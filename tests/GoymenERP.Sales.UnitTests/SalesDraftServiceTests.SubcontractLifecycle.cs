@@ -60,6 +60,20 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(Day.AddDays(3), finalized.Invoice.Lifecycle.Match!.InvoiceDate);
     }
 
+    [Fact]
+    public async Task Subcontract_first_finalization_keeps_its_own_command_receipt_when_the_automatic_finance_offer_replays()
+    {
+        var fixture = new SubcontractLifecycleWorld();
+        await fixture.Service().MatchSubcontractInvoiceAsync(fixture.Invoice.Id, fixture.Request, Metadata("sc34-match"));
+        fixture.Lifecycle.ReplayConcurrentFinanceOffer = true;
+        var metadata = Metadata("sc34-final");
+        var result = await fixture.Service(new FakeFinanceAdmission()).FinalizeSubcontractInvoiceAsync(fixture.Invoice.Id, new("4"), metadata);
+        Assert.False(result.IsReplay);
+        Assert.False(result.Invoice.IsReplay);
+        Assert.Equal(metadata.CorrelationId, result.OriginalCorrelationId);
+        Assert.Equal("admitted", result.Invoice.Lifecycle!.Finalization!.FinanceStatus);
+    }
+
     private sealed class SubcontractLifecycleWorld
     {
         public World World { get; } = new();
@@ -84,11 +98,12 @@ public sealed partial class SalesDraftServiceTests
                 new(Company, Guid.NewGuid(), "approved-import", "1", World.Clock.GetUtcNow(), null, null, null, Guid.NewGuid(), new string('a', 64), false)));
             Lifecycle = new(Reader, World.Clock);
         }
-        public SalesInvoiceService Service()
+        public SalesInvoiceService Service(ISalesFinanceAdmissionPortV1? finance = null)
         {
             var company = new CompanyContext(); company.Set(Company);
             return new(company, World.User, World.Authority, new FixedCorrelation(), new FakeInvoiceStore(), World.Store, World.Settings,
-                World.Clock, exchangeRates: Rates, officialInvoices: Official, subcontractInvoices: Reader, subcontractLifecycle: Lifecycle);
+                World.Clock, exchangeRates: Rates, officialInvoices: Official, financeAdmission: finance,
+                subcontractInvoices: Reader, subcontractLifecycle: Lifecycle);
         }
     }
 
@@ -110,9 +125,16 @@ public sealed partial class SalesDraftServiceTests
     {
         private readonly Dictionary<(string Command, string Key), (string Hash, string Actor, SalesSubcontractInvoiceReplayV1 Result)> attempts = [];
         public int Writes { get; private set; }
+        public bool ReplayConcurrentFinanceOffer { get; set; }
         public Task<SalesSubcontractInvoiceReplayV1?> FindLifecycleReplayAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
             CancellationToken cancellationToken = default)
         {
+            if (ReplayConcurrentFinanceOffer && commandName == SalesSubcontractInvoiceLifecycleCommandsV1.ResendFinance)
+            {
+                var invoice = Assert.Single(reader.Stored.Values);
+                invoice.RecordFinanceAttempt(true, "admitted", clock.GetUtcNow());
+                return Task.FromResult<SalesSubcontractInvoiceReplayV1?>(new(invoice, null, "SENTETIK-concurrent-offer"));
+            }
             if (!attempts.TryGetValue((commandName, envelope.IdempotencyKey), out var found)) return Task.FromResult<SalesSubcontractInvoiceReplayV1?>(null);
             if (found.Hash != requestHash || found.Actor != envelope.ActorId) throw new SalesDraftStoreException(SalesDraftStoreCodes.SameKeyPayloadMismatch, "SENTETIK");
             return Task.FromResult<SalesSubcontractInvoiceReplayV1?>(found.Result);

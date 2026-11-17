@@ -1,5 +1,6 @@
 export const SUBCONTRACT_LIFECYCLE_TEXT = {
-  heading: 'Fason hizmet faturası işlemleri', invoiceId: 'Fatura kimliği', open: 'Faturayı aç', refresh: 'Yenile',
+  heading: 'Fason hizmet faturası işlemleri', invoice: 'Fatura', open: 'Faturayı aç', refresh: 'Yenile',
+  emptyList: 'Bu sipariş için fason hizmet faturası henüz hazırlanmamış.', nextPage: 'Sonraki faturalar', firstPage: 'İlk sayfa',
   empty: 'İşlem yapmak için bir fason hizmet faturası açın.', subject: 'fason hizmet faturası',
   mismatch: 'Açılan fatura bu siparişe ait değil.', reason: 'Gerekçe', officialNo: 'Resmî fatura numarası', ettn: 'ETTN',
   approveDifference: 'Toleransı aşan farkı ayrıca onaylıyorum', noControls: 'Bu işlem için gerekli yetki şu anda kullanılamıyor.',

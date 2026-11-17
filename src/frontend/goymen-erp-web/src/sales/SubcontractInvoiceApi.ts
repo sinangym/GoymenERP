@@ -17,8 +17,21 @@ import {
   decodeSubcontractInvoiceDetail,
   subcontractServiceInvoicePath,
   type SubcontractInvoiceDetail,
+  type SubcontractInvoiceList,
+  decodeSubcontractInvoiceList,
+  subcontractInvoicesOfOrderPath,
 } from './SubcontractInvoiceContract'
 import type { ViewOutcome } from '../shell/uiState'
+
+export async function fetchSubcontractInvoiceList(salesOrderId: string, companyId: string, cursor: string | null,
+  signal?: AbortSignal): Promise<ViewOutcome<SubcontractInvoiceList>> {
+  const query = new URLSearchParams({ pageSize: '50', ...(cursor === null ? {} : { cursor }) })
+  const raw = await request(`${subcontractInvoicesOfOrderPath(salesOrderId)}?${query}`, { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const data = decodeSubcontractInvoiceList(raw.body, salesOrderId)
+  return data === null ? { type: 'malformed' } : { type: 'ok-single', data }
+}
 
 /** The create body as the person chose it: the subcontract order and the delivery weighing of its loading instruction. */
 export interface CreateSubcontractInvoicePayload {

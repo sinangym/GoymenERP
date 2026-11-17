@@ -9,17 +9,31 @@ import {
   SUBCONTRACT_INVOICE_REASON,
   SUBCONTRACT_SERVICE_INVOICES_PATH,
   decodeSubcontractInvoiceDetail,
+  decodeSubcontractInvoiceList,
   subcontractServiceInvoicePath,
 } from './SubcontractInvoiceContract'
 import { SUBCONTRACT_INVOICE_REASON_TEXT, subcontractInvoiceFieldText, subcontractInvoiceReasonText } from './SubcontractInvoiceText'
 import { invoiceNotReadyReasonText } from './invoiceDraftText'
 import {
   SUBCONTRACT_INVOICE_ID,
+  SUBCONTRACT_ORDER_ID,
   subcontractInvoiceDetail,
   subcontractInvoiceLine,
 } from './subcontractInvoiceTestData'
 
 describe('F2 subcontract service invoice decoder', () => {
+  it('accepts order-scoped metadata and refuses another order, duplicate ids or leaking amount fields', () => {
+    const item = { id: SUBCONTRACT_INVOICE_ID, documentNo: 'SFH-SENTETIK', state: 'Draft', version: '1',
+      businessDate: '2026-11-17', createdAtUtc: '2026-11-17T09:30:00Z' }
+    const body = { salesOrderId: SUBCONTRACT_ORDER_ID, items: [item], nextCursor: null }
+    expect(decodeSubcontractInvoiceList(body, SUBCONTRACT_ORDER_ID)?.items).toEqual([item])
+    expect(decodeSubcontractInvoiceList(body, SUBCONTRACT_INVOICE_ID)).toBeNull()
+    expect(decodeSubcontractInvoiceList({ ...body, items: [item, item] }, SUBCONTRACT_ORDER_ID)).toBeNull()
+    expect(decodeSubcontractInvoiceList({ ...body, items: [{ ...item, version: 1 }] }, SUBCONTRACT_ORDER_ID)).toBeNull()
+    expect(decodeSubcontractInvoiceList({ ...body, items: [{ ...item, netAmount: '100.00' }] }, SUBCONTRACT_ORDER_ID)).toBeNull()
+    expect(decodeSubcontractInvoiceList({ ...body, nextCursor: '' }, SUBCONTRACT_ORDER_ID)).toBeNull()
+  })
+
   it('decodes the detail verbatim: the net kg, the billed kg and the amounts stay the server text', () => {
     const detail = decodeSubcontractInvoiceDetail(subcontractInvoiceDetail(), SUBCONTRACT_INVOICE_ID)
     expect(detail).not.toBeNull()
