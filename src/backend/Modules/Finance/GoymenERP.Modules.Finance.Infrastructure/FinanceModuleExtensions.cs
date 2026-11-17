@@ -103,6 +103,7 @@ public static class FinanceModuleExtensions
         services.AddScoped<IFinanceCreditAccountService>(CreateCreditAccountService);
         services.TryAddScoped<IFinanceCreditAccountingPeriodPortV1, UnavailableFinanceCreditAccountingPeriodPortV1>();
         services.AddScoped<IFinanceCreditMovementServiceV1>(CreateCreditMovementService);
+        services.AddScoped<IFinanceCreditLimitServiceV1>(CreateCreditLimitService);
         // F018 §L3 (FNS-D27 (2), FNS-D31 (4)): the Cari card's Finance panel read — the credit limit, open receivables,
         // collateral, its utilization and the documentary risk from the calculators above. It writes nothing.
         services.AddScoped<IFinancePartyCreditPanelReader>(CreatePartyCreditPanelService);
@@ -323,6 +324,17 @@ public static class FinanceModuleExtensions
             provider.GetRequiredService<ICurrentUser>(), permissions, provider.GetRequiredService<ISettingsPrerequisiteProvider>(),
             provider.GetRequiredService<IFinanceOpeningPeriodReader>(), provider.GetRequiredService<IFinanceCreditAccountingPeriodPortV1>(),
             provider.GetRequiredService<IFinanceTreasuryBalanceGuard>(), provider.GetRequiredService<IAuditEventCollector>(),
+            new(Envelope(provider, ErpPermissions.FinanceCreditsPropose, permissions, FinanceAction.ProposeCredit),
+                Envelope(provider, ErpPermissions.FinanceCreditsApprove, permissions, FinanceAction.ApproveCredit)),
+            provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<IAuditTransactionWriterV1>());
+    }
+
+    private static FinanceCreditLimitServiceV1 CreateCreditLimitService(IServiceProvider provider)
+    {
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new(provider.GetRequiredService<FinanceDbContext>(), provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(), permissions, provider.GetRequiredService<IFinanceCreditLenderPortV1>(),
+            provider.GetRequiredService<IAuditEventCollector>(),
             new(Envelope(provider, ErpPermissions.FinanceCreditsPropose, permissions, FinanceAction.ProposeCredit),
                 Envelope(provider, ErpPermissions.FinanceCreditsApprove, permissions, FinanceAction.ApproveCredit)),
             provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<IAuditTransactionWriterV1>());

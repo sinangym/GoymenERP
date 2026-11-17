@@ -11,6 +11,7 @@ import { fetchCreditBanks, fetchCreditMovements, sendCreditMovement, type Credit
 import { CREDIT_MOVEMENT_TEXT as T } from './creditMovementText'
 import styles from './Finance.module.css'
 import { CreditAccountingProposalsPanel } from './CreditAccountingProposalsPanel'
+import { CreditLimitsPanel } from './CreditLimitsPanel'
 
 const pending = new Map<string, MovementAttempt>()
 export function CreditMovementsPanel({ account, namespace }: { readonly account: CreditAccount; readonly namespace: string }) {
@@ -41,6 +42,7 @@ export function CreditMovementsPanel({ account, namespace }: { readonly account:
   }
   const state = (query.isPending ? { kind: 'initial-loading' } : classifyOutcome(query.data ?? { type: 'malformed' })) as RemoteViewState<readonly CreditMovement[]>
   return <section aria-labelledby={`credit-actual-${account.id}`}><h3 id={`credit-actual-${account.id}`}>{T.title}</h3><p>{T.intro}</p>
+    <CreditLimitsPanel account={account} namespace={namespace} refreshVersion={query.dataUpdatedAt} />
     {hasCapability(shell, 'finance.credits.propose') ? <button disabled={frozen} onClick={() => { setEditing(value => !value); setOriginal(null) }}>{editing ? T.cancel : T.add}</button> : null}
     {editing ? <MovementForm key={original?.id ?? 'new'} account={account} namespace={namespace} original={original} frozen={frozen} submit={request => void send({ key: crypto.randomUUID(), operation: 'propose', request })} /> : null}
     {state.kind !== 'ready' ? <StateBlock state={state} subject={T.title} onRetry={() => void query.refetch()} /> : state.data.length === 0 ? <p>{T.empty}</p> : state.data.map(row => <article key={row.id}>

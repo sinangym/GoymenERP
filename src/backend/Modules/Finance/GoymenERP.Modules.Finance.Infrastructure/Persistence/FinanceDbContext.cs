@@ -172,6 +172,7 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
         ConfigureCashTransfers(modelBuilder);
         ConfigureCreditAccounts(modelBuilder);
         ConfigureCreditMovements(modelBuilder);
+        ConfigureCreditLimits(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -2367,6 +2368,8 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
             {
                 if (entry.Entity is FinanceCreditMovementRow movement && !CreditMovementChangeAllowed(entry, movement))
                     throw new InvalidOperationException("Kredi hareketi yalnız ayrı kişinin kararı veya açık dönem ters kaydıyla değişir.");
+                if (entry.Entity is FinanceCreditLimitRow limit && !CreditLimitChangeAllowed(entry, limit))
+                    throw new InvalidOperationException("Kredi limiti yalnız ayrı kişinin kararı veya yeni onaylı kaynak sürümüyle değişir.");
                 if (entry.Entity is ManualBankPaymentRow payment
                     && !IsAllowedManualBankPaymentTransition(entry, payment))
                 {
@@ -2462,6 +2465,8 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
 
                 string[] allowed = entry.Entity switch
                 {
+                    FinanceCreditLimitRow => [nameof(FinanceCreditLimitRow.Status), nameof(FinanceCreditLimitRow.DecidedBy),
+                        nameof(FinanceCreditLimitRow.DecidedAtUtc), nameof(FinanceCreditLimitRow.RejectionReason)],
                     FinanceCreditMovementRow => [nameof(FinanceCreditMovementRow.Status), nameof(FinanceCreditMovementRow.DecidedBy),
                         nameof(FinanceCreditMovementRow.DecidedAtUtc), nameof(FinanceCreditMovementRow.RejectionReason), nameof(FinanceCreditMovementRow.ReversedByMovementId)],
                     FinanceOfficialSalesInvoiceRow =>

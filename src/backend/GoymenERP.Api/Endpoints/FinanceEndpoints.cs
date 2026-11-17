@@ -113,6 +113,7 @@ public static partial class FinanceEndpoints
         MapOpeningBalanceEndpoints(endpoints);
         MapCreditAccountEndpoints(endpoints);
         MapCreditMovementEndpoints(endpoints);
+        MapBankCreditLimitEndpoints(endpoints);
         MapPartyCreditPanelEndpoints(endpoints);
         MapOfficialInvoiceImportEndpoints(endpoints);
         MapOfficialSalesInvoiceEndpoints(endpoints);
