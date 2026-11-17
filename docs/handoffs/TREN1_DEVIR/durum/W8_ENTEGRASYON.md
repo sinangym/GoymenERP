@@ -68,3 +68,34 @@ Birleşimler `--no-ff` ile yapıldı; rebase, force veya eski commit değişikli
 
 Bu rapor W8'in bittiği, trene push edildiği veya ürünün kullanılabilir/kabul
 edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonra güncellenir.
+
+## Son owner bağlantıları — 17 Kasım kaynak devamı
+
+- Üretim yeniden açma işleminde gerçek Accounting dönem okuyucusu aynı Serializable
+  transaction'a katılır (`d93914f54`); bağlantıyı kapatma/commit etme sahibi değildir.
+  Yeni context construction K3 inceleme listesindedir, guard'a sessiz eklenmedi.
+- FIN-S14 gerçek gider/nakit transferi olayları immutable muhasebe kaynak kuyruğuna
+  bağlandı (`6ee4c7a75`). `20261117102540_AddFinanceJournalSources`, Down **51989**;
+  onaylı eşleme ve aynı tutar kanıtı olmadan muhasebe önerisi oluşmaz. Kur değişimi
+  muhasebe satır politikası açık kalır. Dispatcher ve Finance STOP değişmedi.
+- Product boya üyeliği için gerçek ürün adayı (`6c710040d`) ve Inventory ortalama
+  maliyetin para birimi kanıtı (`f9b175a42`) alındı. Eski/bilinmeyen maliyet para
+  birimi TL varsayılmaz. Üretim USD gösterimi resmî TL tutarı/kabul günü USD kuru
+  çapraz dönüşümüne bağlandı (`d6f24c79d`); TL ana maliyet değişmez.
+- SAT-S9 termin uyarısı (`b7e959a2f`) ve SAT-S13 gerçek kantar farkı görüntüsü
+  (`b06da2eee`) alındı. Geçmiş termin ayırmayı kendiliğinden bırakmaz; ekran hesap
+  yapmaz. Resmî irsaliyeden faturaya kg aktarımının önceki kaynakları korunur.
+- Gelen alış faturası listesi/eşleştirme/kesinleştirme mevcut owner'a bağlandı;
+  dosya içe aktarma hâlâ açık FIN-S13 kapsamıdır. Product ticari mal/mamul kontrolü,
+  Ayarlar alış fatura fark toleransı, Finans cari bakiye devri ve Muhasebe satır
+  sınıfı/SMM düzeltme route/menü bağlantıları eklendi. Mevcut staged Finance/
+  Accounting kapıları ve gerçek yetki sınırları korunur; grant yapılmadı.
+- Sales invoice finalized ve Finance gerçek hareket kaynakları, Work registry'de
+  ilgili Accounting consumers ile eşlendi. Registry validator/dispatch kapalı
+  olma test kaynağı eklendi. Shell provider sürümleri Settings **1.13**, Finance
+  **1.16**; authority hashleri merkezi üretici aşamasında güncellenecek.
+- Birleşik API, Api.IntegrationTests, Finance.UnitTests, Inventory.UnitTests,
+  Product.UnitTests kaynak derlemeleri exit 0, uyarı/hata 0. TypeScript derlemesi
+  exit 0; son mount parity test kaynaklarının derlemesi bir sonraki TSC'ye dahildir.
+  Bütün runtime Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**. Plan **135/174 (%77,6)**
+  kalır; tamamlanmış dilim denetimi/pin/FF push öncesi yüzde artırılmadı.

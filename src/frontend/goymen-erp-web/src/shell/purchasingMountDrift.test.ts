@@ -12,7 +12,7 @@ import {
 import { purchasingRoutes } from '../purchasing/purchasingRoutes'
 
 describe('shell ↔ Purchasing lane route catalogue', () => {
-  it('mounts exactly the six route ids and keeps submit and approve children out of the route catalogue', () => {
+  it('mounts order and invoice routes while keeping mutation controls out of the route catalogue', () => {
     expect(CAPABILITY.purchasingRequestsList).toBe(PURCHASING_CAPABILITY.requestList)
     expect(CAPABILITY.purchasingRequestsCreate).toBe(PURCHASING_CAPABILITY.requestCreate)
     expect(CAPABILITY.purchasingRequestsDetail).toBe(PURCHASING_CAPABILITY.requestDetail)
@@ -28,6 +28,8 @@ describe('shell ↔ Purchasing lane route catalogue', () => {
       PURCHASING_CAPABILITY.orderCreate,
       PURCHASING_CAPABILITY.orderDetail,
       PURCHASING_CAPABILITY.orderList,
+      PURCHASING_CAPABILITY.invoiceList,
+      PURCHASING_CAPABILITY.invoiceDetail,
     ].sort())
     expect(shellIds).not.toContain(PURCHASING_CAPABILITY.requestSubmit)
     expect(shellIds).not.toContain(PURCHASING_CAPABILITY.requestApprove)
@@ -35,6 +37,21 @@ describe('shell ↔ Purchasing lane route catalogue', () => {
     expect(shellIds).not.toContain(PURCHASING_CAPABILITY.orderApprove)
     expect(shellIds).not.toContain(PURCHASING_CAPABILITY.orderCancel)
     expect(shellIds).not.toContain(PURCHASING_CAPABILITY.orderLineScheduleWrite)
+    expect(shellIds).not.toContain(PURCHASING_CAPABILITY.invoiceMatch)
+    expect(shellIds).not.toContain(PURCHASING_CAPABILITY.invoiceApproveVariance)
+    expect(shellIds).not.toContain(PURCHASING_CAPABILITY.invoiceFinalize)
+  })
+
+  it('mounts the actual invoice list and detail under their owner capability routes', () => {
+    for (const [shellId, ownerId] of [
+      [CAPABILITY.purchasingInvoicesList, PURCHASING_CAPABILITY.invoiceList],
+      [CAPABILITY.purchasingInvoicesDetail, PURCHASING_CAPABILITY.invoiceDetail],
+    ] as const) {
+      expect(shellId).toBe(ownerId)
+      expect(CAPABILITY_ROUTE[shellId]).toBe(PURCHASING_ROUTE[ownerId])
+      const actualPath = CAPABILITY_ROUTE[shellId].replace(':invoiceId', '7b1c0f2e-0000-4a00-8000-000000000009')
+      expect(matchRoutes(shellRoutes, actualPath)?.at(-1)?.route.path).toBe(CAPABILITY_ROUTE[shellId].slice(1))
+    }
   })
 
   it('agrees with the lane on every route and never reads a static create segment as a record id', () => {

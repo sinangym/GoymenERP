@@ -256,10 +256,13 @@ export const CAPABILITY = {
    */
   financeOpeningBalancesList: 'finance.opening-balances.list',
   financeCreditsWorkspace: 'finance.credits.workspace',
+  financePartyBalanceTransfers: 'finance.party-balance-transfers.record',
   financeOfficialInvoicesRecord: 'finance.official-sales-invoices.record',
   financeOfficialInvoicesApprove: 'finance.official-sales-invoices.approve',
   accountingCostDifferencePrepare: 'accounting.manufacturing-cost-differences.prepare',
   accountingCostDifferenceApprove: 'accounting.manufacturing-cost-differences.approve',
+  accountingInvoiceLineCogsPrepare: 'accounting.invoice-line-cogs.prepare',
+  accountingInvoiceLineCogsApprove: 'accounting.invoice-line-cogs.approve',
   identityUsersManage: 'identity.users.manage',
   productPaintMemberships: 'paint-memberships.manage',
   /** M-07 Muhasebe Dönemleri. Route `/muhasebe/donemler`, owner the Accounting lane (FİNANS). */
@@ -356,6 +359,7 @@ export const CAPABILITY = {
    * `/ayarlar/referans-listeleri`, owner Settings 1.6; one non-Critical name, granted to no role here.
    */
   settingsPurchasingReferenceLists: 'settings.reference-lists.manage',
+  settingsPurchaseInvoiceVariance: 'settings.purchase-invoice-variance-policies.manage',
   /**
    * B-14, KIM-D51 Ayarlar > Boya rengi ve hurda türü: the company's paint color and scrap kind lists (no seed). Route
    * `/ayarlar/uretim-referans-listeleri`, owner Settings 1.6; one non-Critical name, granted to no role here.
@@ -379,6 +383,8 @@ export const CAPABILITY = {
   purchasingRequestsDetail: 'purchasing.requests.detail',
   /** P-03 purchase-order list. Route `/satinalma/siparisler`, owner the Purchasing lane. */
   purchasingOrdersList: 'purchasing.orders.list',
+  purchasingInvoicesList: 'purchasing.invoices.list',
+  purchasingInvoicesDetail: 'purchasing.invoices.detail',
   /** P-04 new purchase order. Route `/satinalma/siparisler/yeni`; staged until a real Product candidate source exists. */
   purchasingOrdersCreate: 'purchasing.orders.create',
   /** P-03-DETAIL one purchase order. Route `/satinalma/siparisler/:orderId`. */
@@ -473,10 +479,13 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.financeCollateralsList]: '/finans/teminatlar',
   [CAPABILITY.financeOpeningBalancesList]: '/finans/acilis-bakiyeleri',
   [CAPABILITY.financeCreditsWorkspace]: '/finans/krediler',
+  [CAPABILITY.financePartyBalanceTransfers]: '/finans/cari-bakiye-devri',
   [CAPABILITY.financeOfficialInvoicesRecord]: '/finans/resmi-satis-faturalari',
   [CAPABILITY.financeOfficialInvoicesApprove]: '/finans/resmi-satis-faturasi-onaylari',
   [CAPABILITY.accountingCostDifferencePrepare]: '/muhasebe/uretim-maliyet-farklari',
   [CAPABILITY.accountingCostDifferenceApprove]: '/muhasebe/uretim-maliyet-farki-onay',
+  [CAPABILITY.accountingInvoiceLineCogsPrepare]: '/muhasebe/fatura-satiri-smm',
+  [CAPABILITY.accountingInvoiceLineCogsApprove]: '/muhasebe/fatura-satiri-smm-onay',
   [CAPABILITY.identityUsersManage]: '/ayarlar/kullanicilar',
   [CAPABILITY.productPaintMemberships]: '/boya-urunleri',
   [CAPABILITY.accountingPeriodsList]: '/muhasebe/donemler',
@@ -513,6 +522,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.settingsManufacturingTolerances]: '/ayarlar/uretim-tolerans-profilleri',
   [CAPABILITY.settingsWorkCenterCapacity]: '/ayarlar/is-merkezi-kapasitesi',
   [CAPABILITY.settingsPurchasingReferenceLists]: '/ayarlar/referans-listeleri',
+  [CAPABILITY.settingsPurchaseInvoiceVariance]: '/ayarlar/alis-fatura-fark-toleransi',
   [CAPABILITY.settingsProductionReferenceLists]: '/ayarlar/uretim-referans-listeleri',
   [CAPABILITY.logisticsInstructionsList]: '/lojistik/yukleme-talimatlari',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as an instruction id.
@@ -525,6 +535,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.purchasingRequestsCreate]: '/satinalma/talepler/yeni',
   [CAPABILITY.purchasingRequestsDetail]: '/satinalma/talepler/:requestId',
   [CAPABILITY.purchasingOrdersList]: '/satinalma/siparisler',
+  [CAPABILITY.purchasingInvoicesList]: '/satinalma/faturalar',
+  [CAPABILITY.purchasingInvoicesDetail]: '/satinalma/faturalar/:invoiceId',
   // Static before the parameter route: `yeni` must never be read as an order id. The route remains
   // mounted but unavailable while the owner declaration is staged.
   [CAPABILITY.purchasingOrdersCreate]: '/satinalma/siparisler/yeni',

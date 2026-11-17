@@ -24,8 +24,10 @@ import { ManufacturingProfilePage } from './ManufacturingProfilePage'
 import { FinanceOpeningPeriodPage } from './FinanceOpeningPeriodPage'
 import { OperationalPolicyPage } from './OperationalPolicyPage'
 import { DocumentNumberSeriesPage } from './DocumentNumberSeriesPage'
+import { PurchaseInvoiceVariancePolicyPage } from './PurchaseInvoiceVariancePolicyPage'
 
 export const settingsRoutes: RouteObject[] = [
+  { path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.purchaseInvoiceVariance].slice(1), element: <CapabilityRoute capability={SETTINGS_CAPABILITY.purchaseInvoiceVariance}><PurchaseInvoiceVariancePolicyPage /></CapabilityRoute> },
   { path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.documentNumberSeries].slice(1), element: <CapabilityRoute capability={SETTINGS_CAPABILITY.documentNumberSeries}><DocumentNumberSeriesPage /></CapabilityRoute> },
   { path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.manufacturingScrapCost].slice(1), element: <CapabilityRoute capability={SETTINGS_CAPABILITY.manufacturingScrapCost}><OperationalPolicyPage kind="scrap-cost" /></CapabilityRoute> },
   { path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.notificationRetention].slice(1), element: <CapabilityRoute capability={SETTINGS_CAPABILITY.notificationRetention}><OperationalPolicyPage kind="notification-retention" /></CapabilityRoute> },

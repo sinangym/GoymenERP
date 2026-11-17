@@ -39,7 +39,7 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Shell;
 public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SETTINGS";
-    public const string OwnerContractVersion = "1.12";
+    public const string OwnerContractVersion = "1.13";
 
     public const string ManufacturingParametersCapabilityId = ManufacturingParameterProfileActionsV1.Read;
     public const string ManufacturingParametersRoutePath = "/ayarlar/uretim-parametre-profilleri";
@@ -159,6 +159,11 @@ public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
 
         return
         [
+            new ShellCapabilityDeclaration(SettingsPurchaseInvoiceVariancePolicyPermissionsV1.Manage,
+                SettingsPurchaseInvoiceVariancePolicyPermissionsV1.Manage, "/ayarlar/alis-fatura-fark-toleransi", "AY-AFF-01",
+                ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide, [SettingsPurchaseInvoiceVariancePolicyPermissionsV1.Manage],
+                ImplementationAvailable: true),
             new ShellCapabilityDeclaration(SettingsSalesContractDiscountLimitPermissionsV1.Manage, SettingsSalesContractDiscountLimitPermissionsV1.Manage,
                 "/ayarlar/sozlesme-iskonto-siniri", "AY-SIS-01", ShellCapabilityRoutePrecedence.Static,
                 ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,

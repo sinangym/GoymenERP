@@ -34,6 +34,8 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'finance.official-sales-invoices.approve',
   'accounting.manufacturing-cost-differences.prepare',
   'accounting.manufacturing-cost-differences.approve',
+  'accounting.invoice-line-cogs.prepare',
+  'accounting.invoice-line-cogs.approve',
   'identity.users.manage',
   'paint-memberships.manage',
   'cari.parties.list',
@@ -68,6 +70,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   // B-05 (KLN-D3): the party ledger opens from Muhasebe and from Cari; both are Finance's read of one sub-ledger.
   'finance.party-ledger.accounting',
   'finance.party-ledger.cari',
+  'finance.party-balance-transfers.record',
   /**
    * Listed together with the route that serves it, on purpose: a nav entry whose route
    * is not mounted is a link to the not-found block. It still renders only where the
@@ -153,6 +156,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
    */
   'purchasing.requests.list',
   'purchasing.orders.list',
+  'purchasing.invoices.list',
   /**
    * SY-01 read subset, listed with the route that serves it. It renders only where the server granted
    * `identity.assignments.read` company-wide; the role card is reached from a row.
@@ -183,6 +187,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'settings.manufacturing-scrap-cost.manage',
   'settings.notification-retention.manage',
   'settings.document-number-series.manage',
+  'settings.purchase-invoice-variance-policies.manage',
   'settings.manufacturing-parameter-profiles.read',
   'settings.manufacturing-tolerance-profiles.read',
   /** URT-D89: the Settings work center capacity screen, drawn only where the server granted its one name. */
@@ -262,6 +267,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'finance.open-items.detail': '',
   'finance.party-ledger.accounting': 'Cari Hesaplar',
   'finance.party-ledger.cari': 'Cari Hesap Takibi',
+  'finance.party-balance-transfers.record': 'Cari Bakiye Devri',
   'finance.receipts.reverse.approve': 'Ters Kayıt Onayları',
   'finance.bank-accounts.list': 'Banka Hesapları',
   // None of these three: the new draft is entered from a Cari account, the detail from a list row and
@@ -282,6 +288,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'finance.official-sales-invoices.approve': 'Resmî satış faturası onayları',
   'accounting.manufacturing-cost-differences.prepare': 'Üretim maliyet farkları',
   'accounting.manufacturing-cost-differences.approve': 'Üretim maliyet farkı onayları',
+  'accounting.invoice-line-cogs.prepare': 'Fatura satırı muhasebe düzeltmesi',
+  'accounting.invoice-line-cogs.approve': 'Fatura satırı düzeltme onayı',
   'identity.users.manage': 'Kullanıcı yönetimi',
   'paint-memberships.manage': 'Boya ürünleri',
   'accounting.periods.list': 'Muhasebe Dönemleri',
@@ -298,6 +306,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'identity.roles.detail': '',
   'identity.audit.list': 'Denetim kaydı',
   'settings.sales-discount-limits.manage': 'İskonto limitleri',
+  'settings.purchase-invoice-variance-policies.manage': 'Alış faturası fark toleransı',
   'settings.tax-master.manage': 'Vergi (KDV / tevkifat)',
   'settings.exchange-rates.read': 'Kurlar',
   'settings.sales-delivery-tolerances.manage': 'Teslim toleransı',
@@ -337,6 +346,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'purchasing.requests.create': '',
   'purchasing.requests.detail': '',
   'purchasing.orders.list': 'Satın alma siparişleri',
+  'purchasing.invoices.list': 'Alış faturaları',
+  'purchasing.invoices.detail': '',
   // P-04 is staged and, once published, is reached from the list. The detail is reached from a row.
   'purchasing.orders.create': '',
   'purchasing.orders.detail': '',
@@ -398,7 +409,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     label: 'Satış',
     entries: ['sales.requests.list', 'sales.quotes.list', 'sales.drafts.list', 'sales.dispatches.list', 'sales.invoice-candidates.list', 'sales.invoices.list', 'sales.customer-returns.list', 'sales.reports.view', 'price-lists.list'],
   },
-  { id: 'purchasing', label: 'Satın Alma', entries: ['purchasing.requests.list', 'purchasing.orders.list'] },
+  { id: 'purchasing', label: 'Satın Alma', entries: ['purchasing.requests.list', 'purchasing.orders.list', 'purchasing.invoices.list'] },
   { id: 'manufacturing', label: 'Üretim', entries: ['manufacturing.orders.list'] },
   {
     id: 'stock-logistics',
@@ -421,6 +432,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     label: 'Finans & Hazine',
     entries: [
       'finance.credits.workspace',
+      'finance.party-balance-transfers.record',
       'finance.official-sales-invoices.record',
       'finance.official-sales-invoices.approve',
       'finance.receipts.list',
@@ -443,7 +455,8 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     id: 'accounting',
     label: 'Muhasebe',
     entries: ['accounting.journals.list', 'accounting.periods.list', 'accounting.posting-queues', 'finance.party-ledger.accounting',
-      'accounting.manufacturing-cost-differences.prepare', 'accounting.manufacturing-cost-differences.approve'],
+      'accounting.manufacturing-cost-differences.prepare', 'accounting.manufacturing-cost-differences.approve',
+      'accounting.invoice-line-cogs.prepare', 'accounting.invoice-line-cogs.approve'],
   },
   {
     id: 'settings',
