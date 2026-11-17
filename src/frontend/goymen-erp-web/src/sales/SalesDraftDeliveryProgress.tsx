@@ -62,6 +62,7 @@ export function SalesDraftDeliveryProgress({ detail }: { readonly detail: DraftD
             <thead><tr>
               <th scope="col">{T.lineNo}</th><th scope="col">{T.ordered}</th><th scope="col">{T.shipped}</th>
               <th scope="col">{T.delivered}</th><th scope="col">{T.remaining}</th><th scope="col">{T.excess}</th>
+              <th scope="col">{T.invoiced}</th><th scope="col">{T.deliveredNotInvoiced}</th>
               <th scope="col">{T.shippedBy}</th>
             </tr></thead>
             <tbody>{outcome.data.lines.map((line) => (
@@ -72,6 +73,8 @@ export function SalesDraftDeliveryProgress({ detail }: { readonly detail: DraftD
                 <td data-testid={`sales-delivery-progress-line-${line.lineNo}-delivered`}>{line.delivered}</td>
                 <td data-testid={`sales-delivery-progress-line-${line.lineNo}-remaining`}>{line.remaining}</td>
                 <td data-testid={`sales-delivery-progress-line-${line.lineNo}-excess`}>{line.excess}</td>
+                <td data-testid={`sales-delivery-progress-line-${line.lineNo}-invoiced`}>{line.invoiceProgress?.invoiced ?? T.invoiceUnknown}</td>
+                <td data-testid={`sales-delivery-progress-line-${line.lineNo}-uninvoiced`}>{line.invoiceProgress?.deliveredNotInvoiced ?? T.invoiceUnknown}</td>
                 <td data-testid={`sales-delivery-progress-line-${line.lineNo}-shipped-by`}>{shippedByText(line.shippedBy)}</td>
               </tr>
             ))}</tbody>

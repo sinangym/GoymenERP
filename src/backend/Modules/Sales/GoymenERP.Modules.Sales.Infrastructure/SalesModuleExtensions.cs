@@ -55,6 +55,7 @@ public static class SalesModuleExtensions
         services.TryAddScoped<ISalesOfficialCancellationEvidenceReadPortV1, UnavailableSalesOfficialCancellationEvidenceReadPortV1>();
         services.AddScoped<ISalesOfficialInvoiceCancellationServiceV1, SalesOfficialInvoiceCancellationServiceV1>();
         services.AddScoped<ISalesOrderDraftStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        services.AddScoped<ISalesOrderInvoicedQuantityReadPortV1, SalesOrderInvoicedQuantityReadPortV1>();
         // API-20 / API-21: the sales request store is the same Sales store (one context, one attempt table).
         services.AddScoped<ISalesRequestStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         // API-22…24: the sales quote store is the same Sales store (the conversion writes the order in the quote's one save).
@@ -326,7 +327,8 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISalesOrderPlannedQuantityReadPortV1>(),
         // SAT-D268..274 / URT-D67: the Inventory owner's currency-proven company-wide cost read.
         // Missing evidence remains an unavailable margin snapshot; it never becomes zero cost.
-        marginCosts: serviceProvider.GetService<ISalesMarginCostReadPortV1>());
+        marginCosts: serviceProvider.GetService<ISalesMarginCostReadPortV1>(),
+        invoicedQuantities: serviceProvider.GetService<ISalesOrderInvoicedQuantityReadPortV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(

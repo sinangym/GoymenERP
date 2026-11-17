@@ -63,7 +63,7 @@ public sealed partial class SalesDraftServiceTests
         // OPEN-004 (tolerance) is open: the facts only — no completion, warning or approval member exists on the wire.
         Assert.Equal(("1.25", "1.5", "0", "0.25"), (line.Ordered, line.Delivered, line.Remaining, line.Excess));
         Assert.Equal(
-            ["Delivered", "Excess", "LineId", "LineNo", "OrderUnitId", "Ordered", "Remaining", "Shipped", "ShippedBy"],
+            ["Delivered", "Excess", "InvoiceProgress", "LineId", "LineNo", "OrderUnitId", "Ordered", "Remaining", "Shipped", "ShippedBy"],
             typeof(SalesDraftLineDeliveryProgressV1).GetProperties().Select(property => property.Name).Order(StringComparer.Ordinal));
     }
 

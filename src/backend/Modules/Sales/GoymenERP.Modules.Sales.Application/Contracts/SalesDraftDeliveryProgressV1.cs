@@ -1,4 +1,10 @@
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.Modules.Sales.Application.Contracts;
+
+/// <summary>Server-calculated quantities only, backed by the current complete Sales invoice evidence token.
+/// Absence is unreadable/legacy evidence, never a fabricated zero. No price-read authority is implied.</summary>
+public sealed record SalesDraftLineInvoiceProgressV1(string Invoiced, string DeliveredNotInvoiced, string SourceVersion);
 
 /// <summary>
 /// AT-024: one order line's delivered and remaining quantity, exact decimal text in the line's order unit (Ö2, never
@@ -28,7 +34,8 @@ public sealed record SalesDraftLineDeliveryProgressV1(
     string Delivered,
     string Remaining,
     string Excess,
-    IReadOnlyList<string>? ShippedBy);
+    IReadOnlyList<string>? ShippedBy,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SalesDraftLineInvoiceProgressV1? InvoiceProgress = null);
 
 /// <summary>
 /// AT-024: GET …/{id}/delivery-progress — every line of the draft once, in line order, under the draft read. The answer

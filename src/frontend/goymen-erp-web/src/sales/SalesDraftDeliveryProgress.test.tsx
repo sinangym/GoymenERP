@@ -67,6 +67,32 @@ afterEach(() => {
 const progressCalls = <C extends { readonly url: string }>(calls: readonly C[]) => calls.filter((call) => call.url.endsWith('/delivery-progress'))
 
 describe('S-04 delivery progress (AT-024)', () => {
+  it('shows backend invoiced and unbilled quantities verbatim with actual evidence and leaves legacy missing evidence unknown', async () => {
+    const body = progress({ shipped: '600', delivered: '400', remaining: '425' })
+    body.lines[0].invoiceProgress = { invoiced: '300.125', deliveredNotInvoiced: '274.875',
+      sourceVersion: `sales.order-invoiced-quantities.v1/${'a'.repeat(64)}` }
+    installFetch({ onDetail: () => json(detail()), onDeliveryProgress: () => json(body) })
+    renderSalesApp(`/satis/siparisler/${DRAFT}?sekme=gerceklesme`)
+    await waitFor(() => expect(screen.getByTestId('sales-delivery-progress-line-1-invoiced').textContent).toBe('300.125'))
+    expect(screen.getByTestId('sales-delivery-progress-line-1-uninvoiced').textContent).toBe('274.875')
+    expect(screen.getByTestId('sales-delivery-progress-line-1-remaining').textContent).toBe('425')
+    cleanup()
+    installFetch({ onDetail: () => json(detail()), onDeliveryProgress: () => json(progress({ shipped: '600', delivered: '400', remaining: '425' })) })
+    renderSalesApp(`/satis/siparisler/${DRAFT}?sekme=gerceklesme`)
+    await waitFor(() => expect(screen.getByTestId('sales-delivery-progress-line-1-invoiced').textContent).toBe(T.invoiceUnknown))
+    expect(screen.getByTestId('sales-delivery-progress-line-1-uninvoiced').textContent).toBe(T.invoiceUnknown)
+  })
+
+  it.each([
+    null, { invoiced: '1', deliveredNotInvoiced: '0', sourceVersion: 'unproven' },
+    { invoiced: '-1', deliveredNotInvoiced: '0', sourceVersion: `sales.order-invoiced-quantities.v1/${'a'.repeat(64)}` },
+    { invoiced: '1', deliveredNotInvoiced: '0', sourceVersion: `sales.order-invoiced-quantities.v1/${'a'.repeat(64)}`, amount: '10' },
+  ])('rejects malformed additive invoice evidence instead of manufacturing quantities: %j', invoiceProgress => {
+    const body = progress({ shipped: '600', delivered: '400', remaining: '425' })
+    body.lines[0].invoiceProgress = invoiceProgress
+    expect(decodeDeliveryProgress(body, decodeDraftDetail(detail(), DRAFT)!)).toBeNull()
+  })
+
   it('shows the server’s shipped, delivered and remaining quantity per line through a company-bound read-only GET', async () => {
     const harness = installFetch({
       onDetail: () => json(detail()),

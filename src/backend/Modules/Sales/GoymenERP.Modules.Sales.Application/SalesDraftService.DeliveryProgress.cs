@@ -79,11 +79,13 @@ public sealed partial class SalesDraftService
             throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.CustomerReturnProviderUnavailable);
         }
 
-        return DeliveryProgress(scope, draft, answer, CustomerReturns(scope, draft, returned));
+        var invoices = await ReadInvoicedQuantitiesAsync(scope, draft, cancellationToken);
+        return DeliveryProgress(scope, draft, answer, CustomerReturns(scope, draft, returned), invoices);
     }
 
     private static SalesOrderDraftDeliveryProgressResponse DeliveryProgress(Scope scope, SalesOrderDraft draft,
-        SalesOrderDeliveryReadAnswerV1? answer, SalesOrderDraftCustomerReturnsResponse approvedReturns)
+        SalesOrderDeliveryReadAnswerV1? answer, SalesOrderDraftCustomerReturnsResponse approvedReturns,
+        (IReadOnlyDictionary<Guid, decimal> Quantities, string Version)? invoices)
     {
         var recorded = RecordedDeliveries(scope, draft, answer);
         var returned = approvedReturns.Lines.ToDictionary(line => line.LineId);
@@ -91,7 +93,8 @@ public sealed partial class SalesDraftService
             [.. draft.Lines.OrderBy(line => line.LineNo).Select(line =>
             {
                 var totals = recorded.GetValueOrDefault(line.Id);
-                return LineProgress(line, totals, ShippedByOf(answer!, line.Id, totals.Shipped), returned[line.Id].ApprovedReturned);
+                return LineProgress(line, totals, ShippedByOf(answer!, line.Id, totals.Shipped), returned[line.Id].ApprovedReturned,
+                    invoices?.Quantities.GetValueOrDefault(line.Id), invoices?.Version);
             })]);
     }
 
@@ -166,7 +169,7 @@ public sealed partial class SalesDraftService
     }
 
     private static SalesDraftLineDeliveryProgressV1 LineProgress(SalesOrderDraftLine line, (decimal Shipped, decimal Delivered) recorded,
-        IReadOnlyList<string>? shippedBy, string approvedReturned)
+        IReadOnlyList<string>? shippedBy, string approvedReturned, decimal? invoiced, string? invoiceSourceVersion)
     {
         var unit = line.Quantity.Unit;
         Quantity shipped;
@@ -190,7 +193,8 @@ public sealed partial class SalesDraftService
         try
         {
             var returned = Quantity.Of(decimal.Parse(approvedReturned, CultureInfo.InvariantCulture), unit);
-            open = SalesOrderLineOpenQuantity.Calculate(line.Quantity, shipped, returned, null);
+            open = SalesOrderLineOpenQuantity.Calculate(line.Quantity, shipped, returned,
+                invoiced is { } quantity ? Quantity.Of(quantity, unit) : null);
         }
         catch (SalesRuleException)
         {
@@ -198,7 +202,50 @@ public sealed partial class SalesDraftService
             throw CustomerReturnAnswerInvalid();
         }
         return new SalesDraftLineDeliveryProgressV1(line.Id, line.LineNo, line.OrderUnit.UnitId, line.QuantityText,
-            QuantityText(shipped), QuantityText(delivered), QuantityText(open.Open), QuantityText(open.Excess), shippedBy);
+            QuantityText(shipped), QuantityText(delivered), QuantityText(open.Open), QuantityText(open.Excess), shippedBy,
+            open.Invoiced is { } billed && open.DeliveredNotInvoiced is { } unbilled && invoiceSourceVersion is not null
+                ? new(QuantityText(billed), QuantityText(unbilled), invoiceSourceVersion) : null);
+    }
+
+    private async Task<(IReadOnlyDictionary<Guid, decimal> Quantities, string Version)?> ReadInvoicedQuantitiesAsync(
+        Scope scope, SalesOrderDraft draft, CancellationToken token)
+    {
+        if (invoicedQuantities is null) return null;
+        SalesOrderInvoicedQuantityReadV1? source;
+        try
+        {
+            source = await GuardedAsync(scope, bindings.ReadPermission,
+                () => invoicedQuantities.ReadAsync(scope.CompanyId, draft.Id,
+                    async ct => { await RequireStillAsync(scope, bindings.ReadPermission, ct); }, token), token);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (SalesDraftServiceException error) when (error.Status is 401 or 403) { throw; }
+        catch { await RequireStillAsync(scope, bindings.ReadPermission, token); return null; }
+        var prefix = ISalesOrderInvoicedQuantityReadPortV1.SourceVersionPrefix;
+        if (source is null || source.CompanyId != scope.CompanyId || source.SalesOrderId != draft.Id
+            || source.Outcome != SalesOrderInvoicedQuantityReadOutcomeV1.Available || source.Lines is null
+            || source.SourceVersion is not { } version || !version.StartsWith(prefix, StringComparison.Ordinal)
+            || version.Length != prefix.Length + 64 || !version[prefix.Length..].All(character =>
+                character is >= '0' and <= '9' or >= 'a' and <= 'f')) return null;
+        var actualLines = draft.AllLines.ToDictionary(line => line.Id);
+        var claims = new HashSet<(string, Guid, Guid)>();
+        var quantities = new Dictionary<Guid, decimal>();
+        try
+        {
+            foreach (var item in source.Lines)
+            {
+                if (item is null || item.InvoiceId == Guid.Empty || item.InvoiceLineId == Guid.Empty
+                    || item.InvoiceKind is not ("Normal" or "Subcontract") || item.SourceVersion is not { Length: 64 }
+                    || !item.SourceVersion.All(Uri.IsHexDigit) || !claims.Add((item.InvoiceKind, item.InvoiceId, item.InvoiceLineId))
+                    || !actualLines.TryGetValue(item.SalesOrderLineId, out var line) || item.UnitId != line.OrderUnit.UnitId
+                    || item.Quantity <= 0m) return null;
+                _ = Quantity.Of(item.Quantity, line.Quantity.Unit);
+                quantities[line.Id] = quantities.GetValueOrDefault(line.Id) + item.Quantity;
+                _ = Quantity.Of(quantities[line.Id], line.Quantity.Unit);
+            }
+        }
+        catch (Exception error) when (error is ArgumentException or OverflowException) { return null; }
+        return (quantities, version);
     }
 
     /// <summary>
