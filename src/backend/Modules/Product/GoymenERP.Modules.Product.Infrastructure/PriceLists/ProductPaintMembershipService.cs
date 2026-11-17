@@ -51,6 +51,54 @@ internal sealed class ProductPaintMembershipService(ProductPriceListDbContext da
         { await FenceAsync(frame, cancellationToken); throw Unavailable(); }
     }
 
+    public async Task<ProductPaintMembershipCandidatesV1> SearchCandidatesAsync(ProductPaintMembershipCandidateQueryV1 query,
+        CancellationToken cancellationToken = default)
+    {
+        var frame = Capture();
+        await FenceAsync(frame, cancellationToken);
+        if (query is null || !ProductPaintMembershipCandidateQueryV1.TryCreate(query.Q, query.Limit, out var normalized))
+            throw new ProductPaintMembershipException(400, ProductPaintMembershipCodesV1.InvalidRequest);
+        try
+        {
+            var head = await ReadAsync(() => HeadAsync(cancellationToken), frame, cancellationToken);
+            if (head == 0)
+            {
+                await FenceAsync(frame, cancellationToken);
+                return new(ProductPaintMembershipCatalogOutcomeV1.NoSource, frame.CompanyId, "0", normalized.Q,
+                    normalized.Limit, [], false, ProductPaintMembershipReader.Source);
+            }
+            // Only the actual active card's identity/version is exposed. The maintenance permission
+            // neither implies operational selection nor opens the global Product-card reader.
+            var first = await ReadAsync(ReadWindowAsync, frame, cancellationToken);
+            var fresh = await ReadAsync(ReadWindowAsync, frame, cancellationToken);
+            var freshHead = await ReadAsync(() => HeadAsync(cancellationToken), frame, cancellationToken);
+            if (head != freshHead || !first.SequenceEqual(fresh))
+                throw new ProductPaintMembershipException(409, ProductPaintMembershipCodesV1.VersionConflict);
+            if (first.Any(x => x.ProductId == Guid.Empty || x.ProductVersion <= 0 || x.MembershipVersion < 0
+                || x.MembershipVersion > head || !Label(x.ProductCode, 64, out _) || !Label(x.ProductName, 250, out _))) throw Unavailable();
+            await FenceAsync(frame, cancellationToken);
+            return new(ProductPaintMembershipCatalogOutcomeV1.Available, frame.CompanyId, Text(head), normalized.Q,
+                normalized.Limit, first.Take(normalized.Limit).Select(x => new ProductPaintMembershipCandidateV1(x.ProductId,
+                    Text(x.ProductVersion), Text(x.MembershipVersion), x.ProductCode, x.ProductName, x.MembershipVersion != 0)).ToArray(),
+                first.Count > normalized.Limit, ProductPaintMembershipReader.Source);
+
+            Task<List<CandidateSnapshot>> ReadWindowAsync() => (
+                from product in database.Products.AsNoTracking()
+                where product.Lifecycle == ProductPaintMembershipReader.Active
+                    && (normalized.Q == null || product.Code.Contains(normalized.Q) || product.Name.Contains(normalized.Q))
+                join membership in database.PaintMembershipLines.AsNoTracking().Where(x => x.Version == head)
+                    on product.Id equals membership.ProductId into memberships
+                from membership in memberships.DefaultIfEmpty()
+                orderby product.Code, product.Id
+                select new CandidateSnapshot(product.Id, product.Version, membership == null ? 0 : membership.MembershipVersion,
+                    product.Code, product.Name)).Take(normalized.Limit + 1).ToListAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is not ProductPaintMembershipException and not UnauthorizedAccessException and not OperationCanceledException)
+        { await FenceAsync(frame, cancellationToken); throw Unavailable(); }
+    }
+
+    private sealed record CandidateSnapshot(Guid ProductId, long ProductVersion, long MembershipVersion, string ProductCode, string ProductName);
+
     public Task<ProductPaintMembershipMutationV1> ApplyImportAsync(ApplyProductPaintMembershipImportV1 request,
         ProductPaintMembershipCommandMetadataV1 metadata, CancellationToken cancellationToken = default)
     {
@@ -103,6 +151,7 @@ internal sealed class ProductPaintMembershipService(ProductPriceListDbContext da
             if ((existing?.MembershipVersion ?? 0) != expectedMember) return Refuse(409, ProductPaintMembershipCodesV1.VersionConflict);
             if (request.IsMember && product.Lifecycle != ProductPaintMembershipReader.Active) return Refuse(422, ProductPaintMembershipCodesV1.Inactive);
             if (request.IsMember == (existing is not null)) return Success(frame.CompanyId, head, [], []);
+            if (request.IsMember && current.Count >= ProductPaintMembershipLimitsV1.MaximumRows) return Refuse(422, ProductPaintMembershipCodesV1.InvalidFile);
             var next = checked(head + 1);
             AddHeader(next, "Edit", "ERP", null, null, reason, frame, metadata);
             Carry(current.Where(x => x.ProductId != productId), next);

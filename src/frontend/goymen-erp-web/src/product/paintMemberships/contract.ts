@@ -31,6 +31,19 @@ export interface PaintPreviewRow {
   readonly productName: string
   readonly alreadyMember: boolean
 }
+export type PaintCandidate = Omit<PaintPreviewRow, 'rowNumber'>
+export interface PaintCandidates {
+  readonly outcome: 1 | 2 | 3
+  readonly companyId: string
+  readonly version: string
+  readonly q: string | null
+  readonly limit: number
+  readonly items: readonly PaintCandidate[]
+  readonly searchWindowFull: boolean
+  readonly sourceVersion: string
+}
+export const PAINT_CANDIDATE_LIMIT = 25
+export const PAINT_CANDIDATE_QUERY_LIMIT = 100
 export interface PaintImportError {
   readonly rowNumber: number | null
   readonly field: string
@@ -112,6 +125,31 @@ export function decodePaintCatalog(value: unknown, companyId: string): PaintCata
   if (items === null || (value.outcome === 1 ? value.version === '0' : value.version !== '0' || items.length !== 0)
     || items.some((item) => BigInt(item.membershipVersion) > BigInt(value.version as string))) return null
   return { outcome: value.outcome, companyId: value.companyId, version: value.version, entries: items, sourceVersion: value.sourceVersion }
+}
+export function decodePaintCandidates(value: unknown, companyId: string, expectedQ: string | null,
+  expectedLimit = PAINT_CANDIDATE_LIMIT): PaintCandidates | null {
+  if (!record(value) || !exact(value, ['outcome', 'companyId', 'version', 'q', 'limit', 'items', 'searchWindowFull', 'sourceVersion'])
+    || !isBoundUuid(value.companyId) || !samePaintId(value.companyId, companyId) || !paintVersion(value.version)
+    || (value.outcome !== 1 && value.outcome !== 2 && value.outcome !== 3) || value.sourceVersion !== PAINT_SOURCE
+    || value.q !== expectedQ || !(value.q === null || typeof value.q === 'string' && value.q.length <= PAINT_CANDIDATE_QUERY_LIMIT
+      && value.q.trim() === value.q && value.q !== '' && !/[\u0000-\u001f\u007f-\u009f]/.test(value.q))
+    || !count(value.limit, 50) || value.limit < 1 || value.limit !== expectedLimit
+    || !Array.isArray(value.items) || value.items.length > value.limit || typeof value.searchWindowFull !== 'boolean') return null
+  const result: PaintCandidate[] = []
+  for (const item of value.items) {
+    if (!record(item) || !exact(item, ['productId', 'productVersion', 'membershipVersion', 'productCode', 'productName', 'alreadyMember'])
+      || !isBoundUuid(item.productId) || !positiveVersion(item.productVersion) || !paintVersion(item.membershipVersion)
+      || !text(item.productCode, 64) || !text(item.productName, 250)
+      || /[\u0000-\u001f\u007f-\u009f]/.test(item.productCode) || /[\u0000-\u001f\u007f-\u009f]/.test(item.productName)
+      || typeof item.alreadyMember !== 'boolean' || item.alreadyMember !== (item.membershipVersion !== '0')
+      || BigInt(item.membershipVersion) > BigInt(value.version)) return null
+    result.push(item as unknown as PaintCandidate)
+  }
+  if (!uniqueIds(result.map((item) => item.productId)) || (value.outcome === 1 ? value.version === '0'
+    : value.version !== '0' || result.length !== 0 || value.searchWindowFull)
+    || value.searchWindowFull && result.length !== value.limit) return null
+  return { outcome: value.outcome, companyId: value.companyId, version: value.version, q: value.q,
+    limit: value.limit, items: result, searchWindowFull: value.searchWindowFull, sourceVersion: value.sourceVersion }
 }
 function previewRow(value: unknown): PaintPreviewRow | null {
   if (!record(value) || !exact(value, ['rowNumber', 'productId', 'productVersion', 'membershipVersion', 'productCode', 'productName', 'alreadyMember'])

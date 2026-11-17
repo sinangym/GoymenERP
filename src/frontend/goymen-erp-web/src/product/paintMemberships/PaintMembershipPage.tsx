@@ -7,9 +7,9 @@ import { classifyOutcome, type ViewOutcome } from '../../shell/uiState'
 import { useAuthBoundary } from '../../shell/useAuthBoundary'
 import { Button } from '../../ui/Button'
 import { Field } from '../../ui/Field'
-import { fetchPaintCatalog, sendPaintCommand, validatePaintFile } from './api'
+import { fetchPaintCandidates, fetchPaintCatalog, sendPaintCommand, validatePaintFile } from './api'
 import { DEFAULT_PAINT_COLUMN, PAINT_LIMITS, PAINT_MEMBERSHIP_CAPABILITY,
-  type PaintCommand, type PaintEntry, type PaintPreview, type PaintPreviewRow } from './contract'
+  PAINT_CANDIDATE_QUERY_LIMIT, type PaintCandidate, type PaintCandidates, type PaintCommand, type PaintEntry, type PaintPreview, type PaintPreviewRow } from './contract'
 import { beginPaintAttempt, finishPaintAttempt, leavePaintAttempt, paintAttempt, paintAttemptFrozen,
   paintBinding, subscribePaintAttempt } from './paintAttempt'
 import { freezePaintFile, validPaintFile, type FrozenPaintFile } from './paintFile'
@@ -39,12 +39,16 @@ function PaintMembershipEditor({ shell, companyId, namespace }: {
   const alive = useRef(false)
   const fileGeneration = useRef(0)
   const validationAbort = useRef<AbortController | null>(null)
+  const candidateGeneration = useRef(0)
+  const candidateAbort = useRef<AbortController | null>(null)
   useLayoutEffect(() => {
     alive.current = true
     return () => {
       alive.current = false
       fileGeneration.current += 1
       validationAbort.current?.abort()
+      candidateGeneration.current += 1
+      candidateAbort.current?.abort()
       leavePaintAttempt(binding)
     }
   }, [binding])
@@ -55,6 +59,8 @@ function PaintMembershipEditor({ shell, companyId, namespace }: {
   const [reason, setReason] = useState('')
   const [localError, setLocalError] = useState<string | null>(null)
   const [previewOutcome, setPreviewOutcome] = useState<ViewOutcome<PaintPreview> | null>(null)
+  const [candidateText, setCandidateText] = useState('')
+  const [candidateOutcome, setCandidateOutcome] = useState<ViewOutcome<PaintCandidates> | null>(null)
   const query = useQuery({
     queryKey: [namespace, 'paint-memberships', shell.routeEntryGeneration, 'current'],
     retry: false,
@@ -68,7 +74,9 @@ function PaintMembershipEditor({ shell, companyId, namespace }: {
   const catalog = query.data?.type === 'ok-single' && query.data.data.outcome !== 3 ? query.data.data : null
   const preview = previewOutcome?.type === 'ok-single' ? previewOutcome.data : null
   const previewCurrent = preview !== null && catalog !== null && preview.version === catalog.version
-  const busy = frozen || reading || previewOutcome?.type === 'loading'
+  const candidates = candidateOutcome?.type === 'ok-single' ? candidateOutcome.data : null
+  const candidatesCurrent = candidates !== null && catalog?.outcome === 1 && candidates.outcome === 1 && candidates.version === catalog.version
+  const busy = frozen || reading || previewOutcome?.type === 'loading' || candidateOutcome?.type === 'loading'
   const canEdit = catalog?.outcome === 1 && !query.isFetching && !busy
 
   function invalidatePreview() {
@@ -76,6 +84,27 @@ function PaintMembershipEditor({ shell, companyId, namespace }: {
     validationAbort.current?.abort()
     setPreviewOutcome(null)
     setLocalError(null)
+  }
+  function invalidateCandidates() {
+    candidateGeneration.current += 1
+    candidateAbort.current?.abort()
+    setCandidateOutcome(null)
+  }
+  async function searchCandidates() {
+    if (!canEdit) return
+    if (candidateText.length > PAINT_CANDIDATE_QUERY_LIMIT || /[\u0000-\u001f\u007f-\u009f]/.test(candidateText)) {
+      setLocalError(T.candidateQueryInvalid); return
+    }
+    invalidateCandidates()
+    setLocalError(null)
+    const generation = candidateGeneration.current
+    const controller = new AbortController()
+    candidateAbort.current = controller
+    const security = boundary.capture()
+    setCandidateOutcome({ type: 'loading' })
+    const result = await fetchPaintCandidates(companyId, candidateText.trim() || null, controller.signal)
+    if (result.type === 'http') boundary.report(result.status, security)
+    if (alive.current && generation === candidateGeneration.current) setCandidateOutcome(result)
   }
   async function chooseFile(event: ChangeEvent<HTMLInputElement>) {
     if (frozen) return
@@ -122,10 +151,12 @@ function PaintMembershipEditor({ shell, companyId, namespace }: {
     if (!alive.current) return
     if (result.type === 'applied') {
       invalidatePreview()
+      invalidateCandidates()
       void query.refetch()
     } else if (result.type === 'refused' && (result.status === 409 || result.status === 404)
       && !paintAttemptFrozen(paintAttempt(binding))) {
       invalidatePreview()
+      invalidateCandidates()
       void query.refetch()
     }
   }
@@ -138,8 +169,8 @@ function PaintMembershipEditor({ shell, companyId, namespace }: {
       sourceLabel: sourceLabel.trim(), reason: reason.trim(),
     } })
   }
-  function setMembership(row: PaintEntry | PaintPreviewRow, isMember: boolean) {
-    if (!canEdit || catalog === null || (isMember && (!preview?.ready || !previewCurrent))) return
+  function setMembership(row: PaintEntry | PaintPreviewRow | PaintCandidate, isMember: boolean, source: 'preview' | 'candidate' = 'preview') {
+    if (!canEdit || catalog === null || (isMember && (source === 'candidate' ? !candidatesCurrent : !preview?.ready || !previewCurrent))) return
     if (reason.trim() === '') { setLocalError(T.reasonRequired); return }
     void send({ kind: 'set', productId: row.productId, payload: {
       expectedVersion: catalog.version, expectedProductVersion: row.productVersion,
@@ -213,6 +244,30 @@ function PaintMembershipEditor({ shell, companyId, namespace }: {
         </section>}
       </section>
       <section className={styles.section} aria-labelledby="paint-current-heading"><h2 id="paint-current-heading">{T.current}</h2><p>{T.manualHelp}</p>
+        {catalog.outcome !== 1 ? null : <section aria-labelledby="paint-candidates-heading">
+          <h3 id="paint-candidates-heading">{T.candidates}</h3><p>{T.candidateHelp}</p>
+          <form onSubmit={(event) => { event.preventDefault(); void searchCandidates() }}>
+            <Field label={T.candidateQuery}>{(control) => <input {...control} type="search" maxLength={PAINT_CANDIDATE_QUERY_LIMIT}
+              value={candidateText} disabled={busy} onChange={(event) => { invalidateCandidates(); setCandidateText(event.currentTarget.value) }} />}</Field>
+            <div className={styles.actions}><Button type="submit" disabled={!canEdit}>{T.search}</Button></div>
+          </form>
+          {candidateOutcome !== null && candidateOutcome.type !== 'ok-single' ? candidateOutcome.type === 'http' && candidateOutcome.status === 400
+            ? <p role="alert">{T.candidateSearchRefused}</p>
+            : <StateBlock subject={T.candidates} state={classifyOutcome(candidateOutcome)} onRetry={() => void searchCandidates()} /> : null}
+          {candidates?.outcome === 3 ? <StateBlock subject={T.candidates} state={{ kind: 'service-unavailable' }} /> : null}
+          {candidates?.outcome === 2 ? <p role="status">{T.noSource}</p> : null}
+          {candidates?.outcome !== 1 ? null : <>
+            {!candidatesCurrent ? <p role="alert">{T.candidateExpired}</p> : null}
+            {candidates.searchWindowFull ? <p role="status">{T.candidateWindowFull}</p> : null}
+            {candidates.items.length === 0 ? <p role="status">{T.noCandidates}</p> : <div className={styles.tableWrap}>
+              <table><caption>{T.candidates}</caption><thead><tr><th scope="col">{T.code}</th><th scope="col">{T.name}</th>
+                <th scope="col">{T.membership}</th><th scope="col">{T.operation}</th></tr></thead>
+                <tbody>{candidates.items.map((row) => <tr key={row.productId}><td>{row.productCode}</td><td>{row.productName}</td>
+                  <td>{row.alreadyMember ? T.alreadyMember : T.willAdd}</td><td>{row.alreadyMember ? null : <Button type="button" size="sm"
+                    disabled={!canEdit || !candidatesCurrent} onClick={() => setMembership(row, true, 'candidate')}>{T.add}</Button>}</td></tr>)}</tbody>
+              </table></div>}
+          </>}
+        </section>}
         {catalog.outcome === 2 ? null : catalog.entries.length === 0 ? <p role="status">{T.empty}</p> : <div className={styles.tableWrap}>
           <table><caption>{T.current}</caption><thead><tr><th scope="col">{T.code}</th><th scope="col">{T.name}</th><th scope="col">{T.operation}</th></tr></thead>
             <tbody>{catalog.entries.map((row) => <tr key={row.productId}><td>{row.productCode}</td><td>{row.productName}</td><td>
