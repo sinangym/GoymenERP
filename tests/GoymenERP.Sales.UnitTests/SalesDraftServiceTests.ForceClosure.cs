@@ -440,6 +440,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict), Status(submit));
         Assert.Equal("Closed", Assert.Single((await world.Service().GetDraftListAsync(new SalesOrderDraftListQuery())).Items, item => item.Id == approved.Draft.Id).State);
         world.Deliveries = new FakeDeliveries(order => new(Company, order, []));
+        world.CustomerReturns = NoCustomerReturns();
         Assert.Equal("1.25", Assert.Single((await world.Service().GetDraftDeliveryProgressAsync(approved.Draft.Id)).Lines).Remaining);
     }
 }

@@ -3,8 +3,9 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// <summary>
 /// AT-024: one order line's delivered and remaining quantity, exact decimal text in the line's order unit (Ö2, never
 /// rounded). <c>ordered</c> is the line's quantity; <c>shipped</c> and <c>delivered</c> are the delivery owner's recorded
-/// totals (Logistics, through <see cref="ISalesOrderDeliveryReadPortV1"/>); <c>remaining</c> = ordered − shipped, never
-/// below zero; <c>excess</c> = shipped − ordered when more was shipped than ordered, else zero (KLN-D100 + KLN-D106: the order's
+/// totals (Logistics, through <see cref="ISalesOrderDeliveryReadPortV1"/>). Net shipped subtracts the approved physical
+/// returns read through <see cref="ISalesOrderCustomerReturnReadPortV1"/>; <c>remaining</c> = ordered − net shipped, never
+/// below zero; <c>excess</c> = net shipped − ordered when above ordered, else zero (KLN-D100 + KLN-D106: the order's
 /// delivered quantity counts at the shipment's stock-out approval, so the shipped total is the delivered counter of the open
 /// quantity; <c>delivered</c> stays the owner's separate delivery record, displayed only). These are facts only:
 /// whether a shortfall closes the line or an excess is acceptable is the over/under-delivery tolerance policy (OPEN-004,

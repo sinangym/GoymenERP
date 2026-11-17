@@ -1,5 +1,6 @@
 using System.Globalization;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Domain.Quantities;
 
@@ -7,7 +8,7 @@ namespace GoymenERP.Modules.Sales.Application;
 
 /// <summary>
 /// AT-024 ("Kısmi teslimat sipariş kalanını doğru tutar"): per order line the delivered and the remaining quantity, from
-/// the delivery owner's RECORDED deliveries (Logistics, through <see cref="ISalesOrderDeliveryReadPortV1"/>) — never from
+/// the delivery owner's RECORDED deliveries and approved physical returns (Logistics, through its typed owner ports) — never from
 /// another module's tables and never a stored Sales copy. Read-only: no attempt, audit or version effect in either module.
 /// <list type="bullet">
 /// <item><b>Fences</b> (the draft read's): the draft read name before anything is read, after the draft read and after
@@ -63,18 +64,34 @@ public sealed partial class SalesDraftService
             throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.DeliveryProviderUnavailable);
         }
 
-        return DeliveryProgress(scope, draft, answer);
+        // KLN-D100: an approved physical customer return corrects the delivered counter. A missing owner is
+        // not proof of zero returns; use the existing return reader and its exact company/line/unit validation.
+        var returnsOwner = customerReturns
+            ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.CustomerReturnProviderUnavailable);
+        SalesOrderCustomerReturnReadAnswerV1? returned;
+        try
+        {
+            returned = await GuardedAsync(scope, bindings.ReadPermission,
+                () => returnsOwner.ReadApprovedReturnsAsync(draft.Id, cancellationToken), cancellationToken);
+        }
+        catch (Exception exception) when (exception is not (OperationCanceledException or SalesDraftServiceException))
+        {
+            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.CustomerReturnProviderUnavailable);
+        }
+
+        return DeliveryProgress(scope, draft, answer, CustomerReturns(scope, draft, returned));
     }
 
     private static SalesOrderDraftDeliveryProgressResponse DeliveryProgress(Scope scope, SalesOrderDraft draft,
-        SalesOrderDeliveryReadAnswerV1? answer)
+        SalesOrderDeliveryReadAnswerV1? answer, SalesOrderDraftCustomerReturnsResponse approvedReturns)
     {
         var recorded = RecordedDeliveries(scope, draft, answer);
+        var returned = approvedReturns.Lines.ToDictionary(line => line.LineId);
         return new SalesOrderDraftDeliveryProgressResponse(draft.Version.ToString(CultureInfo.InvariantCulture),
             [.. draft.Lines.OrderBy(line => line.LineNo).Select(line =>
             {
                 var totals = recorded.GetValueOrDefault(line.Id);
-                return LineProgress(line, totals, ShippedByOf(answer!, line.Id, totals.Shipped));
+                return LineProgress(line, totals, ShippedByOf(answer!, line.Id, totals.Shipped), returned[line.Id].ApprovedReturned);
             })]);
     }
 
@@ -149,7 +166,7 @@ public sealed partial class SalesDraftService
     }
 
     private static SalesDraftLineDeliveryProgressV1 LineProgress(SalesOrderDraftLine line, (decimal Shipped, decimal Delivered) recorded,
-        IReadOnlyList<string>? shippedBy)
+        IReadOnlyList<string>? shippedBy, string approvedReturned)
     {
         var unit = line.Quantity.Unit;
         Quantity shipped;
@@ -168,8 +185,18 @@ public sealed partial class SalesDraftService
         // KLN-D100 + KLN-D106: the one open-quantity rule (ordered − delivered, invoiced never deciding), where "delivered"
         // counts at the shipment's stock-out approval — shipment and delivery are one counter and no customer POD is awaited. The
         // owner's definite shipped total is therefore the delivered figure of the rule; its separate delivery record stays a
-        // displayed fact. This read does not ask the customer-return owner yet, so it passes no return correction.
-        var open = SalesOrderLineOpenQuantity.Calculate(line.Quantity, shipped, Quantity.Zero(unit), null);
+        // displayed fact. ApprovedReturned is already the return owner's exact, validated quantity in this line's own unit.
+        SalesOrderLineOpenQuantity open;
+        try
+        {
+            var returned = Quantity.Of(decimal.Parse(approvedReturned, CultureInfo.InvariantCulture), unit);
+            open = SalesOrderLineOpenQuantity.Calculate(line.Quantity, shipped, returned, null);
+        }
+        catch (SalesRuleException)
+        {
+            // Inconsistent owner snapshots, such as returns exceeding shipped kg, cannot yield a plausible remainder.
+            throw CustomerReturnAnswerInvalid();
+        }
         return new SalesDraftLineDeliveryProgressV1(line.Id, line.LineNo, line.OrderUnit.UnitId, line.QuantityText,
             QuantityText(shipped), QuantityText(delivered), QuantityText(open.Open), QuantityText(open.Excess), shippedBy);
     }
