@@ -1,0 +1,7 @@
+# W8 — SAT-S12 bağımsız golden ve P2 para birimi düzeltmesi
+
+- Kullanıcının ilettiği bağımsız kaynak incelemesi `e20f0ad14a44ecfe927060dbe0a2ff7e3eda9c8c` formül çekirdeği için şartlı APPROVE verir; P0/P1 yok, P2-1 açılış öncesi zorunludur. İnceleme çalışma sohbetinden aktarılmıştır; GitHub review imzası veya son K3 kabulü değildir.
+- Gerçek Satış uygulama çağrısı artık maliyet anlık görüntüsünün para birimini fonksiyonel para birimi olarak seçmez. `SettingsCurrencyIdentitiesV1.TurkishLira` ile bağlanan aynı internal fonksiyon canlı çağrı ve regresyon kaynağında kullanılır. Geçerli fakat USD/USD, TL/USD veya USD/TL saklanmış veri dönüştürülmez; `CurrencyConversionUndecided`, tutar/yüzde yoktur. TL/TL mevcut formülü korur.
+- Yalnız test assembly erişimi eklenmiştir; public HTTP/sözleşme/yetki/model/migration değişikliği yoktur. Dört regresyon vektörü kaynak olarak yazıldı. Kaynak derlemesi QUEUED; global .NET/EF lease başka kaynak zincirindedir. Unit/SQL/HTTP/Vitest/browser/CI koşulmadı.
+- `MarginGoldenAccepted => false` korunur. Bağımsız golden ayrı tek dosyalık DOCS adayına aktarılır; iki exact-head DOCS review ve main koşulu öncesi formül açılmaz. Son K3 iki-review kapısı ayrıca sürer. Eski aday dalın head'i değiştirilmez.
+- SAT-S12 PARTIAL; bu düzeltme 165/174 kaynak sayımını yükseltmez. Sıfır maliyet/çift birim yuvarlama/yalnız yüzde taşması hakkında yeni işletme kararı üretilmedi.

@@ -1,6 +1,8 @@
 using System.Text.Json;
+using GoymenERP.BuildingBlocks.Monetary;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain.Drafts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Sales.Application;
 
@@ -100,10 +102,9 @@ public sealed partial class SalesDraftService
                     : await ReadMarginCostAsync(scope, bindings.ReadPermission, draft, line, cancellationToken);
             var margin = cost.UnavailableReason is { } reason ? SalesLineMargin.Unavailable(reason)
                 : !MarginGoldenAccepted ? SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.FormulaGoldenPending)
-                : SalesLineMarginCalculator.Calculate(new SalesLineMarginInput(
+                : CalculateMarginInTurkishLira(
                     totals.Lines.Single(item => item.LineId == line.Id).NetAmountBeforeSurcharge,
-                    line.OrderUnit.UnitId, line.Quantity.Value, cost.CurrencyId!.Value,
-                    SalesLineMarginCost.Of(cost.CostPerUnit!.Value, cost.CurrencyId.Value, cost.UnitId)));
+                    line.OrderUnit.UnitId, line.Quantity.Value, cost);
             lines.Add(LineMargin(line.Id, line.LineNo, margin));
         }
         // Every slow owner read can revoke both disclosure names. Nothing is returned on a stale disclosure.
@@ -115,4 +116,11 @@ public sealed partial class SalesDraftService
         return new(SalesMarginDisclosure.Visible, SalesDraftMarginTextsV1.PurchaseCostOnly,
             draft.ApprovalState == InternalApprovalState.Approved ? SalesDraftMarginTextsV1.Snapshot : SalesDraftMarginTextsV1.Preview, lines);
     }
+
+    // SAT-D259 / OPEN-INV-AVGCOST-FX: a restored snapshot is data, never the currency authority.
+    // This binding is shared by the live read and the regression tests; the independent golden gate stays above it.
+    internal static SalesLineMargin CalculateMarginInTurkishLira(Money? netSale, Guid orderUnitId,
+        decimal quantity, SalesMarginCostSnapshot cost) => SalesLineMarginCalculator.Calculate(new SalesLineMarginInput(
+            netSale, orderUnitId, quantity, SettingsCurrencyIdentitiesV1.TurkishLira,
+            SalesLineMarginCost.Of(cost.CostPerUnit!.Value, cost.CurrencyId!.Value, cost.UnitId)));
 }
