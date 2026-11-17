@@ -25,10 +25,11 @@ public static class AccountingPostingAccountMappingPurposesV1
 {
     public const string SalesInvoice = "sales-invoice";
     public const string PurchaseInvoice = "purchase-invoice";
+    public const string CostOfGoodsSold = "cost-of-goods-sold";
 
-    public static IReadOnlyList<string> All { get; } = [SalesInvoice, PurchaseInvoice];
+    public static IReadOnlyList<string> All { get; } = [SalesInvoice, PurchaseInvoice, CostOfGoodsSold];
 
-    public static bool IsKnown(string? purpose) => purpose is SalesInvoice or PurchaseInvoice;
+    public static bool IsKnown(string? purpose) => purpose is SalesInvoice or PurchaseInvoice or CostOfGoodsSold;
 }
 
 /// <summary>
@@ -52,11 +53,15 @@ public static class AccountingPostingAccountMappingKeysV1
     public const string VatInput = "vat-input";
     public const string WithholdingPayable = "withholding-payable";
     public const string Expense = "expense";
+    // SAT-D419/D422: explicit Product COGS classification, never Steel/Scrap ItemType or purchase origin.
+    public const string TradeGoods = "trade-goods";
+    public const string Manufactured = "manufactured";
 
     public static IReadOnlyList<string> SalesInvoice { get; } = [Receivable, Revenue, VatOutput, WithholdingReceivable];
 
     public static IReadOnlyList<string> PurchaseInvoice { get; } =
         [Payable, Inventory, VatInput, WithholdingPayable, Expense];
+    public static IReadOnlyList<string> CostOfGoodsSold { get; } = [TradeGoods, Manufactured];
 
     public static bool IsAllowed(string? purpose, string? key) => purpose switch
     {
@@ -64,6 +69,7 @@ public static class AccountingPostingAccountMappingKeysV1
             key is Receivable or Revenue or VatOutput or WithholdingReceivable,
         AccountingPostingAccountMappingPurposesV1.PurchaseInvoice =>
             key is Payable or Inventory or VatInput or WithholdingPayable or Expense,
+        AccountingPostingAccountMappingPurposesV1.CostOfGoodsSold => key is TradeGoods or Manufactured,
         _ => false,
     };
 }
@@ -295,6 +301,11 @@ public static class AccountingPostingAccountMappingPayloadV1
             {
                 return new Issue(AccountingPostingAccountMappingCodesV1.KeyUnknown, prefix + ".mappingKey");
             }
+
+            // The class is already the mapping key. No invoice/export/tax selector can redefine the Product class.
+            if (row.Purpose == AccountingPostingAccountMappingPurposesV1.CostOfGoodsSold
+                && (row.ItemType is not null || row.LinePurpose is not null || row.IsExport is not null || row.VatRateCode is not null))
+                return new Issue(AccountingPostingAccountMappingCodesV1.SelectorInvalid, prefix);
 
             if (!IsSelector(row.ItemType))
             {

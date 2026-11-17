@@ -503,3 +503,17 @@ history with same-company restricted foreign keys and version/approval constrain
 refuses with **THROW 51920** while either history exists. Empty new stores may roll back. Real SQL, browser and
 runtime acceptance are separate from source compilation. Dependent later closed carry chains remain unavailable
 pending the explicit decision; this checkpoint does not choose automatic cascading reopening.
+
+## SAT-D419/D420: explicit COGS account mapping
+
+The existing versioned posting-account mapping catalog accepts `cost-of-goods-sold` with only the explicit
+Product COGS keys `trade-goods` and `manufactured`. Item type, line purpose, export and VAT selectors are not
+COGS classifications. The existing read/prepare/activate authorities and different-person activation remain.
+The workspace exposes the actual active approved plan and offers its exact 621/620 accounts as choices;
+missing accounts remain missing. No account, mapping version, role or grant is seeded or activated.
+The owner resolver returns Product/classification and mapping versions for a caller to freeze with a proposal.
+Its availability alone is not a posted SMM journal or proof that every consuming workflow has been connected.
+
+EF-generated `20261117171929_WidenPostingMappingsToCogs` widens only the existing mapping-key constraint.
+Up is pure DDL. Down first refuses with **THROW 51929** while any COGS mapping row (prepared, active or
+historical) exists; old-purpose-only data may roll back. No old rows are rewritten or removed.

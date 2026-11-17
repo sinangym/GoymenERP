@@ -100,7 +100,9 @@ public sealed partial class AccountingDbContext(DbContextOptions<AccountingDbCon
     internal const string PostingAccountMappingRowKeyCheck =
         "([Purpose] = N'sales-invoice' AND [MappingKey] IN (N'receivable', N'revenue', N'vat-output', N'withholding-receivable')) OR "
         + "([Purpose] = N'purchase-invoice' AND [MappingKey] IN "
-        + "(N'payable', N'inventory', N'vat-input', N'withholding-payable', N'expense'))";
+        + "(N'payable', N'inventory', N'vat-input', N'withholding-payable', N'expense')) OR "
+        + "([Purpose] = N'cost-of-goods-sold' AND [MappingKey] IN (N'trade-goods', N'manufactured') "
+        + "AND [ItemType] IS NULL AND [LinePurpose] IS NULL AND [IsExport] IS NULL AND [VatRateCode] IS NULL)";
 
     /// <summary>
     /// ACC-V0 (Ö4): the facts follow the status exactly. Proposed (3): the preparer only; Open (1): the
