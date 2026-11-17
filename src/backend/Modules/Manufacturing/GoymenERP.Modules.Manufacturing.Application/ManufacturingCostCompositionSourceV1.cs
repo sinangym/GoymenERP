@@ -14,7 +14,9 @@ public interface IManufacturingCostMovementReadPortV1
 }
 public sealed record ManufacturingCostIssueSnapshotV1(Guid FactId, Guid MovementId, Guid ParentLabelId, Kilograms Mass,
     IssueCostReadStatus Status, decimal? StampedUnitCostTl, IssueCostCurrencyInput Currency, string StampVersion,
-    decimal? StampedUnitCostUsd = null, string? UsdStampVersion = null);
+    decimal? StampedUnitCostUsd = null, string? UsdStampVersion = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    string? RateEvidenceJson = null);
 public sealed record ManufacturingCostReturnSnapshotV1(Guid FactId, Guid MovementId, Guid ParentLabelId, Kilograms Mass,
     Guid? SourceIssueMovementId, string StampVersion);
 public sealed record ManufacturingCostOutputSnapshotV1(Guid FactId, Guid MovementId, Guid ParentLabelId, Guid LabelId,

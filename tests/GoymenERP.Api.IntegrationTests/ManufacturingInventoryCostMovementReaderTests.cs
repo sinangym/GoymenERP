@@ -4,6 +4,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Manufacturing.Domain.Costing;
+using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -11,6 +12,16 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>Typed owner bridge source tests. Actual movement stamps and generation persistence need real SQL facts.</summary>
 public sealed class ManufacturingInventoryCostMovementReaderTests
 {
+    [Fact]
+    public async Task Foreign_receipt_invoice_proof_without_actual_order_priority_composition_is_not_usable_cost()
+    {
+        var fixture = new Fixture(); var issue = fixture.Owner.Value.Issues[0];
+        fixture.Owner.Value = fixture.Owner.Value with { Issues = [issue with { Currency = new(InventoryIssueCostCurrencyStatusV1.Converted,
+            Guid.NewGuid(), 2m, 40m, "synthetic-invoice:1", null) }] };
+        Assert.Null(await new ManufacturingInventoryCostMovementReader(fixture.Company, fixture.User, fixture.Owner)
+            .ReadAsync(fixture.CompanyId, fixture.OrderId, CancellationToken.None));
+    }
+
     [Theory]
     [InlineData("100", "3", null, true)]
     [InlineData("141", "4", "35.25", true)]
@@ -109,7 +120,8 @@ public sealed class ManufacturingInventoryCostMovementReaderTests
                     Guid.NewGuid(), Guid.NewGuid(), "2", 100m,
                     new(InventoryMovementCostStampStatusV1.Known, SettingsCurrencyIdentitiesV1.TurkishLira, 10m, 1000m, 7, "synthetic-TL-stamp:7", null),
                     MissingStamp(), new(InventoryIssueCostCurrencyStatusV1.FunctionalCurrency, null, null, null, "synthetic-functional-proof:1", null))], [], [], "synthetic-owner-source:1") };
-            Reader = new(Company, User, Owner);
+            // These bridge tests isolate stamp/representation mapping; real owner priority composition has its own tests.
+            Reader = new(Company, User, Owner, new SyntheticPriorityProjection());
         }
     }
     private sealed class Owner : IInventoryManufacturingCostReadPortV1
@@ -117,6 +129,12 @@ public sealed class ManufacturingInventoryCostMovementReaderTests
         public required InventoryManufacturingCostReadV1 Value { get; set; } public Action? BeforeRead { get; set; }
         public Task<InventoryManufacturingCostReadV1> GetAsync(Guid companyId, Guid manufacturingOrderId, CancellationToken cancellationToken = default)
         { BeforeRead?.Invoke(); return Task.FromResult(Value); }
+    }
+    private sealed class SyntheticPriorityProjection : IManufacturingInputRatePriorityReadPortV1
+    {
+        public Task<ManufacturingInputRateProofV1?> ReadAsync(Guid companyId, Guid orderId, Guid factId, Guid labelId,
+            IssueCostCurrencyInput recordedCurrency, CancellationToken ct) =>
+            Task.FromResult<ManufacturingInputRateProofV1?>(new(recordedCurrency, "synthetic-priority:1", "{}"));
     }
     private sealed class User(Guid companyId) : ICurrentUser
     {

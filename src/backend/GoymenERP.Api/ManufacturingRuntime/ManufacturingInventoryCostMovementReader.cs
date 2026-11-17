@@ -5,13 +5,15 @@ using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Costing;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using System.Security.Cryptography;
+using System.Text.Json;
 using Kilograms = GoymenERP.Modules.Manufacturing.Domain.Common.Kilograms;
 
 namespace GoymenERP.Api.ManufacturingRuntime;
 
 /// <summary>Typed bridge over real immutable Inventory movement facts; no current-average, FX or identity synthesis.</summary>
 internal sealed class ManufacturingInventoryCostMovementReader(ICompanyContext company, ICurrentUser user,
-    IInventoryManufacturingCostReadPortV1 owner) : IManufacturingCostMovementReadPortV1
+    IInventoryManufacturingCostReadPortV1 owner, IManufacturingInputRatePriorityReadPortV1? priorities = null) : IManufacturingCostMovementReadPortV1
 {
     public async Task<ManufacturingCostMovementSnapshotV1?> ReadAsync(Guid companyId, Guid orderId, CancellationToken cancellationToken)
     {
@@ -33,14 +35,26 @@ internal sealed class ManufacturingInventoryCostMovementReader(ICompanyContext c
                     || !Stamp(issue.Tl, tl: true) || !Stamp(issue.Usd, tl: false) || issue.Currency is null
                     || string.IsNullOrWhiteSpace(issue.Currency.SourceVersion)) return null;
                 var currency = Currency(issue.Currency); if (currency is null) return null;
+                ManufacturingInputRateProofV1? selected = null;
+                if (currency.Status is IssueCostCurrencyStatus.Converted or IssueCostCurrencyStatus.RateMissing)
+                {
+                    if (priorities is null) return null;
+                    selected = await priorities.ReadAsync(companyId, orderId, issue.FactId, issue.ParentLabelId, currency, cancellationToken);
+                    if (!InScope() || selected is null || string.IsNullOrWhiteSpace(selected.SourceVersion) || string.IsNullOrWhiteSpace(selected.EvidenceJson)) return null;
+                    if (!SelectedCurrency(currency, selected.Currency)) return null;
+                    using var evidence = JsonDocument.Parse(selected.EvidenceJson);
+                    if (evidence.RootElement.ValueKind != JsonValueKind.Object) return null;
+                    currency = selected.Currency;
+                }
                 var status = currency.Status == IssueCostCurrencyStatus.Unreadable ? IssueCostReadStatus.Unreadable
                     : currency.Status == IssueCostCurrencyStatus.RateMissing && issue.Tl.UnitCostPerKg is null ? IssueCostReadStatus.Value
                     : issue.Tl.Status == InventoryMovementCostStampStatusV1.Known ? IssueCostReadStatus.Value : IssueCostReadStatus.Unreadable;
                 issues.Add(new(issue.FactId, issue.MovementId, issue.ParentLabelId, new(issue.QuantityKg), status,
-                    issue.Tl.UnitCostPerKg, currency, issue.Tl.StampVersion + "/" + issue.Currency.SourceVersion,
+                    currency.Status == IssueCostCurrencyStatus.RateMissing ? null : issue.Tl.UnitCostPerKg, currency,
+                    issue.Tl.StampVersion + "/" + issue.Currency.SourceVersion + (selected is null ? "" : "/" + selected.SourceVersion),
                     issue.Usd.Status == InventoryMovementCostStampStatusV1.Known && issue.Usd.CurrencyId == ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD")
                         ? issue.Usd.UnitCostPerKg : null,
-                    issue.Usd.Status == InventoryMovementCostStampStatusV1.Known ? issue.Usd.StampVersion : null));
+                    issue.Usd.Status == InventoryMovementCostStampStatusV1.Known ? issue.Usd.StampVersion : null, selected?.EvidenceJson));
             }
             foreach (var entry in value.Returns)
             {
@@ -60,7 +74,11 @@ internal sealed class ManufacturingInventoryCostMovementReader(ICompanyContext c
                     new(output.DeclaredQuantityKg), value.SourceVersion));
             }
             // V1's actual movement contract contains only kg facts. It does not claim a paint/non-kg consumption fact.
-            return new(companyId, orderId, issues, returns, outputs, NonKgInputUse.None, value.SourceVersion);
+            var prioritySources = issues.Where(issue => issue.RateEvidenceJson is not null).OrderBy(issue => issue.FactId)
+                .Select(issue => issue.StampVersion).ToArray();
+            var sourceVersion = value.SourceVersion + (prioritySources.Length == 0 ? "" : "/manufacturing-input-rate/"
+                + Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(prioritySources))).ToLowerInvariant());
+            return new(companyId, orderId, issues, returns, outputs, NonKgInputUse.None, sourceVersion);
         }
         catch (OperationCanceledException) { throw; }
         catch { return null; }
@@ -107,4 +125,11 @@ internal sealed class ManufacturingInventoryCostMovementReader(ICompanyContext c
         var ratio = new ProductionExactRatioV1(value.Numerator, value.Denominator);
         return ratio.IsValid() ? ratio : null;
     }
+    private static bool SelectedCurrency(IssueCostCurrencyInput recorded, IssueCostCurrencyInput? selected) => selected is not null
+        && selected.CurrencyId == recorded.CurrencyId && selected.ForeignUnitCostPerKg == recorded.ForeignUnitCostPerKg
+        && selected.ForeignUnitCostRatio == recorded.ForeignUnitCostRatio
+        && (selected.Status == IssueCostCurrencyStatus.RateMissing && selected.ExchangeRate is null && selected.ExchangeRateRatio is null
+            || selected.Status == IssueCostCurrencyStatus.Converted
+            && (selected.ExchangeRate is > 0m && (selected.ExchangeRateRatio is null || selected.ExchangeRateRatio.IsValid() && selected.ExchangeRateRatio.Represents(selected.ExchangeRate.Value))
+                || selected.ExchangeRate is null && selected.ExchangeRateRatio?.IsValid() == true));
 }
