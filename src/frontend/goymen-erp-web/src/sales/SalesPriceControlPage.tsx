@@ -183,7 +183,7 @@ function MarginSection({ margin }: { readonly margin: DraftMargin }) {
         <div id="sales-price-control-margin-preview" data-testid="sales-price-control-margin-preview">
           <ul className={styles.muted} aria-label={T.margin.heading} data-testid="sales-price-control-margin-labels">
             <li data-testid="sales-price-control-margin-cost-basis">{T.margin.costBasis}</li>
-            <li data-testid="sales-price-control-margin-kind">{T.margin.kind}</li>
+            <li data-testid="sales-price-control-margin-kind">{margin.kind === 'Snapshot' ? T.margin.snapshot : T.margin.kind}</li>
           </ul>
           <p className={styles.muted}>{T.margin.note}</p>
           <div className={styles.tableWrap}>

@@ -314,7 +314,10 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISalesOrderFutureAllocationReleaseParticipantV1>(),
         // SAT-D406 / SAT-D367: the risk remainder's plan quantity (issued, not yet shipped loading instructions), bound by the host to
         // the Logistics owner's read; until it is, the "approved, not shipped" remainder is "Unavailable", never an assumed zero.
-        serviceProvider.GetService<ISalesOrderPlannedQuantityReadPortV1>());
+        serviceProvider.GetService<ISalesOrderPlannedQuantityReadPortV1>(),
+        // SAT-D268..274 / URT-D67: the Inventory owner's currency-proven company-wide cost read.
+        // Missing evidence remains an unavailable margin snapshot; it never becomes zero cost.
+        marginCosts: serviceProvider.GetService<ISalesMarginCostReadPortV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(
