@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({ read: vi.fn(), report: vi.fn() }))
 vi.mock('../inventory/futureAllocationApi', () => ({ fetchFutureAllocations: mocks.read }))
 vi.mock('../shell/useAuthBoundary', () => ({ useAuthBoundary: () => ({ capture: () => 'SENTETIK-scope', report: mocks.report }) }))
 const id = '11111111-1111-4111-8111-111111111111'
-const props = { canRead: true, companyId: id, orderId: id, lineId: id, namespace: 'synthetic-scope', actorId: 'synthetic-actor', routeEntry: 1 }
+const props = { canRead: true, companyId: id, orderId: id, lineId: id, namespace: 'synthetic-scope', actorId: 'synthetic-actor', routeEntry: 1, orderVersion: '1' }
 const list: FutureAllocationList = { companyId: id, salesOrderId: id, salesOrderLineId: id, windowFull: false,
   evaluatedOn: '2026-11-17', unitCodes: { [id]: 'kg' }, schedules: { [id]: { status: 'Scheduled', deliveryDate: '2026-11-16', isOverdue: true } },
   items: [{ allocationId: id, companyId: id, version: '1', status: 'Active', salesOrderId: id, salesOrderLineId: id,

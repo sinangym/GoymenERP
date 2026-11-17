@@ -12,20 +12,20 @@ import { SALES_FUTURE_SUPPLY_TEXT as T } from './salesFutureSupplyText'
 
 interface Binding {
   readonly canRead: boolean; readonly companyId: string; readonly orderId: string; readonly lineId: string
-  readonly namespace: string; readonly actorId: string; readonly routeEntry: number
+  readonly namespace: string; readonly actorId: string; readonly routeEntry: number; readonly orderVersion: string
 }
 
 /** F17-5 reads the actual Inventory owner. Expanding one line never queries all order lines. */
 export function SalesFutureSupplyLine(props: Binding) {
-  return props.canRead ? <AuthorizedLine key={`${props.namespace}:${props.actorId}:${props.routeEntry}:${props.orderId}:${props.lineId}`} {...props} /> : null
+  return props.canRead ? <AuthorizedLine key={`${props.namespace}:${props.actorId}:${props.routeEntry}:${props.orderId}:${props.orderVersion}:${props.lineId}`} {...props} /> : null
 }
 
-function AuthorizedLine({ companyId, orderId, lineId, namespace, actorId, routeEntry }: Binding) {
+function AuthorizedLine({ companyId, orderId, lineId, namespace, actorId, routeEntry, orderVersion }: Binding) {
   const [open, setOpen] = useState(false)
   const regionId = useId()
   const boundary = useAuthBoundary()
   const query = useQuery({
-    queryKey: [namespace, actorId, routeEntry, companyId, orderId, lineId, 'sales-future-supply'],
+    queryKey: [namespace, actorId, routeEntry, companyId, orderId, orderVersion, lineId, 'sales-future-supply'],
     enabled: open, retry: false, staleTime: 0, gcTime: 0, refetchOnWindowFocus: false,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()

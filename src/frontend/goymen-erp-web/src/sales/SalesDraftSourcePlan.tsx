@@ -179,7 +179,7 @@ export function SalesDraftSourcePlan({
           onSave={() => submit(plan)}
           renderFutureSupply={lineId => <SalesFutureSupplyLine canRead={hasCapability(shell, INVENTORY_FUTURE_ALLOCATION_READ_CAPABILITY)}
             companyId={companyId} orderId={detail.draft.id} lineId={lineId} namespace={namespace}
-            actorId={actorId} routeEntry={routeEntryGeneration} />}
+            actorId={actorId} routeEntry={routeEntryGeneration} orderVersion={detail.draft.version} />}
         />
       )}
       {pendingConfirm === null ? null : (

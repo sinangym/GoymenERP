@@ -242,3 +242,7 @@ FNS-D73/D83/D107 için Sales owner okuma portu eklendi. Mevcut onaylı revizyon 
 - `npx tsc -b` son kaynakta exit 0. İlk denemede iç PlanView sınırında eksik props
   bulundu; typed render prop ile düzeltildi. `git diff --check` exit 0. Runtime
   Vitest/browser/HTTP/SQL/CI **NOT_RUN**. Merkezi entegrasyon/pin/tren FF beklenir.
+
+- SAT-S9 dar takip: sipariş sürümü de satır görüntüsünün query/mount anahtarına girdi.
+  Aynı siparişte kaydedilen revizyon eski ayırma görünümünü yeni sürüme taşımaz.
+  Bu salt istemci bağlam çiti sonrası TypeScript kaynak derlemesi exit 0; runtime NOT_RUN.
