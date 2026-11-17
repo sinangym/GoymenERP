@@ -138,6 +138,9 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'inventory.opening-stock.record',
   'inventory.stock-positions.list',
   'inventory.stock-transfer.write',
+  'inventory.stock-transfer.overage-approve',
+  'inventory.stock-transfer.loss-record',
+  'inventory.stock-transfer.loss-approve',
   /**
    * Listed together with the routes that serve them (LOG-4b). Each renders only where the server's
    * snapshot carries the capability (staged until the l04 suite); the detail is reached from a row.
@@ -306,6 +309,9 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'inventory.opening-stock.record': 'Açılış stokları',
   'inventory.stock-positions.list': 'Stok / Malzeme Pozisyonu',
   'inventory.stock-transfer.write': 'Depo transferi planlama',
+  'inventory.stock-transfer.overage-approve': 'Transfer fazla kabul onayları',
+  'inventory.stock-transfer.loss-record': 'Transfer kayıp talepleri',
+  'inventory.stock-transfer.loss-approve': 'Transfer kayıp onayları',
   'identity.assignments.list': 'Kullanıcılar ve yetkiler',
   // The role card is opened from a row of the access list, never from the sidebar.
   'identity.roles.detail': '',
@@ -432,6 +438,9 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     entries: [
       'inventory.stock-positions.list',
       'inventory.stock-transfer.write',
+      'inventory.stock-transfer.overage-approve',
+      'inventory.stock-transfer.loss-record',
+      'inventory.stock-transfer.loss-approve',
       'logistics.operations-work.sales',
       'logistics.instructions.list',
       'logistics.operations-work.purchase',

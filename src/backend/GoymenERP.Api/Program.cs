@@ -605,6 +605,8 @@ app.MapWorkNotificationEndpoints();
 app.MapSalesEndpoints();
 app.MapSalesProductCandidateEndpoints();
 app.MapInventoryEndpoints();
+app.MapInventoryTransferPlanCandidateEndpoints();
+app.MapInventoryTransferReceiptDocumentEndpoints();
 app.MapManufacturingEndpoints();
 app.MapLogisticsEndpoints();
 app.MapLogisticsTransferDepartureEndpoints();

@@ -14,6 +14,7 @@ import {
   INVENTORY_TRANSFERS_ROUTE,
   INVENTORY_TRANSFER_PLANNING_ROUTE,
   INVENTORY_TRANSFER_PLANNING_CAPABILITY,
+  INVENTORY_TRANSFER_ACTION_ROUTE,
   INVENTORY_FUTURE_ALLOCATION_ROUTE,
   INVENTORY_FUTURE_ALLOCATION_READ_CAPABILITY,
 } from './capabilities'
@@ -35,6 +36,9 @@ function gate(children: ReactNode) {
 }
 
 export const inventoryRoutes: RouteObject[] = [
+  ...Object.entries(INVENTORY_TRANSFER_ACTION_ROUTE).map(([capability, path]) => ({
+    path: path.slice(1), element: <CapabilityRoute capability={capability as CapabilityId}><InventoryTransferPage /></CapabilityRoute>,
+  })),
   { path: INVENTORY_TRANSFER_PLANNING_ROUTE.slice(1), element: <CapabilityRoute capability={INVENTORY_TRANSFER_PLANNING_CAPABILITY as CapabilityId}>
     <InventoryTransferPage /></CapabilityRoute> },
   { path: INVENTORY_NEGATIVE_STOCK_ATTEMPTS_ROUTE.slice(1), element: <CapabilityRoute capability={INVENTORY_STOCK_POSITIONS_CAPABILITY as CapabilityId}>

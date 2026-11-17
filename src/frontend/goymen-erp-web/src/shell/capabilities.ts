@@ -292,6 +292,9 @@ export const CAPABILITY = {
   /** ST-01 bounded, company-scoped physical stock-position read. */
   inventoryStockPositionsList: 'inventory.stock-positions.list',
   inventoryTransferPlanning: 'inventory.stock-transfer.write',
+  inventoryTransferOverageApproval: 'inventory.stock-transfer.overage-approve',
+  inventoryTransferLossRequest: 'inventory.stock-transfer.loss-record',
+  inventoryTransferLossApproval: 'inventory.stock-transfer.loss-approve',
   /** SY-01 read subset "Kullanıcılar ve yetkiler". Route `/ayarlar/kullanicilar-ve-yetkiler`, owner Identity. Read-only. */
   identityAssignmentsList: 'identity.assignments.list',
   /** SY-02 read subset: one role's permissions and holders. Reached from a row, never the sidebar. */
@@ -508,6 +511,9 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.inventoryOpeningStockRecord]: '/stok/acilis',
   [CAPABILITY.inventoryStockPositionsList]: '/stok/pozisyonlar',
   [CAPABILITY.inventoryTransferPlanning]: '/stok/transferler/planla',
+  [CAPABILITY.inventoryTransferOverageApproval]: '/stok/transferler/fazla-kabul-onaylari',
+  [CAPABILITY.inventoryTransferLossRequest]: '/stok/transferler/kayip-talepleri',
+  [CAPABILITY.inventoryTransferLossApproval]: '/stok/transferler/kayip-onaylari',
   [CAPABILITY.identityAssignmentsList]: '/ayarlar/kullanicilar-ve-yetkiler',
   [CAPABILITY.identityRolesDetail]: '/ayarlar/kullanicilar-ve-yetkiler/roller/:roleId',
   [CAPABILITY.identityAuditList]: '/ayarlar/denetim-kaydi',

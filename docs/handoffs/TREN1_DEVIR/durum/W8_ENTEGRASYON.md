@@ -139,3 +139,27 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
   Test çalışma zamanı, gerçek SQL, Vitest/browser ve CI **NOT_RUN**.
   Shell/OpenAPI/recovery/mimari/ilişkisel pin üretimi ve tren FF push henüz yapılmadı.
   Sabit ölçüm **135/174 (%77,6)**, W8 son pakettir; yeni dalga açılmadı.
+
+## Transfer kabul owner'ı ve fatura commit çiti — devam
+
+- STK-S8 gerçek plan/kabul kaynağı `1127e5993` alındı. Inventory kabul belgesi
+  Draft/Effective değişmez geçmişi ve typed belge kanıtı, action-purpose kuyruk
+  okumaları, gerçek plan adayları ve komut ekranı vardır. EF üretimi
+  `20261117122205_AddInventoryTransferReceiptDocuments`, Down **51999**; DB'ye
+  uygulanmadı. Owner API, Inventory/Counterparty/Organization UnitTests,
+  Api.IntegrationTests ve TypeScript derlemeleri exit 0, uyarı/hata 0 aldı.
+- İki yeni Inventory endpoint map'i gerçek host'a bağlandı. Fazla kabul onayı,
+  kayıp talebi ve kayıp onayı mevcut ayrı yetkileriyle bağımsız gateway'e açıldı;
+  genel stok raporu veya Product gösterim yetkisi komuta eklenmedi. Inventory
+  shell provider **1.12**, 20 bildirimdir. Merkez birleşik TypeScript exit 0;
+  bu son mount/provider C# derlemesi sıradaki merkez derlemesini bekler.
+- FIN-S13 `87fac44cd`: fatura kayıt ve terminal ret işlemleri kendi transaction'ında
+  SQL Save sonrası fresh yetki çitinden geçer. Ret halinde belge/geçmiş/denetim/
+  attempt commit edilmez. İki SQL fact kaynağı, Purchasing.UnitTests ve
+  Api.IntegrationTests derlemeleri exit 0; runtime **NOT_RUN**. Alış fason vergi
+  snapshot'ının immutable eşleştirme metadata'sı `bc0524b5f` de alındı; resmî
+  fatura tutarları değiştirilmez. D105 yetki düzeltmesinin kalan owner kaynağı sürer.
+- Kaynakta TL satır/toplam olmayan dövizli alış faturası yuvarlama dağılımı için
+  [6947890400](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6947890400)
+  karar bekler. Linked GİB gerçek provider'ı 503 kalır; mock veya unavailable
+  kullanılabilirlik sayılmaz. Pin/son tren FF ve runtime kabulü henüz alınmadı.
