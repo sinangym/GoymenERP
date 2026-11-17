@@ -178,6 +178,57 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
         Assert.Equal(3, await run.Count("accounting.Journals"));
     }
 
+    [SqlServerFact]
+    public async Task A_proved_partial_return_links_only_the_already_posted_net_share_without_revaluing_the_original_issue()
+    {
+        await using var run = await Run.Start(); var period = await run.Period();
+        var physical = new AttributionLineage(run.Source.Facts).WithReturn(.5m);
+        await using var scope = run.Open(); var ledger = AttributionLedger(scope, physical);
+        await PostAttributed(scope, physical, ledger, period);
+        var reader = new AttributedCostReader(run.Source.Facts, ledger, physical); var store = AttributedCosts(scope, reader, ledger);
+        await store.AcceptAsync(reader.Envelope);
+        var result = Assert.Single(await store.ListAsync(AccountingInventoryCostKindV1.SalesInvoicedShipment));
+        var share = Assert.Single(result.Component.AlreadyPostedComponents!);
+        Assert.Equal("AlreadyAccounted", result.Status); Assert.Equal("20", share.SignedAmount);
+        Assert.Equal(1m, share.Shipment.PhysicalQuantityKg); Assert.Equal(new("1", "2"), share.Shipment.NetRootQuantityKg);
+        Assert.Equal(.5m, Assert.Single(share.Shipment.Returns!).QuantityKg);
+        Assert.Equal(1, await run.Count("accounting.Journals"));
+    }
+
+    [SqlServerFact]
+    public async Task A_fully_returned_physical_share_retains_proved_zero_inside_the_existing_nonzero_posted_source()
+    {
+        await using var run = await Run.Start(); var period = await run.Period();
+        var physical = new AttributionLineage(run.Source.Facts).WithReturn(1m);
+        await using var scope = run.Open(); var ledger = AttributionLedger(scope, physical);
+        await PostAttributed(scope, physical, ledger, period);
+        var reader = new AttributedCostReader(run.Source.Facts, ledger, physical); var store = AttributedCosts(scope, reader, ledger);
+        await store.AcceptAsync(reader.Envelope);
+        var result = Assert.Single(await store.ListAsync(AccountingInventoryCostKindV1.SalesInvoicedShipment));
+        var share = Assert.Single(result.Component.AlreadyPostedComponents!);
+        Assert.Equal("AlreadyAccounted", result.Status); Assert.Equal("0", share.SignedAmount);
+        Assert.Equal(new("0", "1"), share.Shipment.NetRootQuantityKg); Assert.Single(share.Shipment.Returns!);
+        Assert.Equal(2, await run.Count("accounting.ManufacturingCostAttributionShares"));
+        Assert.Equal(1, await run.Count("accounting.Journals"));
+    }
+
+    [SqlServerFact]
+    public async Task A_fully_returned_output_retains_zero_evidence_when_another_output_supplies_the_real_aggregate_journal()
+    {
+        await using var run = await Run.Start(); var period = await run.Period();
+        var physical = new AttributionLineage(run.Source.Facts).WithReturn(1m, wholeOutput: true);
+        await using var scope = run.Open(); var ledger = AttributionLedger(scope, physical);
+        await PostAttributed(scope, physical, ledger, period);
+        var reader = new AttributedCostReader(run.Source.Facts, ledger, physical); var store = AttributedCosts(scope, reader, ledger);
+        await store.AcceptAsync(reader.Envelope);
+        var result = Assert.Single(await store.ListAsync(AccountingInventoryCostKindV1.SalesInvoicedShipment));
+        Assert.Equal("AlreadyAccounted", result.Status);
+        Assert.Equal("0", Assert.Single(result.Component.AlreadyPostedComponents!).SignedAmount);
+        Assert.Equal(2, await run.Count("accounting.ManufacturingCostAttributions"));
+        Assert.Equal(2, await run.Count("accounting.ManufacturingCostAttributionShares"));
+        Assert.Equal(1, await run.Count("accounting.Journals"));
+    }
+
     private static async Task PostAttributed(Scope scope, AttributionLineage physical, ManufacturingPostedCostAttributionStoreV1 ledger,
         Guid period, bool negative = false)
     {
@@ -201,7 +252,7 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
     // Only physical owner answers and commercial identity are synthetic; all money/source/journal/claim writes use real SQL owners.
     private sealed class AttributionLineage : IManufacturingAttributionLineageReaderV1
     {
-        public ManufacturingAttributionShipmentV1 Target { get; }
+        public ManufacturingAttributionShipmentV1 Target { get; private set; }
         public ManufacturingCostDifferenceEventV1 Source { get; private set; }
         public WorkInboxEventV1 Envelope { get; private set; }
         public ManufacturingAttributionLineageV1 Value { get; private set; }
@@ -213,6 +264,28 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
                 GenerationVersion = source.GenerationVersion };
         }
         public AttributionLineage Copy(ManufacturingCostDifferenceEventV1 source) => new(this, source);
+        public AttributionLineage WithReturn(decimal quantity, bool wholeOutput = false)
+        {
+            var original = Value.Outputs[0]; var consumed = 3m - quantity; var unitCost = 100m / consumed;
+            Target = Target with { HasReturns = true, NetRootQuantityKg = AccountingInventoryCostAmountsV1.FromDecimal(1m - quantity),
+                Returns = [new(Guid.NewGuid(), Guid.NewGuid(), 1, Target.MovementId, quantity, At.AddMinutes(1))] };
+            Source = Source with { Outputs = [Source.Outputs[0] with { RemainingQuantityKg = quantity, ConsumedQuantityKg = consumed,
+                TlUnitCostPerKg = unitCost, RemainingTlValue = quantity * unitCost, ConsumedTlDifference = 100m, OriginalTlAmount = 3m * unitCost }] };
+            Value = Value with { Outputs = [original with { ConsumedRootQuantityKg = AccountingInventoryCostAmountsV1.FromDecimal(consumed),
+                Shipments = [Target, original.Shipments[1]] }] };
+            if (wholeOutput)
+            {
+                var secondId = Guid.NewGuid(); var secondReceipt = Guid.NewGuid(); var secondLabel = Guid.NewGuid();
+                Source = Source with { Outputs = [Source.Outputs[0] with { NetQuantityKg = 1m, RemainingQuantityKg = 1m,
+                        ConsumedQuantityKg = 0m, TlUnitCostPerKg = 50m, RemainingTlValue = 50m, ConsumedTlDifference = 0m, OriginalTlAmount = 50m },
+                    new(secondId, secondReceipt, secondLabel, 2m, 0m, 2m, 50m, 0m, 100m, null, [], 100m)] };
+                Value = Value with { Outputs = [original with { NetQuantityKg = 1m, ConsumedRootQuantityKg = new("0", "1"), Shipments = [Target] },
+                    new(secondId, secondReceipt, secondLabel, 2m, new("2", "1"), new string('c', 64),
+                        [original.Shipments[1] with { LabelId = secondLabel }])] };
+            }
+            Envelope = Envelope with { PayloadJson = JsonSerializer.Serialize(Source, Json) };
+            return this;
+        }
         public AttributionLineage(FinalizedInvoiceLineSourceV1 facts, bool? zeroShareRecognition = null)
         {
             var generation = Guid.NewGuid(); var output = Guid.NewGuid(); var receipt = Guid.NewGuid(); var label = Guid.NewGuid(); var id = Guid.NewGuid();
@@ -254,7 +327,9 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
                 facts.FinalizationAdmissionId, facts.InvoiceDate, facts.OfficialInvoiceNumber, Maker,
                 AccountingInventoryCostSourceValidationV1.Sha256(envelope.PayloadJson),
                 [new(AccountingInventoryCostTraceV1.SalesComponent(facts.InvoiceLineId), facts.ProductId, facts.InvoiceLineId, facts.InvoiceLineNo,
-                    null, new("1667", "50"), proof, AccountingInventoryCostSourceValidationV1.Sha256(proof),
+                    null, actual.Shares.Aggregate(AccountingInventoryCostAmountsV1.FromDecimal(0m), (sum, share) =>
+                        AccountingInventoryCostAmountsV1.Add(sum, AccountingInventoryCostAmountsV1.FromDecimal(decimal.Parse(share.SignedAmount,
+                            System.Globalization.CultureInfo.InvariantCulture)))), proof, AccountingInventoryCostSourceValidationV1.Sha256(proof),
                     [new(target.ShipmentId, target.MovementId, 1, target.ProductId, 1m)], actual.Shares)]);
         }
     }

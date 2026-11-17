@@ -19,6 +19,19 @@ const proposal = () => ({ proposalId: id('15'), companyId: company, eventId: id(
   preparation: null, approvedBy: null, approvedAtUtc: null, journalId: null, cancellationId: null, reversalProposal: null })
 
 describe('existing posted manufacturing attribution proof', () => {
+  it('requires explicit same-issue return evidence while keeping legacy no-return sources', () => {
+    const original = share()
+    const returned = { returnId: id('70'), movementId: id('71'), movementLineNumber: 1,
+      sourceIssueMovementId: original.shipment.movementId, quantityKg: 0.5, recordedAtUtc: '2026-11-17T10:00:00Z' }
+    const value = { ...original, shipment: { ...original.shipment, hasReturns: true, returns: [returned] } }
+    expect(postedManufacturingCostShare(value, company, product)).toBe(true)
+    for (const returns of [undefined, [], [returned, returned], [{ ...returned, sourceIssueMovementId: id('72') }]]) {
+      expect(postedManufacturingCostShare({ ...value, shipment: { ...value.shipment, returns } }, company, product)).toBe(false)
+    }
+    expect(postedManufacturingCostShare(original, company, product)).toBe(true)
+    expect(postedManufacturingCostShare({ ...value, shipment: { ...value.shipment, hasReturns: false } }, company, product)).toBe(false)
+    expect(postedManufacturingCostShare({ ...value, shipment: { ...value.shipment, movementId: undefined } }, company, product)).toBe(false)
+  })
   it('displays the actual posted share without claiming a new approval or journal', () => {
     expect(postedManufacturingCostShare(share(), company, product)).toBe(true)
     expect(decodeInventoryCost(proposal(), company, 1)?.status).toBe('AlreadyAccounted')

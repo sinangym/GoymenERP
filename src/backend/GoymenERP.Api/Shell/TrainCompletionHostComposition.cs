@@ -43,11 +43,13 @@ public static class TrainCompletionHostComposition
         services.AddAccountingInvoiceLineCogsRuntime();
         services.AddScoped<IAccountingCogsAccountResolverV1, AccountingCogsAccountResolverV1>();
         services.AddScoped<IAccountingInventoryCostSourceReaderV1, AccountingInventoryCostSourceReaderV1>();
+        services.AddScoped<IManufacturingAttributionLineageReaderV1, ManufacturingAttributionLineageReaderV1>();
         services.AddScoped<IAccountingInventoryCostStoreV1, AccountingInventoryCostStoreV1>();
         services.AddScoped<AccountingInventoryCostServiceV1>();
         services.AddWorkInboxConsumer<AccountingInventoryCostInboxConsumerV1>(AccountingInventoryCostInboxV1.ConsumerName,
             AccountingInventoryCostInboxV1.Subscriptions.ToArray());
         services.AddInventoryPurchaseInvoiceCostsV1();
+        services.AddScoped<IInventoryFirstCostPrerequisitesV1, InventoryFirstCostPrerequisitesSourceV1>();
         services.AddScoped<IPurchaseSupplierReturnInvoiceCostReadPortV1, PurchaseSupplierReturnInvoiceCostReadPort>();
         services.AddScoped<ISalesMarginCostReadPortV1, InventorySalesMarginCostReadPortV1>();
         services.AddScoped<ISalesFinalizedShipmentClaimReadPortV1, SalesFinalizedShipmentClaimReadPortV1>();
