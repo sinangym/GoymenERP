@@ -55,7 +55,13 @@ public sealed record AccountingSalesInvoiceFinalizedLineV1(
     decimal? Withholding,
     decimal? FunctionalNet,
     decimal? FunctionalVat,
-    decimal? FunctionalWithholding);
+    decimal? FunctionalWithholding,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    AccountingSalesInvoiceShipmentSourceV1? ShipmentSource = null);
+
+/// <summary>Sales' whole-dispatch-line claim; the commercial quantity is not an Inventory cost allocation ratio.</summary>
+public sealed record AccountingSalesInvoiceShipmentSourceV1(Guid ShipmentId, Guid DispatchNoteId, int DispatchNoteLineNo,
+    Guid SalesOrderId, Guid SalesOrderLineId, int PriceBasisRevision, Guid ProductId, Guid UnitId, string InvoicedQuantity);
 
 /// <summary>
 /// The keys of <c>sales.invoice.finalized.v1</c> Accounting reads. <see cref="InvoiceDate"/> (the official invoice date of KLN-D8)
