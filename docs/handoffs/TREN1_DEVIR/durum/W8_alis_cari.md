@@ -186,3 +186,26 @@ kırmızıların geçtiği veya bu kaynakların kabul aldığı iddia edilmez.
   Önceki mal kabul kur kanıtının test namespace düzeltmesi `404186d8a` ile kaydedildi.
   Runtime Unit/SQL/HTTP/Vitest/browser/CI
   **NOT_RUN**. OpenAPI, relational envanter ve bütün pinler merkezi entegrasyon sırasındadır.
+
+## FIN-S13 / ALC-SC47 — gerçek gelen fatura çekirdeği ön koşulu
+
+- ALS-D7/D8/D14/D15/D41/D44/D59/D64: resmi kaynak kimliği/hash/tarih, satır tutarları,
+  tedarikçi ve ödeme planı immutable fatura geçmişine alındı. İki yöndeki fiyat, miktar
+  ve kur farkları kayıtlı Ayarlar sürümüyle karşılaştırılır; hazırlayan kendi farkını onaylamaz.
+- Eşleştirme gerçek kabul/sipariş bağını şirket filtresi ve bütün general-line kimliklerinin
+  tek global kilit sırası altında kaydeder; cari revizyonu bu gerçek bağı görür.
+  Kabul payı SQL ölçeğine tam sığmıyorsa reddedilir, sessiz yuvarlama yapılmaz.
+- Kesinleştirme bir adet `purchasing.invoice.finalized.v1` outbox kaydı ve sabit Finans
+  kabul kimliği üretir. Finans cevabı ayrı revizyondur; kesinleşmiş payload değişmez.
+  Alış yazısı kendi transaction'ında tamamlanır; borrowed/ambient transaction reddedilir.
+- EF CLI `20261117084001_AddPurchaseIncomingInvoices` migration/designer/snapshot üretti.
+  Up yalnız DDL; Down önce resmi kimlik/geçmiş/kabul bağı/terminal sonuç varsa **51980**
+  ile reddeder. DB'ye uygulanmadı. Model, birim ve altı gerçek SQL test kaynağı yazıldı.
+- API, Purchasing.UnitTests ve Api.IntegrationTests kaynak derlemeleri exit 0,
+  uyarı/hata 0. İncelemede bulunan transaction sahipliği, miktar ölçeği ve global kilit
+  sırası düzeltildi. Runtime Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**.
+- **PARTIAL:** gerçek belge/dosya içe aktarımı, Ayarlar tolerans ve kabul fiyat/kur
+  karşılaştırma kaynakları, yetki çitli uygulama/HTTP/UI, ayrı Finans kabul/tekrar çağrısı
+  ve masraf/hizmet satırının kendi gerçek owner bağlantıları henüz tamamlanmadı.
+  Masraf satırı için yapay mal kabul üretilmez; ALC-S7/S8 bu checkpoint ile DONE değildir.
+  Merkezi pin/ilişkisel envanter güncellemesi entegrasyon sırasındadır.

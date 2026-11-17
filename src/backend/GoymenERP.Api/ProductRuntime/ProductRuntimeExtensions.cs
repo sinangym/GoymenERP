@@ -76,6 +76,9 @@ public static class ProductRuntimeExtensions
         });
         services.AddScoped<ProductReader>();
         services.AddScoped<ProductService>();
+        services.AddScoped<ProductCogsClassificationRuntime>();
+        services.AddScoped<IProductCogsClassificationServiceV1>(p => p.GetRequiredService<ProductCogsClassificationRuntime>());
+        services.AddScoped<IProductCogsClassificationReadPortV1>(p => p.GetRequiredService<ProductCogsClassificationRuntime>());
         services.AddProductManufacturingTechnicalSnapshot(provider =>
             provider.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
         services.AddProductStockDisplayReferences(provider =>

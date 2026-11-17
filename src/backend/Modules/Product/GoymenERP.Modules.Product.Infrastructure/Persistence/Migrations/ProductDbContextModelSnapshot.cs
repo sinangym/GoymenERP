@@ -91,6 +91,62 @@ namespace GoymenERP.Modules.Product.Infrastructure.Persistence.Migrations
                     b.ToTable("CodeRegistrations", "product");
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.Persistence.ProductCogsClassificationRow", b =>
+                {
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("ActorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AuthorityRevision")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("OriginCompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("RecordedProductVersion")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("ProductId", "Version");
+
+                    b.ToTable("CogsClassifications", "product", t =>
+                        {
+                            t.HasCheckConstraint("CK_CogsClassifications_Identity", "[ProductId] <> '00000000-0000-0000-0000-000000000000' AND [OriginCompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ActorId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_CogsClassifications_Kind", "[Kind] IN (1,2)");
+
+                            t.HasCheckConstraint("CK_CogsClassifications_Provenance", "LEN([AuthorityRevision]) > 0 AND LEN([Reason]) > 0 AND LEN([CorrelationId]) > 0 AND DATEPART(TZOFFSET,[RecordedAtUtc]) = 0");
+
+                            t.HasCheckConstraint("CK_CogsClassifications_Version", "[Version] >= 1 AND [RecordedProductVersion] >= 1");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.Persistence.ProductDictionaryEntryRow", b =>
                 {
                     b.Property<string>("Dictionary")
@@ -441,6 +497,15 @@ namespace GoymenERP.Modules.Product.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.Persistence.ProductCodeRegistration", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Product.Infrastructure.Persistence.ProductRow", null)
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.Persistence.ProductCogsClassificationRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Product.Infrastructure.Persistence.ProductRow", null)
                         .WithMany()

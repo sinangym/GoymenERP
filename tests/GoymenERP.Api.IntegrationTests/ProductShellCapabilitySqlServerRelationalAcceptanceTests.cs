@@ -27,7 +27,7 @@ public sealed class ProductShellCapabilitySqlServerRelationalAcceptanceTests
     private static readonly string[] ProductCapabilities =
     [
         "product.items.activate", "product.items.create", "product.items.deactivate", "product.items.detail",
-        "product.items.edit", "product.items.list", "product.items.reactivate",
+        "product.items.edit", "product.items.list", "product.items.reactivate", "product.items.set-cogs-classification",
     ];
 
     [SqlServerFact]
@@ -79,9 +79,22 @@ public sealed class ProductShellCapabilitySqlServerRelationalAcceptanceTests
             Assert.Equal(
                 [
                     "product.items.create", "product.items.deactivate", "product.items.detail", "product.items.edit",
-                    "product.items.list", "product.items.reactivate",
+                    "product.items.list", "product.items.reactivate", "product.items.set-cogs-classification",
                 ],
                 ProductOnly(await ReadAsync(administrator)));
+
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+                var classification = await identity.Set<ProductMasterAssignment>().SingleAsync(row =>
+                    row.UserId == ActorId && row.Operation == ProductMasterOperation.SetCogsClassification && row.IsActive);
+                classification.Revoke(Guid.NewGuid(), "Isolated explicit COGS operation revocation", DateTimeOffset.UtcNow);
+                await identity.SaveChangesAsync();
+            }
+            var withoutClassification = ProductOnly(await ReadAsync(administrator));
+            Assert.DoesNotContain("product.items.set-cogs-classification", withoutClassification);
+            Assert.Contains("product.items.edit", withoutClassification);
+            Assert.Contains("product.items.detail", withoutClassification);
 
             await using (var scope = factory.Services.CreateAsyncScope())
             {

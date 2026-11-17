@@ -8,12 +8,14 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence;
 // Not connected to IdentityDbContext or a migration until the exact #104 admission.
 public static class ProductMasterAssignmentModel
 {
+    internal const string OperationCheck = "[Operation] IN (1, 2, 3, 4, 5, 6, 7)";
+
     public static void ConfigureProductMasterAssignment(this ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<ProductMasterAssignment>();
         entity.ToTable("ProductMasterAssignments", "identity", table =>
         {
-            table.HasCheckConstraint("CK_ProductMasterAssignments_Operation", "[Operation] IN (1, 2, 3, 4, 5, 6)");
+            table.HasCheckConstraint("CK_ProductMasterAssignments_Operation", OperationCheck);
             table.HasCheckConstraint("CK_ProductMasterAssignments_Identities",
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [UserId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [RoleId] <> '00000000-0000-0000-0000-000000000000' AND [DecisionId] <> '00000000-0000-0000-0000-000000000000'");

@@ -435,3 +435,21 @@ EF-generated `20261117072202_AddPurchaseSupplierRevisions` adds nullable revisio
 invoice binding table. Down starts with **THROW 51977** while either history exists. No backfill, grant or database
 application occurs in this slice. Test sources cover replay, maker/checker, tenant isolation, historical restoration,
 post-save authority loss rollback and the Down guard. Runtime acceptance is **NOT_RUN**.
+
+## FIN-S13 / ALC-SC47 incoming invoice owner prerequisite
+
+ALS-D7/D8/D14/D15/D41/D44/D59/D64: the Purchasing-owned incoming invoice preserves official source identity,
+amounts, rate and installments; matching records actual receipt/order bindings, both favorable and unfavorable
+variances and the exact Settings policy version. Approval cannot come from the preparer. Finalization appends one
+`purchasing.invoice.finalized.v1` event and freezes one Finance admission identity. Finance acknowledgement is a
+separate revision and cannot change the finalized payload. No Finance tables are written from Purchasing.
+Receipt shares require exact storage scale; no quantity rounding is allowed. Matching takes all affected general-line
+locks in one global order. Writes reject ambient/borrowed transactions: Purchasing commits independently before
+the ALS-D64 Finance call; a failed save cannot leave partial invoice writes inside another owner's transaction.
+EF generated `20261117084001_AddPurchaseIncomingInvoices`; Up is only DDL, Down first refuses with **THROW 51980**
+while invoice identity, history, receipt bindings or terminal attempts exist. The migration was not applied.
+This checkpoint is PARTIAL: actual import/document readers, Settings policy composition, receipt comparison facts,
+authorization services/HTTP/UI and the separate Finance admission/retry still need wiring. Service/additional-cost
+invoice lines need their own real owner references; no artificial goods receipt substitutes for them.
+Unit/model and real SQL test sources cover immutable source/history, tenant isolation, replay, actor/payload conflicts,
+quantity scale, late authority loss, transaction ownership, one outbox event and the forward-fix guard. Runtime NOT_RUN.

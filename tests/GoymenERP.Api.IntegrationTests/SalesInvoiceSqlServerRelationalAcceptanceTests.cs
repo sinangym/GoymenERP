@@ -9,6 +9,7 @@ using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Domain.Invoices;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations;
+using GoymenERP.Modules.Sales.Infrastructure.Outbox;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
@@ -31,6 +32,85 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
     private static readonly Guid Try = Guid.Parse("6b1d2c3b-4a59-4687-9a0b-1c2d3e4f5c02");
     private static readonly Guid Kg = Guid.Parse("6b1d2c3b-4a59-4687-9a0b-1c2d3e4f5c03");
     private static readonly Guid Product = Guid.Parse("6b1d2c3b-4a59-4687-9a0b-1c2d3e4f5c04");
+
+    [SqlServerFact]
+    public async Task Committed_sales_outbox_cursor_does_not_skip_an_earlier_uncommitted_event_and_down_51983_preserves_positions()
+    {
+        await using var run = await Run.StartAsync();
+        var guard = Assert.IsType<SqlOperation>(new AddSalesOutboxCommittedCursor().DownOperations[0]).Sql;
+        await run.ExecuteAsync(guard);
+        await using var earlier = run.Store(CompanyA);
+        await using var transaction = await earlier.Context.Database.BeginTransactionAsync();
+        var first = SyntheticOutbox(CompanyA);
+        earlier.Context.OutboxMessages.Add(first); await earlier.Context.SaveChangesAsync();
+        var second = SyntheticOutbox(CompanyA);
+        await using (var later = run.Store(CompanyA))
+        {
+            later.Context.OutboxMessages.Add(second); await later.Context.SaveChangesAsync();
+        }
+        var other = SyntheticOutbox(CompanyB);
+        await using (var foreign = run.Store(CompanyB))
+        {
+            foreign.Context.OutboxMessages.Add(other); await foreign.Context.SaveChangesAsync();
+        }
+        var company = new CompanyContext(); company.Set(CompanyA);
+        await using var reader = run.Store(CompanyA);
+        var source = new SalesOutboxEventSourceV1(reader.Context, company);
+        Assert.Empty(await source.ReadAfterAsync(null, 10, default).WaitAsync(TimeSpan.FromSeconds(10)));
+        await transaction.CommitAsync();
+        var firstPage = Assert.Single(await source.ReadAfterAsync(null, 1, default));
+        Assert.Equal(first.Id, firstPage.EventId);
+        Assert.Equal(first.CompanyId, firstPage.CompanyId);
+        Assert.Equal(first.PayloadJson, firstPage.PayloadJson);
+        Assert.Equal(first.CorrelationId, firstPage.CorrelationId);
+        Assert.Equal(first.CausationId, firstPage.CausationId);
+        Assert.Equal(first.EventType, firstPage.EventType);
+        Assert.Equal(first.SchemaVersion, firstPage.Version);
+        Assert.Matches("^[0-9]{20}$", firstPage.Position);
+        var secondPage = Assert.Single(await source.ReadAfterAsync(firstPage.Position, 1, default));
+        Assert.Equal(second.Id, secondPage.EventId);
+        Assert.True(string.CompareOrdinal(firstPage.Position, secondPage.Position) < 0);
+        Assert.Empty(await source.ReadAfterAsync(secondPage.Position, 10, default));
+        await using (var foreign = run.Store(CompanyB))
+        {
+            var foreignCompany = new CompanyContext(); foreignCompany.Set(CompanyB);
+            Assert.Equal(other.Id, Assert.Single(await new SalesOutboxEventSourceV1(foreign.Context, foreignCompany)
+                .ReadAfterAsync(null, 10, default)).EventId);
+        }
+        var refused = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
+        Assert.Equal(51983, refused.Number);
+        Assert.Equal(2, (await source.ReadAfterAsync(null, 10, default)).Count);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.OutboxMessages WHERE Position IS NULL"));
+    }
+
+    [SqlServerFact]
+    public async Task Rolled_back_sales_outbox_event_is_absent_and_a_later_committed_event_can_advance_the_cursor()
+    {
+        await using var run = await Run.StartAsync();
+        await using var earlier = run.Store(CompanyA);
+        await using var transaction = await earlier.Context.Database.BeginTransactionAsync();
+        var rolledBack = SyntheticOutbox(CompanyA);
+        earlier.Context.OutboxMessages.Add(rolledBack); await earlier.Context.SaveChangesAsync();
+        var committed = SyntheticOutbox(CompanyA);
+        await using (var later = run.Store(CompanyA))
+        {
+            later.Context.OutboxMessages.Add(committed); await later.Context.SaveChangesAsync();
+        }
+        var company = new CompanyContext(); company.Set(CompanyA);
+        await using var reader = run.Store(CompanyA);
+        var source = new SalesOutboxEventSourceV1(reader.Context, company);
+        Assert.Empty(await source.ReadAfterAsync(null, 10, default).WaitAsync(TimeSpan.FromSeconds(10)));
+        await transaction.RollbackAsync();
+        Assert.Equal(committed.Id, Assert.Single(await source.ReadAfterAsync(null, 10, default)).EventId);
+    }
+
+    private static SalesOutboxRow SyntheticOutbox(Guid companyId) => new()
+    {
+        Id = Guid.NewGuid(), CompanyId = companyId, AggregateId = Guid.NewGuid(), AggregateVersion = 1, Sequence = 1,
+        EventType = SalesStore.InvoiceFinalizedEventType, SchemaVersion = 1, SourceOperation = "sales.invoice.finalized.v1",
+        AggregateType = "SalesInvoice", PayloadJson = "{\"synthetic\":true}", OccurredAtUtc = DateTimeOffset.UnixEpoch,
+        RecordedAtUtc = DateTimeOffset.UnixEpoch, CorrelationId = "SENTETIK-cursor", CausationId = "SENTETIK-source",
+    };
 
     [SqlServerFact]
     public async Task Official_match_source_proof_survives_reload_and_down_51982_refuses_without_losing_the_match()
