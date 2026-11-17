@@ -45,10 +45,10 @@
    "STK-S13 + ALC-S7/S8 (KIM-S18 sonrası)"
   ],
   "toplam": 174,
-  "done": 135,
-  "partial": 27,
-  "remaining_not_started": 12,
-  "last_wave": 7,
+  "done": 151,
+  "partial": 17,
+  "remaining_not_started": 6,
+  "last_wave": 8,
   "progress_meaning": "DONE yalnız kaynak kapsamıdır. Tam birim/mimari/gerçek SQL/Vitest/browser/CI koşumları NOT_RUN; K3 kabulü ve production değildir.",
   "w6_source_done_ids": [
    "KIM-S13",
@@ -234,7 +234,27 @@
    "source": "#1189/6929718990",
    "decision_pr": 1198,
    "note": "Computed dispatch only: remainder to the first of equally heaviest lines; finalized genuine external document allocations remain authoritative."
-  }
+  },
+  "w8_source_done_ids": [
+   "URT-S4",
+   "URT-S5",
+   "URT-S8",
+   "URT-SC32",
+   "URT-SC33",
+   "URT-SC36",
+   "STK-S11",
+   "STK-S13",
+   "STK-S19",
+   "STK-S21",
+   "STK-S29",
+   "STK-SC36-b",
+   "STK-SC36-c",
+   "FIN-S17",
+   "FNS-SC32",
+   "FIN-SC36"
+  ],
+  "published_train_done_at_last_checkpoint": 135,
+  "w8_status": "IN_PROGRESS: local source scope updated; combined builds/pins/light checks and train fast-forward pending. No W9."
  },
  "teams": [
   {
@@ -901,8 +921,8 @@
     "Product"
    ],
    "toplam": 45,
-   "done": 35,
-   "partial": 6,
+   "done": 42,
+   "partial": 3,
    "kalan": [
     {
      "id": "STK-S1",
@@ -1010,11 +1030,14 @@
      "contracts": [
       "sağlar: IProductPurchaseUnitConversionV1 (stok_lojistik; tüketen alis_cari, satis, stok)"
      ],
-     "status": "BLOCKED_SOURCE",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 6,
+     "wave": 8,
      "w6_report": "durum/W6_stok_lojistik.md",
-     "w6_note": "Settings birim kaynağında kg dışı typed ton/metre/adet semantiği ve dönüşüm faktörü yok; koddan tahmin edilmedi."
+     "w6_note": "Settings birim kaynağında kg dışı typed ton/metre/adet semantiği ve dönüşüm faktörü yok; koddan tahmin edilmedi.",
+     "w8_source_commit": "667822a10851041c20759088f536735f26387ce1",
+     "w8_report": "durum/W8_stok_lojistik.md",
+     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "STK-S13",
@@ -1038,10 +1061,13 @@
      "contracts": [
       "tüketir: ISettingsReferenceListReaderV1 (kimlik)"
      ],
-     "status": "PLANNED",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 6,
-     "w6_report": "durum/W6_stok_lojistik.md"
+     "wave": 8,
+     "w6_report": "durum/W6_stok_lojistik.md",
+     "w8_source_commit": "b6ba56727e54910511d00db5fb0c4cb96c4bd36c",
+     "w8_report": "durum/W8_stok_lojistik.md",
+     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "STK-S17",
@@ -1112,12 +1138,15 @@
       "src/backend/Modules/Inventory/**/ReceiptReversal*"
      ],
      "contracts": [],
-     "status": "READY",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 7,
+     "wave": 8,
      "w6_report": "durum/W6_stok_lojistik.md",
      "w7_result": "7B yanıtlandı: yalnız talep sınırına sığan tüketilmiş miktar yeniden açılır, kalan Released; eski Released geri gelmez (#1189/6926090415). Owner ters tüketim/ledger+ALC-S6 aynı transaction uygulaması henüz yok.",
-     "w7_report": "durum/W7_stok_lojistik.md"
+     "w7_report": "durum/W7_stok_lojistik.md",
+     "w8_source_commit": "67fad5246354daf3cc4f0c484c90a3412f00bdbd",
+     "w8_report": "durum/W8_stok_lojistik.md",
+     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "STK-S21",
@@ -1139,10 +1168,13 @@
       "recovery/release pin (recovery-inventory-repin)"
      ],
      "contracts": [],
-     "status": "PLANNED",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 6,
-     "w6_report": "durum/W6_stok_lojistik.md"
+     "wave": 8,
+     "w6_report": "durum/W6_stok_lojistik.md",
+     "w8_source_commit": "dfef53c6a40ab8acd3d9cd3f654c0470f2e842f0",
+     "w8_report": "durum/W8_stok_lojistik.md",
+     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "STK-S26",
@@ -1182,13 +1214,15 @@
      ],
      "files_hint": [],
      "contracts": [],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 6,
+     "wave": 8,
      "decision_note": "NS-05 (Issue #66 yorum 6882315732 (SINAN-CEVAP 14)): Logo/antet şirket ayarından yüklenir; şablon yayımlama ayrı izin (yeni izin adı kaydedilebilir, grant yok); hazırlayan kendi şablonunu yayımlayamaz.",
      "w6_report": "durum/W6_stok_lojistik.md",
      "w8_report": "durum/W8_stok_lojistik.md",
-     "w8_result": "Documents marka/şablon owner kaydı ve üretilmiş migration kaynakları merkezde; gerçek PDF renderer/producer ve yönetim ekranı bağlantısı halen uygulanıyor."
+     "w8_result": "Documents marka/şablon owner kaydı ve üretilmiş migration kaynakları merkezde; gerçek PDF renderer/producer ve yönetim ekranı bağlantısı halen uygulanıyor.",
+     "w8_source_commit": "c820c37d6ea846e0dbd7bfe56b5534bc6feeae0b",
+     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "STK-SC36-a",
@@ -1234,10 +1268,14 @@
      ],
      "contracts": [],
      "finding": "SC36-SC47 kararları",
-     "status": "PARTIAL",
-     "wave": 5,
+     "status": "DONE",
+     "wave": 8,
      "w5_raporu": "durum/W5_stok_lojistik.md",
-     "w6_report": "durum/W6_stok_lojistik.md"
+     "w6_report": "durum/W6_stok_lojistik.md",
+     "blocked_reason": "",
+     "w8_source_commit": "4bd80d9dc153f3692ecc1db8341e5146737f559f",
+     "w8_report": "durum/W8_stok_lojistik.md",
+     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "STK-SC36-c",
@@ -1257,13 +1295,17 @@
      ],
      "contracts": [],
      "finding": "SC36-SC47 kararları",
-     "status": "PARTIAL",
-     "wave": 5,
+     "status": "DONE",
+     "wave": 8,
      "w5_raporu": "durum/W5_stok_lojistik.md",
-     "w6_report": "durum/W6_stok_lojistik.md"
+     "w6_report": "durum/W6_stok_lojistik.md",
+     "blocked_reason": "",
+     "w8_source_commit": "c86f24b46f771de3e1cdccd59efc862619968db9",
+     "w8_report": "durum/W8_stok_lojistik.md",
+     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
     }
    ],
-   "remaining_not_started": 4
+   "remaining_not_started": 0
   },
   {
    "key": "uretim",
@@ -1271,8 +1313,8 @@
     "Manufacturing"
    ],
    "toplam": 27,
-   "done": 21,
-   "partial": 5,
+   "done": 27,
+   "partial": 0,
    "kalan": [
     {
      "id": "URT-S4",
@@ -1297,13 +1339,16 @@
      "contracts": [
       "tüketir: Stok Free kg okuma portu, OrderCancelled=3 (stok_lojistik)"
      ],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 7,
+     "wave": 8,
      "w5_raporu": "durum/W5_uretim.md",
      "w6_report": "durum/W6_uretim.md",
      "w7_result": "Gerçek Inventory advisory + successful-rollback sonrası company/plan fenced kanonik requested/available/missing kg HTTP/UI shortfall var; replay ayrıntıyı taşımaz. Diğer plan kullanıcı akışı tamamlanmadı.",
-     "w7_report": "durum/W7_uretim.md"
+     "w7_report": "durum/W7_uretim.md",
+     "w8_source_commit": "4d9b8bfca52560ea539ae936412b42184f61fcb9",
+     "w8_report": "durum/W8_uretim.md",
+     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "URT-S5",
@@ -1321,12 +1366,15 @@
       "src/backend/Modules/Manufacturing/**/Replan*"
      ],
      "contracts": [],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 7,
+     "wave": 8,
      "w6_report": "durum/W6_uretim.md",
      "w7_result": "8A fiziksel toplam draft/revizyon üst sınırı yanıtlandı; AT-044 uygulaması sonraki dalga. Onayda Free/tek pozisyon sürer.",
-     "w7_report": "durum/W7_uretim.md"
+     "w7_report": "durum/W7_uretim.md",
+     "w8_source_commit": "2120b758e7f41fb5aeb7c75bcf1d2327e72b3937",
+     "w8_report": "durum/W8_uretim.md",
+     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "URT-S6",
@@ -1395,10 +1443,13 @@
      "contracts": [
       "tüketir: Muhasebe dönem durumu okuma portu (finans, mevcut)"
      ],
-     "status": "READY",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 7,
-     "w6_report": "durum/W6_uretim.md"
+     "wave": 8,
+     "w6_report": "durum/W6_uretim.md",
+     "w8_source_commit": "cd584d806e0c7e1e97b9e933d5cf25da13280a85",
+     "w8_report": "durum/W8_uretim.md",
+     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "URT-S18",
@@ -1427,9 +1478,14 @@
     {
      "id": "URT-SC32",
      "title": "USD değerleme hareketli ortalaması (URT-D82), URT-D83/D85",
-     "status": "PARTIAL",
+     "status": "DONE",
      "w6_report": "durum/W6_uretim.md",
-     "w6_note": "DOGRULA: calculator parçaları var; gerçek USD hareketli ortalama/maliyet runtime provider ve ekran bağı eksik."
+     "w6_note": "DOGRULA: calculator parçaları var; gerçek USD hareketli ortalama/maliyet runtime provider ve ekran bağı eksik.",
+     "wave": 8,
+     "blocked_reason": "",
+     "w8_source_commit": "4be7e2b4aee8ddd18ba8923ad57a9ce66697e817",
+     "w8_report": "durum/W8_uretim.md",
+     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "URT-SC33",
@@ -1445,13 +1501,16 @@
      ],
      "files_hint": [],
      "contracts": [],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 7,
+     "wave": 8,
      "w5_raporu": "durum/W5_uretim.md",
      "w6_report": "durum/W6_uretim.md",
      "w7_result": "Gerçek Settings tamponu, append-only expected priority revision, kuyruk HTTP/UI var. 6 elle sıra kalıcı + yeni C15→B20→A10 anchor yanıtlandı (#1189/6926992238); manual sıra deposu/komutu henüz yazılmadı.",
-     "w7_report": "durum/W7_uretim.md"
+     "w7_report": "durum/W7_uretim.md",
+     "w8_source_commit": "59f30eb7ec53022f47289d71ac0a8a9abece0769",
+     "w8_report": "durum/W8_uretim.md",
+     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "URT-SC36",
@@ -1473,13 +1532,17 @@
      ],
      "contracts": [],
      "finding": "SC36-SC47 kararları",
-     "status": "PARTIAL",
-     "wave": 5,
+     "status": "DONE",
+     "wave": 8,
      "w5_raporu": "durum/W5_uretim.md",
-     "w6_report": "durum/W6_uretim.md"
+     "w6_report": "durum/W6_uretim.md",
+     "blocked_reason": "",
+     "w8_source_commit": "87b44d2625742631e3e886800b4fcd0e44008d33",
+     "w8_report": "durum/W8_uretim.md",
+     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
     }
    ],
-   "remaining_not_started": 1
+   "remaining_not_started": 0
   },
   {
    "key": "finans",
@@ -1489,8 +1552,8 @@
     "FX ekranı (Settings uçları)"
    ],
    "toplam": 21,
-   "done": 15,
-   "partial": 4,
+   "done": 18,
+   "partial": 2,
    "kalan": [
     {
      "id": "FIN-S13",
@@ -1553,18 +1616,26 @@
      ],
      "files_hint": [],
      "contracts": [],
-     "status": "PLANNED",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 6,
+     "wave": 8,
      "decision_note": "NS-15 (Issue #66 yorum 6882315732 (SINAN-CEVAP 14)): Dönem kapanışı onaylanınca yeni dönem açılış/devir fişi üretilir; kapanış geri alınırsa ters kayıtla iptal. Finance STOP sınırları geçerli.",
-     "w6_report": "durum/W6_finans.md"
+     "w6_report": "durum/W6_finans.md",
+     "w8_source_commit": "5edcd80b09aa6a1b11fac33e558ba6d658c978a1",
+     "w8_report": "durum/W8_finans.md",
+     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "FNS-SC32",
      "title": "Bakiye devir fişi portu (KLN-D76/D77), teminat as-of iş günü (FNS-D71), izinler (FNS-D72)",
-     "status": "PARTIAL",
+     "status": "DONE",
      "w6_report": "durum/W6_finans.md",
-     "w6_note": "DOGRULA: Türkiye iş günü ve teminat izin kayıtları kaynakta var; gerçek Settings teminat kataloğu ve bakiye devir fişinin port/komut/ekranı eksik."
+     "w6_note": "DOGRULA: Türkiye iş günü ve teminat izin kayıtları kaynakta var; gerçek Settings teminat kataloğu ve bakiye devir fişinin port/komut/ekranı eksik.",
+     "wave": 8,
+     "blocked_reason": "",
+     "w8_source_commit": "5ee3b2d05768150805f20d343fad144c0afd2dcc",
+     "w8_report": "durum/W8_finans.md",
+     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "FIN-SC36",
@@ -1584,13 +1655,16 @@
      ],
      "contracts": [],
      "finding": "SC36-SC47 kararları",
-     "status": "PARTIAL",
-     "wave": 7,
+     "status": "DONE",
+     "wave": 8,
      "w5_raporu": "durum/W5_finans.md",
      "w6_report": "durum/W6_finans.md",
      "w7_result": "FNS-D102 gerçek iç defter ve Serializable aynı işlem bakiye koruması, MARS/borrowed transaction/audit rollback kaynakları yazıldı. Paketin kalan FNS-D89/D90 ve KLN-D102/D104 bağları bu işte tamamlanmadı; tüm test koşumları NOT_RUN.",
      "w7_report": "durum/W7_finans.md",
-     "blocked_reason": ""
+     "blocked_reason": "",
+     "w8_source_commit": "a4a747383111efa48060937637cf887e9022d1ff",
+     "w8_report": "durum/W8_finans.md",
+     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "FIN-SC47-KREDI",
@@ -1616,7 +1690,7 @@
      "w6_report": "durum/W6_finans.md"
     }
    ],
-   "remaining_not_started": 2
+   "remaining_not_started": 1
   }
  ]
 }
