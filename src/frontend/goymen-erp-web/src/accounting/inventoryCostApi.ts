@@ -83,7 +83,9 @@ export function decodeInventoryCost(body: unknown, company: string, kind: Invent
     || typeof c.signedTlAmount.numerator !== 'string' || !/^-?(0|[1-9][0-9]*)$/.test(c.signedTlAmount.numerator)
     || typeof c.signedTlAmount.denominator !== 'string' || !/^[1-9][0-9]*$/.test(c.signedTlAmount.denominator)) return null
   const firstParts = c.componentKey.split('/')
-  const firstPurchase = firstParts.length === 3 && firstParts[0] === 'purchase-first' && guid(firstParts[1]) && guid(firstParts[2])
+  const firstLine = firstParts.length === 2 && firstParts[0] === 'purchase-first-line' && guid(firstParts[1])
+    && c.componentKey === `purchase-first-line/${firstParts[1].toLowerCase()}`
+  const firstPurchase = firstLine || firstParts.length === 3 && firstParts[0] === 'purchase-first' && guid(firstParts[1]) && guid(firstParts[2])
     && c.componentKey === `purchase-first/${firstParts[1].toLowerCase()}/${firstParts[2].toLowerCase()}`
   const recorded = c.recordedRounding
   if (firstPurchase ? kind !== 2 || !rec(recorded) || !guid(recorded.currencyId) || !guid(recorded.moneyProfileId)
@@ -93,7 +95,7 @@ export function decodeInventoryCost(body: unknown, company: string, kind: Invent
     : recorded !== undefined && recorded !== null) return null
   if (kind === 1 ? !guid(c.invoiceLineId) || !version(c.invoiceLineNumber) || c.locationId !== null
     || c.componentKey !== `invoice-line:${(c.invoiceLineId as string).toLowerCase()}` || c.signedTlAmount.numerator.startsWith('-')
-    : c.invoiceLineId !== null || c.invoiceLineNumber !== null || !guid(c.locationId)
+    : c.invoiceLineId !== null || c.invoiceLineNumber !== null || (firstLine ? c.locationId !== null : !guid(c.locationId))
       || !firstPurchase && c.componentKey !== `product-location:${c.productId.toLowerCase()}:${(c.locationId as string).toLowerCase()}`) return null
   // Validate the server's lossless display shape; never calculate or round an amount in the browser.
   if (!canonicalDecimal(body.exactTlAmount)

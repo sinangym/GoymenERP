@@ -163,8 +163,29 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
         Assert.Equal(3, await run.Count("accounting.InventoryCostProposals"));
     }
 
+    [SqlServerFact]
+    public async Task A_first_purchase_line_aggregate_replays_one_component_and_posts_one_owner_rounded_total_without_a_single_location()
+    {
+        await using var run = await Run.Start(); var period = await run.Period();
+        // The actual Inventory/adapter is tested by its owner; this source fixture only supplies its recorded line total.
+        Assert.True(AccountingInventoryCostRoundingV1Rules.TryRound(new("1", "100"), Currency, 2, out var amount, out var rounding));
+        var reader = new RoundedCostReader(run.Source.Facts, AccountingInventoryCostAmountsV1.FromDecimal(amount), purchase: true,
+            recorded: new(Currency, MutableCostProfiles.ProfileId, 1, 2, rounding!), aggregate: true);
+        await using var scope = run.Open(); var store = Costs(scope, reader);
+        await store.AcceptAsync(reader.Envelope); await store.AcceptAsync(reader.Envelope);
+        var source = Assert.Single(await store.ListAsync(AccountingInventoryCostKindV1.PurchaseInvoiceDifference));
+        Assert.Equal(AccountingInventoryCostTraceV1.PurchaseFirstLineComponent(run.Source.Facts.InvoiceLineId), source.Component.ComponentKey);
+        Assert.Null(source.Component.LocationId); Assert.Null(source.Component.InvoiceLineId);
+        Assert.Equal(1, await run.Count("accounting.InventoryCostSources")); Assert.Equal(1, await run.Count("accounting.InventoryCostProposals"));
+        await store.PrepareAsync(source.ProposalId, source.Kind, CostPreparation(period), Maker, Fence, Metadata(Maker));
+        var approved = await store.ApproveAsync(source.ProposalId, source.Kind, 2, Checker, Fence, Metadata(Checker));
+        Assert.Equal("0.01", approved.Preparation!.SignedAmount); Assert.Equal(1, await run.Count("accounting.Journals"));
+        var lines = await scope.Db.JournalLines.AsNoTracking().OrderBy(x => x.LineNumber).ToArrayAsync();
+        Assert.Equal(0.01m, lines[0].Debit); Assert.Equal(0.01m, lines[1].Credit);
+    }
+
     private sealed class RoundedCostReader(FinalizedInvoiceLineSourceV1 facts, AccountingInventoryCostRatioV1 amount,
-        bool purchase = false, AccountingInventoryCostRecordedRoundingV1? recorded = null) : IAccountingInventoryCostSourceReaderV1
+        bool purchase = false, AccountingInventoryCostRecordedRoundingV1? recorded = null, bool aggregate = false) : IAccountingInventoryCostSourceReaderV1
     {
         private readonly CostReader inner = new(facts);
         private readonly Guid location = Guid.NewGuid();
@@ -175,8 +196,9 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
         {
             var source = await inner.ReadAsync(envelope, cancellationToken);
             var component = source.Components[0] with { SignedTlAmount = amount };
-            if (purchase) component = component with { InvoiceLineId = null, InvoiceLineNumber = null, LocationId = location,
-                ComponentKey = recorded is null ? AccountingInventoryCostTraceV1.PurchaseComponent(component.ProductId, location)
+            if (purchase) component = component with { InvoiceLineId = null, InvoiceLineNumber = null, LocationId = aggregate ? null : location,
+                ComponentKey = aggregate ? AccountingInventoryCostTraceV1.PurchaseFirstLineComponent(facts.InvoiceLineId)
+                    : recorded is null ? AccountingInventoryCostTraceV1.PurchaseComponent(component.ProductId, location)
                     : AccountingInventoryCostTraceV1.PurchaseFirstComponent(acceptance, facts.InvoiceLineId), RecordedRounding = recorded };
             return source with { Kind = purchase ? AccountingInventoryCostKindV1.PurchaseInvoiceDifference : source.Kind, Components = [component] };
         }

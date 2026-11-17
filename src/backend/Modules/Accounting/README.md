@@ -590,8 +590,10 @@ proof and the current profile. General manual-journal scale rules are unchanged;
 journal nor a physical stock effect. A nonzero exact amount rounded to zero still requires a different approver;
 `RoundedNoCost` retains the approved proof without fabricating a zero journal.
 
-First purchase recognition is keyed by `purchase-first/{acceptanceId}/{invoiceLineId}`, separate from later
-product/location differences. Inventory has already fixed the stock remainder from its rounded consumed amount,
+First purchase recognition is keyed by `purchase-first-line/{invoiceLineId}`, separate from later product/location
+differences. It aggregates all actual receipt/root/location proofs for the invoice line; `LocationId` is null, not
+an invented representative position. The older `purchase-first/{acceptanceId}/{invoiceLineId}` evidence remains
+readable, but it cannot coexist with a line aggregate for the same source line. Inventory has already fixed the stock remainder from its rounded consumed amount,
 so Accounting keeps that amount and its optional `RecordedRounding` proof exactly. The historical source profile
 and the selected open-period journal profile are separate evidence. A different profile identity/version is
 allowed when the same currency amount fits the current journal scale exactly; no second rounding is performed.

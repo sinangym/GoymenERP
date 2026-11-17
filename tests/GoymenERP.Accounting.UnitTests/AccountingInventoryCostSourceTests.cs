@@ -73,6 +73,31 @@ public sealed class AccountingInventoryCostSourceTests
     }
 
     [Fact]
+    public void First_cost_uses_one_invoice_line_component_without_a_fabricated_location_or_duplicate_legacy_receipt()
+    {
+        var (envelope, source) = Purchase(); var currency = Guid.NewGuid(); var line = Guid.NewGuid();
+        var exact = AccountingInventoryCostAmountsV1.Add(new("1", "200"), new("1", "200"));
+        Assert.True(AccountingInventoryCostRoundingV1Rules.TryRound(exact, currency, 2, out var amount, out var rounding));
+        Assert.Equal(0.01m, amount);
+        var aggregate = source.Components[0] with { ComponentKey = AccountingInventoryCostTraceV1.PurchaseFirstLineComponent(line),
+            LocationId = null, SignedTlAmount = AccountingInventoryCostAmountsV1.FromDecimal(amount),
+            RecordedRounding = new(currency, Guid.NewGuid(), 1, 2, rounding!) };
+        AccountingInventoryCostSourceValidationV1.Require(envelope, source with { Components = [aggregate] }, source.CompanyId);
+        Assert.Throws<OutboxPermanentFailureException>(() => AccountingInventoryCostSourceValidationV1.Require(envelope,
+            source with { Components = [aggregate with { LocationId = Guid.NewGuid() }] }, source.CompanyId));
+        Assert.Throws<OutboxPermanentFailureException>(() => AccountingInventoryCostSourceValidationV1.Require(envelope,
+            source with { Components = [aggregate with { ComponentKey = aggregate.ComponentKey.ToUpperInvariant() }] }, source.CompanyId));
+        var legacy = aggregate with { ComponentKey = AccountingInventoryCostTraceV1.PurchaseFirstComponent(Guid.NewGuid(), line),
+            LocationId = source.Components[0].LocationId };
+        Assert.Throws<OutboxPermanentFailureException>(() => AccountingInventoryCostSourceValidationV1.Require(envelope,
+            source with { Components = [aggregate, legacy] }, source.CompanyId));
+        Assert.Throws<OutboxPermanentFailureException>(() => AccountingInventoryCostSourceValidationV1.Require(envelope,
+            source with { Components = [legacy, aggregate] }, source.CompanyId));
+        AccountingInventoryCostSourceValidationV1.Require(envelope, source with { Components = [legacy] }, source.CompanyId);
+        Assert.Throws<ArgumentException>(() => AccountingInventoryCostTraceV1.PurchaseFirstLineComponent(Guid.Empty));
+    }
+
+    [Fact]
     public void A_changed_owner_proof_or_duplicate_component_is_refused_instead_of_hiding_a_second_cost_effect()
     {
         var (envelope, source) = Purchase();

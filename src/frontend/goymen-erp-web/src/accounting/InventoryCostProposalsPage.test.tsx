@@ -88,6 +88,10 @@ describe('inventory cost human approval flow', () => {
       recordedRounding: { currencyId: source, moneyProfileId: source, moneyProfileVersion: 1, moneyScale: 2, rounding } },
       preparation: { ...base.preparation, signedAmount: '0', rounding } })
     expect(decodeInventoryCost(first, state.company, 2)).not.toBeNull()
+    const aggregate = { ...first, component: { ...first.component, componentKey: `purchase-first-line/${counter}`, locationId: null } }
+    expect(decodeInventoryCost(aggregate, state.company, 2)).not.toBeNull()
+    expect(decodeInventoryCost({ ...aggregate, component: { ...aggregate.component, locationId: counter } }, state.company, 2)).toBeNull()
+    expect(decodeInventoryCost({ ...aggregate, component: { ...aggregate.component, componentKey: `purchase-first-line/${counter.toUpperCase()}` } }, state.company, 2)).toBeNull()
     expect(decodeInventoryCost({ ...first, preparation: { ...base.preparation, signedAmount: '0', rounding,
       moneyProfileId: counter, moneyProfileVersion: 2, moneyScale: 3 } }, state.company, 2)).not.toBeNull()
     expect(decodeInventoryCost({ ...first, preparation: { ...base.preparation, signedAmount: '0', rounding, currencyId: counter } }, state.company, 2)).toBeNull()

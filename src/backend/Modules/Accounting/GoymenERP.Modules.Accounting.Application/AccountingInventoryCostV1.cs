@@ -12,8 +12,9 @@ public sealed record AccountingInventoryCostRatioV1(string Numerator, string Den
 /// <summary>
 /// Sales uses one component per invoice line; its evidence names the whole claimed dispatch line and every actual
 /// Inventory movement line selected by the Logistics owner proof. Commercial invoice kg is not a physical-cost ratio.
-/// Purchasing uses one component per Product/location residual; first recognition instead uses acceptance/invoice-line
-/// identity and its already recorded rounding profile. First recognition and later differences are never netted away.
+/// Purchasing uses one component per Product/location residual; first recognition instead aggregates every receipt
+/// of one actual invoice line and uses its recorded rounding profile. The receipt-key shape remains readable for legacy evidence.
+/// First recognition and later differences are never netted away.
 /// SourceProofJson contains immutable owner facts, not a request from the preparer's browser.
 /// </summary>
 public sealed record AccountingInventoryCostComponentV1(string ComponentKey, Guid ProductId,
@@ -123,6 +124,18 @@ public static class AccountingInventoryCostTraceV1
     public static string PurchaseFirstComponent(Guid acceptanceId, Guid invoiceLineId) => acceptanceId != Guid.Empty && invoiceLineId != Guid.Empty
         ? "purchase-first/" + acceptanceId.ToString("D") + "/" + invoiceLineId.ToString("D")
         : throw new ArgumentException("A real acceptance and source invoice line are required.");
+
+    public static string PurchaseFirstLineComponent(Guid invoiceLineId) => invoiceLineId != Guid.Empty
+        ? "purchase-first-line/" + invoiceLineId.ToString("D")
+        : throw new ArgumentException("A real source invoice line is required.");
+
+    public static bool IsPurchaseFirstLineComponent(string? value)
+    {
+        var parts = value?.Split('/');
+        return parts is { Length: 2 } && parts[0] == "purchase-first-line"
+            && Guid.TryParseExact(parts[1], "D", out var line) && line != Guid.Empty
+            && value == PurchaseFirstLineComponent(line);
+    }
 
     public static bool IsPurchaseFirstComponent(string? value)
     {

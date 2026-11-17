@@ -89,6 +89,8 @@ public static class AccountingInventoryCostSourceValidationV1
             throw Invalid("inventory_cost_source_invalid");
         var identities = new HashSet<string>(StringComparer.Ordinal);
         var lineNumbers = new HashSet<int>();
+        var firstAggregateLines = new HashSet<Guid>();
+        var firstLegacyLines = new HashSet<Guid>();
         foreach (var component in source.Components)
         {
             if (component is null || component.ProductId == Guid.Empty || !identities.Add(component.ComponentKey)
@@ -128,11 +130,21 @@ public static class AccountingInventoryCostSourceValidationV1
             }
             else
             {
-                var first = AccountingInventoryCostTraceV1.IsPurchaseFirstComponent(component.ComponentKey);
-                if (component.InvoiceLineId is not null || component.InvoiceLineNumber is not null || component.LocationId is null
-                    || component.LocationId == Guid.Empty || !first && (amount == 0
-                        || component.ComponentKey != AccountingInventoryCostTraceV1.PurchaseComponent(component.ProductId, component.LocationId.Value)))
+                var aggregate = AccountingInventoryCostTraceV1.IsPurchaseFirstLineComponent(component.ComponentKey);
+                var first = aggregate || AccountingInventoryCostTraceV1.IsPurchaseFirstComponent(component.ComponentKey);
+                if (component.InvoiceLineId is not null || component.InvoiceLineNumber is not null
+                    || (aggregate ? component.LocationId is not null : component.LocationId is null || component.LocationId == Guid.Empty)
+                    || !first && (amount == 0
+                        || component.ComponentKey != AccountingInventoryCostTraceV1.PurchaseComponent(component.ProductId, component.LocationId!.Value)))
                     throw Invalid("inventory_cost_position_invalid");
+                if (first)
+                {
+                    var line = Guid.Parse(component.ComponentKey.Split('/')[aggregate ? 1 : 2]);
+                    // A line aggregate and its old individual receipts must never both create economic components.
+                    if (aggregate ? firstLegacyLines.Contains(line) : firstAggregateLines.Contains(line))
+                        throw Invalid("inventory_cost_component_invalid");
+                    (aggregate ? firstAggregateLines : firstLegacyLines).Add(line);
+                }
                 if (component.SalesPhysicalClaims is not null || component.AlreadyPostedComponents is not null)
                     throw Invalid("inventory_cost_attribution_invalid");
                 if (first ? component.RecordedRounding is not { } recorded || amount < 0
