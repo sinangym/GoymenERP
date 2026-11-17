@@ -2,9 +2,11 @@ import { MANUFACTURING_BASE, devHeaders } from './api'
 import type { ViewOutcome } from '../shell/uiState'
 
 export interface CostGenerationOutput {
-  readonly outputId: string; readonly labelId: string; readonly netKg: string; readonly remainingKg: string; readonly consumedKg: string
+  readonly outputId: string; readonly labelId: string; readonly netKg: string; readonly remainingKg: string | null; readonly consumedKg: string | null
+  readonly remainingKgRatio?: CostQuantityRatio; readonly consumedKgRatio?: CostQuantityRatio
   readonly originalTlAmount: string | null; readonly remainingTlValue: string | null; readonly consumedTlDifference: string | null; readonly usdUnitCostPerKg: string | null
 }
+export interface CostQuantityRatio { readonly numerator: string; readonly denominator: string }
 export interface CostGeneration {
   readonly companyId: string; readonly orderId: string; readonly generationId: string; readonly closedOrderVersion: number
   readonly revision: number; readonly inventoryVersion: string; readonly state: 'Pending' | 'Unreadable' | 'Recognized' | 'Reversed'
@@ -20,6 +22,23 @@ const text = (value: unknown): value is string => typeof value === 'string' && v
 const decimal = (value: unknown) => value === null || typeof value === 'string' && number.test(value)
 const signedDecimal = (value: unknown) => value === null || typeof value === 'string' && /^-?(0|[1-9]\d*)(\.\d+)?$/.test(value)
 const id = (value: unknown): value is string => typeof value === 'string' && guid.test(value)
+const ratio = (raw: unknown): raw is CostQuantityRatio => {
+  if (!object(raw) || Object.keys(raw).sort().join(',') !== 'denominator,numerator'
+    || typeof raw.numerator !== 'string' || typeof raw.denominator !== 'string'
+    || raw.numerator.length > 1024 || raw.denominator.length > 1024 || !/^(0|[1-9]\d*)$/.test(raw.numerator) || !/^[1-9]\d*$/.test(raw.denominator)) return false
+  let a = BigInt(raw.numerator), b = BigInt(raw.denominator)
+  while (b !== 0n) { const rest = a % b; a = b; b = rest }
+  return a === 1n
+}
+const quantity = (scalar: unknown, exact: unknown): boolean => {
+  if (exact === undefined) return typeof scalar === 'string' && number.test(scalar)
+  if (!ratio(exact) || scalar !== null && (typeof scalar !== 'string' || !number.test(scalar))) return false
+  if (scalar === null) return true
+  const [whole, fraction = ''] = (scalar as string).split('.')
+  // Duplicate wire evidence must agree exactly. No quantity, cost or rounding policy is computed here.
+  return BigInt(whole + fraction) * BigInt(exact.denominator) === BigInt(exact.numerator) * 10n ** BigInt(fraction.length)
+}
+export const costQuantityText = (scalar: string | null, exact?: CostQuantityRatio) => scalar ?? (exact === undefined ? '—' : `${exact.numerator} / ${exact.denominator}`)
 export function decodeCostGeneration(value: unknown, company: string, order: string): CostGeneration | null {
   if (!object(value) || value.companyId !== company || value.orderId !== order || !id(value.generationId)
     || !Number.isSafeInteger(value.closedOrderVersion) || (value.closedOrderVersion as number) < 2
@@ -32,8 +51,8 @@ export function decodeCostGeneration(value: unknown, company: string, order: str
   const ids = new Set<string>()
   for (const row of value.outputs) {
     if (!object(row) || !id(row.outputId) || !id(row.labelId) || ids.has(row.outputId)
-      || typeof row.netKg !== 'string' || !number.test(row.netKg) || typeof row.remainingKg !== 'string' || !number.test(row.remainingKg)
-      || typeof row.consumedKg !== 'string' || !number.test(row.consumedKg)
+      || typeof row.netKg !== 'string' || !number.test(row.netKg) || !quantity(row.remainingKg, row.remainingKgRatio)
+      || !quantity(row.consumedKg, row.consumedKgRatio)
       || ![row.originalTlAmount, row.usdUnitCostPerKg].every(decimal) || !signedDecimal(row.remainingTlValue) || !signedDecimal(row.consumedTlDifference)
       || ['Pending', 'Unreadable'].includes(String(value.state)) && [row.originalTlAmount, row.remainingTlValue, row.consumedTlDifference, row.usdUnitCostPerKg].some(v => v !== null)) return null
     ids.add(String(row.outputId))

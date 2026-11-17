@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decodeCostAttempt, decodeCostGeneration, decodeCostHistory } from './costGenerationApi'
+import { costQuantityText, decodeCostAttempt, decodeCostGeneration, decodeCostHistory } from './costGenerationApi'
 const company = 'a0000000-0000-0000-0000-00000000000a'; const order = 'b0000000-0000-0000-0000-00000000000b'
 const generation = 'c0000000-0000-0000-0000-00000000000c'
 const row = () => ({ companyId: company, orderId: order, generationId: generation, closedOrderVersion: 4, revision: 1,
@@ -8,6 +8,15 @@ const row = () => ({ companyId: company, orderId: order, generationId: generatio
   outputs: [{ outputId: generation, labelId: generation, netKg: '100', remainingKg: '70', consumedKg: '30', originalTlAmount: null,
     remainingTlValue: null, consumedTlDifference: null, usdUnitCostPerKg: null }] })
 describe('manufacturing immutable cost generations', () => {
+  it('keeps nonfinite physical cohort quantities as exact fractions without synthesizing a decimal', () => {
+    const value = row(), output = { ...value.outputs[0], remainingKg: null, consumedKg: null,
+      remainingKgRatio: { numerator: '4', denominator: '3' }, consumedKgRatio: { numerator: '296', denominator: '3' } }
+    expect(decodeCostGeneration({ ...value, outputs: [output] }, company, order)).not.toBeNull()
+    expect(costQuantityText(null, output.remainingKgRatio)).toBe('4 / 3')
+    expect(decodeCostGeneration({ ...value, outputs: [{ ...output, remainingKg: '1.3333' }] }, company, order)).toBeNull()
+    expect(decodeCostGeneration({ ...value, outputs: [{ ...output, remainingKgRatio: { numerator: '8', denominator: '6' } }] }, company, order)).toBeNull()
+    expect(decodeCostGeneration({ ...value, outputs: [{ ...output, remainingKgRatio: undefined }] }, company, order)).toBeNull()
+  })
   it('preserves exact server decimal text and rejects fictional money on an unreadable result', () => {
     const value = row(); expect(decodeCostGeneration(value, company, order)).not.toBeNull()
     expect(decodeCostGeneration({ ...value, outputs: [{ ...value.outputs[0], remainingTlValue: '0' }] }, company, order)).toBeNull()

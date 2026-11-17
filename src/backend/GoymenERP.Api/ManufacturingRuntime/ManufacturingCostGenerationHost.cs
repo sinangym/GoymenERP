@@ -239,14 +239,44 @@ internal sealed class ManufacturingCostGenerationHost(ManufacturingDbContext db,
             || value.Outputs.Select(item => item.OutputId).Distinct().Count() != outputs.Count
             || value.Outputs.Any(item => !outputs.Any(expected => expected.OutputId == item.OutputId && expected.ReceiptMovementId == item.ReceiptMovementId
                 && expected.LabelId == item.LabelId && expected.NetQuantityKg == item.NetQuantityKg)
-                || item.RemainingQuantityKg < 0 || item.ConsumedQuantityKg < 0 || item.RemainingQuantityKg + item.ConsumedQuantityKg != item.NetQuantityKg
-                || item.Positions is null || item.Positions.Any(position => position is null || position.LocationId == Guid.Empty || position.QuantityKg < 0)
+                || !ExactOutputEvidence(item)
                 || state == ManufacturingCostGenerationStateV1.Recognized && !outputs.Any(expected => expected.OutputId == item.OutputId
                     && expected.TlUnitCostPerKg == item.TlUnitCostPerKg && expected.UsdUnitCostPerKg == item.UsdUnitCostPerKg && expected.OriginalTlAmount == item.OriginalTlAmount)
                 || state is ManufacturingCostGenerationStateV1.Pending or ManufacturingCostGenerationStateV1.Unreadable
                     && (item.TlUnitCostPerKg is not null || item.RemainingTlValue is not null || item.ConsumedTlDifference is not null
-                        || item.UsdUnitCostPerKg is not null || item.OriginalTlAmount is not null || item.Positions.Count != 0)))
+                        || item.UsdUnitCostPerKg is not null || item.OriginalTlAmount is not null || item.Positions.Count != 0
+                        || item.PoolEffects is { Count: > 0 })))
             throw Unavailable();
+    }
+
+    private static bool ExactOutputEvidence(InventoryManufacturingCostGenerationOutputResultV1 output)
+    {
+        try
+        {
+            var remaining = InventoryExactCostRatioV1.Resolve(output.RemainingQuantityKg, output.RemainingQuantityKgRatio);
+            var consumed = InventoryExactCostRatioV1.Resolve(output.ConsumedQuantityKg, output.ConsumedQuantityKgRatio);
+            if (remaining.Sign < 0 || consumed.Sign < 0 || remaining.Add(consumed).CompareTo(
+                    GoymenERP.Modules.Inventory.Domain.Costing.ExactCostRatio.Of(output.NetQuantityKg)) != 0 || output.Positions is null)
+                return false;
+            foreach (var position in output.Positions)
+            {
+                if (position is null || position.LocationId == Guid.Empty
+                    || InventoryExactCostRatioV1.Resolve(position.QuantityKg, position.QuantityKgRatio).Sign < 0) return false;
+                _ = InventoryExactCostRatioV1.Resolve(position.TlValue, position.TlValueRatio);
+            }
+            foreach (var pool in output.PoolEffects ?? [])
+            {
+                if (pool is null || pool.CurrencyId == Guid.Empty || pool.LocationId == Guid.Empty || pool.ProductId == Guid.Empty) return false;
+                _ = InventoryExactCostRatioV1.Resolve(pool.QuantityKg, pool.QuantityKgRatio);
+                _ = InventoryExactCostRatioV1.Resolve(pool.BeforeQuantityKg, pool.BeforeQuantityKgRatio);
+                _ = InventoryExactCostRatioV1.Resolve(pool.AfterQuantityKg, pool.AfterQuantityKgRatio);
+                _ = InventoryExactCostRatioV1.Resolve(pool.AuthoritativeValue, pool.AuthoritativeValueRatio);
+                _ = InventoryExactCostRatioV1.Resolve(pool.RecordedPoolValueEffect, pool.RecordedPoolValueEffectRatio);
+                _ = InventoryExactCostRatioV1.Resolve(pool.AverageRoundingDifference, pool.AverageRoundingDifferenceRatio);
+            }
+            return true;
+        }
+        catch (InvalidOperationException) { return false; }
     }
 
     private static void RequireMatching(ManufacturingCostGenerationV1 previous, InventoryManufacturingCostGenerationResultV1? active,

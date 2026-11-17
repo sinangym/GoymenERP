@@ -1,13 +1,18 @@
 using GoymenERP.BuildingBlocks.Security;
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using GoymenERP.Modules.Inventory.Application;
 
 namespace GoymenERP.Modules.Manufacturing.Application;
 
 public sealed record ManufacturingCostGenerationHistoryV1(Guid OrderId, long OrderVersion,
     IReadOnlyList<ManufacturingCostGenerationViewV1> Generations);
-public sealed record ManufacturingCostGenerationOutputViewV1(Guid OutputId, Guid LabelId, string NetKg, string RemainingKg,
-    string ConsumedKg, string? OriginalTlAmount, string? RemainingTlValue, string? ConsumedTlDifference, string? UsdUnitCostPerKg);
+public sealed record ManufacturingCostQuantityRatioV1(string Numerator, string Denominator);
+public sealed record ManufacturingCostGenerationOutputViewV1(Guid OutputId, Guid LabelId, string NetKg, string? RemainingKg,
+    string? ConsumedKg, string? OriginalTlAmount, string? RemainingTlValue, string? ConsumedTlDifference, string? UsdUnitCostPerKg,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ManufacturingCostQuantityRatioV1? RemainingKgRatio = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ManufacturingCostQuantityRatioV1? ConsumedKgRatio = null);
 public sealed record ManufacturingCostGenerationViewV1(Guid CompanyId, Guid OrderId, Guid GenerationId, long ClosedOrderVersion,
     long Revision, string InventoryVersion, string State, string InputFingerprint, string CalculatorVersion,
     DateTimeOffset RecordedAtUtc, string Reason, string CorrelationId, Guid? CostDifferenceEventId,
@@ -62,12 +67,22 @@ public sealed partial class ManufacturingCommandService
         using var document = JsonDocument.Parse(row.ResultJson); var root = document.RootElement;
         var outputs = root.GetProperty("outputs").EnumerateArray().Select(output => new ManufacturingCostGenerationOutputViewV1(
             output.GetProperty("outputId").GetGuid(), output.GetProperty("labelId").GetGuid(), Number(output, "netQuantityKg")!,
-            Number(output, "remainingQuantityKg")!, Number(output, "consumedQuantityKg")!, Number(output, "originalTlAmount"),
-            Number(output, "remainingTlValue"), Number(output, "consumedTlDifference"), Number(output, "usdUnitCostPerKg"))).ToArray();
+            Number(output, "remainingQuantityKg"), Number(output, "consumedQuantityKg"), Number(output, "originalTlAmount"),
+            Number(output, "remainingTlValue"), Number(output, "consumedTlDifference"), Number(output, "usdUnitCostPerKg"),
+            Ratio(output, "remainingQuantityKg", "remainingQuantityKgRatio"), Ratio(output, "consumedQuantityKg", "consumedQuantityKgRatio"))).ToArray();
         var effectId = root.TryGetProperty("costDifferenceEventId", out var effect) && effect.ValueKind == JsonValueKind.String ? effect.GetGuid() : (Guid?)null;
         return new(row.CompanyId, row.OrderId, row.GenerationId, row.ClosedOrderVersion, row.Revision, row.InventoryVersion,
             row.State.ToString(), row.InputFingerprint, row.CalculatorVersion, row.RecordedAtUtc, row.Reason, row.CorrelationId, effectId, outputs);
         static string? Number(JsonElement value, string name) => value.TryGetProperty(name, out var number) && number.ValueKind != JsonValueKind.Null
             ? number.GetDecimal().ToString("0.############################", CultureInfo.InvariantCulture) : null;
+        static ManufacturingCostQuantityRatioV1? Ratio(JsonElement value, string scalarName, string ratioName)
+        {
+            var scalar = value.GetProperty(scalarName).ValueKind == JsonValueKind.Null ? (decimal?)null : value.GetProperty(scalarName).GetDecimal();
+            var ratio = value.TryGetProperty(ratioName, out var field) && field.ValueKind != JsonValueKind.Null
+                ? JsonSerializer.Deserialize<InventoryExactCostRatioV1>(field.GetRawText(), new JsonSerializerOptions(JsonSerializerDefaults.Web)) : null;
+            var exact = InventoryExactCostRatioV1.Resolve(scalar, ratio);
+            if (exact.Sign < 0) throw new InvalidOperationException("Maliyet neslinin miktar kanıtı geçersiz.");
+            return ratio is null ? null : new(ratio.Numerator, ratio.Denominator);
+        }
     }
 }

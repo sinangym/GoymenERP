@@ -6,6 +6,24 @@ namespace GoymenERP.Api.IntegrationTests;
 
 public sealed class ManufacturingCostGenerationHostContractTests
 {
+    [Fact]
+    public void Nonfinite_owner_quantities_keep_exact_mass_proof_and_reject_rounded_or_contradictory_scalars()
+    {
+        var company = Guid.NewGuid(); var order = Guid.NewGuid(); var generation = Guid.NewGuid();
+        var output = new InventoryManufacturingCostGenerationOutputResultV1(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
+            3m, null, null, null, null, null, null, [], null, null, new("4", "3"), new("5", "3"));
+        var result = new InventoryManufacturingCostGenerationResultV1(company, order, generation, "1", "4",
+            InventoryManufacturingCostGenerationStateV1.Pending, new string('a', 64), [output], null, false, "synthetic");
+        ManufacturingCostGenerationHost.RequireResult(result, company, order, generation, 4, ManufacturingCostGenerationStateV1.Pending,
+            result.InputFingerprint, [output]);
+        foreach (var invalid in new[] {
+            output with { RemainingQuantityKg = 1.3333m },
+            output with { RemainingQuantityKgRatio = null },
+            output with { ConsumedQuantityKgRatio = new("4", "3") },
+            output with { RemainingQuantityKgRatio = new("8", "6") },
+        }) Assert.Throws<ManufacturingInventoryRealizationPortException>(() => ManufacturingCostGenerationHost.RequireResult(
+            result with { Outputs = [invalid] }, company, order, generation, 4, ManufacturingCostGenerationStateV1.Pending, result.InputFingerprint, [output]));
+    }
     [Theory]
     [InlineData(503, "inventory_manufacturing_cost_consumption_source_unreadable", true)]
     [InlineData(409, "inventory_manufacturing_cost_consumption_source_unreadable", false)]

@@ -4,7 +4,7 @@ import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { Button } from '../ui/Button'
-import { clearCostAttempt, fetchCostGenerations, persistCostAttempt, readCostAttempt, recognizeCost, type CostGeneration, type CostGenerationHistory, type CostRecognitionAttempt } from './costGenerationApi'
+import { clearCostAttempt, costQuantityText, fetchCostGenerations, persistCostAttempt, readCostAttempt, recognizeCost, type CostGeneration, type CostGenerationHistory, type CostRecognitionAttempt } from './costGenerationApi'
 import { COST_GENERATION_TEXT as T } from './costGenerationText'
 import { newCommandId } from './commandId'
 import styles from './OrderDetailPage.module.css'
@@ -54,6 +54,6 @@ function Generation({ row }: { readonly row: CostGeneration }) {
   const states = { Pending: T.pending, Unreadable: T.unreadable, Recognized: T.recognized, Reversed: T.reversed }
   return <><p>{T.close}: {row.closedOrderVersion} · {T.revision}: {row.revision} · {states[row.state]}</p><p>{row.recordedAtUtc} · {row.reason}</p>
     <div className={styles.tableWrap}><table className={styles.table}><caption>{T.outputs}</caption><thead><tr>{[T.label, T.net, T.remaining, T.consumed, T.originalTl, T.remainingTl, T.consumedTl, T.usd].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
-      <tbody>{row.outputs.map(output => <tr key={output.outputId}><th scope="row">{output.labelId}</th><td>{output.netKg}</td><td>{output.remainingKg}</td><td>{output.consumedKg}</td>
+      <tbody>{row.outputs.map(output => <tr key={output.outputId}><th scope="row">{output.labelId}</th><td>{output.netKg}</td><td>{costQuantityText(output.remainingKg, output.remainingKgRatio)}</td><td>{costQuantityText(output.consumedKg, output.consumedKgRatio)}</td>
         <td>{output.originalTlAmount ?? T.missing}</td><td>{output.remainingTlValue ?? T.missing}</td><td>{output.consumedTlDifference ?? T.missing}</td><td>{output.usdUnitCostPerKg ?? T.missing}</td></tr>)}</tbody></table></div></>
 }
