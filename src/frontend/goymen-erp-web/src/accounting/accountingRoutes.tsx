@@ -26,6 +26,7 @@ import { InvoiceLineCogsCorrectionPage } from './InvoiceLineCogsCorrectionPage'
 import { JournalReversalApprovalPage } from './JournalReversalPages'
 import { SourceVouchersPage } from './SourceVouchersPage'
 import { CogsMappingPage } from './CogsMappingPage'
+import { InventoryCostProposalsPage } from './InventoryCostProposalsPage'
 import {
   NormalJournalDraftCreatePage,
   NormalJournalDraftPage,
@@ -43,6 +44,11 @@ function gate(capability: AccountingCapabilityId, children: ReactNode) {
 }
 
 export const accountingRoutes: RouteObject[] = [
+  { path: ACCOUNTING_ROUTE.invoicedShipmentPrepare.slice(1), element: gate(ACCOUNTING_CAPABILITY.invoicedShipmentPrepare, <InventoryCostWorkspace kind={1} />) },
+  { path: ACCOUNTING_ROUTE.invoicedShipmentApprove.slice(1), element: gate(ACCOUNTING_CAPABILITY.invoicedShipmentApprove, <InventoryCostWorkspace kind={1} />) },
+  { path: ACCOUNTING_ROUTE.invoicedShipmentReverse.slice(1), element: gate(ACCOUNTING_CAPABILITY.invoicedShipmentReverse, <InventoryCostWorkspace kind={1} />) },
+  { path: ACCOUNTING_ROUTE.purchaseCostPrepare.slice(1), element: gate(ACCOUNTING_CAPABILITY.purchaseCostPrepare, <InventoryCostWorkspace kind={2} />) },
+  { path: ACCOUNTING_ROUTE.purchaseCostApprove.slice(1), element: gate(ACCOUNTING_CAPABILITY.purchaseCostApprove, <InventoryCostWorkspace kind={2} />) },
   { path: ACCOUNTING_ROUTE.postingMappings.slice(1), element: gate(ACCOUNTING_CAPABILITY.postingMappingsRead, <PostingMappingWorkspace />) },
   { path: ACCOUNTING_ROUTE.sourceVouchers.slice(1), element: gate(ACCOUNTING_CAPABILITY.sourceVouchers, <SourceVoucherWorkspace />) },
   { path: ACCOUNTING_ROUTE.invoiceLineCogsPrepare.slice(1), element: gate(ACCOUNTING_CAPABILITY.invoiceLineCogsPrepare, <InvoiceLineCogsCorrectionPage mode="prepare" />) },
@@ -95,4 +101,12 @@ function PostingMappingWorkspace() {
   const shell = useShellState()
   return <CogsMappingPage canPrepare={hasCapability(shell, ACCOUNTING_CAPABILITY.postingMappingsPrepare)}
     canActivate={hasCapability(shell, ACCOUNTING_CAPABILITY.postingMappingsActivate)} />
+}
+
+function InventoryCostWorkspace({ kind }: { readonly kind: 1 | 2 }) {
+  const shell = useShellState()
+  return <InventoryCostProposalsPage kind={kind}
+    canPrepare={hasCapability(shell, kind === 1 ? ACCOUNTING_CAPABILITY.invoicedShipmentPrepare : ACCOUNTING_CAPABILITY.purchaseCostPrepare)}
+    canApprove={hasCapability(shell, kind === 1 ? ACCOUNTING_CAPABILITY.invoicedShipmentApprove : ACCOUNTING_CAPABILITY.purchaseCostApprove)}
+    canProposeReversal={hasCapability(shell, ACCOUNTING_CAPABILITY.invoicedShipmentReverse)} />
 }

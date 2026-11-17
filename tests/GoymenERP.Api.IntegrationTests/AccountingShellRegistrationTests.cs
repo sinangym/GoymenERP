@@ -62,7 +62,7 @@ public sealed class AccountingShellRegistrationTests
             .ToArray();
         // Published owner routes and existing staged source/cost declarations, plus the three
         // staged mapping read/prepare/activate actions. The exact published set below is unchanged.
-        Assert.Equal(23, accounting.Length);
+        Assert.Equal(28, accounting.Length);
         // Named rather than counted, and asserted as a SET: "all staged" was true only until the flip, while
         // "these six and no others" stays true and fails loudly if a seventh is ever published without an
         // acceptance to stand on.

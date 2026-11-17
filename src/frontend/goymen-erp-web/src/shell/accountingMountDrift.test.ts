@@ -22,6 +22,11 @@ import { ACCOUNTING_CAPABILITY, ACCOUNTING_ROUTE, journalDetailPath } from '../a
 
 /** The lane's routed ids, paired with the route key that serves each. */
 const ROUTED = [
+  [CAPABILITY.accountingInvoicedShipmentPrepare, ACCOUNTING_CAPABILITY.invoicedShipmentPrepare, ACCOUNTING_ROUTE.invoicedShipmentPrepare],
+  [CAPABILITY.accountingInvoicedShipmentApprove, ACCOUNTING_CAPABILITY.invoicedShipmentApprove, ACCOUNTING_ROUTE.invoicedShipmentApprove],
+  [CAPABILITY.accountingInvoicedShipmentReverse, ACCOUNTING_CAPABILITY.invoicedShipmentReverse, ACCOUNTING_ROUTE.invoicedShipmentReverse],
+  [CAPABILITY.accountingPurchaseCostPrepare, ACCOUNTING_CAPABILITY.purchaseCostPrepare, ACCOUNTING_ROUTE.purchaseCostPrepare],
+  [CAPABILITY.accountingPurchaseCostApprove, ACCOUNTING_CAPABILITY.purchaseCostApprove, ACCOUNTING_ROUTE.purchaseCostApprove],
   [CAPABILITY.accountingPostingMappingsRead, ACCOUNTING_CAPABILITY.postingMappingsRead, ACCOUNTING_ROUTE.postingMappings],
   [CAPABILITY.accountingSourceVouchers, ACCOUNTING_CAPABILITY.sourceVouchers, ACCOUNTING_ROUTE.sourceVouchers],
   [CAPABILITY.accountingInvoiceLineCogsPrepare, ACCOUNTING_CAPABILITY.invoiceLineCogsPrepare, ACCOUNTING_ROUTE.invoiceLineCogsPrepare],
