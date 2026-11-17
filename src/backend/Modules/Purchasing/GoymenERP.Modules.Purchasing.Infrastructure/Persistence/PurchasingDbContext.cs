@@ -332,6 +332,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
             table.HasCheckConstraint("CK_PurchaseOrders_Approval", OrderApprovalCheck);
             // A2a-1 (TEK-01): the money snapshot is complete or absent.
             table.HasCheckConstraint("CK_PurchaseOrders_Money", OrderMoneyCheck);
+            table.HasCheckConstraint("CK_PurchaseOrders_DocumentNumber", OrderDocumentNumberCheck);
             // A2a-1c (ALS-D72): the unit-price scale only beside a money snapshot.
             table.HasCheckConstraint("CK_PurchaseOrders_UnitPriceScale", OrderUnitPriceScaleCheck);
         });
@@ -347,6 +348,8 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
         entity.Property(x => x.CancellationReason).HasMaxLength(4000);
         entity.Property(x => x.ApprovedBy).HasMaxLength(128);
         entity.Property(x => x.CurrencyCode).HasMaxLength(PurchaseOrderMoney.MaximumCurrencyCodeLength);
+        entity.Property(x => x.DocumentNumber).HasMaxLength(64).IsUnicode(false).UseCollation("Latin1_General_100_BIN2");
+        entity.HasIndex(x => new { x.CompanyId, x.DocumentNumber }).IsUnique().HasFilter("[DocumentNumber] IS NOT NULL");
         entity.HasIndex(x => new { x.CompanyId, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_PurchaseOrders_CompanyId_CreatedAtUtc_Id");
         entity.HasIndex(x => new { x.CompanyId, x.Status, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_PurchaseOrders_CompanyId_Status_CreatedAtUtc_Id");
         entity.HasIndex(x => new { x.CompanyId, x.SourceRequestId }).HasDatabaseName("IX_PurchaseOrders_CompanyId_SourceRequestId");
@@ -876,6 +879,10 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
 
             if (entry.State == EntityState.Modified)
             {
+                if (entry.Entity is PurchaseOrderRow && entry.Property(nameof(PurchaseOrderRow.DocumentNumberCancelledAtUtc)).IsModified
+                    && (entry.Property(nameof(PurchaseOrderRow.DocumentNumberCancelledAtUtc)).OriginalValue is not null
+                        || entry.Property(nameof(PurchaseOrderRow.DocumentNumberCancelledAtUtc)).CurrentValue is null))
+                    throw new InvalidOperationException("Belge numarası iptal geçmişi yalnız bir kez eklenir.");
                 string[] allowed = entry.Entity switch
                 {
                     PurchaseRequestRow =>
@@ -890,6 +897,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
                         nameof(PurchaseOrderRow.Status), nameof(PurchaseOrderRow.UpdatedAtUtc),
                         nameof(PurchaseOrderRow.ApprovedBy), nameof(PurchaseOrderRow.ApprovedAtUtc),
                         nameof(PurchaseOrderRow.CancelledBy), nameof(PurchaseOrderRow.CancelledAtUtc), nameof(PurchaseOrderRow.CancellationReason),
+                        nameof(PurchaseOrderRow.DocumentNumberCancelledAtUtc),
                     ],
                     PurchaseOrderLineRow =>
                     [

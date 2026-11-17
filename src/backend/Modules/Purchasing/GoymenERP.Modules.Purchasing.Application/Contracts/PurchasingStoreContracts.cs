@@ -164,7 +164,10 @@ public sealed record StoredPurchaseRequest(PurchaseRequest Request, DateOnly Eff
 
 /// <summary>A stored order, the same way, plus the supplier's Cari company account (the domain record names the party only).</summary>
 public sealed record StoredPurchaseOrder(PurchaseOrder Order, Guid CompanyAccountId, DateOnly EffectiveOn,
-    IReadOnlyDictionary<Guid, string> ProductVersionsByLineId);
+    IReadOnlyDictionary<Guid, string> ProductVersionsByLineId)
+{
+    public string? DocumentNumber { get; init; }
+}
 
 public sealed record PurchasingRequestStoreResult(StoredPurchaseRequest Request, PurchasingWriteOutcome Outcome, string OriginalCorrelationId);
 

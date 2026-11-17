@@ -4,6 +4,8 @@ using System.Text;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Domain.Orders;
@@ -24,7 +26,9 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 /// 5738113623 §1) is measured inside the approval's save, and the source request's sourcing version moves
 /// with it so two approvals against the same request collide on the request's row version.
 /// </summary>
-public sealed partial class PurchasingStore(PurchasingDbContext dbContext, ICompanyContext companyContext, IAuditEventCollector auditEvents, TimeProvider timeProvider)
+public sealed partial class PurchasingStore(PurchasingDbContext dbContext, ICompanyContext companyContext, IAuditEventCollector auditEvents, TimeProvider timeProvider,
+    ISettingsDocumentNumberSeriesV1? documentNumbers = null, ICurrentUser? numberUser = null,
+    IErpAuthorityRevalidationService? numberAuthority = null)
     : IPurchasingStore
 {
     private const string RequestEntityType = "Purchasing.PurchaseRequest";
@@ -290,6 +294,12 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             throw Refused(PurchasingStoreCodes.ConcurrentChange, "Bu sipariş kimliği şirketin başka bir siparişinde kullanılıyor.");
         }
 
+        var format = await NumberPolicyAsync(companyId, envelope, cancellationToken);
+        await using var numberTransaction = dbContext.Database.CurrentTransaction is null
+            ? await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken) : null;
+        var numberSql = dbContext.Database.CurrentTransaction?.GetDbTransaction()
+            ?? throw Refused(NumberOwnerUnavailable, "Belge numarası için açık işlem gerekli.");
+        var number = await ReserveNumberAsync(numberSql, companyId, order.Id, effectiveOn, format, envelope, cancellationToken);
         // A2a-5a (ALS-D3): the preparer the approval rule is checked against is the create envelope's actor (CreatedBy).
         order.StampPreparer(actorId);
         var now = timeProvider.GetUtcNow();
@@ -307,6 +317,9 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             UpdatedAtUtc = order.UpdatedAtUtc,
             CreatedBy = actorId,
             CorrelationId = envelope.CorrelationId.Trim(),
+            DocumentNumber = number.Number,
+            DocumentNumberFormatVersion = long.Parse(number.FormatVersion, System.Globalization.CultureInfo.InvariantCulture),
+            DocumentNumberSequence = number.Sequence,
             // A2a-1 (TEK-01): the money snapshot the order was opened under, all five facts or none.
             CurrencyId = order.Money?.CurrencyId,
             CurrencyCode = order.Money?.CurrencyCode,
@@ -365,10 +378,13 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
 
         dbContext.Attempts.Add(Attempt(companyId, PurchasingCommands.OrderCreateV1, keyHash, requestHash, actorId, envelope, null, order.Id, now));
         Audit(envelope, companyId, OrderEntityType, order.Id, "purchasing.purchase-order.created.v1", "Create", null, order.Version,
-            "{}", Snapshot(order), "Satınalma siparişi açıldı");
+            "{}", JsonSerializer.Serialize(new { Order = JsonSerializer.Deserialize<JsonElement>(Snapshot(order)), Number = number }, Json), "Satınalma siparişi açıldı");
+        await RequireNumberAuthorityAsync(companyId, envelope, cancellationToken);
         await SaveAsync(cancellationToken);
+        await RequireNumberAuthorityAsync(companyId, envelope, cancellationToken);
+        if (numberTransaction is not null) await numberTransaction.CommitAsync(cancellationToken);
         return new PurchasingOrderStoreResult(
-            new StoredPurchaseOrder(order, companyAccountId, effectiveOn, Versions(productVersionsByLineId, order.Lines.Select(line => line.Id))),
+            new StoredPurchaseOrder(order, companyAccountId, effectiveOn, Versions(productVersionsByLineId, order.Lines.Select(line => line.Id))) { DocumentNumber = number.Number },
             PurchasingWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
@@ -517,6 +533,13 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             await participant(order, transaction.GetDbTransaction(), cancellationToken);
         }
 
+        var cancelsNumber = order.Status == PurchaseOrderStatus.Cancelled && row.DocumentNumber is not null && row.DocumentNumberCancelledAtUtc is null;
+        if (cancelsNumber)
+        {
+            var transaction = dbContext.Database.CurrentTransaction ?? throw Refused(NumberOwnerUnavailable, "Numara iptali için açık işlem gerekli.");
+            await CancelNumberAsync(transaction.GetDbTransaction(), row, order.Cancellation!.Reason, envelope, cancellationToken);
+            row.DocumentNumberCancelledAtUtc = now;
+        }
         row.Status = (int)order.Status;
         row.Version = order.Version;
         row.UpdatedAtUtc = order.UpdatedAtUtc;
@@ -594,13 +617,15 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
 
         dbContext.Attempts.Add(Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, null, order.Id, now));
         Audit(envelope, companyId, OrderEntityType, order.Id, audit.EventType, audit.Operation, versionBefore, order.Version, before, Snapshot(order), audit.Reason);
+        if (cancelsNumber) await RequireNumberAuthorityAsync(companyId, envelope, cancellationToken);
         await SaveAsync(cancellationToken);
+        if (cancelsNumber) await RequireNumberAuthorityAsync(companyId, envelope, cancellationToken);
         if (lockTransaction is not null)
         {
             await lockTransaction.CommitAsync(cancellationToken);
         }
 
-        return new PurchasingOrderStoreResult(new StoredPurchaseOrder(order, row.CompanyAccountId, row.EffectiveOn, VersionsOf(lineRows)),
+        return new PurchasingOrderStoreResult(new StoredPurchaseOrder(order, row.CompanyAccountId, row.EffectiveOn, VersionsOf(lineRows)) { DocumentNumber = row.DocumentNumber },
             PurchasingWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
@@ -1075,7 +1100,7 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             return new StoredPurchaseOrder(RestoreOrder(row, own, ownAcceptances, ownSlices, ownClosures, ownRates,
                 adjustments.Where(item => item.OrderId == row.Id).ToArray(), cancellations.Where(item => item.OrderId == row.Id).ToArray(),
                 batches.Where(item => item.OrderId == row.Id).ToArray()), row.CompanyAccountId, row.EffectiveOn,
-                VersionsOf(own));
+                VersionsOf(own)) { DocumentNumber = row.DocumentNumber };
         })];
     }
 

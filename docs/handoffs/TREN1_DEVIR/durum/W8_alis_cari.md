@@ -121,3 +121,28 @@ kırmızıların geçtiği veya bu kaynakların kabul aldığı iddia edilmez.
   derlemesi sıradaki ortak derlemede, runtime koşumu **NOT_RUN**.
 - Inventory host bağlayıcısı ve gerçek gelen fatura sağlayıcısı tamamlanana kadar
   uçtan uca maliyet kapsamı **PARTIAL**.
+
+## KIM-S19 / N-12 — alış siparişinde gerçek numara owner bağlantısı
+
+- KIM-D53 ve ALS-D36'nın yerini alan kullanıcı cevabı doğrultusunda yeni alış siparişi,
+  Settings'in şirket bazında açık girilmiş önek/yıl/sıra biçiminden numara alır.
+  Eksik biçim/provider 503 ile kapanır; varsayılan önek, otomatik kurulum veya geçmişe
+  numara doldurma yapılmaz. Bu mevcut KIM-S19 diliminin tüketicisidir, yeni dilim değildir.
+- Settings numara owner'ı, siparişle aynı açık Serializable transaction'a katılır.
+  Numara/biçim sürümü/sıra siparişte immutable tutulur; numara geçmişi kendi sahibindedir.
+  Sipariş/numara/iki denetim kaydı birlikte commit veya rollback olur. Commit öncesi
+  aktör, şirket ve güncel yetki tekrar doğrulanır. Aynı anahtar yeni numara tüketmez.
+- İptal aynı transaction içinde numara boşluğu geçmişi ekler; sonraki sipariş numarayı
+  yeniden kullanmaz. Eski sipariş numarasız kalabilir. UI kayıtlı numarayı gösterir;
+  üretmez, legacy eksikliği ayrı Türkçe metinle gösterir. Strict decoder kaynak testleri var.
+- **51957** additive nullable kolonlar/unique/check migration'ının ilk Down korumasıdır.
+  Model ve gerçek SQL kaynakları annual reset, replay, eksik biçim, iptal/tekrar kullanmama,
+  save sonrası yetki kaybında tüm transaction rollback ve ilk sıra numarasının korunmasını kapsar.
+- Direct-store fixture gerçek Settings ve Audit owner'larını kullanır; yalnız fixture
+  kimlik/yetkisi sentetiktir. HTTP hostunun gerçek authorization servisleri değiştirilmedi.
+  Genuine Product→alış→kabul yolunda numara biçimi gerçek HTTP komutuyla açıkça kaydedilir.
+- EF CLI 10.0.8 `20261117002600_AddPurchaseOrderDocumentNumbers` migration/snapshot dosyalarını üretti.
+  Up yalnız nullable kolon/index/CHECK DDL'idir; Down ilk işlem 51957 ile kayıtlı numara geçmişini korur.
+  API, Purchasing.UnitTests, Api.IntegrationTests ve TypeScript kaynak derlemeleri exit 0, hata/uyarı 0; runtime
+  Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**. Inventory ortak receipt fixture'ının aynı
+  gerçek numara test owner'ına bağlanması ve merkezi pin/kontrat üretimi entegrasyondadır.

@@ -404,3 +404,18 @@ uses **51949** for immutable receipt/cancellation history; its recorded-cancella
 cursor history. Batch identity, detail ordering and first response remain immutable. The outbox's fixed
 `MIN_ACTIVE_ROWVERSION` read protects commit ordering and awaits K3 review; tenant filters remain in place.
 Runtime SQL acceptance is not yet run; these migrations are generated source, not deployment evidence.
+
+## KIM-S19 / N-12 purchase-order numbering
+
+KIM-D53 and the later decision replacing ALS-D36 include purchase orders in prefix/year/annual-sequence numbering.
+New orders require the company's explicitly configured Settings series; missing configuration fails closed rather
+than inventing a prefix. The real Settings owner reserves the number within the order's Serializable transaction.
+The number, format version and sequence are immutable order facts. Replay preserves the stored number.
+Cancellation records the Settings gap in the same transaction and does not release that number for reuse.
+Existing orders remain unnumbered; no historical backfill or artificial document number is produced.
+The EF-generated `20261117002600_AddPurchaseOrderDocumentNumbers` additive nullable snapshot has a company-scoped
+filtered unique index and an all-or-none check; its Up contains only DDL and does not backfill old orders.
+Down starts with **THROW 51957** while any numbering fact exists. SQL test sources cover annual reset, replay,
+missing configuration, cancellation/non-reuse, and permission loss after save rolling back the entire unit.
+The direct-store fixtures use the real Settings/Audit owners with explicitly synthetic fixture authority; HTTP
+authorization remains real. Runtime SQL/HTTP/Unit/Vitest/CI acceptance is **NOT_RUN**.

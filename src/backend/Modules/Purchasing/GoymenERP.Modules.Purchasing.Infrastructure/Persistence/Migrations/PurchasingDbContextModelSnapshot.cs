@@ -991,6 +991,21 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("CurrencyId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("DocumentNumber")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateTimeOffset?>("DocumentNumberCancelledAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long?>("DocumentNumberFormatVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("DocumentNumberSequence")
+                        .HasColumnType("bigint");
+
                     b.Property<DateOnly>("EffectiveOn")
                         .HasColumnType("date");
 
@@ -1030,6 +1045,10 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CompanyId", "DocumentNumber")
+                        .IsUnique()
+                        .HasFilter("[DocumentNumber] IS NOT NULL");
+
                     b.HasIndex("CompanyId", "SourceRequestId")
                         .HasDatabaseName("IX_PurchaseOrders_CompanyId_SourceRequestId");
 
@@ -1044,6 +1063,8 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_PurchaseOrders_Approval", "([ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL) OR ([ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL AND [Status] IN (2, 3) AND [ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [CreatedBy] COLLATE Latin1_General_100_BIN2)");
 
                             t.HasCheckConstraint("CK_PurchaseOrders_Cancellation", "([Status] = 3 AND [CancelledBy] IS NOT NULL AND LEN([CancelledBy]) > 0 AND [CancelledAtUtc] IS NOT NULL AND [CancellationReason] IS NOT NULL AND LEN([CancellationReason]) > 0) OR ([Status] = 2 AND [CancelledBy] IS NOT NULL AND LEN([CancelledBy]) > 0 AND [CancelledAtUtc] IS NOT NULL AND [CancellationReason] IS NOT NULL AND LEN([CancellationReason]) > 0) OR ([Status] <> 3 AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL)");
+
+                            t.HasCheckConstraint("CK_PurchaseOrders_DocumentNumber", "([DocumentNumber] IS NULL AND [DocumentNumberFormatVersion] IS NULL AND [DocumentNumberSequence] IS NULL AND [DocumentNumberCancelledAtUtc] IS NULL) OR ([DocumentNumber] IS NOT NULL AND LEN([DocumentNumber]) > 0 AND [DocumentNumberFormatVersion] IS NOT NULL AND [DocumentNumberFormatVersion] > 0 AND [DocumentNumberSequence] IS NOT NULL AND [DocumentNumberSequence] > 0)");
 
                             t.HasCheckConstraint("CK_PurchaseOrders_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SupplierPartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND ([SourceRequestId] IS NULL OR [SourceRequestId] <> '00000000-0000-0000-0000-000000000000')");
 

@@ -74,6 +74,10 @@ internal sealed class PurchaseRequestLineRow : IPurchasingTenantRow
 /// </summary>
 internal sealed class PurchaseOrderRow : IPurchasingTenantRow
 {
+    public string? DocumentNumber { get; set; }
+    public long? DocumentNumberFormatVersion { get; set; }
+    public long? DocumentNumberSequence { get; set; }
+    public DateTimeOffset? DocumentNumberCancelledAtUtc { get; set; }
     public Guid Id { get; set; }
     public Guid CompanyId { get; set; }
     public Guid SupplierPartyId { get; set; }

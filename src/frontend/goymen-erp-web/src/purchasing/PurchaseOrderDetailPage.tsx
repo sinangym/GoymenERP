@@ -230,6 +230,7 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
     <section className={styles.section} aria-labelledby="purchase-order-summary-heading" data-testid="purchase-order-summary">
       <h2 id="purchase-order-summary-heading">{T.summaryHeading}</h2>
       <dl className={styles.facts} data-testid="purchase-order-status-facts">
+        <div><dt>{T.documentNumber}</dt><dd>{order.documentNumber ?? T.documentNumberUnavailable}</dd></div>
         <div><dt>{T.orderId}</dt><dd className={styles.identifier}>{order.id}</dd></div>
         <div><dt>{T.version}</dt><dd>{order.version}</dd></div>
         <div><dt>{T.businessDate}</dt><dd><time dateTime={order.effectiveOn}>{formatBusinessDate(order.effectiveOn)}</time></dd></div>
