@@ -7,6 +7,8 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations;
 
 namespace GoymenERP.Finance.UnitTests;
 
@@ -29,9 +31,31 @@ public sealed class FinanceDocumentNumberingTests
             Assert.Equal(64, entity.FindProperty("DocumentNumber")!.GetMaxLength());
             Assert.Contains(entity.GetIndexes(), index => index.IsUnique && index.Properties.Select(x => x.Name)
                 .SequenceEqual(new[] { "CompanyId", "DocumentNumber" }) && index.GetFilter() == "[DocumentNumber] IS NOT NULL");
-            Assert.Contains(entity.GetCheckConstraints(), x => x.Name.EndsWith("_DocumentNumber", StringComparison.Ordinal)
+            Assert.Contains(entity.GetCheckConstraints(), x => x.Name!.EndsWith("_DocumentNumber", StringComparison.Ordinal)
                 && x.Sql.Contains("[DocumentNumber] IS NULL AND [DocumentNumberFormatVersion] IS NULL", StringComparison.Ordinal));
         }
+    }
+
+    [Fact]
+    public void Recorded_number_migration_has_only_nullable_DDL_and_a_first_guard_while_legacy_rows_remain_untouched()
+    {
+        var company = new CompanyContext(); company.Set(Company);
+        using var db = new FinanceDbContext(new DbContextOptionsBuilder<FinanceDbContext>()
+            .UseSqlServer("Server=unused;Database=unused;Integrated Security=true;TrustServerCertificate=true").Options, company);
+        Assert.EndsWith("_AddFinanceRecordedDocumentNumbers", db.Database.GetMigrations().Last());
+        Assert.False(db.Database.HasPendingModelChanges());
+        var migration = new AddFinanceRecordedDocumentNumbers();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var columns = migration.UpOperations.OfType<AddColumnOperation>().ToArray();
+        Assert.Equal(8, columns.Length);
+        Assert.All(columns, column => { Assert.True(column.IsNullable); Assert.Null(column.DefaultValue); Assert.Null(column.DefaultValueSql); });
+        Assert.Equal(4, migration.UpOperations.OfType<CreateIndexOperation>().Count());
+        Assert.Equal(4, migration.UpOperations.OfType<AddCheckConstraintOperation>().Count());
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql;
+        Assert.Contains("THROW 51911", guard);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        foreach (var table in new[] { "ReceiptDrafts", "ManualBankPayments", "ExpensePayments", "CashTransfers" })
+            Assert.Contains("[finance].[" + table + "] WHERE [DocumentNumber] IS NOT NULL OR [DocumentNumberFormatVersion] IS NOT NULL", guard);
     }
 
     [Fact]
@@ -61,11 +85,15 @@ public sealed class FinanceDocumentNumberingTests
         var row = new ReceiptDraftRow { Id = Guid.NewGuid(), CompanyId = Company, Stage = ReceiptStages.Draft,
             BankReference = "SENTETIK-external-bank-reference" };
         Assert.Null(FinanceDocumentNumbering.View(row));
-        var legacy = JsonSerializer.Serialize(ReceiptDraftService.Detail(row, AmountDisclosure.Redacted), FinanceJson.CreateOptions());
+        var hidden = new AmountView(AmountDisclosure.Redacted, null);
+        var detail = new SourceDetail(new SourceSummary(row.Id, Company, row.Id.ToString("D"), "1", SourceStage.Draft,
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), new(2026, 11, 17), null, hidden),
+            new("SENTETIK-profile", "1"), row.BankReference, null, null, null, null,
+            new UnallocatedView(AllocationKnowledge.Unavailable, hidden));
+        var legacy = JsonSerializer.Serialize(detail, FinanceJson.CreateOptions());
         Assert.DoesNotContain("\"documentNumber\"", legacy, StringComparison.Ordinal);
         row.DocumentNumber = "MAK-2026-000001"; row.DocumentNumberFormatVersion = "1"; row.Stage = ReceiptStages.Recorded;
-        var recorded = ReceiptDraftService.Detail(row, AmountDisclosure.Redacted);
-        Assert.Equal(row.DocumentNumber, recorded.Source.SourceNumber);
+        var recorded = detail with { DocumentNumber = FinanceDocumentNumbering.View(row) };
         Assert.Equal(new FinanceDocumentNumberV1(row.DocumentNumber, "1"), recorded.DocumentNumber);
         Assert.Equal("SENTETIK-external-bank-reference", recorded.BankReference);
         var request = new RecordRequest(row.Id, "1");

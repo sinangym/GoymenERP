@@ -3,11 +3,33 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using Microsoft.Data.SqlClient;
+using GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
 public sealed partial class SettingsCompanyPolicySqlServerRelationalAcceptanceTests
 {
+    [SqlServerFact]
+    public async Task Finance_series_Down_allows_the_existing_purchase_series_and_refuses_51910_while_a_finance_format_exists()
+    {
+        await using var run = await HostRun.StartAsync();
+        var guard = Assert.IsType<SqlOperation>(new AddFinanceDocumentNumberSeries().DownOperations[0]).Sql;
+        await run.ExecuteAsync(guard);
+        var subject = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SettingsDocumentNumberSeriesPermissionsV1.Manage);
+        using var editor = run.Client(subject, CompanyA);
+        const string path = "/api/v1/settings/company-policies/document-number-series/versions";
+        await run.CommandAsync(editor, path, "SENTETIK-old-purchase-format",
+            new RecordSettingsDocumentNumberFormatV1(SettingsDocumentSeriesV1.PurchaseOrder, "0", "ALI", 6, "SENTETIK mevcut seri"));
+        await run.ExecuteAsync(guard);
+        await run.CommandAsync(editor, path, "SENTETIK-new-receipt-format",
+            new RecordSettingsDocumentNumberFormatV1(SettingsDocumentSeriesV1.FinanceReceipt, "0", "MAK", 6, "SENTETIK açık seri"));
+        Assert.Equal(51910, (await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard))).Number);
+        Assert.Equal(1, await run.CountAsync("SELECT COUNT(*) FROM settings.DocumentNumberFormats WHERE Series=5"));
+        Assert.Equal(1, await run.CountAsync("SELECT COUNT(*) FROM settings.DocumentNumberFormats WHERE Series=4"));
+    }
+
     [SqlServerFact]
     public async Task Five_actual_finance_purposes_share_two_explicit_annual_series_under_their_own_record_permission()
     {
