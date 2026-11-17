@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace GoymenERP.Api.Endpoints;
 
-public static class SettingsFinancePolicyEndpoints
+public static partial class SettingsFinancePolicyEndpoints
 {
     public const string Path = "/api/v1/settings/finance-policies";
     public static IEndpointRouteBuilder MapSettingsFinancePolicyEndpoints(this IEndpointRouteBuilder endpoints)
@@ -39,6 +39,7 @@ public static class SettingsFinancePolicyEndpoints
         ReadContract(group.MapPost("/cash-count-differences/preview", (PreviewSettingsCashCountDifferencePolicyV1 request, HttpContext context,
             [FromServices] ISettingsFinancePolicyPreviewV1? service, CancellationToken token) =>
             ReadAsync(context, service is null ? null : async () => (object)await service.PreviewCashDifferenceAsync(request, token))).WithName("SettingsFinancePolicyPreviewCashDifferenceV1").Produces<SettingsCashCountDifferencePreviewV1>());
+        MapCollateralPolicies(endpoints);
         return endpoints;
     }
 

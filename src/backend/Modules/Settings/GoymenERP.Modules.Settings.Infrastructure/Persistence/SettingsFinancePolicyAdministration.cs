@@ -18,9 +18,11 @@ public sealed partial class SettingsFinancePolicyAdministration(
     SettingsDbContext database, ICompanyContext company, ICurrentUser user,
     IErpAuthorizationService authorization, IErpAuthorityRevalidationService revalidation,
     IAuditEventCollector audit, IAuditTransactionWriterV1 auditWriter,
-    ISettingsFinancePolicyReferencesV1 references, TimeProvider clock,
+    ISettingsFinancePolicyReferencesV1 references, ISettingsCollateralTypeCatalogV1 collateralTypes, TimeProvider clock,
     ILogger<SettingsFinancePolicyAdministration> logger) : ISettingsFinancePolicyAdministrationV1,
-    ISettingsFinanceApprovalPolicyProviderV1, ISettingsCashCountDifferencePolicyProviderV1, ISettingsFinancePolicyPreviewV1
+    ISettingsFinanceApprovalPolicyProviderV1, ISettingsCashCountDifferencePolicyProviderV1, ISettingsFinancePolicyPreviewV1,
+    ISettingsBankInstitutionAdministrationV1, ISettingsBankInstitutionCatalogV1,
+    ISettingsCollateralRateAdministrationV1, ISettingsCollateralRateProviderV1
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private const string ApprovalEntity = "Settings.FinanceApprovalPolicy";
@@ -182,6 +184,12 @@ public sealed partial class SettingsFinancePolicyAdministration(
     private async Task VerifyReferencesAsync(Scope scope, Change change, CancellationToken token)
     {
         if (change.Event is null || change.Event.EndsWith(".retired.v1", StringComparison.Ordinal)) return;
+        if (change.After is SettingsBankInstitutionPolicyV1) return;
+        if (change.After is SettingsCollateralRatePolicyV1 collateralRate)
+        {
+            if (!await CollateralReferencesMatchAsync(scope, collateralRate, token)) throw Unavailable();
+            return;
+        }
         var source = await ReferenceAsync(scope, token);
         var matches = change.After switch
         {

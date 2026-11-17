@@ -5,11 +5,14 @@ export const fetchFinancePolicies = (company: string, signal?: AbortSignal) => r
 export const commandFinancePolicy = (context: CommandContext, suffix: string, body: object) => send('POST', `${FINANCE_POLICY_PATH}/${suffix}`, context, body, 204, noBody)
 // Preview is read-only but has a typed POST body; it does not get an idempotency identity or write an attempt.
 export async function previewFinancePolicy(company: string, family: FinancePolicyFamily, body: unknown, signal?: AbortSignal): Promise<ViewOutcome<import('./financePolicyContract').FinancePolicyPreview>> {
+  return postFinancePolicyRead(company, `${family}/preview`, body, raw => decodeFinancePolicyPreview(raw, family), signal)
+}
+export async function postFinancePolicyRead<T>(company: string, suffix: string, body: unknown, decode: (raw: unknown) => T | null, signal?: AbortSignal): Promise<ViewOutcome<T>> {
   let response: Response
   const dev = import.meta.env.DEV || import.meta.env.VITE_BOOTSTRAP_IDENTITY_ENABLED === 'true'
-  try { response = await fetch(`${API_BASE}${FINANCE_POLICY_PATH}/${family}/preview`, { method: 'POST', credentials: 'same-origin', signal,
+  try { response = await fetch(`${API_BASE}${FINANCE_POLICY_PATH}/${suffix}`, { method: 'POST', credentials: 'same-origin', signal,
     headers: { 'Content-Type': 'application/json', 'X-Company-Id': company, ...(dev ? { 'X-Development-User': (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user' } : {}) }, body: JSON.stringify(body) }) }
   catch { return signal?.aborted ? { type: 'fence-stale' } : navigator.onLine ? { type: 'network-error' } : { type: 'offline' } }
   if (response.status !== 200) return { type: 'http', status: response.status }
-  try { const data = decodeFinancePolicyPreview(await response.json(), family); return data === null ? { type: 'malformed' } : { type: 'ok-single', data } } catch { return { type: 'malformed' } }
+  try { const data = decode(await response.json()); return data === null ? { type: 'malformed' } : { type: 'ok-single', data } } catch { return { type: 'malformed' } }
 }

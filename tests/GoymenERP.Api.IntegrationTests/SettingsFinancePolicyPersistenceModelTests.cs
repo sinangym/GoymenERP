@@ -12,12 +12,12 @@ public sealed class SettingsFinancePolicyPersistenceModelTests
     public void Finance_policy_values_are_typed_company_keyed_filtered_versioned_and_never_defaulted()
     {
         using var db = Database(); var model = db.GetService<IDesignTimeModel>().Model;
-        foreach (var name in new[] { "FinanceApprovalPolicies", "FinanceApprovalPolicyRules", "CashCountDifferencePolicies" })
+        foreach (var name in new[] { "FinanceApprovalPolicies", "FinanceApprovalPolicyRules", "CashCountDifferencePolicies", "BankInstitutionPolicies", "BankInstitutionEntries", "CollateralRatePolicies" })
         {
             var entity = Assert.Single(model.GetEntityTypes(), e => e.GetTableName() == name);
             Assert.Equal("settings", entity.GetSchema()); Assert.Equal("CompanyId", entity.FindPrimaryKey()!.Properties[0].Name);
             Assert.Single(entity.GetDeclaredQueryFilters()); Assert.DoesNotContain(entity.GetProperties(), p => p.Name == "ValueJson");
-            if (name != "FinanceApprovalPolicyRules") Assert.True(entity.FindProperty("StateVersion")!.IsConcurrencyToken);
+            if (name is not ("FinanceApprovalPolicyRules" or "BankInstitutionEntries")) Assert.True(entity.FindProperty("StateVersion")!.IsConcurrencyToken);
             if (entity.FindProperty("AmountThreshold") is { } threshold)
             { Assert.Null(threshold.FindAnnotation("Relational:DefaultValue")); Assert.Null(threshold.FindAnnotation("Relational:DefaultValueSql")); }
         }

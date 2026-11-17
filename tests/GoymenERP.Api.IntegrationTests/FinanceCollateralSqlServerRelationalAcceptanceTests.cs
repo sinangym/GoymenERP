@@ -23,7 +23,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// and currency below is SENTETIK / NOT_ENV test data. A collateral moves no money.
 /// </para>
 /// </summary>
-public sealed class FinanceCollateralSqlServerRelationalAcceptanceTests
+public sealed partial class FinanceCollateralSqlServerRelationalAcceptanceTests
 {
     private const string Recorder = "SENTETIK-recorder";
     private const string SecondRecorder = "SENTETIK-recorder-2";
@@ -339,6 +339,13 @@ public sealed class FinanceCollateralSqlServerRelationalAcceptanceTests
 
         public Scope Open(Guid company, string actor, bool catalogAvailable = true,
             params Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] extra)
+            => OpenCore(company, actor, catalogAvailable, null, extra);
+
+        public Scope OpenWithPolicies(Guid company, string actor, IFinanceCollateralPolicyReaderV1 policies)
+            => OpenCore(company, actor, true, policies, []);
+
+        private Scope OpenCore(Guid company, string actor, bool catalogAvailable, IFinanceCollateralPolicyReaderV1? policies,
+            Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] extra)
         {
             var companyContext = new CompanyContext();
             companyContext.Set(company);
@@ -360,7 +367,7 @@ public sealed class FinanceCollateralSqlServerRelationalAcceptanceTests
                 new SyntheticCatalog(catalogAvailable), collector,
                 new FinancePartyCollateralEnvelopes(
                     new FinanceAuditEnvelope(ErpPermissions.FinanceCollateralsRecord, ["SENTETIK-FINANCE"], "Web")),
-                TimeProvider.System);
+                TimeProvider.System, policies);
             return new Scope(dbContext, collaterals, new FinanceContext(company, actor, Correlation, null));
         }
 
@@ -418,6 +425,7 @@ public sealed class FinanceCollateralSqlServerRelationalAcceptanceTests
         : IAsyncDisposable
     {
         public FinancePartyCollateralService Collaterals => collaterals;
+        public FinanceDbContext Database => dbContext;
         public FinanceContext Context => context;
 
         public ValueTask DisposeAsync() => dbContext.DisposeAsync();

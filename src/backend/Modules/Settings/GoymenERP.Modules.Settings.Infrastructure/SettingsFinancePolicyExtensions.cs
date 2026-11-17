@@ -13,6 +13,10 @@ public static class SettingsFinancePolicyExtensions
         services.AddScoped<ISettingsFinanceApprovalPolicyProviderV1>(sp => sp.GetRequiredService<SettingsFinancePolicyAdministration>());
         services.AddScoped<ISettingsCashCountDifferencePolicyProviderV1>(sp => sp.GetRequiredService<SettingsFinancePolicyAdministration>());
         services.AddScoped<ISettingsFinancePolicyPreviewV1>(sp => sp.GetRequiredService<SettingsFinancePolicyAdministration>());
+        services.AddScoped<ISettingsBankInstitutionAdministrationV1>(sp => sp.GetRequiredService<SettingsFinancePolicyAdministration>());
+        services.AddScoped<ISettingsBankInstitutionCatalogV1>(sp => sp.GetRequiredService<SettingsFinancePolicyAdministration>());
+        services.AddScoped<ISettingsCollateralRateAdministrationV1>(sp => sp.GetRequiredService<SettingsFinancePolicyAdministration>());
+        services.AddScoped<ISettingsCollateralRateProviderV1>(sp => sp.GetRequiredService<SettingsFinancePolicyAdministration>());
         return services;
     }
 }

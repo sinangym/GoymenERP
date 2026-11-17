@@ -45,6 +45,7 @@ public sealed partial class SettingsDbContext
         cash.Property(x => x.CashAccountVersion).HasMaxLength(128).IsUnicode(false);
         cash.Property(x => x.AmountThreshold).HasMaxLength(FinancePolicyRulesV1.AmountMaximumLength).IsUnicode(false);
         cash.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
+        ConfigureCollateralPolicies(modelBuilder);
     }
 
     internal const string FinancePolicyAmountCheck = "LEN([AmountThreshold]) BETWEEN 1 AND 64 AND [AmountThreshold] NOT LIKE '%[^0-9.]%' AND LEFT([AmountThreshold],1) <> '.' AND RIGHT([AmountThreshold],1) <> '.' AND LEN([AmountThreshold])-LEN(REPLACE([AmountThreshold],'.','')) <= 1";
@@ -56,7 +57,7 @@ public sealed partial class SettingsDbContext
         {
             table.HasCheckConstraint($"CK_{name}_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PolicyId] <> '00000000-0000-0000-0000-000000000000' AND [Version] > 0 AND [StateVersion] > 0");
             table.HasCheckConstraint($"CK_{name}_Window", "[ValidThrough] IS NULL OR [ValidThrough] >= [ValidFrom]");
-            table.HasCheckConstraint($"CK_{name}_State", "([State]='Draft' AND [StateVersion]=1 AND [PublishedBy] IS NULL AND [PublishedAtUtc] IS NULL AND [RetiredFrom] IS NULL) OR ([State]='Published' AND [StateVersion]=2 AND LEN([PublishedBy])>0 AND [PublishedAtUtc] IS NOT NULL AND [RetiredFrom] IS NULL) OR ([State]='Retired' AND [StateVersion]=3 AND LEN([PublishedBy])>0 AND [PublishedAtUtc] IS NOT NULL AND [RetiredFrom] IS NOT NULL)");
+            table.HasCheckConstraint($"CK_{name}_State", "([State]='Draft' AND [StateVersion]=1 AND [PublishedBy] IS NULL AND [PublishedAtUtc] IS NULL AND [RetiredFrom] IS NULL) OR ([State]='Published' AND [StateVersion]=2 AND [PublishedBy] IS NOT NULL AND LEN([PublishedBy])>0 AND [PublishedAtUtc] IS NOT NULL AND [RetiredFrom] IS NULL) OR ([State]='Retired' AND [StateVersion]=3 AND [PublishedBy] IS NOT NULL AND LEN([PublishedBy])>0 AND [PublishedAtUtc] IS NOT NULL AND [RetiredFrom] IS NOT NULL)");
             table.HasCheckConstraint($"CK_{name}_Text", "LEN([PreparedBy])>0 AND LEN([Reason])>0 AND LEN([LastReason])>0");
             extra?.Invoke(table);
         });
@@ -72,8 +73,18 @@ public sealed partial class SettingsDbContext
 
     private void ApplyFinancePolicyWriteGuard(EntityEntry entry)
     {
-        if (entry.Entity is FinanceApprovalPolicyRuleRow && entry.State != EntityState.Added)
-            throw new InvalidOperationException("Published finance policy rule values are immutable.");
+        if (entry.Entity is FinanceApprovalPolicyRuleRow rule)
+        {
+            if (!companyContext.IsResolved || rule.CompanyId == Guid.Empty || rule.CompanyId != companyContext.CompanyId)
+                throw new InvalidOperationException("Finance policy rule company differs from the resolved owner.");
+            if (entry.State != EntityState.Added) throw new InvalidOperationException("Published finance policy rule values are immutable.");
+        }
+        if (entry.Entity is BankInstitutionEntryRow bankEntry)
+        {
+            if (!companyContext.IsResolved || bankEntry.CompanyId == Guid.Empty || bankEntry.CompanyId != companyContext.CompanyId)
+                throw new InvalidOperationException("Bank institution company differs from the resolved owner.");
+            if (entry.State != EntityState.Added) throw new InvalidOperationException("Bank institution snapshots are immutable.");
+        }
         if (entry.Entity is not IFinancePolicyVersionRow row) return;
         if (row.CompanyId == Guid.Empty || !companyContext.IsResolved || row.CompanyId != companyContext.CompanyId)
             throw new InvalidOperationException("Finance policy company differs from the resolved owner.");

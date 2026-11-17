@@ -19,6 +19,7 @@ public static class SettingsFinancePolicyRuntime
         services.AddScoped<IIdentityFinancePolicyRoleReferencesV1, IdentityFinancePolicyRoleReferences>();
         services.AddScoped<IFinancePolicyCashReferencesV1, FinancePolicyCashReferences>();
         services.AddScoped<ISettingsFinancePolicyReferencesV1, SettingsFinancePolicyReferences>();
+        services.AddScoped<IFinanceCollateralPolicyReaderV1, SettingsFinanceCollateralPolicyReader>();
         return services;
     }
 }

@@ -71,3 +71,57 @@ internal sealed class CashCountDifferencePolicyRow : IFinancePolicyVersionRow
     public Guid CurrencyId { get; set; }
     public string AmountThreshold { get; set; } = string.Empty;
 }
+
+internal sealed class BankInstitutionPolicyRow : IFinancePolicyVersionRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid PolicyId { get; set; }
+    public long Version { get; set; }
+    public long StateVersion { get; set; }
+    public string State { get; set; } = string.Empty;
+    public DateOnly ValidFrom { get; set; }
+    public DateOnly? ValidThrough { get; set; }
+    public DateOnly? RetiredFrom { get; set; }
+    public string PreparedBy { get; set; } = string.Empty;
+    public DateTimeOffset PreparedAtUtc { get; set; }
+    public string? PublishedBy { get; set; }
+    public DateTimeOffset? PublishedAtUtc { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string LastReason { get; set; } = string.Empty;
+}
+
+internal sealed class CollateralRatePolicyRow : IFinancePolicyVersionRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid PolicyId { get; set; }
+    public long Version { get; set; }
+    public long StateVersion { get; set; }
+    public string State { get; set; } = string.Empty;
+    public DateOnly ValidFrom { get; set; }
+    public DateOnly? ValidThrough { get; set; }
+    public DateOnly? RetiredFrom { get; set; }
+    public string PreparedBy { get; set; } = string.Empty;
+    public DateTimeOffset PreparedAtUtc { get; set; }
+    public string? PublishedBy { get; set; }
+    public DateTimeOffset? PublishedAtUtc { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string LastReason { get; set; } = string.Empty;
+    public string ScopeKey { get; set; } = string.Empty;
+    public string Scope { get; set; } = string.Empty;
+    public Guid? CollateralTypeId { get; set; }
+    public string? CollateralTypeVersion { get; set; }
+    public Guid? BankInstitutionId { get; set; }
+    public string? BankSourceVersion { get; set; }
+    public int? MaximumRemainingDays { get; set; }
+    public string RatePercent { get; set; } = string.Empty;
+}
+
+internal sealed class BankInstitutionEntryRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid PolicyId { get; set; }
+    public Guid BankInstitutionId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string EftCode { get; set; } = string.Empty;
+    public bool Active { get; set; }
+}

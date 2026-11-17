@@ -41,10 +41,14 @@ function Workspace({ data, family, changed }: { readonly data: FinancePolicyWork
   const [operation, setOperation] = useState(''); const [currency, setCurrency] = useState(''); const [role, setRole] = useState(''); const [step, setStep] = useState<1 | 2>(1)
   const [amount, setAmount] = useState(''); const [cash, setCash] = useState(''); const [rules, setRules] = useState<readonly RuleInput[]>([])
   const [target, setTarget] = useState<FinancePolicyHeader | null>(null); const [retireFrom, setRetireFrom] = useState(data.businessDate)
-  const [previewDate, setPreviewDate] = useState(data.businessDate); const [previewAmount, setPreviewAmount] = useState(''); const [preview, setPreview] = useState<ViewOutcome<FinancePolicyPreview> | null>(null)
+  const [previewDate, setPreviewDate] = useState(data.businessDate); const [previewAmount, setPreviewAmount] = useState(''); const [previewAnswer, setPreview] = useState<{ readonly key: string; readonly value: ViewOutcome<FinancePolicyPreview> } | null>(null)
   const policies = matrix ? data.approvalPolicies : data.cashCountDifferencePolicies
   const selectedCash = data.references.cashAccounts.find(x => x.cashAccountId === cash)
   const selectedRole = data.references.roles.find(x => x.roleId === role)
+  const previewKey = JSON.stringify([operation, currency, cash, selectedCash?.version, previewDate, previewAmount, data.approvalPolicies, data.cashCountDifferencePolicies])
+  const previewFence = useRef(previewKey); previewFence.current = previewKey
+  const previewSequence = useRef(0)
+  const preview = previewAnswer?.key === previewKey ? previewAnswer.value : null
   const canPublish = hasCapability(shell, C.publish) && (!matrix || hasCapability(shell, C.publishCritical))
   const latest = matrix ? Math.max(0, ...data.approvalPolicies.map(x => x.version)) : Math.max(0, ...data.cashCountDifferencePolicies.filter(x => x.cashAccountId === cash && x.currencyId === selectedCash?.currencyId).map(x => x.version))
   const frozen = busy || held !== null
@@ -75,12 +79,12 @@ function Workspace({ data, family, changed }: { readonly data: FinancePolicyWork
   }
   async function inspect() {
     if (busy) return
-    const captured = boundary.capture(); setPreview({ type: 'loading' })
+    const captured = boundary.capture(); const capturedKey = previewKey; const sequence = ++previewSequence.current; setPreview({ key: capturedKey, value: { type: 'loading' } })
     const result = await previewFinancePolicy(data.companyId, family, matrix ? { operationPermission: operation, currencyId: currency, businessDate: previewDate, amount: previewAmount }
       : { cashAccountId: cash, currencyId: selectedCash?.currencyId, businessDate: previewDate, differenceAmount: previewAmount })
-    if (!alive.current) return
+    if (!alive.current || previewFence.current !== capturedKey || previewSequence.current !== sequence) return
     if (result.type === 'http' && (result.status === 401 || result.status === 403)) boundary.report(result.status, captured)
-    setPreview(result)
+    setPreview({ key: capturedKey, value: result })
   }
   const currencyName = (id: string) => data.references.currencies.find(x => x.currencyId === id)?.code ?? id
   return <section>

@@ -14,7 +14,7 @@ const guid = (x: unknown): x is string => typeof x === 'string' && /^[0-9a-f]{8}
 const text = (x: unknown): x is string => typeof x === 'string' && x.trim().length > 0
 const integer = (x: unknown): x is number => typeof x === 'number' && Number.isSafeInteger(x) && x > 0
 const version = (x: unknown): x is string => typeof x === 'string' && /^[1-9][0-9]*$/.test(x)
-const date = (x: unknown): x is string => typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x) && Number.isFinite(Date.parse(x)) && new Date(x).toISOString().slice(0, 10) === x
+const date = (x: unknown): x is string => typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x) && !x.startsWith('0000') && Number.isFinite(Date.parse(x)) && new Date(x).toISOString().slice(0, 10) === x
 const utc = (x: unknown): x is string => typeof x === 'string' && /(?:Z|\+00:00)$/.test(x) && Number.isFinite(Date.parse(x))
 const nullable = (x: unknown, check: (value: unknown) => boolean) => x === null || check(x)
 const amount = (x: unknown): x is string => typeof x === 'string' && x.length <= 64 && /^(?:0|[1-9][0-9]*)(?:\.[0-9]*[1-9])?$/.test(x)
@@ -54,3 +54,5 @@ export function decodeFinancePolicyPreview(raw: unknown, family: FinancePolicyFa
     : raw.outcome !== 'Unavailable' || raw.policyId !== null || raw.version !== null || !text(raw.reason) || (matrix ? (raw.matchingRules as unknown[]).length !== 0 : raw.exceedsThreshold !== null)) return null
   return raw as unknown as FinancePolicyPreview
 }
+/** Shape validation only. These helpers do not calculate money, rates, maturity or policy precedence in the UI. */
+export const financePolicyShape = { object, exact, guid, text, integer, version, date, utc, nullable, amount, unique, header, headerKeys }

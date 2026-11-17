@@ -45,18 +45,24 @@ public enum PartyCollateralFigureState { Available, Unavailable, Withheld }
 
 // A new received collateral. ValidUntil null: open-ended. DocumentReference: the paper's reference (optional).
 public sealed record PartyCollateralRecordRequest(Guid PartyId, Guid CompanyAccountId, Guid CollateralTypeId,
-    Guid CurrencyId, string Amount, DateOnly ValidFrom, DateOnly? ValidUntil, string? DocumentReference);
+    Guid CurrencyId, string Amount, DateOnly ValidFrom, DateOnly? ValidUntil, string? DocumentReference,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? BankInstitutionId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? BankSourceVersion = null);
 
 // A change names the collateral and its current revision; the new values replace the old ones as a new revision.
 public sealed record PartyCollateralChangeRequest(Guid CollateralId, string ExpectedRevision, Guid CollateralTypeId,
-    Guid CurrencyId, string Amount, DateOnly ValidFrom, DateOnly? ValidUntil, string? DocumentReference);
+    Guid CurrencyId, string Amount, DateOnly ValidFrom, DateOnly? ValidUntil, string? DocumentReference,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? BankInstitutionId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? BankSourceVersion = null);
 
 // A release names the collateral, its current revision and a reason.
 public sealed record PartyCollateralReleaseRequest(Guid CollateralId, string ExpectedRevision, string Reason);
 
 // HTTP bodies: the collateral is the route's.
 public sealed record PartyCollateralChangeBody(string ExpectedRevision, Guid CollateralTypeId, Guid CurrencyId,
-    string Amount, DateOnly ValidFrom, DateOnly? ValidUntil, string? DocumentReference);
+    string Amount, DateOnly ValidFrom, DateOnly? ValidUntil, string? DocumentReference,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? BankInstitutionId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? BankSourceVersion = null);
 
 public sealed record PartyCollateralReleaseBody(string ExpectedRevision, string Reason);
 
@@ -83,7 +89,8 @@ public sealed record PartyCollateralRecordView(
     PartyCollateralStatus Status,
     DateTimeOffset RecordedAtUtc,
     DateTimeOffset? SupersededAtUtc,
-    string Version);
+    string Version,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] FinanceCollateralBankProofV1? BankInstitution = null);
 
 public sealed record PartyCollateralAmountView(Guid CurrencyId, string Amount);
 

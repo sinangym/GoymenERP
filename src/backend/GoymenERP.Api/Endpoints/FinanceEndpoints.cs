@@ -49,6 +49,7 @@ public static partial class FinanceEndpoints
 
     public static IEndpointRouteBuilder MapFinanceEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapFinanceCollateralPolicyEndpoints();
         var handler = endpoints.MapGet(DraftContextPath, async (
             [FromQuery] Guid treasuryAccountId,
             [FromQuery] Guid partyId,
@@ -2956,7 +2957,7 @@ public static partial class FinanceEndpoints
                 var result = await master.ChangeAsync(Context(companyContext, currentUser, correlation),
                     new CommandMetadata(key), new PartyCollateralChangeRequest(collateralId, body.ExpectedRevision,
                         body.CollateralTypeId, body.CurrencyId, body.Amount, body.ValidFrom, body.ValidUntil,
-                        body.DocumentReference), cancellationToken);
+                        body.DocumentReference, body.BankInstitutionId, body.BankSourceVersion), cancellationToken);
                 return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
             })
             .WithName("ChangeFinancePartyCollateralV1")

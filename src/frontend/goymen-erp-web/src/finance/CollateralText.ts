@@ -10,6 +10,12 @@ import type { CollateralFigureState, CollateralKind, CollateralStatus } from './
 import type { CollateralOperation } from './CollateralHttp'
 
 export const COLLATERAL_TEXT = {
+  bank: 'Teminatı veren banka',
+  bankSubject: 'Yayımlanmış banka listesi',
+  noBank: 'Banka belirtilmedi — yalnız teminat türü oranı',
+  bankHint: 'Banka adından, IBAN’dan veya banka hesabından eşleme yapılmaz. Seçim, yayımlanmış listenin sürümüyle kaydedilir.',
+  bankVersion: 'Banka listesi kaynak sürümü',
+  bankSourceChanged: 'Banka listesini yenileyip açık seçimi tekrar yapın.',
   title: 'Müşteri teminatları',
   accountSubject: 'cari hesap teminatları',
   historySubject: 'teminat geçmişi',
@@ -158,6 +164,9 @@ export const collateralFigureReasonText = (code: string): string =>
 
 /** Stable issue codes of the collateral master → text. An unknown code falls back to the generic refusal. */
 export const COLLATERAL_ISSUE: Readonly<Record<string, string>> = {
+  collateral_bank_invalid: 'Banka kurumunu yayımlanmış listeden açıkça seçin.',
+  collateral_bank_unavailable: 'Banka kurumunun gerçek kaynağı şu anda okunamıyor; banka tahmin edilmez.',
+  collateral_bank_source_changed: 'Banka listesi değişmiş. Listeyi yenileyip açık seçimi tekrar yapın.',
   collateral_amount_invalid: 'Tutar sıfırdan büyük, geçerli bir ondalık sayı olmalı.',
   collateral_unchanged: 'Değişiklik teminatın geçerli değerleriyle aynı; kaydedilecek bir fark yok.',
   collateral_not_found: 'Teminat bulunamadı.',
