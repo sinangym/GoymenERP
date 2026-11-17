@@ -49,6 +49,7 @@ public sealed partial class SalesStore : ISalesSubcontractServiceInvoiceStore
         }
 
         SalesSubcontractServiceInvoiceRows.Add(dbContext, invoice, envelope.CorrelationId);
+        AppendSubcontractLifecycle(invoice, 1, envelope.CorrelationId, now);
         dbContext.SubcontractServiceInvoiceAttempts.Add(new SubcontractServiceInvoiceAttemptRow
         {
             CompanyId = companyId,
@@ -119,7 +120,8 @@ public sealed partial class SalesStore : ISalesSubcontractServiceInvoiceStore
         var row = await dbContext.SubcontractServiceInvoices.AsNoTracking()
             .SingleOrDefaultAsync(candidate => candidate.SalesOrderId == salesOrderId
                 && candidate.LoadingInstructionId == loadingInstructionId
-                && candidate.WeighingId == weighingId, cancellationToken);
+                && candidate.WeighingId == weighingId && (candidate.State == 1 || candidate.State == 2
+                    || candidate.State == 3 || candidate.State == 6), cancellationToken);
         return row is null ? null : await RestoreSubcontractServiceInvoiceAsync(row, cancellationToken);
     }
 
@@ -129,7 +131,13 @@ public sealed partial class SalesStore : ISalesSubcontractServiceInvoiceStore
         var lines = await dbContext.SubcontractServiceInvoiceLines.AsNoTracking()
             .Where(line => line.InvoiceId == row.Id)
             .ToListAsync(cancellationToken);
-        return SalesSubcontractServiceInvoiceRows.Restore(row, lines);
+        var lifecycle = await dbContext.SubcontractInvoiceLifecycles.AsNoTracking()
+            .Where(item => item.InvoiceId == row.Id).OrderByDescending(item => item.Sequence).FirstOrDefaultAsync(cancellationToken);
+        if (lifecycle is not null && (lifecycle.InvoiceVersion != row.Version || lifecycle.State != row.State))
+            throw new InvalidOperationException("Fason faturanın yaşam döngüsü sürümü başlıkla uyuşmuyor.");
+        return SalesSubcontractServiceInvoiceRows.Restore(row, lines, lifecycle is null ? null
+            : JsonSerializer.Deserialize<SalesSubcontractInvoiceLifecycleFacts>(lifecycle.FactsJson, Json)
+                ?? throw new InvalidOperationException("Fason fatura yaşam döngüsü okunamadı."));
     }
 
     private async Task<SalesSubcontractServiceInvoiceStoreResult> ReplaySubcontractServiceInvoiceAttemptAsync(

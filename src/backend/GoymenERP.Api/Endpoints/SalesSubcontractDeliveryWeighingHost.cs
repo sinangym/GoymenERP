@@ -44,7 +44,9 @@ public sealed class SalesSubcontractDeliveryWeighingHost(
                             line.SourceOrderLineId,
                             line.ProductId,
                             line.UnitId,
-                            line.LoadedKgAtWeighing))])),
+                            line.LoadedKgAtWeighing,
+                            value.Shipments is null ? null : [.. value.Shipments.Where(shipment => shipment.LineId == line.LineId)
+                                .Select(shipment => new SalesSubcontractShipmentFactV1(shipment.ShipmentId, shipment.RecordedAtUtc))]))])),
             LogisticsSubcontractDeliveryNetWeightStatusV1.NoSource =>
                 Closed(SalesSubcontractDeliveryWeighingStatusV1.NoSource, companyId, loadingInstructionId, weighingId),
             _ => Closed(SalesSubcontractDeliveryWeighingStatusV1.Unavailable, companyId, loadingInstructionId, weighingId),

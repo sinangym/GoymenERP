@@ -389,7 +389,7 @@ public sealed partial class SalesInvoice
         return new SalesInvoiceLine(lineNo, share, netUnitPrice, vatPercent, withholdingShare, amounts, functional);
     }
 
-    private static bool DecisionIsConsistent(SalesInvoiceState state, string createdBy, SalesInvoiceDecisionFacts facts)
+    internal static bool DecisionIsConsistent(SalesInvoiceState state, string createdBy, SalesInvoiceDecisionFacts facts)
     {
         var submitted = facts.SubmittedBy is not null && facts.SubmittedAtUtc is not null;
         var submittedNone = facts.SubmittedBy is null && facts.SubmittedAtUtc is null;

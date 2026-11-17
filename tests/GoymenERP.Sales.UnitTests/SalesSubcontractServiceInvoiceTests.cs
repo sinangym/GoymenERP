@@ -12,7 +12,7 @@ namespace GoymenERP.Sales.UnitTests;
 /// the approved kg price (SAT-D195), a missing price or tax source is refused (never a zero amount), and a stored row whose amounts
 /// do not agree is refused on restore. Every value is SENTETIK.
 /// </summary>
-public sealed class SalesSubcontractServiceInvoiceTests
+public sealed partial class SalesSubcontractServiceInvoiceTests
 {
     private static readonly Guid Company = Guid.Parse("11111111-1111-4111-8111-111111111111");
     private static readonly Guid Party = Guid.Parse("22222222-2222-4222-8222-222222222222");

@@ -78,7 +78,7 @@ export async function createSubcontractInvoice(
   const detail = decodeSubcontractInvoiceDetail(raw.body, null)
   if (
     detail === null ||
-    detail.state !== 'Draft' ||
+    (detail.state !== 'Draft' && !detail.isReplay) ||
     !sameId(detail.salesOrderId, payload.salesOrderId) ||
     !sameId(detail.loadingInstructionId, payload.loadingInstructionId) ||
     !sameId(detail.weighingId, payload.weighingId) ||
@@ -99,4 +99,30 @@ export async function fetchSubcontractInvoice(
   if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
   const detail = decodeSubcontractInvoiceDetail(raw.body, invoiceId)
   return detail === null ? { type: 'malformed' } : { type: 'ok-single', data: detail }
+}
+
+export type SubcontractAction = 'submit' | 'approve' | 'reject' | 'cancel' | 'match' | 'finalize' | 'resend-finance'
+export interface SubcontractActionPayload {
+  readonly invoiceId: string
+  readonly action: SubcontractAction
+  readonly expectedVersion: string
+  readonly reason?: string
+  readonly officialInvoiceNo?: string
+  readonly ettn?: string
+  readonly approveDifference?: boolean
+  readonly differenceReason?: string
+}
+
+export async function commandSubcontractInvoice(payload: SubcontractActionPayload, context: KeyedContext): Promise<OrderCommandOutcome<SubcontractInvoiceDetail>> {
+  const { invoiceId, action, ...body } = payload
+  const raw = await request(`${subcontractServiceInvoicePath(invoiceId)}/${action}`, {
+    method: 'POST', headers: { ...headers(context.companyId), 'Content-Type': 'application/json', 'Idempotency-Key': context.idempotencyKey },
+    body: JSON.stringify(body),
+  }, undefined)
+  if ('failure' in raw) return failureOutcome(raw.failure)
+  if (raw.status !== 200) return raw.status >= 200 && raw.status < 300 ? { type: 'malformed' }
+    : { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  const detail = decodeSubcontractInvoiceDetail(raw.body, invoiceId)
+  if (detail === null || !replayAgrees(detail, raw.replayed, raw.replayCorrelationId)) return { type: 'malformed' }
+  return { type: 'succeeded', data: detail }
 }
