@@ -10,8 +10,8 @@ public enum AverageCostLateInvoiceDifferenceStatus
     PositionUnreadable = 2,
 
     /// <summary>
-    /// The position holds no stock, so there is no current average to join. Where such a difference goes is not decided
-    /// (fail-closed; the caller keeps the difference unposted and surfaces it).
+    /// The position holds no stock, so there is no current average to join. SAT-D413 sends this unabsorbed difference
+    /// to a separate SMM proposal; this legacy result alone does not post or invent an account.
     /// </summary>
     NoStockToAbsorb = 3,
 
@@ -31,6 +31,17 @@ public sealed record AverageCostLateInvoiceDifferenceResult(
     AverageCostPosition Position,
     decimal DifferenceValue);
 
+/// <summary>SAT-D385/D404/D413: an exact, already known receipt-cost difference. The source amount is split without
+/// rounding; the current average alone uses SAT-D265's existing 4dp rounding. Its actual pool effect and rounding
+/// difference remain distinct evidence, not another SMM or tax policy.</summary>
+public sealed record ExactAverageCostLateInvoiceDifferenceResult(
+    ExactAverageCostPool Position,
+    ExactCostRatio SourceDifference,
+    ExactCostRatio AbsorbedDifference,
+    ExactCostRatio UnabsorbedDifference,
+    ExactCostRatio RecordedPoolValueEffect,
+    ExactCostRatio AverageRoundingDifference);
+
 /// <summary>
 /// SAT-D385 / SAT-D404: when the supplier invoice of a foreign-currency receipt arrives late and its official TL cost differs
 /// from the TL cost the receipt entered with, the difference joins the CURRENT TL average once, as a difference movement
@@ -42,6 +53,27 @@ public sealed record AverageCostLateInvoiceDifferenceResult(
 /// </summary>
 public static class AverageCostLateInvoiceDifferenceCalculator
 {
+    /// <summary>For a proven current priced pool and a proven invoice-minus-original-receipt amount only.
+    /// Missing/first-recognition cost is not zero and must never be passed to this difference path.</summary>
+    public static ExactAverageCostLateInvoiceDifferenceResult ApplyExact(
+        ExactAverageCostPool current, ExactCostRatio sourceDifference)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        ArgumentNullException.ThrowIfNull(sourceDifference);
+        if (current.QuantityKg.Sign < 0 || current.AverageCostPerKg < 0m
+            || !AverageCostPrecision.IsAtInternalScale(current.AverageCostPerKg))
+            throw new ArgumentException("The current priced pool must be readable at its recorded precision.", nameof(current));
+
+        var zero = ExactCostRatio.Of(0m);
+        var absorbed = current.QuantityKg.Sign == 0 ? zero
+            : current.Value.Add(sourceDifference).Sign < 0 ? current.Value.Multiply(-1m) : sourceDifference;
+        var unabsorbed = sourceDifference.Subtract(absorbed);
+        var after = absorbed.Sign == 0 ? current : new ExactAverageCostPool(current.QuantityKg,
+            current.Value.Add(absorbed).Divide(current.QuantityKg).Round(AverageCostPrecision.InternalScale));
+        var actualEffect = after.Value.Subtract(current.Value);
+        return new(after, sourceDifference, absorbed, unabsorbed, actualEffect, actualEffect.Subtract(absorbed));
+    }
+
     public static AverageCostLateInvoiceDifferenceResult Apply(
         AverageCostPosition current,
         decimal receivedKg,
