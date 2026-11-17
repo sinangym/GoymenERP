@@ -62,7 +62,8 @@ public sealed class SecurityEventsPersistenceModelTests
         Assert.StartsWith("[ReasonCode] IS NULL OR [ReasonCode] IN (", checks["CK_SecurityEvents_ReasonCode"], StringComparison.Ordinal);
         Assert.All(SecurityEventReasonCodesV1.All, code => Assert.Contains($"'{code}'", checks["CK_SecurityEvents_ReasonCode"], StringComparison.Ordinal));
         Assert.Equal(SecurityEventModelBuilderExtensions.RateLimitSummaryCheck, checks["CK_SecurityEvents_RateLimitSummary"]);
-        Assert.Equal(17, checks.Count);
+        Assert.Equal(SecurityEventModelBuilderExtensions.OperatorTwoFactorRecoveryCheck, checks["CK_SecurityEvents_OperatorTwoFactorRecovery"]);
+        Assert.Equal(18, checks.Count);
     }
 
     [Fact]
@@ -88,6 +89,7 @@ public sealed class SecurityEventsPersistenceModelTests
                 "20261111222917_HardenSecurityEventCodeChecks",
                 "20261115163955_AddLoginRateLimitedSecurityEvent",
                 "20261116100000_AddFounderRecoverySecurityEvents",
+                "20261117161010_AddOperatorTwoFactorRecoverySecurityEvents",
             ],
             context.Database.GetMigrations());
         Assert.False(context.Database.HasPendingModelChanges());

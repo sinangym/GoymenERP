@@ -39,3 +39,31 @@ company Admin lock. `CompanySetupAuthority` records the one-authority KIM-D56 ap
 EF-generated `20261116205256_AddExplicitCompanySetupAuthority` adds the global eligibility model and widens only
 the approval-mode checks. Its Up is DDL-only and seeds nothing. Down first refuses with **THROW 51947** while a
 group authority or new approval mode exists. SQL/browser/CI acceptance and real grants remain separate gates.
+
+### KIM-S9: explicitly targeted server operator 2FA recovery
+
+KIM-D27 and the human answer relayed at #1189 / 6951606530 authorize the separate interactive
+`identity recover-two-factor` command for every local user, including an inactive account or a user with no
+company memberships. The exact two command words are the entire argv. Target name, retry key and reason
+are read at the terminal; the confirmation displays the real target and confirmed versions. No password,
+authenticator seed or recovery code is requested. `recover-founder` retains its existing separate semantics.
+
+Recovery deactivates the confirmed factor and renews the credential security stamp. It never changes the
+password, user activity, roles or company access. An inactive user remains inactive. A target's changed
+user/credential/factor versions produce a recorded refusal instead of adopting a fresh expected version.
+
+`LocalTwoFactorOperatorRecoveryAttempts` is a global immutable command journal for global local credentials;
+it has no invented CompanyId. Its unique hashed retry key binds target/operator/reason/original versions.
+Reuse the same key after a lost answer: its original result is returned without removing a later enrollment.
+Another target/operator/reason cannot read that original result. A genuinely new action needs a new key and
+a new explicit confirmation. The server operator's real OS/machine declaration is recorded only by typed Audit.
+
+Identity owns the Serializable transaction. Audit and SecurityEvents borrow its exact connection/transaction
+through their closed owner ports, append, and never commit it. Their failure rolls the credential, factor and
+journal back. No target company is invented and no membership/role is assigned. Normal HTTP self-service
+retains its current-session, actor-equals-target and company-membership checks.
+
+EF generated `20261117160905_AddOperatorTwoFactorRecoveryAttempts`; Down first refuses with **51922** while
+history exists. The reviewed UPDATE/DELETE trigger refuses with **51925**, in addition to the tracker guard.
+It has no INSERT trigger: SQL Server's [OUTPUT restriction applies to the corresponding DML action](https://learn.microsoft.com/sql/t-sql/queries/output-clause-transact-sql?view=sql-server-ver17#triggers).
+No database application, command execution or runtime acceptance is implied by source/EF compilation.

@@ -47,6 +47,11 @@ public static class SecurityEventTypesV1
     /// </summary>
     public const string FounderRecoveryRefused = "identity.founder.recovery_refused";
 
+    public const string OperatorTwoFactorRecovered = "identity.two_factor.recovered";
+    public const string OperatorTwoFactorRecoveryRefused = "identity.two_factor.recovery_refused";
+    public static IReadOnlyList<string> OperatorTwoFactorRecoveryTypes { get; } =
+        [OperatorTwoFactorRecovered, OperatorTwoFactorRecoveryRefused];
+
     /// <summary>The ID-2r founder recovery types: Platform scope, no company, System actor, no permission code.</summary>
     public static IReadOnlyList<string> FounderRecoveryTypes { get; } =
         [FounderRecovered, FounderPasswordReset, FounderRecoveryRefused];
@@ -56,6 +61,7 @@ public static class SecurityEventTypesV1
         LoginSucceeded, LoginFailed, AuthorizationDenied, AiAuthorizationDenied, PermissionChanged,
         PolicyPublished, ExportPerformed, RetentionPurgeRequested, AiToolCalled, AiRequestRefused,
         SecurityEventsRead, LoginRateLimited, FounderRecovered, FounderPasswordReset, FounderRecoveryRefused,
+        OperatorTwoFactorRecovered, OperatorTwoFactorRecoveryRefused,
     ];
 
     public static bool IsDefined(string? value) => value is not null && All.Contains(value, StringComparer.Ordinal);

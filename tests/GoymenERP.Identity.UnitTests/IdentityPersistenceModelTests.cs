@@ -28,8 +28,8 @@ public sealed class IdentityPersistenceModelTests
         Assert.Equal(
             ["20261114164716_AddLocalCredentials", "20261115144305_AddIdentityBootstrapState", "20261115170730_AddAccessGrantRequestWorkflow",
                 "20261116164010_RemoveIdentityAuditTableMapping", "20261116185533_AddCompanySetupInboxAndOutboxPosition", "20261116205256_AddExplicitCompanySetupAuthority",
-                "20261117004612_AddLocalTwoFactorSecrets"],
-            context.Database.GetMigrations().TakeLast(7));
+                "20261117004612_AddLocalTwoFactorSecrets", "20261117082918_AddProductCogsClassificationAuthority", "20261117160905_AddOperatorTwoFactorRecoveryAttempts"],
+            context.Database.GetMigrations().TakeLast(9));
         Assert.False(context.Database.HasPendingModelChanges());
         Assert.Null(context.Model.FindEntityType("GoymenERP.Modules.Audit.Domain.Events.AuditEvent"));
         // Audit was excluded from Identity migrations already. The generated ownership

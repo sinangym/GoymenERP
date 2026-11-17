@@ -40,6 +40,8 @@ public static class SecurityEventWriteFailureModesV1
             [(SecurityEventTypesV1.FounderPasswordReset, SecurityEventPhasesV1.Single)] = SecurityEventWriteFailureMode.FailClosed,
             // authz.denied pattern: the refusal stays in force, a lost record raises the alarm.
             [(SecurityEventTypesV1.FounderRecoveryRefused, SecurityEventPhasesV1.Single)] = SecurityEventWriteFailureMode.FailOpenWithAlarm,
+            [(SecurityEventTypesV1.OperatorTwoFactorRecovered, SecurityEventPhasesV1.Single)] = SecurityEventWriteFailureMode.FailClosed,
+            [(SecurityEventTypesV1.OperatorTwoFactorRecoveryRefused, SecurityEventPhasesV1.Single)] = SecurityEventWriteFailureMode.FailOpenWithAlarm,
         };
 
     /// <summary>Every valid (type, phase) pair, in a stable order.</summary>
@@ -119,6 +121,8 @@ public static class SecurityEventRetentionClassesV1
         [SecurityEventTypesV1.FounderRecovered] = No134,
         [SecurityEventTypesV1.FounderPasswordReset] = No134,
         [SecurityEventTypesV1.FounderRecoveryRefused] = No134,
+        [SecurityEventTypesV1.OperatorTwoFactorRecovered] = No134,
+        [SecurityEventTypesV1.OperatorTwoFactorRecoveryRefused] = No134,
     };
 
     public static string? ForEventType(string? eventType) =>
