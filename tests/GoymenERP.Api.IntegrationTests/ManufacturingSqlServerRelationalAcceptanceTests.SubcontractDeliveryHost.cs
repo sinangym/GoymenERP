@@ -9,6 +9,8 @@ using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Infrastructure;
+using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Logistics.Application.Contracts;
 using GoymenERP.Modules.Logistics.Domain.Loading;
 using GoymenERP.Modules.Logistics.Infrastructure.Persistence;
@@ -128,6 +130,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     private sealed class SubcontractHostScope(AsyncServiceScope services, LogisticsDbContext context, LogisticsStore store, LogisticsSubcontractDeliveryHost host, S3Risk risk, Guid actor) : IAsyncDisposable
     {
         public LogisticsSubcontractDeliveryHost Host => host; public LogisticsStore Store => store; public S3Risk Risk => risk;
+        public ICompanyContext Company => services.ServiceProvider.GetRequiredService<ICompanyContext>();
         public LogisticsWriteEnvelope Envelope(string key) => new(actor.ToString("D"), LogisticsPermissionManifestV1.InstructionsCreate, ["SYNTHETIC-MANUFACTURING"], key, null, key, "Integration");
         public async Task<CreateSubcontractDeliveryV1> CommandAsync(SubcontractHostSeed seed)
         {
@@ -137,20 +140,32 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
                 item.SalesLineRevision, item.ManufacturingOrderId, item.ManufacturingOrderVersion, item.PlanVersion, item.SalesLinkRevision,
                 item.OutputFactId, item.LabelId, item.LabelVersion, Guid.NewGuid(), "80", "SENTETIK gerçek owner kaynakları")]);
         }
-        public static SubcontractHostScope Create(Run run, Guid party, Guid account, IInterceptor? failure = null)
+        public static SubcontractHostScope Create(Run run, Guid party, Guid account, IInterceptor? failure = null,
+            ICurrentUser? currentUser = null, IErpAuthorityRevalidationService? authority = null,
+            Func<IInventoryNegativeStockAttemptRecorderV1, IInventoryNegativeStockAttemptRecorderV1>? recorder = null)
         {
             var services = run.Factory.Services.CreateAsyncScope(); var provider = services.ServiceProvider; var company = provider.GetRequiredService<ICompanyContext>(); company.Set(CompanyA);
             var collector = provider.GetRequiredService<AuditEventCollector>(); var writer = provider.GetRequiredService<IAuditTransactionWriterV1>();
             var options = new DbContextOptionsBuilder<LogisticsDbContext>().UseSqlServer(run.Factory.DatabaseConnectionString).AddInterceptors(new AuditSaveChangesInterceptor(collector, company));
             if (failure is not null) options.AddInterceptors(failure);
             var db = new LogisticsDbContext(options.Options, company); var store = new LogisticsStore(db, company, collector, TimeProvider.System); var risk = new S3Risk();
+            var user = currentUser ?? new ManufacturingHostCurrentUser(run.Actor, CompanyA);
+            var permissions = authority ?? new GenerationHostAuthority();
+            var actualRecorder = new InventoryNegativeStockAttempts(company, user, permissions,
+                provider.GetRequiredService<IServiceScopeFactory>(), provider.GetRequiredService<InventoryDbContext>());
+            var refusalServices = new SubcontractRefusalServices(provider, recorder?.Invoke(actualRecorder) ?? actualRecorder);
             // Authority, customer activity and the risk verdict are explicit synthetic inputs; Sales/Mfg/Inventory stores, sessions, locks, audit and transaction are real.
-            var host = new LogisticsSubcontractDeliveryHost(db, store, company, new ManufacturingHostCurrentUser(run.Actor, CompanyA), new GenerationHostAuthority(), collector, writer,
+            var host = new LogisticsSubcontractDeliveryHost(db, store, company, user, permissions, collector, writer,
                 ManufacturingSettings(run), provider.GetRequiredService<ISalesOrderLineSerializationLockBinderV1>(), provider.GetRequiredService<ISalesOrderLineReferencePortV1>(),
-                new S3Customer(party, account), risk, TimeProvider.System);
+                new S3Customer(party, account), risk, TimeProvider.System, refusalServices);
             return new(services, db, store, host, risk, run.Actor);
         }
         public async ValueTask DisposeAsync() { await context.DisposeAsync(); await services.DisposeAsync(); }
+    }
+    private sealed class SubcontractRefusalServices(IServiceProvider actual, IInventoryNegativeStockAttemptRecorderV1 recorder) : IServiceProvider
+    {
+        public object? GetService(Type serviceType) => serviceType == typeof(IInventoryNegativeStockAttemptRecorderV1)
+            ? recorder : actual.GetService(serviceType);
     }
     private sealed class S3Customer(Guid party, Guid account) : ILogisticsPartyAccountPortV1
     {

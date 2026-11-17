@@ -60,6 +60,48 @@ public sealed class LogisticsSubcontractDeliveryHttpContractTests(GoymenErpApiFa
         else { Assert.Equal("true", Assert.Single(response.Headers.GetValues("Idempotency-Replayed"))); Assert.Equal("SENTETIK-original", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id"))); }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_trusted_original_or_replayed_physical_refusal_preserves_the_original_available_and_requested_kg(bool replay)
+    {
+        const string detail = "Sistemde 20 kg var, 80 kg istendi.";
+        var stub = new SyntheticHost { Failure = new(409, "inventory_physical_stock_insufficient", isReplay: replay,
+            originalCorrelationId: replay ? "SENTETIK-original-physical" : null, detail: detail) };
+        using var host = Host(stub); using var client = Client(host);
+        using var response = await client.SendAsync(Post($"/{Guid.NewGuid():D}/weighing-corrections", CorrectionBody()));
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(detail, body.RootElement.GetProperty("detail").GetString());
+        Assert.Equal("inventory_physical_stock_insufficient", body.RootElement.GetProperty("code").GetString());
+        Assert.False(body.RootElement.TryGetProperty("stockShortfall", out _)); // Legacy stored detail has no invented structured IDs.
+        Assert.Equal(replay, response.Headers.Contains("Idempotency-Replayed"));
+        if (replay) Assert.Equal("SENTETIK-original-physical", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+    }
+
+    [Theory]
+    [InlineData(401, "inventory_physical_stock_insufficient", "Sistemde 20 kg var, 80 kg istendi.")]
+    [InlineData(403, "inventory_physical_stock_insufficient", "Sistemde 20 kg var, 80 kg istendi.")]
+    [InlineData(503, "inventory_physical_stock_insufficient", "Sistemde 20 kg var, 80 kg istendi.")]
+    [InlineData(409, LogisticsSubcontractDeliveryV1.ActiveInvoice, "Sistemde 20 kg var, 80 kg istendi.")]
+    [InlineData(409, "inventory_physical_stock_insufficient", "SENTETIK arbitrary exception text")]
+    public async Task Nondisclosable_or_nonphysical_or_untrusted_detail_is_never_returned_as_stock_kg(int status, string code, string detail)
+    {
+        var stub = new SyntheticHost { Failure = new(status, code, detail: detail) };
+        using var host = Host(stub); using var client = Client(host);
+        using var response = await client.SendAsync(Post($"/{Guid.NewGuid():D}/weighing-corrections", CorrectionBody()));
+        Assert.Equal(status, (int)response.StatusCode);
+        var text = await response.Content.ReadAsStringAsync(); Assert.DoesNotContain(detail, text);
+        using var body = JsonDocument.Parse(text); Assert.False(body.RootElement.TryGetProperty("stockShortfall", out _));
+        Assert.False(response.Headers.Contains("Idempotency-Replayed"));
+    }
+
+    private static string CorrectionBody() => JsonSerializer.Serialize(new
+    {
+        expectedVersion = "7", weighingId = Guid.NewGuid(), expectedWeighingRevision = 1, correctionId = Guid.NewGuid(),
+        direction = "TareFirst", firstWeighingKg = "100", secondWeighingKg = "106", reason = "SENTETIK gerçek gerekçe"
+    });
+
     private WebApplicationFactory<Program> Host(SyntheticHost stub) => factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services => services.Replace(ServiceDescriptor.Scoped<ILogisticsSubcontractDeliveryHostV1>(_ => stub))));
     private static HttpClient Client(WebApplicationFactory<Program> host)
     {

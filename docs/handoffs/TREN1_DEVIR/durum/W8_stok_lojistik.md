@@ -348,3 +348,30 @@
 - **DONE — owner kaynak kapsamı**: ana S29 checkpoint'i ve bu takip, gerçek yönetim/renderer/üç producer ile dar MIME
   kaynak eksiğini tamamlar. Merkezi mount/registry/pin ve birleşik baştaki doğrulama koordinatördedir. Kabul/SQL/browser/CI,
   K3 exact-head review ve kurumsal gerçek asset/grant/UAT kapıları ayrıdır; runtime **NOT_RUN**, OPEN-019 açık kalır.
+
+### STK-S21 — fason sevk ret günlüğü ve özgün kg mesajı
+
+- SAT-D328/D336..D339: gerçek fason sevk host'u, Inventory owner'ın fiziksel çıkış doğrulamasında ürettiği
+  proof'u ancak doğrulanmış rollback sonrasında mevcut `InventoryNegativeStockAttemptRecording` yoluna verir.
+  Fresh şirket/aktör/komut yetkisi kayıt öncesinde ve sonuçtan önce tekrar ölçülür; kaydedici kendi fresh owner
+  transaction'ında aynı proof'un şirket/aktör/izin çitini ve immutable dedup'unu korur. Rezervasyon yetersizliği
+  bu proof'u üretmez; belirsiz rollback veya kaydedici arızası 503'tür ve terminal ret kaydı oluşturmaz.
+- Yalnız gerçek physical proof'tan üretilen eldeki/istenen kg metni Command dönüşümüne, mevcut terminal JSON'una
+  ve özgün replay'e taşınır. Fason terminal okuyucusu mevcut bounded detail sözleşmesini doğrular; eski null/missing
+  detail JSON'u geçerlidir. 401/403/404/503 yanıtlarında fiziksel ayrıntı gösterilmez; keyfî exception/body metni alınmaz.
+- Mevcut frontend canonical kg-text decoder'ı uygun 409 physical code için kullanılır. Bozuk detail/status/replay
+  metadata'sı belirsiz yanıttır; eski kg yeniden hesaplanmaz. Ekran özgün veya replay ret metnini yalnız aynı
+  şirket/aktör/oturum binding'inde ve mevcut komut capability'si altında gösterir. Türkçe replay açıklaması kaynaklıdır.
+- Beş gerçek SQL fact kaynağı: gerçek ShipAsync fiziksel ret + bir kez jurnal/audit + stok değişse de aynı kg ile replay;
+  kaydedici arızası; doğrulanamayan rollback; rollback anında şirket/aktör/komut yetkisi kaybı; yalnız rezervasyon
+  yetersizliğinde fiziksel jurnal oluşmaması. SQL fault'ları açıkça sentetiktir; gerçek owner/ledger/transaction/replay
+  kullanılır. HTTP kaynakları güvenli özgün/replay detail ve nondisclosable yanıtları; Vitest kaynakları strict decoder,
+  legacy null detail, malformed replay/status ve ekranın şirket/aktör/oturum/izin çitlerini kapsar.
+- Kaynak derlemeleri: API **exit0 / 0 uyarı / 0 hata** (2:37,72); Logistics.UnitTests **exit0 / 0 uyarı / 0 hata**
+  (6,26sn); Api.IntegrationTests **exit0 / 0 uyarı / 0 hata** (47,97sn). İlk Logistics.UnitTests denemesi yalnız eksik
+  owner assets nedeniyle NETSDK1004/exit1 verdi; mevcut projeye dar restore exit0 ve ardından final build exit0 alındı.
+  Frontend son `npx tsc -b` **exit0**; bu delta C# kaynağını değiştirmedi. Her native süreç başlangıcında >=2GiB
+  fiziksel RAM doğrulandı, exit'ler anında ve ham loglar depodışında korundu. `git diff --check` exit0.
+- **SOURCE_COMPLETE — dar S21 kapanış kaynağı.** HTTP/unit/SQL/Vitest/browser/CI runtime **NOT_RUN**.
+  Yeni model/migration/permission veya guard allowlist girdisi yok. Merkezi ilişkisel envanter/grup/pin üretimi ve
+  exact-head K3 kabulü koordinatörde; bu beş fact'in sınıfı `ManufacturingSqlServerRelationalAcceptanceTests`'tir.

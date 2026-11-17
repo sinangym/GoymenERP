@@ -1,5 +1,6 @@
 using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Api.InventoryRuntime;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Logistics.Application.Contracts;
@@ -180,7 +181,11 @@ public sealed partial class LogisticsSubcontractDeliveryHost
         LogisticsInstructionServiceException? failure = null;
         try { return await TransactionAsync(scope, work, token); }
         catch (LogisticsInstructionServiceException error) { failure = error; }
-        catch (InventoryDefiniteShipmentException error) { failure = Error(error.Status, error.Code); }
+        catch (InventoryDefiniteShipmentException error)
+        {
+            failure = new(error.Status, error.Code,
+                detail: InventoryPhysicalStockRefusalProblem.Apply(error.Status, error, new Dictionary<string, object?>()));
+        }
         catch (LogisticsVersionConflictException) { failure = Error(409, SourceConflict); }
         catch (LogisticsRuleException error)
         {
@@ -198,7 +203,7 @@ public sealed partial class LogisticsSubcontractDeliveryHost
         {
             await TransactionAsync(scope, async ct =>
             {
-                await store.RecordRefusalAsync(envelope, hash, command, new(409, failure.Code, failure.Errors), ct); return true;
+                await store.RecordRefusalAsync(envelope, hash, command, new(409, failure.Code, failure.Errors, failure.Detail), ct); return true;
             }, token);
         }
         throw failure!;

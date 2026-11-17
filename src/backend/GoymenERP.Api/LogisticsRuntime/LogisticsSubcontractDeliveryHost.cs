@@ -1,5 +1,6 @@
 using System.Data;
 using System.Globalization;
+using GoymenERP.Api.InventoryRuntime;
 using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
@@ -26,7 +27,8 @@ public sealed partial class LogisticsSubcontractDeliveryHost(LogisticsDbContext 
     ICompanyContext company, ICurrentUser user, IErpAuthorityRevalidationService authority,
     IAuditEventCollector audit, IAuditTransactionWriterV1 auditWriter, ISettingsPrerequisiteProvider settings,
     ISalesOrderLineSerializationLockBinderV1 lineLocks, ISalesOrderLineReferencePortV1 salesLines,
-    ILogisticsPartyAccountPortV1 parties, ISalesShipmentRiskGateReadPortV1 risk, TimeProvider clock)
+    ILogisticsPartyAccountPortV1 parties, ISalesShipmentRiskGateReadPortV1 risk, TimeProvider clock,
+    IServiceProvider services)
     : ILogisticsSubcontractDeliveryHostV1
 {
     private sealed record Scope(Guid CompanyId, string ActorId, IReadOnlyCollection<string> Roles, string Permission, string[] Additional);
@@ -78,12 +80,20 @@ public sealed partial class LogisticsSubcontractDeliveryHost(LogisticsDbContext 
             await auditWriter.WritePendingAsync(tx.GetDbTransaction(), token);
             await StillAsync(scope, token); await tx.CommitAsync(token); return answer;
         }
-        catch
+        catch (Exception failure)
         {
             var rolledBack = false;
             try { await tx.RollbackAsync(CancellationToken.None); rolledBack = true; } catch { }
             auditWriter.DiscardPending(); db.ChangeTracker.Clear();
             if (!rolledBack) throw Error(503, Unavailable);
+            if (InventoryNegativeStockAttemptEvidenceException.Find(failure) is not null)
+            {
+                // SAT-D328: only the actual physical owner proof survives a confirmed rollback. The recorder
+                // owns a fresh transaction; neither a reservation refusal nor an uncertain rollback may use it.
+                await StillAsync(scope, CancellationToken.None);
+                try { await InventoryNegativeStockAttemptRecording.AfterRollbackAsync(services, failure); }
+                catch (Exception) { throw Error(503, Unavailable); }
+            }
             if (!token.IsCancellationRequested) await StillAsync(scope, token);
             throw;
         }
