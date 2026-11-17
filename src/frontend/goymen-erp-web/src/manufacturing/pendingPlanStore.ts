@@ -1,3 +1,4 @@
+import { decodePlanProcessSpec } from './contract'
 import type { SavePlanRequest } from './planCommandApi'
 
 export interface PendingPlanCreate {
@@ -184,6 +185,7 @@ function decode(value: unknown, context: CreateSlotContext): PendingPlanCreate |
   ) {
     return null
   }
+  if (Object.hasOwn(request, 'processSpec') && !decodePlanProcessSpec(request.processSpec)) return null
   if (!validSlittingSpec(request.slittingSpec)) return null
   if (!validCutToLengthSpec((request as { readonly cutToLengthSpec?: unknown }).cutToLengthSpec)) return null
   const pending: PendingPlanCreate = {

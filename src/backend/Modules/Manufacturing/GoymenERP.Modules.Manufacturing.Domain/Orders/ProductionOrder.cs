@@ -16,7 +16,7 @@ namespace GoymenERP.Modules.Manufacturing.Domain.Orders;
 /// performed by this module.
 /// </para>
 /// </summary>
-public sealed class ProductionOrder
+public sealed partial class ProductionOrder
 {
     private readonly List<PlannedInput> _plannedInputs;
     private readonly List<InputIssue> _issues = [];
@@ -219,7 +219,8 @@ public sealed class ProductionOrder
         DateOnly? planDueDate = null,
         Guid? cancelledByUserId = null,
         DateTimeOffset? cancelledAtUtc = null,
-        string? cancellationReason = null)
+        string? cancellationReason = null,
+        IEnumerable<ProductionOrderReopeningV1>? reopenings = null)
     {
         ArgumentNullException.ThrowIfNull(issues);
         ArgumentNullException.ThrowIfNull(returns);
@@ -280,6 +281,9 @@ public sealed class ProductionOrder
                 measurement.Mass, measurement.MeasuredAtUtc);
         }
 
+        // URT-D32/D56: historical close decisions were made on their own fact generation. Never re-evaluate them
+        // against the corrected current facts; validate their immutable transition chain and retain their headers.
+        order.RestoreReopenings(reopenings ?? []);
         var hasCancel = cancelledByUserId is not null || cancelledAtUtc is not null || cancellationReason is not null;
         if (hasCancel)
         {

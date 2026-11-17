@@ -12,6 +12,7 @@ const companyId = '10000000-0000-0000-0000-000000000001'
 const planId = '20000000-0000-0000-0000-000000000002'
 const priority: PlanPriority = { companyId, planId, planVersion: 3, priorityScore: 0, priorityRevision: 0, recordedBy: null, recordedAtUtc: null, reason: null }
 const queue: PlanQueue = { contractVersion: 1, companyId, workCenterId: '30000000-0000-0000-0000-000000000003', targetPlanId: planId, targetPlanVersion: 3,
+  queueRevision: 0, hasManualOrder: false,
   items: [{ planId, dueDate: null, priorityScore: 0, priorityRevision: 0, plannedKg: '10', processedKg: '11', remainingKg: '0', isOverPlanned: true, isQueued: true }] }
 function ready() {
   vi.mocked(fetchPlanPriority).mockResolvedValue({ type: 'ok-single', data: priority })

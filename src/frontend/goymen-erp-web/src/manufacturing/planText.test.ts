@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { lifecycleFailureText } from './planText'
+import { lifecycleFailureText, PLAN_PHYSICAL_MASS_REFUSAL, saveFailureText } from './planText'
+import { revisionFailureText } from './planEditText'
+import { previewRefusal } from './planPreviewText'
+
+describe('AT044 physical mass refusal', () => {
+  it('names the total physical bound consistently for create, revision and preview without calling it free stock', () => {
+    const code = 'manufacturing_plan_label_not_usable'
+    expect(saveFailureText(422, code)).toBe(PLAN_PHYSICAL_MASS_REFUSAL)
+    expect(revisionFailureText(422, code, 'inputs[0].plannedKg', 'Slitting')).toBe(PLAN_PHYSICAL_MASS_REFUSAL)
+    expect(previewRefusal(422, code, 'inputs[0].plannedKg')).toBe(`${PLAN_PHYSICAL_MASS_REFUSAL} Alan: inputs[0].plannedKg.`)
+    expect(PLAN_PHYSICAL_MASS_REFUSAL).toContain('tüm pozisyonlarındaki güncel fiziksel toplamını')
+  })
+})
 
 describe('lifecycleFailureText', () => {
   it('names the preparer refusal of the approval (U2-d, URT-D2)', () => {

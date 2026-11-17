@@ -135,7 +135,7 @@ public sealed partial class ManufacturingCommandService
         }
 
         var verified = await VerifyPlanContentAsync(
-            content.Inputs!, content.TargetKg, permission, companyId, actorId, cancellationToken);
+            content.Inputs!, content.TargetKg, process.Value, permission, companyId, actorId, cancellationToken);
         if (verified.Refusal is not null)
         {
             return Refusal<PlanPreviewViewV1>(verified.Refusal);
@@ -159,6 +159,9 @@ public sealed partial class ManufacturingCommandService
         {
             return fenced;
         }
+
+        if (await VerifyPaintSelectionAsync(processSpec.Value, process.Value, permission, companyId, actorId, cancellationToken) is { } paintRefusal)
+            return Refusal<PlanPreviewViewV1>(paintRefusal);
 
         ProductionPlan plan;
         try

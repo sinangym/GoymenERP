@@ -540,6 +540,9 @@ public static class ErpPermissions
     /// </summary>
     public const string ManufacturingOrdersCancel = "manufacturing.orders.cancel";
 
+    /// <summary>URT-D32/D77/D85: reasoned reopening under the existing period and Inventory cost fences. Registration only; no role or user grant.</summary>
+    public const string ManufacturingOrdersReopen = "manufacturing.orders.reopen";
+
     /// <summary>
     /// Üretim U2-a (API-11, plan v1 §5.2): cancelling a production plan — a Draft, or an approved plan that opened no
     /// order — with a reason; the plan is kept, never deleted. Its own name because cancelling a plan is neither writing
@@ -1707,6 +1710,7 @@ public static class ErpPermissions
             ManufacturingOrdersCloseExceptionApprove,
             ManufacturingOrdersWrite,
             ManufacturingOrdersCancel,
+            ManufacturingOrdersReopen,
             ManufacturingPlansRead,
             ManufacturingPlansCancel,
             ManufacturingPlansReorder,
@@ -1981,6 +1985,7 @@ public static class ErpPermissions
             ManufacturingOrdersCloseExceptionApprove,
             ManufacturingOrdersWrite,
             ManufacturingOrdersCancel,
+            ManufacturingOrdersReopen,
             ManufacturingPlansRead,
             ManufacturingPlansCancel,
             ManufacturingPlansReorder,

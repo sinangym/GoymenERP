@@ -868,6 +868,13 @@ Decision: `docs/decisions/SINAN_KARARLARI_2026-11-10_SATIS_EK52.md`. Inventory o
 - **Open (NEEDS-SINAN):** releasing the whole remainder on a link failure, treating not enough unheld kg as a link failure,
   and the partial non-kg share without a central conversion source (released) are the author's reading.
 
+## Receipt reversal history (STK-S19, F017-e, ALS-D86/D91/D92, 7B)
+
+- `IInventoryGoodsReceiptReversalParticipantV1` borrows the host transaction. Purchasing is flushed first; its post-write source must use that same connection and transaction. The host owns Sales-line locks in ascending order, then the full purchase-line union, fresh subset validation, authority and commit/rollback.
+- Original receipt and conversion rows remain immutable. A separate reversal ledger records exact original conversion shares, reopened amounts, overflow released with `acceptance-reversed-no-supply`, and unheld amounts. Prior released shares never return; closed Sales demand or an inactive physical hold does not reopen a future allocation. Physical and purchase-unit quantities remain separate facts.
+- `AddInventoryGoodsReceiptReversals` adds two company-scoped history tables, same-company original links, and movement kind 16 for a pure acceptance undo. Down first refuses with **THROW 51950** while either history table or a kind-16 movement exists; empty storage rolls back freely (forward fix).
+- Evidence: unit/model and real-SQL fact sources are present. Runtime tests are **NOT_RUN**; the complete Purchasing undo/correction and supplier-return host chain remains required before this slice can be called usable.
+
 ## dependency_wait
 
 - **Central registration (CARİ, same branch, sequential):** the tenant guard's reviewed inventory (this DbContext's fingerprint, the design-time factory and the initializer's `Migrate`/`EnsureCreated` branch); the module-dependency allowlist edge `Inventory.Infrastructure → Audit.Infrastructure` (ADR-009); the `Api.IntegrationTests` project reference to Inventory; and the relational verifier's BROAD list and counts for `InventorySqlServerRelationalAcceptanceTests`.
