@@ -10,6 +10,7 @@ import { PurchaseRequestCreatePage } from './PurchaseRequestCreatePage'
 import { PurchaseRequestDetailPage } from './PurchaseRequestDetailPage'
 import { PurchaseRequestListPage } from './PurchaseRequestListPage'
 import { IncomingInvoiceDetailPage, IncomingInvoiceListPage } from './IncomingInvoicePages'
+import { ServiceOrderListPage, ServiceOrderCreatePage, ServiceOrderDetailPage } from './ServiceOrderPages'
 
 /** Owner ids are checked against the server catalogue; staged invoice routes fail closed until published. */
 function gate(capability: PurchasingCapabilityId, children: ReactNode) {
@@ -17,6 +18,9 @@ function gate(capability: PurchasingCapabilityId, children: ReactNode) {
 }
 
 export const purchasingRoutes: RouteObject[] = [
+  { path: PURCHASING_ROUTE[PURCHASING_CAPABILITY.serviceOrderList].slice(1), element: gate(PURCHASING_CAPABILITY.serviceOrderList, <ServiceOrderListPage />) },
+  { path: PURCHASING_ROUTE[PURCHASING_CAPABILITY.serviceOrderCreate].slice(1), element: gate(PURCHASING_CAPABILITY.serviceOrderCreate, <ServiceOrderCreatePage />) },
+  { path: PURCHASING_ROUTE[PURCHASING_CAPABILITY.serviceOrderDetail].slice(1), element: gate(PURCHASING_CAPABILITY.serviceOrderDetail, <ServiceOrderDetailPage />) },
   { path: PURCHASING_ROUTE[PURCHASING_CAPABILITY.invoiceList].slice(1), element: gate(PURCHASING_CAPABILITY.invoiceList, <IncomingInvoiceListPage />) },
   { path: PURCHASING_ROUTE[PURCHASING_CAPABILITY.invoiceDetail].slice(1), element: gate(PURCHASING_CAPABILITY.invoiceDetail, <IncomingInvoiceDetailPage />) },
   { path: PURCHASING_ROUTE[PURCHASING_CAPABILITY.requestList].slice(1), element: gate(PURCHASING_CAPABILITY.requestList, <PurchaseRequestListPage />) },

@@ -46,7 +46,13 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "PURCHASING";
-    public const string OwnerContractVersion = "1.10";
+    public const string OwnerContractVersion = "1.11";
+
+    public const string ServiceOrderListCapabilityId = "purchasing.service-orders.list";
+    public const string ServiceOrderCreateCapabilityId = "purchasing.service-orders.create";
+    public const string ServiceOrderDetailCapabilityId = "purchasing.service-orders.detail";
+    public const string ServiceOrderApproveCapabilityId = "purchasing.service-orders.approve";
+    public const string ServiceOrderAcceptCapabilityId = "purchasing.service-orders.accept";
 
     public const string InvoiceListCapabilityId = "purchasing.invoices.list";
     public const string InvoiceDetailCapabilityId = "purchasing.invoices.detail";
@@ -103,6 +109,23 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 
         return
         [
+            new ShellCapabilityDeclaration(ServiceOrderListCapabilityId, ServiceOrderListCapabilityId, "/satinalma/hizmet-siparisleri", "ALC-S7-list",
+                ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide, [PurchasingPermissionManifestV1.OrdersRead], ImplementationAvailable: true),
+            new ShellCapabilityDeclaration(ServiceOrderCreateCapabilityId, ServiceOrderCreateCapabilityId, "/satinalma/hizmet-siparisleri/yeni", "ALC-S7-create",
+                ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide, [PurchasingPermissionManifestV1.OrdersCreate], ImplementationAvailable: true),
+            new ShellCapabilityDeclaration(ServiceOrderDetailCapabilityId, ServiceOrderDetailCapabilityId, "/satinalma/hizmet-siparisleri/:serviceOrderId", "ALC-S7-detail",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide, [PurchasingPermissionManifestV1.OrdersRead], ImplementationAvailable: true),
+            new ShellCapabilityDeclaration(ServiceOrderApproveCapabilityId, ServiceOrderApproveCapabilityId, "/satinalma/hizmet-siparisleri/:serviceOrderId", "ALC-S7-detail",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide, [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersApprove],
+                ImplementationAvailable: true, ParentCapabilityId: ServiceOrderDetailCapabilityId),
+            new ShellCapabilityDeclaration(ServiceOrderAcceptCapabilityId, ServiceOrderAcceptCapabilityId, "/satinalma/hizmet-siparisleri/:serviceOrderId", "ALC-S7-detail",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide, [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.GoodsReceiptsRecord],
+                ImplementationAvailable: true, ParentCapabilityId: ServiceOrderDetailCapabilityId),
             invoiceDetail with { CapabilityId = InvoiceListCapabilityId, RouteId = InvoiceListCapabilityId,
                 RoutePath = "/satinalma/faturalar", ScreenId = "P-INV-LIST", RoutePrecedence = ShellCapabilityRoutePrecedence.Static },
             invoiceDetail,

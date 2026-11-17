@@ -2,7 +2,8 @@ namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 
 public sealed record PurchaseIncomingInvoicePageV1(int PageIndex, bool HasNext, IReadOnlyList<PurchaseIncomingInvoiceViewV1> Items);
 public sealed record PurchaseInvoiceReceiptCandidateV1(Guid PurchaseOrderId, string? PurchaseOrderNumber, Guid PurchaseOrderLineId,
-    int OrderLineNo, Guid AcceptanceId, DateTimeOffset AcceptedAtUtc, Guid ProductId, Guid UnitId, string AvailableQuantity);
+    int OrderLineNo, Guid AcceptanceId, DateTimeOffset AcceptedAtUtc, Guid ProductId, Guid UnitId, string AvailableQuantity,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] Guid? ServiceTypeId = null);
 public sealed record PurchaseInvoiceReceiptCandidatePageV1(Guid InvoiceId, Guid InvoiceLineId, string InvoiceVersion,
     int PageIndex, bool HasNext, IReadOnlyList<PurchaseInvoiceReceiptCandidateV1> Items);
 

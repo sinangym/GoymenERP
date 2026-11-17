@@ -45,6 +45,11 @@ public static class PurchasingModuleExtensions
         });
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<PurchasingStore>();
+        services.AddScoped<PurchaseServiceOrderStoreV1>();
+        services.AddScoped<IPurchaseServiceOrderStoreV1>(sp => sp.GetRequiredService<PurchaseServiceOrderStoreV1>());
+        services.AddScoped<IPurchaseSubcontractOrderReadPortV1>(sp => sp.GetRequiredService<PurchaseServiceOrderStoreV1>());
+        services.AddScoped<IPurchaseServiceAcceptanceReadPortV1>(sp => sp.GetRequiredService<PurchaseServiceOrderStoreV1>());
+        services.AddScoped<IPurchaseServiceOrderServiceV1, PurchaseServiceOrderServiceV1>();
         services.AddScoped<IPurchasingStore>(serviceProvider => serviceProvider.GetRequiredService<PurchasingStore>());
         services.AddScoped<IPurchasingIncomingInvoiceStoreV1>(serviceProvider => serviceProvider.GetRequiredService<PurchasingStore>());
         services.AddScoped<IPurchaseIncomingInvoiceWorkflowV1, PurchaseIncomingInvoiceWorkflow>();

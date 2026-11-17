@@ -453,3 +453,21 @@ authorization services/HTTP/UI and the separate Finance admission/retry still ne
 invoice lines need their own real owner references; no artificial goods receipt substitutes for them.
 Unit/model and real SQL test sources cover immutable source/history, tenant isolation, replay, actor/payload conflicts,
 quantity scale, late authority loss, transaction ownership, one outbox event and the forward-fix guard. Runtime NOT_RUN.
+
+## ALC-S7 / ALS-D29, ALS-D40 and KIM-D49 service orders
+
+Service purchase and outgoing own-material subcontract share actual Settings service types and units.
+Cari supplies the active Supplier account and, for subcontract, its Tolling role. Product and Inventory prove
+material/output identities; customer-owned labels cannot authorize an outgoing own-material order.
+The commercial order reserves its actual Settings purchase-order number in its own Serializable transaction.
+Approval keeps the existing purchase maker/checker boundary; actual service acceptance is append-only and creates
+no goods receipt or stock movement. API72 exposes price-free operational order facts to trusted in-process consumers.
+Service invoice matching binds actual service acceptances, under the shared line locks, in its own table with
+company-scoped composite foreign keys. Normal goods receipt foreign keys remain intact. Typed ServiceTypeId is
+additive and omitted when null, preserving legacy goods JSON. Service lines never enter material-cost order bindings.
+EF generated 20261117110054_AddPurchaseServiceOrders; Up is additive DDL. Down starts with THROW 51992 while
+any service order, revision, acceptance, invoice binding or terminal attempt exists. No migration was applied.
+Unit/model, HTTP, real SQL, strict transport and UI regression sources are written. API, Purchasing.UnitTests,
+Api.IntegrationTests and frontend tsc source builds passed; all runtime/SQL/Vitest/browser/CI evidence is NOT_RUN.
+Central Program/shell/OpenAPI/inventory composition is pending integration. Unpriced service orders remain
+unpriced: invoice matching refuses missing price; an actual later price-entry workflow remains a visible source gap.

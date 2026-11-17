@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 
 /// <summary>Reads Purchasing's actual invoice/receipt owners only. Candidate quantities are advisory, never a reservation.</summary>
-public sealed class PurchaseIncomingInvoiceWorkspace(PurchasingDbContext context, ICompanyContext company, ICurrentUser user,
+public sealed partial class PurchaseIncomingInvoiceWorkspace(PurchasingDbContext context, ICompanyContext company, ICurrentUser user,
     IErpAuthorityRevalidationService authority, IPurchaseIncomingInvoiceWorkflowV1 workflow) : IPurchaseIncomingInvoiceWorkspaceV1
 {
     private const int PageSize = 25;
@@ -46,6 +46,7 @@ public sealed class PurchaseIncomingInvoiceWorkspace(PurchasingDbContext context
             ?? throw new PurchasingServiceException(404, "not_found");
         if (snapshot.Status != PurchaseIncomingInvoiceStatus.Recorded)
             return new(invoiceId, invoiceLineId, snapshot.Version.ToString(CultureInfo.InvariantCulture), pageIndex, false, []);
+        if (line.ServiceTypeId is not null) return await ServiceCandidatesAsync(scope, snapshot, line, pageIndex, cancellationToken);
         var query = from accepted in context.Acceptances.AsNoTracking()
                     join order in context.Orders.AsNoTracking() on accepted.OrderId equals order.Id
                     join sourceLine in context.OrderLines.AsNoTracking()
