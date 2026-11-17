@@ -4,7 +4,8 @@ namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 public sealed record PurchaseInvoiceImportLineMappingV1(string SourceLineId, Guid LineId, Guid ProductId,
     string ExpectedProductVersion, Guid UnitId, string ItemType, string LinePurpose, string VatTaxCode,
     Guid? ServiceTypeId = null, string? ExpectedServiceTypeVersion = null,
-    Guid? ExpenseTypeId = null, string? ExpectedExpenseTypeVersion = null);
+    Guid? ExpenseTypeId = null, string? ExpectedExpenseTypeVersion = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? ExpectedItemTypeVersion = null);
 public sealed record PurchaseInvoiceImportInstallmentV1(Guid Id, Guid OpenItemId, int Sequence, DateOnly DueOn,
     string Amount, string? FunctionalAmount);
 public sealed record PurchaseInvoiceImportAdmissionRequestV1(PurchaseInvoiceImportPreviewRequestV1 Source,

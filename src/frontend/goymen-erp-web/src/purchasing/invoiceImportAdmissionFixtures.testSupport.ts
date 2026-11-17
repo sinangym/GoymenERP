@@ -10,10 +10,10 @@ export const admissionReferences = (): ImportMappingReferences => ({ companyId: 
   currencies: [{ currencyId: id(12), code: 'USD', profileId: id(13), profileVersion: '2', scale: 2 }], payable: '12', functionalPayable: '24', serviceTypes: [], expenseTypes: null })
 export const admissionSupplier = () => ({ companyId: id(2), importId: id(1), supplierPartyId: id(14), companyAccountId: id(15), partyVersion: '4', accountVersion: '5' })
 export const admissionProducts = () => ({ companyId: id(2), importId: id(1), searchWindowFull: false,
-  items: [{ productId: id(16), productVersion: '6', code: 'SYN', name: 'SENTETIK ürün', unitId: id(10), unitCode: 'KGM', profileId: id(11), profileVersion: '3' }] })
+  items: [{ productId: id(16), productVersion: '6', code: 'SYN', name: 'SENTETIK ürün', unitId: id(10), unitCode: 'KGM', profileId: id(11), profileVersion: '3', itemType: 'Steel' as const, itemTypeVersion: '7' }] })
 export const admissionSnapshot = (): ImportRecordSnapshot => ({ facts: admissionFacts(), request: { source: importRequestFixture(), expectedInvoiceVersion: '0',
   supplierPartyId: id(14), companyAccountId: id(15), expectedPartyVersion: '4', expectedAccountVersion: '5', currencyId: id(12),
-  lines: [{ sourceLineId: '001', lineId: id(17), productId: id(16), expectedProductVersion: '6', unitId: id(10), itemType: 'General', linePurpose: 'resale', vatTaxCode: '' }],
+  lines: [{ sourceLineId: '001', lineId: id(17), productId: id(16), expectedProductVersion: '6', unitId: id(10), itemType: 'Steel', linePurpose: 'resale', vatTaxCode: '', expectedItemTypeVersion: '7' }],
   installments: [{ id: id(18), openItemId: id(19), sequence: 1, dueOn: '2026-12-17', amount: '12', functionalAmount: null }] } })
 export const admissionResult = (snapshot = admissionSnapshot()) => ({ isReplay: false, originalCorrelationId: 'SENTETIK', financeOutcome: null,
   invoice: { ...incomingInvoiceFixture(), id: id(1), companyId: id(2), supplierPartyId: id(14), companyAccountId: id(15), currencyId: id(12),

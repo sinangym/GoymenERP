@@ -12,7 +12,7 @@ public sealed record PurchaseInvoiceImportSupplierV1(Guid CompanyId, Guid Import
     string PartyVersion, string AccountVersion);
 public sealed record PurchaseInvoiceImportProductsRequestV1(PurchaseInvoiceImportPreviewRequestV1 Source, string? Q);
 public sealed record PurchaseInvoiceImportProductV1(Guid ProductId, string ProductVersion, string Code, string Name,
-    Guid UnitId, string UnitCode, Guid ProfileId, string ProfileVersion);
+    Guid UnitId, string UnitCode, Guid ProfileId, string ProfileVersion, string ItemType, string ItemTypeVersion);
 public sealed record PurchaseInvoiceImportProductsV1(Guid CompanyId, Guid ImportId,
     IReadOnlyList<PurchaseInvoiceImportProductV1> Items, bool SearchWindowFull);
 public interface IPurchaseInvoiceImportProductSearchV1

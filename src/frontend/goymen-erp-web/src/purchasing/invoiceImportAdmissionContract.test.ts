@@ -14,6 +14,9 @@ describe('import admission source contracts', () => {
     expect(decodeImportSupplier(admissionSupplier(), id(2), id(1), id(14), id(15))).not.toBeNull()
     expect(decodeImportSupplier({ ...admissionSupplier(), partyVersion: 4 }, id(2), id(1), id(14), id(15))).toBeNull()
     expect(decodeImportProducts({ ...admissionProducts(), importId: id(99) }, id(2), id(1))).toBeNull()
+    const product = admissionProducts().items[0]
+    for (const raw of [{ ...product, itemType: 'General' }, { ...product, itemType: null }, { ...product, itemTypeVersion: 7 }, { ...product, itemTypeVersion: '0' }])
+      expect(decodeImportProducts({ ...admissionProducts(), items: [raw] }, id(2), id(1))).toBeNull()
   })
   it('binds a stored record to every selected identity and source, never a mismatching successful HTTP result', () => {
     const snapshot = admissionSnapshot(), result = admissionResult()

@@ -94,9 +94,32 @@ public sealed partial class PurchaseInvoiceImportAdmission
         var answer = await GuardAsync(scope, () => port.SearchAsync(request.Q, preview.Invoice!.InvoiceDate, token), token);
         if (answer.Items is null || answer.Items.Count > 25 || answer.Items.Any(x => x is null || x.ProductId == Guid.Empty
             || x.UnitId == Guid.Empty || x.ProfileId == Guid.Empty || !Identity(x.ProductVersion, 128) || !Identity(x.Code, 128)
-            || !Identity(x.Name, 4000) || !Identity(x.UnitCode, 128) || !Identity(x.ProfileVersion, 32))
+            || !Identity(x.Name, 4000) || !Identity(x.UnitCode, 128) || !Identity(x.ProfileVersion, 32)
+            || !Enum.TryParse<PurchasingProductItemTypeKindV1>(x.ItemType, out var kind) || !Enum.IsDefined(kind) || kind.ToString() != x.ItemType
+            || !long.TryParse(x.ItemTypeVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var version)
+            || version < 1 || TextVersion(version) != x.ItemTypeVersion)
             || answer.Items.Select(x => (x.ProductId, x.UnitId)).Distinct().Count() != answer.Items.Count) throw Unavailable();
         return new(scope.Company, importId, answer.Items, answer.SearchWindowFull);
+    }
+
+    private async Task<PurchasingProductItemTypeSourceV1> ProductTypeAsync(Scope scope, Guid productId, CancellationToken token)
+    {
+        var port = itemTypes ?? throw Unavailable();
+        var answer = await GuardAsync(scope, () => port.GetAsync(productId, token), token);
+        if (answer?.Outcome == PurchasingProductItemTypeOutcomeV1.Denied) throw Forbidden();
+        if (answer is null || answer.Outcome != PurchasingProductItemTypeOutcomeV1.Found || answer.CompanyId != scope.Company
+            || answer.ProductId != productId || answer.ItemType is not { } kind || !Enum.IsDefined(kind) || answer.Version is not > 0) throw Unavailable();
+        return answer;
+    }
+
+    private async Task FenceProductTypesAsync(Scope scope, IReadOnlyList<PurchasingProductItemTypeSourceV1> sources, CancellationToken token)
+    {
+        await FenceAsync(scope, token);
+        foreach (var source in sources.DistinctBy(x => x.ProductId))
+        {
+            var fresh = await ProductTypeAsync(scope, source.ProductId, token);
+            if (fresh.ItemType != source.ItemType || fresh.Version != source.Version) throw Conflict();
+        }
     }
 
     private async Task<PurchaseInvoiceImportPreviewV1> MappingSourceAsync(Scope scope, Guid id, PurchaseInvoiceImportPreviewRequestV1 source, CancellationToken token)

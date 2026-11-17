@@ -24,6 +24,8 @@ public sealed class PurchaseInvoiceImportAdmissionTests
         Assert.Equal(world.Id, result.Invoice.Source.ImportProof!.ImportId);
         Assert.Contains("source-01", result.Invoice.Source.ImportProof.MappingJson, StringComparison.Ordinal);
         Assert.Equal("OfficialInvoiceRate", result.Invoice.Source.ImportProof.OfficialRatePurpose);
+        Assert.Contains("Steel", result.Invoice.Source.ImportProof.ProductItemTypesJson!, StringComparison.Ordinal);
+        Assert.Contains("7", result.Invoice.Source.ImportProof.ProductItemTypesJson!, StringComparison.Ordinal);
         Assert.Equal(PurchaseIncomingInvoicePermissionNamesV1.Import, world.SavedEnvelope!.PermissionCode);
         Assert.Equal("1", result.Invoice.Source.DocumentVersion.ToString());
     }
@@ -59,9 +61,14 @@ public sealed class PurchaseInvoiceImportAdmissionTests
         var world = new World();
         var original = await world.Service.RecordAsync(world.Id, world.Request, World.Metadata);
         world.File = world.File with { Currency = "BROKEN" };
+        world.ItemTypeOutcome = PurchasingProductItemTypeOutcomeV1.Unavailable;
+        var typeReads = world.ItemTypeReads;
         var replay = await world.Service.RecordAsync(world.Id, world.Request, World.Metadata);
         Assert.True(replay.IsReplay); Assert.Equal(original.Invoice, replay.Invoice); Assert.Equal(1, world.PreviewReads);
+        Assert.Equal(typeReads, world.ItemTypeReads);
         world.Denied = PurchaseIncomingInvoicePermissionNamesV1.Import;
+        Assert.Equal(403, (await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service.RecordAsync(world.Id, world.Request, World.Metadata))).Status);
+        world.Denied = PurchasingPermissionManifestV1.OrdersPriceRead;
         Assert.Equal(403, (await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service.RecordAsync(world.Id, world.Request, World.Metadata))).Status);
     }
 
@@ -160,10 +167,92 @@ public sealed class PurchaseInvoiceImportAdmissionTests
         Assert.Null(world.Saved); Assert.Equal(0, world.RefusalWrites);
     }
 
+    [Theory]
+    [InlineData(PurchasingProductItemTypeOutcomeV1.Unavailable, 503)]
+    [InlineData(PurchasingProductItemTypeOutcomeV1.Denied, 403)]
+    public async Task Missing_or_denied_actual_Product_item_type_never_becomes_a_General_invoice_line(PurchasingProductItemTypeOutcomeV1 outcome, int status)
+    {
+        var world = new World { ItemTypeOutcome = outcome };
+        Assert.Equal(status, (await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service.RecordAsync(world.Id, world.Request, World.Metadata))).Status);
+        Assert.Null(world.Saved); Assert.Equal(0, world.RefusalWrites);
+    }
+
+    [Fact]
+    public async Task Changed_or_forged_item_type_is_a_terminal_source_version_conflict_and_final_save_rechecks_the_owner()
+    {
+        var forged = new World(); var request = forged.Request with { Lines = [forged.Request.Lines[0] with { ItemType = "General" }] };
+        Assert.Equal(409, (await Assert.ThrowsAsync<PurchasingServiceException>(() => forged.Service.RecordAsync(forged.Id, request, World.Metadata))).Status);
+        Assert.Null(forged.Saved);
+        var changed = new World { ChangeTypeBeforeSave = true };
+        Assert.Equal(409, (await Assert.ThrowsAsync<PurchasingServiceException>(() => changed.Service.RecordAsync(changed.Id, changed.Request, World.Metadata))).Status);
+        Assert.Null(changed.Saved); Assert.Equal(1, changed.RefusalWrites);
+    }
+
+    [Fact]
+    public async Task Settings_service_source_remains_independent_of_Product_item_type_and_legacy_optional_JSON_is_omitted()
+    {
+        var world = new World { ItemTypeOutcome = PurchasingProductItemTypeOutcomeV1.Unavailable };
+        var map = world.Request.Lines[0] with { ProductId = Guid.Empty, ExpectedProductVersion = "", ItemType = "Service", LinePurpose = "service",
+            ServiceTypeId = world.ServiceTypeId, ExpectedServiceTypeVersion = "1", ExpectedItemTypeVersion = null };
+        var request = world.Request with { Lines = [map] };
+        var result = await world.Service.RecordAsync(world.Id, request, World.Metadata);
+        Assert.Equal(world.ServiceTypeId, result.Invoice.Lines[0].ServiceTypeId); Assert.Null(result.Invoice.Source.ImportProof!.ProductItemTypesJson);
+        Assert.DoesNotContain("expectedItemTypeVersion", System.Text.Json.JsonSerializer.Serialize(map, PurchasingJson.Options), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Missing_additive_item_type_proof_preserves_the_legacy_command_hash_and_snapshot_JSON()
+    {
+        var world = new World(); var request = world.Request;
+        var map = request.Lines[0] with { ExpectedItemTypeVersion = null };
+        var legacyMap = new { map.SourceLineId, map.LineId, map.ProductId, map.ExpectedProductVersion, map.UnitId,
+            map.ItemType, map.LinePurpose, map.VatTaxCode, map.ServiceTypeId, map.ExpectedServiceTypeVersion,
+            map.ExpenseTypeId, map.ExpectedExpenseTypeVersion };
+        var legacyRequest = new { request.Source, request.ExpectedInvoiceVersion, request.SupplierPartyId, request.CompanyAccountId,
+            request.ExpectedPartyVersion, request.ExpectedAccountVersion, request.CurrencyId, Lines = new[] { legacyMap }, request.Installments };
+        Assert.Equal(PurchasingRequestHash.Compute(PurchaseIncomingInvoiceCommandsV1.Record, world.Id, legacyRequest),
+            PurchasingRequestHash.Compute(PurchaseIncomingInvoiceCommandsV1.Record, world.Id, request with { Lines = [map] }));
+        var proof = new PurchaseInvoiceImportProof(world.Id, "synthetic.v1", "{}", "[]", world.Id, 1, world.Id, 1, "[]", null);
+        var json = System.Text.Json.JsonSerializer.Serialize(proof, PurchasingJson.Options);
+        Assert.DoesNotContain("productItemTypesJson", json, StringComparison.Ordinal);
+        Assert.Null(System.Text.Json.JsonSerializer.Deserialize<PurchaseInvoiceImportProof>(json, PurchasingJson.Options)!.ProductItemTypesJson);
+    }
+
+    [Fact]
+    public async Task Product_type_read_revocation_before_commit_never_saves_or_stores_a_business_refusal()
+    {
+        var world = new World { DenyItemTypeBeforeSave = true };
+        Assert.Equal(403, (await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service.RecordAsync(world.Id, world.Request, World.Metadata))).Status);
+        Assert.Null(world.Saved); Assert.Equal(0, world.RefusalWrites);
+    }
+
+    [Fact]
+    public async Task Product_Service_is_not_converted_to_goods_or_a_Settings_service_identity()
+    {
+        var world = new World { ItemType = PurchasingProductItemTypeKindV1.Service };
+        var request = world.Request with { Lines = [world.Request.Lines[0] with { ItemType = "Service" }] };
+        Assert.Equal(400, (await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service.RecordAsync(world.Id, request, World.Metadata))).Status);
+        Assert.Null(world.Saved); Assert.Equal(0, world.RefusalWrites);
+    }
+
+    [Theory]
+    [InlineData("version")]
+    [InlineData("kind")]
+    [InlineData("company")]
+    public async Task Malformed_item_type_owner_metadata_is_unavailable_without_a_stored_attempt(string defect)
+    {
+        var world = new World();
+        if (defect == "version") world.ItemTypeVersion = 0;
+        if (defect == "kind") world.ItemType = (PurchasingProductItemTypeKindV1)999;
+        if (defect == "company") world.ItemTypeCompany = Guid.NewGuid();
+        Assert.Equal(503, (await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service.RecordAsync(world.Id, world.Request, World.Metadata))).Status);
+        Assert.Null(world.Saved); Assert.Equal(0, world.RefusalWrites);
+    }
+
     private sealed class World : ICompanyContext, ICurrentUser, IErpAuthorityRevalidationService, ICorrelationContext,
         IPurchaseInvoiceImportV1, IPurchasingIncomingInvoiceStoreV1, IPurchasingPartyAccountPortV2,
         IProductPurchaseEligibilityPortV1, ISettingsPrerequisiteProvider, ISettingsReferenceListReaderV1,
-        ISettingsUnitIdentityCatalogV1, ISettingsMoneyCandidateReaderV2, IPurchaseInvoiceImportProductSearchV1
+        ISettingsUnitIdentityCatalogV1, ISettingsMoneyCandidateReaderV2, IPurchaseInvoiceImportProductSearchV1, IPurchasingProductItemTypePortV1
     {
         public static PurchasingCommandMetadata Metadata => new("synthetic-import-key", "synthetic-import-correlation", null, DateTimeOffset.UtcNow);
         public Guid Id { get; } = Guid.NewGuid();
@@ -172,8 +261,16 @@ public sealed class PurchaseInvoiceImportAdmissionTests
         public Guid? UnitCompany { get; set; }
         public string? Denied { get; set; }
         public string ProductVersion { get; set; } = "1";
+        public long ItemTypeVersion { get; set; } = 7;
+        public Guid? ItemTypeCompany { get; set; }
+        public PurchasingProductItemTypeOutcomeV1 ItemTypeOutcome { get; set; } = PurchasingProductItemTypeOutcomeV1.Found;
+        public PurchasingProductItemTypeKindV1? ItemType { get; set; } = PurchasingProductItemTypeKindV1.Steel;
         public bool BeforeSave { get; set; }
         public bool ConcurrentWrite { get; set; }
+        public bool ChangeTypeBeforeSave { get; set; }
+        public bool DenyItemTypeBeforeSave { get; set; }
+        public int ItemTypeReads { get; private set; }
+        public Guid ServiceTypeId { get; } = Guid.NewGuid();
         public PurchaseIncomingInvoiceSnapshot? Saved { get; private set; }
         public PurchasingWriteEnvelope? SavedEnvelope { get; private set; }
         public int PreviewReads { get; private set; }
@@ -190,10 +287,10 @@ public sealed class PurchaseInvoiceImportAdmissionTests
                 [new("source-01", "synthetic-product", null, "Sentetik ürün", "KGM", "5", new("USD", "10"),
                     [new("0015", "20", new("USD", "2"), new("USD", "10"), false)], [])], new("20.01", "4", "0"));
         }
-        public PurchaseInvoiceImportAdmission Service => new(this, this, this, this, this, this, this, this, this, this, TimeProvider.System, this, this, this);
+        public PurchaseInvoiceImportAdmission Service => new(this, this, this, this, this, this, this, this, this, this, TimeProvider.System, this, this, this, this);
         public PurchaseInvoiceImportAdmissionRequestV1 Request => new(new("1", Id, 1, new string('a', 64), new(PurchaseInvoiceFileFormatV1.Csv)),
             "0", supplier, account, "1", "1", SettingsCurrencyIdentitiesV1.UnitedStatesDollar,
-            [new("source-01", Guid.Parse("86f4a3cf-261b-4372-ae49-bbe8606a8a33"), product, "1", unit, "General", "resale", "0015")],
+            [new("source-01", Guid.Parse("86f4a3cf-261b-4372-ae49-bbe8606a8a33"), product, "1", unit, "Steel", "resale", "0015", ExpectedItemTypeVersion: "7")],
             [new(Guid.Parse("196081c5-19ef-45b3-a333-c0d68d576749"), Guid.Parse("f029bf01-af08-4994-9e7b-3d9da6f5d305"), 1, new(2026, 12, 17), "12", "24.01")]);
         public bool IsResolved => true; public void Set(Guid companyId) { }
         public bool IsAuthenticated => true; public string UserId => "synthetic-import-actor";
@@ -217,20 +314,25 @@ public sealed class PurchaseInvoiceImportAdmissionTests
         public Task<MoneyProfileV1> GetMoneyProfileAsync(Guid id, string operation, DateOnly date, CancellationToken cancellationToken = default)
             => Task.FromResult(new MoneyProfileV1(CompanyId, id, id == SettingsCurrencyIdentitiesV1.TurkishLira ? "TRY" : "USD", operation, new(id, 1), 2, true, date, null));
         public Task<PeriodEligibilityV1> GetPeriodEligibilityAsync(string operation, DateOnly occurredOn, DateOnly? valueOn, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<SettingsReferenceListLookupV1> GetAsync(Guid companyId, SettingsReferenceListKindV1 kind, Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<SettingsReferenceListLookupV1> GetAsync(Guid companyId, SettingsReferenceListKindV1 kind, Guid id, CancellationToken cancellationToken = default)
+            => Task.FromResult(new SettingsReferenceListLookupV1(SettingsReferenceListLookupOutcomeV1.Found, new(id, "SYN", "SENTETIK", true, 1)));
         public Task<SettingsReferenceListV1> ListAsync(Guid companyId, SettingsReferenceListKindV1 kind, CancellationToken cancellationToken = default) => Task.FromResult(new SettingsReferenceListV1(companyId, kind, true, []));
         public Task<IReadOnlyList<UnitIdentityV1>> ListAsync(CancellationToken token = default) => Task.FromResult<IReadOnlyList<UnitIdentityV1>>([new(unit, "KGM", "mass", true)]);
         Task<UnitIdentityV1?> ISettingsUnitIdentityCatalogV1.ReadAsync(Guid id, CancellationToken token) => Task.FromResult<UnitIdentityV1?>(new(id, "KGM", "mass", true));
         public Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(string operation, CancellationToken token = default) =>
             Task.FromResult<IReadOnlyList<MoneyCurrencyCandidateV1>>([new(SettingsCurrencyIdentitiesV1.UnitedStatesDollar, "USD", "SENTETIK USD")]);
         public Task<(IReadOnlyList<PurchaseInvoiceImportProductV1> Items, bool SearchWindowFull)> SearchAsync(string? q, DateOnly on, CancellationToken token) =>
-            Task.FromResult<(IReadOnlyList<PurchaseInvoiceImportProductV1>, bool)>(([new(product, ProductVersion, "SYN", "SENTETIK", unit, "KGM", unit, "1")], false));
+            Task.FromResult<(IReadOnlyList<PurchaseInvoiceImportProductV1>, bool)>(([new(product, ProductVersion, "SYN", "SENTETIK", unit, "KGM", unit, "1", "Steel", "7")], false));
+        public Task<PurchasingProductItemTypeSourceV1> GetAsync(Guid id, CancellationToken token = default)
+        { ItemTypeReads++; return Task.FromResult(new PurchasingProductItemTypeSourceV1(ItemTypeOutcome, ItemTypeCompany ?? CompanyId, id, ItemType, ItemTypeVersion)); }
         public Task<PurchaseIncomingInvoiceSnapshot?> FindIncomingInvoiceAsync(Guid invoiceId, CancellationToken cancellationToken = default) => Task.FromResult(Saved);
         public Task<PurchasingIncomingInvoiceWriteResult?> FindIncomingInvoiceAttemptAsync(string command, PurchasingWriteEnvelope envelope, string hash, CancellationToken cancellationToken = default)
             => Task.FromResult(Saved is null && terminalRefusal is null ? null : new PurchasingIncomingInvoiceWriteResult(Saved, terminalRefusal, true, Metadata.CorrelationId));
         public async Task<PurchasingIncomingInvoiceWriteResult> RecordIncomingInvoiceAsync(PurchaseIncomingInvoice invoice, PurchasingWriteEnvelope envelope,
             string hash, Func<CancellationToken, Task> fence, CancellationToken cancellationToken = default)
         { if (ConcurrentWrite) throw new PurchasingStoreException(PurchasingStoreCodes.ConcurrentChange, "SENTETIK concurrent write");
+            if (ChangeTypeBeforeSave) ItemTypeVersion++;
+            if (DenyItemTypeBeforeSave) ItemTypeOutcome = PurchasingProductItemTypeOutcomeV1.Denied;
             if (BeforeSave) Denied = PurchaseIncomingInvoicePermissionNamesV1.Import; await fence(cancellationToken); SavedEnvelope = envelope;
             Saved = PurchaseIncomingInvoiceSnapshot.Capture(invoice); return new(Saved, null, false, envelope.CorrelationId); }
         public Task<PurchasingIncomingInvoiceWriteResult?> MutateIncomingInvoiceAsync(Guid invoiceId, string command, PurchasingWriteEnvelope envelope, string hash,

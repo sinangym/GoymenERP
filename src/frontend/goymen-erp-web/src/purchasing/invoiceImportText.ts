@@ -23,6 +23,8 @@ export const INVOICE_IMPORT_TEXT = {
   retry: 'Aynı işlemi tekrar dene', refresh: 'Belgeleri yenile', rejected: 'İşlem kabul edilmedi.',
   functionalAmounts: 'Belgede kayıtlı TL tutarları', functionalNet: 'TL net tutar', functionalVat: 'TL KDV', functionalWithholding: 'TL tevkifat',
   mapAndRecord: 'Satırları eşleştir ve faturayı kaydet', admissionHeading: 'Fatura kaynağını kayda al',
+  actualItemType: 'Ürün sahibinin kalem türü', sourceVersion: 'Kaynak sürümü', steel: 'Demir', scrap: 'Hurda',
+  productServiceMapping: 'Bu ürünün türü Hizmet; mal olarak eşleştirilemez. Satır türünden Hizmet seçip gerçek Ayarlar hizmet türünü ayrıca seçin. Otomatik dönüşüm yapılmaz.',
   admissionHint: 'Satıcıyı ve her satırın gerçek kartını seçin. Bu işlem yalnız kaynak faturayı kaydeder; mal kabul eşleştirmesi ve kesinleştirme ayrı adımlardır.',
   supplierSelection: 'Tedarikçi hesabı', supplierSearch: 'Tedarikçi ara', find: 'Ara', currencySelection: 'Kaynak faturanın para birimi',
   lineMapping: 'Satır kartları ve ödeme planı', lineKind: 'Satır türü', goods: 'Mal', service: 'Hizmet', expense: 'Masraf',

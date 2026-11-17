@@ -135,12 +135,13 @@ function Line(props: Props & { readonly line: SourceLine; readonly choices: Impo
   const taxes = line.taxes.filter(x => !x.isWithholding), vat = taxes.length === 0 ? '' : taxes.length === 1 ? taxes[0].code : null
   function change(k: string, p: ImportProduct | null, r: ImportReference | null, u: string, why: string) {
     setKind(k); setProduct(p); setReference(r); setUnit(u); setPurpose(why)
-    if (vat === null || !units.some(x => x.unitId === u) || k === 'product' && (p === null || p.unitId !== u || !['resale', 'production-input'].includes(why))
+    if (vat === null || !units.some(x => x.unitId === u) || k === 'product' && (p === null || p.itemType === 'Service' || p.unitId !== u || !['resale', 'production-input'].includes(why))
       || k !== 'product' && (r === null || k !== 'service' && k !== 'expense')) { props.onChange(undefined); return }
     props.onChange({ sourceLineId: line.id, lineId, productId: p?.productId ?? EMPTY, expectedProductVersion: p?.productVersion ?? '', unitId: u,
-      itemType: k === 'product' ? 'General' : k === 'service' ? 'Service' : 'Expense', linePurpose: k === 'product' ? why as 'resale' | 'production-input' : k as 'service' | 'expense',
+      itemType: k === 'product' ? p!.itemType : k === 'service' ? 'Service' : 'Expense', linePurpose: k === 'product' ? why as 'resale' | 'production-input' : k as 'service' | 'expense',
       vatTaxCode: vat, ...(k === 'service' ? { serviceTypeId: r!.id, expectedServiceTypeVersion: r!.version }
-        : k === 'expense' ? { expenseTypeId: r!.id, expectedExpenseTypeVersion: r!.version } : {}) })
+        : k === 'expense' ? { expenseTypeId: r!.id, expectedExpenseTypeVersion: r!.version }
+          : { expectedItemTypeVersion: p!.itemTypeVersion }) })
   }
   const list = kind === 'service' ? choices.serviceTypes : choices.expenseTypes
   return <article className={styles.card}><h4>{T.line} {line.id} · {line.description}</h4><p>{T.unit}: {line.unitCode}</p>
@@ -153,7 +154,9 @@ function Line(props: Props & { readonly line: SourceLine; readonly choices: Impo
       <Field label={T.productSelection}>{p => <select {...p} value={product?.productId ?? ''} onChange={e => { const selected = products?.items.find(x => x.productId === e.target.value) ?? null
         change(kind, selected, null, selected?.unitId ?? '', purpose) }}><option value="">{T.choose}</option>
         {products?.items.filter(x => x.unitCode === line.unitCode && units.some(u => u.unitId === x.unitId)).map(x => <option key={`${x.productId}:${x.unitId}`} value={x.productId}>{x.code} · {x.name} · {x.unitCode}</option>)}</select>}</Field>
-      <Field label={T.purchasePurpose}>{p => <select {...p} value={purpose} onChange={e => change(kind, product, null, unit, e.target.value)}><option value="">{T.choose}</option>
+      {product === null ? null : <p>{T.actualItemType}: {product.itemType === 'Steel' ? T.steel : product.itemType === 'Scrap' ? T.scrap : T.service} · {T.sourceVersion}: {product.itemTypeVersion}</p>}
+      {product?.itemType === 'Service' ? <p role="alert">{T.productServiceMapping}</p> : null}
+      <Field label={T.purchasePurpose}>{p => <select {...p} disabled={product?.itemType === 'Service'} value={purpose} onChange={e => change(kind, product, null, unit, e.target.value)}><option value="">{T.choose}</option>
         <option value="production-input">{T.productionInput}</option><option value="resale">{T.resale}</option></select>}</Field></> : kind === 'service' || kind === 'expense' ? <>
         {list === null ? <StateBlock subject={T.typeSelection} state={{ kind: 'service-unavailable' }} /> : list.length === 0 ? <StateBlock subject={T.typeSelection} state={{ kind: 'empty-no-data' }} /> : null}
         <Field label={T.typeSelection}>{p => <select {...p} value={reference?.id ?? ''} onChange={e => change(kind, null, list?.find(x => x.id === e.target.value) ?? null, unit, kind)}>

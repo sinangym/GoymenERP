@@ -17,7 +17,8 @@ public sealed partial class PurchaseInvoiceImportAdmission(ICompanyContext compa
     IProductPurchaseEligibilityPortV1 products, ISettingsPrerequisiteProvider profiles,
     ISettingsReferenceListReaderV1 references, TimeProvider time,
     ISettingsUnitIdentityCatalogV1? unitCatalog = null, ISettingsMoneyCandidateReaderV2? moneyCatalog = null,
-    IPurchaseInvoiceImportProductSearchV1? productSearch = null) : IPurchaseInvoiceImportAdmissionV1, IPurchaseInvoiceImportMappingV1
+    IPurchaseInvoiceImportProductSearchV1? productSearch = null,
+    IPurchasingProductItemTypePortV1? itemTypes = null) : IPurchaseInvoiceImportAdmissionV1, IPurchaseInvoiceImportMappingV1
 {
     private sealed record Scope(Guid Company, string Actor, IReadOnlyCollection<string> Roles);
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -68,6 +69,8 @@ public sealed partial class PurchaseInvoiceImportAdmission(ICompanyContext compa
                 throw Invalid();
             var lines = new List<PurchaseInvoiceLine>();
             var unitProofs = new List<object>();
+            var typeProofs = new List<object>();
+            var typeSources = new List<PurchasingProductItemTypeSourceV1>();
             foreach (var source in file.Lines)
             {
                 var map = request.Lines.SingleOrDefault(x => x.SourceLineId == source.Id) ?? throw Invalid();
@@ -99,6 +102,16 @@ public sealed partial class PurchaseInvoiceImportAdmission(ICompanyContext compa
                     if (product.Outcome == ProductPurchaseEligibilityOutcomeV1.Unavailable) throw Unavailable();
                     if (product.Outcome != ProductPurchaseEligibilityOutcomeV1.Eligible) throw Invalid();
                     if (product.ProductVersion != map.ExpectedProductVersion) throw Conflict();
+                    var actualType = await ProductTypeAsync(scope, map.ProductId, token);
+                    // A Product Service identity is not a Settings service-type identity. The actor must
+                    // explicitly use the existing Settings-backed service mapping; no conversion is inferred.
+                    if (actualType.ItemType == PurchasingProductItemTypeKindV1.Service) throw Invalid();
+                    if (map.ExpectedItemTypeVersion is null) throw Invalid();
+                    if (map.ItemType != actualType.ItemType!.Value.ToString()
+                        || map.ExpectedItemTypeVersion != TextVersion(actualType.Version!.Value)) throw Conflict();
+                    typeSources.Add(actualType);
+                    typeProofs.Add(new { source.Id, map.ProductId, map.ExpectedProductVersion,
+                        ItemType = actualType.ItemType.Value.ToString(), ItemTypeVersion = actualType.Version.Value });
                 }
                 var amounts = Amounts(source, map.VatTaxCode, file.Currency, out var vatPercent);
                 lines.Add(new(map.LineId, lines.Count + 1, map.ProductId, map.UnitId, quantity, itemType, purpose,
@@ -149,13 +162,14 @@ public sealed partial class PurchaseInvoiceImportAdmission(ICompanyContext compa
             var proof = new PurchaseInvoiceImportProof(importId, "purchase-invoice-file-reader.v1",
                 JsonSerializer.Serialize(request.Source.Options, Json), JsonSerializer.Serialize(request.Lines, Json),
                 money.Profile.ProfileId, money.Profile.Version, functional.Profile.ProfileId, functional.Profile.Version,
-                JsonSerializer.Serialize(unitProofs, Json), ratePurpose);
+                JsonSerializer.Serialize(unitProofs, Json), ratePurpose,
+                typeProofs.Count == 0 ? null : JsonSerializer.Serialize(typeProofs, Json));
             var invoice = PurchaseIncomingInvoice.Record(importId, scope.Company, request.SupplierPartyId, request.CompanyAccountId,
                 money.CurrencyId, functional.CurrencyId, money.Scale, functional.Scale, rate,
                 new(preview.DocumentId, preview.DocumentVersion, preview.DocumentSha256, file.Number, file.Ettn, file.InvoiceDate, proof),
                 amountsTotal, functionalTotal, lines, installments, scope.Actor, time.GetUtcNow());
             var result = await GuardAsync(scope, () => store.RecordIncomingInvoiceAsync(invoice, envelope, hash,
-                ct => FenceAsync(scope, ct), token), token);
+                ct => FenceProductTypesAsync(scope, typeSources, ct), token), token);
             return Result(result, scope.Company, importId);
         }
         catch (PurchasingServiceException exception) when (exception.Status == 409 && exception.Code == PurchasingProblemCodesV1.VersionConflict)
