@@ -43,6 +43,7 @@ Routes: `POST /api/v1/documents` (multipart `ownerKind`, `ownerId`, `file`; `Ide
 | `Documents:Scanner:Defender:MaximumConcurrentScans` | 1…16 (default 2). |
 | `Documents:Scanner:Mode` | Production: empty or `WindowsDefender`. Dev/test: `DevelopmentSignature` (default), `None`, or `WindowsDefender`. |
 | `Documents:MaximumUploadBytes` | Default 20 971 520 (20 MiB). |
+| `Documents:Branding:AllowedContentTypes` | Optional indexed list narrowing new company-logo/letterhead admission to a nonempty subset of `application/pdf`, `image/png`, `image/jpeg` (KLN-D33). Absent keeps these three existing standard kinds; explicit empty/scalar/duplicate/unknown or malformed values return unavailable. The vault's byte-limit source above still applies. Valid narrowing does not rewrite fixed old publications or recorded upload/version replays; fresh branding/draft/publication commands and new file writes use the current subset. No configuration file or activation is changed by registering this reader. |
 
 As environment variables: `Documents__ObjectStore__RootPath`, `Documents__Scanner__Defender__ExecutablePath`, …
 

@@ -316,3 +316,35 @@
   negatif test kaynağı ayrı takip checkpoint'inde tamamlanacaktır; config/env dosyası değiştirilmeyecektir. Merkezi
   mount/pin/derleme birleşmeden tam dilim DONE denmez. Gerçek kurumsal asset'ler, izin ataması, UAT/production ayrı insan
   kapısıdır; OPEN-019 kapanmadı. Yeni Product purpose projection ve fixed-publication/hash bağı **K3 review bekliyor**.
+
+### STK-S29 — KLN-D33 konfigüre dosya türü altkümesi
+
+- Yeni owner reader `Documents:Branding:AllowedContentTypes` üzerinden yalnız mevcut StandardKinds'ın boş olmayan
+  PDF/PNG/JPEG altkümesini okur. Hiç yapılandırılmamış değer eski üç türü korur; açık boş/null/scalar, yinelenen,
+  kesik/nested indeks, bilinmeyen veya genişletilmiş tür listesi **503** olur. Dosya boyutu mevcut
+  `Documents:MaximumUploadBytes` / DocumentsServiceBindings kaynağından kalır. Config/env dosyası veya production
+  aktivasyonu değiştirilmedi; reader kaydı kendiliğinden bir işletme ayarı üretmez.
+- Şirket branding GET ve upload limits gerçek altkümeyi gösterir. Yeni upload/version, şirket branding seçimi,
+  modül taslağı ve yayım güncel tür kabulünü owner'da kontrol eder. Geçerli daraltma daha önceki sabit publication'ı,
+  tarihsel asset byte/hash kanıtını veya kayıtlı upload/version/branding tekrar sonucunu yeniden yazmaz. Geçersiz
+  yapılandırma yeni başarıya veya sessiz StandardKinds fallback'ine dönüşmez; aynı actor/company/permission çitleri sürer.
+- Store'un hem normal kayıtlı hem unique-race winner tekrarında çalıştırdığı authority callback'i ile yalnız yeni
+  append'in admission callback'i ayrıldı. Böylece güncel liste, daha önce kaydedilmiş winner sonucuna yeni 422 uygulamaz.
+  Güncel altküme yeni metadata/attempt yazılmadan kontrol edilir; mevcut content-addressed object-first düzeninde
+  başarısız yeni admission en fazla başvurulmayan şirket içi nesne bırakabilir, belge başarısı/kalıcılık iddiası üretmez.
+  Eski generated-PDF/store overload'ları ve null publication hash biçimi korunur; yeni modül/tablo/ham SQL/bypass yoktur.
+- Test kaynakları: gerçek configuration-provider absent/empty/null/scalar ayrımı; default/subset/duplicate/unknown
+  kontrolleri; gerçek module DI ve aynı byte-limit; upload/version replay ile payload mismatch; store fence'de policy
+  değişimi ve hiç metadata/attempt oluşmaması; diğer owner türlerinin değişmemesi. SQL lifecycle kaynağı daraltma sonrası
+  eski upload ve historical publication/PDF replay'ini, yeni 422 ve bozuk policy 503'ünü kapsar. Ek gerçek SQL fact,
+  actual store upload/version replay dallarında authority callback'inin çalıştığını, admission'ın çalışmadığını ve yeni
+  append reddinde satır eklenmediğini doğrular. HTTP/SQL/unit/Vitest runtime **NOT_RUN**.
+- Frontend policy altkümesi ve boş/yinelenen/genişletilmiş bozuk liste decoder kaynakları, sunucunun 422 tür red metni
+  eklendi. Son `npx tsc -b` **exit0**; başlangıç ≥2GiB RAM kapısı geçti, native exit/log depodışında korundu.
+- C# kaynak derlemeleri **exit0 / 0 uyarı / 0 hata**: API 2:41,71; Documents.UnitTests 3,49sn; Api.IntegrationTests
+  46,24sn. İlk Integration derlemesindeki test-only CS1674 (`IConfigurationRoot` lifetime) dar düzeltildi. Aradaki
+  <2GiB RAM kapısında hiçbir yeni süreç başlatılmadı; koşul düzeldikten sonra Integration ≥2GiB ile yeniden derlendi.
+  Bütün native exit'ler anında ve ham loglar depodışında saklandı. Yeni migration/EF/DB apply yok.
+- **DONE — owner kaynak kapsamı**: ana S29 checkpoint'i ve bu takip, gerçek yönetim/renderer/üç producer ile dar MIME
+  kaynak eksiğini tamamlar. Merkezi mount/registry/pin ve birleşik baştaki doğrulama koordinatördedir. Kabul/SQL/browser/CI,
+  K3 exact-head review ve kurumsal gerçek asset/grant/UAT kapıları ayrıdır; runtime **NOT_RUN**, OPEN-019 açık kalır.

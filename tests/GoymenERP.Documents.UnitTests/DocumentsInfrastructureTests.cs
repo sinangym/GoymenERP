@@ -279,6 +279,19 @@ public sealed class DocumentsInfrastructureTests : IDisposable
         Assert.NotNull(noScanner.GetService<IDocumentObjectStoreV1>());
     }
 
+    [Fact]
+    public void Branding_subset_uses_the_modules_actual_configuration_and_keeps_the_existing_byte_limit_source()
+    {
+        using var provider = Services(allowDevelopment: true,
+            (DocumentBrandingFilePolicy.AllowedContentTypesKey + ":0", "image/png"),
+            (DocumentsModuleExtensions.MaximumUploadBytesKey, "1048576"));
+        var actual = provider.GetRequiredService<DocumentBrandingFilePolicy>().Read();
+        Assert.True(actual.Available); Assert.Equal([DocumentFileKind.Png], actual.Kinds);
+        Assert.Equal(1048576, provider.GetRequiredService<DocumentsServiceBindings>().MaximumUploadBytes);
+        using var invalid = Services(allowDevelopment: true, (DocumentBrandingFilePolicy.AllowedContentTypesKey + ":0", "application/xml"));
+        Assert.False(invalid.GetRequiredService<DocumentBrandingFilePolicy>().Read().Available);
+    }
+
     private static ServiceProvider Services(bool allowDevelopment, params (string Key, string Value)[] settings)
     {
         var configuration = new ConfigurationBuilder()

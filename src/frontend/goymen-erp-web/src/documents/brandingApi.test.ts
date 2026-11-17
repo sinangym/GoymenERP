@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fetchBranding, fetchTemplate, writeBranding } from './brandingApi'
-import { decodeTemplatePublication, type SetBranding } from './brandingContract'
+import { decodeBrandingCurrent, decodeTemplatePublication, type SetBranding } from './brandingContract'
 const company = '58000000-0000-4000-8000-000000000001'
 const command: SetBranding = { expectedVersion: '0', logo: null, letterhead: null, reason: 'SENTETIK' }
 const branding = { companyId: company, version: '1', logo: null, letterhead: null, preparedBy: 'SENTETIK-maker', preparedAtUtc: '2026-11-17T08:00:00Z', reason: 'SENTETIK' }
@@ -11,6 +11,12 @@ describe('Documents branding transport source contract', () => {
       uploadPolicy: { allowedContentTypes: ['image/png'], maximumUploadBytes: 1024, canUpload: false } }), { status: 200 })))
     expect((await fetchBranding(company)).type).toBe('ok-single')
   })
+  it.each([{ allowedContentTypes: [] }, { allowedContentTypes: ['image/png', 'image/png'] },
+    { allowedContentTypes: ['application/xml'] }, { allowedContentTypes: ['image/png', 'application/pdf', 'image/jpeg', 'text/html'] }])(
+    'refuses malformed or expanded configured kinds $allowedContentTypes instead of using a default list', ({ allowedContentTypes }) => {
+      expect(decodeBrandingCurrent({ companyId: company, branding: null,
+        uploadPolicy: { allowedContentTypes, maximumUploadBytes: 1024, canUpload: true } }, company)).toBeNull()
+    })
   it('rejects foreign-company malformed and same-maker publications instead of publishing a partial result', () => {
     const asset = { companyId: company, documentId: '58000000-0000-4000-8000-000000000002', versionNo: 2, contentType: 'image/png',
       sizeBytes: 10, sha256: 'a'.repeat(64), scannerId: 'SENTETIK', uploadedBy: 'SENTETIK', uploadedAtUtc: '2026-11-17T08:00:00Z' }

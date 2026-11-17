@@ -102,7 +102,7 @@ public static partial class DocumentsModuleExtensions
         services.AddScoped<IDocumentService>(serviceProvider => serviceProvider.GetRequiredService<DocumentService>());
         // F-026 (PLT-S9): producing modules store their generated PDFs through the same scoped service and fences.
         services.AddScoped<IGeneratedDocumentStorePortV1>(serviceProvider => serviceProvider.GetRequiredService<DocumentService>());
-        AddDocumentBranding(services);
+        AddDocumentBranding(services, configuration);
         return services;
     }
 
