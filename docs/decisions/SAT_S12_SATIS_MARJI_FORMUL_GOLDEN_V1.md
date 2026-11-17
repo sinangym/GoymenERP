@@ -10,6 +10,8 @@ Kaynak karar dosyaları: `SINAN_KARARLARI_2026-11-09_SATIS_EK51.md`, `SINAN_KARA
 
 Bu dosyanın varlığı formülü açmaz. İki bağımsız exact-head DOCS review, main'e alınma ve P2-1'in giderilmesi gerekir. Son uygulama K3 kapısı ayrıca sürer. Eski karar dosyası, grant/rol/Critical, production, OPEN veya Finance STOP değiştirilmez.
 
+Kullanıcı bu aday için iki ayrı bağımsız Claude oturumuyla golden/DOCS incelemesini kabul etti: [6961293621](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6961293621), doğrudan çalışma sohbeti cevabının açık ajan aktarımı. Bu, SAT-D265(5)'teki inceleyen oturum şartına yalnız bu aday için dar istisnadır; iki bağımsız exact-head imzası, kaynak/aritmetik doğrulaması ve main koşulu korunur. Son uygulama K3 veya başka formül adayları için genel kural değişmez; yazar kendi işini onaylamaz veya merge etmez.
+
 ## İletilen golden metni
 
 Kaynak: SAT-D259, D261, D262, D263, D265(1-4), D275, D295, D297, D298; OPEN-INV-AVGCOST-FX.
@@ -59,6 +61,14 @@ Açık (NEEDS-SINAN; bu golden politika seçmez):
 
 ## Uygulama okumasının sınırları
 
-G22 ve G24 hesaplayıcının kaynak davranışını kaydeder; tüm uygulama katmanlarının neden önceliği veya erişilebilir miktar sınırları hakkında yeni karar değildir. G18 için sıfır maliyeti Satış'ta reddetme politikası seçilmemiştir. Golden bu açıkları, döviz/birim dönüşümünü veya ilk alış maliyeti muhasebeleştirme kuralını kapatmaz.
+**G20 ve tarihsel OPEN atfının düzeltmesi:** Kaynak listesindeki ve iletilen G20 satırındaki `OPEN-INV-AVGCOST-FX` yeni/açık bir maliyet kararı değildir. `SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md` **BS-1** ve `SINAN_KARARLARI_2026-11-11_SATIS_EK59_ORTALAMA_MALIYET.md` durum tablosu bu kur kaynağını daha önce karara bağlamıştır: TL ortalama maliyet **tedarikçi faturasındaki resmî kurla** hesaplanır; fatura gelene kadar TL maliyet **Unavailable** okunur, geçici kur veya düzeltme hareketi üretilmez. G20'nin maliyet kısmı bugün gerçek Stok portundan TL değer ya da Unavailable okunmasıyla değerlendirilir. Golden'daki eski OPEN parantezi bu kararı yeniden açmaz. **Satış tutarının para birimi TL dışı olduğunda marjın nasıl ele alınacağı ayrı, karara bağlanmamış sınırdır; BS-1 veya bu OPEN kimliğine dayanarak satış tutarı çevrilmez.** Bu belge mevcut kararı aktarır; açık karar sicilini değiştirmez veya kendi yetkisiyle OPEN kapatmaz.
+
+**G21 geçiş durumu:** `ProducedItem` / `MixedSourceItem` koşulsuz ve süresiz yasak değildir. `SINAN_KARARLARI_2026-11-15_MALIYET_VE_RISK.md` **URT-D67**, üretilen maliyetin URT-S14 ile hesaplandığı anda ortalamaya ve marj kaynağına katılmasını belirler; karma kaynak için **SAT-D305(1)** tek hareketli ortalama kuralı geçerlidir. İletilen G21 yalnız gerçek kaynağın henüz okunamadığı durumda ilgili nedenin aktarımını kaydeder; mevcut ve kanıtlı TL maliyetini sırf ürün üretildi/karma diye reddetmeye dayanak değildir.
+
+**G12 kesin yüzde:** İletilen tablodaki `0.0666…`, devirli `0.06666…` anlamına gelmez. Kesin kesir `100/1501`, ondalık açılım `0.0666222518…`; gösterim `0.07` değişmez.
+
+**G18 sonraki kullanıcı cevabı:** Yukarıdaki iletilen inceleme snapshot'ında sıfır maliyet açık bırakılmıştı. Kullanıcı daha sonra “Marjı kullanılamıyor göster (Önerilen)” dedi: [6960913297](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6960913297), açık ajan aktarımı. Satış'a porttan veya eski snapshot'tan sıfır birim maliyet gelirse maliyet okunamıyor gösterilir; sipariş onayı engellenmez. G18'in mekanik yüzde hesabı artık uygulamada %100 gösterme yetkisi değildir. Bu yeni cevabın uygulama değişikliği ayrı tren kaynağıdır; ilk inceleme onu onaylamaz.
+
+G22 ve G24 hesaplayıcının incelenen kaynak davranışını kaydeder; tüm uygulama katmanlarının neden önceliği veya erişilebilir miktar sınırları hakkında yeni karar değildir. Yalnız yüzde taşmasında tutarın da düşmesi ve kg dışı birimde Stok ara yuvarlaması bu golden ile karara bağlanmaz. Satış döviz tutarının marj için çevrilmesi veya ilk alış maliyetinin muhasebeleştirme politikası türetilmez.
 
 Formülün açılması ayrı uygulama değişikliğidir; bu belgeyle `MarginGoldenAccepted` değiştirilmez. Main'e alınma, runtime kabulü, gerçek sağlayıcı, SQL, browser veya CI başarısı anlamına gelmez.
