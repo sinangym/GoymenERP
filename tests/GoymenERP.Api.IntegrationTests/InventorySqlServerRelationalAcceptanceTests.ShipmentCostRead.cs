@@ -26,8 +26,12 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using var reads = run.Context(CompanyA);
         var reader = ShipmentCostReader(reads, CompanyA);
         var before = await reader.GetAsync(CompanyA, shipment.Request.ShipmentId, shipment.Request.MovementId);
+        var resolved = await reader.GetByShipmentAsync(CompanyA, shipment.Request.ShipmentId);
         Assert.Equal(InventoryShipmentCostReadOutcomeV1.Available, before.Outcome);
+        Assert.Equal((before.Outcome, before.CompanyId, before.ShipmentId, before.MovementId, before.SourceVersion),
+            (resolved.Outcome, resolved.CompanyId, resolved.ShipmentId, resolved.MovementId, resolved.SourceVersion));
         var line = Assert.Single(before.Lines);
+        Assert.Equal(line, Assert.Single(resolved.Lines));
         Assert.Equal((shipment.Request.LoadingInstructionId, shipment.Request.LoadingInstructionLineId, shipment.Request.AllocationId,
             shipment.Request.LabelId, Product, "product-v1", 10m),
             (line.LoadingInstructionId, line.LoadingInstructionLineId, line.AllocationId, line.LabelId,
@@ -43,8 +47,11 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             .Select(row => row.AverageCostPerKg).SingleAsync();
         Assert.NotEqual(15m, actualAverage);
         var after = await reader.GetAsync(CompanyA, shipment.Request.ShipmentId, shipment.Request.MovementId);
+        var resolvedAfter = await reader.GetByShipmentAsync(CompanyA, shipment.Request.ShipmentId);
         Assert.Equal(before.SourceVersion, after.SourceVersion);
+        Assert.Equal(before.SourceVersion, resolvedAfter.SourceVersion);
         Assert.Equal(line, Assert.Single(after.Lines));
+        Assert.Equal(line, Assert.Single(resolvedAfter.Lines));
         Assert.Equal(movementsBefore + 1, await reads.Movements.CountAsync());
         Assert.Equal(eventsBefore, await reads.OutboxMessages.CountAsync()); // Reading creates no proposal/event/terminal.
         Assert.Empty(reads.ChangeTracker.Entries());
@@ -70,6 +77,9 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal("movement_cost_stamp_not_recorded", tl.Reason);
         Assert.Null(tl.Amount); Assert.Null(tl.UnitCostPerKg); Assert.Null(tl.UnitCostRatio);
         Assert.Equal(SettingsCurrencyIdentitiesV1.TurkishLira, tl.CurrencyId);
+        var resolved = await ShipmentCostReader(reads, CompanyA).GetByShipmentAsync(CompanyA, shipment.Request.ShipmentId);
+        Assert.Equal(answer.SourceVersion, resolved.SourceVersion);
+        Assert.Equal(tl, Assert.Single(resolved.Lines).Tl);
     }
 
     [SqlServerFact]
@@ -89,6 +99,12 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             shipment.Request.ShipmentId, shipment.Request.MovementId);
         Assert.Equal(InventoryShipmentCostReadOutcomeV1.NotFound, foreign.Outcome);
         Assert.Empty(foreign.Lines);
+        var foreignResolved = await ShipmentCostReader(other, CompanyB).GetByShipmentAsync(CompanyB, shipment.Request.ShipmentId);
+        var unknownResolved = await ShipmentCostReader(other, CompanyB).GetByShipmentAsync(CompanyB, Guid.NewGuid());
+        Assert.Equal(InventoryShipmentCostReadOutcomeV1.NotFound, foreignResolved.Outcome);
+        Assert.Equal((unknownResolved.Outcome, unknownResolved.MovementId, unknownResolved.SourceVersion, unknownResolved.Reason),
+            (foreignResolved.Outcome, foreignResolved.MovementId, foreignResolved.SourceVersion, foreignResolved.Reason));
+        Assert.Empty(foreignResolved.Lines);
     }
 
     [SqlServerFact]
@@ -103,6 +119,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var missingShape = await reader.GetAsync(CompanyA, shipment.Request.ShipmentId, shipment.Request.MovementId);
         Assert.Equal(InventoryShipmentCostReadOutcomeV1.Unreadable, missingShape.Outcome);
         Assert.Empty(missingShape.Lines);
+        Assert.Equal(InventoryShipmentCostReadOutcomeV1.Unreadable,
+            (await reader.GetByShipmentAsync(CompanyA, shipment.Request.ShipmentId)).Outcome);
         await run.ExecuteAsync("UPDATE inventory.OutboxMessages SET PayloadJson = N'[]' WHERE Id = @id", ("@id", eventId));
         var wrongJsonType = await reader.GetAsync(CompanyA, shipment.Request.ShipmentId, shipment.Request.MovementId);
         Assert.Equal(InventoryShipmentCostReadOutcomeV1.Unreadable, wrongJsonType.Outcome);
@@ -119,6 +137,71 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var unknownVersion = await reader.GetAsync(CompanyA, shipment.Request.ShipmentId, shipment.Request.MovementId);
         Assert.Equal(InventoryShipmentCostReadOutcomeV1.Unreadable, unknownVersion.Outcome);
         Assert.Empty(unknownVersion.Lines);
+        Assert.Equal(InventoryShipmentCostReadOutcomeV1.Unreadable,
+            (await reader.GetByShipmentAsync(CompanyA, shipment.Request.ShipmentId)).Outcome);
+    }
+
+    [SqlServerFact]
+    public async Task Shipment_only_cost_resolution_refuses_multiple_original_commands_or_multiple_physical_source_movements()
+    {
+        await using var run = await Run.StartAsync();
+        var shipment = await SeedShipmentCostReadAsync(run);
+        // Deliberate database corruption: two otherwise real command results claim the same shipment under different keys.
+        await run.ExecuteAsync("""
+            INSERT INTO inventory.Commands(CompanyId,CommandName,IdempotencyKeyHash,ActorId,PayloadHash,TargetId,ResultJson,CorrelationId,RecordedAtUtc)
+            SELECT CompanyId,CommandName,@key,ActorId,PayloadHash,TargetId,ResultJson,CorrelationId,RecordedAtUtc
+            FROM inventory.Commands WHERE CompanyId=@company AND TargetId=@shipment AND CommandName=@operation
+            """, ("@key", Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N")), ("@company", CompanyA),
+            ("@shipment", shipment.Request.ShipmentId), ("@operation", InventoryDefiniteShipmentOutboxV1.SourceOperation));
+        await using var reads = run.Context(CompanyA);
+        var duplicateCommand = await ShipmentCostReader(reads, CompanyA).GetByShipmentAsync(CompanyA, shipment.Request.ShipmentId);
+        Assert.Equal(InventoryShipmentCostReadOutcomeV1.Unreadable, duplicateCommand.Outcome);
+        Assert.Equal(Guid.Empty, duplicateCommand.MovementId); Assert.Empty(duplicateCommand.Lines);
+
+        var first = await SeedShipmentCostReadAsync(run);
+        var second = await SeedShipmentCostReadAsync(run);
+        // A different real physical line is incorrectly linked to the first source. Choosing first/last is forbidden.
+        await run.ExecuteAsync("UPDATE inventory.Movements SET SourceId=@shipment WHERE CompanyId=@company AND Id=@movement",
+            ("@shipment", first.Request.ShipmentId), ("@company", CompanyA), ("@movement", second.Request.MovementId));
+        var duplicateMovement = await ShipmentCostReader(reads, CompanyA).GetByShipmentAsync(CompanyA, first.Request.ShipmentId);
+        Assert.Equal(InventoryShipmentCostReadOutcomeV1.Unreadable, duplicateMovement.Outcome);
+        Assert.Equal(Guid.Empty, duplicateMovement.MovementId); Assert.Empty(duplicateMovement.Lines);
+    }
+
+    [SqlServerFact]
+    public async Task Shipment_only_cost_resolution_refuses_missing_or_tampered_immutable_command_linkage()
+    {
+        await using var run = await Run.StartAsync();
+        var missing = await SeedShipmentCostReadAsync(run);
+        await run.ExecuteAsync("DELETE FROM inventory.Commands WHERE CompanyId=@company AND TargetId=@shipment AND CommandName=@operation",
+            ("@company", CompanyA), ("@shipment", missing.Request.ShipmentId), ("@operation", InventoryDefiniteShipmentOutboxV1.SourceOperation));
+        await using var reads = run.Context(CompanyA);
+        var missingCommand = await ShipmentCostReader(reads, CompanyA).GetByShipmentAsync(CompanyA, missing.Request.ShipmentId);
+        Assert.Equal(InventoryShipmentCostReadOutcomeV1.Unreadable, missingCommand.Outcome);
+        Assert.Equal(Guid.Empty, missingCommand.MovementId); Assert.Empty(missingCommand.Lines);
+
+        var tampered = await SeedShipmentCostReadAsync(run);
+        await run.ExecuteAsync("UPDATE inventory.Commands SET ResultJson=JSON_MODIFY(ResultJson,'$.movementId',@wrong) WHERE CompanyId=@company AND TargetId=@shipment AND CommandName=@operation",
+            ("@wrong", Guid.NewGuid().ToString("D")), ("@company", CompanyA), ("@shipment", tampered.Request.ShipmentId),
+            ("@operation", InventoryDefiniteShipmentOutboxV1.SourceOperation));
+        var changedCommand = await ShipmentCostReader(reads, CompanyA).GetByShipmentAsync(CompanyA, tampered.Request.ShipmentId);
+        Assert.Equal(InventoryShipmentCostReadOutcomeV1.Unreadable, changedCommand.Outcome);
+        Assert.Equal(Guid.Empty, changedCommand.MovementId); Assert.Empty(changedCommand.Lines);
+    }
+
+    [SqlServerFact]
+    public async Task Shipment_only_cost_resolution_discards_the_actual_SQL_result_if_company_changes_during_resolution()
+    {
+        await using var run = await Run.StartAsync();
+        var shipment = await SeedShipmentCostReadAsync(run);
+        var company = new ShipmentCostMutableCompany(); company.Set(CompanyA);
+        var fault = new ShipmentCostCompanySwitch(() => company.Set(CompanyB));
+        await using var reads = new InventoryDbContext(new DbContextOptionsBuilder<InventoryDbContext>()
+            .UseSqlServer(run.Factory.DatabaseConnectionString).AddInterceptors(fault).Options, company);
+        var answer = await new InventoryShipmentCostReadPort(reads, company).GetByShipmentAsync(CompanyA, shipment.Request.ShipmentId);
+        Assert.True(fault.Fired);
+        Assert.Equal(InventoryShipmentCostReadOutcomeV1.Unreadable, answer.Outcome);
+        Assert.Equal(Guid.Empty, answer.MovementId); Assert.Empty(answer.Lines);
     }
 
     [SqlServerFact]

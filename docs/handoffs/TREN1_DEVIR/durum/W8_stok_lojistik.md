@@ -415,3 +415,35 @@
   exit/ham loglar depodışında korundu. Her süreç öncesi ≥2GiB RAM kapısı ölçüldü. EF/DB apply/test koşumu yoktur.
 - **PARTIAL — merkezi DI bekliyor**: bu dar provider ve test kaynakları derlenmiştir; gerçek DI + birleşik kaynak
   derlemesi koordinatördedir. Eski raporun sağlayıcı yok notunu bu kaynak tamamlar; kabul veya K3 kanıtı yerine geçmez.
+
+### STK-SC36-a — ilk SMM tüketimi için sevk kimliğinden gerçek maliyet izi
+
+- SAT-D419/D422'nin ilk SMM tüketici bağımlılığı için mevcut `IInventoryShipmentCostReadPortV1` sözleşmesine yalnız
+  `GetByShipmentAsync(companyId, shipmentId, cancellationToken)` owner okuması eklendi. Eski üç kimlikli `GetAsync`,
+  sonuç DTO'su ve gerçek DI kaydı değişmedi; başka implementor/test double bulunmadı. Sahte hareket kimliği üretilmez.
+- Inventory'nin kendi şirket filtreli `Commands` kaydında gerçek shipment target + definite-shipment operation ve
+  kendi `Movements` kaynak kimliğinde aynı shipment aranır. Her aday kümesi sıralı `Take(2)` ile sınırlıdır; tam birer
+  kayıt ve immutable result'taki hareket kimliğiyle tam eşleşme şarttır. Sonra eski strict okuyucu gerçek komut,
+  hareket, outbox envelope/payload, LoadingInstructionId/LineId, MovementLineNumber ve orijinal TL damgasını doğrular.
+  Başarılı cevap aynı kaynak fingerprint'ini ve kayıtlı TL tutarını taşır; güncel ortalama/sipariş/fatura fiyatı,
+  USD veya kg oranlaması maliyetin yerine geçmez.
+- Tamamen bilinmeyen ve başka şirkete ait sevk aynı non-disclosing NotFound cevabıdır. Tek tarafı eksik kanonik
+  kaynak, bozuk/çelişkili result veya outbox, birden çok komut/hareket Unreadable'dır; consumer ikisini de mevcut
+  kaynak-hazır-değil/503 sınırına map eder. Başarısız çözümlemede hareket kimliği boş ve satırlar boştur; bu boş
+  kimlik başarıya dönüştürülmez. Her await sonrasında şirket scope'u tekrar ölçülür. Actor/permission ve muhasebe
+  admission çiti tüketicidedir; bu internal port yetki veya SMM tetikleyicisi sağlamaz. Available yalnız fiziksel
+  provenance kanıtıdır; legacy/missing TL damgası ayrıca Unavailable kalır ve finansal maliyet başarısı sayılmaz.
+- Üç yeni gerçek SQL fact kaynağı çift komut/çift gerçek hareket, eksik veya bozulmuş immutable komut bağı ve
+  çözümleme await'i sırasında şirket değişimini kapsar. Mevcut gerçek receipt/average/allocation/shipment/outbox
+  fact'leri yeni yöntemde aynı original TL/fingerprint, sonraki gerçek girişle değişen ortalamadan bağımsızlık,
+  legacy TL eksikliği, outbox bozma ve başka şirket/bilinmeyen ayrımını da doğrulayacak şekilde genişletildi.
+  Owner unit kaynakları iptal ve boş/uyuşmayan şirket/kimliklerde hiç bağlantı açılmamasını kapsar.
+- Yeni model/migration/ham SQL üretim yüzeyi, başka modül tablo erişimi, Program/permission/pin veya SMM producer
+  değişimi yoktur. SQL bozma yalnız test fixture'ındadır. Unit/SQL/HTTP/Vitest/browser/CI runtime **NOT_RUN**;
+  muhasebe/fatura tüketici bağını ve merkezi kapanış kanıtını koordinatör tamamlar.
+- Kaynak derlemeleri **exit0 / 0 uyarı / 0 hata**: API 2:42,02; Inventory.UnitTests 6,83sn; Api.IntegrationTests
+  48,00sn. İlk Inventory.UnitTests denemesi NETSDK1004/exit1 verdi; yalnız o mevcut projenin dar restore'u exit0 aldı.
+  Ardından yeni test assertion'ında parametre/yerel `resolved` adı çakışması exit1 verdi; yalnız testte dar ad düzeltmesi
+  sonrası final build exit0'dır. Üretim kaynağı değişmediğinden başarılı API derlemesi tekrar edilmedi. Yeni paket/sürüm/
+  lock değişimi yok; her süreç öncesi ≥2GiB kapısı ölçüldü, native exit/ilk hata/ham loglar depodışında korundu.
+  **DONE — bu dar owner read kaynak kapsamı**; ilk SMM finansal producer veya uçtan uca kabul iddiası değildir.
