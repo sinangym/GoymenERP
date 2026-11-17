@@ -109,6 +109,10 @@ public sealed record InventoryAverageCostUnitReadAnswerV1
     /// <summary>Only with <see cref="InventoryAverageCostUnitReadStatusV1.Value"/>: non-negative, at most 4 decimals.</summary>
     public decimal? CostPerUnit { get; }
 
+    /// <summary>The source's proven currency identity; conversion of kg to another physical unit changes no currency.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? CostCurrencyId => CompanyWide.CostCurrencyId;
+
     /// <summary>
     /// With <see cref="InventoryAverageCostUnitReadStatusV1.Value"/> (1 for a kilogram unit) and with an
     /// <see cref="InventoryAverageCostUnitConversionRefusalCodesV1.CoefficientNotPositive"/> refusal: the kilograms one unit

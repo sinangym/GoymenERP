@@ -185,13 +185,25 @@ public sealed partial class SalesInvoice
             throw StateConflict("Fatura zaten resmî belgeyle eşleştirildi.");
         }
 
-        if (!official.HasCompleteSourceProof(CompanyId))
+        var facts = BuildMatchFacts(CompanyId, official, EvaluateMatch(official), actor, tolerance,
+            approveDifference, differenceReason, () => RequireNotPreparer(actor), now);
+        Match = facts;
+        return facts;
+    }
+
+    // One matching policy for dispatch and subcontract invoices. Source/date/amount rules are identical;
+    // the caller supplies its own already-checked lifecycle and its immutable functional amounts.
+    internal static SalesInvoiceMatchFacts BuildMatchFacts(Guid companyId, SalesOfficialInvoiceFacts official,
+        SalesInvoiceMatchEvaluation evaluation, string actor, decimal tolerance, bool approveDifference,
+        string? differenceReason, Action requireNotPreparer, DateTimeOffset now)
+    {
+        if (tolerance < 0m) throw new ArgumentOutOfRangeException(nameof(tolerance));
+        if (!official.HasCompleteSourceProof(companyId))
         {
             throw new SalesRuleException(SalesRuleCodes.InvoiceMatchSourceProofRequired,
                 "Resmî fatura tarihi ve onaylı kaynak kanıtı olmadan eşleştirme kaydedilemez.");
         }
 
-        var evaluation = EvaluateMatch(official);
         if (!evaluation.ExactFieldsMatch)
         {
             throw new SalesRuleException(SalesRuleCodes.InvoiceMatchMismatch,
@@ -209,7 +221,7 @@ public sealed partial class SalesInvoice
                     "Ödenecek tutar, KDV ya da tevkifat farkı toleransı aşıyor; ayrı ve açık onay gerekir.");
             }
 
-            RequireNotPreparer(actor);
+            requireNotPreparer();
             reason = RequireReason(differenceReason) ?? throw new SalesRuleException(SalesRuleCodes.InvoiceMatchDifferenceReasonRequired,
                 "Tutar farkı onayı için neden yazılır.");
             approver = actor;
@@ -223,7 +235,6 @@ public sealed partial class SalesInvoice
         var facts = new SalesInvoiceMatchFacts(official.OfficialNo, official.Ettn, evaluation.InvoiceFunctionalAmount,
             evaluation.OfficialFunctionalAmount, evaluation.Difference, tolerance, actor, now.ToUniversalTime(), approver, reason,
             evaluation.Taxes, official.InvoiceDate, official.SourceProof);
-        Match = facts;
         return facts;
     }
 

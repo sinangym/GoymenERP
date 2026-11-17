@@ -1,5 +1,5 @@
 import type { ViewOutcome } from '../../shell/uiState'
-import { decodePaintCatalog, decodePaintMutation, decodePaintPreview, type PaintCatalog, type PaintCommand,
+import { decodePaintCandidates, decodePaintCatalog, decodePaintMutation, decodePaintPreview, PAINT_CANDIDATE_LIMIT, type PaintCandidates, type PaintCatalog, type PaintCommand,
   type PaintMutation, type PaintPreview, type PaintValidateRequest } from './contract'
 
 export const PAINT_API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
@@ -35,6 +35,12 @@ async function read<T>(path: string, companyId: string, decode: (body: unknown) 
 }
 export function fetchPaintCatalog(companyId: string, signal?: AbortSignal): Promise<ViewOutcome<PaintCatalog>> {
   return read('/current', companyId, (body) => decodePaintCatalog(body, companyId), signal)
+}
+export function fetchPaintCandidates(companyId: string, q: string | null, signal?: AbortSignal): Promise<ViewOutcome<PaintCandidates>> {
+  const parameters = new URLSearchParams({ limit: String(PAINT_CANDIDATE_LIMIT) })
+  if (q !== null) parameters.set('q', q)
+  return read(`/candidates?${parameters.toString()}`, companyId,
+    (body) => decodePaintCandidates(body, companyId, q), signal)
 }
 export function validatePaintFile(companyId: string, request: PaintValidateRequest,
   sha256: string, signal?: AbortSignal): Promise<ViewOutcome<PaintPreview>> {

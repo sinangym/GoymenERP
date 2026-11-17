@@ -80,7 +80,7 @@ public static class SalesSubcontractServiceInvoiceReasonCodesV1
     /// <summary>SAT-D376/D402: a served line's whole-kg share would be zero or negative; it is never billed as zero.</summary>
     public const string ShareNotPositive = "subcontract_share_not_positive";
 
-    /// <summary>A foreign-currency subcontract order: its rate day is not decided for the service invoice (NEEDS-SINAN).</summary>
+    /// <summary>Retained wire value for older clients; SAT-D380 now resolves the actual official invoice date at match.</summary>
     public const string CurrencyPending = "subcontract_currency_pending";
 
     /// <summary>
@@ -127,7 +127,16 @@ public sealed record SalesSubcontractServiceInvoiceDetailView(
     IReadOnlyList<SalesSubcontractServiceInvoiceLineView> Lines,
     string CreatedBy,
     DateTimeOffset CreatedAtUtc,
-    bool IsReplay);
+    bool IsReplay,
+    SalesSubcontractInvoiceLifecycleViewV1? Lifecycle = null);
+
+public sealed record SalesSubcontractInvoiceLifecycleViewV1(
+    SalesInvoiceDecisionView? Decision,
+    IReadOnlyList<SalesInvoiceInstalmentView> Instalments,
+    SalesInvoiceRateView? ExchangeRate,
+    SalesInvoiceAmountsView? FunctionalTotals,
+    SalesInvoiceMatchView? Match,
+    SalesInvoiceFinalizationView? Finalization);
 
 /// <summary>The command answer: the stored draft, whether it is a replay, and the first request's correlation id.</summary>
 public sealed record SalesSubcontractServiceInvoiceCommandResult(SalesSubcontractServiceInvoiceDetailView Invoice, bool IsReplay,
@@ -185,7 +194,9 @@ public enum SalesSubcontractDeliveryWeighingStatusV1
 /// <paramref name="TheoreticalKg"/> stops a shared-weighing split (fail closed), never a zero.
 /// </summary>
 public sealed record SalesSubcontractDeliveryWeighingLineV1(Guid SourceOrderId, Guid SourceOrderLineId, Guid ProductId, Guid UnitId,
-    string? TheoreticalKg = null);
+    string? TheoreticalKg = null, IReadOnlyList<SalesSubcontractShipmentFactV1>? Shipments = null);
+
+public sealed record SalesSubcontractShipmentFactV1(Guid ShipmentId, DateTimeOffset RecordedAtUtc);
 
 /// <summary>
 /// The delivery weighing facts Sales needs (Sales-owned shape; the host adapts the Logistics owner's F1 read): the net kilograms

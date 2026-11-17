@@ -451,7 +451,7 @@ public sealed partial class SalesStore : ISalesInvoiceStore
         ArgumentException.ThrowIfNullOrWhiteSpace(officialNo);
         ArgumentException.ThrowIfNullOrWhiteSpace(ettn);
         RequireResolvedCompany();
-        var found = await dbContext.InvoiceMatches.AsNoTracking()
+        var found = await dbContext.OfficialInvoiceClaims.AsNoTracking()
             .Where(match => match.OfficialInvoiceNo == officialNo || match.Ettn == ettn)
             .Select(match => (Guid?)match.InvoiceId)
             .FirstOrDefaultAsync(cancellationToken);
@@ -504,6 +504,11 @@ public sealed partial class SalesStore : ISalesInvoiceStore
         }
 
         dbContext.InvoiceMatches.Add(SalesInvoiceRows.ToMatchRow(companyId, invoiceId, facts, envelope.CorrelationId));
+        dbContext.OfficialInvoiceClaims.Add(new OfficialInvoiceClaimRow
+        {
+            CompanyId = companyId, InvoiceId = invoiceId, SourceKind = "dispatch",
+            OfficialInvoiceNo = facts.OfficialNo, Ettn = facts.Ettn,
+        });
         dbContext.InvoiceAttempts.Add(new InvoiceAttemptRow
         {
             CompanyId = companyId,

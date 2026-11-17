@@ -25,7 +25,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// and activated through the existing routes; the port is called in process (it is not an HTTP surface) with a
 /// SENTETIK host authority.
 /// </summary>
-public sealed class AccountingSourceDocumentAdmissionSqlServerRelationalAcceptanceTests
+public sealed partial class AccountingSourceDocumentAdmissionSqlServerRelationalAcceptanceTests
 {
     private const string MappingsPath = "/api/v1/accounting/posting-account-mappings";
     private const string PackagesPath = "/api/v1/accounting/approved-source-catalog/packages";

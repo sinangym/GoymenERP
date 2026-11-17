@@ -43,6 +43,9 @@ public sealed class AccountingSalesInvoiceFinalizedInboxConsumer(
         {
             case AccountingSourceDocumentAdmissionOutcomeV1.Admitted:
                 return;
+            case AccountingSourceDocumentAdmissionOutcomeV1.Refused
+                when answer.Reason == AccountingSourceDocumentAdmissionReasonsV1.SourceCancelled:
+                return; // Committed cancellation wins over an out-of-order finalized delivery.
             case AccountingSourceDocumentAdmissionOutcomeV1.Unavailable:
                 throw new AccountingInvoiceJournalRetryException(answer.Reason,
                     "Muhasebe faturayı şu an kabul edemedi; aynı anahtarla yeniden denenecek.");
@@ -164,7 +167,8 @@ public sealed class AccountingSalesInvoiceFinalizedInboxConsumer(
             DueDate: null,
             document,
             functional,
-            lines);
+            lines,
+            payload.OfficialInvoiceNo);
     }
 
     /// <summary>The exact decimal text of a frozen amount. Trailing zeros of the scale are dropped; the value is never rounded.</summary>

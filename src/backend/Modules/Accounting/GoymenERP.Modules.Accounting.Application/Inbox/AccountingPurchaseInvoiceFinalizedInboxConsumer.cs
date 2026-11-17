@@ -33,6 +33,9 @@ public sealed class AccountingPurchaseInvoiceFinalizedInboxConsumer(
         {
             case AccountingSourceDocumentAdmissionOutcomeV1.Admitted:
                 return;
+            case AccountingSourceDocumentAdmissionOutcomeV1.Refused
+                when answer.Reason == AccountingSourceDocumentAdmissionReasonsV1.SourceCancelled:
+                return; // Committed cancellation wins over an out-of-order finalized delivery.
             case AccountingSourceDocumentAdmissionOutcomeV1.Unavailable:
                 throw new AccountingInvoiceJournalRetryException(answer.Reason,
                     "Muhasebe faturayı şu an kabul edemedi; aynı anahtarla yeniden denenecek.");
@@ -155,7 +158,8 @@ public sealed class AccountingPurchaseInvoiceFinalizedInboxConsumer(
             payload.DueDate,
             document,
             functional,
-            lines);
+            lines,
+            payload.OfficialInvoiceNo);
     }
 
     /// <summary>The exact decimal text of a frozen amount. Trailing zeros of the scale are dropped; the value is never rounded.</summary>
@@ -176,6 +180,14 @@ public sealed class AccountingPurchaseInvoiceFinalizedInboxConsumer(
         var vat = foreignCurrency ? line.FunctionalVat : line.Vat;
         var withholding = foreignCurrency ? line.FunctionalWithholding : line.Withholding;
         if (line.LineId == Guid.Empty || !AccountingPurchaseLinePurposesV1.IsKnown(line.LinePurpose)
+            || (line.LinePurpose == AccountingPurchaseLinePurposesV1.Expense && line.ItemType != "Expense")
+            || (line.ExpenseTypeId is { } expenseType && (expenseType == Guid.Empty || line.ServiceTypeId is not null
+                || line.ItemType != "Expense" || line.LinePurpose != AccountingPurchaseLinePurposesV1.Expense))
+            // ALC-S7: the producer's frozen Settings service identity is metadata, never a stock item selector.
+            // Older events omit it; a supplied identity must agree with the existing service accounting purpose.
+            || (line.ServiceTypeId is { } serviceTypeId && (serviceTypeId == Guid.Empty
+                || !string.Equals(line.ItemType, "Service", StringComparison.Ordinal)
+                || !string.Equals(line.LinePurpose, AccountingPurchaseLinePurposesV1.Service, StringComparison.Ordinal)))
             || line.LineNo < 1 || line.VatPercent is not { } vatPercent || net is not { } n || vat is not { } v
             || withholding is not { } w || line.Net is null || line.Vat is null || line.Withholding is null
             || (!foreignCurrency && (line.FunctionalNet is not null || line.FunctionalVat is not null

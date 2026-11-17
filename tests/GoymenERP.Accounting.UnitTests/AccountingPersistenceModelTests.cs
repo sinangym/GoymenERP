@@ -27,6 +27,7 @@ public sealed class AccountingPersistenceModelTests
         typeof(AccountingPostingAccountMappingVersionRow), typeof(AccountingPostingAccountMappingEntryRow),
         typeof(AccountingSourceDocumentAdmissionRow), typeof(AccountingSourceDocumentVoucherDraftRow),
         typeof(AccountingSourceDocumentVoucherDraftLineRow),
+        typeof(AccountingSourceInvoiceCancellationRow),
         typeof(ManufacturingCostDifferenceRow), typeof(CreditMovementProposalRow),
         typeof(InvoiceLineCogsProposalRow), typeof(InvoiceLineCogsRevisionRow),
     ];
@@ -134,8 +135,9 @@ public sealed class AccountingPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddPeriodApproval", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddNormalJournalDrafts", StringComparison.Ordinal));
         Assert.Equal(["20261117000534_AddManufacturingCostDifferenceProposals", "20261117005516_AddCreditMovementProposals",
-                "20261117095844_AddInvoiceLineCogsCorrections", "20261117102540_AddFinanceJournalSources"],
-            context.Database.GetMigrations().TakeLast(4));
+                "20261117095844_AddInvoiceLineCogsCorrections", "20261117102540_AddFinanceJournalSources",
+                "20261117123611_AddSourceVoucherLifecycle"],
+            context.Database.GetMigrations().TakeLast(5));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -207,6 +209,56 @@ public sealed class AccountingPersistenceModelTests
         var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
         Assert.Contains("THROW 51240", guard.Sql, StringComparison.Ordinal);
         Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
+    }
+
+    [Fact]
+    public void Source_voucher_lifecycle_preserves_company_keys_frozen_source_and_real_journal_maker_checker()
+    {
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var vouchers = model.FindEntityType(typeof(AccountingSourceDocumentVoucherDraftRow))!;
+        Assert.Contains(vouchers.GetCheckConstraints(), check => check.Name == "CK_SourceDocumentVoucherDrafts_Status"
+            && check.Sql == AccountingDbContext.SourceVoucherLifecycleStatusCheck);
+        Assert.Contains(vouchers.GetForeignKeys(), fk => fk.PrincipalEntityType.ClrType == typeof(JournalRow)
+            && fk.Properties.Select(x => x.Name).SequenceEqual(["CompanyId", "JournalId"]));
+        Assert.Contains(vouchers.GetForeignKeys(), fk => fk.PrincipalEntityType.ClrType == typeof(PeriodRow)
+            && fk.Properties.Select(x => x.Name).SequenceEqual(["CompanyId", "PeriodId"]));
+        Assert.True(vouchers.FindProperty(nameof(AccountingSourceDocumentVoucherDraftRow.OfficialInvoiceNo))!.IsNullable);
+        var cancellations = model.FindEntityType(typeof(AccountingSourceInvoiceCancellationRow))!;
+        Assert.Equal(["CompanyId", "CancellationId"], cancellations.FindPrimaryKey()!.Properties.Select(x => x.Name));
+        Assert.Contains(cancellations.GetIndexes(), index => index.IsUnique
+            && index.Properties.Select(x => x.Name).SequenceEqual(["CompanyId", "SourceDocumentId"]));
+        Assert.Contains(cancellations.GetIndexes(), index => index.IsUnique
+            && index.Properties.Select(x => x.Name).SequenceEqual(["CompanyId", "DocumentKind", "InvoiceId", "FinalizedVersion"]));
+        var migration = new GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations.AddSourceVoucherLifecycle();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51938", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[OfficialInvoiceNo] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
+    }
+
+    [Theory]
+    [InlineData("edit-cancellation")]
+    [InlineData("edit-voucher-amount")]
+    [InlineData("rewrite-posted-voucher")]
+    public void Source_voucher_financial_facts_and_cancellation_receipts_are_immutable_before_database_access(string fault)
+    {
+        using var context = Context();
+        if (fault == "edit-cancellation")
+        {
+            var row = new AccountingSourceInvoiceCancellationRow { CompanyId = CompanyA, CancellationId = Guid.NewGuid(), Reason = "SENTETIK" };
+            context.Attach(row); row.Reason = "SENTETIK changed";
+        }
+        else
+        {
+            var row = new AccountingSourceDocumentVoucherDraftRow { CompanyId = CompanyA, Id = Guid.NewGuid(),
+                SourceActorId = Guid.NewGuid(), Status = fault == "rewrite-posted-voucher" ? 2 : 1, Version = 1 };
+            context.Attach(row); row.Version = 2;
+            if (fault == "edit-voucher-amount") { row.Status = 3; row.FunctionalPayable = 100; }
+            else row.Status = 3;
+        }
+        Assert.Throws<InvalidOperationException>(() => context.SaveChanges());
     }
 
     [Fact]

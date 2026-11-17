@@ -55,6 +55,12 @@ public enum SalesLineMarginUnavailableReason
 
     /// <summary>Only the percent: the net sale is zero or negative, so there is no ratio (SAT-D259 detail; no division by zero).</summary>
     NetSaleNotPositive = 12,
+
+    /// <summary>A reinstatement or out-of-revision quantity change needs an explicit cost-pin decision.</summary>
+    CostRepinPolicyPending = 13,
+
+    /// <summary>SAT-D265(5): independent formula golden acceptance is not yet in main.</summary>
+    FormulaGoldenPending = 14,
 }
 
 /// <summary>Why no cost value is available for a line — the cost side's own fail-closed states (SAT-D258, SAT-D262; no warehouse state — SAT-D272).</summary>

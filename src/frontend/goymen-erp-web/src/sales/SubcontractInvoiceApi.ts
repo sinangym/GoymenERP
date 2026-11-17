@@ -17,8 +17,21 @@ import {
   decodeSubcontractInvoiceDetail,
   subcontractServiceInvoicePath,
   type SubcontractInvoiceDetail,
+  type SubcontractInvoiceList,
+  decodeSubcontractInvoiceList,
+  subcontractInvoicesOfOrderPath,
 } from './SubcontractInvoiceContract'
 import type { ViewOutcome } from '../shell/uiState'
+
+export async function fetchSubcontractInvoiceList(salesOrderId: string, companyId: string, cursor: string | null,
+  signal?: AbortSignal): Promise<ViewOutcome<SubcontractInvoiceList>> {
+  const query = new URLSearchParams({ pageSize: '50', ...(cursor === null ? {} : { cursor }) })
+  const raw = await request(`${subcontractInvoicesOfOrderPath(salesOrderId)}?${query}`, { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const data = decodeSubcontractInvoiceList(raw.body, salesOrderId)
+  return data === null ? { type: 'malformed' } : { type: 'ok-single', data }
+}
 
 /** The create body as the person chose it: the subcontract order and the delivery weighing of its loading instruction. */
 export interface CreateSubcontractInvoicePayload {
@@ -78,7 +91,7 @@ export async function createSubcontractInvoice(
   const detail = decodeSubcontractInvoiceDetail(raw.body, null)
   if (
     detail === null ||
-    detail.state !== 'Draft' ||
+    (detail.state !== 'Draft' && !detail.isReplay) ||
     !sameId(detail.salesOrderId, payload.salesOrderId) ||
     !sameId(detail.loadingInstructionId, payload.loadingInstructionId) ||
     !sameId(detail.weighingId, payload.weighingId) ||
@@ -99,4 +112,30 @@ export async function fetchSubcontractInvoice(
   if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
   const detail = decodeSubcontractInvoiceDetail(raw.body, invoiceId)
   return detail === null ? { type: 'malformed' } : { type: 'ok-single', data: detail }
+}
+
+export type SubcontractAction = 'submit' | 'approve' | 'reject' | 'cancel' | 'match' | 'finalize' | 'resend-finance'
+export interface SubcontractActionPayload {
+  readonly invoiceId: string
+  readonly action: SubcontractAction
+  readonly expectedVersion: string
+  readonly reason?: string
+  readonly officialInvoiceNo?: string
+  readonly ettn?: string
+  readonly approveDifference?: boolean
+  readonly differenceReason?: string
+}
+
+export async function commandSubcontractInvoice(payload: SubcontractActionPayload, context: KeyedContext): Promise<OrderCommandOutcome<SubcontractInvoiceDetail>> {
+  const { invoiceId, action, ...body } = payload
+  const raw = await request(`${subcontractServiceInvoicePath(invoiceId)}/${action}`, {
+    method: 'POST', headers: { ...headers(context.companyId), 'Content-Type': 'application/json', 'Idempotency-Key': context.idempotencyKey },
+    body: JSON.stringify(body),
+  }, undefined)
+  if ('failure' in raw) return failureOutcome(raw.failure)
+  if (raw.status !== 200) return raw.status >= 200 && raw.status < 300 ? { type: 'malformed' }
+    : { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  const detail = decodeSubcontractInvoiceDetail(raw.body, invoiceId)
+  if (detail === null || !replayAgrees(detail, raw.replayed, raw.replayCorrelationId)) return { type: 'malformed' }
+  return { type: 'succeeded', data: detail }
 }

@@ -150,7 +150,7 @@ internal static class AccountingSourceDocumentVoucherPlanV1
         foreach (var item in parsed.Where(item => item.Net > 0m).OrderBy(item => item.Line.LineNumber))
         {
             var key = purchase
-                ? item.Line.LinePurpose == AccountingPurchaseLinePurposesV1.Service
+                ? item.Line.LinePurpose is AccountingPurchaseLinePurposesV1.Service or AccountingPurchaseLinePurposesV1.Expense
                     ? AccountingPostingAccountMappingKeysV1.Expense
                     : AccountingPostingAccountMappingKeysV1.Inventory
                 : AccountingPostingAccountMappingKeysV1.Revenue;

@@ -56,6 +56,7 @@ const problem = (status: number, code: string | null, errors: readonly unknown[]
 function serve(command: (call: Call, index: number) => Response | Promise<Response>) {
   const calls: Call[] = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
+    if (url.includes('/by-order/')) return json({ salesOrderId: SUBCONTRACT_ORDER_ID, items: [], nextCursor: null })
     const headers = (init.headers ?? {}) as Record<string, string>
     const call: Call = {
       url,

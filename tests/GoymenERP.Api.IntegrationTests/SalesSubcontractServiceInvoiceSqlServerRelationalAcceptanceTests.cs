@@ -24,7 +24,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// refuses a non-draft state and a source without a weighing revision; another company never finds it. The migration refuses to roll
 /// back over a recorded invoice (THROW 51732, forward fix). No other module's table is written. SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class SalesSubcontractServiceInvoiceSqlServerRelationalAcceptanceTests
+public sealed partial class SalesSubcontractServiceInvoiceSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
@@ -72,8 +72,8 @@ public sealed class SalesSubcontractServiceInvoiceSqlServerRelationalAcceptanceT
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[SubcontractServiceInvoiceLines]"),
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[SubcontractServiceInvoiceAttempts]")));
 
-        // The checks hold against raw SQL: only a draft, and never a source without a weighing revision.
-        Assert.Equal(547, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+        // Lifecycle transitions require their version advance; the original source revision constraint remains.
+        Assert.Equal(51997, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
             "UPDATE [sales].[SubcontractServiceInvoices] SET [State] = 2 WHERE [Id] = @id; SELECT 1", ("@id", id)))).Number);
         Assert.Equal(547, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
             "UPDATE [sales].[SubcontractServiceInvoices] SET [WeighingRevision] = 0 WHERE [Id] = @id; SELECT 1", ("@id", id)))).Number);
@@ -107,10 +107,10 @@ public sealed class SalesSubcontractServiceInvoiceSqlServerRelationalAcceptanceT
         var index = Array.FindIndex(applied, id => id.EndsWith("_AddSubcontractServiceInvoices", StringComparison.Ordinal));
         Assert.True(index > 0);
         var migrator = context.GetService<IMigrator>();
-        await migrator.MigrateAsync(applied[index]);
+        // SC34 history is forward-fix as well; rolling through it cannot discard the newer lifecycle evidence.
         var rollback = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[index - 1]));
-        Assert.Equal(51732, rollback.Number);
-        Assert.Equal(applied[..(index + 1)], await context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(51994, rollback.Number);
+        Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         await context.Database.MigrateAsync();
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[SubcontractServiceInvoices]"));
