@@ -99,6 +99,7 @@ public static class AccountingInventoryCostSourceValidationV1
             catch (JsonException) { throw Invalid("inventory_cost_proof_invalid"); }
             if (expectedKind == AccountingInventoryCostKindV1.SalesInvoicedShipment)
             {
+                if (component.RecordedRounding is not null) throw Invalid("inventory_cost_rounding_invalid");
                 if (component.InvoiceLineId is null || component.InvoiceLineId == Guid.Empty) throw Invalid("inventory_cost_line_missing");
                 if (component.InvoiceLineNumber is null or < 1 || !lineNumbers.Add(component.InvoiceLineNumber.Value)
                     || component.LocationId is not null || amount < 0
@@ -125,12 +126,20 @@ public static class AccountingInventoryCostSourceValidationV1
                     if (sum != component.SignedTlAmount) throw Invalid("inventory_cost_attribution_invalid");
                 }
             }
-            else if (component.InvoiceLineId is not null || component.InvoiceLineNumber is not null || component.LocationId is null
-                || component.LocationId == Guid.Empty || amount == 0
-                || component.ComponentKey != AccountingInventoryCostTraceV1.PurchaseComponent(component.ProductId, component.LocationId.Value))
-                throw Invalid("inventory_cost_position_invalid");
-            else if (component.SalesPhysicalClaims is not null || component.AlreadyPostedComponents is not null)
-                throw Invalid("inventory_cost_attribution_invalid");
+            else
+            {
+                var first = AccountingInventoryCostTraceV1.IsPurchaseFirstComponent(component.ComponentKey);
+                if (component.InvoiceLineId is not null || component.InvoiceLineNumber is not null || component.LocationId is null
+                    || component.LocationId == Guid.Empty || !first && (amount == 0
+                        || component.ComponentKey != AccountingInventoryCostTraceV1.PurchaseComponent(component.ProductId, component.LocationId.Value)))
+                    throw Invalid("inventory_cost_position_invalid");
+                if (component.SalesPhysicalClaims is not null || component.AlreadyPostedComponents is not null)
+                    throw Invalid("inventory_cost_attribution_invalid");
+                if (first ? component.RecordedRounding is not { } recorded || amount < 0
+                        || !AccountingInventoryCostRoundingV1Rules.IsValidRecorded(component.SignedTlAmount, recorded)
+                        || !AccountingInventoryCostAmountsV1.TryRead(recorded.Rounding.ExactSignedAmount, out var original, out _) || original <= 0
+                    : component.RecordedRounding is not null) throw Invalid("inventory_cost_rounding_invalid");
+            }
         }
     }
 

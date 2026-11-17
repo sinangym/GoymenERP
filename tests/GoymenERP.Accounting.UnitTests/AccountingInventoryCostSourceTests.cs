@@ -41,6 +41,38 @@ public sealed class AccountingInventoryCostSourceTests
     }
 
     [Fact]
+    public void A_first_receipt_component_cannot_net_against_a_late_difference_for_the_same_product_and_location()
+    {
+        var (envelope, source) = Purchase(); var late = source.Components[0];
+        var currency = Guid.NewGuid();
+        Assert.True(AccountingInventoryCostRoundingV1Rules.TryRound(new("1", "3"), currency, 2, out var value, out var rounding));
+        var first = late with { ComponentKey = AccountingInventoryCostTraceV1.PurchaseFirstComponent(Guid.NewGuid(), Guid.NewGuid()),
+            SignedTlAmount = AccountingInventoryCostAmountsV1.FromDecimal(value),
+            RecordedRounding = new(currency, Guid.NewGuid(), 1, 2, rounding!) };
+        AccountingInventoryCostSourceValidationV1.Require(envelope, source with { Components = [late, first] }, source.CompanyId);
+        Assert.NotEqual(late.ComponentKey, first.ComponentKey);
+        Assert.Throws<OutboxPermanentFailureException>(() => AccountingInventoryCostSourceValidationV1.Require(envelope,
+            source with { Components = [first with { ComponentKey = first.ComponentKey.ToUpperInvariant() }] }, source.CompanyId));
+        Assert.Throws<OutboxPermanentFailureException>(() => AccountingInventoryCostSourceValidationV1.Require(envelope,
+            source with { Components = [first with { RecordedRounding = null }] }, source.CompanyId));
+        Assert.Throws<OutboxPermanentFailureException>(() => AccountingInventoryCostSourceValidationV1.Require(envelope,
+            source with { Components = [late with { RecordedRounding = first.RecordedRounding }] }, source.CompanyId));
+    }
+
+    [Fact]
+    public void A_first_receipt_rounded_zero_keeps_its_positive_exact_source_but_cannot_hide_a_changed_residue()
+    {
+        var (envelope, source) = Purchase(); var currency = Guid.NewGuid();
+        Assert.True(AccountingInventoryCostRoundingV1Rules.TryRound(new("1", "250"), currency, 2, out _, out var rounding));
+        var first = source.Components[0] with { ComponentKey = AccountingInventoryCostTraceV1.PurchaseFirstComponent(Guid.NewGuid(), Guid.NewGuid()),
+            SignedTlAmount = new("0", "1"), RecordedRounding = new(currency, Guid.NewGuid(), 1, 2, rounding!) };
+        AccountingInventoryCostSourceValidationV1.Require(envelope, source with { Components = [first] }, source.CompanyId);
+        Assert.Throws<OutboxPermanentFailureException>(() => AccountingInventoryCostSourceValidationV1.Require(envelope,
+            source with { Components = [first with { RecordedRounding = first.RecordedRounding with {
+                Rounding = rounding! with { ExactSignedResidue = new("0", "1") } } }] }, source.CompanyId));
+    }
+
+    [Fact]
     public void A_changed_owner_proof_or_duplicate_component_is_refused_instead_of_hiding_a_second_cost_effect()
     {
         var (envelope, source) = Purchase();

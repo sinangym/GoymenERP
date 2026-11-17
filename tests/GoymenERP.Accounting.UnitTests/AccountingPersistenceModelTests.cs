@@ -160,8 +160,8 @@ public sealed class AccountingPersistenceModelTests
                 "20261117095844_AddInvoiceLineCogsCorrections", "20261117102540_AddFinanceJournalSources",
                 "20261117123611_AddSourceVoucherLifecycle", "20261117154311_AddPeriodClosureCarryAndReopening",
                 "20261117171929_WidenPostingMappingsToCogs", "20261117175214_AddInventoryCostProposals",
-                "20261117190022_AddPostedManufacturingCostAttribution"],
-            context.Database.GetMigrations().TakeLast(9));
+                "20261117190022_AddPostedManufacturingCostAttribution", "20261117194231_AddInventoryCostComponentRounding"],
+            context.Database.GetMigrations().TakeLast(10));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -176,6 +176,25 @@ public sealed class AccountingPersistenceModelTests
         var guards = migration.UpOperations.OfType<SqlOperation>().ToArray();
         Assert.Equal(3, guards.Length);
         Assert.All(guards, guard => { Assert.Contains("THROW 51801", guard.Sql); Assert.Contains("THROW 51802", guard.Sql); });
+    }
+
+    [Fact]
+    public void Inventory_cost_rounding_widens_only_the_approved_zero_state_and_protects_exact_evidence_before_rollback()
+    {
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var row = model.FindEntityType(typeof(AccountingInventoryCostProposalRow))!;
+        Assert.Equal(AccountingDbContext.InventoryCostProposalStateCheck,
+            row.GetCheckConstraints().Single(x => x.Name == "CK_InventoryCostProposals_State").Sql);
+        var migration = new GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations.AddInventoryCostComponentRounding();
+        Assert.Empty(migration.UpOperations.OfType<SqlOperation>());
+        Assert.Collection(migration.UpOperations,
+            op => Assert.IsType<DropCheckConstraintOperation>(op), op => Assert.IsType<AddCheckConstraintOperation>(op));
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51803", guard.Sql);
+        Assert.Contains("$.preparation.rounding", guard.Sql);
+        Assert.Contains("$.component.recordedRounding", guard.Sql);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
     }
 
     [Fact]

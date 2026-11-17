@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router'
 import { InventoryCostProposalsPage } from './InventoryCostProposalsPage'
 import { INVENTORY_COST_TEXT as T } from './inventoryCostText'
 import { reversalProposal } from './testHarness'
+import { decodeInventoryCost } from './inventoryCostApi'
 
 const state = vi.hoisted(() => ({ company: 'e0431000-0000-4000-8000-000000000001', actor: 'e0431000-0000-4000-8000-000000000002',
   capabilityGeneration: 'SENTETIK-cap-1', committedContextRevision: 1, sessionEpoch: 0 }))
@@ -40,6 +41,64 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); state.actor = 'e0431000-0000
   state.committedContextRevision = 1; state.sessionEpoch = 0 })
 
 describe('inventory cost human approval flow', () => {
+  it('shows the source exact amount and signed residue separately from its one rounded posting amount', async () => {
+    const base = row(); const rounding = { exactSignedAmount: { numerator: '1', denominator: '3' }, roundedSignedAmount: '0.33',
+      exactSignedResidue: { numerator: '1', denominator: '300' }, exactSignedAmountText: '1 / 3', exactSignedResidueText: '1 / 300',
+      ruleVersion: 'accounting.inventory-cost-component-total.v1' }
+    vi.stubGlobal('fetch', vi.fn(async () => json({ companyId: state.company, items: [row({ exactTlAmount: '1 / 3',
+      component: { ...base.component, signedTlAmount: rounding.exactSignedAmount }, preparation: { ...base.preparation, signedAmount: '0.33', rounding } })] })))
+    mount(); fireEvent.click(await screen.findByRole('button', { name: T.choose }))
+    await screen.findByText('0.33'); expect(screen.getByText('1 / 300')).toBeDefined()
+    expect(screen.getByRole('button', { name: T.approve })).toBeDefined()
+  })
+  it('accepts a different approver zero outcome without linking or fabricating a journal', async () => {
+    const base = row(); const rounding = { exactSignedAmount: { numerator: '1', denominator: '250' }, roundedSignedAmount: '0',
+      exactSignedResidue: { numerator: '1', denominator: '250' }, exactSignedAmountText: '0.004', exactSignedResidueText: '0.004',
+      ruleVersion: 'accounting.inventory-cost-component-total.v1' }
+    const prepared = row({ exactTlAmount: '0.004', component: { ...base.component, signedTlAmount: rounding.exactSignedAmount },
+      preparation: { ...base.preparation, signedAmount: '0', rounding } })
+    const approved = { ...prepared, status: 'RoundedNoCost', version: 3, approvedBy: state.actor, approvedAtUtc: '2026-11-17T09:02:00Z' }
+    let writes = 0
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') { writes++; return json(approved) }
+      return json({ companyId: state.company, items: [writes ? approved : prepared] })
+    }))
+    mount(); fireEvent.click(await screen.findByRole('button', { name: T.choose }))
+    fireEvent.click(await screen.findByRole('button', { name: T.approve }))
+    await screen.findByText(T.done); await screen.findByText(T.roundedZero)
+    expect(writes).toBe(1); expect(screen.queryByText(T.unknown)).toBeNull()
+    expect(screen.queryByRole('button', { name: T.approve })).toBeNull()
+    expect(screen.queryByRole('link', { name: T.reversalApproval })).toBeNull()
+  })
+  it('rejects rounding proof that points to another exact source instead of allowing contradictory prepared totals', async () => {
+    const base = row()
+    vi.stubGlobal('fetch', vi.fn(async () => json({ companyId: state.company, items: [row({ preparation: { ...base.preparation,
+      rounding: { exactSignedAmount: { numerator: '1', denominator: '3' }, roundedSignedAmount: '600',
+        exactSignedResidue: { numerator: '1', denominator: '300' }, exactSignedAmountText: '1 / 3', exactSignedResidueText: '1 / 300',
+        ruleVersion: 'accounting.inventory-cost-component-total.v1' } } })] })))
+    mount(); await screen.findByText(`Beklenmeyen yanıt — ${T.subject}`)
+    expect(screen.queryByRole('button', { name: T.approve })).toBeNull()
+  })
+  it('keeps source rounding and the current journal profile separate while refusing currency or evidence replacement', () => {
+    const base = row(); const rounding = { exactSignedAmount: { numerator: '1', denominator: '250' }, roundedSignedAmount: '0',
+      exactSignedResidue: { numerator: '1', denominator: '250' }, exactSignedAmountText: '0.004', exactSignedResidueText: '0.004',
+      ruleVersion: 'accounting.inventory-cost-component-total.v1' }
+    const first = row({ kind: 2, exactTlAmount: '0', component: { ...base.component, componentKey: `purchase-first/${source}/${counter}`,
+      invoiceLineId: null, invoiceLineNumber: null, locationId: counter, signedTlAmount: { numerator: '0', denominator: '1' },
+      recordedRounding: { currencyId: source, moneyProfileId: source, moneyProfileVersion: 1, moneyScale: 2, rounding } },
+      preparation: { ...base.preparation, signedAmount: '0', rounding } })
+    expect(decodeInventoryCost(first, state.company, 2)).not.toBeNull()
+    expect(decodeInventoryCost({ ...first, preparation: { ...base.preparation, signedAmount: '0', rounding,
+      moneyProfileId: counter, moneyProfileVersion: 2, moneyScale: 3 } }, state.company, 2)).not.toBeNull()
+    expect(decodeInventoryCost({ ...first, preparation: { ...base.preparation, signedAmount: '0', rounding, currencyId: counter } }, state.company, 2)).toBeNull()
+    expect(decodeInventoryCost({ ...first, preparation: { ...base.preparation, signedAmount: '0',
+      rounding: { ...rounding, exactSignedResidue: { numerator: '0', denominator: '1' }, exactSignedResidueText: '0' } } }, state.company, 2)).toBeNull()
+    expect(decodeInventoryCost({ ...first, status: 'NoCost', preparation: null, version: 1 }, state.company, 2)).toBeNull()
+    expect(decodeInventoryCost({ ...first, status: 'RoundedNoCost', version: 3, approvedBy: state.actor,
+      approvedAtUtc: '2026-11-17T09:02:00Z' }, state.company, 2)).not.toBeNull()
+    expect(decodeInventoryCost({ ...first, status: 'RoundedNoCost', version: 3, approvedBy: maker,
+      approvedAtUtc: '2026-11-17T09:02:00Z' }, state.company, 2)).toBeNull()
+  })
   it('shows an actual empty queue and never creates an automatic proposal from the browser', async () => {
     const fetch = vi.fn(async () => json({ companyId: state.company, items: [] })); vi.stubGlobal('fetch', fetch)
     mount(); await screen.findByText(T.empty); expect(screen.queryByRole('button', { name: T.approve })).toBeNull()

@@ -66,6 +66,11 @@ function Page({ kind, canPrepare, canApprove, canProposeReversal, namespace }: P
       {selected !== null && row === undefined ? <StateBlock state={{ kind: 'not-found' }} subject={T.subject} /> : null}
       {row !== undefined ? <>
         <h2>{row.officialInvoiceNumber ?? T.sourceNumberMissing} · {T.statuses[row.status]}</h2><p>{T.amount}: {row.exactTlAmount}</p>
+        {row.component.recordedRounding ? <><p>{T.ownerRounded}</p><dl>
+          <dt>{T.beforeRounding}</dt><dd>{row.component.recordedRounding.rounding.exactSignedAmountText}</dd>
+          <dt>{T.roundingResidue}</dt><dd>{row.component.recordedRounding.rounding.exactSignedResidueText}</dd>
+          <dt>{T.moneyScale}</dt><dd>{row.component.recordedRounding.moneyScale}</dd>
+          <dt>{T.moneyProfileVersion}</dt><dd>{row.component.recordedRounding.moneyProfileVersion}</dd></dl></> : null}
         {row.component.alreadyPostedComponents ? <><p>{row.status === 'AttributedCancellationPending' ? T.attributedPending : T.attributed}</p>
           <ul>{row.component.alreadyPostedComponents.map(share => <li key={share.fingerprint}>
             {T.attributedJournal}: {share.journalId} · {T.attributedAmount}: {share.signedAmount}</li>)}</ul></> : null}
@@ -73,7 +78,12 @@ function Page({ kind, canPrepare, canApprove, canProposeReversal, namespace }: P
         {row.preparation !== null ? <dl><dt>{T.classification}</dt><dd>{row.preparation.classification.classification === 1 ? T.trade : T.manufactured}</dd>
           <dt>{T.counter}</dt><dd>{row.preparation.counterAccount.code} · {row.preparation.counterAccount.name}</dd>
           <dt>{T.preparedDate}</dt><dd>{row.preparation.accountingDate}</dd><dt>{T.reason}</dt><dd>{row.preparation.reason}</dd>
-          <dt>{T.plan}</dt><dd>{row.preparation.accountPlanSourceVersion}</dd></dl> : null}
+          <dt>{T.plan}</dt><dd>{row.preparation.accountPlanSourceVersion}</dd>
+          <dt>{T.postingAmount}</dt><dd>{row.preparation.signedAmount}</dd>
+          {row.preparation.rounding ? <><dt>{T.beforeRounding}</dt><dd>{row.preparation.rounding.exactSignedAmountText}</dd>
+            <dt>{T.roundingResidue}</dt><dd>{row.preparation.rounding.exactSignedResidueText}</dd>
+            <dt>{T.moneyScale}</dt><dd>{row.preparation.moneyScale}</dd><dt>{T.moneyProfileVersion}</dt><dd>{row.preparation.moneyProfileVersion}</dd></> : null}</dl> : null}
+        {row.status === 'RoundedNoCost' || row.status === 'RoundedNoCostCancelled' ? <p>{T.roundedZero}</p> : null}
         {canPrepare && ['AwaitingPreparation', 'Prepared'].includes(row.status) ? <Preparation key={`${row.proposalId}:${row.version}:prepare`}
           row={row} company={company} namespace={namespace!} actor={actor} frozen={frozen} reverse={false} send={next => void send(next)} /> : null}
         {canApprove && row.status === 'Prepared' ? row.preparation?.preparedBy.toLowerCase() === actor.toLowerCase() ? <p>{T.own}</p>

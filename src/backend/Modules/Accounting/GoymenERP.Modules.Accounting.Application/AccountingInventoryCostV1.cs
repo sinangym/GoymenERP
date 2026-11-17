@@ -12,7 +12,8 @@ public sealed record AccountingInventoryCostRatioV1(string Numerator, string Den
 /// <summary>
 /// Sales uses one component per invoice line; its evidence names the whole claimed dispatch line and every actual
 /// Inventory movement line selected by the Logistics owner proof. Commercial invoice kg is not a physical-cost ratio.
-/// Purchasing uses one component per Product/location residual; opposite signed components are never netted away.
+/// Purchasing uses one component per Product/location residual; first recognition instead uses acceptance/invoice-line
+/// identity and its already recorded rounding profile. First recognition and later differences are never netted away.
 /// SourceProofJson contains immutable owner facts, not a request from the preparer's browser.
 /// </summary>
 public sealed record AccountingInventoryCostComponentV1(string ComponentKey, Guid ProductId,
@@ -21,7 +22,9 @@ public sealed record AccountingInventoryCostComponentV1(string ComponentKey, Gui
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     IReadOnlyList<AccountingSalesPhysicalCostClaimV1>? SalesPhysicalClaims = null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-    IReadOnlyList<PostedManufacturingCostShareV1>? AlreadyPostedComponents = null);
+    IReadOnlyList<PostedManufacturingCostShareV1>? AlreadyPostedComponents = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    AccountingInventoryCostRecordedRoundingV1? RecordedRounding = null);
 
 public sealed record AccountingSalesPhysicalCostClaimV1(Guid ShipmentId, Guid MovementId, int MovementLineNumber,
     Guid ProductId, decimal QuantityKg);
@@ -47,7 +50,8 @@ public sealed record AccountingInventoryCostPreparationV1(Guid PeriodId, DateOnl
     DateOnly TransactionDate, Guid CurrencyId, string SignedAmount, Guid MoneyProfileId, long MoneyProfileVersion, int MoneyScale,
     AccountingInventoryCostClassificationV1 Classification, InvoiceLineCogsAccountV1 CounterAccount,
     Guid AccountPlanPackageId, long AccountPlanPackageVersion, long? AccountPlanCatalogVersion,
-    string AccountPlanSourceVersion, string AccountPlanSha256, Guid PreparedBy, DateTimeOffset PreparedAtUtc, string Reason);
+    string AccountPlanSourceVersion, string AccountPlanSha256, Guid PreparedBy, DateTimeOffset PreparedAtUtc, string Reason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AccountingInventoryCostRoundingV1? Rounding = null);
 
 public sealed record AccountingInventoryCostProposalV1(Guid ProposalId, Guid CompanyId, Guid EventId,
     AccountingInventoryCostKindV1 Kind, Guid InvoiceId, long InvoiceVersion, Guid AdmissionId, DateOnly InvoiceDate,
@@ -115,4 +119,17 @@ public static class AccountingInventoryCostTraceV1
     public static string PurchaseComponent(Guid productId, Guid locationId) => productId != Guid.Empty && locationId != Guid.Empty
         ? "product-location:" + productId.ToString("D") + ":" + locationId.ToString("D")
         : throw new ArgumentException("A real product and original receipt location are required.");
+
+    public static string PurchaseFirstComponent(Guid acceptanceId, Guid invoiceLineId) => acceptanceId != Guid.Empty && invoiceLineId != Guid.Empty
+        ? "purchase-first/" + acceptanceId.ToString("D") + "/" + invoiceLineId.ToString("D")
+        : throw new ArgumentException("A real acceptance and source invoice line are required.");
+
+    public static bool IsPurchaseFirstComponent(string? value)
+    {
+        var parts = value?.Split('/');
+        return parts is { Length: 3 } && parts[0] == "purchase-first"
+            && Guid.TryParseExact(parts[1], "D", out var acceptance) && acceptance != Guid.Empty
+            && Guid.TryParseExact(parts[2], "D", out var line) && line != Guid.Empty
+            && value == PurchaseFirstComponent(acceptance, line);
+    }
 }

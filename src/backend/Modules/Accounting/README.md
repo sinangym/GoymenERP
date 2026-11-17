@@ -582,3 +582,24 @@ existing posted source evidence without new stock/journal effects. A completely 
 evidence when another output supplies the actual nonzero aggregate journal. Missing legacy return lists remain
 unavailable. A wholly zero source with no actual journal is not assigned a fabricated journal identity. The remaining
 mixed-component and later-delta integration above is still pending.
+
+Inventory cost component rounding follows the explicit Q11 answer (#1189 / 6958102286): one exact component total is
+rounded once using the actual company Accounting money profile. The preparation freezes the exact ratio, profile
+identity/version/scale, posted amount and signed residue (`exact = posted + residue`). Approval revalidates that
+proof and the current profile. General manual-journal scale rules are unchanged; residue writes neither another
+journal nor a physical stock effect. A nonzero exact amount rounded to zero still requires a different approver;
+`RoundedNoCost` retains the approved proof without fabricating a zero journal.
+
+First purchase recognition is keyed by `purchase-first/{acceptanceId}/{invoiceLineId}`, separate from later
+product/location differences. Inventory has already fixed the stock remainder from its rounded consumed amount,
+so Accounting keeps that amount and its optional `RecordedRounding` proof exactly. The historical source profile
+and the selected open-period journal profile are separate evidence. A different profile identity/version is
+allowed when the same currency amount fits the current journal scale exactly; no second rounding is performed.
+An unrepresentable amount refuses preparation. Approval still rechecks the frozen current journal profile. Legacy components omit the new
+field. Real physical attribution of these purchase components is a separate remaining owner integration; the key
+and rounding proof alone do not establish an invoice-line economic claim.
+
+EF migration `20261117194231_AddInventoryCostComponentRounding` widens only the proposal state constraint for
+approved zero amounts. Down first refuses with **51803** while a rounded preparation, recorded owner-rounding
+snapshot or approved-zero version exists. Empty/legacy-only stores remain rollback-safe. The SQL guard is pending
+K3 review; no automatic guard allowlist was added and no database migration was applied.
