@@ -16,6 +16,7 @@ import { reserveInvoiceImport, previewInvoiceImport, fetchInvoiceImports } from 
 import type { ImportOptions, ImportPreview, ImportPreviewRequest, ImportReservation, ImportReservationResult, SourceInvoice, SourceAmount, SourceTax, SourceAdjustment } from './invoiceImportContract'
 import { INVOICE_IMPORT_TEXT as T, REQUIRED_IMPORT_COLUMNS as REQUIRED, OPTIONAL_IMPORT_COLUMNS as OPTIONAL, IMPORT_TOTAL_LABELS as TOTALS, IMPORT_PURPOSE_LABELS as PURPOSES } from './invoiceImportText'
 import styles from './IncomingInvoicePages.module.css'
+import { InvoiceImportAdmissionPanel } from './InvoiceImportAdmissionPanel'
 
 export interface InvoiceImportBinding { readonly company: string; readonly namespace: string; readonly entry: number }
 export function InvoiceImportPanel({ binding }: { readonly binding: InvoiceImportBinding }) {
@@ -147,6 +148,7 @@ function ImportFile({ binding, id, document }: { readonly binding: InvoiceImport
     </form>
     {request !== null ? <ReadState outcome={preview.data} fetching={preview.isFetching} refresh={() => void preview.refetch()} /> : null}
     {result?.invoice ? <InvoiceSourceFacts invoice={result.invoice} /> : null}
+    {result?.invoice && request ? <InvoiceImportAdmissionPanel key={JSON.stringify(request)} binding={binding} id={id} source={request} invoice={result.invoice} /> : null}
     {result && result.issues.length > 0 ? <section role="alert"><h3>{T.issueHeading}</h3>{result.issues.map((issue, index) =>
       <p key={index}>{TOTALS[issue.field] ?? T.source}: {T.issue}</p>)}</section> : null}
   </>
@@ -168,6 +170,9 @@ export function InvoiceSourceFacts({ invoice }: { readonly invoice: SourceInvoic
     <h4>{T.supplier}</h4>{invoice.supplierIdentities.map((value, index) => <p key={index}>{value.scheme}: {value.value}</p>)}
     <h4>{T.buyer}</h4>{invoice.buyerIdentities.map((value, index) => <p key={index}>{value.scheme}: {value.value}</p>)}
     <section><h4>{T.totals}</h4>{Object.entries(invoice.totals).map(([name, amount]) => <p key={name}>{TOTALS[name]}: {shown(amount)}</p>)}</section>
+    {invoice.functionalTotals == null ? null : <section><h4>{T.functionalAmounts}</h4><dl className={styles.amounts}>
+      <dt>{T.functionalNet}</dt><dd>{invoice.functionalTotals.net}</dd><dt>{T.functionalVat}</dt><dd>{invoice.functionalTotals.vat}</dd>
+      <dt>{T.functionalWithholding}</dt><dd>{invoice.functionalTotals.withholding}</dd></dl></section>}
     <Taxes taxes={invoice.taxes} /><Adjustments adjustments={invoice.adjustments} />
     {invoice.rates.length ? <section><h4>{T.rates}</h4>{invoice.rates.map((item, index) => <dl className={styles.amounts} key={index}>
       <dt>{T.purpose}</dt><dd>{PURPOSES[item.purpose] ?? item.purpose}</dd><dt>{T.sourceCurrency}</dt><dd>{item.sourceCurrency}</dd>
@@ -179,6 +184,8 @@ export function InvoiceSourceFacts({ invoice }: { readonly invoice: SourceInvoic
     {invoice.lines.map(line => <article className={styles.card} key={line.id}><h4>{T.line} {line.id}</h4><dl className={styles.amounts}>
       <dt>{T.description}</dt><dd>{line.description}</dd><dt>{T.sellerCode}</dt><dd>{line.sellerCode ?? T.missing}</dd><dt>{T.buyerCode}</dt><dd>{line.buyerCode ?? T.missing}</dd>
       <dt>{T.unit}</dt><dd>{line.unitCode}</dd><dt>{T.quantity}</dt><dd>{line.quantity}</dd><dt>{T.net}</dt><dd>{shown(line.net)}</dd></dl>
+      {line.functionalAmounts == null ? null : <dl className={styles.amounts}><dt>{T.functionalNet}</dt><dd>{line.functionalAmounts.net}</dd>
+        <dt>{T.functionalVat}</dt><dd>{line.functionalAmounts.vat}</dd><dt>{T.functionalWithholding}</dt><dd>{line.functionalAmounts.withholding}</dd></dl>}
       <Taxes taxes={line.taxes} /><Adjustments adjustments={line.adjustments} /></article>)}
   </section>
 }

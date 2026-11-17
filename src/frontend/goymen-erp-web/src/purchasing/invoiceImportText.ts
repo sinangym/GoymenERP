@@ -21,6 +21,21 @@ export const INVOICE_IMPORT_TEXT = {
   issueHeading: 'Dosya okunamadı', issue: 'Bu alanı ve kaynak dosyayı kontrol edin.', invalidMapping: 'Zorunlu sütunları doldurun; aynı başlığı iki alana vermeyin.',
   changed: 'Seçilen belge değişti. Güncel sürümü seçip yeniden okuyun.', sending: 'Kayıt hazırlanıyor…', unknown: 'İşlemin sonucu alınamadı. Aynı işlemi tekrar sorgulayın.',
   retry: 'Aynı işlemi tekrar dene', refresh: 'Belgeleri yenile', rejected: 'İşlem kabul edilmedi.',
+  functionalAmounts: 'Belgede kayıtlı TL tutarları', functionalNet: 'TL net tutar', functionalVat: 'TL KDV', functionalWithholding: 'TL tevkifat',
+  mapAndRecord: 'Satırları eşleştir ve faturayı kaydet', admissionHeading: 'Fatura kaynağını kayda al',
+  admissionHint: 'Satıcıyı ve her satırın gerçek kartını seçin. Bu işlem yalnız kaynak faturayı kaydeder; mal kabul eşleştirmesi ve kesinleştirme ayrı adımlardır.',
+  supplierSelection: 'Tedarikçi hesabı', supplierSearch: 'Tedarikçi ara', find: 'Ara', currencySelection: 'Kaynak faturanın para birimi',
+  lineMapping: 'Satır kartları ve ödeme planı', lineKind: 'Satır türü', goods: 'Mal', service: 'Hizmet', expense: 'Masraf',
+  productSearch: 'Ürün ara', productSelection: 'Gerçek ürün kartı', purchasePurpose: 'Alış amacı', productionInput: 'Üretim girdisi', resale: 'Yeniden satış',
+  typeSelection: 'Hizmet veya masraf türü', actualUnit: 'Ayarlar birimi', refineSearch: 'Daha dar bir ürün araması yapın.',
+  missingMappingSource: 'Belgedeki birim veya vergi kodu için uygun gerçek kaynak yok. Ayarları ve kaynak belgeyi kontrol edin.',
+  installmentPlan: 'Açık kalem ödeme planı', installment: (number: number) => `Ödeme ${number}`, addPlan: 'Ödeme ekle', removePlan: 'Ödemeyi çıkar',
+  useTotal: 'Tek ödemeye kaynak toplamını al', functionalPayable: 'Sunucunun doğruladığı TL toplam', installmentFunctional: 'Bu ödemenin açık TL payı',
+  planHint: 'Belgede bulunan tutar ve tarihler korunur. Eksik tarihi açıkça girin. Birden çok dövizli ödemede her TL payını yazın; toplamı sunucu doğrular.',
+  admissionInvalid: 'Tedarikçi, para birimi, bütün satır kartları ve ödeme tarih/tutarlarını tamamlayın.',
+  recordInvoice: 'Kaynak faturayı kaydet', recording: 'Kaynak fatura kaydediliyor…', recorded: 'Kaynak fatura kaydedildi',
+  recordedHint: 'Mal kabul eşleştirmesi ve kesinleştirme için fatura kaydına geçin.', openRecorded: 'Fatura kaydını aç',
+  frozenImport: 'Belirsiz sonucun özgün belge ve eşleme isteği korunuyor. Tekrar düğmesi aynı içeriği ve anahtarı kullanır.',
 } as const
 
 // Names are the file-reader contract's explicit mapping keys, not inferred vendor column names.
@@ -38,6 +53,8 @@ export const OPTIONAL_IMPORT_COLUMNS: Readonly<Record<string, string>> = {
   TaxAmount: 'Fatura vergi tutarı', TaxableAmount: 'Fatura vergi matrahı', WithholdingCode: 'Fatura tevkifat kodu', WithholdingPercent: 'Fatura tevkifat oranı',
   WithholdingAmount: 'Fatura tevkifat tutarı', WithholdingTaxableAmount: 'Fatura tevkifat matrahı', OfficialRate: 'Belgedeki resmî kur',
   RateSourceCurrency: 'Kurun kaynak para birimi', RateTargetCurrency: 'Kurun hedef para birimi', RateDate: 'Kur tarihi', PaymentDueDate: 'Ödeme tarihi', PaymentAmount: 'Ödeme tutarı',
+  FunctionalNet: 'Belgedeki TL net toplam', FunctionalVat: 'Belgedeki TL KDV toplamı', FunctionalWithholding: 'Belgedeki TL tevkifat toplamı',
+  FunctionalLineNet: 'Belgedeki TL satır net tutarı', FunctionalLineVat: 'Belgedeki TL satır KDV tutarı', FunctionalLineWithholding: 'Belgedeki TL satır tevkifat tutarı',
 }
 export const IMPORT_TOTAL_LABELS: Readonly<Record<string, string>> = { ...REQUIRED_IMPORT_COLUMNS, ...OPTIONAL_IMPORT_COLUMNS }
 export const IMPORT_PURPOSE_LABELS: Readonly<Record<string, string>> = {
