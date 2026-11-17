@@ -80,7 +80,8 @@ public sealed partial class SalesDraftService(
     ISalesOrderFutureAllocationReleaseParticipantV1? futureAllocationRelease = null,
     ISalesOrderPlannedQuantityReadPortV1? plannedQuantities = null,
     ISalesOrderFutureDemandReductionParticipantV1? futureDemandReduction = null,
-    ISalesMarginCostReadPortV1? marginCosts = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
+    ISalesMarginCostReadPortV1? marginCosts = null,
+    ISalesOrderInvoicedQuantityReadPortV1? invoicedQuantities = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;

@@ -653,3 +653,38 @@ Program kaynağında doğrulandı. Bu bir K3 incelemesi veya runtime kabulü de�
 STK-S3 eski owner ve merkezi kaynak derlemeleri `W8_uretim`/`W8_ENTEGRASYON` kayıtlarında exit0'dır;
 ayrı unused-release ve resmî iptal owner build/EF/TSC kanıtları yukarıdaki bölümlerdedir. Bu dar
 denetimde süreç başlatılmadı, sekiz false deklarasyon veya diğer publish/grant ayarı değiştirilmedi.
+
+## SAT-SC34 — KLN-D100 gerçek faturalanan ve faturalanmamış miktar kaynağı
+
+- Yukarıdaki kapanış denetiminde açık kalan miktar sunumu bu kaynak devamında tamamlandı.
+  Yeni `ISalesOrderInvoicedQuantityReadPortV1`, yalnız kendi şirketinin normal ve fason fatura
+  kayıtlarını keşfeder. Normal satır için mevcut gerçek `ISalesFinalizedShipmentClaimReadPortV1`
+  değişmez finalization/outbox/pay ve resmî iptal kanıtını doğrular; yalnız aktif kesinleşmiş claim
+  sayılır. Maliyet için ayrıca tutulan tarihsel kesinleşme aktif faturalanan miktar değildir.
+- Fason satır için mevcut gerçek lifecycle store, değişmez finalization/match/kaynak kimlikleri
+  ve özgün finalized outbox payload'u birlikte doğrulanır. Draft, bekleyen, onaylı fakat kesinleşmemiş,
+  reddedilmiş veya iptal edilmiş fatura sayılmaz. Gerçek kesinleşmiş satır miktarı ve kendi birimi
+  alınır; fiyat, vergi, risk tutarı, kg oranı veya bugünkü fiziksel stok kullanılmaz. Fiziksel iade,
+  önceki checkpoint'teki net teslim düzeltmesidir; kendiliğinden finansal fatura iptali sayılmaz.
+- Aynı mevcut sipariş read yetkisi ve özgün actor/company her owner/DB await'i çevresinde yeniden
+  ölçülür. Başlangıç/son discovery sürümleri uyuşmazsa, kanıt bozuk/eksik/legacy ise veya bounded
+  okuma tamamlanamazsa miktar bilinmiyor kalır. Teknik okuma sınırı yeni fatura yazım sınırı değildir.
+  Tam ve boş owner kaynağı sıfırı kanıtlar; eksik provider veya başarısız okuma sıfıra çevrilmez.
+- Mevcut `SalesOrderLineOpenQuantity` tek hesaplayıcısı gerçek faturalanan miktarı alır. Progress
+  DTO'suna null olduğunda yazılmayan `invoiceProgress` alanı eklenmiştir: `invoiced`,
+  `deliveredNotInvoiced`, `sourceVersion`. Eski cevap şekli korunur. Strict frontend decoder
+  bu ek kanıtı doğrular; ekran backend miktarlarını aynen, eksik kanıtta “Bilinmiyor” gösterir.
+  Remaining faturadan bağımsız net sevkten hesaplanmaya devam eder; UI hesap yapmaz.
+- Birim kaynakları gerçek miktar toplama/net fiziksel iade, known-zero ile unavailable ayrımı,
+  bozuk tenant/satır/birim/ölçek/duplicate/proof ve actor kaybını kapsar. Sentetik HTTP sözleşme
+  ve DOM/decoder kaynakları fiyat içermeyen additive alanı ve eski null-omit cevabı kapsar.
+  Gerçek SQL fact kaynakları normal kesinleşme/tenant/resmî iptal, company fence kaybı ve gerçek
+  owner iptalinin iki discovery arasına girmesinde Unavailable sonucunu kapsar; fason lifecycle
+  SQL kaynağı kesinleşmiş satırları ve iptalden sonraki Draft replacement'ın hariç tutulmasını doğrular.
+  Kontrollü interleaving hook SQL stres/race koşumu diye sunulmaz.
+- **SOURCE_READY; kaynak derlemeleri QUEUED.** Runtime birim/SQL/HTTP/Vitest/browser/CI **NOT_RUN**.
+  Yeni model, migration, EF, izin veya genel read grant yoktur. Sales module gerçek reader'ı
+  `SalesDraftService` bağına kaydeder; mevcut delivery-progress endpoint'i ve gerçekleşme ekranı
+  tüketir. Merkezi OpenAPI ve sözleşme pin'leri coordinator üretiminde yeniden üretilmelidir.
+  Resmî dış iptal provider'ının bugün yokluğu ayrı dış kaynak sınırı olarak korunur; bu checkpoint
+  sekiz özgün Logistics staged deklarasyonunu veya başka kabul/publish kapısını değiştirmez.

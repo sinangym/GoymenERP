@@ -255,6 +255,11 @@ export interface DeliveryProgressLine {
   readonly remaining: string
   readonly excess: string
   readonly shippedBy: readonly string[] | null
+  readonly invoiceProgress?: {
+    readonly invoiced: string
+    readonly deliveredNotInvoiced: string
+    readonly sourceVersion: string
+  }
 }
 
 export interface DeliveryProgress {
@@ -1466,7 +1471,7 @@ export function decodeDeliveryProgress(value: unknown, detail: DraftDetail): Del
   ) return null
   const lines: DeliveryProgressLine[] = []
   for (const [index, entry] of response.lines.entries()) {
-    const o = exact(entry, ['lineId', 'lineNo', 'orderUnitId', 'ordered', 'shipped', 'delivered', 'remaining', 'excess', 'shippedBy'])
+    const o = exactWithOptional(entry, ['lineId', 'lineNo', 'orderUnitId', 'ordered', 'shipped', 'delivered', 'remaining', 'excess', 'shippedBy'], ['invoiceProgress'])
     const line = detail.lines[index]
     if (
       o === null || !isRevisionId(o.lineId) || o.lineId.toLowerCase() !== line.lineId.toLowerCase() ||
@@ -1476,9 +1481,17 @@ export function decodeDeliveryProgress(value: unknown, detail: DraftDetail): Del
       !isRevisionDecimal(o.delivered, false) || !isRevisionDecimal(o.remaining, false) || !isRevisionDecimal(o.excess, false) ||
       !isShippedByOf(o.shippedBy, compareDecimalText(o.shipped, '0') === 0)
     ) return null
+    const invoice = Object.hasOwn(o, 'invoiceProgress')
+      ? exact(o.invoiceProgress, ['invoiced', 'deliveredNotInvoiced', 'sourceVersion']) : undefined
+    if (invoice !== undefined && (invoice === null || !isRevisionDecimal(invoice.invoiced, false)
+      || !isRevisionDecimal(invoice.deliveredNotInvoiced, false) || typeof invoice.sourceVersion !== 'string'
+      || !/^sales\.order-invoiced-quantities\.v1\/[a-f0-9]{64}$/.test(invoice.sourceVersion))) return null
     lines.push({
       lineId: o.lineId, lineNo: o.lineNo, orderUnitId: o.orderUnitId, ordered: o.ordered,
       shipped: o.shipped, delivered: o.delivered, remaining: o.remaining, excess: o.excess, shippedBy: o.shippedBy,
+      ...(invoice !== undefined && invoice !== null ? { invoiceProgress: {
+        invoiced: invoice.invoiced as string, deliveredNotInvoiced: invoice.deliveredNotInvoiced as string,
+        sourceVersion: invoice.sourceVersion as string } } : {}),
     })
   }
   return { draftVersion: response.draftVersion, lines }

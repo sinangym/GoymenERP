@@ -17,6 +17,11 @@ public sealed partial class SalesSubcontractServiceInvoiceSqlServerRelationalAcc
         var official=LifecycleOfficial(invoice,Guid.NewGuid().ToString("D"));
         await MoveLifecycleAsync(run,invoice.Id,"official-fason-match",SalesSubcontractInvoiceLifecycleCommandsV1.Match,(x,n)=>x.RecordMatch(3,"SENTETIK-matcher",official,Currency,null,0.05m,false,null,n),"SENTETIK-matcher");
         var finalized=await MoveLifecycleAsync(run,invoice.Id,"official-fason-final",SalesSubcontractInvoiceLifecycleCommandsV1.Finalize,(x,n)=>x.Finalize(4,"SENTETIK-finalizer",Guid.NewGuid,n),"SENTETIK-finalizer");
+        var quantityBefore = await ReadQuantityAsync();
+        Assert.Equal(SalesOrderInvoicedQuantityReadOutcomeV1.Available, quantityBefore.Outcome);
+        Assert.Equal(invoice.Lines.Select(line => (line.Input.SalesOrderLineId, line.Input.UnitId, line.Input.Quantity)),
+            quantityBefore.Lines.Select(line => (line.SalesOrderLineId, line.UnitId, line.Quantity)));
+        Assert.All(quantityBefore.Lines, line => Assert.Equal("Subcontract", line.InvoiceKind));
         var actor=Guid.NewGuid().ToString("D");var proof=new SalesOfficialInvoiceCancellationEvidenceV1(CompanyA,invoice.Id,official.OfficialNo,official.Ettn,"SENTETIK-status","SENTETIK-record","1",new string('a',64),DateTimeOffset.UtcNow.AddSeconds(-1));
         await using(var scope=run.OfficialFasonStore(CompanyA))
         {
@@ -31,7 +36,18 @@ public sealed partial class SalesSubcontractServiceInvoiceSqlServerRelationalAcc
         Assert.Equal(0,await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.SubcontractServiceInvoices WHERE Id=@id AND State IN (1,2,3,6)",("@id",invoice.Id)));
         // Same actual order/weighing can be billed again only as a NEW invoice; old official identity remains owned.
         var replacement=await CreateLifecycleAsync(run,Weighing,"official-fason-replacement");Assert.NotEqual(invoice.Id,replacement.Id);
+        var quantityAfter = await ReadQuantityAsync();
+        Assert.Equal(SalesOrderInvoicedQuantityReadOutcomeV1.Available, quantityAfter.Outcome);
+        Assert.Empty(quantityAfter.Lines); // Official cancellation and its new Draft replacement are not finalized quantities.
         await using var foreign=run.OfficialFasonStore(CompanyB);Assert.Null(await foreign.Store.ReadForInvoiceAsync(SalesOfficialInvoiceKindV1.Subcontract,invoice.Id,_=>Task.CompletedTask));
+
+        async Task<SalesOrderInvoicedQuantityReadV1> ReadQuantityAsync()
+        {
+            await using var scope = run.Factory.Services.CreateAsyncScope();
+            var company = scope.ServiceProvider.GetRequiredService<ICompanyContext>(); company.Set(CompanyA);
+            return await scope.ServiceProvider.GetRequiredService<ISalesOrderInvoicedQuantityReadPortV1>()
+                .ReadAsync(CompanyA, invoice.Source.SalesOrderId, _ => Task.CompletedTask);
+        }
     }
     private sealed partial class Run
     {
