@@ -33,7 +33,7 @@ namespace GoymenERP.Modules.Documents.Infrastructure;
 /// </list>
 /// Nothing registered here deletes a document object (legal retention 10 years; archive/legal hold later).
 /// </summary>
-public static class DocumentsModuleExtensions
+public static partial class DocumentsModuleExtensions
 {
     public const string ObjectStoreRootPathKey = "Documents:ObjectStore:RootPath";
     public const string ScannerModeKey = "Documents:Scanner:Mode";
@@ -102,6 +102,7 @@ public static class DocumentsModuleExtensions
         services.AddScoped<IDocumentService>(serviceProvider => serviceProvider.GetRequiredService<DocumentService>());
         // F-026 (PLT-S9): producing modules store their generated PDFs through the same scoped service and fences.
         services.AddScoped<IGeneratedDocumentStorePortV1>(serviceProvider => serviceProvider.GetRequiredService<DocumentService>());
+        AddDocumentBranding(services);
         return services;
     }
 

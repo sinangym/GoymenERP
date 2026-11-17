@@ -297,6 +297,7 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
         ConfigureOpeningCosts(modelBuilder);
         ConfigureInventoryTransfers(modelBuilder);
         ConfigureTransferReceiptDocuments(modelBuilder);
+        ConfigureSubcontractDelivery(modelBuilder);
         ConfigureFutureSupply(modelBuilder);
         ConfigureGoodsReceiptReversals(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
@@ -635,7 +636,7 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
                 "([DemandKind] IS NULL AND [DemandId] IS NULL AND [DemandLineId] IS NULL "
                 + "AND [DemandProductId] IS NULL AND [DemandProductVersion] IS NULL AND [Reason] IS NULL "
                 + "AND [ReservedUntilUtc] IS NULL) "
-                + "OR ([DemandKind] IS NOT NULL AND [DemandKind] = 'sales.order-line' "
+                + "OR ([DemandKind] IS NOT NULL AND [DemandKind] IN ('sales.order-line','sales.subcontract-service-order-line') "
                 + "AND [DemandId] IS NOT NULL AND [DemandId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [DemandLineId] IS NOT NULL AND [DemandLineId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [DemandProductId] IS NOT NULL AND [DemandProductId] <> '00000000-0000-0000-0000-000000000000' "

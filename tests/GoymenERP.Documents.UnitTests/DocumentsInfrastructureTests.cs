@@ -91,7 +91,8 @@ public sealed class DocumentsInfrastructureTests : IDisposable
             && check.Sql == DocumentsDbContext.ContentKindCheck);
         Assert.Equal("[ContentKind] IN (1, 2, 3, 4, 5, 6, 7)", DocumentsDbContext.ContentKindCheck);
         Assert.Equal(["20260930120000_InitialDocuments", "20261115132357_AddDocumentLinkPrimaryMarker", "20261115134058_WidenDocumentContentKinds",
-                "20261115165534_AddSystemGeneratedDocumentScanState", "20261117112418_AddPurchaseInvoiceXmlContentKind"],
+                "20261115165534_AddSystemGeneratedDocumentScanState", "20261117112418_AddPurchaseInvoiceXmlContentKind",
+                "20261117140908_AddDocumentBrandingPublications"],
             context.Database.GetMigrations());
         Assert.False(context.Database.HasPendingModelChanges());
     }

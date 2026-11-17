@@ -232,3 +232,38 @@
 - Merkezi mount: **MapInventoryTransferPlanCandidateEndpoints()** ve **MapInventoryTransferReceiptDocumentEndpoints()**. İkincisi receipt-work tek okuma ve candidate list yollarını da map eder. Frontend **InventoryTransferPage()** ve **TransferReceiptPanel({transferId,onChanged})**; mevcut inventory.stock-transfer.write standalone plan gateway ile kullanılır. Organization/Inventory owner DI module içinde kayıtlıdır. Ortak Program, shell provider, global nav/cap, izin kaydı ve KALAN_PLAN değiştirilmedi.
 - Merkezi yeniden üretim: yedi yeni HTTP operation + optional Receive belge sürümü şeması; bir migration/durable store/recovery/release; Down Sql=1 review; Inventory context/snapshot/store/cursor/Organization DI fingerprint'leri; sekiz SQL fact tam adı/ilişkisel envanter ve backend test grupları. Yeni bypass/ham SQL/context allowlist girdisi eklenmedi. Yeni owner transaction/context, signed purpose cursor, original replay, belge-fiziksel binding ve mutex-aware race kaynakları **K3 review bekliyor**. Bu kaynak ve rapor aynı dilim commit'inde tutulur; SHA merkezi entegrasyon kaydına yazılır.
 - Son dependency merge sonrası bütün frontend için **npx tsc -b exit0** ve **git diff --check exit0**. Bu sonuç kaynak derlemesidir; yukarıdaki bütün runtime NOT_RUN sınırları korunur. .NET/EF ve Node slotları açıkça koordinatöre bırakıldı.
+
+### STK-S3 — müşteri malı teslimi owner kaynağı, PARTIAL
+
+- Kaynak `93bfba4acccb406cbb7c7cb36d3c57c01d77a83e`: ayrı subcontract demand kind,
+  gerçek müşteri sahipliği/şirket saklayıcılığı kontrolü, immutable allocation source
+  ve borrowed reserve/ship participant vardır. Normal şirket malı satış sevki veya
+  SMM olayı bu participant'tan çıkmaz. Sales/Manufacturing gerçek kanıt birleştirmesi,
+  tamamlanma V2 okuyucusu, Logistics host ve tartı düzeltme bağlantısı henüz yoktur.
+- EF `20261117140912_AddInventorySubcontractDeliverySources`, Down **51934**;
+  önce kaynak veya yeni demand-kind satırı varken reddeder, sonra DDL geri alır.
+  Snapshot üreticiden geldi; DB uygulaması yok. Company/model/immutable source
+  unit ve SQL Down guard kaynakları yazıldı. Borrowed context construction ve
+  physical source binding **K3 review bekliyor**; guard allowlist'e eklenmedi.
+
+### STK-S29 — belge şablonu yayımlama owner kaynağı, PARTIAL
+
+- Kaynak `ba38bc6daad9ba6ac646c47968239acea0ef4978`: şirketli logo/antet sürümü,
+  üç kapalı modül şablonu, ayrı hazırlayan/yayımlayan ve immutable yayın kanıtı
+  oluşturuldu. Gerçek Documents Clean uploaded sürüm/hash kaynağı gerekir;
+  SystemGenerated belge uploaded Clean sayılmaz. Dış URL/HTML/script/layout yoktur.
+- EF `20261117140908_AddDocumentBrandingPublications`, Down **51936**; branding,
+  draft, yayın, attempt veya generated-version yayın kanıtı varken önce reddeder.
+  Snapshot üreticiden geldi; DB uygulaması yok. İlk iki type/using compile hatası,
+  test nullability ve yerel Documents test restore gereksinimi dar düzeltildi.
+- API, Documents.UnitTests, Inventory.UnitTests, Api.IntegrationTests ve TypeScript
+  final kaynak derlemeleri **exit 0, uyarı/hata 0**. İki yeni SQL fact adı doğru
+  Inventory/platform envanterine sıralı eklendi. Unit/SQL/HTTP/Vitest/browser/CI
+  **NOT_RUN**; guard numaraları 29 farklı committed tren/main head'inde çakışmadı.
+- Yedi izin adı yalnız owner sözleşmesinde aday olarak vardır; merkezi kayıt/grant
+  yapılmadı. Endpoint sınıfı henüz host'a map edilmedi. Gerçek asset renderer,
+  PDF producer binding, yönetim ekranı ve runtime/negative kabulü eksiktir;
+  unregistered/unavailable durumu başarı veya kullanıma hazır sayılmaz.
+- Dedicated Documents context construction, maker-checker, uploaded kaynak ispatı,
+  immutable publication/request hash ve iki Down guard **K3 review bekliyor**.
+  Kaynak checkpoint'leri tam dilim DONE değildir; merkezi pin ve tren FF bekler.

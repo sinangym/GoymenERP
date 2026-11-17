@@ -58,6 +58,9 @@ internal sealed class DocumentVersionRow : IDocumentsTenantRow
 
     public int VersionNo { get; set; }
 
+    public Guid? TemplatePublicationId { get; set; }
+    public string? TemplatePublicationJson { get; set; }
+
     public string FileName { get; set; } = string.Empty;
 
     public string Sha256 { get; set; } = string.Empty;
