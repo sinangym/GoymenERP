@@ -170,6 +170,7 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
         ConfigureOfficialSalesInvoices(modelBuilder);
         ConfigureExpensePayments(modelBuilder);
         ConfigureCashTransfers(modelBuilder);
+        ConfigureCashExchangeBookValues(modelBuilder);
         ConfigureCreditAccounts(modelBuilder);
         ConfigureCreditMovements(modelBuilder);
         ConfigureCreditLimits(modelBuilder);
@@ -2301,6 +2302,7 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
 
     private void ApplyWriteGuards()
     {
+        GuardCashExchangeBookValues();
         GuardDocumentNumbers();
         if (ChangeTracker.Entries<FinancePeriodCarryVoucherRow>().Any(x => x.State is EntityState.Modified or EntityState.Deleted)
             || ChangeTracker.Entries<FinancePeriodCarryReversalRow>().Any(x => x.State is EntityState.Modified or EntityState.Deleted))

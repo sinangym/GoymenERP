@@ -40,6 +40,9 @@ public static class DocumentOwnerLinkKindsV1
     /// <summary>A Finance manual receipt (tahsilat) source readable in the context company (Finance owner; B-26).</summary>
     public const string FinanceManualReceipt = "finance.manual-receipt";
 
+    /// <summary>One actual FX transfer, read under the Accounting book-value command purpose (FIN-S14).</summary>
+    public const string FinanceCashExchange = "finance.cash-exchange";
+
     /// <summary>A Finance manual bank payment readable in the context company (Finance owner; B-26).</summary>
     public const string FinanceManualBankPayment = "finance.manual-bank-payment";
 
