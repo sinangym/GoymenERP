@@ -342,3 +342,9 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
 - Logistics owner iç `ILogisticsInvoicedShipmentProofReadPortV1` okuması aynı şirket ve dayanıklı sürümde onaylı irsaliye satırı, gerçek sevk payı, talimat satırı, sipariş/ürün/birim kimliklerini çapraz doğrular. Fiyat, maliyet ve oran üretmez. Kullanıcı yetkili irsaliye seçicisi değiştirilmez; yeni browser route veya grant yoktur. Bu sistem amaçlı çapraz modül okuma yüzeyi K3 review bekler; guard izin listesine sessiz eklenmedi.
 - Altı unit fact kaynağı ve mevcut gerçek SQL source fact'inde çoklu sipariş, yabancı şirket, yanlış sevk ve iptal kanıtları eklendi. API, Accounting.UnitTests, Logistics.UnitTests, IntegrationTests birleşik kaynak derlemeleri exit 0, 0 uyarı/hata; runtime NOT_RUN. Yeni ilişkisel FQN yok; Inventory owner üç yeni SQL fact'i final envanter üretiminde alınacak.
 - Accounting gerçek hazırlama/onay ve iptal zincirini diğer kaynaklarla birleştirir; ilk SMM bütünü henüz DONE değildir. Merkezi pinler, tren FF ve gerçek kabul NOT_RUN.
+
+
+## STK-SC36-a / SAT-D419 — sevk kanıtı değişirken fail-closed kaynak testi
+
+- Logistics owner kaynak anlık görüntüsü alındıktan sonra irsaliyenin gerçek domain iptalini araya alan deterministik bir unit fact kaynağı eklendi. İkinci owner okuması değişen sürüm/iptali görür; maliyet tüketicisine eski onaylı kanıt verilmez. Mevcut fake-store hook varsayılan boş kalır.
+- Birleşik API, Accounting.UnitTests, Logistics.UnitTests, Finance.UnitTests, IntegrationTests derlemeleri exit0; runtime unit/SQL ve eşzamanlı gerçek SQL kanıtı NOT_RUN. Bu kaynak testi gerçek SQL yarış kabulü diye sunulmaz.
