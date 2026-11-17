@@ -309,9 +309,11 @@ internal sealed class ManufacturingCostGenerationHost(ManufacturingDbContext db,
         try { await transaction.RollbackAsync(CancellationToken.None); }
         catch { throw Unavailable(); }
     }
-    private static ManufacturingInventoryRealizationPortException Map(InventoryManufacturingCostGenerationException fault) =>
+    internal static ManufacturingInventoryRealizationPortException Map(InventoryManufacturingCostGenerationException fault) =>
         new(fault.Status == 409 ? ManufacturingApiStatus.Conflict : ManufacturingApiStatus.Unavailable,
-            fault.Status == 409 ? ManufacturingStoreCodes.ConcurrentChange : "cost_source_unavailable");
+            fault.Status == 409 && fault.Code == "inventory_manufacturing_cost_transfer_reversal_required"
+                ? ManufacturingStoreCodes.CostTransferReversalRequired
+                : fault.Status == 409 ? ManufacturingStoreCodes.ConcurrentChange : "cost_source_unavailable");
     private static ManufacturingInventoryRealizationPortException Unavailable() => new(ManufacturingApiStatus.Unavailable, "cost_source_unavailable");
     private static ManufacturingInventoryRealizationPortException Concurrent() => new(ManufacturingApiStatus.Conflict, ManufacturingStoreCodes.ConcurrentChange);
     private static string Text(long value) => value.ToString(CultureInfo.InvariantCulture);

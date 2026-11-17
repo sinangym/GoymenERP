@@ -32,7 +32,8 @@ export function OrderReopenSection({ order, companyId, namespace, allowed, block
     if (result.type === 'applied') { setMessage(T.applied); setReason('') }
     else {
       if (result.status === 401 || result.status === 403) boundaryRef.current.report(result.status, captured)
-      setMessage(result.code === 'manufacturing_order_reopen_period_not_open' ? T.period : T.refused)
+      setMessage(result.code === 'manufacturing_order_reopen_period_not_open' ? T.period
+        : result.code === 'manufacturing_cost_transfer_reversal_required' ? T.transfer : T.refused)
     }
     await onRefresh()
   }

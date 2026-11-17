@@ -108,6 +108,9 @@ public static class ManufacturingStoreCodes
     /// </summary>
     public const string ConcurrentChange = "manufacturing_concurrent_change";
 
+    /// <summary>The recognized output's real transfer must be undone by its own owner flow before reopening.</summary>
+    public const string CostTransferReversalRequired = "manufacturing_cost_transfer_reversal_required";
+
     /// <summary>MFG-PLAN-EDIT: the longest revision reason (trimmed) the stored column keeps; a longer one is refused.</summary>
     public const int PlanRevisionReasonMaximumLength = 256;
 

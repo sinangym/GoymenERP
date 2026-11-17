@@ -134,7 +134,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using (var connection = new SqlConnection(run.Factory.DatabaseConnectionString))
         {
             await connection.OpenAsync();
-            await using var transaction = (DbTransaction)await connection.BeginTransactionAsync();
+            await using var transaction = (DbTransaction)await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             await using var scope = run.Factory.Services.CreateAsyncScope();
             scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
             await using var owner = await InventoryManufacturingCostGenerationParticipant.EnlistAsync(connection, transaction, CompanyA,
@@ -449,7 +449,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     {
         await using var connection = new SqlConnection(run.Factory.DatabaseConnectionString);
         await connection.OpenAsync();
-        await using var transaction = (DbTransaction)await connection.BeginTransactionAsync();
+        await using var transaction = (DbTransaction)await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
         await using var scope = run.Factory.Services.CreateAsyncScope();
         scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
         await using var owner = await InventoryManufacturingCostGenerationParticipant.EnlistAsync(connection, transaction, CompanyA,
