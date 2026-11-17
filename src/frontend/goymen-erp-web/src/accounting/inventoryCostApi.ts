@@ -2,6 +2,7 @@ import type { ViewOutcome } from '../shell/uiState'
 import { isDateOnly } from '../finance/dateOnly'
 import { ACCOUNTING_BASE, devHeaders } from './api'
 import { decodeJournalReversalProposal, type JournalReversalProposal } from './journalReversalContract'
+import { postedManufacturingCostShare, type PostedManufacturingCostShare } from './postedManufacturingCostProof'
 
 export type InventoryCostKind = 1 | 2
 export interface InventoryCostAccount { readonly accountId: string; readonly code: string; readonly name: string }
@@ -15,7 +16,8 @@ export interface InventoryCostProposal {
   readonly officialInvoiceNumber: string | null; readonly version: number; readonly status: string; readonly sourceOccurredAtUtc: string; readonly exactTlAmount: string
   readonly component: { readonly componentKey: string; readonly productId: string; readonly invoiceLineId: string | null
     readonly invoiceLineNumber: number | null; readonly locationId: string | null
-    readonly signedTlAmount: { readonly numerator: string; readonly denominator: string }; readonly sourceProofSha256: string }
+    readonly signedTlAmount: { readonly numerator: string; readonly denominator: string }; readonly sourceProofSha256: string
+    readonly alreadyPostedComponents?: readonly PostedManufacturingCostShare[] }
   readonly preparation: { readonly periodId: string; readonly accountingDate: string; readonly transactionDate: string
     readonly currencyId: string; readonly signedAmount: string; readonly moneyProfileId: string; readonly moneyProfileVersion: number; readonly moneyScale: number
     readonly preparedBy: string; readonly preparedAtUtc: string; readonly reason: string
@@ -53,7 +55,7 @@ export function decodeInventoryCost(body: unknown, company: string, kind: Invent
   if (!rec(body) || !['proposalId', 'companyId', 'eventId', 'invoiceId', 'admissionId'].every(k => guid(body[k]))
     || !same(body.companyId as string, company) || body.kind !== kind || !version(body.invoiceVersion) || !version(body.version)
     || !date(body.invoiceDate) || !utc(body.sourceOccurredAtUtc) || !text(body.exactTlAmount) || body.officialInvoiceNumber !== null && !text(body.officialInvoiceNumber)
-    || !['AwaitingPreparation', 'Prepared', 'Posted', 'NoCost', 'Cancelled', 'CancellationReversalPending', 'CancelledByReversal'].includes(body.status as string)) return null
+    || !['AwaitingPreparation', 'Prepared', 'Posted', 'NoCost', 'Cancelled', 'CancellationReversalPending', 'CancelledByReversal', 'AlreadyAccounted', 'AttributedCancellationPending'].includes(body.status as string)) return null
   const c = body.component
   if (!rec(c) || !text(c.componentKey) || !guid(c.productId) || !hash(c.sourceProofSha256) || !rec(c.signedTlAmount)
     || typeof c.signedTlAmount.numerator !== 'string' || !/^-?(0|[1-9][0-9]*)$/.test(c.signedTlAmount.numerator)
@@ -66,6 +68,11 @@ export function decodeInventoryCost(body: unknown, company: string, kind: Invent
   if (!canonicalDecimal(body.exactTlAmount)
     && body.exactTlAmount !== `${c.signedTlAmount.numerator} / ${c.signedTlAmount.denominator}`) return null
   const p = body.preparation
+  const attributed = ['AlreadyAccounted', 'AttributedCancellationPending'].includes(body.status as string)
+  if (attributed ? kind !== 1 || !Array.isArray(c.alreadyPostedComponents) || c.alreadyPostedComponents.length === 0
+      || c.alreadyPostedComponents.some(value => !postedManufacturingCostShare(value, company, c.productId as string))
+      || new Set(c.alreadyPostedComponents.map(value => (value as PostedManufacturingCostShare).fingerprint)).size !== c.alreadyPostedComponents.length
+    : c.alreadyPostedComponents !== undefined && c.alreadyPostedComponents !== null) return null
   if (p !== null) {
     if (!rec(p) || !guid(p.periodId) || !guid(p.currencyId) || !guid(p.preparedBy) || !utc(p.preparedAtUtc)
       || !date(p.accountingDate) || !date(p.transactionDate) || !canonicalDecimal(p.signedAmount)
@@ -80,16 +87,16 @@ export function decodeInventoryCost(body: unknown, company: string, kind: Invent
       || cl.origin !== 'Product' && cl.origin !== 'InvoiceLine') return null
   }
   if (['Prepared', 'Posted', 'CancellationReversalPending', 'CancelledByReversal'].includes(body.status as string) && p === null) return null
-  if (['AwaitingPreparation', 'NoCost'].includes(body.status as string) && p !== null) return null
+  if ((['AwaitingPreparation', 'NoCost'].includes(body.status as string) || attributed) && p !== null) return null
   if (body.status === 'NoCost' ? c.signedTlAmount.numerator !== '0' || c.signedTlAmount.denominator !== '1' || body.exactTlAmount !== '0'
-    : body.status !== 'Cancelled' && c.signedTlAmount.numerator === '0') return null
-  if (['AwaitingPreparation', 'NoCost'].includes(body.status as string) && body.version !== 1
+    : body.status !== 'Cancelled' && !attributed && c.signedTlAmount.numerator === '0') return null
+  if ((['AwaitingPreparation', 'NoCost'].includes(body.status as string) || attributed) && body.version !== 1
     || body.status === 'Prepared' && (body.version as number) < 2) return null
   if (['Posted', 'CancellationReversalPending', 'CancelledByReversal'].includes(body.status as string)) {
     if (!rec(p) || !guid(body.approvedBy) || !guid(body.journalId) || !utc(body.approvedAtUtc) || same(body.approvedBy, p.preparedBy as string)) return null
   } else if (body.approvedBy !== null || body.approvedAtUtc !== null || body.journalId !== null) return null
   if (body.cancellationId !== null && !guid(body.cancellationId)) return null
-  if (['Cancelled', 'CancellationReversalPending', 'CancelledByReversal'].includes(body.status as string) && !guid(body.cancellationId)) return null
+  if (['Cancelled', 'CancellationReversalPending', 'CancelledByReversal', 'AttributedCancellationPending'].includes(body.status as string) && !guid(body.cancellationId)) return null
   const currentJournal = body.currentPostedJournalId === undefined ? null : body.currentPostedJournalId
   if (currentJournal !== null && (!guid(currentJournal) || !guid(body.journalId))) return null
   const reversal = body.reversalProposal === null ? null : decodeJournalReversalProposal(body.reversalProposal, company)

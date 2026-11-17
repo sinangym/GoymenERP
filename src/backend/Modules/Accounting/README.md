@@ -545,3 +545,32 @@ rounding/remainder policy is not invented. A shipment originally stamped Unavail
 generic manufacturing consumed-cost proposal still lacks a proved invoice-line economic lineage. That case remains
 explicitly unavailable/partial: neither a second initial SMM nor fabricated manufacturing identifiers are introduced.
 Runtime unit/SQL/Vitest/browser acceptance and central registry/pin integration are distinct from source compilation.
+
+### Existing posted manufacturing money: immutable invoice attribution
+
+The source now handles an originally Unavailable shipment after its real manufacturing consumed-cost journal is
+approved. Each output keeps its own signed amount, exact physical root kg, actual money profile and original
+journal accounts. The approved attribution rule rounds those physical shares and allocates residue by largest kg,
+then earliest proved recording time; an exhausted share continues at zero to the next priority. Exact minor-unit
+integer sums preserve the total even at decimal limits. An unproved tie or incomplete historic source chain refuses
+attribution. A rounded-zero reversal is never evidence of an original recognition.
+
+Manufacturing approval appends the output and physical-share evidence in the same Accounting transaction as the
+journal. A delayed Sales source resolves its actual finalized claim and those posted components on retry. It becomes
+`AlreadyAccounted`, atomically claims the physical source, and cannot prepare or approve another initial journal.
+SAT-D422 corrections use the proved partial amount and actual posted accounts; the original aggregate journal is
+unchanged. Different outputs sharing one movement retain distinct source shares. Whole-line claims still prevent
+a second initial economic posting. The real Inventory lineage reader must be registered by the host; no user
+impersonation, invented generation, current-average fallback or new permission is used.
+
+EF-generated `20261117190022_AddPostedManufacturingCostAttribution` adds three company-scoped append-only tables,
+their proof constraints and indexes. Down refuses retained evidence with **51800**; update/delete triggers use
+**51801/51802**. No database application or historical backfill occurred. These migration SQL sources await K3 review;
+they were not added to guard allowlists. SQL fact sources cover actual posting/retry, partial correction, rollback,
+tenant/transaction boundaries, zero-share recognition and incomplete historic chains. Source compilation is not
+runtime acceptance.
+
+This remains PARTIAL: proved return/net-share handling, mixed original-known and attributed components, and later
+manufacturing deltas on an originally known first posting need their remaining owner integration. Legacy evidence
+that cannot be proved remains unavailable. Attributed cancellation stays explicit pending its authority decision.
+The attribution rule does not decide the separate first-recognition or ordinary initial-SMM rounding questions.

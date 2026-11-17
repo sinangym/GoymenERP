@@ -111,13 +111,13 @@ public sealed partial class AccountingStore
             row.ProposedBy, row.ProposedAtUtc, row.Reason, row.ApprovedBy, row.ApprovedAtUtc);
         var now = timeProvider.GetUtcNow();
         var approved = proposal.Approve(actor, now);
-        // A closed later period may have carried this balance onward. The human answer about
-        // reopening that dependent chain is still pending; never reverse just one link by guess.
+        // A closed later period may have carried this balance onward. Each later closed period
+        // must first be reopened through its own proposal and different-actor approval workflow.
         if (await (from laterClose in dbContext.PeriodClosures
                    join laterPeriod in dbContext.Periods on laterClose.PeriodId equals laterPeriod.Id
                    where laterClose.ReopeningId == null && laterPeriod.EndsOn > periodRow.EndsOn
                    select laterClose.Id).AnyAsync(cancellationToken))
-            throw Refused("accounting_period_carry_source_unavailable", "Sonraki kapalı devir zincirinin geri alma kuralı henüz kesinleşmedi.");
+            throw Refused("accounting_period_carry_source_unavailable", "Önce sonraki kapalı dönemler kendi öneri ve farklı yetkili onayıyla yeniden açılmalıdır.");
         await PeriodFenceAsync(companyId, actor, metadata, cancellationToken);
         await CarryOwner().ReverseAsync(new(row.Id, companyId, close.Id, close.CarryVoucherId, actor, now, row.Reason),
             metadata, cancellationToken);

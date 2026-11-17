@@ -66,6 +66,9 @@ function Page({ kind, canPrepare, canApprove, canProposeReversal, namespace }: P
       {selected !== null && row === undefined ? <StateBlock state={{ kind: 'not-found' }} subject={T.subject} /> : null}
       {row !== undefined ? <>
         <h2>{row.officialInvoiceNumber ?? T.sourceNumberMissing} · {T.statuses[row.status]}</h2><p>{T.amount}: {row.exactTlAmount}</p>
+        {row.component.alreadyPostedComponents ? <><p>{row.status === 'AttributedCancellationPending' ? T.attributedPending : T.attributed}</p>
+          <ul>{row.component.alreadyPostedComponents.map(share => <li key={share.fingerprint}>
+            {T.attributedJournal}: {share.journalId} · {T.attributedAmount}: {share.signedAmount}</li>)}</ul></> : null}
         {row.component.signedTlAmount.numerator.startsWith('-') ? <p role="note">{T.negative}</p> : null}
         {row.preparation !== null ? <dl><dt>{T.classification}</dt><dd>{row.preparation.classification.classification === 1 ? T.trade : T.manufactured}</dd>
           <dt>{T.counter}</dt><dd>{row.preparation.counterAccount.code} · {row.preparation.counterAccount.name}</dd>

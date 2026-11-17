@@ -20,7 +20,8 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext db, AccountingStore posting,
     IAccountingInventoryCostSourceReaderV1 sources, IAccountingCogsAccountResolverV1 cogs,
     IActiveAccountPlanReaderV1 plans, ISettingsMoneyCandidateReader currencies, AccountingAmountScaleVerifier amounts,
-    ICompanyContext company, IAuditEventCollector audit, IAuditTransactionWriterV1 auditWriter, TimeProvider clock)
+    ICompanyContext company, IAuditEventCollector audit, IAuditTransactionWriterV1 auditWriter, TimeProvider clock,
+    IPostedManufacturingShipmentCostReaderV1? postedManufacturing = null)
     : IAccountingInventoryCostStoreV1
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -65,10 +66,12 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
                 AuditAiInvolvement.None, null, SourceChannels.System, null, null, metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey));
             foreach (var component in source.Components)
             {
+                await ClaimPhysicalCost(source, component, cancellationToken);
                 AccountingInventoryCostAmountsV1.TryRead(component.SignedTlAmount, out var amount, out _);
                 var view = new AccountingInventoryCostProposalV1(Guid.NewGuid(), captured, source.EventId, source.Kind,
                     source.InvoiceId, source.InvoiceVersion, source.AdmissionId, source.InvoiceDate, source.OfficialInvoiceNumber,
-                    component, 1, amount == 0 ? "NoCost" : "AwaitingPreparation", envelope.OccurredAtUtc);
+                    component, 1, component.AlreadyPostedComponents is { Count: > 0 } ? "AlreadyAccounted"
+                        : amount == 0 ? "NoCost" : "AwaitingPreparation", envelope.OccurredAtUtc);
                 Add(view);
                 Audit(view, metadata, "received", null, system: true);
             }
@@ -195,7 +198,7 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
     {
         CompanyId = view.CompanyId, Id = view.ProposalId, Version = view.Version, EventId = view.EventId,
         ComponentKey = view.Component.ComponentKey, Status = view.Status switch
-        { "AwaitingPreparation" => 1, "Prepared" => 2, "Posted" => 3, "NoCost" => 4, _ => throw Refuse("inventory_cost_state_invalid") },
+        { "AwaitingPreparation" => 1, "Prepared" => 2, "Posted" => 3, "NoCost" => 4, "AlreadyAccounted" => 5, _ => throw Refuse("inventory_cost_state_invalid") },
         PreparedBy = view.Preparation?.PreparedBy, ApprovedBy = view.ApprovedBy, PeriodId = view.Preparation?.PeriodId,
         JournalId = view.JournalId, ViewJson = Encode(view), RecordedAtUtc = clock.GetUtcNow(),
     });

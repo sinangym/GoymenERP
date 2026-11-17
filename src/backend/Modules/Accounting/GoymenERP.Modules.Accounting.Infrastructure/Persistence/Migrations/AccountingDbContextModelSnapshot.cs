@@ -135,7 +135,7 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_InventoryCostProposals_Proof", "ISJSON([ViewJson]) = 1 AND DATEPART(TZOFFSET,[RecordedAtUtc]) = 0");
 
-                            t.HasCheckConstraint("CK_InventoryCostProposals_State", "([Status] IN (1,4) AND [Version] = 1 AND [PreparedBy] IS NULL AND [ApprovedBy] IS NULL AND [PeriodId] IS NULL AND [JournalId] IS NULL) OR ([Status] = 2 AND [Version] > 1 AND [PreparedBy] IS NOT NULL AND [PeriodId] IS NOT NULL AND [ApprovedBy] IS NULL AND [JournalId] IS NULL) OR ([Status] = 3 AND [Version] > 2 AND [PreparedBy] IS NOT NULL AND [PeriodId] IS NOT NULL AND [ApprovedBy] IS NOT NULL AND [JournalId] IS NOT NULL AND [ApprovedBy] <> [PreparedBy])");
+                            t.HasCheckConstraint("CK_InventoryCostProposals_State", "([Status] IN (1,4,5) AND [Version] = 1 AND [PreparedBy] IS NULL AND [ApprovedBy] IS NULL AND [PeriodId] IS NULL AND [JournalId] IS NULL) OR ([Status] = 2 AND [Version] > 1 AND [PreparedBy] IS NOT NULL AND [PeriodId] IS NOT NULL AND [ApprovedBy] IS NULL AND [JournalId] IS NULL) OR ([Status] = 3 AND [Version] > 2 AND [PreparedBy] IS NOT NULL AND [PeriodId] IS NOT NULL AND [ApprovedBy] IS NOT NULL AND [JournalId] IS NOT NULL AND [ApprovedBy] <> [PreparedBy])");
                         });
                 });
 
@@ -1172,6 +1172,68 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.InvoiceCogsEconomicClaimRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("MovementId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("MovementLineNumber")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("AdmissionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("FinalizedVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("InvoiceLineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Origin")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("SalesEventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ShipmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SourceHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength()
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ViewJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("CompanyId", "MovementId", "MovementLineNumber");
+
+                    b.HasIndex("CompanyId", "SalesEventId");
+
+                    b.HasIndex("CompanyId", "ShipmentId");
+
+                    b.HasIndex("CompanyId", "InvoiceId", "InvoiceLineId", "FinalizedVersion");
+
+                    b.ToTable("InvoiceCogsEconomicClaims", "accounting", t =>
+                        {
+                            t.HasCheckConstraint("CK_InvoiceCogsEconomicClaims_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [MovementId] <> '00000000-0000-0000-0000-000000000000' AND [MovementLineNumber] > 0 AND [ShipmentId] <> '00000000-0000-0000-0000-000000000000' AND [SalesEventId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceLineId] <> '00000000-0000-0000-0000-000000000000' AND [AdmissionId] <> '00000000-0000-0000-0000-000000000000' AND [FinalizedVersion] > 0 AND [Origin] IN (1,2)");
+
+                            t.HasCheckConstraint("CK_InvoiceCogsEconomicClaims_Proof", "LEN([SourceHash]) = 64 AND ISJSON([ViewJson]) = 1 AND DATEPART(TZOFFSET,[RecordedAtUtc]) = 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.InvoiceLineCogsProposalRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -1399,6 +1461,136 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.ManufacturingCostAttributionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SourceEventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OutputId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CurrencyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("GenerationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("GenerationVersion")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("JournalId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("LineageHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength()
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("MoneyProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("MoneyProfileVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("MoneyScale")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("ReceiptMovementId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("SourceHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength()
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ViewJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("CompanyId", "SourceEventId", "OutputId");
+
+                    b.HasIndex("CompanyId", "JournalId");
+
+                    b.HasIndex("CompanyId", "GenerationId", "GenerationVersion", "OutputId")
+                        .IsUnique();
+
+                    b.ToTable("ManufacturingCostAttributions", "accounting", t =>
+                        {
+                            t.HasCheckConstraint("CK_ManufacturingCostAttributions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SourceEventId] <> '00000000-0000-0000-0000-000000000000' AND [OutputId] <> '00000000-0000-0000-0000-000000000000' AND [GenerationId] <> '00000000-0000-0000-0000-000000000000' AND [ReceiptMovementId] <> '00000000-0000-0000-0000-000000000000' AND [JournalId] <> '00000000-0000-0000-0000-000000000000' AND LEN([GenerationVersion]) > 0");
+
+                            t.HasCheckConstraint("CK_ManufacturingCostAttributions_Profile", "[CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [MoneyProfileId] <> '00000000-0000-0000-0000-000000000000' AND [MoneyProfileVersion] > 0 AND [MoneyScale] BETWEEN 0 AND 28");
+
+                            t.HasCheckConstraint("CK_ManufacturingCostAttributions_Proof", "LEN([SourceHash]) = 64 AND LEN([LineageHash]) = 64 AND ISJSON([ViewJson]) = 1 AND DATEPART(TZOFFSET,[RecordedAtUtc]) = 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.ManufacturingCostAttributionShareRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SourceEventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OutputId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("MovementId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("MovementLineNumber")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("ShipmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SourceHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength()
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ViewJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("CompanyId", "SourceEventId", "OutputId", "MovementId", "MovementLineNumber");
+
+                    b.HasIndex("CompanyId", "ShipmentId");
+
+                    b.HasIndex("CompanyId", "MovementId", "MovementLineNumber");
+
+                    b.HasIndex("CompanyId", "SourceEventId", "OutputId", "ShipmentId")
+                        .IsUnique();
+
+                    b.ToTable("ManufacturingCostAttributionShares", "accounting", t =>
+                        {
+                            t.HasCheckConstraint("CK_ManufacturingCostAttributionShares_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SourceEventId] <> '00000000-0000-0000-0000-000000000000' AND [OutputId] <> '00000000-0000-0000-0000-000000000000' AND [MovementId] <> '00000000-0000-0000-0000-000000000000' AND [MovementLineNumber] > 0 AND [ShipmentId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_ManufacturingCostAttributionShares_Proof", "LEN([SourceHash]) = 64 AND ISJSON([ViewJson]) = 1 AND DATEPART(TZOFFSET,[RecordedAtUtc]) = 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.ManufacturingCostDifferenceRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -1507,6 +1699,8 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CompanyId", "GenerationId", "GenerationVersion")
                         .IsUnique();
+
+                    b.HasIndex("CompanyId", "ManufacturingOrderId", "Status");
 
                     b.HasIndex("CompanyId", "Status", "SourceOccurredAtUtc");
 
@@ -2272,6 +2466,15 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.InvoiceCogsEconomicClaimRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingInventoryCostSourceRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "SalesEventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.InvoiceLineCogsProposalRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.OrganizationCompanyReference", null)
@@ -2319,6 +2522,31 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("CompanyId", "PeriodId")
                         .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.ManufacturingCostAttributionRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.JournalRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "JournalId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.ManufacturingCostDifferenceRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "SourceEventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.ManufacturingCostAttributionShareRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.ManufacturingCostAttributionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "SourceEventId", "OutputId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

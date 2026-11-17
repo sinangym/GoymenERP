@@ -1,21 +1,31 @@
 using GoymenERP.BuildingBlocks.Messaging;
+using System.Text.Json.Serialization;
 
 namespace GoymenERP.Modules.Accounting.Application;
 
 /// <summary>Frozen Inventory amounts, not an instruction to recalculate old issues or to post without human approval.</summary>
 public sealed record ManufacturingCostDifferenceOutputV1(Guid OutputId, Guid ReceiptMovementId, Guid LabelId,
-    decimal NetQuantityKg, decimal RemainingQuantityKg, decimal ConsumedQuantityKg,
+    decimal NetQuantityKg, decimal? RemainingQuantityKg, decimal? ConsumedQuantityKg,
     decimal? TlUnitCostPerKg, decimal? RemainingTlValue, decimal? ConsumedTlDifference,
     decimal? UsdUnitCostPerKg, IReadOnlyList<ManufacturingCostDifferencePositionV1> Positions,
-    decimal? OriginalTlAmount = null);
+    decimal? OriginalTlAmount = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AccountingInventoryCostRatioV1? RemainingQuantityKgRatio = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AccountingInventoryCostRatioV1? ConsumedQuantityKgRatio = null);
 
-public sealed record ManufacturingCostDifferencePositionV1(Guid LocationId, decimal QuantityKg, decimal TlValue,
-    bool IncludedInMovingAverage);
+public sealed record ManufacturingCostDifferencePositionV1(Guid LocationId, decimal? QuantityKg, decimal? TlValue,
+    bool IncludedInMovingAverage,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AccountingInventoryCostRatioV1? QuantityKgRatio = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AccountingInventoryCostRatioV1? TlValueRatio = null);
 
 public sealed record ManufacturingCostDifferenceEventV1(Guid CompanyId, Guid ManufacturingOrderId,
     Guid GenerationId, string GenerationVersion, string ClosedOrderVersion, int State, string InputFingerprint,
     IReadOnlyList<ManufacturingCostDifferenceOutputV1> Outputs, Guid? CostDifferenceEventId,
-    bool IsReplay, string OriginalCorrelationId);
+    bool IsReplay, string OriginalCorrelationId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ManufacturingConsumedLineageReferenceV1? ConsumedLineageReference = null);
+
+/// <summary>Exact immutable Inventory history reference carried by the committed source event.</summary>
+public sealed record ManufacturingConsumedLineageReferenceV1(string SourceVersion, Guid GenerationId,
+    string GenerationVersion, string HistorySha256);
 
 public static class ManufacturingCostDifferenceInboxV1
 {

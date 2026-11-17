@@ -12,7 +12,7 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>Adapter contract sources use synthetic owner ports. These facts are not real SQL/Inventory acceptance.</summary>
-public sealed class AccountingInventoryCostSourceReaderTests
+public sealed partial class AccountingInventoryCostSourceReaderTests
 {
     [Fact]
     public async Task Original_commercial_revision_zero_is_valid_while_missing_frozen_source_remains_unavailable()
