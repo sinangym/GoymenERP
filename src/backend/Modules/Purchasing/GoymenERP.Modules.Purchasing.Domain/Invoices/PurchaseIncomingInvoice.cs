@@ -5,13 +5,14 @@ namespace GoymenERP.Modules.Purchasing.Domain.Invoices;
 
 /// <summary>ALS-D7/D44: imported supplier facts. Amounts are from the official document, never recomputed as tax policy.</summary>
 public sealed record PurchaseInvoiceSource(Guid DocumentId, long DocumentVersion, string Sha256,
-    string OfficialNumber, Guid Ettn, DateOnly InvoiceDate);
+    string OfficialNumber, Guid Ettn, DateOnly InvoiceDate,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseInvoiceImportProof? ImportProof = null);
 
 public sealed record PurchaseInvoiceAmounts(decimal Net, decimal Vat, decimal Withholding)
 {
     public decimal Payable => checked(Net + Vat - Withholding);
 
-    internal void Validate(int scale)
+    public void Validate(int scale)
     {
         if (Net < 0 || Vat < 0 || Withholding < 0 || Withholding > Vat
             || new[] { Net, Vat, Withholding }.Any(value => decimal.Round(value, scale) != value))
@@ -32,7 +33,8 @@ public sealed record PurchaseInvoiceReceiptMatch(Guid CompanyId, Guid InvoiceLin
     long OrderVersion, Guid SupplierPartyId, Guid CompanyAccountId, Guid CurrencyId, Guid UnitId,
     decimal Quantity, decimal ExpectedNet, decimal? ControlRate, DateOnly AcceptedOn,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? ServiceTypeId = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] GoymenERP.Modules.Purchasing.Domain.Services.PurchaseServiceTax? SubcontractTax = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] GoymenERP.Modules.Purchasing.Domain.Services.PurchaseServiceTax? SubcontractTax = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] decimal? AcceptedQuantity = null);
 
 /// <summary>The actual Settings version used for comparison. Null policy means unavailable, never zero tolerance.</summary>
 public sealed record PurchaseInvoiceVariancePolicy(Guid Id, long Version, decimal AmountTolerance, decimal RateTolerance);
@@ -179,6 +181,9 @@ public sealed class PurchaseIncomingInvoice
         {
             if (item.Quantity > MaximumStoredQuantity || decimal.Round(item.Quantity, MaximumStoredScale) != item.Quantity)
                 throw new ArgumentException("Kabul payı miktarı kayıt ölçeğine tam olarak sığmalıdır; yuvarlanmaz.");
+            if (item.AcceptedQuantity is { } original && (original <= 0 || original > MaximumStoredQuantity
+                || decimal.Round(original, MaximumStoredScale) != original))
+                throw new ArgumentException("Özgün kabul miktarı kayıt ölçeğine tam olarak sığmalıdır; yuvarlanmaz.");
             if (item.CompanyId != CompanyId || item.AcceptanceId == Guid.Empty || item.OrderId == Guid.Empty || item.OrderLineId == Guid.Empty || item.OrderVersion < 1
                 || item.SupplierPartyId != SupplierPartyId || item.CompanyAccountId != CompanyAccountId || item.CurrencyId != CurrencyId
                 || item.Quantity <= 0 || item.ExpectedNet < 0 || item.AcceptedOn == default

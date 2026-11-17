@@ -18,16 +18,18 @@ public sealed record PurchaseInvoiceFileRateV1(string Purpose, string SourceCurr
     string Rate, string? SourceBaseRate, string? TargetBaseRate, string? Operator, DateOnly? Date);
 public sealed record PurchaseInvoiceFilePaymentV1(DateOnly? DueOn, PurchaseInvoiceFileAmountV1? Amount,
     DateOnly? InstallmentDueOn = null, string Source = "PaymentTerms");
+public sealed record PurchaseInvoiceFileFunctionalAmountsV1(string Net, string Vat, string Withholding);
 public sealed record PurchaseInvoiceFileLineV1(string Id, string? SellerCode, string? BuyerCode, string Description,
     string UnitCode, string Quantity, PurchaseInvoiceFileAmountV1 Net,
-    IReadOnlyList<PurchaseInvoiceFileTaxV1> Taxes, IReadOnlyList<PurchaseInvoiceFileAdjustmentV1> Adjustments);
+    IReadOnlyList<PurchaseInvoiceFileTaxV1> Taxes, IReadOnlyList<PurchaseInvoiceFileAdjustmentV1> Adjustments,
+    PurchaseInvoiceFileFunctionalAmountsV1? FunctionalAmounts = null);
 public sealed record PurchaseInvoiceFileFactsV1(string Number, Guid Ettn, DateOnly InvoiceDate, string InvoiceType,
     string Currency, IReadOnlyList<PurchaseInvoiceFileIdentityV1> SupplierIdentities,
     IReadOnlyList<PurchaseInvoiceFileIdentityV1> BuyerIdentities,
     IReadOnlyDictionary<string, PurchaseInvoiceFileAmountV1> Totals,
     IReadOnlyList<PurchaseInvoiceFileTaxV1> Taxes, IReadOnlyList<PurchaseInvoiceFileAdjustmentV1> Adjustments,
     IReadOnlyList<PurchaseInvoiceFileRateV1> Rates, IReadOnlyList<PurchaseInvoiceFilePaymentV1> Payments,
-    IReadOnlyList<PurchaseInvoiceFileLineV1> Lines);
+    IReadOnlyList<PurchaseInvoiceFileLineV1> Lines, PurchaseInvoiceFileFunctionalAmountsV1? FunctionalTotals = null);
 
 public interface IPurchaseInvoiceFileReaderV1
 {
