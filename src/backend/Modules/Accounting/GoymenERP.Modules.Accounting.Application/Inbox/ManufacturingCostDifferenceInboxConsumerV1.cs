@@ -37,13 +37,20 @@ public sealed class ManufacturingCostDifferenceInboxConsumerV1(
             || !Version(source.GenerationVersion) || !Version(source.ClosedOrderVersion)
             || source.State is not (3 or 4) || !Text(source.InputFingerprint, 128) || !Text(source.OriginalCorrelationId, 128)
             || source.Outputs is not { Count: > 0 and <= 10000 }) throw Invalid("invalid_payload");
+        if (source.ConsumedLineageReference is { } lineage &&
+            (lineage.SourceVersion != "inventory.manufacturing-consumed-cost-lineage.v1"
+             || lineage.GenerationId != source.GenerationId || lineage.GenerationVersion != source.GenerationVersion
+             || lineage.HistorySha256 is not { Length: 64 } || lineage.HistorySha256.Any(character =>
+                 character is not (>= '0' and <= '9') and not (>= 'a' and <= 'f'))))
+            throw Invalid("cost_difference_lineage_reference_invalid");
         var outputs = new HashSet<Guid>();
         foreach (var output in source.Outputs)
         {
             if (output is null || output.OutputId == Guid.Empty || output.ReceiptMovementId == Guid.Empty
                 || output.LabelId == Guid.Empty || !outputs.Add(output.OutputId) || output.NetQuantityKg <= 0
-                || output.RemainingQuantityKg < 0 || output.ConsumedQuantityKg < 0
-                || output.NetQuantityKg != output.RemainingQuantityKg + output.ConsumedQuantityKg
+                || !ManufacturingCostDifferenceQuantityV1.TryResolve(output.RemainingQuantityKg, output.RemainingQuantityKgRatio, out var remaining)
+                || !ManufacturingCostDifferenceQuantityV1.TryResolve(output.ConsumedQuantityKg, output.ConsumedQuantityKgRatio, out var consumed)
+                || AccountingInventoryCostAmountsV1.Add(remaining, consumed) != AccountingInventoryCostAmountsV1.FromDecimal(output.NetQuantityKg)
                 || output.ConsumedTlDifference is null || output.OriginalTlAmount is null
                 || output.RemainingTlValue is null || output.TlUnitCostPerKg is null || output.Positions is null)
                 throw Invalid("cost_difference_source_unreadable");

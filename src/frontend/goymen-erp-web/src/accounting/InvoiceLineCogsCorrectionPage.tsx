@@ -93,7 +93,10 @@ function Page({ namespace, invoiceId, lineId, mode }: { readonly namespace: stri
             <dt>{T.version}</dt><dd>{state.data.lineVersion}</dd><dt>{T.product}</dt>
             <dd>{state.data.productReference.classification === null ? T.sourceUnknown : T.classes[state.data.productReference.classification]}</dd></dl>
           <p role="note">{state.data.postingEvidenceState === 'NoPostedCogs' ? T.noPosting : state.data.postingEvidenceState === 'Unreadable' ? T.unreadable
+            : state.data.postingEvidenceState === 'AttributedPostedCogs' ? T.attributed
             : `${T.posted}: ${state.data.postedEvidence?.amount} · ${state.data.postedEvidence?.currencyId}`}</p>
+          {state.data.attributedEvidence ? <ul>{state.data.attributedEvidence.map(item => <li key={item.source.fingerprint}>
+            {T.posted}: {item.source.signedAmount} · {item.currentJournalId}</li>)}</ul> : null}
           <h2>{T.history}</h2>{state.data.revisions.length === 0 ? <p>{T.noHistory}</p> : <ol>{state.data.revisions.map(row => <li key={row.version}>
             {row.version} · {T.classes[row.classification]} · {row.accountPlan.account.code} · {row.accountPlan.account.name} · {row.accountingDate} · {row.reason}
           </li>)}</ol>}

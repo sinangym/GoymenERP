@@ -18,6 +18,14 @@ const fixture = (patch: Record<string, unknown> = {}) => ({ proposalId, companyI
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 describe('manufacturing consumed cost accounting suggestion', () => {
+  it('displays the exact backend quantity fraction without computing or accepting a money fraction', () => {
+    const output = { ...fixture().outputs[0], remainingQuantityKg: '2 / 3', consumedQuantityKg: '1 / 3' }
+    expect(decodeCostDifference(fixture({ outputs: [output] }), COMPANY_A)?.outputs[0].consumedQuantityKg).toBe('1 / 3')
+    for (const quantity of ['1/3', '1 / 0', '-1 / 3', '01 / 3', '1 / 03', 'NaN']) {
+      expect(decodeCostDifference(fixture({ outputs: [{ ...output, consumedQuantityKg: quantity }] }), COMPANY_A)).toBeNull()
+    }
+    expect(decodeCostDifference(fixture({ outputs: [{ ...output, consumedTlDifference: '1 / 3' }] }), COMPANY_A)).toBeNull()
+  })
   it('preserves decimal text and refuses foreign or incomplete preparation', () => {
     expect(decodeCostDifference(fixture(), COMPANY_A)?.signedTlDifference).toBe('600')
     expect(decodeCostDifference(fixture({ companyId: COMPANY_B }), COMPANY_A)).toBeNull()

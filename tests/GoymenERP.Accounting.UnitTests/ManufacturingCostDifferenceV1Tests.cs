@@ -46,6 +46,52 @@ public sealed class ManufacturingCostDifferenceV1Tests
     }
 
     [Fact]
+    public void Exact_nonterminating_quantity_ratios_preserve_owner_mass_without_decimal_approximation()
+    {
+        var source = Source();
+        source = source with { Outputs = [source.Outputs[0] with
+        {
+            NetQuantityKg = 1m, RemainingQuantityKg = null, ConsumedQuantityKg = null,
+            RemainingQuantityKgRatio = new("2", "3"), ConsumedQuantityKgRatio = new("1", "3"),
+            Positions = [new(Guid.NewGuid(), null, null, true, new("2", "3"), new("10", "3"))],
+        }], ConsumedLineageReference = new("inventory.manufacturing-consumed-cost-lineage.v1",
+            source.GenerationId, source.GenerationVersion, new('a', 64)) };
+        var accepted = ManufacturingCostDifferenceInboxConsumerV1.Read(Envelope(source), Context());
+        Assert.Equal(source, accepted with { Outputs = source.Outputs });
+        var output = Assert.Single(accepted.Outputs);
+        Assert.Null(output.ConsumedQuantityKg);
+        Assert.Equal(new AccountingInventoryCostRatioV1("1", "3"), output.ConsumedQuantityKgRatio);
+        Assert.Equal("1 / 3", ManufacturingCostDifferenceQuantityV1.Display(output.ConsumedQuantityKg, output.ConsumedQuantityKgRatio));
+        Assert.Equal(600m, output.ConsumedTlDifference);
+        Assert.Equal(source.ConsumedLineageReference, accepted.ConsumedLineageReference);
+    }
+
+    [Fact]
+    public void Missing_noncanonical_conflicting_ratios_and_forged_lineage_references_are_refused()
+    {
+        var source = Source();
+        var reference = new ManufacturingConsumedLineageReferenceV1("inventory.manufacturing-consumed-cost-lineage.v1",
+            source.GenerationId, source.GenerationVersion, new('a', 64));
+        foreach (var output in new[]
+        {
+            source.Outputs[0] with { ConsumedQuantityKg = null },
+            source.Outputs[0] with { ConsumedQuantityKgRatio = new("300", "10") },
+            source.Outputs[0] with { ConsumedQuantityKgRatio = new("31", "1") },
+            source.Outputs[0] with { ConsumedQuantityKg = null, ConsumedQuantityKgRatio = new("-30", "1") },
+        }) Assert.Throws<OutboxPermanentFailureException>(() => ManufacturingCostDifferenceInboxConsumerV1.Read(
+            Envelope(source with { Outputs = [output] }), Context()));
+        foreach (var invalid in new[]
+        {
+            reference with { SourceVersion = "unsupported" }, reference with { GenerationId = Guid.NewGuid() },
+            reference with { GenerationVersion = "3" }, reference with { HistorySha256 = new('A', 64) },
+            reference with { HistorySha256 = "" },
+        }) Assert.Throws<OutboxPermanentFailureException>(() => ManufacturingCostDifferenceInboxConsumerV1.Read(
+            Envelope(source with { ConsumedLineageReference = invalid }), Context()));
+        Assert.DoesNotContain("consumedLineageReference", Envelope(source).PayloadJson);
+        Assert.Equal(source.GenerationId, ManufacturingCostDifferenceInboxConsumerV1.Read(Envelope(source), Context()).GenerationId);
+    }
+
+    [Fact]
     public void Missing_cost_mass_mismatch_cross_company_and_forged_event_are_not_zero_or_success()
     {
         var source = Source();

@@ -17,7 +17,7 @@ public sealed partial class AccountingInventoryCostStoreV1
         try { view = Decode<AccountingInventoryCostProposalV1>(row.ViewJson); source = Decode<AccountingInventoryCostSourceV1>(header.SourceJson); }
         catch (System.Text.Json.JsonException) { throw Refuse("inventory_cost_source_unavailable"); }
         var component = source.Components?.SingleOrDefault(x => x.ComponentKey == row.ComponentKey);
-        var status = row.Status switch { 1 => "AwaitingPreparation", 2 => "Prepared", 3 => "Posted", 4 => "NoCost", _ => "" };
+        var status = row.Status switch { 1 => "AwaitingPreparation", 2 => "Prepared", 3 => "Posted", 4 => "NoCost", 5 => "AlreadyAccounted", _ => "" };
         if (header.CompanyId != Company() || source.CompanyId != header.CompanyId || source.EventId != header.EventId
             || (int)source.Kind != header.Kind || source.InvoiceId != header.InvoiceId || source.InvoiceVersion != header.InvoiceVersion
             || source.AdmissionId != header.AdmissionId || source.SourcePayloadSha256 != header.PayloadHash
@@ -25,7 +25,7 @@ public sealed partial class AccountingInventoryCostStoreV1
             || view.EventId != row.EventId || view.Version != row.Version || view.Status != status
             || view.Kind != source.Kind || view.InvoiceId != source.InvoiceId || view.InvoiceVersion != source.InvoiceVersion
             || view.AdmissionId != source.AdmissionId || view.InvoiceDate != source.InvoiceDate || view.OfficialInvoiceNumber != source.OfficialInvoiceNumber
-            || view.SourceOccurredAtUtc != header.OccurredAtUtc || component is null || view.Component != component
+            || view.SourceOccurredAtUtc != header.OccurredAtUtc || component is null || Encode(view.Component) != Encode(component)
             || component.SourceProofSha256 != AccountingInventoryCostSourceValidationV1.Sha256(component.SourceProofJson)
             || !AccountingInventoryCostAmountsV1.TryRead(component.SignedTlAmount, out _, out _)
             || view.Preparation?.PreparedBy != row.PreparedBy || view.Preparation?.PeriodId != row.PeriodId
@@ -117,6 +117,8 @@ public sealed partial class AccountingInventoryCostStoreV1
     {
         var cancelled = await Cancellation(view, token);
         if (cancelled is null) return view;
+        if (view.Component.AlreadyPostedComponents is { Count: > 0 })
+            return view with { Status = "AttributedCancellationPending", CancellationId = cancelled.CancellationId };
         if (view.JournalId is null) return view with { Status = "Cancelled", CancellationId = cancelled.CancellationId };
         var journal = await CurrentPostedJournal(view, token);
         var reversals = await db.JournalReversalProposals.AsNoTracking().Where(x => x.SourceJournalId == journal).ToListAsync(token);

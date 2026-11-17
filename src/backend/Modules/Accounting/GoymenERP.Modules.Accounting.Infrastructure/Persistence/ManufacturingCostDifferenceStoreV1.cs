@@ -20,7 +20,8 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 /// <summary>Own-table inbox and human proposal; only the existing Accounting posting store writes a journal.</summary>
 public sealed class ManufacturingCostDifferenceStoreV1(AccountingDbContext db,
     AccountingStore posting, ICompanyContext company, IActiveAccountPlanReaderV1 accountPlans,
-    ISettingsMoneyCandidateReader currencies, IAuditEventCollector audit, TimeProvider clock)
+    ISettingsMoneyCandidateReader currencies, IAuditEventCollector audit, TimeProvider clock,
+    ManufacturingPostedCostAttributionStoreV1? attributions = null)
     : IManufacturingCostDifferenceStoreV1
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -41,7 +42,10 @@ public sealed class ManufacturingCostDifferenceStoreV1(AccountingDbContext db,
             if (previous.SourceHash != hash) throw Refuse("cost_difference_source_conflict");
             return;
         }
-        var amount = source.Outputs.Sum(output => output.ConsumedTlDifference!.Value);
+        var exactAmount = source.Outputs.Aggregate(AccountingInventoryCostAmountsV1.FromDecimal(0), (sum, output) =>
+            AccountingInventoryCostAmountsV1.Add(sum, AccountingInventoryCostAmountsV1.FromDecimal(output.ConsumedTlDifference!.Value)));
+        if (!AccountingInventoryCostAmountsV1.TryExactDecimal(exactAmount, 28, out var amount))
+            throw Refuse("cost_difference_amount_unreadable");
         var row = new ManufacturingCostDifferenceRow
         {
             Id = envelope.EventId, CompanyId = companyId, ManufacturingOrderId = source.ManufacturingOrderId,
@@ -127,7 +131,7 @@ public sealed class ManufacturingCostDifferenceStoreV1(AccountingDbContext db,
         var companyId = Company();
         await freshAuthorityFence(cancellationToken);
         RequireActor(actorId, metadata);
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
         try
         {
             var row = await Load(proposalId, expectedVersion, cancellationToken);
@@ -166,6 +170,16 @@ public sealed class ManufacturingCostDifferenceStoreV1(AccountingDbContext db,
             Audit(row, metadata, "approved", version, before);
             Complete(metadata, companyId, result);
             await Save(cancellationToken);
+            var frozenSource = JsonSerializer.Deserialize<ManufacturingCostDifferenceEventV1>(row.SourceJson, Json)
+                ?? throw Refuse("manufacturing_attribution_source_missing");
+            if (frozenSource.ConsumedLineageReference is not null)
+            {
+                if (attributions is null) throw Refuse("manufacturing_attribution_owner_unavailable");
+                await attributions.RecordPostedAsync(row.Id, freshAuthorityFence, cancellationToken);
+                await Save(cancellationToken);
+            }
+            await freshAuthorityFence(cancellationToken);
+            RequireCompany(companyId);
             await transaction.CommitAsync(cancellationToken);
             return result;
         }
@@ -235,8 +249,10 @@ public sealed class ManufacturingCostDifferenceStoreV1(AccountingDbContext db,
         return new(row.Id, row.CompanyId, row.ManufacturingOrderId, row.GenerationId, row.GenerationVersion,
             row.Status switch { 1 => "AwaitingPreparation", 2 => "Prepared", 3 => "Posted", 4 => "NoDifference", _ => throw new InvalidOperationException() },
             row.Version, row.SignedTlDifference, source.Outputs.Select(output => new ManufacturingCostDifferenceOutputViewV1(
-                output.OutputId, output.ReceiptMovementId, output.LabelId, Text(output.NetQuantityKg), Text(output.RemainingQuantityKg),
-                Text(output.ConsumedQuantityKg), Text(output.TlUnitCostPerKg!.Value), Text(output.RemainingTlValue!.Value),
+                output.OutputId, output.ReceiptMovementId, output.LabelId, Text(output.NetQuantityKg),
+                ManufacturingCostDifferenceQuantityV1.Display(output.RemainingQuantityKg, output.RemainingQuantityKgRatio),
+                ManufacturingCostDifferenceQuantityV1.Display(output.ConsumedQuantityKg, output.ConsumedQuantityKgRatio),
+                Text(output.TlUnitCostPerKg!.Value), Text(output.RemainingTlValue!.Value),
                 Text(output.ConsumedTlDifference!.Value), output.UsdUnitCostPerKg is { } usd ? Text(usd) : null,
                 Text(output.OriginalTlAmount!.Value))).ToArray(), row.SourceOccurredAtUtc, row.PeriodId, row.AccountingDate,
             row.TransactionDate, row.DebitAccountId, row.CreditAccountId, row.PreparedBy, row.ApprovedBy, row.JournalId, row.Reason,

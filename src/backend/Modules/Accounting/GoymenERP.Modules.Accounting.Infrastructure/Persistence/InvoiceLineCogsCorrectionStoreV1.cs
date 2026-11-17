@@ -15,9 +15,9 @@ using Microsoft.EntityFrameworkCore.Storage;
 namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 
 /// <summary>Append-only line choices and component corrections, never a Sales/Inventory write or invoice-total reversal.</summary>
-public sealed class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext db, ICompanyContext company,
+public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext db, ICompanyContext company,
     IActiveAccountPlanReaderV1 accountPlans, IAuditEventCollector audit, IAuditTransactionWriterV1 auditWriter,
-    TimeProvider clock) : IInvoiceLineCogsCorrectionStoreV1
+    TimeProvider clock, IPostedManufacturingShipmentCostReaderV1? postedManufacturing = null) : IInvoiceLineCogsCorrectionStoreV1
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private const string Entity = "Accounting.InvoiceLineCogsCorrection";
@@ -65,6 +65,8 @@ public sealed class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext db, ICo
     public async Task<InvoiceLineCogsHistoryV1> ReadAsync(FinalizedInvoiceLineSourceV1 source, CancellationToken cancellationToken = default)
     {
         var companyId = ValidateSource(source);
+        await using var attributionRead = db.Database.CurrentTransaction is null
+            ? await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken) : null;
         var revisions = await Revisions(source).AsNoTracking().OrderBy(x => x.Version).ToListAsync(cancellationToken);
         var proposals = await db.InvoiceLineCogsProposals.AsNoTracking().Where(x => x.InvoiceId == source.InvoiceId
             && x.InvoiceLineId == source.InvoiceLineId).OrderBy(x => x.PreparedAtUtc).ThenBy(x => x.Id).ToListAsync(cancellationToken);
@@ -72,10 +74,17 @@ public sealed class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext db, ICo
         var approved = revisions.ToDictionary(x => x.ProposalId);
         var history = revisions.Select(x => Decode<InvoiceLineCogsRevisionViewV1>(x.RevisionJson)).ToArray();
         var (state, evidence) = await Evidence(source, history.LastOrDefault(), cancellationToken);
+        var attributed = await AttributedEvidence(source, cancellationToken);
+        if (attributed is { Count: > 0 })
+        {
+            if (evidence is not null) throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
+            state = "AttributedPostedCogs";
+        }
         RequireCompany(companyId);
         return new(companyId, source.InvoiceId, source.InvoiceLineId, FinalizedInvoiceLineReferenceV1.From(source), history.LastOrDefault()?.Version ?? 0,
             history.LastOrDefault(), history, proposals.Select(x => approved.TryGetValue(x.Id, out var decision)
-                ? Decode<InvoiceLineCogsCorrectionViewV1>(decision.ViewJson) : Decode<InvoiceLineCogsCorrectionViewV1>(x.ViewJson)).ToArray(), state, evidence);
+                ? Decode<InvoiceLineCogsCorrectionViewV1>(decision.ViewJson) : Decode<InvoiceLineCogsCorrectionViewV1>(x.ViewJson)).ToArray(), state, evidence,
+                AttributedEvidence: attributed);
     }
 
     public async Task<InvoiceLineCogsCorrectionViewV1?> FindAsync(Guid proposalId, CancellationToken cancellationToken = default)
@@ -103,10 +112,12 @@ public sealed class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext db, ICo
             var plan = await Account(request.CogsAccountId, cancellationToken);
             var (state, evidence) = await Evidence(source, current, cancellationToken);
             if (state == "Unreadable") throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
+            var attributed = await AttributedEvidence(source, cancellationToken);
+            if (evidence is not null && attributed is not null) throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
             var view = new InvoiceLineCogsCorrectionViewV1(request.ProposalId, source.CompanyId, source.InvoiceId,
                 source.InvoiceLineId, source.FinalizedVersion, 1, request.ExpectedLineVersion, "Prepared", request.Classification,
                 plan, request.PeriodId, request.TransactionDate, request.AccountingDate, request.ValueDate,
-                actorId, clock.GetUtcNow(), null, null, request.Reason, evidence, null, null);
+                actorId, clock.GetUtcNow(), null, null, request.Reason, evidence, null, null, attributed);
             db.InvoiceLineCogsProposals.Add(new() { CompanyId = source.CompanyId, Id = request.ProposalId,
                 InvoiceId = source.InvoiceId, InvoiceLineId = source.InvoiceLineId, ExpectedLineVersion = request.ExpectedLineVersion,
                 PreparedBy = actorId, PreparedAtUtc = view.PreparedAtUtc, SourceJson = Encode(source), ViewJson = Encode(view) });
@@ -139,6 +150,9 @@ public sealed class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext db, ICo
             var (state, evidence) = await Evidence(source, current, cancellationToken);
             if (state == "Unreadable") throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
             if (Encode(evidence) != Encode(prepared.PostedEvidence)) throw Refuse(InvoiceLineCogsCorrectionCodesV1.SourceChanged);
+            var attributed = await AttributedEvidence(source, cancellationToken);
+            if (Encode(attributed) != Encode(prepared.AttributedEvidence) || evidence is not null && attributed is not null)
+                throw Refuse(InvoiceLineCogsCorrectionCodesV1.SourceChanged);
             Guid? reverseId = null, replacementId = null;
             if (evidence is not null && evidence.CogsAccountId != prepared.AccountPlan.Account.AccountId)
             {
@@ -158,11 +172,13 @@ public sealed class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext db, ICo
                 db.Entry(period).Property(x => x.UpdatedAtUtc).IsModified = true;
             }
             var now = clock.GetUtcNow();
+            var attributedCorrections = await CorrectAttributed(attributed, prepared, period, metadata, cancellationToken);
             var approved = prepared with { Version = 2, Status = "Approved", ApprovedBy = actorId, ApprovedAtUtc = now,
-                ReversingCorrectionJournalId = reverseId, ReplacementCorrectionJournalId = replacementId };
+                ReversingCorrectionJournalId = reverseId, ReplacementCorrectionJournalId = replacementId,
+                AttributedCorrections = attributedCorrections };
             var revision = new InvoiceLineCogsRevisionViewV1(checked(row.ExpectedLineVersion + 1), proposalId,
                 prepared.Classification, prepared.AccountPlan, row.PreparedBy, actorId, now, prepared.PeriodId,
-                prepared.TransactionDate, prepared.AccountingDate, reverseId, replacementId, prepared.Reason);
+                prepared.TransactionDate, prepared.AccountingDate, reverseId, replacementId, prepared.Reason, attributedCorrections);
             db.InvoiceLineCogsRevisions.Add(new() { CompanyId = source.CompanyId, InvoiceId = source.InvoiceId,
                 InvoiceLineId = source.InvoiceLineId, Version = revision.Version, ProposalId = proposalId,
                 PreparedBy = row.PreparedBy, ApprovedBy = actorId, ApprovedAtUtc = now,
