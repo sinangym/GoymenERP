@@ -1,6 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using Microsoft.Data.SqlClient;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -12,12 +15,16 @@ public sealed partial class SettingsCollateralTypeSqlServerRelationalAcceptanceT
         await using var run = await HostRun.StartAsync(); await GrantFinancePolicyAuthorAsync(run);
         await run.GrantAsync(TestUsers.CompanyA, CompanyA, Manage);
         using var editor = run.Client(TestUsers.CompanyA, CompanyA);
+        var down = Assert.IsType<SqlOperation>(new AddFinancePolicyFamilies().DownOperations[0]).Sql;
+        await run.ExecuteAsync(down);
         await run.CommandAsync(editor, Root, "k6-type", new CreateSettingsCollateralTypeRequestV1("K6", "Synthetic K6 type", SettingsCollateralKindV1.GuaranteeLetter, "Synthetic"));
         var first = (await editor.GetFromJsonAsync<SettingsBankInstitutionsWorkspaceV1>(FinancePolicyRoot + "/bank-institutions"))!;
         Assert.Empty(first.Versions);
         var bankRequest = new PrepareSettingsBankInstitutionsV1("0", first.BusinessDate, null, [new(null, "Synthetic bank", "0007", true)], "Synthetic explicit bank");
         await run.CommandAsync(editor, FinancePolicyRoot + "/bank-institutions", "k6-bank-draft", bankRequest);
         var bankDraft = Assert.Single((await editor.GetFromJsonAsync<SettingsBankInstitutionsWorkspaceV1>(FinancePolicyRoot + "/bank-institutions"))!.Versions);
+        Assert.Equal(51807, (await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(down))).Number);
+        Assert.Equal(1, await run.CountAsync("SELECT COUNT(*) FROM settings.BankInstitutionPolicies"));
         var draftsOnly = (await editor.GetFromJsonAsync<SettingsCollateralRatesWorkspaceV1>(FinancePolicyRoot + "/collateral-rates"))!;
         Assert.Equal(SettingsFinancePolicyReadOutcomeV1.Unavailable, draftsOnly.Banks.Outcome); Assert.Empty(draftsOnly.Banks.Entries);
         await run.CommandAsync(editor, $"{FinancePolicyRoot}/bank-institutions/{bankDraft.PolicyId}/publish", "k6-bank-publish", new PublishSettingsFinancePolicyV1("1", "Synthetic publish bank"));

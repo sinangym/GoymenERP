@@ -2,11 +2,31 @@ using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
+using GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations;
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
 public sealed partial class FinanceCollateralSqlServerRelationalAcceptanceTests
 {
+    [SqlServerFact]
+    public async Task The_bank_proof_Down_passes_with_unbound_legacy_collaterals_and_refuses_without_losing_a_recorded_bank_proof()
+    {
+        await using var run = await Run.StartAsync();
+        var down = Assert.IsType<SqlOperation>(new AddCollateralBankProof().DownOperations[0]).Sql;
+        await run.ExecuteAsync(down);
+        await using (var scope = run.Open(CompanyA, Recorder))
+            Assert.Equal(CommandOutcome.Succeeded, (await scope.Collaterals.RecordAsync(scope.Context, Key("legacy"), Record("1"), default)).Outcome);
+        await run.ExecuteAsync(down);
+        var source = new K6Policies(CompanyA);
+        await using (var scope = run.OpenWithPolicies(CompanyA, Recorder, source))
+            Assert.Equal(CommandOutcome.Succeeded, (await scope.Collaterals.RecordAsync(scope.Context, Key("bank"),
+                Record("2") with { BankInstitutionId = source.Id, BankSourceVersion = source.Source }, default)).Outcome);
+        Assert.Equal(51808, (await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(down))).Number);
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.PartyCollaterals"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.PartyCollaterals WHERE BankProofJson IS NOT NULL"));
+    }
     [SqlServerFact]
     public async Task An_explicit_bank_is_frozen_on_each_revision_replay_keeps_the_original_proof_and_release_needs_no_current_bank()
     {

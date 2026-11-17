@@ -70,7 +70,10 @@ function Editor({ data, family, changed }: { readonly data: BankInstitutionsWork
   }
   async function inspect() {
     const capturedKey = previewKey; const sequence = ++previewSequence.current; const captured = boundary.capture(); setPreview({ key: capturedKey, value: { type: 'loading' } })
-    const result = await postFinancePolicyRead(data.companyId, 'collateral-rates/preview', { collateralTypeId: typeId, bankInstitutionId: bankId || null, bankSourceVersion: bank?.sourceVersion ?? null, validUntil: expiry || null, businessDate: previewDate }, decodeCollateralRatePreview)
+    const result = await postFinancePolicyRead(data.companyId, 'collateral-rates/preview', { collateralTypeId: typeId, bankInstitutionId: bankId || null, bankSourceVersion: bank?.sourceVersion ?? null, validUntil: expiry || null, businessDate: previewDate }, raw => {
+      const value = decodeCollateralRatePreview(raw)
+      return value?.outcome === 'Available' && value.collateralTypeVersion !== type?.version ? null : value
+    })
     if (!alive.current || previewCurrent.current !== capturedKey || sequence !== previewSequence.current) return
     if (result.type === 'http' && (result.status === 401 || result.status === 403)) boundary.report(result.status, captured)
     setPreview({ key: capturedKey, value: result })

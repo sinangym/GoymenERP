@@ -3,11 +3,26 @@ using GoymenERP.Modules.Settings.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
 public sealed class SettingsFinancePolicyPersistenceModelTests
 {
+    [Fact]
+    public void The_real_generated_policy_migration_is_ddl_only_and_guards_all_six_histories_before_any_drop()
+    {
+        var migration = new AddFinancePolicyFamilies();
+        Assert.Empty(migration.UpOperations.OfType<SqlOperation>());
+        Assert.Equal(6, migration.UpOperations.OfType<CreateTableOperation>().Count());
+        var down = Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql;
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        Assert.Contains("THROW 51807", down);
+        foreach (var table in migration.UpOperations.OfType<CreateTableOperation>()) Assert.Contains($"[settings].[{table.Name}]", down);
+        using var db = Database(); Assert.False(db.Database.HasPendingModelChanges());
+        Assert.Contains("20261117220044_AddFinancePolicyFamilies", db.Database.GetMigrations());
+    }
     [Fact]
     public void Finance_policy_values_are_typed_company_keyed_filtered_versioned_and_never_defaulted()
     {
