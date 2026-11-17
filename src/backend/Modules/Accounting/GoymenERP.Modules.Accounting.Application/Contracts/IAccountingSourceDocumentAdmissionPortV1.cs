@@ -30,8 +30,9 @@ public static class AccountingPurchaseLinePurposesV1
     public const string ProductionInput = "production-input";
     public const string Resale = "resale";
     public const string Service = "service";
+    public const string Expense = "expense";
 
-    public static bool IsKnown(string? purpose) => purpose is ProductionInput or Resale or Service;
+    public static bool IsKnown(string? purpose) => purpose is ProductionInput or Resale or Service or Expense;
 }
 
 /// <summary>
@@ -84,7 +85,8 @@ public sealed record AccountingSourceDocumentAdmissionRequestV1(
     DateOnly? DueDate,
     AccountingSourceDocumentTotalsV1 DocumentTotals,
     AccountingSourceDocumentTotalsV1 FunctionalTotals,
-    IReadOnlyList<AccountingSourceDocumentLineV1> Lines);
+    IReadOnlyList<AccountingSourceDocumentLineV1> Lines,
+    string? OfficialInvoiceNo = null);
 
 /// <summary>What Accounting answered. Only <see cref="Admitted"/> moves the producer's ledger to admitted.</summary>
 public enum AccountingSourceDocumentAdmissionOutcomeV1
@@ -131,6 +133,7 @@ public sealed record AccountingSourceDocumentAdmissionAnswerV1(
 /// <summary>The stable reason codes (each at most 64 characters).</summary>
 public static class AccountingSourceDocumentAdmissionReasonsV1
 {
+    public const string SourceCancelled = "source_invoice_cancelled";
     public const string Admitted = "admitted";
     public const string Unavailable = "unavailable";
 

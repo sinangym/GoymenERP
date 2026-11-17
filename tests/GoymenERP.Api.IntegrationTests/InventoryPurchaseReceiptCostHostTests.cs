@@ -27,6 +27,7 @@ public sealed class InventoryPurchaseReceiptCostHostTests
     private static readonly Guid RateRecordId = Guid.Parse("8c210000-0000-4000-8000-000000000010");
     private static readonly Guid Lira = SettingsCurrencyIdentitiesV1.TurkishLira;
     private static readonly Guid Usd = ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD");
+    private static readonly Guid Eur = ExchangeRateCurrencyIdentitiesV1.ForIsoCode("EUR");
     private static readonly DateTimeOffset ReceivedAt = new(2026, 11, 17, 22, 30, 0, TimeSpan.Zero);
     private static readonly InventoryPurchaseReceiptCostSelectionV1 Selection =
         new(CompanyId, AcceptanceId, OrderId, LineId, ProductId, "7", ReceivedAt);
@@ -185,6 +186,59 @@ public sealed class InventoryPurchaseReceiptCostHostTests
         Assert.Empty(world.Rates.Requests);
     }
 
+    [Fact]
+    public async Task A_third_currency_uses_the_official_invoice_TL_rate_then_the_receipt_day_USD_selling_rate()
+    {
+        var world = new World(price: 100m, kgPerPriceUnit: 1m, usdSellingRate: 50m, currency: Eur, invoiceRecorded: true);
+        world.Owner.Answer = world.Owner.Answer! with
+        {
+            InvoiceRate = PurchaseInvoiceCostRateAnswerV1.Rated(CompanyId, AcceptanceId, OrderId, LineId, Eur, "EUR", ExchangeRate.Of(Eur, Lira, 40m)),
+        };
+        var result = await world.Host().ReadAsync(Selection);
+        Assert.Equal((100m, 4000m, 80m), (result.OriginalUnitCostPerKg, result.TlUnitCostPerKg, result.UsdUnitCostPerKg));
+        Assert.Equal(40m, result.Currency.ExchangeRate);
+        Assert.Null(result.UsdUnavailableReason);
+        Assert.Equal((new DateOnly(2026, 11, 18), Usd, Lira), Assert.Single(world.Rates.Requests));
+        using var evidence = JsonDocument.Parse(result.EvidenceJson);
+        Assert.Equal(RateRecordId, evidence.RootElement.GetProperty("usdRate").GetProperty("recordId").GetGuid());
+        Assert.Contains("40", evidence.RootElement.GetProperty("proof").GetProperty("invoiceRate").ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_third_currency_preserves_a_nonterminating_cross_rate_as_an_exact_ratio()
+    {
+        var world = new World(price: 1m, kgPerPriceUnit: 3m, usdSellingRate: 3m, currency: Eur, invoiceRecorded: true);
+        var result = await world.Host().ReadAsync(Selection);
+        Assert.Null(result.UsdUnitCostPerKg);
+        Assert.Equal(new InventoryExactCostRatioV1("35", "9"), result.UsdUnitCostRatio);
+        Assert.Null(result.UsdUnavailableReason);
+    }
+
+    [Fact]
+    public async Task A_missing_third_currency_invoice_does_not_substitute_a_current_TL_or_USD_rate()
+    {
+        var world = new World(currency: Eur);
+        var result = await world.Host().ReadAsync(Selection);
+        Assert.Null(result.TlUnitCostPerKg);
+        Assert.Null(result.UsdUnitCostPerKg);
+        Assert.Null(result.UsdUnitCostRatio);
+        Assert.Equal("purchase_receipt_usd_invoice_cross_rate_not_recorded", result.UsdUnavailableReason);
+        Assert.Empty(world.Rates.Requests);
+    }
+
+    [Fact]
+    public async Task A_missing_USD_display_rate_does_not_remove_the_official_third_currency_TL_cost()
+    {
+        var world = new World(currency: Eur, invoiceRecorded: true);
+        world.Rates.Failure = new InvalidOperationException("SENTETIK unavailable USD source");
+        var result = await world.Host().ReadAsync(Selection);
+        Assert.Equal(105m, result.TlUnitCostPerKg);
+        Assert.Null(result.TlUnavailableReason);
+        Assert.Null(result.UsdUnitCostPerKg);
+        Assert.Equal("purchase_receipt_usd_entry_rate_unreadable", result.UsdUnavailableReason);
+        Assert.Equal(InventoryIssueCostCurrencyStatusV1.Converted, result.Currency.Status);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -266,7 +320,7 @@ public sealed class InventoryPurchaseReceiptCostHostTests
         Guid? companyId = null)
     {
         var scopedCompany = companyId ?? CompanyId;
-        var code = currency == Lira ? "TRY" : "USD";
+        var code = currency == Lira ? "TRY" : currency == Eur ? "EUR" : "USD";
         var recorded = PurchaseOrderLineCostPriceV1.Of(LineId, ProductId, PriceUnitId, PriceUnitId,
             priceUnitIsKilogram: false, Money.Of(price, currency, 4), code, null, null, null, null);
         var invoice = invoiceRecorded

@@ -20,6 +20,15 @@ public static partial class PurchasingEndpoints
     private static void MapInvoiceImports(IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v1/purchasing/invoice-imports").WithTags("Purchasing").RequireAuthorization().RequireCompanyContext();
+        InvoiceWorkspaceRead(group.MapGet("", async (int? pageIndex, HttpContext context, [FromServices] IPurchaseInvoiceImportV1 service,
+            ICorrelationContext correlation, CancellationToken token) =>
+        {
+            SetPrivateNoStore(context.Response);
+            if (context.Request.Query.Keys.Any(key => key != "pageIndex") || context.Request.Query.Any(item => item.Value.Count != 1))
+                return Problem(400, "validation_failed", correlation);
+            try { return Results.Json(await service.ListAsync(pageIndex ?? 0, token), PurchasingJson.Options); }
+            catch (PurchasingServiceException exception) { return Problem(context, exception, correlation); }
+        }).WithName("ListPurchaseInvoiceImportsV1").Produces<PurchaseInvoiceImportReservationPageV1>());
         group.MapPost("/reservations", (HttpContext context, [FromServices] IPurchaseInvoiceImportV1 service,
             ICorrelationContext correlation, CancellationToken token) => MutateAsync(context, correlation,
                 json => { using var doc = JsonDocument.Parse(json); if (doc.RootElement.ValueKind != JsonValueKind.Object

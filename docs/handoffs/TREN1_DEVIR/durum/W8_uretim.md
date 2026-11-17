@@ -202,6 +202,16 @@ ayrılan üyeler sonraki snapshot'tan çıkar, önceki history korunur. Yeni DB 
 - Son kaynak derlemeleri **API, Manufacturing.UnitTests, Accounting.UnitTests ve Api.IntegrationTests: exit 0; 0 uyarı / 0 hata**. Integration'ın ilk denemesindeki yalnız eksik `Domain.Common` using'i düzeltildikten sonra final derleme exit 0'dır. Önceki Accounting exact-index assertion'ı da bu Accounting.Unit derlemesine dahil edilmiştir. Bu checkpoint backend-only olduğu için TSC yeniden çalıştırılmadı; önceki değişmeyen UI kaynakları final TSC exit 0'dır. **Unit/gerçek SQL/HTTP/Vitest/browser/CI runtime NOT_RUN**, K3 imzası yoktur.
 - W5 raporundaki **13 Manufacturing test hatası** isimleriyle verilmemiştir. Bilinen migration/model/shell ve karar golden beklentileri kaynakta hizalanmıştır; test atlama/silme/karantina yapılmamıştır. İsimleri bulunmayan eski kırmızıların tümünün kapandığı iddia edilmez; final runtime turunda gerçek sonuçla doğrulanmalıdır.
 
+### URT-SC36 — üçüncü dövizden USD gösterimine gerçek kur köprüsü
+
+- Kullanıcının çapraz dönüşüm cevabı, Issue #1189 yorum 6943061620 ajan aktarımında kayıtlıdır.
+  EUR gibi bir para biriminde kayıtlı resmî fatura TL maliyeti, kabul gününün gerçek TCMB
+  USD döviz satış kuruna bölünür. TL ana maliyet oranı aynen korunur; ara tutar yuvarlanmaz.
+- Eksik resmî fatura kuru veya USD bülteni için değer tahmin edilmez. Kur kaydının kimliği,
+  sürümü, kaynak/hedef para birimi ve bülten tarihi doğrulanır. USD eksikliği TL'yi silmez.
+- Dört host test kaynağı eklendi: EUR çapraz kur, tam oran hassasiyeti, eksik resmî kur,
+  eksik USD kaynağında TL'nin korunması. Birleşik API ve Integration kaynak derlemeleri
+  exit 0, uyarı/hata 0. Runtime test ve gerçek SQL **NOT_RUN**; yeni migration/izin yoktur.
 ## URT-S18 / STK-S3 bağımlılığı — gerçek fason çıktı kanıtı V2
 
 - **Owner kaynak bağımlılığı DONE**, commit `94912f0187f0b2b5bfcabd69591b6866bbb237e6`. URT-D62, URT-D63, SAT-D219 ve LOJ-D1..5 kapsamında V2 okuma; gerçek Manufacturing order/plan sürümlerini, ayrı SalesLinkRevision'ı, bağlı satış siparişi/satır/revizyonunu, müşteri party/account kimliklerini ve gerçek çıktı fact/etiket bağını yayımlar. Fiyat taşımaz. Bu bağımlılık STK-S3 host/Inventory/Logistics/UI zincirinin tamamlandığı anlamına gelmez; merkezi tüketici entegrasyonu ayrı adımdır.

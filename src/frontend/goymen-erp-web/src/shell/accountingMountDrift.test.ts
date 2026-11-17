@@ -22,6 +22,9 @@ import { ACCOUNTING_CAPABILITY, ACCOUNTING_ROUTE, journalDetailPath } from '../a
 
 /** The lane's routed ids, paired with the route key that serves each. */
 const ROUTED = [
+  [CAPABILITY.accountingSourceVouchers, ACCOUNTING_CAPABILITY.sourceVouchers, ACCOUNTING_ROUTE.sourceVouchers],
+  [CAPABILITY.accountingInvoiceLineCogsPrepare, ACCOUNTING_CAPABILITY.invoiceLineCogsPrepare, ACCOUNTING_ROUTE.invoiceLineCogsPrepare],
+  [CAPABILITY.accountingInvoiceLineCogsApprove, ACCOUNTING_CAPABILITY.invoiceLineCogsApprove, ACCOUNTING_ROUTE.invoiceLineCogsApprove],
   [CAPABILITY.accountingCostDifferencePrepare, ACCOUNTING_CAPABILITY.costDifferencePrepare, ACCOUNTING_ROUTE.costDifferencePrepare],
   [CAPABILITY.accountingCostDifferenceApprove, ACCOUNTING_CAPABILITY.costDifferenceApprove, ACCOUNTING_ROUTE.costDifferenceApprove],
   [CAPABILITY.accountingPeriodsList, ACCOUNTING_CAPABILITY.periodsList, ACCOUNTING_ROUTE.periodsList],
@@ -42,10 +45,10 @@ describe('shell ↔ Accounting lane capability ids', () => {
     }
   })
 
-  it('mounts the nine routed ids and NEITHER period control', () => {
+  it('mounts routed ids without period or source voucher approval controls', () => {
     const shellIds = (Object.values(CAPABILITY) as string[]).filter((id) => id.startsWith('accounting.'))
     expect([...shellIds].sort()).toEqual([...ROUTED.map(([shellId]) => shellId as string)].sort())
-    for (const control of [ACCOUNTING_CAPABILITY.periodsApprove, ACCOUNTING_CAPABILITY.periodsClose]) {
+    for (const control of [ACCOUNTING_CAPABILITY.periodsApprove, ACCOUNTING_CAPABILITY.periodsClose, ACCOUNTING_CAPABILITY.sourceVouchersApprove]) {
       expect(shellIds).not.toContain(control)
       expect(Object.values(ACCOUNTING_ROUTE) as string[]).not.toContain(control)
     }
@@ -70,10 +73,11 @@ describe('shell ↔ Accounting lane capability ids', () => {
     ).toBeNull()
   })
 
-  it('gives the three lists a nav label and the propose screen and detail none', () => {
+  it('gives lists nav labels and the propose screen and detail none', () => {
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.accountingPeriodsList]).toBe('Muhasebe Dönemleri')
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.accountingJournalsList]).toBe('Muhasebe Fişleri')
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.accountingPostingQueues]).toBe('Muhasebe Kontrol')
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.accountingSourceVouchers]).toBe('Kaynak fişler')
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.accountingPeriodsPropose]).toBe('')
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.accountingJournalsDetail]).toBe('')
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.accountingNormalDraftCreate]).toBe('')

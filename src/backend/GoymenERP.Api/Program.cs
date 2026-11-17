@@ -377,6 +377,7 @@ builder.Services.AddScoped<ISalesPartyDisplaySourceV1, SalesPartyDisplayHost>();
 // F2 (SAT-D309, LOJ-D9): the subcontract service invoice reads the delivery weighing's net kg only through the Logistics
 // owner's F1 read; the adapter has no route, carries no authority and maps facts only.
 builder.Services.AddScoped<ISalesSubcontractDeliveryWeighingReadPortV1, SalesSubcontractDeliveryWeighingHost>();
+builder.Services.AddScoped<GoymenERP.Modules.Sales.Infrastructure.Persistence.ISalesSubcontractWeighingCommitReadPortV1, SalesSubcontractWeighingCommitReadHost>();
 // SAT-S13 (SAT-D343, SAT-D389): the dispatch screen and the invoice gate read a note's weighing difference only through the
 // Logistics owner's STK-S24 read; the adapter has no route, carries no authority and maps facts only.
 builder.Services.AddScoped<ISalesDispatchWeighingDifferenceReadPortV1, SalesDispatchWeighingDifferenceHost>();
@@ -595,7 +596,9 @@ app.MapProductDimensionEndpoints();
 app.MapProductProfileWeightTableEndpoints();
 app.MapProductPackageStandardEndpoints();
 app.MapProductPaintMembershipEndpoints();
+app.MapProductCogsClassificationEndpoints();
 app.MapFinanceEndpoints();
+app.MapFinancePartyBalanceTransfersV1();
 app.MapFinanceOpenItemReadEndpoints();
 app.MapWorkApprovalEndpoints();
 app.MapWorkQueueEndpoints();
@@ -603,13 +606,21 @@ app.MapWorkNotificationEndpoints();
 app.MapSalesEndpoints();
 app.MapSalesProductCandidateEndpoints();
 app.MapInventoryEndpoints();
+app.MapInventoryTransferPlanCandidateEndpoints();
+app.MapInventoryTransferReceiptDocumentEndpoints();
 app.MapManufacturingEndpoints();
 app.MapLogisticsEndpoints();
+app.MapLogisticsTransferDepartureEndpoints();
+app.MapLogisticsTransferOutgoingDocumentEndpoints();
 app.MapLogisticsWeighingDifferenceEndpoints();
 app.MapLogisticsCustomerReturnEndpoints();
 app.MapPurchasingEndpoints();
+app.MapPurchaseServiceOrderEndpointsV1();
+app.MapPurchaseAdditionalCostEndpointsV1();
 app.MapPurchasingProductCandidateEndpoints();
 app.MapAccountingEndpoints();
+app.MapAccountingSourceVouchersV1();
+app.MapAccountingInvoiceLineCogsEndpoints();
 app.MapGlobalSearchEndpoints();
 app.MapDocumentEndpoints();
 app.MapSettingsEndpoints();
@@ -623,6 +634,8 @@ app.MapSettingsCompanyPolicyEndpoints();
 app.MapSettingsLoginRateLimitEndpoints();
 app.MapSettingsWorkCenterCapacityEndpoints();
 app.MapSettingsReferenceListEndpoints();
+app.MapSettingsPurchaseInvoiceVariancePolicyEndpoints();
+app.MapSettingsWarehouseTransferScaleEndpoints();
 app.MapSettingsCollateralTypeEndpoints();
 app.MapSettingsBankCsvMappingEndpoints();
 app.MapSettingsSalesQuoteAndEInvoicePolicyEndpoints();

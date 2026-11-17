@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Messaging;
+using System.Text.Json.Serialization;
 
 namespace GoymenERP.Modules.Accounting.Application.Inbox;
 
@@ -30,7 +31,9 @@ public sealed record AccountingPurchaseInvoiceFinalizedLineV1(
     decimal? Withholding,
     decimal? FunctionalNet,
     decimal? FunctionalVat,
-    decimal? FunctionalWithholding);
+    decimal? FunctionalWithholding,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? ServiceTypeId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? ExpenseTypeId = null);
 
 /// <summary>AdmissionId is generated once at finalisation; InvoiceDate and FinalizedBy are official source facts.</summary>
 public sealed record AccountingPurchaseInvoiceFinalizedEventV1(
@@ -52,4 +55,5 @@ public sealed record AccountingPurchaseInvoiceFinalizedEventV1(
     IReadOnlyList<AccountingPurchaseInvoiceFinalizedLineV1?>? Lines,
     DateOnly? InvoiceDate,
     string? FinalizedBy,
-    DateOnly? DueDate = null);
+    DateOnly? DueDate = null,
+    string? OfficialInvoiceNo = null);

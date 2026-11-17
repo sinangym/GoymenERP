@@ -1,0 +1,15 @@
+export const TRANSFER_PLAN_TEXT = {
+  heading: 'Yeni transfer planı', intro: 'Aynı kaynak yer ve zilyetteki etiketleri seçin. Etiketin tam fiziksel kg bilgisi sunucudan alınır; plan henüz sevk oluşturmaz.',
+  labels: 'kaynak etiketler', destinations: 'hedef depolar', labelQuery: 'Etiket koduyla ara', destinationQuery: 'Hedef depo ara', search: 'Ara', refresh: 'Adayları yenile',
+  queryInvalid: 'Arama metni geçersiz veya çok uzun.', label: 'Etiket', physical: 'Fiziksel kg', blocked: 'Bloke fiziksel kg', allocated: 'Aktif ayrılan kg',
+  version: 'Etiket sürümü', source: 'Kaynak yer ve zilyet', select: 'Seç', remove: 'Seçimi kaldır', destination: 'Hedef depo', choose: 'Hedef depo seçin…',
+  noLabels: 'Aramaya uyan kaynak etiket yok.', noDestinations: 'Aramaya uyan hedef depo yok.', windowFull: 'Aday penceresi dolu. Aramayı daraltarak ilgili kayıtları bulun.',
+  selection: 'Aynı kaynak yer ve zilyette bulunan en az bir etiketi seçin.', sourceMismatch: 'Seçilen etiketler aynı kaynak yer ve zilyette olmalıdır.',
+  stale: 'Seçilen etiketin kaynak bilgisi veya sürümü değişti. Adayları yenileyip etiketleri yeniden seçin.',
+  selected: 'Seçilen etiketler', planId: 'Transfer planı kimliği', plannedAt: 'Plan zamanı (yerel saat)', submit: 'Transfer planını oluştur',
+  invalid: 'Etiketleri, farklı hedef yer veya zilyedi ve geçerli plan zamanını seçin.',
+  pending: 'Transfer planı gönderiliyor…', saved: 'Transfer planı oluşturuldu.', replayed: 'Önceki transfer planı doğrulandı.',
+  unknown: 'Plan gönderiminin sonucu kesinleşmedi. Yeni plan açmadan aynı isteği aynı anahtarla tekrar gönderin.',
+  retry: 'Aynı plan isteğini tekrar gönder', refused: 'Plan isteği kabul edilmedi. Aday bilgilerini kontrol edin.',
+  companyCustodian: 'Şirket zilyetliği', partyCustodian: 'Cari zilyetliği', complete: 'Belgeler tamam', documentsPending: 'Belge bekliyor',
+} as const

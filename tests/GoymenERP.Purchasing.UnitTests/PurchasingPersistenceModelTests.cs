@@ -144,10 +144,18 @@ public sealed class PurchasingPersistenceModelTests
     public void The_request_and_order_screens_and_their_controls_are_published()
     {
         var declarations = new PurchasingShellCapabilityProvider().GetDeclarations();
-        Assert.Equal("1.13", PurchasingShellCapabilityProvider.OwnerContractVersion);
-        Assert.Equal(28, declarations.Count);
+        Assert.Equal("1.14", PurchasingShellCapabilityProvider.OwnerContractVersion);
+        Assert.Equal(29, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(!declaration.CapabilityId.StartsWith("purchasing.invoices.", StringComparison.Ordinal), declaration.ImplementationAvailable));
         var byId = declarations.ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
+        var import = byId[PurchasingShellCapabilityProvider.InvoiceImportCapabilityId];
+        var invoiceList = byId[PurchasingShellCapabilityProvider.InvoiceListCapabilityId];
+        Assert.Equal(invoiceList.CapabilityId, import.ParentCapabilityId);
+        Assert.Equal(invoiceList.RoutePath, import.RoutePath);
+        Assert.Equal(invoiceList.RouteId, import.RouteId);
+        Assert.All(invoiceList.RequiredPermissions, permission => Assert.Contains(permission, import.RequiredPermissions));
+        Assert.Contains(PurchaseIncomingInvoicePermissionNamesV1.Import, import.RequiredPermissions);
+        Assert.False(import.ImplementationAvailable); // The full source-to-invoice workflow remains staged.
         Assert.Equal(PurchasingShellCapabilityProvider.RequestListRoutePath,
             byId[PurchasingShellCapabilityProvider.RequestListCapabilityId].RoutePath);
         Assert.Equal([PurchasingPermissionManifestV1.OrdersRead],

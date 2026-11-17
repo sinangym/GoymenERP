@@ -10,6 +10,17 @@ public sealed class PurchaseInvoiceImport(ICompanyContext company, ICurrentUser 
     ICorrelationContext correlation, IPurchaseInvoiceImportReservationStoreV1 reservations,
     IPurchaseInvoiceImportDocumentReadV1 documents, IPurchaseInvoiceFileReaderV1 reader) : IPurchaseInvoiceImportV1
 {
+    public async Task<PurchaseInvoiceImportReservationPageV1> ListAsync(int pageIndex, CancellationToken token = default)
+    {
+        var scope = await RequireAsync(token);
+        if (pageIndex < 0 || pageIndex > int.MaxValue / 25) throw Invalid();
+        var page = await GuardAsync(scope, () => reservations.ListAsync(pageIndex, token), token);
+        if (page is null || page.CompanyId != scope.Company || page.PageIndex != pageIndex || page.Items is null
+            || page.Items.Count > 25 || page.Items.Select(x => x.Id).Distinct().Count() != page.Items.Count) throw Unavailable();
+        foreach (var item in page.Items) Validate(item, scope.Company, item.Id);
+        return page;
+    }
+
     public async Task<PurchaseInvoiceImportReservationResultV1> ReserveAsync(PurchasingCommandMetadata metadata, CancellationToken token = default)
     {
         var scope = await RequireAsync(token);

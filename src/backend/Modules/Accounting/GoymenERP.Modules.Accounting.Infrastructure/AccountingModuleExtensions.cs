@@ -99,6 +99,11 @@ public static class AccountingModuleExtensions
             UnavailableAccountingSourceDocumentAdmissionAuthorityV1>();
         services.AddScoped<IAccountingSourceDocumentAdmissionStoreV1, AccountingSourceDocumentAdmissionStoreV1>();
         services.AddScoped<IAccountingSourceDocumentAdmissionPortV1, AccountingSourceDocumentAdmissionServiceV1>();
+        services.AddScoped<IAccountingSourceVoucherStoreV1, AccountingSourceVoucherStoreV1>();
+        services.AddScoped<AccountingSourceVoucherServiceV1>();
+        services.TryAddScoped<IAccountingSourceInvoiceCancellationAuthorityV1, UnavailableAccountingSourceInvoiceCancellationAuthorityV1>();
+        services.AddScoped<IAccountingSourceInvoiceCancellationStoreV1, AccountingSourceInvoiceCancellationStoreV1>();
+        services.AddScoped<IAccountingSourceInvoiceCancellationPortV1, AccountingSourceInvoiceCancellationServiceV1>();
         services.AddScoped<AccountingApiService>();
         services.AddScoped<IManufacturingCostDifferenceStoreV1, ManufacturingCostDifferenceStoreV1>();
         services.AddScoped<ManufacturingCostDifferenceServiceV1>();

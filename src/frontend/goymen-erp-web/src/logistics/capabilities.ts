@@ -14,6 +14,7 @@
  */
 
 export const LOGISTICS_CAPABILITY = {
+  transferDepartures: 'logistics.transfer-departures.record',
   /** L-02 Yükleme Talimatları — the company's instructions, newest first. */
   instructionsList: 'logistics.instructions.list',
   /** L-03 Yeni Yükleme Talimatı — a Draft with lines on APPROVED sales lines. A SEPARATE grant from reading. */
@@ -35,6 +36,7 @@ export const LOGISTICS_CAPABILITY = {
 export type LogisticsCapabilityId = (typeof LOGISTICS_CAPABILITY)[keyof typeof LOGISTICS_CAPABILITY]
 
 export const LOGISTICS_ROUTE = {
+  transferDepartures: '/lojistik/transfer-cikislari',
   list: '/lojistik/yukleme-talimatlari',
   // Static before the parameter route: `yeni` must never be read as an instruction id.
   create: '/lojistik/yukleme-talimatlari/yeni',
@@ -45,6 +47,7 @@ export const LOGISTICS_ROUTE = {
 
 /** Master v3 §27.8 screen ids, one per route, as the backend provider declares them. */
 export const LOGISTICS_SCREEN_ID = {
+  [LOGISTICS_CAPABILITY.transferDepartures]: 'STK-S8-DEPARTURE',
   [LOGISTICS_CAPABILITY.instructionsList]: 'L-02',
   [LOGISTICS_CAPABILITY.instructionsCreate]: 'L-03',
   [LOGISTICS_CAPABILITY.instructionsDetail]: 'L-02-DETAIL',
@@ -53,6 +56,7 @@ export const LOGISTICS_SCREEN_ID = {
 } as const
 
 export const LOGISTICS_NAV_LABEL = {
+  [LOGISTICS_CAPABILITY.transferDepartures]: 'Transfer çıkışları',
   [LOGISTICS_CAPABILITY.instructionsList]: 'Yükleme Talimatları',
   // No nav entry: one entry point per creation route (coordinator, 19 September 2026) — the L-02 list carries
   // its own primary link to L-03, as Finance and Accounting do; a second sidebar link with the same accessible

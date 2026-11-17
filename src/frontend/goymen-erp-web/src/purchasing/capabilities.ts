@@ -8,6 +8,7 @@ export const PURCHASING_CAPABILITY = {
   serviceOrderAccept: 'purchasing.service-orders.accept',
   serviceOrderRevisePrices: 'purchasing.service-orders.prices-revise',
   invoiceList: 'purchasing.invoices.list',
+  invoiceImport: 'purchasing.invoices.import',
   invoiceDetail: 'purchasing.invoices.detail',
   invoiceMatch: 'purchasing.invoices.match',
   invoiceApproveVariance: 'purchasing.invoices.approve-variance',

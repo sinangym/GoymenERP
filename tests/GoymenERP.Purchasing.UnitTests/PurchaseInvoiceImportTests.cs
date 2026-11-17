@@ -14,6 +14,20 @@ public sealed class PurchaseInvoiceImportTests
     private static readonly Guid CompanyId = Guid.Parse("798ef301-8409-4468-9284-22f36435fc0c");
 
     [Fact]
+    public async Task Reservation_list_reads_current_company_and_rechecks_authority_after_owner_read()
+    {
+        var world = new World();
+        var page = await world.Service.ListAsync(0);
+        Assert.Equal(CompanyId, page.CompanyId); Assert.Equal(world.Store.Id, Assert.Single(page.Items).Id);
+        Assert.False(world.Store.Saved); Assert.Equal(0, world.Documents.Calls);
+        var revoked = new World(); revoked.Store.BeforeFence = () => revoked.Authority.Denied = true;
+        var error = await Assert.ThrowsAsync<PurchasingServiceException>(() => revoked.Service.ListAsync(0));
+        Assert.Equal(403, error.Status);
+        var invalid = await Assert.ThrowsAsync<PurchasingServiceException>(() => new World().Service.ListAsync(-1));
+        Assert.Equal(400, invalid.Status);
+    }
+
+    [Fact]
     public async Task Reservation_uses_current_import_authority_and_precommit_fence_without_reading_a_document()
     {
         var world = new World();
@@ -116,6 +130,8 @@ public sealed class PurchaseInvoiceImportTests
         public Guid Id { get; } = Guid.NewGuid(); public int Reads { get; private set; } public bool Saved { get; private set; }
         public PurchasingWriteEnvelope? Envelope { get; private set; } public Action? BeforeFence { get; set; }
         private PurchaseInvoiceImportReservationV1 Reservation => new(Id, CompanyId, "1", "synthetic-actor", DateTimeOffset.UtcNow);
+        public Task<PurchaseInvoiceImportReservationPageV1> ListAsync(int pageIndex, CancellationToken token = default)
+        { Reads++; BeforeFence?.Invoke(); return Task.FromResult(new PurchaseInvoiceImportReservationPageV1(CompanyId, pageIndex, false, [Reservation])); }
         public Task<PurchaseInvoiceImportReservationV1?> FindAsync(Guid id, CancellationToken token = default)
         { Reads++; return Task.FromResult<PurchaseInvoiceImportReservationV1?>(id == Id ? Reservation : null); }
         public async Task<PurchaseInvoiceImportReservationResultV1> ReserveAsync(PurchasingWriteEnvelope envelope, Func<CancellationToken, Task> fence, CancellationToken token = default)

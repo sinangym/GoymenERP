@@ -60,6 +60,7 @@ public static class OrganizationModuleExtensions
         // The module read for other modules' commands: company-scoped, no user permission gate.
         services.AddScoped<IOrganizationLocationStatusReaderV1, OrganizationLocationStatusReader>();
         services.AddScoped<IOrganizationLocationCandidatesV1, OrganizationLocationCandidateReader>();
+        services.AddScoped<IOrganizationTransferDestinationCandidatesV1, OrganizationTransferDestinationCandidateReader>();
         services.AddScoped<IOrganizationLocationDisplayReaderV1, OrganizationLocationDisplayReader>();
         // KIM-D35: the company's "VKN girilmemiş" mark for modules that issue a VKN-bearing official document.
         services.AddScoped<IOrganizationCompanyTaxIdStatusReaderV1, OrganizationCompanyTaxIdStatusReader>();

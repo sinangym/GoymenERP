@@ -13,6 +13,38 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed class OrganizationLocationCandidateSqlServerRelationalAcceptanceTests
 {
     [SqlServerFact]
+    public async Task Transfer_destinations_keep_the_real_external_operator_and_location_version_without_a_report_grant()
+    {
+        await WithDatabaseAsync(async factory =>
+        {
+            var operatorId = Guid.NewGuid(); var externalId = Guid.NewGuid();
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(TestCompanyIds.CompanyA);
+                var database = scope.ServiceProvider.GetRequiredService<OrganizationDbContext>();
+                var site = await database.Sites.FirstAsync();
+                var external = new GoymenERP.Modules.Organization.Domain.Locations.Location(externalId, TestCompanyIds.CompanyA,
+                    site.Id, "SYN-TRANSFER-EXT", "SENTETIK harici hedef", true);
+                external.AssignOperator(operatorId); database.Locations.Add(external); await database.SaveChangesAsync();
+            }
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(TestCompanyIds.CompanyA);
+                var owner = scope.ServiceProvider.GetRequiredService<IOrganizationTransferDestinationCandidatesV1>();
+                var item = Assert.Single((await owner.SearchAsync(TestCompanyIds.CompanyA, new("SYN-TRANSFER-EXT", 1))).Items);
+                Assert.Equal((externalId, true, operatorId), (item.LocationId, item.IsExternal, item.OperatorPartyId));
+                Assert.True(item.LocationVersion >= 1);
+                await Assert.ThrowsAsync<OrganizationCompanyContextMismatchException>(() => owner.SearchAsync(TestCompanyIds.CompanyB, new(null, 1)));
+            }
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(TestCompanyIds.CompanyB);
+                Assert.Empty((await scope.ServiceProvider.GetRequiredService<IOrganizationTransferDestinationCandidatesV1>()
+                    .SearchAsync(TestCompanyIds.CompanyB, new("SYN-TRANSFER-EXT", 1))).Items);
+            }
+        });
+    }
+    [SqlServerFact]
     public async Task Active_internal_locations_are_bounded_joined_to_their_site_and_company_isolated()
     {
         await WithDatabaseAsync(async factory =>

@@ -14,7 +14,7 @@ namespace GoymenERP.Modules.Documents.Infrastructure.Persistence;
 /// OPEN-018/021). Hashes and link kinds are compared under a binary collation. The audit sidecar is Audit's table,
 /// written in the same save and filtered the same way.
 /// </summary>
-public sealed class DocumentsDbContext(DbContextOptions<DocumentsDbContext> options, ICompanyContext companyContext)
+public sealed partial class DocumentsDbContext(DbContextOptions<DocumentsDbContext> options, ICompanyContext companyContext)
     : DbContext(options)
 {
     public const string Schema = "documents";
@@ -64,6 +64,7 @@ public sealed class DocumentsDbContext(DbContextOptions<DocumentsDbContext> opti
         ConfigureVersions(modelBuilder);
         ConfigureLinks(modelBuilder);
         ConfigureAttempts(modelBuilder);
+        ConfigureBranding(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);

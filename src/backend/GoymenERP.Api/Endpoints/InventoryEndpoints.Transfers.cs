@@ -765,6 +765,9 @@ public static partial class InventoryEndpoints
                 InventoryTransferCodesV1.SourcePositionConflict,
                 InventoryTransferReceiptCodesV1.MultiBlockFullReceiptOnly,
                 InventoryTransferReceiptCodesV1.LossPending,
+                InventoryTransferReceiptDocumentV1.NotEffective,
+                InventoryTransferReceiptDocumentV1.VersionConflict,
+                InventoryTransferReceiptDocumentV1.BindingConflict,
             },
             new HashSet<string>(StringComparer.Ordinal)
             {

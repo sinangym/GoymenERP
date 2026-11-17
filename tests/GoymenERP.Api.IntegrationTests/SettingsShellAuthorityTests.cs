@@ -32,6 +32,29 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed class SettingsShellAuthorityTests
 {
     [Fact]
+    public void Subcontract_tax_screens_keep_existing_sales_and_purchasing_approval_authorities_separate()
+    {
+        var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
+        foreach (var item in new[]
+        {
+            (SettingsShellCapabilityProvider.SalesSubcontractTaxCapabilityId, SettingsShellCapabilityProvider.SalesSubcontractTaxRoutePath,
+                ErpPermissions.SalesOrdersApprove, ErpPermissions.PurchasingOrdersApprove),
+            (SettingsShellCapabilityProvider.PurchasingSubcontractTaxCapabilityId, SettingsShellCapabilityProvider.PurchasingSubcontractTaxRoutePath,
+                ErpPermissions.PurchasingOrdersApprove, ErpPermissions.SalesOrdersApprove),
+        })
+        {
+            var screen = Assert.Single(declarations, candidate => candidate.CapabilityId == item.Item1);
+            Assert.Equal(item.Item2, screen.RoutePath);
+            Assert.Equal([item.Item3], screen.RequiredPermissions);
+            Assert.DoesNotContain(item.Item4, screen.RequiredPermissions);
+            Assert.DoesNotContain(screen.CapabilityId, screen.RequiredPermissions);
+            Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, screen.ContextRequirement);
+            Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, screen.ScopeRequirement);
+            Assert.False(screen.ImplementationAvailable);
+        }
+    }
+
+    [Fact]
     public void Normal_host_revision_matches_the_exact_integrated_provider_tuple_with_settings()
     {
         IShellCapabilityProvider[] providers =
@@ -77,8 +100,8 @@ public sealed class SettingsShellAuthorityTests
     public void The_tax_master_screen_stands_on_the_one_tax_master_name_company_wide_in_one_company()
     {
         var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
-        Assert.Equal(24, declarations.Count);
-        Assert.Equal("1.11", new SettingsShellCapabilityProvider().ContractVersion);
+        Assert.Equal(31, declarations.Count);
+        Assert.Equal("1.15", new SettingsShellCapabilityProvider().ContractVersion);
         var declaration = Assert.Single(declarations,
             candidate => candidate.CapabilityId == SettingsShellCapabilityProvider.TaxMasterCapabilityId);
 
@@ -132,6 +155,8 @@ public sealed class SettingsShellAuthorityTests
         var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
         (string Id, string Path, string ScreenId, string Permission)[] screens =
         [
+            ("settings.purchase-invoice-variance-policies.manage", "/ayarlar/alis-fatura-fark-toleransi", "AY-AFF-01",
+                SettingsPurchaseInvoiceVariancePolicyPermissionsV1.Manage),
             ("settings.sales-delivery-tolerances.manage", "/ayarlar/teslim-toleransi", "AY-TSL-01",
                 SettingsSalesPolicyPermissionManifestV1.DeliveryToleranceManage),
             ("settings.sales-approval-thresholds.manage", "/ayarlar/onay-esikleri", "AY-ONY-01",

@@ -14,6 +14,56 @@ public sealed class AccountingPurchaseInvoiceFinalizedInboxConsumerV1Tests
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     [Fact]
+    public void Expense_identity_uses_only_the_explicit_expense_mapping_and_preserves_frozen_source_amounts()
+    {
+        var source = Payload();
+        var expense = source.Lines![0]! with { ItemType = "Expense", LinePurpose = "expense", ExpenseTypeId = Guid.NewGuid() };
+        var read = AccountingPurchaseInvoiceFinalizedInboxConsumer.Read(Event(source with { Lines = [expense] }), Context());
+        var line = Assert.Single(read.Lines);
+        Assert.Equal(("Expense", "expense", "100"), (line.ItemType, line.LinePurpose, line.Net));
+        foreach (var invalid in new[] { expense with { ItemType = "Goods" }, expense with { LinePurpose = "resale" },
+            expense with { ExpenseTypeId = Guid.Empty }, expense with { ServiceTypeId = Guid.NewGuid() } })
+            Assert.Throws<OutboxPermanentFailureException>(() => AccountingPurchaseInvoiceFinalizedInboxConsumer.Read(
+                Event(source with { Lines = [invalid] }), Context()));
+    }
+
+    [Fact]
+    public void Purchase_service_type_metadata_keeps_the_service_purpose_and_frozen_amounts()
+    {
+        var payload = Payload();
+        var serviceTypeId = Guid.Parse("b0430000-0000-4000-8000-000000000009");
+        payload = payload with { Lines = [payload.Lines![0]! with
+            { ItemType = "Service", LinePurpose = "service", ServiceTypeId = serviceTypeId }] };
+        var sourceEvent = Event(payload);
+        Assert.Contains(serviceTypeId.ToString("D"), sourceEvent.PayloadJson, StringComparison.Ordinal);
+        var line = Assert.Single(AccountingPurchaseInvoiceFinalizedInboxConsumer.Read(sourceEvent, Context()).Lines);
+        Assert.Equal(("Service", "service", "100", "20", "10"),
+            (line.ItemType, line.LinePurpose, line.Net, line.Vat, line.Withholding));
+    }
+
+    [Fact]
+    public void Purchase_legacy_goods_event_omits_service_type_metadata_and_keeps_its_existing_mapping()
+    {
+        var sourceEvent = Event(Payload());
+        Assert.DoesNotContain("serviceTypeId", sourceEvent.PayloadJson, StringComparison.Ordinal);
+        Assert.Equal("production-input", Assert.Single(AccountingPurchaseInvoiceFinalizedInboxConsumer.Read(sourceEvent, Context()).Lines).LinePurpose);
+    }
+
+    [Fact]
+    public void Purchase_service_identity_cannot_claim_a_goods_mapping_or_an_empty_identity()
+    {
+        var payload = Payload();
+        foreach (var invalid in new[]
+        {
+            payload.Lines![0]! with { ServiceTypeId = Guid.NewGuid() },
+            payload.Lines![0]! with { ItemType = "Service", LinePurpose = "production-input", ServiceTypeId = Guid.NewGuid() },
+            payload.Lines![0]! with { ItemType = "Service", LinePurpose = "service", ServiceTypeId = Guid.Empty },
+        })
+            Assert.Throws<OutboxPermanentFailureException>(() => AccountingPurchaseInvoiceFinalizedInboxConsumer.Read(
+                Event(payload with { Lines = [invalid] }), Context()));
+    }
+
+    [Fact]
     public void Purchase_source_preserves_official_date_actor_purpose_and_frozen_foreign_amounts()
     {
         var payload = Payload() with

@@ -9,6 +9,34 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
 {
     [SqlServerFact]
+    public async Task Invoice_import_reservations_can_be_reopened_across_pages_without_disclosing_another_company()
+    {
+        await using var run = await Run.StartAsync();
+        var ids = new HashSet<Guid>();
+        await using (var scope = run.Store(CompanyA))
+        {
+            var store = (IPurchaseInvoiceImportReservationStoreV1)scope.Store;
+            for (var index = 0; index < 26; index++)
+            {
+                var answer = await store.ReserveAsync(run.Envelope($"invoice-list-{index}") with
+                    { PermissionCode = PurchaseIncomingInvoicePermissionNamesV1.Import }, _ => Task.CompletedTask);
+                ids.Add(answer.Reservation.Id);
+            }
+            var first = await store.ListAsync(0); var second = await store.ListAsync(1);
+            Assert.True(first.HasNext); Assert.False(second.HasNext);
+            Assert.Equal(25, first.Items.Count); Assert.Single(second.Items);
+            Assert.True(ids.SetEquals(first.Items.Concat(second.Items).Select(x => x.Id)));
+            Assert.All(first.Items.Concat(second.Items), row => Assert.Equal(CompanyA, row.CompanyId));
+        }
+        await using (var scope = run.Store(CompanyB))
+        {
+            var page = await ((IPurchaseInvoiceImportReservationStoreV1)scope.Store).ListAsync(0);
+            Assert.Equal(CompanyB, page.CompanyId); Assert.Empty(page.Items); Assert.False(page.HasNext);
+        }
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.IncomingInvoices"));
+    }
+
+    [SqlServerFact]
     public async Task Invoice_import_reservation_replays_in_company_and_down_refuses_while_its_document_owner_identity_exists()
     {
         await using var run = await Run.StartAsync();

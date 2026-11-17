@@ -253,7 +253,7 @@ internal sealed class InventoryStockPositionService(
             scope,
             cancellationToken);
 
-    private static InventoryStockPositionV1 View(InventoryStockPositionRecord record, Guid companyId)
+    internal static InventoryStockPositionV1 View(InventoryStockPositionRecord record, Guid companyId)
     {
         var label = record.Label;
         if (record.Version <= 0 || label.CompanyId != companyId || record.Lot.CompanyId != companyId

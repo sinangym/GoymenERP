@@ -211,6 +211,151 @@ public sealed partial class ProductPriceListSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PaintMembershipAttempts"));
     }
 
+    [SqlServerFact]
+    public async Task Paint_candidates_require_the_real_initial_source_then_allow_remove_and_readd_without_another_workbook()
+    {
+        await using var run = await Run.StartAsync();
+        var code = await run.ScalarAsync<string>("SELECT Code FROM product.Products WHERE Id=@id", ProductId);
+        await using (var scope = run.Request())
+        {
+            var service = PaintService(scope, run.CreatorActorId); // synthetic authority, real Product and company membership rows
+            var noSource = await service.SearchCandidatesAsync(new(code));
+            Assert.Equal(ProductPaintMembershipCatalogOutcomeV1.NoSource, noSource.Outcome);
+            Assert.Empty(noSource.Items);
+            Assert.Equal("0", noSource.Version);
+            var preview = await service.ValidateImportAsync(PaintFile(code));
+            await service.ApplyImportAsync(PaintApply(preview, code), PaintMetadata(run, "candidate-initial-source"));
+            var original = await service.SearchCandidatesAsync(new(code));
+            var member = Assert.Single(original.Items);
+            Assert.Equal(ProductId, member.ProductId);
+            Assert.True(member.AlreadyMember);
+            Assert.Equal("1", member.MembershipVersion);
+            await service.SetAsync(ProductId, new(original.Version, member.ProductVersion, member.MembershipVersion, false, "SENTETIK çıkarma"), PaintMetadata(run, "candidate-remove"));
+            var removed = await service.SearchCandidatesAsync(new(code));
+            var candidate = Assert.Single(removed.Items);
+            Assert.Equal("2", removed.Version);
+            Assert.False(candidate.AlreadyMember);
+            Assert.Equal("0", candidate.MembershipVersion);
+            var request = new SetProductPaintMembershipV1(removed.Version, candidate.ProductVersion, candidate.MembershipVersion, true, "SENTETIK ERP ekleme");
+            var restored = await service.SetAsync(candidate.ProductId, request, PaintMetadata(run, "candidate-readd"));
+            Assert.Equal("3", restored.Version);
+            Assert.Equal(ProductId, Assert.Single(restored.ChangedEntries).ProductId);
+            var replay = await service.SetAsync(candidate.ProductId, request, PaintMetadata(run, "candidate-readd"));
+            Assert.True(replay.IsReplay);
+            Assert.Equal(restored.Version, replay.Version);
+        }
+        await using (var foreign = run.Request(TestCompanyIds.CompanyB))
+        {
+            var result = await PaintService(foreign, run.CreatorActorId).SearchCandidatesAsync(new(code));
+            Assert.Equal(TestCompanyIds.CompanyB, result.CompanyId);
+            Assert.Equal(ProductPaintMembershipCatalogOutcomeV1.NoSource, result.Outcome);
+            Assert.Empty(result.Items); // A's current membership is not a B source
+        }
+        Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PaintMembershipVersions"));
+        Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType=N'Product.PaintMemberships' AND Outcome=N'Succeeded'"));
+    }
+
+    [SqlServerFact]
+    public async Task Paint_candidates_use_actual_active_cards_and_a_bounded_literal_code_or_name_search()
+    {
+        await using var run = await Run.StartAsync();
+        var originalCode = await run.ScalarAsync<string>("SELECT Code FROM product.Products WHERE Id=@id", ProductId);
+        foreach (var item in new[] { (Code: "CAND-SENTETIK-001", State: 1), (Code: "CAND-SENTETIK-002", State: 1), (Code: "CAND-SENTETIK-003", State: 2), (Code: "CAND-SENTETIK-004", State: 0) })
+        {
+            // A real fixture Product row, with no fabricated eligibility or inferred paint classification.
+            await run.ExecuteAsync("INSERT INTO product.Products (Id,ClassId,Code,CreatedAtUtc,FamilyId,GroupId,Lifecycle,Name,ProductionInputProvenance,ProductionInputValue,ProductionOutputProvenance,ProductionOutputValue,PurchasableProvenance,PurchasableValue,ReferencesJson,SellableProvenance,SellableValue,UpdatedAtUtc,Version) "
+                + "SELECT @id,ClassId,'" + item.Code + "',CreatedAtUtc,FamilyId,GroupId," + item.State + ",N'SENTETIK aday',ProductionInputProvenance,ProductionInputValue,ProductionOutputProvenance,ProductionOutputValue,PurchasableProvenance,PurchasableValue,ReferencesJson,SellableProvenance,SellableValue,UpdatedAtUtc,Version FROM product.Products WHERE Id='"
+                + ProductId.ToString("D") + "'", Guid.NewGuid());
+        }
+        await using var scope = run.Request();
+        var service = PaintService(scope, run.CreatorActorId);
+        await service.ApplyImportAsync(PaintApply(await service.ValidateImportAsync(PaintFile(originalCode)), originalCode), PaintMetadata(run, "candidate-window-source"));
+        var result = await service.SearchCandidatesAsync(new("CAND-SENTETIK", 1));
+        Assert.True(result.SearchWindowFull);
+        Assert.Equal("CAND-SENTETIK-001", Assert.Single(result.Items).ProductCode);
+        Assert.False(result.Items[0].AlreadyMember);
+        var complete = await service.SearchCandidatesAsync(new("CAND-SENTETIK", 50));
+        Assert.False(complete.SearchWindowFull);
+        Assert.Equal(new[] { "CAND-SENTETIK-001", "CAND-SENTETIK-002" }, complete.Items.Select(x => x.ProductCode));
+        Assert.Empty((await service.SearchCandidatesAsync(new("%"))).Items); // Contains treats wildcard text literally
+        var empty = await service.SearchCandidatesAsync(new("SENTETIK-no-match"));
+        Assert.Equal(ProductPaintMembershipCatalogOutcomeV1.Available, empty.Outcome);
+        Assert.Equal("1", empty.Version);
+        Assert.Empty(empty.Items);
+    }
+
+    [SqlServerFact]
+    public async Task Paint_candidate_product_change_or_late_permission_loss_cannot_release_a_stale_result()
+    {
+        await using var run = await Run.StartAsync();
+        var code = await run.ScalarAsync<string>("SELECT Code FROM product.Products WHERE Id=@id", ProductId);
+        await using (var scope = run.Request())
+        {
+            var service = PaintService(scope, run.CreatorActorId);
+            await service.ApplyImportAsync(PaintApply(await service.ValidateImportAsync(PaintFile(code)), code), PaintMetadata(run, "candidate-fresh-source"));
+        }
+        var authority = new PaintCandidateAuthority(async call =>
+        {
+            if (call == 6) await run.ExecuteAsync("UPDATE product.Products SET Version=Version+1 WHERE Id=@id", ProductId);
+            return GrantedScope();
+        });
+        await using (var scope = run.Request())
+        {
+            var conflict = await Assert.ThrowsAsync<ProductPaintMembershipException>(() => PaintService(scope, run.CreatorActorId, authority).SearchCandidatesAsync(new(code)));
+            Assert.Equal((409, ProductPaintMembershipCodesV1.VersionConflict), (conflict.StatusCode, conflict.Code));
+        }
+        await using (var scope = run.Request())
+        {
+            var revoked = new PaintCandidateAuthority(call => Task.FromResult(call < 5 ? GrantedScope() : PermissionScope.Denied));
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => PaintService(scope, run.CreatorActorId, revoked).SearchCandidatesAsync(new(code)));
+        }
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PaintMembershipVersions"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PaintMembershipAttempts"));
+    }
+    [SqlServerFact]
+    public async Task Paint_manual_candidate_add_preserves_the_existing_five_thousand_membership_bound()
+    {
+        await using var run = await Run.StartAsync();
+        var code = await run.ScalarAsync<string>("SELECT Code FROM product.Products WHERE Id=@id", ProductId);
+        await using (var scope = run.Request())
+        {
+            var service = PaintService(scope, run.CreatorActorId);
+            await service.ApplyImportAsync(PaintApply(await service.ValidateImportAsync(PaintFile(code)), code), PaintMetadata(run, "candidate-limit-source"));
+        }
+        // Fixture-only actual Product and membership rows fill the already-existing technical bound.
+        await run.ExecuteAsync("DECLARE @rows TABLE (Id uniqueidentifier NOT NULL, Number int NOT NULL); "
+            + "INSERT @rows SELECT TOP (4999) NEWID(),CONVERT(int,ROW_NUMBER() OVER (ORDER BY a.object_id,b.object_id)) FROM sys.all_objects a CROSS JOIN sys.all_objects b; "
+            + "INSERT INTO product.Products (Id,ClassId,Code,CreatedAtUtc,FamilyId,GroupId,Lifecycle,Name,ProductionInputProvenance,ProductionInputValue,ProductionOutputProvenance,ProductionOutputValue,PurchasableProvenance,PurchasableValue,ReferencesJson,SellableProvenance,SellableValue,UpdatedAtUtc,Version) "
+            + "SELECT r.Id,p.ClassId,'PAINT-LIMIT-'+CONVERT(varchar(10),r.Number),p.CreatedAtUtc,p.FamilyId,p.GroupId,p.Lifecycle,p.Name,p.ProductionInputProvenance,p.ProductionInputValue,p.ProductionOutputProvenance,p.ProductionOutputValue,p.PurchasableProvenance,p.PurchasableValue,p.ReferencesJson,p.SellableProvenance,p.SellableValue,p.UpdatedAtUtc,p.Version FROM @rows r CROSS JOIN product.Products p WHERE p.Id=@id; "
+            + "INSERT product.PaintMembershipLines (CompanyId,Version,ProductId,MembershipVersion,RecordedProductVersion) SELECT '" + TestCompanyIds.CompanyA.ToString("D")
+            + "',1,r.Id,1,p.Version FROM @rows r JOIN product.Products p ON p.Id=r.Id;", ProductId);
+        var extra = Guid.NewGuid();
+        await run.ExecuteAsync("INSERT INTO product.Products (Id,ClassId,Code,CreatedAtUtc,FamilyId,GroupId,Lifecycle,Name,ProductionInputProvenance,ProductionInputValue,ProductionOutputProvenance,ProductionOutputValue,PurchasableProvenance,PurchasableValue,ReferencesJson,SellableProvenance,SellableValue,UpdatedAtUtc,Version) "
+            + "SELECT @id,ClassId,'PAINT-LIMIT-EXTRA',CreatedAtUtc,FamilyId,GroupId,Lifecycle,Name,ProductionInputProvenance,ProductionInputValue,ProductionOutputProvenance,ProductionOutputValue,PurchasableProvenance,PurchasableValue,ReferencesJson,SellableProvenance,SellableValue,UpdatedAtUtc,Version FROM product.Products WHERE Id='" + ProductId.ToString("D") + "'", extra);
+        await using (var scope = run.Request())
+        {
+            var service = PaintService(scope, run.CreatorActorId);
+            var result = await service.SearchCandidatesAsync(new("PAINT-LIMIT-EXTRA"));
+            var candidate = Assert.Single(result.Items);
+            var refusal = await Assert.ThrowsAsync<ProductPaintMembershipException>(() => service.SetAsync(candidate.ProductId,
+                new(result.Version, candidate.ProductVersion, candidate.MembershipVersion, true, "SENTETIK sınır"), PaintMetadata(run, "candidate-limit-refusal")));
+            Assert.Equal((422, ProductPaintMembershipCodesV1.InvalidFile), (refusal.StatusCode, refusal.Code));
+        }
+        Assert.Equal(ProductPaintMembershipLimitsV1.MaximumRows, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PaintMembershipLines WHERE Version=1"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PaintMembershipVersions"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType=N'Product.PaintMemberships' AND Outcome=N'Succeeded'"));
+    }
+    private sealed class PaintCandidateAuthority(Func<int, Task<PermissionScope>> answer) : IErpAuthorityRevalidationService
+    {
+        private int calls;
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid company, CancellationToken ct = default)
+        {
+            Assert.Equal(ProductPaintMembershipPermissionsV1.Manage, permission);
+            ct.ThrowIfCancellationRequested();
+            return answer(++calls);
+        }
+    }
+
     private static ProductPaintMembershipService PaintService(RequestScope scope, Guid actor,
         IErpAuthorityRevalidationService? authority = null, IAuditTransactionWriterV1? writer = null)
     {

@@ -87,6 +87,7 @@ public sealed partial class LogisticsDbContext(DbContextOptions<LogisticsDbConte
         ConfigureDispatchNotes(modelBuilder);
         ConfigureCustomerReturns(modelBuilder);
         ConfigureTransferOutgoingDocuments(modelBuilder);
+        ConfigureTransferDepartures(modelBuilder);
         ConfigureWeighingDifferences(modelBuilder);
         ConfigureShipmentRiskGate(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
@@ -709,6 +710,7 @@ public sealed partial class LogisticsDbContext(DbContextOptions<LogisticsDbConte
                 throw new InvalidOperationException("Sevkiyat kaydı yalnız aktif şirket bağlamında ve o şirket için yazılır.");
             }
 
+            GuardTransferDepartureChange(entry);
             if (entry.State == EntityState.Modified)
             {
                 string[] allowed = entry.Entity switch
@@ -740,6 +742,11 @@ public sealed partial class LogisticsDbContext(DbContextOptions<LogisticsDbConte
                         nameof(TransferOutgoingDocumentRow.EffectiveBy), nameof(TransferOutgoingDocumentRow.EffectiveAtUtc),
                         nameof(TransferOutgoingDocumentRow.CancelledBy), nameof(TransferOutgoingDocumentRow.CancelledAtUtc),
                         nameof(TransferOutgoingDocumentRow.CancellationReason),
+                    ],
+                    TransferDepartureStateRow =>
+                    [
+                        nameof(TransferDepartureStateRow.Version), nameof(TransferDepartureStateRow.ExitWeighingAtUtc),
+                        nameof(TransferDepartureStateRow.VehicleExitAtUtc), nameof(TransferDepartureStateRow.NoFurtherExitVersion),
                     ],
                     // STK-S24: only the approval moves; the evaluation, products, actors and attempts are append only.
                     WeighingDifferenceRecordRow =>

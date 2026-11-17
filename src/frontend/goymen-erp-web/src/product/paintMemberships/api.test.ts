@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchPaintCatalog, sendPaintCommand, validatePaintFile } from './api'
+import { fetchPaintCandidates, fetchPaintCatalog, sendPaintCommand, validatePaintFile } from './api'
 import { PAINT_SOURCE, type PaintCommand } from './contract'
 
 const COMPANY = '11111111-1111-1111-1111-111111111111'
@@ -13,6 +13,27 @@ function json(body: unknown, status = 200, headers: Record<string, string> = {})
 }
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 describe('paint membership company-bound transport', () => {
+  it('reads bounded candidate identity under the committed company without a global Product request or mutation key', async () => {
+    const fetch = vi.fn(async () => json({ companyId: COMPANY, outcome: 1, version: '2', q: '00012 & boya', limit: 25,
+      items: [], searchWindowFull: false, sourceVersion: PAINT_SOURCE }))
+    vi.stubGlobal('fetch', fetch)
+    const controller = new AbortController()
+    expect((await fetchPaintCandidates(COMPANY, '00012 & boya', controller.signal)).type).toBe('ok-single')
+    expect(fetch.mock.calls[0]).toMatchObject(['/api/v1/product-paint-memberships/candidates?limit=25&q=00012+%26+boya',
+      { method: 'GET', signal: controller.signal, headers: { 'X-Company-Id': COMPANY } }])
+    expect(new Headers((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].headers).has('Idempotency-Key')).toBe(false)
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+  it.each([{ companyId: OTHER }, { q: 'other' }, { limit: 50 }, { sourceVersion: 'other-source' }])('refuses a mismatched candidate response %j', async (change) => {
+    vi.stubGlobal('fetch', vi.fn(async () => json({ companyId: COMPANY, outcome: 1, version: '2', q: null, limit: 25,
+      items: [], searchWindowFull: false, sourceVersion: PAINT_SOURCE, ...change })))
+    expect(await fetchPaintCandidates(COMPANY, null)).toEqual({ type: 'malformed' })
+  })
+  it('propagates aborted candidate reads as stale rather than a network failure', async () => {
+    const controller = new AbortController()
+    vi.stubGlobal('fetch', vi.fn(async () => { controller.abort(); throw new DOMException('Synthetic abort', 'AbortError') }))
+    expect(await fetchPaintCandidates(COMPANY, null, controller.signal)).toEqual({ type: 'fence-stale' })
+  })
   it('reads only the current endpoint with the committed company header', async () => {
     const fetch = vi.fn(async () => json({ companyId: COMPANY, outcome: 2, version: '0', entries: [], sourceVersion: PAINT_SOURCE }))
     vi.stubGlobal('fetch', fetch)
