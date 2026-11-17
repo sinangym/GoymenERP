@@ -83,14 +83,28 @@ internal sealed class ManufacturingInventoryCostMovementReader(ICompanyContext c
     private static IssueCostCurrencyInput? Currency(InventoryIssueCostCurrencyV1 proof) => proof.Status switch
     {
         InventoryIssueCostCurrencyStatusV1.FunctionalCurrency when proof.OriginalCurrencyId is null || proof.OriginalCurrencyId == SettingsCurrencyIdentitiesV1.TurkishLira
-            => proof.ForeignUnitCostPerKg is null && proof.ExchangeRate is null ? IssueCostCurrencyInput.FunctionalCurrency : null,
+            => proof.ForeignUnitCostPerKg is null && proof.ExchangeRate is null && proof.ForeignUnitCostRatio is null ? IssueCostCurrencyInput.FunctionalCurrency : null,
         InventoryIssueCostCurrencyStatusV1.Converted when proof.OriginalCurrencyId is { } id && id != Guid.Empty
-            && id != SettingsCurrencyIdentitiesV1.TurkishLira && proof.ForeignUnitCostPerKg is > 0m && proof.ExchangeRate is > 0m
+            && id != SettingsCurrencyIdentitiesV1.TurkishLira && proof.ForeignUnitCostPerKg is > 0m && proof.ExchangeRate is > 0m && proof.ForeignUnitCostRatio is null
             => new(IssueCostCurrencyStatus.Converted, id, proof.ForeignUnitCostPerKg, proof.ExchangeRate),
+        InventoryIssueCostCurrencyStatusV1.Converted when proof.OriginalCurrencyId is { } id && id != Guid.Empty
+            && id != SettingsCurrencyIdentitiesV1.TurkishLira && proof.ForeignUnitCostPerKg is null && proof.ExchangeRate is > 0m
+            && Ratio(proof.ForeignUnitCostRatio) is { } ratio
+            => new(IssueCostCurrencyStatus.Converted, id, null, proof.ExchangeRate, ratio),
         InventoryIssueCostCurrencyStatusV1.RateMissing when proof.OriginalCurrencyId is { } id && id != Guid.Empty
-            && id != SettingsCurrencyIdentitiesV1.TurkishLira && proof.ExchangeRate is null && proof.ForeignUnitCostPerKg is null or > 0m
+            && id != SettingsCurrencyIdentitiesV1.TurkishLira && proof.ExchangeRate is null && proof.ForeignUnitCostPerKg is null or > 0m && proof.ForeignUnitCostRatio is null
             => new(IssueCostCurrencyStatus.RateMissing, id, proof.ForeignUnitCostPerKg, null),
+        InventoryIssueCostCurrencyStatusV1.RateMissing when proof.OriginalCurrencyId is { } id && id != Guid.Empty
+            && id != SettingsCurrencyIdentitiesV1.TurkishLira && proof.ExchangeRate is null && proof.ForeignUnitCostPerKg is null
+            && Ratio(proof.ForeignUnitCostRatio) is { } ratio
+            => new(IssueCostCurrencyStatus.RateMissing, id, null, null, ratio),
         InventoryIssueCostCurrencyStatusV1.Unreadable => new(IssueCostCurrencyStatus.Unreadable, proof.OriginalCurrencyId, proof.ForeignUnitCostPerKg, proof.ExchangeRate),
         _ => null,
     };
+    private static ProductionExactRatioV1? Ratio(InventoryExactCostRatioV1? value)
+    {
+        if (value is null) return null;
+        var ratio = new ProductionExactRatioV1(value.Numerator, value.Denominator);
+        return ratio.IsValid() ? ratio : null;
+    }
 }

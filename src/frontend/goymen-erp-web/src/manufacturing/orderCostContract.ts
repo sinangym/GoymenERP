@@ -37,12 +37,14 @@ export interface OrderCostLine {
 export interface OrderCostCurrencyLine {
   readonly issueMovementId: string
   readonly currencyId: string
-  readonly foreignUnitCostPerKg: string
+  readonly foreignUnitCostPerKg: string | null
   readonly exchangeRate: string
   readonly tlUnitCostPerKg: string
   readonly keptKilograms: string
   /** Display only (URT-D55 (2)). */
-  readonly foreignAmount: string
+  readonly foreignAmount: string | null
+  readonly foreignUnitCostRatio?: { readonly numerator: string; readonly denominator: string }
+  readonly foreignAmountRatio?: { readonly numerator: string; readonly denominator: string }
 }
 
 export interface OrderCostIssueReason {
@@ -227,7 +229,9 @@ function decodeLine(value: unknown): OrderCostLine | null {
 }
 
 function decodeCurrencyLine(value: unknown): OrderCostCurrencyLine | null {
-  if (!isObject(value) || !hasExactKeys(value, CURRENCY_LINE_KEYS)) return null
+  if (!isObject(value)) return null
+  const exact = Object.hasOwn(value, 'foreignUnitCostRatio') || Object.hasOwn(value, 'foreignAmountRatio')
+  if (!hasExactKeys(value, exact ? [...CURRENCY_LINE_KEYS, 'foreignUnitCostRatio', 'foreignAmountRatio'] : CURRENCY_LINE_KEYS)) return null
   const issueMovementId = nonNilGuid(value.issueMovementId)
   const currencyId = nonNilGuid(value.currencyId)
   const foreignUnitCostPerKg = amount(value.foreignUnitCostPerKg)
@@ -238,15 +242,28 @@ function decodeCurrencyLine(value: unknown): OrderCostCurrencyLine | null {
   if (
     issueMovementId === null ||
     currencyId === null ||
-    foreignUnitCostPerKg === null ||
+    (!exact && foreignUnitCostPerKg === null) ||
     exchangeRate === null ||
     tlUnitCostPerKg === null ||
     keptKilograms === null ||
-    foreignAmount === null
+    (!exact && foreignAmount === null)
   ) {
     return null
   }
+  if (exact) {
+    const foreignUnitCostRatio = ratio(value.foreignUnitCostRatio, false); const foreignAmountRatio = ratio(value.foreignAmountRatio, true)
+    if (value.foreignUnitCostPerKg !== null || value.foreignAmount !== null || foreignUnitCostRatio === null || foreignAmountRatio === null) return null
+    return { issueMovementId, currencyId, foreignUnitCostPerKg: null, exchangeRate, tlUnitCostPerKg, keptKilograms,
+      foreignAmount: null, foreignUnitCostRatio, foreignAmountRatio }
+  }
   return { issueMovementId, currencyId, foreignUnitCostPerKg, exchangeRate, tlUnitCostPerKg, keptKilograms, foreignAmount }
+}
+
+function ratio(value: unknown, allowZero: boolean): { readonly numerator: string; readonly denominator: string } | null {
+  if (!isObject(value) || !hasExactKeys(value, ['numerator', 'denominator']) || typeof value.numerator !== 'string'
+    || typeof value.denominator !== 'string' || value.numerator.length > 160 || value.denominator.length > 160
+    || !(allowZero ? /^(0|[1-9]\d*)$/ : /^[1-9]\d*$/).test(value.numerator) || !/^[1-9]\d*$/.test(value.denominator)) return null
+  return { numerator: value.numerator, denominator: value.denominator }
 }
 
 function decodeIssueReason(value: unknown): OrderCostIssueReason | null {

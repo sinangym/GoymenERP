@@ -53,11 +53,13 @@ public sealed record ManufacturingProductionCostLineV2(
 public sealed record ManufacturingProductionCostCurrencyLineV2(
     Guid IssueMovementId,
     Guid CurrencyId,
-    decimal ForeignUnitCostPerKg,
+    decimal? ForeignUnitCostPerKg,
     decimal ExchangeRate,
     decimal TlUnitCostPerKg,
     decimal KeptKilograms,
-    decimal ForeignAmount);
+    decimal? ForeignAmount,
+    ProductionExactRatioV1? ForeignUnitCostRatio = null,
+    ProductionExactRatioV1? ForeignAmountRatio = null);
 
 /// <summary>One issue that keeps the cost from being computed and its reason code (URT-D55 (2), URT-D58 (1)).</summary>
 public sealed record ManufacturingProductionCostIssueReasonV2(Guid IssueMovementId, string ReasonCode);
@@ -191,7 +193,7 @@ public sealed class ManufacturingProductionCostPort(IManufacturingScrapCostDistr
                 var currencyLines = cost.CurrencyLines
                     .Select(static line => new ManufacturingProductionCostCurrencyLineV2(line.IssueMovementId,
                         line.CurrencyId, line.ForeignUnitCostPerKg, line.ExchangeRate, line.TlUnitCostPerKg,
-                        line.KeptKilograms, line.ForeignAmount))
+                        line.KeptKilograms, line.ForeignAmount, line.ForeignUnitCostRatio, line.ForeignAmountRatio))
                     .ToArray();
                 return new ManufacturingProductionCostResultV2(
                     ManufacturingProductionCostResultV2.CurrentContractVersion, companyId, orderId,

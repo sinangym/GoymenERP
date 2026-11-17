@@ -11,6 +11,21 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>Typed owner bridge source tests. Actual movement stamps and generation persistence need real SQL facts.</summary>
 public sealed class ManufacturingInventoryCostMovementReaderTests
 {
+    [Theory]
+    [InlineData("1", "3", true)]
+    [InlineData("1", "0", false)]
+    [InlineData("2", "6", false)]
+    public async Task An_exact_original_foreign_unit_ratio_remains_a_ratio_and_never_replaces_the_actual_tl_stamp(string numerator, string denominator, bool valid)
+    {
+        var fixture = new Fixture(); var issue = fixture.Owner.Value.Issues[0];
+        fixture.Owner.Value = fixture.Owner.Value with { Issues = [issue with { Currency = new(InventoryIssueCostCurrencyStatusV1.Converted,
+            Guid.NewGuid(), null, 40m, "synthetic-exact-order:1", null, new(numerator, denominator)) }] };
+        var result = await fixture.Reader.ReadAsync(fixture.CompanyId, fixture.OrderId, CancellationToken.None);
+        if (!valid) { Assert.Null(result); return; }
+        var read = Assert.Single(result!.Issues); Assert.Equal(10m, read.StampedUnitCostTl);
+        Assert.Null(read.Currency.ForeignUnitCostPerKg); Assert.Equal(new ProductionExactRatioV1("1", "3"), read.Currency.ForeignUnitCostRatio);
+    }
+
     [Fact]
     public async Task An_issue_keeps_its_stamped_TL_and_separate_original_currency_proof_without_recalculation()
     {

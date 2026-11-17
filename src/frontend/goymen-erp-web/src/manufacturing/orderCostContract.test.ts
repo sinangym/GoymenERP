@@ -18,6 +18,17 @@ function withoutKey(body: Record<string, unknown>, key: string): Record<string, 
 }
 
 describe('decodeOrderCost', () => {
+  it('preserves an exact foreign unit and amount ratio without a rounded scalar or UI calculation', () => {
+    const original = { issueMovementId: ISSUE, currencyId: 'c0000000-0000-4000-8000-000000000001', foreignUnitCostPerKg: '0.35',
+      exchangeRate: '35.25', tlUnitCostPerKg: '12.3375', keptKilograms: '2', foreignAmount: '0.7' }
+    const exact = { ...original, foreignUnitCostPerKg: null, foreignAmount: null,
+      foreignUnitCostRatio: { numerator: '1', denominator: '3' }, foreignAmountRatio: { numerator: '2', denominator: '3' } }
+    const decoded = decodeOrderCost(availableOrderCost({ currencyLines: [exact] }), ORDER)
+    expect(decoded?.currencyLines[0]?.foreignUnitCostPerKg).toBeNull()
+    expect(decoded?.currencyLines[0]?.foreignAmountRatio).toEqual({ numerator: '2', denominator: '3' })
+    for (const malformed of [ { ...exact, foreignUnitCostPerKg: '0.3333' }, { ...exact, foreignUnitCostRatio: { numerator: '1', denominator: '0' } },
+      { ...exact, foreignAmountRatio: null } ]) expect(decodeOrderCost(availableOrderCost({ currencyLines: [malformed] }), ORDER)).toBeNull()
+  })
   it('decodes the unavailable answer with its reason and no figure', () => {
     const cost = decodeOrderCost(orderCost(), ORDER)
 

@@ -541,3 +541,9 @@ enable the existing paint/non-kg cost-exclusion notes; no provider is never trea
 Migration `20261116234916_AddManufacturingNonKgInputFacts` was generated with `dotnet ef`, including same-company order
 and self-replacement foreign keys. Up is DDL only; Down first refuses with **THROW 51963** while any fact exists.
 No database was changed. Unit, SQL/HTTP and frontend test sources are written; runtime is **NOT_RUN**.
+
+Original foreign-cost provenance may be a normalized integer ratio when a purchase-unit conversion is not a finite
+decimal, for example `1 / 3` per kg. The calculator and report retain that exact ratio and the exact kept-quantity
+foreign amount; their scalar fields are null. Existing finite-decimal currency lines retain their previous JSON shape.
+Actual issue TL/USD moving-average stamps remain authoritative; foreign ratio times FX is never substituted for them.
+No new rounding, tolerance, money policy or migration is introduced by this display evidence.

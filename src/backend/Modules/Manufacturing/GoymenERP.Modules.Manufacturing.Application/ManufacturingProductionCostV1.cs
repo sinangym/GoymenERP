@@ -1,4 +1,6 @@
 using GoymenERP.BuildingBlocks.Security;
+using System.Text.Json.Serialization;
+using GoymenERP.Modules.Manufacturing.Domain.Costing;
 
 namespace GoymenERP.Modules.Manufacturing.Application;
 
@@ -27,11 +29,13 @@ public sealed record ProductionCostLineViewV1(
 public sealed record ProductionCostCurrencyLineViewV1(
     Guid IssueMovementId,
     Guid CurrencyId,
-    string ForeignUnitCostPerKg,
+    string? ForeignUnitCostPerKg,
     string ExchangeRate,
     string TlUnitCostPerKg,
     string KeptKilograms,
-    string ForeignAmount);
+    string? ForeignAmount,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ProductionExactRatioV1? ForeignUnitCostRatio = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ProductionExactRatioV1? ForeignAmountRatio = null);
 
 /// <summary>One issue that keeps the cost from being computed and why (<c>input_cost_zero</c>, <c>input_exchange_rate_missing</c>).</summary>
 public sealed record ProductionCostIssueReasonViewV1(Guid IssueMovementId, string ReasonCode);
@@ -184,9 +188,9 @@ public sealed partial class ManufacturingCommandService
                         line.RecordedSeparateScrapExpenseTl is { } separate ? Text(separate) : null,
                         Text(line.RemainderTl), line.AllocationBasis, line.NotAllocatedCode)).ToArray(),
                     result.CurrencyLines.Select(static line => new ProductionCostCurrencyLineViewV1(
-                        line.IssueMovementId, line.CurrencyId, Text(line.ForeignUnitCostPerKg),
+                        line.IssueMovementId, line.CurrencyId, line.ForeignUnitCostPerKg is { } foreign ? Text(foreign) : null,
                         Text(line.ExchangeRate), Text(line.TlUnitCostPerKg), Text(line.KeptKilograms),
-                        Text(line.ForeignAmount))).ToArray(),
+                        line.ForeignAmount is { } foreignAmount ? Text(foreignAmount) : null, line.ForeignUnitCostRatio, line.ForeignAmountRatio)).ToArray(),
                     [], result.NoteCodes.ToArray(), null);
             case ManufacturingScrapCostDistributionStatusV1.Pending:
                 return ProductionCostWithoutFigures(orderId, orderStatus, orderVersion,
