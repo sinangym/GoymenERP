@@ -21,7 +21,8 @@ public sealed class FinanceFinancialMovementNormalJournalSourceProviderV1(
     IFinancePermissionPort permissions,
     ICompanyContext company,
     ICurrentUser user,
-    ICorrelationContext correlation) : INormalJournalDraftServerSourceProviderV1
+    ICorrelationContext correlation,
+    IFinanceCashExchangeJournalSourceProviderV1? exchanges = null) : INormalJournalDraftServerSourceProviderV1
 {
     public async Task<NormalJournalDraftServerSourceV1?> ResolveAsync(Guid companyId, Guid sourceId, CancellationToken cancellationToken = default)
     {
@@ -31,6 +32,11 @@ public sealed class FinanceFinancialMovementNormalJournalSourceProviderV1(
         if (!Same(companyId, actor)) return null;
         if (kind == NormalJournalSourceKindsV1.RecordedManualReceipt)
             return await receipts.ResolveAsync(companyId, sourceId, cancellationToken);
+        if (kind == NormalJournalSourceKindsV1.ApprovedCashExchangeBookValue)
+        {
+            var exchange = exchanges is null ? null : await exchanges.ResolveAsync(companyId, sourceId, cancellationToken);
+            return Same(companyId, actor) ? exchange : null;
+        }
         var context = new FinanceContext(companyId, actor, correlation.CorrelationId, correlation.CausationId);
         var fact = kind switch
         {

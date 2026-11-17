@@ -28,7 +28,7 @@ public sealed class FinanceJournalSourceTests
         Assert.Equal("100.01", fact.Amount); Assert.Equal("SENTETIK-profile", fact.ProfileId);
         Assert.Equal(envelope.EventType, fact.Kind); Assert.Equal("3", fact.Version);
         Assert.Equal(At, fact.RecordedAtUtc);
-        Assert.Equal(2, FinanceJournalSourceInboxV1.Subscriptions.Count);
+        Assert.Equal(4, FinanceJournalSourceInboxV1.Subscriptions.Count);
     }
     [Theory]
     [InlineData("eventId")]
@@ -106,6 +106,22 @@ public sealed class FinanceJournalSourceTests
         Assert.Equal(AccountingDbContext.FinanceJournalSourcePayloadCheck, model.GetCheckConstraints().Single(x => x.Name == "CK_FinanceJournalSources_Payload").Sql);
         Assert.Equal(AccountingDbContext.FinanceJournalSourceKindCheck, model.GetCheckConstraints().Single(x => x.Name == "CK_FinanceJournalSources_Source").Sql);
     }
+    [Fact]
+    public void Exchange_source_constraint_is_ddl_only_and_Down_protects_both_actual_owner_event_kinds()
+    {
+        var migration = new GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations.AllowCashExchangeJournalSources();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var added = Assert.Single(migration.UpOperations.OfType<AddCheckConstraintOperation>());
+        Assert.Equal(AccountingDbContext.FinanceJournalSourceKindCheck, added.Sql);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51810", guard.Sql);
+        Assert.Contains(NormalJournalSourceKindsV1.RecordedCashExchange, guard.Sql);
+        Assert.Contains(NormalJournalSourceKindsV1.ApprovedCashExchangeBookValue, guard.Sql);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        Assert.DoesNotContain(NormalJournalSourceKindsV1.RecordedCashExchange,
+            Assert.Single(migration.DownOperations.OfType<AddCheckConstraintOperation>()).Sql);
+    }
+
     internal static WorkInboxEventV1 Envelope(bool transfer)
     {
         var id = Guid.NewGuid(); var sourceId = Guid.NewGuid();

@@ -467,6 +467,26 @@ shell at `/muhasebe/hesap-plani` (screen `M-05`, capability `accounting.account-
   source exists; an empty queue may roll back. Use a forward fix to retain financial provenance. Database apply and
   runtime SQL/browser/CI acceptance remain separate from source generation and compilation.
 
+### FIN-S14: actual exchange carrying value and exact journal components
+
+- `finance.cash-exchange.recorded.v1` and `finance.cash-exchange.book-value-approved.v1` enter the same immutable
+  company-filtered inbox queue. Receipt alone creates neither a draft nor a financial movement. The approved source
+  carries Finance's documented carrying TL value, separate preparer/approver and original transfer/document proof.
+- Preparation re-reads that real approved Finance source and the approved Accounting binding. The fixed posting
+  purpose is `finance.cash-exchange`; mapping keys are `cash-exchange.target-receipt` (Debit),
+  `cash-exchange.source-carrying` (Credit), and only the actual difference's `cash-exchange.realized-gain` (Credit)
+  or `cash-exchange.realized-loss` (Debit). Accounts are supplied solely by the approved mapping package. Missing
+  mappings remain unavailable. No TCMB reference amount is treated as a carrying or settlement amount.
+- For an actual TRY target, the received amount comes from the immutable transfer's `TargetMoney`. Both source
+  totals and individual mapping/side/amount components are exact backend constraints: a balanced but redistributed
+  draft is refused. The existing normal draft/open-period/posting flow is reused; its permission rules are unchanged.
+  Finance's carrying-value approval still requires different people. Credit-specific approval policy is separate.
+- A foreign-currency target remains `TargetBookValueUnavailable` until the separately documented and approved
+  target TL proof is implemented. The subsequent human decision authorizes that source, not inference from a quote.
+- EF-generated `20261117213704_AllowCashExchangeJournalSources` only widens the source-kind constraint. Down first
+  refuses with **THROW 51810** while either new source kind exists; empty or old-only queues can roll back. The SQL
+  guard awaits K3 review. No database apply, automatic dispatch, grant or runtime acceptance is implied.
+
 ## FIN-S13 / B-04: source voucher approval and cancellation ordering
 
 - Finalized Sales/Purchasing sources retain their real official invoice number when supplied; legacy sources keep a

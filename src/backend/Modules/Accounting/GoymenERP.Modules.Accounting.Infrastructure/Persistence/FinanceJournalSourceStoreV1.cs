@@ -13,7 +13,8 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 /// <summary>B-28: accepts the existing fact once; no accounting amount, mapping or journal is invented.</summary>
 public sealed class FinanceJournalSourceStoreV1(AccountingDbContext db, ICompanyContext company,
     IApprovedNormalJournalSourceKindCatalogV1 kinds, IApprovedNormalJournalSourceBindingCatalogV1 bindings,
-    IAuditEventCollector audit, TimeProvider clock, IAuditTransactionWriterV1? auditOwner = null) : IFinanceJournalSourceStoreV1
+    IAuditEventCollector audit, TimeProvider clock, IAuditTransactionWriterV1? auditOwner = null,
+    IFinanceCashExchangeJournalSourceProviderV1? exchanges = null) : IFinanceJournalSourceStoreV1
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     public async Task AcceptAsync(WorkInboxEventV1 envelope, CancellationToken cancellationToken)
@@ -70,6 +71,15 @@ public sealed class FinanceJournalSourceStoreV1(AccountingDbContext db, ICompany
         var answer = new List<FinanceJournalSourceViewV1>(rows.Count);
         foreach (var row in rows)
         {
+            if (row.SourceKind is NormalJournalSourceKindsV1.RecordedCashExchange or NormalJournalSourceKindsV1.ApprovedCashExchangeBookValue)
+            {
+                var exchangeSource = row.SourceKind == NormalJournalSourceKindsV1.ApprovedCashExchangeBookValue && exchanges is not null
+                    ? await exchanges.ResolveAsync(companyId, row.SourceId, cancellationToken) : null;
+                Fence(companyId);
+                var exchangePreparation = NormalJournalDraftSourcePreparationV1.TryCreate(companyId, row.SourceId, exchangeSource);
+                answer.Add(View(row, exchangePreparation?.PreparationVersion));
+                continue;
+            }
             var kind = await kinds.ResolveKindAsync(companyId, row.SourceId, cancellationToken);
             Fence(companyId);
             var rule = kind == row.SourceKind ? await bindings.ResolveAsync(companyId, row.SourceId, row.SourceKind,
@@ -89,5 +99,6 @@ public sealed class FinanceJournalSourceStoreV1(AccountingDbContext db, ICompany
     }
     private static FinanceJournalSourceViewV1 View(FinanceJournalSourceRow row, string? preparation) => new(row.Id, row.CompanyId,
         row.SourceId, row.SourceKind, row.SourceVersion, row.CurrencyId, row.AmountText, row.OwnerProfileId, row.OwnerProfileVersion,
-        row.OccurredOn, row.RecordedAtUtc, row.ReceivedAtUtc, "Received", preparation is null ? "BindingUnavailable" : "BindingAvailable", preparation);
+        row.OccurredOn, row.RecordedAtUtc, row.ReceivedAtUtc, "Received", preparation is null ? "BindingUnavailable" : "BindingAvailable", preparation,
+        FinanceJournalSourceReaderV1.ReadStoredExchange(row));
 }
