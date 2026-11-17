@@ -301,3 +301,11 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
   Runtime Unit/SQL/HTTP/Vitest/browser/CI NOT_RUN.
 - Banka işlem tarihi/muhasebe tarihi devir ayrımı ve sonraki kapalı devir zinciri
   insan cevabı bekler; kaynak fail-closed kalır. FIN-S17 PARTIAL; pinler/tren FF bekler.
+
+
+## FIN-S13 / ALS-D7 — gerçek ürün araması ve tür sahibi merkezi bağlantısı
+
+- `AddPurchaseInvoiceImportProductSearch()` gerçek host kaydı eklendi. Aynı scoped adapter gerçek Product aday okuyucusunu ve bağımsız tür/sürüm portunu sağlar; `General` varsayımı kullanılmaz. Service ürünü mal satırına çevrilmez; hizmet/masraf için açık Ayarlar seçimi sürer.
+- Owner kaynakları `c5570b816` ve raporu `cdb3a521e` merkezi entegrasyona alındı. Yetki/şirket değişimi ve eski nullable snapshot/hash uyumluluğu owner test kaynaklarında korunur.
+- Birleşik kaynakta API, Purchasing.UnitTests, Inventory.UnitTests ve Api.IntegrationTests derlemeleri exit 0, 0 uyarı/hata. Standart tek süreç parametreleri ve her süreç öncesi bellek kapısı kullanıldı. Owner TSC exit 0; merkezi yeni frontend farkı için son birleşik TSC ayrıca alınacak.
+- Runtime birim/SQL/HTTP/Vitest/browser/CI ve merkezi pinler NOT_RUN. FIN-S13 bütünü için bu kayıt tek başına DONE/kabul değildir.
