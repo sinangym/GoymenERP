@@ -223,3 +223,22 @@ FNS-D73/D83/D107 için Sales owner okuma portu eklendi. Mevcut onaylı revizyon 
   ve `git diff --check` exit 0. Runtime Unit/SQL/HTTP/CI **NOT_RUN**.
 - Bu düzeltme SAT-SC34'ün resmî iptal üreticisi ve bağımsız muhasebe onayı kalanını
   tamamlamaz; tüm dilim PARTIAL kalır. Kaynak ve rapor aynı dilim commit'indedir.
+
+
+### SAT-S9 / F17-5 — kaynak planında gerçek alış ayırmaları
+
+- Satırın kaynak planından gerçek Inventory ayırma okuyucusuna ve mevcut açık alış
+  satırı seçme/yönetme ekranına bağ kuruldu. Kaynak planını kaydetmek ayırma oluşturmaz;
+  gelecek tedarik fiziksel stok kısmına veya frontend hesaplamasına eklenmez.
+- Ayrı Inventory read capability olmadan çağrı yoktur. Kullanıcı tek satırı açınca
+  yalnız o satır okunur; siparişin bütün satırları için istek patlaması yapılmaz.
+  Şirket/aktör/route-entry query anahtarı ve ortak auth boundary korunur.
+- Kalan miktar, gerçek değerlendirme tarihi ve termin-geçti bayrağı aynen gösterilir.
+  Alış/Stok bırakma nedenleri ve kayıtlı gerekçe birlikte görünür; bilinmeyen neden
+  için yeni işletme kuralı türetilmez. Sınırlı owner penceresi eksiksiz geçmiş sanılmaz.
+- Kaynak testleri bağımsız yetki, lazy okuma, gerçek miktar/termin/gerekçe aktarımı,
+  loading/empty, 401/403/404/409/503, offline/ağ/bozuk yanıt ve okunamayan termin
+  ayrımını kapsar. Yeni API, migration, izin veya grant yoktur.
+- `npx tsc -b` son kaynakta exit 0. İlk denemede iç PlanView sınırında eksik props
+  bulundu; typed render prop ile düzeltildi. `git diff --check` exit 0. Runtime
+  Vitest/browser/HTTP/SQL/CI **NOT_RUN**. Merkezi entegrasyon/pin/tren FF beklenir.

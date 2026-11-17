@@ -13,7 +13,7 @@
  *  - One idempotent attempt per plan snapshot (`useSourcePlanAttempt`): an unknown outcome keeps its key and "tekrar gönder"
  *    resends the same snapshot; a recorded plan or a conflict re-reads the detail and the plan.
  */
-import { useId, useMemo, useState } from 'react'
+import { useId, useMemo, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchDraftSourcePlan } from './api'
 import { userDisplayFor, type DraftDetail, type UserDisplay } from './contract'
@@ -40,6 +40,8 @@ import { classifyOutcome } from '../shell/uiState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { Button } from '../ui/Button'
 import styles from './SalesPages.module.css'
+import { SalesFutureSupplyLine } from './SalesFutureSupplyLine'
+import { INVENTORY_FUTURE_ALLOCATION_READ_CAPABILITY } from '../inventory/capabilities'
 
 const PARTS = ['production', 'purchasing', 'subcontract'] as const
 type Part = (typeof PARTS)[number]
@@ -175,6 +177,9 @@ export function SalesDraftSourcePlan({
           edit={edit}
           formError={formError}
           onSave={() => submit(plan)}
+          renderFutureSupply={lineId => <SalesFutureSupplyLine canRead={hasCapability(shell, INVENTORY_FUTURE_ALLOCATION_READ_CAPABILITY)}
+            companyId={companyId} orderId={detail.draft.id} lineId={lineId} namespace={namespace}
+            actorId={actorId} routeEntry={routeEntryGeneration} />}
         />
       )}
       {pendingConfirm === null ? null : (
@@ -198,6 +203,7 @@ function PlanView({
   edit,
   formError,
   onSave,
+  renderFutureSupply,
 }: {
   readonly plan: SourcePlan
   readonly userDisplays: readonly UserDisplay[]
@@ -208,6 +214,7 @@ function PlanView({
   readonly edit: (lineId: string, part: Part, value: string) => void
   readonly formError: string | null
   readonly onSave: () => void
+  readonly renderFutureSupply: (lineId: string) => ReactNode
 }) {
   const linkUnreadable = plan.linkedSupply.some((entry) => entry.status === SOURCE_PLAN_LINK_STATUS.unreadable)
   const linkPresent = plan.linkedSupply.some((entry) => entry.status === SOURCE_PLAN_LINK_STATUS.present)
@@ -293,6 +300,7 @@ function PlanView({
                   {line.warnings.length === 0 ? null : (
                     <ul>{line.warnings.map((warning) => <li key={warning}>{T.warning[warning]}</li>)}</ul>
                   )}
+                  {renderFutureSupply(line.lineId)}
                 </td>
               </tr>
             )
