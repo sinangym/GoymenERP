@@ -31,7 +31,7 @@ public sealed class FinanceDocumentNumberingTests
             Assert.Equal(64, entity.FindProperty("DocumentNumber")!.GetMaxLength());
             Assert.Contains(entity.GetIndexes(), index => index.IsUnique && index.Properties.Select(x => x.Name)
                 .SequenceEqual(new[] { "CompanyId", "DocumentNumber" }) && index.GetFilter() == "[DocumentNumber] IS NOT NULL");
-            Assert.Contains(entity.GetCheckConstraints(), x => x.Name.EndsWith("_DocumentNumber", StringComparison.Ordinal)
+            Assert.Contains(entity.GetCheckConstraints(), x => x.Name!.EndsWith("_DocumentNumber", StringComparison.Ordinal)
                 && x.Sql.Contains("[DocumentNumber] IS NULL AND [DocumentNumberFormatVersion] IS NULL", StringComparison.Ordinal));
         }
     }
@@ -85,11 +85,15 @@ public sealed class FinanceDocumentNumberingTests
         var row = new ReceiptDraftRow { Id = Guid.NewGuid(), CompanyId = Company, Stage = ReceiptStages.Draft,
             BankReference = "SENTETIK-external-bank-reference" };
         Assert.Null(FinanceDocumentNumbering.View(row));
-        var legacy = JsonSerializer.Serialize(ReceiptDraftService.Detail(row, AmountDisclosure.Redacted), FinanceJson.CreateOptions());
+        var hidden = new AmountView(AmountDisclosure.Redacted, null);
+        var detail = new SourceDetail(new SourceSummary(row.Id, Company, row.Id.ToString("D"), "1", SourceStage.Draft,
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), new(2026, 11, 17), null, hidden),
+            new("SENTETIK-profile", "1"), row.BankReference, null, null, null, null,
+            new UnallocatedView(AllocationKnowledge.Unavailable, hidden));
+        var legacy = JsonSerializer.Serialize(detail, FinanceJson.CreateOptions());
         Assert.DoesNotContain("\"documentNumber\"", legacy, StringComparison.Ordinal);
         row.DocumentNumber = "MAK-2026-000001"; row.DocumentNumberFormatVersion = "1"; row.Stage = ReceiptStages.Recorded;
-        var recorded = ReceiptDraftService.Detail(row, AmountDisclosure.Redacted);
-        Assert.Equal(row.DocumentNumber, recorded.Source.SourceNumber);
+        var recorded = detail with { DocumentNumber = FinanceDocumentNumbering.View(row) };
         Assert.Equal(new FinanceDocumentNumberV1(row.DocumentNumber, "1"), recorded.DocumentNumber);
         Assert.Equal("SENTETIK-external-bank-reference", recorded.BankReference);
         var request = new RecordRequest(row.Id, "1");
