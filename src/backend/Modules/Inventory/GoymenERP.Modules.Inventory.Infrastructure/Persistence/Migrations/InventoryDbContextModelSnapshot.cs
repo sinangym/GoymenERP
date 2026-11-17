@@ -996,6 +996,12 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<byte[]>("Position")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.Property<DateTimeOffset>("RecordedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -1012,6 +1018,9 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                         .HasColumnType("varchar(128)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "Position")
+                        .HasDatabaseName("IX_OutboxMessages_CompanyId_Position");
 
                     b.HasIndex("CompanyId", "EventType", "AggregateId", "Sequence")
                         .IsUnique()
@@ -2451,11 +2460,17 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                     b.Property<string>("ForeignUnitCostPerKg")
                         .HasColumnType("varchar(64)");
 
+                    b.Property<string>("ForeignUnitCostRatioJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<long?>("LedgerVersion")
                         .HasColumnType("bigint");
 
                     b.Property<Guid?>("OriginalCurrencyId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PoolEffectJson")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Reason")
                         .HasMaxLength(160)
@@ -2477,21 +2492,26 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                     b.Property<string>("UnitCostPerKg")
                         .HasColumnType("varchar(64)");
 
+                    b.Property<string>("UnitCostRatioJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.HasKey("CompanyId", "MovementId", "LineNumber", "CurrencyId");
 
                     b.HasIndex("CompanyId", "SourceIssueMovementId");
 
                     b.ToTable("MovementCostStamps", "inventory", t =>
                         {
-                            t.HasCheckConstraint("CK_MovementCostStamps_Currency", "LEN([CurrencySourceVersion]) > 0 AND (([EntryCurrencyStatus] = 1 AND [OriginalCurrencyId] IS NULL AND [ForeignUnitCostPerKg] IS NULL AND [EntryExchangeRate] IS NULL AND [CurrencyReason] IS NULL) OR ([EntryCurrencyStatus] = 2 AND [OriginalCurrencyId] IS NOT NULL AND [OriginalCurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [ForeignUnitCostPerKg] <> '0' AND [ForeignUnitCostPerKg] IS NOT NULL AND [EntryExchangeRate] > 0 AND [EntryExchangeRate] IS NOT NULL AND [CurrencyReason] IS NULL) OR ([EntryCurrencyStatus] = 3 AND [OriginalCurrencyId] IS NOT NULL AND [OriginalCurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [EntryExchangeRate] IS NULL AND ([ForeignUnitCostPerKg] IS NULL OR [ForeignUnitCostPerKg] <> '0') AND LEN([CurrencyReason]) > 0 AND [CurrencyReason] IS NOT NULL) OR ([EntryCurrencyStatus] = 4 AND [OriginalCurrencyId] IS NULL AND [ForeignUnitCostPerKg] IS NULL AND [EntryExchangeRate] IS NULL AND LEN([CurrencyReason]) > 0 AND [CurrencyReason] IS NOT NULL))");
+                            t.HasCheckConstraint("CK_MovementCostStamps_Currency", "LEN([CurrencySourceVersion]) > 0 AND (([EntryCurrencyStatus] = 1 AND [OriginalCurrencyId] IS NULL AND [ForeignUnitCostPerKg] IS NULL AND [EntryExchangeRate] IS NULL AND [CurrencyReason] IS NULL) OR ([EntryCurrencyStatus] = 2 AND [OriginalCurrencyId] IS NOT NULL AND [OriginalCurrencyId] <> '00000000-0000-0000-0000-000000000000' AND (([ForeignUnitCostPerKg] <> '0' AND [ForeignUnitCostPerKg] IS NOT NULL) OR [ForeignUnitCostRatioJson] IS NOT NULL) AND [EntryExchangeRate] > 0 AND [EntryExchangeRate] IS NOT NULL AND [CurrencyReason] IS NULL) OR ([EntryCurrencyStatus] = 3 AND [OriginalCurrencyId] IS NOT NULL AND [OriginalCurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [EntryExchangeRate] IS NULL AND ([ForeignUnitCostPerKg] IS NULL OR [ForeignUnitCostPerKg] <> '0') AND LEN([CurrencyReason]) > 0 AND [CurrencyReason] IS NOT NULL) OR ([EntryCurrencyStatus] = 4 AND [OriginalCurrencyId] IS NULL AND [ForeignUnitCostPerKg] IS NULL AND [EntryExchangeRate] IS NULL AND LEN([CurrencyReason]) > 0 AND [CurrencyReason] IS NOT NULL))");
 
                             t.HasCheckConstraint("CK_MovementCostStamps_DecimalText", "([UnitCostPerKg] IS NULL OR (LEN([UnitCostPerKg]) BETWEEN 1 AND 50 AND [UnitCostPerKg] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9.]%' AND [UnitCostPerKg] NOT LIKE '%.%.%' AND [UnitCostPerKg] NOT LIKE '.%' AND [UnitCostPerKg] NOT LIKE '%.' AND [UnitCostPerKg] NOT LIKE '0[0-9]%' AND (CHARINDEX('.',[UnitCostPerKg]) = 0 OR [UnitCostPerKg] NOT LIKE '%0') AND LEN([UnitCostPerKg]) = DATALENGTH([UnitCostPerKg]) AND LEN(REPLACE([UnitCostPerKg],'.','')) <= 29 AND (CHARINDEX('.',[UnitCostPerKg]) = 0 OR LEN([UnitCostPerKg]) - CHARINDEX('.',[UnitCostPerKg]) <= 28) AND (LEN(REPLACE([UnitCostPerKg],'.','')) < 29 OR REPLACE([UnitCostPerKg],'.','') COLLATE Latin1_General_100_BIN2 <= '79228162514264337593543950335') AND TRY_CONVERT(decimal(38,18),[UnitCostPerKg]) IS NOT NULL)) AND ([Amount] IS NULL OR (LEN([Amount]) BETWEEN 1 AND 50 AND [Amount] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9.]%' AND [Amount] NOT LIKE '%.%.%' AND [Amount] NOT LIKE '.%' AND [Amount] NOT LIKE '%.' AND [Amount] NOT LIKE '0[0-9]%' AND (CHARINDEX('.',[Amount]) = 0 OR [Amount] NOT LIKE '%0') AND LEN([Amount]) = DATALENGTH([Amount]) AND LEN(REPLACE([Amount],'.','')) <= 29 AND (CHARINDEX('.',[Amount]) = 0 OR LEN([Amount]) - CHARINDEX('.',[Amount]) <= 28) AND (LEN(REPLACE([Amount],'.','')) < 29 OR REPLACE([Amount],'.','') COLLATE Latin1_General_100_BIN2 <= '79228162514264337593543950335') AND TRY_CONVERT(decimal(38,18),[Amount]) IS NOT NULL)) AND ([ForeignUnitCostPerKg] IS NULL OR (LEN([ForeignUnitCostPerKg]) BETWEEN 1 AND 50 AND [ForeignUnitCostPerKg] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9.]%' AND [ForeignUnitCostPerKg] NOT LIKE '%.%.%' AND [ForeignUnitCostPerKg] NOT LIKE '.%' AND [ForeignUnitCostPerKg] NOT LIKE '%.' AND [ForeignUnitCostPerKg] NOT LIKE '0[0-9]%' AND (CHARINDEX('.',[ForeignUnitCostPerKg]) = 0 OR [ForeignUnitCostPerKg] NOT LIKE '%0') AND LEN([ForeignUnitCostPerKg]) = DATALENGTH([ForeignUnitCostPerKg]) AND LEN(REPLACE([ForeignUnitCostPerKg],'.','')) <= 29 AND (CHARINDEX('.',[ForeignUnitCostPerKg]) = 0 OR LEN([ForeignUnitCostPerKg]) - CHARINDEX('.',[ForeignUnitCostPerKg]) <= 28) AND (LEN(REPLACE([ForeignUnitCostPerKg],'.','')) < 29 OR REPLACE([ForeignUnitCostPerKg],'.','') COLLATE Latin1_General_100_BIN2 <= '79228162514264337593543950335') AND TRY_CONVERT(decimal(38,18),[ForeignUnitCostPerKg]) IS NOT NULL))");
 
                             t.HasCheckConstraint("CK_MovementCostStamps_Envelope", "LEN([CorrelationId]) > 0 AND DATEPART(TZOFFSET,[RecordedAtUtc]) = 0 AND ISJSON([EvidenceJson], OBJECT) = 1");
 
+                            t.HasCheckConstraint("CK_MovementCostStamps_ExactProof", "([UnitCostRatioJson] IS NULL OR ISJSON([UnitCostRatioJson], OBJECT) = 1) AND ([ForeignUnitCostRatioJson] IS NULL OR ISJSON([ForeignUnitCostRatioJson], OBJECT) = 1) AND ([PoolEffectJson] IS NULL OR ISJSON([PoolEffectJson], OBJECT) = 1)");
+
                             t.HasCheckConstraint("CK_MovementCostStamps_Identity", "[LineNumber] >= 1 AND [StampVersion] >= 1 AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND ([SourceIssueMovementId] IS NULL OR [SourceIssueMovementId] <> '00000000-0000-0000-0000-000000000000')");
 
-                            t.HasCheckConstraint("CK_MovementCostStamps_Value", "([Status] = 1 AND [UnitCostPerKg] IS NOT NULL AND [Amount] IS NOT NULL AND [LedgerVersion] >= 1 AND [LedgerVersion] IS NOT NULL AND [Reason] IS NULL) OR ([Status] = 2 AND [UnitCostPerKg] IS NULL AND [Amount] IS NULL AND LEN([Reason]) > 0 AND [Reason] IS NOT NULL AND ([LedgerVersion] IS NULL OR [LedgerVersion] >= 1))");
+                            t.HasCheckConstraint("CK_MovementCostStamps_Value", "([Status] = 1 AND (([UnitCostPerKg] IS NOT NULL AND [Amount] IS NOT NULL) OR [UnitCostRatioJson] IS NOT NULL) AND [LedgerVersion] >= 1 AND [LedgerVersion] IS NOT NULL AND [Reason] IS NULL) OR ([Status] = 2 AND [UnitCostPerKg] IS NULL AND [Amount] IS NULL AND [UnitCostRatioJson] IS NULL AND LEN([Reason]) > 0 AND [Reason] IS NOT NULL AND ([LedgerVersion] IS NULL OR [LedgerVersion] >= 1))");
                         });
                 });
 

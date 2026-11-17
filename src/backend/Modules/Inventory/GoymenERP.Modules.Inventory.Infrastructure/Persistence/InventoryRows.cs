@@ -283,6 +283,7 @@ internal sealed class AverageCostLedgerRow : IInventoryTenantRow
 /// </summary>
 internal sealed class InventoryOutboxRow : IInventoryTenantRow
 {
+    public ulong Position { get; set; }
     public Guid Id { get; set; }
     public Guid CompanyId { get; set; }
     public string EventType { get; set; } = string.Empty;

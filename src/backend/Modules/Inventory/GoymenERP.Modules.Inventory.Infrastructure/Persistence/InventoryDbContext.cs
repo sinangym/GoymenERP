@@ -794,6 +794,8 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
         entity.Property(x => x.PayloadJson).HasColumnType("nvarchar(max)").IsRequired();
         entity.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation("Latin1_General_100_BIN2").IsRequired();
         entity.Property(x => x.CausationId).HasMaxLength(128).UseCollation("Latin1_General_100_BIN2");
+        entity.Property(x => x.Position).IsRowVersion().HasConversion<byte[]>();
+        entity.HasIndex(x => new { x.CompanyId, x.Position }).HasDatabaseName("IX_OutboxMessages_CompanyId_Position");
         entity.HasIndex(x => new { x.CompanyId, x.EventType, x.AggregateId, x.Sequence })
             .IsUnique().HasDatabaseName("UX_OutboxMessages_AggregateSequence");
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)

@@ -167,6 +167,7 @@ public sealed class InventorySupplierReturnExitParticipant : IInventorySupplierR
             CostResult.NotCalculated);
         try
         {
+            store.UseSupplierReturnCost(movement.Id, input.OriginalUnitCostTryPerKg);
             var outcome = await store.StageMovementAsync(
                 movement, metadata, recordAudit: false, cancellationToken);
             if (outcome != InventoryWriteOutcome.Recorded)

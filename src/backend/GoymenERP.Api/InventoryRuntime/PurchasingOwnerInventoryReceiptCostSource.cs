@@ -5,6 +5,7 @@ using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.Costing;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
@@ -30,46 +31,66 @@ public sealed class PurchasingOwnerInventoryReceiptCostSource(IPurchaseReceiptCo
         ExchangeRateResolutionV1? usdRate = null;
         try
         {
-            proof = await purchasing.ReadAsync(selection.PurchaseOrderId, selection.PurchaseOrderLineId, selection.AcceptanceId, cancellationToken);
+            var receiptProof = await purchasing.ReadAsync(selection.PurchaseOrderId, selection.PurchaseOrderLineId, selection.AcceptanceId, cancellationToken);
             Fence(selection.CompanyId, actor);
-            if (proof is null || proof.CompanyId != selection.CompanyId || proof.AcceptanceId != selection.AcceptanceId
-                || proof.PurchaseOrderId != selection.PurchaseOrderId || proof.PurchaseOrderLineId != selection.PurchaseOrderLineId
-                || proof.ProductId != selection.ProductId || proof.ProductVersion != selection.ProductVersion
-                || proof.ReceivedAtUtc.Offset != TimeSpan.Zero || proof.Price.CompanyId != selection.CompanyId
-                || proof.Price.PurchaseOrderId != selection.PurchaseOrderId || proof.Price.PurchaseOrderLineId != selection.PurchaseOrderLineId)
+            if (receiptProof is null || receiptProof.CompanyId != selection.CompanyId || receiptProof.AcceptanceId != selection.AcceptanceId
+                || receiptProof.PurchaseOrderId != selection.PurchaseOrderId || receiptProof.PurchaseOrderLineId != selection.PurchaseOrderLineId
+                || receiptProof.ProductId != selection.ProductId || receiptProof.ProductVersion != selection.ProductVersion
+                || receiptProof.ReceivedAtUtc.Offset != TimeSpan.Zero || receiptProof.Price.CompanyId != selection.CompanyId
+                || receiptProof.Price.PurchaseOrderId != selection.PurchaseOrderId || receiptProof.Price.PurchaseOrderLineId != selection.PurchaseOrderLineId
+                || receiptProof.Price.Price is { } scopedPrice && scopedPrice.ProductId != selection.ProductId
+                || receiptProof.InvoiceRate.CompanyId != selection.CompanyId || receiptProof.InvoiceRate.GoodsReceiptLineId != selection.AcceptanceId
+                || receiptProof.InvoiceRate.PurchaseOrderId is { } invoiceOrder && invoiceOrder != selection.PurchaseOrderId
+                || receiptProof.InvoiceRate.PurchaseOrderLineId is { } invoiceLine && invoiceLine != selection.PurchaseOrderLineId)
                 return Unavailable("purchase_receipt_cost_proof_unreadable");
+            // Rejected owner payloads never enter another company's immutable evidence.
+            proof = receiptProof;
             if (proof.Price is not { Outcome: PurchaseOrderLineCostOutcomeV1.Known, Price: { } price } || price.ProductId != selection.ProductId)
                 return Unavailable(proof.Price.UnreadableReason ?? "purchase_receipt_price_not_recorded");
             if (price.MovingAverageUnitCost <= 0m) return Unavailable("purchase_receipt_cost_zero_unreadable");
             var day = ProductPriceBusinessDayV2.DateOf(proof.ReceivedAtUtc);
-            conversion = await product.ConvertAsync(new(selection.ProductId, 1m, price.PriceUnitId, null, day), cancellationToken);
+            var unitConversion = await product.ConvertAsync(new(selection.ProductId, 1m, price.PriceUnitId, null, day), cancellationToken);
             Fence(selection.CompanyId, actor);
-            if (conversion.Outcome != ProductPurchaseUnitConversionOutcomeV1.Available || conversion.Quantity is not > 0m
-                || conversion.InputKg != conversion.Quantity || conversion.RemainderKg != 0m
-                || conversion.Source is not { } unitSource || unitSource.CompanyId != selection.CompanyId
+            if (unitConversion.Outcome != ProductPurchaseUnitConversionOutcomeV1.Available || unitConversion.Quantity is not > 0m
+                || unitConversion.InputKg != unitConversion.Quantity || unitConversion.RemainderKg != 0m
+                || unitConversion.Source is not { } unitSource || unitSource.CompanyId != selection.CompanyId
                 || unitSource.ProductId != selection.ProductId || !unitSource.Units.Any(unit => unit.UnitId == price.PriceUnitId
-                    && unit.KgPerUnit == conversion.Quantity))
+                    && unit.KgPerUnit == unitConversion.Quantity))
                 return Unavailable("purchase_receipt_unit_conversion_unreadable");
-            var original = price.MovingAverageUnitCost / conversion.Quantity.Value;
+            conversion = unitConversion;
+            var originalRatio = ExactCostRatio.Of(price.MovingAverageUnitCost).Divide(conversion.Quantity!.Value);
+            decimal? original = originalRatio.TryToDecimal(out var originalScalar) ? originalScalar : null;
             var currency = price.UnitPrice.CurrencyId;
             var invoice = MapInvoice(proof.InvoiceRate);
-            var tl = InventoryAverageCostFxRateResolverV1.Resolve(selection.CompanyId, selection.AcceptanceId, currency, original, invoice);
+            // Resolve the invoice's authority/currency with the actual price input. A non-terminating per-kg quotient
+            // is kept as a rational value until the existing average's final 4dp rounding, never rounded here.
+            var tl = InventoryAverageCostFxRateResolverV1.Resolve(selection.CompanyId, selection.AcceptanceId, currency, price.MovingAverageUnitCost, invoice);
+            var hasTl = tl.Status is InventoryAverageCostFxRateStatusV1.BaseCurrency or InventoryAverageCostFxRateStatusV1.Converted
+                || tl.UnavailableCode == InventoryAverageCostFxRateUnavailableCodesV1.NotRepresentable;
+            var tlRatio = !hasTl ? null : currency == SettingsCurrencyIdentitiesV1.TurkishLira
+                ? originalRatio : originalRatio.Multiply(invoice.Rate!.Value.Rate);
+            decimal? tlScalar = tlRatio is not null && tlRatio.TryToDecimal(out var actualTl) ? actualTl : null;
             decimal? usd = null;
+            ExactCostRatio? usdRatio = null;
             string? usdReason = null;
-            if (currency == ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD")) usd = original;
+            if (currency == ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD")) { usd = original; usdRatio = originalRatio; }
             else if (currency == SettingsCurrencyIdentitiesV1.TurkishLira)
             {
                 try
                 {
-                usdRate = await exchangeRates.ResolveAsync(day, ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD"),
+                var resolvedUsdRate = await exchangeRates.ResolveAsync(day, ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD"),
                     SettingsCurrencyIdentitiesV1.TurkishLira, cancellationToken);
                 Fence(selection.CompanyId, actor);
-                if (usdRate.State == ExchangeRateResolutionStatesV1.Resolved && usdRate.Source == ExchangeRateSourcesV1.Tcmb
-                    && usdRate.RateDay == day && usdRate.SourceCurrencyId == ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD")
-                    && usdRate.TargetCurrencyId == SettingsCurrencyIdentitiesV1.TurkishLira && usdRate.RecordId is not null
-                    && !string.IsNullOrWhiteSpace(usdRate.RecordVersion) && usdRate.BulletinDate is not null
-                    && decimal.TryParse(usdRate.SellingRate, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var rate) && rate > 0m)
-                    usd = original / rate;
+                if (resolvedUsdRate.State == ExchangeRateResolutionStatesV1.Resolved && resolvedUsdRate.Source == ExchangeRateSourcesV1.Tcmb
+                    && resolvedUsdRate.RateDay == day && resolvedUsdRate.SourceCurrencyId == ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD")
+                    && resolvedUsdRate.TargetCurrencyId == SettingsCurrencyIdentitiesV1.TurkishLira && resolvedUsdRate.RecordId is not null
+                    && !string.IsNullOrWhiteSpace(resolvedUsdRate.RecordVersion) && resolvedUsdRate.BulletinDate is not null
+                    && decimal.TryParse(resolvedUsdRate.SellingRate, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var rate) && rate > 0m)
+                {
+                    usdRate = resolvedUsdRate;
+                    usdRatio = originalRatio.Divide(rate);
+                    if (usdRatio.TryToDecimal(out var exactUsd)) usd = exactUsd;
+                }
                 else usdReason = "purchase_receipt_usd_entry_rate_unreadable";
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
@@ -79,18 +100,17 @@ public sealed class PurchasingOwnerInventoryReceiptCostSource(IPurchaseReceiptCo
             else usdReason = "purchase_receipt_usd_invoice_cross_rate_not_recorded";
             var evidence = Evidence();
             var version = Version(evidence);
-            var provenance = tl.Status switch
-            {
-                InventoryAverageCostFxRateStatusV1.BaseCurrency => new InventoryIssueCostCurrencyV1(
-                    InventoryIssueCostCurrencyStatusV1.FunctionalCurrency, null, null, null, version, null),
-                InventoryAverageCostFxRateStatusV1.Converted => new(InventoryIssueCostCurrencyStatusV1.Converted,
-                    currency, original, tl.Rate!.Value.Rate, version, null),
-                _ => new(InventoryIssueCostCurrencyStatusV1.RateMissing, currency, original, null,
-                    version, tl.UnavailableCode ?? "purchase_receipt_invoice_rate_unreadable"),
-            };
+            var provenance = currency == SettingsCurrencyIdentitiesV1.TurkishLira
+                ? new InventoryIssueCostCurrencyV1(InventoryIssueCostCurrencyStatusV1.FunctionalCurrency, null, null, null, version, null)
+                : hasTl ? new(InventoryIssueCostCurrencyStatusV1.Converted, currency, original, invoice.Rate!.Value.Rate,
+                    version, null, InventoryExactCostRatioV1.From(originalRatio))
+                : new(InventoryIssueCostCurrencyStatusV1.RateMissing, currency, original, null,
+                    version, tl.UnavailableCode ?? "purchase_receipt_invoice_rate_unreadable", InventoryExactCostRatioV1.From(originalRatio));
             Fence(selection.CompanyId, actor);
             return new(selection.CompanyId, selection.AcceptanceId, selection.PurchaseOrderId, selection.PurchaseOrderLineId,
-                currency, original, tl.BaseUnitCostPerStockKg, usd, provenance, version, evidence, tl.UnavailableCode, usdReason);
+                currency, original, tlScalar, usd, provenance, version, evidence, hasTl ? null : tl.UnavailableCode, usdReason,
+                InventoryExactCostRatioV1.From(originalRatio), tlRatio is null ? null : InventoryExactCostRatioV1.From(tlRatio),
+                usdRatio is null ? null : InventoryExactCostRatioV1.From(usdRatio));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (UnauthorizedAccessException) { throw; }

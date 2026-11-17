@@ -13,6 +13,22 @@ namespace GoymenERP.Inventory.UnitTests;
 public sealed class InventoryMovementCostModelTests
 {
     [Fact]
+    public void Outbox_cursor_and_exact_cost_forward_migration_guard_both_provenances_before_any_drop()
+    {
+        var migration = new AddInventoryOutboxCursorAndExactCostRatios();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        Assert.Contains("THROW 51958", Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51964", Assert.IsType<SqlOperation>(migration.DownOperations[1]).Sql, StringComparison.Ordinal);
+        Assert.IsType<DropIndexOperation>(migration.DownOperations[2]);
+        using var context = Context();
+        var stamp = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(MovementCostStampRow))!;
+        Assert.Equal("nvarchar(max)", stamp.FindProperty(nameof(MovementCostStampRow.UnitCostRatioJson))!.GetColumnType());
+        Assert.True(stamp.FindProperty(nameof(MovementCostStampRow.UnitCostRatioJson))!.IsNullable);
+        Assert.Contains(stamp.GetCheckConstraints(), check => check.Name == "CK_MovementCostStamps_ExactProof");
+        Assert.True(context.Model.FindEntityType(typeof(InventoryOutboxRow))!.FindProperty(nameof(InventoryOutboxRow.Position))!.IsConcurrencyToken);
+    }
+
+    [Fact]
     public void Movement_cost_migration_refuses_data_loss_before_every_down_drop_and_never_backfills_old_prices()
     {
         var migration = new AddInventoryMovementCostProvenance();

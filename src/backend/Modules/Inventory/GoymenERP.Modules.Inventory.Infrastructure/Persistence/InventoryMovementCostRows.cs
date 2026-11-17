@@ -10,6 +10,8 @@ internal sealed class MovementCostStampRow : IInventoryTenantRow
     public int Status { get; set; }
     public decimal? UnitCostPerKg { get; set; }
     public decimal? Amount { get; set; }
+    public string? UnitCostRatioJson { get; set; }
+    public string? PoolEffectJson { get; set; }
     public long? LedgerVersion { get; set; }
     public long StampVersion { get; set; }
     public string? Reason { get; set; }
@@ -17,6 +19,7 @@ internal sealed class MovementCostStampRow : IInventoryTenantRow
     public int EntryCurrencyStatus { get; set; }
     public Guid? OriginalCurrencyId { get; set; }
     public decimal? ForeignUnitCostPerKg { get; set; }
+    public string? ForeignUnitCostRatioJson { get; set; }
     public decimal? EntryExchangeRate { get; set; }
     public string CurrencySourceVersion { get; set; } = string.Empty;
     public string? CurrencyReason { get; set; }

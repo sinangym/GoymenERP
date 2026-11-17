@@ -192,10 +192,9 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
                 throw Error(503, "inventory_manufacturing_cost_consumption_source_unreadable");
         }
         var tlAmount = recognized ? output.TlAmount : null;
-        // Decimal values remain JSON decimals at full precision. No SQL money-column scale or new cent policy is imposed.
-        // The exact residual preserves original = remaining + consumed, even when the 4dp recorded unit differs.
-        var remainingTl = tlAmount is { } amount ? output.NetQuantityKg == 0m ? 0m : amount * remaining / output.NetQuantityKg : (decimal?)null;
-        var consumedTl = tlAmount - remainingTl;
+        var split = tlAmount is { } amount ? InventoryManufacturingCostSplitCalculatorV1.Split(amount, output.NetQuantityKg, consumed) : null;
+        var remainingTl = split?.RemainingTlAmount;
+        var consumedTl = split?.ConsumedTlAmount;
         var sign = reverse ? -1m : 1m;
         var positions = new List<InventoryManufacturingCostPositionEffectV1>();
         var poolEffects = new List<InventoryManufacturingCostPoolEffectV1>();
@@ -208,7 +207,7 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
             var group = groups[index];
             var kg = group.Sum(row => row.QuantityKg);
             var value = index == groups.Length - 1 ? (remainingTl ?? 0m) - allocatedValue
-                : tlAmount is { } fullAmount && output.NetQuantityKg > 0m ? fullAmount * kg / output.NetQuantityKg : 0m;
+                : remainingTl is { } fullRemaining && remaining > 0m ? fullRemaining * kg / remaining : 0m;
             allocatedValue += value;
             if (recognized && output.TlAmount is not null) positions.Add(new(group.Key.LocationId, kg, sign * value, group.Key.Included));
             if (!recognized || !group.Key.Included) continue;
@@ -251,23 +250,26 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
     {
         var key = (location, product, currency);
         if (!pools.TryGetValue(key, out var pool)) pool = await InventoryStore.ReadCostPoolAsync(db, company, location, product, currency, token);
-        if (!pool.IsConsistent || authoritativeValue <= 0m) throw Error(503, "inventory_manufacturing_cost_ledger_unreadable");
+        if (!pool.IsConsistent || authoritativeValue < 0m) throw Error(503, "inventory_manufacturing_cost_ledger_unreadable");
         var beforeValue = pool.CostedKg * (pool.Position?.AverageCostPerKg ?? 0m);
         AverageCostPosition after;
         if (!reverse)
-            after = AverageCostCalculator.Apply(pool.Position, new(AverageCostMovementKind.PurchaseReceipt, kg, pool.CostedKg, authoritativeValue / kg));
+            // A zero remaining value can be the approved cent residual after all label value was recognized in SMM;
+            // it is not an unpriced zero-cost receipt and never changes the original positive recorded label amount.
+            after = AverageCostPosition.Known(pool.CostedKg + kg, ExactCostRatio.Of(beforeValue).Add(ExactCostRatio.Of(authoritativeValue))
+                .Divide(pool.CostedKg + kg).Round(AverageCostPrecision.InternalScale));
         else
         {
-            if (original is null || original.QuantityKg < kg || original.RecordedPoolValueEffect <= 0m)
+            if (original is null || original.QuantityKg < kg || original.RecordedPoolValueEffect < 0m)
                 throw Error(503, "inventory_manufacturing_cost_reversal_effect_unreadable");
             var remainingKg = pool.CostedKg - kg;
-            var actualOriginalValue = original.RecordedPoolValueEffect * kg / original.QuantityKg;
-            var remainingValue = beforeValue - actualOriginalValue;
-            if (remainingKg < 0m || remainingValue < 0m || remainingKg == 0m && remainingValue != 0m
-                || remainingKg > 0m && remainingValue <= 0m)
+            var actualOriginalValue = ExactCostRatio.Of(original.RecordedPoolValueEffect).Multiply(kg).Divide(original.QuantityKg);
+            var remainingValue = ExactCostRatio.Of(beforeValue).Subtract(actualOriginalValue);
+            if (remainingKg < 0m || remainingValue.Sign < 0 || remainingKg == 0m && remainingValue.Sign != 0
+                || remainingKg > 0m && remainingValue.Sign < 0)
                 throw Error(503, "inventory_manufacturing_cost_reversal_effect_unreadable");
             after = AverageCostPosition.Known(remainingKg, remainingKg == 0m ? pool.Position!.AverageCostPerKg!.Value
-                : AverageCostPrecision.Round(remainingValue / remainingKg));
+                : remainingValue.Divide(remainingKg).Round(AverageCostPrecision.InternalScale));
         }
         if (after.Status != AverageCostStatus.Known) throw Error(503, "inventory_manufacturing_cost_ledger_unreadable");
         var version = await InventoryStore.WriteCostPoolAsync(db, company, clock, location, product, currency, pool, after, token);
