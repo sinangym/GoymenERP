@@ -99,6 +99,7 @@ function BrandingEditor({ shell, company, module, namespace }: {
       boundary.report(result.status, snapshot)
       if ([401, 403, 404, 409].includes(result.status)) setState({ kind: result.status === 401 ? 'unauthenticated' : result.status === 403 ? 'forbidden' : result.status === 404 ? 'not-found' : 'conflict' })
       else setMessage(result.code === 'document_branding_asset_render_invalid' ? T.renderInvalid
+        : result.code === 'document_branding_asset_type_not_allowed' ? T.fileInvalid
         : result.code === 'document_template_maker_cannot_publish' ? T.maker : T.invalid)
     }
   }

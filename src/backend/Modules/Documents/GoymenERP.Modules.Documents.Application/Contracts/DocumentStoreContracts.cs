@@ -26,8 +26,16 @@ public interface IDocumentStore
     Task<DocumentStoreResult> StoreUploadAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
         Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default);
 
+    /// <summary>Reloadable admission runs only before a NEW append. Authority still runs on recorded/race replay.</summary>
+    Task<DocumentStoreResult> StoreUploadWithAdmissionAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
+        Func<CancellationToken, Task> beforeWrite, Func<CancellationToken, Task> beforeNewWrite, CancellationToken cancellationToken = default);
+
     Task<DocumentStoreResult> StoreVersionAsync(DocumentWriteEnvelope envelope, string requestHash, int expectedCurrentVersion,
         NewDocumentVersion version, Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default);
+
+    Task<DocumentStoreResult> StoreVersionWithAdmissionAsync(DocumentWriteEnvelope envelope, string requestHash, int expectedCurrentVersion,
+        NewDocumentVersion version, Func<CancellationToken, Task> beforeWrite, Func<CancellationToken, Task> beforeNewWrite,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// B-26: the recorded link attempt of (context company, <see cref="DocumentCommands.LinkV1"/>, key), answered for
