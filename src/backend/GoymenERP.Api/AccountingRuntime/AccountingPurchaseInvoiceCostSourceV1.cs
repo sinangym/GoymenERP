@@ -6,7 +6,7 @@ using GoymenERP.Modules.Inventory.Application;
 namespace GoymenERP.Api.AccountingRuntime;
 
 /// <summary>Adapts Inventory's committed valuation result only; does not re-run valuation or choose an account/rounding.</summary>
-public static class AccountingPurchaseInvoiceCostSourceV1
+public static partial class AccountingPurchaseInvoiceCostSourceV1
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     public static AccountingInventoryCostSourceV1 Read(WorkInboxEventV1 envelope, Guid companyId)
@@ -21,7 +21,9 @@ public static class AccountingPurchaseInvoiceCostSourceV1
             || source.AdmissionId == Guid.Empty || source.InvoiceDate == default || !Hash(source.SourceSha256)
             || source.OfficialDocument is not { DocumentVersion: > 0 } official || official.DocumentId == Guid.Empty
             || official.Ettn == Guid.Empty || !Hash(official.Sha256)
-            || source.Receipts is not { Count: > 0 and <= 10000 } || source.Positions is not { Count: > 0 and <= 10000 }) throw Invalid();
+            || source.Receipts is not { Count: <= 10000 } || source.Positions is not { Count: <= 10000 }
+            || source.InitialRecognitions is { Count: > 10000 }
+            || source.Receipts.Count == 0 && source.InitialRecognitions is not { Count: > 0 }) throw Invalid();
         var receiptIds = new HashSet<(Guid, Guid)>();
         foreach (var receipt in source.Receipts)
         {
@@ -56,7 +58,9 @@ public static class AccountingPurchaseInvoiceCostSourceV1
             components.Add(new(AccountingInventoryCostTraceV1.PurchaseComponent(position.ProductId, position.LocationId), position.ProductId,
                 null, null, position.LocationId, residual, proof, AccountingInventoryCostSourceValidationV1.Sha256(proof)));
         }
-        if (source.Receipts.Any(x => !positionIds.Contains((x.ProductId, x.LocationId))) || sum != Ratio(source.UnabsorbedTlDifference)) throw Invalid();
+        if (source.Receipts.Any(x => !positionIds.Contains((x.ProductId, x.LocationId)))) throw Invalid();
+        sum = ReadFirstRecognitions(source, receiptIds, components, sum);
+        if (sum != Ratio(source.UnabsorbedTlDifference)) throw Invalid();
         var result = new AccountingInventoryCostSourceV1(companyId, envelope.EventId, AccountingInventoryCostKindV1.PurchaseInvoiceDifference,
             source.InvoiceId, source.InvoiceVersion, source.AdmissionId, source.InvoiceDate, null, null,
             AccountingInventoryCostSourceValidationV1.Sha256(envelope.PayloadJson), components);
