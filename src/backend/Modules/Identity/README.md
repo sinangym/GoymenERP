@@ -1,5 +1,17 @@
 # Identity migration notes
 
+### KIM-S8 / KIM-D3 optional authenticator and recovery codes
+
+EF-generated `20261117004612_AddLocalTwoFactorSecrets` adds encrypted local authenticator secrets,
+one-use recovery hashes and nullable original correlation evidence in the existing command journal.
+It never enables two-factor authentication or assigns access. Credentials remain global Identity-owned
+accounts; each self-service request verifies its current user, security stamp and live company membership.
+Credential, factor, command receipt and typed Audit-owner append share one Serializable transaction.
+Down first refuses with **THROW 51967** while any factor, enabled credential or MFA replay evidence exists.
+Login consumes the factor and any one-use temporary password in one transaction; a failed write restores both.
+Enrollment and regenerated recovery plaintext is returned once with NoStore; replay returns no secret.
+Unit, HTTP, SQL and frontend test sources are separate from runtime acceptance, which remains NOT_RUN.
+
 
 ### KIM-S5 W7 lifecycle foundation (KIM-D18/D20/D21; historical source checkpoint)
 

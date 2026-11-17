@@ -77,7 +77,7 @@ export const LOGIN_TEXT = {
   submit: 'Giriş yap',
   submitting: 'Giriş yapılıyor…',
   missingFields: 'Kullanıcı adını ve parolayı girin.',
-  refused: 'Kullanıcı adı veya parola hatalı',
+  refused: 'Giriş bilgileri doğrulanamadı',
   lockNote:
     'Art arda hatalı denemelerden sonra giriş bir süre kapalı kalabilir. Bu durumda bir süre sonra yeniden deneyin ' +
     'veya yöneticinize başvurun.',

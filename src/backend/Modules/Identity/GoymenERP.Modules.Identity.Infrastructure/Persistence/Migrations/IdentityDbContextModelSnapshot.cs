@@ -576,6 +576,10 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                         .HasColumnType("nvarchar(100)")
                         .UseCollation("Latin1_General_100_BIN2");
 
+                    b.Property<string>("OriginalCorrelationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<byte[]>("RequestFingerprint")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -597,6 +601,38 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                     b.ToTable("LocalCredentialCommands", "identity", t =>
                         {
                             t.HasCheckConstraint("CK_LocalCredentialCommands_Shape", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [ResultVersion] >= 1 AND DATALENGTH([RequestFingerprint]) = 32 AND LEN([IdempotencyKey]) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.Credentials.LocalTwoFactorSecret", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<long?>("LastAcceptedStep")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ProtectedSecret")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("RecoveryHashesJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("LocalTwoFactorSecrets", "identity", t =>
+                        {
+                            t.HasCheckConstraint("CK_LocalTwoFactorSecrets_State", "[UserId] <> '00000000-0000-0000-0000-000000000000' AND [Version] >= 1 AND ([LastAcceptedStep] IS NULL OR [LastAcceptedStep] >= 0) AND ISJSON([RecoveryHashesJson]) = 1");
                         });
                 });
 
@@ -955,6 +991,15 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Identity.Domain.Credentials.LocalCredential", null)
                         .WithMany()
                         .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.Credentials.LocalTwoFactorSecret", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Identity.Domain.Credentials.LocalCredential", null)
+                        .WithOne()
+                        .HasForeignKey("GoymenERP.Modules.Identity.Domain.Credentials.LocalTwoFactorSecret", "UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

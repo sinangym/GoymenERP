@@ -40,7 +40,8 @@ public sealed record LocalCredentialLoginState(
     Guid SecurityStamp,
     bool UserIsActive,
     DateTimeOffset? TemporaryPasswordExpiresAtUtc = null,
-    DateTimeOffset? TemporaryPasswordConsumedAtUtc = null);
+    DateTimeOffset? TemporaryPasswordConsumedAtUtc = null,
+    bool TwoFactorEnabled = false);
 
 /// <summary>
 /// Storage port of the login path. Login writes are single conditional updates that never raise
@@ -103,6 +104,8 @@ public sealed record LocalCredentialSessionState(
 public interface ILocalAccountLoginService
 {
     Task<LocalAccountLoginResult> LoginAsync(string? userName, string? password, CancellationToken cancellationToken);
+    Task<LocalAccountLoginResult> LoginAsync(string? userName, string? password, string? secondFactorCode, CancellationToken cancellationToken)
+        => LoginAsync(userName, password, cancellationToken);
 }
 
 /// <summary>
@@ -189,6 +192,8 @@ public sealed record LocalAccountLoginRequestV1
     public required string UserName { get; init; }
 
     public required string Password { get; init; }
+
+    public string? TotpCode { get; init; }
 
     /// <summary>The password stays out of logs and debugger output.</summary>
     public override string ToString() => nameof(LocalAccountLoginRequestV1);

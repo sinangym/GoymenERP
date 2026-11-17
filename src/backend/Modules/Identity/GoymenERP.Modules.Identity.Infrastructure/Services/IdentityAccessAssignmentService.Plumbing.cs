@@ -78,7 +78,8 @@ internal sealed partial class IdentityAccessAssignmentService
         string KeyHash,
         string RequestHash,
         long? ExpectedVersion,
-        IdentityAccessCommandMetadataV1 Metadata);
+        IdentityAccessCommandMetadataV1 Metadata,
+        Guid? ManagedUserId = null);
 
     private sealed record Prepared(Command? Command, IdentityAccessCommandResultV1? Early);
 
@@ -157,7 +158,8 @@ internal sealed partial class IdentityAccessAssignmentService
     private async Task<Prepared> BeginAsync(
         Intent intent,
         IdentityAccessCommandMetadataV1 metadata,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Guid? managedUserId = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var companyId = RequireContextCompany();
@@ -174,6 +176,8 @@ internal sealed partial class IdentityAccessAssignmentService
         }
 
         var scope = await RequireAsync(intent.Permission, companyId, cancellationToken);
+        if (managedUserId is { } target)
+            await RequireUserManagementAcrossMembershipAsync(actorUserId, target, cancellationToken);
 
         long? expectedVersion = null;
         var fieldErrors = new List<RefusedAttemptFieldErrorV1>(intent.FieldErrors);
@@ -211,7 +215,8 @@ internal sealed partial class IdentityAccessAssignmentService
             IdempotencyHash.ComputeKey(metadata.IdempotencyKey),
             IdempotencyHash.ComputePayload(new { Command = intent.Name, Target = intent.TargetId, Request = intent.Payload }),
             expectedVersion,
-            metadata);
+            metadata,
+            managedUserId);
 
         var execution = await FindExecutionAsync(command, cancellationToken);
         if (execution is null)
@@ -219,7 +224,7 @@ internal sealed partial class IdentityAccessAssignmentService
             return new Prepared(command, null);
         }
 
-        await RequireStillAsync(command.Permission, companyId, cancellationToken);
+        await RequireCommandStillAsync(command, cancellationToken);
         return new Prepared(null, await ReplayAsync(execution, command, cancellationToken));
     }
 
@@ -250,19 +255,28 @@ internal sealed partial class IdentityAccessAssignmentService
         CancellationToken cancellationToken)
     {
         await using var transaction = await database.Database.BeginTransactionAsync(
-            IsolationLevel.ReadCommitted,
+            command.ManagedUserId is null ? IsolationLevel.ReadCommitted : IsolationLevel.Serializable,
             cancellationToken);
-        if (!await IdentityAdminLock.TryAcquireAsync(database, command.CompanyId, cancellationToken))
+        var lockCompanies = command.ManagedUserId is { } managed
+            ? (await new IdentityUserManagementEvaluator(database).GetMembershipCompanyIdsAsync(
+                managed, timeProvider.GetUtcNow(), cancellationToken)).Append(command.CompanyId).Distinct().Order().ToArray()
+            : [command.CompanyId];
+        foreach (var lockCompany in lockCompanies)
         {
-            await transaction.RollbackAsync(cancellationToken);
-            return Done(command, Unstored(Answers.Unavailable(), command.Metadata));
+            if (!await IdentityAdminLock.TryAcquireAsync(database, lockCompany, cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return Done(command, Unstored(Answers.Unavailable(), command.Metadata));
+            }
         }
+
+        await RequireCommandStillAsync(command, cancellationToken);
 
         var raced = await FindExecutionAsync(command, cancellationToken);
         if (raced is not null)
         {
             await transaction.RollbackAsync(cancellationToken);
-            await RequireStillAsync(command.Permission, command.CompanyId, cancellationToken);
+            await RequireCommandStillAsync(command, cancellationToken);
             return Done(command, await ReplayAsync(raced, command, cancellationToken));
         }
 
@@ -270,11 +284,17 @@ internal sealed partial class IdentityAccessAssignmentService
         var step = await body(now);
         if (step.Refusal is { } refusal)
         {
+            if (refusal.StatusCode >= 500 || refusal.StatusCode == 400)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                database.ChangeTracker.Clear();
+                return Done(command, Unstored(refusal, command.Metadata));
+            }
             return Done(command, await StoreRefusalAsync(command, refusal, transaction, cancellationToken));
         }
 
         var change = step.Change ?? throw new InvalidOperationException("Kimlik yetki komutu sonuç üretmedi.");
-        await RequireStillAsync(command.Permission, command.CompanyId, cancellationToken);
+        await RequireCommandStillAsync(command, cancellationToken);
         foreach (var audit in change.Audits)
         {
             auditEvents.Enqueue(audit);
@@ -324,7 +344,7 @@ internal sealed partial class IdentityAccessAssignmentService
         CancellationToken cancellationToken)
     {
         database.ChangeTracker.Clear();
-        await RequireStillAsync(command.Permission, command.CompanyId, cancellationToken);
+        await RequireCommandStillAsync(command, cancellationToken);
         RecordTerminal(command, refusal);
         AddExecution(command, refusal, timeProvider.GetUtcNow().ToUniversalTime());
         try
@@ -358,7 +378,7 @@ internal sealed partial class IdentityAccessAssignmentService
         IdentityAccessCommandAnswerV1 refusal,
         CancellationToken cancellationToken)
     {
-        await RequireStillAsync(command.Permission, command.CompanyId, cancellationToken);
+        await RequireCommandStillAsync(command, cancellationToken);
         AddExecution(command, refusal, timeProvider.GetUtcNow().ToUniversalTime());
         try
         {
