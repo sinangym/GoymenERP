@@ -18,6 +18,7 @@ internal sealed class LoadingInstructionRow : ILogisticsTenantRow
     public Guid CustomerPartyId { get; set; }
     public Guid CompanyAccountId { get; set; }
     public int Status { get; set; }
+    public int ShipmentKind { get; set; } = 1;
     public long Version { get; set; }
     public byte[] RowVersion { get; set; } = [];
 

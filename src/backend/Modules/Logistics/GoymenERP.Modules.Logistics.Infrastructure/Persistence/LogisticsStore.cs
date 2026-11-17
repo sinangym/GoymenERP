@@ -24,7 +24,7 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 /// (no owner source yet): a blocked line is restored with one block at the end, and a line that was
 /// blocked and unblocked cannot be represented — LOG-5 stores the block source's events.
 /// </summary>
-public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext companyContext, IAuditEventCollector auditEvents, TimeProvider timeProvider)
+public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext companyContext, IAuditEventCollector auditEvents, TimeProvider timeProvider)
     : ILogisticsInstructionStore, ILogisticsAggregateLoadStoreV1, ILogisticsShipmentRiskGateStoreV1
 {
     private const string EntityType = "Logistics.LoadingInstruction";
@@ -97,6 +97,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             CustomerPartyId = instruction.CustomerPartyId,
             CompanyAccountId = instruction.CompanyAccountId,
             Status = (int)instruction.Status,
+            ShipmentKind = (int)instruction.ShipmentKind,
             Version = instruction.Version,
             EffectiveOn = effectiveOn,
             CreatedAtUtc = instruction.CreatedAtUtc,
@@ -346,13 +347,15 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         var shareRows = await dbContext.Shares.AsNoTracking().Where(share => share.InstructionId == instructionId).OrderBy(share => share.ShareNo)
             .ToListAsync(cancellationToken);
         var weighingRow = await dbContext.Weighings.AsNoTracking().SingleOrDefaultAsync(weighing => weighing.InstructionId == instructionId, cancellationToken);
+        var correctionRows = await dbContext.WeighingCorrections.AsNoTracking().Where(correction => correction.InstructionId == instructionId)
+            .OrderBy(correction => correction.Revision).ToListAsync(cancellationToken);
         var unloadRow = await dbContext.UnloadWeighings.AsNoTracking().SingleOrDefaultAsync(unload => unload.InstructionId == instructionId, cancellationToken);
         // AT-055: the dispatch notes and their lines are tracked too — a lifecycle step writes its columns and releases lines in place.
         var noteRows = await dbContext.DispatchNotes.Where(note => note.InstructionId == instructionId).OrderBy(note => note.NoteNo)
             .ToListAsync(cancellationToken);
         var noteLineRows = await dbContext.DispatchNoteLines.Where(line => line.InstructionId == instructionId)
             .ToListAsync(cancellationToken);
-        var instruction = Restore(row, lineRows, shareRows, weighingRow, noteRows, noteLineRows, unloadRow);
+        var instruction = Restore(row, lineRows, shareRows, weighingRow, noteRows, noteLineRows, unloadRow, correctionRows);
         if (aggregateLoadLimit is not null)
         {
             await RequireAggregateLoadLimitAsync(companyId, row.EffectiveOn, instruction, aggregateLoadLimit, cancellationToken);
@@ -361,6 +364,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         var before = MutationSnapshot(instruction, aggregateLoadLimit);
         var sharesBefore = instruction.Shares.Count;
         var weighingBefore = instruction.Weighing;
+        var correctionsBefore = instruction.WeighingCorrections.ToArray();
         var unloadBefore = instruction.UnloadWeighing;
         var notesBefore = instruction.DispatchNotes.ToArray();
         var stepsBefore = instruction.DispatchSteps;
@@ -368,6 +372,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         // The domain decides; a refusal leaves the tracked rows untouched (nothing below has run).
         mutate(instruction, now);
         var weighingAdded = weighingBefore is null && instruction.Weighing is not null;
+        var correctionAdded = instruction.WeighingCorrections.Count == correctionsBefore.Length + 1;
         var unloadAdded = unloadBefore is null && instruction.UnloadWeighing is not null;
         var noteAdded = instruction.DispatchNotes.Count == notesBefore.Length + 1;
         var notesChanged = Enumerable.Range(0, Math.Min(notesBefore.Length, instruction.DispatchNotes.Count))
@@ -376,6 +381,10 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         if (instruction.Version != versionBefore + 1 || instruction.Id != row.Id || instruction.CompanyId != companyId
             || instruction.Shares.Count > sharesBefore + 1 || instruction.Lines.Count != lineRows.Count
             || (weighingBefore is not null && !ReferenceEquals(weighingBefore, instruction.Weighing))
+            || (instruction.WeighingCorrections.Count != correctionsBefore.Length && !correctionAdded)
+            || correctionsBefore.Where((correction, index) => !ReferenceEquals(correction, instruction.WeighingCorrections[index])).Any()
+            || (correctionAdded && (commandName != LogisticsCommands.CorrectWeighingV1 || instruction.Shares.Count != sharesBefore
+                || weighingAdded || unloadAdded || dispatchStep))
             || (weighingAdded && instruction.Shares.Count != sharesBefore)
             || (unloadBefore is not null && !ReferenceEquals(unloadBefore, instruction.UnloadWeighing))
             || (unloadAdded && (instruction.Shares.Count != sharesBefore || weighingAdded))
@@ -395,6 +404,10 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             dbContext.ChangeTracker.Clear();
             throw new LogisticsRuleException(LogisticsRuleCodes.DuplicateDispatchNoteId, "Bu irsaliye kimliği şirketin başka bir talimatında kullanılıyor.");
         }
+
+        if (correctionAdded && await dbContext.WeighingCorrections.AsNoTracking()
+            .AnyAsync(correction => correction.CorrectionId == instruction.WeighingCorrections[^1].CorrectionId, cancellationToken))
+            throw new LogisticsRuleException(LogisticsRuleCodes.DuplicateWeighingCorrectionId, "Bu düzeltme kimliği şirketin başka bir tartımında kayıtlı.");
 
         if (shipmentRiskGate is not null)
         {
@@ -509,6 +522,9 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
                 RecordedAtUtc = unload.RecordedAtUtc,
             });
         }
+
+        if (correctionAdded)
+            AppendWeighingCorrection(companyId, instruction, instruction.WeighingCorrections[^1], actorId);
 
         if (noteAdded)
         {
@@ -960,6 +976,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         var lines = await dbContext.Lines.AsNoTracking().Where(line => ids.Contains(line.InstructionId)).ToListAsync(cancellationToken);
         var shares = await dbContext.Shares.AsNoTracking().Where(share => ids.Contains(share.InstructionId)).ToListAsync(cancellationToken);
         var weighings = await dbContext.Weighings.AsNoTracking().Where(weighing => ids.Contains(weighing.InstructionId)).ToListAsync(cancellationToken);
+        var corrections = await dbContext.WeighingCorrections.AsNoTracking().Where(correction => ids.Contains(correction.InstructionId)).ToListAsync(cancellationToken);
         var unloads = await dbContext.UnloadWeighings.AsNoTracking().Where(unload => ids.Contains(unload.InstructionId)).ToListAsync(cancellationToken);
         var notes = await dbContext.DispatchNotes.AsNoTracking().Where(note => ids.Contains(note.InstructionId)).ToListAsync(cancellationToken);
         var noteLines = await dbContext.DispatchNoteLines.AsNoTracking().Where(line => ids.Contains(line.InstructionId)).ToListAsync(cancellationToken);
@@ -969,7 +986,8 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
                 weighings.SingleOrDefault(weighing => weighing.InstructionId == row.Id),
                 [.. notes.Where(note => note.InstructionId == row.Id).OrderBy(note => note.NoteNo)],
                 [.. noteLines.Where(line => line.InstructionId == row.Id)],
-                unloads.SingleOrDefault(unload => unload.InstructionId == row.Id)),
+                unloads.SingleOrDefault(unload => unload.InstructionId == row.Id),
+                [.. corrections.Where(correction => correction.InstructionId == row.Id).OrderBy(correction => correction.Revision)]),
             row.EffectiveOn,
             ShareActors(shares.Where(share => share.InstructionId == row.Id))))];
     }
@@ -990,9 +1008,11 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
     /// domain recalculates its net, loaded-at-cancel and difference; the stored ones must be the same.
     /// </summary>
     private static LoadingInstruction Restore(LoadingInstructionRow row, IReadOnlyList<LoadingInstructionLineRow> lines, IReadOnlyList<LoadingShareRow> shares,
-        VehicleWeighingRow? weighing, IReadOnlyList<DispatchNoteRow> notes, IReadOnlyList<DispatchNoteLineRow> noteLines, UnloadWeighingRow? unload)
+        VehicleWeighingRow? weighing, IReadOnlyList<DispatchNoteRow> notes, IReadOnlyList<DispatchNoteLineRow> noteLines, UnloadWeighingRow? unload,
+        IReadOnlyList<VehicleWeighingCorrectionRow> corrections)
     {
-        var instruction = LoadingInstruction.Create(row.Id, row.CompanyId, row.CustomerPartyId, row.CompanyAccountId, row.CreatedAtUtc);
+        var instruction = LoadingInstruction.Create(row.Id, row.CompanyId, row.CustomerPartyId, row.CompanyAccountId, row.CreatedAtUtc,
+            (LoadingInstructionShipmentKind)row.ShipmentKind);
         foreach (var line in lines)
         {
             var unit = line.UnitIsKilogram ? QuantityUnit.Kilogram : QuantityUnit.Piece;
@@ -1018,6 +1038,11 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             throw new InvalidOperationException("Kayıtlı kantar tartımının pay sırası paylarla uyuşmuyor.");
         }
 
+        if (corrections.Count > 0 && (weighing is null || corrections.Where((correction, index) =>
+                correction.Revision != index + 2 || correction.SharesBefore < weighing.SharesBefore || correction.SharesBefore > shares.Count
+                || index > 0 && correction.SharesBefore < corrections[index - 1].SharesBefore).Any()))
+            throw new InvalidOperationException("Kayıtlı tartı düzeltme sırası özgün tartı ve paylarla uyuşmuyor.");
+
         if (notes.Where((note, index) => note.NoteNo != index + 1 || note.SharesBefore < 1 || note.SharesBefore > shares.Count
                 || (index > 0 && (note.SharesBefore < notes[index - 1].SharesBefore || note.CreatedStep <= notes[index - 1].CreatedStep))).Any()
             || noteLines.Any(line => !notes.Any(note => note.DispatchNoteId == line.DispatchNoteId)))
@@ -1037,6 +1062,9 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             {
                 RestoreWeighing(instruction, weighing);
             }
+
+            foreach (var correction in corrections.Where(correction => correction.SharesBefore == index))
+                RestoreWeighingCorrection(instruction, correction);
 
             while (nextStep < steps.Count && (steps[nextStep].Kind != DispatchStepKind.Create || steps[nextStep].Note.SharesBefore == index))
             {
@@ -1286,6 +1314,8 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         JsonSerializer.Serialize(new
         {
             status = instruction.Status.ToString(),
+            shipmentKind = instruction.ShipmentKind.ToString(),
+            weighingCorrections = CorrectionSnapshot(instruction),
             version = instruction.Version,
             cancelledBy = instruction.CancelledBy, cancelReason = instruction.CancelReason,
             lines = instruction.Lines.Select(line => new
@@ -1339,6 +1369,8 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         return JsonSerializer.Serialize(new
         {
             status = instruction.Status.ToString(),
+            shipmentKind = instruction.ShipmentKind.ToString(),
+            weighingCorrections = CorrectionSnapshot(instruction),
             version = instruction.Version,
             cancelledBy = instruction.CancelledBy, cancelReason = instruction.CancelReason,
             lines = instruction.Lines.Select(line => new

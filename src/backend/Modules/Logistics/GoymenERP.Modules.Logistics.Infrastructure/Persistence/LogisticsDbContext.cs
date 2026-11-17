@@ -18,7 +18,7 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 /// (company, command, key hash) is a primary key under a binary collation; the raw key is never stored.
 /// The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// </summary>
-public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> options, ICompanyContext companyContext)
+public sealed partial class LogisticsDbContext(DbContextOptions<LogisticsDbContext> options, ICompanyContext companyContext)
     : DbContext(options)
 {
     public const string Schema = "logistics";
@@ -82,6 +82,7 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         ConfigureShares(modelBuilder);
         ConfigureAttempts(modelBuilder);
         ConfigureWeighings(modelBuilder);
+        ConfigureWeighingCorrections(modelBuilder);
         ConfigureUnloadWeighings(modelBuilder);
         ConfigureDispatchNotes(modelBuilder);
         ConfigureCustomerReturns(modelBuilder);
@@ -122,6 +123,7 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
             table.HasCheckConstraint("CK_LoadingInstructions_Identity",
                 $"[Id] <> {EmptyGuid} AND [CompanyId] <> {EmptyGuid} AND [CustomerPartyId] <> {EmptyGuid} AND [CompanyAccountId] <> {EmptyGuid}");
             table.HasCheckConstraint("CK_LoadingInstructions_Status", InstructionStatusCheck);
+            table.HasCheckConstraint("CK_LoadingInstructions_ShipmentKind", "[ShipmentKind] IN (1, 2)");
             table.HasCheckConstraint("CK_LoadingInstructions_Cancel", InstructionCancelCheck);
             table.HasCheckConstraint("CK_LoadingInstructions_Version", "[Version] >= 1");
             table.HasCheckConstraint("CK_LoadingInstructions_Text", "LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
@@ -131,6 +133,7 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         entity.Property(x => x.Id).ValueGeneratedNever();
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.RowVersion).IsRowVersion();
+        entity.Property(x => x.ShipmentKind).HasDefaultValue(1);
         entity.Property(x => x.EffectiveOn).HasColumnType("date");
         entity.Property(x => x.CreatedBy).HasMaxLength(128).IsRequired();
         entity.Property(x => x.CancelledBy).HasMaxLength(128);
