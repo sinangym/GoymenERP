@@ -12,7 +12,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Shell;
 public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "INVENTORY";
-    public const string OwnerContractVersion = "1.12";
+    public const string OwnerContractVersion = "1.13";
     // STK-S8: actual Settings/departure owners are registered by the host; their unavailable/legacy fences still apply.
     // 1.8 / STK-S18: future supply allocation read route and separately granted write control; no grant is added.
     public const string FutureAllocationReadCapabilityId = InventoryPermissionManifestV1.FutureAllocationRead;
@@ -22,6 +22,9 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
     public const string StockPositionsRouteId = "inventory.stock-positions";
     public const string StockPositionsRoutePath = "/stok/pozisyonlar";
     public const string StockPositionsScreenId = "ST-01";
+    // 1.13 / STK-S3: explicit unused release is a standalone write-purpose route, no stock display grant.
+    public const string SubcontractReleaseCapabilityId = "inventory.subcontract-allocations.release-unused";
+    public const string SubcontractReleaseRoutePath = "/stok/fason-ayirma-birak";
     public const string PhysicalAllocationCapabilityId = ErpPermissions.InventoryPhysicalAllocationWrite;
     public const string TransferCancelCapabilityId = ErpPermissions.InventoryStockTransferCancel;
     public const string TransferPlanningCapabilityId = ErpPermissions.InventoryStockTransferWrite;
@@ -85,6 +88,10 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
             [InventoryPermissionManifestV1.FutureAllocationRead], ImplementationAvailable: true);
         return
         [
+        new ShellCapabilityDeclaration(SubcontractReleaseCapabilityId, SubcontractReleaseCapabilityId,
+            SubcontractReleaseRoutePath, "ST-SUBCONTRACT-UNUSED-RELEASE", ShellCapabilityRoutePrecedence.Static,
+            ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
+            [ErpPermissions.InventoryPhysicalAllocationWrite], ImplementationAvailable: true),
         futureAllocations,
         futureAllocations with
         {

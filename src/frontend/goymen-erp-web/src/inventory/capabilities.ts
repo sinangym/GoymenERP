@@ -101,3 +101,6 @@ export const INVENTORY_OPENING_ROUTE = {
 export function inventoryOpeningDetailPath(countId: string): string {
   return `/stok/acilis/${encodeURIComponent(countId)}`
 }
+
+export const INVENTORY_SUBCONTRACT_RELEASE_CAPABILITY = 'inventory.subcontract-allocations.release-unused' as const
+export const INVENTORY_SUBCONTRACT_RELEASE_ROUTE = '/stok/fason-ayirma-birak' as const

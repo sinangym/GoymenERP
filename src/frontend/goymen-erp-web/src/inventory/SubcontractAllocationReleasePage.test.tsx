@@ -4,11 +4,11 @@ import {SubcontractAllocationReleasePage} from './SubcontractAllocationReleasePa
 import {SUBCONTRACT_RELEASE_TEXT as T} from './subcontractAllocationReleaseText'
 import {RELEASE_ALLOCATION as id,releaseCandidateFixture} from './subcontractAllocationReleaseTestData'
 import {resetPendingPoolAttempts} from '../sales/pendingPoolAttempts'
-const auth=vi.hoisted(()=>({capture:vi.fn(()=>({token:1})),report:vi.fn()}));const enabled=vi.hoisted(()=>({capabilities:['inventory.physical-allocation.write']}));const dispatch=vi.hoisted(()=>vi.fn())
+const auth=vi.hoisted(()=>({capture:vi.fn(()=>({token:1})),report:vi.fn()}));const enabled=vi.hoisted(()=>({capabilities:['inventory.subcontract-allocations.release-unused']}));const dispatch=vi.hoisted(()=>vi.fn())
 vi.mock('../shell/useAuthBoundary',()=>({useAuthBoundary:()=>auth}))
 vi.mock('../shell/shellContext',async original=>({...await original<typeof import('../shell/shellContext')>(),useShellState:()=>({sessionEpoch:1,routeEntryGeneration:0,requestFenceGeneration:0,committedContextRevision:1,activeContext:{scopeMode:'single',companyId:'11111111-1111-4111-8111-111111111111',userId:'SENTETIK-user',capabilityGeneration:'1',capabilities:enabled.capabilities}}),useShellDispatch:()=>dispatch}))
 vi.mock('../shell/shellState',async original=>({...await original<typeof import('../shell/shellState')>(),hasCapability:(_state:unknown,name:string)=>enabled.capabilities.includes(name)}))
-beforeEach(()=>{enabled.capabilities=['inventory.physical-allocation.write'];auth.report.mockClear()})
+beforeEach(()=>{enabled.capabilities=['inventory.subcontract-allocations.release-unused'];auth.report.mockClear()})
 afterEach(()=>{cleanup();resetPendingPoolAttempts();vi.unstubAllGlobals()})
 const response=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json'}})
 describe('STK-S3 explicit unused release',()=>{

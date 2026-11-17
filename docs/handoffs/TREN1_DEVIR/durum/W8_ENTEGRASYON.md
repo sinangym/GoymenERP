@@ -397,3 +397,11 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
 - Gerçek sağlayıcı yokluğu typed 503 olarak korunur (kullanıcı Q12). Resmî iptal olmuş gibi kanıt üretilmez. Kaynak/route/host hazır olması dış belge iptalinin kullanılabilir kabulü değildir; dilim PARTIAL kalır.
 - Provider/host/mount sözleşme test kaynakları güncellendi; owner'ın altı gerçek SQL fact tam adı sıralı Sales envanterine eklendi. Shell registry otoriteleri, OpenAPI, recovery ve guard pinleri finalde üreticiyle yeniden üretilecek; elle hash yazılmadı.
 - Owner API/EF/Sales.Unit/Integration/TSC derlemeleri exit0. Bu merkezi delta için derlemeler QUEUED; runtime/SQL/Vitest/browser/CI NOT_RUN.
+
+
+## STK-S3 — ayrı yetkili kullanılmayan fason ayırma komutu
+
+- Owner kaynak checkpoint'i `372e27303` alındı; gerçek Program DI ve endpoint mount'u bağlandı. Kullanılmış pay veya fiziksel stok/hareket değişmez; yalnız aktif kullanılmayan pay açık komutla bırakılır. Sipariş/label/capacity çitleri owner işleminde kalır.
+- Inventory shell 1.13 bağımsız `/stok/fason-ayirma-birak` ekranını yalnız mevcut `inventory.physical-allocation.write` izniyle yayımlar. Teknik route capability `inventory.subcontract-allocations.release-unused` bir ERP izni değildir; eski stok-detail control'ünün ekstra okuma izinleri yeni write-purpose gateway'e yüklenmez. Sayfa, route ve menü aynı teknik capability'ye bağlandı.
+- Kayıtlı fresh izin/version/idempotency/Audit/replay ve HTTP/fiziksel rollback kaynakları owner'dadır. Merkezi mount/provider test kaynakları ve üç gerçek SQL fact tam adı güncellendi. Şema/migration, yeni izin/grant/rol veya production aktivasyonu yoktur.
+- Kaynak derleme owner zinciri sürüyor; merkez delta için son birleşik derleme QUEUED. Runtime/SQL/Vitest/browser/CI NOT_RUN. Pinler final üretici sırasındadır; elle hash yazılmadı.

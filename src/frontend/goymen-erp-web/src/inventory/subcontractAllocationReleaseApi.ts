@@ -4,7 +4,7 @@ import { isReferenceId, isVersionString } from '../sales/wirePrimitives'
 import type { ViewOutcome } from '../shell/uiState'
 import type { OrderCommandOutcome } from '../sales/orderAttempt'
 
-export const SUBCONTRACT_RELEASE_CAPABILITY = 'inventory.physical-allocation.write'
+export const SUBCONTRACT_RELEASE_CAPABILITY = 'inventory.subcontract-allocations.release-unused'
 export const SUBCONTRACT_RELEASE_ROUTE = '/stok/fason-ayirma-birak'
 const path = '/inventory/subcontract-allocations'
 export interface SubcontractAllocation {

@@ -34,7 +34,7 @@ describe('shell ↔ Inventory opening-stock contract', () => {
     expect(CAPABILITY_ROUTE[CAPABILITY.inventoryStockPositionsList]).toBe(INVENTORY_STOCK_POSITIONS_ROUTE)
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.inventoryStockPositionsList]).toBe('Stok / Malzeme Pozisyonu')
     expect(NAV_CAPABILITIES.filter((item) => item === INVENTORY_STOCK_POSITIONS_CAPABILITY)).toHaveLength(1)
-    expect(inventoryRoutes).toHaveLength(14)
+    expect(inventoryRoutes).toHaveLength(15)
     const futurePath = inventoryFutureAllocationPath('order-1', 'line-2')
     expect(matchRoutes(inventoryRoutes, futurePath)?.at(-1)?.route.path)
       .toBe(INVENTORY_FUTURE_ALLOCATION_ROUTE.slice(1))
@@ -91,4 +91,13 @@ describe('shell ↔ Inventory opening-stock contract', () => {
       expect(NAV_GROUPS.find(group => group.id === 'stock-logistics')?.entries).toContain(capability)
     }
   })
+})
+
+
+it('mounts explicit unused subcontract release independently of stock display capabilities', () => {
+  const capability = CAPABILITY.inventorySubcontractRelease
+  expect(CAPABILITY_ROUTE[capability]).toBe('/stok/fason-ayirma-birak')
+  expect(matchRoutes(inventoryRoutes, CAPABILITY_ROUTE[capability])?.at(-1)?.route.path).toBe('stok/fason-ayirma-birak')
+  expect(NAV_CAPABILITIES).toContain(capability)
+  expect(CAPABILITY_NAV_LABEL[capability]).toBe('Kullanılmayan fason ayırmayı bırak')
 })

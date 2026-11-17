@@ -4,6 +4,8 @@ import { CapabilityRoute } from '../shell/CapabilityRoute'
 import type { CapabilityId } from '../shell/capabilities'
 import {
   INVENTORY_LABEL_TRACE_ROUTE,
+  INVENTORY_SUBCONTRACT_RELEASE_CAPABILITY,
+  INVENTORY_SUBCONTRACT_RELEASE_ROUTE,
   INVENTORY_OPENING_CAPABILITY,
   INVENTORY_MOVEMENT_TIMELINE_ROUTE,
   INVENTORY_OPENING_ROUTE,
@@ -18,6 +20,7 @@ import {
   INVENTORY_FUTURE_ALLOCATION_ROUTE,
   INVENTORY_FUTURE_ALLOCATION_READ_CAPABILITY,
 } from './capabilities'
+import { SubcontractAllocationReleasePage } from './SubcontractAllocationReleasePage'
 import { InventoryLabelTracePage } from './InventoryLabelTracePage'
 import { InventoryMovementTimelinePage } from './InventoryMovementTimelinePage'
 import { InventoryOpeningCreatePage } from './InventoryOpeningCreatePage'
@@ -36,6 +39,8 @@ function gate(children: ReactNode) {
 }
 
 export const inventoryRoutes: RouteObject[] = [
+  { path: INVENTORY_SUBCONTRACT_RELEASE_ROUTE.slice(1), element: <CapabilityRoute capability={INVENTORY_SUBCONTRACT_RELEASE_CAPABILITY}>
+    <SubcontractAllocationReleasePage /></CapabilityRoute> },
   ...Object.entries(INVENTORY_TRANSFER_ACTION_ROUTE).map(([capability, path]) => ({
     path: path.slice(1), element: <CapabilityRoute capability={capability as CapabilityId}><InventoryTransferPage /></CapabilityRoute>,
   })),

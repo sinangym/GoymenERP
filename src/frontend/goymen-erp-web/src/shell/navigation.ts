@@ -145,6 +145,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'accounting.purchase-cost-differences.approve',
   'inventory.opening-stock.record',
   'inventory.stock-positions.list',
+  'inventory.subcontract-allocations.release-unused',
   'inventory.stock-transfer.write',
   'inventory.stock-transfer.overage-approve',
   'inventory.stock-transfer.loss-record',
@@ -331,6 +332,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // same capability; only the sidebar place and its wording changed.
   'inventory.opening-stock.record': 'Açılış stokları',
   'inventory.stock-positions.list': 'Stok / Malzeme Pozisyonu',
+  'inventory.subcontract-allocations.release-unused': 'Kullanılmayan fason ayırmayı bırak',
   'inventory.stock-transfer.write': 'Depo transferi planlama',
   'inventory.stock-transfer.overage-approve': 'Transfer fazla kabul onayları',
   'inventory.stock-transfer.loss-record': 'Transfer kayıp talepleri',
@@ -485,6 +487,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     label: 'Stok & Lojistik',
     entries: [
       'inventory.stock-positions.list',
+      'inventory.subcontract-allocations.release-unused',
       'inventory.stock-transfer.write',
       'inventory.stock-transfer.overage-approve',
       'inventory.stock-transfer.loss-record',

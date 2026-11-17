@@ -299,6 +299,7 @@ export const CAPABILITY = {
   inventoryOpeningStockRecord: 'inventory.opening-stock.record',
   /** ST-01 bounded, company-scoped physical stock-position read. */
   inventoryStockPositionsList: 'inventory.stock-positions.list',
+  inventorySubcontractRelease: 'inventory.subcontract-allocations.release-unused',
   inventoryTransferPlanning: 'inventory.stock-transfer.write',
   inventoryTransferOverageApproval: 'inventory.stock-transfer.overage-approve',
   inventoryTransferLossRequest: 'inventory.stock-transfer.loss-record',
@@ -543,6 +544,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.accountingTrialBalance]: '/muhasebe/mizan',
   [CAPABILITY.inventoryOpeningStockRecord]: '/stok/acilis',
   [CAPABILITY.inventoryStockPositionsList]: '/stok/pozisyonlar',
+  [CAPABILITY.inventorySubcontractRelease]: '/stok/fason-ayirma-birak',
   [CAPABILITY.inventoryTransferPlanning]: '/stok/transferler/planla',
   [CAPABILITY.inventoryTransferOverageApproval]: '/stok/transferler/fazla-kabul-onaylari',
   [CAPABILITY.inventoryTransferLossRequest]: '/stok/transferler/kayip-talepleri',

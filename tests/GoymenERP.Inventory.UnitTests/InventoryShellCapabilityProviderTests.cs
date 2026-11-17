@@ -8,16 +8,28 @@ namespace GoymenERP.Inventory.UnitTests;
 public sealed class InventoryShellCapabilityProviderTests
 {
     [Fact]
+    public void Unused_subcontract_release_has_a_standalone_write_only_single_company_route()
+    {
+        var declaration = Assert.Single(new InventoryShellCapabilityProvider().GetDeclarations(),
+            x => x.CapabilityId == InventoryShellCapabilityProvider.SubcontractReleaseCapabilityId);
+        Assert.Equal("/stok/fason-ayirma-birak", declaration.RoutePath);
+        Assert.Null(declaration.ParentCapabilityId);
+        Assert.Equal([ErpPermissions.InventoryPhysicalAllocationWrite], declaration.RequiredPermissions);
+        Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, declaration.ScopeRequirement);
+    }
+
+    [Fact]
     public void Opening_stock_workspace_reuses_the_existing_permission_and_one_route()
     {
         var provider = new InventoryShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
-        Assert.Equal(20, declarations.Count);
+        Assert.Equal(21, declarations.Count);
         var declaration = Assert.Single(declarations,
             item => item.CapabilityId == InventoryShellCapabilityProvider.OpeningStockCapabilityId);
 
         Assert.Equal("INVENTORY", provider.Owner);
-        Assert.Equal("1.12", provider.ContractVersion);
+        Assert.Equal("1.13", provider.ContractVersion);
         Assert.Equal(ErpPermissions.InventoryOpeningStockRecord, declaration.CapabilityId);
         Assert.Equal("inventory.opening-stock", declaration.RouteId);
         Assert.Equal("/stok/acilis", declaration.RoutePath);
