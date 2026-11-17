@@ -45,7 +45,9 @@ public sealed class InventorySubcontractDeliveryContractTests
         var source = Source();
         foreach (var invalid in new[] { source with { CompanyId = Guid.NewGuid() }, source with { LabelId = Guid.NewGuid() },
                      source with { SalesOrderVersion = 0 }, source with { ManufacturingOrderVersion = 0 },
-                     source with { ManufacturingPlanVersion = 0 }, source with { CustomerAccountId = Guid.Empty },
+                     source with { ManufacturingPlanVersion = 0 }, source with { ManufacturingSalesLinkRevision = 0 },
+                     source with { SalesServiceProductId = Guid.Empty },
+                     source with { CustomerAccountId = Guid.Empty },
                      source with { SourceVersion = "unknown" }, source with { OutputNetKg = "1.0" } })
             Assert.Equal(503, Assert.Throws<InventoryDefiniteShipmentException>(() =>
                 InventorySubcontractDeliveryContractV1.Source(invalid, source.CompanyId, source.LabelId)).Status);
@@ -62,7 +64,33 @@ public sealed class InventorySubcontractDeliveryContractTests
             Assert.DoesNotContain(forbidden, json, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void Link_revision_is_retained_separately_from_the_unchanged_plan_version()
+    {
+        var first = Source();
+        var relinked = first with { ManufacturingSalesLinkRevision = first.ManufacturingSalesLinkRevision + 1 };
+        Assert.Equal(first.ManufacturingPlanVersion, relinked.ManufacturingPlanVersion);
+        InventorySubcontractDeliveryContractV1.Source(relinked, first.CompanyId, first.LabelId);
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var firstJson = JsonSerializer.Serialize(first, options);
+        var relinkedJson = JsonSerializer.Serialize(relinked, options);
+        Assert.NotEqual(firstJson, relinkedJson);
+        Assert.Equal(relinked, JsonSerializer.Deserialize<InventorySubcontractDeliverySourceV1>(relinkedJson, options));
+    }
+
+    [Fact]
+    public void Service_line_product_and_physical_output_product_keep_separate_identities()
+    {
+        var source = Source();
+        Assert.NotEqual(source.ProductId, source.SalesServiceProductId);
+        InventorySubcontractDeliveryContractV1.Source(source, source.CompanyId, source.LabelId);
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var saved = JsonSerializer.Deserialize<InventorySubcontractDeliverySourceV1>(JsonSerializer.Serialize(source, options), options)!;
+        Assert.Equal(source.ProductId, saved.ProductId);
+        Assert.Equal(source.SalesServiceProductId, saved.SalesServiceProductId);
+    }
+
     private static InventorySubcontractDeliverySourceV1 Source() => new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
         Guid.NewGuid(), 4, 2, Guid.NewGuid(), "product.v1", Guid.NewGuid(), 7, Guid.NewGuid(), 3, Guid.NewGuid(), Guid.NewGuid(), "10",
-        InventorySubcontractDeliveryContractV1.SourceVersion);
+        InventorySubcontractDeliveryContractV1.SourceVersion, 2, Guid.NewGuid());
 }

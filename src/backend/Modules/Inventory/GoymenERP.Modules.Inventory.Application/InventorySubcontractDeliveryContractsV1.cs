@@ -12,7 +12,7 @@ public sealed record InventorySubcontractDeliverySourceV1(Guid CompanyId, Guid C
     Guid SalesOrderId, Guid SalesOrderLineId, long SalesOrderVersion, int SalesLineRevision,
     Guid ProductId, string ProductVersion, Guid ManufacturingOrderId, long ManufacturingOrderVersion,
     Guid ManufacturingPlanId, long ManufacturingPlanVersion, Guid OutputFactId, Guid LabelId,
-    string OutputNetKg, string SourceVersion);
+    string OutputNetKg, string SourceVersion, long ManufacturingSalesLinkRevision, Guid SalesServiceProductId);
 
 public sealed record InventorySubcontractReservationLineV1(Guid AllocationId, Guid LabelId,
     string ExpectedLabelVersion, string QuantityKg, string Reason, InventorySubcontractDeliverySourceV1 Source);
@@ -76,6 +76,7 @@ public static class InventorySubcontractDeliveryContractV1
             || source.SalesLineRevision < 0 || source.ProductId == Guid.Empty || !Text(source.ProductVersion, 128)
             || source.ManufacturingOrderId == Guid.Empty || source.ManufacturingOrderVersion < 1
             || source.ManufacturingPlanId == Guid.Empty || source.ManufacturingPlanVersion < 1 || source.OutputFactId == Guid.Empty
+            || source.ManufacturingSalesLinkRevision < 1 || source.SalesServiceProductId == Guid.Empty
             || source.SourceVersion != SourceVersion) throw Refused(503, SourceMismatch);
         try { _ = Quantity(source.OutputNetKg); }
         catch (InventoryDefiniteShipmentException error) { throw Refused(503, SourceMismatch, error); }

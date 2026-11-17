@@ -63,6 +63,7 @@ public sealed class InventorySubcontractDeliveryParticipant : IInventorySubcontr
         ArgumentNullException.ThrowIfNull(settings); ArgumentNullException.ThrowIfNull(audit); ArgumentNullException.ThrowIfNull(auditWriter);
         ArgumentNullException.ThrowIfNull(salesLineLocks);
         if (companyId == Guid.Empty || connection.State != ConnectionState.Open || !ReferenceEquals(transaction.Connection, connection)
+            || transaction.IsolationLevel != IsolationLevel.Serializable
             || auditWriter.HasPendingDrafts) throw Refused(503, Unavailable);
         var company = new CompanyContext(); company.Set(companyId);
         var context = new InventoryDbContext(new DbContextOptionsBuilder<InventoryDbContext>()
@@ -232,7 +233,8 @@ public sealed class InventorySubcontractDeliveryParticipant : IInventorySubcontr
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         if (Interlocked.Exchange(ref started, 1) != 0 || connection.State != ConnectionState.Open
-            || !ReferenceEquals(transaction.Connection, connection) || context.Database.CurrentTransaction is not { } enlisted
+            || !ReferenceEquals(transaction.Connection, connection) || transaction.IsolationLevel != IsolationLevel.Serializable
+            || context.Database.CurrentTransaction is not { } enlisted
             || !ReferenceEquals(enlisted.GetDbTransaction(), transaction) || auditWriter.HasPendingDrafts) throw Refused(503, Unavailable);
         ArgumentNullException.ThrowIfNull(metadata);
         if (!Text(metadata.ActorId, 128) || !Text(metadata.PermissionCode, 128) || !Text(metadata.CorrelationId, 128)
@@ -287,8 +289,10 @@ public sealed class InventorySubcontractDeliveryParticipant : IInventorySubcontr
             || fresh.SalesOrderId != original.SalesOrderId || fresh.SalesOrderLineId != original.SalesOrderLineId
             || fresh.SalesLineRevision < original.SalesLineRevision || fresh.SalesOrderVersion < original.SalesOrderVersion
             || fresh.ProductId != original.ProductId || fresh.ProductVersion != original.ProductVersion || fresh.LabelId != original.LabelId
+            || fresh.SalesServiceProductId != original.SalesServiceProductId
             || fresh.ManufacturingOrderId != original.ManufacturingOrderId || fresh.ManufacturingOrderVersion < original.ManufacturingOrderVersion
             || fresh.ManufacturingPlanId != original.ManufacturingPlanId || fresh.ManufacturingPlanVersion < original.ManufacturingPlanVersion
+            || fresh.ManufacturingSalesLinkRevision < original.ManufacturingSalesLinkRevision
             || fresh.OutputFactId != original.OutputFactId) throw Refused(409, SourceMismatch);
     }
     private async Task<MaterialLabel> MaterialAsync(LabelRow row, CancellationToken token)
