@@ -125,7 +125,7 @@ public sealed partial class AccountingInventoryCostStoreV1
     {
         var cancelled = await Cancellation(view, token);
         if (cancelled is null) return view;
-        if (view.Component.AlreadyPostedComponents is { Count: > 0 })
+        if (view.Component.HasPostedComponents)
             return view with { Status = view.Component.UnpostedTlAmount is null ? "AttributedCancellationPending" : "MixedCancellationPending",
                 CancellationId = cancelled.CancellationId };
         if (view.JournalId is null) return view with { Status = view.Status == "RoundedNoCost" ? "RoundedNoCostCancelled" : "Cancelled", CancellationId = cancelled.CancellationId };
@@ -157,7 +157,7 @@ public sealed partial class AccountingInventoryCostStoreV1
             var row = await db.InventoryCostProposals.AsNoTracking().Where(x => x.Id == proposalId).OrderByDescending(x => x.Version).FirstAsync(cancellationToken);
             if (request.ExpectedVersion != row.Version) throw new AccountingVersionConflictException(request.ExpectedVersion, row.Version);
             var view = await ReadStored(row, cancellationToken);
-            if (view.Status != "Posted" || view.Component.AlreadyPostedComponents is { Count: > 0 })
+            if (view.Status != "Posted" || view.Component.HasPostedComponents)
                 throw Refuse("inventory_cost_reversal_not_proposable");
             var journal = await CurrentPostedJournal(view, cancellationToken);
             if (await db.JournalReversalProposals.AnyAsync(x => x.SourceJournalId == journal

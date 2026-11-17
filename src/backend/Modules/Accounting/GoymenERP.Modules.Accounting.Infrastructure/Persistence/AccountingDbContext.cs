@@ -146,6 +146,7 @@ public sealed partial class AccountingDbContext(DbContextOptions<AccountingDbCon
         ConfigureManufacturingCostDifferences(modelBuilder);
         ConfigureInventoryCosts(modelBuilder);
         ConfigureCostAttributions(modelBuilder);
+        ConfigurePurchaseCostAttributions(modelBuilder);
         ConfigureCreditMovementProposals(modelBuilder);
         ConfigureFinanceJournalSources(modelBuilder);
         ConfigureInvoiceLineCogs(modelBuilder);

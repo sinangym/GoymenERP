@@ -39,4 +39,11 @@ public interface IPostedManufacturingShipmentCostReaderV1
     Task<PostedManufacturingShipmentCostV1?> ReadAsync(Guid companyId, Guid shipmentId, Guid movementId,
         int movementLineNumber, Guid productId, decimal quantityKg,
         Func<CancellationToken, Task> freshConsumerFence, CancellationToken cancellationToken = default);
+
+    // Actual implementations may return a proved root subset for a consumer that combines purchase and production roots.
+    // Existing providers retain their stricter whole-line admission until they implement that evidence explicitly.
+    Task<PostedManufacturingShipmentCostV1?> ReadProvenSharesAsync(Guid companyId, Guid shipmentId, Guid movementId,
+        int movementLineNumber, Guid productId, decimal quantityKg,
+        Func<CancellationToken, Task> freshConsumerFence, CancellationToken cancellationToken = default) =>
+        ReadAsync(companyId, shipmentId, movementId, movementLineNumber, productId, quantityKg, freshConsumerFence, cancellationToken);
 }

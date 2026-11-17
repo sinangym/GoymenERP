@@ -29,7 +29,13 @@ public sealed record AccountingInventoryCostComponentV1(string ComponentKey, Gui
     // Only a mixed Sales line uses this partition: source total = already posted shares + unposted original stamps.
     // Zero is meaningful when the remaining original stamps prove zero; null retains the legacy all-or-none shape.
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    AccountingInventoryCostRatioV1? UnpostedTlAmount = null);
+    AccountingInventoryCostRatioV1? UnpostedTlAmount = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<PostedPurchaseCostShareV1>? AlreadyPostedPurchaseComponents = null)
+{
+    [JsonIgnore] public bool HasPostedComponents => AlreadyPostedComponents is { Count: > 0 }
+        || AlreadyPostedPurchaseComponents is { Count: > 0 };
+}
 
 public sealed record AccountingSalesPhysicalCostClaimV1(Guid ShipmentId, Guid MovementId, int MovementLineNumber,
     Guid ProductId, decimal QuantityKg);

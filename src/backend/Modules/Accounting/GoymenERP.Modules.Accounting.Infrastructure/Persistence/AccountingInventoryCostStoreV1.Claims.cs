@@ -10,14 +10,14 @@ public sealed partial class AccountingInventoryCostStoreV1
     {
         if (source.Kind != AccountingInventoryCostKindV1.SalesInvoicedShipment)
         {
-            if (component.SalesPhysicalClaims is not null || component.AlreadyPostedComponents is not null)
+            if (component.SalesPhysicalClaims is not null || component.AlreadyPostedComponents is not null || component.AlreadyPostedPurchaseComponents is not null)
                 throw Refuse("inventory_cost_physical_claim_invalid");
             return;
         }
         var claims = component.SalesPhysicalClaims;
         if (claims is null)
         {
-            if (component.AlreadyPostedComponents is not null) throw Refuse("inventory_cost_physical_claim_invalid");
+            if (component.AlreadyPostedComponents is not null || component.AlreadyPostedPurchaseComponents is not null) throw Refuse("inventory_cost_physical_claim_invalid");
             return; // Old known-stamp source shape; it never resolves an unavailable stamp through attribution.
         }
         if (claims.Count is < 1 or > 10000 || claims.Select(x => (x.MovementId, x.MovementLineNumber)).Distinct().Count() != claims.Count)
@@ -33,22 +33,35 @@ public sealed partial class AccountingInventoryCostStoreV1
             if (old is not null) throw Refuse("inventory_cost_economic_claim_conflict");
             var expected = component.AlreadyPostedComponents?.Where(x => x.Shipment.MovementId == physical.MovementId
                 && x.Shipment.MovementLineNumber == physical.MovementLineNumber).OrderBy(x => x.SourceEventId).ThenBy(x => x.OutputId).ToArray() ?? [];
+            var purchased = component.AlreadyPostedPurchaseComponents?.Where(x => x.MovementId == physical.MovementId
+                && x.MovementLineNumber == physical.MovementLineNumber).OrderBy(x => x.Approval.SourceEventId).ThenBy(x => x.Approval.InvoiceLineId).ToArray() ?? [];
             if (expected.Length > 0)
             {
                 if (postedManufacturing is null) throw Refuse("manufacturing_attribution_owner_unavailable");
-                var actual = await postedManufacturing.ReadAsync(source.CompanyId, physical.ShipmentId, physical.MovementId,
+                var actual = await postedManufacturing.ReadProvenSharesAsync(source.CompanyId, physical.ShipmentId, physical.MovementId,
                     physical.MovementLineNumber, physical.ProductId, physical.QuantityKg,
                     _ => { RequireCompany(source.CompanyId); return Task.CompletedTask; }, token);
                 RequireCompany(source.CompanyId);
                 if (actual is null || expected.Length == 0 || Encode(actual.Shares) != Encode(expected))
                     throw Refuse("inventory_cost_attribution_changed");
             }
+            if (purchased.Length > 0)
+            {
+                if (postedPurchasing is null) throw Refuse("purchase_cost_attribution_owner_unavailable");
+                var actual = await postedPurchasing.ReadProvenSharesAsync(source.CompanyId, physical.ShipmentId, physical.MovementId,
+                    physical.MovementLineNumber, physical.ProductId, physical.QuantityKg,
+                    _ => { RequireCompany(source.CompanyId); return Task.CompletedTask; }, token);
+                RequireCompany(source.CompanyId);
+                if (actual.HasPendingCandidate || Encode(actual.Shares) != Encode(purchased)) throw Refuse("inventory_cost_attribution_changed");
+            }
+            if ((expected.Length > 0 || purchased.Length > 0) && !PostedCostPhysicalCoverageV1.IsComplete(expected, purchased))
+                throw Refuse("inventory_cost_attribution_changed");
             var proof = Encode(new { source.CompanyId, source.EventId, source.InvoiceId, source.InvoiceVersion, source.AdmissionId,
                 component.InvoiceLineId, Physical = physical, component.SourceProofSha256 });
             db.InvoiceCogsEconomicClaims.Add(new() { CompanyId = source.CompanyId, MovementId = physical.MovementId,
                 MovementLineNumber = physical.MovementLineNumber, ShipmentId = physical.ShipmentId, SalesEventId = source.EventId,
                 InvoiceId = source.InvoiceId, InvoiceLineId = component.InvoiceLineId!.Value, AdmissionId = source.AdmissionId,
-                FinalizedVersion = source.InvoiceVersion, Origin = expected.Length == 0 ? 1 : 2,
+                FinalizedVersion = source.InvoiceVersion, Origin = expected.Length == 0 && purchased.Length == 0 ? 1 : 2,
                 SourceHash = AccountingInventoryCostSourceValidationV1.Sha256(proof), ViewJson = proof, RecordedAtUtc = clock.GetUtcNow() });
         }
     }
