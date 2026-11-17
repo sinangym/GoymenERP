@@ -545,7 +545,7 @@ public sealed partial class ManufacturingCommandService(
     IManufacturingPlanPriorityStore? planPriorities = null,
     IManufacturingWorkCenterQueueOrderingStore? queueOrdering = null,
     IManufacturingOrderReopeningStoreV1? orderReopenings = null,
-    GoymenERP.Modules.Accounting.Application.Contracts.IAccountingPeriodStatusPortV1? accountingPeriods = null,
+    IManufacturingReopeningAccountingPeriodStatusPortV1? accountingPeriods = null,
     IManufacturingOrderReopeningInventoryPortV1? reopeningInventory = null,
     IManufacturingCostGenerationStoreV1? costGenerations = null,
     IManufacturingClosedOrderCostRecognitionPortV1? costRecognition = null,
