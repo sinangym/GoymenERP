@@ -221,3 +221,26 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
   **135 DONE (%77,6), 25 PARTIAL, 14 diğer açık; toplam 174, açık 39**.
   Kaynak kodun ilerlemesi tam dilim DONE veya runtime kabulü diye sayılmadı.
   W8 son pakettir; yeni dalga yok. Pinler ve tren FF henüz tamamlanmadı.
+
+## W8 paralel devam ve yeni insan cevapları
+
+- Daha önce kota hatası veren mevcut yürütücüler yeniden yanıt verdi; üretim,
+  stok/lojistik ve finans işleri ayrı worktree/dosya sahipliğiyle yeniden başladı.
+  Tek .NET/EF ve tek Node derleme slotu, açık lease devri ve her yeni araç
+  sürecinde en az 2 GiB boş RAM koşulu korunur. Yeni dalga açılmadı.
+- `93bfba4ac` / `ba38bc6da` / `cea19b720` kaynakları merkezde alındı. Inventory
+  fason müşteri malı rezervasyon/sevk participant'ı ve Documents marka/şablon
+  depoları PARTIAL'dır; gerçek host/renderer eksikliği başarı sayılmaz.
+  Merkez API, Documents.UnitTests, Inventory.UnitTests, Api.IntegrationTests
+  derlemeleri exit 0, hata/uyarı 0; birleşik TypeScript derlemesi exit 0.
+- Oturumdaki doğrudan insan cevapları, kaynak sınırı açık ajan aktarımlarıyla
+  Issue #1189'a kaydedildi: [6951273717](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6951273717)
+  yalnız faturalanan maliyet payının kesinleşmesi ve kalanın beklemesi;
+  [6951274243](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6951274243)
+  ilk SMM önerisinin kesinleşen faturanın gerçek sevk maliyeti payından oluşması;
+  [6951274771](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6951274771)
+  resmen iptal edilen fason faturanın ters kaydında seçilen açık dönem/tarih ve
+  farklı muhasebe onaylayanı. Bu aktarımlar bağımsız DOCS incelemesi değildir.
+- KIM-S8 ve STK-S29 ana planda gerçek mevcut kaynakları nedeniyle PARTIAL'a
+  hizalandı. **135 DONE (%77,6), 27 PARTIAL, 12 diğer açık**; toplam 174 ve
+  açık 39 değişmedi. Runtime Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**.
