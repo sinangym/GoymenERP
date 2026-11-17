@@ -39,6 +39,22 @@ public sealed class FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTest
     private const string BeforeDecisionsMigration = "20261111233047_AddOfficialSalesInvoices";
 
     [SqlServerFact]
+    public async Task Official_customer_owner_loss_before_record_or_approval_preserves_rows_and_command_receipts()
+    {
+        await using var run = await Run.StartAsync();
+        var invoice = await ReserveAsync(run, "SENTETIK-maker");
+        await using (var missing = run.Service("SENTETIK-maker", customerAnswer: ReadOutcome.NotFound))
+            Assert.Equal(CommandOutcome.ValidationFailed, (await missing.Service.RecordAsync(missing.Context, new("owner-missing"), Request(invoice), default)).Outcome);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialSalesInvoices"));
+        await using (var maker = run.Service("SENTETIK-maker"))
+            Assert.Equal(CommandOutcome.Succeeded, (await maker.Service.RecordAsync(maker.Context, new("owner-record"), Request(invoice), default)).Outcome);
+        await using (var checker = run.Service("SENTETIK-checker", customerAnswer: ReadOutcome.NotFound))
+            Assert.Equal(CommandOutcome.ValidationFailed, (await checker.Service.ApproveAsync(checker.Context, new("owner-approve"), new(invoice, "1"), default)).Outcome);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT Status FROM finance.OfficialSalesInvoices WHERE Id=@id", ("@id", invoice)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialSalesInvoiceCommands WHERE CommandName='finance.official-sales-invoices.approve'"));
+    }
+
+    [SqlServerFact]
     public async Task Official_source_date_persists_and_its_Down_refuses_loss_of_known_dates()
     {
         await using var run = await Run.StartAsync();
@@ -713,7 +729,7 @@ public sealed class FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTest
             return new FinanceDbContext(Options(Factory), companyContext);
         }
 
-        public Scope Service(string actor, Guid? company = null, Barrier? barrier = null, string? pdfSha = null)
+        public Scope Service(string actor, Guid? company = null, Barrier? barrier = null, string? pdfSha = null, ReadOutcome customerAnswer = ReadOutcome.Found)
         {
             var companyId = company ?? Company;
             var companyContext = new CompanyContext();
@@ -736,9 +752,14 @@ public sealed class FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTest
                         ["SENTETIK-FINANCE"], "Integration"),
                     new FinanceAuditEnvelope(FinanceOfficialSalesInvoicePermissionNamesV1.Withdraw,
                         ["SENTETIK-FINANCE"], "Integration")),
-                TimeProvider.System);
+                TimeProvider.System, new CustomerOwner(customerAnswer));
             return new Scope(db, service,
                 new FinanceContext(companyId, actor, $"fin-official-sales-{Guid.NewGuid():N}", null));
+        }
+
+        private sealed class CustomerOwner(ReadOutcome answer) : IFinanceOfficialSalesInvoiceCustomerPortV1
+        {
+            public Task<ReadOutcome> CheckCompanyPartyAsync(FinanceContext context, Guid partyId, CancellationToken cancellationToken) => Task.FromResult(answer);
         }
 
         /// <summary>The Documents owner read (finance.official-sales-invoice) as the actor in that company.</summary>

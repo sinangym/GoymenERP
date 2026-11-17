@@ -37,7 +37,28 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
     private static readonly Guid Pdf = Guid.Parse("15000000-0000-0000-0000-000000000003");
     private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
     private static string Path => FinanceEndpoints.OfficialSalesInvoicesPath;
+    private sealed class SyntheticCustomerOwner : IFinanceOfficialSalesInvoiceCustomerPortV1
+    {
+        public Task<ReadOutcome> CheckCompanyPartyAsync(FinanceContext context, Guid partyId, CancellationToken cancellationToken) =>
+            Task.FromResult(partyId == Customer ? ReadOutcome.Found : ReadOutcome.NotFound);
+    }
     private static string ReservationsPath => Path + "/reservations";
+
+    [Fact]
+    public async Task Official_invoice_currency_candidates_require_context_and_release_the_actual_owner_candidates_without_cache()
+    {
+        using var host = RealHost();
+        using var client = Client(host, TestUsers.GroupAdmin);
+        using var answer = await client.GetAsync(Path + "/currency-candidates");
+        Assert.Equal(HttpStatusCode.OK, answer.StatusCode);
+        PrivateNoStore(answer);
+        var source = await answer.Content.ReadFromJsonAsync<FinanceOfficialSalesInvoiceCurrenciesV1>(Json);
+        Assert.Equal(TestCompanyIds.CompanyA, source!.CompanyId);
+        Assert.Equal(Currency, Assert.Single(source.Items).CurrencyId);
+        using var anonymous = host.CreateClient();
+        using var denied = await anonymous.GetAsync(Path + "/currency-candidates");
+        Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+    }
 
     [Fact]
     public async Task Shipped_runtime_grants_neither_name_so_every_route_is_forbidden_and_nothing_is_stored()
@@ -603,6 +624,8 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
             services.AddSingleton<IFinanceOfficialSalesInvoiceDocumentPortV1>(pdf ?? new CleanPdf());
             services.RemoveAll<ISettingsMoneyCandidateReader>();
             services.AddSingleton<ISettingsMoneyCandidateReader>(new OneCurrency());
+            services.RemoveAll<IFinanceOfficialSalesInvoiceCustomerPortV1>();
+            services.AddSingleton<IFinanceOfficialSalesInvoiceCustomerPortV1>(new SyntheticCustomerOwner());
         }));
 
     private WebApplicationFactory<Program> FakeHost(CapturingService service) =>

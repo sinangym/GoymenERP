@@ -17,9 +17,10 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(42, declarations.Count);
+        Assert.Equal(45, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(
-            !declaration.CapabilityId.StartsWith("finance.credits.", StringComparison.Ordinal), declaration.ImplementationAvailable));
+            !declaration.CapabilityId.StartsWith("finance.credits.", StringComparison.Ordinal)
+            && !declaration.CapabilityId.StartsWith("finance.official-sales-invoices.", StringComparison.Ordinal), declaration.ImplementationAvailable));
     }
 
     [Fact]
@@ -29,9 +30,15 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.14", provider.ContractVersion);
+        Assert.Equal("1.15", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
+            ("finance.official-sales-invoices.record", "finance.official-sales-invoices.record", "/finans/resmi-satis-faturalari", "F-005-OFFICIAL",
+                ShellCapabilityRoutePrecedence.Static, [FinanceOfficialSalesInvoicePermissionNamesV1.Record]),
+            ("finance.official-sales-invoices.approve", "finance.official-sales-invoices.approve", "/finans/resmi-satis-faturasi-onaylari", "F-005-OFFICIAL-APPROVAL",
+                ShellCapabilityRoutePrecedence.Static, [FinanceOfficialSalesInvoicePermissionNamesV1.Approve]),
+            ("finance.official-sales-invoices.withdraw", "finance.official-sales-invoices.record", "/finans/resmi-satis-faturalari", "F-005-OFFICIAL",
+                ShellCapabilityRoutePrecedence.Static, [FinanceOfficialSalesInvoicePermissionNamesV1.Record, FinanceOfficialSalesInvoicePermissionNamesV1.Withdraw]),
             ("finance.credits.workspace", "finance.credits.workspace", "/finans/krediler", "F-47-CREDITS",
                 ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCreditsRead]),
             ("finance.credits.propose", "finance.credits.workspace", "/finans/krediler", "F-47-CREDITS",

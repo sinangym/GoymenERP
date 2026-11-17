@@ -117,6 +117,7 @@ public static partial class FinanceEndpoints
         MapPartyCreditPanelEndpoints(endpoints);
         MapOfficialInvoiceImportEndpoints(endpoints);
         MapOfficialSalesInvoiceEndpoints(endpoints);
+        MapOfficialInvoiceCandidates(endpoints);
         return endpoints;
     }
 

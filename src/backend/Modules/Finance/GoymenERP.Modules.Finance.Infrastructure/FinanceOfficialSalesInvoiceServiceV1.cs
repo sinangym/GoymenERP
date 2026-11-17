@@ -37,7 +37,8 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1(
     ISettingsMoneyCandidateReader currencies,
     IAuditEventCollector auditEvents,
     FinanceOfficialSalesInvoiceAuditEnvelopesV1 envelopes,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IFinanceOfficialSalesInvoiceCustomerPortV1 customers)
     : IFinanceOfficialSalesInvoiceServiceV1
 {
     public const string ReserveCommand = "finance.official-sales-invoices.reserve";
@@ -188,6 +189,8 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1(
         {
             return currencyRefused;
         }
+        if (await CustomerRefusalAsync(context, action, request.InvoiceId, request.CustomerPartyId, cancellationToken)
+            is { } customerRefused) return customerRefused;
 
         // #66 6860586175: the PDF must already belong to this record id (uploaded after the reservation); its hash
         // comes only from the vault's metadata.
@@ -314,6 +317,11 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1(
         {
             dbContext.ChangeTracker.Clear();
             return currencyRefused;
+        }
+        if (await CustomerRefusalAsync(context, action, row.Id, row.CustomerPartyId, cancellationToken) is { } customerRefused)
+        {
+            dbContext.ChangeTracker.Clear();
+            return customerRefused;
         }
 
         var pdf = await documents.CheckAsync(context, row.PdfDocumentId, row.Id, row.PdfDocumentVersionNo,
