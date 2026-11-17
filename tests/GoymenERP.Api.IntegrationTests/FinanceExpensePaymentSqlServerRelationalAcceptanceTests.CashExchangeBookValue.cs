@@ -76,6 +76,7 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
             var approved = await checker.Service.DecideAsync(checker.Context, Key("book-approve"), new(pending.Id, "1", true, null), default);
             Assert.Equal(CommandOutcome.Succeeded, approved.Outcome);
             Assert.Equal(("3500.00", CashExchangeBookValueStatusV1.Approved), (approved.Resource!.SourceBookValueTl, approved.Resource.Status));
+            Assert.Equal("3300.00", approved.Resource.TargetFunctionalValueTl);
             var replay = await checker.Service.DecideAsync(checker.Context, Key("book-approve"), new(pending.Id, "1", true, null), default);
             Assert.True(replay.IsReplay); Assert.Equal(approved.Resource, replay.Resource);
         }
@@ -95,6 +96,7 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
         var json = await run.ScalarAsync<string>("SELECT PayloadJson FROM finance.OutboxMessages WHERE EventType=N'finance.cash-exchange.book-value-approved.v1'");
         var payload = JsonSerializer.Deserialize<FinanceCashExchangeBookValueApprovedV1>(json, FinanceJson.CreateOptions())!;
         Assert.Equal("3500.00", payload.BookValue.SourceBookValueTl);
+        Assert.Equal("3300.00", payload.BookValue.TargetFunctionalValueTl);
         Assert.Equal("3400", payload.Source.Exchange!.SourceReferenceTl!.Amount);
         Assert.Equal(source, payload.Source);
         Assert.Equal(TreasuryBalanceOutcome.Sufficient, (await run.ExchangeBalanceAsync(source.Preparation.SourceAccountId, ExchangeUsd, "50")).Outcome);
@@ -151,8 +153,81 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OutboxMessages WHERE EventType=N'finance.cash-exchange.book-value-approved.v1'"));
     }
 
+    [SqlServerFact]
+    public async Task Exchange_book_value_requires_both_actual_TL_values_and_rejects_a_target_TRY_mismatch_before_writing()
+    {
+        await using var run = await Run.StartAsync();
+        var source = await run.RecordBookValueExchangeAsync();
+        await using var maker = run.OpenBookValue("SENTETIK-book-maker");
+        var request = BookRequest(source);
+        Assert.Equal(CommandOutcome.ValidationFailed, (await maker.Service.ProposeAsync(maker.Context, Key("book-target-missing"),
+            request with { TargetFunctionalValueTl = null }, default)).Outcome);
+        Assert.Equal(CommandOutcome.ValidationFailed, (await maker.Service.ProposeAsync(maker.Context, Key("book-target-mismatch"),
+            request with { TargetFunctionalValueTl = "3400.00" }, default)).Outcome);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CashExchangeBookValueProposals"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CashExchangeBookValueCommands"));
+        // A failed, unrecorded attempt has no economic effect; real target 3300 is not reference 3400.
+        var result = await maker.Service.ProposeAsync(maker.Context, Key("book-target-mismatch"), request, default);
+        Assert.Equal(CommandOutcome.Succeeded, result.Outcome);
+        Assert.Equal("3300.00", result.Resource!.TargetFunctionalValueTl);
+        var stored = await run.ScalarAsync<string>("SELECT PreparationJson FROM finance.CashExchangeBookValueProposals");
+        Assert.Equal(request, JsonSerializer.Deserialize<ProposeCashExchangeBookValueV1>(stored, FinanceJson.CreateOptions()));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CashTransfers"));
+    }
+
+    [SqlServerFact]
+    public async Task Exchange_book_value_legacy_null_proof_replays_unchanged_and_requires_explicit_rejection_before_new_preparation()
+    {
+        await using var run = await Run.StartAsync();
+        var source = await run.RecordBookValueExchangeAsync();
+        const string actor = "SENTETIK-legacy-book-maker";
+        var json = FinanceJson.CreateOptions();
+        var request = BookRequest(source) with { TargetFunctionalValueTl = null };
+        var sourceJson = JsonSerializer.Serialize(source, json);
+        var requestJson = JsonSerializer.Serialize(request, json);
+        var id = Guid.NewGuid(); var at = DateTimeOffset.UtcNow;
+        var pending = new CashExchangeBookValueViewV1(id, CompanyA, source.Id, source.Version,
+            CashExchangeBookValueServiceV1.Hash(sourceJson), request.SourceBookValueTl, request.Evidence, request.Reason,
+            actor, at, CashExchangeBookValueStatusV1.Pending, "1", null, null, null);
+        var receipt = new CashExchangeBookValueCommandResultV1(CommandOutcome.Succeeded, pending, false, run.Correlation, null);
+        Assert.DoesNotContain("targetFunctionalValueTl", requestJson);
+        // Explicit historical fixture. No current source, FX fallback or mutable row upgrade is used.
+        await run.ExecuteAsync("INSERT INTO finance.CashExchangeBookValueProposals "
+            + "(Id,CompanyId,TransferId,TransferSourceJson,TransferSourceHash,PreparationJson,PreparedBy,PreparedAtUtc) "
+            + "VALUES (@id,@company,@transfer,@source,@hash,@request,@actor,@at)",
+            ("@id", id), ("@company", CompanyA), ("@transfer", source.Id), ("@source", sourceJson),
+            ("@hash", pending.TransferSourceHash), ("@request", requestJson), ("@actor", actor), ("@at", at));
+        await run.ExecuteAsync("INSERT INTO finance.CashExchangeBookValueCommands "
+            + "(CompanyId,Command,KeyHash,ActorId,PayloadHash,ResultJson) VALUES (@company,@command,@key,@actor,@payload,@result)",
+            ("@company", CompanyA), ("@command", CashExchangeBookValueServiceV1.ProposeCommand),
+            ("@key", FinanceCommandKeys.Hash(Key("book-legacy").IdempotencyKey)), ("@actor", actor),
+            ("@payload", CashExchangeBookValueServiceV1.Hash(requestJson)), ("@result", JsonSerializer.Serialize(receipt, json)));
+        await using (var maker = run.OpenBookValue(actor))
+        {
+            var replay = await maker.Service.ProposeAsync(maker.Context, Key("book-legacy"), request, default);
+            Assert.True(replay.IsReplay); Assert.Equal(pending, replay.Resource); Assert.Null(replay.Resource!.TargetFunctionalValueTl);
+        }
+        await using (var checker = run.OpenBookValue("SENTETIK-book-checker"))
+        {
+            Assert.Equal(CommandOutcome.ValidationFailed, (await checker.Service.DecideAsync(checker.Context, Key("book-legacy-approve"),
+                new(id, "1", true, null), default)).Outcome);
+            Assert.Equal(CommandOutcome.Succeeded, (await checker.Service.DecideAsync(checker.Context, Key("book-legacy-reject"),
+                new(id, "1", false, "SENTETIK iki belgeli tutarla yeniden hazırlama"), default)).Outcome);
+        }
+        await using (var maker = run.OpenBookValue(actor))
+        {
+            var replacement = await maker.Service.ProposeAsync(maker.Context, Key("book-two-values"), BookRequest(source), default);
+            Assert.Equal(CommandOutcome.Succeeded, replacement.Outcome); Assert.Equal("3300.00", replacement.Resource!.TargetFunctionalValueTl);
+            var old = await maker.Service.ProposeAsync(maker.Context, Key("book-legacy"), request, default);
+            Assert.True(old.IsReplay); Assert.Equal(pending, old.Resource);
+        }
+        Assert.Equal(requestJson, await run.ScalarAsync<string>("SELECT PreparationJson FROM finance.CashExchangeBookValueProposals WHERE Id=@id", ("@id", id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OutboxMessages WHERE EventType=N'finance.cash-exchange.book-value-approved.v1'"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CashTransfers"));
+    }
+
     private static ProposeCashExchangeBookValueV1 BookRequest(CashTransferView source) => new(source.Id, source.Version,
-        "3500.00", new(Guid.Parse("f1400000-0000-4000-8000-000000000007"), 1, new string('b', 64)), "SENTETIK kayıtlı defter belgesi");
+        "3500.00", new(Guid.Parse("f1400000-0000-4000-8000-000000000007"), 1, new string('b', 64)), "SENTETIK kayıtlı defter belgesi", "3300.00");
 
     private sealed partial class Run
     {

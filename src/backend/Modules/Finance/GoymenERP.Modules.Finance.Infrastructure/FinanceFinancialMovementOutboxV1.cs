@@ -55,6 +55,7 @@ internal static class FinanceFinancialMovementOutboxV1
         if (value.CompanyId != source.CompanyId || value.TransferId != source.Id || value.TransferVersion != source.Version
             || value.TransferSourceHash != CashExchangeBookValueServiceV1.Hash(JsonSerializer.Serialize(source, FinanceJson.CreateOptions()))
             || value.Status != CashExchangeBookValueStatusV1.Approved || value.Version != "2"
+            || !CashExchangeBookValueServiceV1.TargetMatchesSource(source, value.TargetFunctionalValueTl)
             || value.DecidedBy != context.ActorId || value.PreparedBy == value.DecidedBy || value.DecidedAtUtc is null)
             throw new InvalidOperationException("An exchange book value needs its exact source and a distinct checker.");
         var id = Guid.NewGuid();
