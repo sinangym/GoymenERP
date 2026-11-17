@@ -57,6 +57,9 @@ public sealed record ApprovedMoneyProfileEntry(
 /// </summary>
 public sealed class ApprovedMoneyProfileCatalog
 {
+    // FNS-D62: finance.cash-transfer.v1 is an independent empty human authoring target (see
+    // MoneyProfileAuthoringCatalogV1). No entry is silently copied into this approved baseline; an actual separate
+    // profile must be prepared/published before the Finance transfer owner can read monetary values for that key.
     /// <summary>A2a-1b: the bound of an approved unit-price scale (decimal's own maximum scale).</summary>
     public const int MaximumUnitPriceScale = 28;
 

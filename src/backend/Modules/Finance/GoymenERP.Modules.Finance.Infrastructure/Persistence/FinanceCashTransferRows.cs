@@ -25,6 +25,7 @@ internal sealed class CashTransferRow : IFinanceTenantRow
     public string TargetProfileId { get; set; } = string.Empty;
     public string TargetProfileVersion { get; set; } = string.Empty;
     public string? RateText { get; set; }
+    public string? ExchangeSnapshotJson { get; set; }
     public DateOnly OccurredOn { get; set; }
     public DateOnly? ValueOn { get; set; }
     public string? Reference { get; set; }

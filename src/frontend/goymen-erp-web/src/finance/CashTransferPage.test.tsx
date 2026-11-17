@@ -169,7 +169,6 @@ async function fill(options: { readonly exchange?: boolean } = {}) {
   if (options.exchange) {
     await user.type(within(form).getByLabelText(T.sourceAmount), '100')
     await user.type(within(form).getByLabelText(T.targetAmount), '3650')
-    await user.type(within(form).getByLabelText(T.rate), '36,5')
   } else {
     await user.type(within(form).getByLabelText(T.sameCurrencyAmount), '1000,50')
   }
@@ -329,7 +328,7 @@ describe('CashTransferPage preview and commit', () => {
     expect(within(form).queryByRole('button', { name: T.commit })).toBeNull()
   })
 
-  it('sends an exchange with both amounts and the rate as text, and shows the fail-closed rate rule', async () => {
+  it('sends both actual amounts without a client-calculated rate and refuses an unreadable comparison source', async () => {
     const calls = reads(() => json(page([])), (call) => (call.method === 'POST' && call.url === PREVIEW_URL
       ? json({
           outcome: 'ValidationFailed', preparation: null,
@@ -340,15 +339,40 @@ describe('CashTransferPage preview and commit', () => {
     const { user, form } = await fill({ exchange: true })
     await user.click(within(form).getByRole('button', { name: T.preview }))
     expect(await within(form).findByText(T.previewRefused)).toBeTruthy()
-    expect(within(form).getByText('Kur kuralı henüz tanımlı değil; döviz bozdurma şu anda kaydedilemez.')).toBeTruthy()
+    expect(within(form).getByText('Karşılaştırma kuru veya para profili okunamadı. İşlem kaydedilmedi.')).toBeTruthy()
     expect(within(form).queryByRole('button', { name: T.commit })).toBeNull()
     expect(calls.find((call) => call.url === PREVIEW_URL)?.body).toEqual(preparation({
       kind: 'CurrencyExchange',
       sourceAccountId: EUR_ACCOUNT,
       sourceMoney: { amount: '100', currencyId: EUR },
       targetMoney: { amount: '3650', currencyId: TRY },
-      rate: '36.5',
+      rate: null,
     }))
+  })
+
+  it('shows the actual server quote and TCMB benchmark without a rate input or a profit claim', async () => {
+    const p = preparation({ kind: 'CurrencyExchange', sourceAccountId: EUR_ACCOUNT,
+      sourceMoney: { amount: '100', currencyId: EUR }, targetMoney: { amount: '3650', currencyId: TRY }, rate: null })
+    const exchange = {
+      companyId: COMPANY, occurredOn: p.occurredOn, sourceMoney: p.sourceMoney, targetMoney: p.targetMoney,
+      sourceProfile: p.sourceProfile, targetProfile: p.targetProfile,
+      transactionRate: '36.50', exactTransactionRate: { numerator: '73', denominator: '2' },
+      comparisonRate: '36.00', exactComparisonRate: { numerator: '36', denominator: '1' }, rateDeviation: '0.50',
+      sourceComparison: { currencyId: EUR, sellingRate: '36', rateDay: p.occurredOn, source: 'Tcmb',
+        recordId: SOURCE, recordVersion: '7', bulletinDate: '2026-11-09', provenance: 'SENTETIK / NOT_ENV' },
+      targetComparison: { currencyId: TRY, sellingRate: '1', rateDay: p.occurredOn, source: 'FunctionalCurrency',
+        recordId: null, recordVersion: null, bulletinDate: null, provenance: null },
+    }
+    const calls = reads(() => json(page([])), (call) => call.method === 'POST' && call.url === PREVIEW_URL
+      ? json({ outcome: 'Succeeded', preparation: p, issues: [], exchange }) : undefined)
+    show()
+    const { user, form } = await fill({ exchange: true })
+    expect(within(form).queryByLabelText(T.rate)).toBeNull()
+    await user.click(within(form).getByRole('button', { name: T.preview }))
+    expect(await within(form).findByText(T.previewAccepted)).toBeTruthy()
+    expect(within(form).getByText(T.comparisonIsNotProfit)).toBeTruthy()
+    expect(within(form).getByText('36,50')).toBeTruthy()
+    expect(calls.find((call) => call.url === PREVIEW_URL)?.body).toEqual(p)
   })
 
   it('treats a preview echo that differs from what was sent as unknown', async () => {

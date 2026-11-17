@@ -813,3 +813,17 @@ approval lock/read the Finance carry range in their existing Serializable transa
 an active carry. A first setup without a carry is not required to invent an Accounting period.
 Temporal fences for other historical source writers and the later-closed-period reopening chain remain follow-up
 work in this FIN-S17 slice; this checkpoint alone is not complete delivery. Runtime SQL/CI and activation are NOT_RUN.
+
+## FIN-S14: FNS-D59/D62 exchange quote evidence
+
+The actual source/target amounts determine the server quote; TCMB forex selling is separate comparison evidence,
+never a realized exchange gain/loss. The host adapter is `AddFinanceCashExchangeSources()`. It rechecks current
+company/actor/transfer permission around actual Settings profile and rate reads. The independent
+`finance.cash-transfer.v1` profile is an empty authorized authoring target, not a seed or activation; absence refuses.
+
+EF-generated `20261117175952_AddCashTransferExchangeSnapshots` adds nullable immutable quote/profile/TCMB-source
+JSON only. Legacy records and idempotency request hashes are not rewritten. Down first refuses with **THROW 51933**
+while any snapshot exists; legacy null evidence does not prevent rollback. SQL test sources cover the guard,
+source/target internal ledger effects, replay/company scope and rollback after an actual SQL insert. Runtime,
+database apply and external TCMB acceptance remain NOT_RUN. Financial TL valuation and FNS-D63 posting policy
+are separate pending human decisions; the quote difference does not select either one.

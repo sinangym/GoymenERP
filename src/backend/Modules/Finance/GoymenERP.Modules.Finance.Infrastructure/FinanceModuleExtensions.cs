@@ -466,9 +466,9 @@ public static class FinanceModuleExtensions
             provider.GetRequiredService<ISettingsPrerequisiteProvider>(),
             provider.GetRequiredService<IFinanceRecordPeriodRule>(),
             provider.GetRequiredService<IAuditEventCollector>(),
-            // No dedicated Settings money operation exists for transfers yet; like the expense payment, the outgoing
-            // bank payment operation's approved profile governs each leg amount until one is catalogued (NEEDS-SINAN).
-            new CashTransferBinding(FinanceMoneyOperations.ManualBankPaymentV1),
+            // FNS-D62: only the independently published transfer profile governs each leg.
+            // A missing profile is unavailable; the manual bank payment profile is never a runtime fallback.
+            new CashTransferBinding(FinanceMoneyOperations.CashTransferV1),
             new CashTransferAuditEnvelopes(
                 Envelope(provider, FinancePermissionNames.CashTransferCommit, permissions,
                     FinanceAction.CommitCashTransfer)),
