@@ -2,9 +2,13 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Movements;
+using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Costing;
+using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Kilograms = GoymenERP.Modules.Manufacturing.Domain.Common.Kilograms;
@@ -13,7 +17,8 @@ namespace GoymenERP.Api.ManufacturingRuntime;
 
 /// <summary>Typed bridge over real immutable Inventory movement facts; no current-average, FX or identity synthesis.</summary>
 internal sealed class ManufacturingInventoryCostMovementReader(ICompanyContext company, ICurrentUser user,
-    IInventoryManufacturingCostReadPortV1 owner, IManufacturingInputRatePriorityReadPortV1? priorities = null) : IManufacturingCostMovementReadPortV1
+    IInventoryManufacturingCostReadPortV1 owner, IManufacturingInputRatePriorityReadPortV1? priorities = null,
+    ManufacturingDbContext? manufacturing = null) : IManufacturingCostMovementReadPortV1
 {
     public async Task<ManufacturingCostMovementSnapshotV1?> ReadAsync(Guid companyId, Guid orderId, CancellationToken cancellationToken)
     {
@@ -21,7 +26,12 @@ internal sealed class ManufacturingInventoryCostMovementReader(ICompanyContext c
         if (!InScope() || orderId == Guid.Empty) return null;
         try
         {
-            var value = await owner.GetAsync(companyId, orderId, cancellationToken);
+            // A physical close has already written label/allocation facts on this transaction. Read those facts through
+            // Inventory's borrowed owner context; a second SQL connection could block on the host's own label locks.
+            await using var shared = manufacturing?.Database.CurrentTransaction is { } transaction
+                ? await InventoryManufacturingCostReadSession.EnlistAsync(manufacturing.Database.GetDbConnection(),
+                    transaction.GetDbTransaction(), company, cancellationToken) : null;
+            var value = await (shared?.CostMovements ?? owner).GetAsync(companyId, orderId, cancellationToken);
             if (!InScope() || value is null || value.Outcome != InventoryManufacturingCostReadOutcomeV1.Available
                 || value.CompanyId != companyId || value.ManufacturingOrderId != orderId || string.IsNullOrWhiteSpace(value.SourceVersion)
                 || value.Issues is null || value.Returns is null || value.Outputs is null) return null;
