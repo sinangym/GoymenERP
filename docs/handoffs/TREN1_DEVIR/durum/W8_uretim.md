@@ -250,3 +250,10 @@ ayrılan üyeler sonraki snapshot'tan çıkar, önceki history korunur. Yeni DB 
 | `logistics.subcontract-deliveries.weigh` | detail child | `logistics.loading-instructions.read`, `logistics.weighings.record` |
 | `logistics.subcontract-deliveries.ship` | detail child | `logistics.loading-instructions.read`, `logistics.shipments.record`, `inventory.physical-allocation.write` |
 | `logistics.subcontract-deliveries.weighing-correct` | detail child | `logistics.loading-instructions.read`, `logistics.weighings.correct` |
+
+### URT-S8 / FIN-S17 — kapalı dönem SQL fixture kaynak hizası
+
+- Kaynak commit'i **`129e50dc239b606dfaef6ae3fe535491d0dd233b`**. Commit edilmiş merkez `d5b0e84c5` normal no-ff ile alındı; henüz commit edilmemiş Program değişikliği alınmadı. FNS-D42 ve #1189 / 6951607995 kapsamındaki gerçek açık hedef dönem + Accounting/Finance atomik kapanış şartı, iki mevcut Manufacturing SQL fixture'ına uyarlandı. Ürün kodu, migration, yetki veya dönem politikası değiştirilmedi.
+- Normal fixture kapanışları ortak `AccountingPeriodCarrySqlFixture.CloseAsync` yolundadır. Reopen yarışında hedef dönem host transaction'ından önce `PrepareAsync` ile açıkça hazırlanır; gerçek kapatıcı **aynı** `LOCK_TIMEOUT 0` scoped Accounting bağlantısı ve gerçek Finance carry adapter'ı üzerinden çağrılır. Reader dispose sonrası kilidin host commit'ine kadar tutulması ve önden kapalı dönemde reopen/Inventory/Audit rollback assertion'ları korunur. Metadata gerçek actor GUID ve mevcut `accounting.periods.close` adını taşır; açılış öneri/onayı kendi mevcut adlarını kullanır.
+- Maliyet farkı fixture'ında, açık hedef dönem eklendiği için artık belirsiz olan `SELECT Status FROM accounting.Periods` yerine sınanan exact dönemin gerçek owner cevabı kontrol edilir. Hiçbir test, ret veya yarış assertion'ı atlanmadı/silinmedi. İki açık dönem politikası ve S3 kullanılmayan ayırma sorusu bu kaynak uyarlamasıyla kapatılmaz.
+- Kaynak whitespace kontrolü exit 0. Bu checkpoint için derleme **NOT_BUILT** (lease sırası bekleniyor); Unit/gerçek SQL/HTTP/Vitest/browser/CI runtime **NOT_RUN**. Önceki S3 build0 yeni FIN-S17 dependency başının kanıtı sayılmaz.
