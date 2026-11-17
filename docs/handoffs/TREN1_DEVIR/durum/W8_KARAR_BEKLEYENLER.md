@@ -76,3 +76,7 @@ Kullanıcının ilettiği bağımsız inceleme kaynak adayı `e20f0ad14a44ecfe92
 - Golden #1200 iki yeni DOCS imzasıyla main `3c1b47878447570210b933b83d874646f9c52e4b` oldu. Ayrı uygulama `19ca53a17` kaynakta golden kabul koşulunu karşılar; Sales.Unit kaynak derleme0. Golden/DOCS insan sorusu açık değildir. Son K3 ve runtime kabulü sürer.
 - [6961618871](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6961618871) açık ajan aktarımıdır: “İki TL tutarı da belgeli girilsin (Önerilen)”. Kaynak dövizin gerçek TL defter değeri ve alınan dövizin gerçek TL muhasebe tutarı ayrı, kaynak belgeyle ve farklı kişi onayıyla saklanır. TCMB'den bu gerçek değerler türetilmez. Hedef TRY ise gerçek alınan TL tutarı korunur. Bu soru açık değildir; kaynak uygulaması FIN14 owner/consumer checkpointlerinde sürer.
 - K6 “30 güne kadar” örneğinin orijinal soru penceresi [6961524705](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6961524705) ile ayrı aktarılmıştır; bitişe kalan gün üst sınırıdır. Bu aktarım yeni bir kullanıcı cevabı veya sayısal varsayılan değildir.
+
+## SAT-D417 — yanıtlandı, kaynak sürüyor
+
+Doğrudan kullanıcı cevabı: “100 kg kalıp 20 kg için ayrı istisna kaydedilsin, satış müdürü,”. Açık ajan aktarımı #1189/6963301286; soru #1189/6963231247. Ayrı kalıcı istisna/onay/gerçek miktar kullanımı aynı STK-S3/W8 kapsamında uygulanıyor. Plan100 değişmez; fiziksel yüklenmeyen miktar sevk edilmez. Grant/rol veya production onayı değildir.

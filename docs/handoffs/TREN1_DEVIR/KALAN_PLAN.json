@@ -89,8 +89,8 @@
    {
     "work": "EK24 plan üstü sevk uyarısı",
     "slice": "STK-S3",
-    "status": "BLOCKED_DECISION_SOURCE_MISSING",
-    "note": "SAT-D417 actual source missing; no valid current over-plan admission. NEEDS-SINAN #1189/6963231247; do not fabricate unreachable approval or weaken loaded cap."
+    "status": "ANSWERED_SOURCE_IN_PROGRESS",
+    "note": "Direct user answer transferred #1189/6963301286: original instruction quantity unchanged; extra quantity separately recorded and approved by Sales manager. Actual source implementation in progress. No grants/Critical choice or production implied."
    },
    {
     "work": "EK24 satır bazlı iskonto",
@@ -1083,12 +1083,12 @@
       "tüketir: Üretim fason emri okuma (uretim)"
      ],
      "status": "PARTIAL",
-     "blocked_reason": "SAT-D417 warning/approval followup absent. Actual loaded quantity <= own approved open plan, so excess branch unreachable. NEEDS-SINAN #1189/6963231247: authorized instruction revision vs separate excess shipment admission and approval owner. No cap weakening.",
+     "blocked_reason": "",
      "wave": 5,
      "w5_raporu": "durum/W5_stok_lojistik.md",
      "w6_report": "durum/W6_stok_lojistik.md",
      "w8_report": "durum/W8_KAYNAK_SON_KONTROL.md",
-     "w8_source_note": "Original LOJ flow and unused release source complete and compiled; enclosing slice reopened for registered SAT-D417 source followup. Eight original shell declarations remain staged false."
+     "w8_source_note": "Original LOJ flow/unused release source compiled. SAT-D417 direct answer recorded #1189/6963301286: keep plan100; separate20 exception; Sales manager approves. Actual durable exception/admission/usage and tests in progress under same slice; physical loaded cap and other owner limits preserved."
     },
     {
      "id": "STK-S8",
