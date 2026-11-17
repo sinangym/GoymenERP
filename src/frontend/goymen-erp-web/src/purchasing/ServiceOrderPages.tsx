@@ -16,6 +16,8 @@ import { fetchPurchasingCurrencyCandidates, fetchPurchasingSupplierOptions } fro
 import { useReceiptAdjustmentAttempt } from './useReceiptAdjustmentAttempt'
 import { receiptIdentity } from './goodsReceiptAttempt'
 import { fetchServiceOrder, fetchServiceOrders, fetchServiceOrderReferences, submitServiceOrder } from './serviceOrderApi'
+import { ADDITIONAL_COST_CAPABILITY, additionalCostPath } from './additionalCostContract'
+import { ADDITIONAL_COST_TEXT } from './additionalCostText'
 import { SERVICE_ORDER_CAPABILITY as C, SERVICE_ORDER_PATH, serviceOrderPath, serviceGuid, type ServiceOrder, type ServiceCreate,
   type ServiceMaterial, type ServiceOutput, type ServiceOrderReceipt } from './serviceOrderContract'
 import { SERVICE_ORDER_TEXT as T } from './serviceOrderText'
@@ -165,6 +167,7 @@ function ServiceDetail({ scope, id }: { readonly scope: Scope; readonly id: stri
   return <section className={styles.page}><h1>{value?.documentNumber ?? T.subject}</h1><Link to={SERVICE_ORDER_PATH}>{T.back}</Link>
     <ReadState value={read.data} loading={read.isFetching} refresh={() => void read.refetch()} />
     {value !== null && <><p>{T.status[value.status]} · {value.isOpen ? T.open : value.status === 'Approved' ? T.complete : ''}</p>
+      {hasCapability(shell, ADDITIONAL_COST_CAPABILITY.read) && <Link to={additionalCostPath('ServiceOrder', value.orderId)}>{ADDITIONAL_COST_TEXT.title}</Link>}
       {value.kind === 'OwnMaterialSubcontract' && <p>{T.physical}</p>}
       <table><caption>{T.service}</caption><thead><tr><th>{T.serviceType}</th><th>{T.quantity}</th><th>{T.accepted}</th><th>{T.amount}</th><th>{T.tax}</th></tr></thead>
         <tbody>{value.lines.map(line => <tr key={line.lineId}><th>{line.serviceName}</th><td>{line.quantity} {line.unitCode}</td><td>{line.acceptedQuantity}</td>

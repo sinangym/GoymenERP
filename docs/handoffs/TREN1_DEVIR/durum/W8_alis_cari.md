@@ -353,3 +353,39 @@ kırmızıların geçtiği veya bu kaynakların kabul aldığı iddia edilmez.
   yeni head'e taşınmaz. Erken fiyat UI takibi TSC0 verdi; son vergi DTO/UI ekleri sonrası
   **TSC NOT_RUN**. Kök owner merkezi import derlemelerine dahil edecektir. Unit/SQL/HTTP/
   Vitest/browser/CI runtime **NOT_RUN**. Yeni migration/THROW yok;51992 aynen kalır.
+
+#### ALC-S8 checkpoint — gerçek ek masraf kaydı/okuması (PARTIAL)
+
+- Kaynak commit: `60a2e3110ee9ef7065579fba9898a0259590e86c`. Dayanaklar
+  ALS-D23/D27/D80/D107, KIM-D49 ve API23/API51'dir. Gerçek mal veya hizmet alış
+  siparişi ve isteğe bağlı gerçek kabul/satır kimliğiyle değişmez masraf kaydı eklendi.
+  İki kabul türü ayrı şirketli composite foreign key'lerle korunur; sahte mal kabulü,
+  fiziksel miktar, stok hareketi veya ortalama maliyet etkisi üretilmez.
+- Gerçek Cari Supplier hesabı siparişin tedarikçisi veya başka firma olabilir. Actual
+  Settings masraf tipi, tarihli KDV listesi ve para profili sürümü saklanır. Etkin tip
+  yoksa genel açıklama yeterlidir; etkin tip varsa açık seçim zorunludur. Eski tipsiz
+  kayıtlar değişmez. KDV/brüt tutar ortak backend calculator'ından gelir.
+- Kayıt yetkisi yeni insan yanıtıyla mevcut `purchasing.orders.revise` olarak
+  kesinleşti: Issue #1189 aktarımı `6946921285`. Yeni izin/grant/rol yoktur. Fiyat
+  okuma, şirket, aktör, fresh company-wide permission, expected kaynak sürümü,
+  idempotency ve gerçek Audit aynı sahip olunan Serializable işlemde korunur.
+  Kaynak çatışması terminal replay olur; teknik/yetki/Audit hataları tam rollback olur.
+- EF `20261117114517_AddPurchaseAdditionalCosts` üretim exit0. Up yalnız iki yeni
+  tablo/index/FK/check DDL'idir. Down ilk işlemde **THROW51998** ile masraf veya komut
+  geçmişi varken reddeder; boş geçmiş geri alınabilir. DB uygulaması yapılmadı.
+- API, Purchasing.UnitTests ve Api.IntegrationTests kaynak derlemeleri **exit0,
+  0 uyarı/0 hata**; `npx tsc -b` exit0; `git diff --check` exit0. Unit/model, HTTP,
+  dört gerçek-SQL fact, strict decoder/transport ve DOM test kaynakları yazıldı.
+  Runtime Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**; bağımsız K3 imzası yoktur.
+- Module store/service DI hazırdır. Merkezi host mount ihtiyacı
+  `MapPurchaseAdditionalCostEndpointsV1()`; Purchasing shell owner **1.13 / toplam28**
+  bildirimdir: read + OrdersRevise çocuk kontrolü. Ekran ve mal/hizmet siparişinden
+  bağlantılar hazırdır; merkezi Program/nav/OpenAPI/pin/envanter kök owner'dadır.
+- **PARTIAL kalan:** Parçalı fatura eşleştirme insan cevabı `6947000365` ile
+  kesinleşti; aynı caride toplam masrafı aşmadan farklı faturalara pay bağlanacaktır.
+  Bu checkpoint kayıt/okuma kaynağıdır; gerçek parasal invoice binding ledger,
+  aynı işlem toplam sınırı, fatura consumer/ekran ve test kaynakları takip işidir.
+- S7 takip `7e3aad912` kaynakları da bu derlemelerde yer aldı; önceki BUILD/TSC
+  NOT_RUN notu bu kaynak başında derleme0 ile tamamlandı. ALS-D105 yeni kesin yetki
+  yanıtı `6947126872`: Satış `sales.orders.approve`, Alış `purchasing.orders.approve`.
+  Bu checkpoint vergi yönetimi/override'ını henüz açmaz; ayrı kaynak takibi sürer.

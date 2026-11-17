@@ -55,7 +55,7 @@ public sealed partial class PurchasingServiceTests
         [new(Guid.NewGuid(), source.ServiceType, "1", KgUnit, "10", null)], [], [], "SENTETIK hizmet");
     // Contract fixtures only. This class does not claim SQL, a real catalog or a number reservation.
     private sealed class ServiceCommandSource : IPurchasingPartyAccountPortV2, ISettingsReferenceListReaderV1,
-        ISettingsPrerequisiteProvider, ISettingsUnitIdentityCatalogV1, ISettingsSubcontractTaxDefaultProviderV1
+        ISettingsPrerequisiteProvider, ISettingsUnitIdentityCatalogV1, ISettingsSubcontractTaxDefaultProviderV1, ISettingsTaxRateListReaderV1
     {
         public Guid ServiceType { get; } = Guid.NewGuid(); public Guid Currency { get; } = Guid.NewGuid();
         public bool IsKg { get; init; } = true; public bool HasService { get; init; } = true; public Action? AfterList { get; init; }
@@ -78,6 +78,9 @@ public sealed partial class PurchasingServiceTests
         { UnitReads++; return Task.FromResult<IReadOnlyList<UnitIdentityV1>>([new(KgUnit, "kg", "weight", IsKg)]); }
         public Task<SettingsSubcontractTaxDefaultAnswerV1> GetSubcontractTaxDefaultAsync(Guid company, SubcontractTaxSideV1 side, CancellationToken token = default) =>
             Task.FromResult(new SettingsSubcontractTaxDefaultAnswerV1(company, side, null, 0));
+        public Task<SettingsTaxRateListResolutionV1> GetRateListAsync(string kind, DateOnly on, CancellationToken token = default) =>
+            Task.FromResult(new SettingsTaxRateListResolutionV1(Company, kind, on, TaxResolutionStatesV1.Resolved, 1, Day,
+                [new("SENTETIK-20", "SENTETIK KDV", 20)], null));
     }
     private sealed class ServiceCommandStore : IPurchaseServiceOrderStoreV1
     {

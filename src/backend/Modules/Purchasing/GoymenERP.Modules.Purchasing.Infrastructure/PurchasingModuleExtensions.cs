@@ -50,6 +50,11 @@ public static class PurchasingModuleExtensions
         services.AddScoped<IPurchaseSubcontractOrderReadPortV1>(sp => sp.GetRequiredService<PurchaseServiceOrderStoreV1>());
         services.AddScoped<IPurchaseServiceAcceptanceReadPortV1>(sp => sp.GetRequiredService<PurchaseServiceOrderStoreV1>());
         services.AddScoped<IPurchaseServiceOrderServiceV1, PurchaseServiceOrderServiceV1>();
+        services.AddScoped<IPurchaseAdditionalCostStoreV1, PurchaseAdditionalCostStoreV1>();
+        services.AddScoped<IPurchaseAdditionalCostServiceV1, PurchaseAdditionalCostServiceV1>();
+        // Direct ALC-S8 answer: the existing purchase-order reviser records expenses. Registration grants nothing.
+        services.TryAddSingleton(new PurchaseAdditionalCostWriteAdmissionV1(PurchasingPermissionManifestV1.OrdersRevise,
+            "Issue #1189 issuecomment-6946921285: alış siparişini revize etme yetkilisi"));
         services.AddScoped<IPurchasingStore>(serviceProvider => serviceProvider.GetRequiredService<PurchasingStore>());
         services.AddScoped<IPurchasingIncomingInvoiceStoreV1>(serviceProvider => serviceProvider.GetRequiredService<PurchasingStore>());
         services.AddScoped<IPurchaseIncomingInvoiceWorkflowV1, PurchaseIncomingInvoiceWorkflow>();
