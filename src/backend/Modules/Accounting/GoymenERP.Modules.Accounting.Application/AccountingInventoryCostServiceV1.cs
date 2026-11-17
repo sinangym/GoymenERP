@@ -64,7 +64,11 @@ public sealed class AccountingInventoryCostServiceV1(IAccountingInventoryCostSto
             if (result.CompanyId != companyId || !await Allowed(permission, companyId, actor, actorText, token)) return Denied<InvoiceLineCogsOptionsV1>();
             return new(AccountingApiStatus.Ok, result, false, null);
         }
-        catch (AccountingStoreException) { return new(AccountingApiStatus.Unavailable, null, false, "inventory_cost_account_plan_missing"); }
+        catch (AccountingStoreException)
+        {
+            return await Allowed(permission, companyId, actor, actorText, token)
+                ? new(AccountingApiStatus.Unavailable, null, false, "inventory_cost_account_plan_missing") : Denied<InvoiceLineCogsOptionsV1>();
+        }
     }
 
     public Task<AccountingApiResult<AccountingInventoryCostProposalV1>> PrepareAsync(Guid id, AccountingInventoryCostKindV1 kind,
