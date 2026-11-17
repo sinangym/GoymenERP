@@ -52,6 +52,25 @@ public sealed partial class LogisticsInstructionServiceTests
     }
 
     [Fact]
+    public async Task Invoiced_shipment_proof_refuses_an_owner_cancellation_between_its_two_reads()
+    {
+        var (world, instructionId, noteId, shipmentId) = await InvoiceProofWorld();
+        var instruction = (await world.Store.FindInstructionAsync(instructionId))!.Instruction;
+        world.Store.AfterInvoiceSourceSnapshot = () =>
+        {
+            world.Store.AfterInvoiceSourceSnapshot = null;
+            instruction.CancelDispatchNote(instruction.Version, noteId, Actor, "SENTETIK araya giren iptal", DateTimeOffset.UtcNow);
+        };
+        var result = await new LogisticsInvoicedShipmentProofReadPortV1(world.Company, world.Store)
+            .GetAsync(Company, noteId, 1, shipmentId);
+        Assert.Equal(9L, instruction.Version);
+        Assert.Equal(GoymenERP.Modules.Logistics.Domain.Loading.DispatchNoteStatus.Cancelled,
+            Assert.Single(instruction.DispatchNotes).Status);
+        Assert.Equal(LogisticsInvoicedShipmentProofOutcomeV1.Unavailable, result.Outcome);
+        Assert.Null(result.Proof);
+    }
+
+    [Fact]
     public async Task Invoiced_shipment_proof_refuses_a_contradictory_historical_order_revision()
     {
         var (world, _, noteId, shipmentId) = await InvoiceProofWorld();

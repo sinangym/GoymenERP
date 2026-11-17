@@ -273,3 +273,31 @@ FNS-D73/D83/D107 için Sales owner okuma portu eklendi. Mevcut onaylı revizyon 
   kayıtlı TL maliyeti Inventory sahibinden doğrulanmalı, fiş önerisi Accounting sahibi
   üzerinden yürümelidir. Birleşik owner kabulü ve merkezi entegrasyon beklenir;
   STK-SC36'nın tamamına DONE verilmez. Yeni DB/EF veya yetki/grant değişikliği yoktur.
+
+### FIN-S13 / STK-SC36 — sevkten kesinleşmiş fatura payına gerçek ters okuma
+
+- SAT-D94 / SAT-D425 kapsamında, en çok 128 gerçek sevk kimliği için şirket kapsamlı
+  `ISalesFinalizedShipmentClaimReadPortV1` eklendi. Fatura satırı, başlık, kesinleştirme
+  kaydı ve değişmez outbox JSON/hash birlikte doğrulanır. Fiyat, maliyet, vergi veya
+  muhasebe hesabı dışarı taşınmaz; ticari miktar fiziksel maliyet oranı sayılmaz.
+- Okuyucu gerçek tüketicinin taze yetki/şirket/aktör çitini zorunlu alır; her veritabanı
+  await öncesinde/sonrasında ve sonucu vermeden yeniden ölçer. İki sınırlı kaynak
+  okuması değişirse sonuç kullanılamaz. Kaynak sürümü sonraki yazım için işlem kilidi
+  veya yetki değildir; yazan tüketici kendi son çitini ve işlemini kurmalıdır.
+- Faturalanmamış pay, başka şirket/olmayan kaynak ve bozuk/çelişkili/eski eksik kanıt
+  ayrıdır. Gerçek taslak iptali ile bırakılmış payın sürümü/tarihi gösterilir; normal
+  kesinleşmiş fatura için henüz olmayan resmî iptal geçişi tahmin edilmez. Aynı sevkin
+  birden çok aktif veya aynı faturada yinelenen payı kullanılabilir kabul edilmez.
+- Mevcut ilk SMM okuyucusundaki `PriceBasisRevision` alt sınırı gerçek Sales domain ve
+  SQL CHECK ile hizalandı: ilk ticari revizyon 0 geçerlidir. Eksik eski ShipmentSource
+  halen kullanılamazdır; geçmiş kaynak veya maliyet geriye doldurulmaz.
+- Unit kaynakları 12 bozuk kanıt karşıörneğini, boş/tekrarlı/129 kimlikli isteği,
+  şirket ve tüketici çiti kaybını kapsar. Üç yeni gerçek SQL fact kaynağı gerçek
+  kesinleştirme/outbox bağını, şirket ayrımını, await sonrası çit kaybını ve iki okuma
+  arasında gerçek owner iptalini kapsar. Sales ilişkisel envanteri sıralı güncellendi;
+  merkezi fingerprint/test grubu pinleri entegrasyon sahibindedir.
+- API, Sales.UnitTests ve Api.IntegrationTests kaynak derlemeleri exit 0, uyarı/hata 0.
+  OpenAPI build üretimi kapalıdır; OpenAPI kabulü değildir. `git diff --check` exit 0.
+  Runtime Unit/SQL/HTTP/CI **NOT_RUN**. Yeni model, migration, endpoint, izin veya
+  grant yoktur. Merkezi DI ve gerçek muhasebe attribution tüketicisi takip işidir;
+  bu kaynak checkpointi bütün FIN-S13/STK-SC36 dilimine DONE vermez.

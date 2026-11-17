@@ -24,6 +24,7 @@ export interface InventoryCostProposal {
     readonly counterAccount: InventoryCostAccount; readonly accountPlanPackageId: string; readonly accountPlanPackageVersion: number
     readonly accountPlanCatalogVersion: number | null; readonly accountPlanSourceVersion: string; readonly accountPlanSha256: string } | null
   readonly approvedBy: string | null; readonly approvedAtUtc: string | null; readonly journalId: string | null
+  readonly currentPostedJournalId: string | null
   readonly cancellationId: string | null; readonly reversalProposal: JournalReversalProposal | null
 }
 export type InventoryCostAttempt = { readonly id: string; readonly kind: InventoryCostKind; readonly key: string; readonly actor: string } & (
@@ -44,7 +45,8 @@ const version = (v: unknown): v is number => Number.isSafeInteger(v) && (v as nu
 const hash = (v: unknown) => typeof v === 'string' && /^[a-f0-9]{64}$/i.test(v)
 const date = (v: unknown): v is string => typeof v === 'string' && isDateOnly(v)
 const utc = (v: unknown) => typeof v === 'string' && /(?:Z|\+00:00)$/.test(v) && Number.isFinite(Date.parse(v))
-const decimal = (v: unknown) => typeof v === 'string' && /^-?(0|[1-9][0-9]*)(\.[0-9]+)?$/.test(v)
+const canonicalDecimal = (v: unknown): v is string => typeof v === 'string'
+  && /^-?(0|[1-9][0-9]*)(\.[0-9]{0,27}[1-9])?$/.test(v) && v !== '-0'
 const account = (v: unknown): v is InventoryCostAccount => rec(v) && guid(v.accountId) && text(v.code) && text(v.name)
 
 export function decodeInventoryCost(body: unknown, company: string, kind: InventoryCostKind): InventoryCostProposal | null {
@@ -60,10 +62,14 @@ export function decodeInventoryCost(body: unknown, company: string, kind: Invent
     || c.componentKey !== `invoice-line:${(c.invoiceLineId as string).toLowerCase()}` || c.signedTlAmount.numerator.startsWith('-')
     : c.invoiceLineId !== null || c.invoiceLineNumber !== null || !guid(c.locationId)
       || c.componentKey !== `product-location:${c.productId.toLowerCase()}:${(c.locationId as string).toLowerCase()}`) return null
+  // Validate the server's lossless display shape; never calculate or round an amount in the browser.
+  if (!canonicalDecimal(body.exactTlAmount)
+    && body.exactTlAmount !== `${c.signedTlAmount.numerator} / ${c.signedTlAmount.denominator}`) return null
   const p = body.preparation
   if (p !== null) {
     if (!rec(p) || !guid(p.periodId) || !guid(p.currencyId) || !guid(p.preparedBy) || !utc(p.preparedAtUtc)
-      || !date(p.accountingDate) || !date(p.transactionDate) || !decimal(p.signedAmount) || !text(p.reason)
+      || !date(p.accountingDate) || !date(p.transactionDate) || !canonicalDecimal(p.signedAmount)
+      || body.exactTlAmount !== p.signedAmount || !text(p.reason)
       || !guid(p.moneyProfileId) || !version(p.moneyProfileVersion) || !Number.isSafeInteger(p.moneyScale) || (p.moneyScale as number) < 0 || (p.moneyScale as number) > 28
       || !guid(p.accountPlanPackageId) || !version(p.accountPlanPackageVersion) || p.accountPlanCatalogVersion !== null && !version(p.accountPlanCatalogVersion)
       || !text(p.accountPlanSourceVersion) || !hash(p.accountPlanSha256) || !account(p.counterAccount) || !rec(p.classification)) return null
@@ -75,7 +81,7 @@ export function decodeInventoryCost(body: unknown, company: string, kind: Invent
   }
   if (['Prepared', 'Posted', 'CancellationReversalPending', 'CancelledByReversal'].includes(body.status as string) && p === null) return null
   if (['AwaitingPreparation', 'NoCost'].includes(body.status as string) && p !== null) return null
-  if (body.status === 'NoCost' ? c.signedTlAmount.numerator !== '0' || c.signedTlAmount.denominator !== '1'
+  if (body.status === 'NoCost' ? c.signedTlAmount.numerator !== '0' || c.signedTlAmount.denominator !== '1' || body.exactTlAmount !== '0'
     : body.status !== 'Cancelled' && c.signedTlAmount.numerator === '0') return null
   if (['AwaitingPreparation', 'NoCost'].includes(body.status as string) && body.version !== 1
     || body.status === 'Prepared' && (body.version as number) < 2) return null
@@ -84,9 +90,13 @@ export function decodeInventoryCost(body: unknown, company: string, kind: Invent
   } else if (body.approvedBy !== null || body.approvedAtUtc !== null || body.journalId !== null) return null
   if (body.cancellationId !== null && !guid(body.cancellationId)) return null
   if (['Cancelled', 'CancellationReversalPending', 'CancelledByReversal'].includes(body.status as string) && !guid(body.cancellationId)) return null
+  const currentJournal = body.currentPostedJournalId === undefined ? null : body.currentPostedJournalId
+  if (currentJournal !== null && (!guid(currentJournal) || !guid(body.journalId))) return null
   const reversal = body.reversalProposal === null ? null : decodeJournalReversalProposal(body.reversalProposal, company)
   if (body.reversalProposal !== null && reversal === null) return null
-  return { ...body, reversalProposal: reversal } as unknown as InventoryCostProposal
+  if (reversal !== null && (typeof currentJournal !== 'string' || !same(reversal.sourceJournalId, currentJournal)
+    || !['CancellationReversalPending', 'CancelledByReversal'].includes(body.status as string))) return null
+  return { ...body, currentPostedJournalId: currentJournal, reversalProposal: reversal } as unknown as InventoryCostProposal
 }
 
 async function read<T>(path: string, company: string, decode: (body: unknown) => T | null, signal?: AbortSignal): Promise<ViewOutcome<T>> {

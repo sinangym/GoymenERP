@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Messaging;
+using System.Text.Json.Serialization;
 
 namespace GoymenERP.Modules.Accounting.Application;
 
@@ -46,7 +47,8 @@ public sealed record AccountingInventoryCostProposalV1(Guid ProposalId, Guid Com
     string? OfficialInvoiceNumber, AccountingInventoryCostComponentV1 Component, long Version, string Status,
     DateTimeOffset SourceOccurredAtUtc, AccountingInventoryCostPreparationV1? Preparation = null,
     Guid? ApprovedBy = null, DateTimeOffset? ApprovedAtUtc = null, Guid? JournalId = null,
-    Guid? CancellationId = null, AccountingJournalReversalProposalViewV1? ReversalProposal = null)
+    Guid? CancellationId = null, AccountingJournalReversalProposalViewV1? ReversalProposal = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? CurrentPostedJournalId = null)
 {
     public string ExactTlAmount => AccountingInventoryCostAmountsV1.TryExactDecimal(Component.SignedTlAmount, 28, out var amount)
         ? amount.ToString("0.############################", System.Globalization.CultureInfo.InvariantCulture)
