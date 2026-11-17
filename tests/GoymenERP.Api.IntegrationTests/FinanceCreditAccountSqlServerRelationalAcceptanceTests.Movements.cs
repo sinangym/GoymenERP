@@ -173,15 +173,18 @@ public sealed partial class FinanceCreditAccountSqlServerRelationalAcceptanceTes
     }
     private sealed partial class Run
     {
-        public ActualScope OpenMovement(string actor, ActualPeriods? periods = null, Guid? companyId = null)
+        public ActualScope OpenMovement(string actor, ActualPeriods? periods = null, Guid? companyId = null,
+            Func<FinanceDbContext, CompanyContext, ICurrentUser, IFinanceCreditAccountingPeriodPortV1>? accountingOwner = null)
         {
             var company = new CompanyContext(); company.Set(companyId ?? CompanyA);
             var audit = new AuditEventCollector();
             var db = new FinanceDbContext(new DbContextOptionsBuilder<FinanceDbContext>().UseSqlServer(Factory.DatabaseConnectionString,
                 sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", FinanceDbContext.Schema)).AddInterceptors(new AuditSaveChangesInterceptor(audit, company)).Options, company);
             periods ??= new();
-            var service = new FinanceCreditMovementServiceV1(db, company, new FixedCurrentUser(actor, company.CompanyId), new SyntheticPermissions(),
-                new SyntheticCreditSources(company.CompanyId), periods, periods, new InternalLedgerTreasuryBalanceGuard(db, company), audit,
+            var user = new FixedCurrentUser(actor, company.CompanyId);
+            var service = new FinanceCreditMovementServiceV1(db, company, user, new SyntheticPermissions(),
+                new SyntheticCreditSources(company.CompanyId), periods, accountingOwner?.Invoke(db, company, user) ?? periods,
+                new InternalLedgerTreasuryBalanceGuard(db, company), audit,
                 new(new(ErpPermissions.FinanceCreditsPropose, ["SENTETIK"], "Web"), new(ErpPermissions.FinanceCreditsApprove, ["SENTETIK"], "Web")), TimeProvider.System);
             return new(db, service, company, new(company.CompanyId, actor, Correlation, null));
         }
