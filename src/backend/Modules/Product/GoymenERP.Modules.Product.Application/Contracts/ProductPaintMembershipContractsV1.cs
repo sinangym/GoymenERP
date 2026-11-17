@@ -17,6 +17,25 @@ public sealed record ProductPaintMembershipReadV1(ProductPaintMembershipReadOutc
 public sealed record ProductPaintMembershipCatalogV1(ProductPaintMembershipCatalogOutcomeV1 Outcome,
     Guid CompanyId, string Version, IReadOnlyList<ProductPaintMembershipEntryV1> Entries, string SourceVersion);
 
+/// <summary>Membership-maintenance discovery only: no global card, operational eligibility, price or stock authority.</summary>
+public sealed record ProductPaintMembershipCandidateQueryV1(string? Q, int Limit = 25)
+{
+    public const int MaximumQueryLength = 100;
+    public const int MaximumLimit = 50;
+    public static bool TryCreate(string? q, int limit, out ProductPaintMembershipCandidateQueryV1 query)
+    {
+        query = new(null, limit);
+        if (limit is < 1 or > MaximumLimit || q is not null && (q.Length > MaximumQueryLength || q.Any(char.IsControl))) return false;
+        query = new(string.IsNullOrWhiteSpace(q) ? null : q.Trim(), limit);
+        return true;
+    }
+}
+public sealed record ProductPaintMembershipCandidateV1(Guid ProductId, string ProductVersion, string MembershipVersion,
+    string ProductCode, string ProductName, bool AlreadyMember);
+public sealed record ProductPaintMembershipCandidatesV1(ProductPaintMembershipCatalogOutcomeV1 Outcome,
+    Guid CompanyId, string Version, string? Q, int Limit, IReadOnlyList<ProductPaintMembershipCandidateV1> Items,
+    bool SearchWindowFull, string SourceVersion);
+
 /// <summary>Authenticated company membership only; the consuming Manufacturing operation owns its permission fence.
 /// Supplier selection uses the actual Cari owner. Optional color is a Settings PaintColor reference, not a new Product master.
 /// ProductVersion and MembershipVersion must be snapshotted and revalidated by the consumer; no rate/formula is returned.</summary>
@@ -69,6 +88,8 @@ public sealed class ProductPaintMembershipException(int statusCode, string code,
 public interface IProductPaintMembershipServiceV1
 {
     Task<ProductPaintMembershipCatalogV1> GetCurrentAsync(CancellationToken cancellationToken = default);
+    Task<ProductPaintMembershipCandidatesV1> SearchCandidatesAsync(ProductPaintMembershipCandidateQueryV1 query,
+        CancellationToken cancellationToken = default);
     Task<ProductPaintMembershipImportPreviewV1> ValidateImportAsync(ValidateProductPaintMembershipImportV1 request,
         CancellationToken cancellationToken = default);
     Task<ProductPaintMembershipMutationV1> ApplyImportAsync(ApplyProductPaintMembershipImportV1 request,
