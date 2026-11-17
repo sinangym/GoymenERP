@@ -721,3 +721,79 @@ denetimde süreç başlatılmadı, sekiz false deklarasyon veya diğer publish/g
   Üretici çalışmadan migration/snapshot elle yazılmaz. Merkezi Program/cap/izin/OpenAPI/
   recovery/guard/test envanterleri coordinator bileşiminde tamamlanır. Sekiz özgün staged
   Logistics deklarasyonu ve yeni staged hazırlama/onay kapıları değiştirilmemiştir.
+
+### STK-S3 / SAT-D417 — EF ve son kaynak derlemeleri
+
+- Kaynak checkpoint'leri `b60114d01` ve `2f34ab915`; merkezi mount/izin/cap bağımlılığı
+  `50dad3b18`, no-ff birleşim `1f84ee850`. Talimat değişmeden ayrı onay, açık ek ayırma,
+  gerçek yükleme ve tek fiziksel sevk kaynak zinciri tamamlandı. Kaynak durumu
+  **SOURCE_READY**; son metadata deltası merkezi birleşik API derlemesini bekler.
+  Bu kayıt runtime kullanılabilirlik, bağımsız review veya K3 kabulü değildir.
+- Gerçek EF üreticisi `AddLogisticsShipmentPlanExcess` komutunu exit 0 ile çalıştırdı.
+  Migration `20261117233641_AddLogisticsShipmentPlanExcess`, designer ve snapshot üretildi.
+  Yalnız yeni migration'ın kontrollü guard penceresinde Down `51817`, forward-only onay
+  `51818`, immutable kullanım `51819` ve immutable ek ayırma mapping `51820` eklendi.
+  Güncel yedi aktif çalışma alanı ve main/train/ilgili branch kaynakları üretimden önce
+  tekrar tarandı; bu numaralarda çakışma bulunmadı. Eski migration değiştirilmedi.
+- Same-key/different-payload unique yarışındaki recovery lookup başlangıç lookup'ıyla
+  aynı hata çevirisine ve son actor/company/izin çitine alındı: uygun terminal sonuç 409,
+  kaybolmuş yetki 403 kalır. Recovery exception'ı 503'e düşürmez; kaynak regresyonları
+  yazıldı. SQL decimal18,3 miktarları InvariantCulture `0.###` ile kanonik yazılır;
+  tr-TR/de-DE altında 20.000→20 ve 20.125→20.125 vektörlerinde ek yuvarlama yoktur.
+
+| Kaynak doğrulaması | Sonuç ve kapsam |
+|---|---|
+| API build | Exit 0, sıfır uyarı/hata (`api-final-pre-ef.log`). Son normal load/ship 409 metadata ekini kapsamaz; bu iki bildirim merkezi son API build'inde derlenecek. |
+| Gerçek EF add | Exit 0 (`ef-add.log`); DB apply yapılmadı. |
+| Logistics.UnitTests build | Exit 0, sıfır uyarı/hata (`logistics-unit-build-retry.log`). |
+| Inventory.UnitTests build | Exit 0, sıfır uyarı/hata (`inventory-unit-build.log`). |
+| Sales.UnitTests build | Son tüketici kaynakları dahil exit 0, sıfır uyarı/hata (`sales-unit-build-final.log`). |
+| Api.IntegrationTests build | Son SQL/HTTP kaynakları dahil exit 0, sıfır uyarı/hata (`integration-build-retry.log`). |
+| `npx --no-install tsc -b` | Son frontend düzeltmesi dahil exit 0 (`tsc-after-fix.log`). |
+| Runtime birim/HTTP/SQL/Vitest/browser/CI | **NOT_RUN**. |
+
+Build'ler seri, `--no-restore -m:1 -nr:false -p:UseSharedCompilation=false
+-p:OpenApiGenerateDocumentsOnBuild=false -v:q` ile ve her süreç öncesi en az 2 GiB boş
+fiziksel RAM doğrulanarak alındı. Eksik assets için yalnız mevcut pinli test projeleri
+dar restore edildi; paket/sürüm/lock/config değişmedi. Native exit ve ham loglar depodışı
+korundu. İlk CA2200 derleme hatası, NETSDK1004 assets hatası, Integration test kaynağı
+derleme hataları ve ilk iki TS2367 TSC sonucu silinmedi veya PASS sayılmadı. Yanlış yola
+uygulanamayan editin ardından aynı kaynakla gereksiz TSC tekrarı yapıldığı da yöntem
+eksiği olarak kaydedildi; gerçek dosya keşfi ve doğrulanmış dar patch sonrası son TSC 0'dır.
+.NET/EF ve Node lease'leri final rapor/commit beklenmeden açıkça bırakıldı.
+
+Yeni endpoint sözleşmeleri (`I` = instructionId, `L` = lineId, `E` = exceptionId):
+
+| OperationId | Method/path | Request → response | Durum/problem kodu |
+|---|---|---|---|
+| `ListLogisticsPlanExcessExceptionsV1` | GET `/api/v1/logistics/plan-excess` | purpose=approve/load/ship, optional instructionId/cursor → `LogisticsPlanExcessPageV1` | 200; 400 validation_failed/invalid_cursor; 401/403; 409 company context; 503 |
+| `ProposeLogisticsPlanExcessV1` | POST `/api/v1/logistics/loading-instructions/{I}/lines/{L}/plan-excess` | `ProposeLogisticsPlanExcessV1` → `LogisticsPlanExcessResultV1` | 200; 400 validation/metadata; 404; 409 logistics_plan_excess_conflict/same-key/concurrent; 422 validation_failed; 415; 401/403; 503 |
+| `ApproveLogisticsPlanExcessV1` | POST `/api/v1/logistics/plan-excess/{E}/approve` | `ApproveLogisticsPlanExcessV1` → `LogisticsPlanExcessResultV1` | 200; 400 validation/metadata; 404; 409 logistics_plan_excess_conflict/same-key/concurrent; 415; 401/403; 503 |
+| `ReserveLogisticsSubcontractPlanExcessV1` | POST `/api/v1/logistics/subcontract-deliveries/{I}/lines/{L}/plan-excess/{E}/reserve` | `ReserveLogisticsPlanExcessV1` → `LogisticsSubcontractInstructionV1` | 200; mevcut command 400/401/403/404/409/415/422/503; 409 logistics_plan_excess_approval_required/logistics_plan_excess_conflict ve gerçek owner/version/stock/risk kodları |
+
+Mevcut `RecordLoadingInstructionLoadV1` ve `RecordLoadingInstructionShipmentV1`
+request'lerine trailing null-omit `planExcessUses` eklendi; mevcut response şekilleri
+gerçek nullable `approvedPlanExcess` kanıtını taşır. Fason ship satırı ayrıca gerçek
+`additionalAllocations` seçimini alır. Legacy null eski hash ve kapasite davranışını korur.
+Son dar metadata patch'i bu iki normal endpoint'in `.ProducesErpConflict` bildirimine
+`logistics_plan_excess_approval_required` ve `logistics_plan_excess_conflict` ekler.
+Bağımsız seçici/onay sayfası, hazırlama/kullanım ve ayrı rezervasyon formları strict
+decoder, frozen belirsiz-cevap retry ve Türkçe durum metinleriyle bağlıdır; frontend
+miktar/fiyat hesabı veya otomatik istisna seçimi yapmaz.
+
+Yeni gerçek SQL fact kaynaklarının tam adları (hepsi **NOT_RUN**, test assembly'si derlendi):
+
+1. `GoymenERP.Api.IntegrationTests.LogisticsInstructionSqlServerRelationalAcceptanceTests.Approved_plan_excess_uses_are_separate_from_plan_and_immutable_original_approval_replay`
+2. `GoymenERP.Api.IntegrationTests.LogisticsInstructionSqlServerRelationalAcceptanceTests.Unapproved_or_wrong_exception_excess_load_writes_no_share_usage_attempt_or_audit`
+3. `GoymenERP.Api.IntegrationTests.LogisticsInstructionSqlServerRelationalAcceptanceTests.Plan_excess_approval_rollback_preserves_pending_fact_plan_cap_and_original_key_for_retry`
+4. `GoymenERP.Api.IntegrationTests.LogisticsInstructionSqlServerRelationalAcceptanceTests.Competing_plan_excess_loads_cannot_consume_one_approved_cap_twice`
+5. `GoymenERP.Api.IntegrationTests.LogisticsInstructionSqlServerRelationalAcceptanceTests.Plan_excess_Down_is_safe_when_empty_and_original_pending_and_usage_evidence_cannot_be_mutated`
+6. `GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.An_explicit_approved_subcontract_extra_reserves_separately_and_ships_one_actual_movement_without_rewriting_plan`
+7. `GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.A_failure_after_actual_extra_reservation_rolls_back_both_owners_and_retries_the_same_explicit_key`
+
+Merkezi OpenAPI, recovery/release, guard fingerprint, migration mutation, ilişkisel
+envanter ve test grubu üretimi coordinator'dadır. Yeni guard/Serializable borrowed owner
+yüzeyleri gerekçeli K3 incelemesi bekler; bypass/SQL izin listesi genişletilmedi. Sekiz
+özgün Logistics false deklarasyonu ile iki yeni staged control/route aynı kaldı. Grant,
+rol ataması veya production aktivasyonu yoktur. STK-S8 linked GİB ve SAT-SC34 dış resmî
+iptal provider'ının yokluğu bu plan istisnasına başarı kaynağı olarak bağlanmadı.

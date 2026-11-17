@@ -70,7 +70,7 @@ public sealed partial class LogisticsInstructionService : ILogisticsPlanExcessSe
         catch (LogisticsStoreException error)
         {
             await RequireStillAsync(scope, permission, token);
-            var won = await GuardedAsync(scope, permission, () => owner.FindPlanExcessReplayAsync(envelope, hash, command, token), token);
+            var won = await PlanExcessReplayAsync(scope, permission, owner, envelope, hash, command, token);
             if (won is not null) return won;
             if (error.Code is LogisticsStoreCodes.ConcurrentChange or LogisticsStoreCodes.SameKeyPayloadMismatch)
                 throw new LogisticsInstructionServiceException(409, error.Code);
@@ -81,7 +81,7 @@ public sealed partial class LogisticsInstructionService : ILogisticsPlanExcessSe
             // The host has confirmed rollback. A fresh own transaction stores only this immutable terminal answer.
             var result = await transaction.ExecutePlanExcessAsync<LogisticsPlanExcessResultV1?>(scope.CompanyId, async ct =>
             {
-                var won = await GuardedAsync(scope, permission, () => owner.FindPlanExcessReplayAsync(envelope, hash, command, ct), ct);
+                var won = await PlanExcessReplayAsync(scope, permission, owner, envelope, hash, command, ct);
                 if (won is not null) return won;
                 await GuardedAsync(scope, permission, async () =>
                 {
@@ -90,7 +90,8 @@ public sealed partial class LogisticsInstructionService : ILogisticsPlanExcessSe
                 }, ct);
                 return null;
             }, ct => RequireStillAsync(scope, permission, ct), token);
-            return result ?? throw error;
+            if (result is not null) return result;
+            throw;
         }
     }
     private static bool PositiveVersion(string text) => long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var value)

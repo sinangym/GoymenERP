@@ -94,6 +94,40 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         Assert.Equal(20m, await db.Lines.Select(row => row.ApprovedPlanExcess).SingleAsync());
     }
     [SqlServerFact]
+    public async Task Plan_excess_Down_is_safe_when_empty_and_original_pending_and_usage_evidence_cannot_be_mutated()
+    {
+        await using var run = await Run.StartAsync();
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(
+            new GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations.AddLogisticsShipmentPlanExcess().DownOperations[0]).Sql;
+        await run.ExecuteAsync(guard);
+        var owners = Owners.For(CompanyA); var instruction = InstructionForOrderLine(owners, Guid.NewGuid(), 100m); var exceptionId = Guid.NewGuid();
+        await using var frame = PlanExcessFrame(run, CompanyA);
+        await frame.Store.StoreInstructionAsync(run.Envelope("px-guard-create"), Hash("px-guard-create"), Day, () => instruction);
+        await frame.Store.MutateInstructionAsync(run.Envelope("px-guard-issue"), Hash("px-guard-issue"), LogisticsCommands.IssueV1, instruction.Id, (value, now) => value.Issue(2, now), Issued);
+        await using (var tx = await frame.Db.Database.BeginTransactionAsync(IsolationLevel.Serializable))
+        {
+            await frame.Store.ProposePlanExcessAsync(run.Envelope("px-guard-propose") with { PermissionCode = LogisticsPermissionManifestV1.LoadsRecord },
+                Hash("px-guard-propose"), instruction.Id, instruction.Lines[0].Id, new(exceptionId, "3", "20", "SENTETIK original"), default);
+            await tx.CommitAsync();
+        }
+        var down = await Assert.ThrowsAsync<Microsoft.Data.SqlClient.SqlException>(() => run.ExecuteAsync(guard)); Assert.Equal(51817, down.Number);
+        var changed = await Assert.ThrowsAsync<Microsoft.Data.SqlClient.SqlException>(() => run.ExecuteAsync("UPDATE logistics.PlanExcessExceptions SET Reason=N'SENTETIK tamper' WHERE ExceptionId=@id", ("@id", exceptionId)));
+        Assert.Equal(51818, changed.Number);
+        await using (var tx = await frame.Db.Database.BeginTransactionAsync(IsolationLevel.Serializable))
+        {
+            await frame.Store.ApprovePlanExcessAsync(run.Envelope("px-guard-approve") with { PermissionCode = LogisticsPlanExcessV1.ApprovePermission },
+                Hash("px-guard-approve"), exceptionId, new("1", "3"), default); await tx.CommitAsync();
+        }
+        await frame.Store.MutateWithPlanExcessAsync(run.Envelope("px-guard-load"), Hash("px-guard-load"), LogisticsCommands.RecordLoadV1, instruction.Id,
+            (value, now) => value.RecordLoad(3, Guid.NewGuid(), instruction.Lines[0].Id, Kg(120), MeasurementKind.Measured, now), Loaded, null, null,
+            new Dictionary<Guid, IReadOnlyList<LogisticsPlanExcessUseV1>?> { [instruction.Lines[0].Id] = [new(exceptionId, "2", "20")] }, default);
+        var use = await Assert.ThrowsAsync<Microsoft.Data.SqlClient.SqlException>(() => run.ExecuteAsync("DELETE FROM logistics.PlanExcessUsages WHERE ExceptionId=@id", ("@id", exceptionId)));
+        Assert.Equal(51819, use.Number);
+        Assert.Equal(20m, await frame.Db.PlanExcessUsages.Select(row => row.Quantity).SingleAsync());
+        Assert.Equal("SENTETIK original", (await frame.Db.PlanExcessExceptions.AsNoTracking().SingleAsync()).Reason);
+    }
+
+    [SqlServerFact]
     public async Task Competing_plan_excess_loads_cannot_consume_one_approved_cap_twice()
     {
         await using var run = await Run.StartAsync(); var owners = Owners.For(CompanyA); var instruction = InstructionForOrderLine(owners, Guid.NewGuid(), 100m);

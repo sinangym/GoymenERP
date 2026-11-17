@@ -59,6 +59,17 @@ public sealed class LogisticsPlanExcessTests
         Assert.Contains("planExcessUses", JsonSerializer.Serialize(explicitProof, LogisticsJson.Options));
     }
     [Fact]
+    public void Generated_plan_excess_migration_guards_history_before_drop_and_has_three_closed_immutable_triggers()
+    {
+        var migration = new GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations.AddLogisticsShipmentPlanExcess();
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51817", guard.Sql); Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var triggers = migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>().ToArray();
+        Assert.Equal(3, triggers.Length);
+        foreach (var number in new[] { 51818, 51819, 51820 }) Assert.Single(triggers, operation => operation.Sql.Contains($"THROW {number}", StringComparison.Ordinal));
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is Microsoft.EntityFrameworkCore.Migrations.Operations.InsertDataOperation);
+    }
+    [Fact]
     public void Approval_and_each_actual_use_and_reservation_are_company_bound_with_restrictive_source_keys()
     {
         using var db = Context(); var model = db.GetService<IDesignTimeModel>().Model;

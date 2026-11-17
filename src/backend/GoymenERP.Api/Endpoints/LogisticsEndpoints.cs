@@ -202,6 +202,7 @@ public static partial class LogisticsEndpoints
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(LogisticsProblemCodesV1.VersionConflict, LogisticsProblemCodesV1.InstructionState,
                 LogisticsProblemCodesV1.LoadExceedsInstructed, LogisticsProblemCodesV1.LineBlocked, LogisticsProblemCodesV1.DuplicateShare,
+                LogisticsPlanExcessV1.ApprovalRequired, LogisticsPlanExcessV1.Conflict,
                 LogisticsProblemCodesV1.SameKeyPayloadMismatch, LogisticsProblemCodesV1.ConcurrentChange)
             .ProducesErpUnprocessableEntity("validation_failed", LogisticsProblemCodesV1.UnsupportedUnit)
             .ProducesErpServiceUnavailable()
@@ -367,6 +368,7 @@ public static partial class LogisticsEndpoints
             .ProducesErpConflict(LogisticsProblemCodesV1.VersionConflict, LogisticsProblemCodesV1.InstructionState,
                 LogisticsProblemCodesV1.LineBlocked, LogisticsProblemCodesV1.DuplicateShare,
                 LogisticsRealizationCodesV1.AllocationSourceMismatch, LogisticsRealizationCodesV1.ShipmentExceedsLoaded,
+                LogisticsPlanExcessV1.ApprovalRequired, LogisticsPlanExcessV1.Conflict,
                 // SAT-D103 / SAT-D111 (K3-REVIEW-A P1-1 b): the Sales order line is no longer approved / no longer this source,
                 // or the shipment would take the line's total shipped above the Sales owner's current loading limit.
                 LogisticsProblemCodesV1.OrderLineState, LogisticsProblemCodesV1.OrderLineAggregateLimitExceeded,

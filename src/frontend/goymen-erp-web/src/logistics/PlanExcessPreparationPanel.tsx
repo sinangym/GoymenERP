@@ -66,7 +66,7 @@ export function PlanExcessCommandNotice({ command }: { readonly command: ReturnT
     {reason !== undefined ? <StateBlock subject={T.subject} state={{ kind: reason }} /> : null}
     {state.phase === 'failed' && !unknown && state.failure !== 'validation' && state.failure !== 'unexpected'
       ? <StateBlock subject={T.subject} state={{ kind: state.failure }} /> : null}
-    {unknown && state.phase !== 'submitting' ? <><Button type="button" onClick={command.retry}>{T.retry}</Button><Button type="button" onClick={command.leave}>{T.abandon}</Button></> : null}
+    {unknown ? <><Button type="button" onClick={command.retry}>{T.retry}</Button><Button type="button" onClick={command.leave}>{T.abandon}</Button></> : null}
   </div>
 }
 export function PlanExcessPreparationPanel(props: { readonly instructionId: string; readonly instructionVersion: string; readonly lineId: string; readonly lineNo: number; readonly instructed: string; readonly onRecorded: () => void }) {
