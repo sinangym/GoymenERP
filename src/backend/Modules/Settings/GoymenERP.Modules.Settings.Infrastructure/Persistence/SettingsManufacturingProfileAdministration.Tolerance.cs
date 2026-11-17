@@ -33,13 +33,14 @@ internal sealed partial class SettingsManufacturingProfileAdministration
         var rows = await ReadAsync(() =>
             database.ManufacturingToleranceProfileVersions.AsNoTracking().ToListAsync(cancellationToken));
         var windows = await ReadAsync(() => RegistryWindowsAsync(cancellationToken));
+        var baseline = await ReadAsync(() => ManufacturingProfileBaselineReads.TolerancesAsync(database, companyId, cancellationToken));
         await RequireStillAsync(ManufacturingToleranceProfileReadActionV1.Read, companyId, cancellationToken);
         return new ManufacturingToleranceProfileListViewV1(
             companyId,
             SettingsBusinessDate.Today(timeProvider),
             rows.OrderBy(row => row.Process, StringComparer.Ordinal).ThenByDescending(row => row.ProfileVersion)
                 .Select(row => ToleranceView(row, windows)).ToArray(),
-            ApprovedManufacturingProfileCatalog.ToleranceFor(companyId).Select(StartingValueView).ToArray());
+            baseline.Values.Select(StartingValueView).ToArray(), baseline.Version);
     }
 
     async Task<ManufacturingToleranceProfileViewV1?> ISettingsManufacturingToleranceProfileAdministrationV1.GetAsync(
@@ -50,13 +51,14 @@ internal sealed partial class SettingsManufacturingProfileAdministration
         var row = await ReadAsync(() => database.ManufacturingToleranceProfileVersions.AsNoTracking()
             .SingleOrDefaultAsync(version => version.ProfileId == profileId, cancellationToken));
         var windows = await ReadAsync(() => RegistryWindowsAsync(cancellationToken));
+        var baseline = await ReadAsync(() => ManufacturingProfileBaselineReads.TolerancesAsync(database, companyId, cancellationToken));
         await RequireStillAsync(ManufacturingToleranceProfileReadActionV1.Read, companyId, cancellationToken);
         if (row is not null)
         {
             return ToleranceView(row, windows);
         }
 
-        return ApprovedManufacturingProfileCatalog.ToleranceFor(companyId)
+        return baseline.Values
             .Where(entry => entry.ProfileId == profileId)
             .Select(StartingValueView)
             .SingleOrDefault();

@@ -20,7 +20,7 @@ namespace GoymenERP.Modules.Inventory.Domain.Balances;
 public sealed record StockShortfall
 {
     public StockShortfall(StockMovementKind movementKind, StockSourceReference source, StockPosition position,
-        Kilograms requested, Kilograms available)
+        Kilograms requested, Kilograms available, int? lineNumber = null)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(position);
@@ -40,12 +40,17 @@ public sealed record StockShortfall
                 "A shortfall exists only while the bucket holds less than the line asks for.");
         }
 
+        if (lineNumber is < 1) throw new ArgumentOutOfRangeException(nameof(lineNumber));
+        LineNumber = lineNumber;
         MovementKind = movementKind;
         Source = source;
         Position = position;
         Requested = requested;
         Available = available;
     }
+
+    /// <summary>One-based failing movement line, supplied by the ledger; null on legacy advisory details.</summary>
+    public int? LineNumber { get; }
 
     /// <summary>The kind of the refused movement (an issue, a scrap, a transfer leg, ...).</summary>
     public StockMovementKind MovementKind { get; }

@@ -190,7 +190,8 @@ public sealed partial class SalesInvoiceService
                 && string.Equals(found.Ettn, ettn, StringComparison.OrdinalIgnoreCase)
                 && found.PayableFunctionalAmount >= 0m && found.PayableAmount >= 0m
                 && found.VatFunctionalAmount >= 0m && found.WithholdingFunctionalAmount >= 0m
-                && found.CustomerPartyId != Guid.Empty && found.CurrencyId != Guid.Empty:
+                && found.CustomerPartyId != Guid.Empty && found.CurrencyId != Guid.Empty
+                && found.HasCompleteSourceProof(scope.CompanyId):
                 return found with { Ettn = ettn };
             default:
                 throw new SalesDraftServiceException(503, SalesInvoiceProblemCodesV1.OfficialInvoiceProviderUnavailable);
@@ -246,7 +247,7 @@ public sealed partial class SalesInvoiceService
             match.MatchedAtUtc, match.DifferenceApprovedBy, match.DifferenceReason, NullableExactText(match.Taxes?.InvoiceVatAmount),
             NullableExactText(match.Taxes?.OfficialVatAmount), NullableExactText(match.Taxes?.VatDifference),
             NullableExactText(match.Taxes?.InvoiceWithholdingAmount), NullableExactText(match.Taxes?.OfficialWithholdingAmount),
-            NullableExactText(match.Taxes?.WithholdingDifference));
+            NullableExactText(match.Taxes?.WithholdingDifference), match.InvoiceDate, match.SourceProof);
 
     private static string ExactText(decimal value) => value.ToString("0.00######", CultureInfo.InvariantCulture);
 

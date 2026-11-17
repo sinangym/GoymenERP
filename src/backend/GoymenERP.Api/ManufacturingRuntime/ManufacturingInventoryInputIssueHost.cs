@@ -27,7 +27,8 @@ internal sealed class ManufacturingInventoryInputIssueHost(
     IErpAuthorityRevalidationService authority,
     ISettingsPrerequisiteProvider settings,
     Func<ManufacturingInventoryIssueStage, CancellationToken, Task>? observer = null,
-    IInventoryLabelDetailsV1? labelDetails = null)
+    IInventoryLabelDetailsV1? labelDetails = null,
+    IInventoryNegativeStockAttemptRecorderV1? negativeStockAttempts = null)
     : IManufacturingInventoryInputIssuePortV1
 {
     async Task<ManufacturingInventoryInputIssuePortResultV1> IManufacturingInventoryInputIssuePortV1.IssueAsync(
@@ -229,6 +230,16 @@ internal sealed class ManufacturingInventoryInputIssueHost(
             }
 
             manufacturing.ChangeTracker.Clear();
+            if (!committed && InventoryNegativeStockAttemptEvidenceException.Find(exception) is not null)
+            {
+                try
+                {
+                    if (negativeStockAttempts is null) throw new InvalidOperationException("Physical refusal recorder is unavailable.");
+                    await negativeStockAttempts.RecordAfterRollbackAsync(exception, CancellationToken.None);
+                }
+                catch (Exception recording) { throw InventoryManufacturingRealizationException.Refused(503,
+                    InventoryManufacturingRealizationCodesV1.Unavailable, recording); }
+            }
             throw;
         }
         finally

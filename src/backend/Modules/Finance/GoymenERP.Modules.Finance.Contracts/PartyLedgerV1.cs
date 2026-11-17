@@ -68,6 +68,9 @@ public enum PartyLedgerEntryKind
 
     /// <summary>FIN-S9 (FNS-D85): the reversal of a Credit opening — debit.</summary>
     OpeningBalanceCreditReversal = 13,
+    /// <summary>KLN-D71: one side of the explicit full party-balance transfer; no bank or money event is copied.</summary>
+    BalanceTransferDebit = 14,
+    BalanceTransferCredit = 15,
 }
 
 /// <summary>The column a row is written in, from the company's view of the party's account: borç / alacak.</summary>

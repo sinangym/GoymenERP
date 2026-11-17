@@ -1296,6 +1296,65 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                     b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ManufacturingProfileBaselineTransferRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Kind")
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("SnapshotHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("SnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("TransferId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("TransferredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "Kind");
+
+                    b.HasIndex("CompanyId", "TransferId")
+                        .IsUnique();
+
+                    b.ToTable("ManufacturingProfileBaselineTransfers", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsMfgBaseline_Actor", "LEN(LTRIM(RTRIM([ActorId]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsMfgBaseline_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [TransferId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_SettingsMfgBaseline_Kind", "[Kind] IN ('parameters','tolerances') AND [Version] = 1");
+
+                            t.HasCheckConstraint("CK_SettingsMfgBaseline_Snapshot", "ISJSON([SnapshotJson]) = 1 AND LEN([SnapshotHash]) = 64 AND [SnapshotHash] NOT LIKE '%[^0-9A-F]%'");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ManufacturingTolerancePolicyRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -1588,6 +1647,53 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_SettingsMoneyProfileVersions_Scale", "[Scale] BETWEEN 0 AND 28 AND ([UnitPriceScale] IS NULL OR [UnitPriceScale] BETWEEN 0 AND 28)");
 
                             t.HasCheckConstraint("CK_SettingsMoneyProfileVersions_Source", "[SourceKind] IN ('CompiledBaselineV0','UserMaintained')");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.PurchaseInvoiceVariancePolicyRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<decimal>("AmountTolerance")
+                        .HasPrecision(24, 6)
+                        .HasColumnType("decimal(24,6)");
+
+                    b.Property<Guid>("PolicyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("PublishedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PublishedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<decimal>("RateTolerance")
+                        .HasPrecision(24, 6)
+                        .HasColumnType("decimal(24,6)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.HasKey("CompanyId", "Version");
+
+                    b.HasIndex("CompanyId", "PolicyId")
+                        .IsUnique();
+
+                    b.ToTable("PurchaseInvoiceVariancePolicies", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_PurchaseInvoiceVariancePolicies_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PolicyId] <> '00000000-0000-0000-0000-000000000000' AND [Version] > 0");
+
+                            t.HasCheckConstraint("CK_PurchaseInvoiceVariancePolicies_Publication", "LEN(LTRIM(RTRIM([PublishedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0 AND DATEPART(TZOFFSET,[PublishedAtUtc]) = 0");
+
+                            t.HasCheckConstraint("CK_PurchaseInvoiceVariancePolicies_Values", "[AmountTolerance] >= 0 AND [RateTolerance] >= 0");
                         });
                 });
 
@@ -3267,6 +3373,52 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_SettingsUnitProfileVersions_Scale", "[Scale] BETWEEN 0 AND 28 AND ([IsKilogram] = 0 OR [Scale] <= 3)");
 
                             t.HasCheckConstraint("CK_SettingsUnitProfileVersions_Source", "[SourceKind] IN ('CompiledBaselineV0','UserMaintained')");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.WarehouseTransferScaleVersionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("LocationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("LocationVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<Guid>("RecordId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<bool>("RequireExitWeighing")
+                        .HasColumnType("bit");
+
+                    b.HasKey("CompanyId", "LocationId", "Version");
+
+                    b.HasIndex("CompanyId", "RecordId")
+                        .IsUnique();
+
+                    b.ToTable("WarehouseTransferScaleVersions", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_WarehouseTransferScaleVersions_Audit", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0 AND DATEPART(TZOFFSET,[RecordedAtUtc]) = 0");
+
+                            t.HasCheckConstraint("CK_WarehouseTransferScaleVersions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [LocationId] <> '00000000-0000-0000-0000-000000000000' AND [RecordId] <> '00000000-0000-0000-0000-000000000000' AND [Version] > 0 AND [LocationVersion] > 0");
                         });
                 });
 

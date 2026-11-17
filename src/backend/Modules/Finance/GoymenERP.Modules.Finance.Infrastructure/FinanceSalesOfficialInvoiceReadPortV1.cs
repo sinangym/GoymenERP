@@ -44,8 +44,13 @@ internal sealed class FinanceSalesOfficialInvoiceReadPortV1(IFinanceOfficialSale
         };
     }
 
-    private static SalesOfficialInvoiceAnswerV1 Found(FinanceOfficialSalesInvoiceFactsV1 invoice) =>
-        ExactDecimal(invoice.PayableAmount) is { } payable
+    private static SalesOfficialInvoiceAnswerV1 Found(FinanceOfficialSalesInvoiceFactsV1 invoice)
+    {
+        var proof = new SalesOfficialInvoiceSourceProofV1(invoice.CompanyId, invoice.InvoiceId, invoice.SourceKind,
+            invoice.Version, invoice.ApprovedAtUtc, invoice.PdfDocumentId, invoice.PdfDocumentVersionNo, invoice.PdfSha256,
+            invoice.SourceBatchId, invoice.SourceChecksum, invoice.HasPendingManual);
+        return invoice.InvoiceDate is { } date && date != default && proof.IsValidFor(invoice.CompanyId)
+        && ExactDecimal(invoice.PayableAmount) is { } payable
         && ExactDecimal(invoice.PayableFunctionalAmount) is { } payableFunctional
         && ExactDecimal(invoice.VatFunctionalAmount) is { } vatFunctional
         && ExactDecimal(invoice.WithholdingFunctionalAmount) is { } withholdingFunctional
@@ -57,8 +62,11 @@ internal sealed class FinanceSalesOfficialInvoiceReadPortV1(IFinanceOfficialSale
                 payable,
                 payableFunctional,
                 vatFunctional,
-                withholdingFunctional))
+                withholdingFunctional,
+                date,
+                proof))
             : SalesOfficialInvoiceAnswerV1.Unavailable;
+    }
 
     /// <summary>
     /// The exact decimal text as a <see cref="decimal"/>, only when it is held without rounding (the record refused any other

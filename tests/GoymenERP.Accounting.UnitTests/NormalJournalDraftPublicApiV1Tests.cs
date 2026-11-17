@@ -111,6 +111,46 @@ public sealed class NormalJournalDraftPublicApiV1Tests
         Assert.Equal(0, provider.Calls);
     }
 
+    [Theory]
+    [InlineData("200")]
+    [InlineData("99.99")]
+    [InlineData("100.01")]
+    [InlineData("100.00000000000000000000000000001")]
+    public async Task Balanced_draft_cannot_change_the_exact_recorded_expense_or_transfer_amount(string amount)
+    {
+        var source = ServerSource() with { ExactSourceAmount = "100.00" };
+        var lifecycle = new CapturingLifecycle();
+        var request = Request(source) with { Lines = [new(Debit, "Debit", amount), new(Credit, "Credit", amount)] };
+        var result = await Service(lifecycle, new FixedSource(source)).CreateAsync(request, "exact-source-mismatch");
+        Assert.Equal(AccountingApiStatus.Unprocessable, result.Status);
+        Assert.Equal("accounting_normal_journal_source_amount_mismatch", result.Code);
+        Assert.Null(lifecycle.Created);
+    }
+
+    [Fact]
+    public async Task Exact_owner_amount_is_accepted_without_conversion_or_rounding()
+    {
+        var source = ServerSource() with { ExactSourceAmount = "100.00" };
+        var lifecycle = new CapturingLifecycle();
+        var request = Request(source) with { Lines = [new(Debit, "Debit", "100.00"), new(Credit, "Credit", "100")] };
+        var result = await Service(lifecycle, new FixedSource(source)).CreateAsync(request, "exact-source-match");
+        Assert.Equal(AccountingApiStatus.Created, result.Status);
+        Assert.Equal((100m, 100m), (lifecycle.Created!.TotalDebit, lifecycle.Created.TotalCredit));
+        Assert.Equal(Currency, lifecycle.Created.Request.CurrencyId);
+    }
+
+    [Fact]
+    public async Task Re_read_source_amount_change_invalidates_preparation_before_any_write()
+    {
+        var shown = ServerSource() with { ExactSourceAmount = "100.00" };
+        var current = shown with { ExactSourceAmount = "101.00" };
+        var lifecycle = new CapturingLifecycle();
+        var result = await Service(lifecycle, new FixedSource(current)).CreateAsync(Request(shown), "exact-source-changed");
+        Assert.Equal(AccountingApiStatus.Conflict, result.Status);
+        Assert.Equal(NormalJournalDraftPreparationCodesV1.VersionConflict, result.Code);
+        Assert.Null(lifecycle.Created);
+    }
+
     private static NormalJournalDraftPublicServiceV1 Service(
         INormalJournalDraftLifecycleV1 lifecycle,
         INormalJournalDraftServerSourceProviderV1 provider)

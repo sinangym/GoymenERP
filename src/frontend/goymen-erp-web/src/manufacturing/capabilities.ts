@@ -79,6 +79,8 @@ export const MANUFACTURING_CAPABILITY = {
    * `hasCapability` answers false and no cancel control is drawn until that contract is merged and published.
    */
   orderCancel: 'manufacturing.orders.cancel',
+  /** URT-D32/D77: enabled once the real enlisted Inventory cost-generation participant is connected. */
+  orderReopen: 'manufacturing.orders.reopen',
   /** Create a Draft plan from authorized work-center and Inventory candidate reads. */
   planCreate: 'manufacturing.plans.create',
   /** Reopen one stored plan through `manufacturing.plans.read`. */
@@ -91,7 +93,7 @@ export const MANUFACTURING_CAPABILITY = {
    * false and no cancel control is drawn. The rejection (API-10) needs no id of its own: it runs under `planApprove`.
    */
   planCancel: 'manufacturing.plans.cancel',
-  /** URT-D106: registered-only; provider keeps this control unavailable until the queue screen exists. */
+  /** URT-D106/D110: manual queue movement on its separate registered permission; the provider never grants it. */
   planReorder: 'manufacturing.plans.reorder',
   /** Create one order from the Approved plan shown on the detail screen. Not a route — a control. */
   planOrderCreate: 'manufacturing.plans.order-create',

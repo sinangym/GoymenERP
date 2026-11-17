@@ -9,7 +9,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// <list type="bullet">
 /// <item>The plan's amounts are taken AS GIVEN: exact non-negative decimal text (digits and at most one inner dot), never
 /// rounded, never converted. The system never calculates interest.</item>
-/// <item>Each line: installment = principal + interest + BSMV + KKDF, exactly.</item>
+/// <item>Each line: installment equals principal + interest + BSMV + KKDF + source-included charges within one smallest
+/// currency unit from the approved Settings profile. Separately collected charges remain separate; no source amount is rounded.</item>
 /// <item>The plan: the sum of the principals = the credit amount (exact positive text), exactly.</item>
 /// <item>Sequences run 1..n in the given order. Dates are carried as given (FNS-D94 checks the totals only).</item>
 /// </list>
@@ -40,8 +41,11 @@ internal static class FinanceCreditPlanCalculator
         public bool IsValid => Issues.Count == 0;
     }
 
-    internal static Result Validate(string? principalAmount, IReadOnlyList<CreditPlanInstallmentInput>? installments)
+    internal static Result Validate(string? principalAmount, IReadOnlyList<CreditPlanInstallmentInput>? installments,
+        int? currencyScale = null)
     {
+        if (currencyScale is < 0 or > 28) throw new ArgumentOutOfRangeException(nameof(currencyScale));
+        var tolerance = new FinanceExactDecimalText(currencyScale is null ? 0 : 1, currencyScale ?? 0);
         var issues = new List<ValidationIssue>();
         var amount = default(FinanceExactDecimalText);
         var amountReadable = principalAmount is not null && principalAmount.Length <= AmountMaximumLength
@@ -69,6 +73,9 @@ internal static class FinanceCreditPlanCalculator
         var totalInterest = zero;
         var totalBsmv = zero;
         var totalKkdf = zero;
+        var totalIncludedCharges = zero;
+        var totalSeparateCharges = zero;
+        var hasCharges = false;
         var everyLineReadable = true;
         for (var index = 0; index < installments.Count; index++)
         {
@@ -99,7 +106,42 @@ internal static class FinanceCreditPlanCalculator
             }
 
             var components = principal.Add(interest).Add(bsmv).Add(kkdf);
-            if (installment.CompareTo(components) != 0)
+            if (line.Charges is { } charges)
+            {
+                if (charges.Count > 100)
+                {
+                    issues.Add(new ValidationIssue(prefix + "charges", "credit_plan_charges_too_many"));
+                    everyLineReadable = false;
+                    continue;
+                }
+                for (var chargeIndex = 0; chargeIndex < charges.Count; chargeIndex++)
+                {
+                    var charge = charges[chargeIndex];
+                    var chargeField = prefix + "charges[" + chargeIndex.ToString(CultureInfo.InvariantCulture) + "]";
+                    if (charge is null || !Enum.IsDefined(charge.Treatment)
+                        || !Canonical(charge.Description, 200) || !Canonical(charge.SourceDocumentReference, 100))
+                    {
+                        issues.Add(new ValidationIssue(chargeField, "credit_plan_charge_source_invalid"));
+                        everyLineReadable = false;
+                        continue;
+                    }
+                    if (!TryRead(charge.Amount, chargeField + ".amount", issues, out var chargeAmount))
+                    {
+                        everyLineReadable = false;
+                        continue;
+                    }
+                    hasCharges = true;
+                    if (charge.Treatment == CreditChargeTreatmentV1.IncludedInInstallment)
+                    {
+                        components = components.Add(chargeAmount);
+                        totalIncludedCharges = totalIncludedCharges.Add(chargeAmount);
+                    }
+                    else totalSeparateCharges = totalSeparateCharges.Add(chargeAmount);
+                }
+            }
+            var difference = installment.CompareTo(components) >= 0
+                ? installment.Subtract(components) : components.Subtract(installment);
+            if (difference.CompareTo(tolerance) > 0)
             {
                 issues.Add(new ValidationIssue(prefix + "installment", InstallmentSumMismatch));
             }
@@ -122,8 +164,12 @@ internal static class FinanceCreditPlanCalculator
         }
 
         return new Result(issues, new CreditPlanTotalsView(totalInstallment.Text, totalPrincipal.Text,
-            totalInterest.Text, totalBsmv.Text, totalKkdf.Text));
+            totalInterest.Text, totalBsmv.Text, totalKkdf.Text,
+            hasCharges ? new(totalIncludedCharges.Text, totalSeparateCharges.Text) : null));
     }
+
+    private static bool Canonical(string? text, int maximum) => !string.IsNullOrWhiteSpace(text)
+        && text == text.Trim() && text.Length <= maximum;
 
     private static bool TryRead(string? value, string field, List<ValidationIssue> issues,
         out FinanceExactDecimalText parsed)

@@ -30,7 +30,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 /// </list>
 /// The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// </summary>
-public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICompanyContext companyContext)
+public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> options, ICompanyContext companyContext)
     : DbContext(options)
 {
     public const string Schema = "sales";
@@ -534,7 +534,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     internal const string InvoiceStateConstraint = "[State] IN (1, 2, 3, 4, 5, 6)";
 
     /// <summary>F2: a subcontract service invoice is recorded as a Draft (1) only in this slice; a later state is a declared widening.</summary>
-    internal const string SubcontractServiceInvoiceStateConstraint = "[State] = 1";
+    internal const string SubcontractServiceInvoiceStateConstraint = "[State] IN (1,2,3,4,5,6)";
 
     /// <summary>F2 (LOJ-D9): the billed weighing carries a positive revision and instruction version and its verbatim net kg text.</summary>
     internal const string SubcontractServiceInvoiceSourceConstraint =
@@ -595,6 +595,30 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     /// <summary>API-35: the match row is append-only; the trigger refuses every UPDATE and DELETE (THROW 51226).</summary>
     internal const string InvoiceMatchGuardTrigger = "TR_InvoiceMatches_Guard";
+    // Legacy matches remain readable; a new match must carry the approved owner's complete proof in application/domain code.
+    internal const string InvoiceMatchSourceProofConstraint = "([OfficialInvoiceDate] IS NULL AND [OfficialSourceProofJson] IS NULL) OR "
+        + "(CASE WHEN [OfficialInvoiceDate] > '0001-01-01' AND [OfficialSourceProofJson] IS NOT NULL "
+        + "AND ISJSON([OfficialSourceProofJson]) = 1 "
+        + "AND TRY_CONVERT(uniqueidentifier, JSON_VALUE([OfficialSourceProofJson], '$.companyId')) = [CompanyId] "
+        + "AND TRY_CONVERT(uniqueidentifier, JSON_VALUE([OfficialSourceProofJson], '$.invoiceId')) <> '00000000-0000-0000-0000-000000000000' "
+        + "AND LEN(JSON_VALUE([OfficialSourceProofJson], '$.version')) BETWEEN 1 AND 128 "
+        + "AND TRY_CONVERT(datetimeoffset, JSON_VALUE([OfficialSourceProofJson], '$.approvedAtUtc')) > '0001-01-01' "
+        + "AND ((JSON_VALUE([OfficialSourceProofJson], '$.sourceKind') = 'manual' "
+        + "AND TRY_CONVERT(uniqueidentifier, JSON_VALUE([OfficialSourceProofJson], '$.pdfDocumentId')) <> '00000000-0000-0000-0000-000000000000' "
+        + "AND TRY_CONVERT(int, JSON_VALUE([OfficialSourceProofJson], '$.pdfDocumentVersionNo')) > 0 "
+        + "AND LEN(JSON_VALUE([OfficialSourceProofJson], '$.pdfSha256')) = 64 "
+        + "AND JSON_VALUE([OfficialSourceProofJson], '$.pdfSha256') COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-fA-F]%' "
+        + "AND JSON_VALUE([OfficialSourceProofJson], '$.sourceBatchId') IS NULL "
+        + "AND JSON_VALUE([OfficialSourceProofJson], '$.sourceChecksum') IS NULL "
+        + "AND JSON_VALUE([OfficialSourceProofJson], '$.hasPendingManual') = 'false') "
+        + "OR (JSON_VALUE([OfficialSourceProofJson], '$.sourceKind') = 'approved-import' "
+        + "AND TRY_CONVERT(uniqueidentifier, JSON_VALUE([OfficialSourceProofJson], '$.sourceBatchId')) <> '00000000-0000-0000-0000-000000000000' "
+        + "AND LEN(JSON_VALUE([OfficialSourceProofJson], '$.sourceChecksum')) = 64 "
+        + "AND JSON_VALUE([OfficialSourceProofJson], '$.sourceChecksum') COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-fA-F]%' "
+        + "AND JSON_VALUE([OfficialSourceProofJson], '$.pdfDocumentId') IS NULL "
+        + "AND JSON_VALUE([OfficialSourceProofJson], '$.pdfDocumentVersionNo') IS NULL "
+        + "AND JSON_VALUE([OfficialSourceProofJson], '$.pdfSha256') IS NULL "
+        + "AND JSON_VALUE([OfficialSourceProofJson], '$.hasPendingManual') IN ('true', 'false'))) THEN 1 ELSE 0 END = 1)";
 
     /// <summary>
     /// CK_InvoiceMatches_Amounts (SAT-D229, SAT-D106; SAT-D241): the payable, VAT and withholding differences all within the tolerance —
@@ -723,6 +747,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureDraftNumbers(modelBuilder);
         ConfigureDrafts(modelBuilder);
         ConfigureDraftLines(modelBuilder);
+        ConfigureMarginCosts(modelBuilder);
         ConfigureDraftDeliverySlices(modelBuilder);
         ConfigureDraftAttempts(modelBuilder);
         ConfigureDraftRevisions(modelBuilder);
@@ -744,6 +769,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureCustomerReturns(modelBuilder);
         ConfigureContracts(modelBuilder);
         ConfigureSubcontractServiceInvoices(modelBuilder);
+        ConfigureSubcontractLifecycle(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -1396,11 +1422,13 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                 + "AND LEN([OfficialInvoiceNo]) > 0 AND LEN([Ettn]) = 36 AND LEN([MatchedBy]) > 0 AND LEN([CorrelationId]) > 0");
             table.HasCheckConstraint("CK_InvoiceMatches_Amounts", InvoiceMatchAmountsConstraint);
             table.HasCheckConstraint("CK_InvoiceMatches_TaxAmounts", InvoiceMatchTaxAmountsConstraint);
+            table.HasCheckConstraint("CK_InvoiceMatches_SourceProof", InvoiceMatchSourceProofConstraint);
             table.HasTrigger(InvoiceMatchGuardTrigger);
         });
         match.HasKey(x => new { x.CompanyId, x.InvoiceId });
         match.Property(x => x.OfficialInvoiceNo).HasMaxLength(SalesInvoice.MaximumOfficialNoLength).UseCollation(IdentityCollation).IsRequired();
         match.Property(x => x.Ettn).HasMaxLength(SalesInvoice.EttnLength).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        match.Property(x => x.OfficialSourceProofJson).HasMaxLength(2048);
         match.Property(x => x.InvoiceAmount).HasPrecision(28, 8);
         match.Property(x => x.OfficialAmount).HasPrecision(28, 8);
         match.Property(x => x.Difference).HasPrecision(28, 8);
@@ -1470,6 +1498,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         });
         outbox.HasKey(x => x.Id);
         outbox.Property(x => x.Id).ValueGeneratedNever();
+        outbox.Property(x => x.Position).IsRowVersion().HasConversion<byte[]>();
+        outbox.HasIndex(x => new { x.CompanyId, x.Position });
         outbox.Property(x => x.EventType).HasMaxLength(160).IsUnicode(false).IsRequired();
         outbox.Property(x => x.SourceOperation).HasMaxLength(128).IsUnicode(false).IsRequired();
         outbox.Property(x => x.AggregateType).HasMaxLength(160).IsUnicode(false).IsRequired();
@@ -2146,6 +2176,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         var invoice = modelBuilder.Entity<SubcontractServiceInvoiceRow>();
         invoice.ToTable("SubcontractServiceInvoices", Schema, table =>
         {
+            table.HasTrigger("TR_SubcontractServiceInvoices_Lifecycle");
+            table.UseSqlOutputClause(false);
             table.HasCheckConstraint("CK_SubcontractServiceInvoices_Identity",
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' "
@@ -2175,8 +2207,12 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         invoice.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
         invoice.HasIndex(x => new { x.CompanyId, x.DocumentNo }).IsUnique().HasDatabaseName("UX_SubcontractServiceInvoices_DocumentNo");
         invoice.HasIndex(x => new { x.CompanyId, x.LoadingInstructionId, x.WeighingId, x.SalesOrderId }).IsUnique()
+            .HasFilter("[State] IN (1,2,3,6)")
             .HasDatabaseName("UX_SubcontractServiceInvoices_Weighing");
         invoice.HasIndex(x => new { x.CompanyId, x.SalesOrderId }).HasDatabaseName("IX_SubcontractServiceInvoices_Order");
+        // The Serializable owner claim reads all states, including an initially empty range.
+        invoice.HasIndex(x => new { x.CompanyId, x.LoadingInstructionId, x.WeighingId })
+            .HasDatabaseName("IX_SubcontractServiceInvoices_ClaimRange");
         invoice.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         invoice.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -2328,6 +2364,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     DraftCustomerRejectionRow => [],
                     // F-018 / plan S1: a recorded credit limit warning is APPEND-ONLY — no column of it may change afterwards.
                     DraftRiskWarningRow => [],
+                    DraftMarginCostRow => [],
                     // No 30 / SAT-D12: a recorded force-closure is APPEND-ONLY — no column of it may change afterwards.
                     DraftForceClosureRow => [],
                     // SAT-D32: a recorded user closure is APPEND-ONLY — no column of it may change afterwards.
@@ -2422,9 +2459,11 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                         nameof(ContractRow.RejectionReason), nameof(ContractRow.UpdatedAtUtc),
                     ],
                     ContractAttemptRow => [],
-                    // F2 (SAT-D309/D312): a subcontract service invoice draft, its lines and its attempts are APPEND-ONLY in this
-                    // slice (the approval axis joins the invoice flow later, with its own declared widening).
-                    SubcontractServiceInvoiceRow => [],
+                    // SAT-D380: only the declared lifecycle state/version may change; source lines and lifecycle history remain append-only.
+                    SubcontractServiceInvoiceRow => [nameof(SubcontractServiceInvoiceRow.State), nameof(SubcontractServiceInvoiceRow.Version)],
+                    SubcontractInvoiceLifecycleRow => [],
+                    OfficialInvoiceClaimRow => [],
+                    SubcontractInvoiceCommandAttemptRow => [],
                     SubcontractServiceInvoiceLineRow => [],
                     SubcontractServiceInvoiceAttemptRow => [],
                     _ => [],

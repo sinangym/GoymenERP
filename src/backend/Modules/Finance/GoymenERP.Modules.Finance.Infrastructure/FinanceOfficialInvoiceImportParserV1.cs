@@ -18,6 +18,7 @@ public sealed class FinanceOfficialInvoiceImportParserV1 : IFinanceOfficialInvoi
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private static readonly string[] Header = FinanceOfficialInvoiceImportTemplateV1.Header.Split(',');
     private static readonly string[] HeaderV2 = FinanceOfficialSalesInvoiceImportTemplateV2.Header.Split(',');
+    private static readonly string[] HeaderV3 = FinanceOfficialSalesInvoiceImportTemplateV3.Header.Split(',');
 
     public FinanceOfficialInvoiceImportPreviewV1 Preview(
         FinanceContext context,
@@ -84,15 +85,16 @@ public sealed class FinanceOfficialInvoiceImportParserV1 : IFinanceOfficialInvoi
             return Result(checksum, issues);
         }
         var isV2 = actualHeader.SequenceEqual(HeaderV2, StringComparer.Ordinal);
-        if (!isV2 && !actualHeader.SequenceEqual(Header, StringComparer.Ordinal))
+        var isV3 = actualHeader.SequenceEqual(HeaderV3, StringComparer.Ordinal);
+        if (!isV2 && !isV3 && !actualHeader.SequenceEqual(Header, StringComparer.Ordinal))
         {
             issues.Add(new(1, "header", FinanceOfficialInvoiceImportCodesV1.HeaderInvalid));
             return Result(checksum, issues);
         }
-        var templateVersion = isV2
+        var templateVersion = isV3 ? FinanceOfficialSalesInvoiceImportTemplateV3.Version : isV2
             ? FinanceOfficialSalesInvoiceImportTemplateV2.Version
             : FinanceOfficialInvoiceImportTemplateV1.Version;
-        var expectedFields = isV2 ? HeaderV2.Length : Header.Length;
+        var expectedFields = isV3 ? HeaderV3.Length : isV2 ? HeaderV2.Length : Header.Length;
         if (lines.Length - 1 > FinanceOfficialInvoiceImportTemplateV1.MaximumRows)
         {
             issues.Add(new(0, "rows", FinanceOfficialInvoiceImportCodesV1.RowLimitExceeded));
@@ -130,10 +132,10 @@ public sealed class FinanceOfficialInvoiceImportParserV1 : IFinanceOfficialInvoi
             }
 
             FinanceOfficialSalesInvoiceImportDocumentV2? document = null;
-            if (isV2)
+            if (isV2 || isV3)
             {
                 document = FinanceOfficialSalesInvoiceImportDocumentsV2.Read(
-                    documentId, fields.AsSpan(Header.Length), rowNumber, rowIssues);
+                    documentId, fields.AsSpan(Header.Length), rowNumber, rowIssues, isV3);
             }
 
             issues.AddRange(rowIssues);

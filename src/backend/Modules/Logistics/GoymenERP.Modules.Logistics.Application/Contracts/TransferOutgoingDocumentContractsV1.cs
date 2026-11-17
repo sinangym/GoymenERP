@@ -2,6 +2,12 @@ using GoymenERP.Modules.Logistics.Domain.Transfers;
 
 namespace GoymenERP.Modules.Logistics.Application.Contracts;
 
+/// <summary>Registered only. A transfer document read does not confer loading-instruction or stock write authority.</summary>
+public static class LogisticsTransferOutgoingDocumentPermissionsV1
+{
+    public const string Read = "logistics.transfer-outgoing-documents.read";
+}
+
 public static class LogisticsTransferOutgoingDocumentCommandsV1
 {
     public const string CreateDraft = "logistics.transfer-outgoing-document.create.v1";
@@ -22,14 +28,19 @@ public sealed record LogisticsTransferOutgoingDocumentBindingsV1(
     string FinalizePermission,
     string CancelPermission);
 
+[System.Text.Json.Serialization.JsonUnmappedMemberHandling(System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow)]
 public sealed record CreateTransferOutgoingDocumentV1(
     Guid DocumentId,
     Guid TransferId,
     IReadOnlyList<Guid> OrderedTransferLineIds,
-    string? EDispatchNumber = null);
+    string? EDispatchNumber = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    LogisticsTransferEDispatchAssociationV1? EDispatchAssociation = null);
 
+[System.Text.Json.Serialization.JsonUnmappedMemberHandling(System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow)]
 public sealed record FinalizeTransferOutgoingDocumentV1(int ExpectedVersion);
 
+[System.Text.Json.Serialization.JsonUnmappedMemberHandling(System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow)]
 public sealed record CancelTransferOutgoingDocumentV1(int ExpectedVersion, string Reason);
 
 public sealed record TransferOutgoingDocumentViewV1(
@@ -65,6 +76,14 @@ public interface ILogisticsTransferOutgoingDocumentServiceV1
     Task<TransferOutgoingDocumentResponseV1> CancelAsync(Guid documentId,
         CancelTransferOutgoingDocumentV1 request, LogisticsCommandMetadata metadata,
         CancellationToken cancellationToken = default);
+}
+
+/// <summary>Company-filtered owner read for a transfer's actual document; the host applies its consuming permission.</summary>
+public sealed record TransferOutgoingDocumentForTransferV1(TransferOutgoingDocumentViewV1 Document,
+    LogisticsTransferEDispatchAssociationV1 Association, long? DepartureVersion);
+public interface ILogisticsTransferOutgoingDocumentReaderV1
+{
+    Task<TransferOutgoingDocumentForTransferV1?> ReadByTransferAsync(Guid transferId, CancellationToken cancellationToken = default);
 }
 
 public sealed record LogisticsTransferOutgoingDocumentScopeV1(

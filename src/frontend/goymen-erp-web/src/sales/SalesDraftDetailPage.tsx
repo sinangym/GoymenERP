@@ -128,6 +128,7 @@ import { SalesOrderStatusAxes } from './SalesOrderStatusAxes'
 import { customerAcceptedFallback, previousRevision } from './orderStatus'
 import { SalesOrderTotalsCard } from './SalesOrderTotalsCard'
 import { SalesOrderTaxCard } from './SalesOrderTaxCard'
+import { SalesSubcontractTaxRevision } from './SalesSubcontractTaxRevision'
 import { SalesOrderRiskCard } from './SalesOrderRiskCard'
 import { SalesOrderRiskExceptions } from './SalesOrderRiskExceptions'
 import { SalesOrderHeaderSummary } from './SalesOrderHeaderSummary'
@@ -146,6 +147,7 @@ import { SalesOrderTabs } from './SalesOrderTabs'
 import { SalesOrderDocumentsWorkspace } from './SalesOrderDocumentsWorkspace'
 import { SalesOrderInvoices } from './SalesInvoiceFinalization'
 import { SubcontractInvoiceCreate } from './SubcontractInvoiceCreate'
+import { SubcontractInvoiceLifecycle } from './SubcontractInvoiceLifecycle'
 import { SalesOrderPdfAction } from './SalesOrderPdfAction'
 import styles from './SalesDraftDetailPage.module.css'
 
@@ -273,6 +275,13 @@ export function SalesDraftDetailPage() {
                 salesOrderId={outcome.data.draft.id}
               />
             ) : null}
+            {outcome.data.draft.subcontractService === true && !hasCapability(shell, SALES_INVOICE_WRITE_CAPABILITY)
+              && hasCapability(shell, SALES_CAPABILITY.invoiceCandidatesList) ? (
+                <SubcontractInvoiceLifecycle
+                  key={`subcontract-read:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+                  salesOrderId={outcome.data.draft.id}
+                />
+              ) : null}
           </>
         ) : null
       }
@@ -311,6 +320,7 @@ export function SalesDraftDetailPage() {
               key={`tax:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
               detail={outcome.data}
             />
+            <SalesSubcontractTaxRevision detail={outcome.data} onRecorded={() => void queryClient.invalidateQueries({ queryKey })} />
           </>
         ) : null
       }

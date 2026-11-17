@@ -92,11 +92,13 @@ export function LineTaxFields({
   value,
   options,
   onChange,
+  allowKeep = true,
 }: {
   readonly idPrefix: string
   readonly value: LineTaxChoiceInput
   readonly options: TaxOptions | null
   readonly onChange: (next: LineTaxChoiceInput) => void
+  readonly allowKeep?: boolean
 }) {
   const situation = situationOf(options, value.buyerSituation)
   return (
@@ -107,7 +109,7 @@ export function LineTaxFields({
         value={value.mode}
         onChange={(event) => onChange({ ...value, mode: event.target.value as LineTaxChoiceInput['mode'] })}
       >
-        <option value="keep">{T.lineTaxMode.keep}</option>
+        {allowKeep ? <option value="keep">{T.lineTaxMode.keep}</option> : null}
         <option value="default">{T.lineTaxMode.default}</option>
         <option value="override">{T.lineTaxMode.override}</option>
       </select>

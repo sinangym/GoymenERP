@@ -133,7 +133,9 @@ public sealed record StoredDocument(
     string? ScannerId,
     string UploadedBy,
     DateTimeOffset UploadedAtUtc,
-    IReadOnlyList<StoredDocumentLink>? Links = null)
+    IReadOnlyList<StoredDocumentLink>? Links = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    GeneratedDocumentPublicationSnapshot? TemplatePublication = null)
 {
     /// <summary>Every owner link, primary first; at least the primary one.</summary>
     public IReadOnlyList<StoredDocumentLink> OwnerLinks =>

@@ -250,6 +250,29 @@ public sealed class FutureSupplyAllocation
         return quantity;
     }
 
+    /// <summary>
+    /// F017-e / 7B: reverses only the eligible consumed share proved by the original receipt conversion.
+    /// The owner has measured the live demand and supply caps under their locks. The fitting part reopens;
+    /// the rest is explicitly released. Nothing previously released is ever made active again.
+    /// A physically released allocation or a closed Sales demand never calls this transition.
+    /// </summary>
+    public void ReverseConsumption(long expectedVersion, FutureSupplyQuantity undone, FutureSupplyQuantity reopened)
+    {
+        if (expectedVersion != Version)
+            throw new FutureSupplyRuleException(FutureSupplyRuleFailure.VersionConflict, "Gelecek tedarik ayırması başka bir işlemle değişti.");
+        if (Status == FutureSupplyAllocationStatus.Released || Consumed.Value == 0m)
+            throw new FutureSupplyRuleException(FutureSupplyRuleFailure.StateConflict, "Geri alınacak tüketilmiş ayırma yok.");
+        if (undone.Value <= 0m || undone > Consumed || reopened > undone)
+            throw new FutureSupplyRuleException(FutureSupplyRuleFailure.ReleaseExceedsRemaining, "Geri alınan pay tüketilmiş miktarı aşamaz.");
+
+        var nextVersion = checked(Version + 1);
+        Remaining += reopened;
+        Released += undone - reopened;
+        Status = Remaining.Value > 0m ? FutureSupplyAllocationStatus.Active
+            : Consumed.Value > 0m ? FutureSupplyAllocationStatus.Consumed : FutureSupplyAllocationStatus.Released;
+        Version = nextVersion;
+    }
+
     /// <summary>A reason text: required, trimmed-meaningful, at most <see cref="MaximumReasonLength"/> characters, never cut.</summary>
     public static string RequireReason(string? reason)
     {

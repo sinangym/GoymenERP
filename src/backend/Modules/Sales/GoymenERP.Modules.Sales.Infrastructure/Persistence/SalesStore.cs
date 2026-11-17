@@ -45,7 +45,8 @@ public sealed partial class SalesStore(
     SalesDbContext dbContext,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
-    TimeProvider timeProvider) : ISalesOrderDraftStore, ISalesRequestStore, ISalesQuoteStore
+    TimeProvider timeProvider,
+    ISalesSubcontractWeighingCommitReadPortV1? subcontractWeighingCommitRead = null) : ISalesOrderDraftStore, ISalesRequestStore, ISalesQuoteStore
 {
     private const string DraftEntityType = "Sales.OrderDraft";
     private const int ActorMaximumLength = 128;
@@ -298,6 +299,7 @@ public sealed partial class SalesStore(
         var before = new { state = draft.ApprovalState.ToString(), version = draft.Version, approval = draft.Approval, customerAcceptance = draft.CustomerAcceptance,
             customerRejection = draft.CurrentRevisionCustomerRejection };
         var rejectionsBefore = draft.CustomerRejections.Count;
+        var marginCostsBefore = draft.MarginCosts.Count;
         var versionBefore = draft.Version;
         var linesBefore = LineRevisionStates(draft);
         var previouslyAcceptedRevision = draft.CustomerAcceptance?.Revision;
@@ -330,6 +332,7 @@ public sealed partial class SalesStore(
             WriteLineRevisionColumns(draft, revertedRows);
         }
 
+        AppendMarginCosts(draft, marginCostsBefore);
         row.ApprovalState = (int)draft.ApprovalState;
         row.SubmittedBy = draft.Approval.SubmittedBy;
         row.SubmittedAtUtc = draft.Approval.SubmittedAtUtc;
@@ -392,7 +395,8 @@ public sealed partial class SalesStore(
             JsonSerializer.Serialize(new { state = draft.ApprovalState.ToString(), version = draft.Version, approval = draft.Approval, customerAcceptance = draft.CustomerAcceptance,
                 customerRejection = draft.CurrentRevisionCustomerRejection,
                 // SAT-D211: the lines the rejection brought back / took out (omitted when none).
-                revertedLines = reverted.Count == 0 ? null : reverted }, Json),
+                revertedLines = reverted.Count == 0 ? null : reverted,
+                marginCosts = draft.MarginCosts.Skip(marginCostsBefore).ToArray() }, Json),
             audit.Reason,
             ApprovalContextJson: null,
             AuditAiInvolvement.None,
@@ -429,7 +433,7 @@ public sealed partial class SalesStore(
     {
         ArgumentNullException.ThrowIfNull(beforeWrite);
         RequireCommand(commandName);
-        if (commandName is not (SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.ApprovePriceFloorExceptionsV1
+        if (commandName is not (SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.ReviseSubcontractTaxV1 or SalesDraftCommands.ApprovePriceFloorExceptionsV1
             or SalesDraftCommands.ApproveDiscountExceptionsV1))
         {
             throw new ArgumentException("Yalnız fiyat revizyonu komutu satırların ticari alanlarını değiştirir.", nameof(commandName));
@@ -2052,6 +2056,7 @@ public sealed partial class SalesStore(
         }
 
         var ids = rows.Select(row => row.Id).ToArray();
+        var marginCostRows = await dbContext.DraftMarginCosts.AsNoTracking().Where(cost => ids.Contains(cost.DraftId)).ToListAsync(cancellationToken);
         var lines = await dbContext.DraftLines.AsNoTracking().Where(line => ids.Contains(line.DraftId)).ToListAsync(cancellationToken);
         var slices = await dbContext.DraftDeliverySlices.AsNoTracking().Where(slice => ids.Contains(slice.DraftId)).ToListAsync(cancellationToken);
         var revisions = await dbContext.DraftRevisions.AsNoTracking().Where(revision => ids.Contains(revision.DraftId)).ToListAsync(cancellationToken);
@@ -2276,6 +2281,11 @@ public sealed partial class SalesStore(
                 throw new InvalidOperationException("Kayıtlı taslağın sürümü satırlarından yeniden kurulan sürümle uyuşmuyor.");
             }
 
+            foreach (var cost in marginCostRows.Where(item => item.DraftId == draft.Id).OrderBy(item => item.Revision))
+                draft.RestoreMarginCost(new(cost.LineId, cost.Revision, cost.ProductId, cost.UnitId, cost.Quantity,
+                    cost.CurrencyId, cost.CostPerUnit, cost.UnavailableReason is { } reason ? (SalesLineMarginUnavailableReason)reason : null,
+                    cost.SourceProof, cost.RecordedAtUtc));
+
             drafts.Add(draft);
         }
 
@@ -2443,7 +2453,7 @@ public sealed partial class SalesStore(
     private static void RequireCommand(string commandName)
     {
         if (commandName is not (SalesDraftCommands.CreateV1 or SalesDraftCommands.SubmitV1 or SalesDraftCommands.ApproveV1
-            or SalesDraftCommands.RejectV1 or SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.WithdrawV1
+            or SalesDraftCommands.RejectV1 or SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.ReviseSubcontractTaxV1 or SalesDraftCommands.WithdrawV1
             or SalesDraftCommands.RescheduleDeliveryV1 or SalesDraftCommands.CancelV1 or SalesDraftCommands.ForceCloseV1
             or SalesDraftCommands.CloseV1
             or SalesDraftCommands.ApproveOverDeliveryV1 or SalesDraftCommands.CloseLineV1 or SalesDraftCommands.RecordSourcePlanV1

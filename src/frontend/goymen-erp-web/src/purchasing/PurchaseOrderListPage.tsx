@@ -356,8 +356,8 @@ function PurchaseOrderList({ namespace }: { readonly namespace: string | null })
 
   // The cells the table and the cards share, so both say exactly the same thing.
   const orderCell = (row: PurchaseOrderSummary) => canOpen
-    ? <Link className={styles.orderLink} to={purchaseOrderDetailPath(row.id)}>…{row.id.slice(-8)}</Link>
-    : <span className={styles.orderId}>…{row.id.slice(-8)}</span>
+    ? <Link className={styles.orderLink} to={purchaseOrderDetailPath(row.id)}>{row.documentNumber ?? `…${row.id.slice(-8)}`}</Link>
+    : <span className={styles.orderId}>{row.documentNumber ?? `…${row.id.slice(-8)}`}</span>
   // A2a-2 (ALS-D18): "fiyat bekliyor" beside the status, only when the server says so (a holder of the price read); never inferred.
   const statusCell = (row: PurchaseOrderSummary) => (
     <>

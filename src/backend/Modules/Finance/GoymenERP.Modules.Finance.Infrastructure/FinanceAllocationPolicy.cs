@@ -51,7 +51,9 @@ internal static class FinanceAllocationPolicy
         ReceiptDraftRow source,
         FinanceOpenItemRow openItem,
         FinanceSourceAllocationStateRow? sourceState,
-        CreateFinanceAllocationRequest request)
+        CreateFinanceAllocationRequest request,
+        Guid? currentSourceAccountId = null,
+        Guid? currentOpenItemAccountId = null)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(openItem);
@@ -63,7 +65,9 @@ internal static class FinanceAllocationPolicy
 
         if (source.Id != request.SourceId || openItem.Id != request.OpenItemId
             || source.CompanyId != openItem.CompanyId
-            || source.CompanyAccountId != openItem.CompanyAccountId
+            || currentSourceAccountId.HasValue != currentOpenItemAccountId.HasValue
+            || (currentSourceAccountId ?? source.CompanyAccountId) != (currentOpenItemAccountId ?? openItem.CompanyAccountId)
+            || currentSourceAccountId == Guid.Empty || currentOpenItemAccountId == Guid.Empty
             || source.CurrencyId != openItem.CurrencyId
             || source.Stage != ReceiptStages.Recorded
             || openItem.Status != FinanceOpenItemStatuses.Open)
@@ -164,7 +168,9 @@ internal static class FinanceAllocationPolicy
         ManualBankPaymentRow payment,
         FinanceOpenItemRow openItem,
         FinancePaymentAllocationStateRow? paymentState,
-        CreateFinancePaymentAllocationRequest request)
+        CreateFinancePaymentAllocationRequest request,
+        Guid? currentPaymentAccountId = null,
+        Guid? currentOpenItemAccountId = null)
     {
         ArgumentNullException.ThrowIfNull(payment);
         ArgumentNullException.ThrowIfNull(openItem);
@@ -176,7 +182,9 @@ internal static class FinanceAllocationPolicy
 
         if (payment.Id != request.PaymentId || openItem.Id != request.OpenItemId
             || payment.CompanyId != openItem.CompanyId
-            || payment.CompanyAccountId != openItem.CompanyAccountId
+            || currentPaymentAccountId.HasValue != currentOpenItemAccountId.HasValue
+            || (currentPaymentAccountId ?? payment.CompanyAccountId) != (currentOpenItemAccountId ?? openItem.CompanyAccountId)
+            || currentPaymentAccountId == Guid.Empty || currentOpenItemAccountId == Guid.Empty
             || payment.CurrencyId != openItem.CurrencyId
             || payment.Status != ManualBankPaymentStatuses.Recorded
             || openItem.Status != FinanceOpenItemStatuses.Open)

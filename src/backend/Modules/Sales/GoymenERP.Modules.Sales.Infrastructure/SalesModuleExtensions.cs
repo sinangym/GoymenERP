@@ -79,6 +79,7 @@ public static class SalesModuleExtensions
         // and loading consumers, over the same company-filtered store. Registered here, in the module
         // (no host file), so that a consumer module reads Sales only through this port.
         services.AddScoped<ISalesOrderLineReferencePortV1, SalesOrderLineReferencePort>();
+        services.AddScoped<ISalesOrderCostRateSourceReadPortV1, SalesOrderCostRateSourceReadPortV1>();
         // S-3 / SAT-D175 (EK25): the Sales-owned subcontract service order read port for the Production consumer (URT-D22), over
         // the same company-filtered store; the Production lane binds its consumer to it.
         services.AddScoped<ISalesSubcontractServiceOrderReadPortV1, SalesSubcontractServiceOrderReadPort>();
@@ -97,6 +98,10 @@ public static class SalesModuleExtensions
         // the host's adapter of the Logistics owner's net-weight port. Without it the create is 503, never an assumed quantity.
         services.AddScoped<ISalesSubcontractServiceInvoiceStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         services.AddScoped<ISalesSubcontractServiceInvoiceService>(CreateInvoiceService);
+        services.AddScoped<ISalesSubcontractInvoiceLifecycleStoreV1>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        services.AddScoped<ISalesSubcontractInvoiceLifecycleServiceV1>(CreateInvoiceService);
+        services.AddScoped<ISalesSubcontractInvoiceListStoreV1>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        services.AddScoped<ISalesSubcontractInvoiceListServiceV1>(CreateInvoiceService);
         // API-35 (SAT-D229): the tolerance policy defaults to the decided 0.05 TL; the Ayarlar link is deferred (SAT-D209). The official
         // invoice read port is the Finance owner's and Finance's AddFinanceServices registers it (FIN-S6, SAT-S1); Sales never registers a
         // default, so a host without Finance answers the match with 503, never an assumed document.
@@ -199,7 +204,9 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISalesSubcontractServiceInvoiceStore>(),
         serviceProvider.GetService<ISalesSubcontractDeliveryWeighingReadPortV1>(),
         // SAT-S13 (SAT-D389 / SAT-D319 (6)): absent, every share waits with weighing_difference_unavailable — never invoiced unread.
-        serviceProvider.GetService<ISalesDispatchWeighingDifferenceReadPortV1>());
+        serviceProvider.GetService<ISalesDispatchWeighingDifferenceReadPortV1>(),
+        serviceProvider.GetService<ISalesSubcontractInvoiceLifecycleStoreV1>(),
+        serviceProvider.GetService<ISalesSubcontractInvoiceListStoreV1>());
 
     // Named for the same architecture guard as the draft service factory below: the company context is resolved, never registered.
     // A missing owner port (Logistics or Cari not composed) stays null and the read answers 503, never an empty list.
@@ -313,7 +320,10 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISalesOrderFutureAllocationReleaseParticipantV1>(),
         // SAT-D406 / SAT-D367: the risk remainder's plan quantity (issued, not yet shipped loading instructions), bound by the host to
         // the Logistics owner's read; until it is, the "approved, not shipped" remainder is "Unavailable", never an assumed zero.
-        serviceProvider.GetService<ISalesOrderPlannedQuantityReadPortV1>());
+        serviceProvider.GetService<ISalesOrderPlannedQuantityReadPortV1>(),
+        // SAT-D268..274 / URT-D67: the Inventory owner's currency-proven company-wide cost read.
+        // Missing evidence remains an unavailable margin snapshot; it never becomes zero cost.
+        marginCosts: serviceProvider.GetService<ISalesMarginCostReadPortV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(

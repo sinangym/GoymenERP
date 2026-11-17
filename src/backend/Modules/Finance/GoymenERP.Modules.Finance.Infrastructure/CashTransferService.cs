@@ -139,6 +139,10 @@ public sealed class CashTransferService(
             context.CorrelationId, []);
         AddCommand(context, keyHash, payloadHash, row.Id, result, now);
         Audit(context, metadata, row);
+        // FNS-D63 does not define the exchange posting mapping; this event publishes only the
+        // decided same-currency source, without synthesising an exchange difference or TL value.
+        if (request.Preparation.Kind == CashTransferKind.SameCurrency)
+            FinanceFinancialMovementOutboxV1.Transfer(dbContext, context, View(row));
         if (await FenceAsync(context, action, cancellationToken) is { } beforeSave)
             return Refused(context, beforeSave);
         return await SaveAsync(context, action, keyHash, payloadHash, cancellationToken) ?? result;

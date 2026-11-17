@@ -1,3 +1,4 @@
+using GoymenERP.Api.InventoryRuntime;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
@@ -42,7 +43,7 @@ internal sealed class PurchaseGoodsReceiptBatchHost(
                 var enlisted = new BatchParticipants(companyId, purchasing.Database.GetDbConnection(), transaction.GetDbTransaction(),
                     services.GetRequiredService<ISettingsPrerequisiteProvider>(), locationStatus,
                     services.GetRequiredService<IInventoryGoodsReceiptFutureSupplyPortV1>(),
-                    services.GetRequiredService<IInventoryFutureAllocationReleasePortV1>(), clock);
+                    services.GetRequiredService<IInventoryFutureAllocationReleasePortV1>(), clock, services);
                 try
                 {
                     await using var readSet = await services.GetRequiredService<IInventoryFutureAllocationReleasePortV1>()
@@ -64,10 +65,16 @@ internal sealed class PurchaseGoodsReceiptBatchHost(
                     await transaction.CommitAsync(cancellationToken);
                     return result;
                 }
-                catch
+                catch (Exception exception)
                 {
-                    await RollbackQuietlyAsync(transaction);
+                    var rolledBack = await RollbackQuietlyAsync(transaction);
                     purchasing.ChangeTracker.Clear();
+                    if (InventoryNegativeStockAttemptEvidenceException.Find(exception) is not null)
+                    {
+                        if (!rolledBack) throw new PurchasingServiceException(503, InventoryGoodsReceiptCodesV1.Unavailable);
+                        try { await InventoryNegativeStockAttemptRecording.AfterRollbackAsync(services, exception); }
+                        catch (Exception) { throw new PurchasingServiceException(503, InventoryGoodsReceiptCodesV1.Unavailable); }
+                    }
                     throw;
                 }
                 finally
@@ -79,7 +86,8 @@ internal sealed class PurchaseGoodsReceiptBatchHost(
         }
         catch (InventoryGoodsReceiptException exception)
         {
-            throw new PurchasingServiceException(exception.Status, exception.Code);
+            throw new PurchasingServiceException(exception.Status, exception.Code, innerException: exception,
+                detail: InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, new Dictionary<string, object?>()));
         }
         catch (SalesOrderLineBusyException exception) { throw new PurchasingServiceException(409, exception.Code); }
         catch (PurchaseLineBusyException exception) { throw new PurchasingServiceException(409, exception.Code); }
@@ -90,17 +98,17 @@ internal sealed class PurchaseGoodsReceiptBatchHost(
         }
     }
 
-    private static async Task RollbackQuietlyAsync(IDbContextTransaction transaction)
+    private static async Task<bool> RollbackQuietlyAsync(IDbContextTransaction transaction)
     {
-        try { await transaction.RollbackAsync(CancellationToken.None); }
-        catch { /* Preserve the original operation failure. */ }
+        try { await transaction.RollbackAsync(CancellationToken.None); return true; }
+        catch { return false; }
     }
 
     /// <summary>Enlists one fresh participant pair per label, in label order; each label index is enlisted at most once.</summary>
     private sealed class BatchParticipants(Guid companyId, System.Data.Common.DbConnection connection,
         System.Data.Common.DbTransaction transaction, ISettingsPrerequisiteProvider settings,
         IOrganizationLocationStatusReaderV1 locations, IInventoryGoodsReceiptFutureSupplyPortV1 futureSupply,
-        IInventoryFutureAllocationReleasePortV1 futureReleases, TimeProvider clock) : IPurchaseGoodsReceiptBatchParticipantsV1, IAsyncDisposable
+        IInventoryFutureAllocationReleasePortV1 futureReleases, TimeProvider clock, IServiceProvider services) : IPurchaseGoodsReceiptBatchParticipantsV1, IAsyncDisposable
     {
         private readonly List<IAsyncDisposable> owned = [];
         private readonly HashSet<int> labels = [];
@@ -111,8 +119,10 @@ internal sealed class PurchaseGoodsReceiptBatchHost(
                 throw new InvalidOperationException("Each bulk receipt label enlists its participants once.");
             var purchase = await PurchaseAcceptanceParticipant.EnlistAsync(connection, transaction, companyId, cancellationToken);
             owned.Add(purchase);
+            var cost = await PurchaseReceiptCostScope.EnlistAsync(connection, transaction, companyId, services, cancellationToken);
+            owned.Add(cost);
             var inventory = await InventoryGoodsReceiptParticipant.EnlistAsync(connection, transaction, companyId, settings,
-                cancellationToken, clock);
+                cancellationToken, clock, costSource: cost.Source);
             owned.Add(inventory);
             return new LabelParticipants(labelIndex,
                 new PurchaseGoodsReceiptHost.Participants(companyId, purchase, inventory, locations, futureSupply,
@@ -164,7 +174,8 @@ internal sealed class PurchaseGoodsReceiptBatchHost(
             }
             catch (InventoryGoodsReceiptException exception)
             {
-                throw new PurchasingServiceException(exception.Status, exception.Code, [new($"labels[{labelIndex}]", exception.Code)]);
+                throw new PurchasingServiceException(exception.Status, exception.Code, [new($"labels[{labelIndex}]", exception.Code)],
+                    innerException: exception, detail: InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, new Dictionary<string, object?>()));
             }
         }
     }

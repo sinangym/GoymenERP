@@ -80,17 +80,20 @@ public sealed class FinancePaymentAllocationService(
             {
                 throw new FinanceAllocationPolicyException("paymentId", "finance_source_already_reversed");
             }
-            mutation = FinanceAllocationPolicy.CreatePayment(payment, openItem, paymentState, normalizedRequest);
-            // The recorded payment's one outgoing money event is the fact being applied: it must exist with the
-            // payment's own amount, account and currency, or the payment is not a usable source.
-            var moneyEvent = await dbContext.OutgoingMoneyEvents.AsNoTracking()
-                .SingleOrDefaultAsync(row => row.PaymentId == payment.Id, cancellationToken);
-            if (moneyEvent is null || moneyEvent.CompanyAccountId != payment.CompanyAccountId
-                || moneyEvent.CurrencyId != payment.CurrencyId
-                || !FinanceExactDecimalText.Equal(moneyEvent.AmountText, payment.AmountText))
-            {
-                throw new FinanceAllocationPolicyException("paymentId", "finance_allocation_reference_invalid");
-            }
+            var sourcePositions = await FinancePartyBalanceAssignment.ReadAsync(dbContext, FinanceBalanceAssignmentKinds.Payment,
+                payment.Id, payment.PartyId, payment.CompanyAccountId, payment.CurrencyId,
+                paymentState?.UnallocatedAmountText ?? payment.AmountText, true, cancellationToken);
+            var itemPositions = await FinancePartyBalanceAssignment.ReadAsync(dbContext, FinanceBalanceAssignmentKinds.OpenItem,
+                openItem.Id, openItem.PartyId, openItem.CompanyAccountId, openItem.CurrencyId,
+                openItem.OutstandingAmountText, true, cancellationToken);
+            var sourceOwner = sourcePositions.Select(request.AllocationPartyId, request.AllocationAccountId);
+            var itemOwner = itemPositions.Select(request.AllocationPartyId, request.AllocationAccountId);
+            FinanceAllocationPositions.RequireAvailable(sourceOwner, normalizedRequest.Amount);
+            FinanceAllocationPositions.RequireAvailable(itemOwner, normalizedRequest.Amount);
+            mutation = FinanceAllocationPolicy.CreatePayment(payment, openItem, paymentState, normalizedRequest,
+                sourceOwner.CompanyAccountId, itemOwner.CompanyAccountId);
+            sourcePositions.Spend(sourceOwner, normalizedRequest.Amount);
+            itemPositions.Spend(itemOwner, normalizedRequest.Amount);
         }
         catch (FinanceAllocationPolicyException exception)
         {
@@ -135,6 +138,8 @@ public sealed class FinancePaymentAllocationService(
             OpenItemId = openItem.Id,
             CurrencyId = payment.CurrencyId,
             AmountText = normalizedRequest.Amount,
+            AllocationPartyId = request.AllocationPartyId,
+            AllocationAccountId = request.AllocationAccountId,
             Reason = normalizedRequest.Reason,
             Status = FinanceAllocationStatuses.Active,
             Version = 1,
@@ -193,6 +198,13 @@ public sealed class FinancePaymentAllocationService(
             return await TerminalAsync(context, metadata, ReleaseCommandName, payloadHash,
                 allocation.PaymentId, allocation.Id, PolicyRefusal(context, exception), cancellationToken);
         }
+
+        var originalAccount = await dbContext.ManualBankPayments.AsNoTracking()
+            .Where(x => x.Id == allocation.PaymentId).Select(x => x.CompanyAccountId).SingleAsync(cancellationToken);
+        await FinancePartyBalanceAssignment.RestoreAsync(dbContext, FinanceBalanceAssignmentKinds.Payment,
+            allocation.PaymentId, originalAccount, allocation.AllocationAccountId, allocation.AmountText, cancellationToken);
+        await FinancePartyBalanceAssignment.RestoreAsync(dbContext, FinanceBalanceAssignmentKinds.OpenItem,
+            openItem.Id, openItem.CompanyAccountId, allocation.AllocationAccountId, allocation.AmountText, cancellationToken);
 
         var now = timeProvider.GetUtcNow();
         var before = AuditJson(allocation);
@@ -383,7 +395,8 @@ public sealed class FinancePaymentAllocationService(
     internal static FinancePaymentAllocationView View(FinancePaymentAllocationRow row) => new FinancePaymentAllocationView(
         row.Id, row.CompanyId, row.PaymentId, row.OpenItemId, row.CurrencyId, row.AmountText,
         (FinanceAllocationStatus)row.Status, row.Version.ToString(System.Globalization.CultureInfo.InvariantCulture),
-        row.Reason, row.CreatedBy, row.CreatedAtUtc, row.ReleasedBy, row.ReleasedAtUtc, row.ReleaseReason);
+        row.Reason, row.CreatedBy, row.CreatedAtUtc, row.ReleasedBy, row.ReleasedAtUtc, row.ReleaseReason,
+        row.AllocationPartyId, row.AllocationAccountId);
 
     private static string AuditJson(FinancePaymentAllocationRow row) => JsonSerializer.Serialize(View(row), Json);
 

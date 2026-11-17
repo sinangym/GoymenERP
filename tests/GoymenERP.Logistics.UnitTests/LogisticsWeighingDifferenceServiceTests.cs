@@ -38,7 +38,8 @@ public sealed class LogisticsWeighingDifferenceServiceTests
         Assert.Equal(1, view.Products.Single().TargetLineNo);
         Assert.Equal(["actor", "shipper"], view.EnteredBy.ToArray());
         Assert.Equal([LogisticsPermissionManifestV1.WeighingDifferencesRecord], scope.InitialPermissions);
-        Assert.Equal([LogisticsPermissionManifestV1.WeighingDifferencesRecord], scope.FreshPermissions);
+        Assert.Equal(4, scope.FreshPermissions.Count);
+        Assert.All(scope.FreshPermissions, permission => Assert.Equal(LogisticsPermissionManifestV1.WeighingDifferencesRecord, permission));
         Assert.Equal([Product], stock.RequestedProducts.ToArray());
         Assert.Same(store.Source, store.ExpectedSource);
         Assert.True(store.Stored);
@@ -229,6 +230,20 @@ public sealed class LogisticsWeighingDifferenceServiceTests
     }
 
     [Fact]
+    public async Task Lost_authority_after_a_missing_source_read_wins_over_not_found_and_no_record_is_written()
+    {
+        var scope = new FakeScope { DenyFresh = true };
+        var store = new FakeStore(null);
+        var service = Create(scope, store, Readable(), new FakeStock(Stock(0m)));
+        var recordError = await Assert.ThrowsAsync<LogisticsWeighingDifferenceServiceException>(() =>
+            service.RecordAsync(Request(1000m), Metadata("missing-revoked")));
+        Assert.Equal(403, recordError.Status);
+        Assert.False(store.Stored);
+        var readError = await Assert.ThrowsAsync<LogisticsWeighingDifferenceServiceException>(() => service.GetByDispatchNoteAsync(Note));
+        Assert.Equal(403, readError.Status);
+    }
+
+    [Fact]
     public async Task Reading_by_dispatch_note_uses_the_read_permission_and_a_missing_record_is_not_found()
     {
         var scope = new FakeScope();
@@ -241,11 +256,60 @@ public sealed class LogisticsWeighingDifferenceServiceTests
     }
 
     private static LogisticsWeighingDifferenceService Create(FakeScope scope, FakeStore store,
-        ILogisticsWeighingDifferencePolicyReadPortV1 policies, ILogisticsWeighingDifferenceStockReadPortV1 stock) => new(
+        ILogisticsWeighingDifferencePolicyReadPortV1 policies, ILogisticsWeighingDifferenceStockReadPortV1 stock,
+        IDispatchKilogramDocumentReadPortV1? documents = null) => new(
         scope, store,
         new(LogisticsPermissionManifestV1.WeighingDifferencesRecord, LogisticsPermissionManifestV1.WeighingDifferencesApprove,
             LogisticsPermissionManifestV1.WeighingDifferencesRead),
-        policies, stock, new FixedCorrelation(), new FixedTimeProvider(Now));
+        policies, stock, new FixedCorrelation(), new FixedTimeProvider(Now), documents);
+
+    [Fact]
+    public async Task Issued_document_quantities_are_pinned_to_the_actual_document_version_and_never_reallocated()
+    {
+        var second = Guid.NewGuid();
+        var source = Source() with { Lines = [new(1, Shipment, Product, 1000m, true), new(2, second, Product, 1000m, true)] };
+        var proof = new FakeDocuments(); var store = new FakeStore(source);
+        var request = new RecordWeighingDifferenceV1(Record, Note, [], new(Guid.NewGuid(), "ElectronicDispatch", proof.Id,
+            [new(1, Shipment, Product, 999.123m), new(2, second, Product, 1000.877m)], 3, new string('a', 64)));
+        var response = await Create(new FakeScope(), store, Readable(), new FakeStock(Stock(0m)), proof).RecordAsync(request, Metadata("issued-kg"));
+        Assert.Equal(2000m, response.Record.ScaleKg);
+        var allocation = Assert.IsType<DispatchKilogramSnapshot>(response.Record.KilogramAllocation);
+        Assert.Equal([999.123m, 1000.877m], allocation.Lines.Select(line => line.Kilograms));
+        Assert.Equal((proof.Id, 3, new string('a', 64)),
+            (allocation.FinalizedDocument!.DocumentId, allocation.FinalizedDocument.DocumentVersion, allocation.FinalizedDocument.Sha256));
+        Assert.Equal(new int?[] { 3, 3 }, proof.Versions);
+    }
+
+    [Theory]
+    [InlineData("unavailable")]
+    [InlineData("foreign-company")]
+    [InlineData("hash-changed")]
+    [InlineData("version-changed")]
+    public async Task Issued_document_evidence_failure_refuses_before_storing_the_distribution(string fault)
+    {
+        var proof = new FakeDocuments { Fault = fault }; var store = new FakeStore(Source());
+        var request = new RecordWeighingDifferenceV1(Record, Note, [], new(Guid.NewGuid(), "ElectronicInvoice", proof.Id,
+            [new(1, Shipment, Product, 1000m)], 3, new string('a', 64)));
+        var error = await Assert.ThrowsAsync<LogisticsWeighingDifferenceServiceException>(() =>
+            Create(new FakeScope(), store, Readable(), new FakeStock(Stock(0m)), proof).RecordAsync(request, Metadata("bad-proof")));
+        Assert.Equal((503, "logistics_dispatch_kg_document_unavailable"), (error.Status, error.Code));
+        Assert.False(store.Stored);
+    }
+
+    private sealed class FakeDocuments : IDispatchKilogramDocumentReadPortV1
+    {
+        public Guid Id { get; } = Guid.NewGuid();
+        public string? Fault { get; init; }
+        public List<int?> Versions { get; } = [];
+        public Task<DispatchKilogramDocumentReadV1?> ReadAsync(Guid companyId, Guid dispatchNoteId, Guid documentId,
+            int? version, CancellationToken cancellationToken = default)
+        {
+            Versions.Add(version);
+            return Task.FromResult<DispatchKilogramDocumentReadV1?>(Fault == "unavailable" ? null :
+                new(Fault == "foreign-company" ? Guid.NewGuid() : companyId, dispatchNoteId, documentId, Fault == "version-changed" ? 4 : 3,
+                    new string(Fault == "hash-changed" && version is not null ? 'b' : 'a', 64)));
+        }
+    }
 
     private static FakePolicy Readable() => new(new LogisticsWeighingDifferencePolicyReadV1(0.5m, 1m, 2m, 3m));
 

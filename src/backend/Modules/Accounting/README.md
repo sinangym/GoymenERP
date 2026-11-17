@@ -422,3 +422,69 @@ shell at `/muhasebe/hesap-plani` (screen `M-05`, capability `accounting.account-
   browser walk accepts it (the staged-then-flip order).
 - **Not in this slice**: the M-05 "Boyutlar" (cost centre / project dimensions) have no backend or decision, and the
   plan is not edited here (the approved source catalog is the only way a plan becomes active).
+
+## SAT-D422 / SAT-D423: finalized invoice-line classification and COGS correction
+
+- The existing journal reversal proposer prepares an explicit line classification/account choice; a different existing
+  reversal approver approves it. The accountant selects the actual open period and dates (FNS-D112). No permission,
+  role, grant, account or current-date default is introduced. The Product card's current classification is reference data.
+- The actual Sales owner supplies immutable finalized invoice identities and a private commercial fingerprint. The
+  public official-number selector and history expose document/line references without commercial prices or proof JSON.
+  The invoice, its quantities, taxes, stock and original journal remain unchanged.
+- An actual posted COGS component must bind `SourceId = InvoiceId` and purpose
+  `sales-invoice-line-cogs:<invoiceLineId>:<finalizedVersion>` with its exact two lines and amount. An aggregate invoice
+  journal is not divided. A missing component is distinct from unreadable evidence. Where a component exists, two
+  balanced linked correction journals retain its exact amount; classification-only approval adds no journal.
+- Immutable proposals, approved line revisions, the command result and Audit-owner append share one owned Serializable
+  transaction. Company/actor/fresh authority, expected line version, source/plan version, maker-checker and open-period
+  fences are rechecked. Failed saves roll back; borrowed/ambient transactions and caller-owned pending state are refused
+  before cleanup. Historical choices are never updated or deleted.
+- `AddInvoiceLineCogsCorrections` creates only the two history tables and their keys/checks. Down's first operation
+  refuses with **THROW 51987** while either table contains history; an empty store can be rolled back. Use a forward fix
+  when history exists. No seed/backfill, database apply or production activation is part of this change.
+- The initial Sales SMM recognition trigger is still a human decision (#1189 / 6943887681). This correction does not
+  choose it or claim that an initial producer exists. The whole STK-SC36-a owner chain remains incomplete until that
+  producer and its immutable shipment-cost trace are bound. Source tests/builds are separate from runtime acceptance.
+
+## FIN-S14 / B-28: received Expense and same-currency Transfer sources
+
+- The Finance owner emits `finance.expense-payment.recorded.v1` or `finance.cash-transfer.recorded.v1` only at its
+  existing final command, in the same transaction as the actual movement and audit. The consumer retains that
+  immutable company/source/version, currency, amount, money-profile and JSON proof once in `FinanceJournalSources`.
+  Receipt does not create a journal or a draft. Identity/payload conflicts are permanent failures; replay is read-only.
+- The existing Accounting journal-read permission controls `GET /api/v1/accounting/finance-journal-sources`, with
+  fresh actor/company/authority checks. `Received`, `BindingUnavailable` and `BindingAvailable` are distinct from
+  journal preparation/posting. The binding is read from the actual approved Accounting source package; no account
+  or debit/credit mapping is supplied by a fallback.
+- The existing normal-journal create screen selects these received sources. The real Finance owner is read again
+  under its read permission when preparing. Its exact amount joins the preparation fingerprint, and the server
+  requires total debit and total credit each to equal that amount in the source currency. A balanced draft for a
+  different total is rejected. Existing open-period, different-approver, idempotency and journal-posting checks apply.
+- FNS-D25 bank fees and paid loan interest remain the single Expense source with its mandatory description. No
+  classification is inferred from that text. FX differences (FNS-D63) and unresolved credit-account mappings (TK-30)
+  are not assigned invented rules by this path. Dispatcher activation and historical event backfill are not included.
+- `AddFinanceJournalSources` adds only this source queue. Down refuses with **THROW 51989** while any received
+  source exists; an empty queue may roll back. Use a forward fix to retain financial provenance. Database apply and
+  runtime SQL/browser/CI acceptance remain separate from source generation and compilation.
+
+## FIN-S13 / B-04: source voucher approval and cancellation ordering
+
+- Finalized Sales/Purchasing sources retain their real official invoice number when supplied; legacy sources keep a
+  missing number explicit. Additive purchase ExpenseTypeId metadata selects the existing expense mapping only for
+  an explicit Expense line. Missing approved mapping remains waiting; no physical inventory effect is introduced.
+- `GET /api/v1/accounting/source-vouchers` uses the existing journal-read authority. The existing normal-journal
+  approval authority posts a frozen source voucher at its actual invoice date and requires a different actor from
+  the source invoice finalizer (KLN-D8/D10/D15/D17). Missing/closed invoice periods remain waiting; no alternative
+  date or period is selected. Posting, state/version, audit and command completion commit in one Serializable transaction.
+- The Sales cancellation consumer retains the original admission/invoice/finalized-version identity. An unapproved
+  voucher is cancelled without deleting its lines or creating a reversal. A cancellation received before finalization
+  prevents that later delivery from creating a voucher. The cancellation identity range is held through admission
+  and approval. A posted journal remains unchanged and exposes `CancellationReversalPending`: its reversal period/date
+  question is still pending, not inferred from the line-classification correction workflow.
+- The list/approval screen selects actual source rows, displays frozen account/amount/date facts, and retains the same
+  command identity after an unknown outcome. It never calculates tax, balances, FX or journal amounts in the browser.
+  Central endpoint/Work/screen composition remains a separate integration step; dispatcher activation is not included.
+- EF-generated `20261117123611_AddSourceVoucherLifecycle` adds the cancellation receipt and nullable official-number/
+  approval facts with company-scoped journal/period references. Up is DDL only. Down's first SQL operation refuses
+  with **THROW 51938** while cancellation, approval or official-number facts exist; an untouched legacy draft may
+  roll back. No history is backfilled, erased or applied to a database by this checkpoint.

@@ -8,7 +8,8 @@
  * and a value outside the shapes below makes the whole answer `null` — never a partial object. The net kilograms are the
  * delivery weighing's (Logistics owner); nothing here adds, rounds or compares a kilogram or an amount.
  */
-import { decodeAmounts, type InvoiceAmounts } from './invoiceFinalizationContract'
+import { decodeAmounts, decodeRate, decodeInstalment, decodeDecision, decodeMatch, decodeFinalization,
+  type InvoiceAmounts, type InvoiceRate, type InvoiceInstalment, type InvoiceDecision, type InvoiceMatch, type InvoiceFinalization } from './invoiceFinalizationContract'
 import { LIMITS } from './contract'
 import { isDateOnly, isReferenceId, isVersionString } from './wirePrimitives'
 
@@ -68,7 +69,7 @@ export const SUBCONTRACT_INVOICE_REASON = {
 
 /* ── Detail ───────────────────────────────────────────────────────────────── */
 
-export const SUBCONTRACT_INVOICE_STATES = ['Draft'] as const
+export const SUBCONTRACT_INVOICE_STATES = ['Draft', 'PendingApproval', 'Approved', 'Rejected', 'Cancelled', 'Finalized'] as const
 export type SubcontractInvoiceState = (typeof SUBCONTRACT_INVOICE_STATES)[number]
 const isState = (value: unknown): value is SubcontractInvoiceState =>
   typeof value === 'string' && (SUBCONTRACT_INVOICE_STATES as readonly string[]).includes(value)
@@ -141,12 +142,13 @@ export interface SubcontractInvoiceDetail {
   readonly createdBy: string
   readonly createdAtUtc: string
   readonly isReplay: boolean
+  readonly lifecycle: SubcontractLifecycle | null
 }
 
 export const SUBCONTRACT_INVOICE_DETAIL_FIELDS = [
   'id', 'documentNo', 'state', 'version', 'businessDate', 'partyId', 'companyAccountId', 'currencyId', 'amountScale',
   'salesOrderId', 'loadingInstructionId', 'weighingId', 'weighingRevision', 'netKg', 'totals', 'lines', 'createdBy',
-  'createdAtUtc', 'isReplay',
+  'createdAtUtc', 'isReplay', 'lifecycle',
 ] as const
 
 /** The detail of `invoiceId` (or of the id the body names when `invoiceId` is null — a create answer); otherwise null. */
@@ -163,7 +165,10 @@ export function decodeSubcontractInvoiceDetail(value: unknown, invoiceId: string
     return null
   }
   const totals = decodeAmounts(o.totals)
-  if (totals === null) return null
+  const lifecycle = o.lifecycle === null ? null : decodeSubcontractLifecycle(o.lifecycle)
+  if (totals === null || (o.lifecycle !== null && lifecycle === null)
+    || (o.state !== 'Draft' && o.state !== 'Cancelled' && (lifecycle === null || lifecycle.instalments.length === 0))
+    || ((o.state === 'Finalized') !== (lifecycle?.finalization != null))) return null
   const lines: SubcontractInvoiceLine[] = []
   for (const entry of o.lines) {
     const line = decodeLine(entry)
@@ -190,5 +195,57 @@ export function decodeSubcontractInvoiceDetail(value: unknown, invoiceId: string
     createdBy: o.createdBy,
     createdAtUtc: o.createdAtUtc,
     isReplay: o.isReplay,
+    lifecycle,
   }
+}
+
+export interface SubcontractLifecycle {
+  readonly decision: InvoiceDecision | null
+  readonly instalments: readonly InvoiceInstalment[]
+  readonly exchangeRate: InvoiceRate | null
+  readonly functionalTotals: InvoiceAmounts | null
+  readonly match: InvoiceMatch | null
+  readonly finalization: InvoiceFinalization | null
+}
+export function decodeSubcontractLifecycle(value: unknown): SubcontractLifecycle | null {
+  const o = exact(value, ['decision', 'instalments', 'exchangeRate', 'functionalTotals', 'match', 'finalization'])
+  if (o === null || !Array.isArray(o.instalments)) return null
+  const decision = o.decision === null ? null : decodeDecision(o.decision)
+  const rate = o.exchangeRate === null ? null : decodeRate(o.exchangeRate)
+  const totals = o.functionalTotals === null ? null : decodeAmounts(o.functionalTotals)
+  const match = o.match === null ? null : decodeMatch(o.match)
+  const finalization = o.finalization === null ? null : decodeFinalization(o.finalization)
+  const instalments = o.instalments.map(decodeInstalment)
+  if ((o.decision !== null && decision === null) || (o.exchangeRate !== null && rate === null)
+    || (o.functionalTotals !== null && totals === null) || (o.match !== null && match === null)
+    || (o.finalization !== null && finalization === null) || instalments.some(item => item === null)
+    || ((rate === null) !== (totals === null)) || (rate !== null && (match === null || rate.rateDay !== match.invoiceDate))
+    || (match !== null && (match.invoiceDate === null || match.sourceProof === null))) return null
+  return { decision, instalments: instalments as InvoiceInstalment[], exchangeRate: rate, functionalTotals: totals, match, finalization }
+}
+
+export interface SubcontractInvoiceListItem {
+  readonly id: string; readonly documentNo: string; readonly state: SubcontractInvoiceDetail['state']
+  readonly version: string; readonly businessDate: string; readonly createdAtUtc: string
+}
+export interface SubcontractInvoiceList {
+  readonly salesOrderId: string; readonly items: readonly SubcontractInvoiceListItem[]; readonly nextCursor: string | null
+}
+export const subcontractInvoicesOfOrderPath = (orderId: string) => `${SUBCONTRACT_SERVICE_INVOICES_PATH}/by-order/${encodeURIComponent(orderId)}`
+export function decodeSubcontractInvoiceList(value: unknown, salesOrderId: string): SubcontractInvoiceList | null {
+  const o = exact(value, ['salesOrderId', 'items', 'nextCursor'])
+  if (o === null || !isReferenceId(o.salesOrderId) || o.salesOrderId.toLowerCase() !== salesOrderId.toLowerCase()
+    || !Array.isArray(o.items) || o.items.length > 100
+    || (o.nextCursor !== null && (typeof o.nextCursor !== 'string' || o.nextCursor.length === 0 || o.nextCursor.length > 8192))) return null
+  const items: SubcontractInvoiceListItem[] = []
+  const seen = new Set<string>()
+  for (const value of o.items) {
+    const item = exact(value, ['id', 'documentNo', 'state', 'version', 'businessDate', 'createdAtUtc'])
+    if (item === null || !isReferenceId(item.id) || seen.has(item.id.toLowerCase()) || !isText(item.documentNo)
+      || !isState(item.state) || !isVersionString(item.version) || !isDateOnly(item.businessDate) || !isInstant(item.createdAtUtc)) return null
+    seen.add(item.id.toLowerCase())
+    items.push({ id: item.id, documentNo: item.documentNo, state: item.state, version: item.version,
+      businessDate: item.businessDate, createdAtUtc: item.createdAtUtc })
+  }
+  return { salesOrderId: o.salesOrderId, items, nextCursor: o.nextCursor }
 }

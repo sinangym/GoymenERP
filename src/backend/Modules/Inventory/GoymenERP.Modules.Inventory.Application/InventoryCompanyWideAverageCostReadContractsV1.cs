@@ -87,7 +87,8 @@ public sealed record InventoryCompanyWideAverageCostReadAnswerV1
 {
     private InventoryCompanyWideAverageCostReadAnswerV1(
         Guid companyId, Guid productId, InventoryAverageCostReadStatusV1 status, decimal? averageCostPerKg,
-        string? unreadableCode, Guid? unreadableLocationId, IReadOnlyList<InventoryCompanyWideAverageCostSourceV1> sources)
+        string? unreadableCode, Guid? unreadableLocationId, IReadOnlyList<InventoryCompanyWideAverageCostSourceV1> sources,
+        Guid? costCurrencyId = null)
     {
         CompanyId = companyId;
         ProductId = productId;
@@ -97,6 +98,7 @@ public sealed record InventoryCompanyWideAverageCostReadAnswerV1
         UnreadableLocationId = unreadableLocationId;
         Sources = sources;
         OnHandKg = sources.Sum(source => source.OnHandKg);
+        CostCurrencyId = costCurrencyId;
     }
 
     public int ContractVersion => InventoryCompanyWideAverageCostReadContractV1.Version;
@@ -109,6 +111,10 @@ public sealed record InventoryCompanyWideAverageCostReadAnswerV1
 
     /// <summary>Only with <see cref="InventoryAverageCostReadStatusV1.Value"/>: non-negative, at most 4 decimals.</summary>
     public decimal? AverageCostPerKg { get; }
+
+    /// <summary>Actual matching owner-pool currency evidence. Null preserves an unproven legacy currency; never infer TRY.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? CostCurrencyId { get; }
 
     /// <summary>Always <see cref="InventoryCompanyWideAverageCostReadContractV1.CostCurrencyBasis"/>.</summary>
     public string CostCurrencyBasis => InventoryCompanyWideAverageCostReadContractV1.CostCurrencyBasis;
@@ -124,9 +130,11 @@ public sealed record InventoryCompanyWideAverageCostReadAnswerV1
     public IReadOnlyList<InventoryCompanyWideAverageCostSourceV1> Sources { get; }
 
     public static InventoryCompanyWideAverageCostReadAnswerV1 ForValue(
-        Guid companyId, Guid productId, decimal averageCostPerKg, IEnumerable<InventoryCompanyWideAverageCostSourceV1> sources)
+        Guid companyId, Guid productId, decimal averageCostPerKg, IEnumerable<InventoryCompanyWideAverageCostSourceV1> sources,
+        Guid? costCurrencyId = null)
     {
         RequireIdentity(companyId, productId);
+        if (costCurrencyId == Guid.Empty) throw new ArgumentException("A supplied currency identity is not empty.", nameof(costCurrencyId));
         if (averageCostPerKg < 0m || Math.Round(averageCostPerKg, InventoryCompanyWideAverageCostReadContractV1.InternalScale,
                 MidpointRounding.AwayFromZero) != averageCostPerKg)
         {
@@ -139,7 +147,7 @@ public sealed record InventoryCompanyWideAverageCostReadAnswerV1
             throw new ArgumentException("A value is read from a ledger row at every source location.", nameof(sources));
         }
 
-        return new(companyId, productId, InventoryAverageCostReadStatusV1.Value, averageCostPerKg, null, null, ordered);
+        return new(companyId, productId, InventoryAverageCostReadStatusV1.Value, averageCostPerKg, null, null, ordered, costCurrencyId);
     }
 
     public static InventoryCompanyWideAverageCostReadAnswerV1 ForUnreadable(

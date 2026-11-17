@@ -14,6 +14,12 @@
  */
 
 export const ACCOUNTING_CAPABILITY = {
+  sourceVouchers: 'accounting.source-vouchers.list',
+  sourceVouchersApprove: 'accounting.source-vouchers.approve',
+  invoiceLineCogsPrepare: 'accounting.invoice-line-cogs.prepare',
+  invoiceLineCogsApprove: 'accounting.invoice-line-cogs.approve',
+  costDifferencePrepare: 'accounting.manufacturing-cost-differences.prepare',
+  costDifferenceApprove: 'accounting.manufacturing-cost-differences.approve',
   /** M-07 Dönem — the company's accounting periods. */
   periodsList: 'accounting.periods.list',
   /** M-07 — propose a period opening. */
@@ -47,6 +53,11 @@ export const ACCOUNTING_CAPABILITY = {
 export type AccountingCapabilityId = (typeof ACCOUNTING_CAPABILITY)[keyof typeof ACCOUNTING_CAPABILITY]
 
 export const ACCOUNTING_ROUTE = {
+  sourceVouchers: '/muhasebe/kaynak-fisler',
+  invoiceLineCogsPrepare: '/muhasebe/fatura-satiri-smm',
+  invoiceLineCogsApprove: '/muhasebe/fatura-satiri-smm-onay',
+  costDifferencePrepare: '/muhasebe/uretim-maliyet-farklari',
+  costDifferenceApprove: '/muhasebe/uretim-maliyet-farki-onay',
   periodsList: '/muhasebe/donemler',
   // Static before the parameter-free list's siblings; `yeni` is its own route.
   periodsPropose: '/muhasebe/donemler/yeni',
@@ -60,6 +71,9 @@ export const ACCOUNTING_ROUTE = {
   accountPlan: '/muhasebe/hesap-plani',
   journalReversalApprove: '/muhasebe/ters-kayit-onay/:proposalId',
 } as const
+
+export const invoiceLineCogsPath = (invoiceId: string, invoiceLineId: string, mode: 'prepare' | 'approve' = 'prepare') =>
+  `${mode === 'prepare' ? ACCOUNTING_ROUTE.invoiceLineCogsPrepare : ACCOUNTING_ROUTE.invoiceLineCogsApprove}?${new URLSearchParams({ invoiceId, invoiceLineId }).toString()}`
 
 export const journalDetailPath = (journalId: string) => `/muhasebe/fisler/${encodeURIComponent(journalId)}`
 

@@ -187,6 +187,12 @@ public static class ErpPermissions
     /// </summary>
     public const string ProductPackageStandardsManage = "product.package-standards.manage";
 
+    /// <summary>BS-10: explicit paint membership import and maintenance only. Name registration grants no role or actor.</summary>
+    public const string ProductPaintMembershipsManage = "product.paint-memberships.manage";
+
+    /// <summary>SAT-D422 global Product card classification name only; company roles never authorize its owner operation.</summary>
+    public const string ProductCogsClassificationsManage = "product.cogs-classifications.manage";
+
     /// <summary>
     /// SAT-D382 (STK-SC36-c): the Product owner's name for approving (from an effective date) or rejecting the package standard
     /// version waiting for approval (<c>ProductPackageStandardPermissionsV3.Approve</c>). Registered, not granted: no role, seed
@@ -543,6 +549,9 @@ public static class ErpPermissions
     /// </summary>
     public const string ManufacturingOrdersCancel = "manufacturing.orders.cancel";
 
+    /// <summary>URT-D32/D77/D85: reasoned reopening under the existing period and Inventory cost fences. Registration only; no role or user grant.</summary>
+    public const string ManufacturingOrdersReopen = "manufacturing.orders.reopen";
+
     /// <summary>
     /// Üretim U2-a (API-11, plan v1 §5.2): cancelling a production plan — a Draft, or an approved plan that opened no
     /// order — with a reason; the plan is kept, never deleted. Its own name because cancelling a plan is neither writing
@@ -717,6 +726,12 @@ public static class ErpPermissions
     /// </summary>
     public const string FinancePartyLedgerRead = "finance.party-ledger.read";
     public const string FinancePartyLedgerAmountRead = "finance.party-ledger.amount.read";
+
+    /// <summary>
+    /// FNS-SC32, KLN-D72/D76: separately authorized complete party balance transfer in the resolved company.
+    /// Registered, not granted. Company-wide only; no new Critical classification or seeded assignment.
+    /// </summary>
+    public const string FinancePartyBalanceTransfersRecord = "finance.party-balance-transfers.record";
 
     /// <summary>FI04 independent read and amount disclosure; registration grants no user or role access.</summary>
     public const string FinanceOpenItemsRead = "finance.open-items.read";
@@ -1150,6 +1165,10 @@ public static class ErpPermissions
     /// </summary>
     public const string LogisticsDispatchNotesCancel = "logistics.dispatch-notes.cancel";
 
+    /// <summary>STK-S8 owner names: registration only, company scoped; no grant or Critical classification.</summary>
+    public const string LogisticsTransferOutgoingDocumentsRead = "logistics.transfer-outgoing-documents.read";
+    public const string LogisticsTransferDeparturesRecord = "logistics.transfer-departures.record";
+
     /// <summary>
     /// F-020 (LOJ-D6..D8): cancel a loading instruction with a reason (LogisticsPermissionManifestV1) while no shipment is recorded —
     /// never a delete. Its own name. Registered, not granted (grant is a human gate). Company-wide only. Not Critical.
@@ -1307,6 +1326,13 @@ public static class ErpPermissions
     /// </summary>
     public const string PurchasingSupplierReturnsRecord = "purchasing.supplier-returns.record";
 
+    /// <summary>ALS-D7/D8/D44/D64 incoming-invoice operation names. Registration only; no grant, role or activation.</summary>
+    public const string PurchasingInvoicesRead = "purchasing.invoices.read";
+    public const string PurchasingInvoicesImport = "purchasing.invoices.import";
+    public const string PurchasingInvoicesMatch = "purchasing.invoices.match";
+    public const string PurchasingInvoicesApproveVariance = "purchasing.invoices.approve-variance";
+    public const string PurchasingInvoicesFinalize = "purchasing.invoices.finalize";
+
     /// <summary>
     /// ACC-V0a: the Accounting owner's names (AccountingPermissionManifestV1), the backend owners' technical mapping
     /// (Business #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Each read is its own
@@ -1428,6 +1454,10 @@ public static class ErpPermissions
     /// role, seed or user receives it here (a human grant gate). Company-wide only. Not Critical.
     /// </summary>
     public const string SettingsSalesQuotePoliciesManage = "settings.sales-quote-policies.manage";
+
+    /// <summary>ALS-D8/D15/D63: explicit company invoice-variance policy publication. Registered only; no grant or new Critical class.</summary>
+    public const string SettingsPurchaseInvoiceVariancePoliciesManage = "settings.purchase-invoice-variance-policies.manage";
+    public const string SettingsWarehouseTransferScaleManage = "settings.warehouse-transfer-scale.manage";
 
     /// <summary>
     /// F-029 S6 (URUN_F029 spec §5.4(2); URN-D2…D5): read the e-Fatura scenario policy — the scenario code list (SAT-D120)
@@ -1665,6 +1695,8 @@ public static class ErpPermissions
             ProductDimensionManage,
             ProductProfileWeightsImport,
             ProductPackageStandardsManage,
+            ProductPaintMembershipsManage,
+            ProductCogsClassificationsManage,
             ProductPackageStandardsApprove,
             SalesDraftsCreate,
             SalesDraftsRead,
@@ -1716,6 +1748,7 @@ public static class ErpPermissions
             ManufacturingOrdersCloseExceptionApprove,
             ManufacturingOrdersWrite,
             ManufacturingOrdersCancel,
+            ManufacturingOrdersReopen,
             ManufacturingPlansRead,
             ManufacturingPlansCancel,
             ManufacturingPlansReorder,
@@ -1750,6 +1783,8 @@ public static class ErpPermissions
             LogisticsDispatchNotesCreate,
             LogisticsDispatchNotesApprove,
             LogisticsDispatchNotesCancel,
+            LogisticsTransferOutgoingDocumentsRead,
+            LogisticsTransferDeparturesRecord,
             LogisticsLoadingInstructionsCancel,
             LogisticsCustomerReturnsRead,
             LogisticsCustomerReturnsRequest,
@@ -1773,6 +1808,11 @@ public static class ErpPermissions
             PurchasingGoodsReceiptsApproveOverdelivery,
             PurchasingFutureAllocationRelease,
             PurchasingSupplierReturnsRecord,
+            PurchasingInvoicesRead,
+            PurchasingInvoicesImport,
+            PurchasingInvoicesMatch,
+            PurchasingInvoicesApproveVariance,
+            PurchasingInvoicesFinalize,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -1840,6 +1880,7 @@ public static class ErpPermissions
         FinanceCustomerInstrumentCollect,
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
+        FinancePartyBalanceTransfersRecord,
         FinanceOpenItemsRead,
         FinanceOpenItemsAmountRead,
         FinanceAllocationWrite,
@@ -1852,6 +1893,8 @@ public static class ErpPermissions
             SettingsSalesDeliveryTolerancesManage,
             SettingsSalesApprovalThresholdsManage,
             SettingsSalesQuotePoliciesManage,
+            SettingsPurchaseInvoiceVariancePoliciesManage,
+            SettingsWarehouseTransferScaleManage,
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
             SettingsUnitProfilesManage,
@@ -1942,6 +1985,7 @@ public static class ErpPermissions
             ProductDimensionManage,
             ProductProfileWeightsImport,
             ProductPackageStandardsManage,
+            ProductPaintMembershipsManage,
             ProductPackageStandardsApprove,
             SalesDraftsCreate,
             SalesDraftsRead,
@@ -1993,6 +2037,7 @@ public static class ErpPermissions
             ManufacturingOrdersCloseExceptionApprove,
             ManufacturingOrdersWrite,
             ManufacturingOrdersCancel,
+            ManufacturingOrdersReopen,
             ManufacturingPlansRead,
             ManufacturingPlansCancel,
             ManufacturingPlansReorder,
@@ -2027,6 +2072,8 @@ public static class ErpPermissions
             LogisticsDispatchNotesCreate,
             LogisticsDispatchNotesApprove,
             LogisticsDispatchNotesCancel,
+            LogisticsTransferOutgoingDocumentsRead,
+            LogisticsTransferDeparturesRecord,
             LogisticsLoadingInstructionsCancel,
             LogisticsCustomerReturnsRead,
             LogisticsCustomerReturnsRequest,
@@ -2050,6 +2097,11 @@ public static class ErpPermissions
             PurchasingGoodsReceiptsApproveOverdelivery,
             PurchasingFutureAllocationRelease,
             PurchasingSupplierReturnsRecord,
+            PurchasingInvoicesRead,
+            PurchasingInvoicesImport,
+            PurchasingInvoicesMatch,
+            PurchasingInvoicesApproveVariance,
+            PurchasingInvoicesFinalize,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -2117,6 +2169,7 @@ public static class ErpPermissions
         FinanceCustomerInstrumentCollect,
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
+        FinancePartyBalanceTransfersRecord,
         FinanceOpenItemsRead,
         FinanceOpenItemsAmountRead,
         FinanceAllocationWrite,
@@ -2129,6 +2182,8 @@ public static class ErpPermissions
             SettingsSalesDeliveryTolerancesManage,
             SettingsSalesApprovalThresholdsManage,
             SettingsSalesQuotePoliciesManage,
+            SettingsPurchaseInvoiceVariancePoliciesManage,
+            SettingsWarehouseTransferScaleManage,
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
             SettingsUnitProfilesManage,

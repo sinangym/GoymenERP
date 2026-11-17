@@ -6,9 +6,9 @@ namespace GoymenERP.Modules.Accounting.Application.Inbox;
 // company, consumer and event id) and offers the invoice to its own B-04b admission port, which writes ONE draft voucher
 // (120 receivable / 600-601 revenue / 391 output VAT, accounts only from the posting account mapping) in Accounting's own
 // tables. Accounting never writes a Sales table and never recomputes an amount (KLN-D14, SAT-D223). The consumer is NOT
-// registered with the dispatcher yet: AddWorkInboxConsumer validates on start that the source is registered, and Sales does not
-// register its outbox as a Work source yet. The dispatcher itself stays off until Work:OutboxDispatcher:Enabled is set (a human
-// gate). The purchase side (purchasing.invoice.finalized.v1, 320) has no event and no admission kind yet; it is not consumed.
+// enabled by a registration: the host binds SalesOutboxEventSourceV1 and this consumer through the versioned Work registry.
+// The dispatcher stays off until Work:OutboxDispatcher:Enabled is set, and Accounting admission has its own host gate.
+// Purchasing has a separate versioned consumer; it never reuses the Sales source or dedup identity.
 
 /// <summary>The Accounting side of <c>sales.invoice.finalized.v1</c> (consumer name, source, event type, version).</summary>
 public static class AccountingSalesInvoiceFinalizedInboxV1
@@ -16,7 +16,7 @@ public static class AccountingSalesInvoiceFinalizedInboxV1
     /// <summary>The Accounting consumer's registered name (dedup key part).</summary>
     public const string ConsumerName = "accounting.invoice-journal";
 
-    /// <summary>The Sales outbox source name (draft; must equal the name Sales registers with AddWorkOutboxEventSource).</summary>
+    /// <summary>The Sales outbox source name; must equal SalesOutboxContractV1.SourceName.</summary>
     public const string SourceName = "sales";
 
     /// <summary>The finalised sales invoice event (SAT-S1 shape, appended keys only).</summary>
@@ -59,8 +59,8 @@ public sealed record AccountingSalesInvoiceFinalizedLineV1(
 
 /// <summary>
 /// The keys of <c>sales.invoice.finalized.v1</c> Accounting reads. <see cref="InvoiceDate"/> (the official invoice date of KLN-D8)
-/// and <see cref="FinalizedBy"/> (the finalising user of KLN-D10/D17) are NOT in the SAT-S1 shape yet; they are requested from
-/// Sales as appended keys under these draft names. An event without them is not admitted (the period date and the source actor
+/// and <see cref="FinalizedBy"/> (the finalising user of KLN-D10/D17) are appended by the FIN-SC36 Sales producer from its
+/// frozen official match and finalisation. A legacy event without them is not admitted (the period date and the source actor
 /// are never guessed: <c>businessDate</c> is the draft's server day, not the invoice date).
 /// </summary>
 public sealed record AccountingSalesInvoiceFinalizedEventV1(
@@ -81,7 +81,8 @@ public sealed record AccountingSalesInvoiceFinalizedEventV1(
     decimal? FunctionalWithholding,
     IReadOnlyList<AccountingSalesInvoiceFinalizedLineV1?>? Lines,
     DateOnly? InvoiceDate,
-    string? FinalizedBy);
+    string? FinalizedBy,
+    string? OfficialInvoiceNo = null);
 
 /// <summary>
 /// A delivery Accounting could not answer yet (the port was unavailable or a mapping is still waiting: "eşleme bekliyor"). An

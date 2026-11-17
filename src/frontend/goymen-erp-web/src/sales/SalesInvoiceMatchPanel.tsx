@@ -73,6 +73,17 @@ export function SalesInvoiceMatchPanel({
  * SAT-D241: the VAT and withholding comparison rows of a recorded match (inside a `<dl>`), the server's TL text as written. A match
  * recorded before SAT-D241 carries no comparison and says so (it is never shown as zero differences).
  */
+export function MatchSourceFacts({ match }: { readonly match: InvoiceMatch }) {
+  if (match.sourceProof === null || match.invoiceDate === null) {
+    return <div><dt>{T.source}</dt><dd>{T.sourceMissing}</dd></div>
+  }
+  return <>
+    <div><dt>{T.invoiceDate}</dt><dd>{match.invoiceDate}</dd></div>
+    <div><dt>{T.source}</dt><dd>{match.sourceProof.sourceKind === 'manual' ? T.sourceManual : T.sourceImport}</dd></div>
+    {match.sourceProof.hasPendingManual ? <div><dt>{T.source}</dt><dd role="status">{T.pendingManual}</dd></div> : null}
+  </>
+}
+
 export function MatchTaxFacts({ match, testIdPrefix }: { readonly match: InvoiceMatch; readonly testIdPrefix: string }) {
   const taxes = match.taxes
   if (taxes === null) {
@@ -106,6 +117,7 @@ function MatchNotice({ controller }: { readonly controller: InvoiceMatchControll
       )}
       {match === null ? null : (
         <dl className={styles.facts} aria-label={T.resultCaption} data-testid="sales-invoice-match-result">
+          <MatchSourceFacts match={match} />
           <div><dt>{T.resultDifference}</dt><dd className={styles.numericValue} data-testid="sales-invoice-match-result-difference">{match.difference}</dd></div>
           <div><dt>{T.resultTolerance}</dt><dd className={styles.numericValue} data-testid="sales-invoice-match-result-tolerance">{match.tolerance}</dd></div>
           <MatchTaxFacts match={match} testIdPrefix="sales-invoice-match-result" />

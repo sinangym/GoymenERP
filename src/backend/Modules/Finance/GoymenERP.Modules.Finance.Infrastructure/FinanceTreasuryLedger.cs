@@ -48,6 +48,18 @@ internal sealed class FinanceTreasuryLedger(FinanceDbContext dbContext, ICompany
 
         if (kind == ExpensePaymentSourceKind.Bank)
         {
+            // Credit plans are not money. Only the approved, explicitly documented actual bank leg is read.
+            var credits = await dbContext.CreditMovements.AsNoTracking()
+                .Where(row => row.CompanyId == companyId && row.BankAccountId == accountId && row.Status == 2)
+                .Select(row => new { row.CurrencyId, row.Kind, row.BankAmountText }).ToListAsync(cancellationToken);
+            foreach (var row in credits)
+            {
+                if (row.CurrencyId != currencyId || row.BankAmountText is null) return null;
+                if (row.Kind == (int)CreditMovementKindV1.Drawdown) incoming.Add(row.BankAmountText);
+                else if (row.Kind == (int)CreditMovementKindV1.Repayment) outgoing.Add(row.BankAmountText);
+                else return null;
+            }
+
             var receipts = await dbContext.MoneyEvents.AsNoTracking()
                 .Where(row => row.CompanyId == companyId && row.TreasuryAccountId == accountId)
                 .Select(row => new { row.Kind, row.CurrencyId, row.AmountText, row.PosBankNetAmountText })

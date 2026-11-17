@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
@@ -26,6 +28,78 @@ public sealed class FinanceOfficialSalesInvoiceReadPortV1Tests
     private const string Ettn = "a5000000-0000-4000-8000-0000000000bc";
 
     [Fact]
+    public async Task Approved_import_supplies_exact_source_date_and_TL_despite_a_pending_manual_record()
+    {
+        await using var run = await Run.CreateAsync(Row(Guid.NewGuid(), FinanceOfficialSalesInvoiceStatusV1.PendingApproval));
+        var port = run.Port(Company);
+        var document = await SeedImport(run.Db, "1500.55");
+        var answer = await port.LookupAsync(Company, OfficialNo, Ettn);
+        Assert.Equal(FinanceOfficialSalesInvoiceReadOutcomeV1.Approved, answer.Outcome);
+        Assert.Equal(document, answer.Invoice!.InvoiceId);
+        Assert.Equal("approved-import", answer.Invoice.SourceKind);
+        Assert.Equal("1500.55", answer.Invoice.PayableFunctionalAmount);
+        Assert.Equal(new DateOnly(2026, 11, 16), answer.Invoice.InvoiceDate);
+        Assert.True(answer.Invoice.HasPendingManual);
+        Assert.Null(answer.Invoice.PdfDocumentId);
+        Assert.NotNull(answer.Invoice.SourceBatchId);
+        Assert.Equal(64, answer.Invoice.SourceChecksum!.Length);
+        var sales = await run.SalesPort(Company).LookupAsync(Company, OfficialNo, Ettn);
+        Assert.Equal(SalesOfficialInvoiceOutcomeV1.Found, sales.Outcome);
+        Assert.Equal(answer.Invoice.InvoiceDate, sales.Invoice!.InvoiceDate);
+        Assert.Equal(answer.Invoice.SourceBatchId, sales.Invoice.SourceProof!.SourceBatchId);
+        Assert.Equal(answer.Invoice.SourceChecksum, sales.Invoice.SourceProof.SourceChecksum);
+        Assert.Equal(document, sales.Invoice.SourceProof.InvoiceId);
+        Assert.True(sales.Invoice.SourceProof.HasPendingManual);
+        Assert.Equal("approved-import", sales.Invoice.SourceProof.SourceKind);
+
+    }
+
+    [Fact]
+    public async Task Missing_import_TL_is_unavailable_and_approved_manual_wins_without_rewriting_the_import()
+    {
+        await using (var missing = await Run.CreateAsync())
+        {
+            var port = missing.Port(Company);
+            await SeedImport(missing.Db, "");
+            Assert.Equal(FinanceOfficialSalesInvoiceReadOutcomeV1.Unavailable,
+                (await port.LookupAsync(Company, OfficialNo, Ettn)).Outcome);
+        }
+        var manual = Row(Guid.NewGuid()); manual.InvoiceDate = new(2026, 11, 15);
+        await using var run = await Run.CreateAsync(manual);
+        var winner = run.Port(Company);
+        await SeedImport(run.Db, "1500.55");
+        var answer = await winner.LookupAsync(Company, OfficialNo, Ettn);
+        Assert.Equal(manual.Id, answer.Invoice!.InvoiceId);
+        Assert.Equal("manual", answer.Invoice.SourceKind);
+        Assert.Equal("1250.50", answer.Invoice.PayableFunctionalAmount);
+        Assert.Equal(manual.InvoiceDate, answer.Invoice.InvoiceDate);
+        Assert.Single(await run.Db.OfficialInvoiceImportBatches.ToListAsync());
+        Assert.False(run.Db.ChangeTracker.HasChanges());
+    }
+
+    private static async Task<Guid> SeedImport(FinanceDbContext db, string tl)
+    {
+        var batchId = Guid.NewGuid(); var documentId = Guid.NewGuid();
+        var row = string.Join(',', Guid.NewGuid(), documentId, Guid.NewGuid(), "1", Customer,
+            Guid.NewGuid(), Currency, "1250.50", "2026-12-01", OfficialNo, Ettn, "1042.08", "208.42", "0", "2026-11-16", tl);
+        var bytes = Encoding.UTF8.GetBytes(FinanceOfficialSalesInvoiceImportTemplateV3.Header + "\n" + row + "\n");
+        var parsed = FinanceOfficialInvoiceImportParserV1.Parse(new(Company, "SENTETIK-checker", "SENTETIK", null), new(batchId, "1", bytes));
+        Assert.True(parsed.Preview.IsValid);
+        db.OfficialInvoiceImportBatches.Add(new() { Id = batchId, CompanyId = Company, BatchVersion = "1",
+            BatchChecksum = parsed.Preview.SourceSha256, TemplateVersion = parsed.Preview.TemplateVersion, FileBytes = bytes,
+            SourceRowsJson = JsonSerializer.Serialize(parsed.Preview.Batch!.Rows, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            RowCount = 1, UploadedBy = "SENTETIK-maker", UploadedAtUtc = ApprovedAt.AddMinutes(-1), CorrelationId = "SENTETIK" });
+        db.OfficialInvoiceImportApprovals.Add(new() { Id = Guid.NewGuid(), CompanyId = Company, BatchId = batchId,
+            UploadedBy = "SENTETIK-maker", ApprovedBy = "SENTETIK-checker", ApprovedAtUtc = ApprovedAt, CorrelationId = "SENTETIK" });
+        foreach (var (kind, value) in new[] { (FinanceOfficialInvoiceIdentityKinds.OfficialNo, OfficialNo), (FinanceOfficialInvoiceIdentityKinds.Ettn, Ettn) })
+            db.OfficialInvoiceIdentityClaims.Add(new() { Id = Guid.NewGuid(), CompanyId = Company, IdentityKind = kind,
+                IdentityValue = value, Generation = 1, HolderBatchId = batchId, HolderSourceDocumentId = documentId,
+                ClaimedBy = "SENTETIK-checker", ClaimedAtUtc = ApprovedAt, CorrelationId = "SENTETIK" });
+        await db.SaveChangesAsync(); db.ChangeTracker.Clear();
+        return documentId;
+    }
+
+    [Fact]
     public async Task An_approved_record_answers_its_stored_exact_facts_and_the_sales_adapter_its_decimals_without_writing()
     {
         var invoice = Guid.NewGuid();
@@ -47,7 +121,8 @@ public sealed class FinanceOfficialSalesInvoiceReadPortV1Tests
         var sales = await run.SalesPort(Company).LookupAsync(Company, OfficialNo, Ettn);
         Assert.Equal(SalesOfficialInvoiceOutcomeV1.Found, sales.Outcome);
         // The tax base is not part of the Sales facts (FNS-D21); the scale of the stored text is kept in the decimal.
-        Assert.Equal(new SalesOfficialInvoiceFacts(OfficialNo, Ettn, Customer, Currency, 1250.50m, 1250.50m, 208.42m, 0m),
+        Assert.Equal(new SalesOfficialInvoiceFacts(OfficialNo, Ettn, Customer, Currency, 1250.50m, 1250.50m, 208.42m, 0m, facts.InvoiceDate,
+            new(Company, invoice, "manual", "2", ApprovedAt, Pdf, 1, new string('d', 64), null, null, false)),
             sales.Invoice);
         Assert.Equal("1250.50", sales.Invoice!.PayableAmount.ToString(System.Globalization.CultureInfo.InvariantCulture));
         Assert.False(run.Db.ChangeTracker.HasChanges());
@@ -256,6 +331,34 @@ public sealed class FinanceOfficialSalesInvoiceReadPortV1Tests
             (answer.Outcome, answer.Invoice));
     }
 
+    [Theory]
+    [InlineData("missing-date")]
+    [InlineData("missing-source-id")]
+    [InlineData("missing-version")]
+    [InlineData("missing-pdf")]
+    [InlineData("bad-hash")]
+    [InlineData("unknown-source")]
+    [InlineData("import-without-batch")]
+    public async Task Sales_refuses_incomplete_official_source_evidence_without_substituting_a_draft_date(string variant)
+    {
+        var facts = Facts();
+        facts = variant switch
+        {
+            "missing-date" => facts with { InvoiceDate = null },
+            "missing-source-id" => facts with { InvoiceId = Guid.Empty },
+            "missing-version" => facts with { Version = "" },
+            "missing-pdf" => facts with { PdfDocumentId = null },
+            "bad-hash" => facts with { PdfSha256 = new string('x', 64) },
+            "unknown-source" => facts with { SourceKind = "unknown" },
+            "import-without-batch" => facts with { SourceKind = "approved-import", PdfDocumentId = null,
+                PdfDocumentVersionNo = null, PdfSha256 = null, SourceChecksum = new string('a', 64) },
+            _ => throw new ArgumentOutOfRangeException(nameof(variant)),
+        };
+        var port = new FinanceSalesOfficialInvoiceReadPortV1(new FixedFinanceAnswer(new(
+            FinanceOfficialSalesInvoiceReadOutcomeV1.Approved, facts)));
+        Assert.Equal(SalesOfficialInvoiceAnswerV1.Unavailable, await port.LookupAsync(Company, OfficialNo, Ettn));
+    }
+
     [Fact]
     public async Task A_cancelled_lookup_is_never_read_as_unavailable()
     {
@@ -281,6 +384,7 @@ public sealed class FinanceOfficialSalesInvoiceReadPortV1Tests
             Id = id,
             CompanyId = company ?? Company,
             OfficialNo = officialNo,
+            InvoiceDate = new DateOnly(2026, 11, 14),
             Ettn = ettn,
             CustomerPartyId = Customer,
             CurrencyId = Currency,
@@ -318,7 +422,7 @@ public sealed class FinanceOfficialSalesInvoiceReadPortV1Tests
     }
 
     private static FinanceOfficialSalesInvoiceFactsV1 Facts() => new(Guid.NewGuid(), Company, OfficialNo, Ettn, Customer,
-        Currency, "1250.50", "1250.50", "1042.08", "208.42", "0", Pdf, 1, new string('d', 64), "2", ApprovedAt);
+        Currency, "1250.50", "1250.50", "1042.08", "208.42", "0", Pdf, 1, new string('d', 64), "2", ApprovedAt, new DateOnly(2026, 11, 14));
 
     private sealed class FixedFinanceAnswer(FinanceOfficialSalesInvoiceReadAnswerV1? answer)
         : IFinanceOfficialSalesInvoiceReadPortV1

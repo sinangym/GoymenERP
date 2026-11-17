@@ -7,6 +7,8 @@ export const PURCHASE_ORDER_DETAIL_TEXT = {
   draft: 'Taslak',
   cancelledStatus: 'Kalanı iptal edildi',
   orderId: 'Sipariş ID',
+  documentNumber: 'Sipariş numarası',
+  documentNumberUnavailable: 'Numara kaydı yok (eski sipariş)',
   version: 'Sürüm',
   businessDate: 'İş tarihi',
   supplierHeading: 'Tedarikçi kayıtları',

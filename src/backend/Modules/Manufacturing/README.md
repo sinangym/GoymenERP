@@ -455,9 +455,9 @@ Readiness: DEC-PRDCT-005 is locked (button-less backend preview after a 300–50
 
 ### Queue permission follow-up (URT-D106)
 
-`manufacturing.plans.reorder` is registered company-wide, granted to no role, and its shell control is staged
-(`ImplementationAvailable: false`). URT-D106 supersedes URT-D101 for manual queue movement; priority-score entry
-remains under `manufacturing.plans.approve` (URT-D103). Manual queue movement and its audit remain pending.
+`manufacturing.plans.reorder` is registered company-wide and granted to no role. URT-D106 supersedes URT-D101 for
+manual queue movement; priority-score entry remains under `manufacturing.plans.approve` (URT-D103). W8 connects the
+separate reorder capability to its endpoint and controls; shell provider version is 1.12.
 
 # W7 — URT-SC33 priority and queue
 
@@ -466,7 +466,7 @@ URT-D97/D103 stores a signed Int32 priority score (technical default zero, highe
 the plan version and the independent priority revision, a reason, audit context and ADR-011 idempotency. It does not
 change plan content or invalidate approval. The parent update participates in the plan's optimistic concurrency fence.
 The real work-center queue and termin suggestion read this stored score and the remaining input kg; URT-D107 exposes
-over-plan output as a non-blocking flag with zero remaining kg. Manual queue ordering is still pending a separate answer.
+over-plan output as a non-blocking flag with zero remaining kg. W8 implements the subsequent URT-D110 manual-order answer.
 
 Migration `20261116184005_AddManufacturingPlanPriorities` was generated with `dotnet ef`. Up is DDL only. Down first
 refuses with **THROW 51943** while any priority history exists (forward fix), then drops the empty table. SQL guard,
@@ -477,3 +477,81 @@ plan, label, product, observed label version, requested/available/missing kg and
 never persisted or replayed. The initial approval and reapproval screens display it separately from a fresh advisory
 read. Inventory's host mapping and central OpenAPI schema are integrated by the train owner after the Inventory owner
 commit; without that mapping the unchanged code-only refusal remains valid and no quantity is fabricated.
+
+## W8 — URT-SC33 persisted manual queue (URT-D110)
+
+The real queue and termin suggestion use the same persisted sequence once a manager moves an existing queued plan.
+Existing relative order survives due-date and priority changes. An arriving eligible member is inserted before the
+first existing member whose current automatic key is later (termin, score, creation moment, plan id). Thus B20→A10
+plus C15 becomes C→B→A. Departed members leave the current sequence; immutable prior snapshots retain the history.
+A draft target is placed by the same arrival rule only in the read result and never becomes a saved queue member.
+
+`POST /api/v1/manufacturing/plans/{planId}/work-center-queue/reorder` needs both plans read and the separate reorder
+permission, expected plan version, independent expected queue revision, reason and an idempotency key. The command
+owns a Serializable transaction; its sequence, audit and exact ADR-011 response commit together. All ordinary
+membership mutations synchronize existing manual queues inside the same Manufacturing owner or Inventory host
+transaction. A failed membership save rolls back the business write, and a concurrent revision loser adds no snapshot.
+No permission grant, role assignment or cross-module write bypass is introduced.
+
+Migration `20261116210842_AddManufacturingManualQueues` was generated with `dotnet ef`; it creates append-only,
+company-filtered `WorkCenterQueueVersions` and `WorkCenterQueueEntries` with composite owner foreign keys and unique
+sequence/member constraints. Up is DDL only. Down first refuses with **THROW 51946** while either table has history;
+an empty store may roll back. Unit, real-SQL/HTTP and frontend acceptance sources are written; runtime is **NOT_RUN**.
+
+### URT-S8 reasoned reopening and close history (URT-D32/D36/D56/D77/D81)
+
+`POST /api/v1/manufacturing/orders/{orderId}/reopening` requires orders read and the separately registered
+`manufacturing.orders.reopen` permission, expected order version, reason and idempotency key. It asks Accounting's
+existing period-status port for the close's Europe/Istanbul business day and rechecks the period and captured authority
+immediately before staging. Missing, closed, unreadable and denied period outcomes remain distinct. URT-D81 permits
+legacy output-above-input orders to enter this same controlled reopening path before an approved weighing correction.
+
+Every reopen appends its prior close header and reasoned reopening; a subsequent close adds another closure decision
+instead of replacing the first. Current corrected facts are not used to re-evaluate an historical close. The store
+requires the Inventory-owned shared transaction so reopening and the prior cost-generation reversal cannot split.
+The shell control remains staged until the actual Inventory generation participant is composed; no missing cost or
+unstamped movement is converted into a successful zero or today's average. The frontend freezes an ambiguous request,
+including reason, version and key, across reload and repeats only that exact request.
+
+Migration `20261116214107_AddManufacturingOrderReopenings` was generated with `dotnet ef`. It adds company-filtered,
+append-only `OrderReopenings` and expands the closure-decision key by `OrderVersion`. Up is DDL only. Down's first
+operation refuses with **THROW 51951** if reopening history or multiple close generations would be lost; an empty
+history with a single legacy close per order remains reversible. Registration adds no grant, role or Critical flag.
+# Cost generation history — URT-S8 / URT-D36, URT-D56, URT-D58, URT-D67
+
+`20261116232039_AddManufacturingCostGenerations` adds company-scoped, append-only cost evidence for each physical close.
+Pending/unreadable results carry no fictional money; later recognition retains the generation identity and appends a revision.
+Reopening records the Inventory owner's exact reversal before a second close creates a new generation.
+Down guard **51960** refuses while any generation history exists (forward fix); an empty table may be dropped.
+
+### Actual non-kg consumption — URT-SC36 / URT-D45, SAT-D327
+
+`GET/POST /api/v1/manufacturing/orders/{orderId}/non-kg-inputs` reads the company's actual consumption history and
+records the material description, kind, unit, exact decimal-text quantity, UTC time and reason. The existing
+`manufacturing.facts.record` permission writes; orders read releases the history. Painting-engine estimates are never
+actual consumption. These facts create no duplicate Inventory movement and apply no non-kg money or mass conversion.
+
+Facts are append-only. A correction references the still-active original fact in the same company/order and unit;
+the previous quantity is retained. A zero replacement can correct a mistaken entry without deleting it. The expected
+order version fences close/cancel; an independent expected consumption revision serializes writes. The parent metadata
+update is explicitly marked modified even for a fixed clock. Fact, audit and ADR-011 reply share the owner transaction.
+
+The cost composition source reads this actual history and snapshots it in cost evidence. Only active, nonzero facts
+enable the existing paint/non-kg cost-exclusion notes; no provider is never treated as a proven empty history.
+Migration `20261116234916_AddManufacturingNonKgInputFacts` was generated with `dotnet ef`, including same-company order
+and self-replacement foreign keys. Up is DDL only; Down first refuses with **THROW 51963** while any fact exists.
+No database was changed. Unit, SQL/HTTP and frontend test sources are written; runtime is **NOT_RUN**.
+
+Original foreign-cost provenance may be a normalized integer ratio when a purchase-unit conversion is not a finite
+decimal, for example `1 / 3` per kg. The calculator and report retain that exact ratio and the exact kept-quantity
+foreign amount; their scalar fields are null. Existing finite-decimal currency lines retain their previous JSON shape.
+Actual issue TL/USD moving-average stamps remain authoritative; foreign ratio times FX is never substituted for them.
+No new rounding, tolerance, money policy or migration is introduced by this display evidence.
+
+### URT-S4 — explicit paint owner references (URT-D25)
+
+Paint selection now captures Product membership and Product/Membership/Source versions, the active Cari Supplier party/account and versions, and an optional Settings PaintColor/version. Product names, free text and steel taxonomy never prove paint membership. An absent process spec remains an incomplete draft; a submitted Paint spec and its approval/reapproval require genuine owner validation. The optional color note is not a Settings master. No new Manufacturing permission or role grant is introduced.
+
+Creation content and each revision retain an immutable nullable `PaintSelectionJson`. Old free-text content remains readable; an absent typed selection preserves the old request/content hash shape. `20261117014136_AddManufacturingPaintSelections` was generated by EF CLI. Up changes only additive nullable schema/checks. Down's first SQL refuses with **51976** while either creation or revision carries a snapshot, before any constraint/column removal (forward fix). Real-SQL guard/history/company isolation and HTTP/DOM/unit sources are present; runtime **NOT_RUN**.
+
+Host registration: `IManufacturingPaintSelectionSourceV1` → `ManufacturingPaintSelectionSourceV1`. The catalog is `GET /api/v1/manufacturing/references/paint-selections?q=...` on the existing company-wide PlansWrite scope; the existing authorized Cari source keeps its own read fence. Central composition, OpenAPI, recovery and architecture/relational inventories are integration work.

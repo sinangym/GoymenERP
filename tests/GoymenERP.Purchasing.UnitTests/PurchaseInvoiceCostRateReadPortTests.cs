@@ -169,7 +169,8 @@ public sealed class PurchaseInvoiceCostRateReadPortTests
         Assert.Equal(3, (int)PurchaseInvoiceCostRateOutcomeV1.NotFound);
         Assert.Equal(3, Enum.GetValues<PurchaseInvoiceCostRateOutcomeV1>().Length);
         Assert.Equal("purchase_invoice_not_recorded", PurchaseInvoiceCostRateReasonsV1.InvoiceNotRecorded);
-        Assert.Equal("purchase_invoice_not_recorded", Assert.Single(PurchaseInvoiceCostRateReasonsV1.All));
+        Assert.Equal(["purchase_invoice_not_recorded", "purchase_invoice_not_finalized", "purchase_invoice_coverage_incomplete",
+            "purchase_invoice_multiple_official_rates", "purchase_invoice_no_foreign_currency_rate"], PurchaseInvoiceCostRateReasonsV1.All);
     }
 
     private static (PurchasingDbContext Context, PurchaseInvoiceCostRateReadPort Port) Port(bool resolved)

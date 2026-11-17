@@ -33,6 +33,7 @@ public sealed class GroupSharedCommandPersistenceTests
     [InlineData(GroupSharedMasterOperation.Activate, "product.card.activate.v1")]
     [InlineData(GroupSharedMasterOperation.Deactivate, "product.card.deactivate.v1")]
     [InlineData(GroupSharedMasterOperation.Reactivate, "product.card.reactivate.v1")]
+    [InlineData(GroupSharedMasterOperation.SetCogsClassification, "product.card.cogs-classification.set.v1")]
     public void EachOwnerCommandRestoresFromItsStoredIdentity(GroupSharedMasterOperation operation, string commandName)
     {
         var binding = GroupSharedCommandBinding.Create(Context(operation), Key, Payload);
@@ -85,6 +86,46 @@ public sealed class GroupSharedCommandPersistenceTests
         Assert.Equal(5, entity.GetCheckConstraints().Count());
         Assert.Contains("ISJSON([ResponseJson], VALUE)", entity.GetCheckConstraints().Single(x => x.Name == "CK_GroupSharedTerminals_Response").Sql);
         Assert.Equal("Latin1_General_100_BIN2", entity.FindProperty("IdempotencyKeyHash")!.GetCollation());
+        Assert.Equal("[Subject] = 'Product' AND [CommandName] IN ('product.draft.create.v1', 'product.draft.basic-edit.v1', "
+            + "'product.card.activate.v1', 'product.card.deactivate.v1', 'product.card.reactivate.v1', "
+            + "'product.card.cogs-classification.set.v1') "
+            + "AND ([CommandName] <> 'product.card.cogs-classification.set.v1' "
+            + "OR DATALENGTH([CommandName]) = DATALENGTH('product.card.cogs-classification.set.v1'))",
+            entity.GetCheckConstraints().Single(x => x.Name == "CK_GroupSharedTerminals_ProductCommands").Sql);
+    }
+
+    [Theory]
+    [InlineData("product.card.cogs-classification.set.v2")]
+    [InlineData("product.card.cogs_classification.set.v1")]
+    [InlineData("product.card.cogs-classification.set.v1 ")]
+    [InlineData("Product.card.cogs-classification.set.v1")]
+    public void Cogs_terminal_restoration_refuses_unregistered_command_aliases(string commandName) =>
+        Assert.Throws<ArgumentException>(() => GroupSharedCommandBinding.RestoreStored(
+            "Product", commandName, Key, Actor, Origin, Payload));
+
+    [Fact]
+    public void Cogs_global_key_keeps_actor_and_origin_as_immutable_binding_not_partition_keys()
+    {
+        var original = GroupSharedCommandBinding.Create(Context(GroupSharedMasterOperation.SetCogsClassification), Key, Payload);
+        foreach (var changed in new[]
+                 {
+                     new GroupSharedMasterAuthorizationSnapshot(true, GroupSharedMasterKind.Product, GroupSharedMasterOperation.SetCogsClassification,
+                         Guid.NewGuid(), Origin, "rev-1"),
+                     new GroupSharedMasterAuthorizationSnapshot(true, GroupSharedMasterKind.Product, GroupSharedMasterOperation.SetCogsClassification,
+                         Actor, Guid.NewGuid(), "rev-1"),
+                 })
+        {
+            var current = GroupSharedMasterCommandContext.FromServerDecision(changed, GroupSharedMasterOperation.SetCogsClassification);
+            var rebound = GroupSharedCommandBinding.Create(current, Key, Payload);
+            Assert.Equal(original.Key, rebound.Key);
+            Assert.False(original.MatchesReauthorizedIntent(current, Key, Payload));
+        }
+        var record = GroupSharedCommandTerminalRecord.FromTerminal(
+            GroupSharedCommandTerminal.Create(original, 200, " {\"classification\":\"SENTETIK\"} ", "synthetic-original", 1), DateTimeOffset.UtcNow);
+        var restored = record.RestoreTerminal();
+        Assert.Equal(original, restored.Binding);
+        Assert.Equal(" {\"classification\":\"SENTETIK\"} ", restored.ResponseJson);
+        Assert.Equal("product.card.cogs-classification.set.v1", restored.Binding.Key.CommandName);
     }
 
     [Fact]

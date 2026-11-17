@@ -6,7 +6,7 @@ namespace GoymenERP.Modules.Product.Infrastructure.Persistence;
 // Product-owned context. No DI/runtime registration or migration is included.
 // Public writes remain closed. The narrow participant borrows the shared host's
 // transaction and flushes Product only; audit/terminal and commit stay in the host.
-public sealed class ProductDbContext(DbContextOptions<ProductDbContext> options) : DbContext(options)
+public sealed partial class ProductDbContext(DbContextOptions<ProductDbContext> options) : DbContext(options)
 {
     // Canonical prefix + '-' + the longest positive Int64 decimal sequence.
     private static readonly int MaximumCodeLength = ProductCode.MaximumPrefixLength + 1
@@ -75,6 +75,7 @@ public sealed class ProductDbContext(DbContextOptions<ProductDbContext> options)
         code.HasIndex(row => row.ProductId).IsUnique().HasFilter("[IsCurrent] = 1");
 
         ConfigureFamilyRegistry(modelBuilder);
+        ConfigureCogsClassifications(modelBuilder);
     }
 
     private static void ConfigureFamilyRegistry(ModelBuilder modelBuilder)

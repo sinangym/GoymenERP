@@ -667,6 +667,8 @@ export function historyOperationLabel(operation: HistoryOperationValue): string 
       return 'Ürün pasife alındı'
     case 'Reactivate':
       return 'Ürün yeniden aktifleştirildi'
+    case 'SetCogsClassification':
+      return 'Maliyet sınıfı değiştirildi'
     default:
       return 'Temel bilgiler düzenlendi'
   }
@@ -681,6 +683,7 @@ const HISTORY_FIELD_LABEL: Record<HistoryField, string> = {
   classId: 'Sınıf',
   familyId: 'Aile',
   lifecycle: 'Durum',
+  cogsClassification: 'Maliyet sınıfı',
   'roles.purchasable': `Rol: ${ROLE_LABEL.purchasable}`,
   'roles.sellable': `Rol: ${ROLE_LABEL.sellable}`,
   'roles.productionInput': `Rol: ${ROLE_LABEL.productionInput}`,

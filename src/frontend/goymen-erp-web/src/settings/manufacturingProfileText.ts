@@ -2,7 +2,9 @@ import type { ManufacturingProcess, ManufacturingProfile } from './manufacturing
 export const MANUFACTURING_PROFILE_TEXT = {
   parametersTitle: 'Üretim parametre profilleri', tolerancesTitle: 'Üretim tolerans profilleri', subject: 'üretim profilleri',
   intro: 'Profili hazırlayın ve yetkiniz varsa yayımlayın. Hazırlayan kişi yayımlayabilir. Geçmiş belge anlık görüntüleri değişmez.',
-  catalog: 'Onaylı başlangıç kataloğu', catalogNote: 'Başlangıç değerleri salt okunurdur. Sürüm 0 aktarımı bu ekranın kapsamı dışındadır.',
+  catalog: 'Onaylı başlangıç kataloğu', catalogNote: 'Başlangıç değerleri salt okunurdur. Yayımlama yetkilisi, seçili şirketin değerlerini değiştirmeden bir kez kalıcı kayıtlara aktarabilir.',
+  transfer: 'Başlangıç değerlerini aktar', transferred: 'Başlangıç değerleri kalıcı kayıtlara aktarıldı.',
+  transferPreview: 'Yalnız seçili şirketin mevcut başlangıç değerleri aktarılır. Değerler, kimlikler, sürümler ve tarihler korunur; daha önce hazırlanan profiller değişmez.',
   empty: 'Bu şirkette kayıtlı profil yok.', prepare: 'Yeni profil hazırla', publish: 'Yayımla', process: 'Proses', workCenter: 'İş merkezi',
   allLines: 'Proses geneli', from: 'Başlangıç tarihi', through: 'Bitiş tarihi (boş: süresiz)', reason: 'Gerekçe', values: 'Parametre değerleri',
   omit: 'Boş bırakılan parametre gönderilmez; eksik değer yerine varsayım yapılmaz.', fire: 'Azami fire (%)', mass: 'Kütle dengesi farkı toleransı (%)',

@@ -107,5 +107,6 @@ public sealed class FinanceAllocationReadService(
     private static FinanceAllocationView View(FinanceAllocationRow row) => new(
         row.Id, row.CompanyId, row.SourceId, row.OpenItemId, row.CurrencyId, row.AmountText,
         (FinanceAllocationStatus)row.Status, row.Version.ToString(CultureInfo.InvariantCulture),
-        row.Reason, row.CreatedBy, row.CreatedAtUtc, row.ReleasedBy, row.ReleasedAtUtc, row.ReleaseReason);
+        row.Reason, row.CreatedBy, row.CreatedAtUtc, row.ReleasedBy, row.ReleasedAtUtc, row.ReleaseReason,
+        row.AllocationPartyId, row.AllocationAccountId);
 }

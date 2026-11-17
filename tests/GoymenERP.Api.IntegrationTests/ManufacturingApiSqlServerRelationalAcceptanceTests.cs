@@ -1478,7 +1478,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         /// A real company-A Inventory label with a physical position. The version is read after the owner
         /// store completes its writes so each Manufacturing request carries the exact owner version.
         /// </summary>
-        public async Task<ParentRollFixture> StockedLabelAsync(string code)
+        public async Task<ParentRollFixture> StockedLabelAsync(string code, bool costed = false)
         {
             var location = await ScalarAsync<Guid>(
                 "SELECT TOP (1) Id FROM organization.Locations WHERE CompanyId = @c ORDER BY Id", ("@c", CompanyA));
@@ -1490,10 +1490,20 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             var writer = Guid.NewGuid();
             await using var scope = InventoryStore(writer);
             await scope.Store.SaveLotAsync(new MaterialLot(Lot, CompanyA, productId), [label], InventoryMetadata(writer));
-            await scope.Store.RecordMovementAsync(
-                InventoryMovement(new StockMovementLine(position, StockDirection.In,
-                    GoymenERP.Modules.Inventory.Domain.Quantities.Kilograms.Positive(1000.125m))),
-                InventoryMetadata(writer));
+            var movement = InventoryMovement(new StockMovementLine(position, StockDirection.In,
+                GoymenERP.Modules.Inventory.Domain.Quantities.Kilograms.Positive(1000.125m)));
+            if (costed)
+            {
+                // Explicit disposable receipt-price fixture only. The real owner writes both cost pools and immutable
+                // issue stamps; no Manufacturing source or calculator is replaced by a successful fake.
+                var acceptance = Guid.NewGuid();
+                movement = new StockMovement(movement.Id, CompanyA, StockMovementKind.Receipt, At,
+                    new StockSourceReference(InventoryGoodsReceiptContractV1.SourceKind, acceptance), movement.Lines);
+                scope.Store.UseReceiptCost(movement.Id, new(CompanyA, acceptance, Guid.NewGuid(), Guid.NewGuid(),
+                    null, null, 10m, 2m, new(InventoryIssueCostCurrencyStatusV1.FunctionalCurrency, null, null, null,
+                        "SYNTHETIC-manufacturing-functional-currency-v1", null), "SYNTHETIC-manufacturing-receipt-price-v1", "{}", null, null));
+            }
+            await scope.Store.RecordMovementAsync(movement, InventoryMetadata(writer));
             var version = await ScalarAsync<long>(
                 "SELECT Version FROM inventory.Labels WHERE CompanyId = @c AND Id = @id",
                 ("@c", CompanyA), ("@id", label.Id));
@@ -1533,10 +1543,11 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         /// <summary>An approved plan of one roll and its open order in company A, through the API.</summary>
         public async Task<(Guid OrderId, Guid Roll)> OpenOrderAsync(
             string user,
-            ManufacturingProcess process = ManufacturingProcess.Slitting)
+            ManufacturingProcess process = ManufacturingProcess.Slitting,
+            bool costedInput = false)
         {
             using var client = ClientFor(user, CompanyA);
-            var roll = await StockedLabelAsync($"SYN-MFG-ORDER-{Guid.NewGuid():N}");
+            var roll = await StockedLabelAsync($"SYN-MFG-ORDER-{Guid.NewGuid():N}", costedInput);
             var plan = new SavePlanRequestV1(Guid.NewGuid(), await WorkCenterOfKindAsync(CompanyA, process.ToString()),
                 [new PlannedInputRequestV1(roll.Id, "1000", roll.Version)], null);
             Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/plans", plan)).StatusCode);

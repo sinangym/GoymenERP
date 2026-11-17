@@ -46,8 +46,8 @@
   ],
   "toplam": 174,
   "done": 135,
-  "partial": 23,
-  "remaining_not_started": 16,
+  "partial": 27,
+  "remaining_not_started": 12,
   "last_wave": 7,
   "progress_meaning": "DONE yalnız kaynak kapsamıdır. Tam birim/mimari/gerçek SQL/Vitest/browser/CI koşumları NOT_RUN; K3 kabulü ve production değildir.",
   "w6_source_done_ids": [
@@ -176,7 +176,65 @@
    "#1189/6926992238",
    "#1189/6927182217",
    "#1189/6927195150"
-  ]
+  ],
+  "scope_frozen": {
+   "date": "2026-11-17",
+   "total_slices": 174,
+   "final_work_package": 8,
+   "new_waves_allowed": false,
+   "baseline_train_head": "df1b7055f9397cd5206b57df439986d1e8344b4e",
+   "baseline_open_ids": [
+    "KIM-S5",
+    "KIM-S6",
+    "KIM-S7",
+    "KIM-S8",
+    "KIM-S9",
+    "KIM-S15",
+    "KIM-S19",
+    "SAT-S9",
+    "SAT-S12",
+    "SAT-S13",
+    "SAT-SC34",
+    "ALC-S5",
+    "ALC-S6",
+    "ALC-S7",
+    "ALC-S8",
+    "ALC-S14",
+    "ALC-SC47",
+    "STK-S3",
+    "STK-S8",
+    "STK-S11",
+    "STK-S13",
+    "STK-S19",
+    "STK-S21",
+    "STK-S29",
+    "STK-SC36-a",
+    "STK-SC36-b",
+    "STK-SC36-c",
+    "URT-S4",
+    "URT-S5",
+    "URT-S8",
+    "URT-SC32",
+    "URT-SC33",
+    "URT-SC36",
+    "FIN-S13",
+    "FIN-S14",
+    "FIN-S17",
+    "FNS-SC32",
+    "FIN-SC36",
+    "FIN-SC47-KREDI"
+   ],
+   "plan": "W8_TAMAMLAMA_PLANI.md",
+   "new_scope_allowed": false,
+   "source_progress_separate_from_acceptance": true
+  },
+  "dispatch_rounding_followup": {
+   "decision": "SAT-D424",
+   "status": "ANSWERED_SOURCE_PENDING",
+   "source": "#1189/6929718990",
+   "decision_pr": 1198,
+   "note": "Computed dispatch only: remainder to the first of equally heaviest lines; finalized genuine external document allocations remain authoritative."
+  }
  },
  "teams": [
   {
@@ -188,7 +246,7 @@
    ],
    "toplam": 28,
    "done": 21,
-   "partial": 5,
+   "partial": 6,
    "kalan": [
     {
      "id": "KIM-S3",
@@ -317,10 +375,12 @@
       "recovery/release pin (recovery-inventory-repin)"
      ],
      "contracts": [],
-     "status": "PLANNED",
+     "status": "PARTIAL",
      "blocked_reason": "",
      "wave": 6,
-     "w6_report": "durum/W6_kimlik.md"
+     "w6_report": "durum/W6_kimlik.md",
+     "w8_report": "durum/W8_kimlik_kapanis.md",
+     "w8_result": "Gerçek TOTP/kurtarma kodları ve Audit owner bağlantısı merkezde kaynak/derleme tamam. Merkezi pinler, son tren FF ve ayrı runtime kabulü bekler."
     },
     {
      "id": "KIM-S9",
@@ -481,7 +541,7 @@
      "blocked_reason": ""
     }
    ],
-   "remaining_not_started": 2
+   "remaining_not_started": 1
   },
   {
    "key": "platform",
@@ -669,7 +729,7 @@
    ],
    "toplam": 20,
    "done": 14,
-   "partial": 2,
+   "partial": 4,
    "kalan": [
     {
      "id": "ALC-S5",
@@ -750,10 +810,12 @@
      "contracts": [
       "tüketir: ISettingsReferenceListReaderV1 (kimlik)"
      ],
-     "status": "PLANNED",
+     "status": "PARTIAL",
      "blocked_reason": "",
      "wave": 6,
-     "w6_report": "durum/W6_alis_cari.md"
+     "w6_report": "durum/W6_alis_cari.md",
+     "w8_report": "durum/W8_alis_cari.md",
+     "w8_result": "Gerçek fason hizmet siparişi/vergi kaynağı ve son mevcut iki onay yetkisi cevabı e67f53fc7 ile entegre. API/ilgili projeler/TSC derleme 0; runtime ve merkezi pin/son tren FF bekler. DONE değildir."
     },
     {
      "id": "ALC-S8",
@@ -774,10 +836,12 @@
       "recovery/release pin (recovery-inventory-repin)"
      ],
      "contracts": [],
-     "status": "PLANNED",
+     "status": "PARTIAL",
      "blocked_reason": "",
      "wave": 6,
-     "w6_report": "durum/W6_alis_cari.md"
+     "w6_report": "durum/W6_alis_cari.md",
+     "w8_report": "durum/W8_alis_cari.md",
+     "w8_result": "Gerçek ek masraf kaydı ve parçalı fatura eşleştirmesi 60a2e3110 / 555503e1b ile entegre. OrdersRevise kullanılır, stok maliyeti değişmez. Derleme 0; runtime ve merkezi pin/son tren FF bekler. DONE değildir."
     },
     {
      "id": "ALC-S14",
@@ -827,7 +891,7 @@
      "w6_report": "durum/W6_alis_cari.md"
     }
    ],
-   "remaining_not_started": 4
+   "remaining_not_started": 2
   },
   {
    "key": "stok_lojistik",
@@ -838,7 +902,7 @@
    ],
    "toplam": 45,
    "done": 35,
-   "partial": 5,
+   "partial": 6,
    "kalan": [
     {
      "id": "STK-S1",
@@ -1118,11 +1182,13 @@
      ],
      "files_hint": [],
      "contracts": [],
-     "status": "PLANNED",
+     "status": "PARTIAL",
      "blocked_reason": "",
      "wave": 6,
      "decision_note": "NS-05 (Issue #66 yorum 6882315732 (SINAN-CEVAP 14)): Logo/antet şirket ayarından yüklenir; şablon yayımlama ayrı izin (yeni izin adı kaydedilebilir, grant yok); hazırlayan kendi şablonunu yayımlayamaz.",
-     "w6_report": "durum/W6_stok_lojistik.md"
+     "w6_report": "durum/W6_stok_lojistik.md",
+     "w8_report": "durum/W8_stok_lojistik.md",
+     "w8_result": "Documents marka/şablon owner kaydı ve üretilmiş migration kaynakları merkezde; gerçek PDF renderer/producer ve yönetim ekranı bağlantısı halen uygulanıyor."
     },
     {
      "id": "STK-SC36-a",
@@ -1197,7 +1263,7 @@
      "w6_report": "durum/W6_stok_lojistik.md"
     }
    ],
-   "remaining_not_started": 5
+   "remaining_not_started": 4
   },
   {
    "key": "uretim",

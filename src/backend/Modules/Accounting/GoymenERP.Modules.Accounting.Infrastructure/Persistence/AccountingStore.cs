@@ -605,6 +605,14 @@ public sealed class AccountingStore(
             }
 
             var before = RestoreReversalProposal(row);
+            // KLN-D17 remains applicable to the invoice's cancellation reversal. The general reversal
+            // maker/checker rule below also refuses the proposal's preparer; these are separate actors.
+            var ownCancelledInvoice = await dbContext.SourceDocumentVoucherDrafts.AsNoTracking().AnyAsync(voucher =>
+                voucher.Status == 2 && voucher.JournalId == before.SourceJournalId && voucher.SourceActorId == checkerId
+                && dbContext.SourceInvoiceCancellations.Any(cancellation => cancellation.SourceDocumentId == voucher.SourceDocumentId
+                    && cancellation.InvoiceId == voucher.InvoiceId && cancellation.FinalizedVersion == voucher.FinalizedVersion), cancellationToken);
+            if (ownCancelledInvoice)
+                throw new AccountingJournalReversalPolicyExceptionV1(AccountingJournalReversalPolicyCodesV1.MakerCheckerRequired, "checkerId");
             var reversalJournalId = Guid.NewGuid();
             var decidedAtUtc = timeProvider.GetUtcNow();
             var approved = AccountingJournalReversalPolicyV1.Approve(

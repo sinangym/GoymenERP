@@ -45,7 +45,8 @@ public sealed record ReceiveInventoryTransferLineV1(
     [property: JsonRequired] DateTimeOffset ReceivedAtUtc,
     [property: JsonRequired] InventoryTransferDocumentReferenceV1 IncomingDocument,
     [property: JsonRequired] string ReceivedKg,
-    string? OverageReason);
+    string? OverageReason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExpectedIncomingDocumentVersion = null);
 
 [JsonConverter(typeof(JsonStringEnumConverter<InventoryTransferDecisionKindV1>))]
 public enum InventoryTransferDecisionKindV1

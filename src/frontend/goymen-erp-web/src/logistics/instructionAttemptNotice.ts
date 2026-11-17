@@ -8,7 +8,7 @@
  * replay; a stable code refines the message, never the verdict.
  */
 
-import { LOGISTICS_PROBLEM_CODE } from './contract'
+import { decodePhysicalStockRefusalDetail, LOGISTICS_PROBLEM_CODE } from './contract'
 import type { AttemptFailure, AttemptState } from './instructionAttempt'
 import { INSTRUCTION_CREATE_TEXT, INSTRUCTION_DETAIL_TEXT, problemCodeText } from './logisticsText'
 
@@ -63,10 +63,12 @@ function failureMessage(words: NoticeWords, failure: AttemptFailure): string {
  * `account_state`, `order_line_state`, `same_key_payload_mismatch`, `concurrent_change`, and the definite shipment's
  * customer risk gate stops (`logistics_shipment_risk_*`, STK-S27), which leave the instruction unchanged.
  */
-function refusalNotice(words: NoticeWords, failure: AttemptFailure, code: string | null, unresolved: boolean): AttemptNotice {
+function refusalNotice(words: NoticeWords, failure: AttemptFailure, code: string | null, unresolved: boolean,
+  detail: string | null): AttemptNotice {
   const reason = problemCodeText(code)
   const base = failureMessage(words, failure)
-  const text = reason === null ? base : `${base} ${reason}`
+  const reasonText = reason === null ? base : `${base} ${reason}`
+  const text = detail === null ? reasonText : `${reasonText} ${detail}`
   return {
     tone: unresolved ? 'unknown' : 'error',
     live: 'assertive',
@@ -99,7 +101,8 @@ function notice<P, R extends { readonly isReplay: boolean }>(
       if (state.unresolvedSince !== undefined && blockedChange && words.unknownChangedBlocked !== undefined) {
         return { tone: 'unknown', live: 'assertive', message: words.unknownChangedBlocked, actions: ['retry', 'abandon'] }
       }
-      return refusalNotice(words, state.failure, state.problem?.code ?? null, state.unresolvedSince !== undefined)
+      return refusalNotice(words, state.failure, state.problem?.code ?? null, state.unresolvedSince !== undefined,
+        decodePhysicalStockRefusalDetail(state.problem?.detail, state.problem?.status ?? 0))
     case 'completed':
       return {
         tone: 'success',

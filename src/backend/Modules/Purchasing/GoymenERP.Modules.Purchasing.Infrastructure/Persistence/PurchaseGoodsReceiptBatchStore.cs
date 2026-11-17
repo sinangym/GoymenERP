@@ -55,7 +55,8 @@ public sealed class PurchaseGoodsReceiptBatchStore(PurchasingDbContext dbContext
         }
 
         var refusal = attempt.RefusalJson is null ? null : JsonSerializer.Deserialize<PurchasingTerminalRefusal>(attempt.RefusalJson, Json);
-        if (refusal is null || refusal.Status is < 400 or > 599 || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null)
+        if (refusal is null || refusal.Status is < 400 or > 599 || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null
+            || !PurchasingPhysicalStockRefusalDetailV1.IsValid(refusal.Status, refusal.Code, refusal.Detail))
         {
             throw new InvalidOperationException("Kayıtlı terminal ret okunamadı.");
         }
@@ -323,6 +324,7 @@ public sealed class PurchaseGoodsReceiptBatchStore(PurchasingDbContext dbContext
         RequireCommand(commandName);
         var companyId = RequireResolvedCompany();
         if (refusal.Status is < 400 or > 599 || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null
+            || !PurchasingPhysicalStockRefusalDetailV1.IsValid(refusal.Status, refusal.Code, refusal.Detail)
             || refusal.Errors.Any(error => error is null || string.IsNullOrWhiteSpace(error.Field) || string.IsNullOrWhiteSpace(error.Code)))
         {
             throw new ArgumentException("Terminal ret bir durum, bir kod ve tam alan hataları taşır.", nameof(refusal));

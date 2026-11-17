@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Settings.Infrastructure.Shell;
@@ -39,7 +40,12 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Shell;
 public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SETTINGS";
-    public const string OwnerContractVersion = "1.12";
+    public const string OwnerContractVersion = "1.15";
+    // Technical screen ids, not additional ERP permissions. Latest ALS-D105 authority decision.
+    public const string SalesSubcontractTaxCapabilityId = "settings.sales-subcontract-tax-default.manage";
+    public const string PurchasingSubcontractTaxCapabilityId = "settings.purchasing-subcontract-tax-default.manage";
+    public const string SalesSubcontractTaxRoutePath = "/ayarlar/satis-fason-vergi-varsayilani";
+    public const string PurchasingSubcontractTaxRoutePath = "/ayarlar/alis-fason-vergi-varsayilani";
 
     public const string ManufacturingParametersCapabilityId = ManufacturingParameterProfileActionsV1.Read;
     public const string ManufacturingParametersRoutePath = "/ayarlar/uretim-parametre-profilleri";
@@ -159,6 +165,24 @@ public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
 
         return
         [
+            new ShellCapabilityDeclaration(SalesSubcontractTaxCapabilityId, SalesSubcontractTaxCapabilityId,
+                SalesSubcontractTaxRoutePath, "AY-SFV-01", ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
+                [ErpPermissions.SalesOrdersApprove], ImplementationAvailable: false),
+            new ShellCapabilityDeclaration(PurchasingSubcontractTaxCapabilityId, PurchasingSubcontractTaxCapabilityId,
+                PurchasingSubcontractTaxRoutePath, "AY-AFV-01", ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
+                [ErpPermissions.PurchasingOrdersApprove], ImplementationAvailable: false),
+            new ShellCapabilityDeclaration(SettingsWarehouseTransferScaleV1.Manage,
+                SettingsWarehouseTransferScaleV1.Manage, "/ayarlar/depo-transfer-tartisi", "STK-S8-SCALE",
+                ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide, [SettingsWarehouseTransferScaleV1.Manage],
+                ImplementationAvailable: true),
+            new ShellCapabilityDeclaration(SettingsPurchaseInvoiceVariancePolicyPermissionsV1.Manage,
+                SettingsPurchaseInvoiceVariancePolicyPermissionsV1.Manage, "/ayarlar/alis-fatura-fark-toleransi", "AY-AFF-01",
+                ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide, [SettingsPurchaseInvoiceVariancePolicyPermissionsV1.Manage],
+                ImplementationAvailable: true),
             new ShellCapabilityDeclaration(SettingsSalesContractDiscountLimitPermissionsV1.Manage, SettingsSalesContractDiscountLimitPermissionsV1.Manage,
                 "/ayarlar/sozlesme-iskonto-siniri", "AY-SIS-01", ShellCapabilityRoutePrecedence.Static,
                 ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,

@@ -27,6 +27,11 @@ public sealed class PurchasingRuleException(string code, string message) : Inval
 /// <summary>The stable refusal codes of the Purchasing domain.</summary>
 public static class PurchasingRuleCodes
 {
+    public const string ReceiptAdjustmentReasonInvalid = "purchasing_receipt_adjustment_reason_invalid";
+    public const string ReceiptAdjustmentDuplicate = "purchasing_receipt_adjustment_duplicate";
+    public const string ReceiptAdjustmentInvalid = "purchasing_receipt_adjustment_invalid";
+    public const string ReceiptAdjustmentExceedsAcceptance = "purchasing_receipt_adjustment_exceeds_acceptance";
+    public const string ReceiptAdjustmentAcceptanceNotFound = "purchasing_receipt_adjustment_acceptance_not_found";
     public const string RequestNotDraft = "purchasing_request_not_draft";
     public const string RequestNotSubmitted = "purchasing_request_not_submitted";
     public const string RequestWithoutLines = "purchasing_request_without_lines";

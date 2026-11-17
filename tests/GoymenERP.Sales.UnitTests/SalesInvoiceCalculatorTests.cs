@@ -198,7 +198,8 @@ public sealed class SalesInvoiceCalculatorTests
     private static SalesOfficialInvoiceFacts Official(SalesInvoice invoice, decimal payable, decimal payableFunctional, decimal vatFunctional,
         decimal withholdingFunctional) =>
         new("GIB2026000000001", new string('A', SalesInvoice.EttnLength), invoice.Header.PartyId, Usd, payable, payableFunctional,
-            vatFunctional, withholdingFunctional);
+            vatFunctional, withholdingFunctional, Day, new(invoice.CompanyId, Guid.NewGuid(), "manual", "2", DateTimeOffset.UnixEpoch,
+                Guid.NewGuid(), 1, new string('a', 64), null, null, false));
 
     private static SalesInvoice ApprovedForeignCurrencyInvoice(decimal? withheld = null)
     {
@@ -309,6 +310,45 @@ public sealed class SalesInvoiceCalculatorTests
         var blocked = Assert.Throws<SalesRuleException>(() => invoice.Finalize(invoice.Version, "finalizer", Guid.NewGuid,
             DateTimeOffset.UnixEpoch));
         Assert.Equal(SalesRuleCodes.InvoiceMatchDifferenceOpen, blocked.Code);
+    }
+
+    [Fact]
+    public void Official_source_proof_is_required_for_a_new_match_and_never_guessed_for_a_legacy_match()
+    {
+        var invoice = ApprovedForeignCurrencyInvoice();
+        var official = Official(invoice, invoice.Totals.Payable.Amount, invoice.PayableFunctionalAmount);
+        var missing = official with { InvoiceDate = null, SourceProof = null };
+        var refused = Assert.Throws<SalesRuleException>(() => invoice.RecordMatch(invoice.Version, "matcher", missing,
+            0.05m, false, null, DateTimeOffset.UnixEpoch));
+        Assert.Equal(SalesRuleCodes.InvoiceMatchSourceProofRequired, refused.Code);
+        Assert.Null(invoice.Match);
+        var matched = MatchedForeignCurrencyInvoice(0m);
+        var legacy = SalesInvoice.Restore(matched.Id, Company, matched.DocumentNo, matched.Header, matched.State,
+            matched.Version, matched.CreatedBy, matched.CreatedAtUtc, matched.Lines, matched.Instalments, matched.Decision);
+        legacy.RestoreMatch(matched.Match! with { InvoiceDate = null, SourceProof = null });
+        Assert.False(legacy.Match!.HasOpenDifference);
+        Assert.Equal(SalesRuleCodes.InvoiceMatchSourceProofRequired,
+            Assert.Throws<SalesRuleException>(() => legacy.Finalize(legacy.Version, "finalizer", Guid.NewGuid,
+                DateTimeOffset.UnixEpoch)).Code);
+        Assert.Equal(SalesInvoiceState.Approved, legacy.State);
+        Assert.Null(legacy.Finalization);
+    }
+
+    [Fact]
+    public void A_match_preserves_import_provenance_and_pending_manual_notice_and_rejects_other_company_proof()
+    {
+        var invoice = ApprovedForeignCurrencyInvoice();
+        var proof = new SalesOfficialInvoiceSourceProofV1(Company, Guid.NewGuid(), "approved-import", "source-v3",
+            DateTimeOffset.UnixEpoch, null, null, null, Guid.NewGuid(), new string('b', 64), true);
+        var official = Official(invoice, invoice.Totals.Payable.Amount, invoice.PayableFunctionalAmount)
+            with { InvoiceDate = Day.AddDays(-3), SourceProof = proof };
+        Assert.Throws<SalesRuleException>(() => invoice.RecordMatch(invoice.Version, "matcher",
+            official with { SourceProof = proof with { CompanyId = Guid.NewGuid() } }, 0.05m, false, null, DateTimeOffset.UnixEpoch));
+        var matched = invoice.RecordMatch(invoice.Version, "matcher", official, 0.05m, false, null, DateTimeOffset.UnixEpoch);
+        Assert.Equal(proof, matched.SourceProof);
+        Assert.Equal(Day.AddDays(-3), matched.InvoiceDate);
+        invoice.Finalize(invoice.Version, "finalizer", Guid.NewGuid, DateTimeOffset.UnixEpoch);
+        Assert.Equal(SalesInvoiceState.Finalized, invoice.State);
     }
 
     [Fact]

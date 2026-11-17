@@ -18,11 +18,13 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 /// (company, command, key hash) is a primary key under a binary collation; the raw key is never stored.
 /// The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// </summary>
-public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> options, ICompanyContext companyContext)
+public sealed partial class LogisticsDbContext(DbContextOptions<LogisticsDbContext> options, ICompanyContext companyContext)
     : DbContext(options)
 {
     public const string Schema = "logistics";
     public const string IdentityCollation = "Latin1_General_100_BIN2";
+    internal const string WeighingKilogramAllocationCheck = "[KilogramAllocationJson] IS NULL OR (ISJSON([KilogramAllocationJson]) = 1 "
+        + "AND JSON_QUERY(CASE WHEN ISJSON([KilogramAllocationJson]) = 1 THEN [KilogramAllocationJson] ELSE N'{}' END, '$.lines') IS NOT NULL)";
 
     /// <summary>A recorded share actor, when present, is not blank (SAT-D222: a blank name never counts as a shipper).</summary>
     public const string ShareRecordedByCheck = "[RecordedBy] IS NULL OR LEN([RecordedBy]) > 0";
@@ -84,6 +86,7 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         ConfigureDispatchNotes(modelBuilder);
         ConfigureCustomerReturns(modelBuilder);
         ConfigureTransferOutgoingDocuments(modelBuilder);
+        ConfigureTransferDepartures(modelBuilder);
         ConfigureWeighingDifferences(modelBuilder);
         ConfigureShipmentRiskGate(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
@@ -541,11 +544,13 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
                 + "AND [ApprovedBy] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL)");
             table.HasCheckConstraint("CK_WeighingDifferences_Actors",
                 "LEN([RecordedBy]) > 0 AND ([ApprovedBy] IS NULL OR LEN([ApprovedBy]) > 0)");
+            table.HasCheckConstraint("CK_WeighingDifferences_KilogramAllocation", WeighingKilogramAllocationCheck);
         });
         record.HasKey(x => new { x.CompanyId, x.RecordId });
         record.HasIndex(x => new { x.CompanyId, x.DispatchNoteId }).IsUnique()
             .HasDatabaseName("UX_WeighingDifferences_DispatchNoteId");
         record.Property(x => x.Version).IsConcurrencyToken();
+        record.Property(x => x.KilogramAllocationJson).HasColumnType("nvarchar(max)");
         record.Property(x => x.RowVersion).IsRowVersion();
         record.Property(x => x.TheoreticalKg).HasPrecision(18, 3);
         record.Property(x => x.ScaleKg).HasPrecision(18, 3);
@@ -702,6 +707,7 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
                 throw new InvalidOperationException("Sevkiyat kaydı yalnız aktif şirket bağlamında ve o şirket için yazılır.");
             }
 
+            GuardTransferDepartureChange(entry);
             if (entry.State == EntityState.Modified)
             {
                 string[] allowed = entry.Entity switch
@@ -733,6 +739,11 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
                         nameof(TransferOutgoingDocumentRow.EffectiveBy), nameof(TransferOutgoingDocumentRow.EffectiveAtUtc),
                         nameof(TransferOutgoingDocumentRow.CancelledBy), nameof(TransferOutgoingDocumentRow.CancelledAtUtc),
                         nameof(TransferOutgoingDocumentRow.CancellationReason),
+                    ],
+                    TransferDepartureStateRow =>
+                    [
+                        nameof(TransferDepartureStateRow.Version), nameof(TransferDepartureStateRow.ExitWeighingAtUtc),
+                        nameof(TransferDepartureStateRow.VehicleExitAtUtc), nameof(TransferDepartureStateRow.NoFurtherExitVersion),
                     ],
                     // STK-S24: only the approval moves; the evaluation, products, actors and attempts are append only.
                     WeighingDifferenceRecordRow =>

@@ -29,7 +29,8 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Shell;
 public sealed class LogisticsShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "LOGISTICS";
-    public const string OwnerContractVersion = "1.3";
+    public const string OwnerContractVersion = "1.4";
+    public const string TransferDeparturesCapabilityId = LogisticsPermissionManifestV1.TransferDeparturesRecord;
 
     public const string ListCapabilityId = "logistics.instructions.list";
     public const string ListRoutePath = "/lojistik/yukleme-talimatlari";
@@ -59,6 +60,10 @@ public sealed class LogisticsShellCapabilityProvider : IShellCapabilityProvider
 
     public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
     [
+        new ShellCapabilityDeclaration(TransferDeparturesCapabilityId, TransferDeparturesCapabilityId,
+            "/lojistik/transfer-cikislari", "STK-S8-DEPARTURE", ShellCapabilityRoutePrecedence.Static,
+            ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
+            [LogisticsPermissionManifestV1.TransferDeparturesRecord], ImplementationAvailable: true),
         new ShellCapabilityDeclaration(ListCapabilityId, ListCapabilityId, ListRoutePath, ListScreenId,
             ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
             ShellCapabilityScopeRequirement.CompanyWide, [LogisticsPermissionManifestV1.InstructionsRead], ImplementationAvailable: true),

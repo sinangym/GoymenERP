@@ -52,6 +52,7 @@ public static class ManufacturingModuleExtensions
         services.AddScoped<IManufacturingPlanSalesOrderLinkStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         services.AddScoped<IManufacturingSalesOrderSupplyReadPortV1, ManufacturingSalesOrderSupplyReadPort>();
         services.AddScoped<IManufacturingSubcontractCompletionReadPortV1, ManufacturingSubcontractCompletionReadPort>();
+        services.AddScoped<IManufacturingSubcontractCompletionReadPortV2, ManufacturingSubcontractCompletionReadPortV2>();
         // URT-S20 (URT-D62, URT-D63): the output lineage edges with their shares, backward and forward; reads only.
         services.AddScoped<IManufacturingLabelLineageReadPortV1, ManufacturingLabelLineageReadPort>();
         // Üretim F-010a (URT-D29): the plan's hand-entered termin, the same store and DbContext as the plan.
@@ -62,6 +63,11 @@ public static class ManufacturingModuleExtensions
         services.AddScoped<IManufacturingOrderDueDateStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         // URT-SC33 (URT-D86): the work center queue of the termin suggestion, the same store and DbContext as the plan.
         services.AddScoped<IManufacturingWorkCenterQueueStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        services.AddScoped<IManufacturingWorkCenterQueueOrderingStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        services.AddScoped<IManufacturingOrderReopeningStoreV1>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        // URT-S8/SC36: these facts and immutable cost generations share the physical order's context and transaction.
+        services.AddScoped<IManufacturingCostGenerationStoreV1>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        services.AddScoped<IManufacturingNonKgInputStoreV1>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         services.AddScoped<IManufacturingPlanPriorityStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         // F-009 D5 (URT-D33/D34/D35): the order cancel with its plan release and the plan's re-approval, the same store.
         services.AddScoped<IManufacturingOrderCancellationStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());

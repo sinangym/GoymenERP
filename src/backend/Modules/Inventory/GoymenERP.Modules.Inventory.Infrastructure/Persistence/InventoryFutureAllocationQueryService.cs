@@ -7,7 +7,8 @@ using Microsoft.EntityFrameworkCore;
 namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 
 public sealed class InventoryFutureAllocationQueryService(InventoryDbContext database, ICompanyContext company,
-    ICurrentUser user, IErpAuthorityRevalidationService authority, ISettingsUnitIdentityCatalogV1 units) : IInventoryFutureAllocationQueryV1
+    ICurrentUser user, IErpAuthorityRevalidationService authority, ISettingsUnitIdentityCatalogV1 units,
+    IInventoryFutureSupplyScheduleSourceV1 schedules, TimeProvider time) : IInventoryFutureAllocationQueryV1
 {
     public async Task<InventoryFutureAllocationListV1> ListByDemandAsync(Guid salesOrderId, Guid salesOrderLineId,
         CancellationToken cancellationToken = default)
@@ -18,6 +19,8 @@ public sealed class InventoryFutureAllocationQueryService(InventoryDbContext dat
             throw new InventoryAllocationException(400, InventoryFutureAllocationCodesV1.ValidationFailed);
         InventoryFutureAllocationViewV1[] items;
         var unitCodes = new Dictionary<Guid, string>();
+        DateOnly evaluatedOn;
+        IReadOnlyDictionary<Guid, InventoryFutureAllocationScheduleViewV1> scheduleViews;
         try
         {
             var rows = await database.FutureSupplyAllocations.AsNoTracking()
@@ -32,6 +35,10 @@ public sealed class InventoryFutureAllocationQueryService(InventoryDbContext dat
                     throw new InvalidOperationException("An allocation unit could not be displayed from its owner source.");
                 unitCodes.Add(unitId, unit.Code);
             }
+            evaluatedOn = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(time.GetUtcNow(),
+                TimeZoneInfo.FindSystemTimeZoneById("Europe/Istanbul")).DateTime);
+            scheduleViews = await InventoryFutureAllocationScheduleProjection.ReadAsync(
+                items.Take(InventoryFutureAllocationApiV1.ReadLimit).ToArray(), evaluatedOn, schedules, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception exception)
@@ -43,6 +50,7 @@ public sealed class InventoryFutureAllocationQueryService(InventoryDbContext dat
         if (items.Any(item => item.CompanyId != fence.CompanyId))
             throw new InventoryAllocationException(503, InventoryFutureAllocationCodesV1.ServiceUnavailable);
         return new(fence.CompanyId, salesOrderId, salesOrderLineId,
-            items.Take(InventoryFutureAllocationApiV1.ReadLimit).ToArray(), items.Length > InventoryFutureAllocationApiV1.ReadLimit, unitCodes);
+            items.Take(InventoryFutureAllocationApiV1.ReadLimit).ToArray(), items.Length > InventoryFutureAllocationApiV1.ReadLimit,
+            unitCodes, evaluatedOn, scheduleViews);
     }
 }

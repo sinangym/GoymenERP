@@ -58,9 +58,11 @@ public sealed partial class PurchasingService(
     IPurchaseSupplierReturnStore? returnStore = null,
     IPurchaseSupplierReturnTransactionV1? returnTransactions = null,
     IPurchaseSupplierReturnInvoiceCostReadPortV1? returnInvoiceCosts = null,
-    PurchaseSupplierReturnPolicyV1? returnPolicy = null) : IPurchasingService, IPurchasingOrderRecordReadSourceV1,
+    PurchaseSupplierReturnPolicyV1? returnPolicy = null,
+    IPurchaseReceiptReversalTransactionV1? receiptReversals = null,
+    IPurchaseReceiptReversalBatchTransactionV1? receiptReversalBatches = null) : IPurchasingService, IPurchasingOrderRecordReadSourceV1,
     IPurchaseGoodsReceiptServiceV1, IPurchaseGoodsReceiptQuantityComparisonServiceV1, IPurchaseGoodsReceiptBatchServiceV1,
-    IPurchaseSupplierReturnServiceV1
+    IPurchaseSupplierReturnServiceV1, IPurchaseReceiptReversalServiceV1, IPurchaseReceiptReversalBatchServiceV1
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -770,7 +772,7 @@ public sealed partial class PurchasingService(
     {
         if (replay.Refusal is { } refusal)
         {
-            throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, isReplay: true, originalCorrelationId: replay.OriginalCorrelationId);
+            throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, isReplay: true, originalCorrelationId: replay.OriginalCorrelationId, detail: refusal.Detail);
         }
     }
 
@@ -809,7 +811,7 @@ public sealed partial class PurchasingService(
             throw Store(exception);
         }
 
-        throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors);
+        throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, detail: refusal.Detail);
     }
 
     /// <summary>A create's stale-product-version refusal lost the key to a winner that stored the record (§8): the create answers that record as a replay.</summary>
@@ -1056,7 +1058,7 @@ public sealed partial class PurchasingService(
     {
         var order = stored.Order;
         return new PurchaseOrderSummaryView(order.Id, order.CompanyId, order.Status.ToString(), order.Version.ToString(CultureInfo.InvariantCulture),
-            order.SupplierPartyId, stored.CompanyAccountId, order.SourceRequestId, stored.EffectiveOn, order.CreatedAtUtc, order.UpdatedAtUtc, order.Lines.Count);
+            order.SupplierPartyId, stored.CompanyAccountId, order.SourceRequestId, stored.EffectiveOn, order.CreatedAtUtc, order.UpdatedAtUtc, order.Lines.Count) { DocumentNumber = stored.DocumentNumber };
     }
 
     /// <summary>

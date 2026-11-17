@@ -24,13 +24,24 @@ function mount() {
 }
 beforeEach(() => {
   sessionStorage.clear(); vi.clearAllMocks(); scenario.write = true
-  api.list.mockResolvedValue({ type: 'ok-single', data: { companyId: id, salesOrderId: id, salesOrderLineId: id, items: [], windowFull: false, unitCodes: {} } })
+  api.list.mockResolvedValue({ type: 'ok-single', data: { companyId: id, salesOrderId: id, salesOrderLineId: id, items: [], windowFull: false, unitCodes: {}, evaluatedOn: '2026-11-17', schedules: {} } })
   api.options.mockResolvedValue({ type: 'ok-single', data: { companyId: id, salesOrderId: id, salesOrderLineId: id, productId: id,
     productVersion: '1', demandUnitId: id, demandUnitCode: 'kg', openDemandQuantity: '100', items: [{ purchaseOrderId: id, purchaseOrderLineId: id,
       lineNo: 1, supplierCode: 'SYN', supplierName: 'Sentetik tedarikçi', unitId: id, unitCode: 'kg', allocatableQuantity: '50', reservedQuantity: '10', availableQuantity: '40' }], nextCursor: null } })
 })
 afterEach(cleanup)
 describe('future allocation workflow', () => {
+  it('shows the server overdue warning without changing the active allocation or starting a command', async () => {
+    scenario.write = false
+    api.list.mockResolvedValue({ type: 'ok-single', data: { companyId: id, salesOrderId: id, salesOrderLineId: id,
+      evaluatedOn: '2099-11-17', windowFull: false, unitCodes: { [id]: 'kg' },
+      schedules: { [id]: { status: 'Scheduled', deliveryDate: '2099-11-16', isOverdue: true } },
+      items: [{ allocationId: id, status: 'Active', unitId: id, allocatedQuantity: '10', remainingQuantity: '10', consumedQuantity: '0', releasedQuantity: '0' }] } })
+    mount()
+    expect(await screen.findByText(/2099-11-16 — Termin geçti/)).not.toBeNull()
+    expect(screen.getByText(T.statuses.Active)).not.toBeNull()
+    expect(api.send).not.toHaveBeenCalled()
+  })
   it('selects an owner source and retries exactly the same payload after 503', async () => {
     api.send.mockResolvedValueOnce({ type: 'unknown', reason: 'service-unavailable' }).mockResolvedValueOnce({ type: 'failed', status: 422, code: null })
     mount()

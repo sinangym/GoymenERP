@@ -16,6 +16,8 @@ public enum GroupSharedMasterOperation
     // DEC-CAR-003 / PRD-PERM-001 (#99): Active -> Inactive and Inactive -> Active, each its own explicit grant.
     Deactivate = 5,
     Reactivate = 6,
+    // SAT-D422: explicit card accounting classification; not an existing draft-edit or company-role grant.
+    SetCogsClassification = 7,
 }
 
 // This is a trusted server service result, never an HTTP request contract.
@@ -84,7 +86,8 @@ public sealed record GroupSharedMasterCommandContext
         if (!snapshot.IsGranted || snapshot.Subject != GroupSharedMasterKind.Product
             || expectedOperation is not (GroupSharedMasterOperation.DraftCreate
                 or GroupSharedMasterOperation.DraftBasicEdit or GroupSharedMasterOperation.Activate
-                or GroupSharedMasterOperation.Deactivate or GroupSharedMasterOperation.Reactivate)
+                or GroupSharedMasterOperation.Deactivate or GroupSharedMasterOperation.Reactivate
+                or GroupSharedMasterOperation.SetCogsClassification)
             || snapshot.Operation != expectedOperation
             || snapshot.LocalActorId == Guid.Empty || snapshot.OriginCompanyId == Guid.Empty
             || string.IsNullOrWhiteSpace(snapshot.AuthorityRevision)

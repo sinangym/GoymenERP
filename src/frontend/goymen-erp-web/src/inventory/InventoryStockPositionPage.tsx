@@ -35,10 +35,11 @@ import { DataTable, type DataTableColumn } from '../ui/DataTable'
 import { productDetailPath } from '../product/capabilities'
 import { locationDetailPath } from '../organization/capabilities'
 import { inventoryLabelDetailPath } from './labelDetailRoute'
-import { INVENTORY_SHORTAGE_WARNINGS_ROUTE, INVENTORY_TRANSFERS_ROUTE } from './capabilities'
+import { INVENTORY_SHORTAGE_WARNINGS_ROUTE, INVENTORY_TRANSFERS_ROUTE, inventoryNegativeStockAttemptPath } from './capabilities'
 import { PurchaseSupplySection } from './PurchaseSupplySection'
 import { SHORTAGE_WARNING_TEXT } from './shortageWarningText'
 import { TRANSFER_TEXT } from './transferText'
+import { NEGATIVE_STOCK_ATTEMPT_TEXT } from './NegativeStockAttemptText'
 import { StockRowActionMenu } from './StockRowActionMenu'
 import {
   normalizeStockSearch,
@@ -794,6 +795,7 @@ function InventoryStockPositionView({
       <h1>{STOCK_TEXT.heading}</h1>
       <Link to={INVENTORY_SHORTAGE_WARNINGS_ROUTE}>{SHORTAGE_WARNING_TEXT.entryLink}</Link>
       <Link to={INVENTORY_TRANSFERS_ROUTE}>{TRANSFER_TEXT.entryLink}</Link>
+      <Link to={inventoryNegativeStockAttemptPath(filters.productId, filters.locationId)}>{NEGATIVE_STOCK_ATTEMPT_TEXT.entryLink}</Link>
     </header>
 
     <div className={styles.toolbar}>

@@ -192,4 +192,33 @@ public sealed partial class SalesDraftServiceTests
                 : Task.FromResult(Answer(dispatchNoteId));
         }
     }
+
+    [Fact]
+    public async Task Dispatch_scale_share_is_carried_to_the_invoice_without_an_invoice_level_redistribution()
+    {
+        var world = await InvoiceWorld.CreateAsync();
+        var proofDocument = Guid.NewGuid(); var ettn = Guid.NewGuid();
+        world.Weighings.Answer = note =>
+        {
+            var share = Assert.Single(world.Shipments.LastAnswer!.Shares);
+            var recorded = WeighingRecorded(note, theoretical: 1.25m, scale: 1.317m);
+            return recorded with { Value = recorded.Value! with { KilogramAllocation = new(
+                [new(share.NoteLineNo, share.ShipmentId, share.ProductId, 1.25m, 1.317m)], ettn, proofDocument, 2,
+                new string('a', 64), "ElectronicDispatch") } };
+        };
+        await world.Service().CreateInvoiceAsync(world.Request(), Metadata("carried-source-kg"));
+        var stored = Assert.Single(world.Invoices.Stored.Values);
+        Assert.Equal(1.317m, Assert.Single(stored.Lines).Share.Quantity);
+    }
+
+    [Fact]
+    public async Task A_zero_total_difference_without_per_line_source_proof_still_waits()
+    {
+        var world = await InvoiceWorld.CreateAsync();
+        world.Weighings.Answer = note => WeighingRecorded(note);
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().CreateInvoiceAsync(world.Request(), Metadata("legacy-no-kg-proof")));
+        Assert.Contains(refused.Errors, error => error.Code == SalesInvoiceReasonCodesV1.WeighingKgTransferPending);
+        Assert.Empty(world.Invoices.Stored);
+    }
 }

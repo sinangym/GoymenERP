@@ -443,7 +443,7 @@ public sealed partial class ManufacturingCommandService
             var queue = await workCenterQueues.ReadWorkCenterQueueAsync(plan.WorkCenterId, plan.Id,
                 cancellationToken);
             return queue.Target.PlanId == plan.Id
-                ? ProductionWorkCenterQueueOrderV1.Ahead(queue.Queued, queue.Target)
+                ? ProductionWorkCenterQueueOrderV1.AheadRealized(queue.Queued, queue.Target, queue.TargetIsQueued, queue.StoredOrder)
                 : null;
         }
         catch (ManufacturingRuleException)

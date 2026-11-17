@@ -22,6 +22,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router'
 import { approveDispatchNote, cancelDispatchNote, createDispatchNote, setEDispatchNumber } from './api'
+import { DispatchKilogramsPanel } from './DispatchKilogramsPanel'
 import {
   CANCEL_REASON_MAX,
   DISPATCH_NOTE_STATUS,
@@ -379,7 +380,10 @@ export function DispatchNoteLifecycles({
     <section className={styles.section} aria-labelledby="logistics-dispatch-note-lifecycle-heading" data-testid="logistics-dispatch-note-lifecycles">
       <h2 id="logistics-dispatch-note-lifecycle-heading">{T.actionsLabel}</h2>
       {detail.dispatchNotes.map((note) => (
-        <DispatchNoteLifecycle key={note.dispatchNoteId} shell={shell} detail={detail} note={note} companyId={companyId} onRecorded={onRecorded} />
+        <div key={note.dispatchNoteId}>
+          <DispatchNoteLifecycle shell={shell} detail={detail} note={note} companyId={companyId} onRecorded={onRecorded} />
+          <DispatchKilogramsPanel shell={shell} note={note} companyId={companyId} />
+        </div>
       ))}
     </section>
   )

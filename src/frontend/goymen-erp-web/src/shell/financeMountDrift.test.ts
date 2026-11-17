@@ -28,6 +28,10 @@ import {
 } from '../finance/officialInvoiceImportRoutes'
 
 const ROUTED = [
+  [CAPABILITY.financePartyBalanceTransfers, FINANCE_CAPABILITY.partyBalanceTransfers, FINANCE_ROUTE.partyBalanceTransfers],
+  [CAPABILITY.financeCreditsWorkspace, FINANCE_CAPABILITY.creditsWorkspace, FINANCE_ROUTE.creditsWorkspace],
+  [CAPABILITY.financeOfficialInvoicesRecord, FINANCE_CAPABILITY.officialInvoicesRecord, FINANCE_ROUTE.officialInvoicesRecord],
+  [CAPABILITY.financeOfficialInvoicesApprove, FINANCE_CAPABILITY.officialInvoicesApprove, FINANCE_ROUTE.officialInvoicesApprove],
   [CAPABILITY.financeReceiptsList, FINANCE_CAPABILITY.receiptsList, FINANCE_ROUTE.receiptsList],
   [CAPABILITY.financeReceiptsDraft, FINANCE_CAPABILITY.receiptsDraft, FINANCE_ROUTE.receiptsDraft],
   [CAPABILITY.financeReceiptsDetail, FINANCE_CAPABILITY.receiptsDetail, FINANCE_ROUTE.receiptsDetail],
@@ -75,6 +79,9 @@ const ROUTED = [
  * this test loudly instead of being quietly appended to a filter.
  */
 const CONTROLS: readonly string[] = [
+  FINANCE_CAPABILITY.creditsPropose,
+  FINANCE_CAPABILITY.creditsApprove,
+  FINANCE_CAPABILITY.officialInvoicesWithdraw,
   FINANCE_CAPABILITY.bankAccountsApprove,
   FINANCE_CAPABILITY.receiptsRecord,
   FINANCE_CAPABILITY.receiptsReversePropose,

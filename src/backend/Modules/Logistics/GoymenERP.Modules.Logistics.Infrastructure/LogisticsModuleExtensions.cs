@@ -90,6 +90,11 @@ public static class LogisticsModuleExtensions
             ErpPermissions.InventoryPhysicalAllocationWrite));
         services.AddScoped<ILogisticsCustomerReturnServiceV1, LogisticsCustomerReturnService>();
         services.AddScoped<LogisticsTransferOutgoingDocumentStore>();
+        services.AddScoped<ILogisticsTransferDepartureOwnerV1, LogisticsTransferDepartureOwner>();
+        services.AddScoped<ILogisticsTransferOutgoingDocumentStoreV2>(provider =>
+            provider.GetRequiredService<LogisticsTransferOutgoingDocumentStore>());
+        services.AddScoped<ILogisticsTransferOutgoingDocumentReaderV1>(provider =>
+            provider.GetRequiredService<LogisticsTransferOutgoingDocumentStore>());
         services.AddScoped<ILogisticsTransferOutgoingDocumentStoreV1>(provider =>
             provider.GetRequiredService<LogisticsTransferOutgoingDocumentStore>());
         services.AddScoped<ILogisticsTransferOutgoingDocumentProofSourceV1>(provider =>

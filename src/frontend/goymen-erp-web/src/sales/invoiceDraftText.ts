@@ -49,6 +49,7 @@ export const INVOICE_NOT_READY_REASON_TEXT: Readonly<Record<string, string>> = {
   money_profile_mismatch: 'Para biriminin ondalık ayarı diğer paylarla aynı değil.',
   rate_unresolved: 'Kur kaydı henüz yok.',
   rate_mismatch: 'Kur diğer paylarla aynı değil.',
+  usd_shipment_day_mismatch: 'Farklı günlerde sevk edilen USD fiyatlı mallar ayrı faturalandırılmalıdır.',
   due_terms_missing: 'Siparişte vade bilgisi yok.',
   due_date_pending: 'Vade tarihi henüz belirlenemedi.',
   due_date_mismatch: 'Vade tarihi diğer paylarla aynı değil.',

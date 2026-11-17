@@ -291,6 +291,7 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
     'Sipariş tarihi bugünden önce olamaz; bugünü ya da ileri bir tarihi seçin. Bugün, sunucunun İstanbul saatine göre iş günüdür.',
   [SALES_PROBLEM_CODE.invoiceMatchRequired]:
     'Resmî e-fatura eşleşmesi kaydedilmeden fatura kesinleştirilemez.',
+  [SALES_PROBLEM_CODE.invoiceMatchSourceProofRequired]: 'Resmî fatura tarihi ve onaylı kaynak kanıtı eksik; bu eşleşmeyle kesinleştirme yapılamaz.',
   [SALES_PROBLEM_CODE.invoiceMatchDifferenceOpen]:
     'Resmî e-fatura ile ERP tutarı arasında fark açıkken fatura kesinleştirilemez.',
   [SALES_PROBLEM_CODE.invoiceInstalmentFunctionalInvalid]:

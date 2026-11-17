@@ -14,6 +14,7 @@ import type {
   OfficialInvoiceImportPreview,
   OfficialInvoiceImportSourceSelection,
   OfficialInvoiceOpenItem,
+  OfficialInvoiceDocument,
 } from './OfficialInvoiceImportPanel'
 import {
   decodeApprovalReply,
@@ -301,12 +302,34 @@ function decodeAppliedBatch(
   const decoded = openItems as OfficialInvoiceOpenItem[]
   if (new Set(decoded.map((item) => item.id.toLowerCase())).size !== decoded.length) return null
   if (expected !== undefined && !sameRows(expected.rows, decoded)) return null
+  const officialDocuments = decodeDocuments(value.officialDocuments, decoded)
+  if (officialDocuments === null) return null
   return {
     batchId,
     batchVersion: value.batchVersion,
     batchChecksum: value.batchChecksum,
     openItems: decoded,
+    officialDocuments,
   }
+}
+
+function decodeDocuments(value: unknown, rows: readonly OfficialInvoiceOpenItem[]): readonly OfficialInvoiceDocument[] | null {
+  if (value === undefined || value === null) return [] // Previously stored receipts predate these read-only diagnostics.
+  if (!Array.isArray(value)) return null
+  const sourceIds = new Set(rows.map((row) => row.sourceDocumentId.toLowerCase()))
+  const seen = new Set<string>()
+  for (const item of value) {
+    if (!isObject(item) || !canonicalGuid(item.sourceDocumentId) || !sourceIds.has(item.sourceDocumentId.toLowerCase())
+      || seen.has(item.sourceDocumentId.toLowerCase()) || typeof item.officialNo !== 'string' || !item.officialNo.trim()
+      || !canonicalGuid(item.ettn) || !(item.invoiceDate === null || typeof item.invoiceDate === 'string' && ISO_DATE.test(item.invoiceDate))
+      || !(item.payableFunctionalAmount === null || typeof item.payableFunctionalAmount === 'string' && isPositiveDecimalText(item.payableFunctionalAmount))
+      || typeof item.hasPendingManual !== 'boolean'
+      || !(item.approvedManualInvoiceId === null || canonicalGuid(item.approvedManualInvoiceId))
+      || !(item.effectivePayableFunctionalAmount === null || typeof item.effectivePayableFunctionalAmount === 'string' && isPositiveDecimalText(item.effectivePayableFunctionalAmount))
+      || !Array.isArray(item.differentFields) || item.differentFields.some((field) => typeof field !== 'string' || !field)) return null
+    seen.add(item.sourceDocumentId.toLowerCase())
+  }
+  return value as OfficialInvoiceDocument[]
 }
 
 function decodeOpenItem(

@@ -58,6 +58,11 @@ public sealed partial class SalesDraftService : ISalesDraftTaxService
         cancellationToken.ThrowIfCancellationRequested();
         var scope = await RequireAsync(bindings.ReadPermission, cancellationToken);
         var permission = bindings.ReadPermission;
+        return await ReadTaxOptionsAsync(scope, permission, on, cancellationToken);
+    }
+
+    private async Task<SalesTaxOptionsResponse> ReadTaxOptionsAsync(Scope scope, string? permission, DateOnly on, CancellationToken cancellationToken)
+    {
         var situations = await TaxPortAsync(scope, permission, port => port.GetBuyerSituationsAsync(on, cancellationToken),
             cancellationToken);
         var exemptions = await TaxPortAsync(scope, permission,
@@ -140,7 +145,7 @@ public sealed partial class SalesDraftService : ISalesDraftTaxService
                     requested.WithholdingRatioCode)
                 : null;
             snapshots[line.LineId] = await ResolveLineTaxAsync(scope, permission, line.ProductId, buyer, change, request.BusinessDate,
-                cancellationToken, lists, $"lines[{index}].taxOverride");
+                cancellationToken, lists, $"lines[{index}].taxOverride", request.SubcontractService == true);
         }
 
         return new CreateTax(buyer, snapshots);
@@ -155,7 +160,7 @@ public sealed partial class SalesDraftService : ISalesDraftTaxService
     // ---- commercial revision ------------------------------------------------------------------------------------------------
 
     /// <summary>The commercial revision's re-resolved taxes, at the draft version they were resolved on.</summary>
-    private sealed record RevisionTax(long DraftVersion, IReadOnlyDictionary<Guid, SalesLineTaxSnapshot?> Lines);
+    private sealed record RevisionTax(long DraftVersion, IReadOnlyDictionary<Guid, SalesLineTaxSnapshot?> Lines, bool RequiresSubcontractAuthority = false);
 
     /// <summary>
     /// SAT-D93/D97/D105: every line's tax re-resolved for the revision — a line's <c>tax</c> choice (<c>Default</c> drops a change,
@@ -183,6 +188,8 @@ public sealed partial class SalesDraftService : ISalesDraftTaxService
         }
 
         var on = draft.Header.BusinessDate;
+        var requiresSubcontractAuthority = draft.IsSubcontractService && request.Lines.Any(x => x.Tax is not null);
+        if (requiresSubcontractAuthority) scope = await WithSubcontractTaxAuthorityAsync(scope, cancellationToken);
         var lists = new TaxLists(on);
         var now = timeProvider.GetUtcNow();
         var indexes = request.Lines.Select((line, index) => (line, index)).ToDictionary(pair => pair.line.LineId, pair => pair);
@@ -214,10 +221,10 @@ public sealed partial class SalesDraftService : ISalesDraftTaxService
             snapshots[line.Id] = draft.Header.BuyerTax is null && change is null
                 ? null
                 : await ResolveLineTaxAsync(scope, permission, line.Product.ProductId,
-                    draft.Header.BuyerTax ?? SalesBuyerTax.Create(StartBuyerSituation), change, on, cancellationToken, lists, field);
+                    draft.Header.BuyerTax ?? SalesBuyerTax.Create(StartBuyerSituation), change, on, cancellationToken, lists, field, draft.IsSubcontractService);
         }
 
-        return new RevisionTax(draft.Version, snapshots);
+        return new RevisionTax(draft.Version, snapshots, requiresSubcontractAuthority);
     }
 
     // ---- header revision ----------------------------------------------------------------------------------------------------
@@ -254,7 +261,7 @@ public sealed partial class SalesDraftService : ISalesDraftTaxService
         {
             snapshots[line.Id] = line.Tax?.Override is not null
                 ? line.Tax
-                : await ResolveLineTaxAsync(scope, permission, line.Product.ProductId, buyer, null, on, cancellationToken);
+                : await ResolveLineTaxAsync(scope, permission, line.Product.ProductId, buyer, null, on, cancellationToken, subcontract: draft.IsSubcontractService);
         }
 
         return (buyer, snapshots);
@@ -469,18 +476,23 @@ public sealed partial class SalesDraftService : ISalesDraftTaxService
     /// date, situation (and product): anything else is the port's fault (503), never stored.
     /// </summary>
     private async Task<SalesLineTaxSnapshot> ResolveLineTaxAsync(Scope scope, string? permission, Guid productId, SalesBuyerTax buyer,
-        SalesLineTaxOverride? change, DateOnly on, CancellationToken cancellationToken, TaxLists? lists = null, string? field = null)
+        SalesLineTaxOverride? change, DateOnly on, CancellationToken cancellationToken, TaxLists? lists = null, string? field = null, bool subcontract = false)
     {
         var situation = change?.BuyerSituation ?? buyer.Situation;
         var exemptionCode = change is null ? buyer.ExemptionCode : change.ExemptionCode;
-        var answer = change?.ItemType is { } itemType
+        if (subcontract && change?.ItemType is { } selectedType && selectedType != TaxItemTypesV1.Service)
+            throw new SalesDraftServiceException(422, "validation_failed", [new(field ?? "tax", SalesRuleCodes.SubcontractLineNotService)]);
+        var answer = subcontract
+            ? await TaxPortAsync(scope, permission, port => port.GetSubcontractDefaultAsync(SubcontractTaxSideV1.Sales, productId,
+                situation, on, exemptionCode, cancellationToken), cancellationToken)
+            : change?.ItemType is { } itemType
             ? await TaxPortAsync(scope, permission,
                 port => port.GetItemTypeDefaultAsync(itemType, situation, on, exemptionCode, cancellationToken), cancellationToken)
             : await TaxPortAsync(scope, permission,
                 port => port.ResolveAsync(productId, situation, on, exemptionCode, cancellationToken), cancellationToken);
         if (answer is null || answer.CompanyId != scope.CompanyId || answer.On != on
             || !string.Equals(answer.BuyerSituation, situation, StringComparison.Ordinal)
-            || (change?.ItemType is null ? answer.ProductId != productId : answer.ProductId is not null)
+            || (subcontract || change?.ItemType is null ? answer.ProductId != productId : answer.ProductId is not null)
             || string.IsNullOrWhiteSpace(answer.State))
         {
             throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.TaxProviderUnavailable);

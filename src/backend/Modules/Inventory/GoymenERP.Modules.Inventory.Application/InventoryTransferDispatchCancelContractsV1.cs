@@ -159,6 +159,15 @@ public interface IInventoryTransferDispatchCancelGatePortV1
         CancellationToken cancellationToken = default);
 }
 
+/// <summary>The genuine owner writer binds the full logical cancellation intent and server command metadata.</summary>
+public interface IInventoryTransferDispatchCancelGatePortV2 : IInventoryTransferDispatchCancelGatePortV1
+{
+    Task<InventoryTransferDispatchCancelConfirmationV1> ConfirmAsync(InventoryTransferDispatchCancelGateQueryV1 query,
+        CancelInventoryTransferDispatchV1 request, bool requireLogisticsNoExit, bool requireEDispatchCancel,
+        InventoryCommandMetadata metadata, Func<CancellationToken, Task> freshAuthority,
+        CancellationToken cancellationToken = default);
+}
+
 /// <summary>Maps the cross-module V1 readings onto the pure domain window rule; unknown values fail closed.</summary>
 public static class InventoryTransferDispatchCancelMapping
 {

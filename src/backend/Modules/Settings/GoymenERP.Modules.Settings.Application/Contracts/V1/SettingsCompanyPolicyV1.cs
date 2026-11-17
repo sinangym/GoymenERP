@@ -25,7 +25,7 @@ public static class CompanyPolicyKeysV1
     /// <summary>SAT-D381: the default subcontract VAT/withholding code on the sales side.</summary>
     public const string SalesSubcontractTaxDefault = "sales.subcontract-tax-default";
 
-    /// <summary>ALS-D105: the separate purchasing-side record (read only until its write authority is decided).</summary>
+    /// <summary>ALS-D105: the separate purchasing-side record, administered by purchasing.orders.approve.</summary>
     public const string PurchasingSubcontractTaxDefault = "purchasing.subcontract-tax-default";
 
     /// <summary>SAT-D358: separate from the order discount group limits, no default.</summary>
@@ -67,6 +67,7 @@ public static class CompanyPolicyProblemCodesV1
     public const string VersionConflict = "settings_company_policy_version_conflict";
     public const string ExemptionCodeUnknown = "settings_company_policy_exemption_code_unknown";
     public const string WithholdingCodeUnknown = "settings_company_policy_withholding_code_unknown";
+    public const string RateUnknown = "settings_company_policy_tax_rate_unknown";
     public const string ProviderUnavailable = "settings_provider_unavailable";
     public const string AccessDenied = "settings_access_denied";
     public const string ProfileInvalid = "settings_profile_invalid";
@@ -170,6 +171,13 @@ public interface ISettingsCompanyPolicyAdministrationV1
 
     Task<CompanyPolicyCommandResultV1> RecordSalesSubcontractTaxDefaultAsync(RecordSubcontractTaxDefaultRequestV1 request,
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+
+    Task<SubcontractTaxDefaultViewV1> GetPurchasingSubcontractTaxDefaultAsync(CancellationToken cancellationToken = default);
+
+    Task<CompanyPolicyCommandResultV1> RecordPurchasingSubcontractTaxDefaultAsync(RecordSubcontractTaxDefaultRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+
+    Task<SubcontractTaxOptionsV1> GetSubcontractTaxOptionsAsync(SubcontractTaxSideV1 side, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

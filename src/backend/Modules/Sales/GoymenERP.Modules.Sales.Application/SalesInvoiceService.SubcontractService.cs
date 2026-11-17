@@ -2,6 +2,7 @@ using System.Globalization;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Invoices;
+using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Sales.Application;
@@ -20,12 +21,12 @@ namespace GoymenERP.Modules.Sales.Application;
 /// the weighing's last line (SAT-D376/D377/D402); this order's invoice bills only its own lines' shares.</item>
 /// <item><b>Price</b> — the order's invoicing gate must be <c>Open</c>; the kg price and tax snapshot are the basis revision's.</item>
 /// <item><b>Waits, never guesses</b> — a shared weighing line without a readable theoretical kg (SAT-D376 fail closed), a share
-/// that would round to zero, a foreign-currency order (SAT-D380's rate snapshot is not carried by the draft yet), a missing
-/// price or tax: 409
+/// that would round to zero, a missing
+/// price, due plan or tax: 409
 /// <c>invoice_not_ready</c> with every reason, nothing recorded under the key.</item>
 /// </list>
-/// Amounts are <see cref="SalesInvoiceCalculator"/>'s only. The due plan, approval and finalisation of a service invoice join the
-/// invoice flow in a later slice; this draft carries no instalments.
+/// Amounts are <see cref="SalesInvoiceCalculator"/>'s only. SAT-D380: native draft amounts are frozen first;
+/// functional amounts use the actual official invoice date only when the document is matched.
 /// </summary>
 public sealed partial class SalesInvoiceService : ISalesSubcontractServiceInvoiceService
 {
@@ -104,13 +105,6 @@ public sealed partial class SalesInvoiceService : ISalesSubcontractServiceInvoic
             throw NotReady([new("loadingInstructionId", SalesSubcontractServiceInvoiceReasonCodesV1.WeighingOrderMismatch)]);
         }
 
-        if (basis.CurrencyId != SettingsCurrencyIdentitiesV1.TurkishLira)
-        {
-            // SAT-D380 decided the rate day (the invoice date's approved source); the draft carries no rate snapshot yet, so a
-            // foreign-currency subcontract invoice still waits instead of being priced without a rate.
-            reasons.Add(new("salesOrderId", SalesSubcontractServiceInvoiceReasonCodesV1.CurrencyPending));
-        }
-
         var prepared = new List<(SalesSubcontractDeliveryWeighingLineV1 Served, BasisLine Line, decimal BilledKg)>();
         for (var index = 0; index < ownShares.Count; index++)
         {
@@ -160,6 +154,7 @@ public sealed partial class SalesInvoiceService : ISalesSubcontractServiceInvoic
             throw NotReady(reasons);
         }
 
+        var dueDates = SubcontractDueDates(basis, order.Header.BusinessDate, served);
         var now = timeProvider.GetUtcNow();
         var header = new SalesSubcontractServiceInvoiceHeader(basis.PartyId, basis.CompanyAccountId, basis.CurrencyId,
             basis.MoneyProfileId, basis.MoneyProfileVersion, basis.MoneyScale, Day(now));
@@ -181,8 +176,12 @@ public sealed partial class SalesInvoiceService : ISalesSubcontractServiceInvoic
         try
         {
             stored = await store.StoreSubcontractServiceInvoiceAsync(envelope, requestHash, documentNo =>
-                SalesSubcontractServiceInvoice.Create(invoiceId, scope.CompanyId, documentNo, header, source, inputs, billedKg,
-                    scope.ActorId, now), cancellationToken);
+            {
+                var draft = SalesSubcontractServiceInvoice.Create(invoiceId, scope.CompanyId, documentNo, header, source, inputs, billedKg,
+                    scope.ActorId, now);
+                draft.SetDuePlan(basis.DueTerms!, dueDates);
+                return draft;
+            }, cancellationToken);
         }
         catch (SalesRuleException exception)
         {
@@ -228,6 +227,29 @@ public sealed partial class SalesInvoiceService : ISalesSubcontractServiceInvoic
             cancellationToken, ReadPermission) ?? throw new SalesDraftServiceException(404, "not_found");
         await RequirePriceReadAsync(scope, cancellationToken);
         return SubcontractView(invoice, isReplay: false);
+    }
+
+    private static IReadOnlyList<SalesDueDate> SubcontractDueDates(InvoiceBasis basis, DateOnly orderDate,
+        IReadOnlyList<SalesSubcontractDeliveryWeighingLineV1> lines)
+    {
+        if (basis.DueTerms is null) throw NotReady([new("salesOrderId", SalesInvoiceReasonCodesV1.DueTermsMissing)]);
+        IReadOnlyList<SalesDueDate>? first = null;
+        foreach (var line in lines)
+        {
+            if (line.Shipments?.Any(item => item.ShipmentId == Guid.Empty || item.RecordedAtUtc == default) == true)
+                throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
+            var days = line.Shipments is { Count: > 0 }
+                ? line.Shipments.Select(item => (DateOnly?)Day(item.RecordedAtUtc)).Distinct().ToArray() : new DateOnly?[] { null };
+            foreach (var day in days)
+            {
+                var due = SalesDueDateCalculator.Compute(basis.DueTerms, orderDate, day);
+                if (!due.IsResolved) throw NotReady([new("salesOrderId", SalesInvoiceReasonCodesV1.DueDatePending)]);
+                if (first is not null && !first.Select(item => item.DueDate).SequenceEqual(due.DueDates.Select(item => item.DueDate)))
+                    throw NotReady([new("salesOrderId", SalesInvoiceReasonCodesV1.DueDateMismatch)]);
+                first ??= due.DueDates;
+            }
+        }
+        return first ?? throw NotReady([new("salesOrderId", SalesInvoiceReasonCodesV1.DueDatePending)]);
     }
 
     private static void Validate(CreateSalesSubcontractServiceInvoiceRequest request)
@@ -349,8 +371,21 @@ public sealed partial class SalesInvoiceService : ISalesSubcontractServiceInvoic
                 SalesDraftApiV1.RevisionText(line.Input.PriceBasisRevision), line.Input.ProductId, line.Input.UnitId, line.Input.QuantityText,
                 Decimal(line.NetUnitPrice), Decimal(line.VatPercent), line.WithholdingShare is { } share ? Decimal(share) : null,
                 Amounts(line.Amounts, scale)))],
-            invoice.CreatedBy, invoice.CreatedAtUtc, isReplay);
+            invoice.CreatedBy, invoice.CreatedAtUtc, isReplay,
+            new(DecisionView(invoice.Decision),
+                [.. invoice.DuePlan.Select(item => new SalesInvoiceInstalmentView(item.SequenceNo, item.DueDate, item.SharePercent, Text(item.Amount, scale)))],
+                invoice.Rate is { } rate ? new(Decimal(rate.Rate), rate.RateDay, rate.BulletinDate, rate.FunctionalCurrencyId, rate.FunctionalScale) : null,
+                invoice.FunctionalTotals is { } functional ? Amounts(functional, invoice.Rate!.FunctionalScale) : null,
+                MatchView(invoice.Match), SubcontractFinalizationView(invoice)));
     }
+
+    private static SalesInvoiceFinalizationView? SubcontractFinalizationView(SalesSubcontractServiceInvoice invoice) =>
+        invoice.Finalization is not { } final ? null : new(final.AdmissionId, final.FinalizedVersion.ToString(CultureInfo.InvariantCulture),
+            final.FinalizedBy, final.FinalizedAtUtc, final.FinanceStatus == SalesInvoiceFinanceStatus.Admitted
+                ? SalesInvoiceFinanceStatusesV1.Admitted : SalesInvoiceFinanceStatusesV1.Waiting,
+            final.AdmittedAtUtc, final.AttemptCount, final.LastAttemptAtUtc, final.LastOutcome, SalesInvoiceAccountingStatusesV1.NoSource,
+            [.. final.Plan.Select(item => new SalesInvoiceFinalInstalmentView(item.SequenceNo, item.DueDate, Text(item.Amount, invoice.Header.AmountScale),
+                item.FunctionalAmount is { } amount ? Text(amount, invoice.Rate!.FunctionalScale) : null, item.OpenItemId, item.InstallmentId))]);
 
     private static SalesSubcontractServiceInvoiceCommandResult SubcontractResult(SalesSubcontractServiceInvoiceStoreResult stored,
         bool isReplay) => new(SubcontractView(stored.Invoice, isReplay), isReplay, stored.OriginalCorrelationId);

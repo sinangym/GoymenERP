@@ -252,7 +252,7 @@ public sealed class LogisticsPersistenceModelTests
             property.Name.Contains("Amount", StringComparison.OrdinalIgnoreCase)
             || property.Name.Contains("Limit", StringComparison.OrdinalIgnoreCase)
             || property.Name.Contains("Risk", StringComparison.OrdinalIgnoreCase));
-        Assert.Equal("AddShipmentRiskGateOutbox", context.Database.GetMigrations().Last()[(context.Database.GetMigrations().Last().IndexOf('_', StringComparison.Ordinal) + 1)..]);
+        Assert.Contains(context.Database.GetMigrations(), name => name.EndsWith("_AddShipmentRiskGateOutbox", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var migration = new GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations.AddShipmentRiskGateOutbox();
@@ -388,11 +388,14 @@ public sealed class LogisticsPersistenceModelTests
         Assert.True(record.FindProperty("Version")!.IsConcurrencyToken);
         Assert.Equal(
             ["CK_WeighingDifferences_Actors", "CK_WeighingDifferences_Bands", "CK_WeighingDifferences_Decision",
-                "CK_WeighingDifferences_Identity", "CK_WeighingDifferences_Quantities", "CK_WeighingDifferences_Rate",
+                "CK_WeighingDifferences_Identity", "CK_WeighingDifferences_KilogramAllocation", "CK_WeighingDifferences_Quantities", "CK_WeighingDifferences_Rate",
                 "CK_WeighingDifferences_State"],
             record.GetCheckConstraints().Select(check => check.Name!).Order(StringComparer.Ordinal).ToArray());
         Assert.Contains(record.GetCheckConstraints(), check => check.Name == "CK_WeighingDifferences_Quantities"
             && check.Sql.Contains("[DifferenceKg] = [ScaleKg] - [TheoreticalKg]", StringComparison.Ordinal));
+        Assert.True(record.FindProperty(nameof(WeighingDifferenceRecordRow.KilogramAllocationJson))!.IsNullable);
+        Assert.Contains(record.GetCheckConstraints(), check => check.Name == "CK_WeighingDifferences_KilogramAllocation"
+            && check.Sql == LogisticsDbContext.WeighingKilogramAllocationCheck);
         Assert.Contains(record.GetCheckConstraints(), check => check.Name == "CK_WeighingDifferences_Decision"
             && check.Sql.Contains("([Decision] = 1 AND [TotalExcessKg] = 0)", StringComparison.Ordinal));
         Assert.Contains(record.GetCheckConstraints(), check => check.Name == "CK_WeighingDifferences_State"
@@ -485,6 +488,22 @@ public sealed class LogisticsPersistenceModelTests
             var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
             Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
         }
+    }
+
+    [Fact]
+    public void Dispatch_kilogram_migration_keeps_legacy_proofs_nullable_and_guards_down_before_the_drop()
+    {
+        using var context = Context();
+        Assert.Contains(context.Database.GetMigrations(), name => name.EndsWith("_AddDispatchKilogramAllocations", StringComparison.Ordinal));
+        Assert.False(context.Database.HasPendingModelChanges());
+        var migration = new GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations.AddDispatchKilogramAllocations();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51973", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[KilogramAllocationJson] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var column = Assert.Single(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddColumnOperation>());
+        Assert.Equal(("logistics", "WeighingDifferences", "KilogramAllocationJson", true), (column.Schema, column.Table, column.Name, column.IsNullable));
     }
 
     private static WeighingDifferenceRecordRow Difference(int status = 2) => new()
@@ -825,8 +844,8 @@ public sealed class LogisticsPersistenceModelTests
     {
         var provider = new LogisticsShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
-        Assert.Equal("1.3", provider.ContractVersion);
-        Assert.Equal(11, declarations.Count);
+        Assert.Equal("1.4", provider.ContractVersion);
+        Assert.Equal(12, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
         Assert.Equal(
             [
@@ -836,14 +855,15 @@ public sealed class LogisticsPersistenceModelTests
                 // AT-025: the operations work list's two separate sections, each behind its own read name.
                 ("logistics.operations-work.purchase", "/lojistik/operasyon-isleri/satinalma", LogisticsPermissionManifestV1.OperationsPurchaseWorkRead),
                 ("logistics.operations-work.sales", "/lojistik/operasyon-isleri/satis", LogisticsPermissionManifestV1.OperationsSalesWorkRead),
+                ("logistics.transfer-departures.record", "/lojistik/transfer-cikislari", LogisticsPermissionManifestV1.TransferDeparturesRecord),
             ],
             declarations.Where(declaration => declaration.ParentCapabilityId is null)
                 .Select(declaration => (declaration.CapabilityId, declaration.RoutePath, declaration.RequiredPermissions.Single()))
                 .OrderBy(item => item.CapabilityId, StringComparer.Ordinal).ToArray());
-        Assert.Equal(15, LogisticsPermissionManifestV1.Names.Count);
+        Assert.Equal(20, LogisticsPermissionManifestV1.Names.Count);
         Assert.Equal("logistics.shipments.record", LogisticsPermissionManifestV1.ShipmentsRecord);
         Assert.Equal("logistics.deliveries.record", LogisticsPermissionManifestV1.DeliveriesRecord);
-        Assert.Equal(15, LogisticsPermissionManifestV1.Names.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(20, LogisticsPermissionManifestV1.Names.Distinct(StringComparer.Ordinal).Count());
         // AT-055: the dispatch note's three names (prepare, approve, cancel), each its own and, like the weighbridge record, with no
         // shell declaration (server-measured commands on the detail).
         Assert.Equal("logistics.dispatch-notes.create", LogisticsPermissionManifestV1.DispatchNotesCreate);
@@ -872,6 +892,7 @@ public sealed class LogisticsPersistenceModelTests
                 ("logistics.operations-work.purchase", "L-09"),
                 ("logistics.operations-work.sales", "L-01"),
                 ("logistics.shipments.record", "L-02-DETAIL"),
+                ("logistics.transfer-departures.record", "STK-S8-DEPARTURE"),
             ],
             declarations.OrderBy(declaration => declaration.CapabilityId, StringComparer.Ordinal)
                 .Select(declaration => (declaration.CapabilityId, declaration.ScreenId)).ToArray());

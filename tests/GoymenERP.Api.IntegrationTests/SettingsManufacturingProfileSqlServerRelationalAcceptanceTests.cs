@@ -29,7 +29,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// the tolerance provider reads, with URT-D6's mass-balance tolerance; the window overlap refusal). Every grant is a fresh
 /// synthetic role; reasons are SENTETIK.
 /// </summary>
-public sealed class SettingsManufacturingProfileSqlServerRelationalAcceptanceTests
+public sealed partial class SettingsManufacturingProfileSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
@@ -546,7 +546,7 @@ public sealed class SettingsManufacturingProfileSqlServerRelationalAcceptanceTes
         /// </summary>
         public DateOnly Today { get; }
 
-        public static async Task<HostRun> StartAsync()
+        public static async Task<HostRun> StartAsync(Action<IServiceCollection>? configure = null)
         {
             var baseConnectionString = Environment.GetEnvironmentVariable(
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
@@ -555,8 +555,11 @@ public sealed class SettingsManufacturingProfileSqlServerRelationalAcceptanceTes
             // system clock, so the synthetic grants stay in force.
             TimeProvider clock = new FixedClock(DateTimeOffset.UtcNow);
             var factory = new SqlServerRelationalApiFactory(baseConnectionString, services =>
+            {
                 services.Replace(ServiceDescriptor.Scoped(provider =>
-                    ActivatorUtilities.CreateInstance<SettingsManufacturingProfileAdministration>(provider, clock))));
+                    ActivatorUtilities.CreateInstance<SettingsManufacturingProfileAdministration>(provider, clock)));
+                configure?.Invoke(services);
+            });
             var run = new HostRun(baseConnectionString, factory, clock);
             using var client = run.Factory.CreateClient();
             using var health = await client.GetAsync("/health/live");

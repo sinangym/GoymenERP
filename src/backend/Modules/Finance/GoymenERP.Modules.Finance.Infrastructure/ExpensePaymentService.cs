@@ -294,6 +294,7 @@ public sealed class ExpensePaymentService(
         AddCommand(context, RecordCommand, keyHash, payloadHash, row.Id, result, now);
         Audit(context, metadata, row, envelopes.Record, "finance.expense-payment.recorded.v1", "Record",
             versionBefore, before);
+        FinanceFinancialMovementOutboxV1.Expense(dbContext, context, View(row));
         if (await FenceAsync(context, action, row.Id, cancellationToken) is { } beforeSave) return beforeSave;
         return await SaveAsync(context, RecordCommand, action, keyHash, payloadHash, cancellationToken) ?? result;
     }

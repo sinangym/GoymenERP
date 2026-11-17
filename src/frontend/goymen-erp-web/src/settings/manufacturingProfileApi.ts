@@ -3,6 +3,8 @@ import { decodeManufacturingProfileReceipt, decodeManufacturingProfiles, manufac
 
 export const fetchManufacturingProfiles = (company: string, kind: ManufacturingProfileKind, signal?: AbortSignal) =>
   readJson(manufacturingProfilePath(kind), company, (raw) => decodeManufacturingProfiles(raw, company, kind), signal)
+export const transferManufacturingStartingValues = (context: CommandContext, kind: ManufacturingProfileKind, body: PublishManufacturingProfileBody) =>
+  send('POST', `${manufacturingProfilePath(kind)}/starting-values-transfer`, context, body, 200, decodeManufacturingProfileReceipt)
 export const prepareManufacturingProfile = (context: CommandContext, kind: ManufacturingProfileKind, body: PrepareManufacturingProfileBody) =>
   send('POST', manufacturingProfilePath(kind), context, body, 200, decodeManufacturingProfileReceipt)
 export const publishManufacturingProfile = (context: CommandContext, kind: ManufacturingProfileKind, profile: string, body: PublishManufacturingProfileBody) =>

@@ -1038,3 +1038,52 @@ roll back on every exception. Prefix and minimum sequence width require explicit
 Annual counters do not reset on format changes; cancellations append history and never free a number.
 The 90-day notification and scrap-cost inclusion starting values are decided policy reads only after a successful
 empty-store read; storage failure never becomes a default success. Runtime SQL/HTTP/browser tests are NOT_RUN.
+
+## KIM-S15 / TK-38 manufacturing starting-value transfer
+
+The existing parameter/tolerance publish permission allows an explicit company-scoped transfer of that company's
+reviewed version-0 starting values. It copies exact values, source identities, dates and decimal representation into
+an immutable snapshot; it does not publish a draft, revise a formula or create values for an unconfigured company.
+The parameter and tolerance scopes each transfer once. Expected version `0`, a reason, actor-bound idempotency,
+fresh permission/company checks and Audit accompany the same save. Providers read the persisted snapshot after
+transfer; an invalid persisted source fails closed. Existing draft/published versions and past document proofs stay intact.
+The two `starting-values-transfer` commands use existing publish permissions and do not grant rights to any person.
+The forward-fix guard is **51966** and refuses while a baseline snapshot exists. Migration generation and source-build
+results are recorded in the W8 identity report; SQL/HTTP/browser acceptance is **NOT_RUN** until the final test phase.
+
+## API-97 purchase invoice variance policy (ALS-D8 / ALS-D15 / ALS-D63)
+
+`ISettingsPurchaseInvoiceVariancePolicyProviderV1` reads only the company's explicitly published immutable versions.
+No row is `settings_purchase_invoice_variance_policy_not_published`, never an active zero fallback. The editor starts
+the two fields at the decided zero; an authorized person may explicitly publish different values, including on the
+first publication. Amount and control-rate boundaries share one identity/version and the invoice snapshots both.
+The owner stores exact decimal(24,6) values, rejecting excess precision without rounding or choosing approval policy.
+
+`settings.purchase-invoice-variance-policies.manage` is registration only, company-wide: it confers no grant, role,
+Critical classification or invoice-approval permission. `GET /api/v1/settings/purchase-invoice-variance-policy`
+shows the actual current version and history; `POST .../publish` requires the expected version, reason and actor-bound
+idempotency key. The owner revalidates current authority, owns its Serializable transaction and appends Audit through
+the Audit owner's port before committing the version and terminal answer. Caller-owned/ambient transactions and
+pending caller state are refused unchanged. Technical/Audit/concurrency failures roll back and leave the key retryable.
+
+EF-generated migration `20261117085524_AddPurchaseInvoiceVariancePolicies` adds the company-filtered table without seed or backfill. Its first
+Down operation refuses with **THROW 51985** while any policy history exists; an empty table may roll back. The API
+mount, shell capability/route and global generated inventories remain central integration work. Unit, SQL/HTTP and
+frontend test sources are supplied; runtime acceptance is **NOT_RUN**.
+
+### Warehouse transfer exit weighing — STK-S8 / LOJ-D11
+
+`ISettingsWarehouseTransferScaleProviderV1` reads the current company's real internal warehouse and its append-only
+choice. A valid warehouse with no record is `NotConfigured`, false, with no recorded version (the default-Off
+metadata in `SINAN_KARARLARI_2026-11-12_LOJISTIK_EK3.md:48`). Explicit Off is a recorded version; unavailable or foreign
+sources are not Off. Publishing On requires the actual Logistics departure capability. No policy is seeded.
+
+The `settings.warehouse-transfer-scale.manage` name is registration only. The editor uses actual Organization
+warehouse candidates, expected version, actor-bound idempotency, reason, fresh authority and same-transaction Audit
+owner writes. It rejects borrowed transactions and pending caller state before clearing any owner work. Replay
+returns its immutable original answer before reading a warehouse that may subsequently be unavailable.
+
+EF-generated `20261117111242_AddWarehouseTransferScalePolicies` adds only the version history and checks. Down first
+refuses with **THROW 51990** while any history exists. The real provider and administrator are module-registered;
+`MapSettingsWarehouseTransferScaleEndpoints` and `/ayarlar/depo-transfer-tartisi` are coordinator mounts. Runtime unit,
+SQL, Vitest, browser and CI acceptance remains **NOT_RUN**.

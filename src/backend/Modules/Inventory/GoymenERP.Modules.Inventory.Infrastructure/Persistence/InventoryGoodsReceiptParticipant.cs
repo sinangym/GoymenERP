@@ -35,12 +35,13 @@ public sealed class InventoryGoodsReceiptParticipant : IInventoryGoodsReceiptPar
     private readonly Guid companyId;
     private readonly TimeProvider clock;
     private readonly Func<CancellationToken, Task>? onStaged;
+    private readonly IInventoryPurchaseReceiptCostSourceV1? costSource;
     private int started;
     private bool disposed;
 
     private InventoryGoodsReceiptParticipant(InventoryDbContext context, InventoryStore store,
         DbConnection connection, DbTransaction transaction, Guid companyId, TimeProvider clock,
-        Func<CancellationToken, Task>? onStaged)
+        Func<CancellationToken, Task>? onStaged, IInventoryPurchaseReceiptCostSourceV1? costSource)
     {
         this.context = context;
         this.store = store;
@@ -49,12 +50,13 @@ public sealed class InventoryGoodsReceiptParticipant : IInventoryGoodsReceiptPar
         this.companyId = companyId;
         this.clock = clock;
         this.onStaged = onStaged;
+        this.costSource = costSource;
     }
 
     public static async Task<InventoryGoodsReceiptParticipant> EnlistAsync(DbConnection connection,
         DbTransaction transaction, Guid companyId, ISettingsPrerequisiteProvider settings,
         CancellationToken cancellationToken = default, TimeProvider? clock = null,
-        Func<CancellationToken, Task>? onStaged = null)
+        Func<CancellationToken, Task>? onStaged = null, IInventoryPurchaseReceiptCostSourceV1? costSource = null)
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(transaction);
@@ -80,7 +82,7 @@ public sealed class InventoryGoodsReceiptParticipant : IInventoryGoodsReceiptPar
             var store = new InventoryStore(context, company, audit,
                 new InventoryKilogramScale(settings), effectiveClock);
             return new InventoryGoodsReceiptParticipant(
-                context, store, connection, transaction, companyId, effectiveClock, onStaged);
+                context, store, connection, transaction, companyId, effectiveClock, onStaged, costSource);
         }
         catch
         {
@@ -159,6 +161,15 @@ public sealed class InventoryGoodsReceiptParticipant : IInventoryGoodsReceiptPar
 
         try
         {
+            if (costSource is not null)
+            {
+                var proof = await costSource.ReadAsync(new(companyId, request.AcceptanceId, request.PurchaseOrderId,
+                    request.PurchaseOrderLineId, request.ProductId, request.ExpectedProductVersion, request.OccurredAtUtc), cancellationToken);
+                if (proof.CompanyId != companyId || proof.AcceptanceId != request.AcceptanceId
+                    || proof.PurchaseOrderId != request.PurchaseOrderId || proof.PurchaseOrderLineId != request.PurchaseOrderLineId)
+                    throw Refused(503, InventoryGoodsReceiptCodesV1.Unavailable);
+                store.UseReceiptCost(movement.Id, proof);
+            }
             if (await store.SaveLotAsync(lot, [label], metadata, cancellationToken) != InventoryWriteOutcome.Recorded)
             {
                 throw Refused(409, InventoryGoodsReceiptCodesV1.LabelAlreadyRegistered);
@@ -177,9 +188,9 @@ public sealed class InventoryGoodsReceiptParticipant : IInventoryGoodsReceiptPar
         {
             throw StoreRefusal(exception.Code);
         }
-        catch (InventoryRuleException)
+        catch (InventoryRuleException exception)
         {
-            throw Refused(503, InventoryGoodsReceiptCodesV1.Unavailable);
+            throw InventoryGoodsReceiptException.Refused(503, InventoryGoodsReceiptCodesV1.Unavailable, exception);
         }
 
         var labelVersion = await context.Labels.AsNoTracking()

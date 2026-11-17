@@ -196,17 +196,18 @@ public sealed partial class ShellCapabilityRegistry
                 "product.items.activate" => (GroupSharedMasterOperation.Activate, "/urun/:productId"),
                 "product.items.deactivate" => (GroupSharedMasterOperation.Deactivate, "/urun/:productId"),
                 "product.items.reactivate" => (GroupSharedMasterOperation.Reactivate, "/urun/:productId"),
+                "product.items.set-cogs-classification" => (GroupSharedMasterOperation.SetCogsClassification, "/urun/:productId"),
                 _ => throw new InvalidOperationException("Unknown global Product capability."),
             };
-            // U-01-360 lifecycle controls (approve, deactivate, reactivate) are children of the detail screen.
-            var isActivationControl = declaration.CapabilityId is "product.items.activate"
-                or "product.items.deactivate" or "product.items.reactivate";
+            // U-01-360 lifecycle and explicit accounting-class controls are children of the detail screen.
+            var isDetailControl = declaration.CapabilityId is "product.items.activate"
+                or "product.items.deactivate" or "product.items.reactivate" or "product.items.set-cogs-classification";
             if (owner != "PRODUCT" || productOperation != expected.Item1
                 || declaration.RoutePath != expected.Item2 || permissions.Length != 0
-                || declaration.ParentCapabilityId != (isActivationControl ? "product.items.detail" : null)
+                || declaration.ParentCapabilityId != (isDetailControl ? "product.items.detail" : null)
                 || declaration.ContextRequirement != ShellCapabilityContextRequirement.SingleCompany
                 || declaration.ScopeRequirement != ShellCapabilityScopeRequirement.AnyGrantedScope
-                || isActivationControl && (declaration.RouteId != "product.detail"
+                || isDetailControl && (declaration.RouteId != "product.detail"
                     || declaration.ScreenId != "U-01-360"
                     || declaration.RoutePrecedence != ShellCapabilityRoutePrecedence.ParameterizedAfterStatic
                     || !declaration.ImplementationAvailable))
