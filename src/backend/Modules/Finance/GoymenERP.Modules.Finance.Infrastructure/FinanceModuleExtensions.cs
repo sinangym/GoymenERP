@@ -357,7 +357,9 @@ public static class FinanceModuleExtensions
             provider.GetRequiredService<TimeProvider>(),
             Envelope(provider, FinancePermissionNames.Record, permissions, FinanceAction.Record),
             provider.GetRequiredService<IFinanceRecordPeriodRule>(),
-            provider.GetService<IAuditTransactionWriterV1>());
+            provider.GetService<IAuditTransactionWriterV1>(),
+            new SettingsFinanceDocumentNumberReservationV1(provider.GetRequiredService<FinanceDbContext>(),
+                provider.GetService<ISettingsDocumentNumberSeriesV1>()));
     }
 
     private static ReversalProposalService CreateReversalProposalService(IServiceProvider provider)
@@ -423,7 +425,9 @@ public static class FinanceModuleExtensions
                     FinanceAction.RecordManualBankPayment)),
             provider.GetRequiredService<TimeProvider>(),
             provider.GetRequiredService<IFinanceTreasuryBalanceGuard>(),
-            provider.GetRequiredService<IAuditTransactionWriterV1>());
+            provider.GetRequiredService<IAuditTransactionWriterV1>(),
+            new SettingsFinanceDocumentNumberReservationV1(provider.GetRequiredService<FinanceDbContext>(),
+                provider.GetService<ISettingsDocumentNumberSeriesV1>()));
     }
 
     private static ExpensePaymentService CreateExpensePaymentService(IServiceProvider provider)
@@ -450,7 +454,9 @@ public static class FinanceModuleExtensions
                 Envelope(provider, FinancePermissionNames.ExpensePaymentRecord, permissions,
                     FinanceAction.RecordExpensePayment)),
             provider.GetRequiredService<TimeProvider>(),
-            provider.GetRequiredService<IAuditTransactionWriterV1>());
+            provider.GetRequiredService<IAuditTransactionWriterV1>(),
+            new SettingsFinanceDocumentNumberReservationV1(provider.GetRequiredService<FinanceDbContext>(),
+                provider.GetService<ISettingsDocumentNumberSeriesV1>()));
     }
 
     private static CashTransferService CreateCashTransferService(IServiceProvider provider)
@@ -473,7 +479,9 @@ public static class FinanceModuleExtensions
                 Envelope(provider, FinancePermissionNames.CashTransferCommit, permissions,
                     FinanceAction.CommitCashTransfer)),
             provider.GetRequiredService<TimeProvider>(),
-            provider.GetRequiredService<IAuditTransactionWriterV1>());
+            provider.GetRequiredService<IAuditTransactionWriterV1>(),
+            new SettingsFinanceDocumentNumberReservationV1(provider.GetRequiredService<FinanceDbContext>(),
+                provider.GetService<ISettingsDocumentNumberSeriesV1>()));
     }
 
     private static FinanceAllocationService CreateAllocationService(IServiceProvider provider)
@@ -525,7 +533,9 @@ public static class FinanceModuleExtensions
                 Envelope(provider, FinancePermissionNames.CustomerInstrumentCollect, permissions,
                     FinanceAction.CollectCustomerInstrument)),
             provider.GetRequiredService<TimeProvider>(),
-            provider.GetService<IAuditTransactionWriterV1>());
+            provider.GetService<IAuditTransactionWriterV1>(),
+            new SettingsFinanceDocumentNumberReservationV1(provider.GetRequiredService<FinanceDbContext>(),
+                provider.GetService<ISettingsDocumentNumberSeriesV1>()));
     }
 
     private static PartyLedgerService CreatePartyLedgerService(IServiceProvider provider) =>

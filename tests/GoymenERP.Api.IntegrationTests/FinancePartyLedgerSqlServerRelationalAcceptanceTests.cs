@@ -580,7 +580,7 @@ public sealed partial class FinancePartyLedgerSqlServerRelationalAcceptanceTests
             var service = new ReceiptDraftService(dbContext, companyContext, new FixedCurrentUser(actor, company),
                 new SyntheticPermissions(), new SyntheticBanks(company), new SyntheticParty(company, party, account),
                 new SyntheticSettings(company), collector, new FinanceReceiptDraftBinding(Operation), Envelope("save"),
-                TimeProvider.System, Envelope("record"), new SyntheticOpenPeriodRule());
+                TimeProvider.System, Envelope("record"), new SyntheticOpenPeriodRule(), documentNumbers: new SyntheticFinanceRecordNumbers());
             return new Scope<IManualReceiptService>(dbContext, service,
                 new FinanceContext(company, actor, $"ledger-receipt-{Guid.NewGuid():N}", null));
         }
@@ -607,7 +607,7 @@ public sealed partial class FinancePartyLedgerSqlServerRelationalAcceptanceTests
                 new CustomerInstrumentAuditEnvelopes(Envelope(FinancePermissionNames.CustomerInstrumentReceive),
                     Envelope(FinancePermissionNames.CustomerInstrumentStatusChange),
                     Envelope(FinancePermissionNames.CustomerInstrumentCollect)),
-                TimeProvider.System);
+                TimeProvider.System, documentNumbers: new SyntheticFinanceRecordNumbers());
             return new Scope<ICustomerInstrumentService>(dbContext, service,
                 new FinanceContext(CompanyA, actor, $"ledger-instrument-{Guid.NewGuid():N}", null));
         }

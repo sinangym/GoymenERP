@@ -355,7 +355,7 @@ public sealed class FinanceDraftSqlServerRelationalAcceptanceTests
                 permissions ?? new SyntheticPermissions(), banks, new SyntheticParty(owners), settings, collector,
                 new FinanceReceiptDraftBinding(Operation),
                 new FinanceAuditEnvelope(ReceiptDraftService.SaveDraftCommand, ["SENTETIK-FINANCE"], "Web"),
-                TimeProvider.System);
+                TimeProvider.System, documentNumbers: new SyntheticFinanceRecordNumbers());
             return new ServiceScope(dbContext, service, new FinanceContext(company, actor ?? Actor, correlation ?? Correlation, null));
         }
 

@@ -1,3 +1,4 @@
+import { decodeFinanceDocumentNumber, type FinanceDocumentNumber } from './documentNumber'
 /**
  * Finance manual receipt wire contract v1 — runtime decoders and request encoders.
  *
@@ -167,6 +168,7 @@ export interface FinanceAllocationPosition {
 }
 
 export interface SourceDetail {
+  readonly documentNumber?: FinanceDocumentNumber
   readonly source: SourceSummary
   readonly profile: ProfileReference
   readonly bankReference: string | null
@@ -405,10 +407,14 @@ export function decodeAllocationPositions(value: unknown, originalPartyId: strin
 export function decodeSourceDetail(value: unknown, companyId: string): Decoded<SourceDetail> {
   if (!isRecord(value)) return FAIL
   const keys = value.pos === undefined ? DETAIL_KEYS : POS_DETAIL_KEYS
-  if (!hasExactKeys(value, value.allocationPositions === undefined ? keys : [...keys, 'allocationPositions'])) return FAIL
+  const metadataKeys = value.allocationPositions === undefined ? keys : [...keys, 'allocationPositions']
+  if (!hasExactKeys(value, Object.hasOwn(value, 'documentNumber') ? [...metadataKeys, 'documentNumber'] : metadataKeys)) return FAIL
+  const documentNumber = decodeFinanceDocumentNumber(value.documentNumber)
+  if (documentNumber === null) return FAIL
   const source = decodeSummary(value.source, companyId)
   const profile = decodeProfile(value.profile)
-  if (source === null || profile === null) return FAIL
+  if (source === null || profile === null || documentNumber !== undefined
+    && (source.stage === 'Draft' || source.sourceNumber !== documentNumber.number || value.recordedAtUtc === null)) return FAIL
   const unallocated = decodeUnallocated(value.unallocated, source.currencyId)
   // An explicit `pos: null` is the bank transfer too; a present `pos` must be a whole POS fact set.
   const pos = value.pos === undefined || value.pos === null ? null : decodePos(value.pos, source.amount, source.currencyId)
@@ -439,6 +445,7 @@ export function decodeSourceDetail(value: unknown, companyId: string): Decoded<S
     unallocated,
     pos,
     ...(positions === undefined ? {} : { allocationPositions: positions }),
+    ...(documentNumber === undefined ? {} : { documentNumber }),
   })
 }
 

@@ -1595,7 +1595,7 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
                 new FinanceAuditEnvelope(ReceiptDraftService.SaveDraftCommand, ["SENTETIK-FINANCE"], "Web"),
                 TimeProvider.System,
                 new FinanceAuditEnvelope(ReceiptDraftService.RecordCommand, ["SENTETIK-FINANCE"], "Web"),
-                rule ?? (productRule ? new UndecidedFinanceRecordPeriodRule() : new SyntheticOpenPeriodRule()));
+                rule ?? (productRule ? new UndecidedFinanceRecordPeriodRule() : new SyntheticOpenPeriodRule()), documentNumbers: new SyntheticFinanceRecordNumbers());
             return new ServiceScope(dbContext, service, new FinanceContext(company, actor ?? Actor, correlation ?? Correlation, null));
         }
 
@@ -1719,7 +1719,7 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
                     new FinanceAuditEnvelope(ManualBankPaymentService.ApproveCommand, ["SENTETIK-FINANCE"], "Web"),
                     new FinanceAuditEnvelope(ManualBankPaymentService.RecordCommand, ["SENTETIK-FINANCE"], "Web")),
                 TimeProvider.System,
-                new SufficientBankBalance());
+                new SufficientBankBalance(), documentNumbers: new SyntheticFinanceRecordNumbers());
             return new PaymentServiceScope(dbContext, service,
                 new FinanceContext(company, actor, $"r47-refund-{Guid.NewGuid():N}", null));
         }

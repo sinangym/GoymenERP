@@ -43,7 +43,8 @@ public sealed class CashTransferService(
     CashTransferBinding binding,
     CashTransferAuditEnvelopes envelopes,
     TimeProvider timeProvider,
-    IAuditTransactionWriterV1? auditOwner = null) : ICashTransferService
+    IAuditTransactionWriterV1? auditOwner = null,
+    IFinanceDocumentNumberReservationV1? documentNumbers = null) : ICashTransferService
 {
     public const string CommitCommand = "finance.cash-transfer.commit";
 
@@ -101,9 +102,14 @@ public sealed class CashTransferService(
         if (await FenceAsync(context, FinanceAction.CommitCashTransfer, cancellationToken) is { } denied)
             return Refused(context, denied);
         return await FinanceTreasuryTransaction.ExecuteAsync(dbContext,
-            () => CommitTreasuryCoreAsync(context, metadata, request, cancellationToken),
+            async () =>
+            {
+                var result = await CommitTreasuryCoreAsync(context, metadata, request, cancellationToken);
+                if (result.Outcome != CommandOutcome.Succeeded) return result;
+                return await FenceAsync(context, FinanceAction.CommitCashTransfer, cancellationToken) is { } refused ? Refused(context, refused) : result;
+            },
             async () => Refused(context, await FenceAsync(context, FinanceAction.CommitCashTransfer, cancellationToken)
-                ?? new Refusal(CommandOutcome.Unavailable, [Issue("treasuryAccountId", TreasuryBalanceAnswer.UnavailableCode)])), auditOwner, cancellationToken);
+                ?? new Refusal(CommandOutcome.Unavailable, [Issue("treasuryAccountId", TreasuryBalanceAnswer.UnavailableCode)])), auditOwner, cancellationToken, result => result.Outcome == CommandOutcome.Succeeded);
     }
 
     private async Task<CashTransferCommandResult> CommitTreasuryCoreAsync(
@@ -138,6 +144,15 @@ public sealed class CashTransferService(
         var now = timeProvider.GetUtcNow();
         var prepared = exchange is null ? request.Preparation : request.Preparation with { Rate = exchange.TransactionRate };
         var row = NewRow(context, prepared, now);
+        var numbering = await FinanceDocumentNumbering.ReserveAsync(dbContext, documentNumbers, context, metadata,
+            envelopes.Commit, SettingsFinanceDocumentPurposeV1.CashTransferCommit, row.Id, row.OccurredOn, cancellationToken);
+        if (await FenceAsync(context, action, cancellationToken) is { } afterNumber) return Refused(context, afterNumber);
+        if (numbering.Number is not { } number) return Refused(context,
+            numbering.Denied ? CommandOutcome.Denied : CommandOutcome.Unavailable,
+            Issue("documentNumber", numbering.Code ?? SettingsDocumentNumberSeriesProblemCodesV1.Unavailable));
+        row.DocumentNumber = number.Number;
+        row.DocumentNumberFormatVersion = number.FormatVersion;
+
         row.ExchangeSnapshotJson = exchange is null ? null : JsonSerializer.Serialize(exchange, Json);
         dbContext.CashTransfers.Add(row);
         var result = new CashTransferCommandResult(CommandOutcome.Succeeded, View(row), IsReplay: false,
@@ -620,7 +635,7 @@ public sealed class CashTransferService(
 
     private static CashTransferView View(CashTransferRow row) => new CashTransferView(
         row.Id, row.CompanyId, Preparation(row), row.RecordedBy, row.RecordedAtUtc, row.TransferConfirmed,
-        VersionText(row.Version), ReadExchange(row));
+        VersionText(row.Version), ReadExchange(row), FinanceDocumentNumbering.View(row));
 
     private static CashTransferExchangeSnapshotV1? ReadExchange(CashTransferRow row)
     {
@@ -660,6 +675,7 @@ public sealed class CashTransferService(
     private static string AuditJson(CashTransferRow row) => JsonSerializer.Serialize(new
     {
         row.Id,
+        documentNumber = FinanceDocumentNumbering.View(row),
         version = VersionText(row.Version),
         kind = ToKind(row.Kind).ToString(),
         source = new

@@ -1,3 +1,4 @@
+import { decodeFinanceDocumentNumber, type FinanceDocumentNumber } from './documentNumber'
 /**
  * FNS-D25 / API-25 — the expense payment wire contract (mirrors ExpensePaymentV1.cs). Every answer is `unknown`
  * until decoded; a decoder answers the typed value or `{ ok: false }`, never a partial object or a default. The
@@ -55,6 +56,7 @@ export interface RecordExpensePaymentRequest extends ApproveExpensePaymentReques
 }
 
 export interface ExpensePaymentView {
+  readonly documentNumber?: FinanceDocumentNumber
   readonly id: string
   readonly companyId: string
   readonly status: ExpensePaymentStatus
@@ -234,7 +236,9 @@ const VIEW_KEYS = [
 ] as const
 
 export function decodeExpensePaymentView(value: unknown, companyId: string): Decoded<ExpensePaymentView> {
-  if (!isRecord(value) || !hasExactKeys(value, VIEW_KEYS)) return FAIL
+  if (!isRecord(value) || !hasExactKeys(value, Object.hasOwn(value, 'documentNumber') ? [...VIEW_KEYS, 'documentNumber'] : VIEW_KEYS)) return FAIL
+  const documentNumber = decodeFinanceDocumentNumber(value.documentNumber)
+  if (documentNumber === null || documentNumber !== undefined && value.status !== 'Recorded') return FAIL
   const preparation = decodePreparation(value.preparation)
   if (
     !isBoundUuid(value.id)
@@ -277,6 +281,7 @@ export function decodeExpensePaymentView(value: unknown, companyId: string): Dec
     recordedAtUtc: value.recordedAtUtc,
     paymentConfirmed: value.paymentConfirmed,
     version: value.version,
+    ...(documentNumber === undefined ? {} : { documentNumber }),
   })
 }
 

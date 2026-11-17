@@ -102,10 +102,12 @@ public sealed partial class SettingsCompanyPolicySqlServerRelationalAcceptanceTe
     {
         public int Measurements { get; private set; }
         public int DenyOnMeasurement { get; init; } = int.MaxValue;
+        public string? OnlyPermission { get; init; }
         public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid company, CancellationToken cancellationToken = default)
         {
             Measurements++;
-            return Task.FromResult(Measurements >= DenyOnMeasurement ? PermissionScope.Denied : new(true, true, new HashSet<string> { "SENTETIK" }, new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()));
+            return Task.FromResult(Measurements >= DenyOnMeasurement || OnlyPermission is not null && OnlyPermission != permission
+                ? PermissionScope.Denied : new(true, true, new HashSet<string> { "SENTETIK" }, new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()));
         }
     }
     private sealed class NumberPortScope(AsyncServiceScope scope, SettingsDbContext database, ISettingsDocumentNumberSeriesV1 value) : IAsyncDisposable

@@ -1,3 +1,4 @@
+import { FinanceDocumentNumberFacts } from './FinanceDocumentNumberFacts'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { isDateOnly } from './dateOnly'
 import { amountInputFromWire, parseAmountInput } from './decimalText'
@@ -34,6 +35,7 @@ function key(): string {
 function PaymentFacts({ payment }: { readonly payment: ManualBankPaymentView }) {
   return (
     <dl>
+      <FinanceDocumentNumberFacts number={payment.documentNumber} kind="voucher" recorded={payment.status === 'Recorded'} />
       <dt>Durum</dt><dd>{payment.status}</dd>
       <dt>Tutar</dt><dd>{payment.preparation.money.amount}</dd>
       <dt>İşlem tarihi</dt><dd>{payment.preparation.occurredOn}</dd>

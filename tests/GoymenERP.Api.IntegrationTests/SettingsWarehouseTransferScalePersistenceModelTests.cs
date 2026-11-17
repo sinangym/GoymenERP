@@ -15,7 +15,7 @@ public sealed class SettingsWarehouseTransferScalePersistenceModelTests
     {
         using var database = Context();
         Assert.False(database.Database.HasPendingModelChanges());
-        Assert.EndsWith("_AddWarehouseTransferScalePolicies", database.Database.GetMigrations().Last(), StringComparison.Ordinal);
+        Assert.Contains(database.Database.GetMigrations(), name => name.EndsWith("_AddWarehouseTransferScalePolicies", StringComparison.Ordinal));
         var migration = new AddWarehouseTransferScalePolicies();
         Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation or InsertDataOperation or UpdateDataOperation or DeleteDataOperation);
         Assert.Equal("WarehouseTransferScaleVersions", Assert.Single(migration.UpOperations.OfType<CreateTableOperation>()).Name);

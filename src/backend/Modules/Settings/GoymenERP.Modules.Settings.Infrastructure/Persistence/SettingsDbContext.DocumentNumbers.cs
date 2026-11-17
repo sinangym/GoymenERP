@@ -10,7 +10,7 @@ public sealed partial class SettingsDbContext
     internal DbSet<DocumentNumberCancellationRow> DocumentNumberCancellations => Set<DocumentNumberCancellationRow>();
     private void ConfigureDocumentNumbers(ModelBuilder model)
     {
-        const string identity = "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Series] IN (1,2,3,4)";
+        const string identity = "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Series] IN (1,2,3,4,5,6)";
         var format = model.Entity<DocumentNumberFormatRow>();
         format.ToTable("DocumentNumberFormats", Schema, table =>
         {

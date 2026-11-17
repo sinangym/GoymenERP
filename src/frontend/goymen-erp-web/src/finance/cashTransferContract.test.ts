@@ -241,3 +241,17 @@ describe('samePreparation', () => {
     expect(samePreparation(a!, decodeCashTransferPreparation(exchange({ rate: '36.50' }))!)).toBe(false)
   })
 })
+
+
+describe('Q7 actual recorded document number', () => {
+  it('accepts additive number proof and preserves a legacy missing proof without a fallback', () => {
+    expect(decodeCashTransferView(view(), COMPANY).ok).toBe(true)
+    const number = { number: 'DEK-2026-000001', formatVersion: '9007199254740993' }
+    const decoded = decodeCashTransferView(view({ documentNumber: number }), COMPANY)
+    expect(decoded.ok).toBe(true)
+    if (decoded.ok) expect(decoded.value.documentNumber).toEqual(number)
+    for (const bad of [null, { ...number, formatVersion: 1 }, { ...number, extra: true }])
+      expect(decodeCashTransferView(view({ documentNumber: bad }), COMPANY).ok).toBe(false)
+    expect(decodeCashTransferView(view({ companyId: '99999999-9999-4999-8999-999999999999', documentNumber: number }), COMPANY).ok).toBe(false)
+  })
+})

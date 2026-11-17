@@ -175,6 +175,7 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
         ConfigureCreditLimits(modelBuilder);
         ConfigurePartyBalanceTransfers(modelBuilder);
         ConfigurePeriodCarry(modelBuilder);
+        ConfigureDocumentNumbers(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -2300,6 +2301,7 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
 
     private void ApplyWriteGuards()
     {
+        GuardDocumentNumbers();
         if (ChangeTracker.Entries<FinancePeriodCarryVoucherRow>().Any(x => x.State is EntityState.Modified or EntityState.Deleted)
             || ChangeTracker.Entries<FinancePeriodCarryReversalRow>().Any(x => x.State is EntityState.Modified or EntityState.Deleted))
             throw new InvalidOperationException("Dönem devir ve ters devir fişleri değişmez; para hareketi değildir.");
@@ -2492,6 +2494,7 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
                     ],
                     ReceiptDraftRow =>
                     [
+                        nameof(ReceiptDraftRow.DocumentNumber), nameof(ReceiptDraftRow.DocumentNumberFormatVersion),
                         nameof(ReceiptDraftRow.PartyId), nameof(ReceiptDraftRow.CompanyAccountId),
                         nameof(ReceiptDraftRow.TreasuryAccountId), nameof(ReceiptDraftRow.CurrencyId),
                         nameof(ReceiptDraftRow.AmountText), nameof(ReceiptDraftRow.ProfileId),
@@ -2580,6 +2583,7 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
                     ],
                     ExpensePaymentRow =>
                     [
+                        nameof(ExpensePaymentRow.DocumentNumber), nameof(ExpensePaymentRow.DocumentNumberFormatVersion),
                         nameof(ExpensePaymentRow.SourceKind), nameof(ExpensePaymentRow.TreasuryAccountId),
                         nameof(ExpensePaymentRow.ExpenseItemId), nameof(ExpensePaymentRow.CurrencyId),
                         nameof(ExpensePaymentRow.AmountText), nameof(ExpensePaymentRow.ProfileId),
@@ -2593,6 +2597,7 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
                     ],
                     ManualBankPaymentRow =>
                     [
+                        nameof(ManualBankPaymentRow.DocumentNumber), nameof(ManualBankPaymentRow.DocumentNumberFormatVersion),
                         nameof(ManualBankPaymentRow.PartyId), nameof(ManualBankPaymentRow.CompanyAccountId),
                         nameof(ManualBankPaymentRow.TreasuryAccountId), nameof(ManualBankPaymentRow.CurrencyId),
                         nameof(ManualBankPaymentRow.AmountText), nameof(ManualBankPaymentRow.ProfileId),
@@ -2763,7 +2768,8 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
         return originalStatus == ExpensePaymentStatuses.Approved
                && current.Status == ExpensePaymentStatuses.Recorded
                && Only(nameof(ExpensePaymentRow.Status), nameof(ExpensePaymentRow.RecordedBy),
-                   nameof(ExpensePaymentRow.RecordedAtUtc), nameof(ExpensePaymentRow.PaymentConfirmed))
+                   nameof(ExpensePaymentRow.RecordedAtUtc), nameof(ExpensePaymentRow.PaymentConfirmed),
+                   nameof(ExpensePaymentRow.DocumentNumber), nameof(ExpensePaymentRow.DocumentNumberFormatVersion))
                && !string.IsNullOrWhiteSpace(current.RecordedBy)
                && current.RecordedAtUtc is not null
                && current.PaymentConfirmed;
@@ -2804,7 +2810,8 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
         return originalStatus == ManualBankPaymentStatuses.Approved
                && current.Status == ManualBankPaymentStatuses.Recorded
                && Only(nameof(ManualBankPaymentRow.Status), nameof(ManualBankPaymentRow.RecordedBy),
-                   nameof(ManualBankPaymentRow.RecordedAtUtc), nameof(ManualBankPaymentRow.BankResultConfirmed))
+                   nameof(ManualBankPaymentRow.RecordedAtUtc), nameof(ManualBankPaymentRow.BankResultConfirmed),
+                   nameof(ManualBankPaymentRow.DocumentNumber), nameof(ManualBankPaymentRow.DocumentNumberFormatVersion))
                && !string.IsNullOrWhiteSpace(current.RecordedBy)
                && current.RecordedAtUtc is not null
                && current.BankResultConfirmed;

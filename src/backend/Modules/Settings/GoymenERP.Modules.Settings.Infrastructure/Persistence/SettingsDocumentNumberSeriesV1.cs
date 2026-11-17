@@ -24,12 +24,16 @@ internal sealed class SettingsDocumentNumberSeriesV1(SettingsDbContext database,
     private const string FormatCommand = "settings.document-number-format.record.v1";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     public async Task<SettingsDocumentNumberFormatV1> GetPolicyAsync(Guid companyId, SettingsDocumentSeriesV1 series, CancellationToken cancellationToken = default)
+        => await GetPolicyCoreAsync(companyId, series, Permission(series, cancel: false), cancellationToken);
+
+    private async Task<SettingsDocumentNumberFormatV1> GetPolicyCoreAsync(Guid companyId, SettingsDocumentSeriesV1 series,
+        string permission, CancellationToken cancellationToken)
     {
         var actor = RequireIdentity(companyId);
-        await RequireAsync(companyId, actor, Permission(series, cancel: false), cancellationToken);
+        await RequireAsync(companyId, actor, permission, cancellationToken);
         var row = await database.DocumentNumberFormats.AsNoTracking().Where(row => row.Series == (int)series)
             .OrderByDescending(row => row.Version).FirstOrDefaultAsync(cancellationToken);
-        await RequireAsync(companyId, actor, Permission(series, cancel: false), cancellationToken);
+        await RequireAsync(companyId, actor, permission, cancellationToken);
         return row is null ? throw Missing() : new(companyId, series, row.Prefix, row.SequenceDigits, Text(row.Version));
     }
     public Task<SettingsDocumentNumberReservationV1> ReservePurchaseOrderNumberAsync(IDbTransaction transaction, Guid companyId,
@@ -40,9 +44,49 @@ internal sealed class SettingsDocumentNumberSeriesV1(SettingsDbContext database,
     public async Task<SettingsDocumentNumberReservationV1> ReserveAsync(IDbTransaction transaction, Guid companyId,
         SettingsDocumentSeriesV1 series, Guid documentId, DateOnly businessDate, string expectedFormatVersion,
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default)
+        => await ReserveCoreAsync(transaction, companyId, series, documentId, businessDate, expectedFormatVersion,
+            metadata, Permission(series, cancel: false), cancellationToken);
+
+    public async Task<SettingsDocumentNumberReservationV1> ReserveFinanceNumberAsync(IDbTransaction transaction, Guid companyId,
+        SettingsFinanceDocumentPurposeV1 purpose, Guid sourceId, DateOnly businessDate, SettingsCommandMetadataV1 metadata,
+        CancellationToken cancellationToken = default)
+    {
+        var (series, permission) = purpose switch
+        {
+            SettingsFinanceDocumentPurposeV1.ManualReceiptRecord => (SettingsDocumentSeriesV1.FinanceReceipt, ErpPermissions.FinanceManualReceiptRecord),
+            SettingsFinanceDocumentPurposeV1.CustomerInstrumentCollect => (SettingsDocumentSeriesV1.FinanceReceipt, ErpPermissions.FinanceCustomerInstrumentCollect),
+            SettingsFinanceDocumentPurposeV1.ManualBankPaymentRecord => (SettingsDocumentSeriesV1.FinanceVoucher, ErpPermissions.FinanceManualBankPaymentRecord),
+            SettingsFinanceDocumentPurposeV1.ExpensePaymentRecord => (SettingsDocumentSeriesV1.FinanceVoucher, ErpPermissions.FinanceExpensePaymentRecord),
+            SettingsFinanceDocumentPurposeV1.CashTransferCommit => (SettingsDocumentSeriesV1.FinanceVoucher, ErpPermissions.FinanceCashTransfersCommit),
+            _ => throw new ArgumentOutOfRangeException(nameof(purpose)),
+        };
+        ValidateMetadata(companyId, metadata);
+        var sql = RequireTransaction(transaction);
+        // Purpose is server-owned, not a client body field. Different record commands may use the
+        // same opaque key without colliding inside their shared receipt/payment series.
+        var numbered = metadata with { IdempotencyKey = FinanceReservationKey(purpose, metadata.IdempotencyKey) };
+        await RequireAsync(companyId, metadata.ActorId, permission, cancellationToken);
+        string? frozenFormat;
+        await using (var scope = scopes.CreateAsyncScope())
+        {
+            var owner = await EnlistAsync(scope.ServiceProvider, companyId, sql, cancellationToken);
+            var key = ReservationKey(series, numbered.IdempotencyKey);
+            var previous = await owner.DocumentNumberReservations.AsNoTracking().SingleOrDefaultAsync(row => row.KeyHash == key, cancellationToken);
+            frozenFormat = previous is null ? null : Text(previous.FormatVersion);
+        }
+        await RequireAsync(companyId, metadata.ActorId, permission, cancellationToken);
+        // The record request did not contain a format version. A retry therefore uses its
+        // original reservation version, never today's newly published company format.
+        var version = frozenFormat ?? (await GetPolicyCoreAsync(companyId, series, permission, cancellationToken)).Version;
+        return await ReserveCoreAsync(transaction, companyId, series, sourceId, businessDate, version,
+            numbered, permission, cancellationToken);
+    }
+
+    private async Task<SettingsDocumentNumberReservationV1> ReserveCoreAsync(IDbTransaction transaction, Guid companyId,
+        SettingsDocumentSeriesV1 series, Guid documentId, DateOnly businessDate, string expectedFormatVersion,
+        SettingsCommandMetadataV1 metadata, string permission, CancellationToken cancellationToken)
     {
         ValidateMetadata(companyId, metadata);
-        var permission = Permission(series, cancel: false);
         await RequireAsync(companyId, metadata.ActorId, permission, cancellationToken);
         var sql = RequireTransaction(transaction);
         if (documentId == Guid.Empty || businessDate == default || !ParseVersion(expectedFormatVersion, out var expected) || expected < 1)
@@ -85,6 +129,9 @@ internal sealed class SettingsDocumentNumberSeriesV1(SettingsDbContext database,
         await RequireAsync(companyId, metadata.ActorId, permission, cancellationToken);
         return View(row, replayed: false);
     }
+
+    private static string FinanceReservationKey(SettingsFinanceDocumentPurposeV1 purpose, string key) =>
+        $"finance-number:{(int)purpose}:{IdempotencyHash.ComputeKey(key)}";
     public async Task CancelAsync(IDbTransaction transaction, Guid companyId, SettingsDocumentSeriesV1 series, Guid documentId,
         string reason, SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default)
     {
