@@ -1,4 +1,5 @@
 using GoymenERP.Api.FinanceRuntime;
+using GoymenERP.Api.LogisticsRuntime;
 using GoymenERP.Api.AccountingRuntime;
 using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.InventoryRuntime;
@@ -32,6 +33,8 @@ public static class TrainCompletionHostComposition
     {
         services.AddFinanceCreditLenderOwnerRead();
         services.AddPurchaseInvoiceFinanceAdmissionHost();
+        services.AddPurchaseServiceOrderHostV1();
+        services.AddInventoryTransferPolicyHostPorts();
         services.AddFinancePartyBalanceTransfersV1();
         services.AddAccountingInvoiceLineCogsRuntime();
         services.AddScoped<ISalesMarginCostReadPortV1, InventorySalesMarginCostReadPortV1>();

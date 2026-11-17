@@ -9,6 +9,7 @@
  */
 
 export const SETTINGS_CAPABILITY = {
+  warehouseTransferScale: 'settings.warehouse-transfer-scale.manage',
   purchaseInvoiceVariance: 'settings.purchase-invoice-variance-policies.manage',
   salesContractDiscountLimit: 'settings.sales-contract-discount-limit.manage',
   collateralTypes: 'settings.collateral-types.manage',
@@ -94,6 +95,7 @@ export const SETTINGS_MANUFACTURING_PROFILE_CONTROL = {
 } as const
 
 export const SETTINGS_ROUTE: Record<SettingsCapabilityId, string> = {
+  [SETTINGS_CAPABILITY.warehouseTransferScale]: '/ayarlar/depo-transfer-tartisi',
   [SETTINGS_CAPABILITY.purchaseInvoiceVariance]: '/ayarlar/alis-fatura-fark-toleransi',
   [SETTINGS_CAPABILITY.salesContractDiscountLimit]: '/ayarlar/sozlesme-iskonto-siniri',
   [SETTINGS_CAPABILITY.collateralTypes]: '/ayarlar/teminat-turleri',
@@ -118,6 +120,7 @@ export const SETTINGS_ROUTE: Record<SettingsCapabilityId, string> = {
 }
 
 export const SETTINGS_NAV_LABEL: Record<SettingsCapabilityId, string> = {
+  [SETTINGS_CAPABILITY.warehouseTransferScale]: 'Depo transfer tartısı',
   [SETTINGS_CAPABILITY.purchaseInvoiceVariance]: 'Alış faturası fark toleransı',
   [SETTINGS_CAPABILITY.salesContractDiscountLimit]: 'Sözleşme iskonto sınırı',
   [SETTINGS_CAPABILITY.collateralTypes]: 'Teminat türleri ve oranları',

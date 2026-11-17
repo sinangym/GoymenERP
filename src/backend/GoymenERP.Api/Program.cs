@@ -613,6 +613,7 @@ app.MapLogisticsWeighingDifferenceEndpoints();
 app.MapLogisticsCustomerReturnEndpoints();
 app.MapPurchasingEndpoints();
 app.MapPurchaseServiceOrderEndpointsV1();
+app.MapPurchaseAdditionalCostEndpointsV1();
 app.MapPurchasingProductCandidateEndpoints();
 app.MapAccountingEndpoints();
 app.MapAccountingInvoiceLineCogsEndpoints();

@@ -28,6 +28,8 @@ export const INVENTORY_STOCK_SCRAP_APPROVE_CAPABILITY = 'inventory.stock-scrap.a
 
 export const INVENTORY_STOCK_POSITIONS_ROUTE = '/stok/pozisyonlar' as const
 export const INVENTORY_TRANSFERS_ROUTE = '/stok/transferler' as const
+export const INVENTORY_TRANSFER_PLANNING_ROUTE = '/stok/transferler/planla' as const
+export const INVENTORY_TRANSFER_PLANNING_CAPABILITY = 'inventory.stock-transfer.write' as const
 export const INVENTORY_TRANSFER_CANCEL_CAPABILITY = 'inventory.stock-transfer.cancel' as const
 
 /**

@@ -29,7 +29,11 @@ describe('shell ↔ Purchasing lane route catalogue', () => {
       PURCHASING_CAPABILITY.orderDetail,
       PURCHASING_CAPABILITY.orderList,
       PURCHASING_CAPABILITY.invoiceList,
+      PURCHASING_CAPABILITY.additionalCostRead,
       PURCHASING_CAPABILITY.invoiceDetail,
+      PURCHASING_CAPABILITY.serviceOrderList,
+      PURCHASING_CAPABILITY.serviceOrderCreate,
+      PURCHASING_CAPABILITY.serviceOrderDetail,
     ].sort())
     expect(shellIds).not.toContain(PURCHASING_CAPABILITY.requestSubmit)
     expect(shellIds).not.toContain(PURCHASING_CAPABILITY.requestApprove)
@@ -38,18 +42,27 @@ describe('shell ↔ Purchasing lane route catalogue', () => {
     expect(shellIds).not.toContain(PURCHASING_CAPABILITY.orderCancel)
     expect(shellIds).not.toContain(PURCHASING_CAPABILITY.orderLineScheduleWrite)
     expect(shellIds).not.toContain(PURCHASING_CAPABILITY.invoiceMatch)
+    expect(shellIds).not.toContain(PURCHASING_CAPABILITY.invoiceImport)
+    expect(shellIds).not.toContain(PURCHASING_CAPABILITY.additionalCostRecord)
     expect(shellIds).not.toContain(PURCHASING_CAPABILITY.invoiceApproveVariance)
     expect(shellIds).not.toContain(PURCHASING_CAPABILITY.invoiceFinalize)
+    expect(shellIds).not.toContain(PURCHASING_CAPABILITY.serviceOrderApprove)
+    expect(shellIds).not.toContain(PURCHASING_CAPABILITY.serviceOrderAccept)
   })
 
   it('mounts the actual invoice list and detail under their owner capability routes', () => {
     for (const [shellId, ownerId] of [
       [CAPABILITY.purchasingInvoicesList, PURCHASING_CAPABILITY.invoiceList],
+      [CAPABILITY.purchasingAdditionalCostsRead, PURCHASING_CAPABILITY.additionalCostRead],
       [CAPABILITY.purchasingInvoicesDetail, PURCHASING_CAPABILITY.invoiceDetail],
+      [CAPABILITY.purchasingServiceOrdersList, PURCHASING_CAPABILITY.serviceOrderList],
+      [CAPABILITY.purchasingServiceOrdersCreate, PURCHASING_CAPABILITY.serviceOrderCreate],
+      [CAPABILITY.purchasingServiceOrdersDetail, PURCHASING_CAPABILITY.serviceOrderDetail],
     ] as const) {
       expect(shellId).toBe(ownerId)
       expect(CAPABILITY_ROUTE[shellId]).toBe(PURCHASING_ROUTE[ownerId])
-      const actualPath = CAPABILITY_ROUTE[shellId].replace(':invoiceId', '7b1c0f2e-0000-4a00-8000-000000000009')
+      const actualPath = CAPABILITY_ROUTE[shellId].replace(':sourceKind', 'goods')
+        .replace(/:(invoiceId|serviceOrderId|orderId)/g, '7b1c0f2e-0000-4a00-8000-000000000009')
       expect(matchRoutes(shellRoutes, actualPath)?.at(-1)?.route.path).toBe(CAPABILITY_ROUTE[shellId].slice(1))
     }
   })

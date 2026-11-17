@@ -137,6 +137,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'accounting.posting-queues',
   'inventory.opening-stock.record',
   'inventory.stock-positions.list',
+  'inventory.stock-transfer.write',
   /**
    * Listed together with the routes that serve them (LOG-4b). Each renders only where the server's
    * snapshot carries the capability (staged until the l04 suite); the detail is reached from a row.
@@ -149,6 +150,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   // AT-025: the operations work list's two separate sections, each shown only to an actor holding its own grant.
   'logistics.operations-work.sales',
   'logistics.operations-work.purchase',
+  'logistics.transfer-departures.record',
   /**
    * P-01 and P-03 are Purchasing's two list entries. Their create actions live inside their lists
    * under K5, and each detail is reached from a row. Submit and approve are controls inside their
@@ -157,6 +159,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'purchasing.requests.list',
   'purchasing.orders.list',
   'purchasing.invoices.list',
+  'purchasing.service-orders.list',
   /**
    * SY-01 read subset, listed with the route that serves it. It renders only where the server granted
    * `identity.assignments.read` company-wide; the role card is reached from a row.
@@ -188,6 +191,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'settings.notification-retention.manage',
   'settings.document-number-series.manage',
   'settings.purchase-invoice-variance-policies.manage',
+  'settings.warehouse-transfer-scale.manage',
   'settings.manufacturing-parameter-profiles.read',
   'settings.manufacturing-tolerance-profiles.read',
   /** URT-D89: the Settings work center capacity screen, drawn only where the server granted its one name. */
@@ -301,12 +305,14 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // same capability; only the sidebar place and its wording changed.
   'inventory.opening-stock.record': 'Açılış stokları',
   'inventory.stock-positions.list': 'Stok / Malzeme Pozisyonu',
+  'inventory.stock-transfer.write': 'Depo transferi planlama',
   'identity.assignments.list': 'Kullanıcılar ve yetkiler',
   // The role card is opened from a row of the access list, never from the sidebar.
   'identity.roles.detail': '',
   'identity.audit.list': 'Denetim kaydı',
   'settings.sales-discount-limits.manage': 'İskonto limitleri',
   'settings.purchase-invoice-variance-policies.manage': 'Alış faturası fark toleransı',
+  'settings.warehouse-transfer-scale.manage': 'Depo transfer tartısı',
   'settings.tax-master.manage': 'Vergi (KDV / tevkifat)',
   'settings.exchange-rates.read': 'Kurlar',
   'settings.sales-delivery-tolerances.manage': 'Teslim toleransı',
@@ -341,6 +347,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // AT-025: one sidebar entry per section, because each section is its own grant.
   'logistics.operations-work.sales': 'Operasyon işleri — Satış',
   'logistics.operations-work.purchase': 'Operasyon işleri — Satın alma',
+  'logistics.transfer-departures.record': 'Transfer çıkışları',
   'purchasing.requests.list': 'Satın alma talepleri',
   // K5: create is reached through the list's single action; detail is reached from a row.
   'purchasing.requests.create': '',
@@ -348,6 +355,10 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'purchasing.orders.list': 'Satın alma siparişleri',
   'purchasing.invoices.list': 'Alış faturaları',
   'purchasing.invoices.detail': '',
+  'purchasing.additional-costs.read': '',
+  'purchasing.service-orders.list': 'Hizmet ve fason alışları',
+  'purchasing.service-orders.create': '',
+  'purchasing.service-orders.detail': '',
   // P-04 is staged and, once published, is reached from the list. The detail is reached from a row.
   'purchasing.orders.create': '',
   'purchasing.orders.detail': '',
@@ -409,7 +420,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     label: 'Satış',
     entries: ['sales.requests.list', 'sales.quotes.list', 'sales.drafts.list', 'sales.dispatches.list', 'sales.invoice-candidates.list', 'sales.invoices.list', 'sales.customer-returns.list', 'sales.reports.view', 'price-lists.list'],
   },
-  { id: 'purchasing', label: 'Satın Alma', entries: ['purchasing.requests.list', 'purchasing.orders.list', 'purchasing.invoices.list'] },
+  { id: 'purchasing', label: 'Satın Alma', entries: ['purchasing.requests.list', 'purchasing.orders.list', 'purchasing.service-orders.list', 'purchasing.invoices.list'] },
   { id: 'manufacturing', label: 'Üretim', entries: ['manufacturing.orders.list'] },
   {
     id: 'stock-logistics',
@@ -420,9 +431,11 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     label: 'Stok & Lojistik',
     entries: [
       'inventory.stock-positions.list',
+      'inventory.stock-transfer.write',
       'logistics.operations-work.sales',
       'logistics.instructions.list',
       'logistics.operations-work.purchase',
+      'logistics.transfer-departures.record',
     ],
   },
   { id: 'product', label: 'Ürün & Hizmet', entries: ['product.items.list', 'paint-memberships.manage'] },
@@ -481,6 +494,8 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       // F-029 S1/S2: the unit profiles follow the unit conversion policy, still before the rates.
       'settings.unit-profiles.manage',
       'settings.money-profiles.manage',
+      'settings.purchase-invoice-variance-policies.manage',
+      'settings.warehouse-transfer-scale.manage',
       'settings.sales-contract-discount-limit.manage',
   'settings.collateral-types.manage',
   'settings.finance-opening-period.manage',

@@ -99,3 +99,38 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
   exit 0; son mount parity test kaynaklarının derlemesi bir sonraki TSC'ye dahildir.
   Bütün runtime Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**. Plan **135/174 (%77,6)**
   kalır; tamamlanmış dilim denetimi/pin/FF push öncesi yüzde artırılmadı.
+
+## Dosya ve fiziksel belge sahipleri — devam checkpointi
+
+- FIN-S13 dosya kaynağı `929f6e57a`, kullanıcı önizlemesi `fd6c33fb1`, kayıtlı
+  kaynağı yeniden açma `85c2a4769` entegrasyona alındı. XML/UBL, CSV ve XLSX;
+  gerçek Documents owner, immutable sürüm/hash ve temiz dosya denetimi vardır.
+  Gerçek cari/ürün/birim/vergi/vade eşlemesi ve fatura kayıt admission'ı hâlâ açık;
+  import capability list parent'ı ile birlikte staged kalır. Dosya önizlemesi
+  finansal kayıt veya resmî belge doğrulaması sayılmaz.
+- ALC-S7 fiyat/actual vergi kaynağı `7e3aad912` / rapor `9c2812891`; ALC-S8 kayıt
+  `60a2e3110` / rapor `93e1f98c3`, additive ExpenseTypeId `a3d1512a5` alındı.
+  Ek masraf mevcut OrdersRevise ile kaydedilir; ilgili API/route merkezde bağlandı.
+  Parçalı fatura eşleştirmesi sonraki owner checkpointinde tamamlanmaktadır;
+  fiziksel kabul, stok hareketi veya Inventory ortalama maliyeti üretilmez.
+- ALS-D105 güncel insan cevabı [6947126872](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6947126872):
+  satış fason vergi varsayılanı/satır kodu mevcut sales.orders.approve, alış tarafı
+  mevcut purchasing.orders.approve ile değişir. Önceki iki yeni izin cevabı geri
+  alınmıştır. Yeni izin/grant yok; bu yetki düzeltmesinin kod takibi owner'dadır.
+- STK-S8 belge/ayrılış/Settings owner'ları `06a4e2953`, gerçek müşteri rolü kanıtı
+  `c86f24b46` alındı. Settings tartı ve Logistics transfer çıkışı route'ları bağlandı;
+  üç mevcut owner yeni izin kaydı merkez kataloğuna eklendi, grant verilmedi.
+  Transfer planlama mevcut stock-transfer.write ile ayrı route'tur; genel stok
+  raporu izinleri bu komuta eklenmez. Plan/kabul workspace kaynak takibi sürer.
+- SAT-SC34 lifecycle `f8cf8b24b`, siparişe bağlı gerçek belge seçimi `924ddd6d0`
+  alındı. Okuyucu/onaylayan write izni olmadan lifecycle paneline ulaşabilir.
+  Kesinleşmiş iptalin Finans/Muhasebe bağı ve B-04 fiş onayı hâlâ açık;
+  [6947269325](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6947269325)
+  dönem/tarih sorusu yanıt bekler. Tamamlanmış iptal iddiası yapılmaz.
+- Bu owner checkpointlerinin raporlarında API/ilgili Unit/Integration/TypeScript
+  derlemeleri exit 0 kayıtlıdır. Merkezde son API derlemesi exit 0, ancak son ortak
+  provider/route değişikliklerinin C# derlemesi yeniden alınmalıdır. Son merkez
+  TypeScript derlemesi exit 0; daha sonra alınan owner'ların birleşimi yeniden
+  derlenecektir. Test çalışma zamanı, gerçek SQL, Vitest/browser ve CI **NOT_RUN**.
+  Shell/OpenAPI/recovery/mimari/ilişkisel pin üretimi ve tren FF push henüz yapılmadı.
+  Sabit ölçüm **135/174 (%77,6)**, W8 son pakettir; yeni dalga açılmadı.
