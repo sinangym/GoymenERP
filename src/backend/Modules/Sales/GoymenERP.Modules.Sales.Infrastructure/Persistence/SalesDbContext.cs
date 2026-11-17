@@ -1496,6 +1496,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         });
         outbox.HasKey(x => x.Id);
         outbox.Property(x => x.Id).ValueGeneratedNever();
+        outbox.Property(x => x.Position).IsRowVersion().HasConversion<byte[]>();
+        outbox.HasIndex(x => new { x.CompanyId, x.Position });
         outbox.Property(x => x.EventType).HasMaxLength(160).IsUnicode(false).IsRequired();
         outbox.Property(x => x.SourceOperation).HasMaxLength(128).IsUnicode(false).IsRequired();
         outbox.Property(x => x.AggregateType).HasMaxLength(160).IsUnicode(false).IsRequired();
