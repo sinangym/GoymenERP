@@ -14,6 +14,7 @@ public sealed class AccountingInventoryCostProposalContractTests
         var encoded = JsonSerializer.Serialize(proposal, Json);
         using var document = JsonDocument.Parse(encoded);
         Assert.False(document.RootElement.TryGetProperty("currentPostedJournalId", out _));
+        Assert.False(document.RootElement.TryGetProperty("componentCancellation", out _));
         Assert.False(document.RootElement.GetProperty("component").TryGetProperty("recordedRounding", out _));
         Assert.False(document.RootElement.GetProperty("component").TryGetProperty("alreadyPostedPurchaseComponents", out _));
         Assert.False(document.RootElement.GetProperty("component").TryGetProperty("hasPostedComponents", out _));

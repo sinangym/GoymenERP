@@ -103,7 +103,7 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
             var actual = await ledger.ReadProvenSharesAsync(Company, target.ShipmentId, target.MovementId,
                 target.MovementLineNumber, target.ProductId, target.PhysicalQuantityKg, Fence, cancellationToken);
             if (actual.HasPendingCandidate) throw new AccountingStoreException("synthetic_pending", "SENTETIK pending purchase");
-            const string proof = "{\"syntheticSalesOwner\":true}";
+            var proof = CancellationProof(facts);
             var total = actual.Shares.Aggregate(AccountingInventoryCostAmountsV1.FromDecimal(0), (sum, share) =>
                 AccountingInventoryCostAmountsV1.Add(sum, AccountingInventoryCostAmountsV1.FromDecimal(decimal.Parse(share.SignedAmount, CultureInfo.InvariantCulture))));
             return new(Company, envelope.EventId, AccountingInventoryCostKindV1.SalesInvoicedShipment, facts.InvoiceId, facts.FinalizedVersion,

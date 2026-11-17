@@ -70,7 +70,8 @@ public sealed record AccountingInventoryCostProposalV1(Guid ProposalId, Guid Com
     DateTimeOffset SourceOccurredAtUtc, AccountingInventoryCostPreparationV1? Preparation = null,
     Guid? ApprovedBy = null, DateTimeOffset? ApprovedAtUtc = null, Guid? JournalId = null,
     Guid? CancellationId = null, AccountingJournalReversalProposalViewV1? ReversalProposal = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? CurrentPostedJournalId = null)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? CurrentPostedJournalId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] InventoryCostCancellationV1? ComponentCancellation = null)
 {
     public string ExactTlAmount => AccountingInventoryCostAmountsV1.TryExactDecimal(Component.SignedTlAmount, 28, out var amount)
         ? amount.ToString("0.############################", System.Globalization.CultureInfo.InvariantCulture)
@@ -85,7 +86,8 @@ public sealed record AccountingInventoryCostListV1(Guid CompanyId, IReadOnlyList
 public sealed record PrepareAccountingInventoryCostV1(long ExpectedVersion, Guid PeriodId, DateOnly AccountingDate,
     DateOnly TransactionDate, Guid CounterAccountId, string Reason);
 public sealed record ProposeAccountingInventoryCostReversalV1(long ExpectedVersion, Guid ProposalId,
-    Guid PeriodId, DateOnly AccountingDate, DateOnly TransactionDate, string Reason);
+    Guid PeriodId, DateOnly AccountingDate, DateOnly TransactionDate, string Reason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? ExpectedCancellationVersion = null);
 
 public interface IAccountingInventoryCostStoreV1
 {
@@ -100,6 +102,9 @@ public interface IAccountingInventoryCostStoreV1
         long expectedVersion, Guid actorId, Func<CancellationToken, Task> freshFence,
         AccountingCommandMetadata metadata, CancellationToken cancellationToken = default);
     Task<AccountingInventoryCostProposalV1> ProposeReversalAsync(Guid proposalId, ProposeAccountingInventoryCostReversalV1 request,
+        Guid actorId, Func<CancellationToken, Task> freshFence, AccountingCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
+    Task<AccountingInventoryCostProposalV1> ApproveCancellationAsync(Guid proposalId, ApproveInventoryCostCancellationV1 request,
         Guid actorId, Func<CancellationToken, Task> freshFence, AccountingCommandMetadata metadata,
         CancellationToken cancellationToken = default);
 }

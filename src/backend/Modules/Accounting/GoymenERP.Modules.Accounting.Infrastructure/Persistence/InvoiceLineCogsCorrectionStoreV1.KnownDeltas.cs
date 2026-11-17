@@ -6,7 +6,7 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 
 public sealed partial class InvoiceLineCogsCorrectionStoreV1
 {
-    private async Task RequireCompletedKnownSource(FinalizedInvoiceLineSourceV1 source, Guid salesEventId,
+    private async Task RequireCompletedKnownSource(CogsEvidenceIdentityV1 source, Guid salesEventId,
         AccountingInventoryCostComponentV1 component, CancellationToken token)
     {
         var rows = await db.InventoryCostProposals.AsNoTracking().Where(x => x.EventId == salesEventId

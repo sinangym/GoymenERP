@@ -247,15 +247,15 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
         finally { if (started) { db.ChangeTracker.Clear(); auditWriter.DiscardPending(); } }
     }
 
-    private IQueryable<InvoiceLineCogsRevisionRow> Revisions(FinalizedInvoiceLineSourceV1 source) => db.InvoiceLineCogsRevisions
+    private IQueryable<InvoiceLineCogsRevisionRow> Revisions(CogsEvidenceIdentityV1 source) => db.InvoiceLineCogsRevisions
         .Where(x => x.InvoiceId == source.InvoiceId && x.InvoiceLineId == source.InvoiceLineId);
-    private async Task<InvoiceLineCogsRevisionViewV1?> Latest(FinalizedInvoiceLineSourceV1 source, CancellationToken token)
+    private async Task<InvoiceLineCogsRevisionViewV1?> Latest(CogsEvidenceIdentityV1 source, CancellationToken token)
     {
         var row = await Revisions(source).AsNoTracking().OrderByDescending(x => x.Version).FirstOrDefaultAsync(token);
         return row is null ? null : Decode<InvoiceLineCogsRevisionViewV1>(row.RevisionJson);
     }
 
-    private async Task<(string State, InvoiceLineCogsPostedEvidenceV1? Evidence)> Evidence(FinalizedInvoiceLineSourceV1 source,
+    private async Task<(string State, InvoiceLineCogsPostedEvidenceV1? Evidence)> Evidence(CogsEvidenceIdentityV1 source,
         InvoiceLineCogsRevisionViewV1? current, CancellationToken token)
     {
         // Every query reads actual owner tables. No matching source facts is distinct from an unreadable/aggregate posting.
@@ -286,6 +286,13 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
         var permitted = await Revisions(source).AsNoTracking().Select(x => x.RevisionJson).ToListAsync(token);
         var ownCorrections = permitted.Select(x => Decode<InvoiceLineCogsRevisionViewV1>(x)).SelectMany(x =>
             new[] { x.ReversingCorrectionJournalId, x.ReplacementCorrectionJournalId }).Where(x => x.HasValue).Select(x => x!.Value).ToHashSet();
+        if (source.CancellationRead)
+        {
+            var answered = await db.InventoryCostCancellationClaims.AsNoTracking().Where(x => x.InvoiceId == source.InvoiceId
+                && x.InvoiceLineId == source.InvoiceLineId && x.FinalizedVersion == source.FinalizedVersion
+                && x.ReversingJournalId != null).Select(x => x.ReversingJournalId!.Value).ToListAsync(token);
+            ownCorrections.UnionWith(answered); // The cancellation reader separately verifies every immutable claim and journal.
+        }
         if (rows.Any(x => x.SourceId == source.InvoiceId && x.PostingPurpose == candidate.PostingPurpose && x.Id != candidate.Id
             && x.Kind != (int)JournalKind.Original && !ownCorrections.Contains(x.Id))) return ("Unreadable", null);
         return ("PostedCogs", new(source.CompanyId, source.InvoiceId, source.InvoiceLineId, source.FinalizedVersion,
@@ -293,7 +300,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
             lines[0].Debit.ToString("0.############################", CultureInfo.InvariantCulture), source.Fingerprint));
     }
 
-    private static bool IsAnotherLineComponent(JournalRow row, FinalizedInvoiceLineSourceV1 source)
+    private static bool IsAnotherLineComponent(JournalRow row, CogsEvidenceIdentityV1 source)
     {
         if (row.SourceId != source.InvoiceId) return false;
         var pieces = row.PostingPurpose.Split(':');

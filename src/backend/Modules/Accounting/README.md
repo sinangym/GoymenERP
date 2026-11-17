@@ -645,3 +645,16 @@ journal guard and different-approver rule are preserved. This binding needs the 
 `IPostedPurchaseShipmentCostReaderV1` in the correction store composition. Source build and test sources do not
 constitute runtime acceptance; attributed cancellation and later manufacturing-delta composition remain separate
 technical follow-ups in the existing slice.
+
+Official invoice cancellation now prepares and separately approves only each actual posted cost component,
+including later manufacturing deltas, purchase attribution, current SAT-D422 replacement accounts, and real
+zero-share witnesses. The aggregate source journal is preserved. A zero witness records approval without a zero
+journal; a unique company/invoice-line/economic-component claim prevents a second reversal. Open period/date,
+current currency-profile representability, source revision and different preparer/approver are rechecked in the
+same Serializable owner transaction. Existing reversal permissions apply; generic whole-journal reversal is unchanged.
+
+EF-generated `20261117223234_AddInventoryCostComponentCancellations` adds two company-scoped append-only tables.
+Down first refuses retained preparation/approval/claim evidence with **51812**; update/delete triggers use
+**51813/51814**. Fixed migration SQL guards await K3 review; no guard allowlist or database application occurred.
+The historical ordering where official cancellation precedes first cost-source acceptance remains a separate
+technical continuation; this checkpoint does not claim its completion or runtime acceptance.

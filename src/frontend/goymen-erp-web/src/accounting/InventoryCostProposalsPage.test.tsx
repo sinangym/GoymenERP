@@ -29,10 +29,10 @@ const row = (patch: Record<string, unknown> = {}) => ({ proposalId: source, comp
     accountPlanSha256: 'b'.repeat(64), preparedBy: maker, preparedAtUtc: '2026-11-17T09:01:00Z', reason: 'SENTETIK gerçek kaynak' },
   approvedBy: null, approvedAtUtc: null, journalId: null, cancellationId: null, reversalProposal: null, ...patch })
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
-const mount = (canApprove = true, canPrepare = false, canProposeReversal = false) => {
+const mount = (canApprove = true, canPrepare = false, canProposeReversal = false, canApproveCancellation = false) => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
   const content = (approve: boolean, prepare: boolean, reverse: boolean) => <MemoryRouter><QueryClientProvider client={client}>
-    <InventoryCostProposalsPage kind={1} canPrepare={prepare} canApprove={approve} canProposeReversal={reverse} /></QueryClientProvider></MemoryRouter>
+    <InventoryCostProposalsPage kind={1} canPrepare={prepare} canApprove={approve} canProposeReversal={reverse} canApproveCancellation={canApproveCancellation} /></QueryClientProvider></MemoryRouter>
   const view = render(content(canApprove, canPrepare, canProposeReversal))
   return { ...view, updateAuthority: (approve: boolean, prepare = false, reverse = false) => view.rerender(content(approve, prepare, reverse)) }
 }
@@ -41,6 +41,28 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); state.actor = 'e0431000-0000
   state.committedContextRevision = 1; state.sessionEpoch = 0 })
 
 describe('inventory cost human approval flow', () => {
+  it('lets a different reversal approver confirm actual cost shares without creating an initial SMM proposal', async () => {
+    const initial = row(); const journal = 'e0431000-0000-4000-8000-000000000005'
+    const componentCancellation = { id: source, companyId: state.company, inventoryCostProposalId: source, cancellationId: source,
+      version: 1, status: 'Prepared', invoiceLineRevision: 0, periodId: source, accountingDate: '2026-11-18', transactionDate: '2026-11-18',
+      reason: 'SENTETIK pay iptali', preparedBy: maker, preparedAtUtc: '2026-11-18T09:00:00Z', approvedBy: null, approvedAtUtc: null,
+      moneyProfiles: [{ currencyId: source, profileId: source, version: 1, scale: 2 }], components: [{ economicKey: 'c'.repeat(64), origin: 'Known',
+        sourceJournalId: journal, journalSourceId: source, postingPurpose: `invoice-line-cogs:${source}:2`, currencyId: source,
+        journalTotal: '600', signedAmount: '600', cogsAccountId: cogs, counterAccountId: counter, sourceFingerprint: 'a'.repeat(64) }] }
+    const value = { ...initial, status: 'ComponentCancellationPrepared', version: 3, approvedBy: state.actor,
+      approvedAtUtc: '2026-11-17T09:02:00Z', journalId: journal, cancellationId: source, componentCancellation }
+    let sent: RequestInit | undefined
+    vi.stubGlobal('fetch', vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') { sent = init; return json({ ...value, status: 'CancelledByComponentReversal', componentCancellation: {
+        ...componentCancellation, version: 2, status: 'Approved', approvedBy: state.actor, approvedAtUtc: '2026-11-18T09:05:00Z',
+        components: [{ ...componentCancellation.components[0], reversingJournalId: source }] } }) }
+      return json({ companyId: state.company, items: [value] })
+    }))
+    mount(false, false, false, true); fireEvent.click(await screen.findByRole('button', { name: T.choose }))
+    expect(screen.queryByRole('button', { name: T.approve })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: T.componentApprove })); await screen.findByText(T.done)
+    expect(JSON.parse(String(sent?.body))).toEqual({ expectedVersion: 3, expectedCancellationVersion: 1 })
+  })
   it('shows the source exact amount and signed residue separately from its one rounded posting amount', async () => {
     const base = row(); const rounding = { exactSignedAmount: { numerator: '1', denominator: '3' }, roundedSignedAmount: '0.33',
       exactSignedResidue: { numerator: '1', denominator: '300' }, exactSignedAmountText: '1 / 3', exactSignedResidueText: '1 / 300',
