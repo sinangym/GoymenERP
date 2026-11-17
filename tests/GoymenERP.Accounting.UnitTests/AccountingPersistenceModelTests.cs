@@ -22,6 +22,7 @@ public sealed class AccountingPersistenceModelTests
     private static readonly Type[] TenantRows =
     [
         typeof(PeriodCalendarRow), typeof(PeriodRow), typeof(JournalRow), typeof(JournalLineRow), typeof(DeliveryRow),
+        typeof(AccountingPeriodClosureRow), typeof(AccountingPeriodReopeningRow),
         typeof(PostingExceptionRow), typeof(PendingValuationRow), typeof(AccountingCommandRow),
         typeof(NormalJournalDraftRow), typeof(NormalJournalDraftLineRow),
         typeof(AccountingPostingAccountMappingVersionRow), typeof(AccountingPostingAccountMappingEntryRow),
@@ -136,8 +137,8 @@ public sealed class AccountingPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddNormalJournalDrafts", StringComparison.Ordinal));
         Assert.Equal(["20261117000534_AddManufacturingCostDifferenceProposals", "20261117005516_AddCreditMovementProposals",
                 "20261117095844_AddInvoiceLineCogsCorrections", "20261117102540_AddFinanceJournalSources",
-                "20261117123611_AddSourceVoucherLifecycle"],
-            context.Database.GetMigrations().TakeLast(5));
+                "20261117123611_AddSourceVoucherLifecycle", "20261117154311_AddPeriodClosureCarryAndReopening"],
+            context.Database.GetMigrations().TakeLast(6));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

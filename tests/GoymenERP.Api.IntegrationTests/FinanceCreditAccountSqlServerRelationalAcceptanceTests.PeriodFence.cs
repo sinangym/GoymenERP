@@ -37,7 +37,7 @@ public sealed partial class FinanceCreditAccountSqlServerRelationalAcceptanceTes
                 var closingDb = closing.ServiceProvider.GetRequiredService<AccountingDbContext>();
                 await closingDb.Database.OpenConnectionAsync();
                 await closingDb.Database.ExecuteSqlRawAsync("SET LOCK_TIMEOUT 0");
-                var blocked = await Record.ExceptionAsync(() => closing.ServiceProvider.GetRequiredService<AccountingStore>()
+                var blocked = await Record.ExceptionAsync(() => AccountingPeriodCarrySqlFixture.Store(closing.ServiceProvider, run.Factory.Services, CreditPeriodChecker)
                     .ClosePeriodAsync(period, 2, CreditPeriodChecker, CreditPeriodMetadata()));
                 Assert.NotNull(blocked);
                 Assert.Equal(1222, Assert.IsType<SqlException>(blocked.GetBaseException()).Number);
@@ -51,7 +51,7 @@ public sealed partial class FinanceCreditAccountSqlServerRelationalAcceptanceTes
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OutboxMessages WHERE AggregateId=@id", ("@id", movement)));
         await using var after = run.Factory.Services.CreateAsyncScope();
         after.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
-        var closed = await after.ServiceProvider.GetRequiredService<AccountingStore>()
+        var closed = await AccountingPeriodCarrySqlFixture.Store(after.ServiceProvider, run.Factory.Services, CreditPeriodChecker)
             .ClosePeriodAsync(period, 2, CreditPeriodChecker, CreditPeriodMetadata());
         Assert.Equal("Closed", closed.Period.Status.ToString());
     }
@@ -69,7 +69,7 @@ public sealed partial class FinanceCreditAccountSqlServerRelationalAcceptanceTes
         await using (var closing = run.Factory.Services.CreateAsyncScope())
         {
             closing.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
-            await closing.ServiceProvider.GetRequiredService<AccountingStore>()
+            await AccountingPeriodCarrySqlFixture.Store(closing.ServiceProvider, run.Factory.Services, CreditPeriodChecker)
                 .ClosePeriodAsync(period, 2, CreditPeriodChecker, CreditPeriodMetadata());
         }
         await using (var checker = run.OpenMovement(Checker, accountingOwner: (db, company, user) =>
@@ -130,7 +130,7 @@ public sealed partial class FinanceCreditAccountSqlServerRelationalAcceptanceTes
     private static readonly Guid CreditPeriodMaker = Guid.Parse("d4710000-0000-4000-8000-000000000001");
     private static readonly Guid CreditPeriodChecker = Guid.Parse("d4710000-0000-4000-8000-000000000002");
     private static AccountingCommandMetadata CreditPeriodMetadata() => new(CreditPeriodChecker.ToString("D"),
-        "synthetic.accounting.period-write", [], "SENTETIK credit period", null, Guid.NewGuid().ToString("D"), "Web");
+        AccountingPermissionManifestV1.PeriodsClose, [], "SENTETIK credit period", null, Guid.NewGuid().ToString("D"), "Web");
     private static async Task<Guid> OpenCreditAccountingPeriod(Run run)
     {
         await using var scope = run.Factory.Services.CreateAsyncScope();
@@ -140,6 +140,7 @@ public sealed partial class FinanceCreditAccountSqlServerRelationalAcceptanceTes
         var (created, _) = await store.ProposePeriodAsync(id, new(2026, 11, 1), new(2026, 11, 30), CreditPeriodMaker,
             CreditPeriodMetadata() with { ActorId = CreditPeriodMaker.ToString("D") });
         await store.ApprovePeriodAsync(id, created.Version, CreditPeriodChecker, CreditPeriodMetadata());
+        await AccountingPeriodCarrySqlFixture.PrepareAsync(run.Factory, CompanyA, id, CreditPeriodChecker);
         return id;
     }
     private sealed class CreditPeriodAuthority : IErpAuthorityRevalidationService

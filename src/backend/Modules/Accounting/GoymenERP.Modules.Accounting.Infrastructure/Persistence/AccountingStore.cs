@@ -37,13 +37,14 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 /// delivery record and no audit event.</item>
 /// </list>
 /// </summary>
-public sealed class AccountingStore(
+public sealed partial class AccountingStore(
     AccountingDbContext dbContext,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
     TimeProvider timeProvider,
-    AccountingAmountScaleVerifier amounts) : IAccountingPeriodStore, IAccountingPostingStore, IAccountingCommandLog,
-    IAccountingNormalJournalDraftStore, IAccountingJournalReversalProposalStoreV1
+    AccountingAmountScaleVerifier amounts,
+    IAccountingPeriodCarryForwardPortV1? periodCarry = null) : IAccountingPeriodStore, IAccountingPostingStore, IAccountingCommandLog,
+    IAccountingNormalJournalDraftStore, IAccountingJournalReversalProposalStoreV1, IAccountingPeriodReopeningStoreV1
 {
     private const int Open = 1;
     private const int Resolved = 2;
@@ -158,31 +159,9 @@ public sealed class AccountingStore(
         return record;
     }
 
-    public async Task<AccountingPeriodRecord> ClosePeriodAsync(Guid periodId, long expectedVersion, Guid closedByUserId,
-        AccountingCommandMetadata metadata, CancellationToken cancellationToken = default)
-    {
-        RequireMetadata(metadata);
-        var companyId = RequireResolvedCompany();
-        var row = await dbContext.Periods.SingleOrDefaultAsync(candidate => candidate.Id == periodId, cancellationToken)
-            ?? throw Refused(AccountingStoreCodes.PeriodNotFound, "Bu şirketin böyle bir dönemi yok.");
-        RequireVersion(row, expectedVersion);
-        var period = RestorePeriod(row);
-        var before = PeriodAudit(period);
-        period.Close(closedByUserId, timeProvider.GetUtcNow());
-
-        var versionBefore = row.Version;
-        row.Status = (int)AccountingPeriodStatus.Closed;
-        row.ClosedByUserId = period.ClosedByUserId;
-        row.ClosedAtUtc = period.ClosedAtUtc;
-        row.Version = checked(versionBefore + 1);
-        row.UpdatedAtUtc = period.ClosedAtUtc!.Value;
-        Audit(metadata, companyId, PeriodEntityType, period.Id.ToString("D"), "accounting.period.closed.v1", "Close",
-            versionBefore, row.Version, before, PeriodAudit(period), "Muhasebe dönemi kapandı");
-        var record = new AccountingPeriodRecord(period, row.Version);
-        Complete(metadata, companyId, record);
-        await SaveAsync(cancellationToken);
-        return record;
-    }
+    public Task<AccountingPeriodRecord> ClosePeriodAsync(Guid periodId, long expectedVersion, Guid closedByUserId,
+        AccountingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        CloseWithCarryAsync(periodId, expectedVersion, closedByUserId, metadata, cancellationToken);
 
     public async Task<AccountingPeriodRecord?> FindPeriodAsync(Guid periodId, CancellationToken cancellationToken = default)
     {

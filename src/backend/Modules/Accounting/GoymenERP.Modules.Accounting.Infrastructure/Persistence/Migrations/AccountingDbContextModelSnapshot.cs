@@ -158,6 +158,126 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingPeriodClosureRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CarryVoucherId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ClosedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("ClosedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("ClosedPeriodVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("LineCount")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("PeriodId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("ReopenedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("ReopenedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ReopeningId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SourceHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("TargetPeriodId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "CarryVoucherId")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "TargetPeriodId");
+
+                    b.HasIndex("CompanyId", "PeriodId", "ClosedPeriodVersion")
+                        .IsUnique();
+
+                    b.ToTable("PeriodClosures", "accounting", t =>
+                        {
+                            t.HasCheckConstraint("CK_PeriodClosures_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CarryVoucherId] <> '00000000-0000-0000-0000-000000000000' AND [PeriodId] <> [TargetPeriodId] AND [ClosedBy] <> '00000000-0000-0000-0000-000000000000' AND [ClosedPeriodVersion] > 1 AND LEN([SourceHash]) = 64 AND [LineCount] >= 0");
+
+                            t.HasCheckConstraint("CK_PeriodClosures_Reopening", "([Version] = 1 AND [ReopeningId] IS NULL AND [ReopenedBy] IS NULL AND [ReopenedAtUtc] IS NULL) OR ([Version] = 2 AND [ReopeningId] IS NOT NULL AND [ReopeningId] <> '00000000-0000-0000-0000-000000000000' AND [ReopenedBy] IS NOT NULL AND [ReopenedBy] <> '00000000-0000-0000-0000-000000000000' AND [ReopenedAtUtc] IS NOT NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingPeriodReopeningRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("ApprovedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("ApprovedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("ClosedPeriodVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("ClosureId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("PeriodId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ProposedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("ProposedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "ClosureId")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "PeriodId");
+
+                    b.ToTable("PeriodReopenings", "accounting", t =>
+                        {
+                            t.HasCheckConstraint("CK_PeriodReopenings_Approval", "([Version] = 1 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL) OR ([Version] = 2 AND [ApprovedBy] IS NOT NULL AND [ApprovedBy] <> '00000000-0000-0000-0000-000000000000' AND [ApprovedBy] <> [ProposedBy] AND [ApprovedAtUtc] IS NOT NULL AND [ApprovedAtUtc] >= [ProposedAtUtc])");
+
+                            t.HasCheckConstraint("CK_PeriodReopenings_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [ProposedBy] <> '00000000-0000-0000-0000-000000000000' AND [ClosedPeriodVersion] > 1 AND LEN([Reason]) > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingPostingAccountMappingEntryRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -1856,6 +1976,39 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.JournalRow", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "SourceJournalId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingPeriodClosureRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.PeriodRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "PeriodId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.PeriodRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "TargetPeriodId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingPeriodReopeningRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingPeriodClosureRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "ClosureId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.PeriodRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "PeriodId")
                         .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();

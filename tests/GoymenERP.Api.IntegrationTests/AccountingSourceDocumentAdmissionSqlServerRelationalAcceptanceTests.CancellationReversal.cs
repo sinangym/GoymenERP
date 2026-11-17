@@ -23,10 +23,10 @@ public sealed partial class AccountingSourceDocumentAdmissionSqlServerRelational
             closing.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
             var version = await run.ScalarAsync<long>("SELECT Version FROM accounting.Periods WHERE CompanyId=@c AND Id=@p",
                 ("@c", CompanyA), ("@p", posted.PeriodId!.Value));
-            await closing.ServiceProvider.GetRequiredService<IAccountingPeriodStore>()
-                .ClosePeriodAsync(posted.PeriodId.Value, version, ReversalChecker, VoucherMetadata(ReversalChecker));
+            await AccountingPeriodCarrySqlFixture.CloseAsync(run.Factory, CompanyA, posted.PeriodId.Value, version,
+                ReversalChecker, VoucherMetadata(ReversalChecker));
         }
-        var target = await OpenReversalTarget(run);
+        var target = await run.ScalarAsync<Guid>("SELECT TOP(1) Id FROM accounting.Periods WHERE CompanyId=@c AND StartsOn='20261201'", ("@c", CompanyA));
         var request = ReversalRequest(target, posted.Version);
         var proposed = await ProposeSourceReversal(run, posted.Id, request, _ => Task.CompletedTask);
         Assert.Equal("CancellationReversalPending", proposed.Status); Assert.Equal(cancellation.CancellationId, proposed.CancellationId);
@@ -89,8 +89,8 @@ public sealed partial class AccountingSourceDocumentAdmissionSqlServerRelational
         await using (var closing = run.Factory.Services.CreateAsyncScope())
         {
             closing.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
-            await closing.ServiceProvider.GetRequiredService<IAccountingPeriodStore>()
-                .ClosePeriodAsync(target, 2, ReversalChecker, VoucherMetadata(ReversalChecker));
+            await AccountingPeriodCarrySqlFixture.CloseAsync(run.Factory, CompanyA, target, 2,
+                ReversalChecker, VoucherMetadata(ReversalChecker));
         }
         await Assert.ThrowsAsync<AccountingDomainException>(() => ApproveSourceReversal(run, request.ProposalId, ReversalChecker));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT Status FROM accounting.JournalReversalProposals WHERE CompanyId=@c AND Id=@p", ("@c", CompanyA), ("@p", request.ProposalId)));

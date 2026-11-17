@@ -3083,6 +3083,117 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinancePeriodCarryReversalRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClosureId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("RecordedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SourceHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("VoucherId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "ClosureId")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "VoucherId")
+                        .IsUnique();
+
+                    b.ToTable("PeriodCarryReversals", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_PeriodCarryReversals_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [RecordedBy] <> '00000000-0000-0000-0000-000000000000' AND LEN([Reason]) > 0 AND LEN([SourceHash]) = 64");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinancePeriodCarryVoucherRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("ClosedPeriodVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("ClosureId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("LinesJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("RecordedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("SourceEndsOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("SourceHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("SourceJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("SourcePeriodId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TargetPeriodId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("TargetStartsOn")
+                        .HasColumnType("date");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "ClosureId")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "TargetStartsOn");
+
+                    b.HasIndex("CompanyId", "SourcePeriodId", "ClosedPeriodVersion")
+                        .IsUnique();
+
+                    b.ToTable("PeriodCarryVouchers", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_PeriodCarryVouchers_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [ClosureId] <> '00000000-0000-0000-0000-000000000000' AND [SourcePeriodId] <> [TargetPeriodId] AND [RecordedBy] <> '00000000-0000-0000-0000-000000000000' AND [ClosedPeriodVersion] > 1 AND [TargetStartsOn] > [SourceEndsOn]");
+
+                            t.HasCheckConstraint("CK_PeriodCarryVouchers_Source", "ISJSON([SourceJson]) = 1 AND ISJSON([LinesJson]) = 1 AND LEN([SourceHash]) = 64");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceSourceAllocationStateRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -4851,6 +4962,24 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("CompanyId", "PaymentId")
                         .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinancePeriodCarryReversalRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinancePeriodCarryVoucherRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "VoucherId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinancePeriodCarryVoucherRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

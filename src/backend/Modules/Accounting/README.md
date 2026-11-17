@@ -488,3 +488,18 @@ shell at `/muhasebe/hesap-plani` (screen `M-05`, capability `accounting.account-
   approval facts with company-scoped journal/period references. Up is DDL only. Down's first SQL operation refuses
   with **THROW 51938** while cancellation, approval or official-number facts exist; an untouched legacy draft may
   roll back. No history is backfilled, erased or applied to a database by this checkpoint.
+
+## FIN-S17: close with carry and approved reopening (FNS-D42)
+
+Closing requires the immediately following recorded period to be open. Accounting retains the exact closure,
+period version and Finance carry source proof; Finance creates its own immutable boundary voucher in the same
+Serializable transaction. No period is created or opened automatically and no money movement is copied.
+Reopening uses the existing period proposal and approval authorities with different actors, keeps the original
+closure history, and reverses the Finance carry atomically. Fresh company/actor/authority checks surround owner
+calls and the final commit. Central registration of the real carry bridge remains required.
+
+EF-generated `20261117154311_AddPeriodClosureCarryAndReopening` adds company-scoped closure and reopening
+history with same-company restricted foreign keys and version/approval constraints. Up is DDL only; Down first
+refuses with **THROW 51920** while either history exists. Empty new stores may roll back. Real SQL, browser and
+runtime acceptance are separate from source compilation. Dependent later closed carry chains remain unavailable
+pending the explicit decision; this checkpoint does not choose automatic cascading reopening.
