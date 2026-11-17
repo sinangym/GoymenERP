@@ -4,6 +4,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
+using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
@@ -89,7 +90,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         {
             var services = run.Factory.Services.CreateAsyncScope(); var provider = services.ServiceProvider;
             var company = provider.GetRequiredService<ICompanyContext>(); company.Set(CompanyA);
-            var collector = provider.GetRequiredService<IAuditEventCollector>(); var writer = provider.GetRequiredService<IAuditTransactionWriterV1>();
+            var collector = provider.GetRequiredService<AuditEventCollector>(); var writer = provider.GetRequiredService<IAuditTransactionWriterV1>();
             var context = new ManufacturingDbContext(new DbContextOptionsBuilder<ManufacturingDbContext>().UseSqlServer(run.Factory.DatabaseConnectionString,
                 sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", ManufacturingDbContext.Schema))
                 .AddInterceptors(new AuditSaveChangesInterceptor(collector, company)).Options, company);
