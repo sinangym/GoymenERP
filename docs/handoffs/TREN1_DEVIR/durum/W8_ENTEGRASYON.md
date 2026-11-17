@@ -128,8 +128,12 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
   [6947269325](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6947269325)
   dönem/tarih sorusu yanıt bekler. Tamamlanmış iptal iddiası yapılmaz.
 - Bu owner checkpointlerinin raporlarında API/ilgili Unit/Integration/TypeScript
-  derlemeleri exit 0 kayıtlıdır. Merkezde son API derlemesi exit 0, ancak son ortak
-  provider/route değişikliklerinin C# derlemesi yeniden alınmalıdır. Son merkez
+  derlemeleri exit 0 kayıtlıdır. Merkezde ortak provider/route değişiklikleriyle
+  API, Purchasing, Inventory, Logistics, Counterparty, Accounting, Settings,
+  Identity UnitTests ve Api.IntegrationTests derlemeleri exit 0 alındı.
+  Counterparty test kaynağındaki ConfigurationBuilder bağımlılığı ve xUnit
+  predicate kullanımı derleme hataları düzeltildi; proje yeniden exit 0 verdi.
+  Son merkez
   TypeScript derlemesi exit 0; daha sonra alınan owner'ların birleşimi yeniden
   derlenecektir. Test çalışma zamanı, gerçek SQL, Vitest/browser ve CI **NOT_RUN**.
   Shell/OpenAPI/recovery/mimari/ilişkisel pin üretimi ve tren FF push henüz yapılmadı.

@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Primitives;
 
 namespace GoymenERP.Counterparty.UnitTests;
 
@@ -102,13 +103,24 @@ public sealed class CounterpartyProductPackageStandardCustomerSourceV1Tests
     public void Owner_contract_is_registered_as_a_scoped_read_source_without_a_new_permission_or_command()
     {
         var services = new ServiceCollection();
-        services.AddCounterpartyModule(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> {
-            ["DB_CONNECTION_STRING"] = "Server=invalid-synthetic;Database=synthetic;Integrated Security=true;TrustServerCertificate=true",
-        }).Build(), allowEphemeralCursorKey: true);
-        var registration = Assert.Single(services.Where(item => item.ServiceType == typeof(ICounterpartyProductPackageStandardCustomerSourceV1)));
+        services.AddCounterpartyModule(new RegistrationConfiguration(), allowEphemeralCursorKey: true);
+        var registration = Assert.Single(services, item => item.ServiceType == typeof(ICounterpartyProductPackageStandardCustomerSourceV1));
         Assert.Equal(ServiceLifetime.Scoped, registration.Lifetime);
         Assert.Equal(typeof(CounterpartyProductPackageStandardCustomerSourceV1), registration.ImplementationType);
         Assert.Equal(100, CounterpartyProductPackageStandardCustomerContractV1.MaximumPartyCount);
+    }
+
+    private sealed class RegistrationConfiguration : IConfiguration
+    {
+        public string? this[string key]
+        {
+            get => key == "DB_CONNECTION_STRING"
+                ? "Server=invalid-synthetic;Database=synthetic;Integrated Security=true;TrustServerCertificate=true" : null;
+            set => throw new NotSupportedException();
+        }
+        public IEnumerable<IConfigurationSection> GetChildren() => [];
+        public IChangeToken GetReloadToken() => new CancellationChangeToken(CancellationToken.None);
+        public IConfigurationSection GetSection(string key) => throw new NotSupportedException();
     }
 
     private static CounterpartyDbContext Database(ICompanyContext context, NoConnection probe) => new(
