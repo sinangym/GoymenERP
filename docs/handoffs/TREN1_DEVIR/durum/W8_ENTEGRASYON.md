@@ -111,7 +111,7 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
 - ALC-S7 fiyat/actual vergi kaynağı `7e3aad912` / rapor `9c2812891`; ALC-S8 kayıt
   `60a2e3110` / rapor `93e1f98c3`, additive ExpenseTypeId `a3d1512a5` alındı.
   Ek masraf mevcut OrdersRevise ile kaydedilir; ilgili API/route merkezde bağlandı.
-  Parçalı fatura eşleştirmesi sonraki owner checkpointinde tamamlanmaktadır;
+  Parçalı fatura eşleştirmesi `368216c5d` / rapor `555503e1b` ile alındı;
   fiziksel kabul, stok hareketi veya Inventory ortalama maliyeti üretilmez.
 - ALS-D105 güncel insan cevabı [6947126872](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6947126872):
   satış fason vergi varsayılanı/satır kodu mevcut sales.orders.approve, alış tarafı
@@ -133,8 +133,9 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
   Identity UnitTests ve Api.IntegrationTests derlemeleri exit 0 alındı.
   Counterparty test kaynağındaki ConfigurationBuilder bağımlılığı ve xUnit
   predicate kullanımı derleme hataları düzeltildi; proje yeniden exit 0 verdi.
-  Son merkez
-  TypeScript derlemesi exit 0; daha sonra alınan owner'ların birleşimi yeniden
-  derlenecektir. Test çalışma zamanı, gerçek SQL, Vitest/browser ve CI **NOT_RUN**.
+  Son merkez TypeScript derlemesi, bu owner birleşimleriyle birlikte exit 0 aldı.
+  Son parçalı masraf eşleştirmesi kendi owner'ında C# exit 0 aldı; bu son deltanın
+  merkez C# derlemesi sonraki entegrasyon derlemesine dahildir.
+  Test çalışma zamanı, gerçek SQL, Vitest/browser ve CI **NOT_RUN**.
   Shell/OpenAPI/recovery/mimari/ilişkisel pin üretimi ve tren FF push henüz yapılmadı.
   Sabit ölçüm **135/174 (%77,6)**, W8 son pakettir; yeni dalga açılmadı.
