@@ -36,6 +36,7 @@ public static class LogisticsCommands
     public const string RecordShipmentV1 = "logistics.loading-instruction.record-shipment.v1";
     public const string RecordDeliveryV1 = "logistics.loading-instruction.record-delivery.v1";
     public const string RecordWeighingV1 = "logistics.loading-instruction.record-weighing.v1";
+    public const string CorrectWeighingV1 = "logistics.loading-instruction.correct-weighing.v1";
 
     /// <summary>AT-055: a dispatch-note draft from the instruction's definite shipments (one version step, no share).</summary>
     public const string CreateDispatchNoteV1 = "logistics.loading-instruction.create-dispatch-note.v1";
@@ -52,8 +53,9 @@ public static class LogisticsCommands
     public const string RecordUnloadWeighingV1 = "logistics.loading-instruction.record-unload-weighing.v1";
 
     public static bool IsMutation(string commandName) =>
-        commandName is IssueV1 or RecordLoadV1 or RecordShipmentV1 or RecordDeliveryV1 or RecordWeighingV1 or CreateDispatchNoteV1
-            or ApproveDispatchNoteV1 or CancelDispatchNoteV1 or SetEDispatchNumberV1 or CancelInstructionV1 or RecordUnloadWeighingV1;
+        commandName is IssueV1 or RecordLoadV1 or RecordShipmentV1 or RecordDeliveryV1 or RecordWeighingV1 or CorrectWeighingV1 or CreateDispatchNoteV1
+            or ApproveDispatchNoteV1 or CancelDispatchNoteV1 or SetEDispatchNumberV1 or CancelInstructionV1 or RecordUnloadWeighingV1
+            or LogisticsSubcontractDeliveryV1.ShipCommand;
 
     public static bool IsKnown(string commandName) => commandName == CreateV1 || IsMutation(commandName);
 }

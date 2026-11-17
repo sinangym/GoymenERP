@@ -64,6 +64,7 @@ public static class SettingsModuleExtensions
         // SAT-D181 (EK26): the VAT rate / withholding ratio lists a Sales line's reasoned tax change picks from (read-only; empty
         // until entered, SAT-D148; maintenance is the SAT-D146 slice).
         services.AddScoped<ISettingsTaxRateListReaderV1, SettingsTaxRateListReader>();
+        services.AddScoped<ISettingsSubcontractTaxCatalogV1, SettingsSubcontractTaxCatalogV1>();
         // F-004 (BS-9/BS-13/BS-16/BS-17, URN-D7…D9): the unit conversion policy record, its administration and the read port
         // Product / stock-logistics consume. No compiled value: the port refuses until a person records the first version.
         services.AddScoped<ISettingsUnitConversionPolicyAdministrationV1, SettingsUnitConversionPolicyAdministration>();
@@ -80,6 +81,9 @@ public static class SettingsModuleExtensions
         services.AddScoped<SettingsPurchaseInvoiceVariancePolicy>();
         services.AddScoped<ISettingsPurchaseInvoiceVariancePolicyProviderV1>(sp => sp.GetRequiredService<SettingsPurchaseInvoiceVariancePolicy>());
         services.AddScoped<ISettingsPurchaseInvoiceVariancePolicyAdministrationV1>(sp => sp.GetRequiredService<SettingsPurchaseInvoiceVariancePolicy>());
+        services.AddScoped<SettingsWarehouseTransferScalePolicy>();
+        services.AddScoped<ISettingsWarehouseTransferScaleProviderV1>(sp => sp.GetRequiredService<SettingsWarehouseTransferScalePolicy>());
+        services.AddScoped<ISettingsWarehouseTransferScaleAdministrationV1>(sp => sp.GetRequiredService<SettingsWarehouseTransferScalePolicy>());
         // F-024 (NS-01): the segregation of duties setting (may the preparer also approve?), its administration and the read
         // port approving modules consume. No row answers the decided default: the preparer may not approve.
         services.AddScoped<ISettingsSegregationOfDutiesPolicyAdministrationV1, SettingsSegregationOfDutiesPolicyAdministration>();

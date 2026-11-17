@@ -38,3 +38,27 @@ rollback/commit, company isolation, wrong actor/target, unknown transitions and
 the first Down refusal. Runtime tests and DB application are **NOT_RUN**.
 The fresh owner context-construction surface awaits K3 review; it is not silently
 added to any guard allowlist.
+
+### KIM-D27 platform credential recovery
+
+The separately typed `ILocalTwoFactorOperatorRecoveryAuditV1` writes the closed
+`PlatformCredentialRecovery` schema-3 subject for `identity.recover-two-factor`.
+A global local credential may have zero company memberships: CompanyId, origin
+company and authority revision remain null. This is not a general System/null-permission
+draft path. The normal Company/V1 and GroupSharedProduct/V2 constructors, integrity
+algorithms and company read filters remain unchanged.
+
+The fixed target entity is `Identity.LocalCredential`; the immutable payload proves
+confirmed/before/after user, credential and factor versions, the actual outcome and
+server operator declaration. No credential hash, factor seed, recovery code or security
+stamp enters the payload. The canonical V3 verifier rejects mismatched envelopes.
+
+Audit opens a fresh unresolved owner scope and borrows the Identity command's open
+Serializable transaction without committing it. A failed append rolls the whole
+credential command back. Company audit reads do not acquire visibility over this
+global platform subject. No company row or company-wide event fan-out is fabricated.
+
+EF generated `20261117160915_AddPlatformCredentialRecoveryAudit`. Up only widens the
+closed subject/permission checks; Down first refuses with **51923** while the new
+subject exists. This subject and borrowed owner writer require K3 review; no guard
+allowlist was silently expanded. SQL and CLI runtime acceptance remain **NOT_RUN**.

@@ -18,6 +18,7 @@ internal sealed class LoadingInstructionRow : ILogisticsTenantRow
     public Guid CustomerPartyId { get; set; }
     public Guid CompanyAccountId { get; set; }
     public int Status { get; set; }
+    public int ShipmentKind { get; set; } = 1;
     public long Version { get; set; }
     public byte[] RowVersion { get; set; } = [];
 
@@ -47,6 +48,7 @@ internal sealed class LoadingInstructionLineRow : ILogisticsTenantRow
     public Guid UnitId { get; set; }
     public bool UnitIsKilogram { get; set; }
     public Guid? AllocationId { get; set; }
+    public string? SubcontractSourceJson { get; set; }
     public decimal Instructed { get; set; }
     public decimal Loaded { get; set; }
     public decimal Shipped { get; set; }
@@ -86,6 +88,7 @@ internal sealed class LoadingAttemptRow : ILogisticsTenantRow
     public int Outcome { get; set; }
     public Guid? InstructionId { get; set; }
     public string? RefusalJson { get; set; }
+    public string? ResultJson { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
 }

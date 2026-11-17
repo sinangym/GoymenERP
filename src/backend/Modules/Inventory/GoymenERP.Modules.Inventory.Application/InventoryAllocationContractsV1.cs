@@ -11,6 +11,9 @@ public static class InventoryAllocationDemandKindsV1
 {
     public const string SalesOrderLine = "sales.order-line";
 
+    /// <summary>LOJ-D1..D5: a customer's processed goods reserved for its own subcontract service-order line.</summary>
+    public const string SubcontractServiceOrderLine = "sales.subcontract-service-order-line";
+
     /// <summary>
     /// URT-D3/D21: a Manufacturing plan's input, held from plan approval until the input issue consumes it or the
     /// plan cancel / order close releases the remainder. DemandId is the plan, DemandLineId the input label.

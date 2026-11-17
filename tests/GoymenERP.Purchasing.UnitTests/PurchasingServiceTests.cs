@@ -591,6 +591,8 @@ public sealed partial class PurchasingServiceTests
         public int Calls { get; private set; }
         public string? LastPermission { get; private set; }
 
+        public List<string> Measured { get; } = [];
+
         /// <summary>A2a-1: names refused even while <see cref="Granted"/> (e.g. the price read, to see the Withheld answer).</summary>
         public HashSet<string> Denied { get; } = new(StringComparer.Ordinal);
 
@@ -598,6 +600,7 @@ public sealed partial class PurchasingServiceTests
         {
             Calls++;
             LastPermission = permission;
+            Measured.Add(permission);
             return Task.FromResult(new PermissionScope(Granted && !Denied.Contains(permission), true, new HashSet<string>(["ROLE-A"], StringComparer.Ordinal),
                 new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()));
         }

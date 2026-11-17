@@ -42,6 +42,31 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(1, source.Reads);
     }
 
+    [Fact]
+    public async Task SAT_S12_reinstated_same_product_and_quantity_preserve_the_first_cost_and_do_not_repin()
+    {
+        var source = new MarginCostSource();
+        var world = new World { MarginCosts = source };
+        var (approved, lineId) = await AcceptedApprovedAsync(world);
+        Owners(world);
+        var draft = Assert.Single(world.Store.Drafts);
+        var original = Assert.Single(draft.MarginCosts);
+        await world.Service().ReviseLinesAsync(approved.Id, LineRevision("5", [AddedLine()], [new SalesDraftLineRemovalV1(lineId)]),
+            Metadata("margin-reinstated-remove"));
+        await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("margin-reinstated-submit"));
+        await world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("margin-reinstated-approve"));
+        await world.Service().RecordCustomerRejectionAsync(approved.Id, Command("8", "SENTETIK satır geri gelsin"),
+            Metadata("margin-reinstated-reject"));
+        var reads = source.Reads;
+        source.Cost = 99m;
+        await world.Service().ReviseLinesAsync(approved.Id, LineRevision("9", [], []), Metadata("margin-reinstated-restore"));
+        var pricing = await world.Service().GetDraftLinePricingAsync(approved.Id);
+        var margin = Assert.Single(pricing.Margin.Lines!, item => item.LineId == lineId);
+        Assert.Equal("FormulaGoldenPending", margin.UnavailableReason);
+        Assert.Equal(original, Assert.Single(draft.MarginCosts, item => item.LineId == lineId));
+        Assert.Equal(reads, source.Reads);
+    }
+
     private sealed class MarginCostSource : ISalesMarginCostReadPortV1
     {
         public int Reads { get; private set; }

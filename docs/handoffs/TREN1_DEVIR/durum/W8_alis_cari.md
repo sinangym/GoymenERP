@@ -279,3 +279,188 @@ kırmızıların geçtiği veya bu kaynakların kabul aldığı iddia edilmez.
 - Son shell assertion güncellemesi (20 bildirim, 15 eski yayında + 5 fatura staged)
   merkezi Integration derlemesine dahildir; authority hash üreticisi entegrasyonda
   çalışacaktır. Kayıt veya yayına alma yerine test beklentisi gerçek metadata ile hizalanmıştır.
+
+### ALC-S7 — hizmet ve kendi malı giden fason siparişi
+
+- Kaynak commit: `b2e39a331` (ALS-D29, ALS-D40, KIM-D49; API70–72).
+  **PARTIAL:** fiyatlı hizmet siparişi hazırlama → ayrı kişi onayı → gerçek hizmet kabulü →
+  gerçek hizmet kabulüyle fatura eşleştirme kaynakları tamamdır. Fiyatsız siparişin
+  sonradan fiyat tamamlama yolu aşağıda açık kalır; genel dilim DONE sayılmamıştır.
+- Etkin hizmet tipi gerçek Settings listesinden, birim ve para profili gerçek owner'dan,
+  tedarikçi ve Supplier/Tolling rolü gerçek Cari kaynağından okunur. Yapay katalog,
+  numara, fiyat veya ürün varsayımı yoktur. Kendi malı fason için etiketin şirket mülkiyeti
+  ve ürün/sürüm, beklenen çıktı için gerçek ürün kimliği doğrulanır. Müşteri malı
+  fasonuyla karıştırılmaz. Fiziksel gönderim/dönüş ve STK-S3 bu siparişin hareketi değildir.
+- Mevcut OrdersCreate/Read/Approve ve GoodsReceiptsRecord izinleri kullanılır. Şirket,
+  aktör ve company-wide yetki await sonrasında ve commit öncesinde yeniden ölçülür.
+  Hazırlayan kendi siparişini onaylayamaz. Expected version, aynı aktör/anahtar/içerik
+  replay, correlation/causation ve Audit owner kaydı aynı owned Serializable işlemdedir.
+  Ticari numara gerçek Settings PurchaseOrder serisinden aynı işlemde ayrılır.
+- Gerçek hizmet kabulü append-only revision ve ayrı immutable kabul faktı olarak saklanır;
+  mal kabulü/stok hareketi üretilmez. API72 `IPurchaseSubcontractOrderReadPortV1`
+  yalnız trusted server şirketiyle fiyat içermeyen onay/açıklık/tedarikçi/hizmet/malzeme
+  kaynağı verir. Ayrı `IPurchaseServiceAcceptanceReadPortV1` gerçek kabul kaynağını sunar.
+- Fatura satırı `ItemType=Service`, `LinePurpose=service`, boş ProductId ve açık typed
+  ServiceTypeId taşır. Nullable alan eski mal JSON'una yazılmaz. Aynı gerçek kabulün
+  faturalanan miktarı tekrar kullanılamaz; aynı global sıralı alış satır kilitlerinde ve
+  Serializable işlemde yeniden okunur. Yeni service invoice binding kendi composite
+  FK'sına sahiptir; mal kabul FK'sı gevşetilmez. Hizmet, Inventory mal maliyeti bağına girmez.
+  Finalized producer typed hizmet kimliğini korur; Accounting tüketici hizası merkezde
+  ayrı owner tarafından alınacaktır.
+- Numaralı liste/detay, gerçek kaynak seçimiyle çok satırlı form, onay ve kabul ekranı
+  yazıldı. Fiyat backend'de esirgenir; fiyat/kur/tolerans hesapları UI'de kopyalanmaz.
+  Şirket/aktör değişimi, yetkisiz, bulunamadı, boş kaynak, 503, bozuk yanıt ve bilinmeyen
+  yazma sonucu ayrıdır. Bilinmeyen yazma aynı içerik/anahtarla doğrulanır.
+- EF üretimi `20261117110054_AddPurchaseServiceOrders` exit 0. Up yalnız beş yeni tablo/
+  indeks/FK DDL'sidir. Down ilk işlemde **THROW 51992** ile sipariş, revision, kabul,
+  fatura bağı veya terminal geçmiş varken veri kaybını reddeder. DB uygulanmadı.
+- Kaynak doğrulaması: API, Purchasing.UnitTests, Api.IntegrationTests ve frontend
+  `tsc -b` exit 0; uyarı/hata 0. Unit/model, HTTP, gerçek SQL, transport/strict decoder
+  ve DOM test kaynakları yazıldı. Runtime Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**.
+  SQL hizmet siparişi/Audit/numara, rollback, replay, şirket, Down ve gerçek kabul
+  eşleştirmesini ölçer; Settings hizmet kataloğu/Finans uçtan uca kabulü iddia edilmez.
+- Merkezi mount gereksinimi: `AddPurchaseServiceOrderHostV1()` ve
+  `MapPurchaseServiceOrderEndpointsV1()`; shell provider 1.11, beş capability ve üç
+  frontend route kaynağı hazırdır. Merkezi nav/OpenAPI/pin/envanter üretimi kök owner'dadır.
+- Açık somut eksik: ALS-D18 fiyatsız siparişi kabul eder. Matcher eksik fiyatı 503 tutar;
+  hizmet siparişinde sonradan gerçek fiyat giriş/revizyon yolu henüz yoktur. Mevcut genel
+  siparişte de yalnız tedarikçi revizyonuna özel fiyat komutu bulunur. Yeni onay/finans
+  politikası seçilmedi; mevcut karar/spec fiyat lifecycle'ı ayrıca dar doğrulanacaktır.
+
+#### ALC-S7 takip — ALS-D9/D18 fiyat tamamlama, ALS-D105/D106
+
+- Kaynak commit: `7e3aad912`. Önceki checkpoint'te belirtilen fiyatsız fiyat tamamlama
+  boşluğu mevcut ALS-D18 metniyle çözüldü: sonradan fiyat girişi yeni Draft revision
+  oluşturur; yeni hazırlayan kendi revizyonunu onaylayamaz. Gerçek hizmet kabulü,
+  miktarlar ve önceki fiyat/onay sürümleri değişmez. Tekrar onay olmadan fatura
+  eşleştirme çalışmaz. Yapılmış fiziksel işlem fiyat revizyonunda yeniden yapılmaz.
+- Mevcut OrdersRevise izni kullanılır; yeni izin/grant yoktur. Şirket/aktör/yetki,
+  expected version, reason, idempotency ve aynı işlem Audit çitleri korunur. Backend,
+  HTTP ve ekran komutu ile gerçek SQL kabulü→eksik fiyat503→revision→yeniden
+  onay→eşleşme test kaynağı eklendi. Shell owner 1.12, toplam 26 bildirimdir;
+  altıncı hizmet capability `purchasing.service-orders.prices-revise` mevcut izinlere bağlıdır.
+- ALS-D106: giden kendi malı fasonun fiyat birimi actual UnitProfile.IsKilogram
+  kanıtıyla kg olmak zorundadır; kod metni 'kg' diye birim anlamı türetilmez. UI de
+  gerçek unit identity IsKilogram alanıyla seçim sunar; server profili tekrar okur.
+- ALS-D105 READ bağı: yalnız actual Settings Purchasing-side vergi varsayılanı okunur;
+  şirket/side/version ve değer snapshot'ı satırda saklanır/gösterilir. Kaynak yoksa503;
+  sıfır vergi, Sales varsayılanı veya mevzuat kodu uydurulmaz. İlk onay, güncel owner
+  sürümüyle snapshot eşleşmesini ölçer. Fiyat-only revision tarihsel vergi kaynağını korur.
+- **PARTIAL kalan:** ALS-D105 alış fasonu vergi varsayılanı yönetimi ve satır override
+  yazma yetkileri için açık insan cevabı beklenir; bu yazmalar kapalıdır. Gerçek yönetim/
+  override kaynağı olmadan tüm giden fason kullanıcı workflow'u tamamlandı sayılmaz.
+- Bu son C# kaynak takibi **BUILD NOT_RUN**; önceki checkpoint'in derleme0 kanıtı bu
+  yeni head'e taşınmaz. Erken fiyat UI takibi TSC0 verdi; son vergi DTO/UI ekleri sonrası
+  **TSC NOT_RUN**. Kök owner merkezi import derlemelerine dahil edecektir. Unit/SQL/HTTP/
+  Vitest/browser/CI runtime **NOT_RUN**. Yeni migration/THROW yok;51992 aynen kalır.
+
+#### ALC-S8 checkpoint — gerçek ek masraf kaydı/okuması (PARTIAL)
+
+- Kaynak commit: `60a2e3110ee9ef7065579fba9898a0259590e86c`. Dayanaklar
+  ALS-D23/D27/D80/D107, KIM-D49 ve API23/API51'dir. Gerçek mal veya hizmet alış
+  siparişi ve isteğe bağlı gerçek kabul/satır kimliğiyle değişmez masraf kaydı eklendi.
+  İki kabul türü ayrı şirketli composite foreign key'lerle korunur; sahte mal kabulü,
+  fiziksel miktar, stok hareketi veya ortalama maliyet etkisi üretilmez.
+- Gerçek Cari Supplier hesabı siparişin tedarikçisi veya başka firma olabilir. Actual
+  Settings masraf tipi, tarihli KDV listesi ve para profili sürümü saklanır. Etkin tip
+  yoksa genel açıklama yeterlidir; etkin tip varsa açık seçim zorunludur. Eski tipsiz
+  kayıtlar değişmez. KDV/brüt tutar ortak backend calculator'ından gelir.
+- Kayıt yetkisi yeni insan yanıtıyla mevcut `purchasing.orders.revise` olarak
+  kesinleşti: Issue #1189 aktarımı `6946921285`. Yeni izin/grant/rol yoktur. Fiyat
+  okuma, şirket, aktör, fresh company-wide permission, expected kaynak sürümü,
+  idempotency ve gerçek Audit aynı sahip olunan Serializable işlemde korunur.
+  Kaynak çatışması terminal replay olur; teknik/yetki/Audit hataları tam rollback olur.
+- EF `20261117114517_AddPurchaseAdditionalCosts` üretim exit0. Up yalnız iki yeni
+  tablo/index/FK/check DDL'idir. Down ilk işlemde **THROW51998** ile masraf veya komut
+  geçmişi varken reddeder; boş geçmiş geri alınabilir. DB uygulaması yapılmadı.
+- API, Purchasing.UnitTests ve Api.IntegrationTests kaynak derlemeleri **exit0,
+  0 uyarı/0 hata**; `npx tsc -b` exit0; `git diff --check` exit0. Unit/model, HTTP,
+  dört gerçek-SQL fact, strict decoder/transport ve DOM test kaynakları yazıldı.
+  Runtime Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**; bağımsız K3 imzası yoktur.
+- Module store/service DI hazırdır. Merkezi host mount ihtiyacı
+  `MapPurchaseAdditionalCostEndpointsV1()`; Purchasing shell owner **1.13 / toplam28**
+  bildirimdir: read + OrdersRevise çocuk kontrolü. Ekran ve mal/hizmet siparişinden
+  bağlantılar hazırdır; merkezi Program/nav/OpenAPI/pin/envanter kök owner'dadır.
+- **PARTIAL kalan:** Parçalı fatura eşleştirme insan cevabı `6947000365` ile
+  kesinleşti; aynı caride toplam masrafı aşmadan farklı faturalara pay bağlanacaktır.
+  Bu checkpoint kayıt/okuma kaynağıdır; gerçek parasal invoice binding ledger,
+  aynı işlem toplam sınırı, fatura consumer/ekran ve test kaynakları takip işidir.
+- S7 takip `7e3aad912` kaynakları da bu derlemelerde yer aldı; önceki BUILD/TSC
+  NOT_RUN notu bu kaynak başında derleme0 ile tamamlandı. ALS-D105 yeni kesin yetki
+  yanıtı `6947126872`: Satış `sales.orders.approve`, Alış `purchasing.orders.approve`.
+  Bu checkpoint vergi yönetimi/override'ını henüz açmaz; ayrı kaynak takibi sürer.
+
+#### ALC-S8 takip — parçalı gerçek masraf fatura eşleştirmesi
+
+- Kaynak commit: `368216c5d102f2eb83b8012b32a16da592fa9147`; additive typed kalem
+  sözleşmesi `a3d1512a53c696b84dd057c38cda7d3624a224ff`. İnsan yanıtı `6947000365`:
+  aynı caride gerçek masraf farklı faturalara parçalı bağlanabilir, toplam aşılmaz.
+  Resmî Expense/expense satırı ayrı ExpenseTypeId taşır; ProductId/ServiceTypeId veya
+  sahte mal kabulü olarak gösterilmez. Normal mal/hizmet JSON ve request hash yolu korunur.
+- Gerçek immutable masraf satırı ile fatura arasına parasal pay ledger'ı eklendi.
+  Bütün sipariş/satır/masraf kimlikleri tek sıralı owner kilit kümesinde, Serializable
+  işlem içinde doğrulanır. Önceden faturalanan toplam ve aynı isteğin bütün payları
+  birlikte ölçülür; 6.000 + 4.000 pay mümkündür, 10.000 masrafın bütçesi aşılamaz.
+  Fatura resmî neti paylara tam bağlanır; fiziksel miktar, stok, ortalama maliyet veya
+  mal kabulü ledger'ı değişmez. Cari, şirket, para birimi, masraf tipi ve KDV kaynakları
+  tekrar doğrulanır. Audit/yazı flush'ından sonra commit öncesi fresh permission çiti vardır.
+- Gerçek bounded aday API'si, yetkili fatura eşleştirme consumer'ı, değişmez retry
+  payload'ı ve ekranda kısmi tutar seçimi hazırdır. Tarayıcı toplam/maliyet hesaplamaz.
+  Yeni endpoint mevcut fatura mount'u altındadır; ek Program çağrısı gerekmez.
+  Merkezi import mapper ve Finance/Accounting finalized-event tüketicilerinde typed
+  ExpenseTypeId/expense metadata entegrasyonu kök owner'a bildirilmiştir.
+- EF `20261117120452_AddPurchaseAdditionalCostInvoiceBindings` üretim exit0; tek
+  additive tablo, şirketli gerçek masraf/fatura FK'leri, pozitif tutar check/index.
+  Down ilk işlem **THROW51939** ile eşleştirme geçmişini korur. DB uygulanmadı.
+- API, Purchasing.UnitTests, Api.IntegrationTests kaynak derlemeleri ve TSC **exit0,
+  0 uyarı/0 hata**; `git diff --check` exit0. Birim/model, HTTP güvenli ret sözleşmeleri,
+  üç gerçek-SQL fact (iki fatura toplamı + replay/tenant/stok etkisizliği, yarışan bütçe,
+  geç yetki kaybında tam rollback + Down51939), strict decoder ve DOM test kaynakları
+  eklendi. Unit/SQL/HTTP/Vitest/browser/CI runtime **NOT_RUN**.
+- Bu checkpoint ALC-S8 parasal eşleştirme kaynağını tamamlar. Merkezi tüketici/route
+  entegrasyonu ve nihai runtime kabulü ayrı doğrulanacaktır; bütün tren için DONE
+  veya bağımsız K3 kabulü iddiası değildir. ALC-S7 ALS-D105 takip işi ayrıca sürer.
+
+#### ALC-S7 ALS-D105 / SAT-D381 takip — iki tarafın gerçek vergi varsayılanı ve satır revizyonu
+
+- Kaynak commit: `e67f53fc75358fb9397dc754e36fe4c538621ed6`; fatura metadata bağımlılığı
+  `bc0524b5f5f197bac9e6bac9f3454fc77ef61d98`. Dayanaklar ALS-D105, SAT-D381,
+  ALS-D9 ve SAT-D105; en yeni yetki cevabı Issue #1189 aktarımı `6947126872`'dir.
+  Geri alınan iki yeni vergi izni cevabı uygulanmadı. Yeni ERP izin adı, manifest
+  kaydı, grant, rol ataması veya Critical sınıflaması yoktur.
+- Ayarlar satış ve alış varsayılanlarını ayrı gerçek şirketli sürüm geçmişinde saklar.
+  Satış yalnız mevcut `sales.orders.approve`, alış yalnız `purchasing.orders.approve`
+  çitindedir. Gerçek tarihli KDV/tevkifat oranı ve kod listeleri okunur; boş liste veya
+  kaydedilmemiş varsayılan gerçek kaynak yokluğudur, sıfır vergi başarısı değildir.
+  Sürüm/idempotency/Audit ve her owner await sonrası taze aktör/şirket/yetki korunur.
+- Alış fason satırı yalnız listeden kod seçerek ve gerekçe ile değişir. ALS-D9'daki
+  onaylı sipariş değişikliği kuralı uyarınca yeni taslak revizyon ve normal yeniden onay
+  gerekir; bu kural ALS-D18 fiyat hükmünden türetilmedi. Önceki kabul, fiyat, miktar,
+  malzeme ve beklenen çıktı kimlikleri korunur. Yeniden fiziksel onay gerekmemesinin
+  kanıtı istemcinin bir bayrağı değil, aynı owner Serializable işleminde okunan gerçek
+  immutable onaylı ServiceOrderRevisions kaydıdır. Başka şirket/sipariş/etiket bu kanıtı
+  kullanamaz. Vergi snapshot'ı kim/ne zaman/neden ve liste kaynak sürümünü taşır.
+- Satış fason default çözümü gerçek ayrı Sales company-policy kaydına bağlandı;
+  genel Service vergi kaydı onun yerine geçmez. Yeni tax-only komut mevcut Sales onay
+  yetkisiyle çalışır, fiyat yazma yetkisi vermez. Normal ürün vergisi/fiyat çiti korunur.
+  Onaylı vergi değişimi mevcut ReviseCommercial ile eski onaylı snapshot'ı arşivler ve
+  normal yeniden onay akışına girer. Gövdeye fiyat, CompanyId veya yetki eklenemez.
+- Gerçek hizmet kabulü eşleştirmesi onaylı alış fason vergi snapshot'ını typed metadata
+  olarak finalized event'e taşır; resmî gelen fatura fiyatı/vergi/tutarı yeniden hesaplanmaz.
+  Yeni alanlar trailing/null-omit olup eski mal/hizmet JSON ve hash yolu korunur.
+- Backend module DI ve mevcut endpoint mount'ları yeterlidir; yeni Program çağrısı yok.
+  Kök owner için iki teknik shell capability/ekran bağlantısı:
+  `settings.sales-subcontract-tax-default.manage` → `sales.orders.approve`,
+  `settings.purchasing-subcontract-tax-default.manage` → `purchasing.orders.approve`.
+  Bunlar ERP permission değildir. Component `SubcontractTaxDefaultPage` iki side ile
+  bağlanır; API yolları `/api/v1/settings/company-policies/{sales|purchasing}-subcontract-tax-default`.
+  Alış detayında mevcut service approval capability ve satış detayında mevcut orders
+  approve capability altında gerçek satır seçimi/listeler/unknown retry hazırdır.
+- API, Purchasing.UnitTests, Sales.UnitTests, Settings.UnitTests ve Api.IntegrationTests
+  son kaynak derlemeleri **exit0, 0 uyarı/0 hata**; `npx tsc -b` ve `git diff --check`
+  exit0. İlk API sabit adı, Integration xUnit assertion ve TSC Button type hataları dar
+  düzeltildi; son kaynak derlemeleri yukarıdaki sonuçtur. Unit, üç gerçek-SQL fact,
+  HTTP kötü gövde/replay, strict decoder ve DOM kaynakları yazıldı; runtime Unit/SQL/
+  HTTP/Vitest/browser/CI **NOT_RUN**. Yeni migration/THROW yoktur.
+- Kaynak checkpoint'i ALC-S7 vergi takip boşluğunu tamamlar. Merkezi shell/route/pin
+  entegrasyonu ve gerçek runtime kabulü ayrı kalır; bağımsız K3 imzası değildir.

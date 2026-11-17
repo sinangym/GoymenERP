@@ -598,6 +598,9 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                         .IsUnicode(false)
                         .HasColumnType("varchar(64)");
 
+                    b.Property<string>("ResultJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.HasKey("CompanyId", "CommandName", "IdempotencyKeyHash");
 
                     b.HasIndex("CompanyId", "InstructionId")
@@ -612,6 +615,8 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_LoadingAttempts_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
 
                             t.HasCheckConstraint("CK_LoadingAttempts_Outcome", "([Outcome] = 1 AND [InstructionId] IS NOT NULL AND [InstructionId] <> '00000000-0000-0000-0000-000000000000' AND [RefusalJson] IS NULL) OR ([Outcome] = 2 AND [InstructionId] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
+
+                            t.HasCheckConstraint("CK_LoadingAttempts_ResultJson", "[ResultJson] IS NULL OR ([Outcome] = 1 AND ISJSON([ResultJson]) = 1)");
                         });
                 });
 
@@ -663,6 +668,9 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                     b.Property<int>("SourceOrderRevision")
                         .HasColumnType("int");
 
+                    b.Property<string>("SubcontractSourceJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<Guid>("UnitId")
                         .HasColumnType("uniqueidentifier");
 
@@ -687,6 +695,8 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_LoadingInstructionLines_Revision", "[SourceOrderRevision] >= 0");
 
                             t.HasCheckConstraint("CK_LoadingInstructionLines_Shares", "[Instructed] > 0 AND [Loaded] >= 0 AND [Shipped] >= 0 AND [Delivered] >= 0 AND [Loaded] <= [Instructed] AND [Shipped] <= [Loaded] AND [Delivered] <= [Shipped]");
+
+                            t.HasCheckConstraint("CK_LoadingInstructionLines_SubcontractSource", "[SubcontractSourceJson] IS NULL OR ISJSON([SubcontractSourceJson]) = 1");
                         });
                 });
 
@@ -737,6 +747,11 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
 
+                    b.Property<int>("ShipmentKind")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(1);
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
@@ -760,6 +775,8 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_LoadingInstructions_Cancel", "([Status] = 3 AND [CancelledBy] IS NOT NULL AND LEN([CancelledBy]) > 0 AND [CancelledAtUtc] IS NOT NULL AND [CancelReason] IS NOT NULL AND LEN([CancelReason]) > 0) OR ([Status] <> 3 AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancelReason] IS NULL)");
 
                             t.HasCheckConstraint("CK_LoadingInstructions_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [CustomerPartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_LoadingInstructions_ShipmentKind", "[ShipmentKind] IN (1, 2)");
 
                             t.HasCheckConstraint("CK_LoadingInstructions_Status", "[Status] IN (1, 2, 3)");
 
@@ -938,6 +955,200 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                     b.ToTable("ShipmentRiskExceptionUses", "logistics", t =>
                         {
                             t.HasCheckConstraint("CK_ShipmentRiskExceptionUses_Identity", "[ExceptionNo] >= 1 AND [SalesOrderId] <> '00000000-0000-0000-0000-000000000000' AND [ShipmentId] <> '00000000-0000-0000-0000-000000000000' AND [InstructionId] <> '00000000-0000-0000-0000-000000000000' AND LEN([RecordedBy]) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.TransferDepartureAttemptRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CommandName")
+                        .HasMaxLength(96)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(96)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("IdempotencyKeyHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("TransferId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("CompanyId", "CommandName", "IdempotencyKeyHash");
+
+                    b.HasIndex("CompanyId", "TransferId");
+
+                    b.ToTable("TransferDepartureAttempts", "logistics", t =>
+                        {
+                            t.HasCheckConstraint("CK_TransferDepartureAttempts_Command", "[CommandName] IN ('logistics.transfer-departure.record.v1','logistics.transfer-departure.confirm-no-exit.v1')");
+
+                            t.HasCheckConstraint("CK_TransferDepartureAttempts_Json", "ISJSON([ResultJson]) = 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.TransferDepartureEventRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TransferId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<decimal?>("FirstWeighingKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<decimal?>("NetWeighingKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<decimal?>("SecondWeighingKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<int?>("WeighingDirection")
+                        .HasColumnType("int");
+
+                    b.HasKey("CompanyId", "TransferId", "Version");
+
+                    b.ToTable("TransferDepartureEvents", "logistics", t =>
+                        {
+                            t.HasCheckConstraint("CK_TransferDepartureEvents_Audit", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN(LTRIM(RTRIM([CorrelationId]))) > 0 AND DATEPART(TZOFFSET,[RecordedAtUtc]) = 0 AND DATEPART(TZOFFSET,[OccurredAtUtc]) = 0");
+
+                            t.HasCheckConstraint("CK_TransferDepartureEvents_Identity", "[Version] > 0 AND [Kind] IN ('AssociationRecorded','ExitWeighing','VehicleExit','NoFurtherExit')");
+
+                            t.HasCheckConstraint("CK_TransferDepartureEvents_Weighing", "([Kind] = 'ExitWeighing' AND [WeighingDirection] IS NOT NULL AND [FirstWeighingKg] IS NOT NULL AND [SecondWeighingKg] IS NOT NULL AND [NetWeighingKg] IS NOT NULL AND [WeighingDirection] IN (1,2) AND [FirstWeighingKg] > 0 AND [SecondWeighingKg] > 0 AND [NetWeighingKg] > 0 AND (([WeighingDirection] = 1 AND [SecondWeighingKg] > [FirstWeighingKg]) OR ([WeighingDirection] = 2 AND [FirstWeighingKg] > [SecondWeighingKg])) AND [NetWeighingKg] = ABS([SecondWeighingKg] - [FirstWeighingKg])) OR ([Kind] <> 'ExitWeighing' AND [WeighingDirection] IS NULL AND [FirstWeighingKg] IS NULL AND [SecondWeighingKg] IS NULL AND [NetWeighingKg] IS NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.TransferDepartureStateRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TransferId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Association")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("ExitWeighingAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long?>("InitialOfficialDocumentVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("NoFurtherExitVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("OfficialDocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("OfficialLinkedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("SourceLocationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("VehicleExitAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "TransferId");
+
+                    b.HasIndex("CompanyId", "DocumentId")
+                        .IsUnique();
+
+                    b.ToTable("TransferDepartureStates", "logistics", t =>
+                        {
+                            t.HasCheckConstraint("CK_TransferDepartureStates_Association", "[Association] IN (0,1,2)");
+
+                            t.HasCheckConstraint("CK_TransferDepartureStates_Fence", "[NoFurtherExitVersion] IS NULL OR ([NoFurtherExitVersion] > 0 AND [NoFurtherExitVersion] <= [Version] AND [ExitWeighingAtUtc] IS NULL AND [VehicleExitAtUtc] IS NULL)");
+
+                            t.HasCheckConstraint("CK_TransferDepartureStates_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [TransferId] <> '00000000-0000-0000-0000-000000000000' AND [DocumentId] <> '00000000-0000-0000-0000-000000000000' AND [SourceLocationId] <> '00000000-0000-0000-0000-000000000000' AND [Version] > 0");
+
+                            t.HasCheckConstraint("CK_TransferDepartureStates_OfficialBinding", "([Association] = 2 AND [OfficialDocumentId] IS NOT NULL AND [OfficialDocumentId] <> '00000000-0000-0000-0000-000000000000' AND [InitialOfficialDocumentVersion] IS NOT NULL AND [InitialOfficialDocumentVersion] > 0 AND [OfficialLinkedAtUtc] IS NOT NULL AND DATEPART(TZOFFSET,[OfficialLinkedAtUtc]) = 0) OR ([Association] <> 2 AND [OfficialDocumentId] IS NULL AND [InitialOfficialDocumentVersion] IS NULL AND [OfficialLinkedAtUtc] IS NULL)");
+
+                            t.HasCheckConstraint("CK_TransferDepartureStates_Utc", "DATEPART(TZOFFSET,[CreatedAtUtc]) = 0 AND ([ExitWeighingAtUtc] IS NULL OR DATEPART(TZOFFSET,[ExitWeighingAtUtc]) = 0) AND ([VehicleExitAtUtc] IS NULL OR DATEPART(TZOFFSET,[VehicleExitAtUtc]) = 0)");
                         });
                 });
 
@@ -1154,6 +1365,81 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_UnloadWeighings_Net", "([Direction] = 1 AND [SecondWeighingKg] > [FirstWeighingKg] AND [NetKg] = [SecondWeighingKg] - [FirstWeighingKg]) OR ([Direction] = 2 AND [FirstWeighingKg] > [SecondWeighingKg] AND [NetKg] = [FirstWeighingKg] - [SecondWeighingKg])");
 
                             t.HasCheckConstraint("CK_UnloadWeighings_Weights", "[FirstWeighingKg] > 0 AND [SecondWeighingKg] > 0 AND [NetKg] > 0 AND [LoadedKgAtCancel] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.VehicleWeighingCorrectionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("InstructionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("CorrectedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CorrectedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("CorrectionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("DifferenceKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<int>("Direction")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("FirstWeighingKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal>("LoadedKgAtWeighing")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal>("NetKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal>("PreviousNetKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<decimal>("SecondWeighingKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<int>("SharesBefore")
+                        .HasColumnType("int");
+
+                    b.HasKey("CompanyId", "InstructionId", "Revision");
+
+                    b.HasIndex("CompanyId", "CorrectionId")
+                        .IsUnique();
+
+                    b.ToTable("VehicleWeighingCorrections", "logistics", t =>
+                        {
+                            t.HasCheckConstraint("CK_VehicleWeighingCorrections_Difference", "[DifferenceKg] = [NetKg] - [LoadedKgAtWeighing]");
+
+                            t.HasCheckConstraint("CK_VehicleWeighingCorrections_Identity", "[CorrectionId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CorrectedBy]) > 0 AND LEN([Reason]) > 0");
+
+                            t.HasCheckConstraint("CK_VehicleWeighingCorrections_Net", "([Direction] = 1 AND [SecondWeighingKg] > [FirstWeighingKg] AND [NetKg] = [SecondWeighingKg] - [FirstWeighingKg]) OR ([Direction] = 2 AND [FirstWeighingKg] > [SecondWeighingKg] AND [NetKg] = [FirstWeighingKg] - [SecondWeighingKg])");
+
+                            t.HasCheckConstraint("CK_VehicleWeighingCorrections_Weights", "[Revision] >= 2 AND [SharesBefore] >= 1 AND [FirstWeighingKg] > 0 AND [SecondWeighingKg] > 0 AND [NetKg] > 0 AND [PreviousNetKg] > 0 AND [LoadedKgAtWeighing] >= 0");
                         });
                 });
 
@@ -1579,6 +1865,33 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.TransferDepartureAttemptRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.TransferDepartureStateRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "TransferId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.TransferDepartureEventRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.TransferDepartureStateRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "TransferId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.TransferDepartureStateRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.TransferOutgoingDocumentRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "DocumentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.TransferOutgoingDocumentAttemptRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.TransferOutgoingDocumentRow", null)
@@ -1612,6 +1925,15 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("CompanyId", "InstructionId")
                         .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.VehicleWeighingCorrectionRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.VehicleWeighingRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "InstructionId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

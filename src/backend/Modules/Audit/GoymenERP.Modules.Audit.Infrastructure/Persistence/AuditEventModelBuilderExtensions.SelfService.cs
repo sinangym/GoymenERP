@@ -23,5 +23,5 @@ public static partial class AuditEventModelBuilderExtensions
         + "AND JSON_VALUE(CASE WHEN ISJSON([ApprovalContextJson]) = 1 THEN [ApprovalContextJson] ELSE N'{}' END, '$.method') IS NOT NULL "
         + "AND JSON_VALUE(CASE WHEN ISJSON([ApprovalContextJson]) = 1 THEN [ApprovalContextJson] ELSE N'{}' END, '$.method') COLLATE Latin1_General_100_BIN2 = N'TOTP')";
 
-    internal const string TypedPermissionCheck = FounderRecoveryPermissionCheck + " OR " + LocalCredentialSelfServicePermissionCheck;
+    internal const string TypedPermissionCheck = FounderRecoveryPermissionCheck + " OR " + LocalCredentialSelfServicePermissionCheck + " OR " + OperatorRecoveryPermissionCheck;
 }

@@ -20,7 +20,7 @@ namespace GoymenERP.Modules.Documents.Infrastructure.Persistence;
 /// B-26: a document may carry more than one owner link. The first (earliest) link is the upload's and stays the primary one;
 /// a later link is ONE save of the link row, the recorded attempt and the audit event, never a second document or blob.
 /// </summary>
-public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext companyContext, IAuditEventCollector auditEvents)
+public sealed partial class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext companyContext, IAuditEventCollector auditEvents)
     : IDocumentStore
 {
     private const string EntityType = "Documents.Document";
@@ -74,8 +74,19 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
         return attempt is null ? null : await ReplayLinkAsync(attempt, envelope, requestHash, documentId, cancellationToken);
     }
 
-    public async Task<DocumentStoreResult> StoreUploadAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
-        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+    public Task<DocumentStoreResult> StoreUploadAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
+        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default) =>
+        StoreUploadCoreAsync(envelope, requestHash, upload, beforeWrite, null, cancellationToken);
+
+    public Task<DocumentStoreResult> StoreUploadWithAdmissionAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
+        Func<CancellationToken, Task> beforeWrite, Func<CancellationToken, Task> beforeNewWrite, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(beforeNewWrite);
+        return StoreUploadCoreAsync(envelope, requestHash, upload, beforeWrite, beforeNewWrite, cancellationToken);
+    }
+
+    private async Task<DocumentStoreResult> StoreUploadCoreAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
+        Func<CancellationToken, Task> beforeWrite, Func<CancellationToken, Task>? beforeNewWrite, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(upload);
         ArgumentNullException.ThrowIfNull(beforeWrite);
@@ -104,6 +115,8 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
                 throw Refused(DocumentStoreCodes.ConcurrentChange, "Bu belge kimliği şirketin başka bir belgesinde kullanılıyor.");
             }
 
+            await RequirePublicationAsync(upload.Template?.Publication, companyId, cancellationToken);
+
             var blob = await dbContext.Blobs.AsNoTracking().SingleOrDefaultAsync(row => row.Sha256 == upload.Sha256, cancellationToken);
             if (blob is not null && (blob.SizeBytes != upload.SizeBytes || blob.ContentKind != (int)upload.Kind.Kind
                      || !string.Equals(blob.ObjectKey, upload.ObjectKey, StringComparison.Ordinal))
@@ -115,6 +128,7 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
 
             var earlierVersions = await dbContext.Versions.AsNoTracking().CountAsync(row => row.Sha256 == upload.Sha256, cancellationToken);
             await beforeWrite(cancellationToken);
+            if (beforeNewWrite is not null) await beforeNewWrite(cancellationToken);
             if (blob is null)
             {
                 dbContext.Blobs.Add(new ContentBlobRow
@@ -142,6 +156,8 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
                 CompanyId = companyId,
                 DocumentId = upload.DocumentId,
                 VersionNo = 1,
+                TemplatePublicationId = upload.Template?.Publication?.PublicationId,
+                TemplatePublicationJson = upload.Template?.Publication is { } publication ? JsonSerializer.Serialize(publication) : null,
                 FileName = upload.FileName.Value,
                 Sha256 = upload.Sha256,
                 ScanState = (int)upload.ScanState,
@@ -196,8 +212,21 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
         }
     }
 
-    public async Task<DocumentStoreResult> StoreVersionAsync(DocumentWriteEnvelope envelope, string requestHash, int expectedCurrentVersion,
-        NewDocumentVersion version, Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+    public Task<DocumentStoreResult> StoreVersionAsync(DocumentWriteEnvelope envelope, string requestHash, int expectedCurrentVersion,
+        NewDocumentVersion version, Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default) =>
+        StoreVersionCoreAsync(envelope, requestHash, expectedCurrentVersion, version, beforeWrite, null, cancellationToken);
+
+    public Task<DocumentStoreResult> StoreVersionWithAdmissionAsync(DocumentWriteEnvelope envelope, string requestHash, int expectedCurrentVersion,
+        NewDocumentVersion version, Func<CancellationToken, Task> beforeWrite, Func<CancellationToken, Task> beforeNewWrite,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(beforeNewWrite);
+        return StoreVersionCoreAsync(envelope, requestHash, expectedCurrentVersion, version, beforeWrite, beforeNewWrite, cancellationToken);
+    }
+
+    private async Task<DocumentStoreResult> StoreVersionCoreAsync(DocumentWriteEnvelope envelope, string requestHash, int expectedCurrentVersion,
+        NewDocumentVersion version, Func<CancellationToken, Task> beforeWrite, Func<CancellationToken, Task>? beforeNewWrite,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(version);
         ArgumentNullException.ThrowIfNull(beforeWrite);
@@ -244,6 +273,7 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
             }
 
             await beforeWrite(cancellationToken);
+            if (beforeNewWrite is not null) await beforeNewWrite(cancellationToken);
             if (blob is null)
             {
                 dbContext.Blobs.Add(new ContentBlobRow
@@ -509,6 +539,7 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
             ScannerId = version.ScannerId,
             UploadedBy = version.UploadedBy,
             UploadedAtUtc = version.UploadedAtUtc,
+            TemplatePublicationJson = version.TemplatePublicationJson,
         };
 
     private IQueryable<LatestDocumentRow> Versions() =>
@@ -532,6 +563,7 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
             ScannerId = version.ScannerId,
             UploadedBy = version.UploadedBy,
             UploadedAtUtc = version.UploadedAtUtc,
+            TemplatePublicationJson = version.TemplatePublicationJson,
         };
 
     /// <summary>
@@ -582,7 +614,9 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
 
     private static StoredDocument Map(LatestDocumentRow row, IReadOnlyList<StoredDocumentLink> links) =>
         new StoredDocument(row.Id, row.CompanyId, links[0].OwnerKind, links[0].OwnerId, row.VersionNo, row.FileName, (DocumentFileKind)row.ContentKind,
-            row.SizeBytes, row.Sha256, row.ObjectKey, (DocumentScanState)row.ScanState, row.ScannerId, row.UploadedBy, row.UploadedAtUtc, links);
+            row.SizeBytes, row.Sha256, row.ObjectKey, (DocumentScanState)row.ScanState, row.ScannerId, row.UploadedBy, row.UploadedAtUtc, links,
+            row.TemplatePublicationJson is null ? null : JsonSerializer.Deserialize<GeneratedDocumentPublicationSnapshot>(row.TemplatePublicationJson)
+                ?? throw new InvalidOperationException("Stored template publication is unreadable."));
 
     private Task<DocumentAttemptRow?> FindAttemptAsync(string commandName, string keyHash, CancellationToken cancellationToken) =>
         dbContext.Attempts.AsNoTracking().SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash,
@@ -672,7 +706,7 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
     private void AuditGenerated(DocumentWriteEnvelope envelope, Guid companyId, NewDocumentUpload upload, int earlierVersions,
         GeneratedDocumentTemplate template) =>
         auditEvents.Enqueue(new AuditEventDraft(companyId, GeneratedEventType, EntityType, upload.DocumentId.ToString("D"), "StoreGenerated",
-            null, 1, AuditActorTypes.User, envelope.ActorId, envelope.PermissionCode, envelope.RoleCodes, "{}", JsonSerializer.Serialize(new
+            null, 1, AuditActorTypes.User, envelope.ActorId, envelope.PermissionCode, envelope.RoleCodes, "{}", AddPublicationSnapshot(JsonSerializer.Serialize(new
             {
                 ownerKind = upload.Owner.Kind,
                 ownerId = upload.Owner.OwnerId,
@@ -689,7 +723,7 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
                 producerCommand = upload.ProducerCommand,
                 producerPermission = envelope.PermissionCode,
                 systemGenerated = upload.ScanState == DocumentScanState.SystemGenerated,
-            }, Json), "Üretilen belge kasaya kaydedildi", ApprovalContextJson: null, AuditAiInvolvement.None, AiContextJson: null,
+            }, Json), template.Publication), "Üretilen belge kasaya kaydedildi", ApprovalContextJson: null, AuditAiInvolvement.None, AiContextJson: null,
             envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent, envelope.CorrelationId, envelope.CausationId,
             envelope.IdempotencyKey));
 
@@ -818,6 +852,7 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
     /// <summary>A member-initialized projection (so the query composes over it); never tracked, never written.</summary>
     private sealed class LatestDocumentRow
     {
+        public string? TemplatePublicationJson { get; init; }
         public Guid Id { get; init; }
 
         public Guid CompanyId { get; init; }

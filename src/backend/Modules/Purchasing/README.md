@@ -453,3 +453,57 @@ authorization services/HTTP/UI and the separate Finance admission/retry still ne
 invoice lines need their own real owner references; no artificial goods receipt substitutes for them.
 Unit/model and real SQL test sources cover immutable source/history, tenant isolation, replay, actor/payload conflicts,
 quantity scale, late authority loss, transaction ownership, one outbox event and the forward-fix guard. Runtime NOT_RUN.
+
+## ALC-S8 / ALS-D23, ALS-D27, ALS-D80 and ALS-D107 additional expenses
+
+An immutable commercial expense references an actual company-scoped goods or service order and optionally its
+actual acceptance/line. Separate composite foreign keys preserve each owner's real acceptance identity. The Cari
+may be the order supplier or another active Supplier. Actual Settings expense types, effective VAT list and money
+profile/version are retained; an empty active expense catalog uses the required description, while a nonempty active
+catalog requires an explicit current type. Historical untyped facts are not rewritten. Shared tax calculation provides
+the frozen VAT/gross amounts. No quantity, Inventory movement, average cost or cost allocation is produced.
+The direct ALC-S8 answer (Issue #1189, 6946921285) selects existing `purchasing.orders.revise` for recording;
+price-read and company-wide authority are revalidated. No permission grant is added. Its command owns a clean
+Serializable transaction, expected source order version, idempotency, terminal source conflict replay and actual
+Audit append; failure rolls back all rows. Reads remain company/actor/price fenced.
+EF generated `20261117114517_AddPurchaseAdditionalCosts` with additive DDL. Down first refuses with **THROW 51998**
+while expense facts or command attempts exist; an empty store can roll back. No DB migration was applied.
+Partial invoice binding was approved separately (6947000365) and is the next source followup; no artificial receipt
+or physical quantity substitutes for a monetary expense share. Runtime acceptance remains NOT_RUN.
+
+## ALC-S7 / ALS-D29, ALS-D40 and KIM-D49 service orders
+
+Service purchase and outgoing own-material subcontract share actual Settings service types and units.
+Cari supplies the active Supplier account and, for subcontract, its Tolling role. Product and Inventory prove
+material/output identities; customer-owned labels cannot authorize an outgoing own-material order.
+The commercial order reserves its actual Settings purchase-order number in its own Serializable transaction.
+Approval keeps the existing purchase maker/checker boundary; actual service acceptance is append-only and creates
+no goods receipt or stock movement. API72 exposes price-free operational order facts to trusted in-process consumers.
+Service invoice matching binds actual service acceptances, under the shared line locks, in its own table with
+company-scoped composite foreign keys. Normal goods receipt foreign keys remain intact. Typed ServiceTypeId is
+additive and omitted when null, preserving legacy goods JSON. Service lines never enter material-cost order bindings.
+EF generated 20261117110054_AddPurchaseServiceOrders; Up is additive DDL. Down starts with THROW 51992 while
+any service order, revision, acceptance, invoice binding or terminal attempt exists. No migration was applied.
+Unit/model, HTTP, real SQL, strict transport and UI regression sources are written. API, Purchasing.UnitTests,
+Api.IntegrationTests and frontend tsc source builds passed; all runtime/SQL/Vitest/browser/CI evidence is NOT_RUN.
+ALS-D18/D9 later price entry creates a new draft snapshot and requires another actor's reapproval. Actual service
+acceptance, quantities, identities and the old approval/price revisions remain intact; price-only reapproval does
+not repeat or reinterpret a past physical operation. FNS/Inventory facts are untouched.
+ALS-D106 outgoing subcontract price units require the actual kilogram unit profile. ALS-D105 defaults read only
+the actual Purchasing-side Settings tax source and preserve its version per line; no default means 503, never
+zero VAT, a Sales default or an assumed tax code. Purchasing tax-default administration and line overrides remain
+closed pending the explicit permission decision. Central Program/shell/OpenAPI/inventory composition is pending.
+# FIN-S13 / ALS-D7 — alış faturası dosyası önizlemesi
+
+XML/UBL 2.1, açık sütun eşlemeli CSV ve XLSX okuyucuları aynı kaynak sözleşmesini
+üretir; genel tablo eşlemesi Mikro'nun yerel biçim adaptörü olarak adlandırılmaz.
+Özgün tutar, para birimi, vergi kodu, tevkifat, kur amacı ve ödeme tarihi bilgileri
+korunur; tanımsız veya fazla hassasiyetli değerler yuvarlanarak kabul edilmez.
+Taranmış Documents sürümü/hash'i, şirket ve `purchasing.invoices.import` ile fiyat
+okuma yetkisi doğrulanır. Önizleme muhasebe kaydı veya Finance olayı üretmez.
+
+`20261117112436_AddPurchaseInvoiceImportReservations` EF üretimidir. Şirket kapsamlı,
+denetlenen ve idempotent rezervasyon belge sahibini oluşturur; kayıtlar değişmezdir.
+Down, kaynak kimliği varken önce `THROW 51996` ile durur. Birim, HTTP sözleşme,
+kalıcılık modeli ve gerçek SQL test kaynakları vardır. Cari/ürün/birim/vergi ve
+ödeme planı eşlemesiyle kayıt akışı tamamlanana kadar FIN-S13 PARTIAL kalır.

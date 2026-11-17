@@ -119,6 +119,7 @@ public sealed partial class IdentityDbContext(DbContextOptions<IdentityDbContext
         ConfigureCompanySetup(modelBuilder);
         ConfigureCompanySetupAuthority(modelBuilder);
         ConfigureTwoFactor(modelBuilder);
+        ConfigureOperatorTwoFactorRecovery(modelBuilder);
         modelBuilder.ConfigureProductMasterAssignment();
         modelBuilder.ConfigureCommandExecution(excludeFromMigrations: true);
     }

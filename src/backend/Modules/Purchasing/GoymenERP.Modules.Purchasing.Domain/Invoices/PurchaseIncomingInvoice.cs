@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Monetary;
+using System.Text.Json.Serialization;
 
 namespace GoymenERP.Modules.Purchasing.Domain.Invoices;
 
@@ -21,13 +22,17 @@ public sealed record PurchaseInvoiceAmounts(decimal Net, decimal Vat, decimal Wi
 
 public sealed record PurchaseInvoiceLine(Guid Id, int LineNo, Guid ProductId, Guid UnitId, decimal Quantity,
     string ItemType, string LinePurpose, decimal VatPercent, PurchaseInvoiceAmounts Amounts,
-    PurchaseInvoiceAmounts? FunctionalAmounts);
+    PurchaseInvoiceAmounts? FunctionalAmounts,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? ServiceTypeId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? ExpenseTypeId = null);
 
 /// <summary>Owner-read receipt facts, including the price/quantity and daily control FX used in the three-way check.
 /// These are persisted with the match, not accepted as authoritative client input.</summary>
 public sealed record PurchaseInvoiceReceiptMatch(Guid CompanyId, Guid InvoiceLineId, Guid AcceptanceId, Guid OrderId, Guid OrderLineId,
     long OrderVersion, Guid SupplierPartyId, Guid CompanyAccountId, Guid CurrencyId, Guid UnitId,
-    decimal Quantity, decimal ExpectedNet, decimal? ControlRate, DateOnly AcceptedOn);
+    decimal Quantity, decimal ExpectedNet, decimal? ControlRate, DateOnly AcceptedOn,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? ServiceTypeId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] GoymenERP.Modules.Purchasing.Domain.Services.PurchaseServiceTax? SubcontractTax = null);
 
 /// <summary>The actual Settings version used for comparison. Null policy means unavailable, never zero tolerance.</summary>
 public sealed record PurchaseInvoiceVariancePolicy(Guid Id, long Version, decimal AmountTolerance, decimal RateTolerance);
@@ -83,6 +88,7 @@ public sealed class PurchaseIncomingInvoice
     public long Version { get; private set; }
     public PurchaseIncomingInvoiceStatus Status { get; private set; } = PurchaseIncomingInvoiceStatus.Recorded;
     public IReadOnlyList<PurchaseInvoiceReceiptMatch> Matches { get; private set; } = Array.Empty<PurchaseInvoiceReceiptMatch>();
+    public IReadOnlyList<PurchaseInvoiceAdditionalCostMatch> AdditionalCosts { get; private set; } = Array.Empty<PurchaseInvoiceAdditionalCostMatch>();
     public IReadOnlyList<PurchaseInvoiceVariance> Variances { get; private set; } = Array.Empty<PurchaseInvoiceVariance>();
     public PurchaseInvoiceVariancePolicy? Policy { get; private set; }
     public PurchaseInvoiceVarianceDecision? VarianceDecision { get; private set; }
@@ -119,11 +125,16 @@ public sealed class PurchaseIncomingInvoice
             throw new ArgumentException("Fatura satır kimlikleri ve sıraları tekil olmalıdır.");
         foreach (var line in frozenLines)
         {
-            if (line.Id == Guid.Empty || line.LineNo < 1 || line.ProductId == Guid.Empty || line.UnitId == Guid.Empty || line.Quantity <= 0
+            var expense = line.ItemType == "Expense" && line.LinePurpose == "expense";
+            if (line.Id == Guid.Empty || line.LineNo < 1 || line.UnitId == Guid.Empty || line.Quantity <= 0
+                || (expense ? line.ProductId != Guid.Empty || line.ServiceTypeId is not null || line.ExpenseTypeId == Guid.Empty
+                    : line.ExpenseTypeId is not null || line.ItemType == "Expense" || line.LinePurpose == "expense"
+                        || (line.ServiceTypeId is { } service ? service == Guid.Empty || line.ProductId != Guid.Empty
+                            || line.ItemType != "Service" || line.LinePurpose != "service" : line.ProductId == Guid.Empty))
                 || line.Quantity > MaximumStoredQuantity
                 || decimal.Round(line.Quantity, MaximumStoredScale) != line.Quantity
                 || line.VatPercent is < 0 or > 100 || string.IsNullOrWhiteSpace(line.ItemType) || line.ItemType.Length > 128
-                || line.LinePurpose is not ("production-input" or "resale" or "service")
+                || line.LinePurpose is not ("production-input" or "resale" or "service" or "expense")
                 || foreign != (line.FunctionalAmounts is not null)) throw new ArgumentException("Fatura satır kaynağı geçersiz.");
             ArgumentNullException.ThrowIfNull(line.Amounts);
             line.Amounts.Validate(moneyScale); line.FunctionalAmounts?.Validate(functionalScale);
@@ -151,14 +162,17 @@ public sealed class PurchaseIncomingInvoice
     }
 
     public void Match(long expectedVersion, IEnumerable<PurchaseInvoiceReceiptMatch> matches,
-        PurchaseInvoiceVariancePolicy? policy, string matchedBy)
+        PurchaseInvoiceVariancePolicy? policy, string matchedBy, IEnumerable<PurchaseInvoiceAdditionalCostMatch>? additionalCosts = null)
     {
         RequireVersion(expectedVersion); RequireStatus(PurchaseIncomingInvoiceStatus.Recorded);
         if (policy is null || policy.Id == Guid.Empty || policy.Version < 1 || policy.AmountTolerance < 0 || policy.RateTolerance < 0)
             throw new PurchasingRuleException(PolicyUnavailable, "Fatura fark toleransı Ayarlar'dan doğrulanamadı.");
         ArgumentNullException.ThrowIfNull(matches);
         var frozen = matches.ToArray(); var actor = Actor(matchedBy);
-        if (frozen.Length == 0 || frozen.Any(item => item is null) || frozen.Select(item => item.AcceptanceId).Distinct().Count() != frozen.Length)
+        var expenses = additionalCosts?.ToArray() ?? [];
+        if (frozen.Length + expenses.Length == 0 || frozen.Any(item => item is null) || expenses.Any(item => item is null)
+            || frozen.Select(item => item.AcceptanceId).Distinct().Count() != frozen.Length
+            || expenses.Select(item => (item.InvoiceLineId, item.CostId)).Distinct().Count() != expenses.Length)
             throw new ArgumentException("Kabul payı yalnız bir kez eşleştirilir.");
         var differences = new List<PurchaseInvoiceVariance>();
         foreach (var item in frozen)
@@ -171,12 +185,39 @@ public sealed class PurchaseIncomingInvoice
                 || (OfficialRate.HasValue ? item.ControlRate is not > 0 : item.ControlRate is not null))
                 throw new PurchasingRuleException(SourceMismatch, "Kabul kaynağı faturanın carisi, para birimi veya kuruyla uyuşmuyor.");
             var line = Lines.SingleOrDefault(line => line.Id == item.InvoiceLineId);
-            if (line is null || line.UnitId != item.UnitId) throw new PurchasingRuleException(SourceMismatch, "Fatura ve kabul birimleri uyuşmuyor.");
+            if (line is null || line.LinePurpose == "expense" || line.UnitId != item.UnitId || line.ServiceTypeId != item.ServiceTypeId)
+                throw new PurchasingRuleException(SourceMismatch, "Fatura ve kabul birimleri veya kalem kaynakları uyuşmuyor.");
+            if (item.SubcontractTax is { } tax && (item.ServiceTypeId is null || line.LinePurpose != "service" || tax.SettingsVersion < 1
+                || line.VatPercent != (tax.VatApplies ? tax.VatPercent : 0m)))
+                throw new PurchasingRuleException(SourceMismatch, "Fason hizmetin onaylı vergi kaynağı resmî fatura satırıyla uyuşmuyor.");
             if (OfficialRate is { } rate && Math.Abs(rate - item.ControlRate!.Value) > policy.RateTolerance)
                 differences.Add(new(line.Id, "ExchangeRate", item.ControlRate.Value, rate));
         }
+        foreach (var item in expenses)
+        {
+            var line = Lines.SingleOrDefault(x => x.Id == item.InvoiceLineId);
+            if (item.CompanyId != CompanyId || item.CostId == Guid.Empty || item.OrderId == Guid.Empty || item.SourceOrderVersion < 1
+                || item.SupplierPartyId != SupplierPartyId || item.CompanyAccountId != CompanyAccountId || item.CurrencyId != CurrencyId
+                || item.NetAmount <= 0 || item.SourceNetAmount <= 0 || item.NetAmount > item.SourceNetAmount
+                || item.NetAmount > MaximumStoredQuantity || decimal.Round(item.NetAmount, MoneyScale) != item.NetAmount
+                || item.CostOn == default || line is null || line.ItemType != "Expense" || line.LinePurpose != "expense"
+                || line.ExpenseTypeId != item.ExpenseTypeId || line.VatPercent != item.VatPercent)
+                throw new PurchasingRuleException(SourceMismatch, "Masraf payının carisi, para birimi veya kalem kaynağı faturayla uyuşmuyor.");
+        }
+        foreach (var group in expenses.GroupBy(x => x.CostId))
+            if (group.Select(x => x.SourceNetAmount).Distinct().Count() != 1
+                || CommercialLinePriceCalculator.ExactSum(group.Select(x => x.NetAmount)) > group.First().SourceNetAmount)
+                throw new PurchasingRuleException(SourceMismatch, "Toplam masraf payı gerçek masrafı aşamaz.");
         foreach (var line in Lines)
         {
+            if (line.LinePurpose == "expense")
+            {
+                // Allocation balancing, not a price estimate: every official net amount must be assigned once.
+                var expenseShares = expenses.Where(x => x.InvoiceLineId == line.Id).ToArray();
+                if (expenseShares.Length == 0 || CommercialLinePriceCalculator.ExactSum(expenseShares.Select(x => x.NetAmount)) != line.Amounts.Net)
+                    throw new PurchasingRuleException(MatchRequired, "Resmî masraf satırının net tutarı masraf paylarına tam bağlanmalıdır.");
+                continue;
+            }
             var shares = frozen.Where(item => item.InvoiceLineId == line.Id).ToArray();
             if (shares.Length == 0) throw new PurchasingRuleException(MatchRequired, "Her fatura satırı kabul kaynağına bağlanmalıdır.");
             var quantity = CommercialLinePriceCalculator.ExactSum(shares.Select(item => item.Quantity));
@@ -186,7 +227,7 @@ public sealed class PurchaseIncomingInvoice
             if (Math.Abs(expectedNet - line.Amounts.Net) > policy.AmountTolerance)
                 differences.Add(new(line.Id, "Price", expectedNet, line.Amounts.Net));
         }
-        Matches = Array.AsReadOnly(frozen); Variances = Array.AsReadOnly(differences.ToArray()); Policy = policy;
+        Matches = Array.AsReadOnly(frozen); AdditionalCosts = Array.AsReadOnly(expenses); Variances = Array.AsReadOnly(differences.ToArray()); Policy = policy;
         MatchedBy = actor; Status = PurchaseIncomingInvoiceStatus.Matched; Version = checked(Version + 1);
     }
 
@@ -203,7 +244,7 @@ public sealed class PurchaseIncomingInvoice
     public void Finalize(long expectedVersion, Guid admissionId, string finalizedBy, DateTimeOffset now)
     {
         RequireVersion(expectedVersion); RequireStatus(PurchaseIncomingInvoiceStatus.Matched);
-        if (Policy is null || Matches.Count == 0) throw new PurchasingRuleException(MatchRequired, "Üçlü kontrol eksik.");
+        if (Policy is null || Matches.Count + AdditionalCosts.Count == 0) throw new PurchasingRuleException(MatchRequired, "Üçlü kontrol eksik.");
         if (Variances.Count != 0 && VarianceDecision is null)
             throw new PurchasingRuleException(VarianceApprovalRequired, "Fiyat, miktar veya kur farkı onaylanmalıdır.");
         Identity.Require(admissionId, nameof(admissionId)); var actor = Actor(finalizedBy);

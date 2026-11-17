@@ -77,7 +77,9 @@ public sealed class PurchasingOwnerInventoryReceiptCostSource(IPurchaseReceiptCo
             ExactCostRatio? usdRatio = null;
             string? usdReason = null;
             if (currency == ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD")) { usd = original; usdRatio = originalRatio; }
-            else if (currency == SettingsCurrencyIdentitiesV1.TurkishLira)
+            // URT-D82/D105 + 2026-11-17 decision: a third currency uses the official invoice TL ratio,
+            // divided by the receipt day's USD selling rate. The primary TL ratio remains untouched.
+            else if (tlRatio is not null)
             {
                 try
                 {
@@ -86,12 +88,13 @@ public sealed class PurchasingOwnerInventoryReceiptCostSource(IPurchaseReceiptCo
                 Fence(selection.CompanyId, actor);
                 if (resolvedUsdRate.State == ExchangeRateResolutionStatesV1.Resolved && resolvedUsdRate.Source == ExchangeRateSourcesV1.Tcmb
                     && resolvedUsdRate.RateDay == day && resolvedUsdRate.SourceCurrencyId == ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD")
-                    && resolvedUsdRate.TargetCurrencyId == SettingsCurrencyIdentitiesV1.TurkishLira && resolvedUsdRate.RecordId is not null
+                    && resolvedUsdRate.TargetCurrencyId == SettingsCurrencyIdentitiesV1.TurkishLira && resolvedUsdRate.RecordId is { } rateId && rateId != Guid.Empty
                     && !string.IsNullOrWhiteSpace(resolvedUsdRate.RecordVersion) && resolvedUsdRate.BulletinDate is not null
+                    && resolvedUsdRate.BulletinDate <= day
                     && decimal.TryParse(resolvedUsdRate.SellingRate, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var rate) && rate > 0m)
                 {
                     usdRate = resolvedUsdRate;
-                    usdRatio = originalRatio.Divide(rate);
+                    usdRatio = tlRatio.Divide(rate);
                     if (usdRatio.TryToDecimal(out var exactUsd)) usd = exactUsd;
                 }
                 else usdReason = "purchase_receipt_usd_entry_rate_unreadable";

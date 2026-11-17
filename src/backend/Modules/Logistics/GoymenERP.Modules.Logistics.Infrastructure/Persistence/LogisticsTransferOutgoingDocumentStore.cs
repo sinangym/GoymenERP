@@ -7,22 +7,36 @@ using GoymenERP.Modules.Logistics.Application.Contracts;
 using GoymenERP.Modules.Logistics.Domain.Transfers;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 
-public sealed class LogisticsTransferOutgoingDocumentStore(
+public sealed partial class LogisticsTransferOutgoingDocumentStore(
     LogisticsDbContext dbContext,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
-    TimeProvider timeProvider)
-    : ILogisticsTransferOutgoingDocumentStoreV1, ILogisticsTransferOutgoingDocumentProofSourceV1
+    TimeProvider timeProvider,
+    ILogisticsTransferReferenceSourceV1? transfers = null,
+    ILogisticsTransferEDispatchEvidenceSourceV1? officialDocuments = null,
+    IAuditTransactionWriterV1? auditWriter = null)
+    : ILogisticsTransferOutgoingDocumentStoreV2, ILogisticsTransferOutgoingDocumentProofSourceV1, ILogisticsTransferOutgoingDocumentReaderV1
 {
     private const string EntityType = "Logistics.TransferOutgoingDocument";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    public async Task<TransferOutgoingDocumentStoreResultV1> StoreDraftAsync(LogisticsWriteEnvelope envelope,
+    public Task<TransferOutgoingDocumentStoreResultV1> StoreDraftAsync(LogisticsWriteEnvelope envelope,
         string requestHash, TransferOutgoingDocument document, Func<CancellationToken, Task> beforeCommit,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) => StoreDraftCoreAsync(envelope, requestHash, document,
+            null, beforeCommit, cancellationToken);
+
+    public Task<TransferOutgoingDocumentStoreResultV1> StoreDraftWithAssociationAsync(LogisticsWriteEnvelope envelope,
+        string requestHash, TransferOutgoingDocument document, LogisticsTransferEDispatchAssociationV1 association,
+        Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken = default) =>
+        StoreDraftCoreAsync(envelope, requestHash, document, association, beforeCommit, cancellationToken);
+
+    private async Task<TransferOutgoingDocumentStoreResultV1> StoreDraftCoreAsync(LogisticsWriteEnvelope envelope,
+        string requestHash, TransferOutgoingDocument document, LogisticsTransferEDispatchAssociationV1? association,
+        Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken)
     {
         RequireEnvelope(envelope);
         RequireHash(requestHash);
@@ -33,6 +47,8 @@ public sealed class LogisticsTransferOutgoingDocumentStore(
             || document.Version != 1 || !string.Equals(document.CreatedBy, envelope.ActorId.Trim(), StringComparison.Ordinal))
             throw Refused(LogisticsStoreCodes.CompanyContextMismatch, "Transfer cikis belgesi aktif sirketin yeni taslagi degil.");
 
+        if (association is not null && (dbContext.ChangeTracker.HasChanges() || auditWriter is null || auditWriter.HasPendingDrafts))
+            throw Refused("logistics_transfer_departure_unavailable", "Transfer çıkış kaynağı kullanılamıyor.");
         await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         try
         {
@@ -54,6 +70,10 @@ public sealed class LogisticsTransferOutgoingDocumentStore(
                 throw Refused(LogisticsTransferOutgoingDocumentCodesV1.TransferAlreadyBound,
                     "Transfer veya belge kimligi daha once bir cikis belgesine baglandi.");
 
+            // Resolve the actual inert plan only after the original immutable replay; a later plan state must not
+            // rewrite the original create result. No missing number is turned into NotLinked.
+            if (association is { } associationValue)
+                await StageInitialAssociationAsync(document, associationValue, envelope, beforeCommit, cancellationToken);
             dbContext.TransferOutgoingDocuments.Add(ToRow(document));
             dbContext.TransferOutgoingDocumentLines.AddRange(document.OrderedTransferLineIds.Select((lineId, index) =>
                 new TransferOutgoingDocumentLineRow
@@ -69,7 +89,10 @@ public sealed class LogisticsTransferOutgoingDocumentStore(
                 "CreateDraft", null, document.Version, "Transfer cikis belgesi stok etkisi olmadan taslak olusturuldu");
 
             await beforeCommit(cancellationToken);
+            if (association is not null)
+                await auditWriter!.WritePendingAsync(transaction.GetDbTransaction(), cancellationToken);
             await SaveAsync(cancellationToken);
+            await beforeCommit(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return new(document, LogisticsWriteOutcome.Recorded, envelope.CorrelationId);
         }
@@ -77,6 +100,7 @@ public sealed class LogisticsTransferOutgoingDocumentStore(
         {
             await RollbackAsync(transaction, cancellationToken);
             dbContext.ChangeTracker.Clear();
+            if (association is not null) auditWriter?.DiscardPending();
             if (IsDeadlockVictim(exception)) throw LostSerializationRead(exception);
             throw;
         }

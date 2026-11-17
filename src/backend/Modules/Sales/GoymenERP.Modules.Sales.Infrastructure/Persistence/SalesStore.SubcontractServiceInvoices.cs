@@ -157,11 +157,31 @@ public sealed partial class SalesStore : ISalesSubcontractServiceInvoiceStore
                 "Aynı Idempotency-Key başka bir istekle geldi; ilk cevap bu isteğe verilmez.");
         }
 
-        var row = await dbContext.SubcontractServiceInvoices.AsNoTracking()
-            .SingleOrDefaultAsync(candidate => candidate.Id == attempt.InvoiceId, cancellationToken)
-            ?? throw new InvalidOperationException("Fason hizmet faturası denemesinin faturası okunamadı.");
-        var invoice = await RestoreSubcontractServiceInvoiceAsync(row, cancellationToken);
+        // Create has one known result version. Subsequent lifecycle writes must not change its replay.
+        var invoice = await RestoreSubcontractServiceInvoiceOutcomeAsync(attempt.InvoiceId, 1, cancellationToken);
         return new SalesSubcontractServiceInvoiceStoreResult(invoice, SalesDraftWriteOutcome.Replayed, attempt.CorrelationId);
+    }
+
+    private async Task<SalesSubcontractServiceInvoice> RestoreSubcontractServiceInvoiceOutcomeAsync(Guid invoiceId,
+        long sequence, CancellationToken cancellationToken)
+    {
+        RequireResolvedCompany();
+        var row = await dbContext.SubcontractServiceInvoices.AsNoTracking()
+            .SingleOrDefaultAsync(candidate => candidate.Id == invoiceId, cancellationToken)
+            ?? throw new InvalidOperationException("Fason hizmet faturası denemesinin faturası okunamadı.");
+        var lifecycle = await dbContext.SubcontractInvoiceLifecycles.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.InvoiceId == invoiceId && item.Sequence == sequence, cancellationToken)
+            ?? throw new InvalidOperationException("Fason fatura komutunun ilk cevap geçmişi okunamadı.");
+        var version = lifecycle.InvoiceVersion;
+        if (sequence < 1 || version < 1 || row.Version < version) throw new InvalidOperationException("Fason fatura cevap sürümü geçersiz.");
+        var lines = await dbContext.SubcontractServiceInvoiceLines.AsNoTracking()
+            .Where(item => item.InvoiceId == invoiceId).ToListAsync(cancellationToken);
+        // Header and service-line inputs are immutable. Only the untracked projection is rewound;
+        // no current row is modified or reattached to the context.
+        row.Version = version; row.State = lifecycle.State;
+        return SalesSubcontractServiceInvoiceRows.Restore(row, lines,
+            JsonSerializer.Deserialize<SalesSubcontractInvoiceLifecycleFacts>(lifecycle.FactsJson, Json)
+                ?? throw new InvalidOperationException("Fason fatura ilk cevap geçmişi bozuk."));
     }
 
     private static string SubcontractServiceInvoiceAuditState(SalesSubcontractServiceInvoice invoice) => JsonSerializer.Serialize(new

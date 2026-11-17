@@ -1165,6 +1165,10 @@ public static class ErpPermissions
     /// </summary>
     public const string LogisticsDispatchNotesCancel = "logistics.dispatch-notes.cancel";
 
+    /// <summary>STK-S8 owner names: registration only, company scoped; no grant or Critical classification.</summary>
+    public const string LogisticsTransferOutgoingDocumentsRead = "logistics.transfer-outgoing-documents.read";
+    public const string LogisticsTransferDeparturesRecord = "logistics.transfer-departures.record";
+
     /// <summary>
     /// F-020 (LOJ-D6..D8): cancel a loading instruction with a reason (LogisticsPermissionManifestV1) while no shipment is recorded —
     /// never a delete. Its own name. Registered, not granted (grant is a human gate). Company-wide only. Not Critical.
@@ -1453,6 +1457,7 @@ public static class ErpPermissions
 
     /// <summary>ALS-D8/D15/D63: explicit company invoice-variance policy publication. Registered only; no grant or new Critical class.</summary>
     public const string SettingsPurchaseInvoiceVariancePoliciesManage = "settings.purchase-invoice-variance-policies.manage";
+    public const string SettingsWarehouseTransferScaleManage = "settings.warehouse-transfer-scale.manage";
 
     /// <summary>
     /// F-029 S6 (URUN_F029 spec §5.4(2); URN-D2…D5): read the e-Fatura scenario policy — the scenario code list (SAT-D120)
@@ -1620,6 +1625,15 @@ public static class ErpPermissions
     /// </summary>
     public const string DocumentsFilesLink = "documents.files.link";
 
+    /// <summary>STK-S29 / KLN-D33/D73/D109: company branding and separate module template duties. Registered only; no grant or Critical classification.</summary>
+    public const string DocumentsCompanyBrandingManage = "documents.company-branding.manage";
+    public const string DocumentsSalesTemplatePrepare = "documents.templates.sales.prepare";
+    public const string DocumentsSalesTemplatePublish = "documents.templates.sales.publish";
+    public const string DocumentsInventoryTemplatePrepare = "documents.templates.inventory.prepare";
+    public const string DocumentsInventoryTemplatePublish = "documents.templates.inventory.publish";
+    public const string DocumentsLogisticsTemplatePrepare = "documents.templates.logistics.prepare";
+    public const string DocumentsLogisticsTemplatePublish = "documents.templates.logistics.publish";
+
     public const string IdentityProfileRead = "identity.profile.read";
     public const string IdentityAccessRequest = "identity.access.request";
     public const string IdentityAccessApprove = "identity.access.approve";
@@ -1778,6 +1792,8 @@ public static class ErpPermissions
             LogisticsDispatchNotesCreate,
             LogisticsDispatchNotesApprove,
             LogisticsDispatchNotesCancel,
+            LogisticsTransferOutgoingDocumentsRead,
+            LogisticsTransferDeparturesRecord,
             LogisticsLoadingInstructionsCancel,
             LogisticsCustomerReturnsRead,
             LogisticsCustomerReturnsRequest,
@@ -1881,12 +1897,20 @@ public static class ErpPermissions
             DocumentsFilesRead,
             DocumentsFilesUpload,
             DocumentsFilesLink,
+            DocumentsCompanyBrandingManage,
+            DocumentsSalesTemplatePrepare,
+            DocumentsSalesTemplatePublish,
+            DocumentsInventoryTemplatePrepare,
+            DocumentsInventoryTemplatePublish,
+            DocumentsLogisticsTemplatePrepare,
+            DocumentsLogisticsTemplatePublish,
             SettingsSalesDiscountLimitsManage,
             SettingsTaxMasterManage,
             SettingsSalesDeliveryTolerancesManage,
             SettingsSalesApprovalThresholdsManage,
             SettingsSalesQuotePoliciesManage,
             SettingsPurchaseInvoiceVariancePoliciesManage,
+            SettingsWarehouseTransferScaleManage,
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
             SettingsUnitProfilesManage,
@@ -2064,6 +2088,8 @@ public static class ErpPermissions
             LogisticsDispatchNotesCreate,
             LogisticsDispatchNotesApprove,
             LogisticsDispatchNotesCancel,
+            LogisticsTransferOutgoingDocumentsRead,
+            LogisticsTransferDeparturesRecord,
             LogisticsLoadingInstructionsCancel,
             LogisticsCustomerReturnsRead,
             LogisticsCustomerReturnsRequest,
@@ -2167,12 +2193,20 @@ public static class ErpPermissions
             DocumentsFilesRead,
             DocumentsFilesUpload,
             DocumentsFilesLink,
+            DocumentsCompanyBrandingManage,
+            DocumentsSalesTemplatePrepare,
+            DocumentsSalesTemplatePublish,
+            DocumentsInventoryTemplatePrepare,
+            DocumentsInventoryTemplatePublish,
+            DocumentsLogisticsTemplatePrepare,
+            DocumentsLogisticsTemplatePublish,
             SettingsSalesDiscountLimitsManage,
             SettingsTaxMasterManage,
             SettingsSalesDeliveryTolerancesManage,
             SettingsSalesApprovalThresholdsManage,
             SettingsSalesQuotePoliciesManage,
             SettingsPurchaseInvoiceVariancePoliciesManage,
+            SettingsWarehouseTransferScaleManage,
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
             SettingsUnitProfilesManage,

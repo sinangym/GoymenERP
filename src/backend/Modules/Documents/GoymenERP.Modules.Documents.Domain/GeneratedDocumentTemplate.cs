@@ -1,4 +1,6 @@
 using System.Text.RegularExpressions;
+using System.Text.Json.Serialization;
+using System.Globalization;
 
 namespace GoymenERP.Modules.Documents.Domain;
 
@@ -13,20 +15,26 @@ public sealed partial record GeneratedDocumentTemplate
     public const int MaximumCodeLength = 64;
     public const int MaximumVersionLength = 64;
 
-    private GeneratedDocumentTemplate(string code, string version)
+    private GeneratedDocumentTemplate(string code, string version, GeneratedDocumentPublicationSnapshot? publication)
     {
         Code = code;
         Version = version;
+        Publication = publication;
     }
 
     public string Code { get; }
 
     public string Version { get; }
 
-    public static GeneratedDocumentTemplate? TryCreate(string? code, string? version) =>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedDocumentPublicationSnapshot? Publication { get; }
+
+    public static GeneratedDocumentTemplate? TryCreate(string? code, string? version, GeneratedDocumentPublicationSnapshot? publication = null) =>
         code is not null && code.Length <= MaximumCodeLength && CodePattern().IsMatch(code)
         && version is not null && version.Length <= MaximumVersionLength && VersionPattern().IsMatch(version)
-            ? new GeneratedDocumentTemplate(code, version)
+        && (publication is null || publication.IsWellFormed() && publication.TemplateCode == code
+            && version == "pub." + publication.PublicationVersion.ToString(CultureInfo.InvariantCulture))
+            ? new GeneratedDocumentTemplate(code, version, publication)
             : null;
 
     [GeneratedRegex("^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$", RegexOptions.CultureInvariant)]

@@ -195,3 +195,156 @@
 - The company-wide and physical-unit cost answers now carry nullable `CostCurrencyId`. The real owner sets TRY only when every included source has an actual matching TRY-specific exact pool. A legacy average ledger has no currency column; its existing `company-base-currency` description never becomes a fabricated TRY identity. Missing proof stays null, without changing the existing numerical read or backfilling any old row. Physical unit conversion forwards this same currency and performs no money conversion.
 - Null proof is omitted from legacy JSON; existing unproven wire shapes remain compatible. Consumers must separately admit the actual currency and their fresh authority; a Product accounting class is not inferred by this read. No schema, financial posting, price, rounding policy or permission is changed.
 - Two unit source tests and one genuine receipt/pool SQL fact source cover forwarding, legacy null, empty identity refusal and real TRY evidence disappearing in an isolated explicit legacy-data fault. Source compilation and runtime .NET/SQL/browser/CI are **NOT_RUN** for this delta; the coordinator owns combined compilation and central inventories. The enclosing margin/financial workflow remains its owner's responsibility.
+
+### STK-S8 — gerçek depo tartı ayarı, belge ve çıkış/iptal owner zinciri
+
+- Durum **PARTIAL**. Gerçek Settings/Logistics owner, host köprüsü, HTTP akışları ve belge→kesinleştirme→sevk paneli kaynakta tamamlandı. Transfer planlama ve mal kabul/fazla kabul/eksik-fazla düzeltme ekranları henüz bu checkpoint'te yoktur. Gerçek bağlı GİB kanıt sağlayıcısı yoktur; bu kol açıkça 503 kalır. Bu kayıt S8'in veya K3 kabulünün tamamlandığı anlamına gelmez.
+- Karar dayanakları: LOJ-D11 (`SINAN_KARARLARI_2026-11-12_LOJISTIK_EK3.md:48` default-Off metadata satırı) ve KLN-D25(7)/D27 (`SINAN_KARARLARI_2026-11-12_STOK_TRANSFER_IPTAL_VE_GELECEK_TEDARIK.md`). Koordinatör notu doğrudan kullanıcı alıntısı olarak gösterilmedi; numarasız belge gönderilmedi veya bağsız sayılmadı.
+- Settings yalnız gerçek şirketin aktif iç deposu için append-only seçim tutar. Geçerli depoda hiç kayıt yoksa NotConfigured/false/sürümsüz; ilk açık Off kaydı Configured/sürüm1; kaynak hatası Unavailable'dır. On kaydı gerçek Logistics yeteneği ister. Beklenen sürüm, özgün actor/hash bağlı replay, fresh authority ve aynı işlem Audit owner yazımı vardır; caller'ın borrowed işlemi, dirty state veya pending audit temizlenmez. Varsayılan/seed yoktur.
+- Yeni açık belge oluşturma gerçek Inventory Planned sürümü, kaynak konumu ve sıralı satır kimliklerini yeniden okur. Explicit NotLinked yalnız bu kanıtla kaydedilir; eski omitted alan Unknown kalır. Linked actual official owner gerektirir. Gerçek belge okuma/oluşturma/kesinleştirme/iptal HTTP yolları ve ayrı capability'leri korunur; sahte GUID formu veya sessiz approve yoktur.
+- Logistics gerçek ilk/ikinci tartı ve yön üzerinden mevcut backend calculator'ın netini, araç çıkışını, değişmez olay ve terminal yanıtını kaydeder. Fiziksel stok hareketi yaratmaz. Kaynak sürümü, şirket/actor/izin ve Audit aynı owner işleminde korunur. Çıkış ile kalıcı NoFurtherExit çiti tek SQL kazananı olan yarıştır. Dispatch öncesine tarihli iptal owner'a girmez. İptalin bağımsız güvenlik çiti sonraki Inventory ters kaydı rollback olsa da kalır; replay external callback'i tekrarlamaz.
+- Gerçek host `AddInventoryTransferPolicyHostPorts()` ile Organization depo, Settings seçim, Inventory transfer ve Logistics evidence portlarını bağlar. Inventory cancel V2 tam özgün request/metadata/fresh authority taşır; metadata'sız eski köprü onayı başarıya dönmez. GİB gönderimi, rol veya Cari/Organization yetkisi uydurulmadı.
+- Kayıt-only yeni adlar: `settings.warehouse-transfer-scale.manage`, `logistics.transfer-departures.record`, `logistics.transfer-outgoing-documents.read`. ErpPermissions/shell/global mount merkezi yazardadır. Belge eylemleri ayrıca mevcut `logistics.dispatch-notes.create`, `.approve`, `.cancel`; fiziksel sevk mevcut `inventory.stock-transfer.write` capability'sini ister. Grant, rol ataması veya Critical sınıfı yoktur.
+- İki forward migration `dotnet ef` ile üretildi: `20261117111242_AddWarehouseTransferScalePolicies` (**51990**) ve `20261117111253_AddTransferDepartures` (**51991**). Her Down'da ilk SQL koruması ilgili herhangi tarihçe varken bütün Drop'lardan önce THROW eder. Generated Designer/snapshot elle üretilmedi; Up yalnız DDL'dir. Main ve aktif owner kaynaklarında çakışma tarandı. Yeni raw SQL/bypass/context allowlist girdisi eklenmedi; yeni owner transaction/context yüzeyleri K3 inceleme listesindedir.
+- Test kaynakları: immutable/defaultOff/company/model/Down, gerçek owner replay/Audit rollback/authority fault, SQL exit-vs-fence yarışı ve fence-sonrası fiziksel rollback, legacy/linked-missing-provider, request/endpoint permission/no-store, strict JSON ve frontend frozen retry/state/capability ayrımı. Sentetik authority/provider arızaları açık sınır fault'larıdır; gerçek GİB kabulü olarak sunulmaz. Dar ikinci göz son üç backend owner dosyasında yeni kanıtlı P1/P2 bulmadı; bu K3 imzası değildir.
+- Kaynak derleme kanıtı: API, Settings.UnitTests, Logistics.UnitTests, Inventory.UnitTests, Product.UnitTests, Identity.UnitTests ve Api.IntegrationTests **exit0, sıfır uyarı/hata**; iki EF üretimi **exit0**. İlk API using ve Integration test-fixture tür/nullable hataları düzeltildikten sonra bu sonuçlar alındı. Settings test projesindeki eksik yerel assets yalnız owner-local restore ile tamamlandı. Unit/SQL/Vitest/browser/CI runtime ve database update **NOT_RUN**; ham derleme kayıtları depodışındadır. Final TypeScript sonucu ayrıca aşağıya kaydedilir.
+- Merkezi bağlama: `MapSettingsWarehouseTransferScaleEndpoints()`, `MapLogisticsTransferDepartureEndpoints()`, `MapLogisticsTransferOutgoingDocumentEndpoints()`; `AddInventoryTransferPolicyHostPorts()`; `WarehouseTransferScalePage` → `/ayarlar/depo-transfer-tartisi`, `TransferDeparturePage` → `/lojistik/transfer-cikislari`; InventoryTransferPage dispatch paneli için yukarıdaki beş ayrı action capability'si. Ortak Program/shell/nav/pin dosyaları bu ekipçe değiştirilmedi.
+- Merkezi üretim: iki yeni migration ve store/recovery/release sayıları, migration Down `Sql=1` mutation review girdileri, Settings/Logistics context fingerprint'leri ve yeni gerekçeli context construction K3 incelemesi, OpenAPI endpoint/schema, relational fact ve test group envanterleri. Eski kesin manifest sayıları yeni gerçek yüzeyle merkezi hizalanmalıdır; testler atlanmadı/silinmedi.
+- Final `npx tsc -b` **exit0**. İlk dispatch test mock-function tür hatası açık dönüş imzasıyla düzeltildi; sonra bütün frontend kaynakları derlendi. `git diff --check` exit0. Yukarıdaki S13 arama/ekleme ve maliyet para birimi kanıtı deltaları da bu API/Product/Inventory/Integration ve frontend derleme checkpoint'ine dahildir; eski NOT_RUN derleme satırlarının yerine bu kanıt geçer. Runtime NOT_RUN durumu değişmez.
+
+### STK-SC36-c — Cari gerçek müşteri rolü owner kanıtı
+
+- Dar kaynak boşluğu kapandı: paket standardı müşterisi artık display-name Found yanıtından türetilmiyor. Yeni `ICounterpartyProductPackageStandardCustomerSourceV1` yalnız istenen en fazla 100 Party kimliğini, gerçek aktif Party ve aynı şirketteki aktif CompanyPartyAccount + Customer rolü ile tek ilişkisel sorgudan okur. Her iki gerçek sürüm, şirket ve kaynak sürümü bağımsız doğrulanır. Missing/foreign/inactive/nonCustomer aynı omission'dır; rol veya fiyat genel listesi açılmaz.
+- Owner yalnız mevcut Product paket-standardı manage/approve işlevinin fresh company-wide yetkisini kullanır. Manufacturing izni veya yeni Cari-read şartı yoktur; grant/rol atanmaz. Product host strict source/schema/company/actor/requested-subset/revision/role admission yapar; display portuna fallback yapmaz. Mevcut Product uygulaması action-specific iznini ve kayıttan önce fresh fence'ini ayrıca korur.
+- Üç gerçek SQL fact ve unit/host sözleşme kaynakları; actual join/revision/role, dirty tracked state'i flush etmeden gerçek kayıt, tenant ve yetki değişimi, bozuk/eksik sağlayıcı senaryolarını kapsar. 18 test tanımı / 38 senaryo yalnız kaynak sayımıdır. Bu deltada kaynak derlemesi ve bütün runtime kabulü **NOT_RUN**; no migration/model/ham SQL/bypass eklenmedi. Yeni scoped owner DI module içindedir, mevcut host Program kaydı değişmez. OpenAPI/public Product DTO değişmez; merkezi relational/group envanteri güncellenmelidir.
+
+### STK-S8 — gerçek plan, hedef kabul belgesi ve kabul/düzeltme iş akışı
+
+- Durum **PARTIAL**; bu bölüm önceki checkpoint'teki plan ve kabul ekranı kaynak eksiklerini kapatır. Gerçek bağlı GİB gönderim durumu sağlayıcısı hâlâ yoktur ve o kol 503 kalır. Kaynak varlığı, derleme, gerçek SQL, browser, CI ve K3 kabulü ayrı tutulur. Karar dayanakları B-22, 14 Ekim transfer yaşam döngüsü ve KLN-D23/D24/D107/D108'dir; yeni işletme politikası veya grant seçilmedi.
+- Plan seçicisi gerçek Inventory etiket/sürüm/fiziksel pozisyon ve Organization aktif hedef depo/saha/sürüm okur; dış hedefte gerçek ExternalOperatorPartyId gerekir. Ürün, sahip, saklayıcı ve kaynak tuple'ı ekranda türetilmez. Elle GUID veya varsayılan dış işletmeci yoktur. Organization tarafında iki salt-okunur sözleşme/sağlayıcı ve module DI kaydı dışında model/context değişikliği yoktur.
+- Hedef kabul belgesinin Draft ve Effective sürümleri append-only Inventory owner kayıtlarıdır. Ayrı açık kesinleştirme, gerçek transfer/satır/etiket/sürüm, UTC kabul günü, kg ve fazla kabul açıklamasını dondurur. Fiziksel Receive aynı işlemde aynı şirketin gerçek Effective sürümünü ve belge satırını doğrular. Belge oluşturma/kesinleştirme ile Audit owner yazımı aynı işlemde atomiktir; aktör/şirket/hash bağlı özgün yanıt replay'i sonradan değişmez. Eski null optional alan hash/JSON'dan çıkarılır; eski anahtar sahipliği korunur.
+- Mevcut dispatch/receive/overage-decision/loss-request/loss-decision izinleri ile gerçek command-purpose aday listesi ve tek kayıt okunur. StockPositions read grant'i bu izinlerden türetilmez. Plan ve kabul adayı sayfaları gerçek backend bilgisi taşır; belge ve iş listesinde şirket/aktör/purpose/query/limit bağlı imzalı keyset continuation vardır. İlk 50 belgeden sonraki gerçek kayıtlar da seçilebilir; key yokken başarılı eksik liste uydurulmaz.
+- Ön yüz gerçek plan → belge taslağı → açık kesinleştirme → hedef kabul akışını; fazla kabul onayı/yenilenmesi, eksik kabul talebi/kararı/geri çekme ve gerçek tarihçeyi bağlar. Belirsiz ağ yanıtı aynı API/oturum/aktör/şirket bağlı frozen body/kimlik/zaman/anahtarı korur. Fiziksel veya mali miktar ekranda yeniden hesaplanmaz. InventoryTransferPage generic report okumaları yalnız gerçek stock-positions capability'siyle enabled olur; command-only kullanıcı plan ve kendi iş listesini rapor yetkisi olmadan kullanır.
+- EF forward migration **20261117122205_AddInventoryTransferReceiptDocuments**, üretim **exit0**. Up yalnız bir tablo, şirketli FK/index ve constraint'lerdir. Down ilk işlem, herhangi bir belge tarihçesi varken bütün Drop'lardan önce **THROW 51999** ile reddeder. Önceki migration'lar değiştirilmedi, backfill yoktur. Numara main/HEAD ve yedi aktif owner kaynak ağacında üretim öncesi çakışmasız tarandı; database update yapılmadı.
+- Test KODU: 23 C# tanımı / 38 genişletilmiş vaka, bunların içinde **8 gerçek-SQL fact kaynağı**; draft/effective binding, immutable replay, quantity/date/line mismatch, foreign company, gerçek Audit rollback + açık sentetik late authority fault, 51 belgeli cursor, yalnız action permission ile aday okuma, dış operator/version kanıtı ve Down guard kapsanır. Plan frontend'i 41 tanım / 103 vaka, kabul frontend'i 36 tanım / 77 vaka kaynağıdır. Bunlar koşum sayısı değildir.
+- Fiziksel transfer race kaynakları mevcut şirket-sayım mutex'iyle hizalandı: aynı mutex'i almış iki SaveChanges arasında yapay bariyer kurmak yerine komut başlangıç yarışı ve tek kazanan/tek fiziksel olay kanıtı korunur. İç callback sırasında ikinci gerçek yazıcı bağlantısının kilit beklemesi yalnız bağlantı-local timeout ile doğrulanır; servis/sunucu ayarı değiştirilmez. Runtime race sonucu iddia edilmez, test silinmez/atlanmaz.
+- Kaynak doğrulama: API, Inventory.UnitTests, Counterparty.UnitTests, Organization.UnitTests ve Api.IntegrationTests **exit0, sıfır uyarı/hata**; EF üretimi **exit0**. İlk API missing-using ve iki TypeScript narrowing/fixture bildirimi düzeltildi; eksik yerel assets yalnız Counterparty/Organization test projesi owner-local restore ile tamamlandı. Son .NET derlemeleri bu düzeltmeleri içerir; ham log ve native exit kayıtları depodışındadır. Birim/gerçek SQL/Vitest/browser/CI runtime ve database update **NOT_RUN**. Önceki SC36-c kaynakları bu Counterparty/Integration derleme kanıtına dahildir.
+- Merkezi mount: **MapInventoryTransferPlanCandidateEndpoints()** ve **MapInventoryTransferReceiptDocumentEndpoints()**. İkincisi receipt-work tek okuma ve candidate list yollarını da map eder. Frontend **InventoryTransferPage()** ve **TransferReceiptPanel({transferId,onChanged})**; mevcut inventory.stock-transfer.write standalone plan gateway ile kullanılır. Organization/Inventory owner DI module içinde kayıtlıdır. Ortak Program, shell provider, global nav/cap, izin kaydı ve KALAN_PLAN değiştirilmedi.
+- Merkezi yeniden üretim: yedi yeni HTTP operation + optional Receive belge sürümü şeması; bir migration/durable store/recovery/release; Down Sql=1 review; Inventory context/snapshot/store/cursor/Organization DI fingerprint'leri; sekiz SQL fact tam adı/ilişkisel envanter ve backend test grupları. Yeni bypass/ham SQL/context allowlist girdisi eklenmedi. Yeni owner transaction/context, signed purpose cursor, original replay, belge-fiziksel binding ve mutex-aware race kaynakları **K3 review bekliyor**. Bu kaynak ve rapor aynı dilim commit'inde tutulur; SHA merkezi entegrasyon kaydına yazılır.
+- Son dependency merge sonrası bütün frontend için **npx tsc -b exit0** ve **git diff --check exit0**. Bu sonuç kaynak derlemesidir; yukarıdaki bütün runtime NOT_RUN sınırları korunur. .NET/EF ve Node slotları açıkça koordinatöre bırakıldı.
+
+### STK-S3 — müşteri malı teslimi owner kaynağı, PARTIAL
+
+- Kaynak `93bfba4acccb406cbb7c7cb36d3c57c01d77a83e`: ayrı subcontract demand kind,
+  gerçek müşteri sahipliği/şirket saklayıcılığı kontrolü, immutable allocation source
+  ve borrowed reserve/ship participant vardır. Normal şirket malı satış sevki veya
+  SMM olayı bu participant'tan çıkmaz. Sales/Manufacturing gerçek kanıt birleştirmesi,
+  tamamlanma V2 okuyucusu, Logistics host ve tartı düzeltme bağlantısı henüz yoktur.
+- EF `20261117140912_AddInventorySubcontractDeliverySources`, Down **51934**;
+  önce kaynak veya yeni demand-kind satırı varken reddeder, sonra DDL geri alır.
+  Snapshot üreticiden geldi; DB uygulaması yok. Company/model/immutable source
+  unit ve SQL Down guard kaynakları yazıldı. Borrowed context construction ve
+  physical source binding **K3 review bekliyor**; guard allowlist'e eklenmedi.
+
+### STK-S29 — belge şablonu yayımlama owner kaynağı, PARTIAL
+
+- Kaynak `ba38bc6daad9ba6ac646c47968239acea0ef4978`: şirketli logo/antet sürümü,
+  üç kapalı modül şablonu, ayrı hazırlayan/yayımlayan ve immutable yayın kanıtı
+  oluşturuldu. Gerçek Documents Clean uploaded sürüm/hash kaynağı gerekir;
+  SystemGenerated belge uploaded Clean sayılmaz. Dış URL/HTML/script/layout yoktur.
+- EF `20261117140908_AddDocumentBrandingPublications`, Down **51936**; branding,
+  draft, yayın, attempt veya generated-version yayın kanıtı varken önce reddeder.
+  Snapshot üreticiden geldi; DB uygulaması yok. İlk iki type/using compile hatası,
+  test nullability ve yerel Documents test restore gereksinimi dar düzeltildi.
+- API, Documents.UnitTests, Inventory.UnitTests, Api.IntegrationTests ve TypeScript
+  final kaynak derlemeleri **exit 0, uyarı/hata 0**. İki yeni SQL fact adı doğru
+  Inventory/platform envanterine sıralı eklendi. Unit/SQL/HTTP/Vitest/browser/CI
+  **NOT_RUN**; guard numaraları 29 farklı committed tren/main head'inde çakışmadı.
+- Yedi izin adı yalnız owner sözleşmesinde aday olarak vardır; merkezi kayıt/grant
+  yapılmadı. Endpoint sınıfı henüz host'a map edilmedi. Gerçek asset renderer,
+  PDF producer binding, yönetim ekranı ve runtime/negative kabulü eksiktir;
+  unregistered/unavailable durumu başarı veya kullanıma hazır sayılmaz.
+- Dedicated Documents context construction, maker-checker, uploaded kaynak ispatı,
+  immutable publication/request hash ve iki Down guard **K3 review bekliyor**.
+  Kaynak checkpoint'leri tam dilim DONE değildir; merkezi pin ve tren FF bekler.
+
+### STK-S29 — gerçek renderer, producer ve yönetim ekranı checkpoint'i
+
+- KLN-D33 / KLN-D73 / KLN-D109 / DEC-DOC-010: mevcut PDFsharp **6.2.4** ile gerçek PNG/JPEG ve tek sayfalı PDF
+  logo/antet çizimi bağlandı. Yayımlanmış şirket/modül şablonunun sabit document/version/hash kanıtı PDF metadata'sına
+  taşınır; çok sayfalı iş belgelerinde her sayfada çizilir. Kapalı backend business-content vocabulary korunur; fiyat,
+  vergi, kg dağılımı ve tolerans yeniden hesaplanmaz. Yeni bağımlılık, HTML/script şablonu, URL/path girişi veya dış
+  e-belge gönderimi eklenmedi. Parser yokluğu/bozuk kanıt başarıya veya sessiz teknik fallback'e dönüşmez.
+- Sales order GET PDF gerçek güncel publication'a bağlandı; read-only GET olarak kaldı. Inventory label POST gerçek
+  Documents generated-store publication snapshot'ını kullanır. Yeni label-scope GET `pdf-template` seçimi gerçek owner'dan
+  alır; public komuttaki trailing nullable PublicationId/PublicationVersion UI attempt'iyle dondurulur. Owner exact
+  historical publication okur; yeni yayım sonrasında kayıp yanıtın tekrarında son yayımı yeniden seçmez. Eski null
+  istek teknik içerik/hash biçimini korur; yeni UI her yeni işlem öncesinde gerçek seçimi okur. Farklı payload aynı key
+  mevcut 409'dur. Üç producer özgün actor/company frame'ini bütün awaited owner çağrıları boyunca korur ve gerçek
+  record-scope okumalarını tazeler.
+- Logistics onaylı irsaliye için read-only GET PDF ve buton kaynağı eklendi. Cari owner gerçek müşteri adını; yeni dar
+  Product-owned Logistics-purpose known-id portu gerçek code/name/version'ı; Settings gerçek birim kodunu; Logistics
+  gerçek kayıtlı sevk miktarı ve varsa frozen kg snapshot'ını verir. Parasal tutar yoktur (SAT-D425). Ürün/fiyat/rol
+  kataloğu veya yeni Product grant'i açılmaz; mevcut Logistics read ve gerçek owner-record fence geçerlidir. Teknik PDF
+  resmî e-İrsaliye gönderim kanıtı sayılmaz. Eski kayıtta bulunmayan kg dağılımı üretilmez veya mevcut ortalamayla doldurulmaz.
+- `CompanyDocumentBrandingPage` ve modül bazlı `DocumentTemplatePage` gerçek upload → Clean fixed version seçimi →
+  company branding → module draft → farklı publisher akışını kullanır. Template sayfası prepare OR publish amaç
+  yetkisiyle çalışır; şirket branding-manage veya genel Documents-read grant'i eklemez. Mevcut upload izni olmadan upload
+  açılmaz. Loading/empty/401/403/404/409/offline/network/503/bozuk yanıt ayrıdır; belirsiz command/upload aynı key ve
+  payload/file ile actor/session/company/origin'e bağlı tutulur. İrsaliye 422 sayfa sınırı kesik belge başarısı sayılmaz.
+- Test kaynakları: gerçek renderer, per-page form/metadata/Türkçe içerik ve deterministik retry; bozuk hash/parser,
+  fixed publication/unknown outcome ve company/actor/permission kaybı; kapalı fiyat-sız irsaliye composer'ı; frontend
+  strict decoder/state/maker/retry kaynakları. Üç gerçek SQL fact kaynağı: (1) gerçek Clean upload, maker≠publisher,
+  pub1 → gerçek label/vault → pub2 sonrasında özgün immutable publication/PDF replay; (2) Audit append sonrası hata,
+  tüm revision/attempt/audit rollback ve aynı-key success/replay; (3) gerçek Product SQL identity'nin yalnız Logistics
+  amaç izni altında price-free okunması. Bu fact'ler **NOT_RUN**; sahte grant'ler yalnız disposable acceptance fixture'ıdır.
+- Kaynak derlemeleri: API, DocumentGeneration.Pdf.Tests, Documents.UnitTests, Product.UnitTests ve Api.IntegrationTests
+  final **exit0 / 0 uyarı / 0 hata**. İlk API 2:47, final incremental API 24,70sn; PDF test projesi 3,07sn, Documents
+  Unit 3,51sn, Product Unit 9,91sn; Integration yeni testteki tek CS0819 düzeltmesinden sonra 45,78sn exit0. Komutlar
+  `--no-restore -m:1 -nr:false -p:UseSharedCompilation=false -p:OpenApiGenerateDocumentsOnBuild=false -v:q` kullandı.
+  Her süreçten önce ≥2GiB RAM ölçüldü, native exit anında kaydedildi, ham loglar depodışında korundu. Runtime unit/SQL/
+  HTTP/Vitest/browser/CI **NOT_RUN**; bu checkpoint'te EF/DB apply yok. Önceki 51936 migration değiştirilmedi.
+  Frontend son `npx tsc -b` **exit0**; Vitest/browser çalıştırılmadı. İlk TS union-generic hatası dar düzeltildi.
+- Merkezi entegrasyon: `AddDocumentBrandingPdfRuntime()`, `MapDocumentBrandingEndpoints()`,
+  `MapLogisticsDispatchPdfEndpoints()`; mevcut Product runtime kapısı ile
+  `AddProductLogisticsDocumentDisplay(Func<IServiceProvider,bool>)`. Kapalı/unconfigured Product sonucu Unavailable/503'tür.
+  Yedi permission kaydı, Settings purpose gateway/nav, page mounts ve Approved note satırında
+  `DispatchNotePdfButton(instructionId,dispatchNoteId,companyId)` merkez sahibindedir. UI action cap kimlikleri owner'daki
+  yedi permission adıyla aynıdır. OpenAPI/registry/architecture/relational/grup pin'leri koordinatörde kalır.
+- **PARTIAL kalan dar kapsam:** KLN-D33 MIME allowlist şu an PDF/PNG/JPEG StandardKinds'tır; boyut gerçek
+  `Documents:MaximumUploadBytes` owner kaynağından gelir. Aynı kayıtlı S29 kapsamındaki konfigüre altküme reader ve
+  negatif test kaynağı ayrı takip checkpoint'inde tamamlanacaktır; config/env dosyası değiştirilmeyecektir. Merkezi
+  mount/pin/derleme birleşmeden tam dilim DONE denmez. Gerçek kurumsal asset'ler, izin ataması, UAT/production ayrı insan
+  kapısıdır; OPEN-019 kapanmadı. Yeni Product purpose projection ve fixed-publication/hash bağı **K3 review bekliyor**.
+
+### STK-S29 — KLN-D33 konfigüre dosya türü altkümesi
+
+- Yeni owner reader `Documents:Branding:AllowedContentTypes` üzerinden yalnız mevcut StandardKinds'ın boş olmayan
+  PDF/PNG/JPEG altkümesini okur. Hiç yapılandırılmamış değer eski üç türü korur; açık boş/null/scalar, yinelenen,
+  kesik/nested indeks, bilinmeyen veya genişletilmiş tür listesi **503** olur. Dosya boyutu mevcut
+  `Documents:MaximumUploadBytes` / DocumentsServiceBindings kaynağından kalır. Config/env dosyası veya production
+  aktivasyonu değiştirilmedi; reader kaydı kendiliğinden bir işletme ayarı üretmez.
+- Şirket branding GET ve upload limits gerçek altkümeyi gösterir. Yeni upload/version, şirket branding seçimi,
+  modül taslağı ve yayım güncel tür kabulünü owner'da kontrol eder. Geçerli daraltma daha önceki sabit publication'ı,
+  tarihsel asset byte/hash kanıtını veya kayıtlı upload/version/branding tekrar sonucunu yeniden yazmaz. Geçersiz
+  yapılandırma yeni başarıya veya sessiz StandardKinds fallback'ine dönüşmez; aynı actor/company/permission çitleri sürer.
+- Store'un hem normal kayıtlı hem unique-race winner tekrarında çalıştırdığı authority callback'i ile yalnız yeni
+  append'in admission callback'i ayrıldı. Böylece güncel liste, daha önce kaydedilmiş winner sonucuna yeni 422 uygulamaz.
+  Güncel altküme yeni metadata/attempt yazılmadan kontrol edilir; mevcut content-addressed object-first düzeninde
+  başarısız yeni admission en fazla başvurulmayan şirket içi nesne bırakabilir, belge başarısı/kalıcılık iddiası üretmez.
+  Eski generated-PDF/store overload'ları ve null publication hash biçimi korunur; yeni modül/tablo/ham SQL/bypass yoktur.
+- Test kaynakları: gerçek configuration-provider absent/empty/null/scalar ayrımı; default/subset/duplicate/unknown
+  kontrolleri; gerçek module DI ve aynı byte-limit; upload/version replay ile payload mismatch; store fence'de policy
+  değişimi ve hiç metadata/attempt oluşmaması; diğer owner türlerinin değişmemesi. SQL lifecycle kaynağı daraltma sonrası
+  eski upload ve historical publication/PDF replay'ini, yeni 422 ve bozuk policy 503'ünü kapsar. Ek gerçek SQL fact,
+  actual store upload/version replay dallarında authority callback'inin çalıştığını, admission'ın çalışmadığını ve yeni
+  append reddinde satır eklenmediğini doğrular. HTTP/SQL/unit/Vitest runtime **NOT_RUN**.
+- Frontend policy altkümesi ve boş/yinelenen/genişletilmiş bozuk liste decoder kaynakları, sunucunun 422 tür red metni
+  eklendi. Son `npx tsc -b` **exit0**; başlangıç ≥2GiB RAM kapısı geçti, native exit/log depodışında korundu.
+- C# kaynak derlemeleri **exit0 / 0 uyarı / 0 hata**: API 2:41,71; Documents.UnitTests 3,49sn; Api.IntegrationTests
+  46,24sn. İlk Integration derlemesindeki test-only CS1674 (`IConfigurationRoot` lifetime) dar düzeltildi. Aradaki
+  <2GiB RAM kapısında hiçbir yeni süreç başlatılmadı; koşul düzeldikten sonra Integration ≥2GiB ile yeniden derlendi.
+  Bütün native exit'ler anında ve ham loglar depodışında saklandı. Yeni migration/EF/DB apply yok.
+- **DONE — owner kaynak kapsamı**: ana S29 checkpoint'i ve bu takip, gerçek yönetim/renderer/üç producer ile dar MIME
+  kaynak eksiğini tamamlar. Merkezi mount/registry/pin ve birleşik baştaki doğrulama koordinatördedir. Kabul/SQL/browser/CI,
+  K3 exact-head review ve kurumsal gerçek asset/grant/UAT kapıları ayrıdır; runtime **NOT_RUN**, OPEN-019 açık kalır.

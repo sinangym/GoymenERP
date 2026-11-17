@@ -33,6 +33,8 @@ import { SupplierRevisionPanel } from './SupplierRevisionPanel'
 import { ORDER_CANCELLATION_TEXT, PURCHASE_ORDER_STATUS_LABEL } from './purchasingText'
 import { PURCHASE_ORDER_STATUS_TONE } from './purchaseOrderStatus'
 import type { PurchaseOrderCurrency, PurchaseOrderLine } from './contract'
+import { ADDITIONAL_COST_CAPABILITY, additionalCostPath } from './additionalCostContract'
+import { ADDITIONAL_COST_TEXT } from './additionalCostText'
 
 const HEADING_ID = 'purchase-order-detail-heading'
 
@@ -229,6 +231,8 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
         : T.approvalFailed(attempt.code ?? attempt.status)}</p>
       : null
   return frame(<>
+    {isCurrentDetail && hasCapability(shell, ADDITIONAL_COST_CAPABILITY.read)
+      ? <Link to={additionalCostPath('GoodsOrder', order.id)}>{ADDITIONAL_COST_TEXT.title}</Link> : null}
     <section className={styles.section} aria-labelledby="purchase-order-summary-heading" data-testid="purchase-order-summary">
       <h2 id="purchase-order-summary-heading">{T.summaryHeading}</h2>
       <dl className={styles.facts} data-testid="purchase-order-status-facts">

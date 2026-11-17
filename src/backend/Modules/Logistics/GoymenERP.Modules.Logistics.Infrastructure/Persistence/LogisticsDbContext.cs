@@ -5,6 +5,7 @@ using GoymenERP.Modules.Logistics.Application.Contracts;
 using GoymenERP.Modules.Logistics.Application.Outbox;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 
@@ -18,7 +19,7 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 /// (company, command, key hash) is a primary key under a binary collation; the raw key is never stored.
 /// The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// </summary>
-public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> options, ICompanyContext companyContext)
+public sealed partial class LogisticsDbContext(DbContextOptions<LogisticsDbContext> options, ICompanyContext companyContext)
     : DbContext(options)
 {
     public const string Schema = "logistics";
@@ -82,10 +83,12 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         ConfigureShares(modelBuilder);
         ConfigureAttempts(modelBuilder);
         ConfigureWeighings(modelBuilder);
+        ConfigureWeighingCorrections(modelBuilder);
         ConfigureUnloadWeighings(modelBuilder);
         ConfigureDispatchNotes(modelBuilder);
         ConfigureCustomerReturns(modelBuilder);
         ConfigureTransferOutgoingDocuments(modelBuilder);
+        ConfigureTransferDepartures(modelBuilder);
         ConfigureWeighingDifferences(modelBuilder);
         ConfigureShipmentRiskGate(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
@@ -122,6 +125,7 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
             table.HasCheckConstraint("CK_LoadingInstructions_Identity",
                 $"[Id] <> {EmptyGuid} AND [CompanyId] <> {EmptyGuid} AND [CustomerPartyId] <> {EmptyGuid} AND [CompanyAccountId] <> {EmptyGuid}");
             table.HasCheckConstraint("CK_LoadingInstructions_Status", InstructionStatusCheck);
+            table.HasCheckConstraint("CK_LoadingInstructions_ShipmentKind", "[ShipmentKind] IN (1, 2)");
             table.HasCheckConstraint("CK_LoadingInstructions_Cancel", InstructionCancelCheck);
             table.HasCheckConstraint("CK_LoadingInstructions_Version", "[Version] >= 1");
             table.HasCheckConstraint("CK_LoadingInstructions_Text", "LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
@@ -131,6 +135,7 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         entity.Property(x => x.Id).ValueGeneratedNever();
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.RowVersion).IsRowVersion();
+        entity.Property(x => x.ShipmentKind).HasDefaultValue(1);
         entity.Property(x => x.EffectiveOn).HasColumnType("date");
         entity.Property(x => x.CreatedBy).HasMaxLength(128).IsRequired();
         entity.Property(x => x.CancelledBy).HasMaxLength(128);
@@ -706,6 +711,11 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
                 throw new InvalidOperationException("Sevkiyat kaydı yalnız aktif şirket bağlamında ve o şirket için yazılır.");
             }
 
+            GuardTransferDepartureChange(entry);
+            if (entry.Entity is LoadingAttemptRow && entry.State == EntityState.Modified
+                && (Database.CurrentTransaction is not { } commandTransaction
+                    || commandTransaction.GetDbTransaction().IsolationLevel != System.Data.IsolationLevel.Serializable))
+                throw new InvalidOperationException("Özgün fason komut cevabı yalnız aynı aktif Serializable işlemde tamamlanır.");
             if (entry.State == EntityState.Modified)
             {
                 string[] allowed = entry.Entity switch
@@ -720,6 +730,7 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
                         nameof(LoadingInstructionLineRow.Loaded), nameof(LoadingInstructionLineRow.Shipped),
                         nameof(LoadingInstructionLineRow.Delivered), nameof(LoadingInstructionLineRow.IsBlocked),
                     ],
+                    LoadingAttemptRow => [nameof(LoadingAttemptRow.ResultJson)],
                     // AT-055 lifecycle: the status and each set-once group (approval + number, cancellation, e-İrsaliye number).
                     DispatchNoteRow => [nameof(DispatchNoteRow.Status), .. DispatchNoteSchema.SetOnceColumns],
                     DispatchNoteLineRow => [nameof(DispatchNoteLineRow.Released)],
@@ -737,6 +748,11 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
                         nameof(TransferOutgoingDocumentRow.EffectiveBy), nameof(TransferOutgoingDocumentRow.EffectiveAtUtc),
                         nameof(TransferOutgoingDocumentRow.CancelledBy), nameof(TransferOutgoingDocumentRow.CancelledAtUtc),
                         nameof(TransferOutgoingDocumentRow.CancellationReason),
+                    ],
+                    TransferDepartureStateRow =>
+                    [
+                        nameof(TransferDepartureStateRow.Version), nameof(TransferDepartureStateRow.ExitWeighingAtUtc),
+                        nameof(TransferDepartureStateRow.VehicleExitAtUtc), nameof(TransferDepartureStateRow.NoFurtherExitVersion),
                     ],
                     // STK-S24: only the approval moves; the evaluation, products, actors and attempts are append only.
                     WeighingDifferenceRecordRow =>
@@ -787,6 +803,11 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
                     }
                 }
 
+                break;
+            case LoadingAttemptRow:
+                var result = entry.Property(nameof(LoadingAttemptRow.ResultJson));
+                if (!result.IsModified || result.OriginalValue is not null || result.CurrentValue is not string { Length: > 0 })
+                    throw new InvalidOperationException("Fason komutun özgün cevabı aynı işlemde bir kez tamamlanır; geçmişi değişmez.");
                 break;
             case DispatchNoteRow:
                 foreach (var column in DispatchNoteSchema.SetOnceColumns)

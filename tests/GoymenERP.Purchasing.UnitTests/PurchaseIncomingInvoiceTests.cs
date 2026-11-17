@@ -166,6 +166,7 @@ public sealed class PurchaseIncomingInvoiceTests
         invoice.Match(1, [Match(invoice)], Policy(), "matcher");
         invoice.Finalize(2, Guid.NewGuid(), "finalizer", Now);
         var original = PurchaseIncomingInvoiceFinalizationV1.Event(invoice);
+        Assert.Equal(invoice.Source.OfficialNumber, original.OfficialInvoiceNo);
         var key = PurchaseIncomingInvoiceFinalizationV1.AdmissionKey(invoice);
         invoice.AcknowledgeFinance(3, invoice.AdmissionId!.Value, Now.AddMinutes(1));
         var json = JsonSerializer.Serialize(PurchaseIncomingInvoiceSnapshot.Capture(invoice));
@@ -236,6 +237,24 @@ public sealed class PurchaseIncomingInvoiceTests
         Assert.Equal(1, invoice.Version);
         Assert.Equal(PurchaseIncomingInvoiceStatus.Recorded, invoice.Status);
         Assert.Empty(invoice.Matches);
+    }
+    [Fact]
+    public void Expense_invoice_identity_is_explicit_and_does_not_change_legacy_goods_or_service_JSON()
+    {
+        var source = Invoice(); var line = source.Lines[0];
+        Assert.DoesNotContain("expenseTypeId", JsonSerializer.Serialize(line, PurchasingJson.Options));
+        var type = Guid.NewGuid();
+        var expense = line with { ProductId = Guid.Empty, ItemType = "Expense", LinePurpose = "expense", ExpenseTypeId = type };
+        Assert.Equal(type, Copy(source, [expense]).Lines[0].ExpenseTypeId);
+        Assert.Null(Copy(source, [expense with { ExpenseTypeId = null }]).Lines[0].ExpenseTypeId); // ALS-D107: actual empty catalog.
+        Assert.Throws<ArgumentException>(() => Copy(source, [expense with { ProductId = Guid.NewGuid() }]));
+        Assert.Throws<ArgumentException>(() => Copy(source, [expense with { ServiceTypeId = Guid.NewGuid() }]));
+        Assert.Throws<ArgumentException>(() => Copy(source, [expense with { ItemType = "Service" }]));
+        Assert.Throws<ArgumentException>(() => Copy(source, [line with { ExpenseTypeId = type }]));
+        var eventLine = new PurchaseInvoiceFinalizedLineV1(line.Id, 1, "Expense", "expense", 20m, 100m, 20m, 0m,
+            null, null, null, ExpenseTypeId: type);
+        Assert.Contains(type.ToString("D"), JsonSerializer.Serialize(eventLine, PurchasingJson.Options));
+        Assert.DoesNotContain("expenseTypeId", JsonSerializer.Serialize(eventLine with { ItemType = "material", LinePurpose = "resale", ExpenseTypeId = null }, PurchasingJson.Options));
     }
     private static PurchaseInvoiceReceiptMatch Match(PurchaseIncomingInvoice invoice) => new(invoice.CompanyId,
         invoice.Lines[0].Id, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 3, invoice.SupplierPartyId,

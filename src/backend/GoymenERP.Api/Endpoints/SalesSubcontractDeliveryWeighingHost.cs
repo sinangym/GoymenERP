@@ -29,7 +29,10 @@ public sealed class SalesSubcontractDeliveryWeighingHost(
         {
             LogisticsSubcontractDeliveryNetWeightStatusV1.Available when answer.Value is { } value
                 && string.Equals(value.Unit, LogisticsSubcontractDeliveryNetWeightContractV1.KilogramUnit, StringComparison.Ordinal)
-                && value.Lines is not null =>
+                && value.Lines is not null
+                && (value.IsContractProcessingDelivery ? value.Lines.All(line => line.ProductId != Guid.Empty
+                    && line.SalesServiceProductId is { } service && service != Guid.Empty)
+                    : value.Lines.All(line => line.SalesServiceProductId is null)) =>
                 new SalesSubcontractDeliveryWeighingReadV1(
                     SalesSubcontractDeliveryWeighingStatusV1.Available,
                     companyId,
@@ -42,7 +45,7 @@ public sealed class SalesSubcontractDeliveryWeighingHost(
                         [.. value.Lines.Select(line => new SalesSubcontractDeliveryWeighingLineV1(
                             line.SourceOrderId,
                             line.SourceOrderLineId,
-                            line.ProductId,
+                            value.IsContractProcessingDelivery ? line.SalesServiceProductId!.Value : line.ProductId,
                             line.UnitId,
                             line.LoadedKgAtWeighing,
                             value.Shipments is null ? null : [.. value.Shipments.Where(shipment => shipment.LineId == line.LineId)

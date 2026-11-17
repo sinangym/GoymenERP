@@ -75,9 +75,12 @@ public sealed partial class DocumentService(
         var fileName = DocumentFileName.TryCreate(request.FileName)
             ?? throw new DocumentServiceException(400, DocumentProblemCodesV1.ValidationFailed, [new("file", DocumentRuleCodes.FileNameInvalid)]);
         var content = request.Content ?? [];
-        // FNS-D52: the kinds the owner record accepts (the standard ones unless its owner port opted in to more).
+        // KLN-D33: a narrowed branding admission policy must not change a recorded upload's immutable hash/answer.
+        // Classify its closed original standard set first, then enforce CURRENT admission only on a new upload.
+        // Other owners retain their existing FNS-D52 admission and replay semantics.
         var decision = DocumentContentPolicy.Classify(fileName, request.DeclaredContentType, content, bindings.MaximumUploadBytes,
-            owners[owner.Kind].AcceptedFileKinds);
+            owner.Kind == DocumentBrandingContractV1.CompanyOwnerKind ? DocumentContentPolicy.StandardKinds
+                : owners[owner.Kind].AcceptedFileKinds);
         if (!decision.IsAccepted)
         {
             throw new DocumentServiceException(422, decision.RefusalCode!, [new("file", decision.RefusalCode!)]);
@@ -138,9 +141,17 @@ public sealed partial class DocumentService(
         DocumentStoreResult stored;
         try
         {
-            stored = await store.StoreUploadAsync(envelope, requestHash, new NewDocumentUpload(Guid.NewGuid(), owner, fileName, kind,
+            var upload = new NewDocumentUpload(Guid.NewGuid(), owner, fileName, kind,
                 content.LongLength, sha256, objectKey, scanState, scanState == DocumentScanState.Clean ? scanner!.ScannerId : null,
-                timeProvider.GetUtcNow()), token => RequireWritableOwnerStillAsync(scope, Permission, owner, token), cancellationToken);
+                timeProvider.GetUtcNow());
+            Task Fence(CancellationToken token) => RequireWritableOwnerStillAsync(scope, Permission, owner, token);
+            Task Admission(CancellationToken token)
+            { token.ThrowIfCancellationRequested(); RequireKindAccepted(owner.Kind, kind.Kind); return Task.CompletedTask; }
+            // The store checks its original/race winner BEFORE new admission. Only a genuinely new append is refused
+            // by a narrowed subset; the same-key winner keeps its original immutable answer and fresh authority fence.
+            stored = owner.Kind == DocumentBrandingContractV1.CompanyOwnerKind
+                ? await store.StoreUploadWithAdmissionAsync(envelope, requestHash, upload, Fence, Admission, cancellationToken)
+                : await store.StoreUploadAsync(envelope, requestHash, upload, Fence, cancellationToken);
         }
         catch (DocumentStoreException exception)
         {
@@ -218,7 +229,8 @@ public sealed partial class DocumentService(
         var linked = OwnerLinksOf(current);
         await RequireEveryLinkReadableAsync(scope, Permission, linked, cancellationToken);
         // FNS-D52: the new version is shown on every linked record, so every linked record must accept its kind.
-        if (!linked.All(link => Accepts(link.Kind, kind.Kind)))
+        if (!linked.All(link => link.Kind == DocumentBrandingContractV1.CompanyOwnerKind
+                ? DocumentContentPolicy.StandardKinds.Contains(kind.Kind) : Accepts(link.Kind, kind.Kind)))
         {
             throw new DocumentServiceException(422, DocumentRuleCodes.TypeNotAllowed, [new("file", DocumentRuleCodes.TypeNotAllowed)]);
         }
@@ -254,10 +266,20 @@ public sealed partial class DocumentService(
         await RequireStillAsync(scope, Permission, cancellationToken);
         try
         {
-            var result = await store.StoreVersionAsync(envelope, requestHash, request.ExpectedCurrentVersion,
-                new NewDocumentVersion(documentId, fileName, kind, content.LongLength, sha256, objectKey, scanState,
-                    scanState == DocumentScanState.Clean ? scanner!.ScannerId : null, timeProvider.GetUtcNow()),
-                token => RequireEveryLinkReadableAsync(scope, Permission, linked, token), cancellationToken);
+            var version = new NewDocumentVersion(documentId, fileName, kind, content.LongLength, sha256, objectKey, scanState,
+                scanState == DocumentScanState.Clean ? scanner!.ScannerId : null, timeProvider.GetUtcNow());
+            Task Fence(CancellationToken token) => RequireEveryLinkReadableAsync(scope, Permission, linked, token);
+            var brandingLinks = linked.Where(x => x.Kind == DocumentBrandingContractV1.CompanyOwnerKind).ToArray();
+            Task Admission(CancellationToken token)
+            {
+                token.ThrowIfCancellationRequested();
+                foreach (var owner in brandingLinks) RequireKindAccepted(owner.Kind, kind.Kind);
+                return Task.CompletedTask;
+            }
+            var result = brandingLinks.Length > 0
+                ? await store.StoreVersionWithAdmissionAsync(envelope, requestHash, request.ExpectedCurrentVersion, version,
+                    Fence, Admission, cancellationToken)
+                : await store.StoreVersionAsync(envelope, requestHash, request.ExpectedCurrentVersion, version, Fence, cancellationToken);
             return new DocumentVersionWriteResponse(View(result.Document, scope.CompanyId, linked[0]), result.IsReplay,
                 result.OriginalCorrelationId);
         }
@@ -816,6 +838,12 @@ public sealed partial class DocumentService(
     private bool Accepts(string ownerKind, DocumentFileKind kind) =>
         owners.TryGetValue(ownerKind, out var port) && port.AcceptedFileKinds.Contains(kind);
 
+    private void RequireKindAccepted(string ownerKind, DocumentFileKind kind)
+    {
+        if (!Accepts(ownerKind, kind))
+            throw new DocumentServiceException(422, DocumentRuleCodes.TypeNotAllowed, [new("file", DocumentRuleCodes.TypeNotAllowed)]);
+    }
+
     // ---- owner, scan ----------------------------------------------------------------------------
 
     private DocumentOwnerLink RequireOwnerLink(string? kind, Guid ownerId)
@@ -922,6 +950,7 @@ public sealed partial class DocumentService(
 
     private static DocumentServiceException Store(DocumentStoreException exception) => exception.Code switch
     {
+        "document_publication_invalid" => new DocumentServiceException(400, GeneratedDocumentStoreCodesV1.TemplateInvalid),
         DocumentStoreCodes.SameKeyPayloadMismatch => new DocumentServiceException(409, DocumentProblemCodesV1.SameKeyPayloadMismatch,
             [new("Idempotency-Key", DocumentProblemCodesV1.SameKeyPayloadMismatch)]),
         DocumentStoreCodes.ConcurrentChange => new DocumentServiceException(409, DocumentProblemCodesV1.ConcurrentChange,

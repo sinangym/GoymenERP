@@ -28,6 +28,7 @@ import {
 } from '../finance/officialInvoiceImportRoutes'
 
 const ROUTED = [
+  [CAPABILITY.financePartyBalanceTransfers, FINANCE_CAPABILITY.partyBalanceTransfers, FINANCE_ROUTE.partyBalanceTransfers],
   [CAPABILITY.financeCreditsWorkspace, FINANCE_CAPABILITY.creditsWorkspace, FINANCE_ROUTE.creditsWorkspace],
   [CAPABILITY.financeOfficialInvoicesRecord, FINANCE_CAPABILITY.officialInvoicesRecord, FINANCE_ROUTE.officialInvoicesRecord],
   [CAPABILITY.financeOfficialInvoicesApprove, FINANCE_CAPABILITY.officialInvoicesApprove, FINANCE_ROUTE.officialInvoicesApprove],

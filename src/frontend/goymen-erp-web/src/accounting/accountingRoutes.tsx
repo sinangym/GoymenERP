@@ -11,6 +11,8 @@
 import type { ReactNode } from 'react'
 import type { RouteObject } from 'react-router'
 import { CapabilityRoute } from '../shell/CapabilityRoute'
+import { useShellState } from '../shell/shellContext'
+import { hasCapability } from '../shell/shellState'
 import type { CapabilityId } from '../shell/capabilities'
 import { ACCOUNTING_CAPABILITY, ACCOUNTING_ROUTE, type AccountingCapabilityId } from './capabilities'
 import { PeriodsPage } from './PeriodsPage'
@@ -22,6 +24,7 @@ import { AccountPlanPage } from './AccountPlanPage'
 import { ManufacturingCostDifferencesPage } from './ManufacturingCostDifferencesPage'
 import { InvoiceLineCogsCorrectionPage } from './InvoiceLineCogsCorrectionPage'
 import { JournalReversalApprovalPage } from './JournalReversalPages'
+import { SourceVouchersPage } from './SourceVouchersPage'
 import {
   NormalJournalDraftCreatePage,
   NormalJournalDraftPage,
@@ -39,6 +42,7 @@ function gate(capability: AccountingCapabilityId, children: ReactNode) {
 }
 
 export const accountingRoutes: RouteObject[] = [
+  { path: ACCOUNTING_ROUTE.sourceVouchers.slice(1), element: gate(ACCOUNTING_CAPABILITY.sourceVouchers, <SourceVoucherWorkspace />) },
   { path: ACCOUNTING_ROUTE.invoiceLineCogsPrepare.slice(1), element: gate(ACCOUNTING_CAPABILITY.invoiceLineCogsPrepare, <InvoiceLineCogsCorrectionPage mode="prepare" />) },
   { path: ACCOUNTING_ROUTE.invoiceLineCogsApprove.slice(1), element: gate(ACCOUNTING_CAPABILITY.invoiceLineCogsApprove, <InvoiceLineCogsCorrectionPage mode="approve" />) },
   { path: ACCOUNTING_ROUTE.costDifferencePrepare.slice(1), element: gate(ACCOUNTING_CAPABILITY.costDifferencePrepare, <ManufacturingCostDifferencesPage mode="prepare" />) },
@@ -79,3 +83,8 @@ export const accountingRoutes: RouteObject[] = [
     element: gate(ACCOUNTING_CAPABILITY.journalReversalApprove, <JournalReversalApprovalPage />),
   },
 ]
+
+function SourceVoucherWorkspace() {
+  const shell = useShellState()
+  return <SourceVouchersPage mode={hasCapability(shell, ACCOUNTING_CAPABILITY.sourceVouchersApprove) ? 'approve' : 'read'} />
+}

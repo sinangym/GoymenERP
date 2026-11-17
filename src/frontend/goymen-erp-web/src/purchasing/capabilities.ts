@@ -1,5 +1,14 @@
 export const PURCHASING_CAPABILITY = {
+  additionalCostRead: 'purchasing.additional-costs.read',
+  additionalCostRecord: 'purchasing.additional-costs.record',
+  serviceOrderList: 'purchasing.service-orders.list',
+  serviceOrderCreate: 'purchasing.service-orders.create',
+  serviceOrderDetail: 'purchasing.service-orders.detail',
+  serviceOrderApprove: 'purchasing.service-orders.approve',
+  serviceOrderAccept: 'purchasing.service-orders.accept',
+  serviceOrderRevisePrices: 'purchasing.service-orders.prices-revise',
   invoiceList: 'purchasing.invoices.list',
+  invoiceImport: 'purchasing.invoices.import',
   invoiceDetail: 'purchasing.invoices.detail',
   invoiceMatch: 'purchasing.invoices.match',
   invoiceApproveVariance: 'purchasing.invoices.approve-variance',
@@ -29,6 +38,10 @@ export type PurchasingCapabilityId =
   (typeof PURCHASING_CAPABILITY)[keyof typeof PURCHASING_CAPABILITY]
 
 export const PURCHASING_ROUTE: Record<string, string> = {
+  [PURCHASING_CAPABILITY.additionalCostRead]: '/satinalma/ek-masraflar/:sourceKind/:orderId',
+  [PURCHASING_CAPABILITY.serviceOrderList]: '/satinalma/hizmet-siparisleri',
+  [PURCHASING_CAPABILITY.serviceOrderCreate]: '/satinalma/hizmet-siparisleri/yeni',
+  [PURCHASING_CAPABILITY.serviceOrderDetail]: '/satinalma/hizmet-siparisleri/:serviceOrderId',
   [PURCHASING_CAPABILITY.invoiceList]: '/satinalma/faturalar',
   [PURCHASING_CAPABILITY.invoiceDetail]: '/satinalma/faturalar/:invoiceId',
   [PURCHASING_CAPABILITY.requestList]: '/satinalma/talepler',
@@ -40,6 +53,10 @@ export const PURCHASING_ROUTE: Record<string, string> = {
 }
 
 export const PURCHASING_NAV_LABEL: Record<string, string> = {
+  [PURCHASING_CAPABILITY.additionalCostRead]: '',
+  [PURCHASING_CAPABILITY.serviceOrderList]: 'Hizmet ve giden fason alış siparişleri',
+  [PURCHASING_CAPABILITY.serviceOrderCreate]: '',
+  [PURCHASING_CAPABILITY.serviceOrderDetail]: '',
   [PURCHASING_CAPABILITY.invoiceList]: 'Alış faturaları',
   [PURCHASING_CAPABILITY.invoiceDetail]: '',
   [PURCHASING_CAPABILITY.requestList]: 'Satın alma talepleri',

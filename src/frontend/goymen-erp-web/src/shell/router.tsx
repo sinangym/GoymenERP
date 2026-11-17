@@ -31,6 +31,7 @@ import { inventoryRoutes } from '../inventory/inventoryRoutes'
 import { identityRoutes } from '../identity/identityRoutes'
 import { auditRoutes } from '../audit/auditRoutes'
 import { settingsRoutes } from '../settings/settingsRoutes'
+import { documentBrandingRoutes } from './documentBrandingRoutes'
 import { searchRoutes } from '../search/searchRoutes'
 import { workRoutes } from '../work/workRoutes'
 import { StateBlock } from './StateBlock'
@@ -210,6 +211,7 @@ export const shellRoutes: RouteObject[] = [
       // UI-K02: the read-only audit log (`/ayarlar/denetim-kaydi`), behind its own capability gate.
       ...auditRoutes,
       ...settingsRoutes,
+      ...documentBrandingRoutes,
       /**
        * AT-002: the global search results (`/arama`), declared in `src/search/searchRoutes.tsx` behind the shared entry
        * gate on the first searchable owner list the actor holds; it has no capability of its own.

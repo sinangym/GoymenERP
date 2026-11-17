@@ -89,9 +89,10 @@ public sealed class DocumentsInfrastructureTests : IDisposable
         Assert.False(attempts.FindProperty(nameof(DocumentAttemptRow.DocumentId))!.IsNullable);
         Assert.Contains(design.FindEntityType(typeof(ContentBlobRow))!.GetCheckConstraints(), check => check.Name == "CK_ContentBlobs_Kind"
             && check.Sql == DocumentsDbContext.ContentKindCheck);
-        Assert.Equal("[ContentKind] IN (1, 2, 3, 4, 5, 6)", DocumentsDbContext.ContentKindCheck);
+        Assert.Equal("[ContentKind] IN (1, 2, 3, 4, 5, 6, 7)", DocumentsDbContext.ContentKindCheck);
         Assert.Equal(["20260930120000_InitialDocuments", "20261115132357_AddDocumentLinkPrimaryMarker", "20261115134058_WidenDocumentContentKinds",
-                "20261115165534_AddSystemGeneratedDocumentScanState"],
+                "20261115165534_AddSystemGeneratedDocumentScanState", "20261117112418_AddPurchaseInvoiceXmlContentKind",
+                "20261117140908_AddDocumentBrandingPublications"],
             context.Database.GetMigrations());
         Assert.False(context.Database.HasPendingModelChanges());
     }
@@ -139,7 +140,7 @@ public sealed class DocumentsInfrastructureTests : IDisposable
         Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
         Assert.Equal("CK_ContentBlobs_Kind", Assert.IsType<DropCheckConstraintOperation>(migration.UpOperations[0]).Name);
         var widened = Assert.IsType<AddCheckConstraintOperation>(migration.UpOperations[1]);
-        Assert.Equal(("CK_ContentBlobs_Kind", DocumentsDbContext.ContentKindCheck), (widened.Name, widened.Sql));
+        Assert.Equal(("CK_ContentBlobs_Kind", "[ContentKind] IN (1, 2, 3, 4, 5, 6)"), (widened.Name, widened.Sql));
         var down = migration.DownOperations;
         var guard = Assert.IsType<SqlOperation>(down[0]);
         Assert.Contains("IF EXISTS (SELECT 1 FROM [documents].[ContentBlobs] WHERE [ContentKind] IN (4, 5, 6))", guard.Sql,
@@ -276,6 +277,19 @@ public sealed class DocumentsInfrastructureTests : IDisposable
         var noScanner = Services(allowDevelopment: true, (DocumentsModuleExtensions.ScannerModeKey, DocumentsModuleExtensions.NoScannerMode));
         Assert.Null(noScanner.GetService<IDocumentContentScannerV1>());
         Assert.NotNull(noScanner.GetService<IDocumentObjectStoreV1>());
+    }
+
+    [Fact]
+    public void Branding_subset_uses_the_modules_actual_configuration_and_keeps_the_existing_byte_limit_source()
+    {
+        using var provider = Services(allowDevelopment: true,
+            (DocumentBrandingFilePolicy.AllowedContentTypesKey + ":0", "image/png"),
+            (DocumentsModuleExtensions.MaximumUploadBytesKey, "1048576"));
+        var actual = provider.GetRequiredService<DocumentBrandingFilePolicy>().Read();
+        Assert.True(actual.Available); Assert.Equal([DocumentFileKind.Png], actual.Kinds);
+        Assert.Equal(1048576, provider.GetRequiredService<DocumentsServiceBindings>().MaximumUploadBytes);
+        using var invalid = Services(allowDevelopment: true, (DocumentBrandingFilePolicy.AllowedContentTypesKey + ":0", "application/xml"));
+        Assert.False(invalid.GetRequiredService<DocumentBrandingFilePolicy>().Read().Available);
     }
 
     private static ServiceProvider Services(bool allowDevelopment, params (string Key, string Value)[] settings)

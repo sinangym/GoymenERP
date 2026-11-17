@@ -44,7 +44,10 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     /// own narrow read name (<see cref="AccountPlanPermissionNamesV1.Read"/>) is declared.
     /// </para>
     /// </summary>
-    public const string OwnerContractVersion = "1.6";
+    public const string OwnerContractVersion = "1.7";
+    public const string SourceVouchersCapabilityId = "accounting.source-vouchers.list";
+    public const string SourceVouchersApproveCapabilityId = "accounting.source-vouchers.approve";
+    public const string SourceVouchersRoutePath = "/muhasebe/kaynak-fisler";
 
     public const string InvoiceLineCogsPrepareCapabilityId = "accounting.invoice-line-cogs.prepare";
     public const string InvoiceLineCogsApproveCapabilityId = "accounting.invoice-line-cogs.approve";
@@ -123,8 +126,14 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
         var journalDetail = Declaration(JournalDetailCapabilityId, JournalDetailRouteId, JournalDetailRoutePath,
             JournalDetailScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
             [AccountingPermissionManifestV1.JournalsRead], available: true);
+        // The actual owner is composed; financial browser acceptance remains a separate staged gate.
+        var sourceVouchers = Declaration(SourceVouchersCapabilityId, SourceVouchersCapabilityId, SourceVouchersRoutePath,
+            "M-04-SOURCE", ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.JournalsRead], available: false);
         return
         [
+            sourceVouchers,
+            sourceVouchers with { CapabilityId = SourceVouchersApproveCapabilityId, ParentCapabilityId = SourceVouchersCapabilityId,
+                RequiredPermissions = [AccountingPermissionManifestV1.JournalsRead, NormalJournalPermissionNamesV1.DraftApprove] },
             periods,
             Declaration(PeriodProposeCapabilityId, PeriodProposeRouteId, PeriodProposeRoutePath, PeriodProposeScreenId,
                 ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.PeriodsPropose], available: true),

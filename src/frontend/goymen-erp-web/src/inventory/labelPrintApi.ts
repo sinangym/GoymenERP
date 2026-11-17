@@ -1,4 +1,22 @@
 import { API_BASE, inventoryHeaders } from './api'
+import { brandingGuid, brandingVersion } from '../documents/brandingContract'
+import type { ViewOutcome } from '../shell/uiState'
+
+export interface LabelPdfTemplateSelection { readonly publicationId: string | null; readonly publicationVersion: string | null }
+export async function fetchLabelPdfTemplate(labelId: string, companyId: string): Promise<ViewOutcome<LabelPdfTemplateSelection>> {
+  try {
+    const response = await fetch(`${API_BASE}/inventory/labels/${encodeURIComponent(labelId)}/pdf-template`, { headers: inventoryHeaders(companyId) })
+    if (response.status !== 200) return { type: 'http', status: response.status }
+    const raw: unknown = await response.json()
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).length !== 4
+      || !('companyId' in raw) || typeof raw.companyId !== 'string' || raw.companyId.toLowerCase() !== companyId.toLowerCase()
+      || !('labelId' in raw) || typeof raw.labelId !== 'string' || raw.labelId.toLowerCase() !== labelId.toLowerCase()
+      || !('publicationId' in raw) || !('publicationVersion' in raw)
+      || !(raw.publicationId === null && raw.publicationVersion === null || brandingGuid(raw.publicationId) && brandingVersion(raw.publicationVersion)))
+      return { type: 'malformed' }
+    return { type: 'ok-single', data: { publicationId: raw.publicationId as string | null, publicationVersion: raw.publicationVersion as string | null } }
+  } catch { return { type: navigator.onLine ? 'network-error' : 'offline' } }
+}
 
 export type LabelPrintOutcome =
   | { readonly type: 'applied'; readonly blob: Blob; readonly replayed: boolean }
@@ -6,12 +24,12 @@ export type LabelPrintOutcome =
   | { readonly type: 'unknown'; readonly reason: 'offline' | 'network-error' | 'service-unavailable' | 'malformed-response' }
 
 export async function generateLabelPdf(labelId: string, requestedAtUtc: string,
-  companyId: string, idempotencyKey: string): Promise<LabelPrintOutcome> {
+  companyId: string, idempotencyKey: string, template?: LabelPdfTemplateSelection): Promise<LabelPrintOutcome> {
   try {
     const response = await fetch(`${API_BASE}/inventory/labels/${encodeURIComponent(labelId)}/pdf`, {
       method: 'POST',
       headers: { ...inventoryHeaders(companyId), 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
-      body: JSON.stringify({ requestedAtUtc }),
+      body: JSON.stringify({ requestedAtUtc, ...(template?.publicationId == null ? {} : template) }),
     })
     if (response.status === 200) {
       const replayHeader = response.headers.get('Idempotency-Replayed')

@@ -238,6 +238,9 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
         ConfigureReceiptAdjustments(modelBuilder);
         ConfigureSupplierRevisions(modelBuilder);
         ConfigureIncomingInvoices(modelBuilder);
+        ConfigureInvoiceImports(modelBuilder);
+        ConfigureServiceOrders(modelBuilder);
+        ConfigureAdditionalCosts(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -859,6 +862,8 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
         PurchasingAuditEventTenantGuard.Validate(this, companyContext);
         GuardSupplierRevisionHistory();
         GuardIncomingInvoiceSnapshots();
+        GuardServiceOrders();
+        GuardAdditionalCosts();
         foreach (var entry in ChangeTracker.Entries<IPurchasingTenantRow>())
         {
             if (entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted))
@@ -921,6 +926,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
                         nameof(PurchaseGoodsReceiptBatchRow.DecidedAtUtc), nameof(PurchaseGoodsReceiptBatchRow.DecisionReason),
                     ],
                     PurchaseGoodsReceiptBatchLabelRow => [nameof(PurchaseGoodsReceiptBatchLabelRow.Released)],
+                    PurchaseServiceOrderRow => [nameof(PurchaseServiceOrderRow.Version)],
                     // ALC-S5: a supplier return moves once (a pending cost exception is approved or rejected).
                     PurchaseSupplierReturnRow =>
                     [

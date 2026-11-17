@@ -6,7 +6,8 @@ namespace GoymenERP.Modules.Inventory.Infrastructure;
 
 internal sealed record InventoryStockPositionCursorRuntimeOptions(string? SigningKeyBase64);
 
-internal sealed class InventoryStockPositionCursorCodec : IInventoryStockPositionCursorCodec, IDisposable
+internal sealed class InventoryStockPositionCursorCodec : IInventoryStockPositionCursorCodec, IInventoryTransferReceiptDocumentCursorV1,
+    IInventoryTransferReceiptWorkCursorV1, IDisposable
 {
     private const int MaximumLength = 4096;
     private static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(30);
@@ -80,6 +81,69 @@ internal sealed class InventoryStockPositionCursorCodec : IInventoryStockPositio
     }
 
     public void Dispose() => CryptographicOperations.ZeroMemory(key);
+
+    string IInventoryTransferReceiptDocumentCursorV1.Protect(Guid companyId, string actorId, Guid transferId, Guid afterDocumentId)
+    {
+        if (!IsAvailable || companyId == Guid.Empty || transferId == Guid.Empty || afterDocumentId == Guid.Empty || string.IsNullOrWhiteSpace(actorId))
+            throw new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable);
+        var payload = JsonSerializer.SerializeToUtf8Bytes(new ReceiptCursorState(1, InventoryTransferReceiptDocumentV1.SourceVersion,
+            companyId, actorId, transferId, afterDocumentId, clock.GetUtcNow()), Json);
+        return $"{Encode(payload)}.{Encode(HMACSHA256.HashData(key, payload))}";
+    }
+    Guid IInventoryTransferReceiptDocumentCursorV1.Unprotect(Guid companyId, string actorId, Guid transferId, string cursor)
+    {
+        if (!IsAvailable) throw new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable);
+        try
+        {
+            if (string.IsNullOrWhiteSpace(cursor) || cursor != cursor.Trim() || cursor.Length > MaximumLength) throw ReceiptInvalid();
+            var parts = cursor.Split('.'); if (parts.Length != 2) throw ReceiptInvalid();
+            var payload = Decode(parts[0]); var signature = Decode(parts[1]);
+            if (signature.Length != 32 || !CryptographicOperations.FixedTimeEquals(signature, HMACSHA256.HashData(key, payload))) throw ReceiptInvalid();
+            var state = JsonSerializer.Deserialize<ReceiptCursorState>(payload, Json); var now = clock.GetUtcNow();
+            if (state is null || state.Schema != 1 || state.Purpose != InventoryTransferReceiptDocumentV1.SourceVersion
+                || state.CompanyId != companyId || state.ActorId != actorId || state.TransferId != transferId || state.AfterDocumentId == Guid.Empty
+                || state.IssuedAtUtc.Offset != TimeSpan.Zero || state.IssuedAtUtc > now || now - state.IssuedAtUtc >= Lifetime) throw ReceiptInvalid();
+            return state.AfterDocumentId;
+        }
+        catch (InventoryStockPositionException) { throw ReceiptInvalid(); }
+        catch (FormatException) { throw ReceiptInvalid(); }
+        catch (JsonException) { throw ReceiptInvalid(); }
+    }
+    private static InventoryTransferException ReceiptInvalid() => new(400, InventoryTransferReceiptDocumentV1.Invalid);
+    private sealed record ReceiptCursorState(int Schema, string Purpose, Guid CompanyId, string ActorId,
+        Guid TransferId, Guid AfterDocumentId, DateTimeOffset IssuedAtUtc);
+
+    string IInventoryTransferReceiptWorkCursorV1.Protect(Guid companyId, string actorId, string purpose, string? query, int limit, Guid afterTransferId)
+    {
+        if (!IsAvailable || companyId == Guid.Empty || afterTransferId == Guid.Empty || string.IsNullOrWhiteSpace(actorId)
+            || InventoryTransferReceiptWorkPurposesV1.Permission(purpose) is null)
+            throw new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable);
+        var payload = JsonSerializer.SerializeToUtf8Bytes(new WorkCursorState(1, "inventory.transfer.receipt-work.v1", companyId,
+            actorId, purpose, query, limit, afterTransferId, clock.GetUtcNow()), Json);
+        return $"{Encode(payload)}.{Encode(HMACSHA256.HashData(key, payload))}";
+    }
+    Guid IInventoryTransferReceiptWorkCursorV1.Unprotect(Guid companyId, string actorId, string purpose, string? query, int limit, string cursor)
+    {
+        if (!IsAvailable) throw new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable);
+        try
+        {
+            if (string.IsNullOrWhiteSpace(cursor) || cursor != cursor.Trim() || cursor.Length > MaximumLength) throw WorkInvalid();
+            var parts = cursor.Split('.'); if (parts.Length != 2) throw WorkInvalid();
+            var payload = Decode(parts[0]); var signature = Decode(parts[1]);
+            if (signature.Length != 32 || !CryptographicOperations.FixedTimeEquals(signature, HMACSHA256.HashData(key, payload))) throw WorkInvalid();
+            var state = JsonSerializer.Deserialize<WorkCursorState>(payload, Json); var now = clock.GetUtcNow();
+            if (state is null || state.Schema != 1 || state.Surface != "inventory.transfer.receipt-work.v1" || state.CompanyId != companyId
+                || state.ActorId != actorId || state.Purpose != purpose || state.Query != query || state.Limit != limit || state.AfterTransferId == Guid.Empty
+                || state.IssuedAtUtc.Offset != TimeSpan.Zero || state.IssuedAtUtc > now || now - state.IssuedAtUtc >= Lifetime) throw WorkInvalid();
+            return state.AfterTransferId;
+        }
+        catch (InventoryStockPositionException) { throw WorkInvalid(); }
+        catch (FormatException) { throw WorkInvalid(); }
+        catch (JsonException) { throw WorkInvalid(); }
+    }
+    private static InventoryTransferException WorkInvalid() => new(400, InventoryTransferCodesV1.ValidationFailed);
+    private sealed record WorkCursorState(int Schema, string Surface, Guid CompanyId, string ActorId, string Purpose,
+        string? Query, int Limit, Guid AfterTransferId, DateTimeOffset IssuedAtUtc);
 
     private static string BindingHash(InventoryStockPositionReadQuery query) => Convert.ToHexString(
         SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(query with { After = null }, Json)));

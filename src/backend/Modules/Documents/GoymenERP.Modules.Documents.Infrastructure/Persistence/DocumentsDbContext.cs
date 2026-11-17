@@ -14,7 +14,7 @@ namespace GoymenERP.Modules.Documents.Infrastructure.Persistence;
 /// OPEN-018/021). Hashes and link kinds are compared under a binary collation. The audit sidecar is Audit's table,
 /// written in the same save and filtered the same way.
 /// </summary>
-public sealed class DocumentsDbContext(DbContextOptions<DocumentsDbContext> options, ICompanyContext companyContext)
+public sealed partial class DocumentsDbContext(DbContextOptions<DocumentsDbContext> options, ICompanyContext companyContext)
     : DbContext(options)
 {
     public const string Schema = "documents";
@@ -31,7 +31,7 @@ public sealed class DocumentsDbContext(DbContextOptions<DocumentsDbContext> opti
     /// The stored content kinds (<c>DocumentFileKind</c>): the standard PDF/PNG/JPEG and, since FNS-D52,
     /// the bank-statement import kinds XLSX/MT940/CSV. Tests compare the model's check with it.
     /// </summary>
-    internal const string ContentKindCheck = "[ContentKind] IN (1, 2, 3, 4, 5, 6)";
+    internal const string ContentKindCheck = "[ContentKind] IN (1, 2, 3, 4, 5, 6, 7)";
 
     /// <summary>
     /// DEC-DOC-009 / KLN-D60: a Clean (2) version names its scanner; a NotScanned (1) or a SystemGenerated (3) version —
@@ -64,6 +64,7 @@ public sealed class DocumentsDbContext(DbContextOptions<DocumentsDbContext> opti
         ConfigureVersions(modelBuilder);
         ConfigureLinks(modelBuilder);
         ConfigureAttempts(modelBuilder);
+        ConfigureBranding(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);

@@ -127,6 +127,31 @@ The Logistics owner records an immutable per-shipment kilogram allocation on a d
 
 Unit, endpoint contract, SQL persistence/rollback/Down and frontend test sources accompany the change. Runtime acceptance is deferred to the final train gate; build evidence is recorded in the W8 Sales report. Central OpenAPI, recovery, architecture and relational inventories must be regenerated on integration. No external submission, permission grant or production activation is included.
 
+### Actual transfer departure and cancellation evidence — STK-S8
+
+Sources: LOJ-D11 and KLN-D25(7)/D27. Explicit new internal transfer documents record `NotLinked` only after actual
+Inventory plan, source warehouse, ordered line and version proof. Omitted legacy association stays `Unknown`.
+`Linked` requires an actual external e-dispatch owner response; this train has no real GİB provider, so a missing
+response is unavailable, never proof of not-sent or not-linked. No GİB transport or manual success button is added.
+
+The real owner appends exit weighing or vehicle departure, its immutable original command answer, and Audit in its
+own Serializable transaction. Weighing stores the two actual measurements and the existing backend calculator's net;
+it creates no physical stock movement. Cancellation rechecks the current Inventory version and time, then records a
+permanent no-further-exit fence. That independent safety fence remains if the later Inventory reversal rolls back.
+Concurrent exit and fence have a single database winner. Replay never repeats an external owner confirmation.
+
+`logistics.transfer-departures.record` and `logistics.transfer-outgoing-documents.read` are registration-only names.
+Document creation, finalization and cancellation retain their separate existing dispatch-note permissions. The new
+read returns the actual transfer-bound document; the UI never uses a typed GUID as evidence of an effective document.
+`AddInventoryTransferPolicyHostPorts` composes actual Organization, Settings, Inventory and Logistics providers.
+The coordinator mounts `MapLogisticsTransferDepartureEndpoints` and `MapLogisticsTransferOutgoingDocumentEndpoints`,
+and the `/lojistik/transfer-cikislari` page. No extra Cari/Organization grant is inferred.
+
+EF-generated `20261117111253_AddTransferDepartures` adds company-bound state, immutable event and terminal histories.
+Down first refuses with **THROW 51991** while any of these histories exists. No bypass or SQL allowlist was widened.
+Unit, contract, real-SQL race/rollback/Down and frontend test sources accompany the change. Runtime acceptance remains
+**NOT_RUN**. Transfer planning/receiving UI and real linked GİB evidence are still explicit delivery gaps.
+
 ### Operations work list (AT-025, "Satış ve satın alma belgeleri operasyon listelerinde karışmaz")
 
 Sources: ACCEPTANCE_70 / MATRIX AT-025 (P0/P1, E2E+Contract, module TBD), master v3 §27.8 (L-01 Sevk Edilebilir Siparişler, L-09 Beklenen Alış / Kapı Kabulü), §32.1 ("Satış/Alış operasyon ayrımı"), DEC-SAL-001 (separate status axes), DEC-SAL-005 (a cancelled order is no longer an approved demand), Sinan §4 #66 5738113623 (each read its own name; the Sevkiyatçı never sees prices). No screen spec, filter set or persona exists for AT-025 beyond these, so this is the minimal decided version; everything else is listed as open below.
@@ -141,3 +166,5 @@ Sources: ACCEPTANCE_70 / MATRIX AT-025 (P0/P1, E2E+Contract, module TBD), master
 | Screens | Logistics shell 1.2: `logistics.operations-work.sales` → `/lojistik/operasyon-isleri/satis` (L-01), `logistics.operations-work.purchase` → `/lojistik/operasyon-isleri/satinalma` (L-09), SingleCompany, company-wide. A row opens its owner's screen (S-04 / P-03-DETAIL) only with that screen's grant; the in-page search lives in the URL (`?ara=`), so back keeps section and search. |
 | Evidence | Unit: `LogisticsOperationsWorkServiceTests`, `PurchaseOpenLineReadPortTests`. Real SQL: `LogisticsOperationsWorkSqlServerRelationalAcceptanceTests` (company fence, no mixing, price-free, grants, cursor). Web: `OperationsWorkPage.test.tsx`, `operationsWorkContract.test.ts`. Browser: `l04` L04-08. |
 | Open (not chosen here) | OPS-OPEN-1 when a sales line leaves the work list (fully delivered / operationally closed; DEC-SAL-001 closure axis, tolerance OPEN-004) — today every approved, not cancelled line is listed with its facts; OPS-OPEN-2 who holds the two names (persona grants are a human gate); OPS-OPEN-3 server-side filters (date, customer/supplier, status) and a group (multi-company) view; OPS-OPEN-4 product/unit names on purchase rows (Purchasing stores identities only; its own detail shows the same references); OPS-OPEN-5 transfers / external processing (DEC-STK-008) and non-order receipts as further sections. |
+
+**STK-S3 subcontract delivery (LOJ-D1..D5, LOJ-D12..D14, SAT-D378).** Migration `20261117151710_AddLogisticsSubcontractDeliveries` is EF-generated; existing instructions retain Sale (1). Typed owner sources and exact command replies remain immutable; weighing corrections append history while preserving the original. Down first refuses with `THROW 51935` while any subcontract instruction, typed source, exact replay result or correction exists (forward fix). Runtime SQL and HTTP acceptance remains separate from source/build evidence.

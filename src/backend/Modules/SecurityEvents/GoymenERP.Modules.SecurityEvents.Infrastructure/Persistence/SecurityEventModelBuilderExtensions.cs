@@ -68,6 +68,7 @@ public static class SecurityEventModelBuilderExtensions
                 table.HasCheckConstraint(
                     "CK_SecurityEvents_AiDataClass", NullOrInList("AiDataClass", Enum.GetNames<AiDataClassV1>()));
                 table.HasCheckConstraint("CK_SecurityEvents_RateLimitSummary", RateLimitSummaryCheck);
+                table.HasCheckConstraint("CK_SecurityEvents_OperatorTwoFactorRecovery", OperatorTwoFactorRecoveryCheck);
             });
 
             entity.HasKey(x => x.Id);
@@ -119,6 +120,16 @@ public static class SecurityEventModelBuilderExtensions
 
     private static PropertyBuilder<T> Code<T>(PropertyBuilder<T> property, int maxLength) =>
         property.HasMaxLength(maxLength).IsUnicode(false);
+
+    public const string OperatorTwoFactorRecoveryCheck =
+        "[EventType] NOT IN ('identity.two_factor.recovered','identity.two_factor.recovery_refused') OR "
+        + "([ScopeKind] = 'Platform' AND [CompanyId] IS NULL AND [RequestedCompanyId] IS NULL "
+        + "AND [ActorType] = 'System' AND [ActorId] IS NOT NULL AND [ActorId] COLLATE Latin1_General_100_BIN2 = 'identity.recover-two-factor' "
+        + "AND [Phase] = 'Single' AND [SourceChannel] = 'System' AND [Severity] = 'High' AND [PermissionCode] IS NULL "
+        + "AND [PolicyId] IS NULL AND [PolicyVersion] IS NULL AND [AiToolId] IS NULL AND [AiToolVersion] IS NULL AND [AiRiskClass] IS NULL AND [AiDataClass] IS NULL "
+        + "AND [OccurrenceCount] = 1 AND [AggregationWindowStartUtc] IS NULL AND [AggregationWindowEndUtc] IS NULL "
+        + "AND (([EventType] = 'identity.two_factor.recovered' AND [Outcome] = 'Allowed' AND [ReasonCode] IS NULL) "
+        + "OR ([EventType] = 'identity.two_factor.recovery_refused' AND [Outcome] = 'Denied' AND [ReasonCode] IS NOT NULL AND [ReasonCode] = 'policy_refused')))";
 
     private static string InList(string column, IEnumerable<string> values) =>
         $"[{column}] IN ({string.Join(", ", values.Select(value => $"'{value}'"))})";
