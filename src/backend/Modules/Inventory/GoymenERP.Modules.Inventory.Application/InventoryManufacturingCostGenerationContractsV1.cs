@@ -23,18 +23,30 @@ public sealed record InventoryManufacturingCostGenerationReversalV1(Guid Company
     string Reason, DateTimeOffset OccurredAtUtc);
 
 /// <summary>All physical positions are explicit; only company-owned/held positions enter the local moving average (KLN-D84).</summary>
-public sealed record InventoryManufacturingCostPositionEffectV1(Guid LocationId, decimal QuantityKg, decimal TlValue,
-    bool IncludedInMovingAverage);
+public sealed record InventoryManufacturingCostPositionEffectV1(Guid LocationId, decimal? QuantityKg, decimal? TlValue,
+    bool IncludedInMovingAverage, InventoryExactCostRatioV1? QuantityKgRatio = null,
+    InventoryExactCostRatioV1? TlValueRatio = null);
+
+/// <summary>Exact effect actually written to the 4dp average pool. The difference from the authoritative amount is
+/// immutable arithmetic provenance, never an automatic accounting entry or a discarded cent.</summary>
+public sealed record InventoryManufacturingCostPoolEffectV1(Guid CurrencyId, Guid LocationId, Guid ProductId,
+    decimal? QuantityKg, decimal? BeforeQuantityKg, decimal? BeforeAverageCostPerKg,
+    decimal? AfterQuantityKg, decimal AfterAverageCostPerKg, decimal? AuthoritativeValue,
+    decimal? RecordedPoolValueEffect, decimal? AverageRoundingDifference,
+    InventoryExactCostRatioV1? QuantityKgRatio = null, InventoryExactCostRatioV1? BeforeQuantityKgRatio = null,
+    InventoryExactCostRatioV1? AfterQuantityKgRatio = null, InventoryExactCostRatioV1? AuthoritativeValueRatio = null,
+    InventoryExactCostRatioV1? RecordedPoolValueEffectRatio = null, InventoryExactCostRatioV1? AverageRoundingDifferenceRatio = null);
 
 /// <summary>
 /// Original output quantity = remaining physical quantity + consumed quantity, with explicit TL effects.
 /// Consumed TL is a separate SMM cost-difference voucher proposal; USD is display only. Old issues are never rewritten.
 /// </summary>
 public sealed record InventoryManufacturingCostGenerationOutputResultV1(Guid OutputId, Guid ReceiptMovementId, Guid LabelId,
-    decimal NetQuantityKg, decimal RemainingQuantityKg, decimal ConsumedQuantityKg,
+    decimal NetQuantityKg, decimal? RemainingQuantityKg, decimal? ConsumedQuantityKg,
     decimal? TlUnitCostPerKg, decimal? RemainingTlValue, decimal? ConsumedTlDifference,
     decimal? UsdUnitCostPerKg, IReadOnlyList<InventoryManufacturingCostPositionEffectV1> Positions,
-    decimal? OriginalTlAmount = null);
+    decimal? OriginalTlAmount = null, IReadOnlyList<InventoryManufacturingCostPoolEffectV1>? PoolEffects = null,
+    InventoryExactCostRatioV1? RemainingQuantityKgRatio = null, InventoryExactCostRatioV1? ConsumedQuantityKgRatio = null);
 
 public sealed record InventoryManufacturingCostGenerationResultV1(Guid CompanyId, Guid ManufacturingOrderId,
     Guid GenerationId, string GenerationVersion, string ClosedOrderVersion, InventoryManufacturingCostGenerationStateV1 State,
