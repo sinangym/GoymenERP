@@ -110,6 +110,13 @@ Tam test, gerçek SQL, arayüz kabulü, CI ve bağımsız K3 incelemesi: NOT_RUN
 - Birim test kaynakları ve gerçek SQL'de aktif/superseded paket, şirket sınırı, değişen kaynak sürümü ve belirsiz tür testi yazıldı. API, IntegrationTests ve Accounting.UnitTests kaynak derlemeleri exit 0, uyarı/hata 0. Yeni migration, THROW veya izin yok; runtime test/SQL/CI NOT_RUN.
 - FIN-S14 bütünü PARTIAL kalır: diğer B-28 kaynakları, gerçek outbox/host bağlantısı ve kullanıcı akışı bu kayıtla tamamlanmış sayılmaz.
 
+### FIN-S14 — gider ve aynı para birimli virman kaynak olayı
+
+- Dayanak: FNS-D14, FNS-D24/D25, FNS-D47/D60; `KALAN_MODULLER_HAZIRLIK_PLANI_v1` B-28 ve §6.1. Banka masrafı ve kredi faizi ödemesi FNS-D25'in mevcut tek Masraf kaynağından gelir; açıklamadan ayrı muhasebe türü veya hesap çıkarılmaz. FNS-D63'ün kur farkı hesap eşlemesi ile TK-30 kredi tahakkuk eşlemesi bu değişiklikte seçilmez.
+- Gerçek gider kaydının son komutu `finance.expense-payment.recorded.v1`, aynı para birimli gerçek virman komutu `finance.cash-transfer.recorded.v1` olayını kendi Finance outbox'ına aynı treasury işlemi içinde yazar. Her olay kaynak kimliği/sürümü, şirket, tam para metni/profili, kayıt/onay kanıtı ve correlation/causation bilgisini taşır. Virmanın iki bacağı tek kaynakta kalır; ikinci para veya muhasebe hareketi oluşturulmaz.
+- Üç birim ve iki gerçek SQL fact kaynağı eklendi; mevcut gerçek SQL hata/MARS geri alma testlerine outbox'ın da geri alınması ve aynı anahtarla tekrarın tek olay bırakması kontrolleri eklendi. Kaynak derlemeleri sıradadır; runtime birim/SQL/Vitest/browser/CI NOT_RUN.
+- Yeni migration/THROW/izin yok. Eski kayıtlara geriye dönük olay doldurulmaz. Mevcut dağıtıcı kapalı kalır. Accounting tüketicisi/kalıcı kaynak kuyruğu, merkez event manifesti ve kullanıcıya fiş hazırlama bağlantısı tamamlanmadığından FIN-S14 PARTIAL'dır; olayın yazılması muhasebe fişinin oluştuğu anlamına gelmez.
+
 
 ## FIN-SC36 — PARTIAL, gerçek Finans → Satış kaynak kanıtı
 
