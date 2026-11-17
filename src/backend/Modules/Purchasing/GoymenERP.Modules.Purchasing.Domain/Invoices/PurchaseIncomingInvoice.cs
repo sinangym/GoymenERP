@@ -31,7 +31,8 @@ public sealed record PurchaseInvoiceLine(Guid Id, int LineNo, Guid ProductId, Gu
 public sealed record PurchaseInvoiceReceiptMatch(Guid CompanyId, Guid InvoiceLineId, Guid AcceptanceId, Guid OrderId, Guid OrderLineId,
     long OrderVersion, Guid SupplierPartyId, Guid CompanyAccountId, Guid CurrencyId, Guid UnitId,
     decimal Quantity, decimal ExpectedNet, decimal? ControlRate, DateOnly AcceptedOn,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? ServiceTypeId = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? ServiceTypeId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] GoymenERP.Modules.Purchasing.Domain.Services.PurchaseServiceTax? SubcontractTax = null);
 
 /// <summary>The actual Settings version used for comparison. Null policy means unavailable, never zero tolerance.</summary>
 public sealed record PurchaseInvoiceVariancePolicy(Guid Id, long Version, decimal AmountTolerance, decimal RateTolerance);
@@ -186,6 +187,9 @@ public sealed class PurchaseIncomingInvoice
             var line = Lines.SingleOrDefault(line => line.Id == item.InvoiceLineId);
             if (line is null || line.LinePurpose == "expense" || line.UnitId != item.UnitId || line.ServiceTypeId != item.ServiceTypeId)
                 throw new PurchasingRuleException(SourceMismatch, "Fatura ve kabul birimleri veya kalem kaynakları uyuşmuyor.");
+            if (item.SubcontractTax is { } tax && (item.ServiceTypeId is null || line.LinePurpose != "service" || tax.SettingsVersion < 1
+                || line.VatPercent != (tax.VatApplies ? tax.VatPercent : 0m)))
+                throw new PurchasingRuleException(SourceMismatch, "Fason hizmetin onaylı vergi kaynağı resmî fatura satırıyla uyuşmuyor.");
             if (OfficialRate is { } rate && Math.Abs(rate - item.ControlRate!.Value) > policy.RateTolerance)
                 differences.Add(new(line.Id, "ExchangeRate", item.ControlRate.Value, rate));
         }
