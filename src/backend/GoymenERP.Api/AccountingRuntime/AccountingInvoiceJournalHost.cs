@@ -23,9 +23,28 @@ internal static class AccountingInvoiceJournalHost
             .Bind(configuration.GetSection(AccountingInvoiceJournalHostOptions.SectionName));
         services.AddScoped<AccountingSalesInvoiceFinalizedInboxConsumer>();
         services.AddScoped<AccountingPurchaseInvoiceFinalizedInboxConsumer>();
+        services.AddScoped<AccountingSalesInvoiceCancelledInboxConsumerV1>();
         // Replaces the module's fail-closed default (registered with TryAdd); with the switch off it answers the same.
         services.Replace(ServiceDescriptor.Scoped<IAccountingSourceDocumentAdmissionAuthorityV1, AccountingInvoiceJournalInboxAuthorityV1>());
+        services.Replace(ServiceDescriptor.Scoped<IAccountingSourceInvoiceCancellationAuthorityV1, AccountingInvoiceJournalCancellationAuthorityV1>());
         return services;
+    }
+}
+
+/// <summary>The existing off-by-default host switch admits only the cancellation consumer's own source kind.
+/// The audit identity is not a grantable permission. This does not activate a dispatcher or authorize a journal reversal.</summary>
+internal sealed class AccountingInvoiceJournalCancellationAuthorityV1(IOptionsMonitor<AccountingInvoiceJournalHostOptions> options)
+    : IAccountingSourceInvoiceCancellationAuthorityV1
+{
+    public Task<AccountingSourceDocumentAuthorityAnswerV1> CheckAsync(Guid companyId, string actorId,
+        string documentKind, Guid sourceDocumentId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(options.CurrentValue.InboxAdmissionEnabled && companyId != Guid.Empty && sourceDocumentId != Guid.Empty
+            && actorId == AccountingSalesInvoiceCancelledInboxV1.ActorId && documentKind == AccountingSourceDocumentKindsV1.SalesInvoice
+            ? new AccountingSourceDocumentAuthorityAnswerV1(AccountingSourceDocumentAuthorityDecisionV1.Allowed,
+                AccountingSalesInvoiceCancelledInboxV1.ActorId, [])
+            : AccountingSourceDocumentAuthorityAnswerV1.Unavailable);
     }
 }
 

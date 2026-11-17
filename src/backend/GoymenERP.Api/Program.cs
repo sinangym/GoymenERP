@@ -618,6 +618,7 @@ app.MapPurchaseServiceOrderEndpointsV1();
 app.MapPurchaseAdditionalCostEndpointsV1();
 app.MapPurchasingProductCandidateEndpoints();
 app.MapAccountingEndpoints();
+app.MapAccountingSourceVouchersV1();
 app.MapAccountingInvoiceLineCogsEndpoints();
 app.MapGlobalSearchEndpoints();
 app.MapDocumentEndpoints();

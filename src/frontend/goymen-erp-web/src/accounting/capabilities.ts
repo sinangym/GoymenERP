@@ -14,6 +14,8 @@
  */
 
 export const ACCOUNTING_CAPABILITY = {
+  sourceVouchers: 'accounting.source-vouchers.list',
+  sourceVouchersApprove: 'accounting.source-vouchers.approve',
   invoiceLineCogsPrepare: 'accounting.invoice-line-cogs.prepare',
   invoiceLineCogsApprove: 'accounting.invoice-line-cogs.approve',
   costDifferencePrepare: 'accounting.manufacturing-cost-differences.prepare',
@@ -51,6 +53,7 @@ export const ACCOUNTING_CAPABILITY = {
 export type AccountingCapabilityId = (typeof ACCOUNTING_CAPABILITY)[keyof typeof ACCOUNTING_CAPABILITY]
 
 export const ACCOUNTING_ROUTE = {
+  sourceVouchers: '/muhasebe/kaynak-fisler',
   invoiceLineCogsPrepare: '/muhasebe/fatura-satiri-smm',
   invoiceLineCogsApprove: '/muhasebe/fatura-satiri-smm-onay',
   costDifferencePrepare: '/muhasebe/uretim-maliyet-farklari',

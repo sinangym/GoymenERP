@@ -163,3 +163,24 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
   [6947890400](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6947890400)
   karar bekler. Linked GİB gerçek provider'ı 503 kalır; mock veya unavailable
   kullanılabilirlik sayılmaz. Pin/son tren FF ve runtime kabulü henüz alınmadı.
+
+## Kaynak fişi onayı ve resmî fatura kimliği — devam
+
+- FIN-S13 kaynak fiş owner'ı `3044b80fb` alındı. Gerçek hesap planı ve açık dönemle
+  ayrı hazırlayan/onaylayan fiş akışı, iptal olayı önce gelirse tombstone ve
+  onaylanmamış kaynak fişin iptal kaydı vardır. Kesinleşmiş yevmiyenin ters kayıt
+  dönem/tarihi yanıtı bekler; kendiliğinden ters kayıt veya dönem açma yapılmaz.
+- Kaynak fişi endpoint'i host'a, okuma ekranı tek menü/gateway'e bağlandı.
+  Onay aynı ekranın ayrı kontrolüdür: mevcut JournalsRead ve normal fiş onay
+  yetkileri gerekir. Accounting provider **1.7**, 20 bildirimdir; yeni izin/grant
+  yoktur. Yeni finans ekranları SQL/browser kabulüne kadar staged kalır.
+- Muhasebe iptal tüketicisinin host kimliği mevcut kapalı başlangıç anahtarını
+  korur. Gerçek Sales iptal üreticisi tamamlanmadan Work aboneliği kaydedilmez;
+  DI kaydı olayın işlendiği veya iptalin uçtan uca tamamlandığı anlamına gelmez.
+- `987759ebd`: alış faturasının resmî numarası additive/null-omit olay alanıyla
+  Muhasebe kaynağına taşınır. Eski olaylar için numara tahmin edilmez. Purchasing
+  UnitTests ve Api.IntegrationTests derlemeleri exit 0, uyarı/hata 0 aldı.
+- Bu birleşim ve host/provider kaynaklarıyla merkez API, Inventory.UnitTests,
+  Accounting.UnitTests, Api.IntegrationTests ve TypeScript derlemeleri exit 0,
+  uyarı/hata 0 aldı. Çalışma zamanı testleri, SQL, HTTP, Vitest/browser ve CI
+  **NOT_RUN**. Sabit ölçüm **135/174 (%77,6)**; pinler ve tren FF henüz yoktur.

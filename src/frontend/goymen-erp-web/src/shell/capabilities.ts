@@ -263,6 +263,7 @@ export const CAPABILITY = {
   accountingCostDifferenceApprove: 'accounting.manufacturing-cost-differences.approve',
   accountingInvoiceLineCogsPrepare: 'accounting.invoice-line-cogs.prepare',
   accountingInvoiceLineCogsApprove: 'accounting.invoice-line-cogs.approve',
+  accountingSourceVouchers: 'accounting.source-vouchers.list',
   identityUsersManage: 'identity.users.manage',
   productPaintMemberships: 'paint-memberships.manage',
   /** M-07 Muhasebe Dönemleri. Route `/muhasebe/donemler`, owner the Accounting lane (FİNANS). */
@@ -496,6 +497,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.accountingCostDifferenceApprove]: '/muhasebe/uretim-maliyet-farki-onay',
   [CAPABILITY.accountingInvoiceLineCogsPrepare]: '/muhasebe/fatura-satiri-smm',
   [CAPABILITY.accountingInvoiceLineCogsApprove]: '/muhasebe/fatura-satiri-smm-onay',
+  [CAPABILITY.accountingSourceVouchers]: '/muhasebe/kaynak-fisler',
   [CAPABILITY.identityUsersManage]: '/ayarlar/kullanicilar',
   [CAPABILITY.productPaintMemberships]: '/boya-urunleri',
   [CAPABILITY.accountingPeriodsList]: '/muhasebe/donemler',
