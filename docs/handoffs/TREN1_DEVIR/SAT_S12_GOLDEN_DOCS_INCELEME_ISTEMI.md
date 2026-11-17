@@ -1,15 +1,15 @@
 # SAT-S12 golden DOCS incelemesi — tek istem
 
-Aşağıdaki istemi iki ayrı bağımsız oturumda kullanın. SAT-D265(5) gereği en az biri ayrı ChatGPT oturumu olmalıdır; diğerini ayrı Claude oturumunda kullanabilirsiniz. İlkine `DOCS-REVIEW-1`, ikincisine `DOCS-REVIEW-2` verin. Yazar veya diğer reviewer oturumu kendi yerine imza atamaz. Bu inceleme son K3 uygulama incelemesi değildir.
+Aşağıdaki istemi iki ayrı bağımsız Claude oturumunda kullanabilirsiniz: kullanıcı bu golden adayı için dar istisnayı doğrudan verdi; açık aktarımı #1189 / 6961293621. İlkine `DOCS-REVIEW-1`, ikincisine `DOCS-REVIEW-2` verin. Yazar veya diğer reviewer oturumu kendi yerine imza atamaz. Bu inceleme son K3 uygulama incelemesi değildir. Önceki head'in review'ları yeni head'e taşınmaz.
 
 ```text
 GöymenERP — PR #1200 için bağımsız DOCS incelemesi.
 Depo: sinangym/GoymenERP.
 PR: https://github.com/sinangym/GoymenERP/pull/1200
-Exact head: 63913e087f850441f51be2136977344b6410102a.
+Exact head: dfab7e934fd6e7fc3b0dd5ca40bd9a3643d3ee4f.
 Dosya: docs/decisions/SAT_S12_SATIS_MARJI_FORMUL_GOLDEN_V1.md.
 
-Bu oturuma verilen imza DOCS-REVIEW-1 veya DOCS-REVIEW-2 olmalı. İmza numarası verilmediyse yalnız bunu netleştir. Yazar veya diğer reviewer oturumuysan dur. Diğer reviewer'ın gerekçesini okuma; imza durumu için yalnız ilk satırları kullan.
+Bu oturuma verilen imza DOCS-REVIEW-1 veya DOCS-REVIEW-2 olmalı. İmza numarası verilmediyse yalnız bunu netleştir. Yazar veya diğer reviewer oturumuysan dur. Diğer reviewer'ın gerekçesini okuma; imza durumu için yalnız ilk satırları kullan. Kullanıcı bu adayın iki bağımsız incelemesini ayrı Claude oturumlarında kabul etti (#1189 / 6961293621); bu genel K3 kuralı değişikliği değildir. Önceki head'in imzası geçerli sayılmaz; yeni head'e tam inceleme yap.
 
 Önce exact head'i ve AGENTS.md/review-signatures/decision-docs-validation kurallarını doğrula. Başta ve review göndermeden hemen önce remote head'i kontrol et; değişirse eski adaya imza verme. Diff yalnız belirtilen tek docs dosyası olmalı. Kod, eski karar dosyası, ayar veya izin değiştirme.
 

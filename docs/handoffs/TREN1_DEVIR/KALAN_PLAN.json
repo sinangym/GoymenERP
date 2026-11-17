@@ -45,8 +45,8 @@
    "STK-S13 + ALC-S7/S8 (KIM-S18 sonrası)"
   ],
   "toplam": 174,
-  "done": 165,
-  "partial": 9,
+  "done": 166,
+  "partial": 8,
   "remaining_not_started": 0,
   "last_wave": 8,
   "progress_meaning": "DONE yalnız kaynak kapsamıdır. Tam birim/mimari/gerçek SQL/Vitest/browser/CI koşumları NOT_RUN; K3 kabulü ve production değildir.",
@@ -265,7 +265,8 @@
    "ALC-S14",
    "ALC-SC47",
    "SAT-S9",
-   "SAT-S13"
+   "SAT-S13",
+   "FIN-S13"
   ],
   "published_train_done_at_last_checkpoint": 135,
   "w8_status": "IN_PROGRESS: local source scope updated; combined builds/pins/light checks and train fast-forward pending. No W9.",
@@ -571,7 +572,7 @@
      "w5_raporu": "durum/W5_kimlik.md",
      "w6_report": "durum/W6_kimlik.md",
      "w8_report": "durum/W8_KIM_S19_IZIN_KAYDI.md",
-     "w8_source_note": "PARTIAL: numbering and opening-period source integrated. No133 record-only names f520ac7af queued for compile; approval/cash policy families in owner WIP; K6 bank institution question 6961108461 unanswered."
+     "w8_source_note": "Numaralama/acilis kaynagi merkezde; No133 f520ac7af kayit-only, compile queued. Iki politika ailesi e0cff0a4a kaynak checkpointi; banka listesi cevabi6961276925 ile K6 devam ediyor. Sayisal esik/grant yok."
     },
     {
      "id": "KIM-SC32-a",
@@ -724,7 +725,7 @@
      "decision_note": "SAT-D347 okunamazsa marj yok. Marj formülü etkinleştirmesi golden gelene kadar kapalı (SAT-D265/5); kod + snapshot yazılır.",
      "w6_report": "durum/W6_satis.md",
      "w8_report": "durum/W8_SAT_S12_GOLDEN_DUZELTME.md",
-     "w8_source_note": "PARTIAL: P2-1 TL binding source compiled at 65618ac1e; zero-cost user answer 6960913297 source compiled at 11e2f6e. Golden docs PR1200 exact 63913e087f850441f51be2136977344b6410102a awaits two DOCS reviews, independent ChatGPT acceptance and main. Formula gate remains false."
+     "w8_source_note": "P2-1 TL source65618ac1e derlendi; sifir maliyet cevabi6960913297 source11e2f6e derlendi. Golden PR1200 yeni exactdfab7e934fd6e7fc3b0dd5ca40bd9a3643d3ee4f iki yeni DOCS/main bekler. Kullanici6961293621 bu adayda iki ayri bagimsiz Claude incelemesine dar istisna verdi. Gate false."
     },
     {
      "id": "SAT-S13",
@@ -1637,11 +1638,14 @@
      "contracts": [
       "tüketir: sales.invoice.finalized.v1 (satis), purchasing.invoice.finalized.v1 (alis_cari)"
      ],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
      "wave": 5,
      "w5_raporu": "durum/W5_finans.md",
-     "w6_report": "durum/W6_finans.md"
+     "w6_report": "durum/W6_finans.md",
+     "w8_source_commit": "118adcab2fd5d4a22418093dd7dbf970fce51b70",
+     "w8_report": "durum/W8_FIN13_KAYNAK_KAPANISI.md",
+     "w8_validation": "Actual source ancestry, Program/DI/inbox/consumer, journal approval and frontend mount verified. Combined source build 65618ac1e exit0; runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "FIN-S14",
