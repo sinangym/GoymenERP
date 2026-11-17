@@ -11,7 +11,7 @@ public sealed class SalesOutboxEventSourceTests
     public void Source_declaration_keeps_the_existing_identity_and_exact_producer_event_versions()
     {
         Assert.Equal("sales", SalesOutboxContractV1.SourceName);
-        Assert.Equal(new[] { ("sales.invoice.finalized.v1", 1), ("sales.return-invoice.finalized.v1", 1) },
+        Assert.Equal(new[] { ("sales.invoice.finalized.v1", 1), ("sales.return-invoice.finalized.v1", 1), ("sales.invoice.cancelled.v1", 1) },
             SalesOutboxContractV1.Publishes.Select(item => (item.EventType, item.Version)));
     }
 

@@ -70,7 +70,15 @@ public sealed class SalesFinalizedShipmentClaimReadPortV1(SalesDbContext db, ICo
                     && x.EventType == SalesStore.InvoiceFinalizedEventType)
                 .OrderBy(x => x.AggregateId).ThenBy(x => x.Id).Select(x => new Event(x.CompanyId, x.Id, x.AggregateId,
                     x.AggregateType, x.AggregateVersion, x.SchemaVersion, x.Sequence, x.PayloadJson, x.OccurredAtUtc, x.CorrelationId)));
-            return new(lines, headers, finalizations, events);
+            var cancellations = await Rows(db.OfficialInvoiceCancellations.AsNoTracking()
+                .Where(x => x.CompanyId == companyId && x.Kind == 1 && invoiceIds.Contains(x.InvoiceId)).OrderBy(x => x.InvoiceId)
+                .Select(x => new Cancellation(x.CompanyId, x.CancellationId, x.InvoiceId, x.InvoiceVersion, x.FinalizedVersion,
+                    x.AdmissionId, x.ActorId, x.RecordedAtUtc, x.CorrelationId, x.ViewJson)));
+            var cancellationEvents = await Rows(db.OutboxMessages.AsNoTracking().Where(x => x.CompanyId == companyId
+                    && invoiceIds.Contains(x.AggregateId) && x.EventType == SalesOfficialInvoiceCancellationCommandsV1.EventType)
+                .OrderBy(x => x.AggregateId).ThenBy(x => x.Id).Select(x => new Event(x.CompanyId, x.Id, x.AggregateId,
+                    x.AggregateType, x.AggregateVersion, x.SchemaVersion, x.Sequence, x.PayloadJson, x.OccurredAtUtc, x.CorrelationId)));
+            return new(lines, headers, finalizations, events, cancellations, cancellationEvents);
         }
     }
 
@@ -103,9 +111,9 @@ public sealed class SalesFinalizedShipmentClaimReadPortV1(SalesDbContext db, ICo
             var header = snapshot.Headers.Single(x => x.InvoiceId == line.InvoiceId);
             if (header.CompanyId != companyId || header.Version < 1 || !Enum.IsDefined((SalesInvoiceState)header.State)) throw Invalid();
             var state = (SalesInvoiceState)header.State;
-            var released = state is SalesInvoiceState.Cancelled or SalesInvoiceState.Rejected;
+            var released = state is SalesInvoiceState.Cancelled or SalesInvoiceState.Rejected or SalesInvoiceState.OfficiallyCancelled;
             if (released != line.ReleasedAtUtc.HasValue || line.ReleasedAtUtc is { Offset: var offset } && offset != TimeSpan.Zero) throw Invalid();
-            if (state == SalesInvoiceState.Cancelled)
+            if (state is SalesInvoiceState.Cancelled or SalesInvoiceState.OfficiallyCancelled)
             {
                 if (string.IsNullOrWhiteSpace(header.CancelledBy) || header.CancelledAtUtc is not { Offset: var utc } || utc != TimeSpan.Zero
                     || header.CancelledAtUtc.Value == default || line.ReleasedAtUtc != header.CancelledAtUtc) throw Invalid();
@@ -116,15 +124,18 @@ public sealed class SalesFinalizedShipmentClaimReadPortV1(SalesDbContext db, ICo
             lifecycles.Add(lifecycle);
             var finals = snapshot.Finalizations.Where(x => x.InvoiceId == line.InvoiceId).ToArray();
             var events = snapshot.Events.Where(x => x.InvoiceId == line.InvoiceId).ToArray();
-            if (state != SalesInvoiceState.Finalized)
+            var cancellations = (snapshot.Cancellations ?? []).Where(x => x.InvoiceId == line.InvoiceId).ToArray();
+            var cancellationEvents = (snapshot.CancellationEvents ?? []).Where(x => x.InvoiceId == line.InvoiceId).ToArray();
+            if (state != SalesInvoiceState.OfficiallyCancelled && (cancellations.Length != 0 || cancellationEvents.Length != 0)) throw Invalid();
+            if (state is not (SalesInvoiceState.Finalized or SalesInvoiceState.OfficiallyCancelled))
             {
-                // Current normal-invoice owner has no finalized cancellation transition. Contradictory history is not "not invoiced".
+                // Unfinalized draft cancellation has no finalization history. Official cancellation is validated below.
                 if (finals.Length != 0 || events.Length != 0) throw Invalid();
                 continue;
             }
-            if (claim is not null || finals is not [var finalized] || events is not [var envelope]
+            if (state == SalesInvoiceState.Finalized && claim is not null || finals is not [var finalized] || events is not [var envelope]
                 || finalized.CompanyId != companyId || finalized.AdmissionId == Guid.Empty || finalized.Version < 2
-                || finalized.Version != header.Version || string.IsNullOrWhiteSpace(finalized.FinalizedBy)
+                || finalized.Version != (state == SalesInvoiceState.OfficiallyCancelled ? header.Version - 1 : header.Version) || string.IsNullOrWhiteSpace(finalized.FinalizedBy)
                 || finalized.FinalizedAtUtc == default || finalized.FinalizedAtUtc.Offset != TimeSpan.Zero
                 || string.IsNullOrWhiteSpace(finalized.CorrelationId)
                 || envelope.CompanyId != companyId || envelope.Id == Guid.Empty || envelope.AggregateType != "Sales.Invoice"
@@ -150,6 +161,32 @@ public sealed class SalesFinalizedShipmentClaimReadPortV1(SalesDbContext db, ICo
                 || expected.UnitId == Guid.Empty || !decimal.TryParse(expected.InvoicedQuantity,
                     System.Globalization.NumberStyles.AllowDecimalPoint, System.Globalization.CultureInfo.InvariantCulture, out var quantity)
                 || quantity <= 0 || quantity != sourceLine.Quantity) throw Invalid();
+            if (state == SalesInvoiceState.OfficiallyCancelled)
+            {
+                if (cancellations is not [var cancelled] || cancellationEvents is not [var cancelledEvent]
+                    || cancelled.CompanyId != companyId || cancelled.InvoiceVersion != header.Version
+                    || cancelled.FinalizedVersion != finalized.Version || cancelled.AdmissionId != finalized.AdmissionId
+                    || cancelled.ActorId != header.CancelledBy || cancelled.RecordedAtUtc != header.CancelledAtUtc
+                    || cancelledEvent.CompanyId != companyId || cancelledEvent.Id != cancelled.Id
+                    || cancelledEvent.AggregateType != "Sales.Invoice" || cancelledEvent.Version != header.Version
+                    || cancelledEvent.SchemaVersion != 1 || cancelledEvent.Sequence != 1
+                    || cancelledEvent.OccurredAtUtc != cancelled.RecordedAtUtc || cancelledEvent.CorrelationId != cancelled.CorrelationId) throw Invalid();
+                var view = JsonSerializer.Deserialize<SalesOfficialInvoiceCancellationViewV1>(cancelled.ViewJson, Json) ?? throw Invalid();
+                SalesStore.ValidateOfficialView(view, companyId, cancelled.Id);
+                using var cancellationDocument = JsonDocument.Parse(cancelledEvent.PayloadJson);
+                RequireUniqueProperties(cancellationDocument.RootElement);
+                var bodyCancellation = JsonSerializer.Deserialize<CancellationPayload>(cancelledEvent.PayloadJson, Json);
+                if (view.InvoiceId != header.InvoiceId || view.Kind != SalesOfficialInvoiceKindV1.Normal
+                    || view.InvoiceVersion != header.Version.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    || view.FinalizedVersion != finalized.Version.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    || view.AdmissionId != finalized.AdmissionId || view.RecordedBy != header.CancelledBy
+                    || view.RecordedAtUtc != header.CancelledAtUtc || view.Reason != header.CancellationReason
+                    || bodyCancellation is null || bodyCancellation.CompanyId != companyId || bodyCancellation.CancellationId != cancelled.Id
+                    || bodyCancellation.InvoiceId != header.InvoiceId || bodyCancellation.AdmissionId != finalized.AdmissionId
+                    || bodyCancellation.FinalizedVersion != finalized.Version || bodyCancellation.CancelledBy != Guid.Parse(view.RecordedBy)
+                    || bodyCancellation.CancelledAtUtc != view.RecordedAtUtc || bodyCancellation.Reason != view.Reason) throw Invalid();
+                continue; // Keep the original historical finalization proof; only its active economic claim is released.
+            }
             claim = new(companyId, header.InvoiceId, line.LineId, line.LineNo, finalized.AdmissionId, finalized.Version,
                 expected, envelope.Id, Sha(envelope.PayloadJson), finalized.FinalizedAtUtc, lifecycle);
         }
@@ -183,5 +220,10 @@ public sealed class SalesFinalizedShipmentClaimReadPortV1(SalesDbContext db, ICo
         DateTimeOffset FinalizedAtUtc, string CorrelationId);
     internal sealed record Event(Guid CompanyId, Guid Id, Guid InvoiceId, string AggregateType, long Version,
         int SchemaVersion, int Sequence, string PayloadJson, DateTimeOffset OccurredAtUtc, string CorrelationId);
-    internal sealed record Snapshot(Line[] Lines, Header[] Headers, Finalization[] Finalizations, Event[] Events);
+    internal sealed record Cancellation(Guid CompanyId, Guid Id, Guid InvoiceId, long InvoiceVersion, long FinalizedVersion,
+        Guid AdmissionId, string ActorId, DateTimeOffset RecordedAtUtc, string CorrelationId, string ViewJson);
+    private sealed record CancellationPayload(Guid CompanyId, Guid CancellationId, Guid InvoiceId, Guid AdmissionId,
+        long FinalizedVersion, Guid CancelledBy, DateTimeOffset CancelledAtUtc, string Reason);
+    internal sealed record Snapshot(Line[] Lines, Header[] Headers, Finalization[] Finalizations, Event[] Events,
+        Cancellation[]? Cancellations = null, Event[]? CancellationEvents = null);
 }

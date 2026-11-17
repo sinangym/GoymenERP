@@ -487,3 +487,64 @@
   ilişkisel fact envanteri/grup/pin üretimi, birleşik exact-head doğrulama ve K3 kabulü koordinatörde kalır. Altı fact
   `InventorySqlServerRelationalAcceptanceTests.ManufacturingConsumedLineage` partial kaynak dosyasındadır; enclosing
   SC36-a veya uçtan uca SMM akışı bu dar tamamlamayla DONE sayılmaz.
+
+
+## SAT-SC34 — gerçek resmî fatura iptal producer kaynağı
+
+- **PARTIAL:** SAT-D96, SAT-D235/SAT-D249 ve doğrudan kullanıcı cevapları
+  #1189/6957924089 ile #1189/6951274771 uygulanır. Normal ve fason kesinleşmiş faturada eski onay,
+  resmî eşleştirme, tutar, taksit ve kesinleştirme kanıtı korunarak ayrı `OfficiallyCancelled` terminal
+  durumu kaydedilir. Eski taslak iptal komutu genişletilmedi. Mevcut `sales.invoices.finalize` dışında
+  yeni izin, grant, rol veya Critical sınıfı seçilmedi.
+- Ayrı fiyat içermeyen aday seçimi, kayıt ve Finans yeniden teslim ekranı/endpointleri vardır. Kullanıcı
+  GUID veya dış kanıt girmez. Mevcut detail ekranları aynı paneli kullanır; salt kesinleştirme yetkilisi
+  için bağımsız purpose sayfası `SalesOfficialInvoiceCancellationPage` export edilir. Merkezi rota/nav
+  bağlama koordinatördedir; önerilen yol `/satis/fatura-resmi-iptal`, mevcut finalize capability'si.
+- Dış resmî iptal durumu yalnız `ISalesOfficialCancellationEvidenceReadPortV1` actual owner cevabından
+  alınır. Q12'nin doğrudan cevabı #1189/6959047458 mevcut gerçek provider olmadığını doğrular;
+  gelecekteki AI/ePortal fikri bugün yeni entegrasyon veya aktivasyon yetkisi değildir. Kayıtlı default provider açık `Unavailable`
+  döndürür. Yetkili beyanı, fatura numarası veya yüklenmiş dosya gerçek iptal kanıtı sayılmaz. Bu yüzden
+  mevcut üretim bileşiminde kayıt komutu **503 ile kapalıdır**; doğrulanmamış başarı yoktur.
+- Gerçek proof yolu: CompanyId/actor/fresh finalize authority, expected version, değişmez request hash,
+  aynı anahtarın özgün cevabı/terminal reddi ve winner replay; ayrı immutable fact/attempt/delivery
+  tarihçeleri. Sales Serializable owner işlemi, fason claim-range önce header sırası, normal SQL share
+  release, özgün admission snapshot, outbox ve gerçek Audit owner yazıcısı aynı transaction'dadır.
+  Audit draftı Sales SaveChanges öncesi owner portundan boşaltılır; yeni draft legacy sidecar'a gitmez.
+- `sales.invoice.cancelled.v1` mevcut Accounting consumer sözleşmesini kullanır; envelope EventId ile
+  CancellationId aynıdır. Muhasebe açık dönem/tarih ve farklı onaylayan kapıları Accounting owner'da
+  kalır. Finans ayrı, açık kullanıcı retry'sidir: gerekiyorsa önce özgün immutable admission kimlik ve
+  tutarları teslim edilir; ardından aynı cancellation kimliğiyle gerçek Finance cancel portu çağrılır.
+  Aktif tahsis bırakma ayrı açık onaydır; varsayılan false. Yeni banka/kasa veya ikinci SMM etkisi yoktur.
+- Normal Sales reverse reader, gerçek değişmez iptal fact/event kanıtı bulunan State7'yi ve eski iptal
+  edilmiş faturanın yanında yeni aktif fatura bulunmasını doğrular; eski finalization uydurulmaz.
+- Altı gerçek-SQL kabul fact kaynağı: normal fact/header/share/audit/outbox atomikliği; gerçek Audit append sonrası
+  rollback; fresh authority kaybı; aynı anahtar yarışı; immutable guard'lar; fason actual weighing claim
+  bırakma ve yeni fatura seçimi; boş depoda gerçek Down SQL çalışması/rollback ve dolu geçmişte Down reddi.
+  Birim/model/HTTP strict contract, Finance gerçek adapter sözleşmesi ve Vitest/DOM kaynakları birlikte yazıldı.
+  Belirsiz sonuçta remount sonrasında görünen neden/ayırma onayı da frozen özgün payload'dan gelir.
+- **Kaynak derlemeleri exit0, sıfır uyarı/hata:** API 2:48,22; Sales.UnitTests 13,60sn;
+  Api.IntegrationTests 1:09,01. İlk Sales.Unit denemesi NETSDK1004 eksik assets ile exit1 oldu;
+  yalnız mevcut owner test projesinin dar restore'u exit0, sonra yeni testteki yanlış özellik adı
+  CS1061 gerçek `HoldsShares` ile düzeltildi. Son başarılı derleme yeni migration ve bütün test kaynaklarını içerir.
+  Frontend `npx tsc -b` ilk deneme exit2 (eksik signal argümanı), düzeltmeden sonra exit0;
+  son frozen payload/remount deltası dahil yeniden **exit0**. Her süreç öncesi >=2GiB RAM ölçüldü;
+  ilk hatalar, native exit ve ham loglar depodışında korundu. Her iki süreç lease'i açıkça bırakıldı.
+- Gerçek EF üretimi **exit0**: `20261117195343_AddSalesOfficialInvoiceCancellation`. Down51919 ve immutable
+  mutation guard'ları51916/51917/51918 aktif yedi owner kaynağı ve main/train union tekrar taramasında çakışmasızdır.
+  Up üç yeni şirketli tablo/FK/index ve terminal durum constraint'lerini üretir; yedi sabit SQL operation
+  üç append-only trigger ve mevcut lifecycle/finalization/share guard'larının dar geçişini kurar. Down ilk SQL,
+  herhangi bir yeni geçmiş veya State7 fatura varsa bütün Drop'lardan önce 51919 ile reddeder, aksi halde eski
+  trigger'ları geri kurar. Önceki migration'lar değiştirilmedi; Designer/snapshot üreticiden gelir, backfill yoktur.
+  Migration-only sabit guard SQL yeni owner yüzeyi olarak K3 review
+  bekler; runtime SQL/bypass/context allowlist genişletilmedi.
+- Runtime birim/SQL/Vitest/browser/CI **NOT_RUN**. Source/pin/OpenAPI/ilişkisel envanter/grup üretimi,
+  gerçek dış provider kabulü ve iki bağımsız exact-head K3 incelemesi ayrıca gereklidir.
+- Merkezi bağlama: `AddSalesFinanceCancellationHost()`; Sales module kendi service/store ve unavailable
+  evidence provider'ını kaydeder, `MapSalesEndpoints` kendi yeni endpointlerini bağlar. Yeni outbox
+  declaration/pin sayımı coordinator producer'ında yeniden üretilmelidir. Enclosing SAT-SC34 bu checkpoint
+  ve test kaynaklarının varlığıyla DONE sayılmaz.
+- STK-S8 kapsam ayrımı: mevcut e-İrsaliyesiz gerçek plan/sevk/iptal/kabul/fark akışının kaynakları önceki
+  checkpoint'lerde vardır. 14 Ekim yaşam döngüsü karar4 e-İrsaliye bağlantısını opsiyonel, sağlayıcı aktivasyonunu
+  ayrı tutar. Linked e-belge için gerçek GİB gönderim/iptal owner kanıtı yokluğu gelecekteki dış kaynak bağlantısıdır;
+  numaradan durum üretilmez, mevcut 503 korunur. Bu not mevcut planı sessiz DONE/DEFERRED yapmaz ve bugünkü
+  resmî fatura iptal provider eksikliğini kullanılabilir iş akışı diye sunmaz.

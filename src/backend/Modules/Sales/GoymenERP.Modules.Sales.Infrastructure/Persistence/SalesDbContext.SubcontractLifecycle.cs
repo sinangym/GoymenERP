@@ -42,7 +42,7 @@ internal sealed class SubcontractInvoiceCommandAttemptRow : ISalesTenantRow
 
 public sealed partial class SalesDbContext
 {
-    internal const string SubcontractLifecycleIdentityCheck = "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' AND [Sequence] >= 1 AND [InvoiceVersion] >= 1 AND [State] IN (1,2,3,4,5,6) AND ISJSON([FactsJson]) = 1 AND LEN([CorrelationId]) > 0";
+    internal const string SubcontractLifecycleIdentityCheck = "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' AND [Sequence] >= 1 AND [InvoiceVersion] >= 1 AND [State] IN (1,2,3,4,5,6,7) AND ISJSON([FactsJson]) = 1 AND LEN([CorrelationId]) > 0";
     internal const string OfficialInvoiceClaimIdentityCheck = "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' AND [SourceKind] IN (N'dispatch',N'subcontract') AND LEN([OfficialInvoiceNo]) > 0 AND LEN([Ettn]) = 36";
     internal const string SubcontractCommandOutcomeCheck = "([RefusalStatus] IS NULL AND [RefusalCode] IS NULL AND [RefusalErrorsJson] IS NULL AND [InvoiceId] IS NOT NULL) OR ([RefusalStatus] IS NOT NULL AND [RefusalStatus] IN (400,403,404,409,422) AND [RefusalCode] IS NOT NULL AND LEN([RefusalCode]) > 0 AND [RefusalErrorsJson] IS NOT NULL AND ISJSON([RefusalErrorsJson]) = 1)";
     internal const string SubcontractCommandSequenceCheck = "[LifecycleSequence] IS NULL OR ([LifecycleSequence] >= 1 AND [RefusalStatus] IS NULL AND [InvoiceId] IS NOT NULL)";
