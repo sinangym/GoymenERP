@@ -23,7 +23,8 @@ public sealed record PurchaseInvoiceAmounts(decimal Net, decimal Vat, decimal Wi
 public sealed record PurchaseInvoiceLine(Guid Id, int LineNo, Guid ProductId, Guid UnitId, decimal Quantity,
     string ItemType, string LinePurpose, decimal VatPercent, PurchaseInvoiceAmounts Amounts,
     PurchaseInvoiceAmounts? FunctionalAmounts,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? ServiceTypeId = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? ServiceTypeId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? ExpenseTypeId = null);
 
 /// <summary>Owner-read receipt facts, including the price/quantity and daily control FX used in the three-way check.
 /// These are persisted with the match, not accepted as authoritative client input.</summary>
@@ -122,13 +123,16 @@ public sealed class PurchaseIncomingInvoice
             throw new ArgumentException("Fatura satır kimlikleri ve sıraları tekil olmalıdır.");
         foreach (var line in frozenLines)
         {
+            var expense = line.ItemType == "Expense" && line.LinePurpose == "expense";
             if (line.Id == Guid.Empty || line.LineNo < 1 || line.UnitId == Guid.Empty || line.Quantity <= 0
-                || (line.ServiceTypeId is { } service ? service == Guid.Empty || line.ProductId != Guid.Empty
-                    || line.ItemType != "Service" || line.LinePurpose != "service" : line.ProductId == Guid.Empty)
+                || (expense ? line.ProductId != Guid.Empty || line.ServiceTypeId is not null || line.ExpenseTypeId == Guid.Empty
+                    : line.ExpenseTypeId is not null || line.ItemType == "Expense" || line.LinePurpose == "expense"
+                        || (line.ServiceTypeId is { } service ? service == Guid.Empty || line.ProductId != Guid.Empty
+                            || line.ItemType != "Service" || line.LinePurpose != "service" : line.ProductId == Guid.Empty))
                 || line.Quantity > MaximumStoredQuantity
                 || decimal.Round(line.Quantity, MaximumStoredScale) != line.Quantity
                 || line.VatPercent is < 0 or > 100 || string.IsNullOrWhiteSpace(line.ItemType) || line.ItemType.Length > 128
-                || line.LinePurpose is not ("production-input" or "resale" or "service")
+                || line.LinePurpose is not ("production-input" or "resale" or "service" or "expense")
                 || foreign != (line.FunctionalAmounts is not null)) throw new ArgumentException("Fatura satır kaynağı geçersiz.");
             ArgumentNullException.ThrowIfNull(line.Amounts);
             line.Amounts.Validate(moneyScale); line.FunctionalAmounts?.Validate(functionalScale);

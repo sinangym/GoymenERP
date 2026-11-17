@@ -454,6 +454,23 @@ invoice lines need their own real owner references; no artificial goods receipt 
 Unit/model and real SQL test sources cover immutable source/history, tenant isolation, replay, actor/payload conflicts,
 quantity scale, late authority loss, transaction ownership, one outbox event and the forward-fix guard. Runtime NOT_RUN.
 
+## ALC-S8 / ALS-D23, ALS-D27, ALS-D80 and ALS-D107 additional expenses
+
+An immutable commercial expense references an actual company-scoped goods or service order and optionally its
+actual acceptance/line. Separate composite foreign keys preserve each owner's real acceptance identity. The Cari
+may be the order supplier or another active Supplier. Actual Settings expense types, effective VAT list and money
+profile/version are retained; an empty active expense catalog uses the required description, while a nonempty active
+catalog requires an explicit current type. Historical untyped facts are not rewritten. Shared tax calculation provides
+the frozen VAT/gross amounts. No quantity, Inventory movement, average cost or cost allocation is produced.
+The direct ALC-S8 answer (Issue #1189, 6946921285) selects existing `purchasing.orders.revise` for recording;
+price-read and company-wide authority are revalidated. No permission grant is added. Its command owns a clean
+Serializable transaction, expected source order version, idempotency, terminal source conflict replay and actual
+Audit append; failure rolls back all rows. Reads remain company/actor/price fenced.
+EF generated `20261117114517_AddPurchaseAdditionalCosts` with additive DDL. Down first refuses with **THROW 51998**
+while expense facts or command attempts exist; an empty store can roll back. No DB migration was applied.
+Partial invoice binding was approved separately (6947000365) and is the next source followup; no artificial receipt
+or physical quantity substitutes for a monetary expense share. Runtime acceptance remains NOT_RUN.
+
 ## ALC-S7 / ALS-D29, ALS-D40 and KIM-D49 service orders
 
 Service purchase and outgoing own-material subcontract share actual Settings service types and units.

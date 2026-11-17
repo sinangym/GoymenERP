@@ -144,8 +144,8 @@ public sealed class PurchasingPersistenceModelTests
     public void The_request_and_order_screens_and_their_controls_are_published()
     {
         var declarations = new PurchasingShellCapabilityProvider().GetDeclarations();
-        Assert.Equal("1.12", PurchasingShellCapabilityProvider.OwnerContractVersion);
-        Assert.Equal(26, declarations.Count);
+        Assert.Equal("1.13", PurchasingShellCapabilityProvider.OwnerContractVersion);
+        Assert.Equal(28, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(!declaration.CapabilityId.StartsWith("purchasing.invoices.", StringComparison.Ordinal), declaration.ImplementationAvailable));
         var byId = declarations.ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
         Assert.Equal(PurchasingShellCapabilityProvider.RequestListRoutePath,
@@ -231,13 +231,20 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersRevise], lineSchedule.RequiredPermissions);
         Assert.Equal(byId[PurchasingShellCapabilityProvider.DetailCapabilityId].ScopeRequirement, lineSchedule.ScopeRequirement);
         Assert.Equal(new[] { PurchasingShellCapabilityProvider.LineScheduleCapabilityId,
-                PurchasingShellCapabilityProvider.SupplierRevisionCapabilityId, PurchasingShellCapabilityProvider.ServiceOrderRevisePricesCapabilityId }.Order(StringComparer.Ordinal),
+                PurchasingShellCapabilityProvider.SupplierRevisionCapabilityId, PurchasingShellCapabilityProvider.ServiceOrderRevisePricesCapabilityId,
+                PurchasingShellCapabilityProvider.AdditionalCostRecordCapabilityId }.Order(StringComparer.Ordinal),
             declarations.Where(declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersRevise))
                 .Select(declaration => declaration.CapabilityId).Order(StringComparer.Ordinal));
         // Invoice screens disclose official amounts and require the existing price-read permission.
         Assert.Contains("purchasing.orders.price.read", PurchasingPermissionManifestV1.Names);
         Assert.All(declarations.Where(declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersPriceRead)),
-            declaration => Assert.StartsWith("purchasing.invoices.", declaration.CapabilityId));
+            declaration => Assert.True(declaration.CapabilityId.StartsWith("purchasing.invoices.", StringComparison.Ordinal)
+                || declaration.CapabilityId == PurchasingShellCapabilityProvider.AdditionalCostReadCapabilityId
+                || declaration.CapabilityId == PurchasingShellCapabilityProvider.AdditionalCostRecordCapabilityId));
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersPriceRead],
+            byId[PurchasingShellCapabilityProvider.AdditionalCostReadCapabilityId].RequiredPermissions);
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersPriceRead, PurchasingPermissionManifestV1.OrdersRevise],
+            byId[PurchasingShellCapabilityProvider.AdditionalCostRecordCapabilityId].RequiredPermissions);
         Assert.Contains("purchasing.requests.approve", PurchasingPermissionManifestV1.Names);
         Assert.Contains("purchasing.requests.withdraw", PurchasingPermissionManifestV1.Names);
         Assert.Contains("purchasing.orders.cancel", PurchasingPermissionManifestV1.Names);
@@ -277,8 +284,8 @@ public sealed class PurchasingPersistenceModelTests
                 "20261116215806_AddPurchaseSupplierReturnResponseSnapshots", "20261116222957_AddPurchaseReceiptAdjustmentBatches",
                 "20261117002600_AddPurchaseOrderDocumentNumbers", "20261117072202_AddPurchaseSupplierRevisions",
                 "20261117084001_AddPurchaseIncomingInvoices", "20261117110054_AddPurchaseServiceOrders",
-                "20261117112436_AddPurchaseInvoiceImportReservations"],
-            context.Database.GetMigrations().TakeLast(19));
+                "20261117112436_AddPurchaseInvoiceImportReservations", "20261117114517_AddPurchaseAdditionalCosts"],
+            context.Database.GetMigrations().TakeLast(20));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var requests = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseRequestRow))!;

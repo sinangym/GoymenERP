@@ -46,7 +46,9 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "PURCHASING";
-    public const string OwnerContractVersion = "1.12";
+    public const string OwnerContractVersion = "1.13";
+    public const string AdditionalCostReadCapabilityId = "purchasing.additional-costs.read";
+    public const string AdditionalCostRecordCapabilityId = "purchasing.additional-costs.record";
 
     public const string ServiceOrderListCapabilityId = "purchasing.service-orders.list";
     public const string ServiceOrderCreateCapabilityId = "purchasing.service-orders.create";
@@ -110,6 +112,17 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 
         return
         [
+            new ShellCapabilityDeclaration(AdditionalCostReadCapabilityId, AdditionalCostReadCapabilityId,
+                "/satinalma/ek-masraflar/:sourceKind/:orderId", "ALC-S8-read",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersPriceRead], ImplementationAvailable: true),
+            new ShellCapabilityDeclaration(AdditionalCostRecordCapabilityId, AdditionalCostReadCapabilityId,
+                "/satinalma/ek-masraflar/:sourceKind/:orderId", "ALC-S8-read",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersPriceRead, PurchasingPermissionManifestV1.OrdersRevise],
+                ImplementationAvailable: true, ParentCapabilityId: AdditionalCostReadCapabilityId),
             new ShellCapabilityDeclaration(ServiceOrderListCapabilityId, ServiceOrderListCapabilityId, "/satinalma/hizmet-siparisleri", "ALC-S7-list",
                 ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,
                 ShellCapabilityScopeRequirement.CompanyWide, [PurchasingPermissionManifestV1.OrdersRead], ImplementationAvailable: true),

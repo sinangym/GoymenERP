@@ -21,7 +21,8 @@ public static class PurchaseIncomingInvoiceFinalizationV1
             invoice.Amounts.Vat, invoice.Amounts.Withholding, invoice.FunctionalAmounts?.Net, invoice.FunctionalAmounts?.Vat,
             invoice.FunctionalAmounts?.Withholding, Array.AsReadOnly(invoice.Lines.Select(line => new PurchaseInvoiceFinalizedLineV1(
                 line.Id, line.LineNo, line.ItemType, line.LinePurpose, line.VatPercent, line.Amounts.Net, line.Amounts.Vat,
-                line.Amounts.Withholding, line.FunctionalAmounts?.Net, line.FunctionalAmounts?.Vat, line.FunctionalAmounts?.Withholding, line.ServiceTypeId)).ToArray()),
+                line.Amounts.Withholding, line.FunctionalAmounts?.Net, line.FunctionalAmounts?.Vat, line.FunctionalAmounts?.Withholding,
+                line.ServiceTypeId, line.ExpenseTypeId)).ToArray()),
             invoice.Source.InvoiceDate, invoice.FinalizedBy, invoice.Installments.Min(item => item.DueOn));
     }
 
