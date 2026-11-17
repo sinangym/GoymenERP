@@ -16,13 +16,14 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 /// <see cref="ApprovedAccountingSourceCatalogStoreV1.ReadAsync"/> (no bypass, the store is not changed). It also
 /// answers the B-04b read port <see cref="IAccountingPostingAccountMappingResolverV1"/>.
 /// </summary>
-public sealed class AccountingPostingAccountMappingStoreV1(
+public sealed partial class AccountingPostingAccountMappingStoreV1(
     AccountingDbContext dbContext,
     ApprovedAccountingSourceCatalogStoreV1 catalog,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
     TimeProvider timeProvider)
-    : IAccountingPostingAccountMappingStoreV1, IAccountingPostingAccountMappingResolverV1
+    : IAccountingPostingAccountMappingStoreV1, IAccountingPostingAccountMappingResolverV1,
+      IAccountingPostingAccountMappingWorkspaceStoreV1
 {
     private const int Prepared = (int)AccountingPostingAccountMappingStatusV1.Prepared;
     private const int Active = (int)AccountingPostingAccountMappingStatusV1.Active;
@@ -281,7 +282,9 @@ public sealed class AccountingPostingAccountMappingStoreV1(
             || !AccountingPostingAccountMappingKeysV1.IsAllowed(purpose, mappingKey)
             || !AccountingPostingAccountMappingPayloadV1.IsSelector(itemType)
             || !AccountingPostingAccountMappingPayloadV1.IsSelector(linePurpose)
-            || !AccountingPostingAccountMappingPayloadV1.IsSelector(vatRateCode))
+            || !AccountingPostingAccountMappingPayloadV1.IsSelector(vatRateCode)
+            || purpose == AccountingPostingAccountMappingPurposesV1.CostOfGoodsSold
+                && (itemType is not null || linePurpose is not null || isExport is not null || vatRateCode is not null))
         {
             return AccountingPostingAccountMappingResolutionV1.Unavailable(
                 AccountingPostingAccountMappingUnavailableReasonsV1.QueryInvalid);

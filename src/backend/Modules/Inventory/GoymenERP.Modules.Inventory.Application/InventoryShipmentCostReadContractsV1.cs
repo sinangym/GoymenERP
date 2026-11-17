@@ -28,4 +28,13 @@ public interface IInventoryShipmentCostReadPortV1
 {
     Task<InventoryShipmentCostReadV1> GetAsync(Guid companyId, Guid shipmentId, Guid movementId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resolves the one original movement from Inventory's immutable shipment command/result and source identity,
+    /// then validates the same outbox/line/stamp evidence as GetAsync. The caller supplies no guessed movement id.
+    /// Unknown and foreign shipments are indistinguishable NotFound; inconsistent or ambiguous evidence is Unreadable.
+    /// This adds neither authority nor an Accounting trigger; consumers retain their own fresh admission fences.
+    /// </summary>
+    Task<InventoryShipmentCostReadV1> GetByShipmentAsync(Guid companyId, Guid shipmentId,
+        CancellationToken cancellationToken = default);
 }
