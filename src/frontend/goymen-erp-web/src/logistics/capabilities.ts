@@ -14,6 +14,9 @@
  */
 
 export const LOGISTICS_CAPABILITY = {
+  /** Staged child control; deliberately absent from the global route catalogue. */
+  planExcessPrepare: 'logistics.shipments.plan-excess.prepare',
+  planExcessApprove: 'logistics.shipments.plan-excess.approve',
   transferDepartures: 'logistics.transfer-departures.record',
   /** L-02 Yükleme Talimatları — the company's instructions, newest first. */
   instructionsList: 'logistics.instructions.list',
@@ -36,6 +39,7 @@ export const LOGISTICS_CAPABILITY = {
 export type LogisticsCapabilityId = (typeof LOGISTICS_CAPABILITY)[keyof typeof LOGISTICS_CAPABILITY]
 
 export const LOGISTICS_ROUTE = {
+  planExcessApprove: '/lojistik/plan-ustu-sevk-onay',
   transferDepartures: '/lojistik/transfer-cikislari',
   list: '/lojistik/yukleme-talimatlari',
   // Static before the parameter route: `yeni` must never be read as an instruction id.
@@ -47,6 +51,8 @@ export const LOGISTICS_ROUTE = {
 
 /** Master v3 §27.8 screen ids, one per route, as the backend provider declares them. */
 export const LOGISTICS_SCREEN_ID = {
+  [LOGISTICS_CAPABILITY.planExcessPrepare]: 'L-02-DETAIL',
+  [LOGISTICS_CAPABILITY.planExcessApprove]: 'L-PLAN-EXCESS-APPROVE',
   [LOGISTICS_CAPABILITY.transferDepartures]: 'STK-S8-DEPARTURE',
   [LOGISTICS_CAPABILITY.instructionsList]: 'L-02',
   [LOGISTICS_CAPABILITY.instructionsCreate]: 'L-03',
@@ -56,6 +62,8 @@ export const LOGISTICS_SCREEN_ID = {
 } as const
 
 export const LOGISTICS_NAV_LABEL = {
+  [LOGISTICS_CAPABILITY.planExcessPrepare]: '',
+  [LOGISTICS_CAPABILITY.planExcessApprove]: 'Plan üstü sevk onayı',
   [LOGISTICS_CAPABILITY.transferDepartures]: 'Transfer çıkışları',
   [LOGISTICS_CAPABILITY.instructionsList]: 'Yükleme Talimatları',
   // No nav entry: one entry point per creation route (coordinator, 19 September 2026) — the L-02 list carries

@@ -28,6 +28,7 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
     [InlineData(LogisticsPermissionManifestV1.InstructionsRead, ErpPermissions.LogisticsLoadingInstructionsRead)]
     [InlineData(LogisticsPermissionManifestV1.LoadsRecord, ErpPermissions.LogisticsLoadsRecord)]
     [InlineData(LogisticsPermissionManifestV1.ShipmentsRecord, ErpPermissions.LogisticsShipmentsRecord)]
+    [InlineData("logistics.shipments.plan-excess.approve", ErpPermissions.LogisticsShipmentPlanExcessApprove)]
     [InlineData(LogisticsPermissionManifestV1.DeliveriesRecord, ErpPermissions.LogisticsDeliveriesRecord)]
     [InlineData(LogisticsPermissionManifestV1.WeighingsRecord, ErpPermissions.LogisticsWeighingsRecord)]
     [InlineData(LogisticsPermissionManifestV1.WeighingsCorrect, ErpPermissions.LogisticsWeighingsCorrect)]
@@ -94,9 +95,25 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
             .ToArray();
         // The list, the new-instruction workspace and the detail are published; each still requires its owner permission.
         // AT-025: plus the operations work list's two separate sections (L-01 sales, L-09 purchase), each behind its own name.
-        Assert.Equal(11, logistics.Length);
-        Assert.All(logistics, item => Assert.True(item.Declaration.ImplementationAvailable));
-        Assert.Equal(6, logistics.Count(item => item.Declaration.ParentCapabilityId == LogisticsShellCapabilityProvider.DetailCapabilityId));
+        Assert.Equal(22, logistics.Length);
+        string[] published =
+        [
+            "logistics.customer-returns.approve",
+            "logistics.customer-returns.read",
+            "logistics.customer-returns.reject",
+            "logistics.customer-returns.request",
+            "logistics.deliveries.record",
+            "logistics.instructions.create",
+            "logistics.instructions.detail",
+            "logistics.instructions.list",
+            "logistics.operations-work.purchase",
+            "logistics.operations-work.sales",
+            "logistics.shipments.record",
+            "logistics.transfer-departures.record",
+        ];
+        Assert.Equal(published, logistics.Where(item => item.Declaration.ImplementationAvailable)
+            .Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
+        Assert.Equal(7, logistics.Count(item => item.Declaration.ParentCapabilityId == LogisticsShellCapabilityProvider.DetailCapabilityId));
 
         var declarations = logistics.ToDictionary(item => item.Declaration.CapabilityId, item => item.Declaration,
             StringComparer.Ordinal);
