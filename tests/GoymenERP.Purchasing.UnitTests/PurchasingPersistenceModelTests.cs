@@ -144,8 +144,8 @@ public sealed class PurchasingPersistenceModelTests
     public void The_request_and_order_screens_and_their_controls_are_published()
     {
         var declarations = new PurchasingShellCapabilityProvider().GetDeclarations();
-        Assert.Equal("1.11", PurchasingShellCapabilityProvider.OwnerContractVersion);
-        Assert.Equal(25, declarations.Count);
+        Assert.Equal("1.12", PurchasingShellCapabilityProvider.OwnerContractVersion);
+        Assert.Equal(26, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(!declaration.CapabilityId.StartsWith("purchasing.invoices.", StringComparison.Ordinal), declaration.ImplementationAvailable));
         var byId = declarations.ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
         Assert.Equal(PurchasingShellCapabilityProvider.RequestListRoutePath,
@@ -230,9 +230,10 @@ public sealed class PurchasingPersistenceModelTests
             (lineSchedule.RoutePath, lineSchedule.ScreenId, lineSchedule.ParentCapabilityId));
         Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersRevise], lineSchedule.RequiredPermissions);
         Assert.Equal(byId[PurchasingShellCapabilityProvider.DetailCapabilityId].ScopeRequirement, lineSchedule.ScopeRequirement);
-        var revised = Assert.Single(declarations,
-            declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersRevise));
-        Assert.Equal(PurchasingShellCapabilityProvider.LineScheduleCapabilityId, revised.CapabilityId);
+        Assert.Equal(new[] { PurchasingShellCapabilityProvider.LineScheduleCapabilityId,
+                PurchasingShellCapabilityProvider.SupplierRevisionCapabilityId, PurchasingShellCapabilityProvider.ServiceOrderRevisePricesCapabilityId }.Order(StringComparer.Ordinal),
+            declarations.Where(declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersRevise))
+                .Select(declaration => declaration.CapabilityId).Order(StringComparer.Ordinal));
         // Invoice screens disclose official amounts and require the existing price-read permission.
         Assert.Contains("purchasing.orders.price.read", PurchasingPermissionManifestV1.Names);
         Assert.All(declarations.Where(declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersPriceRead)),

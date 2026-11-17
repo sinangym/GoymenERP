@@ -469,5 +469,10 @@ EF generated 20261117110054_AddPurchaseServiceOrders; Up is additive DDL. Down s
 any service order, revision, acceptance, invoice binding or terminal attempt exists. No migration was applied.
 Unit/model, HTTP, real SQL, strict transport and UI regression sources are written. API, Purchasing.UnitTests,
 Api.IntegrationTests and frontend tsc source builds passed; all runtime/SQL/Vitest/browser/CI evidence is NOT_RUN.
-Central Program/shell/OpenAPI/inventory composition is pending integration. Unpriced service orders remain
-unpriced: invoice matching refuses missing price; an actual later price-entry workflow remains a visible source gap.
+ALS-D18/D9 later price entry creates a new draft snapshot and requires another actor's reapproval. Actual service
+acceptance, quantities, identities and the old approval/price revisions remain intact; price-only reapproval does
+not repeat or reinterpret a past physical operation. FNS/Inventory facts are untouched.
+ALS-D106 outgoing subcontract price units require the actual kilogram unit profile. ALS-D105 defaults read only
+the actual Purchasing-side Settings tax source and preserve its version per line; no default means 503, never
+zero VAT, a Sales default or an assumed tax code. Purchasing tax-default administration and line overrides remain
+closed pending the explicit permission decision. Central Program/shell/OpenAPI/inventory composition is pending.

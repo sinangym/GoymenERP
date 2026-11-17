@@ -1,4 +1,5 @@
 using GoymenERP.Modules.Purchasing.Domain.Services;
+using System.Text.Json.Serialization;
 
 namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 
@@ -11,11 +12,16 @@ public sealed record PurchaseServiceOutputInputV1(Guid ProductId, string Product
 public sealed record CreatePurchaseServiceLineV1(Guid LineId, Guid ServiceTypeId, string ExpectedServiceTypeVersion,
     Guid UnitId, string Quantity, string? UnitPrice);
 public sealed record ApprovePurchaseServiceOrderV1(string ExpectedVersion, string Reason);
+public sealed record PurchaseServiceLinePriceV1(Guid LineId, string UnitPrice);
+public sealed record RevisePurchaseServiceOrderPricesV1(string ExpectedVersion, IReadOnlyList<PurchaseServiceLinePriceV1> Lines, string Reason);
 public sealed record AcceptPurchaseServiceV1(string ExpectedVersion, Guid AcceptanceId, Guid LineId, string Quantity,
     DateOnly AcceptedOn, string Reason);
 public sealed record PurchaseServiceOrderResponseV1(PurchaseServiceOrderViewV1 Order, bool IsReplay, string OriginalCorrelationId);
 public sealed record PurchaseServiceLineViewV1(Guid LineId, Guid ServiceTypeId, string ServiceTypeVersion, string ServiceName,
-    Guid UnitId, string UnitCode, string Quantity, string AcceptedQuantity, string? UnitPrice, string? Amount);
+    Guid UnitId, string UnitCode, string Quantity, string AcceptedQuantity, string? UnitPrice, string? Amount,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseServiceTaxViewV1? Tax = null);
+public sealed record PurchaseServiceTaxViewV1(bool VatApplies, string? VatPercent, string? ExemptionCode,
+    bool WithholdingApplies, string? WithholdingPercent, string? WithholdingCode, string SettingsVersion);
 public sealed record PurchaseServiceOrderViewV1(Guid CompanyId, Guid OrderId, string DocumentNumber, string Version, string Kind, string Status,
     Guid SupplierPartyId, Guid CompanyAccountId, DateOnly BusinessDate, Guid CurrencyId, string CurrencyCode, bool IsOpen,
     string PriceDisclosure, IReadOnlyList<PurchaseServiceLineViewV1> Lines, IReadOnlyList<PurchaseServiceMaterialInputV1> Materials,
@@ -23,7 +29,7 @@ public sealed record PurchaseServiceOrderViewV1(Guid CompanyId, Guid OrderId, st
 public sealed record PurchaseServiceAcceptanceViewV1(Guid AcceptanceId, Guid LineId, string Quantity, DateOnly AcceptedOn,
     string RecordedBy, string Reason, DateTimeOffset RecordedAtUtc);
 public sealed record PurchaseServiceTypeOptionV1(Guid Id, string Version, string Code, string Name);
-public sealed record PurchaseServiceUnitOptionV1(Guid UnitId, string Code);
+public sealed record PurchaseServiceUnitOptionV1(Guid UnitId, string Code, bool IsKilogram);
 public sealed record PurchaseServiceOrderReferencesV1(Guid CompanyId, IReadOnlyList<PurchaseServiceTypeOptionV1> ServiceTypes,
     IReadOnlyList<PurchaseServiceUnitOptionV1> Units);
 public interface IPurchaseServiceOrderServiceV1
@@ -33,6 +39,7 @@ public interface IPurchaseServiceOrderServiceV1
     Task<PurchaseServiceOrderViewV1> ReadAsync(Guid orderId, CancellationToken token = default);
     Task<PurchaseServiceOrderResponseV1> CreateAsync(CreatePurchaseServiceOrderV1 request, PurchasingCommandMetadata metadata, CancellationToken token = default);
     Task<PurchaseServiceOrderResponseV1> ApproveAsync(Guid orderId, ApprovePurchaseServiceOrderV1 request, PurchasingCommandMetadata metadata, CancellationToken token = default);
+    Task<PurchaseServiceOrderResponseV1> RevisePricesAsync(Guid orderId, RevisePurchaseServiceOrderPricesV1 request, PurchasingCommandMetadata metadata, CancellationToken token = default);
     Task<PurchaseServiceOrderResponseV1> AcceptAsync(Guid orderId, AcceptPurchaseServiceV1 request, PurchasingCommandMetadata metadata, CancellationToken token = default);
 }
 
@@ -80,5 +87,6 @@ public static class PurchaseServiceOrderCommandsV1
     public const string Create = "purchasing.service-order.create.v1";
     public const string Approve = "purchasing.service-order.approve.v1";
     public const string Accept = "purchasing.service-order.accept.v1";
-    public static bool IsKnown(string command) => command is Create or Approve or Accept;
+    public const string RevisePrices = "purchasing.service-order.prices-revise.v1";
+    public static bool IsKnown(string command) => command is Create or Approve or Accept or RevisePrices;
 }

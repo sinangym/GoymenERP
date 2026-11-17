@@ -108,7 +108,7 @@ function ServiceCreateForm({ scope }: { readonly scope: Scope }) {
         {reference?.serviceTypes.length === 0 && <p role="status">{T.noCatalog}</p>}
         {lines.map((line, index) => <fieldset key={line.lineId}><legend>{T.service} {index + 1}</legend>
           <Field label={T.serviceType}>{p => <select {...p} required value={line.typeId} onChange={e => setLines(v => v.map(x => x.lineId === line.lineId ? { ...x, typeId: e.target.value } : x))}><option value="">{T.choose}</option>{reference?.serviceTypes.map(x => <option key={x.id} value={x.id}>{x.code} — {x.name}</option>)}</select>}</Field>
-          <Field label={T.unit}>{p => <select {...p} required value={line.unitId} onChange={e => setLines(v => v.map(x => x.lineId === line.lineId ? { ...x, unitId: e.target.value } : x))}><option value="">{T.choose}</option>{reference?.units.map(x => <option key={x.unitId} value={x.unitId}>{x.code}</option>)}</select>}</Field>
+          <Field label={T.unit}>{p => <select {...p} required value={line.unitId} onChange={e => setLines(v => v.map(x => x.lineId === line.lineId ? { ...x, unitId: e.target.value } : x))}><option value="">{T.choose}</option>{reference?.units.filter(x => kind !== 2 || x.isKilogram).map(x => <option key={x.unitId} value={x.unitId}>{x.code}</option>)}</select>}</Field>
           <Field label={T.quantity}>{p => <input {...p} required inputMode="decimal" value={line.quantity} onChange={e => setLines(v => v.map(x => x.lineId === line.lineId ? { ...x, quantity: e.target.value } : x))} />}</Field>
           <Field label={T.price}>{p => <input {...p} inputMode="decimal" value={line.price} onChange={e => setLines(v => v.map(x => x.lineId === line.lineId ? { ...x, price: e.target.value } : x))} />}</Field>
           <Button type="button" disabled={lines.length <= 1} onClick={() => setLines(v => v.filter(x => x.lineId !== line.lineId))}>{T.remove}</Button>
@@ -166,14 +166,40 @@ function ServiceDetail({ scope, id }: { readonly scope: Scope; readonly id: stri
     <ReadState value={read.data} loading={read.isFetching} refresh={() => void read.refetch()} />
     {value !== null && <><p>{T.status[value.status]} · {value.isOpen ? T.open : value.status === 'Approved' ? T.complete : ''}</p>
       {value.kind === 'OwnMaterialSubcontract' && <p>{T.physical}</p>}
-      <table><caption>{T.service}</caption><thead><tr><th>{T.serviceType}</th><th>{T.quantity}</th><th>{T.accepted}</th><th>{T.amount}</th></tr></thead>
+      <table><caption>{T.service}</caption><thead><tr><th>{T.serviceType}</th><th>{T.quantity}</th><th>{T.accepted}</th><th>{T.amount}</th><th>{T.tax}</th></tr></thead>
         <tbody>{value.lines.map(line => <tr key={line.lineId}><th>{line.serviceName}</th><td>{line.quantity} {line.unitCode}</td><td>{line.acceptedQuantity}</td>
-          <td>{value.priceDisclosure === 'Withheld' ? T.withheld : line.amount === null ? T.noPrice : `${line.amount} ${value.currencyCode}`}</td></tr>)}</tbody></table>
+          <td>{value.priceDisclosure === 'Withheld' ? T.withheld : line.amount === null ? T.noPrice : `${line.amount} ${value.currencyCode}`}</td>
+          <td>{line.tax === undefined ? T.taxInInvoice : <>{T.vat}: {line.tax.vatPercent ?? line.tax.exemptionCode} · {T.withholding}: {line.tax.withholdingPercent ?? T.noWithholding} {line.tax.withholdingCode}</>}</td></tr>)}</tbody></table>
       {value.status === 'Draft' && hasCapability(shell, C.approve) && <ServiceAction scope={scope} order={value} kind="approve" changed={changed} />}
       {value.status === 'Approved' && value.isOpen && hasCapability(shell, C.accept) && <ServiceAction scope={scope} order={value} kind="accept" changed={changed} />}
+      {value.status === 'Approved' && hasCapability(shell, C.revisePrices) && <ServicePriceRevision scope={scope} order={value} changed={changed} />}
       <h2>{T.acceptanceHistory}</h2><ul>{value.acceptances.map(a => <li key={a.acceptanceId}>{a.acceptedOn} — {a.quantity} — {a.reason}</li>)}</ul>
     </>}
   </section>
+}
+function ServicePriceRevision({ scope, order, changed }: { readonly scope: Scope; readonly order: ServiceOrder; readonly changed: () => void }) {
+  const [prices, setPrices] = useState<Readonly<Record<string, string>>>({}), [reason, setReason] = useState(''), [invalid, setInvalid] = useState(false)
+  const attempt = useReceiptAdjustmentAttempt<unknown, ServiceOrderReceipt>(`${scope.namespace}:service-prices:${order.orderId}`, `${scope.entry}:${order.version}`,
+    (payload, key) => submitServiceOrder(scope.company, order.orderId, 'prices', payload, key), changed)
+  function submit() {
+    const selected: { lineId: string; unitPrice: string }[] = []
+    for (const line of order.lines) {
+      const text = prices[line.lineId]?.trim()
+      if (!text) continue
+      const parsed = parseDecimalInput(text)
+      if (!parsed.ok) { setInvalid(true); return }
+      selected.push({ lineId: line.lineId, unitPrice: parsed.value })
+    }
+    if (!reason.trim() || selected.length === 0) { setInvalid(true); return }
+    setInvalid(false); attempt.submit({ expectedVersion: order.version, lines: selected, reason: reason.trim() })
+  }
+  return <form onSubmit={event => { event.preventDefault(); submit() }}><fieldset disabled={attempt.locked}>
+    <legend>{T.revisePrices}</legend><p>{T.priceRevisionHelp}</p>
+    {order.lines.map(line => <Field key={line.lineId} label={`${line.serviceName} — ${T.revisedPrice}`}>{p => <input {...p} inputMode="decimal"
+      value={prices[line.lineId] ?? ''} onChange={event => setPrices(old => ({ ...old, [line.lineId]: event.target.value }))} />}</Field>)}
+    <Field label={T.reason}>{p => <textarea {...p} required maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} />}</Field>
+  </fieldset>{invalid && <p role="alert">{T.invalid}</p>}<AttemptState attempt={attempt} />
+    <Button type="submit" disabled={attempt.locked}>{T.revisePrices}</Button></form>
 }
 function ServiceAction({ scope, order, kind, changed }: { readonly scope: Scope; readonly order: ServiceOrder; readonly kind: 'approve' | 'accept'; readonly changed: () => void }) {
   const [reason, setReason] = useState(''), [line, setLine] = useState(''), [quantity, setQuantity] = useState(''), [day, setDay] = useState(''), [invalid, setInvalid] = useState(false)

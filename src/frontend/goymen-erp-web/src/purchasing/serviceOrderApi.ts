@@ -15,9 +15,9 @@ async function read<T>(company: string, path: string, signal: AbortSignal, decod
 export const fetchServiceOrders = (company: string, signal: AbortSignal) => read(company, base, signal, v => decodeServiceOrders(v, company))
 export const fetchServiceOrder = (company: string, id: string, signal: AbortSignal) => read(company, `${base}/${encodeURIComponent(id)}`, signal, v => decodeServiceOrder(v, company, id))
 export const fetchServiceOrderReferences = (company: string, signal: AbortSignal) => read(company, `${base}/references`, signal, v => decodeServiceReferences(v, company))
-export async function submitServiceOrder(company: string, id: string, action: 'create' | 'approve' | 'accept', payload: unknown, key: string): Promise<AdjustmentOutcome<ServiceOrderReceipt>> {
+export async function submitServiceOrder(company: string, id: string, action: 'create' | 'approve' | 'accept' | 'prices', payload: unknown, key: string): Promise<AdjustmentOutcome<ServiceOrderReceipt>> {
   try {
-    const path = action === 'create' ? base : `${base}/${encodeURIComponent(id)}/${action === 'approve' ? 'approval' : 'service-acceptances'}`
+    const path = action === 'create' ? base : `${base}/${encodeURIComponent(id)}/${action === 'approve' ? 'approval' : action === 'prices' ? 'price-revisions' : 'service-acceptances'}`
     const response = await fetch(path, { method: 'POST', headers: { ...purchasingHeaders(company), 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(payload) })
     let body: unknown = null; try { body = await response.json() } catch { /* Unknown outcomes keep the same request. */ }
     if (response.status >= 500) return { type: 'unknown', reason: 'service-unavailable', status: response.status }

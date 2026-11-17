@@ -35,6 +35,10 @@ public static partial class PurchasingEndpoints
             ICorrelationContext correlation, CancellationToken token) => ServiceMutateAsync<AcceptPurchaseServiceV1>(http, correlation,
                 (request, metadata) => service.AcceptAsync(id, request, metadata, token), token))
             .WithName("AcceptPurchaseServiceV1").Accepts<AcceptPurchaseServiceV1>("application/json"));
+        ServiceWrite(group.MapPost("/{id:guid}/price-revisions", (Guid id, HttpContext http, [FromServices] IPurchaseServiceOrderServiceV1 service,
+            ICorrelationContext correlation, CancellationToken token) => ServiceMutateAsync<RevisePurchaseServiceOrderPricesV1>(http, correlation,
+                (request, metadata) => service.RevisePricesAsync(id, request, metadata, token), token))
+            .WithName("RevisePurchaseServiceOrderPricesV1").Accepts<RevisePurchaseServiceOrderPricesV1>("application/json"));
         return endpoints;
     }
     private static async Task<IResult> ServiceReadAsync<T>(HttpContext http, ICorrelationContext correlation, Func<Task<T>> action)
