@@ -27,7 +27,8 @@ public sealed class AccountingPersistenceModelTests
         typeof(AccountingPostingAccountMappingVersionRow), typeof(AccountingPostingAccountMappingEntryRow),
         typeof(AccountingSourceDocumentAdmissionRow), typeof(AccountingSourceDocumentVoucherDraftRow),
         typeof(AccountingSourceDocumentVoucherDraftLineRow),
-        typeof(ManufacturingCostDifferenceRow),
+        typeof(ManufacturingCostDifferenceRow), typeof(CreditMovementProposalRow),
+        typeof(InvoiceLineCogsProposalRow), typeof(InvoiceLineCogsRevisionRow),
     ];
 
     [Fact]
@@ -132,8 +133,8 @@ public sealed class AccountingPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDeliveryRequestHash", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddPeriodApproval", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddNormalJournalDrafts", StringComparison.Ordinal));
-        Assert.Equal(["20261107140038_AddPostingAccountMappings", "20261108222146_AddSourceDocumentAdmissions",
-                "20261117000534_AddManufacturingCostDifferenceProposals"],
+        Assert.Equal(["20261117000534_AddManufacturingCostDifferenceProposals", "20261117005516_AddCreditMovementProposals",
+                "20261117095844_AddInvoiceLineCogsCorrections"],
             context.Database.GetMigrations().TakeLast(3));
         Assert.False(context.Database.HasPendingModelChanges());
     }

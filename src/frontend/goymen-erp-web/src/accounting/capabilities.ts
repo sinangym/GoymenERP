@@ -14,6 +14,8 @@
  */
 
 export const ACCOUNTING_CAPABILITY = {
+  invoiceLineCogsPrepare: 'accounting.invoice-line-cogs.prepare',
+  invoiceLineCogsApprove: 'accounting.invoice-line-cogs.approve',
   costDifferencePrepare: 'accounting.manufacturing-cost-differences.prepare',
   costDifferenceApprove: 'accounting.manufacturing-cost-differences.approve',
   /** M-07 Dönem — the company's accounting periods. */
@@ -49,6 +51,8 @@ export const ACCOUNTING_CAPABILITY = {
 export type AccountingCapabilityId = (typeof ACCOUNTING_CAPABILITY)[keyof typeof ACCOUNTING_CAPABILITY]
 
 export const ACCOUNTING_ROUTE = {
+  invoiceLineCogsPrepare: '/muhasebe/fatura-satiri-smm',
+  invoiceLineCogsApprove: '/muhasebe/fatura-satiri-smm-onay',
   costDifferencePrepare: '/muhasebe/uretim-maliyet-farklari',
   costDifferenceApprove: '/muhasebe/uretim-maliyet-farki-onay',
   periodsList: '/muhasebe/donemler',
@@ -64,6 +68,9 @@ export const ACCOUNTING_ROUTE = {
   accountPlan: '/muhasebe/hesap-plani',
   journalReversalApprove: '/muhasebe/ters-kayit-onay/:proposalId',
 } as const
+
+export const invoiceLineCogsPath = (invoiceId: string, invoiceLineId: string, mode: 'prepare' | 'approve' = 'prepare') =>
+  `${mode === 'prepare' ? ACCOUNTING_ROUTE.invoiceLineCogsPrepare : ACCOUNTING_ROUTE.invoiceLineCogsApprove}?${new URLSearchParams({ invoiceId, invoiceLineId }).toString()}`
 
 export const journalDetailPath = (journalId: string) => `/muhasebe/fisler/${encodeURIComponent(journalId)}`
 
