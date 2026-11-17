@@ -15,6 +15,8 @@ public sealed class AccountingInventoryCostProposalContractTests
         using var document = JsonDocument.Parse(encoded);
         Assert.False(document.RootElement.TryGetProperty("currentPostedJournalId", out _));
         Assert.False(document.RootElement.GetProperty("component").TryGetProperty("recordedRounding", out _));
+        Assert.False(document.RootElement.GetProperty("component").TryGetProperty("alreadyPostedPurchaseComponents", out _));
+        Assert.False(document.RootElement.GetProperty("component").TryGetProperty("hasPostedComponents", out _));
         Assert.Equal("100.01", document.RootElement.GetProperty("exactTlAmount").GetString());
         var restored = Assert.IsType<AccountingInventoryCostProposalV1>(JsonSerializer.Deserialize<AccountingInventoryCostProposalV1>(encoded, Json));
         Assert.Null(restored.CurrentPostedJournalId);

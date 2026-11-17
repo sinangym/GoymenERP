@@ -71,7 +71,7 @@ public static class AccountingInventoryCostAmountsV1
     }
 }
 
-public static class AccountingInventoryCostSourceValidationV1
+public static partial class AccountingInventoryCostSourceValidationV1
 {
     public static string Sha256(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
     public static void Require(WorkInboxEventV1 envelope, AccountingInventoryCostSourceV1 source, Guid companyId)
@@ -107,37 +107,8 @@ public static class AccountingInventoryCostSourceValidationV1
                     || component.LocationId is not null || amount < 0
                     || component.ComponentKey != AccountingInventoryCostTraceV1.SalesComponent(component.InvoiceLineId.Value))
                     throw Invalid("inventory_cost_line_invalid");
-                if (component.AlreadyPostedComponents is { } posted)
-                {
-                    if (component.SalesPhysicalClaims is not { Count: > 0 } physical || posted.Count is < 1 or > 10000
-                        || posted.Select(x => (x.SourceEventId, x.OutputId, x.Shipment.MovementId, x.Shipment.MovementLineNumber)).Distinct().Count() != posted.Count
-                        || posted.Any(x => x.CompanyId != companyId || x.SourceEventId == Guid.Empty || x.OutputId == Guid.Empty
-                            || x.JournalId == Guid.Empty || x.CurrencyId == Guid.Empty || x.CogsAccountId == Guid.Empty
-                            || x.CounterAccountId == Guid.Empty || x.CogsAccountId == x.CounterAccountId
-                            || x.Fingerprint != Sha256(JsonSerializer.Serialize(x with { Fingerprint = "" }, new JsonSerializerOptions(JsonSerializerDefaults.Web)))
-                            || !physical.Any(p => p.MovementId == x.Shipment.MovementId && p.MovementLineNumber == x.Shipment.MovementLineNumber
-                                && p.ShipmentId == x.Shipment.ShipmentId && p.ProductId == x.Shipment.ProductId && p.QuantityKg == x.Shipment.PhysicalQuantityKg)))
-                        throw Invalid("inventory_cost_attribution_invalid");
-                    var sum = AccountingInventoryCostAmountsV1.FromDecimal(0);
-                    foreach (var share in posted)
-                    {
-                        if (!decimal.TryParse(share.SignedAmount, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
-                                CultureInfo.InvariantCulture, out var signed)) throw Invalid("inventory_cost_attribution_invalid");
-                        sum = AccountingInventoryCostAmountsV1.Add(sum, AccountingInventoryCostAmountsV1.FromDecimal(signed));
-                    }
-                    if (component.UnpostedTlAmount is { } unposted)
-                    {
-                        if (!AccountingInventoryCostAmountsV1.TryRead(unposted, out var remaining, out _) || remaining < 0
-                            || !physical.Any(p => !posted.Any(x => x.Shipment.MovementId == p.MovementId
-                                && x.Shipment.MovementLineNumber == p.MovementLineNumber)))
-                            throw Invalid("inventory_cost_attribution_invalid");
-                        sum = AccountingInventoryCostAmountsV1.Add(sum, unposted);
-                    }
-                    else if (physical.Any(p => !posted.Any(x => x.Shipment.MovementId == p.MovementId
-                        && x.Shipment.MovementLineNumber == p.MovementLineNumber))) throw Invalid("inventory_cost_attribution_invalid");
-                    if (sum != component.SignedTlAmount) throw Invalid("inventory_cost_attribution_invalid");
-                }
-                else if (component.UnpostedTlAmount is not null) throw Invalid("inventory_cost_attribution_invalid");
+                RequirePostedComponents(component, companyId);
+
             }
             else
             {
@@ -156,7 +127,8 @@ public static class AccountingInventoryCostSourceValidationV1
                         throw Invalid("inventory_cost_component_invalid");
                     (aggregate ? firstAggregateLines : firstLegacyLines).Add(line);
                 }
-                if (component.SalesPhysicalClaims is not null || component.AlreadyPostedComponents is not null || component.UnpostedTlAmount is not null)
+                if (component.SalesPhysicalClaims is not null || component.AlreadyPostedComponents is not null
+                    || component.AlreadyPostedPurchaseComponents is not null || component.UnpostedTlAmount is not null)
                     throw Invalid("inventory_cost_attribution_invalid");
                 if (first ? component.RecordedRounding is not { } recorded || amount < 0
                         || !AccountingInventoryCostRoundingV1Rules.IsValidRecorded(component.SignedTlAmount, recorded)

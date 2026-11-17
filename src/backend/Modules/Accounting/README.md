@@ -605,3 +605,17 @@ EF migration `20261117194231_AddInventoryCostComponentRounding` widens only the 
 approved zero amounts. Down first refuses with **51803** while a rounded preparation, recorded owner-rounding
 snapshot or approved-zero version exists. Empty/legacy-only stores remain rollback-safe. The SQL guard is pending
 K3 review; no automatic guard allowlist was added and no database migration was applied.
+
+First purchase posted attribution uses the real invoice-line aggregate, receipt/root proofs and immutable physical
+shipments. Candidate evidence is captured in the same transaction as the source proposal. A different approver
+posts the one source total (or approves its rounded-zero proof without a journal), and the same transaction records
+each actual shipment share. Each shipment retains its exact cost; only rounding residue follows the approved
+largest-kg/earliest-recorded priority with a zero floor. Original-known and already-accounted manufacturing/purchase
+shares must jointly prove full physical coverage before Sales claims the cost. Pending or incomplete sources never
+become a zero cost, and no second SMM journal or physical movement is produced.
+
+EF-generated `20261117205436_AddPostedPurchaseCostAttribution` adds three company-scoped append-only tables.
+Down refuses any retained candidate/source/approval evidence with **51804**; update/delete triggers use
+**51805/51806**. These fixed migration SQL guards await K3 review and were not allowlisted. No database application
+or historical backfill occurred. The purchase-specific SAT-D422 correction binding remains a separate technical
+follow-up within the same slice; source build and test sources do not constitute runtime acceptance.

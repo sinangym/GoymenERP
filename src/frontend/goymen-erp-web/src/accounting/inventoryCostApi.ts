@@ -3,6 +3,7 @@ import { isDateOnly } from '../finance/dateOnly'
 import { ACCOUNTING_BASE, devHeaders } from './api'
 import { decodeJournalReversalProposal, type JournalReversalProposal } from './journalReversalContract'
 import { postedManufacturingCostShare, type PostedManufacturingCostShare } from './postedManufacturingCostProof'
+import { postedPurchaseCostShare, type PostedPurchaseCostShare } from './postedPurchaseCostProof'
 
 export type InventoryCostKind = 1 | 2
 export interface InventoryCostAccount { readonly accountId: string; readonly code: string; readonly name: string }
@@ -24,6 +25,7 @@ export interface InventoryCostProposal {
     readonly invoiceLineNumber: number | null; readonly locationId: string | null
     readonly signedTlAmount: { readonly numerator: string; readonly denominator: string }; readonly sourceProofSha256: string
     readonly alreadyPostedComponents?: readonly PostedManufacturingCostShare[]
+    readonly alreadyPostedPurchaseComponents?: readonly PostedPurchaseCostShare[]
     readonly unpostedTlAmount?: { readonly numerator: string; readonly denominator: string }
     readonly recordedRounding?: { readonly currencyId: string; readonly moneyProfileId: string; readonly moneyProfileVersion: number
       readonly moneyScale: number; readonly rounding: InventoryCostRounding } }
@@ -104,13 +106,18 @@ export function decodeInventoryCost(body: unknown, company: string, kind: Invent
     && body.exactTlAmount !== `${c.signedTlAmount.numerator} / ${c.signedTlAmount.denominator}`) return null
   const p = body.preparation
   const attributed = ['AlreadyAccounted', 'AttributedCancellationPending'].includes(body.status as string)
-  const hasPosted = c.alreadyPostedComponents !== undefined && c.alreadyPostedComponents !== null
+  const hasManufacturing = c.alreadyPostedComponents !== undefined && c.alreadyPostedComponents !== null
+  const hasPurchasing = c.alreadyPostedPurchaseComponents !== undefined && c.alreadyPostedPurchaseComponents !== null
+  const hasPosted = hasManufacturing || hasPurchasing
   const mixed = c.unpostedTlAmount !== undefined && c.unpostedTlAmount !== null
   const mixedCancelled = body.status === 'MixedCancellationPending'
-  if (hasPosted ? kind !== 1 || !Array.isArray(c.alreadyPostedComponents) || c.alreadyPostedComponents.length === 0
+  if (hasManufacturing && (kind !== 1 || !Array.isArray(c.alreadyPostedComponents) || c.alreadyPostedComponents.length === 0
       || c.alreadyPostedComponents.some(value => !postedManufacturingCostShare(value, company, c.productId as string))
-      || new Set(c.alreadyPostedComponents.map(value => (value as PostedManufacturingCostShare).fingerprint)).size !== c.alreadyPostedComponents.length
-    : attributed || mixed || mixedCancelled) return null
+      || new Set(c.alreadyPostedComponents.map(value => (value as PostedManufacturingCostShare).fingerprint)).size !== c.alreadyPostedComponents.length)) return null
+  if (hasPurchasing && (kind !== 1 || !Array.isArray(c.alreadyPostedPurchaseComponents) || c.alreadyPostedPurchaseComponents.length === 0
+      || c.alreadyPostedPurchaseComponents.some(value => !postedPurchaseCostShare(value, company, c.productId as string))
+      || new Set(c.alreadyPostedPurchaseComponents.map(value => (value as PostedPurchaseCostShare).fingerprint)).size !== c.alreadyPostedPurchaseComponents.length)) return null
+  if (!hasPosted && (attributed || mixed || mixedCancelled)) return null
   if (mixed ? !hasPosted || !costRatio(c.unpostedTlAmount) || c.unpostedTlAmount.numerator.startsWith('-')
       || !ratioDisplay(body.unpostedTlAmountText, c.unpostedTlAmount)
     : body.unpostedTlAmountText !== undefined && body.unpostedTlAmountText !== null) return null

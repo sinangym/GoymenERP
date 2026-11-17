@@ -8,7 +8,7 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Api.IntegrationTests;
 
-public sealed class AccountingPurchaseInvoiceCostSourceTests
+public sealed partial class AccountingPurchaseInvoiceCostSourceTests
 {
     [Fact]
     public void The_committed_inventory_residual_is_carried_exactly_and_stock_absorption_is_not_posted_again()
@@ -89,18 +89,20 @@ public sealed class AccountingPurchaseInvoiceCostSourceTests
             Assert.Throws<OutboxPermanentFailureException>(() => AccountingPurchaseInvoiceCostSourceV1.Read(Envelope(value), value.CompanyId));
     }
 
-    private static InventoryPurchaseInvoiceCostApplicationResultV1 FirstSource(decimal exact)
+    internal static InventoryPurchaseInvoiceCostApplicationResultV1 FirstSource(decimal exact, Guid? companyId = null,
+        Guid? sourceLineId = null, Guid? sourceProductId = null)
     {
-        var source = Source(); var lineId = Guid.NewGuid(); var productId = Guid.NewGuid();
+        var source = Source(); if (companyId is { } company) source = source with { CompanyId = company };
+        var lineId = sourceLineId ?? Guid.NewGuid(); var productId = sourceProductId ?? Guid.NewGuid();
         var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
-        var receipts = Enumerable.Range(0, 2).Select(_ =>
+        var receipts = Enumerable.Range(0, 2).Select(index =>
         {
             var acceptance = Guid.NewGuid(); var movement = Guid.NewGuid(); var root = Guid.NewGuid(); var location = Guid.NewGuid();
             var physical = new InventoryPurchaseFirstCostPhysicalSourceV1(PurchaseFirstCostAllocationCalculator.Version,
                 source.CompanyId, acceptance, lineId, 1, movement, root, productId, 1m, 1m, "receipt-root-proportional",
                 new("0", "1"), new("1", "1"), [new(root, 1, 2, "SENTETIK-v1", new("1", "1"), [])],
                 [new(Guid.NewGuid(), Guid.NewGuid(), 1, Guid.NewGuid(), root, productId, "SENTETIK-v1", location,
-                    1m, new("1", "1"), new("1", "1"), [], DateTimeOffset.UtcNow)]);
+                    1m, new("1", "1"), new("1", "1"), [], new DateTimeOffset(2026, 11, 17, 9, 0, index, TimeSpan.Zero))]);
             var proof = JsonSerializer.Serialize(physical, json);
             var amount = InventoryExactCostRatioV1.From(ExactCostRatio.Of(exact).Divide(2m));
             return new InventoryPurchaseFirstCostReceiptV1(acceptance, movement, root, location, 1m, 1m,
@@ -127,7 +129,7 @@ public sealed class AccountingPurchaseInvoiceCostSourceTests
             [new(product, location, new("10", "1"), new("4", "1"), new("6", "1"), new("4", "1"), new("0", "1"), 3)],
             Guid.NewGuid(), new("6", "1"));
     }
-    private static WorkInboxEventV1 Envelope(InventoryPurchaseInvoiceCostApplicationResultV1 source) => new(
+    internal static WorkInboxEventV1 Envelope(InventoryPurchaseInvoiceCostApplicationResultV1 source) => new(
         AccountingInventoryCostInboxV1.InventorySourceName, source.CostDifferenceEventId!.Value, source.CompanyId,
         AccountingInventoryCostInboxV1.PurchaseDifferenceEventType, 1, JsonSerializer.Serialize(source, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
         DateTimeOffset.UtcNow, "SENTETIK-purchase-cost", null);

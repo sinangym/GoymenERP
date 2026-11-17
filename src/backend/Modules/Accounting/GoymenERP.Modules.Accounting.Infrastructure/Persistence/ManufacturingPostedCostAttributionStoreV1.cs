@@ -118,9 +118,19 @@ public sealed class ManufacturingPostedCostAttributionStoreV1(AccountingDbContex
         await Fence(captured, freshFence, token);
     }
 
-    public async Task<PostedManufacturingShipmentCostV1?> ReadAsync(Guid companyId, Guid shipmentId, Guid movementId,
+    public Task<PostedManufacturingShipmentCostV1?> ReadAsync(Guid companyId, Guid shipmentId, Guid movementId,
         int movementLineNumber, Guid productId, decimal quantityKg, Func<CancellationToken, Task> freshConsumerFence,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        Read(companyId, shipmentId, movementId, movementLineNumber, productId, quantityKg, freshConsumerFence, true, cancellationToken);
+
+    public Task<PostedManufacturingShipmentCostV1?> ReadProvenSharesAsync(Guid companyId, Guid shipmentId, Guid movementId,
+        int movementLineNumber, Guid productId, decimal quantityKg, Func<CancellationToken, Task> freshConsumerFence,
+        CancellationToken cancellationToken = default) =>
+        Read(companyId, shipmentId, movementId, movementLineNumber, productId, quantityKg, freshConsumerFence, false, cancellationToken);
+
+    private async Task<PostedManufacturingShipmentCostV1?> Read(Guid companyId, Guid shipmentId, Guid movementId,
+        int movementLineNumber, Guid productId, decimal quantityKg, Func<CancellationToken, Task> freshConsumerFence,
+        bool requireWholeLine, CancellationToken cancellationToken)
     {
         RequireTransaction();
         if (companyId != Company() || shipmentId == Guid.Empty || movementId == Guid.Empty || movementLineNumber < 1
@@ -176,7 +186,8 @@ public sealed class ManufacturingPostedCostAttributionStoreV1(AccountingDbContex
                 throw Refuse("manufacturing_attribution_root_incomplete");
             coverage = AccountingInventoryCostAmountsV1.Add(coverage, root.First().Shipment.RootShare);
         }
-        if (coverage != AccountingInventoryCostAmountsV1.FromDecimal(1m)) throw Refuse("manufacturing_attribution_root_incomplete");
+        if (!AccountingInventoryCostAmountsV1.TryRead(coverage, out var covered, out var denominator) || covered <= 0 || covered > denominator
+            || requireWholeLine && covered != denominator) throw Refuse("manufacturing_attribution_root_incomplete");
         await Fence(companyId, freshConsumerFence, cancellationToken);
         return new(companyId, shipmentId, movementId, movementLineNumber, productId, quantityKg,
             shares.OrderBy(x => x.SourceEventId).ThenBy(x => x.OutputId).ToArray());

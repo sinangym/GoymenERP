@@ -21,7 +21,9 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
     IAccountingInventoryCostSourceReaderV1 sources, IAccountingCogsAccountResolverV1 cogs,
     IActiveAccountPlanReaderV1 plans, ISettingsMoneyCandidateReader currencies, AccountingAmountScaleVerifier amounts,
     ICompanyContext company, IAuditEventCollector audit, IAuditTransactionWriterV1 auditWriter, TimeProvider clock,
-    IPostedManufacturingShipmentCostReaderV1? postedManufacturing = null)
+    IPostedManufacturingShipmentCostReaderV1? postedManufacturing = null,
+    IPurchaseFirstCostLineageReaderV1? purchaseLineage = null,
+    IPostedPurchaseShipmentCostReaderV1? postedPurchasing = null)
     : IAccountingInventoryCostStoreV1
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -66,11 +68,12 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
                 AuditAiInvolvement.None, null, SourceChannels.System, null, null, metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey));
             foreach (var component in source.Components)
             {
+                await RecordPurchaseCandidates(envelope, source, component, cancellationToken);
                 await ClaimPhysicalCost(source, component, cancellationToken);
                 AccountingInventoryCostAmountsV1.TryRead(component.UnpostedTlAmount ?? component.SignedTlAmount, out var amount, out _);
                 var view = new AccountingInventoryCostProposalV1(Guid.NewGuid(), captured, source.EventId, source.Kind,
                     source.InvoiceId, source.InvoiceVersion, source.AdmissionId, source.InvoiceDate, source.OfficialInvoiceNumber,
-                    component, 1, component.AlreadyPostedComponents is { Count: > 0 } && (component.UnpostedTlAmount is null || amount == 0) ? "AlreadyAccounted"
+                    component, 1, component.HasPostedComponents && (component.UnpostedTlAmount is null || amount == 0) ? "AlreadyAccounted"
                         : amount == 0 && component.RecordedRounding is null ? "NoCost" : "AwaitingPreparation", envelope.OccurredAtUtc);
                 Add(view);
                 Audit(view, metadata, "received", null, system: true);
@@ -176,7 +179,9 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
                 if (prepared.Rounding is null) throw Refuse("inventory_cost_source_conflict");
                 var zeroResult = view with { Version = checked(view.Version + 1), Status = "RoundedNoCost", ApprovedBy = actorId,
                     ApprovedAtUtc = clock.GetUtcNow() };
-                Add(zeroResult); Audit(zeroResult, metadata, "approved-zero-without-journal", view);
+                Add(zeroResult);
+                await RecordPurchaseApproval(zeroResult, freshFence, cancellationToken);
+                Audit(zeroResult, metadata, "approved-zero-without-journal", view);
                 return zeroResult;
             }
             var purpose = view.Kind == AccountingInventoryCostKindV1.SalesInvoicedShipment
@@ -195,7 +200,9 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
             if (posted.Kind != PostingOutcomeKind.Posted || posted.Journal is null) throw Refuse("inventory_cost_posting_conflict");
             var result = view with { Version = checked(view.Version + 1), Status = "Posted", ApprovedBy = actorId,
                 ApprovedAtUtc = clock.GetUtcNow(), JournalId = posted.Journal.Id };
-            Add(result); Audit(result, metadata, "approved", view);
+            Add(result);
+            await RecordPurchaseApproval(result, freshFence, cancellationToken);
+            Audit(result, metadata, "approved", view);
             return result;
         }, cancellationToken);
 
