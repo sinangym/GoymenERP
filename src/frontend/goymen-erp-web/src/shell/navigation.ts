@@ -151,6 +151,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   // the same accessible name to one route is what l04's strict-mode violation found, and a screen
   // reader announces it twice.
   'logistics.instructions.list',
+  'logistics.subcontract-deliveries.list',
   // AT-025: the operations work list's two separate sections, each shown only to an actor holding its own grant.
   'logistics.operations-work.sales',
   'logistics.operations-work.purchase',
@@ -362,6 +363,14 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'accounting.normal-journal-drafts.detail': '',
   'accounting.normal-journal-drafts.approve': '',
   'logistics.instructions.list': 'Yükleme Talimatları',
+  'logistics.subcontract-deliveries.list': 'Fason teslimler',
+  'logistics.subcontract-deliveries.create': '',
+  'logistics.subcontract-deliveries.detail': '',
+  'logistics.subcontract-deliveries.issue': '',
+  'logistics.subcontract-deliveries.load': '',
+  'logistics.subcontract-deliveries.weigh': '',
+  'logistics.subcontract-deliveries.ship': '',
+  'logistics.subcontract-deliveries.weighing-correct': '',
   // Neither of these two: the new-instruction screen is reached from the L-02 list's own primary
   // link (one entry point per creation route, the Finance and Accounting precedent), and an
   // instruction is opened from a list row — never from the sidebar.
@@ -468,6 +477,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       'inventory.stock-transfer.loss-approve',
       'logistics.operations-work.sales',
       'logistics.instructions.list',
+      'logistics.subcontract-deliveries.list',
       'logistics.operations-work.purchase',
       'logistics.transfer-departures.record',
     ],

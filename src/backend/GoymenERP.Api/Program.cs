@@ -511,6 +511,7 @@ builder.Services.AddSalesOrderPlannedQuantityReadAdapter();
 // are configured, otherwise uploads and downloads answer 503, fail-closed).
 builder.Services.AddDocumentsRuntime(builder.Configuration, builder.Environment);
 builder.Services.AddDocumentBrandingPdfRuntime();
+builder.Services.AddLogisticsSubcontractDeliveryRuntime();
 // AT-002 / ERP-000I: the global search composer and its module-owned sources (Cari, Product, Sales), after the modules.
 builder.Services.AddGlobalSearch();
 // Registered before the shell authority is chosen: the module table maps the provider set.
@@ -612,6 +613,7 @@ app.MapInventoryTransferPlanCandidateEndpoints();
 app.MapInventoryTransferReceiptDocumentEndpoints();
 app.MapManufacturingEndpoints();
 app.MapLogisticsEndpoints();
+app.MapLogisticsSubcontractDeliveryEndpoints();
 app.MapLogisticsTransferDepartureEndpoints();
 app.MapLogisticsTransferOutgoingDocumentEndpoints();
 app.MapLogisticsWeighingDifferenceEndpoints();

@@ -260,3 +260,25 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
   `git diff --check` exit 0. SQL/HTTP/Vitest/browser/CI **NOT_RUN**.
 - MIME alt kümesi yapılandırma devamı, merkezi pinler ve yayımlanmış trene
   fast-forward beklediğinden ana plan STK-S29 halen PARTIAL'dır.
+
+
+## STK-S3 — gerçek fason teslim merkezi bağlantısı
+
+- Owner kaynakları `b6774f25c` / `415f46df4` merkeziye alındı. Gerçek Sales, Manufacturing,
+  Inventory ve Logistics zincirinin host/runtime endpoint kayıtları bağlandı; hizmet
+  ürünü ile fiziksel etiket ürünü ayrı kalır. İşlem içinde tek owner yazımı korunur.
+- Logistics provider 1.5, sekiz yeni S3 screen/action bildirimi: tamamı kabul kanıtına
+  kadar staged. Mevcut ordinary-delivery bildirimleri yayımlanmış durumunu korur.
+  `logistics.weighings.correct` yalnız All/CompanyWideOnly kayıtlarına eklendi;
+  Critical/grant/rol ataması yapılmadı.
+- Üç ekran, sekiz capability ve tek Fason teslimler menü girdisi gerçek owner sayfalarına
+  bağlandı. Normal Logistics mount-drift envanteri eski ve yeni owner kümelerini birlikte
+  korur. Yetki/route/menü karşı örnekleri ve kayıt/model test kaynakları hizalandı.
+- API, Logistics.UnitTests, Accounting.UnitTests, Identity.UnitTests ve Api.IntegrationTests
+  kaynak derlemeleri exit 0, 0 uyarı/hata. Merkezi TypeScript derlemesi exit 0; hafif
+  backlog/bootstrap doğrulayıcıları exit 0. Runtime Unit/SQL/HTTP/Vitest/browser/CI NOT_RUN.
+- 100 ayrılıp 80 yüklenen kısmi sevkte kalan ayırma politikası insan cevabı bekliyor.
+  Yeni S3 host'un negatif fiziksel ret günlüğü/detail takip düzeltmesi mevcut S21
+  diliminde sürer. Bu nedenle STK-S3 bütünü PARTIAL; yeni dalga açılmadı.
+- Registry/OpenAPI/recovery/architecture/relational/test-group pin üretimi ve tren FF
+  henüz yapılmadı. Kaynak derlemesi runtime veya kullanılabilirlik kabulü değildir.
