@@ -12,7 +12,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
-/// <summary>SENTETIK HTTP adapter tests; final central endpoint mount and runtime acceptance are separate gates.</summary>
+/// <summary>SENTETIK HTTP tests of the central endpoint mount; runtime acceptance remains a separate gate.</summary>
 public sealed class FinanceCashExchangeBookValueHttpAcceptanceTests(GoymenErpApiFactory factory) : IClassFixture<GoymenErpApiFactory>
 {
     private const string Path = "/api/v1/finance/cash-exchanges/book-values";
@@ -22,7 +22,7 @@ public sealed class FinanceCashExchangeBookValueHttpAcceptanceTests(GoymenErpApi
     [Fact]
     public void Actual_book_value_vault_owner_and_evidence_composition_has_no_constructor_cycle()
     {
-        using var host = factory.WithWebHostBuilder(b => b.ConfigureTestServices(s => s.AddFinanceCashExchangeBookValuesV1()));
+        using var host = factory.WithWebHostBuilder(_ => { });
         using var scope = host.Services.CreateScope();
         Assert.IsType<CashExchangeBookValueServiceV1>(scope.ServiceProvider.GetRequiredService<ICashExchangeBookValueServiceV1>());
         Assert.IsType<DocumentsCashExchangeBookValueEvidencePortV1>(scope.ServiceProvider.GetRequiredService<ICashExchangeBookValueEvidencePortV1>());

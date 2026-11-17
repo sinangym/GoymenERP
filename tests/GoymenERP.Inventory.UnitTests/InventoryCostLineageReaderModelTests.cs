@@ -122,6 +122,37 @@ public sealed class InventoryCostLineageReaderModelTests
     }
 
     [Fact]
+    public void First_cost_zero_claim_requires_a_real_shipment_and_its_fully_bound_return()
+    {
+        var world = new World(); world.Receipt(Root, 10m);
+        Assert.False(InventoryPurchaseInvoiceCostStoreV1.HasFullyReturnedShipmentWitness(Value(world)));
+        var issue = world.Shipment(Root, 5m);
+        Assert.False(InventoryPurchaseInvoiceCostStoreV1.HasFullyReturnedShipmentWitness(Value(world)));
+        world.CustomerReturn(Root, 2m, issue);
+        Assert.False(InventoryPurchaseInvoiceCostStoreV1.HasFullyReturnedShipmentWitness(Value(world)));
+        world.CustomerReturn(Root, 3m, issue);
+
+        Assert.True(InventoryPurchaseInvoiceCostStoreV1.HasFullyReturnedShipmentWitness(Value(world)));
+    }
+
+    [Fact]
+    public void First_cost_zero_claim_keeps_exact_root_shares_and_rejects_an_unreadable_return_source()
+    {
+        var world = new World(); world.Receipt(Root, 1m); world.Receipt(Other, 2m);
+        world.Repack(InventoryLabelTransformationKind.Merge, [(Root, 1m), (Other, 2m)], [(Merged, 3m)]);
+        var issue = world.Shipment(Merged, 1m);
+        world.CustomerReturn(Merged, 1m, issue);
+        var snapshot = Value(world);
+        Ratio(Assert.Single(snapshot.Shipments).RootShare, "1", "3");
+        Assert.True(InventoryPurchaseInvoiceCostStoreV1.HasFullyReturnedShipmentWitness(snapshot));
+
+        world.CustomerReturn(Merged, 1m, issue);
+        var unreadable = world.Read();
+        Assert.Equal(InventoryCostLineageOutcome.Unreadable, unreadable.Outcome);
+        Assert.False(InventoryPurchaseInvoiceCostStoreV1.HasFullyReturnedShipmentWitness(unreadable));
+    }
+
+    [Fact]
     public void A_physical_exit_before_a_later_split_preserves_the_reduced_whole_label_fraction()
     {
         var world = new World();

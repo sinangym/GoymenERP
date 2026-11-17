@@ -63,7 +63,7 @@ public sealed class FinanceShellRegistrationTests
         // FNS-D24 (Finance 1.11) the cash-transfer workspace and its commit control; F-018 L2 (Finance 1.12) the collateral
         // route and its record control; FIN-S9 (Finance 1.13) the opening-balance route and its propose/approve controls. A declaration still grants nothing: each route or control service measures its own
         // Finance permission afresh.
-        Assert.Equal(46, finance.Length);
+        Assert.Equal(48, finance.Length);
         Assert.All(finance, item => Assert.Equal(
             !FinanceShellCapabilityRegistryTests.TrainStagedCapabilities.Contains(item.Declaration.CapabilityId),
             item.Declaration.ImplementationAvailable));

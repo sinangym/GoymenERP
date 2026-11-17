@@ -17,10 +17,12 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(45, declarations.Count);
+        Assert.Equal(48, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(
             !declaration.CapabilityId.StartsWith("finance.credits.", StringComparison.Ordinal)
-            && !declaration.CapabilityId.StartsWith("finance.official-sales-invoices.", StringComparison.Ordinal), declaration.ImplementationAvailable));
+            && !declaration.CapabilityId.StartsWith("finance.official-sales-invoices.", StringComparison.Ordinal)
+            && declaration.CapabilityId != FinanceShellCapabilityProvider.PartyBalanceTransferCapabilityId
+            && !declaration.CapabilityId.StartsWith("finance.cash-exchange-book-values.", StringComparison.Ordinal), declaration.ImplementationAvailable));
     }
 
     [Fact]
@@ -30,9 +32,16 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.15", provider.ContractVersion);
+        Assert.Equal("1.17", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
+            ("finance.cash-exchange-book-values.prepare", "finance.cash-exchange-book-values.prepare", "/finans/doviz-defter-degeri-hazirla", "F-32-EXCHANGE-BOOK-PREPARE",
+                ShellCapabilityRoutePrecedence.Static, [ErpPermissions.AccountingNormalJournalDraftCreate]),
+            ("finance.cash-exchange-book-values.approve", "finance.cash-exchange-book-values.approve", "/finans/doviz-defter-degeri-onaylari", "F-32-EXCHANGE-BOOK-APPROVE",
+                ShellCapabilityRoutePrecedence.Static, [ErpPermissions.AccountingNormalJournalDraftApprove]),
+            ("finance.party-balance-transfers.record", "finance.party-balance-transfers.record", "/finans/cari-bakiye-devri", "F-32-PARTY-BALANCE-TRANSFER",
+                ShellCapabilityRoutePrecedence.Static, [FinancePartyBalanceTransferPermissionsV1.Record, FinancePermissionNames.PartyLedgerRead,
+                    FinancePermissionNames.PartyLedgerAmountRead]),
             ("finance.official-sales-invoices.record", "finance.official-sales-invoices.record", "/finans/resmi-satis-faturalari", "F-005-OFFICIAL",
                 ShellCapabilityRoutePrecedence.Static, [FinanceOfficialSalesInvoicePermissionNamesV1.Record]),
             ("finance.official-sales-invoices.approve", "finance.official-sales-invoices.approve", "/finans/resmi-satis-faturasi-onaylari", "F-005-OFFICIAL-APPROVAL",
@@ -308,12 +317,13 @@ public sealed class FinanceShellCapabilityProviderTests
 
         // The registry refuses a screen id shared by two routes (ValidateUnique on ScreenId).
         Assert.Equal(routes.Length, routes.Select(item => item.ScreenId).Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(["C-04", "F-02", "F-02-DETAIL", "F-02-INSTRUMENTS", "F-02-NEW",
+        Assert.Equal(["C-04", "F-005-OFFICIAL", "F-005-OFFICIAL-APPROVAL", "F-02", "F-02-DETAIL", "F-02-INSTRUMENTS", "F-02-NEW",
                 "F-02-OFFICIAL-INVOICE-APPROVALS", "F-02-OFFICIAL-INVOICE-UPLOAD",
                 "F-02-PAYMENT-DETAIL", "F-02-PAYMENT-NEW",
                 "F-02-PAYMENTS", "F-02-REVERSAL-APPROVAL", "F-03", "F-03-OPEN-ITEM-DETAIL",
                 "F-03-OPEN-ITEMS", "F-04", "F-04-NEW", "F-18-COLLATERALS", "F-18-CREDIT-LIMITS", "F-23-OPENING-BALANCES",
-                "F-25-EXPENSE-PAYMENTS", "F-32-CASH-TRANSFERS", "M-03"],
+                "F-25-EXPENSE-PAYMENTS", "F-32-CASH-TRANSFERS", "F-32-EXCHANGE-BOOK-APPROVE", "F-32-EXCHANGE-BOOK-PREPARE",
+                "F-32-PARTY-BALANCE-TRANSFER", "F-47-CREDITS", "M-03"],
             routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
     }
 }

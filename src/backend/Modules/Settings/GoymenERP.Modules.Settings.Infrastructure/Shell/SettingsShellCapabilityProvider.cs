@@ -40,7 +40,7 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Shell;
 public sealed partial class SettingsShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SETTINGS";
-    public const string OwnerContractVersion = "1.16";
+    public const string OwnerContractVersion = "1.17";
     // Technical screen ids, not additional ERP permissions. Latest ALS-D105 authority decision.
     public const string SalesSubcontractTaxCapabilityId = "settings.sales-subcontract-tax-default.manage";
     public const string PurchasingSubcontractTaxCapabilityId = "settings.purchasing-subcontract-tax-default.manage";
@@ -166,6 +166,7 @@ public sealed partial class SettingsShellCapabilityProvider : IShellCapabilityPr
         return
         [
             .. DocumentTemplateDeclarations(),
+            .. FinancePolicyDeclarations(),
             new ShellCapabilityDeclaration(SalesSubcontractTaxCapabilityId, SalesSubcontractTaxCapabilityId,
                 SalesSubcontractTaxRoutePath, "AY-SFV-01", ShellCapabilityRoutePrecedence.Static,
                 ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,

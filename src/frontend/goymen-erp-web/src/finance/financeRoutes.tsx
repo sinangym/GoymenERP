@@ -51,6 +51,8 @@ import { CollateralPage } from './CollateralPage'
 import { OpeningBalancePage } from './OpeningBalancePage'
 import { EXPENSE_PAYMENT_TEXT } from './expensePaymentText'
 import { CashTransferPage } from './CashTransferPage'
+import { CashExchangeBookValuePage } from './CashExchangeBookValuePage'
+import { BOOK_VALUE_TEXT } from './cashExchangeBookValueText'
 import { CASH_TRANSFER_TEXT } from './cashTransferText'
 import {
   ManualBankPaymentCreatePage,
@@ -112,6 +114,15 @@ function CashTransferRoute() {
   if (context === null) return <StateBlock state={{ kind: 'not-found' }} subject={CASH_TRANSFER_TEXT.subject} />
   return <CashTransferPage companyId={context.companyId} actorId={context.userId}
     canCommit={hasCapability(shell, FINANCE_CAPABILITY.cashTransfersCommit)} />
+}
+
+function CashExchangeBookValueRoute() {
+  const context = usePaymentContext()
+  const shell = useShellState()
+  if (context === null) return <StateBlock state={{ kind: 'not-found' }} subject={BOOK_VALUE_TEXT.subject} />
+  return <CashExchangeBookValuePage companyId={context.companyId} actorId={context.userId}
+    canPrepare={hasCapability(shell, FINANCE_CAPABILITY.exchangeBookValuesPrepare)}
+    canApprove={hasCapability(shell, FINANCE_CAPABILITY.exchangeBookValuesApprove)} />
 }
 
 /**
@@ -293,6 +304,14 @@ export const financeRoutes: RouteObject[] = [
   {
     path: FINANCE_ROUTE.cashTransfers.slice(1),
     element: gate(FINANCE_CAPABILITY.cashTransfersWorkspace, <CashTransferRoute />),
+  },
+  {
+    path: FINANCE_ROUTE.exchangeBookValuesPrepare.slice(1),
+    element: gate(FINANCE_CAPABILITY.exchangeBookValuesPrepare, <CashExchangeBookValueRoute />),
+  },
+  {
+    path: FINANCE_ROUTE.exchangeBookValuesApprove.slice(1),
+    element: gate(FINANCE_CAPABILITY.exchangeBookValuesApprove, <CashExchangeBookValueRoute />),
   },
   {
     path: FINANCE_ROUTE.creditLimitsList.slice(1),

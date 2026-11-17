@@ -1,8 +1,8 @@
 {
  "meta": {
-  "tarih": "2026-11-17",
+  "tarih": "2026-11-18",
   "tren_dali": "claude/tren-1",
-  "kod_head": "6edcbf09266c5d9f6038cadb8bd5fdcc725a8284",
+  "kod_head": "19ca53a178dc97e86cdc576ba775d9ee89543a4f",
   "durum_sozlugu": {
    "PARTIAL": "kapsamın bir kısmı kaynakta; kalan kısım son W<n> ekip raporunda",
    "PLANNED/READY": "başlanmadı",
@@ -45,9 +45,9 @@
    "STK-S13 + ALC-S7/S8 (KIM-S18 sonrası)"
   ],
   "toplam": 174,
-  "done": 165,
+  "done": 167,
   "partial": 7,
-  "remaining_not_started": 2,
+  "remaining_not_started": 0,
   "last_wave": 8,
   "progress_meaning": "DONE yalnız kaynak kapsamıdır. Tam birim/mimari/gerçek SQL/Vitest/browser/CI koşumları NOT_RUN; K3 kabulü ve production değildir.",
   "w6_source_done_ids": [
@@ -79,12 +79,12 @@
    {
     "work": "EK24 iç defter banka bakiyesi",
     "slice": "FIN-SC36",
-    "status": "PARTIAL"
+    "status": "SOURCE_DONE_RUNTIME_NOT_RUN"
    },
    {
     "work": "EK24 purchasing.invoice.finalized ve alış yevmiyesi",
     "slice": "FIN-S13",
-    "status": "PLANNED"
+    "status": "SOURCE_DONE_RUNTIME_NOT_RUN"
    },
    {
     "work": "EK24 plan üstü sevk uyarısı",
@@ -265,10 +265,27 @@
    "ALC-S14",
    "ALC-SC47",
    "SAT-S9",
-   "SAT-S13"
+   "SAT-S13",
+   "FIN-S13",
+   "SAT-S12"
   ],
   "published_train_done_at_last_checkpoint": 135,
-  "w8_status": "IN_PROGRESS: local source scope updated; combined builds/pins/light checks and train fast-forward pending. No W9."
+  "w8_status": "IN_PROGRESS: local source scope updated; combined builds/pins/light checks and train fast-forward pending. No W9.",
+  "w8_last_combined_source_build": "65618ac1ec70b97d2a5d05bc6f6cf05e2f2dcea9",
+  "w8_last_sales_source_build": "19ca53a178dc97e86cdc576ba775d9ee89543a4f",
+  "w8_last_mounted_source_build": "6ff5e4f63",
+  "sat_s12_golden_main": {
+   "pr": 1200,
+   "head": "dfab7e934fd6e7fc3b0dd5ca40bd9a3643d3ee4f",
+   "merge_sha": "3c1b47878447570210b933b83d874646f9c52e4b",
+   "reviews": [
+    5946943155,
+    5946958064
+   ],
+   "application_source": "19ca53a178dc97e86cdc576ba775d9ee89543a4f",
+   "runtime": "NOT_RUN",
+   "K3": "PENDING"
+  }
  },
  "teams": [
   {
@@ -567,7 +584,9 @@
      "blocked_reason": "",
      "wave": 5,
      "w5_raporu": "durum/W5_kimlik.md",
-     "w6_report": "durum/W6_kimlik.md"
+     "w6_report": "durum/W6_kimlik.md",
+     "w8_report": "durum/W8_KIM_S19_IZIN_KAYDI.md",
+     "w8_source_note": "Numaralama/acilis kaynagi merkezde; No133 f520ac7af kayit-only, compile queued. Iki politika ailesi e0cff0a4a kaynak checkpointi; banka listesi cevabi6961276925 ile K6 devam ediyor. Sayisal esik/grant yok."
     },
     {
      "id": "KIM-SC32-a",
@@ -714,11 +733,14 @@
      "contracts": [
       "tüketir: Stok ortalama maliyet okuma portu (stok_lojistik, mevcut #1044)"
      ],
-     "status": "READY",
+     "status": "DONE",
      "blocked_reason": "",
      "wave": 3,
      "decision_note": "SAT-D347 okunamazsa marj yok. Marj formülü etkinleştirmesi golden gelene kadar kapalı (SAT-D265/5); kod + snapshot yazılır.",
-     "w6_report": "durum/W6_satis.md"
+     "w6_report": "durum/W6_satis.md",
+     "w8_report": "durum/W8_SAT_S12_GOLDEN_DUZELTME.md",
+     "w8_source_note": "Golden PR1200 dfab7e934fd6e7fc3b0dd5ca40bd9a3643d3ee4f iki bagimsiz DOCS imzasi ile main3c1b47878447570210b933b83d874646f9c52e4b oldu; main no-ff trende. Ayri uygulama19ca53a17 gercek TL bagini ve sifir maliyet unavailable korur; golden kabul kosulu source true. Sales.Unit kaynak derleme0/0warn/error42.95s. Runtime ve son K3 iki exact-head inceleme NOT_RUN; production aktivasyonu degildir.",
+     "w8_source_commit": "19ca53a178dc97e86cdc576ba775d9ee89543a4f"
     },
     {
      "id": "SAT-S13",
@@ -1301,7 +1323,9 @@
      "status": "PARTIAL",
      "wave": 5,
      "w5_raporu": "durum/W5_stok_lojistik.md",
-     "w6_report": "durum/W6_stok_lojistik.md"
+     "w6_report": "durum/W6_stok_lojistik.md",
+     "w8_report": "durum/W8_finans.md",
+     "w8_source_note": "PARTIAL: actual purchase posted attribution 3ea0f8300 integrated and mounted at 65618ac1e, combined source builds exit0. SAT-D422 purchase correction in next owner checkpoint; cancellation/generation and full-return witness gaps remain explicit."
     },
     {
      "id": "STK-SC36-b",
@@ -1629,11 +1653,14 @@
      "contracts": [
       "tüketir: sales.invoice.finalized.v1 (satis), purchasing.invoice.finalized.v1 (alis_cari)"
      ],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
      "wave": 5,
      "w5_raporu": "durum/W5_finans.md",
-     "w6_report": "durum/W6_finans.md"
+     "w6_report": "durum/W6_finans.md",
+     "w8_source_commit": "118adcab2fd5d4a22418093dd7dbf970fce51b70",
+     "w8_report": "durum/W8_FIN13_KAYNAK_KAPANISI.md",
+     "w8_validation": "Actual source ancestry, Program/DI/inbox/consumer, journal approval and frontend mount verified. Combined source build 65618ac1e exit0; runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "FIN-S14",
@@ -1650,10 +1677,12 @@
       "src/backend/Modules/Accounting/**/Sources/*Cash*"
      ],
      "contracts": [],
-     "status": "READY",
+     "status": "PARTIAL",
      "blocked_reason": "",
      "wave": 6,
-     "w6_report": "durum/W6_finans.md"
+     "w6_report": "durum/W6_finans.md",
+     "w8_report": "durum/W8_FIN14_DOVIZ_KAYNAGI.md",
+     "w8_source_note": "PARTIAL: Q10 reference values and event/book-value source owner checkpoint is frozen, build/EF queued. Actual source book-value user answer 6960684942; Accounting bridge still pending. Target FX actual TL value is not inferred from TCMB."
     },
     {
      "id": "FIN-S17",

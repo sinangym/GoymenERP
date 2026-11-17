@@ -95,12 +95,19 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1
             share.TlNetShare, Ratio(consumedKg), Ratio(consumedExact), physicalJson,
             Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(physicalJson)))),
             new(share.TlNetShare.Value(), ExactCostRatio.Of(acceptedKg), invoicedKg, lineage.NetShippedKg, stockShares),
-            physical.ToDictionary(x => x.Key.LocationId, x => x.Key.Included));
+            physical.ToDictionary(x => x.Key.LocationId, x => x.Key.Included), HasFullyReturnedShipmentWitness(lineage));
     }
+
+    // The input is the owner reader's reconciled snapshot, not a client-supplied quantity or inferred shipment.
+    internal static bool HasFullyReturnedShipmentWitness(InventoryCostLineageSnapshot lineage) =>
+        lineage.Outcome == InventoryCostLineageOutcome.Value && lineage.NetShippedKg is { Sign: 0 }
+        && lineage.Shipments.Any(shipment => shipment.QuantityKg > 0m && shipment.RootShare.Sign > 0
+            && shipment.NetRootQuantityKg.Sign == 0 && shipment.Returns.Any(returned => returned.QuantityKg > 0m
+                && returned.SourceIssueMovementId == shipment.MovementId));
 
     private sealed record FirstCostReceiptPlan(InventoryPurchaseInvoiceCostReceiptV1 Share, MoneyProfileV1 Profile,
         InventoryPurchaseFirstCostReceiptV1 Receipt, PurchaseFirstCostReceiptShare Allocation,
-        IReadOnlyDictionary<Guid, bool> Included);
+        IReadOnlyDictionary<Guid, bool> Included, bool HasFullyReturnedShipmentWitness);
 
     private async Task<InventoryPurchaseFirstCostRecognitionV1> RecognizeFirstCostLineAsync(
         InventoryPurchaseInvoiceCostProjectionV1 source, IReadOnlyList<FirstCostReceiptPlan> plans, CancellationToken token)

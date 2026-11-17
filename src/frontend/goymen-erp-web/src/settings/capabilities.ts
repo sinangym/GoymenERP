@@ -9,6 +9,10 @@
  */
 
 export const SETTINGS_CAPABILITY = {
+  financePolicies: 'settings.finance-policies.prepare',
+  cashDifferencePolicies: 'settings.cash-count-difference-policies.prepare',
+  bankInstitutions: 'settings.bank-institutions.prepare',
+  collateralRatePolicies: 'settings.collateral-rate-policies.prepare',
   salesSubcontractTax: 'settings.sales-subcontract-tax-default.manage',
   purchasingSubcontractTax: 'settings.purchasing-subcontract-tax-default.manage',
   warehouseTransferScale: 'settings.warehouse-transfer-scale.manage',
@@ -91,12 +95,21 @@ export const SETTINGS_EXCHANGE_RATE_CONTROL = {
 
 export type SettingsCapabilityId = (typeof SETTINGS_CAPABILITY)[keyof typeof SETTINGS_CAPABILITY]
 
+export const SETTINGS_FINANCE_POLICY_CONTROL = {
+  publish: 'settings.finance-policies.publish',
+  publishCritical: 'settings.finance-policies.publish-critical',
+} as const
+
 export const SETTINGS_MANUFACTURING_PROFILE_CONTROL = {
   parameters: { prepare: 'settings.manufacturing-parameter-profiles.prepare', publish: 'settings.manufacturing-parameter-profiles.publish' },
   tolerances: { prepare: 'settings.manufacturing-tolerance-profiles.prepare', publish: 'settings.manufacturing-tolerance-profiles.publish' },
 } as const
 
 export const SETTINGS_ROUTE: Record<SettingsCapabilityId, string> = {
+  [SETTINGS_CAPABILITY.financePolicies]: '/ayarlar/finans-onay-politikalari',
+  [SETTINGS_CAPABILITY.cashDifferencePolicies]: '/ayarlar/kasa-sayim-fark-politikalari',
+  [SETTINGS_CAPABILITY.bankInstitutions]: '/ayarlar/banka-kurumlari',
+  [SETTINGS_CAPABILITY.collateralRatePolicies]: '/ayarlar/teminat-oran-politikalari',
   [SETTINGS_CAPABILITY.salesSubcontractTax]: '/ayarlar/satis-fason-vergi-varsayilani',
   [SETTINGS_CAPABILITY.purchasingSubcontractTax]: '/ayarlar/alis-fason-vergi-varsayilani',
   [SETTINGS_CAPABILITY.warehouseTransferScale]: '/ayarlar/depo-transfer-tartisi',
@@ -124,6 +137,10 @@ export const SETTINGS_ROUTE: Record<SettingsCapabilityId, string> = {
 }
 
 export const SETTINGS_NAV_LABEL: Record<SettingsCapabilityId, string> = {
+  [SETTINGS_CAPABILITY.financePolicies]: 'Finans onay politikaları',
+  [SETTINGS_CAPABILITY.cashDifferencePolicies]: 'Kasa sayım fark politikaları',
+  [SETTINGS_CAPABILITY.bankInstitutions]: 'Banka kurumları',
+  [SETTINGS_CAPABILITY.collateralRatePolicies]: 'Teminat oran politikaları',
   [SETTINGS_CAPABILITY.salesSubcontractTax]: 'Satış fason vergi varsayılanı',
   [SETTINGS_CAPABILITY.purchasingSubcontractTax]: 'Alış fason vergi varsayılanı',
   [SETTINGS_CAPABILITY.warehouseTransferScale]: 'Depo transfer tartısı',

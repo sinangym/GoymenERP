@@ -28,6 +28,8 @@ import {
 } from '../finance/officialInvoiceImportRoutes'
 
 const ROUTED = [
+  [CAPABILITY.financeExchangeBookValuesPrepare, FINANCE_CAPABILITY.exchangeBookValuesPrepare, FINANCE_ROUTE.exchangeBookValuesPrepare],
+  [CAPABILITY.financeExchangeBookValuesApprove, FINANCE_CAPABILITY.exchangeBookValuesApprove, FINANCE_ROUTE.exchangeBookValuesApprove],
   [CAPABILITY.financePartyBalanceTransfers, FINANCE_CAPABILITY.partyBalanceTransfers, FINANCE_ROUTE.partyBalanceTransfers],
   [CAPABILITY.financeCreditsWorkspace, FINANCE_CAPABILITY.creditsWorkspace, FINANCE_ROUTE.creditsWorkspace],
   [CAPABILITY.financeOfficialInvoicesRecord, FINANCE_CAPABILITY.officialInvoicesRecord, FINANCE_ROUTE.officialInvoicesRecord],
@@ -179,6 +181,12 @@ describe('shell ↔ Finance lane capability ids', () => {
     const labels: Record<string, string> = {}
     for (const [shellId] of ROUTED) labels[shellId] = CAPABILITY_NAV_LABEL[shellId as CapabilityId]
     expect(labels).toEqual({
+      'finance.cash-exchange-book-values.prepare': 'Döviz defter değeri hazırla',
+      'finance.cash-exchange-book-values.approve': 'Döviz defter değeri onayları',
+      'finance.party-balance-transfers.record': 'Cari Bakiye Devri',
+      'finance.credits.workspace': 'Krediler',
+      'finance.official-sales-invoices.record': 'Resmî satış faturaları',
+      'finance.official-sales-invoices.approve': 'Resmî satış faturası onayları',
       'finance.receipts.list': 'Tahsilat Taslakları',
       'finance.receipts.draft': '',
       'finance.receipts.detail': '',

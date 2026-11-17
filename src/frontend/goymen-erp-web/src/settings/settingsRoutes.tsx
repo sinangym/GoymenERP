@@ -1,5 +1,7 @@
 import { SalesContractDiscountLimitPage } from './SalesContractDiscountLimitPage'
 import { CollateralTypesPage } from './CollateralTypesPage'
+import { FinanceApprovalPoliciesPage, CashCountDifferencePoliciesPage } from './FinancePoliciesPage'
+import { BankInstitutionsPage, CollateralRatesPage } from './CollateralPoliciesPage'
 /**
  * The Settings route table, spread into `shell/router.tsx` (before the catch-all). Each entry is wrapped in
  * `CapabilityRoute`: an ungranted capability mounts nothing and renders the same neutral not-found block any unknown
@@ -29,6 +31,10 @@ import { WarehouseTransferScalePage } from './WarehouseTransferScalePage'
 import { SubcontractTaxDefaultPage } from './SubcontractTaxDefaultPage'
 
 export const settingsRoutes: RouteObject[] = [
+  { path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.financePolicies].slice(1), element: <CapabilityRoute capability={SETTINGS_CAPABILITY.financePolicies}><FinanceApprovalPoliciesPage /></CapabilityRoute> },
+  { path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.cashDifferencePolicies].slice(1), element: <CapabilityRoute capability={SETTINGS_CAPABILITY.cashDifferencePolicies}><CashCountDifferencePoliciesPage /></CapabilityRoute> },
+  { path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.bankInstitutions].slice(1), element: <CapabilityRoute capability={SETTINGS_CAPABILITY.bankInstitutions}><BankInstitutionsPage /></CapabilityRoute> },
+  { path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.collateralRatePolicies].slice(1), element: <CapabilityRoute capability={SETTINGS_CAPABILITY.collateralRatePolicies}><CollateralRatesPage /></CapabilityRoute> },
   { path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.salesSubcontractTax].slice(1), element: <CapabilityRoute capability={SETTINGS_CAPABILITY.salesSubcontractTax}><SubcontractTaxDefaultPage side="sales" /></CapabilityRoute> },
   { path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.purchasingSubcontractTax].slice(1), element: <CapabilityRoute capability={SETTINGS_CAPABILITY.purchasingSubcontractTax}><SubcontractTaxDefaultPage side="purchasing" /></CapabilityRoute> },
   { path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.warehouseTransferScale].slice(1), element: <CapabilityRoute capability={SETTINGS_CAPABILITY.warehouseTransferScale}><WarehouseTransferScalePage /></CapabilityRoute> },

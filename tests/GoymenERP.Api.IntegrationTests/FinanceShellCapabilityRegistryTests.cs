@@ -18,6 +18,7 @@ public sealed class FinanceShellCapabilityRegistryTests
 {
     internal static readonly string[] TrainStagedCapabilities =
     [
+        "finance.cash-exchange-book-values.approve", "finance.cash-exchange-book-values.prepare",
         "finance.credits.approve", "finance.credits.propose", "finance.credits.workspace",
         "finance.official-sales-invoices.approve", "finance.official-sales-invoices.record", "finance.official-sales-invoices.withdraw",
         "finance.party-balance-transfers.record",
@@ -49,6 +50,8 @@ public sealed class FinanceShellCapabilityRegistryTests
                 ("finance.bank-accounts.approve", "F-04", "finance.bank-accounts.list"),
                 ("finance.bank-accounts.list", "F-04", null),
                 ("finance.bank-accounts.propose", "F-04-NEW", null),
+                ("finance.cash-exchange-book-values.approve", "F-32-EXCHANGE-BOOK-APPROVE", null),
+                ("finance.cash-exchange-book-values.prepare", "F-32-EXCHANGE-BOOK-PREPARE", null),
                 // FNS-D24 (Finance 1.11): one transfer is one transaction; the commit is a control of the workspace.
                 ("finance.cash-transfers.commit", "F-32-CASH-TRANSFERS", "finance.cash-transfers.workspace"),
                 ("finance.cash-transfers.workspace", "F-32-CASH-TRANSFERS", null),
@@ -119,7 +122,7 @@ public sealed class FinanceShellCapabilityRegistryTests
         var registry = new ShellCapabilityRegistry(providers,
             new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistry.ComputeCandidateRevision(providers)]));
 
-        Assert.Equal(46, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
+        Assert.Equal(48, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
     }
 
     [Fact]

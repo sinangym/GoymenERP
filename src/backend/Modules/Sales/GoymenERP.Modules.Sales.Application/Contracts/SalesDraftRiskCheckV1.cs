@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.Modules.Sales.Application.Contracts;
 
 // ---- MOD-01 / API-06: the read-only customer risk check of an order ---------------------------------------------------------
@@ -194,7 +196,8 @@ public sealed record SalesDraftRiskFigureV1(
     string State,
     string? TaxBasis,
     IReadOnlyList<SalesDraftRiskAmountV1>? Amounts,
-    string? ReasonCode);
+    string? ReasonCode,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<SalesPartyRiskPolicyProofV1>? PolicyProofs = null);
 
 /// <summary>One amount in one currency as exact invariant text (padded to that currency's approved money scale when it is known).</summary>
 public sealed record SalesDraftRiskAmountV1(Guid CurrencyId, string Amount);

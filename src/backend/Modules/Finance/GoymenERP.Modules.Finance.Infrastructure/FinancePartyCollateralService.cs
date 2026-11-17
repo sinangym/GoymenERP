@@ -38,7 +38,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// Not built: a haircut (OPEN-010), the given direction's commands (API-84), a validity-expiry job (a collateral past its
 /// end simply stops counting).
 /// </summary>
-public sealed class FinancePartyCollateralService(
+public sealed partial class FinancePartyCollateralService(
     FinanceDbContext dbContext,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
@@ -48,7 +48,8 @@ public sealed class FinancePartyCollateralService(
     IFinanceCollateralTypeCatalogReader collateralTypes,
     IAuditEventCollector auditEvents,
     FinancePartyCollateralEnvelopes envelopes,
-    TimeProvider timeProvider) : IFinancePartyCollateralMaster
+    TimeProvider timeProvider, IFinanceCollateralPolicyReaderV1? collateralPolicies = null,
+    IAuditTransactionWriterV1? auditOwner = null) : IFinancePartyCollateralMaster, IFinanceCollateralBankCandidatesV1
 {
     public const string RecordCommand = "finance.collateral.record";
     public const string ChangeCommand = "finance.collateral.change";
@@ -141,6 +142,8 @@ public sealed class FinancePartyCollateralService(
             return Refused(context, CommandOutcome.ValidationFailed, Issue("companyAccountId", "party_account_ineligible"));
         }
 
+        var bank = await BankAsync(context, request.BankInstitutionId, request.BankSourceVersion, cancellationToken);
+        if (bank.Refusal is not null) return bank.Refusal;
         var now = timeProvider.GetUtcNow();
         var row = new PartyCollateralRow
         {
@@ -167,12 +170,13 @@ public sealed class FinancePartyCollateralService(
             RecordedAtUtc = now,
             UpdatedAtUtc = now,
         };
+        SetBank(row, bank.Proof);
         dbContext.PartyCollaterals.Add(row);
         var result = Succeeded(context, row);
         AddCommand(context, metadata, RecordCommand, payloadHash, row.Id, result, now);
-        Audit(context, metadata, row.Id, "finance.collateral.recorded.v1", "Record", versionBefore: null, row.Version,
+        var audit = Audit(context, metadata, row.Id, "finance.collateral.recorded.v1", "Record", versionBefore: null, row.Version,
             "{}", RecordAudit(row), "Finans müşteri teminatı kaydı (yetkili tek adımda; hemen geçerli; para etkisi yok)");
-        return await SaveAsync(context, metadata, action, RecordCommand, payloadHash, result, cancellationToken);
+        return await SaveAsync(context, metadata, action, RecordCommand, payloadHash, result, cancellationToken, audit);
     }
 
     public async Task<PartyCollateralCommandResult> ChangeAsync(FinanceContext context, CommandMetadata metadata,
@@ -225,6 +229,7 @@ public sealed class FinancePartyCollateralService(
         if (current!.CollateralTypeId == request.CollateralTypeId && current.CurrencyId == request.CurrencyId
             && string.Equals(current.AmountText, request.Amount, StringComparison.Ordinal)
             && current.ValidFrom == request.ValidFrom && current.ValidUntil == request.ValidUntil
+            && current.BankInstitutionId == request.BankInstitutionId && current.BankSourceVersion == request.BankSourceVersion
             && string.Equals(current.DocumentReference, request.DocumentReference, StringComparison.Ordinal))
         {
             return Refused(context, CommandOutcome.ValidationFailed, Issue("request", "collateral_unchanged"));
@@ -247,19 +252,22 @@ public sealed class FinancePartyCollateralService(
             return partyRefused;
         }
 
+        var bank = await BankAsync(context, request.BankInstitutionId, request.BankSourceVersion, cancellationToken);
+        if (bank.Refusal is not null) return bank.Refusal;
         var now = timeProvider.GetUtcNow();
         var before = RecordAudit(current);
         var versionBefore = current.Version;
         Supersede(current, now);
         var row = NextRevision(context, current, ChangeKind, request.CollateralTypeId, type!.Version, request.CurrencyId,
             request.Amount, request.ValidFrom, request.ValidUntil, request.DocumentReference, releaseReason: null, now);
+        SetBank(row, bank.Proof);
         dbContext.PartyCollaterals.Add(row);
         var result = Succeeded(context, row);
         AddCommand(context, metadata, ChangeCommand, payloadHash, row.Id, result, now);
-        Audit(context, metadata, row.Id, "finance.collateral.changed.v1", "Change", versionBefore, row.Version, before,
+        var audit = Audit(context, metadata, row.Id, "finance.collateral.changed.v1", "Change", versionBefore, row.Version, before,
             RecordAudit(row),
             "Finans müşteri teminatı değişikliği (yetkili tek adımda; önceki sürümün yerine geçer; para etkisi yok)");
-        return await SaveAsync(context, metadata, action, ChangeCommand, payloadHash, result, cancellationToken);
+        return await SaveAsync(context, metadata, action, ChangeCommand, payloadHash, result, cancellationToken, audit);
     }
 
     public async Task<PartyCollateralCommandResult> ReleaseAsync(FinanceContext context, CommandMetadata metadata,
@@ -322,13 +330,14 @@ public sealed class FinancePartyCollateralService(
         var row = NextRevision(context, current, ReleaseKind, current.CollateralTypeId, current.CollateralTypeVersion,
             current.CurrencyId, current.AmountText, current.ValidFrom, current.ValidUntil, current.DocumentReference,
             request.Reason, now);
+        SetBank(row, BankProof(current));
         dbContext.PartyCollaterals.Add(row);
         var result = Succeeded(context, row);
         AddCommand(context, metadata, ReleaseCommand, payloadHash, row.Id, result, now);
-        Audit(context, metadata, row.Id, "finance.collateral.released.v1", "Release", versionBefore, row.Version, before,
+        var audit = Audit(context, metadata, row.Id, "finance.collateral.released.v1", "Release", versionBefore, row.Version, before,
             RecordAudit(row), "Finans müşteri teminatı çözümü (ters kayıt; yetkili tek adımda; para etkisi yok): "
             + request.Reason);
-        return await SaveAsync(context, metadata, action, ReleaseCommand, payloadHash, result, cancellationToken);
+        return await SaveAsync(context, metadata, action, ReleaseCommand, payloadHash, result, cancellationToken, audit);
     }
 
     /// <summary>
@@ -371,7 +380,7 @@ public sealed class FinancePartyCollateralService(
                 asOf))
                 ? await collateralTypes.ListAsync(context.CompanyId, asOf, cancellationToken)
                 : null;
-            weighted = FinancePartyCollateralFigures.Weigh(inputs, catalog, asOf);
+            weighted = await FinanceCollateralPolicyFigures.WeighAsync(context.CompanyId, inputs, catalog, collateralPolicies, asOf, cancellationToken);
         }
         var documentary = await DocumentaryRiskAsync(context, companyAccountId, cancellationToken);
         if (await ReadFenceAsync(context, cancellationToken) is { } again)
@@ -497,7 +506,8 @@ public sealed class FinancePartyCollateralService(
             .ToListAsync(cancellationToken);
 
     internal static FinancePartyCollateralFigures.HeldCollateral HeldInput(PartyCollateralRow row) =>
-        new(row.CollateralTypeId, row.CurrencyId, row.AmountText, row.ValidFrom, row.ValidUntil);
+        new(row.CollateralTypeId, row.CurrencyId, row.AmountText, row.ValidFrom, row.ValidUntil, row.CollateralId, row.Revision,
+            row.BankInstitutionId, row.BankSourceVersion);
 
     /// <summary>
     /// FNS-D75: the date a collateral's validity and the Settings rate are read on — the company business day
@@ -782,6 +792,7 @@ public sealed class FinancePartyCollateralService(
     private async Task<PartyCollateralCommandResult?> StartAsync(FinanceContext context, CommandMetadata metadata,
         FinanceAction action, CancellationToken cancellationToken)
     {
+        if (auditOwner?.HasPendingDrafts == true) return Refused(context, CommandOutcome.Unavailable);
         if (await FenceAsync(context, action, cancellationToken) is { } denied)
         {
             return denied;
@@ -899,22 +910,31 @@ public sealed class FinancePartyCollateralService(
     /// </summary>
     private async Task<PartyCollateralCommandResult> SaveAsync(FinanceContext context, CommandMetadata metadata,
         FinanceAction action, string command, string payloadHash, PartyCollateralCommandResult result,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, AuditEventDraft? audit = null)
     {
+        if (await RevalidateBanksAsync(context, cancellationToken) is { } changed)
+        {
+            dbContext.ChangeTracker.Clear();
+            auditOwner?.DiscardPending();
+            return changed;
+        }
         if (await FenceAsync(context, action, cancellationToken) is { } fenced)
         {
             dbContext.ChangeTracker.Clear();
+            auditOwner?.DiscardPending();
             return fenced;
         }
 
         try
         {
+            if (audit is not null) auditEvents.Enqueue(audit);
             await dbContext.SaveChangesAsync(cancellationToken);
         }
         catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
             || exception.InnerException is SqlException { Number: 2601 or 2627 })
         {
             dbContext.ChangeTracker.Clear();
+            auditOwner?.DiscardPending();
             if (await PriorAsync(context, metadata, action, command, payloadHash, cancellationToken) is { } prior)
             {
                 return prior;
@@ -937,14 +957,14 @@ public sealed class FinancePartyCollateralService(
         return SaveAsync(context, metadata, action, command, payloadHash, refusal, cancellationToken);
     }
 
-    private void Audit(FinanceContext context, CommandMetadata metadata, Guid recordId, string eventType,
+    private AuditEventDraft Audit(FinanceContext context, CommandMetadata metadata, Guid recordId, string eventType,
         string operation, long? versionBefore, long? versionAfter, string before, string after, string reason)
     {
         // FNS-D57: one step, no proposer/approver and no threshold; the context says so.
         var approval = JsonSerializer.Serialize(new { rule = "FNS-D57", recordedBy = context.ActorId, direct = true },
             AuditJson);
         var envelope = envelopes.Record;
-        auditEvents.Enqueue(new AuditEventDraft(
+        return new AuditEventDraft(
             context.CompanyId,
             eventType,
             EntityType,
@@ -967,7 +987,7 @@ public sealed class FinancePartyCollateralService(
             envelope.UserAgent,
             context.CorrelationId,
             context.CausationId,
-            metadata.IdempotencyKey));
+            metadata.IdempotencyKey);
     }
 
     /// <summary>FNS-D57: who, when, type, amount, currency and validity of one revision (old beside new in the audit).</summary>
@@ -984,6 +1004,7 @@ public sealed class FinancePartyCollateralService(
         row.PartyId,
         row.CompanyAccountId,
         row.CollateralTypeId,
+        bankInstitution = BankProof(row),
         collateralTypeVersion = row.CollateralTypeVersion,
         row.CurrencyId,
         amount = row.AmountText,
@@ -1000,7 +1021,7 @@ public sealed class FinancePartyCollateralService(
             DirectionOf(row.Direction), SourceOf(row.SourceKind), row.PartyId, row.CompanyAccountId, KindOf(row.Kind),
             row.CollateralTypeId, row.CollateralTypeVersion, row.CurrencyId, row.AmountText, row.ValidFrom, row.ValidUntil,
             row.DocumentReference, row.ReleaseReason, StatusOf(row.Status), row.RecordedAtUtc, row.SupersededAtUtc,
-            VersionText(row.Version));
+            VersionText(row.Version), BankProof(row));
 
     private static PartyCollateralDirection DirectionOf(int direction) => direction switch
     {

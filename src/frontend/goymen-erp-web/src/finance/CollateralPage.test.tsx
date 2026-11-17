@@ -61,7 +61,7 @@ interface Call {
 type Answer = (call: Call) => Response | Promise<Response>
 
 /** Reads answer from `reads` by path; every POST goes to `command`. */
-function serve(reads: { account?: Answer; history?: Answer; types?: Answer; currencies?: Answer }, command?: Answer) {
+function serve(reads: { account?: Answer; history?: Answer; types?: Answer; currencies?: Answer; banks?: Answer }, command?: Answer) {
   const calls: Call[] = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
     const headers = (init.headers ?? {}) as Record<string, string>
@@ -76,6 +76,7 @@ function serve(reads: { account?: Answer; history?: Answer; types?: Answer; curr
     if (call.method === 'POST') return command === undefined ? new Response(null, { status: 503 }) : command(call)
     if (url.endsWith('/type-candidates')) return (reads.types ?? (() => jsonResponse(typeCandidates())))(call)
     if (url.endsWith('/currency-candidates')) return (reads.currencies ?? (() => jsonResponse(currencyCandidates())))(call)
+    if (url.endsWith('/bank-candidates')) return (reads.banks ?? (() => jsonResponse({ companyId: CO_COMPANY, items: [] })))(call)
     if (url.endsWith('/history')) return (reads.history ?? (() => jsonResponse(historyPage([recorded()]))))(call)
     return (reads.account ?? (() => jsonResponse(account())))(call)
   }))
@@ -226,6 +227,21 @@ describe('CollateralPage record', () => {
     fireEvent.change(within(record).getByLabelText(T.validFrom), { target: { value: '2026-11-01' } })
     await user.type(within(record).getByLabelText(T.documentReference), 'SENTETIK-BELGE-1')
   }
+
+  it('sends only an explicitly selected real bank identity and source version, keeping an unknown attempt unchanged', async () => {
+    const user = userEvent.setup()
+    const bank = { companyId: CO_COMPANY, bankInstitutionId: '33333333-3333-4333-8333-333333333333',
+      name: 'Sentetik banka', eftCode: '0007', sourceVersion: 'settings.bank-institutions:synthetic:3' }
+    const calls = serve({ banks: () => jsonResponse({ companyId: CO_COMPANY, items: [bank] }) }, () => new Response(null, { status: 503 }))
+    renderPage(true); const record = form(await openAccount(user), 'record'); await fillRecord(user, record)
+    expect(within(record).getByLabelText(T.bank)).toHaveProperty('value', '')
+    await user.selectOptions(within(record).getByLabelText(T.bank), `${bank.bankInstitutionId}::${bank.sourceVersion}`)
+    await user.click(within(record).getByRole('button', { name: T.recordSubmit }))
+    await waitFor(() => expect(posts(calls)).toHaveLength(1))
+    expect(posts(calls)[0].body).toMatchObject({ bankInstitutionId: bank.bankInstitutionId, bankSourceVersion: bank.sourceVersion })
+    expect(posts(calls)[0].body).not.toHaveProperty('bankName')
+    expect(posts(calls)[0].body).not.toHaveProperty('bankAccountId')
+  })
 
   it('records a collateral in one step with the company only in the header', async () => {
     const user = userEvent.setup()
