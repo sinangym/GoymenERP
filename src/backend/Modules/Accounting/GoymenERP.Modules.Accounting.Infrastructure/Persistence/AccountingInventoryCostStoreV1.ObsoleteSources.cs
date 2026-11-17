@@ -18,6 +18,9 @@ public sealed partial class AccountingInventoryCostStoreV1
         if (await db.InvoiceCogsEconomicClaims.AsNoTracking().AnyAsync(x => x.InvoiceId == source.InvoiceId
                 && x.FinalizedVersion == source.InvoiceVersion, token)) throw ObsoletePending();
         RequireCompany(source.CompanyId);
+        if (await db.InvoiceCogsEconomicClaimSuccessions.AsNoTracking().AnyAsync(x => x.InvoiceId == source.InvoiceId
+                && x.FinalizedVersion == source.InvoiceVersion, token)) throw ObsoletePending();
+        RequireCompany(source.CompanyId);
         var receipts = new List<AccountingInventoryCostObsoleteComponentV1>();
         foreach (var component in source.Components)
         {
@@ -25,8 +28,9 @@ public sealed partial class AccountingInventoryCostStoreV1
             var owners = new List<AccountingInventoryCostObsoleteOwnerV1>();
             foreach (var physical in physicalClaims)
             {
-                var existing = await db.InvoiceCogsEconomicClaims.AsNoTracking().SingleOrDefaultAsync(x =>
-                    x.MovementId == physical.MovementId && x.MovementLineNumber == physical.MovementLineNumber, token);
+                var history = await InvoiceCogsClaimHistoryV1.ReadAsync(db, source.CompanyId, physical.MovementId,
+                    physical.MovementLineNumber, () => RequireCompany(source.CompanyId), token);
+                var existing = history.LastOrDefault()?.Claim;
                 RequireCompany(source.CompanyId);
                 if (existing is null) continue;
                 if (existing.CompanyId != source.CompanyId || existing.InvoiceId == source.InvoiceId

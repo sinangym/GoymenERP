@@ -14,6 +14,8 @@ public sealed partial class AccountingInventoryCostStoreV1
     private async Task<(long Revision, IReadOnlyList<InventoryCostCancellationComponentV1> Pending)>
         CancellationEvidence(AccountingInventoryCostProposalV1 view, CancellationToken token)
     {
+        if (await SupersedingProof(view, token) is { } successor)
+            return (successor.InvoiceLineRevision, []); // The actual complete release is immutable; later deltas belong to its successor.
         var reader = new InvoiceLineCogsCorrectionStoreV1(db, company, plans, audit, auditWriter, clock,
             postedManufacturing, postedPurchasing);
         (long Revision, IReadOnlyList<InventoryCostCancellationComponentV1> Components) evidence;

@@ -11,8 +11,8 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
     private async Task<IReadOnlyList<InvoiceLineCogsAttributedEvidenceV1>?> AttributedEvidence(CogsEvidenceIdentityV1 source,
         CancellationToken token)
     {
-        var claims = await db.InvoiceCogsEconomicClaims.AsNoTracking().Where(x => x.InvoiceId == source.InvoiceId
-            && x.InvoiceLineId == source.InvoiceLineId && x.FinalizedVersion == source.FinalizedVersion).ToListAsync(token);
+        var claims = await InvoiceCogsClaimHistoryV1.CurrentForInvoiceAsync(db, source.CompanyId, source.InvoiceId,
+            source.InvoiceLineId, source.FinalizedVersion, () => RequireCompany(source.CompanyId), token);
         RequireCompany(source.CompanyId);
         if (claims.Count == 0) return null;
         if (claims.Any(x => x.Origin is not (1 or 2) || x.AdmissionId != source.FinalizationAdmissionId || x.ShipmentId != source.ShipmentId))
@@ -82,8 +82,8 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
         CancellationToken token)
     {
         if (evidence is null) return;
-        var claims = await db.InvoiceCogsEconomicClaims.AsNoTracking().Where(x => x.InvoiceId == source.InvoiceId
-            && x.InvoiceLineId == source.InvoiceLineId && x.FinalizedVersion == source.FinalizedVersion).ToListAsync(token);
+        var claims = await InvoiceCogsClaimHistoryV1.CurrentForInvoiceAsync(db, source.CompanyId, source.InvoiceId,
+            source.InvoiceLineId, source.FinalizedVersion, () => RequireCompany(source.CompanyId), token);
         RequireCompany(source.CompanyId);
         if (!claims.Any(x => x.Origin == 1)
             || claims.Any(x => x.Origin is not (1 or 2) || x.AdmissionId != source.FinalizationAdmissionId || x.ShipmentId != source.ShipmentId)

@@ -1,4 +1,5 @@
 export const INVENTORY_COST_TEXT = {
+  succession: 'Bu sevkin önceki fatura maliyet payı iptal/ters kayıt kanıtıyla serbest bırakıldı. Eski kayıtlar korunur; bu faturanın tutarı yeniden hazırlama ve farklı muhasebe onayına gider.',
   salesTitle: 'Faturalanan sevklerin maliyet önerileri', differenceTitle: 'Alış faturası maliyet önerileri', subject: 'Maliyet önerileri',
   intro: 'Kesin kaynak, fiş tutarı ve yuvarlama artığı ayrı izlenir. Hazırlayan açık dönemi, tarihi ve karşı hesabı seçer; farklı muhasebe yetkilisi onaylar.',
   empty: 'Bu şirkette bu türden maliyet önerisi yok.', refresh: 'Yenile', choose: 'Seç', invoice: 'Fatura', line: 'Satır', amount: 'Kaynak tutarı (TL)',

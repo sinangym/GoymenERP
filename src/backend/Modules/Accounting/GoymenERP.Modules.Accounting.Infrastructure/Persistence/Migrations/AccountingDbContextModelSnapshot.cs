@@ -1363,6 +1363,88 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.InvoiceCogsEconomicClaimSuccessionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("MovementId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("MovementLineNumber")
+                        .HasColumnType("int");
+
+                    b.Property<long>("Generation")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("AdmissionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CancellationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("FinalizedVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("InvoiceLineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PreviousClaimSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength()
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("SalesEventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ShipmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SourceHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength()
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("SuccessionJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SuccessionSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength()
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ViewJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("CompanyId", "MovementId", "MovementLineNumber", "Generation");
+
+                    b.HasIndex("CompanyId", "InvoiceId", "InvoiceLineId", "FinalizedVersion");
+
+                    b.HasIndex("CompanyId", "SalesEventId", "MovementId", "MovementLineNumber")
+                        .IsUnique();
+
+                    b.ToTable("InvoiceCogsEconomicClaimSuccessions", "accounting", t =>
+                        {
+                            t.HasCheckConstraint("CK_InvoiceCogsEconomicClaimSuccessions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [MovementId] <> '00000000-0000-0000-0000-000000000000' AND [MovementLineNumber] > 0 AND [Generation] >= 2 AND [ShipmentId] <> '00000000-0000-0000-0000-000000000000' AND [SalesEventId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceLineId] <> '00000000-0000-0000-0000-000000000000' AND [AdmissionId] <> '00000000-0000-0000-0000-000000000000' AND [FinalizedVersion] > 0 AND [CancellationId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_InvoiceCogsEconomicClaimSuccessions_Proof", "LEN([PreviousClaimSha256]) = 64 AND LEN([SourceHash]) = 64 AND LEN([SuccessionSha256]) = 64 AND ISJSON([ViewJson]) = 1 AND ISJSON([SuccessionJson]) = 1 AND DATEPART(TZOFFSET,[RecordedAtUtc]) = 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.InvoiceLineCogsProposalRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -2801,6 +2883,21 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingInventoryCostSourceRow", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "SalesEventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.InvoiceCogsEconomicClaimSuccessionRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingInventoryCostSourceRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "SalesEventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.InvoiceCogsEconomicClaimRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "MovementId", "MovementLineNumber")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

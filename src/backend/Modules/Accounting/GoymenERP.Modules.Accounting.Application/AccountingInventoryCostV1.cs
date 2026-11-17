@@ -31,7 +31,9 @@ public sealed record AccountingInventoryCostComponentV1(string ComponentKey, Gui
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     AccountingInventoryCostRatioV1? UnpostedTlAmount = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    IReadOnlyList<PostedPurchaseCostShareV1>? AlreadyPostedPurchaseComponents = null)
+    IReadOnlyList<PostedPurchaseCostShareV1>? AlreadyPostedPurchaseComponents = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    InventoryCostClaimSuccessionV1? ClaimSuccession = null)
 {
     [JsonIgnore] public bool HasPostedComponents => AlreadyPostedComponents is { Count: > 0 }
         || AlreadyPostedPurchaseComponents is { Count: > 0 };
