@@ -11,8 +11,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 /// rules are the invoice's (ADR-011 §2–§8) in the subcontract invoice's own attempt table: (company, command, key hash) is the
 /// identity, the raw key is never stored, the same key, content and actor answers the stored invoice, another content or actor is
 /// one 409, a lost race stores nothing. One save writes the invoice, its service lines, the attempt, the number counter and the audit
-/// event; the unique index UX_SubcontractServiceInvoices_Weighing makes a second invoice of one weighing for one order the save's
-/// concurrent change (LOJ-D12: a correction after invoicing is a difference invoice, never a second invoice).
+/// event; the unique index UX_SubcontractServiceInvoices_Weighing makes a second active invoice of one weighing for one order
+/// the save's concurrent change. SAT-D378 requires cancellation before a billed weighing may be corrected.
 /// </summary>
 public sealed partial class SalesStore : ISalesSubcontractServiceInvoiceStore
 {
@@ -21,7 +21,11 @@ public sealed partial class SalesStore : ISalesSubcontractServiceInvoiceStore
     /// <summary>The display-number series of a subcontract service invoice draft: technical text, never the official number (Ö8).</summary>
     internal const string SubcontractServiceInvoiceSeries = "SFH";
 
-    public async Task<SalesSubcontractServiceInvoiceStoreResult> StoreSubcontractServiceInvoiceAsync(SalesDraftWriteEnvelope envelope,
+    public Task<SalesSubcontractServiceInvoiceStoreResult> StoreSubcontractServiceInvoiceAsync(SalesDraftWriteEnvelope envelope,
+        string requestHash, Func<string, SalesSubcontractServiceInvoice> build, CancellationToken cancellationToken = default) =>
+        InSubcontractTransactionAsync(() => StoreSubcontractServiceInvoiceCoreAsync(envelope, requestHash, build, cancellationToken), cancellationToken);
+
+    private async Task<SalesSubcontractServiceInvoiceStoreResult> StoreSubcontractServiceInvoiceCoreAsync(SalesDraftWriteEnvelope envelope,
         string requestHash, Func<string, SalesSubcontractServiceInvoice> build, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(build);
@@ -48,6 +52,9 @@ public sealed partial class SalesStore : ISalesSubcontractServiceInvoiceStore
             throw new ArgumentException("Faturayı hazırlayan, yazma zarfının aktörüdür.", nameof(build));
         }
 
+        await SalesSubcontractInvoiceClaimReadSession.ReadRangeAsync(dbContext, companyId,
+            invoice.Source.LoadingInstructionId, invoice.Source.WeighingId, cancellationToken);
+        await RequireCurrentSubcontractWeighingAsync(invoice, cancellationToken);
         SalesSubcontractServiceInvoiceRows.Add(dbContext, invoice, envelope.CorrelationId);
         AppendSubcontractLifecycle(invoice, 1, envelope.CorrelationId, now);
         dbContext.SubcontractServiceInvoiceAttempts.Add(new SubcontractServiceInvoiceAttemptRow

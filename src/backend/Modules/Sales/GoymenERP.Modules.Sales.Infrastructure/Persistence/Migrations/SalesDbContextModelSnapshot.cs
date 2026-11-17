@@ -4282,6 +4282,9 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     b.HasIndex("CompanyId", "SalesOrderId")
                         .HasDatabaseName("IX_SubcontractServiceInvoices_Order");
 
+                    b.HasIndex("CompanyId", "LoadingInstructionId", "WeighingId")
+                        .HasDatabaseName("IX_SubcontractServiceInvoices_ClaimRange");
+
                     b.HasIndex("CompanyId", "LoadingInstructionId", "WeighingId", "SalesOrderId")
                         .IsUnique()
                         .HasDatabaseName("UX_SubcontractServiceInvoices_Weighing")

@@ -140,3 +140,31 @@ FNS-D73/D83/D107 için Sales owner okuma portu eklendi. Mevcut onaylı revizyon 
   Aynı karar belgesinin Sınırlar bölümü ters fiş dönemini seçmez. FNS-D112 yalnız
   satır sınıfı/SMM düzeltmesi kapsamında olduğundan tam iptale sessizce genişletilmedi;
   kalan dönem/tarih sorusu koordinatöre iletildi. Bu ek dilimi DONE yapmaz.
+
+### SAT-SC34 / STK-S3 işlem içi tartı kanıtı
+
+- Kaynak `f8f39bbc9`, gerçek Lojistik borrowed-reader bağımlılığı `486158802`
+  (seçici alım `42d9a9e81`). Satış fiyat taşımayan invoice-claim okuması gerçek
+  şirket/talimat/tartı aralığındaki bütün durumları okur; boş aralık da
+  Serializable işlem bitene kadar korunur. İptal/ret geçmişi kaynak sürümünden
+  düşmez; unavailable boş veya aktif fatura yok cevabı sayılmaz.
+- Satış create ve lifecycle yazması aynı claim aralığını önce okur. Create gerçek
+  Lojistik sahibini aynı connection/transaction içinde tekrar okuyup talimat
+  sürümü, tartı revizyonu, net kg ve kaynak satır kimliklerini karşılaştırır.
+  Eski veya eksik kaynakta kayıt, sayaç, attempt ve denetim commit edilmez.
+- EF üretimi `20261117135232_AddSubcontractInvoiceClaimRange`: yalnız üç alanlı,
+  tüm durumları kapsayan index. Up create-index, Down drop-index; veri silinmediği
+  için yeni THROW gerekmez. Snapshot elle yazılmadı, DB'ye uygulanmadı.
+- API, Sales.UnitTests ve Api.IntegrationTests kaynak derlemeleri exit 0,
+  uyarı/hata 0. Sonradan eklenen index Down round-trip SQL fact kaynağı merkez
+  derlemesini bekler. Altı SQL fact adı sıralı ilişkisel envanterlere eklendi;
+  yürütme **NOT_RUN**. İlk iki compile hatası mevcut hata sabiti ve sentetik
+  ICompanyContext arayüz üyeleriyle düzeltildi; son derlemeler yukarıdadır.
+- İki read-only borrowed context construction kaynağı **K3 review bekliyor**:
+  SalesSubcontractInvoiceClaimReadSession, LogisticsSubcontractDeliveryReadSession.
+  Context şirket filtresi korunur; yeni bypass/ham SQL guard allowlist eklenmedi.
+  Dispose yalnız read context'ini bırakır, ödünç SQL handle'larını yönetmez.
+- STK-S3 gerçek müşteri malı teslimi/tartı düzeltme host'u bu portu bağlamalıdır;
+  yalnız bu seam o akışın tamamlandığı anlamına gelmez. Finalized iptal üreticisi
+  ve Finans/Muhasebe dönem-tarih kararı halen açık; Accounting iptal tüketicisi
+  `3044b80fb` ile vardır, Work kaydı gerçek Sales üreticisini bekler. DONE artışı yok.
