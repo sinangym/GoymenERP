@@ -55,6 +55,16 @@ describe('immutable received Finance source list', () => {
     const targetUnknown = { ...approved, mappingStatus: 'BindingUnavailable', preparationVersion: null,
       cashExchange: { ...approved.cashExchange, targetCurrencyId: 'a0000000-0000-4000-8000-000000000022', postingState: 'TargetBookValueUnavailable' } }
     expect(decodeFinanceJournalSources({ companyId: company, items: [targetUnknown] }, company)?.items[0]).toEqual(targetUnknown)
+    const targetDocumented = { ...approved, cashExchange: { ...approved.cashExchange,
+      targetCurrencyId: targetUnknown.cashExchange.targetCurrencyId, targetAmount: '90', targetFunctionalValueTl: '3330' } }
+    expect(decodeFinanceJournalSources({ companyId: company, items: [targetDocumented] }, company)?.items[0]).toEqual(targetDocumented)
+    for (const changed of [
+      { ...targetDocumented, cashExchange: { ...targetDocumented.cashExchange, targetFunctionalValueTl: '0' } },
+      { ...targetDocumented, cashExchange: { ...targetDocumented.cashExchange, targetFunctionalValueTl: null } },
+      { ...targetDocumented, cashExchange: { ...targetDocumented.cashExchange, targetFunctionalValueTl: '1e2' } },
+      { ...targetUnknown, cashExchange: { ...targetUnknown.cashExchange, targetFunctionalValueTl: '3330' } },
+      { ...raw, cashExchange: { ...raw.cashExchange, targetFunctionalValueTl: '3330' } },
+    ]) expect(decodeFinanceJournalSources({ companyId: company, items: [changed] }, company)).toBeNull()
   })
   it('keeps empty, malformed and offline distinct', async () => {
     const fetcher = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ companyId: company, items: [] })))

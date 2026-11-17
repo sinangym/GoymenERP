@@ -26,6 +26,7 @@ public static partial class AccountingPurchaseInvoiceCostSourceV1
             var invoice = zero; var kg = zero; var consumedKg = zero; var consumed = zero;
             var roots = new HashSet<Guid>(); var movements = new HashSet<Guid>();
             var expectedPositions = new Dictionary<Guid, (ExactCostRatio Kg, bool Included)>();
+            var hasActualReturnedShipment = false;
             foreach (var receipt in line.Receipts)
             {
                 if (receipt is null || receipt.AcceptanceId == Guid.Empty || receipt.ReceiptMovementId == Guid.Empty
@@ -56,6 +57,8 @@ public static partial class AccountingPurchaseInvoiceCostSourceV1
                     || receiptValue.Multiply(net).Divide(accepted).CompareTo(Value(receipt.ConsumedExactTlAmount)) != 0)
                     throw Invalid();
                 RequirePhysicalTotals(source.CompanyId, line.ProductId, physical, remaining, net);
+                hasActualReturnedShipment |= physical.Shipments.Any(shipment => shipment.PhysicalQuantityKg > 0
+                    && Value(shipment.NetRootQuantityKg).Sign == 0 && shipment.Returns.Count > 0);
                 var fraction = ExactCostRatio.Of(receipt.MatchedQuantity).Divide(receipt.AcceptedQuantity);
                 foreach (var label in physical.Labels)
                 foreach (var position in label.Positions.Where(x => x.QuantityKg > 0))
@@ -106,7 +109,7 @@ public static partial class AccountingPurchaseInvoiceCostSourceV1
                     Ratio(line.ConsumedRoundingResidue), AccountingInventoryCostRoundingV1Rules.Version));
             if (!AccountingInventoryCostRoundingV1Rules.IsValidRecorded(amount, rounding)) throw Invalid();
             sum = AccountingInventoryCostAmountsV1.Add(sum, amount);
-            if (consumed.Sign == 0) continue;
+            if (consumed.Sign == 0 && !hasActualReturnedShipment) continue;
             var proof = JsonSerializer.Serialize(new { source.CompanyId, source.InvoiceId, source.InvoiceVersion, source.SourceEventId,
                 source.AdmissionId, source.InvoiceDate, source.OfficialDocument, source.SourceSha256, source.CostDifferenceEventId, line }, Json);
             components.Add(new(AccountingInventoryCostTraceV1.PurchaseFirstLineComponent(line.InvoiceLineId), line.ProductId,

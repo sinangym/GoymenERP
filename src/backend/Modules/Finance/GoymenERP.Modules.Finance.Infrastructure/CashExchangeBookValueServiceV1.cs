@@ -9,6 +9,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -77,13 +78,15 @@ public sealed class CashExchangeBookValueServiceV1(FinanceDbContext db, ICompany
         {
             var payloadHash = Hash(JsonSerializer.Serialize(request, Json));
             if (await Replay(context, metadata, ProposeCommand, payloadHash, permission, ct) is { } replay) return replay;
-            if (!Valid(request)) return Failure(context, CommandOutcome.ValidationFailed, "cash_exchange_book_value_invalid");
+            if (!ValidNew(request)) return Failure(context, CommandOutcome.ValidationFailed, "cash_exchange_book_value_invalid");
             var transfer = await db.CashTransfers.AsNoTracking().SingleOrDefaultAsync(x => x.Id == request.TransferId, ct);
             if (!await Allowed(context, permission, ct)) return Failure(context, CommandOutcome.Denied);
             if (transfer is null || transfer.Kind != CashTransferKinds.CurrencyExchange) return Failure(context, CommandOutcome.VersionConflict, "cash_exchange_not_found");
             var source = CashTransferService.View(transfer);
             if (source.Version != request.ExpectedTransferVersion) return Failure(context, CommandOutcome.VersionConflict, "cash_exchange_source_changed");
             if (source.Exchange is null) return Failure(context, CommandOutcome.Unavailable, "cash_exchange_legacy_source_unreadable");
+            if (!TargetMatchesSource(source, request.TargetFunctionalValueTl))
+                return Failure(context, CommandOutcome.ValidationFailed, "cash_exchange_target_functional_value_mismatch");
             var all = await db.CashExchangeBookValueProposals.AsNoTracking().Where(x => x.TransferId == transfer.Id).Select(x => x.Id).ToArrayAsync(ct);
             if (!await Allowed(context, permission, ct)) return Failure(context, CommandOutcome.Denied);
             var decisions = await db.CashExchangeBookValueDecisions.AsNoTracking().Where(x => x.TransferId == transfer.Id).ToArrayAsync(ct);
@@ -124,6 +127,9 @@ public sealed class CashExchangeBookValueServiceV1(FinanceDbContext db, ICompany
             var source = JsonSerializer.Deserialize<CashTransferView>(row.TransferSourceJson, Json) ?? throw new JsonException();
             if (request.Approve)
             {
+                // Legacy proposals remain readable/replayable, but cannot silently acquire a second actual TL value.
+                if (pending.TargetFunctionalValueTl is null)
+                    return Failure(context, CommandOutcome.ValidationFailed, "cash_exchange_target_functional_value_required");
                 var transfer = await db.CashTransfers.AsNoTracking().SingleOrDefaultAsync(x => x.Id == row.TransferId, ct);
                 if (!await Allowed(context, permission, ct)) return Failure(context, CommandOutcome.Denied);
                 if (transfer is null || Hash(JsonSerializer.Serialize(CashTransferService.View(transfer), Json)) != row.TransferSourceHash)
@@ -169,7 +175,7 @@ public sealed class CashExchangeBookValueServiceV1(FinanceDbContext db, ICompany
         audit.Enqueue(new AuditEventDraft(context.CompanyId, command, "Finance.CashExchangeBookValue", value.Id.ToString("D"),
             command == ProposeCommand ? "Propose" : "Decide", command == ProposeCommand ? null : 1, command == ProposeCommand ? 1 : 2,
             AuditActorTypes.User, context.ActorId, permission, scope.RoleCodes, before is null ? "{}" : JsonSerializer.Serialize(before, Json), JsonSerializer.Serialize(value, Json), reason,
-            "{\"decision\":\"1189/6960684942\",\"bookValueIsNotTcmbReference\":true}", AuditAiInvolvement.None, null,
+            "{\"decision\":\"1189/6960684942\",\"targetValueDecision\":\"1189/6961618871\",\"bookValueIsNotTcmbReference\":true}", AuditAiInvolvement.None, null,
             correlation.SourceChannel, correlation.ClientIpAddress, correlation.UserAgent, context.CorrelationId, context.CausationId, metadata.IdempotencyKey));
         await auditWriter.WritePendingAsync(db.Database.CurrentTransaction!.GetDbTransaction(), ct);
         return await Allowed(context, permission, ct) ? result : Failure(context, CommandOutcome.Denied);
@@ -243,8 +249,15 @@ public sealed class CashExchangeBookValueServiceV1(FinanceDbContext db, ICompany
     internal static string Hash(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
     internal static bool Valid(ProposeCashExchangeBookValueV1 r) => r.TransferId != Guid.Empty && r.ExpectedTransferVersion == "1"
         && Text(r.SourceBookValueTl, 128) && FinanceExactDecimalText.TryParsePositive(r.SourceBookValueTl, out var amount) && amount.Text == r.SourceBookValueTl
+        && (r.TargetFunctionalValueTl is null || ExactPositive(r.TargetFunctionalValueTl))
         && Text(r.Reason, 1000) && r.Evidence is { DocumentId: var id, VersionNo: > 0, Sha256: var hash } && id != Guid.Empty
         && hash is { Length: 64 } && hash.All(char.IsAsciiHexDigit);
+    internal static bool ValidNew(ProposeCashExchangeBookValueV1 r) => Valid(r) && r.TargetFunctionalValueTl is not null;
+    private static bool ExactPositive(string? value) => Text(value, 128)
+        && FinanceExactDecimalText.TryParsePositive(value, out var amount) && amount.Text == value;
+    internal static bool TargetMatchesSource(CashTransferView source, string? value) => ExactPositive(value)
+        && (source.Preparation.TargetMoney.CurrencyId != SettingsCurrencyIdentitiesV1.TurkishLira
+            || FinanceExactDecimalText.Equal(value!, source.Preparation.TargetMoney.Amount));
     private static bool Metadata(FinanceContext c, CommandMetadata m) => Text(m.IdempotencyKey, 128) && Text(c.CorrelationId, 128)
         && (c.CausationId is null || Text(c.CausationId, 128));
     private static bool Text(string? value, int max) => !string.IsNullOrWhiteSpace(value) && value.Length <= max
@@ -257,6 +270,7 @@ public sealed class CashExchangeBookValueServiceV1(FinanceDbContext db, ICompany
         if (!Valid(preparation) || preparation.TransferId != p.TransferId || source.Id != p.TransferId || source.CompanyId != p.CompanyId
             || source.Version != preparation.ExpectedTransferVersion || p.TransferSourceHash != Hash(p.TransferSourceJson)
             || source.Preparation.Kind != CashTransferKind.CurrencyExchange || !source.TransferConfirmed || source.Exchange is null
+            || preparation.TargetFunctionalValueTl is not null && !TargetMatchesSource(source, preparation.TargetFunctionalValueTl)
             || !Text(p.PreparedBy, 128) || p.PreparedAtUtc == default || p.PreparedAtUtc.Offset != TimeSpan.Zero
             || (d is not null && (d.CompanyId != p.CompanyId || d.ProposalId != p.Id || d.TransferId != p.TransferId
                 || d.PreparedBy != p.PreparedBy || !Text(d.DecidedBy, 128) || d.DecidedBy == p.PreparedBy || d.DecidedAtUtc < p.PreparedAtUtc
@@ -264,6 +278,6 @@ public sealed class CashExchangeBookValueServiceV1(FinanceDbContext db, ICompany
         return new(p.Id, p.CompanyId, p.TransferId, source.Version, p.TransferSourceHash, preparation.SourceBookValueTl,
             preparation.Evidence, preparation.Reason, p.PreparedBy, p.PreparedAtUtc,
             d is null ? CashExchangeBookValueStatusV1.Pending : d.Approved ? CashExchangeBookValueStatusV1.Approved : CashExchangeBookValueStatusV1.Rejected,
-            d is null ? "1" : "2", d?.DecidedBy, d?.DecidedAtUtc, d?.Reason);
+            d is null ? "1" : "2", d?.DecidedBy, d?.DecidedAtUtc, d?.Reason, preparation.TargetFunctionalValueTl);
     }
 }

@@ -7,10 +7,10 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 
 public sealed partial class AccountingInventoryCostStoreV1
 {
-    private async Task RecordPurchaseCandidates(WorkInboxEventV1 envelope, AccountingInventoryCostSourceV1 source,
+    private async Task<bool?> RecordPurchaseCandidates(WorkInboxEventV1 envelope, AccountingInventoryCostSourceV1 source,
         AccountingInventoryCostComponentV1 component, CancellationToken token)
     {
-        if (!AccountingInventoryCostTraceV1.IsPurchaseFirstLineComponent(component.ComponentKey)) return;
+        if (!AccountingInventoryCostTraceV1.IsPurchaseFirstLineComponent(component.ComponentKey)) return null;
         if (source.Kind != AccountingInventoryCostKindV1.PurchaseInvoiceDifference || purchaseLineage is null)
             throw Refuse("purchase_cost_attribution_owner_unavailable");
         var lineage = await purchaseLineage.ReadAsync(envelope, source, component,
@@ -33,6 +33,7 @@ public sealed partial class AccountingInventoryCostStoreV1
                 RootLabelId = candidate.RootLabelId, MovementId = candidate.Shipment.MovementId,
                 MovementLineNumber = candidate.Shipment.MovementLineNumber, ShipmentId = candidate.Shipment.ShipmentId,
                 ProductId = candidate.ProductId, SourceHash = candidate.Fingerprint, ViewJson = Encode(candidate), RecordedAtUtc = at });
+        return candidates.Count > 0;
     }
 
     private async Task RecordPurchaseApproval(AccountingInventoryCostProposalV1 view, Func<CancellationToken, Task> fence, CancellationToken token)
@@ -82,8 +83,18 @@ public sealed partial class AccountingInventoryCostStoreV1
         var totalKg = weighted.Aggregate(zero, (total, x) => AccountingInventoryCostAmountsV1.Add(total, x.Source.NetQuantityKg));
         if (!decimal.TryParse(prepared.SignedAmount, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var amount))
             throw Refuse("purchase_cost_attribution_amount_unavailable");
-        if (!PostedManufacturingCostAttributionCalculatorV1.TryCalculatePurchase(amount, prepared.CurrencyId, prepared.MoneyScale,
-                totalKg, weighted, out var allocation, out var reason)) throw Refuse(reason ?? "purchase_cost_attribution_amount_unavailable");
+        PostedCostAttributionCalculationV1? allocation;
+        if (weighted.Count == 0)
+        {
+            // A fully returned, actually recorded shipment retains its zero witness. No positive-weight
+            // distribution or zero journal is invented, and an all-stock source without shipments is not a claim.
+            if (groups.Length == 0 || amount != 0 || view.Status != "RoundedNoCost" || view.JournalId is not null
+                || totalKg != zero || candidates.Any(x => x.InvoicedNetQuantityKg != zero || x.ExactTlAmount != zero))
+                throw Refuse("purchase_cost_attribution_amount_unavailable");
+            allocation = new(0m, prepared.CurrencyId, prepared.MoneyScale, zero, []);
+        }
+        else if (!PostedManufacturingCostAttributionCalculatorV1.TryCalculatePurchase(amount, prepared.CurrencyId, prepared.MoneyScale,
+                     totalKg, weighted, out allocation, out var reason)) throw Refuse(reason ?? "purchase_cost_attribution_amount_unavailable");
         var shares = new List<PostedPurchaseCostShareV1>();
         foreach (var group in groups)
         {

@@ -17,7 +17,7 @@ public sealed class FinanceCashExchangeBookValueHttpAcceptanceTests(GoymenErpApi
 {
     private const string Path = "/api/v1/finance/cash-exchanges/book-values";
     private static readonly ProposeCashExchangeBookValueV1 Input = new(Guid.Parse("f1401000-0000-4000-8000-000000000001"), "1",
-        "3500.00", new(Guid.Parse("f1401000-0000-4000-8000-000000000002"), 2, new string('b', 64)), "SENTETIK kaynak defter belgesi");
+        "3500.00", new(Guid.Parse("f1401000-0000-4000-8000-000000000002"), 2, new string('b', 64)), "SENTETIK kaynak defter belgesi", "3300.00");
 
     [Fact]
     public void Actual_book_value_vault_owner_and_evidence_composition_has_no_constructor_cycle()

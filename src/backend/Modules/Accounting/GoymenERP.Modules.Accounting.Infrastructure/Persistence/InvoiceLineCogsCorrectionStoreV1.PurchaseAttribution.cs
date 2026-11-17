@@ -20,6 +20,18 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
         Task Fence(CancellationToken _) { RequireCompany(source.CompanyId); return Task.CompletedTask; }
         IReadOnlyList<PostedManufacturingCostShareV1> manufacturing = [];
         IReadOnlyList<PostedPurchaseCostShareV1> purchase = [];
+        if (claim.Origin == 1)
+        {
+            if (postedManufacturing is null) throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
+            var deltas = await postedManufacturing.ReadPostedDeltasAsync(source.CompanyId, source.ShipmentId, physical.MovementId,
+                physical.MovementLineNumber, source.ProductId, physical.QuantityKg, Fence, token);
+            RequireCompany(source.CompanyId);
+            if (deltas is null) return (manufacturing, purchase);
+            await RequireCompletedKnownSource(source, claim.SalesEventId, component, token);
+            // The original known source already proves physical coverage. These are only independently posted
+            // changes; they cannot be reused by the unavailable-original-cost admission path.
+            return (deltas.Shares, purchase);
+        }
         if (component.AlreadyPostedComponents?.Any(x => x.Shipment.MovementId == physical.MovementId
                 && x.Shipment.MovementLineNumber == physical.MovementLineNumber) == true)
         {

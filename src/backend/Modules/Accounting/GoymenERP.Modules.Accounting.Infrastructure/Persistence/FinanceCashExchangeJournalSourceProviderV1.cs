@@ -30,16 +30,16 @@ public sealed class FinanceCashExchangeJournalSourceProviderV1(AccountingDbConte
         if (recorded is not { Source: { }, BookValue: { } } || recorded.EventId != row.Id || recorded.BookValue.Id != sourceId
             || recorded.BookValue.Version != row.SourceVersion || row.CurrencyId != SettingsCurrencyIdentitiesV1.TurkishLira
             || row.AmountText != recorded.BookValue.SourceBookValueTl
-            || !FinanceJournalSourceReaderV1.ValidApprovedExchange(recorded.Source, recorded.BookValue, companyId)
-            || recorded.Source.Preparation.TargetMoney.CurrencyId != SettingsCurrencyIdentitiesV1.TurkishLira) return null;
+            || !FinanceJournalSourceReaderV1.ValidApprovedExchange(recorded.Source, recorded.BookValue, companyId)) return null;
+        var targetFunctional = FinanceJournalSourceReaderV1.TargetFunctionalAmount(recorded.Source, recorded.BookValue);
+        if (targetFunctional is null) return null;
         var context = new FinanceContext(companyId, actor, correlation.CorrelationId, correlation.CausationId);
         var actual = await bookValues.GetAsync(context, recorded.Source.Id, cancellationToken);
         if (!Same(companyId, actor) || actual is not { Outcome: ReadOutcome.Found, Resource: { } resource }
             || resource.CompanyId != companyId || resource.Transfer != recorded.Source
             || resource.Proposals.Count(x => x.Id == sourceId && x == recorded.BookValue) != 1
             || resource.Proposals.Count(x => x.Status == CashExchangeBookValueStatusV1.Approved) != 1) return null;
-        var lines = CashExchangeJournalAmountsV1.TryCreate(recorded.BookValue.SourceBookValueTl,
-            recorded.Source.Preparation.TargetMoney.Amount);
+        var lines = CashExchangeJournalAmountsV1.TryCreate(recorded.BookValue.SourceBookValueTl, targetFunctional);
         if (lines is null) return null;
         var profile = recorded.Source.Preparation.SourceProfile;
         var rule = await bindings.ResolveAsync(companyId, sourceId, NormalJournalSourceKindsV1.ApprovedCashExchangeBookValue,
@@ -47,7 +47,7 @@ public sealed class FinanceCashExchangeJournalSourceProviderV1(AccountingDbConte
         if (!Same(companyId, actor) || rule is null || rule.Mirror.CompanyId != companyId
             || rule.PostingPurpose != CashExchangeJournalAmountsV1.PostingPurpose) return null;
         var total = Math.Max(decimal.Parse(recorded.BookValue.SourceBookValueTl, CultureInfo.InvariantCulture),
-            decimal.Parse(recorded.Source.Preparation.TargetMoney.Amount, CultureInfo.InvariantCulture));
+            decimal.Parse(targetFunctional, CultureInfo.InvariantCulture));
         var source = new NormalJournalDraftServerSourceV1(rule, SettingsCurrencyIdentitiesV1.TurkishLira,
             recorded.BookValue.Version, profile.ProfileId, profile.Version, CashExchangeJournalAmountsV1.Text(total), lines);
         return NormalJournalDraftSourcePreparationV1.TryCreate(companyId, sourceId, source) is null ? null : source;

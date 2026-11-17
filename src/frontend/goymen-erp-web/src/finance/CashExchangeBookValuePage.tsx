@@ -29,7 +29,7 @@ function Workspace({ companyId, actorId, canPrepare, canApprove, namespace, gene
   const client = useQueryClient(); const boundary = useAuthBoundary(); const live = useRef(true)
   useEffect(() => { live.current = true; return () => { live.current = false } }, [])
   const [cursor, setCursor] = useState<string | null>(null); const [selected, setSelected] = useState<string | null>(null)
-  const [amount, setAmount] = useState(''); const [reason, setReason] = useState(''); const [documentId, setDocumentId] = useState('')
+  const [amount, setAmount] = useState(''); const [targetAmount, setTargetAmount] = useState(''); const [reason, setReason] = useState(''); const [documentId, setDocumentId] = useState('')
   const [rejectReason, setRejectReason] = useState(''); const [attempt, setAttempt] = useState<BookValueAttempt | null>(null)
   const [sending, setSending] = useState(false); const [message, setMessage] = useState<string | null>(null)
   const [authorityStatus, setAuthorityStatus] = useState<401 | 403 | null>(null)
@@ -53,15 +53,15 @@ function Workspace({ companyId, actorId, canPrepare, canApprove, namespace, gene
       if (answer.status === 401 || answer.status === 403) { boundary.report(answer.status, captured); setAuthorityStatus(answer.status); return }
       setMessage(answer.status === 409 ? T.conflict : T.refused); return
     }
-    setMessage(answer.result.isReplay ? T.replay : T.completed); setAmount(''); setReason(''); setDocumentId(''); setRejectReason('')
+    setMessage(answer.result.isReplay ? T.replay : T.completed); setAmount(''); setTargetAmount(''); setReason(''); setDocumentId(''); setRejectReason('')
     await client.invalidateQueries({ queryKey: [namespace, generation, 'exchange-book-value', selected] })
   }
   function propose(e: FormEvent) {
-    e.preventDefault(); const parsed = parseAmountInput(amount)
+    e.preventDefault(); const parsed = parseAmountInput(amount); const parsedTarget = parseAmountInput(targetAmount)
     const doc = docs.data?.type === 'ok-single' ? docs.data.data.items.find(x => x.id === documentId && x.downloadable) : undefined
-    if (!parsed.ok || !doc || !selected || !reason.trim()) { setMessage(T.invalid); return }
+    if (!parsed.ok || !parsedTarget.ok || !doc || !selected || !reason.trim()) { setMessage(T.invalid); return }
     void send({ key: crypto.randomUUID(), decision: false, body: { transferId: selected, expectedTransferVersion: '1', sourceBookValueTl: parsed.wire,
-      evidence: { documentId: doc.id, versionNo: doc.versionNo, sha256: doc.sha256 }, reason: reason.trim() } })
+      evidence: { documentId: doc.id, versionNo: doc.versionNo, sha256: doc.sha256 }, reason: reason.trim(), targetFunctionalValueTl: parsedTarget.wire } })
   }
   if (authorityStatus !== null) return <ReadState outcome={{ type: 'http', status: authorityStatus }} />
   if (selected === null) {
@@ -76,7 +76,7 @@ function Workspace({ companyId, actorId, canPrepare, canApprove, namespace, gene
   if (workspace.data?.type !== 'ok-single') return <><Button type="button" onClick={() => setSelected(null)}>{T.back}</Button><ReadState outcome={workspace.data} /></>
   const view = workspace.data.data; const source = view.transfer; const locked = attempt !== null || sending
   const canPropose = canPrepare && !view.proposals.some(x => x.status === 'Pending' || x.status === 'Approved')
-  return <><Button type="button" disabled={locked} onClick={() => { setSelected(null); setMessage(null); setDocumentId(''); setAmount(''); setReason('') }}>{T.back}</Button>
+  return <><Button type="button" disabled={locked} onClick={() => { setSelected(null); setMessage(null); setDocumentId(''); setAmount(''); setTargetAmount(''); setReason('') }}>{T.back}</Button>
     <dl><dt>{T.source}</dt><dd>{formatDecimalTextTr(source.preparation.sourceMoney.amount)}</dd><dt>{T.target}</dt><dd>{formatDecimalTextTr(source.preparation.targetMoney.amount)}</dd>
       {source.exchange?.sourceReferenceTl && <><dt>{T.reference}</dt><dd>{formatDecimalTextTr(source.exchange.sourceReferenceTl.amount)}</dd></>}</dl>
     {message && <p role="status">{message}</p>}{attempt && !sending && <Button type="button" onClick={() => void send(attempt)}>{T.retry}</Button>}
@@ -84,16 +84,19 @@ function Workspace({ companyId, actorId, canPrepare, canApprove, namespace, gene
     {canPropose && <>
       {docs.data?.type !== 'ok-single' ? <ReadState outcome={docs.data} /> : <form onSubmit={propose}><fieldset disabled={locked}>
         <label>{T.amount}<input inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)} required /></label>
+        <label>{T.targetAmount}<input inputMode="decimal" value={targetAmount} onChange={e => setTargetAmount(e.target.value)} required /></label>
         <label>{T.document}<select value={documentId} onChange={e => setDocumentId(e.target.value)} required><option value="">{T.choose}</option>
           {docs.data.data.items.filter(x => x.downloadable).map(x => <option key={x.id} value={x.id}>{x.fileName} (v{x.versionNo})</option>)}</select></label>
         {docs.data.data.items.every(x => !x.downloadable) && <p>{T.documentEmpty}</p>}
         <Button type="button" onClick={() => void docs.refetch()}>{T.refresh}</Button>
         <label>{T.reason}<textarea value={reason} maxLength={1000} onChange={e => setReason(e.target.value)} required /></label><Button type="submit">{T.prepare}</Button>
       </fieldset></form>}</>}
-    <ul>{view.proposals.map(row => <li key={row.id}><p>{row.status === 'Pending' ? T.pending : row.status === 'Approved' ? T.approved : T.rejected}: {formatDecimalTextTr(row.sourceBookValueTl)} TL</p>
+    <ul>{view.proposals.map(row => <li key={row.id}><p>{row.status === 'Pending' ? T.pending : row.status === 'Approved' ? T.approved : T.rejected}</p>
+      <dl><dt>{T.amount}</dt><dd>{formatDecimalTextTr(row.sourceBookValueTl)} TL</dd><dt>{T.targetAmount}</dt>
+        <dd>{row.targetFunctionalValueTl === null ? T.targetValueMissing : `${formatDecimalTextTr(row.targetFunctionalValueTl)} TL`}</dd></dl>
       <p>{row.reason}</p><PinnedEvidence companyId={companyId} transferId={selected} namespace={namespace} generation={generation} evidence={row.evidence} />
       {row.status === 'Pending' && canApprove && (row.preparedBy === actorId ? <p>{T.own}</p> : <fieldset disabled={locked}>
-        <Button type="button" onClick={() => void send({ key: crypto.randomUUID(), decision: true, body: { proposalId: row.id, expectedVersion: '1', approve: true, reason: null } })}>{T.approve}</Button>
+        <Button type="button" disabled={row.targetFunctionalValueTl === null} onClick={() => void send({ key: crypto.randomUUID(), decision: true, body: { proposalId: row.id, expectedVersion: '1', approve: true, reason: null } })}>{T.approve}</Button>
         <label>{T.rejection}<textarea value={rejectReason} maxLength={1000} onChange={e => setRejectReason(e.target.value)} /></label>
         <Button type="button" disabled={!rejectReason.trim()} onClick={() => void send({ key: crypto.randomUUID(), decision: true, body: { proposalId: row.id, expectedVersion: '1', approve: false, reason: rejectReason.trim() } })}>{T.reject}</Button>
       </fieldset>)}</li>)}</ul></>

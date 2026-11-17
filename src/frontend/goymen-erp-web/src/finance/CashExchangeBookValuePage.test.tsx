@@ -24,8 +24,9 @@ const transfer = { id: ID, companyId: C, preparation: prep, recordedBy: 'SENTETI
     sourceReferenceTl: { currencyId: TRY, amount: '3400', sourceVersion: 'finance.cash-transfer.tl-reference.v1' }, targetReferenceTl: { currencyId: TRY, amount: '3300', sourceVersion: 'finance.cash-transfer.tl-reference.v1' } } }
 const evidence = { documentId: DOC, versionNo: 2, sha256: 'a'.repeat(64) }
 const value = { id: PROPOSAL, companyId: C, transferId: ID, transferVersion: '1', transferSourceHash: 'b'.repeat(64), sourceBookValueTl: '3500.00', evidence,
-  reason: 'SENTETIK gerçek defter belgesi', preparedBy: actor, preparedAtUtc: `${date}T08:01:00Z`, status: 'Pending', version: '1', decidedBy: null, decidedAtUtc: null, decisionReason: null }
-const attempt: BookValueAttempt = { key: 'SENTETIK-fixed-key', decision: false, body: { transferId: ID, expectedTransferVersion: '1', sourceBookValueTl: value.sourceBookValueTl, evidence, reason: value.reason } }
+  reason: 'SENTETIK gerçek defter belgesi', preparedBy: actor, preparedAtUtc: `${date}T08:01:00Z`, status: 'Pending', version: '1', decidedBy: null, decidedAtUtc: null, decisionReason: null,
+  targetFunctionalValueTl: '3300.00' }
+const attempt: BookValueAttempt = { key: 'SENTETIK-fixed-key', decision: false, body: { transferId: ID, expectedTransferVersion: '1', sourceBookValueTl: value.sourceBookValueTl, evidence, reason: value.reason, targetFunctionalValueTl: '3300.00' } }
 const json = (x: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(x), { status, headers: { 'Content-Type': 'application/json', ...headers } })
 const boundary = vi.hoisted(() => ({ capture: vi.fn(() => ({ token: 1 })), report: vi.fn() }))
 vi.mock('../shell/useAuthBoundary', () => ({ useAuthBoundary: () => boundary }))
@@ -43,10 +44,16 @@ describe('FIN14 typed book-value proof', () => {
     expect(decodeBookValue({ ...value, status: 'Approved', version: '2', decidedBy: actor, decidedAtUtc: `${date}T09:00:00Z` }, C)).toBeNull()
     expect(decodeBookValue({ ...value, sourceBookValueTl: 3500 }, C)).toBeNull()
     expect(decodeBookValue({ ...value, evidence: { ...evidence, sha256: 'missing' } }, C)).toBeNull()
+    expect(decodeBookValue({ ...value, targetFunctionalValueTl: 3300 }, C)).toBeNull()
+    expect(decodeBookValue({ ...value, targetFunctionalValueTl: '0' }, C)).toBeNull()
+    const legacy = Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'targetFunctionalValueTl'))
+    expect(decodeBookValue(legacy, C)?.targetFunctionalValueTl).toBeNull()
   })
 
   it('refuses a wrong actor or mismatched replay header and never displays arbitrary 503 body text', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(json({ outcome: 'Succeeded', resource: { ...value, preparedBy: 'SENTETIK-other' }, isReplay: false, originalCorrelationId: 'SENTETIK-corr', code: null }))))
+    expect((await sendBookValueAttempt(C, actor, attempt)).kind).toBe('unknown')
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(json({ outcome: 'Succeeded', resource: { ...value, targetFunctionalValueTl: '3400.00' }, isReplay: false, originalCorrelationId: 'SENTETIK-corr', code: null }))))
     expect((await sendBookValueAttempt(C, actor, attempt)).kind).toBe('unknown')
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(json({ outcome: 'Succeeded', resource: value, isReplay: true, originalCorrelationId: 'SENTETIK-corr', code: null }))))
     expect((await sendBookValueAttempt(C, actor, attempt)).kind).toBe('unknown')
@@ -78,11 +85,13 @@ describe('FIN14 book-value workflow consumer', () => {
     const posts = show(); const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: /SENTETIK FX belge/ }))
     await user.type(await screen.findByLabelText(T.amount), '3500,00')
+    await user.type(screen.getByLabelText(T.targetAmount), '3300,00')
     await user.selectOptions(screen.getByLabelText(T.document), DOC)
     await user.type(screen.getByLabelText(T.reason), value.reason)
     await user.click(screen.getByRole('button', { name: T.prepare }))
     expect(await screen.findByText(T.unknown)).toBeTruthy()
     expect((screen.getByLabelText(T.amount) as HTMLInputElement).closest('fieldset')?.disabled).toBe(true)
+    expect((screen.getByLabelText(T.targetAmount) as HTMLInputElement).closest('fieldset')?.disabled).toBe(true)
     await user.click(screen.getByRole('button', { name: T.retry }))
     await waitFor(() => expect(posts).toHaveLength(2))
     expect(posts[0].body).toBe(posts[1].body)
@@ -112,5 +121,14 @@ describe('FIN14 book-value workflow consumer', () => {
     await user.click(await screen.findByRole('button', { name: /SENTETIK FX belge/ }))
     expect(await screen.findByText(T.documentUnavailable)).toBeTruthy()
     expect(screen.queryByRole('button', { name: T.download })).toBeNull()
+  })
+  it('shows a legacy missing target without substituting a benchmark or enabling a fresh approval', async () => {
+    const legacy = Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'targetFunctionalValueTl'))
+    show([legacy], false, true, 'SENTETIK-checker'); const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: /SENTETIK FX belge/ }))
+    expect(await screen.findByText(T.targetValueMissing)).toBeTruthy()
+    expect((screen.getByRole('button', { name: T.approve }) as HTMLButtonElement).disabled).toBe(true)
+    await user.type(screen.getByLabelText(T.rejection), 'SENTETIK iki gerçek değerle yeniden hazırlama')
+    expect((screen.getByRole('button', { name: T.reject }) as HTMLButtonElement).disabled).toBe(false)
   })
 })

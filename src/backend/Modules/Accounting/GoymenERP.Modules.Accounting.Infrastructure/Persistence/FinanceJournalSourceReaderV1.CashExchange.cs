@@ -30,7 +30,7 @@ internal static partial class FinanceJournalSourceReaderV1
             || payload.BookValue is not { } value || !ValidApprovedExchange(source, value, envelope.CompanyId)
             || value.DecidedAtUtc != envelope.OccurredAtUtc) throw Invalid();
         // OwnerProfile is the actual source-leg proof, not a fabricated TL rounding profile.
-        // Journal preparation additionally requires the actual TRY target and the approved Accounting binding.
+        // Journal preparation additionally requires the actual target TL proof and the approved Accounting binding.
         return Finish(value.Id, source.CompanyId, envelope.EventType, value.Version,
             new MoneyText(value.SourceBookValueTl, SettingsCurrencyIdentitiesV1.TurkishLira),
             source.Preparation.SourceProfile, source.Preparation.OccurredOn, value.DecidedAtUtc!.Value) with
@@ -44,6 +44,10 @@ internal static partial class FinanceJournalSourceReaderV1
         && value.TransferId == source.Id && value.TransferVersion == source.Version && value.Version == "2"
         && value.Status == CashExchangeBookValueStatusV1.Approved && value.TransferSourceHash == TransferHash(source)
         && NormalJournalDraftSourcePreparationV1.TryExactAmount(value.SourceBookValueTl, out _)
+        && (value.TargetFunctionalValueTl is null
+            || NormalJournalDraftSourcePreparationV1.TryExactAmount(value.TargetFunctionalValueTl, out var target)
+                && (source.Preparation.TargetMoney.CurrencyId != SettingsCurrencyIdentitiesV1.TurkishLira
+                    || NormalJournalDraftSourcePreparationV1.TryExactAmount(source.Preparation.TargetMoney.Amount, out var actual) && target == actual))
         && value.Evidence is { DocumentId: var document, VersionNo: > 0, Sha256: { Length: 64 } hash }
         && document != Guid.Empty && hash.All(Uri.IsHexDigit) && Text(value.Reason, 2000)
         && Guid.TryParse(value.PreparedBy, out var maker) && maker != Guid.Empty
@@ -102,6 +106,10 @@ internal static partial class FinanceJournalSourceReaderV1
         new(source.Id, value?.Id, source.Preparation.SourceMoney.CurrencyId, source.Preparation.SourceMoney.Amount,
             source.Preparation.TargetMoney.CurrencyId, source.Preparation.TargetMoney.Amount, value?.SourceBookValueTl,
             value is null ? "SourceBookValuePending"
-                : source.Preparation.TargetMoney.CurrencyId != SettingsCurrencyIdentitiesV1.TurkishLira
-                    ? "TargetBookValueUnavailable" : "ApprovedSourceBookValue");
+                : TargetFunctionalAmount(source, value) is null ? "TargetBookValueUnavailable" : "ApprovedSourceBookValue",
+            value?.TargetFunctionalValueTl);
+
+    internal static string? TargetFunctionalAmount(CashTransferView source, CashExchangeBookValueViewV1 value) =>
+        source.Preparation.TargetMoney.CurrencyId == SettingsCurrencyIdentitiesV1.TurkishLira
+            ? source.Preparation.TargetMoney.Amount : value.TargetFunctionalValueTl;
 }

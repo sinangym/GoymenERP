@@ -121,16 +121,21 @@ public sealed class ManufacturingPostedCostAttributionStoreV1(AccountingDbContex
     public Task<PostedManufacturingShipmentCostV1?> ReadAsync(Guid companyId, Guid shipmentId, Guid movementId,
         int movementLineNumber, Guid productId, decimal quantityKg, Func<CancellationToken, Task> freshConsumerFence,
         CancellationToken cancellationToken = default) =>
-        Read(companyId, shipmentId, movementId, movementLineNumber, productId, quantityKg, freshConsumerFence, true, cancellationToken);
+        Read(companyId, shipmentId, movementId, movementLineNumber, productId, quantityKg, freshConsumerFence, true, true, cancellationToken);
 
     public Task<PostedManufacturingShipmentCostV1?> ReadProvenSharesAsync(Guid companyId, Guid shipmentId, Guid movementId,
         int movementLineNumber, Guid productId, decimal quantityKg, Func<CancellationToken, Task> freshConsumerFence,
         CancellationToken cancellationToken = default) =>
-        Read(companyId, shipmentId, movementId, movementLineNumber, productId, quantityKg, freshConsumerFence, false, cancellationToken);
+        Read(companyId, shipmentId, movementId, movementLineNumber, productId, quantityKg, freshConsumerFence, false, true, cancellationToken);
+
+    public Task<PostedManufacturingShipmentCostV1?> ReadPostedDeltasAsync(Guid companyId, Guid shipmentId, Guid movementId,
+        int movementLineNumber, Guid productId, decimal quantityKg, Func<CancellationToken, Task> freshConsumerFence,
+        CancellationToken cancellationToken = default) =>
+        Read(companyId, shipmentId, movementId, movementLineNumber, productId, quantityKg, freshConsumerFence, false, false, cancellationToken);
 
     private async Task<PostedManufacturingShipmentCostV1?> Read(Guid companyId, Guid shipmentId, Guid movementId,
         int movementLineNumber, Guid productId, decimal quantityKg, Func<CancellationToken, Task> freshConsumerFence,
-        bool requireWholeLine, CancellationToken cancellationToken)
+        bool requireWholeLine, bool requireRecognitionWitness, CancellationToken cancellationToken)
     {
         RequireTransaction();
         if (companyId != Company() || shipmentId == Guid.Empty || movementId == Guid.Empty || movementLineNumber < 1
@@ -182,7 +187,7 @@ public sealed class ManufacturingPostedCostAttributionStoreV1(AccountingDbContex
         foreach (var root in shares.GroupBy(x => (x.OutputId, x.ReceiptMovementId)))
         {
             if (root.Select(x => x.Shipment.RootShare).Distinct().Count() != 1
-                || !recognizedRoots.Contains(root.Key))
+                || requireRecognitionWitness && !recognizedRoots.Contains(root.Key))
                 throw Refuse("manufacturing_attribution_root_incomplete");
             coverage = AccountingInventoryCostAmountsV1.Add(coverage, root.First().Shipment.RootShare);
         }
