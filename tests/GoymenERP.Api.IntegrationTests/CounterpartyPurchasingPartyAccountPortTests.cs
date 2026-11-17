@@ -21,6 +21,42 @@ namespace GoymenERP.Api.IntegrationTests;
 /// </summary>
 public sealed class CounterpartyPurchasingPartyAccountPortTests
 {
+    [Theory]
+    [InlineData(PartyRole.Supplier, true, false)]
+    [InlineData(PartyRole.Tolling, false, true)]
+    [InlineData(PartyRole.Supplier | PartyRole.Tolling, true, true)]
+    [InlineData(PartyRole.Customer, false, false)]
+    [InlineData(PartyRole.None, false, false)]
+    public async Task V2_exposes_the_actual_tolling_flag_and_order_specific_terms_without_a_party_default(PartyRole roles, bool supplier, bool tolling)
+    {
+        var owner = new Owner(Detail(new CounterpartyDetailAccountView(Account, Company, roles, true, "7")));
+        var answer = await ((IPurchasingPartyAccountPortV2)Port(owner)).GetAuthorizedAsync(Party, Account);
+        var account = Assert.IsType<PurchasingPartyAccountV2>(answer.Account);
+        Assert.Equal(PurchasingPartyAccountOutcomeV1.Found, answer.Outcome);
+        Assert.Equal((Party, Account, Company, true, true, supplier, tolling, "3", "7"),
+            (account.PartyId, account.CompanyAccountId, account.CompanyId, account.PartyIsActive, account.AccountIsActive,
+                account.AccountHasSupplierRole, account.AccountHasTollingRole, account.PartyVersion, account.AccountVersion));
+        Assert.Equal(PurchasingPaymentTermsScopeV2.OrderSpecific, account.PaymentTermsScope);
+        Assert.Equal([Party], owner.Reads);
+    }
+
+    [Fact]
+    public async Task V2_keeps_foreign_accounts_hidden_and_refuses_lost_company_access_or_changed_actor_before_releasing_role_flags()
+    {
+        var foreign = new Owner(Detail(new CounterpartyDetailAccountView(Account, OtherCompany, PartyRole.Tolling, true, "1")));
+        Assert.Equal(new PurchasingPartyAccountAnswerV2(PurchasingPartyAccountOutcomeV1.NotFound, null),
+            await ((IPurchasingPartyAccountPortV2)Port(foreign)).GetAuthorizedAsync(Party, Account));
+        foreach (var changeActor in new[] { false, true })
+        {
+            var user = new User(Company); var company = Context(Company);
+            var owner = new Owner(Detail(new CounterpartyDetailAccountView(Account, Company, PartyRole.Tolling, true, "1")))
+            { DuringRead = () => { if (changeActor) user.SwapTo("SENTETIK-other"); else user.Revoke(); } };
+            var port = (IPurchasingPartyAccountPortV2)new CounterpartyPurchasingPartyAccountPortV1(company, user, owner);
+            Assert.Equal(new PurchasingPartyAccountAnswerV2(PurchasingPartyAccountOutcomeV1.Denied, null),
+                await port.GetAuthorizedAsync(Party, Account));
+        }
+    }
+
     private static readonly Guid Company = Guid.Parse("10000000-0000-0000-0000-000000000001");
     private static readonly Guid OtherCompany = Guid.Parse("10000000-0000-0000-0000-000000000002");
     private static readonly Guid Party = Guid.Parse("c0000000-0000-4000-8000-000000000001");

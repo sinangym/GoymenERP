@@ -351,7 +351,7 @@ public sealed class LogisticsOperationsWorkSqlServerRelationalAcceptanceTests
         /// <summary>A purchase order of the company towards a SYNTHETIC supplier with one general kg line, approved when asked, through the real Purchasing store.</summary>
         public async Task<PurchaseLineRef> PurchaseOrderAsync(Guid company, string keyPrefix, decimal quantity, bool approve)
         {
-            await using var scope = PurchasingStore(company);
+            await using var scope = await PurchasingStoreAsync(company);
             // Each order one minute after the previous: "newest first" is then a fact of the data, never an id tie-break.
             var at = T0.AddMinutes(Interlocked.Increment(ref purchaseSequence));
             var order = PurchaseOrder.Create(Guid.NewGuid(), company, Guid.NewGuid(), at);
@@ -417,7 +417,7 @@ public sealed class LogisticsOperationsWorkSqlServerRelationalAcceptanceTests
             return new StoreScope<ILogisticsInstructionStore>(dbContext, new LogisticsStore(dbContext, companyContext, collector, TimeProvider.System));
         }
 
-        private StoreScope<IPurchasingStore> PurchasingStore(Guid company)
+        private async Task<StoreScope<IPurchasingStore>> PurchasingStoreAsync(Guid company)
         {
             var companyContext = new CompanyContext();
             companyContext.Set(company);
@@ -425,7 +425,16 @@ public sealed class LogisticsOperationsWorkSqlServerRelationalAcceptanceTests
             var dbContext = new PurchasingDbContext(new DbContextOptionsBuilder<PurchasingDbContext>()
                 .UseSqlServer(Factory.DatabaseConnectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", PurchasingDbContext.Schema))
                 .AddInterceptors(new AuditSaveChangesInterceptor(collector, companyContext)).Options, companyContext);
-            return new StoreScope<IPurchasingStore>(dbContext, new PurchasingStore(dbContext, companyContext, collector, TimeProvider.System));
+            var actor = new PurchaseDocumentNumberSqlTestOwner.FixedActor(company, Actor);
+            var authority = new PurchaseDocumentNumberSqlTestOwner.DirectStoreAuthority();
+            var numberOwner = new PurchaseDocumentNumberSqlTestOwner(Factory.Services, company, actor, authority);
+            try
+            {
+                await numberOwner.ConfigurePurchaseSeriesAsync(company, Actor);
+                return new StoreScope<IPurchasingStore>(dbContext, new PurchasingStore(dbContext, companyContext, collector,
+                    TimeProvider.System, numberOwner.Numbers, actor, authority), numberOwner);
+            }
+            catch { await numberOwner.DisposeAsync(); await dbContext.DisposeAsync(); throw; }
         }
 
         public LogisticsRead LogisticsContext(Guid company)
@@ -531,10 +540,10 @@ public sealed class LogisticsOperationsWorkSqlServerRelationalAcceptanceTests
         }
     }
 
-    private sealed class StoreScope<TStore>(DbContext dbContext, TStore store) : IAsyncDisposable
+    private sealed class StoreScope<TStore>(DbContext dbContext, TStore store, IAsyncDisposable? participant = null) : IAsyncDisposable
     {
         public TStore Store => store;
 
-        public ValueTask DisposeAsync() => dbContext.DisposeAsync();
+        public async ValueTask DisposeAsync() { await dbContext.DisposeAsync(); if (participant is not null) await participant.DisposeAsync(); }
     }
 }

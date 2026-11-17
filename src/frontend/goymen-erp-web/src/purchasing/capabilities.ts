@@ -16,6 +16,7 @@ export const PURCHASING_CAPABILITY = {
    * `purchasing.orders.revise` (name registered only; the grant is a human gate).
    */
   orderLineScheduleWrite: 'purchasing.orders.line-schedule.write',
+  orderSupplierRevise: 'purchasing.orders.supplier-revise',
 } as const
 
 export type PurchasingCapabilityId =

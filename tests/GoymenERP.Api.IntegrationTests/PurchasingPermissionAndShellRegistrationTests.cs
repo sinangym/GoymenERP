@@ -89,7 +89,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         var purchasing = registry.Registrations
             .Where(item => item.Owner == PurchasingShellCapabilityProvider.OwnerId)
             .ToArray();
-        Assert.Equal(13, purchasing.Length);
+        Assert.Equal(14, purchasing.Length);
         string[] published =
         [
             PurchasingShellCapabilityProvider.GoodsReceiptCapabilityId,
@@ -99,6 +99,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
             PurchasingShellCapabilityProvider.DetailCapabilityId,
             PurchasingShellCapabilityProvider.LineScheduleCapabilityId,
             PurchasingShellCapabilityProvider.ListCapabilityId,
+            PurchasingShellCapabilityProvider.SupplierRevisionCapabilityId,
             PurchasingShellCapabilityProvider.RequestApproveCapabilityId,
             PurchasingShellCapabilityProvider.RequestCreateCapabilityId,
             PurchasingShellCapabilityProvider.RequestDetailCapabilityId,

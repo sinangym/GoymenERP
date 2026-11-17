@@ -14,7 +14,8 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 /// accepted or cancelled on a slice lowers the general line's allocatable and nothing is counted twice (§3.3: "teknik dilimler
 /// genel satırın içindedir; iki kez sayılmaz"; the same open rule as <c>PurchaseSalesLinkedSupplyComposer</c>):
 /// committed = (ordered − technical) + Σ slice ordered, accepted = own + Σ slice accepted, cancelled = own + Σ slice cancelled,
-/// closed = own + Σ slice closed (API-11), allocatable = committed − accepted − cancelled − closed. A negative allocatable is a record that cannot be answered and fails closed.
+/// closed = own + Σ slice closed (API-11), definitive returned = own + Σ slice returned (ALC-S6),
+/// allocatable = committed − accepted − cancelled − closed − definitive returned. A negative allocatable is unreadable and fails closed.
 /// Untracked; creates nothing (no attempt, audit or version effect). The list's keyset cursor (business date, order id, line
 /// number) is bound to the company and the product that read it.
 /// </summary>
@@ -41,7 +42,7 @@ internal sealed class PurchaseFutureSupplyReadPort(PurchasingDbContext dbContext
             .Where(row => row.OrderId == orderId && row.LineId == lineId)
             .Select(row => new LineFacts(row.CompanyId, row.OrderId, row.LineId, row.LineNo, row.Kind, row.ParentLineId,
                 row.SourceRequestLineId, row.ProductId, row.ProductVersion, row.UnitId, row.UnitIsKilogram, row.Ordered, row.Technical,
-                row.Accepted, row.Cancelled, row.Closed))
+                row.Accepted, row.Cancelled, row.Closed, row.DefinitiveReturned))
             .SingleOrDefaultAsync(cancellationToken);
         if (line is null)
         {
@@ -76,23 +77,20 @@ internal sealed class PurchaseFutureSupplyReadPort(PurchasingDbContext dbContext
                 PurchaseFutureSupplyStatusesV1.TechnicalLine, parentLineId);
         }
 
-        if (order.Status != ApprovedStatus)
-        {
-            return new PurchaseFutureSupplyAnswerV1(PurchaseFutureSupplyOutcomeV1.NotAllocatable, null,
-                ((PurchaseOrderStatus)order.Status).ToString(), null);
-        }
-
         var slices = await dbContext.OrderLines.AsNoTracking()
             .Where(row => row.OrderId == orderId && row.ParentLineId == lineId && row.Kind == TechnicalKind)
             .GroupBy(row => row.OrderId)
             .Select(group => new SliceTotals(group.Sum(row => row.Ordered), group.Sum(row => row.Accepted), group.Sum(row => row.Cancelled),
-                group.Sum(row => row.Closed)))
+                group.Sum(row => row.Closed), group.Sum(row => row.DefinitiveReturned)))
             .SingleOrDefaultAsync(cancellationToken) ?? SliceTotals.None;
 
         var salesIntent = await SalesIntentAsync(order.SourceRequestId, line.SourceRequestLineId is { } requestLineId ? [requestLineId] : [],
             cancellationToken);
-        return new PurchaseFutureSupplyAnswerV1(PurchaseFutureSupplyOutcomeV1.Allocatable,
-            Compose(companyId, order, line, slices, salesIntent), null, null);
+        var answerLine = Compose(companyId, order, line, slices, salesIntent);
+        return order.Status == ApprovedStatus
+            ? new PurchaseFutureSupplyAnswerV1(PurchaseFutureSupplyOutcomeV1.Allocatable, answerLine, null, null)
+            : new PurchaseFutureSupplyAnswerV1(PurchaseFutureSupplyOutcomeV1.NotAllocatable,
+                answerLine with { AllocatableText = "0" }, ((PurchaseOrderStatus)order.Status).ToString(), null);
     }
 
     public async Task<PurchaseFutureSupplyPageV1> ListAllocatableLinesAsync(Guid productId, int pageSize, string? cursor, CancellationToken cancellationToken = default)
@@ -127,8 +125,11 @@ internal sealed class PurchaseFutureSupplyReadPort(PurchasingDbContext dbContext
             let sliceClosed = technical
                 .Where(slice => slice.CompanyId == line.CompanyId && slice.OrderId == line.OrderId && slice.ParentLineId == line.LineId)
                 .Sum(slice => (decimal?)slice.Closed) ?? 0m
+            let sliceReturned = technical
+                .Where(slice => slice.CompanyId == line.CompanyId && slice.OrderId == line.OrderId && slice.ParentLineId == line.LineId)
+                .Sum(slice => (decimal?)slice.DefinitiveReturned) ?? 0m
             where line.Ordered - line.Technical + sliceOrdered - line.Accepted - sliceAccepted - line.Cancelled - sliceCancelled
-                - line.Closed - sliceClosed > 0m
+                - line.Closed - sliceClosed - line.DefinitiveReturned - sliceReturned > 0m
             select new
             {
                 order.CompanyId,
@@ -154,10 +155,12 @@ internal sealed class PurchaseFutureSupplyReadPort(PurchasingDbContext dbContext
                 line.Accepted,
                 line.Cancelled,
                 line.Closed,
+                line.DefinitiveReturned,
                 SliceOrdered = sliceOrdered,
                 SliceAccepted = sliceAccepted,
                 SliceCancelled = sliceCancelled,
                 SliceClosed = sliceClosed,
+                SliceReturned = sliceReturned,
             };
 
         if (cursor is not null)
@@ -192,8 +195,8 @@ internal sealed class PurchaseFutureSupplyReadPort(PurchasingDbContext dbContext
                     row.Status, row.Version, row.EffectiveOn);
                 var line = new LineFacts(row.LineCompanyId, row.OrderId, row.LineId, row.LineNo, row.Kind, row.ParentLineId,
                     row.SourceRequestLineId, row.ProductId, row.ProductVersion, row.UnitId, row.UnitIsKilogram, row.Ordered, row.Technical,
-                    row.Accepted, row.Cancelled, row.Closed);
-                items.Add(Compose(companyId, order, line, new SliceTotals(row.SliceOrdered, row.SliceAccepted, row.SliceCancelled, row.SliceClosed),
+                    row.Accepted, row.Cancelled, row.Closed, row.DefinitiveReturned);
+                items.Add(Compose(companyId, order, line, new SliceTotals(row.SliceOrdered, row.SliceAccepted, row.SliceCancelled, row.SliceClosed, row.SliceReturned),
                     salesIntent));
             }
         }
@@ -238,8 +241,9 @@ internal sealed class PurchaseFutureSupplyReadPort(PurchasingDbContext dbContext
         var accepted = line.Accepted + slices.Accepted;
         var cancelled = line.Cancelled + slices.Cancelled;
         var closed = line.Closed + slices.Closed;
-        var allocatable = committed - accepted - cancelled - closed;
-        if (committed < 0m || accepted < 0m || cancelled < 0m || closed < 0m || allocatable < 0m)
+        var returned = line.DefinitiveReturned + slices.DefinitiveReturned;
+        var allocatable = committed - accepted - cancelled - closed - returned;
+        if (committed < 0m || accepted < 0m || cancelled < 0m || closed < 0m || returned < 0m || allocatable < 0m)
         {
             // Fail closed: an over-accepted or over-cancelled record is never answered as a guessed (clamped) amount.
             throw Unreadable();
@@ -248,7 +252,7 @@ internal sealed class PurchaseFutureSupplyReadPort(PurchasingDbContext dbContext
         var intent = line.SourceRequestLineId is { } requestLineId && salesIntent.TryGetValue(requestLineId, out var found) ? found : null;
         return new PurchaseFutureSupplyLineV1(companyId, order.OrderId, line.LineId, line.LineNo, order.SupplierPartyId, order.CompanyAccountId,
             line.ProductId, line.ProductVersion, line.UnitId, PurchaseOrderLineKind.General.ToString(), Text(committed, unit), Text(accepted, unit),
-            Text(cancelled, unit), Text(closed, unit), Text(allocatable, unit), intent?.SalesOrderId, intent?.SalesOrderLineId, order.Version);
+            Text(cancelled, unit), Text(closed, unit), Text(allocatable, unit), intent?.SalesOrderId, intent?.SalesOrderLineId, order.Version, Text(returned, unit));
     }
 
     private static string Text(decimal value, QuantityUnit unit) => Quantity.Of(value, unit).Value.ToString(CultureInfo.InvariantCulture);
@@ -260,11 +264,11 @@ internal sealed class PurchaseFutureSupplyReadPort(PurchasingDbContext dbContext
 
     private sealed record LineFacts(Guid CompanyId, Guid OrderId, Guid LineId, int LineNo, int Kind, Guid? ParentLineId, Guid? SourceRequestLineId,
         Guid ProductId, string ProductVersion, Guid UnitId, bool UnitIsKilogram, decimal Ordered, decimal Technical, decimal Accepted, decimal Cancelled,
-        decimal Closed);
+        decimal Closed, decimal DefinitiveReturned);
 
-    private sealed record SliceTotals(decimal Ordered, decimal Accepted, decimal Cancelled, decimal Closed)
+    private sealed record SliceTotals(decimal Ordered, decimal Accepted, decimal Cancelled, decimal Closed, decimal DefinitiveReturned)
     {
-        public static readonly SliceTotals None = new(0m, 0m, 0m, 0m);
+        public static readonly SliceTotals None = new(0m, 0m, 0m, 0m, 0m);
     }
 
     private sealed record SalesIntent(Guid? SalesOrderId, Guid? SalesOrderLineId);

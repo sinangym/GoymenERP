@@ -697,7 +697,7 @@ public sealed partial class PurchasingServiceTests
     }
 
     /// <summary>An in-memory store of the contract's replay rules; the Σ-shares rule is switched on by <see cref="OverSourced"/> (the real rule is the SQL store's).</summary>
-    private sealed class FakeStore : IPurchasingStore
+    private sealed partial class FakeStore : IPurchasingStore
     {
         private sealed record Attempt(string Actor, string Hash, StoredPurchaseRequest? Request, StoredPurchaseOrder? Order, PurchasingTerminalRefusal? Refusal, string Correlation);
 
