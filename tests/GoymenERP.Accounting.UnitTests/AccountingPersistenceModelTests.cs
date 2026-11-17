@@ -242,6 +242,9 @@ public sealed class AccountingPersistenceModelTests
     [InlineData("edit-cancellation")]
     [InlineData("edit-voucher-amount")]
     [InlineData("rewrite-posted-voucher")]
+    [InlineData("change-posted-approval")]
+    [InlineData("change-posted-journal")]
+    [InlineData("skip-posted-version")]
     public void Source_voucher_financial_facts_and_cancellation_receipts_are_immutable_before_database_access(string fault)
     {
         using var context = Context();
@@ -253,9 +256,12 @@ public sealed class AccountingPersistenceModelTests
         else
         {
             var row = new AccountingSourceDocumentVoucherDraftRow { CompanyId = CompanyA, Id = Guid.NewGuid(),
-                SourceActorId = Guid.NewGuid(), Status = fault == "rewrite-posted-voucher" ? 2 : 1, Version = 1 };
+                SourceActorId = Guid.NewGuid(), Status = fault == "edit-voucher-amount" ? 1 : 2, Version = 1 };
             context.Attach(row); row.Version = 2;
             if (fault == "edit-voucher-amount") { row.Status = 3; row.FunctionalPayable = 100; }
+            else if (fault == "change-posted-approval") row.ApprovedBy = Guid.NewGuid();
+            else if (fault == "change-posted-journal") row.JournalId = Guid.NewGuid();
+            else if (fault == "skip-posted-version") row.Version = 3;
             else row.Status = 3;
         }
         Assert.Throws<InvalidOperationException>(() => context.SaveChanges());
