@@ -268,7 +268,43 @@ function decodeDecision(value: unknown): InvoiceDecision | null {
 }
 
 /** The recorded match of the official e-invoice (SAT-D14): the server's amounts and its tolerance, shown, never judged. */
+export interface OfficialInvoiceSourceProof {
+  readonly companyId: string
+  readonly invoiceId: string
+  readonly sourceKind: 'manual' | 'approved-import'
+  readonly version: string
+  readonly approvedAtUtc: string
+  readonly pdfDocumentId: string | null
+  readonly pdfDocumentVersionNo: number | null
+  readonly pdfSha256: string | null
+  readonly sourceBatchId: string | null
+  readonly sourceChecksum: string | null
+  readonly hasPendingManual: boolean
+}
+const SOURCE_PROOF_FIELDS = ['companyId', 'invoiceId', 'sourceKind', 'version', 'approvedAtUtc', 'pdfDocumentId',
+  'pdfDocumentVersionNo', 'pdfSha256', 'sourceBatchId', 'sourceChecksum', 'hasPendingManual'] as const
+const isHash = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value)
+function decodeSourceProof(value: unknown): OfficialInvoiceSourceProof | null {
+  const o = exact(value, SOURCE_PROOF_FIELDS)
+  if (o === null || !isReferenceId(o.companyId) || !isReferenceId(o.invoiceId) || !isText(o.version)
+    || o.version.length > 128 || !isInstant(o.approvedAtUtc) || typeof o.hasPendingManual !== 'boolean') return null
+  if (o.sourceKind === 'manual' && isReferenceId(o.pdfDocumentId) && isPositiveCount(o.pdfDocumentVersionNo)
+    && isHash(o.pdfSha256) && o.sourceBatchId === null && o.sourceChecksum === null && !o.hasPendingManual) {
+    return { companyId: o.companyId, invoiceId: o.invoiceId, sourceKind: o.sourceKind, version: o.version,
+      approvedAtUtc: o.approvedAtUtc, pdfDocumentId: o.pdfDocumentId, pdfDocumentVersionNo: o.pdfDocumentVersionNo,
+      pdfSha256: o.pdfSha256, sourceBatchId: null, sourceChecksum: null, hasPendingManual: false }
+  }
+  if (o.sourceKind === 'approved-import' && isReferenceId(o.sourceBatchId) && isHash(o.sourceChecksum)
+    && o.pdfDocumentId === null && o.pdfDocumentVersionNo === null && o.pdfSha256 === null) {
+    return { companyId: o.companyId, invoiceId: o.invoiceId, sourceKind: o.sourceKind, version: o.version,
+      approvedAtUtc: o.approvedAtUtc, pdfDocumentId: null, pdfDocumentVersionNo: null, pdfSha256: null,
+      sourceBatchId: o.sourceBatchId, sourceChecksum: o.sourceChecksum, hasPendingManual: o.hasPendingManual }
+  }
+  return null
+}
 export interface InvoiceMatch {
+  readonly invoiceDate: string | null
+  readonly sourceProof: OfficialInvoiceSourceProof | null
   readonly officialInvoiceNo: string
   readonly ettn: string
   readonly invoiceAmount: string
@@ -299,7 +335,7 @@ const MATCH_TAX_FIELDS = [
 ] as const
 const MATCH_FIELDS = [
   'officialInvoiceNo', 'ettn', 'invoiceAmount', 'officialAmount', 'difference', 'tolerance', 'matchedBy', 'matchedAtUtc',
-  'differenceApprovedBy', 'differenceReason', ...MATCH_TAX_FIELDS,
+  'differenceApprovedBy', 'differenceReason', 'invoiceDate', 'sourceProof', ...MATCH_TAX_FIELDS,
 ] as const
 
 /** All six present (non-negative; the differences are the server's absolute differences) or all six null; a mix is not this contract (`undefined`). */
@@ -324,11 +360,15 @@ function decodeMatch(value: unknown): InvoiceMatch | null {
     || !isNullableText(o.differenceApprovedBy) || !isNullableText(o.differenceReason)
   ) return null
   const taxes = decodeMatchTaxes(o)
-  if (taxes === undefined) return null
+  const sourceProof = o.sourceProof === null ? null : decodeSourceProof(o.sourceProof)
+  if (taxes === undefined || (o.sourceProof !== null && sourceProof === null)
+    || !(o.invoiceDate === null || isDateOnly(o.invoiceDate))
+    || ((o.invoiceDate === null) !== (sourceProof === null))) return null
   return {
     officialInvoiceNo: o.officialInvoiceNo, ettn: o.ettn, invoiceAmount: o.invoiceAmount, officialAmount: o.officialAmount,
     difference: o.difference, tolerance: o.tolerance, matchedBy: o.matchedBy, matchedAtUtc: o.matchedAtUtc,
     differenceApprovedBy: o.differenceApprovedBy, differenceReason: o.differenceReason, taxes,
+    invoiceDate: o.invoiceDate, sourceProof,
   }
 }
 

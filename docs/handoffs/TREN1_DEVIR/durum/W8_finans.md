@@ -109,3 +109,28 @@ Tam test, gerçek SQL, arayüz kabulü, CI ve bağımsız K3 incelemesi: NOT_RUN
 - Kayıt/onay kanıtı eksik gider, teyitsiz hareket, şirket/aktör değişimi ve son okuma yetkisinin kaybı fiş kaynağı olmaz. Virman iki bacağıyla tek kaynaktır; ikinci para hareketi oluşturulmaz. Döviz çevrimi, kur farkı, banka masrafı veya kredi faizi metinden tahmin edilmez.
 - Birim test kaynakları ve gerçek SQL'de aktif/superseded paket, şirket sınırı, değişen kaynak sürümü ve belirsiz tür testi yazıldı. API, IntegrationTests ve Accounting.UnitTests kaynak derlemeleri exit 0, uyarı/hata 0. Yeni migration, THROW veya izin yok; runtime test/SQL/CI NOT_RUN.
 - FIN-S14 bütünü PARTIAL kalır: diğer B-28 kaynakları, gerçek outbox/host bağlantısı ve kullanıcı akışı bu kayıtla tamamlanmış sayılmaz.
+
+
+## FIN-SC36 — PARTIAL, gerçek Finans → Satış kaynak kanıtı
+
+Kararlar: KLN-D102/D104, FNS-D76/D89/D90; bu kaynak checkpoint'i tüm dilimin kabulü değildir.
+
+- Gerçek Finance owner köprüsü resmî tarihi, kaynak belge kimliğini, onay sürümünü/tarihini, manuel PDF kimlik/sürüm/hash veya import batch/checksum kanıtını ve bekleyen manuel kayıt bilgisini Sales'e taşır. Kaynak eksikse 503 döner; taslak tarihi veya hayali kaynak kullanılmaz.
+- Sales eşleştirmesi bu kanıtı append-only kayıt ve audit içinde saklar. Yeni eşleştirmede şirket/tarih/kaynak biçimi doğrulanır. Eski tarihsiz/kanıtsız eşleştirme okunur; kesinleştirme açık `sales_invoice_match_source_proof_required` ile durur. Geçmiş kayıt yerinde doldurulmaz.
+- `sales.invoice.finalized.v1` gerçek `invoiceDate` ve `finalizedBy` alanlarını ekler. Muhasebenin mevcut tüketicisi bunları okur; `businessDate` fatura tarihi yerine geçmez. Eşleştirme kanıtı da olayda korunur; yeni para veya stok hareketi oluşmaz.
+- Satış detayında resmî tarih, manuel/import kaynak türü, bekleyen manuel kayıt notu ve legacy eksikliği görünür. Strict decoder karma/eksik kaynak ve bozuk hash'i reddeder; tutar hesabı yapılmaz.
+- EF `20261117081514_AddSalesInvoiceOfficialSourceProof` üretildi; kaynak kanıtı varken Down ilk işlemde `THROW 51982` ile durur. Nullable eski kayıtlar için backfill yoktur. Designer/snapshot üreticiden; mutation SQL sayısı 1. Merkezi pin/OpenAPI/ilişkisel envanter üretimi entegrasyondadır.
+- Birim, kalıcılık modeli, olay sözleşmesi, strict UI ve gerçek SQL fact kaynakları eklendi. Yeni SQL fact: `GoymenERP.Api.IntegrationTests.SalesInvoiceSqlServerRelationalAcceptanceTests.Official_match_source_proof_survives_reload_and_down_51982_refuses_without_losing_the_match`.
+- API, Sales.UnitTests, Finance.UnitTests ve IntegrationTests kaynak derlemeleri exit 0, 0 uyarı/hata. Parametreler: `--no-restore -m:1 -nr:false -p:UseSharedCompilation=false -p:OpenApiGenerateDocumentsOnBuild=false`. Sales.Unit eksik assets için yalnız mevcut yerel NuGet önbelleğinden restore edildi. Finance audit beklentisinin nullable permission türü merkez sözleşmesiyle hizalandı; test beklentisi gevşetilmedi.
+- TypeScript `tsc -b` exit 0; `git diff --check` exit 0. Runtime birim/SQL/Vitest/browser/CI ve OpenAPI üretimi NOT_RUN. Program/Shell kayıtları, para politikaları, gerçek grant ve Finance STOP değişmedi.
+
+## FIN-S13 — PARTIAL, gerçek Sales outbox kaynağı
+
+Kararlar: FNS-D76, FNS-D89/D90 ve transactional outbox/inbox değişmezi.
+
+- `SalesOutboxEventSourceV1`, mevcut `sales` kaynak kimliğini ve `sales.invoice.finalized.v1` / `sales.return-invoice.finalized.v1` schema 1 olaylarını aynen taşır. Payload/olay kimliği, şirket, correlation ve causation yeniden üretilmez; para veya stok hareketi oluşturmaz.
+- SQL Server'ın ürettiği rowversion ile 20 haneli imleç kullanılır. Sabit `MIN_ACTIVE_ROWVERSION()` sorgusu, daha erken başlayıp henüz commit olmamış olayın sonraki commit tarafından atlanmasını engeller. Şirket filtresi korunur; iki okuma sonrası bağlam yeniden ölçülür. Bu metadata ham SQL yüzeyi **K3 review bekliyor**; guard izin listesine eklenmedi.
+- EF `20261117084843_AddSalesOutboxCommittedCursor` üretildi; şirket/imleç indeksi eklendi. Outbox kaydı varsa Down ilk adımda `THROW 51983` ile durur. Designer/snapshot üreticiden; mevcut append-only trigger korunur.
+- Kaynak beyanı, bozuk imleç, çözülmemiş şirket ve iptal test kaynakları; rowversion/snapshot/Down model testleri yazıldı. Gerçek SQL fact kaynakları önceki açık transaction/sonraki commit, rollback, şirket izolasyonu, aynı olayın değişmeden okunması ve 51983 veri korumasını kapsar.
+- Merkezi kayıtlar entegrasyonda eklenir: `AddWorkOutboxEventSource<SalesOutboxEventSourceV1>` ve mevcut `AccountingSalesInvoiceFinalizedInboxConsumer`. Dispatch/Accounting aktivasyonu, grant ve Finance STOP değişmedi.
+- API, Sales.UnitTests ve IntegrationTests kaynak derlemeleri exit 0, 0 uyarı/hata; `git diff --check` exit 0. `--no-restore -m:1 -nr:false -p:UseSharedCompilation=false -p:OpenApiGenerateDocumentsOnBuild=false` kullanıldı. Runtime birim/SQL/CI ve OpenAPI üretimi NOT_RUN. FIN-S13 tüm üretici/tüketici akışının kabulü bu checkpoint ile tamamlanmış sayılmaz.

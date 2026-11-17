@@ -595,6 +595,30 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     /// <summary>API-35: the match row is append-only; the trigger refuses every UPDATE and DELETE (THROW 51226).</summary>
     internal const string InvoiceMatchGuardTrigger = "TR_InvoiceMatches_Guard";
+    // Legacy matches remain readable; a new match must carry the approved owner's complete proof in application/domain code.
+    internal const string InvoiceMatchSourceProofConstraint = "([OfficialInvoiceDate] IS NULL AND [OfficialSourceProofJson] IS NULL) OR "
+        + "(CASE WHEN [OfficialInvoiceDate] > '0001-01-01' AND [OfficialSourceProofJson] IS NOT NULL "
+        + "AND ISJSON([OfficialSourceProofJson]) = 1 "
+        + "AND TRY_CONVERT(uniqueidentifier, JSON_VALUE([OfficialSourceProofJson], '$.companyId')) = [CompanyId] "
+        + "AND TRY_CONVERT(uniqueidentifier, JSON_VALUE([OfficialSourceProofJson], '$.invoiceId')) <> '00000000-0000-0000-0000-000000000000' "
+        + "AND LEN(JSON_VALUE([OfficialSourceProofJson], '$.version')) BETWEEN 1 AND 128 "
+        + "AND TRY_CONVERT(datetimeoffset, JSON_VALUE([OfficialSourceProofJson], '$.approvedAtUtc')) > '0001-01-01' "
+        + "AND ((JSON_VALUE([OfficialSourceProofJson], '$.sourceKind') = 'manual' "
+        + "AND TRY_CONVERT(uniqueidentifier, JSON_VALUE([OfficialSourceProofJson], '$.pdfDocumentId')) <> '00000000-0000-0000-0000-000000000000' "
+        + "AND TRY_CONVERT(int, JSON_VALUE([OfficialSourceProofJson], '$.pdfDocumentVersionNo')) > 0 "
+        + "AND LEN(JSON_VALUE([OfficialSourceProofJson], '$.pdfSha256')) = 64 "
+        + "AND JSON_VALUE([OfficialSourceProofJson], '$.pdfSha256') COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-fA-F]%' "
+        + "AND JSON_VALUE([OfficialSourceProofJson], '$.sourceBatchId') IS NULL "
+        + "AND JSON_VALUE([OfficialSourceProofJson], '$.sourceChecksum') IS NULL "
+        + "AND JSON_VALUE([OfficialSourceProofJson], '$.hasPendingManual') = 'false') "
+        + "OR (JSON_VALUE([OfficialSourceProofJson], '$.sourceKind') = 'approved-import' "
+        + "AND TRY_CONVERT(uniqueidentifier, JSON_VALUE([OfficialSourceProofJson], '$.sourceBatchId')) <> '00000000-0000-0000-0000-000000000000' "
+        + "AND LEN(JSON_VALUE([OfficialSourceProofJson], '$.sourceChecksum')) = 64 "
+        + "AND JSON_VALUE([OfficialSourceProofJson], '$.sourceChecksum') COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-fA-F]%' "
+        + "AND JSON_VALUE([OfficialSourceProofJson], '$.pdfDocumentId') IS NULL "
+        + "AND JSON_VALUE([OfficialSourceProofJson], '$.pdfDocumentVersionNo') IS NULL "
+        + "AND JSON_VALUE([OfficialSourceProofJson], '$.pdfSha256') IS NULL "
+        + "AND JSON_VALUE([OfficialSourceProofJson], '$.hasPendingManual') IN ('true', 'false'))) THEN 1 ELSE 0 END = 1)";
 
     /// <summary>
     /// CK_InvoiceMatches_Amounts (SAT-D229, SAT-D106; SAT-D241): the payable, VAT and withholding differences all within the tolerance —
@@ -1396,11 +1420,13 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                 + "AND LEN([OfficialInvoiceNo]) > 0 AND LEN([Ettn]) = 36 AND LEN([MatchedBy]) > 0 AND LEN([CorrelationId]) > 0");
             table.HasCheckConstraint("CK_InvoiceMatches_Amounts", InvoiceMatchAmountsConstraint);
             table.HasCheckConstraint("CK_InvoiceMatches_TaxAmounts", InvoiceMatchTaxAmountsConstraint);
+            table.HasCheckConstraint("CK_InvoiceMatches_SourceProof", InvoiceMatchSourceProofConstraint);
             table.HasTrigger(InvoiceMatchGuardTrigger);
         });
         match.HasKey(x => new { x.CompanyId, x.InvoiceId });
         match.Property(x => x.OfficialInvoiceNo).HasMaxLength(SalesInvoice.MaximumOfficialNoLength).UseCollation(IdentityCollation).IsRequired();
         match.Property(x => x.Ettn).HasMaxLength(SalesInvoice.EttnLength).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        match.Property(x => x.OfficialSourceProofJson).HasMaxLength(2048);
         match.Property(x => x.InvoiceAmount).HasPrecision(28, 8);
         match.Property(x => x.OfficialAmount).HasPrecision(28, 8);
         match.Property(x => x.Difference).HasPrecision(28, 8);
@@ -1470,6 +1496,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         });
         outbox.HasKey(x => x.Id);
         outbox.Property(x => x.Id).ValueGeneratedNever();
+        outbox.Property(x => x.Position).IsRowVersion().HasConversion<byte[]>();
+        outbox.HasIndex(x => new { x.CompanyId, x.Position });
         outbox.Property(x => x.EventType).HasMaxLength(160).IsUnicode(false).IsRequired();
         outbox.Property(x => x.SourceOperation).HasMaxLength(128).IsUnicode(false).IsRequired();
         outbox.Property(x => x.AggregateType).HasMaxLength(160).IsUnicode(false).IsRequired();

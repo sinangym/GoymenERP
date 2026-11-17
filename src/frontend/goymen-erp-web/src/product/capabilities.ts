@@ -57,6 +57,7 @@ export const PRODUCT_ACTIVATE_CAPABILITY = 'product.items.activate'
  */
 export const PRODUCT_DEACTIVATE_CAPABILITY = 'product.items.deactivate'
 export const PRODUCT_REACTIVATE_CAPABILITY = 'product.items.reactivate'
+export const PRODUCT_SET_COGS_CLASSIFICATION_CAPABILITY = 'product.items.set-cogs-classification'
 
 export type ProductCapabilityId = (typeof PRODUCT_CAPABILITY)[keyof typeof PRODUCT_CAPABILITY]
 

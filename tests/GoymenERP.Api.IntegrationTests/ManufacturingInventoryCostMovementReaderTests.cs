@@ -18,8 +18,31 @@ public sealed class ManufacturingInventoryCostMovementReaderTests
         var fixture = new Fixture(); var issue = fixture.Owner.Value.Issues[0];
         fixture.Owner.Value = fixture.Owner.Value with { Issues = [issue with { Currency = new(InventoryIssueCostCurrencyStatusV1.Converted,
             Guid.NewGuid(), 2m, 40m, "synthetic-invoice:1", null) }] };
-        Assert.Null(await new ManufacturingInventoryCostMovementReader(fixture.Company, fixture.User, fixture.Owner)
-            .ReadAsync(fixture.CompanyId, fixture.OrderId, CancellationToken.None));
+        var result = await new ManufacturingInventoryCostMovementReader(fixture.Company, fixture.User, fixture.Owner)
+            .ReadAsync(fixture.CompanyId, fixture.OrderId, CancellationToken.None);
+        var read = Assert.Single(result!.Issues);
+        Assert.Equal((issue.FactId, issue.MovementId, issue.ParentLabelId), (read.FactId, read.MovementId, read.ParentLabelId));
+        Assert.Equal(IssueCostReadStatus.Unreadable, read.Status);
+        Assert.Equal(IssueCostCurrencyStatus.Unreadable, read.Currency.Status);
+        Assert.Null(read.StampedUnitCostTl);
+        Assert.Null(read.Currency.ExchangeRate);
+        Assert.Contains("manufacturing_input_rate_source_unreadable", read.RateEvidenceJson ?? "");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task An_unreadable_rate_source_preserves_the_actual_issue_but_never_promotes_its_invoice_rate(bool throws)
+    {
+        var fixture = new Fixture(); var issue = fixture.Owner.Value.Issues[0];
+        fixture.Owner.Value = fixture.Owner.Value with { Issues = [issue with { Currency = new(InventoryIssueCostCurrencyStatusV1.Converted,
+            Guid.NewGuid(), 2m, 40m, "synthetic-invoice:1", null) }] };
+        var reader = new ManufacturingInventoryCostMovementReader(fixture.Company, fixture.User, fixture.Owner, new UnreadableRate(throws));
+        var read = Assert.Single((await reader.ReadAsync(fixture.CompanyId, fixture.OrderId, CancellationToken.None))!.Issues);
+        Assert.Equal(issue.MovementId, read.MovementId);
+        Assert.Equal(IssueCostReadStatus.Unreadable, read.Status);
+        Assert.Null(read.StampedUnitCostTl);
+        Assert.Null(read.Currency.ExchangeRate);
     }
 
     [Theory]
@@ -135,6 +158,13 @@ public sealed class ManufacturingInventoryCostMovementReaderTests
         public Task<ManufacturingInputRateProofV1?> ReadAsync(Guid companyId, Guid orderId, Guid factId, Guid labelId,
             IssueCostCurrencyInput recordedCurrency, CancellationToken ct) =>
             Task.FromResult<ManufacturingInputRateProofV1?>(new(recordedCurrency, "synthetic-priority:1", "{}"));
+    }
+    private sealed class UnreadableRate(bool throws) : IManufacturingInputRatePriorityReadPortV1
+    {
+        public Task<ManufacturingInputRateProofV1?> ReadAsync(Guid companyId, Guid orderId, Guid factId, Guid labelId,
+            IssueCostCurrencyInput recordedCurrency, CancellationToken ct) => throws
+                ? throw new InvalidOperationException("Synthetic cost source outage")
+                : Task.FromResult<ManufacturingInputRateProofV1?>(null);
     }
     private sealed class User(Guid companyId) : ICurrentUser
     {

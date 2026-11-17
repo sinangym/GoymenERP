@@ -23,7 +23,8 @@ public sealed record MatchSalesInvoiceRequest(string ExpectedVersion, string Off
 public sealed record SalesInvoiceMatchView(string OfficialInvoiceNo, string Ettn, string InvoiceAmount, string OfficialAmount,
     string Difference, string Tolerance, string MatchedBy, DateTimeOffset MatchedAtUtc, string? DifferenceApprovedBy, string? DifferenceReason,
     string? InvoiceVatAmount, string? OfficialVatAmount, string? VatDifference, string? InvoiceWithholdingAmount,
-    string? OfficialWithholdingAmount, string? WithholdingDifference);
+    string? OfficialWithholdingAmount, string? WithholdingDifference, DateOnly? InvoiceDate = null,
+    SalesOfficialInvoiceSourceProofV1? SourceProof = null);
 
 /// <summary>How the official-invoice provider answered one lookup; anything but <see cref="Found"/> is read fail-closed.</summary>
 public enum SalesOfficialInvoiceOutcomeV1

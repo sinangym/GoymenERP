@@ -22,6 +22,7 @@ import { AppShell } from '../shell/AppShell'
 import { SHELL_CAPABILITY_CONTRACT_VERSION } from '../shell/api'
 import { productRoutes } from './productRoutes'
 import { PRODUCT_CAPABILITY } from './capabilities'
+import { COGS_SOURCE } from './cogsClassification/contract'
 
 export const COMPANY_A = 'aaaaaaaa-0000-0000-0000-000000000001'
 export const COMPANY_B = 'bbbbbbbb-0000-0000-0000-000000000002'
@@ -207,6 +208,8 @@ export interface HarnessConfig {
   readonly onProfileWeights?: (method: string, body: string | null) => Response | Promise<Response>
   /** `GET/POST/PUT /product-package-standards` (B-08/BS-10); defaults to 403 — the manage name is granted to no role. */
   readonly onPackageStandards?: (method: string, body: string | null) => Response | Promise<Response>
+  /** Synthetic owner DTO only. GET is the existing global read; no COGS write grant is inferred. */
+  readonly onCogsClassification?: (method: string, body: string | null) => Response | Promise<Response>
 }
 
 /**
@@ -255,6 +258,14 @@ export function installFetch(config: HarnessConfig = {}) {
     // Before `/products`: the edit route `/product-package-standards/products/{id}` contains that segment.
     if (url.includes('/product-package-standards')) {
       return (await config.onPackageStandards?.(method, body)) ?? json({}, 403)
+    }
+    if (url.includes('/product-cogs-classifications/')) {
+      const custom = await config.onCogsClassification?.(method, body)
+      if (custom !== undefined) return custom
+      if (method !== 'GET') return json({}, 403)
+      const productId = decodeURIComponent(url.split('/product-cogs-classifications/')[1].split(/[?#]/)[0])
+      return json({ companyId: headers['X-Company-Id'] ?? null, productId, productVersion: '7', classificationVersion: '0',
+        classification: null, changedInCompanyId: null, updatedAtUtc: null, sourceVersion: COGS_SOURCE })
     }
     if (url.includes('/products/code-groups')) {
       return (await config.onGroups?.()) ?? json(codeGroups())

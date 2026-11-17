@@ -42,6 +42,7 @@ public static class ProductHistoryApiV1
     public const string Activate = "Activate";
     public const string Deactivate = "Deactivate";
     public const string Reactivate = "Reactivate";
+    public const string SetCogsClassification = "SetCogsClassification";
 }
 
 /// <summary>The only change keys a history entry may carry, in display order.</summary>
@@ -49,7 +50,7 @@ public static class ProductHistoryFields
 {
     public static readonly IReadOnlyList<string> All =
     [
-        "name", "classId", "familyId", "lifecycle",
+        "name", "classId", "familyId", "lifecycle", "cogsClassification",
         "roles.purchasable", "roles.sellable", "roles.productionInput", "roles.productionOutput",
         "references.templateId", "references.templateVersion", "references.attributes",
         "references.units.stock", "references.units.purchase", "references.units.sales",

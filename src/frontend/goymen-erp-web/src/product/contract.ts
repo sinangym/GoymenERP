@@ -858,7 +858,7 @@ export function productFieldErrorsOf(raw: unknown): readonly ProductFieldError[]
  * version step and the recorded reason — not who, until an Identity display source
  * exists for it.
  */
-export const HISTORY_OPERATION = ['DraftCreate', 'DraftBasicEdit', 'Activate', 'Deactivate', 'Reactivate'] as const
+export const HISTORY_OPERATION = ['DraftCreate', 'DraftBasicEdit', 'Activate', 'Deactivate', 'Reactivate', 'SetCogsClassification'] as const
 export type HistoryOperation = (typeof HISTORY_OPERATION)[number]
 
 /** `ProductHistoryFields.All`, in the server's display order. */
@@ -867,6 +867,7 @@ export const HISTORY_FIELD = [
   'classId',
   'familyId',
   'lifecycle',
+  'cogsClassification',
   'roles.purchasable',
   'roles.sellable',
   'roles.productionInput',
@@ -936,9 +937,12 @@ function decodeHistoryEntry(raw: unknown): ProductHistoryEntry | null {
     if (e.versionBefore !== null || e.versionAfter !== '1' || fields.length > 0) return null
   }
   if (operation.known && operation.value !== 'DraftCreate') {
-    // An edit or a lifecycle move moves the revision by exactly one; compared as integers, never as doubles.
     if (typeof e.versionBefore !== 'string') return null
-    if (BigInt(e.versionAfter) !== BigInt(e.versionBefore) + BigInt(1)) return null
+    // COGS has its own classification revision. Its audit keeps the card revision unchanged.
+    // Other edits and lifecycle moves still advance the card by exactly one.
+    if (operation.value === 'SetCogsClassification') {
+      if (e.versionAfter !== e.versionBefore) return null
+    } else if (BigInt(e.versionAfter) !== BigInt(e.versionBefore) + BigInt(1)) return null
   }
 
   return {

@@ -76,6 +76,10 @@ public static class SettingsModuleExtensions
         services.Replace(ServiceDescriptor.Scoped<ISettingsMoneyCandidateReaderV2, SettingsMoneyCandidateReaderV2>());
         services.AddScoped<ISettingsUnitProfileAdministrationV1, SettingsUnitProfileAdministration>();
         services.AddScoped<ISettingsMoneyProfileAdministrationV1, SettingsMoneyProfileAdministration>();
+        // ALS-D8/D15/D63, API-97: actual explicit publication only; no compiled or automatically seeded active tolerance.
+        services.AddScoped<SettingsPurchaseInvoiceVariancePolicy>();
+        services.AddScoped<ISettingsPurchaseInvoiceVariancePolicyProviderV1>(sp => sp.GetRequiredService<SettingsPurchaseInvoiceVariancePolicy>());
+        services.AddScoped<ISettingsPurchaseInvoiceVariancePolicyAdministrationV1>(sp => sp.GetRequiredService<SettingsPurchaseInvoiceVariancePolicy>());
         // F-024 (NS-01): the segregation of duties setting (may the preparer also approve?), its administration and the read
         // port approving modules consume. No row answers the decided default: the preparer may not approve.
         services.AddScoped<ISettingsSegregationOfDutiesPolicyAdministrationV1, SettingsSegregationOfDutiesPolicyAdministration>();
