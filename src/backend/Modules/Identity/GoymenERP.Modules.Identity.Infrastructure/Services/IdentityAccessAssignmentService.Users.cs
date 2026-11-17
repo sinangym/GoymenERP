@@ -20,6 +20,8 @@ internal sealed partial class IdentityAccessAssignmentService
 
     private async Task RequireCommandStillAsync(Command command, CancellationToken ct)
     {
+        if (!currentUser.IsAuthenticated || currentUser.UserId != command.Metadata.ActorId || !companyContext.IsResolved)
+            throw new UnauthorizedAccessException();
         await RequireStillAsync(command.Permission, command.CompanyId, ct);
         if (command.ManagedUserId is { } target)
             await RequireUserManagementAcrossMembershipAsync(command.ActorUserId, target, ct);
