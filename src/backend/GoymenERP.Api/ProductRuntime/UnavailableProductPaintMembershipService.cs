@@ -5,6 +5,7 @@ namespace GoymenERP.Api.ProductRuntime;
 internal sealed class UnavailableProductPaintMembershipService(ICompanyContext companyContext) : IProductPaintMembershipServiceV1, IProductPaintMembershipReaderV1
 {
     public Task<ProductPaintMembershipCatalogV1> GetCurrentAsync(CancellationToken cancellationToken = default) => Fail<ProductPaintMembershipCatalogV1>(cancellationToken);
+    public Task<ProductPaintMembershipCandidatesV1> SearchCandidatesAsync(ProductPaintMembershipCandidateQueryV1 query, CancellationToken cancellationToken = default) => Fail<ProductPaintMembershipCandidatesV1>(cancellationToken);
     public Task<ProductPaintMembershipImportPreviewV1> ValidateImportAsync(ValidateProductPaintMembershipImportV1 request, CancellationToken cancellationToken = default) => Fail<ProductPaintMembershipImportPreviewV1>(cancellationToken);
     public Task<ProductPaintMembershipMutationV1> ApplyImportAsync(ApplyProductPaintMembershipImportV1 request, ProductPaintMembershipCommandMetadataV1 metadata, CancellationToken cancellationToken = default) => Fail<ProductPaintMembershipMutationV1>(cancellationToken);
     public Task<ProductPaintMembershipMutationV1> SetAsync(Guid productId, SetProductPaintMembershipV1 request, ProductPaintMembershipCommandMetadataV1 metadata, CancellationToken cancellationToken = default) => Fail<ProductPaintMembershipMutationV1>(cancellationToken);

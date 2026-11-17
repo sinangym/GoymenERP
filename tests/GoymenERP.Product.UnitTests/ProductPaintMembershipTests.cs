@@ -148,6 +148,52 @@ public sealed class ProductPaintMembershipTests
         Assert.Equal(ProductPaintMembershipReadOutcomeV1.Unavailable, (await reader.GetAsync(Guid.NewGuid())).Outcome);
         Assert.Equal(ProductPaintMembershipCatalogOutcomeV1.Unavailable, (await reader.ListAsync()).Outcome);
     }
+    [Theory]
+    [InlineData(null, 25, null)] [InlineData("  00012  ", 1, "00012")] [InlineData("   ", 50, null)]
+    public void Membership_candidates_preserve_textual_codes_and_bound_the_technical_window(string? q, int limit, string? normalized)
+    {
+        Assert.True(ProductPaintMembershipCandidateQueryV1.TryCreate(q, limit, out var query));
+        Assert.Equal((normalized, limit), (query.Q, query.Limit));
+    }
+    [Theory]
+    [InlineData("x", 0)] [InlineData("x", 51)] [InlineData("x\n", 25)] [InlineData("x\u007f", 25)]
+    public void Membership_candidates_reject_invalid_query_bounds(string q, int limit) =>
+        Assert.False(ProductPaintMembershipCandidateQueryV1.TryCreate(q, limit, out _));
+    [Fact]
+    public void Membership_candidates_reject_oversized_search_instead_of_truncating_it() =>
+        Assert.False(ProductPaintMembershipCandidateQueryV1.TryCreate(new string('x', 101), 25, out _));
+    [Theory]
+    [InlineData("actor")] [InlineData("company")] [InlineData("permission")] [InlineData("partial_scope")]
+    public async Task Membership_candidate_authority_is_fresh_and_narrow_before_any_connection(string drift)
+    {
+        var company = new MutableCompany(CompanyA);
+        var user = new MutableUser();
+        using var database = Context(company);
+        var authority = new Authority(() =>
+        {
+            if (drift == "actor") user.UserId = "SENTETIK-other";
+            if (drift == "company") company.Set(CompanyB);
+            return new PermissionScope(drift != "permission", drift != "partial_scope", new HashSet<string>(), new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>());
+        });
+        var service = new ProductPaintMembershipService(database, company, user, authority, new NoAudit(), new NoWriter(), new NoRefused(), TimeProvider.System,
+            new ProductPaintMembershipReader(database, company, user));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.SearchCandidatesAsync(new(null)));
+        Assert.Equal(new[] { ProductPaintMembershipPermissionsV1.Manage }, authority.Asked);
+    }
+    [Fact]
+    public async Task Canceled_membership_candidate_read_never_asks_for_authority_or_connects()
+    {
+        var company = new MutableCompany(CompanyA);
+        var user = new MutableUser();
+        using var database = Context(company);
+        var authority = new Authority(() => throw new InvalidOperationException("No authority call after cancellation."));
+        var service = new ProductPaintMembershipService(database, company, user, authority, new NoAudit(), new NoWriter(), new NoRefused(), TimeProvider.System,
+            new ProductPaintMembershipReader(database, company, user));
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.SearchCandidatesAsync(new(null), cancellation.Token));
+        Assert.Empty(authority.Asked);
+    }
     private static ProductPriceListDbContext Context(ICompanyContext? company = null)
     {
         company ??= new MutableCompany(CompanyA);

@@ -5,8 +5,8 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { initialShellState, type ShellState } from '../../shell/shellState'
 import type { ViewOutcome } from '../../shell/uiState'
-import { fetchPaintCatalog, sendPaintCommand, validatePaintFile } from './api'
-import { PAINT_MEMBERSHIP_CAPABILITY, PAINT_SOURCE, type PaintCatalog, type PaintMutation, type PaintPreview } from './contract'
+import { fetchPaintCandidates, fetchPaintCatalog, sendPaintCommand, validatePaintFile } from './api'
+import { PAINT_MEMBERSHIP_CAPABILITY, PAINT_SOURCE, type PaintCandidates, type PaintCatalog, type PaintMutation, type PaintPreview } from './contract'
 import { PaintMembershipPage } from './PaintMembershipPage'
 import { resetPaintAttemptsForTests } from './paintAttempt'
 import { freezePaintFile } from './paintFile'
@@ -22,7 +22,7 @@ const security = vi.hoisted(() => ({ capture: vi.fn(() => ({ actorId: 'synthetic
 let currentShell: ShellState
 vi.mock('../../shell/shellContext', () => ({ useShellState: () => currentShell }))
 vi.mock('../../shell/useAuthBoundary', () => ({ useAuthBoundary: () => security }))
-vi.mock('./api', () => ({ PAINT_API_BASE: '/api/v1', fetchPaintCatalog: vi.fn(), validatePaintFile: vi.fn(), sendPaintCommand: vi.fn() }))
+vi.mock('./api', () => ({ PAINT_API_BASE: '/api/v1', fetchPaintCandidates: vi.fn(), fetchPaintCatalog: vi.fn(), validatePaintFile: vi.fn(), sendPaintCommand: vi.fn() }))
 vi.mock('./paintFile', async (importOriginal) => {
   const original = await importOriginal<typeof import('./paintFile')>()
   return { ...original, freezePaintFile: vi.fn(async (file: File) => Object.freeze({ fileName: file.name, contentBase64: 'AAH/', sha256: 'a'.repeat(64) })) }
@@ -41,6 +41,10 @@ function mutation(overrides: Partial<PaintMutation> = {}): PaintMutation {
 }
 function memberCatalog(): PaintCatalog {
   return catalog({ outcome: 1, version: '1', entries: [{ productId: PRODUCT, productVersion: '7', membershipVersion: '1', productCode: '00012', productName: 'SENTETIK boya', sourceVersion: PAINT_SOURCE }] })
+}
+function candidates(overrides: Partial<PaintCandidates> = {}): PaintCandidates {
+  return { outcome: 1, companyId: COMPANY, version: '1', q: null, limit: 25, searchWindowFull: false, sourceVersion: PAINT_SOURCE,
+    items: [{ productId: PRODUCT, productVersion: '7', membershipVersion: '0', productCode: '00012', productName: 'SENTETIK aday', alreadyMember: false }], ...overrides }
 }
 function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: 0, refetchOnWindowFocus: false } } })
@@ -68,6 +72,7 @@ beforeEach(() => {
   currentShell = { ...initialShellState, phase: 'idle', committedContextRevision: 1, sessionEpoch: 1,
     activeContext: { userId: 'synthetic-actor', scopeMode: 'single', companyId: COMPANY, capabilityGeneration: 'g1', capabilities: [PAINT_MEMBERSHIP_CAPABILITY] } }
   vi.mocked(fetchPaintCatalog).mockResolvedValue({ type: 'ok-single', data: catalog() })
+  vi.mocked(fetchPaintCandidates).mockResolvedValue({ type: 'ok-single', data: candidates() })
   vi.mocked(validatePaintFile).mockResolvedValue({ type: 'ok-single', data: preview() })
   vi.mocked(sendPaintCommand).mockResolvedValue({ type: 'applied', data: mutation() })
   vi.mocked(freezePaintFile).mockResolvedValue(Object.freeze({ fileName: 'SENTETIK.xlsx', contentBase64: 'AAH/', sha256: SHA }))
@@ -128,6 +133,138 @@ describe('paint membership read states', () => {
     mount()
     expect(screen.getByText(/Yetkiniz yok/)).toBeTruthy()
     expect(fetchPaintCatalog).not.toHaveBeenCalled()
+  })
+})
+
+describe('paint membership actual Product candidate maintenance', () => {
+  function initialized(version = '1') {
+    vi.mocked(fetchPaintCatalog).mockResolvedValue({ type: 'ok-single', data: catalog({ outcome: 1, version }) })
+  }
+  it('does not offer candidate discovery before the first actual Excel source', async () => {
+    mount(); await screen.findByText(T.noSource)
+    expect(screen.queryByLabelText(T.candidateQuery)).toBeNull()
+    expect(fetchPaintCandidates).not.toHaveBeenCalled()
+  })
+  it('adds an actual searched Product using all three owner versions without selecting another workbook', async () => {
+    initialized()
+    vi.mocked(fetchPaintCandidates).mockResolvedValue({ type: 'ok-single', data: candidates({ q: '00012' }) })
+    mount(); await screen.findByLabelText(T.candidateQuery)
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText(T.candidateQuery), '00012')
+    await user.click(screen.getByRole('button', { name: T.search }))
+    await screen.findByRole('table', { name: T.candidates })
+    expect(fetchPaintCandidates).toHaveBeenCalledWith(COMPANY, '00012', expect.any(AbortSignal))
+    await user.type(screen.getByLabelText(T.reason), 'SENTETIK ERP ekleme')
+    await user.click(screen.getByRole('button', { name: T.add }))
+    expect(sendPaintCommand).toHaveBeenCalledWith(COMPANY, { kind: 'set', productId: PRODUCT, payload: {
+      expectedVersion: '1', expectedProductVersion: '7', expectedMembershipVersion: '0', isMember: true, reason: 'SENTETIK ERP ekleme',
+    } }, 'paint-synthetic-key-1')
+    expect(validatePaintFile).not.toHaveBeenCalled()
+    expect(freezePaintFile).not.toHaveBeenCalled()
+  })
+  it('requires an explicit reason and never adds an existing member twice', async () => {
+    initialized()
+    mount(); await screen.findByLabelText(T.candidateQuery)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: T.search }))
+    await screen.findByRole('button', { name: T.add })
+    await user.click(screen.getByRole('button', { name: T.add }))
+    expect(screen.getByText(T.reasonRequired)).toBeTruthy()
+    expect(sendPaintCommand).not.toHaveBeenCalled()
+    vi.mocked(fetchPaintCandidates).mockResolvedValue({ type: 'ok-single', data: candidates({ items: [{
+      ...candidates().items[0], alreadyMember: true, membershipVersion: '1',
+    }] }) })
+    await user.click(screen.getByRole('button', { name: T.search }))
+    await screen.findByText(T.alreadyMember)
+    expect(screen.queryByRole('button', { name: T.add })).toBeNull()
+  })
+  it('blocks a candidate from an older list and clears it when search text changes', async () => {
+    initialized('2')
+    mount(); await screen.findByLabelText(T.candidateQuery)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: T.search }))
+    await screen.findByText(T.candidateExpired)
+    expect((screen.getByRole('button', { name: T.add }) as HTMLButtonElement).disabled).toBe(true)
+    await user.type(screen.getByLabelText(T.candidateQuery), 'changed')
+    expect(screen.queryByRole('table', { name: T.candidates })).toBeNull()
+    expect(sendPaintCommand).not.toHaveBeenCalled()
+  })
+  it('distinguishes a current empty candidate window without creating a source or guessing a Product', async () => {
+    initialized()
+    vi.mocked(fetchPaintCandidates).mockResolvedValue({ type: 'ok-single', data: candidates({ items: [] }) })
+    mount(); await screen.findByLabelText(T.candidateQuery)
+    await userEvent.setup().click(screen.getByRole('button', { name: T.search }))
+    expect(await screen.findByText(T.noCandidates)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: T.add })).toBeNull()
+    expect(sendPaintCommand).not.toHaveBeenCalled()
+  })
+  it.each<readonly [ViewOutcome<PaintCandidates>, string]>([
+    [{ type: 'http', status: 401 }, 'Oturum sonlandı'], [{ type: 'http', status: 403 }, 'Yetkiniz yok'],
+    [{ type: 'http', status: 404 }, 'Bulunamadı'], [{ type: 'http', status: 409 }, 'Çakışma'],
+    [{ type: 'http', status: 503 }, 'Servis geçici olarak kullanılamıyor'], [{ type: 'offline' }, 'Bağlantı yok'],
+    [{ type: 'network-error' }, 'Sunucuya ulaşılamadı'], [{ type: 'malformed' }, 'Beklenmeyen yanıt'],
+  ])('keeps the candidate failure state distinct and add closed %j', async (outcome, text) => {
+    initialized()
+    vi.mocked(fetchPaintCandidates).mockResolvedValue(outcome)
+    mount(); await screen.findByLabelText(T.candidateQuery)
+    await userEvent.setup().click(screen.getByRole('button', { name: T.search }))
+    expect(await screen.findByText(new RegExp(text))).toBeTruthy()
+    expect(screen.queryByRole('button', { name: T.add })).toBeNull()
+    if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403))
+      expect(security.report).toHaveBeenCalledWith(outcome.status, expect.anything())
+  })
+  it('shows loading during the actual candidate read', async () => {
+    initialized()
+    vi.mocked(fetchPaintCandidates).mockReturnValue(new Promise(() => {}))
+    mount(); await screen.findByLabelText(T.candidateQuery)
+    await userEvent.setup().click(screen.getByRole('button', { name: T.search }))
+    expect(await screen.findByText(/Yükleniyor/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: T.search }) as HTMLButtonElement).disabled).toBe(true)
+  })
+  it('aborts and hides a former company candidate read after the committed company changes', async () => {
+    initialized()
+    let resolve!: (value: ViewOutcome<PaintCandidates>) => void
+    vi.mocked(fetchPaintCandidates).mockReturnValue(new Promise((done) => { resolve = done }))
+    const page = mount(); await screen.findByLabelText(T.candidateQuery)
+    await userEvent.setup().click(screen.getByRole('button', { name: T.search }))
+    const signal = vi.mocked(fetchPaintCandidates).mock.calls[0][2]!
+    currentShell = { ...currentShell, committedContextRevision: 2, activeContext: { ...currentShell.activeContext!, companyId: OTHER } }
+    vi.mocked(fetchPaintCatalog).mockResolvedValue({ type: 'ok-single', data: catalog({ companyId: OTHER }) })
+    page.refresh()
+    await screen.findByText(T.noSource)
+    await act(async () => { resolve({ type: 'ok-single', data: candidates() }) })
+    expect(signal.aborted).toBe(true)
+    expect(screen.queryByText('SENTETIK aday')).toBeNull()
+    expect(screen.queryByRole('button', { name: T.add })).toBeNull()
+    expect(sendPaintCommand).not.toHaveBeenCalled()
+  })
+  it('retains the same searched-product payload and key when a write result is ambiguous', async () => {
+    initialized()
+    vi.mocked(sendPaintCommand).mockResolvedValueOnce({ type: 'unknown', reason: 'network-error' })
+    mount(); await screen.findByLabelText(T.candidateQuery)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: T.search }))
+    await screen.findByRole('button', { name: T.add })
+    await user.type(screen.getByLabelText(T.reason), 'SENTETIK ekleme')
+    await user.click(screen.getByRole('button', { name: T.add }))
+    await screen.findByText(T.unknown)
+    expect((screen.getByLabelText(T.candidateQuery) as HTMLInputElement).disabled).toBe(true)
+    await user.click(screen.getByRole('button', { name: T.retry }))
+    await waitFor(() => expect(sendPaintCommand).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(sendPaintCommand).mock.calls[1]).toEqual(vi.mocked(sendPaintCommand).mock.calls[0])
+  })
+  it('discards candidates after an owner concurrency refusal and refreshes the actual catalog', async () => {
+    initialized()
+    vi.mocked(sendPaintCommand).mockResolvedValue({ type: 'refused', status: 409, body: null })
+    mount(); await screen.findByLabelText(T.candidateQuery)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: T.search }))
+    await screen.findByRole('button', { name: T.add })
+    await user.type(screen.getByLabelText(T.reason), 'SENTETIK ekleme')
+    await user.click(screen.getByRole('button', { name: T.add }))
+    await screen.findByText(/Çakışma/)
+    await waitFor(() => expect(fetchPaintCatalog).toHaveBeenCalledTimes(2))
+    expect(screen.queryByRole('table', { name: T.candidates })).toBeNull()
   })
 })
 
