@@ -10,6 +10,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import { SUBCONTRACT_CAPABILITY } from '../logistics/subcontractDeliveryContract'
 import { matchPath } from 'react-router'
 import { CAPABILITY, CAPABILITY_ROUTE, CAPABILITY_NAV_LABEL } from './capabilities'
 import {
@@ -28,7 +29,7 @@ describe('shell ↔ Logistics lane capability ids', () => {
     expect(CAPABILITY.logisticsOperationsPurchase).toBe(LOGISTICS_CAPABILITY.operationsPurchase)
     expect(CAPABILITY.logisticsTransferDepartures).toBe(LOGISTICS_CAPABILITY.transferDepartures)
     const shellIds = (Object.values(CAPABILITY) as string[]).filter((id) => id.startsWith('logistics.'))
-    expect([...shellIds].sort()).toEqual([...(Object.values(LOGISTICS_CAPABILITY) as string[])].sort())
+    expect([...shellIds].sort()).toEqual([...Object.values(LOGISTICS_CAPABILITY), ...Object.values(SUBCONTRACT_CAPABILITY)].sort())
   })
 
   it('agrees with the lane on every route, value by value', () => {

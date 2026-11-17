@@ -23,6 +23,7 @@ public sealed class PurchaseInvoiceSubcontractTaxMetadataTests
         invoice.Match(1, [accepted], new(Guid.NewGuid(), 1, 0m, 0m), "SENTETIK eşleştiren");
         invoice.Finalize(2, Guid.NewGuid(), "SENTETIK kesinleştiren", DateTimeOffset.UtcNow);
         var payload = PurchaseIncomingInvoiceFinalizationV1.Event(invoice);
+        Assert.Null(Assert.Single(payload.Lines).GoodsCostSource);
         var source = Assert.Single(Assert.Single(payload.Lines).SubcontractTaxSources!);
         Assert.Equal((accepted.OrderId, accepted.OrderVersion, accepted.AcceptanceId, tax), (source.OrderId, source.OrderVersion, source.AcceptanceId, source.Tax));
         Assert.Equal((100m, 20m, 10m, 110m), (payload.Net, payload.Vat, payload.Withholding, payload.Payable));

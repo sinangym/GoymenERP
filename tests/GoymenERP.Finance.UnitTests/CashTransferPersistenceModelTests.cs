@@ -40,6 +40,8 @@ public sealed class CashTransferPersistenceModelTests
         Assert.Equal(typeof(string), design.FindProperty(nameof(CashTransferRow.SourceAmountText))!.ClrType);
         Assert.Equal(typeof(string), design.FindProperty(nameof(CashTransferRow.TargetAmountText))!.ClrType);
         Assert.True(design.FindProperty(nameof(CashTransferRow.RateText))!.IsNullable);
+        Assert.True(design.FindProperty(nameof(CashTransferRow.ExchangeSnapshotJson))!.IsNullable);
+        Assert.Equal("nvarchar(max)", design.FindProperty(nameof(CashTransferRow.ExchangeSnapshotJson))!.GetColumnType());
         Assert.True(design.FindProperty(nameof(CashTransferRow.Version))!.IsConcurrencyToken);
         Assert.Equal("Latin1_General_100_BIN2",
             design.FindProperty(nameof(CashTransferRow.RecordedBy))!.GetCollation());
@@ -57,6 +59,8 @@ public sealed class CashTransferPersistenceModelTests
         Assert.Contains(design.GetCheckConstraints(), check => check.Name == "CK_CashTransfers_Version"
             && check.Sql == "[Version] = 1");
         Assert.Contains(design.GetCheckConstraints(), check => check.Name == "CK_CashTransfers_Dates");
+        Assert.Contains(design.GetCheckConstraints(), check => check.Name == "CK_CashTransfers_ExchangeSnapshot"
+            && check.Sql == "[ExchangeSnapshotJson] IS NULL OR ([Kind] = 1 AND ISJSON([ExchangeSnapshotJson]) = 1)");
     }
 
     [Fact]
@@ -119,6 +123,8 @@ public sealed class CashTransferPersistenceModelTests
 
         Assert.Contains(context.Database.GetMigrations(), migration =>
             migration.EndsWith("_AddCashTransfers", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration =>
+            migration.EndsWith("_AddCashTransferExchangeSnapshots", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -133,6 +139,20 @@ public sealed class CashTransferPersistenceModelTests
         Assert.Contains("[finance].[CashTransfers]", guard, StringComparison.Ordinal);
         Assert.Contains("[finance].[CashTransferCommands]", guard, StringComparison.Ordinal);
         Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
+    }
+
+    [Fact]
+    public void Exchange_snapshot_migration_adds_only_nullable_evidence_and_refuses_rollback_before_any_drop()
+    {
+        var migration = new AddCashTransferExchangeSnapshots();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var column = Assert.Single(migration.UpOperations.OfType<AddColumnOperation>());
+        Assert.Equal(("finance", "CashTransfers", "ExchangeSnapshotJson", "nvarchar(max)", true),
+            (column.Schema, column.Table, column.Name, column.ColumnType, column.IsNullable));
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql;
+        Assert.Contains("THROW 51933", guard, StringComparison.Ordinal);
+        Assert.Contains("[ExchangeSnapshotJson] IS NOT NULL", guard, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
     }
 
     private static CashTransferRow Transfer() => new()

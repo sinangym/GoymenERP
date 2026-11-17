@@ -21,7 +21,7 @@ namespace GoymenERP.Modules.Accounting.Application;
 /// </list>
 /// No grant is registered here and no account is chosen here.
 /// </summary>
-public sealed class AccountingPostingAccountMappingServiceV1(
+public sealed partial class AccountingPostingAccountMappingServiceV1(
     IAccountingPostingAccountMappingStoreV1 mappings,
     IAccountingCommandLog commands,
     IErpAuthorityRevalidationService authority,

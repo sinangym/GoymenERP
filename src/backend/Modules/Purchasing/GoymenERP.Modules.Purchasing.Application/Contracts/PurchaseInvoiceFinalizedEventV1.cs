@@ -15,7 +15,15 @@ public sealed record PurchaseInvoiceFinalizedLineV1(Guid LineId, int LineNo, str
     decimal? FunctionalNet, decimal? FunctionalVat, decimal? FunctionalWithholding,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] Guid? ServiceTypeId = null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] Guid? ExpenseTypeId = null,
-    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseInvoiceSubcontractTaxSourceV1>? SubcontractTaxSources = null);
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseInvoiceSubcontractTaxSourceV1>? SubcontractTaxSources = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] PurchaseInvoiceGoodsCostSourceV1? GoodsCostSource = null);
+
+/// <summary>Immutable goods source identities and quantities, never a price distribution or current-stock estimate.</summary>
+public sealed record PurchaseInvoiceGoodsCostSourceV1(Guid ProductId, Guid UnitId, decimal InvoiceQuantity,
+    IReadOnlyList<PurchaseInvoiceReceiptCostShareV1> Receipts);
+public sealed record PurchaseInvoiceReceiptCostShareV1(Guid AcceptanceId, Guid OrderId, Guid OrderLineId,
+    long OrderVersion, decimal MatchedQuantity, decimal AcceptedQuantity);
+public sealed record PurchaseInvoiceOfficialDocumentV1(Guid DocumentId, long DocumentVersion, string Sha256, Guid Ettn);
 
 /// <summary>Approved service-source metadata only. Official invoice amounts are unchanged and never recalculated from it.</summary>
 public sealed record PurchaseInvoiceSubcontractTaxSourceV1(Guid OrderId, long OrderVersion, Guid AcceptanceId,
@@ -28,4 +36,5 @@ public sealed record PurchaseInvoiceFinalizedPayloadV1(Guid InvoiceId, long Vers
     decimal Net, decimal Vat, decimal Withholding, decimal? FunctionalNet, decimal? FunctionalVat,
     decimal? FunctionalWithholding, IReadOnlyList<PurchaseInvoiceFinalizedLineV1> Lines,
     DateOnly InvoiceDate, string FinalizedBy, DateOnly? DueDate = null,
-    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? OfficialInvoiceNo = null);
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? OfficialInvoiceNo = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] PurchaseInvoiceOfficialDocumentV1? OfficialDocument = null);

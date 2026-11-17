@@ -3,10 +3,9 @@
  * company, or exchanged between two currencies at one rate, recorded as ONE transfer carrying both legs.
  *
  * The screen shows the server's decisions only: account eligibility, each leg's currency and money profile, the
- * exchange rate rule (rate source, rate/amount consistency — not decided yet, so the server refuses every exchange
- * until it is), the period and the source balance (FNS-D11: refused, never clipped) are all answered by the backend.
- * Nothing about money is worked out here: a same-currency transfer sends the one typed amount on both legs, an
- * exchange sends both typed amounts and the typed rate, all as text.
+ * exchange quote and separate actual TCMB comparison, the period and the source balance (FNS-D11: refused,
+ * never clipped) are all answered by the backend. Nothing about money is worked out here: a same-currency transfer
+ * sends one typed amount on both legs; an exchange sends both actual amounts with a null rate for server calculation.
  *
  * The flow is preview → explicit confirmation → commit. A commit whose answer could not be read keeps its idempotency
  * key and exact body in memory: the inputs lock and only "Aynı isteği yeniden gönder" is offered, so a retry can never
@@ -28,12 +27,10 @@ import {
   CASH_TRANSFER_ACCOUNT_KINDS,
   CASH_TRANSFER_DESCRIPTION_MAX_LENGTH,
   CASH_TRANSFER_KINDS,
-  CASH_TRANSFER_RATE_MAX_INTEGER_DIGITS,
-  CASH_TRANSFER_RATE_MAX_SCALE,
   CASH_TRANSFER_REFERENCE_MAX_LENGTH,
-  isRateText,
   type CashTransferAccountContext,
   type CashTransferAccountKind,
+  type CashTransferExchangeSnapshot,
   type CashTransferKind,
   type CashTransferPreparation,
   type CashTransferView,
@@ -420,7 +417,20 @@ function TransferFacts({ transfer, codes, names }: {
     <div><dt>{T.referenceShort}</dt><dd>{preparation.reference ?? T.noValue}</dd></div>
     <div><dt>{T.recordedBy}</dt><dd>{transfer.recordedBy}</dd></div>
     <div><dt>{T.recordedAt}</dt><dd><Instant value={transfer.recordedAtUtc} /></dd></div>
+    {transfer.exchange === undefined ? null : <ExchangeFacts exchange={transfer.exchange} />}
   </dl>
+}
+
+function ExchangeFacts({ exchange }: { readonly exchange: CashTransferExchangeSnapshot }) {
+  return <>
+    <div><dt>{T.rate}</dt><dd>{amountText(exchange.transactionRate)}</dd></div>
+    <div><dt>{T.comparisonRate}</dt><dd>{amountText(exchange.comparisonRate)}</dd></div>
+    <div><dt>{T.rateDeviation}</dt><dd>{amountText(exchange.rateDeviation)}</dd></div>
+    <div><dt>{T.comparisonSourceDay}</dt><dd>{[exchange.sourceComparison, exchange.targetComparison]
+      .filter((source) => source.source === 'Tcmb').map((source) => source.bulletinDate === null
+        ? T.noValue : formatDate(source.bulletinDate)).join(' / ')}</dd></div>
+    <div><dt>{T.comparisonMeaning}</dt><dd>{T.comparisonIsNotProfit}</dd></div>
+  </>
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -533,7 +543,8 @@ function PreviewPanel({ state, current }: {
   const { outcome } = state
   if (outcome.kind === 'accepted') {
     return current !== null && samePreparation(state.sent, current)
-      ? <p className={styles.notice} role="status">{T.previewAccepted}</p>
+      ? <><p className={styles.notice} role="status">{T.previewAccepted}</p>
+          {outcome.exchange === undefined ? null : <dl className={styles.facts}><ExchangeFacts exchange={outcome.exchange} /></dl>}</>
       : <p className={styles.hint} role="status">{T.previewStale}</p>
   }
   if (outcome.kind === 'unknown') return <p className={styles.error} role="alert">{T.previewUnknown}</p>
@@ -633,20 +644,6 @@ function LegFields({ heading, kind, accountId, leg, codes, error, onKind, onAcco
   </fieldset>
 }
 
-type RateResult =
-  | { readonly ok: true; readonly wire: string }
-  | { readonly ok: false; readonly message: string }
-
-/** The rate as typed (tr-TR comma) → wire text; never rounded. The server re-checks it. */
-function parseRate(input: string): RateResult {
-  const parsed = parseAmountInput(input)
-  if (!parsed.ok) return { ok: false, message: T.invalidRate[parsed.error] }
-  if (!isRateText(parsed.wire)) {
-    return { ok: false, message: T.rateBounds(CASH_TRANSFER_RATE_MAX_INTEGER_DIGITS, CASH_TRANSFER_RATE_MAX_SCALE) }
-  }
-  return { ok: true, wire: parsed.wire }
-}
-
 interface Built {
   readonly preparation: CashTransferPreparation | null
   readonly errors: FieldErrors
@@ -662,7 +659,6 @@ function build(input: {
   readonly target: CashTransferAccountContext | null
   readonly sourceAmount: string
   readonly targetAmount: string
-  readonly rate: string
   readonly occurredOn: string
   readonly valueOn: string
   readonly reference: string
@@ -671,7 +667,6 @@ function build(input: {
   const exchange = input.kind === 'CurrencyExchange'
   const source = parseAmountInput(input.sourceAmount)
   const target = exchange ? parseAmountInput(input.targetAmount) : source
-  const rate = exchange ? parseRate(input.rate) : null
   const description = input.description.trim()
   const reference = input.reference.trim()
   const sameAccount = input.sourceKind !== '' && input.sourceKind === input.targetKind
@@ -679,7 +674,6 @@ function build(input: {
   const errors: FieldErrors = {
     ...(source.ok ? {} : { sourceAmount: T.invalidAmount[source.error] }),
     ...(target.ok || !exchange ? {} : { targetAmount: T.invalidAmount[target.error] }),
-    ...(rate === null || rate.ok ? {} : { rate: rate.message }),
     ...(description.length > CASH_TRANSFER_DESCRIPTION_MAX_LENGTH
       ? { description: T.descriptionTooLong(CASH_TRANSFER_DESCRIPTION_MAX_LENGTH) }
       : {}),
@@ -708,7 +702,7 @@ function build(input: {
       targetAccountId: input.targetAccountId,
       targetMoney: { amount: target.wire, currencyId: input.target.currencyId },
       targetProfile: input.target.profile,
-      rate: rate !== null && rate.ok ? rate.wire : null,
+      rate: null,
       occurredOn: input.occurredOn,
       valueOn: input.valueOn === '' ? null : input.valueOn,
       reference: reference === '' ? null : reference,
@@ -729,7 +723,6 @@ function TransferForm(props: FormProps) {
   const [valueOn, setValueOn] = useState('')
   const [sourceAmount, setSourceAmount] = useState('')
   const [targetAmount, setTargetAmount] = useState('')
-  const [rate, setRate] = useState('')
   const [reference, setReference] = useState('')
   const [description, setDescription] = useState('')
   const [errors, setErrors] = useState<FieldErrors>({})
@@ -747,7 +740,7 @@ function TransferForm(props: FormProps) {
 
   const built = build({
     kind, sourceKind, sourceAccountId, source: sourceLeg.value, targetKind, targetAccountId, target: targetLeg.value,
-    sourceAmount, targetAmount, rate, occurredOn, valueOn, reference, description,
+    sourceAmount, targetAmount, occurredOn, valueOn, reference, description,
   })
   // A hint only: the server answers cash_transfer_currency_mismatch / _currency_same with the same rule.
   const currencyHint = sourceLeg.value === null || targetLeg.value === null || kind === ''
@@ -825,10 +818,7 @@ function TransferForm(props: FormProps) {
           {(control) => <input {...control} inputMode="decimal" autoComplete="off" value={targetAmount}
             onChange={(event) => setTargetAmount(event.target.value)} />}
         </Field>
-        <Field label={T.rate} help={T.rateHelp} error={errors.rate}>
-          {(control) => <input {...control} inputMode="decimal" autoComplete="off" value={rate}
-            onChange={(event) => setRate(event.target.value)} />}
-        </Field>
+        <p className={styles.hint}>{T.rateCalculated}</p>
         <p className={styles.hint}>{T.exchangeRuleNote}</p>
       </> : null}
 

@@ -74,6 +74,121 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingInventoryCostProposalRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("ApprovedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ComponentKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("JournalId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("PeriodId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("PreparedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ViewJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("CompanyId", "Id", "Version");
+
+                    b.HasIndex("CompanyId", "JournalId")
+                        .IsUnique()
+                        .HasFilter("[JournalId] IS NOT NULL");
+
+                    b.HasIndex("CompanyId", "PeriodId");
+
+                    b.HasIndex("CompanyId", "EventId", "ComponentKey", "Version")
+                        .IsUnique();
+
+                    b.ToTable("InventoryCostProposals", "accounting", t =>
+                        {
+                            t.HasCheckConstraint("CK_InventoryCostProposals_Actors", "([PreparedBy] IS NULL OR [PreparedBy] <> '00000000-0000-0000-0000-000000000000') AND ([ApprovedBy] IS NULL OR [ApprovedBy] <> '00000000-0000-0000-0000-000000000000') AND ([PeriodId] IS NULL OR [PeriodId] <> '00000000-0000-0000-0000-000000000000') AND ([JournalId] IS NULL OR [JournalId] <> '00000000-0000-0000-0000-000000000000')");
+
+                            t.HasCheckConstraint("CK_InventoryCostProposals_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [EventId] <> '00000000-0000-0000-0000-000000000000' AND [Version] >= 1 AND LEN([ComponentKey]) > 0");
+
+                            t.HasCheckConstraint("CK_InventoryCostProposals_Proof", "ISJSON([ViewJson]) = 1 AND DATEPART(TZOFFSET,[RecordedAtUtc]) = 0");
+
+                            t.HasCheckConstraint("CK_InventoryCostProposals_State", "([Status] IN (1,4) AND [Version] = 1 AND [PreparedBy] IS NULL AND [ApprovedBy] IS NULL AND [PeriodId] IS NULL AND [JournalId] IS NULL) OR ([Status] = 2 AND [Version] > 1 AND [PreparedBy] IS NOT NULL AND [PeriodId] IS NOT NULL AND [ApprovedBy] IS NULL AND [JournalId] IS NULL) OR ([Status] = 3 AND [Version] > 2 AND [PreparedBy] IS NOT NULL AND [PeriodId] IS NOT NULL AND [ApprovedBy] IS NOT NULL AND [JournalId] IS NOT NULL AND [ApprovedBy] <> [PreparedBy])");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingInventoryCostSourceRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AdmissionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("InvoiceVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength()
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateTimeOffset>("ReceivedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("SourceJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("CompanyId", "EventId");
+
+                    b.HasIndex("CompanyId", "Kind", "InvoiceId", "InvoiceVersion")
+                        .IsUnique();
+
+                    b.ToTable("InventoryCostSources", "accounting", t =>
+                        {
+                            t.HasCheckConstraint("CK_InventoryCostSources_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [EventId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' AND [AdmissionId] <> '00000000-0000-0000-0000-000000000000' AND [Kind] IN (1,2) AND [InvoiceVersion] >= 1");
+
+                            t.HasCheckConstraint("CK_InventoryCostSources_Proof", "ISJSON([SourceJson]) = 1 AND LEN([PayloadHash]) = 64 AND DATEPART(TZOFFSET,[OccurredAtUtc]) = 0 AND DATEPART(TZOFFSET,[ReceivedAtUtc]) = 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingJournalReversalProposalRow", b =>
                 {
                     b.Property<Guid>("Id")
@@ -338,7 +453,7 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_PostingAccountMappingRows_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [MappingVersion] >= 1 AND [LineNumber] >= 1 AND [AccountId] <> '00000000-0000-0000-0000-000000000000'");
 
-                            t.HasCheckConstraint("CK_PostingAccountMappingRows_Key", "([Purpose] = N'sales-invoice' AND [MappingKey] IN (N'receivable', N'revenue', N'vat-output', N'withholding-receivable')) OR ([Purpose] = N'purchase-invoice' AND [MappingKey] IN (N'payable', N'inventory', N'vat-input', N'withholding-payable', N'expense'))");
+                            t.HasCheckConstraint("CK_PostingAccountMappingRows_Key", "([Purpose] = N'sales-invoice' AND [MappingKey] IN (N'receivable', N'revenue', N'vat-output', N'withholding-receivable')) OR ([Purpose] = N'purchase-invoice' AND [MappingKey] IN (N'payable', N'inventory', N'vat-input', N'withholding-payable', N'expense')) OR ([Purpose] = N'cost-of-goods-sold' AND [MappingKey] IN (N'trade-goods', N'manufactured') AND [ItemType] IS NULL AND [LinePurpose] IS NULL AND [IsExport] IS NULL AND [VatRateCode] IS NULL)");
 
                             t.HasCheckConstraint("CK_PostingAccountMappingRows_Text", "LEN([AccountCode]) > 0 AND ([ItemType] IS NULL OR LEN([ItemType]) > 0) AND ([LinePurpose] IS NULL OR LEN([LinePurpose]) > 0)");
 
@@ -1951,6 +2066,36 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingCommandRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingInventoryCostProposalRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingInventoryCostSourceRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.JournalRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "JournalId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.PeriodRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "PeriodId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingInventoryCostSourceRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.OrganizationCompanyReference", null)
                         .WithMany()

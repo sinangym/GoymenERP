@@ -6,7 +6,7 @@ using GoymenERP.BuildingBlocks.Monetary;
 
 namespace GoymenERP.Purchasing.UnitTests;
 
-public sealed class PurchaseIncomingInvoiceTests
+public sealed partial class PurchaseIncomingInvoiceTests
 {
     private static readonly DateTimeOffset Now = new(2026, 11, 17, 9, 0, 0, TimeSpan.Zero);
 

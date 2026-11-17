@@ -264,6 +264,7 @@ export const CAPABILITY = {
   accountingInvoiceLineCogsPrepare: 'accounting.invoice-line-cogs.prepare',
   accountingInvoiceLineCogsApprove: 'accounting.invoice-line-cogs.approve',
   accountingSourceVouchers: 'accounting.source-vouchers.list',
+  accountingPostingMappingsRead: 'accounting.posting-mappings.read',
   identityUsersManage: 'identity.users.manage',
   productPaintMemberships: 'paint-memberships.manage',
   /** M-07 Muhasebe Dönemleri. Route `/muhasebe/donemler`, owner the Accounting lane (FİNANS). */
@@ -391,6 +392,14 @@ export const CAPABILITY = {
   /** AT-025 L-09 operations work — the PURCHASE section. Route `/lojistik/operasyon-isleri/satinalma`. Its own grant. */
   logisticsOperationsPurchase: 'logistics.operations-work.purchase',
   logisticsTransferDepartures: 'logistics.transfer-departures.record',
+  logisticsSubcontractList: 'logistics.subcontract-deliveries.list',
+  logisticsSubcontractCreate: 'logistics.subcontract-deliveries.create',
+  logisticsSubcontractDetail: 'logistics.subcontract-deliveries.detail',
+  logisticsSubcontractIssue: 'logistics.subcontract-deliveries.issue',
+  logisticsSubcontractLoad: 'logistics.subcontract-deliveries.load',
+  logisticsSubcontractWeigh: 'logistics.subcontract-deliveries.weigh',
+  logisticsSubcontractShip: 'logistics.subcontract-deliveries.ship',
+  logisticsSubcontractCorrect: 'logistics.subcontract-deliveries.weighing-correct',
   /** P-01 purchase-request list. Route `/satinalma/talepler`, owner the Purchasing lane. */
   purchasingRequestsList: 'purchasing.requests.list',
   /** P-01 new request. Route `/satinalma/talepler/yeni`; reached from the list under K5. */
@@ -507,6 +516,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.accountingInvoiceLineCogsPrepare]: '/muhasebe/fatura-satiri-smm',
   [CAPABILITY.accountingInvoiceLineCogsApprove]: '/muhasebe/fatura-satiri-smm-onay',
   [CAPABILITY.accountingSourceVouchers]: '/muhasebe/kaynak-fisler',
+  [CAPABILITY.accountingPostingMappingsRead]: '/muhasebe/hesap-eslemeleri',
   [CAPABILITY.identityUsersManage]: '/ayarlar/kullanicilar',
   [CAPABILITY.productPaintMemberships]: '/boya-urunleri',
   [CAPABILITY.accountingPeriodsList]: '/muhasebe/donemler',
@@ -566,6 +576,14 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.logisticsOperationsSales]: '/lojistik/operasyon-isleri/satis',
   [CAPABILITY.logisticsOperationsPurchase]: '/lojistik/operasyon-isleri/satinalma',
   [CAPABILITY.logisticsTransferDepartures]: '/lojistik/transfer-cikislari',
+  [CAPABILITY.logisticsSubcontractList]: '/lojistik/fason-teslimler',
+  [CAPABILITY.logisticsSubcontractCreate]: '/lojistik/fason-teslimler/yeni',
+  [CAPABILITY.logisticsSubcontractDetail]: '/lojistik/fason-teslimler/:instructionId',
+  [CAPABILITY.logisticsSubcontractIssue]: '/lojistik/fason-teslimler/:instructionId',
+  [CAPABILITY.logisticsSubcontractLoad]: '/lojistik/fason-teslimler/:instructionId',
+  [CAPABILITY.logisticsSubcontractWeigh]: '/lojistik/fason-teslimler/:instructionId',
+  [CAPABILITY.logisticsSubcontractShip]: '/lojistik/fason-teslimler/:instructionId',
+  [CAPABILITY.logisticsSubcontractCorrect]: '/lojistik/fason-teslimler/:instructionId',
   [CAPABILITY.purchasingRequestsList]: '/satinalma/talepler',
   // K5 keeps creation inside the P-01 list. Static `yeni` must never be read as a request id.
   [CAPABILITY.purchasingRequestsCreate]: '/satinalma/talepler/yeni',

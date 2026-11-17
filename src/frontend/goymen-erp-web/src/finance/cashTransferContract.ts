@@ -63,6 +63,34 @@ export interface CashTransferView {
   readonly recordedAtUtc: string
   readonly transferConfirmed: true
   readonly version: string
+  readonly exchange?: CashTransferExchangeSnapshot
+}
+
+export interface CashTransferComparisonSource {
+  readonly currencyId: string
+  readonly sellingRate: string
+  readonly rateDay: string
+  readonly source: 'Tcmb' | 'FunctionalCurrency'
+  readonly recordId: string | null
+  readonly recordVersion: string | null
+  readonly bulletinDate: string | null
+  readonly provenance: string | null
+}
+
+export interface CashTransferExchangeSnapshot {
+  readonly companyId: string
+  readonly occurredOn: string
+  readonly sourceMoney: MoneyText
+  readonly targetMoney: MoneyText
+  readonly sourceProfile: ProfileReference
+  readonly targetProfile: ProfileReference
+  readonly transactionRate: string
+  readonly exactTransactionRate: { readonly numerator: string; readonly denominator: string }
+  readonly comparisonRate: string
+  readonly exactComparisonRate: { readonly numerator: string; readonly denominator: string }
+  readonly rateDeviation: string
+  readonly sourceComparison: CashTransferComparisonSource
+  readonly targetComparison: CashTransferComparisonSource
 }
 
 export interface CashTransferPage {
@@ -88,7 +116,7 @@ export type CashTransferCommandResult =
     }
 
 export type CashTransferPreviewResult =
-  | { readonly outcome: 'Succeeded'; readonly preparation: CashTransferPreparation; readonly issues: readonly ValidationIssue[] }
+  | { readonly outcome: 'Succeeded'; readonly preparation: CashTransferPreparation; readonly issues: readonly ValidationIssue[]; readonly exchange?: CashTransferExchangeSnapshot }
   | { readonly outcome: 'ValidationFailed'; readonly preparation: null; readonly issues: readonly ValidationIssue[] }
 
 export interface CashTransferAccountContext {
@@ -192,7 +220,7 @@ const PREPARATION_KEYS = [
  * the two legs never name the same account; a same-currency transfer carries the same amount text in the same
  * currency and no rate; a currency exchange names two currencies and a rate.
  */
-export function decodeCashTransferPreparation(value: unknown): CashTransferPreparation | null {
+export function decodeCashTransferPreparation(value: unknown, computedRate = false): CashTransferPreparation | null {
   if (!isRecord(value) || !hasExactKeys(value, PREPARATION_KEYS)) return null
   const sourceMoney = decodeMoney(value.sourceMoney)
   const targetMoney = decodeMoney(value.targetMoney)
@@ -208,7 +236,7 @@ export function decodeCashTransferPreparation(value: unknown): CashTransferPrepa
     || !isBoundUuid(value.targetAccountId)
     || targetMoney === null
     || targetProfile === null
-    || !(value.rate === null || isRateText(value.rate))
+    || !(value.rate === null || isRateText(value.rate) || computedRate && value.rate === '0.00')
     || !isWireDate(value.occurredOn)
     || !(value.valueOn === null || (isWireDate(value.valueOn) && value.valueOn >= value.occurredOn))
     || !isOptionalText(value.reference, CASH_TRANSFER_REFERENCE_MAX_LENGTH)
@@ -219,7 +247,7 @@ export function decodeCashTransferPreparation(value: unknown): CashTransferPrepa
   const sameCurrency = sourceMoney.currencyId === targetMoney.currencyId
   if (value.kind === 'SameCurrency'
     && (!sameCurrency || sourceMoney.amount !== targetMoney.amount || value.rate !== null)) return null
-  if (value.kind === 'CurrencyExchange' && (sameCurrency || value.rate === null)) return null
+  if (value.kind === 'CurrencyExchange' && sameCurrency) return null
 
   return {
     kind: value.kind,
@@ -241,9 +269,51 @@ export function decodeCashTransferPreparation(value: unknown): CashTransferPrepa
 
 const VIEW_KEYS = ['id', 'companyId', 'preparation', 'recordedBy', 'recordedAtUtc', 'transferConfirmed', 'version'] as const
 
+function decodeExchange(value: unknown, preparation: CashTransferPreparation): CashTransferExchangeSnapshot | null {
+  const keys = ['companyId', 'occurredOn', 'sourceMoney', 'targetMoney', 'sourceProfile', 'targetProfile',
+    'transactionRate', 'exactTransactionRate', 'comparisonRate', 'exactComparisonRate', 'rateDeviation', 'sourceComparison', 'targetComparison']
+  if (!isRecord(value) || !hasExactKeys(value, keys) || !isBoundUuid(value.companyId)
+    || value.occurredOn !== preparation.occurredOn || preparation.kind !== 'CurrencyExchange') return null
+  const sourceMoney = decodeMoney(value.sourceMoney); const targetMoney = decodeMoney(value.targetMoney)
+  const sourceProfile = decodeProfile(value.sourceProfile); const targetProfile = decodeProfile(value.targetProfile)
+  if (sourceMoney === null || targetMoney === null || sourceProfile === null || targetProfile === null
+    || sourceMoney.currencyId !== preparation.sourceMoney.currencyId || sourceMoney.amount !== preparation.sourceMoney.amount
+    || targetMoney.currencyId !== preparation.targetMoney.currencyId || targetMoney.amount !== preparation.targetMoney.amount
+    || sourceProfile.profileId !== preparation.sourceProfile.profileId || sourceProfile.version !== preparation.sourceProfile.version
+    || targetProfile.profileId !== preparation.targetProfile.profileId || targetProfile.version !== preparation.targetProfile.version
+    || typeof value.transactionRate !== 'string' || !/^(0|[1-9]\d*)\.\d{2}$/.test(value.transactionRate)
+    || typeof value.comparisonRate !== 'string' || !/^(0|[1-9]\d*)\.\d{2}$/.test(value.comparisonRate)
+    || typeof value.rateDeviation !== 'string' || !/^-?(0|[1-9]\d*)\.\d{2}$/.test(value.rateDeviation)
+    || value.rateDeviation === '-0.00') return null
+  const ratio = (raw: unknown): { numerator: string; denominator: string } | null =>
+    isRecord(raw) && hasExactKeys(raw, ['numerator', 'denominator'])
+      && typeof raw.numerator === 'string' && /^[1-9]\d*$/.test(raw.numerator)
+      && typeof raw.denominator === 'string' && /^[1-9]\d*$/.test(raw.denominator)
+      ? { numerator: raw.numerator, denominator: raw.denominator } : null
+  const comparison = (raw: unknown, currency: string): CashTransferComparisonSource | null => {
+    if (!isRecord(raw) || !hasExactKeys(raw, ['currencyId', 'sellingRate', 'rateDay', 'source', 'recordId',
+      'recordVersion', 'bulletinDate', 'provenance']) || raw.currencyId !== currency || raw.rateDay !== preparation.occurredOn
+      || !isRateText(raw.sellingRate) || !isOptionalText(raw.provenance, 4000)) return null
+    if (raw.source === 'FunctionalCurrency') {
+      if (raw.sellingRate !== '1' || raw.recordId !== null || raw.recordVersion !== null || raw.bulletinDate !== null) return null
+    } else if (raw.source === 'Tcmb') {
+      if (!isBoundUuid(raw.recordId) || !isOpaqueVersion(raw.recordVersion) || !isWireDate(raw.bulletinDate)
+        || raw.bulletinDate >= preparation.occurredOn) return null
+    } else return null
+    return raw as unknown as CashTransferComparisonSource
+  }
+  const exactTransactionRate = ratio(value.exactTransactionRate); const exactComparisonRate = ratio(value.exactComparisonRate)
+  const sourceComparison = comparison(value.sourceComparison, sourceMoney.currencyId)
+  const targetComparison = comparison(value.targetComparison, targetMoney.currencyId)
+  if (exactTransactionRate === null || exactComparisonRate === null || sourceComparison === null || targetComparison === null) return null
+  return { companyId: value.companyId, occurredOn: preparation.occurredOn, sourceMoney, targetMoney, sourceProfile, targetProfile,
+    transactionRate: value.transactionRate, exactTransactionRate, comparisonRate: value.comparisonRate, exactComparisonRate,
+    rateDeviation: value.rateDeviation, sourceComparison, targetComparison }
+}
+
 export function decodeCashTransferView(value: unknown, companyId: string): Decoded<CashTransferView> {
-  if (!isRecord(value) || !hasExactKeys(value, VIEW_KEYS)) return FAIL
-  const preparation = decodeCashTransferPreparation(value.preparation)
+  if (!isRecord(value) || !hasExactKeys(value, Object.hasOwn(value, 'exchange') ? [...VIEW_KEYS, 'exchange'] : VIEW_KEYS)) return FAIL
+  const preparation = decodeCashTransferPreparation(value.preparation, Object.hasOwn(value, 'exchange'))
   if (
     !isBoundUuid(value.id)
     || value.companyId !== companyId
@@ -254,6 +324,9 @@ export function decodeCashTransferView(value: unknown, companyId: string): Decod
     || value.transferConfirmed !== true
     || !isOpaqueVersion(value.version)
   ) return FAIL
+  if (preparation.kind === 'CurrencyExchange' && preparation.rate === null) return FAIL
+  const exchange = Object.hasOwn(value, 'exchange') ? decodeExchange(value.exchange, preparation) : undefined
+  if (exchange === null || exchange !== undefined && (exchange.companyId !== companyId || exchange.transactionRate !== preparation.rate)) return FAIL
   return ok({
     id: value.id,
     companyId,
@@ -262,6 +335,7 @@ export function decodeCashTransferView(value: unknown, companyId: string): Decod
     recordedAtUtc: value.recordedAtUtc,
     transferConfirmed: true,
     version: value.version,
+    ...(exchange === undefined ? {} : { exchange }),
   })
 }
 
@@ -325,15 +399,19 @@ export function decodeCashTransferCommandResult(value: unknown, companyId: strin
  * 403/503 code-less).
  */
 export function decodeCashTransferPreviewResult(value: unknown): Decoded<CashTransferPreviewResult> {
-  if (!isRecord(value) || !hasExactKeys(value, ['outcome', 'preparation', 'issues'])) return FAIL
+  if (!isRecord(value) || !hasExactKeys(value, Object.hasOwn(value, 'exchange')
+    ? ['outcome', 'preparation', 'issues', 'exchange'] : ['outcome', 'preparation', 'issues'])) return FAIL
   const issues = decodeIssues(value.issues)
   if (issues === null) return FAIL
   if (value.outcome === 'Succeeded') {
     const preparation = decodeCashTransferPreparation(value.preparation)
-    return preparation === null || issues.length > 0 ? FAIL : ok({ outcome: 'Succeeded', preparation, issues })
+    if (preparation === null || issues.length > 0) return FAIL
+    const exchange = Object.hasOwn(value, 'exchange') ? decodeExchange(value.exchange, preparation) : undefined
+    if (exchange === null || preparation.kind === 'CurrencyExchange' && exchange === undefined) return FAIL
+    return ok({ outcome: 'Succeeded', preparation, issues, ...(exchange === undefined ? {} : { exchange }) })
   }
   if (value.outcome === 'ValidationFailed') {
-    return value.preparation !== null || issues.length === 0
+    return value.preparation !== null || issues.length === 0 || Object.hasOwn(value, 'exchange')
       ? FAIL
       : ok({ outcome: 'ValidationFailed', preparation: null, issues })
   }

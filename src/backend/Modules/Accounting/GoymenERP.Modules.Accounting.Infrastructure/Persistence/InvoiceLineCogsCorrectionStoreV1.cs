@@ -188,6 +188,10 @@ public sealed class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext db, ICo
             await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
             started = true;
             await fence(cancellationToken);
+            // The same Serializable cancellation-key read used by initial COGS preparation/posting. A late line
+            // reclassification cannot replace the journal while an official invoice cancellation is being reversed.
+            if (await db.SourceInvoiceCancellations.AsNoTracking().AnyAsync(x => x.SourceDocumentId == source.FinalizationAdmissionId,
+                    cancellationToken)) throw Refuse(InvoiceLineCogsCorrectionCodesV1.SourceChanged);
             var frozenSource = Encode(source);
             if (await db.InvoiceLineCogsProposals.AnyAsync(x => x.InvoiceId == source.InvoiceId
                 && x.InvoiceLineId == source.InvoiceLineId && x.SourceJson != frozenSource, cancellationToken))

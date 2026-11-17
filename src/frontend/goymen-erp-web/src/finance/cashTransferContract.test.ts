@@ -59,6 +59,41 @@ const view = (patch: Record<string, unknown> = {}) => ({
   ...patch,
 })
 
+const quote = () => ({
+  companyId: COMPANY, occurredOn: '2026-11-10',
+  sourceMoney: { amount: '100.00', currencyId: EUR }, targetMoney: { amount: '3650.00', currencyId: TRY },
+  sourceProfile: sameCurrency().sourceProfile, targetProfile: sameCurrency().targetProfile,
+  transactionRate: '36.50', exactTransactionRate: { numerator: '73', denominator: '2' },
+  comparisonRate: '36.00', exactComparisonRate: { numerator: '36', denominator: '1' }, rateDeviation: '0.50',
+  sourceComparison: { currencyId: EUR, sellingRate: '36', rateDay: '2026-11-10', source: 'Tcmb',
+    recordId: SOURCE, recordVersion: '7', bulletinDate: '2026-11-09', provenance: 'SENTETIK / NOT_ENV' },
+  targetComparison: { currencyId: TRY, sellingRate: '1', rateDay: '2026-11-10', source: 'FunctionalCurrency',
+    recordId: null, recordVersion: null, bulletinDate: null, provenance: null },
+})
+
+describe('cash exchange immutable source snapshot', () => {
+  it('decodes server-calculated quotes and keeps a legacy stored exchange readable without enriching it', () => {
+    expect(decodeCashTransferPreviewResult({ outcome: 'Succeeded', preparation: exchange({ rate: null }), issues: [], exchange: quote() }).ok).toBe(true)
+    expect(decodeCashTransferView(view({ preparation: exchange() }), COMPANY).ok).toBe(true)
+    expect(decodeCashTransferView(view({ preparation: exchange({ rate: '36.50' }), exchange: quote() }), COMPANY).ok).toBe(true)
+  })
+
+  it('refuses another company, changed profile, missing ratio and a source that does not belong to the stored quote', () => {
+    const source = quote()
+    for (const snapshot of [
+      { ...source, companyId: OTHER },
+      { ...source, sourceProfile: { ...source.sourceProfile, version: '99' } },
+      { ...source, exactTransactionRate: null },
+      { ...source, sourceComparison: { ...source.sourceComparison, currencyId: TRY } },
+      { ...source, sourceComparison: { ...source.sourceComparison, source: 'TCMB' } },
+      { ...source, transactionRate: '37.00' },
+      { ...source, profit: '50.00' },
+    ]) {
+      expect(decodeCashTransferView(view({ preparation: exchange({ rate: '36.50' }), exchange: snapshot }), COMPANY).ok).toBe(false)
+    }
+  })
+})
+
 describe('cash transfer preparation decoder', () => {
   it('accepts a same-currency transfer and an exchange as sent', () => {
     expect(decodeCashTransferPreparation(sameCurrency())).toEqual(sameCurrency())
@@ -85,9 +120,9 @@ describe('cash transfer preparation decoder', () => {
     expect(decodeCashTransferPreparation(sameCurrency({ rate: '1' }))).toBeNull()
   })
 
-  it('refuses an exchange in one currency or without a rate', () => {
+  it('refuses an exchange in one currency and accepts a null rate for server calculation', () => {
     expect(decodeCashTransferPreparation(exchange({ targetMoney: { amount: '100.00', currencyId: EUR } }))).toBeNull()
-    expect(decodeCashTransferPreparation(exchange({ rate: null }))).toBeNull()
+    expect(decodeCashTransferPreparation(exchange({ rate: null }))).toEqual(exchange({ rate: null }))
   })
 
   it('refuses a value date before the occurred date and over-long texts', () => {
@@ -166,7 +201,7 @@ describe('cash transfer command and preview results', () => {
   })
 
   it('takes a preview success without issues and a refusal with at least one', () => {
-    expect(decodeCashTransferPreviewResult({ outcome: 'Succeeded', preparation: exchange(), issues: [] }).ok).toBe(true)
+    expect(decodeCashTransferPreviewResult({ outcome: 'Succeeded', preparation: exchange(), issues: [] }).ok).toBe(false)
     expect(decodeCashTransferPreviewResult({
       outcome: 'ValidationFailed', preparation: null, issues: [{ field: 'rate', code: 'finance_exchange_rate_rule_unavailable' }],
     }).ok).toBe(true)

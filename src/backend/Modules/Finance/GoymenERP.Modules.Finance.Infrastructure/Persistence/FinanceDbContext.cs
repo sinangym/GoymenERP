@@ -1215,6 +1215,8 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
             table.HasCheckConstraint("CK_CashTransfers_Dates", "[ValueOn] IS NULL OR [ValueOn] >= [OccurredOn]");
             table.HasCheckConstraint("CK_CashTransfers_Confirmed", "[TransferConfirmed] = 1");
             table.HasCheckConstraint("CK_CashTransfers_Version", "[Version] = 1");
+            table.HasCheckConstraint("CK_CashTransfers_ExchangeSnapshot",
+                "[ExchangeSnapshotJson] IS NULL OR ([Kind] = 1 AND ISJSON([ExchangeSnapshotJson]) = 1)");
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
@@ -1228,6 +1230,7 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
         entity.Property(x => x.TargetProfileVersion).HasMaxLength(20).IsUnicode(false).IsRequired();
         // The rate's storage bound: at most 18 integer digits, a dot and 10 decimals (Settings' rate record bound).
         entity.Property(x => x.RateText).HasMaxLength(29).IsUnicode(false);
+        entity.Property(x => x.ExchangeSnapshotJson).HasColumnType("nvarchar(max)");
         entity.Property(x => x.OccurredOn).HasColumnType("date");
         entity.Property(x => x.ValueOn).HasColumnType("date");
         entity.Property(x => x.Reference).HasMaxLength(128);

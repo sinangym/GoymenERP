@@ -105,3 +105,17 @@ Numaralar ana/tren/ilgili owner kaynaklarında ve ilgili açık güvenlik PR ba�
 - Merkez üretici listesi: üç migration ve deneme durable-store/recovery envanteri; Audit/Identity/SecurityEvents model
   fingerprint'leri; migration mutation kaynakları (Identity Up tetikleyici + Down guard, diğer ikisinde Down guard);
   ilişkisel fact envanteri ve test grubu sabitlemeleri. Açık işletme kararı kalmadı.
+
+
+## KIM-S9 merkezi CLI kompozisyonu
+
+- `0b204509a` owner kaynağı merkeziye alındı. Gerçek Program, ayrı operatör
+  konsolunu `identity recover-two-factor` CLI dispatcher'ına açıkça bağlar; web host
+  başlatılmaz. Kurucu ve kişisel kurtarma yolları kendi sınırlarını korur.
+- Hedef seçimi global typed deneme/Audit/SecurityEvents aynı Serializable owner
+  transaction'ına gider. Sahte şirket/rol/grant veya şirketlere toplu denetim yazımı yoktur.
+- Son merkezi API, Identity.UnitTests ve Api.IntegrationTests kaynak derlemeleri
+  exit 0, 0 uyarı/hata; owner Audit.UnitTests/SecurityEvents.UnitTests ve üç EF
+  üretimi exit 0. Runtime Unit/SQL/CLI/CI **NOT_RUN**.
+- Merkezi CLI kaynak boşluğu kapandı. Pin üretimi, tren FF ve bağımsız K3 kabulü
+  ayrı aşamalardır; daha önceki tablonun kompozisyon bekliyor notu bu kayıtla güncellenir.

@@ -1141,6 +1141,8 @@ public static class ErpPermissions
 
     /// <inheritdoc cref="LogisticsLoadingInstructionsCreate"/>
     public const string LogisticsWeighingsRecord = "logistics.weighings.record";
+    /// <summary>STK-S3 / LOJ-D13 / SAT-D378: registered reasoned weighing correction; no grant or Critical classification.</summary>
+    public const string LogisticsWeighingsCorrect = "logistics.weighings.correct";
 
     /// <summary>
     /// AT-055: prepare a dispatch-note (irsaliye) DRAFT from an issued instruction's definite shipments (LogisticsPermissionManifestV1;
@@ -1789,6 +1791,7 @@ public static class ErpPermissions
             LogisticsShipmentsRecord,
             LogisticsDeliveriesRecord,
             LogisticsWeighingsRecord,
+            LogisticsWeighingsCorrect,
             LogisticsDispatchNotesCreate,
             LogisticsDispatchNotesApprove,
             LogisticsDispatchNotesCancel,
@@ -2085,6 +2088,7 @@ public static class ErpPermissions
             LogisticsShipmentsRecord,
             LogisticsDeliveriesRecord,
             LogisticsWeighingsRecord,
+            LogisticsWeighingsCorrect,
             LogisticsDispatchNotesCreate,
             LogisticsDispatchNotesApprove,
             LogisticsDispatchNotesCancel,

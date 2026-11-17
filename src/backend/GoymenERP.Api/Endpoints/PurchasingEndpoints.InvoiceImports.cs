@@ -20,6 +20,33 @@ public static partial class PurchasingEndpoints
     private static void MapInvoiceImports(IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v1/purchasing/invoice-imports").WithTags("Purchasing").RequireAuthorization().RequireCompanyContext();
+        InvoiceWorkspaceRead(group.MapPost("/{id:guid}/mapping-references", (Guid id, HttpContext context,
+            [FromServices] IPurchaseInvoiceImportMappingV1 service, ICorrelationContext correlation, CancellationToken token) =>
+            ImportMappingReadAsync<PurchaseInvoiceImportPreviewRequestV1>(context, correlation,
+                async request => await service.ReferencesAsync(id, request, token), token))
+            .RequireAuthorization(PurchaseIncomingInvoicePermissionNamesV1.Import)
+            .WithName("GetPurchaseInvoiceImportMappingReferencesV1").Accepts<PurchaseInvoiceImportPreviewRequestV1>("application/json")
+            .Produces<PurchaseInvoiceImportReferencesV1>());
+        InvoiceWorkspaceRead(group.MapPost("/{id:guid}/supplier-resolution", (Guid id, HttpContext context,
+            [FromServices] IPurchaseInvoiceImportMappingV1 service, ICorrelationContext correlation, CancellationToken token) =>
+            ImportMappingReadAsync<PurchaseInvoiceImportSupplierRequestV1>(context, correlation,
+                async request => await service.SupplierAsync(id, request, token), token))
+            .RequireAuthorization(PurchaseIncomingInvoicePermissionNamesV1.Import)
+            .WithName("ResolvePurchaseInvoiceImportSupplierV1").Accepts<PurchaseInvoiceImportSupplierRequestV1>("application/json")
+            .Produces<PurchaseInvoiceImportSupplierV1>());
+        InvoiceWorkspaceRead(group.MapPost("/{id:guid}/product-candidates", (Guid id, HttpContext context,
+            [FromServices] IPurchaseInvoiceImportMappingV1 service, ICorrelationContext correlation, CancellationToken token) =>
+            ImportMappingReadAsync<PurchaseInvoiceImportProductsRequestV1>(context, correlation,
+                async request => await service.ProductsAsync(id, request, token), token))
+            .RequireAuthorization(PurchaseIncomingInvoicePermissionNamesV1.Import)
+            .WithName("GetPurchaseInvoiceImportProductCandidatesV1").Accepts<PurchaseInvoiceImportProductsRequestV1>("application/json")
+            .Produces<PurchaseInvoiceImportProductsV1>());
+        InvoiceMutation(group.MapPost("/{id:guid}/records", (Guid id, HttpContext context,
+            [FromServices] IPurchaseInvoiceImportAdmissionV1 service, ICorrelationContext correlation, CancellationToken token) =>
+            MutateAsync(context, correlation, ReadImportAdmission,
+                async (request, metadata) => PurchaseIncomingInvoiceWireV1.Response(await service.RecordAsync(id, request, metadata, token)), token))
+            .RequireAuthorization(PurchaseIncomingInvoicePermissionNamesV1.Import)
+            .WithName("RecordPurchaseInvoiceImportV1").Accepts<PurchaseInvoiceImportAdmissionRequestV1>("application/json"));
         InvoiceWorkspaceRead(group.MapGet("", async (int? pageIndex, HttpContext context, [FromServices] IPurchaseInvoiceImportV1 service,
             ICorrelationContext correlation, CancellationToken token) =>
         {
@@ -83,6 +110,36 @@ public static partial class PurchasingEndpoints
     }
 
     private sealed record InvoiceImportReservationBody;
+
+    private static PurchaseInvoiceImportAdmissionRequestV1 ReadImportAdmission(string text) => ReadImportJson<PurchaseInvoiceImportAdmissionRequestV1>(text);
+    private static T ReadImportJson<T>(string text)
+    {
+        using var document = JsonDocument.Parse(text, new JsonDocumentOptions { MaxDepth = 12 });
+        static void Unique(JsonElement value)
+        {
+            if (value.ValueKind == JsonValueKind.Object)
+            {
+                var names = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var property in value.EnumerateObject())
+                { if (!names.Add(property.Name)) throw new JsonException(); Unique(property.Value); }
+            }
+            else if (value.ValueKind == JsonValueKind.Array) foreach (var child in value.EnumerateArray()) Unique(child);
+        }
+        Unique(document.RootElement);
+        return document.Deserialize<T>(ImportJson) ?? throw new JsonException();
+    }
+
+    private static async Task<IResult> ImportMappingReadAsync<T>(HttpContext context, ICorrelationContext correlation,
+        Func<T, Task<object>> action, CancellationToken token)
+    {
+        SetPrivateNoStore(context.Response);
+        if (!context.Request.HasJsonContentType()) return Results.StatusCode(415);
+        if (context.Request.Query.Count != 0) return Problem(400, "validation_failed", correlation);
+        try { return Results.Json(await action(ReadImportJson<T>(await ReadImportBodyAsync(context, token))), PurchasingJson.Options); }
+        catch (JsonException) { return Problem(400, "validation_failed", correlation); }
+        catch (DecoderFallbackException) { return Problem(400, "validation_failed", correlation); }
+        catch (PurchasingServiceException error) { return Problem(context, error, correlation); }
+    }
 
     private static async Task<string> ReadImportBodyAsync(HttpContext context, CancellationToken token)
     {
