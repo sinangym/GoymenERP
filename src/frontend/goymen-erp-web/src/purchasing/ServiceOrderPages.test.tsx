@@ -73,6 +73,18 @@ describe('ALC-S7 user workflow source (synthetic, NOT_ENV)', () => {
     expect(screen.queryByRole('button', { name: T.approve })).toBeNull()
     expect(screen.queryByRole('button', { name: T.accept })).toBeNull()
   })
+  it('enters a later price as a new revision without changing accepted quantities or submitting physical facts', async () => {
+    vi.mocked(fetchServiceOrder).mockResolvedValue({ type: 'ok-single', data: { ...serviceFixture(), status: 'Approved', isOpen: false,
+      version: '3', lines: [{ ...serviceFixture().lines[0], acceptedQuantity: '10' }] } })
+    mount('detail'); await screen.findByText(T.priceRevisionHelp)
+    fireEvent.change(screen.getByLabelText('SENTETIK hizmet — ' + T.revisedPrice), { target: { value: '2,0000' } })
+    fireEvent.change(screen.getByLabelText(T.reason), { target: { value: 'SENTETIK gerçek fiyat' } })
+    fireEvent.click(screen.getByRole('button', { name: T.revisePrices }))
+    await screen.findByText(T.unknown)
+    expect(vi.mocked(submitServiceOrder).mock.calls[0][2]).toBe('prices')
+    expect(vi.mocked(submitServiceOrder).mock.calls[0][3]).toEqual({ expectedVersion: '3', reason: 'SENTETIK gerçek fiyat',
+      lines: [{ lineId: id(6), unitPrice: '2' }] })
+  })
   it('reports permission refusal and does not disclose a former successful order', async () => {
     vi.mocked(fetchServiceOrder).mockResolvedValue({ type: 'http', status: 403 })
     mount('detail'); await waitFor(() => expect(auth.report).toHaveBeenCalledWith(403, expect.anything()))

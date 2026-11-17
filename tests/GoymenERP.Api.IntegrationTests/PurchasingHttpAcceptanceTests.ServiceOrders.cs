@@ -46,12 +46,24 @@ public sealed partial class PurchasingHttpAcceptanceTests
         var body = await response.Content.ReadAsStringAsync(); Assert.DoesNotContain("SENTETIK-private", body); Assert.DoesNotContain("unitPrice", body);
         AssertPrivateNoStore(response);
     }
+    [Fact]
+    public async Task Service_later_price_entry_accepts_only_line_price_and_version_and_uses_the_revision_command()
+    {
+        var owner = new ServiceOrderHttpOwner(); using var host = ServiceOrderHost(owner); using var client = CreateClient(host);
+        var line = Guid.NewGuid();
+        using var response = await client.SendAsync(Post($"/api/v1/purchasing/service-orders/{PurchaseOrderId:D}/price-revisions", "SENTETIK-price-revision",
+            $$"""{"expectedVersion":"3","lines":[{"lineId":"{{line:D}}","unitPrice":"2"}],"reason":"SENTETIK sonradan fiyat"}"""));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("3", owner.PriceRequest!.ExpectedVersion); Assert.Equal(line, owner.PriceRequest.Lines[0].LineId);
+        Assert.Equal("2", owner.PriceRequest.Lines[0].UnitPrice); AssertPrivateNoStore(response);
+    }
     private WebApplicationFactory<Program> ServiceOrderHost(ServiceOrderHttpOwner owner) => factory.WithWebHostBuilder(builder =>
         builder.ConfigureTestServices(services => { services.RemoveAll<IPurchaseServiceOrderServiceV1>(); services.AddSingleton<IPurchaseServiceOrderServiceV1>(owner); }));
     private sealed class ServiceOrderHttpOwner : IPurchaseServiceOrderServiceV1
     {
         public bool Replay { get; init; } public int? Refusal { get; init; }
         public ApprovePurchaseServiceOrderV1? Request { get; private set; } public PurchasingCommandMetadata? Metadata { get; private set; }
+        public RevisePurchaseServiceOrderPricesV1? PriceRequest { get; private set; }
         private static PurchaseServiceOrderViewV1 View() => new(CompanyA, PurchaseOrderId, "SENTETIK-HIZ-2026-1", "2", "ServicePurchase", "Approved",
             Guid.NewGuid(), Guid.NewGuid(), new(2026, 11, 17), Guid.NewGuid(), "TRY", true, "Withheld",
             [new(Guid.NewGuid(), Guid.NewGuid(), "1", "SENTETIK hizmet", UnitId, "kg", "10", "0", null, null)], [], [], []);
@@ -63,5 +75,7 @@ public sealed partial class PurchasingHttpAcceptanceTests
         { Request = request; Metadata = metadata; return Task.FromResult(new PurchaseServiceOrderResponseV1(View(), Replay, "SENTETIK-original")); }
         public Task<PurchaseServiceOrderResponseV1> CreateAsync(CreatePurchaseServiceOrderV1 request, PurchasingCommandMetadata metadata, CancellationToken token = default) => throw new NotSupportedException();
         public Task<PurchaseServiceOrderResponseV1> AcceptAsync(Guid id, AcceptPurchaseServiceV1 request, PurchasingCommandMetadata metadata, CancellationToken token = default) => throw new NotSupportedException();
+        public Task<PurchaseServiceOrderResponseV1> RevisePricesAsync(Guid id, RevisePurchaseServiceOrderPricesV1 request, PurchasingCommandMetadata metadata, CancellationToken token = default)
+        { PriceRequest = request; return Task.FromResult(new PurchaseServiceOrderResponseV1(View(), false, "SENTETIK-original")); }
     }
 }

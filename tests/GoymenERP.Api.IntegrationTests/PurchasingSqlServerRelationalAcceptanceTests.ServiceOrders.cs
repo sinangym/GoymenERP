@@ -85,6 +85,8 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync(); var draft = ServiceDraft(run);
         await using var scope = ServiceScope(run, CompanyA);
+        var guard = new AddPurchaseServiceOrders().DownOperations.OfType<SqlOperation>().First().Sql;
+        await scope.Database.Database.ExecuteSqlRawAsync(guard);
         await using (var borrowed = await scope.Database.Database.BeginTransactionAsync())
         {
             await Assert.ThrowsAsync<InvalidOperationException>(() => scope.Store.WriteAsync(draft.OrderId, PurchaseServiceOrderCommandsV1.Create,
@@ -94,7 +96,6 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         }
         await scope.Store.WriteAsync(draft.OrderId, PurchaseServiceOrderCommandsV1.Create, run.Envelope("service-down"), Hash("service-down"), "SENTETIK Down kanıtı",
             (_, _) => Task.FromResult(draft), _ => Task.CompletedTask, default);
-        var guard = new AddPurchaseServiceOrders().DownOperations.OfType<SqlOperation>().First().Sql;
         var error = await Assert.ThrowsAsync<SqlException>(() => scope.Database.Database.ExecuteSqlRawAsync(guard));
         Assert.Equal(51992, error.Number); Assert.NotNull(await scope.Store.ReadAsync(draft.OrderId, default));
     }

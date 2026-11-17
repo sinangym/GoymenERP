@@ -51,6 +51,7 @@ public sealed class PurchaseServiceOrderTests
             Materials = [new(Guid.NewGuid(), "1", Guid.NewGuid(), "1", 10m)], ExpectedOutputs = [new(Guid.NewGuid(), "1", 9m)] };
         Assert.Equal(own, PurchaseServiceOrder.Create(own));
         Assert.Throws<ArgumentException>(() => PurchaseServiceOrder.Create(own with { Kind = PurchaseServiceOrderKind.ServicePurchase }));
+        Assert.Throws<ArgumentException>(() => PurchaseServiceOrder.Approve(own, 1, "SENTETIK-checker", Now));
     }
     [Fact]
     public void Corrupt_acceptance_totals_and_overprecision_are_refused_without_repair()
@@ -58,6 +59,24 @@ public sealed class PurchaseServiceOrderTests
         var draft = Draft();
         Assert.Throws<ArgumentException>(() => PurchaseServiceOrder.Validate(draft with { Lines = [draft.Lines[0] with { AcceptedQuantity = 1m }] }));
         Assert.Throws<ArgumentException>(() => PurchaseServiceOrder.Create(draft with { Lines = [draft.Lines[0] with { Quantity = 1.0000001m }] }));
+    }
+    [Fact]
+    public void Later_price_entry_preserves_service_acceptance_and_requires_a_new_draft_and_a_different_approver()
+    {
+        var source = Draft(); source = PurchaseServiceOrder.Create(source with { Lines = [source.Lines[0] with { UnitPrice = null }] });
+        var approved = PurchaseServiceOrder.Approve(source, 1, "SENTETIK-checker", Now);
+        var actual = PurchaseServiceOrder.Accept(approved, 2, Guid.NewGuid(), source.Lines[0].LineId, 4m, source.BusinessDate,
+            "SENTETIK-receiver", "SENTETIK kabul", Now);
+        var revision = PurchaseServiceOrder.RevisePrices(actual, 3, new Dictionary<Guid, decimal> { [source.Lines[0].LineId] = 2m },
+            "SENTETIK-price-preparer", "SENTETIK sonradan fiyat", Now);
+        Assert.Equal(PurchaseServiceOrderStatus.Draft, revision.Status); Assert.Equal(4, revision.Version); Assert.Equal(1, revision.PriceRevision);
+        Assert.Equal(actual.Acceptances, revision.Acceptances); Assert.Equal(4m, revision.Lines[0].AcceptedQuantity);
+        Assert.Null(actual.Lines[0].UnitPrice); Assert.Equal(2m, revision.Lines[0].UnitPrice); Assert.Null(revision.ApprovedBy);
+        Assert.Equal(PurchaseServiceOrder.SameActor, Assert.Throws<PurchaseServiceOrderException>(() =>
+            PurchaseServiceOrder.Approve(revision, 4, revision.PreparedBy, Now)).Code);
+        var final = PurchaseServiceOrder.Approve(revision, 4, "SENTETIK-other-checker", Now);
+        Assert.Equal(PurchaseServiceOrderStatus.Approved, final.Status); Assert.Equal(5, final.Version);
+        Assert.Equal(actual.Acceptances, final.Acceptances);
     }
     private static PurchaseServiceOrderState Draft() => PurchaseServiceOrder.Create(new(Guid.NewGuid(), Guid.NewGuid(), 1,
         PurchaseServiceOrderKind.ServicePurchase, PurchaseServiceOrderStatus.Draft, Guid.NewGuid(), Guid.NewGuid(), "1", "1",

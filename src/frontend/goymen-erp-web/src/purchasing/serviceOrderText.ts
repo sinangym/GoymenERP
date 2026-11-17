@@ -14,4 +14,6 @@ export const SERVICE_ORDER_TEXT = {
   emptyMaterials: 'Gönderilecek etiket ve beklenen çıktı seçilmelidir.', references: 'Hizmet kaynakları', sourcesSearch: 'Etiket veya ürün adı/kodu',
   status: { Draft: 'Taslak', Approved: 'Onaylı', Cancelled: 'İptal' }, open: 'Açık', complete: 'Tam kabul edildi',
   selected: 'Seçilen kayıtlar', removeSelected: 'Seçimi kaldır', acceptanceHistory: 'Hizmet kabul geçmişi',
+  revisePrices: 'Fiyat revizyonu hazırla', revisedPrice: 'Yeni birim fiyat', priceRevisionHelp: 'Girilen fiyatlar yeni taslak revizyon oluşturur. Hizmet kabul geçmişi korunur; farklı yetkili yeniden onaylar.',
+  tax: 'Kayıtlı vergi kaynağı', vat: 'KDV', withholding: 'Tevkifat', noWithholding: 'Uygulanmıyor', taxInInvoice: 'Resmî fatura kaynağında',
 } as const
