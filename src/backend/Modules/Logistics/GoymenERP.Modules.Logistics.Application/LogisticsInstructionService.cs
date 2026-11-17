@@ -868,7 +868,7 @@ public sealed partial class LogisticsInstructionService(
         if (replay.Refusal is { } refusal)
         {
             throw new LogisticsInstructionServiceException(refusal.Status, refusal.Code, refusal.Errors, isReplay: true,
-                originalCorrelationId: replay.OriginalCorrelationId);
+                originalCorrelationId: replay.OriginalCorrelationId, detail: refusal.Detail);
         }
 
         return Response(replay.Instruction!, isReplay: true, replay.OriginalCorrelationId);
@@ -903,7 +903,7 @@ public sealed partial class LogisticsInstructionService(
             }
         }
 
-        throw new LogisticsInstructionServiceException(refusal.Status, refusal.Code, refusal.Errors);
+        throw new LogisticsInstructionServiceException(refusal.Status, refusal.Code, refusal.Errors, detail: refusal.Detail);
     }
 
     private static LogisticsInstructionServiceException Store(LogisticsStoreException exception) => exception.Code switch

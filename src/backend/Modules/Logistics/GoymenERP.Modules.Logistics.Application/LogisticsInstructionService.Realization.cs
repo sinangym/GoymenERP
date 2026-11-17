@@ -251,7 +251,7 @@ public sealed partial class LogisticsInstructionService
         catch (LogisticsInstructionServiceException exception) when (
             exception.Status == 409 && IsTerminalRealizationConflict(exception.Code))
         {
-            terminal = new(409, exception.Code, exception.Errors);
+            terminal = new(409, exception.Code, exception.Errors, exception.Detail);
         }
         catch (LogisticsRuleException exception)
         {
@@ -296,7 +296,7 @@ public sealed partial class LogisticsInstructionService
         }
         catch (LogisticsStoreException exception) { throw Store(exception); }
 
-        throw new LogisticsInstructionServiceException(terminal.Status, terminal.Code, terminal.Errors);
+        throw new LogisticsInstructionServiceException(terminal.Status, terminal.Code, terminal.Errors, detail: terminal.Detail);
     }
 
     private async Task<LogisticsReplay?> FindRealizationReplayAsync(Scope scope, string? permission,

@@ -52,6 +52,7 @@ export function ReceiptAdjustmentBatchPanel(props: Props) {
       <p key={line.acceptanceId}>{T.original}: {line.acceptanceId}; {T.quantity}: {line.undoQuantity}; {T.kg}: {line.measuredUndoQuantityKg}
         {line.replacementReceipt == null ? null : <>; {T.label}: {line.replacementReceipt.labelCode}; {T.nextQuantity}: {line.replacementReceipt.acceptedQuantity}; {T.nextKg}: {line.replacementReceipt.measuredQuantityKg}</>}</p>)}</div> : null}
     {outcome?.type === 'failed' ? <StateBlock subject={T.heading} state={classifyOutcome({ type: 'http', status: outcome.status, body: { code: outcome.code } })} /> : null}
+    {outcome?.type === 'failed' && outcome.detail !== undefined ? <p role="alert">{outcome.detail}</p> : null}
     {outcome?.type === 'unknown' ? <StateBlock subject={T.heading} state={classifyOutcome(outcome.reason === 'service-unavailable'
       ? { type: 'http', status: outcome.status ?? 503, body: null } : { type: outcome.reason })} /> : null}
     {outcome?.type === 'applied' ? <div role="status"><p>{outcome.response.isReplay ? T.replayed : T.saved}</p><p>{T.version}: {outcome.response.orderVersion}</p>

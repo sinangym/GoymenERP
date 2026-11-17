@@ -1,3 +1,4 @@
+using GoymenERP.Api.InventoryRuntime;
 using System.Data.Common;
 using System.Globalization;
 using GoymenERP.BuildingBlocks.Concurrency;
@@ -84,10 +85,16 @@ internal sealed class PurchaseGoodsReceiptHost(
                     await transaction.CommitAsync(cancellationToken);
                     return result;
                 }
-                catch
+                catch (Exception exception)
                 {
-                    await RollbackQuietlyAsync(transaction);
+                    var rolledBack = await RollbackQuietlyAsync(transaction);
                     purchasing.ChangeTracker.Clear();
+                    if (InventoryNegativeStockAttemptEvidenceException.Find(exception) is not null)
+                    {
+                        if (!rolledBack) throw new PurchasingServiceException(503, InventoryGoodsReceiptCodesV1.Unavailable);
+                        try { await InventoryNegativeStockAttemptRecording.AfterRollbackAsync(services, exception); }
+                        catch (Exception) { throw new PurchasingServiceException(503, InventoryGoodsReceiptCodesV1.Unavailable); }
+                    }
                     throw;
                 }
             }
@@ -95,7 +102,8 @@ internal sealed class PurchaseGoodsReceiptHost(
         }
         catch (InventoryGoodsReceiptException exception)
         {
-            throw new PurchasingServiceException(exception.Status, exception.Code);
+            throw new PurchasingServiceException(exception.Status, exception.Code, innerException: exception,
+                detail: InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, new Dictionary<string, object?>()));
         }
         catch (SalesOrderLineBusyException exception) { throw new PurchasingServiceException(409, exception.Code); }
         catch (PurchaseLineBusyException exception) { throw new PurchasingServiceException(409, exception.Code); }
@@ -159,14 +167,15 @@ internal sealed class PurchaseGoodsReceiptHost(
         }
         catch (InventoryGoodsReceiptException exception)
         {
-            throw new PurchasingServiceException(exception.Status, exception.Code);
+            throw new PurchasingServiceException(exception.Status, exception.Code, innerException: exception,
+                detail: InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, new Dictionary<string, object?>()));
         }
     }
 
-    private static async Task RollbackQuietlyAsync(IDbContextTransaction transaction)
+    private static async Task<bool> RollbackQuietlyAsync(IDbContextTransaction transaction)
     {
-        try { await transaction.RollbackAsync(CancellationToken.None); }
-        catch { /* Preserve the original operation failure. */ }
+        try { await transaction.RollbackAsync(CancellationToken.None); return true; }
+        catch { return false; }
     }
 
     /// <summary>

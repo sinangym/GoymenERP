@@ -1,3 +1,4 @@
+using GoymenERP.Api.InventoryRuntime;
 using System.Data.Common;
 using System.Data;
 using System.Globalization;
@@ -153,12 +154,20 @@ internal sealed partial class PurchaseReceiptReversalHost
                         return refusal;
                     }
                 }
-                catch { await RollbackQuietlyAsync(transaction); purchasing.ChangeTracker.Clear(); throw; }
+                catch (Exception exception)
+                {
+                    var rolledBack = await RollbackQuietlyAsync(transaction);
+                    purchasing.ChangeTracker.Clear();
+                    await RecordPhysicalRefusalAsync(exception, rolledBack);
+                    throw;
+                }
             }
             throw PurchaseGoodsReceiptPrelock.RetryExhausted();
         }
-        catch (InventoryGoodsReceiptReversalException exception) { throw new PurchasingServiceException(exception.Status, exception.Code); }
-        catch (InventoryGoodsReceiptException exception) { throw new PurchasingServiceException(exception.Status, exception.Code); }
+        catch (InventoryGoodsReceiptReversalException exception) { throw new PurchasingServiceException(exception.Status, exception.Code, innerException: exception,
+                detail: InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, new Dictionary<string, object?>())); }
+        catch (InventoryGoodsReceiptException exception) { throw new PurchasingServiceException(exception.Status, exception.Code, innerException: exception,
+                detail: InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, new Dictionary<string, object?>())); }
         catch (InventoryAllocationException exception)
         { throw exception.Status == 409 ? new PurchasingServiceException(409, InventoryGoodsReceiptCodesV1.ConcurrentChange) : new PurchasingServiceException(503, InventoryGoodsReceiptCodesV1.Unavailable); }
         catch (SalesOrderLineBusyException exception) { throw new PurchasingServiceException(409, exception.Code); }

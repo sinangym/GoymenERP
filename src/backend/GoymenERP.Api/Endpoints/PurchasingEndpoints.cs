@@ -914,7 +914,8 @@ public static partial class PurchasingEndpoints
             extensions["errors"] = exception.Errors;
         }
 
-        return Results.Problem(statusCode: exception.Status, extensions: extensions);
+        var detail = InventoryRuntime.InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, extensions, exception.Detail);
+        return Results.Problem(statusCode: exception.Status, detail: detail, extensions: extensions);
     }
 
     private static IResult Problem(int statusCode, string code, ICorrelationContext correlation) => Results.Problem(statusCode: statusCode,

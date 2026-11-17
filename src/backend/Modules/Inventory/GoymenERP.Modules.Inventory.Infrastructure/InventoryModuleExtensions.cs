@@ -97,6 +97,7 @@ public static class InventoryModuleExtensions
         services.AddInventoryStockPositions();
         services.AddInventoryLabelDetails();
         services.AddInventoryMovementTimeline();
+        services.AddInventoryNegativeStockAttempts();
         // KLN-D42 (STK-S31): the dated shortage warning read; the purchase source is the host's adapter.
         services.AddInventoryShortageWarnings();
         // F-017 STOK F017-b: the future supply allocation writer (no route yet, F017-b2) and the ports Purchasing and Sales use.

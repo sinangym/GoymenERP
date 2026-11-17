@@ -186,6 +186,7 @@ function AttemptFeedback<TAnswer>({ attempt }: { readonly attempt: { readonly se
     {attempt.sending ? <p role="status">{T.sending}</p> : null}
     {!attempt.sending && attempt.snapshot !== null ? <div role="alert"><p>{T.unknown}</p><Button type="button" onClick={attempt.retry}>{T.retry}</Button></div> : null}
     {result?.type === 'failed' ? <StateBlock subject={T.heading} state={classifyOutcome({ type: 'http', status: result.status, body: { code: result.code } })} /> : null}
+    {result?.type === 'failed' && result.detail !== undefined ? <p role="alert">{result.detail}</p> : null}
     {result?.type === 'unknown' ? <StateBlock subject={T.heading} state={classifyOutcome(result.reason === 'service-unavailable'
       ? { type: 'http', status: result.status ?? 503, body: null } : { type: result.reason })} /> : null}
   </>

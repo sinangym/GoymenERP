@@ -1,5 +1,9 @@
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Allocations;
+using GoymenERP.Modules.Inventory.Domain.Balances;
+using GoymenERP.Modules.Inventory.Domain.Costing;
+using GoymenERP.Modules.Inventory.Domain.Labels;
+using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Domain.FutureSupply;
 using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
@@ -13,7 +17,8 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant
 {
     /// <summary>
     /// API-44: load every awaited source first, then evaluate the complete correction against shared shadow budgets.
-    /// This method never tracks an entity, stages a movement, enqueues audit, saves, or uses a savepoint.
+    /// This method never tracks or saves business entities, stages movements, enqueues audit or uses a savepoint.
+    /// It first takes the technical Inventory validation guard in the already borrowed host transaction.
     /// A later unavailable owner therefore dominates an earlier stable business refusal.
     /// </summary>
     public async Task EvaluateBatchAsync(IReadOnlyList<InventoryGoodsReceiptReversalBatchLineV1> lines,
@@ -32,6 +37,7 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant
         if (lines.Count == 0 || lines.Any(line => line is null)
             || lines.Select(line => line.Request.AcceptanceId).Distinct().Count() != lines.Count)
             throw Error(400, Codes.InvalidRequest);
+        await store.LockPhysicalValidationAsync(cancellationToken);
         var targets = new List<BatchRead>();
         var demandsByLine = new Dictionary<Guid, BatchDemand>();
         var supplyByLine = new Dictionary<Guid, BatchSupply>();
@@ -44,6 +50,7 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant
             var existing = await ReadReplayAsync(item.Request, item.Metadata, cancellationToken);
             var target = await ReadTargetAsync(item.Request.AcceptanceId, cancellationToken) ?? throw Error(503, Codes.Unavailable);
             var original = target.Original.OriginalRequest;
+            await store.ObservePhysicalCountBoundaryAsync(original.ProductId, original.LocationId, cancellationToken);
             var expected = item.ExpectedSupply;
             if (item.Request.Kind != InventoryGoodsReceiptReversalKindV1.AcceptanceUndo
                 || expected.CompanyId != companyId || expected.PurchaseOrderId != original.PurchaseOrderId
@@ -162,11 +169,24 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant
                     if (demand.Open) demand.Held += FutureSupplyReceiptReversal.ExactRatio(plan.ReopenedQuantity, kg, quantity);
                     remaining -= take;
                 }
-                if (label.Allocated > label.Physical - undo) throw Error(409, Codes.StockAllocated);
                 var key = (original.LabelId, (int)original.OwnerKind, original.OwnerId, (int)original.CustodianKind,
                     original.CustodianId, original.LocationId, (int)item.Request.SourceBlock);
                 if (!positions.TryGetValue(key, out var position)) position = read.Position;
-                if (position < undo) throw Error(409, Codes.StockNotAvailable);
+                if (position < undo)
+                {
+                    var physicalPosition = new StockPosition(companyId, new StockOwner(original.OwnerKind, original.OwnerId),
+                        new StockCustodian(original.CustodianKind, original.CustodianId), original.LocationId,
+                        new MaterialLabel(original.LabelId, companyId, original.LabelCode, original.ProductId,
+                            original.LotId, original.ExpectedProductVersion), item.Request.SourceBlock);
+                    var movement = new StockMovement(item.Request.InventoryMovementId, companyId,
+                        StockMovementKind.PurchaseAcceptanceReversal, item.Request.OccurredAtUtc,
+                        new StockSourceReference(Codes.SourceKind, original.MovementId, item.Request.ReversalLineId),
+                        [new StockMovementLine(physicalPosition, StockDirection.Out, Kilograms.Positive(undo))], CostResult.NotCalculated);
+                    throw Error(409, Codes.StockNotAvailable, store.PhysicalStockRefusal(movement,
+                        new StockShortfall(movement.Kind, movement.Source, physicalPosition, Kilograms.Positive(undo),
+                            Kilograms.Of(position), 1), item.Metadata, original.LabelCode));
+                }
+                if (label.Allocated > label.Physical - undo) throw Error(409, Codes.StockAllocated);
                 positions[key] = position - undo; label.Physical -= undo;
             }
             catch (InventoryGoodsReceiptReversalException exception) { terminal ??= exception; }
