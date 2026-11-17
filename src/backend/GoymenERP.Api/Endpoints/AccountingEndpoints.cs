@@ -142,6 +142,7 @@ public static partial class AccountingEndpoints
     private static readonly string[] NormalJournalUnprocessableCodes =
     [
         .. PeriodUnprocessableCodes,
+        NormalJournalDraftPreparationCodesV1.SourceAmountMismatch,
         AccountingErrorCodes.CompanyMismatch,
         AccountingErrorCodes.JournalTooFewLines,
         AccountingErrorCodes.JournalLineInvalid,
@@ -157,6 +158,7 @@ public static partial class AccountingEndpoints
             .WithTags("Accounting");
 
         MapManufacturingCostDifferences(group);
+        MapFinanceJournalSources(group);
 
         group.MapGet("/periods", async (
                 int? pageSize,

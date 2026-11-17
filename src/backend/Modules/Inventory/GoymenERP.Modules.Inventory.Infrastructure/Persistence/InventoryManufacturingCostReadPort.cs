@@ -59,8 +59,8 @@ public sealed class InventoryManufacturingCostReadPort(InventoryDbContext db, IC
                     && row.CurrencyId == SettingsCurrencyIdentitiesV1.TurkishLira);
                 var usdRow = stamps.SingleOrDefault(row => row.MovementId == movement.Id && row.LineNumber == 1
                     && row.CurrencyId == ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD"));
-                var tl = Stamp(tlRow, line.QuantityKg, SettingsCurrencyIdentitiesV1.TurkishLira);
-                var usd = Stamp(usdRow, line.QuantityKg, ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD"));
+                var tl = InventoryMovementCostStampProjection.Read(tlRow, line.QuantityKg, SettingsCurrencyIdentitiesV1.TurkishLira);
+                var usd = InventoryMovementCostStampProjection.Read(usdRow, line.QuantityKg, ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD"));
                 if (movement.SourceKind == InventoryManufacturingRealizationContractV1.InputIssueSourceKind)
                 {
                     issues.Add(new(movement.SourceLineId!.Value, movement.Id, movement.SourceKind, (StockMovementKind)movement.Kind,
@@ -115,29 +115,6 @@ public sealed class InventoryManufacturingCostReadPort(InventoryDbContext db, IC
                 && fact.Line.Direction == (int)StockDirection.In,
             _ => false,
         });
-
-    private static InventoryMovementCostStampV1 Stamp(MovementCostStampRow? row, decimal kg, Guid currency)
-    {
-        if (row is null) return new(InventoryMovementCostStampStatusV1.Unavailable, currency, null, null, null,
-            "legacy-not-recorded", "movement_cost_stamp_not_recorded");
-        if (row.StampVersion < 1 || row.CurrencyId != currency) throw new InvalidOperationException();
-        if (row.Status == (int)InventoryMovementCostStampStatusV1.Known && row.LedgerVersion is >= 1 && row.Reason is null)
-        {
-            var exact = row.UnitCostRatioJson is { } json ? (JsonSerializer.Deserialize<InventoryExactCostRatioV1>(json, Json)
-                ?? throw new InvalidOperationException()).Value() : GoymenERP.Modules.Inventory.Domain.Costing.ExactCostRatio.Of(
-                    row.UnitCostPerKg ?? throw new InvalidOperationException());
-            if (exact.Sign < 0 || row.UnitCostPerKg is { } scalar && (!exact.TryToDecimal(out var actual) || actual != scalar)
-                || row.Amount is { } amount && (!exact.Multiply(kg).TryToDecimal(out var actualAmount) || actualAmount != amount))
-                throw new InvalidOperationException();
-            return new(InventoryMovementCostStampStatusV1.Known, currency, row.UnitCostPerKg, row.Amount, row.LedgerVersion,
-                row.StampVersion.ToString(CultureInfo.InvariantCulture), null, InventoryExactCostRatioV1.From(exact));
-        }
-        if (row.Status == (int)InventoryMovementCostStampStatusV1.Unavailable && row.UnitCostPerKg is null && row.Amount is null
-            && !string.IsNullOrWhiteSpace(row.Reason))
-            return new(InventoryMovementCostStampStatusV1.Unavailable, currency, null, null, row.LedgerVersion,
-                row.StampVersion.ToString(CultureInfo.InvariantCulture), row.Reason);
-        throw new InvalidOperationException();
-    }
 
     private static InventoryIssueCostCurrencyV1 Currency(MovementCostStampRow? row)
     {

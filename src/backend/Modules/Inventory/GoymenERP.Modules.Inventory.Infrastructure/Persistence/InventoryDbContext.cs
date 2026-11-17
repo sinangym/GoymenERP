@@ -292,6 +292,7 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
         ConfigureOpeningCounts(modelBuilder);
         ConfigureCommands(modelBuilder);
         ConfigureStockCounts(modelBuilder);
+        ConfigureNegativeStockAttempts(modelBuilder);
         ConfigureStockScraps(modelBuilder);
         ConfigureOpeningCosts(modelBuilder);
         ConfigureInventoryTransfers(modelBuilder);
@@ -1663,6 +1664,7 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
             {
                 string[] allowed = entry.Entity switch
                 {
+                    NegativeStockValidationGuardRow => [nameof(NegativeStockValidationGuardRow.Version)],
                     LabelRow =>
                     [
                         nameof(LabelRow.Classification), nameof(LabelRow.Version), nameof(LabelRow.UpdatedAtUtc),

@@ -106,7 +106,7 @@ public static class InventorySupplierReturnExitCodesV1
 
 public sealed class InventorySupplierReturnExitException : Exception
 {
-    private InventorySupplierReturnExitException(int status, string code) : base(code)
+    private InventorySupplierReturnExitException(int status, string code, Exception? innerException = null) : base(code, innerException)
     {
         Status = status;
         Code = code;
@@ -115,9 +115,9 @@ public sealed class InventorySupplierReturnExitException : Exception
     public int Status { get; }
     public string Code { get; }
 
-    public static InventorySupplierReturnExitException Refused(int status, string code) =>
+    public static InventorySupplierReturnExitException Refused(int status, string code, Exception? innerException = null) =>
         InventorySupplierReturnExitCodesV1.IsDefined(status, code)
-            ? new(status, code)
+            ? new(status, code, innerException)
             : throw new InvalidOperationException("Inventory supplier-return exit refusal is outside its closed contract.");
 }
 

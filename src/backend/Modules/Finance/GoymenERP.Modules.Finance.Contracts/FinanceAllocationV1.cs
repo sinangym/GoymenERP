@@ -13,7 +13,9 @@ public sealed record CreateFinanceAllocationRequest(
     Guid OpenItemId,
     string ExpectedOpenItemVersion,
     string Amount,
-    string Reason);
+    string Reason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? AllocationPartyId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? AllocationAccountId = null);
 
 public sealed record ReleaseFinanceAllocationRequest(
     Guid AllocationId,
@@ -42,7 +44,9 @@ public sealed record FinanceAllocationView(
     DateTimeOffset CreatedAtUtc,
     string? ReleasedBy,
     DateTimeOffset? ReleasedAtUtc,
-    string? ReleaseReason);
+    string? ReleaseReason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? AllocationPartyId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? AllocationAccountId = null);
 
 public sealed record FinanceAllocationCommandResult(
     CommandOutcome Outcome,

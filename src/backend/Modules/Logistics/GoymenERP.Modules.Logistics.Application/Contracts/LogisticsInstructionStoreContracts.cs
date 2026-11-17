@@ -125,7 +125,7 @@ public sealed record LogisticsOrderLineAggregateLoadLimit(
     DateOnly EffectiveOn);
 
 /// <summary>ADR-011 §7: a terminal refusal recorded under the attempt key (stale version, cap, block, state), answered again on the same key.</summary>
-public sealed record LogisticsTerminalRefusal(int Status, string Code, IReadOnlyList<LogisticsFieldError> Errors);
+public sealed record LogisticsTerminalRefusal(int Status, string Code, IReadOnlyList<LogisticsFieldError> Errors, string? Detail = null);
 
 /// <summary>What the key holds: the stored instruction or the recorded refusal, never both.</summary>
 public sealed record LogisticsReplay(StoredLoadingInstruction? Instruction, LogisticsTerminalRefusal? Refusal, string OriginalCorrelationId);

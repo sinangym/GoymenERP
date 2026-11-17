@@ -14,6 +14,7 @@ import {
   decodeInstructionMutation,
   decodeInstructionPage,
   decodeProblem,
+  decodePhysicalStockRefusalDetail,
   decodeUnloadWeighing,
   parseQuantityInput,
 } from './contract'
@@ -21,6 +22,26 @@ import approvedLinesRaw from './examples/approved-order-lines-response.json?raw'
 import { approvedOrderLine, CANCELLED_INSTRUCTION, INSTRUCTION, unloadWeighingRecord, weighingRecord } from './testHarness'
 
 type Body = Record<string, any>
+
+describe('Physical stock refusal detail, authoritative text only', () => {
+  it.each(['Sistemde 0 kg var, 1 kg istendi.', 'Sistemde -0.001 kg var, 2.125 kg istendi.',
+    'Sistemde 999999999999999.999 kg var, 999999999999999.999 kg istendi.'])
+  ('preserves canonical 409 text without computing new kg: %s', (detail) => {
+    expect(decodeProblem({ status: 409, detail }, 409)?.detail).toBe(detail)
+  })
+  it.each(['Sistemde -0 kg var, 1 kg istendi.', 'Sistemde 1 kg var, 0 kg istendi.',
+    'Sistemde 1.0001 kg var, 2 kg istendi.', 'Sistemde 01 kg var, 2 kg istendi.',
+    'Sistemde 1.00 kg var, 2 kg istendi.', 'Sistemde 1,5 kg var, 2 kg istendi.',
+    'Sistemde 1 kg var, 2 kg istendi.\n', 'Sistemde 1\u0000 kg var, 2 kg istendi.',
+    'Sistemde 1000000000000000 kg var, 2 kg istendi.', '<script>unsafe</script>'])
+  ('drops noncanonical or unrelated detail: %s', (detail) => {
+    expect(decodePhysicalStockRefusalDetail(detail, 409)).toBeNull()
+    expect(decodeProblem({ status: 409, detail }, 409)).not.toHaveProperty('detail')
+  })
+  it.each([400, 401, 403, 404, 422, 503])('never takes detail from HTTP %s', (status) => {
+    expect(decodeProblem({ status, detail: 'Sistemde 1 kg var, 2 kg istendi.' }, status)).not.toHaveProperty('detail')
+  })
+})
 const parse = (raw: string): Body => JSON.parse(raw) as Body
 const tweak = (raw: string, change: (body: Body) => void): Body => {
   const body = parse(raw)

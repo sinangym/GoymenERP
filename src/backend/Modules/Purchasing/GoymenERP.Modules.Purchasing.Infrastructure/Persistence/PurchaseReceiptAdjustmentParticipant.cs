@@ -73,9 +73,10 @@ public sealed partial class PurchaseReceiptAdjustmentParticipant : IPurchaseRece
             PurchasingTerminalRefusal? refusal;
             try { refusal = JsonSerializer.Deserialize<PurchasingTerminalRefusal>(attempt.RefusalJson ?? "null", Json); }
             catch (JsonException) { throw Unavailable(); }
-            if (refusal is null || refusal.Status is < 400 or > 499 || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null)
+            if (refusal is null || refusal.Status is < 400 or > 499 || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null
+                || !PurchasingPhysicalStockRefusalDetailV1.IsValid(refusal.Status, refusal.Code, refusal.Detail))
                 throw Unavailable();
-            throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, true, attempt.CorrelationId);
+            throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, true, attempt.CorrelationId, detail: refusal.Detail);
         }
         if (attempt.Outcome != 1 || attempt.ReceiptAdjustmentId is not { } adjustmentId || attempt.OrderId is not { } orderId
             || attempt.RefusalJson is not null || attempt.RequestId is not null || attempt.ReceiptAdjustmentBatchId is not null) throw Unavailable();

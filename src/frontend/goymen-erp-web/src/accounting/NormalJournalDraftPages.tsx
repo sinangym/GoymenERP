@@ -3,14 +3,14 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
 import { parseAmountInput } from '../finance/decimalText'
 import { isDateOnly } from '../finance/dateOnly'
-import type { SourcePage, SourceSummary } from '../finance/contract'
 import { StateBlock } from '../shell/StateBlock'
 import { useShellState } from '../shell/shellContext'
-import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
+import { classifyOutcome, type RemoteViewState, type ViewOutcome } from '../shell/uiState'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { fetchNormalJournalDraft, fetchNormalJournalDraftAccounts } from './api'
 import { fetchNormalJournalDraftSource, fetchNormalJournalSources } from './normalJournalSourceApi'
+import { fetchFinanceJournalSources } from './financeJournalSources'
 import {
   ACCOUNTING_CAPABILITY,
   ACCOUNTING_ROUTE,
@@ -38,9 +38,11 @@ const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const newId = () => crypto.randomUUID()
 type LineForm = { readonly accountId: string; readonly side: NormalJournalSide; readonly amount: string }
 
-function sourceLabel(source: SourceSummary): string {
+type SourceChoice = { id: string; sourceNumber: string; occurredOn: string; stage: string; amount?: string; mappingStatus?: string }
+type SourceChoices = { companyId: string; items: readonly SourceChoice[]; nextCursor: string | null }
+function sourceLabel(source: SourceChoice): string {
   const number = GUID.test(source.sourceNumber) ? normalSourceRefText(source.id) : source.sourceNumber
-  return `${number} - ${source.occurredOn}`
+  return `${number} - ${source.occurredOn}${source.amount === undefined ? '' : ` - ${source.amount}`}`
 }
 
 export function NormalJournalDraftCreatePage() {
@@ -71,6 +73,7 @@ function NormalJournalDraftCreate({ namespace, attemptOwner }: { readonly namesp
   const canCreate = hasCapability(shell, ACCOUNTING_CAPABILITY.normalDraftCreate)
   const recovered = useRef(recallNormalJournalCreate(attemptOwner))
   const [sourceId, setSourceId] = useState(recovered.current?.request.sourceId ?? '')
+  const [sourceMode, setSourceMode] = useState<'manual' | 'financial'>('manual')
   const [transactionDate, setTransactionDate] = useState(recovered.current?.request.transactionDate ?? '')
   const [accountingDate, setAccountingDate] = useState(recovered.current?.request.accountingDate ?? '')
   const [valueDate, setValueDate] = useState(recovered.current?.request.valueDate ?? '')
@@ -86,12 +89,25 @@ function NormalJournalDraftCreate({ namespace, attemptOwner }: { readonly namesp
   const sending = snapshot !== null && outcome === null
   const unresolved = outcome?.type === 'unknown'
   const sourceListQuery = useQuery({
-    queryKey: [namespace, shell.routeEntryGeneration, 'accounting', 'normal-journal-source-picker'],
-    queryFn: async ({ signal }) => {
+    queryKey: [namespace, shell.routeEntryGeneration, 'accounting', 'normal-journal-source-picker', sourceMode],
+    queryFn: async ({ signal }): Promise<ViewOutcome<SourceChoices>> => {
       const security = boundary.capture()
-      const answer = await fetchNormalJournalSources(companyId ?? '', signal)
+      if (sourceMode === 'manual') {
+        const answer = await fetchNormalJournalSources(companyId ?? '', signal)
+        if (answer.type === 'http' && (answer.status === 401 || answer.status === 403)) boundary.report(answer.status, security)
+        return answer.type === 'ok-single' ? { type: 'ok-single', data: { companyId: answer.data.companyId, nextCursor: null,
+          items: answer.data.items.map(({ id, sourceNumber, occurredOn, stage }) => ({ id, sourceNumber, occurredOn, stage })) } }
+          : answer.type === 'ok' ? { type: 'malformed' } : answer
+      }
+      const answer = await fetchFinanceJournalSources(companyId ?? '', signal)
       if (answer.type === 'http' && (answer.status === 401 || answer.status === 403)) boundary.report(answer.status, security)
-      return answer
+      if (answer.type === 'ok-single') {
+        const received = answer.data
+        return { type: 'ok-single' as const, data: { companyId: received.companyId, nextCursor: null,
+          items: received.items.map(item => ({ id: item.sourceId, sourceNumber: `${item.sourceKind === 'finance.expense-payment.recorded.v1' ? T.expenseSource : T.transferSource} (${normalSourceRefText(item.sourceId)})`,
+            occurredOn: item.occurredOn, stage: 'Recorded', amount: item.amount, mappingStatus: item.mappingStatus })) } }
+      }
+      return answer.type === 'ok' ? { type: 'malformed' } : answer
     },
     enabled: single && canCreate,
     retry: false,
@@ -100,9 +116,10 @@ function NormalJournalDraftCreate({ namespace, attemptOwner }: { readonly namesp
   })
   const sourceListState = (sourceListQuery.isPending
     ? { kind: 'initial-loading' }
-    : classifyOutcome(sourceListQuery.data ?? { type: 'malformed' })) as RemoteViewState<SourcePage>
+    : classifyOutcome(sourceListQuery.data ?? { type: 'malformed' })) as RemoteViewState<SourceChoices>
   const authorizedSources = sourceListState.kind === 'ready'
     ? sourceListState.data.items.filter(source => source.stage === 'Recorded') : []
+  const selectedSource = authorizedSources.find(source => source.id === sourceId)
   const sourceIsValid = GUID.test(sourceId)
   const preparationQuery = useQuery({
     queryKey: [namespace, shell.routeEntryGeneration, 'accounting', 'normal-journal-source', sourceId],
@@ -184,6 +201,10 @@ function NormalJournalDraftCreate({ namespace, attemptOwner }: { readonly namesp
     {outcome?.type === 'failed' ? <p role="alert" className={styles.error}>{normalJournalCreateFailureText(outcome.failure)}</p> : null}
     <form className={styles.page} noValidate onSubmit={submit}>
       <div className={styles.form}>
+        <label className={styles.control}>{T.sourceMode}<select value={sourceMode} disabled={sending || unresolved} onChange={event => {
+          setSourceMode(event.target.value === 'financial' ? 'financial' : 'manual'); setSourceId(''); setSnapshot(null); setOutcome(null); setError(null)
+          setLines(current => current.map(line => ({ ...line, accountId: '' })))
+        }}><option value="manual">{T.manualSources}</option><option value="financial">{T.financialSources}</option></select></label>
         <div className={styles.control}><label htmlFor="normal-journal-source">{T.source}</label><select id="normal-journal-source" value={sourceId} disabled={sending || unresolved || sourceListState.kind !== 'ready'} onChange={event => {
           setSourceId(event.target.value)
           setSnapshot(null)
@@ -196,6 +217,10 @@ function NormalJournalDraftCreate({ namespace, attemptOwner }: { readonly namesp
         <label className={styles.control}>{T.valueDate}<input type="date" value={valueDate} disabled={sending || unresolved} onChange={event => setValueDate(event.target.value)} /></label>
       </div>
       {sourceListState.kind !== 'ready' ? <StateBlock state={sourceListState} subject={T.sourcesSubject} onRetry={() => void sourceListQuery.refetch()} /> : null}
+      {sourceListState.kind === 'ready' && authorizedSources.length === 0 ? <p role="status" className={styles.help}>{T.sourcesEmpty}</p> : null}
+      {sourceMode === 'financial' ? <p className={styles.help}>{T.receivedSourceHelp}</p> : null}
+      {selectedSource?.amount ? <p className={styles.help}>{T.sourceAmount}: {selectedSource.amount}</p> : null}
+      {selectedSource?.mappingStatus === 'BindingUnavailable' ? <p role="alert" className={styles.noticeWarn}>{T.bindingUnavailable}</p> : null}
       {sourceIsValid && preparationQuery.isPending ? <StateBlock state={{ kind: 'initial-loading' }} subject={T.preparationSubject} /> : null}
       {sourceIsValid && preparationQuery.data !== undefined && preparationQuery.data.type !== 'ok-single'
         ? <p role="alert" className={styles.error}>{T.preparationUnreadable}</p> : null}

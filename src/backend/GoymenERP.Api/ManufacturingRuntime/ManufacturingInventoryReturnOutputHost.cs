@@ -36,7 +36,8 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
     Func<ManufacturingInventoryReturnOutputStage, CancellationToken, Task>? observer = null,
     IManufacturingOutputLabelCodePolicyReadPortV1? labelCodePolicy = null,
     IManufacturingLabelCodeRegisterReadPortV1? labelCodeRegister = null,
-    IInventoryLabelDispositionReadPortV1? labelDispositions = null)
+    IInventoryLabelDispositionReadPortV1? labelDispositions = null,
+    IInventoryNegativeStockAttemptRecorderV1? negativeStockAttempts = null)
     : IManufacturingInventoryReturnOutputPortV1, IManufacturingInventoryOutputCorrectionPortV1
 {
     async Task<ManufacturingInventoryInputReturnPortResultV1> IManufacturingInventoryReturnOutputPortV1.ReturnAsync(
@@ -897,6 +898,16 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
         {
             manufacturing.ChangeTracker.Clear();
             throw new ManufacturingInventoryReturnOutputRecoveryException(attempt, rollback);
+        }
+        if (InventoryNegativeStockAttemptEvidenceException.Find(attempt) is not null)
+        {
+            try
+            {
+                if (negativeStockAttempts is null) throw new InvalidOperationException("Physical refusal recorder is unavailable.");
+                await negativeStockAttempts.RecordAfterRollbackAsync(attempt, CancellationToken.None);
+            }
+            catch (Exception recording) { throw InventoryManufacturingRealizationException.Refused(503,
+                InventoryManufacturingRealizationCodesV1.Unavailable, recording); }
         }
     }
 

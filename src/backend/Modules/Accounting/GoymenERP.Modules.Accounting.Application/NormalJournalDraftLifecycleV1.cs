@@ -90,6 +90,7 @@ public static class NormalJournalCommandNamesV1
 public static class NormalJournalDraftPreparationCodesV1
 {
     public const string VersionConflict = "accounting_normal_journal_preparation_version_conflict";
+    public const string SourceAmountMismatch = "accounting_normal_journal_source_amount_mismatch";
 }
 
 public static class NormalJournalDraftStoreCodesV1

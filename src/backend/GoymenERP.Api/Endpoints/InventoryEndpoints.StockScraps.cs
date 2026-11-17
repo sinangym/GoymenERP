@@ -214,8 +214,14 @@ public static partial class InventoryEndpoints
             return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
         }
 
-        return exception.Status is StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden
-            ? Results.Problem(statusCode: exception.Status)
-            : LabelTransformationProblem(exception.Status, exception.Code, correlation);
+        if (exception.Status is StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden)
+            return Results.Problem(statusCode: exception.Status);
+        var extensions = new Dictionary<string, object?>
+        {
+            ["code"] = exception.Code,
+            ["correlationId"] = correlation.IsResolved ? correlation.CorrelationId : null,
+        };
+        var detail = InventoryRuntime.InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, extensions);
+        return Results.Problem(statusCode: exception.Status, detail: detail, extensions: extensions);
     }
 }

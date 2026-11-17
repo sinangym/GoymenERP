@@ -27,6 +27,7 @@ public sealed class ManufacturingCostRuntimeCompositionTests
         Assert.IsType<ManufacturingCostCompositionSourceV1>(services.GetRequiredService<IManufacturingScrapCostDistributionSourceV1>());
         Assert.IsType<ManufacturingScrapCostDistributionPort>(services.GetRequiredService<IManufacturingScrapCostDistributionPortV1>());
         Assert.IsType<ManufacturingProductionCostPort>(services.GetRequiredService<IManufacturingProductionCostPortV2>());
+        Assert.IsType<ManufacturingReopeningAccountingPeriodStatusPortV1>(services.GetRequiredService<IManufacturingReopeningAccountingPeriodStatusPortV1>());
         Assert.NotNull(services.GetRequiredService<ManufacturingInventoryCostGenerationFactoryV1>());
         Assert.NotNull(services.GetRequiredService<ManufacturingCommandService>());
     }

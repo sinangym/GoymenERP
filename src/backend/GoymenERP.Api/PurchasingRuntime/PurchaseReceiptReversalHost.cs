@@ -1,4 +1,5 @@
 using System.Data.Common;
+using GoymenERP.Api.InventoryRuntime;
 using System.Data;
 using System.Globalization;
 using System.Security.Cryptography;
@@ -119,18 +120,22 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
                     await transaction.CommitAsync(cancellationToken);
                     return written;
                 }
-                catch
+                catch (Exception exception)
                 {
-                    await RollbackQuietlyAsync(transaction);
+                    var rolledBack = await RollbackQuietlyAsync(transaction);
                     purchasing.ChangeTracker.Clear();
+                    await RecordPhysicalRefusalAsync(exception, rolledBack);
                     throw;
                 }
             }
             throw PurchaseGoodsReceiptPrelock.RetryExhausted();
         }
-        catch (InventoryGoodsReceiptReversalException exception) { throw new PurchasingServiceException(exception.Status, exception.Code); }
-        catch (InventoryGoodsReceiptException exception) { throw new PurchasingServiceException(exception.Status, exception.Code); }
-        catch (InventorySupplierReturnExitException exception) { throw new PurchasingServiceException(exception.Status, exception.Code); }
+        catch (InventoryGoodsReceiptReversalException exception) { throw new PurchasingServiceException(exception.Status, exception.Code, innerException: exception,
+                detail: InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, new Dictionary<string, object?>())); }
+        catch (InventoryGoodsReceiptException exception) { throw new PurchasingServiceException(exception.Status, exception.Code, innerException: exception,
+                detail: InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, new Dictionary<string, object?>())); }
+        catch (InventorySupplierReturnExitException exception) { throw new PurchasingServiceException(exception.Status, exception.Code, innerException: exception,
+                detail: InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, new Dictionary<string, object?>())); }
         catch (InventoryAllocationException exception)
         {
             throw exception.Status == 409
@@ -218,6 +223,13 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
         envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent);
     internal static string InventoryChildKey(string commandName, string key) => commandName == PurchaseReceiptReversalApiV1.CommandName
         ? key : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(commandName + "\n" + key))).ToLowerInvariant();
-    private static async Task RollbackQuietlyAsync(IDbContextTransaction transaction)
-    { try { await transaction.RollbackAsync(CancellationToken.None); } catch { /* Preserve the original failure. */ } }
+    private async Task RecordPhysicalRefusalAsync(Exception exception, bool rolledBack)
+    {
+        if (InventoryNegativeStockAttemptEvidenceException.Find(exception) is null) return;
+        if (!rolledBack) throw Unavailable();
+        try { await InventoryNegativeStockAttemptRecording.AfterRollbackAsync(services, exception); }
+        catch (Exception) { throw Unavailable(); }
+    }
+    private static async Task<bool> RollbackQuietlyAsync(IDbContextTransaction transaction)
+    { try { await transaction.RollbackAsync(CancellationToken.None); return true; } catch { return false; } }
 }

@@ -143,6 +143,10 @@ public sealed class FinanceInvoiceOpenItemCancellationService(
                 return Refused(context, CommandOutcome.ValidationFailed,
                     new ValidationIssue("invoiceId", StoredStateNotUnderstoodCode));
             }
+            var sourceAccount = await dbContext.ReceiptDrafts.AsNoTracking().Where(x => x.Id == allocation.SourceId)
+                .Select(x => x.CompanyAccountId).SingleAsync(cancellationToken);
+            await FinancePartyBalanceAssignment.RestoreAsync(dbContext, FinanceBalanceAssignmentKinds.Receipt,
+                allocation.SourceId, sourceAccount, allocation.AllocationAccountId, allocation.AmountText, cancellationToken);
             allocation.Status = FinanceAllocationStatuses.Released;
             allocation.Version = checked(allocation.Version + 1);
             allocation.ReleasedBy = context.ActorId;
@@ -173,6 +177,10 @@ public sealed class FinanceInvoiceOpenItemCancellationService(
                 return Refused(context, CommandOutcome.ValidationFailed,
                     new ValidationIssue("invoiceId", StoredStateNotUnderstoodCode));
             }
+            var sourceAccount = await dbContext.ManualBankPayments.AsNoTracking().Where(x => x.Id == allocation.PaymentId)
+                .Select(x => x.CompanyAccountId).SingleAsync(cancellationToken);
+            await FinancePartyBalanceAssignment.RestoreAsync(dbContext, FinanceBalanceAssignmentKinds.Payment,
+                allocation.PaymentId, sourceAccount, allocation.AllocationAccountId, allocation.AmountText, cancellationToken);
             allocation.Status = FinanceAllocationStatuses.Released;
             allocation.Version = checked(allocation.Version + 1);
             allocation.ReleasedBy = context.ActorId;
@@ -203,6 +211,7 @@ public sealed class FinanceInvoiceOpenItemCancellationService(
                 OpenItemId = item.Id,
                 ReversedAmountText = item.OriginalAmountText,
             });
+            await FinancePartyBalanceAssignment.ClearAsync(dbContext, FinanceBalanceAssignmentKinds.OpenItem, item.Id, cancellationToken);
             item.Status = FinanceOpenItemStatuses.Cancelled;
             item.OutstandingAmountText = "0";
             item.Version = checked(item.Version + 1);

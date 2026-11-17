@@ -774,6 +774,187 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.FinanceJournalSourceRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AmountText")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)");
+
+                    b.Property<Guid>("CurrencyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("OccurredOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("OwnerProfileId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("OwnerProfileVersion")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateTimeOffset>("ReceivedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("SourceHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength()
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("SourceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SourceJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SourceKind")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("SourceVersion")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "SourceId", "SourceKind", "SourceVersion")
+                        .IsUnique();
+
+                    b.ToTable("FinanceJournalSources", "accounting", t =>
+                        {
+                            t.HasCheckConstraint("CK_FinanceJournalSources_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [SourceId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_FinanceJournalSources_Payload", "ISJSON([SourceJson]) = 1 AND LEN([SourceHash]) = 64");
+
+                            t.HasCheckConstraint("CK_FinanceJournalSources_Source", "[SourceKind] IN (N'finance.expense-payment.recorded.v1', N'finance.cash-transfer.recorded.v1') AND LEN([SourceVersion]) > 0 AND LEN([OwnerProfileId]) > 0 AND LEN([OwnerProfileVersion]) > 0 AND LEN([AmountText]) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.InvoiceLineCogsProposalRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("ExpectedLineVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("InvoiceLineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("PreparedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("PreparedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SourceJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ViewJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "InvoiceId", "InvoiceLineId", "ExpectedLineVersion");
+
+                    b.ToTable("InvoiceLineCogsProposals", "accounting", t =>
+                        {
+                            t.HasCheckConstraint("CK_InvoiceLineCogsProposals_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceLineId] <> '00000000-0000-0000-0000-000000000000' AND [PreparedBy] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_InvoiceLineCogsProposals_Json", "ISJSON([SourceJson]) = 1 AND ISJSON([ViewJson]) = 1");
+
+                            t.HasCheckConstraint("CK_InvoiceLineCogsProposals_Utc", "DATEPART(TZOFFSET, [PreparedAtUtc]) = 0");
+
+                            t.HasCheckConstraint("CK_InvoiceLineCogsProposals_Version", "[ExpectedLineVersion] >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.InvoiceLineCogsRevisionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("InvoiceLineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("ApprovedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("ApprovedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("PreparedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProposalId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RevisionJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ViewJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("CompanyId", "InvoiceId", "InvoiceLineId", "Version");
+
+                    b.HasIndex("CompanyId", "ProposalId")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "InvoiceId", "InvoiceLineId", "ProposalId");
+
+                    b.ToTable("InvoiceLineCogsRevisions", "accounting", t =>
+                        {
+                            t.HasCheckConstraint("CK_InvoiceLineCogsRevisions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceLineId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_InvoiceLineCogsRevisions_Json", "ISJSON([ViewJson]) = 1 AND ISJSON([RevisionJson]) = 1");
+
+                            t.HasCheckConstraint("CK_InvoiceLineCogsRevisions_MakerChecker", "[PreparedBy] <> '00000000-0000-0000-0000-000000000000' AND [ApprovedBy] <> '00000000-0000-0000-0000-000000000000' AND [PreparedBy] <> [ApprovedBy]");
+
+                            t.HasCheckConstraint("CK_InvoiceLineCogsRevisions_Utc", "DATEPART(TZOFFSET, [ApprovedAtUtc]) = 0");
+
+                            t.HasCheckConstraint("CK_InvoiceLineCogsRevisions_Version", "[Version] >= 1");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.JournalLineRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -1677,6 +1858,34 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                         .HasForeignKey("CompanyId", "JournalId")
                         .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.FinanceJournalSourceRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.InvoiceLineCogsProposalRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.InvoiceLineCogsRevisionRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.InvoiceLineCogsProposalRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "InvoiceId", "InvoiceLineId", "ProposalId")
+                        .HasPrincipalKey("CompanyId", "InvoiceId", "InvoiceLineId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.JournalLineRow", b =>

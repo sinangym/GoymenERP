@@ -107,6 +107,7 @@ public sealed class FinancePermissionPort(
         FinanceAction.ReadCredits => ErpPermissions.FinanceCreditsRead,
         FinanceAction.ProposeCredit => ErpPermissions.FinanceCreditsPropose,
         FinanceAction.ApproveCredit => ErpPermissions.FinanceCreditsApprove,
+        FinanceAction.RecordPartyBalanceTransfer => FinancePartyBalanceTransferPermissionsV1.Record,
         _ => null,
     };
 

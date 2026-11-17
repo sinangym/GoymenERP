@@ -54,6 +54,8 @@ internal static class PartyLedgerPolicy
         PartyLedgerEntryKind.OpeningBalanceCredit => PartyLedgerSide.Credit,
         PartyLedgerEntryKind.OpeningBalanceDebitReversal => PartyLedgerSide.Credit,
         PartyLedgerEntryKind.OpeningBalanceCreditReversal => PartyLedgerSide.Debit,
+        PartyLedgerEntryKind.BalanceTransferDebit => PartyLedgerSide.Debit,
+        PartyLedgerEntryKind.BalanceTransferCredit => PartyLedgerSide.Credit,
         _ => throw new InvalidOperationException("Cari ekstre satır türü tanınmadı; ekstre hesaplanmaz."),
     };
 

@@ -7,6 +7,20 @@ namespace GoymenERP.Manufacturing.UnitTests;
 
 public sealed partial class ManufacturingCommandServiceTests
 {
+    [Fact]
+    public async Task A_missing_transaction_bound_period_reader_is_unavailable_before_any_reopening_write()
+    {
+        var fixture = new Fixture(); var order = await fixture.BalancedOrderAsync(); order.Close(order.Version, Actor, At);
+        var store = new ReopeningStore(fixture);
+        var service = new ManufacturingCommandService(fixture.Store, fixture.Store, fixture.Store, new ManufacturingMassVerifier(fixture.Settings),
+            fixture.Authority, fixture.CompanyContext, fixture.User, fixture.Correlation, new FixedTime(), orderReopenings: store,
+            reopeningInventory: new ReopeningInventoryPort());
+        var result = await service.ReopenOrderAsync(order.Id, new(order.Version, "Synthetic unavailable transaction-bound reader"),
+            "reopen-missing-bound-reader", CancellationToken.None);
+        Assert.Equal(ManufacturingApiStatus.Unavailable, result.Status); Assert.Equal(0, store.Writes);
+        Assert.Equal(OrderStatus.Closed, order.Status); Assert.Empty(order.Reopenings); Assert.Empty(fixture.Store.Commands);
+    }
+
     [Theory]
     [InlineData(AccountingPeriodStatusOutcomeV1.Denied, ManufacturingApiStatus.Denied)]
     [InlineData(AccountingPeriodStatusOutcomeV1.None, ManufacturingApiStatus.Unprocessable)]
@@ -56,7 +70,7 @@ public sealed partial class ManufacturingCommandServiceTests
             fixture.CompanyContext, fixture.User, fixture.Correlation, new FixedTime(), orderReopenings: store,
             accountingPeriods: periods, reopeningInventory: new ReopeningInventoryPort());
 
-    private sealed class ReopenPeriodPort(AccountingPeriodStatusOutcomeV1 outcome) : IAccountingPeriodStatusPortV1
+    private sealed class ReopenPeriodPort(AccountingPeriodStatusOutcomeV1 outcome) : IManufacturingReopeningAccountingPeriodStatusPortV1
     {
         public List<DateOnly> Dates { get; } = [];
         public bool Throw { get; init; }

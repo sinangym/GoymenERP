@@ -188,9 +188,9 @@ public sealed class InventoryGoodsReceiptParticipant : IInventoryGoodsReceiptPar
         {
             throw StoreRefusal(exception.Code);
         }
-        catch (InventoryRuleException)
+        catch (InventoryRuleException exception)
         {
-            throw Refused(503, InventoryGoodsReceiptCodesV1.Unavailable);
+            throw InventoryGoodsReceiptException.Refused(503, InventoryGoodsReceiptCodesV1.Unavailable, exception);
         }
 
         var labelVersion = await context.Labels.AsNoTracking()

@@ -207,7 +207,7 @@ public sealed class InventoryManufacturingRealizationException : Exception
 {
     private InventoryManufacturingRealizationException(int status, string code,
         InventoryManufacturingStockShortfallV1? stockShortfall,
-        InventoryManufacturingPlanAllocationShortfallV1? planAllocationShortfall = null) : base(code)
+        InventoryManufacturingPlanAllocationShortfallV1? planAllocationShortfall = null, Exception? innerException = null) : base(code, innerException)
     {
         Status = status;
         Code = code;
@@ -237,9 +237,9 @@ public sealed class InventoryManufacturingRealizationException : Exception
             : throw new InvalidOperationException("Only the plan-allocation free-stock refusal carries this shortfall.");
     }
 
-    public static InventoryManufacturingRealizationException Refused(int status, string code) =>
+    public static InventoryManufacturingRealizationException Refused(int status, string code, Exception? innerException = null) =>
         InventoryManufacturingRealizationCodesV1.IsDefined(status, code)
-            ? new(status, code, stockShortfall: null)
+            ? new(status, code, stockShortfall: null, innerException: innerException)
             : throw new InvalidOperationException(
                 "Inventory manufacturing-realization refusal is outside its closed contract.");
 
@@ -248,11 +248,11 @@ public sealed class InventoryManufacturingRealizationException : Exception
     /// code is outside the closed contract.
     /// </summary>
     public static InventoryManufacturingRealizationException Refused(int status, string code,
-        InventoryManufacturingStockShortfallV1 stockShortfall)
+        InventoryManufacturingStockShortfallV1 stockShortfall, Exception? innerException = null)
     {
         ArgumentNullException.ThrowIfNull(stockShortfall);
         return status == 409 && code == InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient
-            ? new(status, code, stockShortfall)
+            ? new(status, code, stockShortfall, innerException: innerException)
             : throw new InvalidOperationException(
                 "Only the physical-stock refusal of the manufacturing-realization contract carries a stock shortfall.");
     }
@@ -261,9 +261,9 @@ public sealed class InventoryManufacturingRealizationException : Exception
     /// B-03: a V2 participant refusal. The V2 code set is the V1 set plus the V2-only codes; the V1 closed set and
     /// <see cref="Refused"/> stay unchanged, so a V1 caller can never observe a V2-only code.
     /// </summary>
-    public static InventoryManufacturingRealizationException RefusedV2(int status, string code) =>
+    public static InventoryManufacturingRealizationException RefusedV2(int status, string code, Exception? innerException = null) =>
         InventoryManufacturingRealizationCodesV2.IsDefined(status, code)
-            ? new(status, code, stockShortfall: null)
+            ? new(status, code, stockShortfall: null, innerException: innerException)
             : throw new InvalidOperationException(
                 "Inventory manufacturing-realization V2 refusal is outside its closed contract.");
 
@@ -271,9 +271,9 @@ public sealed class InventoryManufacturingRealizationException : Exception
     /// F-009 D1: an output-reversal participant refusal. Its code set is the V1 set plus the reversal-only codes; the
     /// V1 and V2 closed sets stay unchanged, so neither caller can observe a reversal-only code.
     /// </summary>
-    public static InventoryManufacturingRealizationException RefusedOutputReversal(int status, string code) =>
+    public static InventoryManufacturingRealizationException RefusedOutputReversal(int status, string code, Exception? innerException = null) =>
         InventoryManufacturingOutputReversalCodesV1.IsDefined(status, code)
-            ? new(status, code, stockShortfall: null)
+            ? new(status, code, stockShortfall: null, innerException: innerException)
             : throw new InvalidOperationException(
                 "Inventory manufacturing output-reversal refusal is outside its closed contract.");
 }

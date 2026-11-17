@@ -87,6 +87,7 @@ public static class InventoryModuleExtensions
         services.AddScoped<IInventoryLabelDispositionReadPortV1, InventoryLabelDispositionReadPort>();
         services.AddScoped<IInventoryFirstReceiptExchangeRateReadPortV1, InventoryFirstReceiptExchangeRateReadPort>();
         services.AddScoped<IInventoryManufacturingCostReadPortV1, InventoryManufacturingCostReadPort>();
+        services.AddScoped<IInventoryShipmentCostReadPortV1, InventoryShipmentCostReadPort>();
         services.AddScoped<IInventoryFreeQuantityReadPortV1, InventoryFreeQuantityReadPort>();
         // STK-S24: per-product physical kg for the Logistics weighing-difference record (read only; Api host adapter).
         services.AddScoped<IInventoryProductPhysicalStockReadPortV1, InventoryProductPhysicalStockReadPort>();
@@ -97,6 +98,7 @@ public static class InventoryModuleExtensions
         services.AddInventoryStockPositions();
         services.AddInventoryLabelDetails();
         services.AddInventoryMovementTimeline();
+        services.AddInventoryNegativeStockAttempts();
         // KLN-D42 (STK-S31): the dated shortage warning read; the purchase source is the host's adapter.
         services.AddInventoryShortageWarnings();
         // F-017 STOK F017-b: the future supply allocation writer (no route yet, F017-b2) and the ports Purchasing and Sales use.

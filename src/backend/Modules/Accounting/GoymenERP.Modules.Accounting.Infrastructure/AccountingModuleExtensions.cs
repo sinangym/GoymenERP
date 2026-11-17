@@ -102,8 +102,13 @@ public static class AccountingModuleExtensions
         services.AddScoped<AccountingApiService>();
         services.AddScoped<IManufacturingCostDifferenceStoreV1, ManufacturingCostDifferenceStoreV1>();
         services.AddScoped<ManufacturingCostDifferenceServiceV1>();
+        services.AddScoped<IInvoiceLineCogsCorrectionStoreV1, InvoiceLineCogsCorrectionStoreV1>();
+        services.AddScoped<InvoiceLineCogsCorrectionServiceV1>();
         services.AddScoped<ICreditMovementProposalStoreV1, CreditMovementProposalStoreV1>();
         services.AddScoped<CreditMovementProposalServiceV1>();
+        services.AddScoped<IFinanceJournalSourceStoreV1, FinanceJournalSourceStoreV1>();
+        services.AddScoped<FinanceJournalSourceServiceV1>();
+        services.AddScoped<FinanceJournalSourceInboxConsumerV1>();
         services.AddScoped<GoymenERP.Modules.Accounting.Application.Inbox.CreditMovementProposalInboxConsumerV1>();
         services.AddScoped<GoymenERP.Modules.Accounting.Application.Inbox.ManufacturingCostDifferenceInboxConsumerV1>();
         return services;

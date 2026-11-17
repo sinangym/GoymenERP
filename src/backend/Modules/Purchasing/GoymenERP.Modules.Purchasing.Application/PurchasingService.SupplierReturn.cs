@@ -137,7 +137,7 @@ public sealed partial class PurchasingService
         catch (PurchasingServiceException exception) when (!exception.IsReplay && ReceiptReversalTerminal(exception))
         {
             return await ReturnTerminalAsync(scope, permission, returns, orderId, envelope, requestHash, command,
-                new(exception.Status, exception.Code, exception.Errors), cancellationToken);
+                new(exception.Status, exception.Code, exception.Errors, exception.Detail), cancellationToken);
         }
         catch (OperationCanceledException) { throw; }
         catch
@@ -280,7 +280,7 @@ public sealed partial class PurchasingService
         catch (PurchasingServiceException exception) when (!exception.IsReplay && ReceiptReversalTerminal(exception))
         {
             return await ReturnTerminalAsync(scope, permission, returns, orderId, envelope, requestHash, command,
-                new(exception.Status, exception.Code, exception.Errors), cancellationToken);
+                new(exception.Status, exception.Code, exception.Errors, exception.Detail), cancellationToken);
         }
         catch (OperationCanceledException) { throw; }
         catch
@@ -359,7 +359,7 @@ public sealed partial class PurchasingService
     {
         if (replay.Refusal is { } refusal)
         {
-            throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, isReplay: true, originalCorrelationId: replay.OriginalCorrelationId);
+            throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, isReplay: true, originalCorrelationId: replay.OriginalCorrelationId, detail: refusal.Detail);
         }
 
         if (replay.ReturnId is not { } returnId) throw new PurchasingServiceException(503, "service_unavailable");
@@ -394,7 +394,7 @@ public sealed partial class PurchasingService
             throw Store(exception);
         }
 
-        throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors);
+        throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, detail: refusal.Detail);
     }
 
     private static StoredPurchaseSupplierReturn RequireOwnReturn(Scope scope, Guid orderId, StoredPurchaseSupplierReturn stored) =>
