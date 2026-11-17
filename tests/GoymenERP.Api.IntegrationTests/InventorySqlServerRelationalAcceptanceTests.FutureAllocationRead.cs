@@ -20,9 +20,14 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         }
         await using var database = run.Context(CompanyA);
         var authority = new FutureReadAuthority();
-        var query = new InventoryFutureAllocationQueryService(database, Company(CompanyA), new FutureReadUser(), authority, new FutureReadUnits());
+        var query = new InventoryFutureAllocationQueryService(database, Company(CompanyA), new FutureReadUser(), authority,
+            new FutureReadUnits(), new FutureReadSchedule(), new FutureReadClock());
         var result = await query.ListByDemandAsync(supply.DemandOrder, supply.DemandLine);
         Assert.Equal((CompanyA, ownId), (result.CompanyId, Assert.Single(result.Items).AllocationId));
+        Assert.Equal(new DateOnly(2026, 11, 18), result.EvaluatedOn); // UTC still 17th, Istanbul already 18th.
+        Assert.Equal(new("Scheduled", new DateOnly(2026, 11, 17), true), result.Schedules[ownId]);
+        Assert.Equal("Active", result.Items[0].Status);
+        Assert.Equal("1", result.Items[0].Version); // The warning did not release or revise the stored allocation.
         Assert.Equal(2, authority.Calls);
         authority.DenyAfterFirst = true;
         authority.Calls = 0;
@@ -54,5 +59,15 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Task.FromResult<UnitIdentityV1?>(new(unitId, "SENTETIK-birim", "synthetic", false));
         public Task<IReadOnlyList<UnitIdentityV1>> ListAsync(CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("Only stored units may be requested.");
+    }
+    private sealed class FutureReadSchedule : IInventoryFutureSupplyScheduleSourceV1
+    {
+        public Task<InventoryFutureSupplyScheduleV1> GetLineScheduleAsync(Guid orderId, Guid lineId,
+            CancellationToken cancellationToken = default) => Task.FromResult(new InventoryFutureSupplyScheduleV1(
+                true, orderId, lineId, new DateOnly(2026, 11, 17)));
+    }
+    private sealed class FutureReadClock : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => new(2026, 11, 17, 21, 30, 0, TimeSpan.Zero);
     }
 }
