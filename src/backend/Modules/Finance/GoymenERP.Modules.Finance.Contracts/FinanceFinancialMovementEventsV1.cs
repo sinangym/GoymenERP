@@ -11,6 +11,8 @@ public static class FinanceFinancialMovementEventsV1
     public const string SourceName = "finance.outbox.v1";
     public const string ExpensePaymentRecorded = "finance.expense-payment.recorded.v1";
     public const string CashTransferRecorded = "finance.cash-transfer.recorded.v1";
+    public const string CashExchangeRecorded = "finance.cash-exchange.recorded.v1";
+    public const string CashExchangeBookValueApproved = "finance.cash-exchange.book-value-approved.v1";
     public const int SchemaVersion = 1;
 }
 
@@ -19,3 +21,10 @@ public sealed record FinanceExpensePaymentRecordedV1(Guid EventId, ExpensePaymen
 
 /// <summary>One same-currency transfer snapshot containing both account legs; never two money events.</summary>
 public sealed record FinanceCashTransferRecordedV1(Guid EventId, CashTransferView Source);
+
+/// <summary>Actual two-leg exchange; TCMB references are not Accounting carrying values or journal instructions.</summary>
+public sealed record FinanceCashExchangeRecordedV1(Guid EventId, CashTransferView Source);
+
+/// <summary>Separately approved, document-backed source-leg carrying value; never another treasury movement.</summary>
+public sealed record FinanceCashExchangeBookValueApprovedV1(Guid EventId, CashTransferView Source,
+    CashExchangeBookValueViewV1 BookValue);
