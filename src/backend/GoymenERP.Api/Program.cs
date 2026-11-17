@@ -2,6 +2,7 @@ using GoymenERP.Api.AccountingRuntime;
 using GoymenERP.Api.Ai;
 using GoymenERP.Api.Contracts;
 using GoymenERP.Api.DocumentsRuntime;
+using GoymenERP.Api.FinanceRuntime;
 using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.Errors;
 using GoymenERP.Api.LogisticsRuntime;
@@ -27,6 +28,7 @@ using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Accounting.Infrastructure;
 using GoymenERP.Modules.Accounting.Infrastructure.Shell;
 using GoymenERP.Modules.Accounting.Application.Contracts;
+using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Audit.Infrastructure;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure;
@@ -187,7 +189,8 @@ builder.Services.AddFinancePersistence(
 // This grants nothing. The port reads under the CALLER's own accounting.periods.read; an actor without
 // that name is refused with finance_period_rule_unavailable, and granting it is a human decision.
 builder.Services.AddScoped<IAccountingPeriodStatusPortV1, AccountingPeriodStatusPort>();
-builder.Services.AddScoped<IFinanceRecordPeriodRule, OccurredOnFinanceRecordPeriodRule>();
+builder.Services.AddScoped<IFinanceRecordPeriodRule, TransactionalOccurredOnFinanceRecordPeriodRule>();
+builder.Services.AddScoped<IAccountingPeriodCarryForwardPortV1, FinancePeriodCarryForwardPortV1>();
 builder.Services.AddFinanceServices();
 builder.Services.AddFinanceOfficialInvoiceImportHost();
 builder.Services.AddFinanceOfficialSalesInvoiceHost();

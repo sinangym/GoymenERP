@@ -282,3 +282,22 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
   diliminde sürer. Bu nedenle STK-S3 bütünü PARTIAL; yeni dalga açılmadı.
 - Registry/OpenAPI/recovery/architecture/relational/test-group pin üretimi ve tren FF
   henüz yapılmadı. Kaynak derlemesi runtime veya kullanılabilirlik kabulü değildir.
+
+
+## FIN-S17 — gerçek devir owner'ı ve transaction boyunca dönem çiti
+
+- `5edcd80b0` ve `dd46601ae` owner kaynakları merkeziye alındı. Accounting kapanışı
+  ile Finance para birimi bazlı gerçek devir fişi tek Serializable host transaction'ına
+  bağlandı. Fiziksel/finansal olay ikinci kez üretilmez; cari ekstre açılış kanıtı ve
+  aralık köprüsü toplamı çift saymaz. İki kişili yeniden açma mevcut izinlerle kalır.
+- Gerçek `FinancePeriodCarryForwardPortV1` kaydedildi. Finance kayıt dönem kuralı,
+  gerçek borrowed Accounting owner okumasıyla işlem bitimine kadar kilidi koruyan
+  `TransactionalOccurredOnFinanceRecordPeriodRule` oldu; AddFinanceServices öncesinde
+  tek scoped descriptor kaydı korunur. Tarih seçimi occurredOn olarak kalır.
+- Composition kaynak testleri tek descriptor/fallback ayrımını ve occurredOn'un
+  valueOn/recordedAt'ten bağımsız gerçek port girişine taşındığını doğrular.
+- Son merkezi API, Accounting.UnitTests, Identity.UnitTests, Logistics.UnitTests ve
+  Api.IntegrationTests derlemeleri exit 0, 0 uyarı/hata. Owner Finance.Unit/TSC de exit 0.
+  Runtime Unit/SQL/HTTP/Vitest/browser/CI NOT_RUN.
+- Banka işlem tarihi/muhasebe tarihi devir ayrımı ve sonraki kapalı devir zinciri
+  insan cevabı bekler; kaynak fail-closed kalır. FIN-S17 PARTIAL; pinler/tren FF bekler.
