@@ -25,7 +25,14 @@ Dayanak: ALS-D7/D44, mevcut FIN-S13; biçimler için kullanıcı cevabının
 - Frontend `npx tsc -b`: exit 0. Strict decoder, transport ve DOM test kaynakları
   yazıldı; Vitest/browser çalıştırılmadı. Mevcut Documents owner sözleşmesine
   `purchasing.invoice-import` eklendi; yeni izin/grant yoktur.
-- Kalan: kayıtlı içe aktarma işlemini tekrar açma; gerçek cari/ürün/birim/vergi/ödeme planı
+- Kayıtlı dosya işlemlerini tekrar açma: yetkili şirketin gerçek rezervasyonları
+  25 kayıtlık sayfalardan seçilir; teknik kimlik girişi veya yeni bir yazma işlemi
+  gerekmez. API no-store, şirket/fresh yetki ve taşma kontrollü sayfa sorgusu;
+  decoder şirket, sayfa, kimlik tekilliği ve sürümü doğrular. Gerçek SQL sayfalama/
+  şirket yalıtımı, HTTP ve geç bağlam yanıtı test kaynakları eklendi.
+- Bu takipte API, Purchasing.UnitTests, Api.IntegrationTests ve frontend `tsc -b`
+  derlemeleri exit 0, hata 0. Yeni migration yok; runtime testler **NOT_RUN**.
+- Kalan: gerçek cari/ürün/birim/vergi/ödeme planı
   eşlemesi; mevcut fatura kayıt komutuna bağlama. Kaynakta olmayan resmî TL satır,
   taksit tutarı veya başlık masraf/yuvarlama dağılımı tahmin edilmez.
 - 174 paydası ve DONE sayısı değişmedi; bu kayıt tamamlanmış FIN-S13 iddiası değildir.

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { initialShellState, type ShellState } from '../shell/shellState'
 import { fetchDocuments } from '../documents/api'
 import { InvoiceImportPanel } from './InvoiceImportPanel'
-import { reserveInvoiceImport, previewInvoiceImport } from './invoiceImportApi'
+import { reserveInvoiceImport, previewInvoiceImport, fetchInvoiceImports } from './invoiceImportApi'
 import { importDocumentsFixture, importPreviewFixture, importReservationFixture, importTestId as id } from './invoiceImportFixtures.testSupport'
 import { INVOICE_IMPORT_TEXT as T } from './invoiceImportText'
 import { resetAdjustmentAttemptsForTests } from './useReceiptAdjustmentAttempt'
@@ -17,7 +17,7 @@ vi.mock('../shell/shellContext', () => ({ useShellState: () => shell }))
 vi.mock('../shell/useAuthBoundary', () => ({ useAuthBoundary: () => auth }))
 vi.mock('../documents/DocumentsPanel', () => ({ DocumentsPanel: () => null }))
 vi.mock('../documents/api', async importOriginal => ({ ...await importOriginal<typeof import('../documents/api')>(), fetchDocuments: vi.fn() }))
-vi.mock('./invoiceImportApi', () => ({ reserveInvoiceImport: vi.fn(), previewInvoiceImport: vi.fn() }))
+vi.mock('./invoiceImportApi', () => ({ reserveInvoiceImport: vi.fn(), previewInvoiceImport: vi.fn(), fetchInvoiceImports: vi.fn() }))
 const clients: QueryClient[] = []
 function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0, refetchOnWindowFocus: false } } }); clients.push(client)
@@ -37,6 +37,7 @@ beforeEach(() => {
   vi.mocked(reserveInvoiceImport).mockResolvedValue({ type: 'applied', response: importReservationFixture() })
   vi.mocked(fetchDocuments).mockResolvedValue({ type: 'ok-single', data: importDocumentsFixture() })
   vi.mocked(previewInvoiceImport).mockResolvedValue({ type: 'ok-single', data: importPreviewFixture() })
+  vi.mocked(fetchInvoiceImports).mockResolvedValue({ type: 'ok-single', data: { companyId: id(2), pageIndex: 0, hasNext: false, items: [] } })
 })
 afterEach(() => { cleanup(); clients.splice(0).forEach(client => client.clear()); resetAdjustmentAttemptsForTests() })
 describe('Purchase invoice source workspace (synthetic, NOT_ENV)', () => {
@@ -44,6 +45,15 @@ describe('Purchase invoice source workspace (synthetic, NOT_ENV)', () => {
     shell = { ...shell, activeContext: { ...shell.activeContext!, capabilities: ['purchasing.invoices.list'] } }; mount()
     expect(screen.queryByRole('button', { name: T.start })).toBeNull()
     expect(reserveInvoiceImport).not.toHaveBeenCalled(); expect(fetchDocuments).not.toHaveBeenCalled()
+    expect(fetchInvoiceImports).not.toHaveBeenCalled()
+  })
+  it('reopens an actual company reservation without a technical-id input or another reservation write', async () => {
+    vi.mocked(fetchInvoiceImports).mockResolvedValue({ type: 'ok-single', data: { companyId: id(2), pageIndex: 0, hasNext: false,
+      items: [importReservationFixture().reservation] } })
+    mount(); fireEvent.click(await screen.findByRole('button', { name: T.open }))
+    await screen.findByRole('option', { name: 'sentetik.xml — Sürüm 2' })
+    expect(reserveInvoiceImport).not.toHaveBeenCalled()
+    expect(fetchDocuments).toHaveBeenCalledWith('purchasing.invoice-import', id(1), id(2), expect.any(AbortSignal))
   })
   it('uses a real listed clean document version and displays source decimals unchanged', async () => {
     mount(); await chooseSource(); fireEvent.click(screen.getByRole('button', { name: T.preview }))
@@ -72,7 +82,8 @@ describe('Purchase invoice source workspace (synthetic, NOT_ENV)', () => {
   it.each([403, 404, 409, 503])('shows source-read %s without stale invoice facts', async status => {
     vi.mocked(previewInvoiceImport).mockResolvedValue({ type: 'http', status })
     mount(); await chooseSource(); fireEvent.click(screen.getByRole('button', { name: T.preview }))
-    await screen.findByRole('alert')
+    const states: Record<number, string> = { 403: 'forbidden', 404: 'not-found', 409: 'conflict', 503: 'service-unavailable' }
+    await waitFor(() => expect(document.querySelector(`[data-state="${states[status]}"]`)).not.toBeNull())
     expect(screen.queryByText('Sentetik kaynak malzeme')).toBeNull()
     if (status === 403) expect(auth.report).toHaveBeenCalledWith(403, expect.anything())
   })

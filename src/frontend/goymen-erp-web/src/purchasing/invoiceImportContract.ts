@@ -3,6 +3,7 @@ import { isDateOnly } from '../finance/dateOnly'
 
 export interface ImportReservation { readonly id: string; readonly companyId: string; readonly version: '1'; readonly reservedBy: string; readonly reservedAtUtc: string }
 export interface ImportReservationResult { readonly reservation: ImportReservation; readonly isReplay: boolean; readonly originalCorrelationId: string }
+export interface ImportReservationPage { readonly companyId: string; readonly pageIndex: number; readonly hasNext: boolean; readonly items: readonly ImportReservation[] }
 export interface SourceAmount { readonly currency: string; readonly value: string }
 export interface SourceTax { readonly code: string | null; readonly percent: string | null; readonly amount: SourceAmount; readonly taxableAmount: SourceAmount | null; readonly isWithholding: boolean }
 export interface SourceAdjustment { readonly isCharge: boolean; readonly amount: SourceAmount; readonly reason: string | null }
@@ -55,6 +56,13 @@ const invoice: Check = value => object(value, { number: text, ettn: guid, invoic
   && new Set(value.lines.map(item => (item as SourceLine).id)).size === value.lines.length
 const instant: Check = value => typeof value === 'string' && value.length <= 64 && /^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value))
 const reservation: Check = value => object(value, { id: guid, companyId: guid, version: value => value === '1', reservedBy: text, reservedAtUtc: instant })
+export function decodeImportReservations(value: unknown, company: string, pageIndex: number): ImportReservationPage | null {
+  if (!object(value, { companyId: guid, pageIndex: value => value === pageIndex, hasNext: boolean, items: array(reservation, 25) })) return null
+  const result = value as ImportReservationPage
+  return result.companyId === company && result.items.every(item => item.companyId === company)
+    && (!result.hasNext || result.items.length === 25)
+    && new Set(result.items.map(item => item.id)).size === result.items.length ? result : null
+}
 export function decodeImportReservation(value: unknown, company: string, replay: boolean, original: string | null): ImportReservationResult | null {
   if (!object(value, { reservation, isReplay: boolean, originalCorrelationId: text })) return null
   const result = value as ImportReservationResult
