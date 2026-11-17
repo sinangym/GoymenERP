@@ -9,6 +9,22 @@ public sealed class AccountingInventoryCostRoundingTests
     private static readonly Guid Currency = new("24355a72-efb6-46ee-a6f6-3bc797b73047");
     private static readonly Guid Profile = new("24355a72-efb6-46ee-a6f6-3bc797b73048");
 
+    [Fact]
+    public void Mixed_component_rounding_excludes_already_posted_money_from_the_new_journal_amount()
+    {
+        var line = Guid.NewGuid();
+        var component = new AccountingInventoryCostComponentV1(AccountingInventoryCostTraceV1.SalesComponent(line),
+            Guid.NewGuid(), line, 1, null, new("11693", "200"), "{}", new string('a', 64),
+            UnpostedTlAmount: new("201", "8"));
+        Assert.True(AccountingInventoryCostRoundingV1Rules.TryResolve(component, Currency, Profile, 1, 2, out var amount, out var proof));
+        Assert.Equal(25.13m, amount); Assert.Equal(component.UnpostedTlAmount, proof!.ExactSignedAmount);
+        Assert.Equal(new("-1", "200"), proof.ExactSignedResidue);
+        Assert.NotEqual(component.SignedTlAmount, proof.ExactSignedAmount);
+        Assert.True(AccountingInventoryCostRoundingV1Rules.TryResolve(component with { UnpostedTlAmount = new("0", "1") },
+            Currency, Profile, 1, 2, out var zero, out var zeroProof));
+        Assert.Equal(0m, zero); Assert.Equal(new("0", "1"), zeroProof!.ExactSignedAmount);
+    }
+
     [Theory]
     [InlineData("1", "3", 2, "0.33", "1", "300")]
     [InlineData("-1", "3", 2, "-0.33", "-1", "300")]

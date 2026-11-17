@@ -66,12 +66,13 @@ function Page({ kind, canPrepare, canApprove, canProposeReversal, namespace }: P
       {selected !== null && row === undefined ? <StateBlock state={{ kind: 'not-found' }} subject={T.subject} /> : null}
       {row !== undefined ? <>
         <h2>{row.officialInvoiceNumber ?? T.sourceNumberMissing} · {T.statuses[row.status]}</h2><p>{T.amount}: {row.exactTlAmount}</p>
+        {row.unpostedTlAmountText !== undefined && <p>{T.unposted}: {row.unpostedTlAmountText}</p>}
         {row.component.recordedRounding ? <><p>{T.ownerRounded}</p><dl>
           <dt>{T.beforeRounding}</dt><dd>{row.component.recordedRounding.rounding.exactSignedAmountText}</dd>
           <dt>{T.roundingResidue}</dt><dd>{row.component.recordedRounding.rounding.exactSignedResidueText}</dd>
           <dt>{T.moneyScale}</dt><dd>{row.component.recordedRounding.moneyScale}</dd>
           <dt>{T.moneyProfileVersion}</dt><dd>{row.component.recordedRounding.moneyProfileVersion}</dd></dl></> : null}
-        {row.component.alreadyPostedComponents ? <><p>{row.status === 'AttributedCancellationPending' ? T.attributedPending : T.attributed}</p>
+        {row.component.alreadyPostedComponents ? <><p>{['AttributedCancellationPending', 'MixedCancellationPending'].includes(row.status) ? T.attributedPending : T.attributed}</p>
           <ul>{row.component.alreadyPostedComponents.map(share => <li key={share.fingerprint}>
             {T.attributedJournal}: {share.journalId} · {T.attributedAmount}: {share.signedAmount}</li>)}</ul></> : null}
         {row.component.signedTlAmount.numerator.startsWith('-') ? <p role="note">{T.negative}</p> : null}

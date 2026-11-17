@@ -243,7 +243,7 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
         scope.CompanyContext, physical, new(new AccountingSqlServerRelationalAcceptanceTests.SyntheticMoneyProfiles(Company)), TimeProvider.System);
     private static ManufacturingCostDifferenceStoreV1 ManufacturingCosts(Scope scope, ManufacturingPostedCostAttributionStoreV1 ledger) => new(scope.Db,
         scope.Posting, scope.CompanyContext, new Plan(), new CostCurrencies(), scope.Audit, TimeProvider.System, ledger);
-    private static AccountingInventoryCostStoreV1 AttributedCosts(Scope scope, AttributedCostReader reader, ManufacturingPostedCostAttributionStoreV1 ledger) => new(scope.Db,
+    private static AccountingInventoryCostStoreV1 AttributedCosts(Scope scope, IAccountingInventoryCostSourceReaderV1 reader, ManufacturingPostedCostAttributionStoreV1 ledger) => new(scope.Db,
         scope.Posting, reader, new CogsMapping(), new Plan(), new CostCurrencies(),
         new(new AccountingSqlServerRelationalAcceptanceTests.SyntheticMoneyProfiles(Company)), scope.CompanyContext, scope.Audit, scope.AuditWriter, TimeProvider.System, ledger);
     private static InvoiceLineCogsCorrectionStoreV1 AttributedCorrections(Scope scope, ManufacturingPostedCostAttributionStoreV1 ledger) => new(scope.Db,

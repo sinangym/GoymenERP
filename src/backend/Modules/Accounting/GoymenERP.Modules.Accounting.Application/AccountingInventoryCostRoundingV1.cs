@@ -31,7 +31,7 @@ public static class AccountingInventoryCostRoundingV1Rules
         long profileVersion, int scale, out decimal amount, out AccountingInventoryCostRoundingV1? evidence)
     {
         if (component.RecordedRounding is not { } recorded)
-            return TryRound(component.SignedTlAmount, currencyId, scale, out amount, out evidence);
+            return TryRound(component.UnpostedTlAmount ?? component.SignedTlAmount, currencyId, scale, out amount, out evidence);
         amount = default; evidence = null;
         if (recorded.CurrencyId != currencyId || profileId == Guid.Empty || profileVersion <= 0
             || !IsValidRecorded(component.SignedTlAmount, recorded)

@@ -94,6 +94,7 @@ function Page({ namespace, invoiceId, lineId, mode }: { readonly namespace: stri
             <dd>{state.data.productReference.classification === null ? T.sourceUnknown : T.classes[state.data.productReference.classification]}</dd></dl>
           <p role="note">{state.data.postingEvidenceState === 'NoPostedCogs' ? T.noPosting : state.data.postingEvidenceState === 'Unreadable' ? T.unreadable
             : state.data.postingEvidenceState === 'AttributedPostedCogs' ? T.attributed
+            : state.data.postingEvidenceState === 'MixedPostedCogs' ? `${T.mixed} ${T.posted}: ${state.data.postedEvidence?.amount}`
             : `${T.posted}: ${state.data.postedEvidence?.amount} · ${state.data.postedEvidence?.currencyId}`}</p>
           {state.data.attributedEvidence ? <ul>{state.data.attributedEvidence.map(item => <li key={item.source.fingerprint}>
             {T.posted}: {item.source.signedAmount} · {item.currentJournalId}</li>)}</ul> : null}

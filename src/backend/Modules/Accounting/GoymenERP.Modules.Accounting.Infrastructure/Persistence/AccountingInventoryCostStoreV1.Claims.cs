@@ -31,15 +31,15 @@ public sealed partial class AccountingInventoryCostStoreV1
                 && x.MovementLineNumber == physical.MovementLineNumber, token);
             RequireCompany(source.CompanyId);
             if (old is not null) throw Refuse("inventory_cost_economic_claim_conflict");
-            if (component.AlreadyPostedComponents is { } allPosted)
+            var expected = component.AlreadyPostedComponents?.Where(x => x.Shipment.MovementId == physical.MovementId
+                && x.Shipment.MovementLineNumber == physical.MovementLineNumber).OrderBy(x => x.SourceEventId).ThenBy(x => x.OutputId).ToArray() ?? [];
+            if (expected.Length > 0)
             {
                 if (postedManufacturing is null) throw Refuse("manufacturing_attribution_owner_unavailable");
                 var actual = await postedManufacturing.ReadAsync(source.CompanyId, physical.ShipmentId, physical.MovementId,
                     physical.MovementLineNumber, physical.ProductId, physical.QuantityKg,
                     _ => { RequireCompany(source.CompanyId); return Task.CompletedTask; }, token);
                 RequireCompany(source.CompanyId);
-                var expected = allPosted.Where(x => x.Shipment.MovementId == physical.MovementId
-                    && x.Shipment.MovementLineNumber == physical.MovementLineNumber).OrderBy(x => x.SourceEventId).ThenBy(x => x.OutputId).ToArray();
                 if (actual is null || expected.Length == 0 || Encode(actual.Shares) != Encode(expected))
                     throw Refuse("inventory_cost_attribution_changed");
             }
@@ -48,7 +48,7 @@ public sealed partial class AccountingInventoryCostStoreV1
             db.InvoiceCogsEconomicClaims.Add(new() { CompanyId = source.CompanyId, MovementId = physical.MovementId,
                 MovementLineNumber = physical.MovementLineNumber, ShipmentId = physical.ShipmentId, SalesEventId = source.EventId,
                 InvoiceId = source.InvoiceId, InvoiceLineId = component.InvoiceLineId!.Value, AdmissionId = source.AdmissionId,
-                FinalizedVersion = source.InvoiceVersion, Origin = component.AlreadyPostedComponents is null ? 1 : 2,
+                FinalizedVersion = source.InvoiceVersion, Origin = expected.Length == 0 ? 1 : 2,
                 SourceHash = AccountingInventoryCostSourceValidationV1.Sha256(proof), ViewJson = proof, RecordedAtUtc = clock.GetUtcNow() });
         }
     }
