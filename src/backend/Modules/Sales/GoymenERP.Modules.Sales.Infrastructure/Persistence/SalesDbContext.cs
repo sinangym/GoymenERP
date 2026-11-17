@@ -30,7 +30,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 /// </list>
 /// The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// </summary>
-public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICompanyContext companyContext)
+public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> options, ICompanyContext companyContext)
     : DbContext(options)
 {
     public const string Schema = "sales";
@@ -747,6 +747,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureDraftNumbers(modelBuilder);
         ConfigureDrafts(modelBuilder);
         ConfigureDraftLines(modelBuilder);
+        ConfigureMarginCosts(modelBuilder);
         ConfigureDraftDeliverySlices(modelBuilder);
         ConfigureDraftAttempts(modelBuilder);
         ConfigureDraftRevisions(modelBuilder);
@@ -2356,6 +2357,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     DraftCustomerRejectionRow => [],
                     // F-018 / plan S1: a recorded credit limit warning is APPEND-ONLY — no column of it may change afterwards.
                     DraftRiskWarningRow => [],
+                    DraftMarginCostRow => [],
                     // No 30 / SAT-D12: a recorded force-closure is APPEND-ONLY — no column of it may change afterwards.
                     DraftForceClosureRow => [],
                     // SAT-D32: a recorded user closure is APPEND-ONLY — no column of it may change afterwards.

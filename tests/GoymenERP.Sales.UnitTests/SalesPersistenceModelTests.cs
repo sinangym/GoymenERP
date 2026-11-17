@@ -25,6 +25,48 @@ public sealed class SalesPersistenceModelTests
     private static readonly Guid CompanyB = Guid.Parse("22222222-2222-4222-8222-222222222222");
     private static readonly DateTimeOffset At = new(2026, 9, 18, 9, 0, 0, TimeSpan.Zero);
 
+    [Theory]
+    [InlineData("modify")]
+    [InlineData("delete")]
+    [InlineData("foreign")]
+    public void Margin_cost_history_cannot_be_rewritten_deleted_or_inserted_for_another_company(string operation)
+    {
+        using var context = Context();
+        var row = new DraftMarginCostRow { CompanyId = CompanyA, DraftId = Guid.NewGuid(), LineId = Guid.NewGuid(),
+            LineNo = 1, Revision = 0, ProductId = Guid.NewGuid(), UnitId = Guid.NewGuid(), Quantity = 1,
+            CurrencyId = Guid.NewGuid(), CostPerUnit = 12m, SourceProof = "{}", RecordedAtUtc = At };
+        if (operation == "foreign") { row.CompanyId = CompanyB; context.Add(row); }
+        else
+        {
+            context.Attach(row);
+            if (operation == "delete") context.Remove(row);
+            else row.CostPerUnit = 15m;
+        }
+        Assert.Throws<InvalidOperationException>(() => context.SaveChanges());
+    }
+
+    [Fact]
+    public void Margin_cost_snapshots_have_tenant_line_identity_exact_cost_and_forward_fix_51993_without_backfill()
+    {
+        using var context = Context();
+        var entity = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(DraftMarginCostRow))!;
+        Assert.Equal(("sales", "DraftMarginCosts"), (entity.GetSchema(), entity.GetTableName()));
+        Assert.Equal(new[] { "CompanyId", "DraftId", "LineId", "Revision" }, entity.FindPrimaryKey()!.Properties.Select(item => item.Name));
+        Assert.Single(entity.GetDeclaredQueryFilters());
+        Assert.Equal(4, entity.FindProperty(nameof(DraftMarginCostRow.CostPerUnit))!.GetScale());
+        Assert.Contains(entity.GetCheckConstraints(), item => item.Name == "CK_DraftMarginCosts_Value"
+            && item.Sql == SalesDbContext.MarginCostValueConstraint);
+        Assert.Contains(entity.GetCheckConstraints(), item => item.Name == "CK_DraftMarginCosts_Proof"
+            && item.Sql == SalesDbContext.MarginCostProofConstraint);
+        Assert.Contains(entity.GetForeignKeys(), key => key.Properties.Select(item => item.Name)
+            .SequenceEqual(new[] { "CompanyId", "DraftId", "LineNo", "LineId" }));
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddSalesMarginCostSnapshots();
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51993,", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("IF EXISTS", guard.Sql, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Sales_outbox_cursor_is_generated_rowversion_with_company_index_and_guarded_down_51983()
     {
@@ -68,7 +110,7 @@ public sealed class SalesPersistenceModelTests
         foreach (var type in new[]
                  {
                      typeof(DraftNumberRow), typeof(DraftRow), typeof(DraftLineRow), typeof(DraftDeliverySliceRow), typeof(DraftAttemptRow),
-                     typeof(DraftRevisionRow), typeof(DraftRevisionLineRow),
+                     typeof(DraftRevisionRow), typeof(DraftRevisionLineRow), typeof(DraftMarginCostRow),
                      typeof(DraftDeliveryScheduleRow), typeof(DraftDeliveryScheduleDateRow), typeof(DraftCancellationRow),
                  })
         {
@@ -177,7 +219,7 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesContracts", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddShipmentRiskExceptionUsages", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSubcontractServiceInvoices", StringComparison.Ordinal));
-        Assert.Equal(new[] { "AddSalesInvoiceOfficialSourceProof", "AddSalesOutboxCommittedCursor" },
+        Assert.Equal(new[] { "AddSalesOutboxCommittedCursor", "AddSalesMarginCostSnapshots" },
             context.Database.GetMigrations().TakeLast(2).Select(name => name[(name.IndexOf('_') + 1)..]));
         Assert.False(context.Database.HasPendingModelChanges());
     }
