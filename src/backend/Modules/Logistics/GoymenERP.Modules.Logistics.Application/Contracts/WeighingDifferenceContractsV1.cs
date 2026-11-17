@@ -32,7 +32,9 @@ public sealed record WeighingDifferenceScaleEntryV1(Guid ProductId, decimal Scal
 public sealed record RecordWeighingDifferenceV1(
     Guid RecordId,
     Guid DispatchNoteId,
-    IReadOnlyList<WeighingDifferenceScaleEntryV1> Products);
+    IReadOnlyList<WeighingDifferenceScaleEntryV1> Products,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    DispatchKilogramFinalizedDocumentV1? FinalizedDocument = null);
 
 public sealed record ApproveWeighingDifferenceV1(int ExpectedVersion);
 
@@ -70,7 +72,7 @@ public sealed record WeighingDifferenceViewV1(
     string RecordedBy,
     DateTimeOffset RecordedAtUtc,
     string? ApprovedBy,
-    DateTimeOffset? ApprovedAtUtc);
+    DateTimeOffset? ApprovedAtUtc, DispatchKilogramSnapshot? KilogramAllocation = null);
 
 public sealed record WeighingDifferenceResponseV1(
     WeighingDifferenceViewV1 Record,
@@ -78,8 +80,7 @@ public sealed record WeighingDifferenceResponseV1(
     string OriginalCorrelationId);
 
 /// <summary>
-/// Owner service of the sales weighing-difference record. Like the transfer outgoing document it has no HTTP route yet; the
-/// central host owns route exposure (OpenAPI then moves with it).
+/// Owner service of the sales weighing-difference record; the central host exposes decimal-text V1 HTTP contracts.
 /// </summary>
 public interface ILogisticsWeighingDifferenceServiceV1
 {
@@ -214,7 +215,7 @@ public sealed record LogisticsWeighingDifferenceReadV1(
     string Decision,
     string Status,
     bool SaleMayProceed,
-    int Version);
+    int Version, DispatchKilogramSnapshot? KilogramAllocation = null);
 
 public interface ILogisticsWeighingDifferenceReadPortV1
 {
