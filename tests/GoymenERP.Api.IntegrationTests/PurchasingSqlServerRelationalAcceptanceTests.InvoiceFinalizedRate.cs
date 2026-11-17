@@ -83,10 +83,10 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         await Assert.ThrowsAnyAsync<InvalidOperationException>(() => ReadInvoiceCostRateAsync(run, CompanyA, CompanyA, receipt.AcceptanceId));
     }
 
-    private static async Task<PurchaseInvoiceReceiptMatch> InvoiceRateReceiptAsync(Run run)
+    private static async Task<PurchaseInvoiceReceiptMatch> InvoiceRateReceiptAsync(Run run, PurchaseOrderLinePrice? price = null)
     {
         var (order, line, version) = await InvoiceCostRateOrderAsync(run,
-            PurchaseOrderMoney.Of(InvoiceCostRateCurrency, "USD", InvoiceCostRateProfile, 1, 2), Day);
+            PurchaseOrderMoney.Of(InvoiceCostRateCurrency, "USD", InvoiceCostRateProfile, 1, 2), Day, price);
         var acceptance = Guid.NewGuid();
         await StageAndCommitAsync(run, CompanyA, AcceptanceRequest(new AcceptanceSeed(order, line, AcceptanceUnit, version), acceptance, "4"),
             Envelope("SENTETIK-rate-receipt-" + acceptance.ToString("N"), "SENTETIK-rate-receipt"));
@@ -96,7 +96,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
     }
 
     private static async Task<PurchaseIncomingInvoice> StoreRateInvoiceAsync(Run run, PurchaseInvoiceReceiptMatch receipt,
-        decimal quantity, decimal rate, bool finalize)
+        decimal quantity, decimal rate, bool finalize, bool recordedOnly = false)
     {
         var id = Guid.NewGuid(); var lineId = Guid.NewGuid();
         var amounts = new PurchaseInvoiceAmounts(quantity * 10m, quantity * 2m, 0m);
@@ -110,6 +110,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         var store = (IPurchasingIncomingInvoiceStoreV1)scope.Store;
         var key = "rate-record-" + id.ToString("N");
         await store.RecordIncomingInvoiceAsync(invoice, run.Envelope(key), Hash(key), _ => Task.CompletedTask);
+        if (recordedOnly) return invoice;
         key = "rate-match-" + id.ToString("N");
         await store.MutateIncomingInvoiceAsync(id, PurchaseIncomingInvoiceCommandsV1.Match, run.Envelope(key), Hash(key), [receipt.OrderId],
             (value, _) => { value.Match(1, [receipt with { InvoiceLineId = lineId, Quantity = quantity, ExpectedNet = amounts.Net, ControlRate = rate }],

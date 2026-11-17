@@ -1,4 +1,9 @@
 export const PURCHASING_CAPABILITY = {
+  invoiceList: 'purchasing.invoices.list',
+  invoiceDetail: 'purchasing.invoices.detail',
+  invoiceMatch: 'purchasing.invoices.match',
+  invoiceApproveVariance: 'purchasing.invoices.approve-variance',
+  invoiceFinalize: 'purchasing.invoices.finalize',
   requestList: 'purchasing.requests.list',
   requestCreate: 'purchasing.requests.create',
   requestDetail: 'purchasing.requests.detail',
@@ -24,6 +29,8 @@ export type PurchasingCapabilityId =
   (typeof PURCHASING_CAPABILITY)[keyof typeof PURCHASING_CAPABILITY]
 
 export const PURCHASING_ROUTE: Record<string, string> = {
+  [PURCHASING_CAPABILITY.invoiceList]: '/satinalma/faturalar',
+  [PURCHASING_CAPABILITY.invoiceDetail]: '/satinalma/faturalar/:invoiceId',
   [PURCHASING_CAPABILITY.requestList]: '/satinalma/talepler',
   [PURCHASING_CAPABILITY.requestCreate]: '/satinalma/talepler/yeni',
   [PURCHASING_CAPABILITY.requestDetail]: '/satinalma/talepler/:requestId',
@@ -33,6 +40,8 @@ export const PURCHASING_ROUTE: Record<string, string> = {
 }
 
 export const PURCHASING_NAV_LABEL: Record<string, string> = {
+  [PURCHASING_CAPABILITY.invoiceList]: 'Alış faturaları',
+  [PURCHASING_CAPABILITY.invoiceDetail]: '',
   [PURCHASING_CAPABILITY.requestList]: 'Satın alma talepleri',
   [PURCHASING_CAPABILITY.requestCreate]: '',
   [PURCHASING_CAPABILITY.requestDetail]: '',

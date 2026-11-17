@@ -76,15 +76,16 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         Assert.Equal(before, await InvoiceCostRateWriteCountsAsync(run));
     }
 
-    /// <summary>An approved, unbound order of company A in <paramref name="money"/>'s currency (null: none) with one unpriced general line.</summary>
-    private static async Task<(Guid Order, Guid Line, long Version)> InvoiceCostRateOrderAsync(Run run, PurchaseOrderMoney? money, DateOnly effectiveOn)
+    /// <summary>An approved, unbound order of company A in <paramref name="money"/>'s currency (null: none), with an explicitly optional line price.</summary>
+    private static async Task<(Guid Order, Guid Line, long Version)> InvoiceCostRateOrderAsync(Run run, PurchaseOrderMoney? money, DateOnly effectiveOn,
+        PurchaseOrderLinePrice? price = null)
     {
         Guid orderId = Guid.NewGuid();
         Guid lineId = Guid.NewGuid();
         await using StoreScope scope = run.Store(CompanyA);
         PurchaseOrder order = PurchaseOrder.Create(orderId, CompanyA, AcceptanceSupplier, money, AcceptanceTime);
         order.AddLine(order.Version, lineId, AcceptanceProduct, AcceptanceUnit, Quantity.Of(10m, QuantityUnit.Kilogram), sourceRequestLineId: null,
-            AcceptanceTime);
+            price, AcceptanceTime);
         string createKey = $"invoice-rate-create-{orderId:N}";
         await scope.Store.StoreOrderAsync(run.Envelope(createKey), Hash(createKey), AcceptanceAccount, effectiveOn, () => order,
             new Dictionary<Guid, string> { [lineId] = "product-v1" });

@@ -56,12 +56,13 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         Assert.Equal(2, finance.Calls);
     }
 
-    private static PurchaseIncomingInvoiceWorkflow InvoiceWorkflow(Run run, StoreScope scope, InvoiceWorkflowFinanceProbe finance)
+    private static PurchaseIncomingInvoiceWorkflow InvoiceWorkflow(Run run, StoreScope scope, InvoiceWorkflowFinanceProbe finance,
+        IPurchaseIncomingInvoiceMatchSourceV1? matching = null)
     {
         var company = new CompanyContext(); company.Set(CompanyA);
         var correlation = new CorrelationContext(); correlation.Set(run.Correlation, null, "Test", null, null);
         return new(company, new NumberTestUser { UserId = run.Actor }, new NumberTestAuthority(), correlation,
-            (IPurchasingIncomingInvoiceStoreV1)scope.Store, TimeProvider.System, finance);
+            (IPurchasingIncomingInvoiceStoreV1)scope.Store, TimeProvider.System, finance, matching: matching);
     }
     // Purchasing SQL/commit proof only. Finance business acceptance is deliberately not claimed by this probe.
     private sealed class InvoiceWorkflowFinanceProbe(Func<PurchaseInvoiceFinanceAdmissionRequestV1, Task> readCommitted)

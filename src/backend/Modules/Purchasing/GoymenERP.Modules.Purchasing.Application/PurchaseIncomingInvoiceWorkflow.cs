@@ -14,7 +14,8 @@ namespace GoymenERP.Modules.Purchasing.Application;
 public sealed class PurchaseIncomingInvoiceWorkflow(ICompanyContext company, ICurrentUser user,
     IErpAuthorityRevalidationService authority, ICorrelationContext correlation,
     IPurchasingIncomingInvoiceStoreV1 store, TimeProvider time,
-    IPurchaseInvoiceFinanceAdmissionPortV1? finance = null, IPurchaseIncomingInvoiceDiagnosticsV1? diagnostics = null)
+    IPurchaseInvoiceFinanceAdmissionPortV1? finance = null, IPurchaseIncomingInvoiceDiagnosticsV1? diagnostics = null,
+    IPurchaseIncomingInvoiceMatchSourceV1? matching = null)
     : IPurchaseIncomingInvoiceWorkflowV1
 {
     public async Task<PurchaseIncomingInvoiceSnapshot> ReadAsync(Guid invoiceId, CancellationToken cancellationToken = default)
@@ -32,6 +33,40 @@ public sealed class PurchaseIncomingInvoiceWorkflow(ICompanyContext company, ICu
         var expected = Version(request.ExpectedVersion);
         return await MutateAsync(scope, invoiceId, PurchaseIncomingInvoiceCommandsV1.ApproveVariance,
             request, metadata, invoice => invoice.ApproveVariance(expected, scope.Actor, request.Reason, time.GetUtcNow()), cancellationToken);
+    }
+
+    public async Task<PurchaseIncomingInvoiceOperationResultV1> MatchAsync(Guid invoiceId,
+        PurchaseIncomingInvoiceMatchRequestV1 request, PurchasingCommandMetadata metadata,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var scope = await RequireAsync(PurchaseIncomingInvoicePermissionNamesV1.Match, cancellationToken);
+        var expected = Version(request.ExpectedVersion);
+        if (request.Receipts is not { Count: > 0 } || request.Receipts.Any(item => item is null
+            || item.InvoiceLineId == Guid.Empty || item.PurchaseOrderId == Guid.Empty || item.AcceptanceId == Guid.Empty
+            || !ValidQuantity(item.Quantity))
+            || request.Receipts.Select(item => item.AcceptanceId).Distinct().Count() != request.Receipts.Count)
+            throw new PurchasingServiceException(400, "validation_failed");
+        return await MutateAsync(scope, invoiceId, PurchaseIncomingInvoiceCommandsV1.Match, request, metadata,
+            request.Receipts.Select(item => item.PurchaseOrderId).Distinct().Order().ToArray(), async (invoice, token) =>
+            {
+                if (invoice.Version != expected) throw new PurchasingVersionConflictException(expected, invoice.Version);
+                if (invoice.Status != PurchaseIncomingInvoiceStatus.Recorded)
+                    throw new PurchasingRuleException(PurchaseIncomingInvoice.StateConflict, "Fatura eşleştirme durumunda değil.");
+                if (matching is null) throw new PurchasingServiceException(503, "service_unavailable");
+                PurchaseIncomingInvoiceMatchSourceV1 source;
+                try { source = await matching.ReadAsync(invoice, request.Receipts, token); }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception exception)
+                {
+                    await FenceAsync(scope, token);
+                    if (exception is PurchasingServiceException or PurchasingRuleException) throw;
+                    throw new PurchasingServiceException(503, "service_unavailable");
+                }
+                await FenceAsync(scope, token);
+                if (source is null) throw new PurchasingServiceException(503, "service_unavailable");
+                invoice.Match(expected, source.Receipts, source.Policy, scope.Actor);
+            }, cancellationToken);
     }
 
     public async Task<PurchaseIncomingInvoiceOperationResultV1> FinalizeAsync(Guid invoiceId,
@@ -109,8 +144,13 @@ public sealed class PurchaseIncomingInvoiceWorkflow(ICompanyContext company, ICu
         return result with { FinanceOutcome = "admitted" };
     }
 
-    private async Task<PurchaseIncomingInvoiceOperationResultV1> MutateAsync(Scope scope, Guid invoiceId, string command,
+    private Task<PurchaseIncomingInvoiceOperationResultV1> MutateAsync(Scope scope, Guid invoiceId, string command,
         object request, PurchasingCommandMetadata metadata, Action<PurchaseIncomingInvoice> mutate, CancellationToken token)
+        => MutateAsync(scope, invoiceId, command, request, metadata, [], (invoice, _) => { mutate(invoice); return Task.CompletedTask; }, token);
+
+    private async Task<PurchaseIncomingInvoiceOperationResultV1> MutateAsync(Scope scope, Guid invoiceId, string command,
+        object request, PurchasingCommandMetadata metadata, IReadOnlyList<Guid> ordersToLock,
+        Func<PurchaseIncomingInvoice, CancellationToken, Task> mutate, CancellationToken token)
     {
         var replay = await ReplayAsync(scope, invoiceId, command, request, metadata, token);
         if (replay is not null) return replay;
@@ -118,10 +158,10 @@ public sealed class PurchaseIncomingInvoiceWorkflow(ICompanyContext company, ICu
         try
         {
             var result = await store.MutateIncomingInvoiceAsync(invoiceId, command, Envelope(scope, metadata),
-                PurchasingRequestHash.Compute(command, invoiceId, request), [], (invoice, _) =>
+                PurchasingRequestHash.Compute(command, invoiceId, request), ordersToLock, (invoice, cancellationToken) =>
                 {
                     if (invoice.CompanyId != scope.Company) throw new PurchasingServiceException(503, "service_unavailable");
-                    mutate(invoice); return Task.CompletedTask;
+                    return mutate(invoice, cancellationToken);
                 }, cancellationToken => FenceAsync(scope, cancellationToken), token);
             return Result(result ?? throw new PurchasingServiceException(404, "not_found"), scope.Company, invoiceId);
         }
@@ -198,6 +238,10 @@ public sealed class PurchaseIncomingInvoiceWorkflow(ICompanyContext company, ICu
     private static long Version(string text) => long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var value) && value > 0
         && text == value.ToString(CultureInfo.InvariantCulture)
         ? value : throw new PurchasingServiceException(400, "validation_failed");
+    private static bool ValidQuantity(string text) => decimal.TryParse(text, NumberStyles.AllowDecimalPoint,
+        CultureInfo.InvariantCulture, out var value) && value > 0 && value <= PurchaseIncomingInvoice.MaximumStoredQuantity
+        && decimal.Round(value, PurchaseIncomingInvoice.MaximumStoredScale) == value
+        && PurchaseAcceptanceParticipantContractV1.FormatQuantity(value) == text;
     private static PurchaseIncomingInvoiceOperationResultV1 Result(PurchasingIncomingInvoiceWriteResult result, Guid companyId, Guid invoiceId)
     {
         if (result.Refusal is { } refusal) throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors,
