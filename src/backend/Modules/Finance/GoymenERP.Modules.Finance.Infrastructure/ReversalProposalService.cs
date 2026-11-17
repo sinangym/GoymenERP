@@ -267,6 +267,7 @@ public sealed class ReversalProposalService(
             sourceAllocationState.UpdatedAtUtc = now;
         }
 
+        await FinancePartyBalanceAssignment.ClearAsync(dbContext, FinanceBalanceAssignmentKinds.Receipt, original.Id, cancellationToken);
         dbContext.ReceiptDrafts.Add(rows.Source);
         dbContext.MoneyEvents.Add(rows.Event);
         var succeeded = Succeeded(context, proposal);

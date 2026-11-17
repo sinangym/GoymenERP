@@ -89,6 +89,7 @@ public sealed class FinanceDraftPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddMoneyEvents", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddReversalProposals", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddFinanceAllocations", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddFinancePartyBalanceTransfers", StringComparison.Ordinal));
         var snapshot = context.GetService<IMigrationsAssembly>().ModelSnapshot?.Model;
         Assert.NotNull(snapshot);
         if (snapshot is IMutableModel mutable)

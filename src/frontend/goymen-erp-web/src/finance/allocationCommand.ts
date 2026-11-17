@@ -27,6 +27,8 @@ function resourceAnswers(request: AllocationCommandRequest, resource: FinanceAll
   if (request.operation === 'allocation-release') return resource.status === 'Released'
   return resource.status === 'Active' && resource.sourceId === request.body.sourceId &&
     resource.openItemId === request.body.openItemId
+    && (request.body.allocationAccountId === undefined || (resource.allocationAccountId === request.body.allocationAccountId
+      && resource.allocationPartyId === request.body.allocationPartyId))
 }
 
 export function classifyAllocationReply(

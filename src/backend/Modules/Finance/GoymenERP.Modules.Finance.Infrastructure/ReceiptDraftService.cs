@@ -324,6 +324,21 @@ public sealed class ReceiptDraftService(
                 .Select(proposal => (Guid?)proposal.OriginalSourceId)
                 .SingleOrDefaultAsync(cancellationToken);
         }
+        IReadOnlyList<FinanceAllocationPositionV1>? positions = null;
+        if (row is { Stage: ReceiptStages.Recorded } && reversalSourceId is null && reversesSourceId is null
+            && amount == PermissionDecision.Allowed)
+        {
+            try
+            {
+                var held = await FinancePartyBalanceAssignment.ReadAsync(dbContext, FinanceBalanceAssignmentKinds.Receipt,
+                    row.Id, row.PartyId, row.CompanyAccountId, row.CurrencyId, unallocatedText ?? row.AmountText, false, cancellationToken);
+                positions = held.All().Select(x => new FinanceAllocationPositionV1(x.PartyId, x.CompanyAccountId,
+                    x.AvailableAmount, x.AssignmentVersion.ToString(System.Globalization.CultureInfo.InvariantCulture), x.TransferId)).ToArray();
+            }
+            catch (InvalidOperationException) { return new(ReadOutcome.Unavailable, null); }
+        }
+        // Amount authority is measured after the new ownership read as well; a revoked grant exposes no position amounts.
+        amount = await permissions.CheckAsync(context, FinanceAction.ReadAmount, request.SourceId, cancellationToken);
         var again = await permissions.CheckAsync(context, FinanceAction.ReadSources, request.SourceId, cancellationToken);
         if (again != PermissionDecision.Allowed || !SameContext(context))
         {
@@ -333,7 +348,8 @@ public sealed class ReceiptDraftService(
         return row is null
             ? new ReadResult<SourceDetail>(ReadOutcome.NotFound, null)
             : new ReadResult<SourceDetail>(ReadOutcome.Found,
-                Detail(row, Disclosure(amount), reversalSourceId, reversesSourceId, unallocatedText));
+                Detail(row, Disclosure(amount), reversalSourceId, reversesSourceId, unallocatedText) with
+                { AllocationPositions = amount == PermissionDecision.Allowed ? positions : null });
     }
 
     /// <summary>

@@ -767,3 +767,27 @@ unavailable, not a default 0.01 success. New optional source fields are omitted 
 W8 checkpoint still PARTIAL: actual usage/repayment/accrual and voucher proposals, per-lender/type warning,
 closed-period correction and the user-completable screens remain to be integrated. Mapping absence remains visible;
 neither a source profile nor a mock provider establishes usable delivery. Finance STOP and production are unchanged.
+
+## FNS-SC32: explicit party balance transfer (KLN-D38/D71/D72/D76/D77)
+
+`POST /api/v1/finance/party-balance-transfers` records one authorized immutable voucher for the complete existing
+currency balances. Its preview pins the actual Counterparty succession/duplicate-merge versions, exact Finance
+source versions and allocation positions. The command also requires a pinned clean Documents version/hash,
+an explicitly selected open-period date, reason, idempotency key and audit. There is no automatic grant or second
+approval; `finance.party-balance-transfers.record` is only registered by the central permission owner.
+
+Historical invoices, receipts and payments keep their original party/account. A transferred available amount is
+represented by a bounded allocation position, not a second money event. Receipt and payment allocations consume
+that selected position; release restores the allocation's captured beneficiary. Subsequent original-document
+differences stay on the original account and require another authorized explicit transfer. No successor-wide alias,
+FX conversion or rounding is introduced. The voucher contributes its two existing-currency party-ledger sides once.
+
+The host composes `AddFinancePartyBalanceTransfersV1()` and `MapFinancePartyBalanceTransfersV1()`. The transfer
+screen and the recorded payment's allocation panel consume actual owner/Finance APIs, retaining the same request
+and key after an unknown response. Central shell/capability registration, runtime acceptance and activation are
+separate. Source tests include real-SQL fact definitions but those facts have not been run in this checkpoint.
+
+EF-generated migration `20261117093515_AddFinancePartyBalanceTransfers` adds three company-scoped stores and
+nullable beneficiary pairs to receipt/payment allocations; existing rows and money facts are not rewritten.
+Down first refuses with `THROW 51984` while any voucher, position, command receipt or allocation beneficiary
+would be lost. Empty new stores with legacy null beneficiary columns can roll back. Database apply is NOT_RUN.

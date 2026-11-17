@@ -158,6 +158,14 @@ export interface PosCollectionView {
   readonly bankNet: AmountView
 }
 
+export interface FinanceAllocationPosition {
+  readonly partyId: string
+  readonly companyAccountId: string
+  readonly availableAmount: string
+  readonly assignmentVersion: string
+  readonly transferId: string | null
+}
+
 export interface SourceDetail {
   readonly source: SourceSummary
   readonly profile: ProfileReference
@@ -169,6 +177,7 @@ export interface SourceDetail {
   readonly unallocated: UnallocatedView
   /** Present only on a POS collection; a bank transfer's body has no `pos` member at all (the #258 shape). */
   readonly pos: PosCollectionView | null
+  readonly allocationPositions?: readonly FinanceAllocationPosition[]
 }
 
 export type ReversalProposalStatus = 'Pending' | 'Approved' | 'Rejected'
@@ -374,8 +383,29 @@ function decodePos(value: unknown, gross: AmountView, currencyId: string): PosCo
   return { commissionBearer: value.commissionBearer as PosCommissionBearer, commission, bankNet }
 }
 
+/** Server-owned available positions; this decoder does not derive or sum money. */
+export function decodeAllocationPositions(value: unknown, originalPartyId: string,
+  originalAccountId: string, requireOriginal = true): readonly FinanceAllocationPosition[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null
+  const accounts = new Set<string>()
+  let originals = 0
+  for (const item of value) {
+    if (!isRecord(item) || !hasExactKeys(item, ['partyId', 'companyAccountId', 'availableAmount', 'assignmentVersion', 'transferId'])
+      || !isBoundUuid(item.partyId) || !isBoundUuid(item.companyAccountId) || !isNonNegativeDecimalText(item.availableAmount)
+      || accounts.has(item.companyAccountId)) return null
+    accounts.add(item.companyAccountId)
+    if (item.companyAccountId === originalAccountId) {
+      if (item.partyId !== originalPartyId || item.assignmentVersion !== '0' || item.transferId !== null) return null
+      originals += 1
+    } else if (!isPositiveInt64Text(item.assignmentVersion) || !isBoundUuid(item.transferId)) return null
+  }
+  return (!requireOriginal || originals === 1) ? value as FinanceAllocationPosition[] : null
+}
+
 export function decodeSourceDetail(value: unknown, companyId: string): Decoded<SourceDetail> {
-  if (!isRecord(value) || !(hasExactKeys(value, DETAIL_KEYS) || hasExactKeys(value, POS_DETAIL_KEYS))) return FAIL
+  if (!isRecord(value)) return FAIL
+  const keys = value.pos === undefined ? DETAIL_KEYS : POS_DETAIL_KEYS
+  if (!hasExactKeys(value, value.allocationPositions === undefined ? keys : [...keys, 'allocationPositions'])) return FAIL
   const source = decodeSummary(value.source, companyId)
   const profile = decodeProfile(value.profile)
   if (source === null || profile === null) return FAIL
@@ -393,6 +423,11 @@ export function decodeSourceDetail(value: unknown, companyId: string): Decoded<S
   ) {
     return FAIL
   }
+  const positions = value.allocationPositions === undefined ? undefined
+    : decodeAllocationPositions(value.allocationPositions, source.partyId, source.companyAccountId)
+  if (positions === null || (positions !== undefined && (source.stage !== 'Recorded'
+    || source.amount.disclosure !== 'Visible' || unallocated.knowledge !== 'Known'
+    || unallocated.amount.disclosure !== 'Visible' || value.reversalSourceId !== null || value.reversesSourceId !== null))) return FAIL
   return ok({
     source,
     profile,
@@ -403,6 +438,7 @@ export function decodeSourceDetail(value: unknown, companyId: string): Decoded<S
     reversesSourceId: value.reversesSourceId as string | null,
     unallocated,
     pos,
+    ...(positions === undefined ? {} : { allocationPositions: positions }),
   })
 }
 
