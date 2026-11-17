@@ -100,7 +100,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
     internal const string OrderApprovalCheck =
         "([ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL) "
         + "OR ([ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL AND [Status] IN (2, 3) "
-        + "AND [ApprovedBy] COLLATE " + IdentityCollation + " <> [CreatedBy] COLLATE " + IdentityCollation + ")";
+        + "AND [ApprovedBy] COLLATE " + IdentityCollation + " <> COALESCE([CurrentPreparedBy], [CreatedBy]) COLLATE " + IdentityCollation + ")";
 
     /// <summary>
     /// §7.2 / §13, A1-3 and API-11 (master INV-006): technical slices, the accepted share, the cancelled remainder and the closed
@@ -236,6 +236,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
         ConfigureGoodsReceiptBatches(modelBuilder);
         ConfigureSupplierReturns(modelBuilder);
         ConfigureReceiptAdjustments(modelBuilder);
+        ConfigureSupplierRevisions(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -855,6 +856,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
     private void ApplyWriteGuards()
     {
         PurchasingAuditEventTenantGuard.Validate(this, companyContext);
+        GuardSupplierRevisionHistory();
         foreach (var entry in ChangeTracker.Entries<IPurchasingTenantRow>())
         {
             if (entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted))
@@ -898,12 +900,17 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
                         nameof(PurchaseOrderRow.ApprovedBy), nameof(PurchaseOrderRow.ApprovedAtUtc),
                         nameof(PurchaseOrderRow.CancelledBy), nameof(PurchaseOrderRow.CancelledAtUtc), nameof(PurchaseOrderRow.CancellationReason),
                         nameof(PurchaseOrderRow.DocumentNumberCancelledAtUtc),
+                        nameof(PurchaseOrderRow.SupplierRevisionHistoryJson), nameof(PurchaseOrderRow.CurrentPreparedBy),
+                        nameof(PurchaseOrderRow.SupplierPartyId), nameof(PurchaseOrderRow.CompanyAccountId),
                     ],
                     PurchaseOrderLineRow =>
                     [
                         nameof(PurchaseOrderLineRow.Technical), nameof(PurchaseOrderLineRow.Accepted), nameof(PurchaseOrderLineRow.Cancelled),
                         nameof(PurchaseOrderLineRow.Closed), nameof(PurchaseOrderLineRow.DefinitiveReturned),
                         nameof(PurchaseOrderLineRow.ReceiptClosureRevived),
+                        nameof(PurchaseOrderLineRow.UnitPrice), nameof(PurchaseOrderLineRow.PriceUnitId),
+                        nameof(PurchaseOrderLineRow.DiscountPercent), nameof(PurchaseOrderLineRow.DiscountAmount),
+                        nameof(PurchaseOrderLineRow.DeferralPercent), nameof(PurchaseOrderLineRow.DeferralAmount),
                     ],
                     // ALC-S16: a bulk receipt moves once (its status and decision facts); a label is only released by a rejection.
                     PurchaseGoodsReceiptBatchRow =>

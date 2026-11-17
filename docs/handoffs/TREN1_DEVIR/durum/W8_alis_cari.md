@@ -154,3 +154,35 @@ kırmızıların geçtiği veya bu kaynakların kabul aldığı iddia edilmez.
 - SQL kaynakları onaylı sipariş kuru varken faturanın hâlâ kayıtsız kalmasını, kur belirtilmeyen
   siparişi, şirket izolasyonunu ve read-only rollback'i kapsar. Bu ek kaynak henüz derlenmedi;
   SQL/runtime **NOT_RUN**. Stok ilk giriş kuru sahibinin bağlantısı ayrı dilimdedir.
+
+## ALC-SC47 / ALS-D112-D115 — cari revizyonu
+
+- Onaylı alış siparişinde gerçek Cari sahibinden yeniden seçilen tedarikçi/şirket hesabı,
+  gerekçe, expected version ve mevcut sipariş revizyon izniyle taslak revizyon açılır.
+  Herhangi bir kabul geçmişi (geri alınmış kabul dahil) veya fatura bağlantısı varsa reddedilir.
+  Satır kimlikleri/miktarları korunur; eski fiyatlar ve her onay append-only geçmişte kalır.
+  Güncel fiyatlar yeniden girilir; mevcut `purchasing.orders.approve` ve farklı hazırlayan/onaylayan
+  çitiyle yeniden onaylanır. İlk oluşturan değiştirilmez; güncel hazırlayan ayrı tutulur.
+- Fatura bağlantısı Purchasing'in kendi şirket filtreli immutable tablosundadır. Gelen alış
+  faturası üreticisi, aynı sipariş satırı kilitlerinde bu tabloyu doldurmalıdır; yalnız tablo
+  eklemek gelen fatura akışını tamamlamaz. Bu owner bağlantısı nedeniyle dilim **PARTIAL** kalır.
+- Para birimi/profil görüntüsü olmayan eski sipariş, gerekli fiyatların girilemeyeceği taslağa
+  taşınmaz; onayı ve carisi korunarak 503 döner. Tarihsel para birimi/profil uydurulmaz.
+- Kayıt, idempotency ve audit tek transaction'dadır; şirket/yetki ve yeni Cari uygunluğu
+  save öncesi/sonrası tekrar doğrulanır. Fiyat yanıtı için güncel fiyat okuma yetkisi tekrar
+  okunur. Satır kapanışı ile cari/fiyat/kur revizyonları gerçek sürüm sırasıyla yeniden kurulur.
+- EF CLI `20261117072202_AddPurchaseSupplierRevisions` migration/designer/snapshot üretti.
+  Up yalnız DDL; Down ilk işlemde geçmiş veya fatura bağı varken **THROW 51977** ile reddeder.
+  Veritabanına uygulanmadı. Yeni bypass, grant veya rol yok; Shell sözleşmesi 1.9, mevcut
+  izinleri tüketen `purchasing.orders.supplier-revise` capability'si eklendi.
+- Gerçek cari arama/seçim, gerekçe, fiyat/iskonto/vade farkı girişi ve geçmiş ekranı yazıldı.
+  UI hesap yapmaz; bilinmeyen sonuçta aynı gövde/anahtar oturumda korunur. Yetki, boş,
+  çakışma, çevrimdışı, 503 ve bozuk kaynak/bekleyen kayıt durumları ayrı gösterilir.
+- Birim/model, HTTP, dört gerçek SQL fact ve Vitest kaynakları hazır. Son kaynakların
+  API (Integration bağımlılığı), Purchasing.UnitTests, Api.IntegrationTests ve TypeScript
+  derlemeleri exit 0; .NET uyarı/hata 0. Backend komutları `--no-restore -m:1 -nr:false
+  -p:UseSharedCompilation=false -p:OpenApiGenerateDocumentsOnBuild=false` ile çalıştı.
+  OpenAPI üretimi bu derlemelere dahil değildir. `git diff --check` exit 0.
+  Önceki mal kabul kur kanıtının test namespace düzeltmesi `404186d8a` ile kaydedildi.
+  Runtime Unit/SQL/HTTP/Vitest/browser/CI
+  **NOT_RUN**. OpenAPI, relational envanter ve bütün pinler merkezi entegrasyon sırasındadır.

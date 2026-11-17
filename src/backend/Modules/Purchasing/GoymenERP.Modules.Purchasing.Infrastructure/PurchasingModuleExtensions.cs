@@ -50,6 +50,7 @@ public static class PurchasingModuleExtensions
         services.TryAddSingleton(new PurchasingServiceBindings());
         services.AddScoped<PurchasingService>(CreatePurchasingService);
         services.AddScoped<IPurchasingService>(provider => provider.GetRequiredService<PurchasingService>());
+        services.AddScoped<IPurchasingSupplierRevisionServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchasingOrderRecordReadSourceV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchasingOrderReadServiceV1, PurchasingOrderReadServiceV1>();
         services.AddScoped<IPurchaseGoodsReceiptServiceV1>(provider => provider.GetRequiredService<PurchasingService>());

@@ -408,11 +408,13 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
     /// <summary>A1-3 / API-11 / ALS-D85 and KLN-D105: serialize remainder and schedule changes with future allocation reduction.</summary>
     private static bool TakesOrderLineLocks(string commandName) =>
         PurchasingCommands.IsOrderCancellation(commandName) || PurchasingCommands.IsLineClosure(commandName)
-        || commandName == PurchasingCommands.OrderLineScheduleV1;
+        || commandName is PurchasingCommands.OrderLineScheduleV1 or PurchasingCommands.OrderSupplierReviseV1 or PurchasingCommands.OrderSupplierRevisionPriceV1;
 
     private async Task<PurchasingOrderStoreResult?> MutateOrderCoreAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
         Guid orderId, Action<PurchaseOrder, DateTimeOffset> mutate, Func<PurchaseOrder, IDbTransaction, CancellationToken, Task>? participant,
-        PurchasingMutationAudit audit, CancellationToken cancellationToken)
+        PurchasingMutationAudit audit, CancellationToken cancellationToken,
+        Func<PurchaseOrder, CancellationToken, Task>? beforeMutation = null, Guid? revisedCompanyAccountId = null,
+        Func<CancellationToken, Task>? requireStillAuthorized = null)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         RequireEnvelope(envelope);
@@ -485,6 +487,9 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         var closureChangesBefore = order.Lines.ToDictionary(line => line.Id, line => line.LastClosureChange);
         var now = timeProvider.GetUtcNow();
         // The domain decides; a refusal leaves the tracked rows untouched (nothing below has run).
+        if (beforeMutation is not null) await beforeMutation(order, cancellationToken);
+        if (requireStillAuthorized is not null) await requireStillAuthorized(cancellationToken);
+        if (RequireResolvedCompany() != companyId) throw Refused(PurchasingStoreCodes.CompanyContextMismatch, "Şirket bağlamı değişti.");
         mutate(order, now);
         if (order.Version != versionBefore + 1 || order.Id != row.Id || order.CompanyId != companyId || order.Lines.Count != lineRows.Count
             || order.Acceptances.Count != acceptanceRows.Count)
@@ -541,6 +546,16 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             row.DocumentNumberCancelledAtUtc = now;
         }
         row.Status = (int)order.Status;
+        if (commandName == PurchasingCommands.OrderSupplierReviseV1)
+        {
+            row.SupplierPartyId = order.SupplierPartyId;
+            row.CompanyAccountId = revisedCompanyAccountId ?? throw new InvalidOperationException("Yeni cari hesabı eksik.");
+        }
+        if (order.SupplierRevision > 0)
+        {
+            row.CurrentPreparedBy = order.PreparedBy;
+            row.SupplierRevisionHistoryJson = PurchaseSupplierRevisionHistory.Write(order);
+        }
         row.Version = order.Version;
         row.UpdatedAtUtc = order.UpdatedAtUtc;
         row.ApprovedBy = order.Approval?.ApprovedBy;
@@ -557,6 +572,12 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             lineRow.Closed = line.ClosedQuantity.Value;
             lineRow.DefinitiveReturned = line.DefinitiveReturnQuantity.Value;
             lineRow.ReceiptClosureRevived = line.ReceiptClosureRevived;
+            lineRow.UnitPrice = line.Price?.UnitPrice;
+            lineRow.PriceUnitId = line.Price?.PriceUnitId;
+            lineRow.DiscountPercent = line.Price?.DiscountPercent;
+            lineRow.DiscountAmount = line.Price?.DiscountAmount;
+            lineRow.DeferralPercent = line.Price?.DeferralPercent;
+            lineRow.DeferralAmount = line.Price?.DeferralAmount;
         }
 
         foreach (var change in order.CancellationHistory.Where(change => change.OrderVersionAfter > versionBefore))
@@ -618,8 +639,11 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         dbContext.Attempts.Add(Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, null, order.Id, now));
         Audit(envelope, companyId, OrderEntityType, order.Id, audit.EventType, audit.Operation, versionBefore, order.Version, before, Snapshot(order), audit.Reason);
         if (cancelsNumber) await RequireNumberAuthorityAsync(companyId, envelope, cancellationToken);
+        if (requireStillAuthorized is not null) await requireStillAuthorized(cancellationToken);
         await SaveAsync(cancellationToken);
         if (cancelsNumber) await RequireNumberAuthorityAsync(companyId, envelope, cancellationToken);
+        if (requireStillAuthorized is not null) await requireStillAuthorized(cancellationToken);
+        if (RequireResolvedCompany() != companyId) throw Refused(PurchasingStoreCodes.CompanyContextMismatch, "Şirket bağlamı değişti.");
         if (lockTransaction is not null)
         {
             await lockTransaction.CommitAsync(cancellationToken);
@@ -1124,9 +1148,12 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         IReadOnlyList<PurchaseReceiptAdjustmentBatchRow>? receiptBatches = null)
     {
         var money = MoneyOf(row);
+        var supplierHistory = PurchaseSupplierRevisionHistory.Read(row);
+        var originalSupplier = supplierHistory?.Revisions[0].PreviousSupplierPartyId ?? row.SupplierPartyId;
+        var supplierActions = supplierHistory?.ReplayActions(row);
         var order = row.SourceRequestId is { } sourceRequestId
-            ? PurchaseOrder.CreateForRequest(row.Id, row.CompanyId, row.SupplierPartyId, sourceRequestId, money, row.CreatedAtUtc, row.CreatedBy)
-            : PurchaseOrder.Create(row.Id, row.CompanyId, row.SupplierPartyId, money, row.CreatedAtUtc, row.CreatedBy);
+            ? PurchaseOrder.CreateForRequest(row.Id, row.CompanyId, originalSupplier, sourceRequestId, money, row.CreatedAtUtc, row.CreatedBy)
+            : PurchaseOrder.Create(row.Id, row.CompanyId, originalSupplier, money, row.CreatedAtUtc, row.CreatedBy);
         // ALC-SC33 (FNS-D79): the automatic opening rate is part of the opening (no version of its own); each later change is replayed
         // at the version it produced, on the Draft, between the schedule revisions.
         var rateChanges = new Queue<PurchaseOrderExchangeRateChangeRow>((exchangeRateChanges ?? []).OrderBy(rate => rate.OrderVersionAfter));
@@ -1142,7 +1169,8 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             switch ((PurchaseOrderLineKind)line.Kind)
             {
                 case PurchaseOrderLineKind.General:
-                    order.AddLine(order.Version, line.LineId, line.ProductId, line.UnitId, quantity, line.SourceRequestLineId, PriceOf(line),
+                    order.AddLine(order.Version, line.LineId, line.ProductId, line.UnitId, quantity, line.SourceRequestLineId,
+                        supplierHistory is null ? PriceOf(line) : supplierHistory.OriginalPrice(line.LineId),
                         row.CreatedAtUtc);
                     break;
                 case PurchaseOrderLineKind.Technical:
@@ -1179,16 +1207,16 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
                 continue;
             }
 
+            if (supplierActions is not null && supplierActions.Remove(draftVersionAfter, out var replaySupplierAction))
+            {
+                replaySupplierAction(order);
+                continue;
+            }
+
             break;
         }
 
-        if (rateChanges.Count > 0)
-        {
-            // FNS-D80: the rate is locked at approval; a rate row past the Draft history is not the domain's.
-            throw new InvalidOperationException("Kayıtlı kur değişikliği taslak sipariş sürümünde ardışık değil.");
-        }
-
-        if (row.Status is (int)PurchaseOrderStatus.Approved or (int)PurchaseOrderStatus.Cancelled)
+        if (supplierHistory is null && (row.Status == (int)PurchaseOrderStatus.Approved || row.Status == (int)PurchaseOrderStatus.Cancelled))
         {
             // A2a-5a (ALS-D3): a recorded approver is replayed through the maker ≠ checker rule; an order approved before A2a-5a
             // has none and is replayed without one (the fact is not invented, the rule is not applied backwards).
@@ -1227,9 +1255,22 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
                 RecordedAtUtc = row.CancelledAtUtc ?? throw new InvalidOperationException("Missing cancellation time.") }];
         var orderedCancellations = new Queue<PurchaseOrderCancellationHistoryRow>(cancellations);
         while (orderedAcceptances.Count > 0 || revisions.Count > 0 || orderedClosures.Count > 0
-            || orderedAdjustments.Count > 0 || orderedCancellations.Count > 0)
+            || orderedAdjustments.Count > 0 || orderedCancellations.Count > 0 || rateChanges.Count > 0 || supplierActions is { Count: > 0 })
         {
             var expectedVersionAfter = checked(order.Version + 1);
+            // A line may have been closed before its supplier was revised. Keep the owner's whole history in version order;
+            // a rate change still goes through the domain's Draft-only rule after the supplier revision opens that draft.
+            if (supplierActions is not null && supplierActions.Remove(expectedVersionAfter, out var supplierAction))
+            {
+                supplierAction(order);
+                continue;
+            }
+            if (rateChanges.TryPeek(out var laterRate) && laterRate.OrderVersionAfter == expectedVersionAfter)
+            {
+                RequireOwnRate(row, rateChanges.Dequeue());
+                order.SetExchangeRate(order.Version, ExchangeRateOf(laterRate), laterRate.RecordedBy, laterRate.Reason, laterRate.RecordedAtUtc);
+                continue;
+            }
             if (revisions.TryPeek(out var revision) && revision[0].OrderVersionAfter == expectedVersionAfter)
             {
                 ReplaySchedule(order, row, lines, revisions.Dequeue());
@@ -1286,7 +1327,8 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             }
         }
 
-        if (order.Version != row.Version || order.Status != (PurchaseOrderStatus)row.Status)
+        if (order.Version != row.Version || order.Status != (PurchaseOrderStatus)row.Status
+            || order.SupplierPartyId != row.SupplierPartyId || order.PreparedBy != (row.CurrentPreparedBy ?? row.CreatedBy))
         {
             throw new InvalidOperationException("Kayıtlı siparişin sürümü satırlarından yeniden kurulan sürümle uyuşmuyor.");
         }
@@ -1298,7 +1340,7 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         foreach (var line in lines)
         {
             var rebuilt = order.Lines.Single(candidate => candidate.Id == line.LineId);
-            if (rebuilt.TechnicalQuantity.Value != line.Technical || rebuilt.AcceptedQuantity.Value != line.Accepted
+            if (rebuilt.Price != PriceOf(line) || rebuilt.TechnicalQuantity.Value != line.Technical || rebuilt.AcceptedQuantity.Value != line.Accepted
                 || rebuilt.CancelledQuantity.Value != line.Cancelled || rebuilt.ClosedQuantity.Value != line.Closed
                 || rebuilt.DefinitiveReturnQuantity.Value != line.DefinitiveReturned || rebuilt.ReceiptClosureRevived != line.ReceiptClosureRevived)
             {
@@ -1514,6 +1556,10 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
     {
         status = order.Status.ToString(),
         version = order.Version,
+        supplierPartyId = order.SupplierPartyId,
+        supplierRevision = order.SupplierRevision,
+        supplierRevisions = order.SupplierRevisions,
+        supplierRevisionPrices = order.SupplierRevisionPrices,
         sourceRequestId = order.SourceRequestId,
         // A2a-1 (TEK-01): the currency snapshot and each line's price are part of the audited record.
         currency = order.Money is { } money

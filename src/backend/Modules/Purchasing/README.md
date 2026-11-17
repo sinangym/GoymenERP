@@ -419,3 +419,19 @@ Down starts with **THROW 51957** while any numbering fact exists. SQL test sourc
 missing configuration, cancellation/non-reuse, and permission loss after save rolling back the entire unit.
 The direct-store fixtures use the real Settings/Audit owners with explicitly synthetic fixture authority; HTTP
 authorization remains real. Runtime SQL/HTTP/Unit/Vitest/CI acceptance is **NOT_RUN**.
+
+## ALC-SC47 / ALS-D112 and ALS-D115 supplier revision
+
+An approved order can change supplier through the existing order-revision permission only when no receipt history
+or invoice binding exists. The supplier and company account are selected again through the actual Cari owner.
+The new revision returns to Draft, clears current prices, preserves original prices and approval in an append-only
+history, and requires price entry and another actor's approval. The original order creator is never overwritten.
+The order, attempt and audit commit together; company and authority are checked again before and after save.
+The invoice owner must record immutable order-line bindings under the shared order-line locks when recording invoices;
+this binding table alone does not implement incoming invoice production. Legacy orders without a money snapshot
+fail closed before changing supplier or approval, because required replacement prices cannot be entered without it.
+No historical currency/profile is guessed; that missing legacy workflow remains separate work.
+EF-generated `20261117072202_AddPurchaseSupplierRevisions` adds nullable revision history and the tenant-filtered
+invoice binding table. Down starts with **THROW 51977** while either history exists. No backfill, grant or database
+application occurs in this slice. Test sources cover replay, maker/checker, tenant isolation, historical restoration,
+post-save authority loss rollback and the Down guard. Runtime acceptance is **NOT_RUN**.

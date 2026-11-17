@@ -56,7 +56,7 @@ public sealed partial class PurchaseOrder
 
     public Guid Id { get; }
     public Guid CompanyId { get; }
-    public Guid SupplierPartyId { get; }
+    public Guid SupplierPartyId { get; private set; }
     public Guid? SourceRequestId { get; }
     public PurchaseOrderStatus Status { get; private set; } = PurchaseOrderStatus.Draft;
 
@@ -80,6 +80,7 @@ public sealed partial class PurchaseOrder
     /// not recorded; it is not invented).
     /// </summary>
     public PurchaseOrderApproval? Approval { get; private set; }
+    public long? ApprovalVersion { get; private set; }
 
     /// <summary>A1-3 (No.161 §2): who cancelled the unaccepted remainder, when and why; null until <see cref="Cancel"/>.</summary>
     public PurchaseOrderCancellation? Cancellation { get; private set; }
@@ -219,6 +220,7 @@ public sealed partial class PurchaseOrder
         RequireVersion(expectedVersion);
         var actor = RequireActor(approvedBy, nameof(approvedBy));
         RequireStatus(PurchaseOrderStatus.Draft, PurchasingRuleCodes.OrderNotDraft, "Yalnız taslak sipariş onaylanabilir.");
+        RequireSupplierRevisionPrices();
         if (lines.Count == 0)
         {
             throw new PurchasingRuleException(PurchasingRuleCodes.OrderWithoutLines, "Satırsız sipariş onaylanamaz.");
@@ -237,6 +239,7 @@ public sealed partial class PurchaseOrder
         }
 
         Approval = new PurchaseOrderApproval(actor, now.ToUniversalTime());
+        ApprovalVersion = checked(Version + 1);
         Status = PurchaseOrderStatus.Approved;
         Touch(now);
     }

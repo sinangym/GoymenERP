@@ -43,6 +43,7 @@ public static partial class PurchasingEndpoints
     {
         MapRequests(endpoints);
         MapOrders(endpoints);
+        MapSupplierRevisions(endpoints);
         MapCurrencyCandidates(endpoints);
         MapGoodsReceiptLabels(endpoints);
         return endpoints;

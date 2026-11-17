@@ -74,6 +74,9 @@ internal sealed class PurchaseRequestLineRow : IPurchasingTenantRow
 /// </summary>
 internal sealed class PurchaseOrderRow : IPurchasingTenantRow
 {
+    /// <summary>ALS-D115: the append-only supplier/price history; null for an order never revised.</summary>
+    public string? SupplierRevisionHistoryJson { get; set; }
+    public string? CurrentPreparedBy { get; set; }
     public string? DocumentNumber { get; set; }
     public long? DocumentNumberFormatVersion { get; set; }
     public long? DocumentNumberSequence { get; set; }

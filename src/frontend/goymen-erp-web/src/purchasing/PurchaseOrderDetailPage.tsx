@@ -28,6 +28,7 @@ import { StatusIndicator } from '../ui/StatusIndicator'
 import { AllocationLinkPanel } from './AllocationLinkPanel'
 import { PurchaseOrderCancellationPanel } from './PurchaseOrderCancellationPanel'
 import { LineSchedulePanel } from './LineSchedulePanel'
+import { SupplierRevisionPanel } from './SupplierRevisionPanel'
 import { ORDER_CANCELLATION_TEXT, PURCHASE_ORDER_STATUS_LABEL } from './purchasingText'
 import { PURCHASE_ORDER_STATUS_TONE } from './purchaseOrderStatus'
 import type { PurchaseOrderCurrency, PurchaseOrderLine } from './contract'
@@ -271,6 +272,10 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
         ? { sessionEpoch: shell.sessionEpoch, actorId, onSettled: () => query.refetch() }
         : null} /></div> : null}
     {/* F-027 (ALC-S16; KLN-D43): the order's bulk goods receipts, read only and loaded only when opened. */}
+    {isCurrentDetail && namespace !== null ? <div className={styles.section}><SupplierRevisionPanel
+      fenceKey={`${namespace}::${shell.routeEntryGeneration}`} companyId={companyId} order={order} lines={lines} actorId={actorId}
+      sessionEpoch={shell.sessionEpoch} canEdit={hasCapability(shell, PURCHASING_CAPABILITY.orderSupplierRevise)}
+      hasCurrency={state.data.currency !== null && state.data.currency !== undefined} onSettled={() => query.refetch()} /></div> : null}
     {isCurrentDetail && namespace !== null ? <div className={styles.section}><GoodsReceiptBatchPanel
       fenceKey={`${namespace}::${shell.routeEntryGeneration}`} companyId={companyId} orderId={order.id}
       orderVersion={order.version} /></div> : null}
