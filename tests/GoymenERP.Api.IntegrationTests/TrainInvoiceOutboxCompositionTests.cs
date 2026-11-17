@@ -5,6 +5,8 @@ using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
+using GoymenERP.Modules.Purchasing.Application.Contracts;
+using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Infrastructure.Outbox;
 using GoymenERP.Modules.Work.Infrastructure;
 using GoymenERP.Modules.Work.Infrastructure.Outbox;
@@ -45,6 +47,10 @@ public sealed class TrainInvoiceOutboxCompositionTests
             item => item.ServiceType == typeof(IInventoryPurchaseInvoiceCostStoreV1));
         Assert.Equal(typeof(InventoryPurchaseInvoiceCostStoreV1), costStore.ImplementationType);
         Assert.Equal(ServiceLifetime.Scoped, costStore.Lifetime);
+        var supplierReturnCost = Assert.Single(services,
+            item => item.ServiceType == typeof(IPurchaseSupplierReturnInvoiceCostReadPortV1));
+        Assert.Equal(typeof(PurchaseSupplierReturnInvoiceCostReadPort), supplierReturnCost.ImplementationType);
+        Assert.Equal(ServiceLifetime.Scoped, supplierReturnCost.Lifetime);
         var inventory = Assert.Single(registry.Sources,
             item => item.SourceName == InventoryOutboxContractV1.SourceName);
         Assert.Contains(inventory.Publishes,

@@ -317,3 +317,11 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
 - Composition test kaynağı gerçek registry doğrulayıcısı, tüketici/source event eşleşmesi, gerçek scoped store türü ve dispatcher başlatılmamasını kontrol eder. Yeni tablo/migration/immutable guard kaynakları owner raporundadır; sessiz guard izin listesi eklenmedi.
 - Birleşik kaynakta API, Purchasing.UnitTests, Inventory.UnitTests ve Api.IntegrationTests derlemeleri exit 0, 0 uyarı/hata; `git diff --check` exit 0. Runtime birim/SQL/Vitest/browser/CI ve pin üretimi NOT_RUN.
 - İlk maliyet tanımasının kısmi stok/sevk payı ve parasal artık politikası için #1189 `6954342313` ve `6954297311` cevapları bekleniyor. Accounting gerçek SMM önerisi/eşleme kaynağı ilgili owner'da sürüyor. Dilim PARTIAL; bu bağlantı maliyet kabulü veya production aktivasyonu değildir.
+
+
+## ALC-S5 / SAT-D306,D392,D393 — gerçek alış iade maliyet sağlayıcısı
+
+- Owner `c67daf71f` merkezi entegrasyona alındı; `IPurchaseSupplierReturnInvoiceCostReadPortV1` gerçek `PurchaseSupplierReturnInvoiceCostReadPort` scoped kaydıyla bağlandı. Fiziksel kabul okuması mevcut gerçek `PurchaseGoodsReceiptHost` üzerinden sürer.
+- Normal komutun işlem öncesi sorgusunda tek kesin fatura satırının tek tam kabule bağlı net TL/orijinal kg kanıtı kullanılır. Kaynak yokluğu mevcut manuel/onay yolundan ayrıdır: bozuk kanıt, tam dört ondalıkta temsil edilemeyen kesin maliyet ve desteklenmeyen aktif borrowed transaction açık 503 verir. Başka bağlantı aynı işlem diye gösterilmez.
+- Owner altı gerçek SQL fact kaynağı yazdı; merkezi composition testi gerçek scoped sağlayıcının varlığını kontrol eder. Birleşik API, Accounting.UnitTests, Logistics.UnitTests ve IntegrationTests derlemeleri exit 0, 0 uyarı/hata. Owner Purchasing.UnitTests de exit 0; ilk eksik assets/dar restore kanıtı owner raporundadır.
+- Runtime testler, merkezi pinler ve tren fast-forward henüz NOT_RUN; kabul/production değildir.
