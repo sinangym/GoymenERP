@@ -18,6 +18,18 @@ function withoutKey(body: Record<string, unknown>, key: string): Record<string, 
 }
 
 describe('decodeOrderCost', () => {
+  it('shows a nonterminating weighted entry rate without inventing a rounded scalar and rejects contradictory evidence', () => {
+    const line = { issueMovementId: ISSUE, currencyId: 'c0000000-0000-4000-8000-000000000001', foreignUnitCostPerKg: '2',
+      exchangeRate: null, exchangeRateRatio: { numerator: '100', denominator: '3' }, tlUnitCostPerKg: '10', keptKilograms: '2', foreignAmount: '4' }
+    const result = decodeOrderCost(availableOrderCost({ currencyLines: [line] }), ORDER)
+    expect(result?.currencyLines[0]?.exchangeRate).toBeNull()
+    expect(result?.currencyLines[0]?.exchangeRateRatio).toEqual({ numerator: '100', denominator: '3' })
+    const finite = { ...line, exchangeRate: '35.25', exchangeRateRatio: { numerator: '141', denominator: '4' } }
+    expect(decodeOrderCost(availableOrderCost({ currencyLines: [finite] }), ORDER)?.currencyLines[0]?.exchangeRate).toBe('35.25')
+    for (const malformed of [ { ...line, exchangeRate: '33.3333' }, { ...line, exchangeRateRatio: { numerator: '200', denominator: '6' } },
+      { ...line, exchangeRateRatio: null }, { ...line, exchangeRateRatio: { numerator: '1', denominator: '0' } },
+      { ...finite, exchangeRate: '35.2501' } ]) expect(decodeOrderCost(availableOrderCost({ currencyLines: [malformed] }), ORDER)).toBeNull()
+  })
   it('preserves an exact foreign unit and amount ratio without a rounded scalar or UI calculation', () => {
     const original = { issueMovementId: ISSUE, currencyId: 'c0000000-0000-4000-8000-000000000001', foreignUnitCostPerKg: '0.35',
       exchangeRate: '35.25', tlUnitCostPerKg: '12.3375', keptKilograms: '2', foreignAmount: '0.7' }

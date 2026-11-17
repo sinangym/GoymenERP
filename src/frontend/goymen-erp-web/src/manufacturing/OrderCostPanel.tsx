@@ -207,7 +207,7 @@ function AvailableCost({ cost }: { readonly cost: OrderCostView }) {
                   </th>
                   <td className={styles.mono}>{line.currencyId}</td>
                   <td>{line.foreignUnitCostRatio ? `${line.foreignUnitCostRatio.numerator} / ${line.foreignUnitCostRatio.denominator}` : line.foreignUnitCostPerKg}</td>
-                  <td>{line.exchangeRate}</td>
+                  <td>{line.exchangeRate ?? (line.exchangeRateRatio ? `${line.exchangeRateRatio.numerator}/${line.exchangeRateRatio.denominator}` : null)}</td>
                   <td>{line.tlUnitCostPerKg}</td>
                   <td>{line.keptKilograms}</td>
                   <td>{line.foreignAmountRatio ? `${line.foreignAmountRatio.numerator} / ${line.foreignAmountRatio.denominator}` : line.foreignAmount}</td>

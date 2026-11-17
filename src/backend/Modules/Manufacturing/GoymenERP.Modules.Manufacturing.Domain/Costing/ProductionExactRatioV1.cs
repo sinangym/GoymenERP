@@ -8,6 +8,15 @@ public sealed record ProductionExactRatioV1(string Numerator, string Denominator
 {
     public bool IsValid(bool allowZero = false) => TryRead(out var numerator, out _) && (allowZero || numerator > 0);
 
+    /// <summary>Validate parallel decimal evidence without rounding or changing the authoritative ratio.</summary>
+    public bool Represents(decimal value)
+    {
+        if (value < 0 || !TryRead(out var numerator, out var denominator)) return false;
+        var bits = decimal.GetBits(value); var scale = (bits[3] >> 16) & 0xFF;
+        var coefficient = ((BigInteger)(uint)bits[2] << 64) | ((BigInteger)(uint)bits[1] << 32) | (uint)bits[0];
+        return numerator * BigInteger.Pow(10, scale) == coefficient * denominator;
+    }
+
     public ProductionExactRatioV1 Multiply(decimal quantity)
     {
         if (quantity < 0 || !TryRead(out var numerator, out var denominator)) throw new ArgumentException("Kesin oran geçersiz.");

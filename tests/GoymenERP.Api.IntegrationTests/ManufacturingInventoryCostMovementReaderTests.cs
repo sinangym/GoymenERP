@@ -12,6 +12,25 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed class ManufacturingInventoryCostMovementReaderTests
 {
     [Theory]
+    [InlineData("100", "3", null, true)]
+    [InlineData("141", "4", "35.25", true)]
+    [InlineData("100", "3", "33.3333", false)]
+    [InlineData("200", "6", null, false)]
+    public async Task The_inventory_weighted_entry_rate_is_carried_exactly_or_refused_when_scalar_evidence_disagrees(string numerator, string denominator, string? scalar, bool valid)
+    {
+        var fixture = new Fixture(); var issue = fixture.Owner.Value.Issues[0];
+        fixture.Owner.Value = fixture.Owner.Value with { Issues = [issue with { Currency = new(InventoryIssueCostCurrencyStatusV1.Converted,
+            Guid.NewGuid(), 2m, scalar is null ? null : decimal.Parse(scalar, System.Globalization.CultureInfo.InvariantCulture),
+            "synthetic-first-entry:1", null, null, new(numerator, denominator)) }] };
+        var result = await fixture.Reader.ReadAsync(fixture.CompanyId, fixture.OrderId, CancellationToken.None);
+        if (!valid) { Assert.Null(result); return; }
+        var read = Assert.Single(result!.Issues);
+        Assert.Equal(10m, read.StampedUnitCostTl);
+        Assert.Equal(new ProductionExactRatioV1(numerator, denominator), read.Currency.ExchangeRateRatio);
+        Assert.Equal(scalar is null ? (decimal?)null : decimal.Parse(scalar, System.Globalization.CultureInfo.InvariantCulture), read.Currency.ExchangeRate);
+    }
+
+    [Theory]
     [InlineData("1", "3", true)]
     [InlineData("1", "0", false)]
     [InlineData("2", "6", false)]

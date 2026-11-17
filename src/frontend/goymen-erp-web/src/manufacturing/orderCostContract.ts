@@ -38,13 +38,14 @@ export interface OrderCostCurrencyLine {
   readonly issueMovementId: string
   readonly currencyId: string
   readonly foreignUnitCostPerKg: string | null
-  readonly exchangeRate: string
+  readonly exchangeRate: string | null
   readonly tlUnitCostPerKg: string
   readonly keptKilograms: string
   /** Display only (URT-D55 (2)). */
   readonly foreignAmount: string | null
   readonly foreignUnitCostRatio?: { readonly numerator: string; readonly denominator: string }
   readonly foreignAmountRatio?: { readonly numerator: string; readonly denominator: string }
+  readonly exchangeRateRatio?: { readonly numerator: string; readonly denominator: string }
 }
 
 export interface OrderCostIssueReason {
@@ -231,11 +232,13 @@ function decodeLine(value: unknown): OrderCostLine | null {
 function decodeCurrencyLine(value: unknown): OrderCostCurrencyLine | null {
   if (!isObject(value)) return null
   const exact = Object.hasOwn(value, 'foreignUnitCostRatio') || Object.hasOwn(value, 'foreignAmountRatio')
-  if (!hasExactKeys(value, exact ? [...CURRENCY_LINE_KEYS, 'foreignUnitCostRatio', 'foreignAmountRatio'] : CURRENCY_LINE_KEYS)) return null
+  const exactRate = Object.hasOwn(value, 'exchangeRateRatio')
+  if (!hasExactKeys(value, [...CURRENCY_LINE_KEYS, ...(exact ? ['foreignUnitCostRatio', 'foreignAmountRatio'] : []), ...(exactRate ? ['exchangeRateRatio'] : [])])) return null
   const issueMovementId = nonNilGuid(value.issueMovementId)
   const currencyId = nonNilGuid(value.currencyId)
   const foreignUnitCostPerKg = amount(value.foreignUnitCostPerKg)
   const exchangeRate = amount(value.exchangeRate)
+  const exchangeRateRatio = exactRate ? ratio(value.exchangeRateRatio, false) : null
   const tlUnitCostPerKg = amount(value.tlUnitCostPerKg)
   const keptKilograms = amount(value.keptKilograms)
   const foreignAmount = amount(value.foreignAmount)
@@ -243,7 +246,8 @@ function decodeCurrencyLine(value: unknown): OrderCostCurrencyLine | null {
     issueMovementId === null ||
     currencyId === null ||
     (!exact && foreignUnitCostPerKg === null) ||
-    exchangeRate === null ||
+    (exactRate ? exchangeRateRatio === null || (value.exchangeRate !== null && (exchangeRate === null || !ratioMatchesDecimal(exchangeRateRatio, exchangeRate))) : exchangeRate === null) ||
+    exchangeRate === '0' ||
     tlUnitCostPerKg === null ||
     keptKilograms === null ||
     (!exact && foreignAmount === null)
@@ -254,16 +258,24 @@ function decodeCurrencyLine(value: unknown): OrderCostCurrencyLine | null {
     const foreignUnitCostRatio = ratio(value.foreignUnitCostRatio, false); const foreignAmountRatio = ratio(value.foreignAmountRatio, true)
     if (value.foreignUnitCostPerKg !== null || value.foreignAmount !== null || foreignUnitCostRatio === null || foreignAmountRatio === null) return null
     return { issueMovementId, currencyId, foreignUnitCostPerKg: null, exchangeRate, tlUnitCostPerKg, keptKilograms,
-      foreignAmount: null, foreignUnitCostRatio, foreignAmountRatio }
+      foreignAmount: null, foreignUnitCostRatio, foreignAmountRatio, ...(exchangeRateRatio ? { exchangeRateRatio } : {}) }
   }
-  return { issueMovementId, currencyId, foreignUnitCostPerKg, exchangeRate, tlUnitCostPerKg, keptKilograms, foreignAmount }
+  return { issueMovementId, currencyId, foreignUnitCostPerKg, exchangeRate, tlUnitCostPerKg, keptKilograms, foreignAmount, ...(exchangeRateRatio ? { exchangeRateRatio } : {}) }
 }
 
 function ratio(value: unknown, allowZero: boolean): { readonly numerator: string; readonly denominator: string } | null {
   if (!isObject(value) || !hasExactKeys(value, ['numerator', 'denominator']) || typeof value.numerator !== 'string'
     || typeof value.denominator !== 'string' || value.numerator.length > 160 || value.denominator.length > 160
     || !(allowZero ? /^(0|[1-9]\d*)$/ : /^[1-9]\d*$/).test(value.numerator) || !/^[1-9]\d*$/.test(value.denominator)) return null
-  return { numerator: value.numerator, denominator: value.denominator }
+  let left = BigInt(value.numerator), right = BigInt(value.denominator)
+  while (right !== 0n) { const next = left % right; left = right; right = next }
+  return left === 1n ? { numerator: value.numerator, denominator: value.denominator } : null
+}
+
+// Validate two representations of owner evidence only; no price, conversion or rounding is calculated in the UI.
+function ratioMatchesDecimal(value: { readonly numerator: string; readonly denominator: string }, scalar: string): boolean {
+  const [whole, fractional = ''] = scalar.split('.')
+  return BigInt(value.numerator) * (10n ** BigInt(fractional.length)) === BigInt(`${whole}${fractional}`) * BigInt(value.denominator)
 }
 
 function decodeIssueReason(value: unknown): OrderCostIssueReason | null {

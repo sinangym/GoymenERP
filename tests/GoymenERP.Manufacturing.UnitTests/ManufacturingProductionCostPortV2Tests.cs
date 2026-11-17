@@ -13,6 +13,20 @@ namespace GoymenERP.Manufacturing.UnitTests;
 /// </summary>
 public sealed class ManufacturingProductionCostPortV2Tests
 {
+    [Fact]
+    public async Task Exact_first_entry_fx_is_preserved_by_the_recorded_cost_port_without_revaluing_its_tl_total()
+    {
+        var rate = new ProductionExactRatioV1("100", "3");
+        var currency = new IssueCostCurrencyInput(IssueCostCurrencyStatus.Converted, CurrencyUsd, 2m, null, null, rate);
+        var source = new FakeSource(Found(Input(currency: currency)));
+        var result = await new ManufacturingProductionCostPort(source).ReadAsync(CompanyA, OrderA, CancellationToken.None);
+        Assert.Equal(ManufacturingScrapCostDistributionStatusV1.Available, result.Status);
+        Assert.Equal(40000m, result.InputTotalTl); Assert.Equal(40000m, result.DistributedTotalTl);
+        var line = Assert.Single(result.CurrencyLines);
+        Assert.Null(line.ExchangeRate); Assert.Equal(rate, line.ExchangeRateRatio);
+        Assert.Equal(40m, line.TlUnitCostPerKg);
+    }
+
     private static readonly Guid CompanyA = Guid.Parse("10000000-0000-0000-0000-00000000000a");
     private static readonly Guid CompanyB = Guid.Parse("10000000-0000-0000-0000-00000000000b");
     private static readonly Guid OrderA = Guid.Parse("20000000-0000-0000-0000-00000000000a");
