@@ -97,6 +97,9 @@ public static class AccountingModuleExtensions
         services.AddScoped<IAccountingSourceDocumentAdmissionStoreV1, AccountingSourceDocumentAdmissionStoreV1>();
         services.AddScoped<IAccountingSourceDocumentAdmissionPortV1, AccountingSourceDocumentAdmissionServiceV1>();
         services.AddScoped<AccountingApiService>();
+        services.AddScoped<IManufacturingCostDifferenceStoreV1, ManufacturingCostDifferenceStoreV1>();
+        services.AddScoped<ManufacturingCostDifferenceServiceV1>();
+        services.AddScoped<GoymenERP.Modules.Accounting.Application.Inbox.ManufacturingCostDifferenceInboxConsumerV1>();
         return services;
     }
 

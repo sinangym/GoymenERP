@@ -21,7 +21,7 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 /// </list>
 /// The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// </summary>
-public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> options, ICompanyContext companyContext)
+public sealed partial class AccountingDbContext(DbContextOptions<AccountingDbContext> options, ICompanyContext companyContext)
     : DbContext(options)
 {
     public const string Schema = "accounting";
@@ -139,6 +139,7 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
         ConfigureSourceDocumentAdmissions(modelBuilder);
         ConfigureSourceDocumentVoucherDrafts(modelBuilder);
         ConfigureSourceDocumentVoucherDraftLines(modelBuilder);
+        ConfigureManufacturingCostDifferences(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -721,8 +722,10 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
 
             if (entry.State == EntityState.Modified)
             {
+                if (entry.Entity is ManufacturingCostDifferenceRow difference) ValidateCostDifferenceChange(entry, difference);
                 string[] allowed = entry.Entity switch
                 {
+                    ManufacturingCostDifferenceRow => CostDifferenceMutableFields,
                     PeriodCalendarRow => [nameof(PeriodCalendarRow.UpdatedAtUtc)],
                     // Ö4: a proposal changes only by its approval, an open period only by its close.
                     PeriodRow => [nameof(PeriodRow.Status), nameof(PeriodRow.ApprovedByUserId), nameof(PeriodRow.ApprovedAtUtc),

@@ -14,6 +14,8 @@
  */
 
 export const ACCOUNTING_CAPABILITY = {
+  costDifferencePrepare: 'accounting.manufacturing-cost-differences.prepare',
+  costDifferenceApprove: 'accounting.manufacturing-cost-differences.approve',
   /** M-07 Dönem — the company's accounting periods. */
   periodsList: 'accounting.periods.list',
   /** M-07 — propose a period opening. */
@@ -47,6 +49,8 @@ export const ACCOUNTING_CAPABILITY = {
 export type AccountingCapabilityId = (typeof ACCOUNTING_CAPABILITY)[keyof typeof ACCOUNTING_CAPABILITY]
 
 export const ACCOUNTING_ROUTE = {
+  costDifferencePrepare: '/muhasebe/uretim-maliyet-farklari',
+  costDifferenceApprove: '/muhasebe/uretim-maliyet-farki-onay',
   periodsList: '/muhasebe/donemler',
   // Static before the parameter-free list's siblings; `yeni` is its own route.
   periodsPropose: '/muhasebe/donemler/yeni',

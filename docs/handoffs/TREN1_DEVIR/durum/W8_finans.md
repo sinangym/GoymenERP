@@ -29,6 +29,18 @@ Kararlar: FNS-D88/D93/D94/D99/D100/D106/D109; 17 Kasım kullanıcı araştırma/
 
 ## Diğer finans dilimleri
 
+### FIN-S14 bağlantısı — üretimde önceden sevk edilmiş bölümün SMM önerisi
+
+Kararlar: URT-D67/D78/D79/D80 ve 17 Kasım tüketilen bölüm için ayrı SMM önerisi, açık dönem/tarih seçimi ve farklı muhasebe onaylayanı cevapları. Dilim bütünü PARTIAL'dır; bu kayıt bir kaynak checkpoint'idir.
+
+- Gerçek `inventory.outbox.v1` / `inventory.manufacturing-cost-difference.proposed.v1` schema 1 olayını şirket, olay kimliği, maliyet nesli, miktarlar ve kaynak tutarlar ile kabul eden Accounting inbox yazıldı. Replay yeni öneri/fiş üretmez; eksik tutar sıfır sayılmaz, USD muhasebe tutarına katılmaz.
+- Kaynak olay kimliğiyle kalıcı öneri oluşur. Muhasebe hazırlayanı açık dönem/tarih, mevcut onaylı hesap planından iki hesap ve gerekçe seçer. Farklı muhasebe yetkilisi onaylar; hesap planı ve şirket/yetki tekrar okunur. Onayda tek Accounting işlemi yevmiye, delivery, öneri kararı, audit ve idempotency makbuzunu birlikte kaydeder. Son yetki kaybında hepsi geri alınır.
+- Stok sahibi tüketilen payı bir kez yuvarlar: 100,01 TL / 3 kg örneğinde 33,34 TL tüketilen ve 66,67 TL kalan. Accounting kaynakta gelen 33,34 TL'yi aynen kullanır; saklanan kg maliyetinden yeniden türetmez ve ikinci yuvarlama yapmaz. Negatif ters fark da kaynak işaretiyle korunur; karşı hesap tahmin edilmez.
+- Hazırlama ve onay ekranları, kaynak tutarları ve dondurulmuş hesap planı kod/ad/sürüm/hash kanıtını gösterir. Aynı kişi onaylayamaz; çevrimdışı/503/bozuk yanıt sonrası aynı istek anahtarı korunur. Yeni yetki/grant yok; mevcut muhasebe düzeltme izinleri kullanılır.
+- EF migration: `20261117000534_AddManufacturingCostDifferenceProposals`; herhangi bir kaynak/karar varken Down ilk işlemde `THROW 51962`. Designer/snapshot üreticiden gelir.
+- Birim, model, Vitest ve dört gerçek SQL fact kaynağı eklendi; onay yarışı, geç yetki kaybı, kapalı dönem, source yuvarlama ve Down korumasını kapsar. API, Accounting.UnitTests, Finance.UnitTests, IntegrationTests derlemeleri exit 0, uyarı/hata 0; TypeScript app/node ayrı `tsc -p` derlemeleri exit 0. Runtime test/SQL/Vitest/browser/CI: NOT_RUN.
+- Merkez entegrasyon: `AddWorkInboxConsumer<ManufacturingCostDifferenceInboxConsumerV1>(ManufacturingCostDifferenceInboxV1.ConsumerName, ManufacturingCostDifferenceInboxV1.Subscriptions)`. Accounting shell sözleşmesi 1.5; `accounting.manufacturing-cost-differences.prepare` ve `.approve` merkezi pin/menü kaydı bekler. Stock gerçek producer/dispatcher bağlantısı koordinatör entegrasyonundadır. Henüz kullanılabilirlik/kabul iddiası yoktur.
+
 Mevcut dilimler üzerinde çalışma sürüyor. Kredi grupları araştırmasında resmî ERP belgeleri kaynak belge/plan/gerçek hareket ayrımını destekler; veri yokluğu sıfır sayılmaz. Kullanıcının son iki cevabı, para biriminin Settings profilindeki en küçük birim toleransını ve komisyon/masrafın kaynak belgede takside dahil ya da ayrı gösterilmesine uyulmasını kilitler. Yeni oran, hesap eşlemesi veya grant türetilmez.
 
 Tam test, gerçek SQL, arayüz kabulü, CI ve bağımsız K3 incelemesi: NOT_RUN.

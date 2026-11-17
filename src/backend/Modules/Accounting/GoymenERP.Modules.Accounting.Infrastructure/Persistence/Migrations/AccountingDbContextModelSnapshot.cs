@@ -846,6 +846,129 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.ManufacturingCostDifferenceRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AccountPlanProofJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("AccountPlanSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength()
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("AccountPlanVersion")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateOnly?>("AccountingDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateTimeOffset?>("ApprovedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("ApprovedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("CreditAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("CurrencyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("DebitAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("GenerationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("GenerationVersion")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid?>("JournalId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ManufacturingOrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("PeriodId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("PreparedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("PreparedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("SignedTlDifference")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("SourceCorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("SourceHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength()
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("SourceJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset>("SourceOccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly?>("TransactionDate")
+                        .HasColumnType("date");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "JournalId");
+
+                    b.HasIndex("CompanyId", "PeriodId");
+
+                    b.HasIndex("CompanyId", "GenerationId", "GenerationVersion")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "Status", "SourceOccurredAtUtc");
+
+                    b.ToTable("ManufacturingCostDifferences", "accounting", t =>
+                        {
+                            t.HasCheckConstraint("CK_ManufacturingCostDifferences_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ManufacturingOrderId] <> '00000000-0000-0000-0000-000000000000' AND [GenerationId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_ManufacturingCostDifferences_Source", "ISJSON([SourceJson]) = 1 AND LEN([SourceHash]) = 64");
+
+                            t.HasCheckConstraint("CK_ManufacturingCostDifferences_State", "([Status] IN (1,4) AND [PreparedBy] IS NULL AND [PreparedAtUtc] IS NULL AND [PeriodId] IS NULL AND [AccountingDate] IS NULL AND [TransactionDate] IS NULL AND [CurrencyId] IS NULL AND [DebitAccountId] IS NULL AND [CreditAccountId] IS NULL AND [AccountPlanVersion] IS NULL AND [AccountPlanSha256] IS NULL AND [AccountPlanProofJson] IS NULL AND [Reason] IS NULL AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [JournalId] IS NULL) OR ([Status] IN (2,3) AND [PreparedBy] IS NOT NULL AND [PreparedBy] <> '00000000-0000-0000-0000-000000000000' AND [PreparedAtUtc] IS NOT NULL AND [PeriodId] IS NOT NULL AND [AccountingDate] IS NOT NULL AND [TransactionDate] IS NOT NULL AND [CurrencyId] IS NOT NULL AND [DebitAccountId] IS NOT NULL AND [CreditAccountId] IS NOT NULL AND [DebitAccountId] <> [CreditAccountId] AND [PeriodId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [DebitAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CreditAccountId] <> '00000000-0000-0000-0000-000000000000' AND [AccountPlanVersion] IS NOT NULL AND LEN([AccountPlanVersion]) > 0 AND [AccountPlanSha256] IS NOT NULL AND LEN([AccountPlanSha256]) = 64 AND [AccountPlanProofJson] IS NOT NULL AND ISJSON([AccountPlanProofJson]) = 1 AND [Reason] IS NOT NULL AND LEN([Reason]) > 0 AND (([Status] = 2 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [JournalId] IS NULL) OR ([Status] = 3 AND [ApprovedBy] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL AND [JournalId] IS NOT NULL AND [ApprovedBy] <> [PreparedBy] AND [ApprovedBy] <> '00000000-0000-0000-0000-000000000000' AND [JournalId] <> '00000000-0000-0000-0000-000000000000')))");
+
+                            t.HasCheckConstraint("CK_ManufacturingCostDifferences_Version", "[Version] >= 1");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.NormalJournalDraftLineRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -1378,6 +1501,9 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CompanyId", "EntityType", "EntityId", "OccurredAtUtc");
 
+                    b.HasIndex("CompanyId", "Outcome", "OccurredAtUtc", "Id")
+                        .IsDescending(false, false, true, true);
+
                     b.HasIndex("SubjectKind", "EntityType", "EntityId", "OccurredAtUtc", "Id");
 
                     b.ToTable("AuditEvents", "audit", t =>
@@ -1521,6 +1647,27 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                         .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.ManufacturingCostDifferenceRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.JournalRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "JournalId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.PeriodRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "PeriodId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.NormalJournalDraftLineRow", b =>
