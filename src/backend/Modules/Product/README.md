@@ -727,3 +727,35 @@ guessed or seeded, and OPEN-007 stays open.
 | Kept files | Every import that reaches the row check is kept in `product.ProductPackageStandardImportFiles` with its full report: `Accepted` with its version, or `Refused` (row errors, a stale version, a waiting version) as the key's terminal answer with one audit event (`import-file-kept.v3`, entity `Product.PackageStandardImportFile`). A trigger refuses every UPDATE and DELETE (`THROW 51871`). No retention period, deletion or download exists (SAT-D397 / SAT-D401; retention, vault and scan stay NEEDS-SINAN). An inactive product is a row error in a file and a 409 in an edit. |
 | Read port | `IProductPackageStandardReaderV3.GetAsync(productId, customerId?, on)`: the customer's override if any, otherwise the product default, of the version in effect on the consumer's business date, with the entry scope and effective date. V2 reads the product default in effect today. |
 | Rollback | Migration `AddProductPackageStandardApprovalAndFiles` (`dotnet ef`). `Down` refuses with `THROW 51872` while a decision, an override, a kept file or a version that requires approval exists (forward fix); an empty store rolls back freely. |
+
+
+## Paint membership (STK-S13, BS-10 / URT-D25)
+
+The company imports the explicit paint-product list from a real `.xlsx` file, then maintains membership in ERP.
+No Product name, steel taxonomy, item type, supplier name or color text is interpreted as membership. No source is seeded.
+`IProductPaintMembershipReaderV1` answers the actual Product ID/version and the immutable membership version; an absent
+source is `NoSource`, a passive card is `Inactive`, and an unreadable owner is `Unavailable`. The consuming Manufacturing
+operation owns its own permission fence, asks the real Cari supplier owner, and uses the optional Settings PaintColor ID/version.
+
+- `product.paint-memberships.manage` is a registration-only company-wide name; no grant, role or Critical assignment.
+- `GET /api/v1/product-paint-memberships/current`; `POST /imports/validate`; `POST /imports`; `PUT /products/{productId}`.
+  Commands require expected versions, Idempotency-Key, actual actor/company, correlation/causation and a reason. The screen
+  capability is `paint-memberships.manage`, route `/boya-urunleri`, screen `STK-S13`. Runtime activation remains unchanged.
+- The first logical worksheet contains the user-mapped text product-code column (default `Ürün kodu`). Leading zeros and case
+  are preserved. Formula/macros/external links/DTD, duplicate codes or ambiguous headers are refused. At most 2 MiB / 5000 rows.
+  Every code must resolve to one actual active Product. Validation writes nothing. Apply parses the same bytes again and binds
+  SHA-256 + actor/company + Product versions + current table version to the preview token. Any row error refuses the whole file.
+- Import adds the explicitly named products and carries every absent member forward. ERP edits explicitly add or remove one
+  member only after a real first import. Inactive members remain visible to maintenance for explicit removal; consumers never
+  receive them as eligible paint products. A no-op stores its immutable answer without a new version or change event.
+- `PaintMembershipVersions`, `PaintMembershipLines` and `PaintMembershipAttempts` belong to `ProductPriceListDbContext`.
+  Full versions and original terminal answers are append-only; Product is read-only. A serializable SQL transaction preserves
+  the actual card/version and current membership set. The Audit owner borrows the same transaction after the Product save;
+  a failure or the final fresh-authority loss rolls back membership, attempt and Audit together. Source hash/name, reason and
+  before/after version remain in history; this slice invents no file-retention or approval policy.
+- Migration `AddProductPaintMemberships` is generated with EF; first Down guard **51975** protects all three stores before drops.
+  The model-only design-time factory does not enable a Product issuer or connect/apply SQL. It is a new context-construction
+  source requiring K3 review; no architecture allowlist is expanded merely to pass a guard.
+- Source checks include parser/unit/model, real-SQL lifecycle/replay/company/preview/card-version/audit rollback/final-fence/race/
+  Down facts, HTTP declarations and Vitest sources. Runtime tests, SQL, browser and CI remain **NOT_RUN** at this checkpoint.
+  Central Program mapping/provider registration, OpenAPI/registry/recovery/guard/relational/group pins are integrated centrally.

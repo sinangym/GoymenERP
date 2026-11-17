@@ -235,8 +235,8 @@ public sealed class ProductProfileWeightTests
     {
         using var context = Context();
         Assert.Equal(["AddProductProfileWeightImports", "AddProductPackageStandards", "AddProductSectionFamilies",
-                "AddProductPackageStandardApprovalAndFiles"],
-            context.Database.GetMigrations().TakeLast(4).Select(name => name.Split('_', 2)[1]));
+                "AddProductPackageStandardApprovalAndFiles", "AddProductPaintMemberships"],
+            context.Database.GetMigrations().TakeLast(5).Select(name => name.Split('_', 2)[1]));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var migration = new AddProductProfileWeightImports();

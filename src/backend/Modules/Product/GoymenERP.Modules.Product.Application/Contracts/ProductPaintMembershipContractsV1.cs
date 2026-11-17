@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.Modules.Product.Application.Contracts;
 
 /// <summary>BS-10 / URT-D25: explicit source-backed membership, never inferred from a name, tax type or steel taxonomy.</summary>
@@ -32,6 +34,7 @@ public static class ProductPaintMembershipLimitsV1
     public const int MaximumSourceLabelLength = 200;
     public const string DefaultProductCodeColumn = "Ürün kodu";
 }
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ValidateProductPaintMembershipImportV1(string? FileName, string? ContentBase64, string? ProductCodeColumn);
 public sealed record ProductPaintMembershipImportErrorV1(int? RowNumber, string Field, string Code, string Message);
 public sealed record ProductPaintMembershipImportRowV1(int RowNumber, Guid ProductId, string ProductVersion,
@@ -44,14 +47,17 @@ public sealed record ProductPaintMembershipImportPreviewV1(Guid CompanyId, strin
 }
 /// <summary>The server parses and validates the same bytes again, then binds the preview to the current actor/company,
 /// Product versions and table version. Only the explicitly imported product rows become members; absent rows stay untouched.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ApplyProductPaintMembershipImportV1(string? ExpectedVersion, string? FileName, string? ContentBase64,
     string? ProductCodeColumn, string? FileSha256, string? PreviewToken, string? SourceLabel, string? Reason);
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record SetProductPaintMembershipV1(string? ExpectedVersion, string? ExpectedProductVersion,
-    string? ExpectedMembershipVersion, bool IsMember, string? Reason);
+    string? ExpectedMembershipVersion, [property: JsonRequired] bool IsMember, string? Reason);
 public sealed record ProductPaintMembershipCommandMetadataV1(Guid CompanyId, string ActorId, string CorrelationId,
-    string? CausationId, string IdempotencyKey);
+    string? CausationId, string IdempotencyKey, string SourceChannel = "Web", string? ClientIpAddress = null, string? UserAgent = null);
 public sealed record ProductPaintMembershipMutationV1(Guid CompanyId, string Version,
-    IReadOnlyList<ProductPaintMembershipEntryV1> ChangedEntries, bool IsReplay, string OriginalCorrelationId);
+    IReadOnlyList<ProductPaintMembershipEntryV1> ChangedEntries, bool IsReplay, string OriginalCorrelationId,
+    IReadOnlyList<Guid>? RemovedProductIds = null);
 public sealed class ProductPaintMembershipException(int statusCode, string code, bool isReplay = false,
     string? originalCorrelationId = null) : Exception(code)
 {

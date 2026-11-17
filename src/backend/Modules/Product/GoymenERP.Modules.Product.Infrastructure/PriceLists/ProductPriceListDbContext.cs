@@ -22,7 +22,7 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists;
 /// the company's package standard table (B-08 / BS-10, <c>ProductPackageStandardVersions</c> / <c>ProductPackageStandardLines</c>).
 /// Migrations have their own history table so that this context never shares one with <c>ProductDbContext</c>.
 /// </summary>
-public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListDbContext> options, ICompanyContext companyContext)
+public sealed partial class ProductPriceListDbContext(DbContextOptions<ProductPriceListDbContext> options, ICompanyContext companyContext)
     : DbContext(options)
 {
     public const string Schema = "product";
@@ -129,6 +129,7 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
         ConfigureDimensions(modelBuilder);
         ConfigureProfileWeights(modelBuilder);
         ConfigurePackageStandards(modelBuilder);
+        ConfigurePaintMemberships(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -736,6 +737,10 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
             {
                 throw new InvalidOperationException("Metre ağırlığı tablosunun içe aktarımı ve satırları değiştirilmez veya silinmez.");
             }
+
+            if (entry.State != EntityState.Added
+                && entry.Entity is ProductPaintMembershipVersionRow or ProductPaintMembershipLineRow or ProductPaintMembershipAttemptRow)
+                throw new InvalidOperationException("Boya üyeliği sürümleri, satırları ve işlem yanıtları değiştirilmez veya silinmez.");
 
             // B-08 / BS-10: a package standard version, its entries and its answers are insert-only (a change is a new version).
             if (entry.State != EntityState.Added
