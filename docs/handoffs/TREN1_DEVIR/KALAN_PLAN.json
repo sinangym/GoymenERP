@@ -2,7 +2,7 @@
  "meta": {
   "tarih": "2026-11-18",
   "tren_dali": "claude/tren-1",
-  "kod_head": "6edcbf09266c5d9f6038cadb8bd5fdcc725a8284",
+  "kod_head": "19ca53a178dc97e86cdc576ba775d9ee89543a4f",
   "durum_sozlugu": {
    "PARTIAL": "kapsamın bir kısmı kaynakta; kalan kısım son W<n> ekip raporunda",
    "PLANNED/READY": "başlanmadı",
@@ -45,8 +45,8 @@
    "STK-S13 + ALC-S7/S8 (KIM-S18 sonrası)"
   ],
   "toplam": 174,
-  "done": 166,
-  "partial": 8,
+  "done": 167,
+  "partial": 7,
   "remaining_not_started": 0,
   "last_wave": 8,
   "progress_meaning": "DONE yalnız kaynak kapsamıdır. Tam birim/mimari/gerçek SQL/Vitest/browser/CI koşumları NOT_RUN; K3 kabulü ve production değildir.",
@@ -79,12 +79,12 @@
    {
     "work": "EK24 iç defter banka bakiyesi",
     "slice": "FIN-SC36",
-    "status": "PARTIAL"
+    "status": "SOURCE_DONE_RUNTIME_NOT_RUN"
    },
    {
     "work": "EK24 purchasing.invoice.finalized ve alış yevmiyesi",
     "slice": "FIN-S13",
-    "status": "PLANNED"
+    "status": "SOURCE_DONE_RUNTIME_NOT_RUN"
    },
    {
     "work": "EK24 plan üstü sevk uyarısı",
@@ -266,12 +266,26 @@
    "ALC-SC47",
    "SAT-S9",
    "SAT-S13",
-   "FIN-S13"
+   "FIN-S13",
+   "SAT-S12"
   ],
   "published_train_done_at_last_checkpoint": 135,
   "w8_status": "IN_PROGRESS: local source scope updated; combined builds/pins/light checks and train fast-forward pending. No W9.",
   "w8_last_combined_source_build": "65618ac1ec70b97d2a5d05bc6f6cf05e2f2dcea9",
-  "w8_last_sales_source_build": "11e2f6e11ddf58c54f4adc71aa0a1a86d681ee2a"
+  "w8_last_sales_source_build": "19ca53a178dc97e86cdc576ba775d9ee89543a4f",
+  "w8_last_mounted_source_build": "6ff5e4f63",
+  "sat_s12_golden_main": {
+   "pr": 1200,
+   "head": "dfab7e934fd6e7fc3b0dd5ca40bd9a3643d3ee4f",
+   "merge_sha": "3c1b47878447570210b933b83d874646f9c52e4b",
+   "reviews": [
+    5946943155,
+    5946958064
+   ],
+   "application_source": "19ca53a178dc97e86cdc576ba775d9ee89543a4f",
+   "runtime": "NOT_RUN",
+   "K3": "PENDING"
+  }
  },
  "teams": [
   {
@@ -719,13 +733,14 @@
      "contracts": [
       "tüketir: Stok ortalama maliyet okuma portu (stok_lojistik, mevcut #1044)"
      ],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
      "wave": 3,
      "decision_note": "SAT-D347 okunamazsa marj yok. Marj formülü etkinleştirmesi golden gelene kadar kapalı (SAT-D265/5); kod + snapshot yazılır.",
      "w6_report": "durum/W6_satis.md",
      "w8_report": "durum/W8_SAT_S12_GOLDEN_DUZELTME.md",
-     "w8_source_note": "P2-1 TL source65618ac1e derlendi; sifir maliyet cevabi6960913297 source11e2f6e derlendi. Golden PR1200 yeni exactdfab7e934fd6e7fc3b0dd5ca40bd9a3643d3ee4f iki yeni DOCS/main bekler. Kullanici6961293621 bu adayda iki ayri bagimsiz Claude incelemesine dar istisna verdi. Gate false."
+     "w8_source_note": "Golden PR1200 dfab7e934fd6e7fc3b0dd5ca40bd9a3643d3ee4f iki bagimsiz DOCS imzasi ile main3c1b47878447570210b933b83d874646f9c52e4b oldu; main no-ff trende. Ayri uygulama19ca53a17 gercek TL bagini ve sifir maliyet unavailable korur; golden kabul kosulu source true. Sales.Unit kaynak derleme0/0warn/error42.95s. Runtime ve son K3 iki exact-head inceleme NOT_RUN; production aktivasyonu degildir.",
+     "w8_source_commit": "19ca53a178dc97e86cdc576ba775d9ee89543a4f"
     },
     {
      "id": "SAT-S13",

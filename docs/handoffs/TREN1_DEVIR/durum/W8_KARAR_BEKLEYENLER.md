@@ -70,3 +70,9 @@ Kullanıcının ilettiği bağımsız inceleme kaynak adayı `e20f0ad14a44ecfe92
 ## KIM-S19 / K6 gerçek banka kurumu — yanıtlandı
 
 [6961276925](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6961276925), doğrudan kullanıcı cevabının açık ajan aktarımıdır: “Banka listesinden açıkça seçilsin (Önerilen)”. Ayarlar'da ad/EFT kodlu gerçek banka listesi ve teminatta açık seçim uygulanır. Eski kayıtta ad/IBAN/hesap kimliğinden otomatik eşleme yoktur; sayısal oran/eşik/grant seçilmez. Bu soru artık açık değildir; Settings sahibi banka/K6 kaynağında ilerler, Finance model tek-yazar sınırı korunur.
+
+## Sonraki durum — golden kapısı ve hedef döviz değeri
+
+- Golden #1200 iki yeni DOCS imzasıyla main `3c1b47878447570210b933b83d874646f9c52e4b` oldu. Ayrı uygulama `19ca53a17` kaynakta golden kabul koşulunu karşılar; Sales.Unit kaynak derleme0. Golden/DOCS insan sorusu açık değildir. Son K3 ve runtime kabulü sürer.
+- [6961618871](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6961618871) açık ajan aktarımıdır: “İki TL tutarı da belgeli girilsin (Önerilen)”. Kaynak dövizin gerçek TL defter değeri ve alınan dövizin gerçek TL muhasebe tutarı ayrı, kaynak belgeyle ve farklı kişi onayıyla saklanır. TCMB'den bu gerçek değerler türetilmez. Hedef TRY ise gerçek alınan TL tutarı korunur. Bu soru açık değildir; kaynak uygulaması FIN14 owner/consumer checkpointlerinde sürer.
+- K6 “30 güne kadar” örneğinin orijinal soru penceresi [6961524705](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6961524705) ile ayrı aktarılmıştır; bitişe kalan gün üst sınırıdır. Bu aktarım yeni bir kullanıcı cevabı veya sayısal varsayılan değildir.

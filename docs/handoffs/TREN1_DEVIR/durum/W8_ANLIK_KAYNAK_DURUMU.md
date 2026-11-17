@@ -1,7 +1,7 @@
 # W8 mevcut kaynak durumu — son paket
 
 - Son yayımlanan tren planı: **135/174 (%77,6)**.
-- Yerel entegrasyon planı: **166/174 (%95,4) kaynak DONE**, **8 açık**.
+- Yerel entegrasyon planı: **167/174 (%96,0) kaynak DONE**, **7 açık**.
 - Bu güncelleme yeni kapsam veya yeni dalga açmaz. W8 son pakettir.
 - İlk 16 kapanışın gerçek commitleri yerel entegrasyon head'inin atası olarak doğrulandı; owner raporlarında kaynak derleme sonuçları vardır. Tüm yeni değişikliklerin birleşik dalga derlemesi, pin üretimi ve hafif kontrolleri henüz tamamlanmadığı için tren fast-forward/push yapılmadı.
 - DONE kaynak kapsamıdır; Unit/gerçek SQL/HTTP/Vitest/browser/CI kabulü NOT_RUN. Sağlayıcı veya insan kapısı kapalı yüzey kullanılabilir sayılmaz.
@@ -33,7 +33,7 @@
 2. STK-SC36-a tek invoice-line yuvarlama ve gerçek purchase attribution merkezde derlendi; alış payı SAT-D422 owner checkpoint'i alındı. Atıflı iptal, Known ilk fişe üretim delta bağlantısı ve tümü stok/iade gerçek sıfır kanıtı tamamlanacak.
 3. FIN-S14 belgeli gerçek kaynak defter değeri/farklı onay: Finance source checkpoint'i derleme/EF zincirinde, Accounting gerçek bileşen/eşleme köprüsü source çalışmasında. TCMB referansı muhasebe değeri sayılmaz; hedef yabancı dövizin gerçek TL kanıtı yoksa açık kalır.
 4. FIN-SC47-KREDI gerçek bileşen hesap eşlemesi ve onaylı fiş akışı tamamlanacak.
-5. SAT-S12 P2 TL bağı ve sıfır maliyet cevabı kaynakta derlendi. Golden #1200 yeni head'i `dfab7e934fd6e7fc3b0dd5ca40bd9a3643d3ee4f`, iki yeni DOCS incelemesi/main bekler. Kullanıcı bu adayda iki ayrı bağımsız Claude incelemesini kabul etti; kaynak gate kapalıdır.
+5. SAT-S12 kaynak DONE: golden #1200 `dfab7e934fd6e7fc3b0dd5ca40bd9a3643d3ee4f` iki DOCS imzasıyla main `3c1b47878447570210b933b83d874646f9c52e4b` oldu ve trene alındı. Ayrı uygulama `19ca53a17` gerçek TL bağı/sıfır maliyet korumasını muhafaza ederek golden koşulunu kabul eder. Sales.Unit kaynak derleme exit0/0 uyarı/hata. Son K3/runtime/production kapıları ayrıdır; kullanılabilirlik iddiası değildir.
 6. STK-S3 ayrı yetkili kullanılmayan ayırma komutu/route hazır; orijinal sekiz fason shell yüzeyi kendi staged kabul kanıtını bekler. Test kapısı atlanmaz.
 7. STK-S8 ve SAT-SC34 gerçek dış resmî belge sağlayıcısı yokluğunu açık korur. ERP iptal kaydı host/route/subscription kaynağı hazırdır; kanıt yokken resmî iptal olmuş gibi davranılmaz.
 8. Bütün kaynak kapsamı bittikten sonra birleşik derleme/pin/hafif kontroller, tren kaydı; ardından son tam kabul koşumu ve tek taslak K3 PR. İnsan/sağlayıcı kapısı kod yüzdesine gizlenmez.
