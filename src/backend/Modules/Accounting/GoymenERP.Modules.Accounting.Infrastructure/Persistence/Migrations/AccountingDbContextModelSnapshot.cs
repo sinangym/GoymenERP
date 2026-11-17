@@ -1168,7 +1168,7 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_FinanceJournalSources_Payload", "ISJSON([SourceJson]) = 1 AND LEN([SourceHash]) = 64");
 
-                            t.HasCheckConstraint("CK_FinanceJournalSources_Source", "[SourceKind] IN (N'finance.expense-payment.recorded.v1', N'finance.cash-transfer.recorded.v1') AND LEN([SourceVersion]) > 0 AND LEN([OwnerProfileId]) > 0 AND LEN([OwnerProfileVersion]) > 0 AND LEN([AmountText]) > 0");
+                            t.HasCheckConstraint("CK_FinanceJournalSources_Source", "[SourceKind] IN (N'finance.expense-payment.recorded.v1', N'finance.cash-transfer.recorded.v1', N'finance.cash-exchange.recorded.v1', N'finance.cash-exchange.book-value-approved.v1') AND LEN([SourceVersion]) > 0 AND LEN([OwnerProfileId]) > 0 AND LEN([OwnerProfileVersion]) > 0 AND LEN([AmountText]) > 0");
                         });
                 });
 

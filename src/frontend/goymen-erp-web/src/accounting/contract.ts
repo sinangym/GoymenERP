@@ -169,6 +169,7 @@ export interface NormalJournalDraftSourcePreparation {
   readonly accountPlanSourceVersion: string
   readonly accountPlanSourceSha256: string
   readonly mappings: readonly NormalJournalDraftSourceMapping[]
+  readonly exactSourceLines?: readonly { mappingKey: string; side: NormalJournalSide; amount: string }[]
 }
 
 // ---------------------------------------------------------------------------------
@@ -228,7 +229,7 @@ export function decodeNormalJournalDraftSourcePreparation(
     'ownerProfileVersion', 'currencyId', 'postingPurpose', 'postingRuleVersion',
     'accountPlanSourceVersion', 'accountPlanSourceSha256', 'mappings',
   ] as const
-  if (v === null || !hasExactKeys(v, keys) || !Array.isArray(v.mappings)
+  if (v === null || !hasExactKeys(v, [...keys, ...('exactSourceLines' in v ? ['exactSourceLines'] : [])]) || !Array.isArray(v.mappings)
       || v.companyId !== companyId || v.sourceId !== sourceId
       || !isSha256(v.preparationVersion) || !isText(v.sourceVersion)
       || !isText(v.ownerProfileId) || !isText(v.ownerProfileVersion)
@@ -251,12 +252,28 @@ export function decodeNormalJournalDraftSourcePreparation(
   }
   if (mappings.length < 2
       || new Set(mappings.map(mapping => `${mapping.side}:${mapping.accountId}`)).size !== mappings.length) return null
+  let exactSourceLines: NormalJournalDraftSourcePreparation['exactSourceLines']
+  if ('exactSourceLines' in v) {
+    if (!Array.isArray(v.exactSourceLines) || v.exactSourceLines.length < 2) return null
+    const decoded: { mappingKey: string; side: NormalJournalSide; amount: string }[] = []
+    for (const item of v.exactSourceLines) {
+      const line = record(item)
+      if (!line || !hasExactKeys(line, ['mappingKey', 'side', 'amount']) || !isText(line.mappingKey)
+        || (line.side !== 'Debit' && line.side !== 'Credit') || typeof line.amount !== 'string'
+        || !/^[0-9]+(?:\.[0-9]+)?$/.test(line.amount) || !/[1-9]/.test(line.amount)
+        || mappings.filter(mapping => mapping.mappingKey === line.mappingKey && mapping.side === line.side).length !== 1) return null
+      decoded.push({ mappingKey: line.mappingKey, side: line.side, amount: line.amount })
+    }
+    if (new Set(decoded.map(line => `${line.mappingKey}:${line.side}`)).size !== decoded.length) return null
+    exactSourceLines = decoded
+  }
   return {
     companyId, sourceId, preparationVersion: v.preparationVersion, sourceVersion: v.sourceVersion,
     ownerProfileId: v.ownerProfileId, ownerProfileVersion: v.ownerProfileVersion,
     currencyId: v.currencyId, postingPurpose: v.postingPurpose,
     postingRuleVersion: v.postingRuleVersion, accountPlanSourceVersion: v.accountPlanSourceVersion,
     accountPlanSourceSha256: v.accountPlanSourceSha256, mappings,
+    ...(exactSourceLines === undefined ? {} : { exactSourceLines }),
   }
 }
 

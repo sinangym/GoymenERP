@@ -104,7 +104,10 @@ function NormalJournalDraftCreate({ namespace, attemptOwner }: { readonly namesp
       if (answer.type === 'ok-single') {
         const received = answer.data
         return { type: 'ok-single' as const, data: { companyId: received.companyId, nextCursor: null,
-          items: received.items.map(item => ({ id: item.sourceId, sourceNumber: `${item.sourceKind === 'finance.expense-payment.recorded.v1' ? T.expenseSource : T.transferSource} (${normalSourceRefText(item.sourceId)})`,
+          items: received.items.map(item => ({ id: item.sourceId, sourceNumber: `${item.sourceKind === 'finance.expense-payment.recorded.v1' ? T.expenseSource
+            : item.sourceKind === 'finance.cash-transfer.recorded.v1' ? T.transferSource
+              : item.cashExchange?.postingState === 'TargetBookValueUnavailable' ? T.targetBookValueUnavailable
+                : item.cashExchange?.postingState === 'ApprovedSourceBookValue' ? T.approvedExchangeSource : T.exchangeSource} (${normalSourceRefText(item.sourceId)})`,
             occurredOn: item.occurredOn, stage: 'Recorded', amount: item.amount, mappingStatus: item.mappingStatus })) } }
       }
       return answer.type === 'ok' ? { type: 'malformed' } : answer
@@ -225,6 +228,11 @@ function NormalJournalDraftCreate({ namespace, attemptOwner }: { readonly namesp
       {sourceIsValid && preparationQuery.data !== undefined && preparationQuery.data.type !== 'ok-single'
         ? <p role="alert" className={styles.error}>{T.preparationUnreadable}</p> : null}
       {preparation ? <p className={styles.help}>{normalPreparationVersionsText(preparation.accountPlanSourceVersion, preparation.postingRuleVersion)}</p> : null}
+      {preparation?.exactSourceLines ? <><p className={styles.help}>{T.sourceExactHelp}</p><button type="button" disabled={sending || unresolved}
+        onClick={() => setLines(preparation.exactSourceLines!.map(line => {
+          const mapping = preparation.mappings.find(item => item.mappingKey === line.mappingKey && item.side === line.side)!
+          return { accountId: mapping.accountId, side: line.side, amount: line.amount }
+        }))}>{T.sourceExactAmounts}</button></> : null}
       {lines.map((line, index) => <div className={styles.form} key={index}>
         <div className={styles.control}><label htmlFor={`normal-journal-account-${index}`}>{T.account}</label><select id={`normal-journal-account-${index}`} value={line.accountId === '' ? '' : `${line.side}:${line.accountId}`} disabled={sending || unresolved || preparation === null} onChange={event => {
           const mapping = preparation?.mappings.find(candidate => `${candidate.side}:${candidate.accountId}` === event.target.value)

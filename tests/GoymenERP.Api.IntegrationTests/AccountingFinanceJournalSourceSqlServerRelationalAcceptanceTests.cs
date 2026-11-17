@@ -16,7 +16,7 @@ using Microsoft.EntityFrameworkCore.Migrations.Operations;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>Real SQL received-source dedup, tenant filter, immutable row and audit. Binding catalog is explicitly synthetic.</summary>
-public sealed class AccountingFinanceJournalSourceSqlServerRelationalAcceptanceTests
+public sealed partial class AccountingFinanceJournalSourceSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid Currency = Guid.Parse("b2891000-0000-4000-8000-000000000001");
     private static readonly DateTimeOffset At = new(2026, 11, 17, 9, 0, 0, TimeSpan.Zero);
@@ -126,9 +126,11 @@ public sealed class AccountingFinanceJournalSourceSqlServerRelationalAcceptanceT
     {
         public AccountingDbContext Db { get; }
         public FinanceJournalSourceStoreV1 Store { get; }
+        public CompanyContext Company { get; } = new();
+        public AuditEventCollector Audit { get; } = new();
         public Scope(string connection, Guid id, ExpensePaymentView? binding)
         {
-            var company = new CompanyContext(); company.Set(id); var audit = new AuditEventCollector();
+            var company = Company; company.Set(id); var audit = Audit;
             Db = new(new DbContextOptionsBuilder<AccountingDbContext>().UseSqlServer(connection,
                 sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", AccountingDbContext.Schema)).AddInterceptors(new AuditSaveChangesInterceptor(audit, company)).Options, company);
             var mappings = new ApprovedNormalJournalSourceBindingCatalogV1(binding is null ? [] : [Binding(binding)]);

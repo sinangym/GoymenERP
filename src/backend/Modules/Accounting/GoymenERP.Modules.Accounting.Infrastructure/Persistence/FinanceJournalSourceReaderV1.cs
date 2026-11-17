@@ -8,7 +8,7 @@ using GoymenERP.Modules.Finance.Contracts;
 
 namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 
-internal static class FinanceJournalSourceReaderV1
+internal static partial class FinanceJournalSourceReaderV1
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
@@ -17,7 +17,8 @@ internal static class FinanceJournalSourceReaderV1
     };
 
     internal sealed record Fact(Guid Id, Guid CompanyId, string Kind, string Version, Guid CurrencyId,
-        string Amount, string ProfileId, string ProfileVersion, DateOnly OccurredOn, DateTimeOffset RecordedAtUtc);
+        string Amount, string ProfileId, string ProfileVersion, DateOnly OccurredOn, DateTimeOffset RecordedAtUtc,
+        FinanceCashExchangeValueV1? CashExchange = null);
 
     internal static Fact Read(WorkInboxEventV1 envelope, ICompanyContext company)
     {
@@ -36,6 +37,10 @@ internal static class FinanceJournalSourceReaderV1
                     JsonSerializer.Deserialize<FinanceExpensePaymentRecordedV1>(envelope.PayloadJson, Json), envelope),
                 NormalJournalSourceKindsV1.RecordedCashTransfer => Transfer(
                     JsonSerializer.Deserialize<FinanceCashTransferRecordedV1>(envelope.PayloadJson, Json), envelope),
+                NormalJournalSourceKindsV1.RecordedCashExchange => Exchange(
+                    JsonSerializer.Deserialize<FinanceCashExchangeRecordedV1>(envelope.PayloadJson, Json), envelope),
+                NormalJournalSourceKindsV1.ApprovedCashExchangeBookValue => BookValue(
+                    JsonSerializer.Deserialize<FinanceCashExchangeBookValueApprovedV1>(envelope.PayloadJson, Json), envelope),
                 _ => throw Invalid()
             };
         }

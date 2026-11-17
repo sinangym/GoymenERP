@@ -8,7 +8,8 @@ public sealed partial class AccountingDbContext
         + "AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [SourceId] <> '00000000-0000-0000-0000-000000000000' "
         + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'";
     internal const string FinanceJournalSourcePayloadCheck = "ISJSON([SourceJson]) = 1 AND LEN([SourceHash]) = 64";
-    internal const string FinanceJournalSourceKindCheck = "[SourceKind] IN (N'finance.expense-payment.recorded.v1', N'finance.cash-transfer.recorded.v1') "
+    internal const string FinanceJournalSourceKindCheck = "[SourceKind] IN (N'finance.expense-payment.recorded.v1', N'finance.cash-transfer.recorded.v1', "
+        + "N'finance.cash-exchange.recorded.v1', N'finance.cash-exchange.book-value-approved.v1') "
         + "AND LEN([SourceVersion]) > 0 AND LEN([OwnerProfileId]) > 0 AND LEN([OwnerProfileVersion]) > 0 AND LEN([AmountText]) > 0";
     internal DbSet<FinanceJournalSourceRow> FinanceJournalSources => Set<FinanceJournalSourceRow>();
     private void ConfigureFinanceJournalSources(ModelBuilder model)

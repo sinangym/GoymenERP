@@ -151,6 +151,33 @@ public sealed class NormalJournalDraftPublicApiV1Tests
         Assert.Null(lifecycle.Created);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Approved_exchange_cannot_shift_a_balanced_amount_between_carrying_and_gain(bool shift)
+    {
+        var gain = Guid.NewGuid(); var at = DateTimeOffset.Parse("2026-09-24T12:00:00Z");
+        var debit = new AccountRef(Company, Debit); var credit = new AccountRef(Company, Credit); var gainAccount = new AccountRef(Company, gain);
+        var mirror = new AccountPlanMirrorV1(Company, "SENTETIK-exchange-plan", new string('a', 64), Actor, at,
+            [new(debit, "SENTETIK-1", "Target"), new(credit, "SENTETIK-2", "Source"), new(gainAccount, "SENTETIK-3", "Gain")]);
+        var rule = new NormalJournalPostingRuleV1(mirror, "SENTETIK-approved-exchange", "1", Actor, at,
+            [new(CashExchangeJournalAmountsV1.TargetReceipt, PostingSide.Debit, debit),
+             new(CashExchangeJournalAmountsV1.SourceCarrying, PostingSide.Credit, credit),
+             new(CashExchangeJournalAmountsV1.RealizedGain, PostingSide.Credit, gainAccount)]);
+        var source = new NormalJournalDraftServerSourceV1(rule, Currency, "2", "SENTETIK-owner-profile", "1", "3300",
+            CashExchangeJournalAmountsV1.TryCreate("3100", "3300"));
+        var lifecycle = new CapturingLifecycle();
+        var request = Request(source) with { Lines = [new(Debit, "Debit", "3300"),
+            new(Credit, "Credit", shift ? "3200" : "3100"), new(gain, "Credit", shift ? "100" : "200")] };
+        var result = await Service(lifecycle, new FixedSource(source)).CreateAsync(request, "exchange-exact-components");
+        Assert.Equal(shift ? AccountingApiStatus.Unprocessable : AccountingApiStatus.Created, result.Status);
+        if (shift) { Assert.Equal(NormalJournalDraftPreparationCodesV1.SourceAmountMismatch, result.Code); Assert.Null(lifecycle.Created); }
+        else { Assert.NotNull(lifecycle.Created); Assert.Equal(3300m, lifecycle.Created.TotalDebit); }
+        var changed = source with { ExactSourceLines = CashExchangeJournalAmountsV1.TryCreate("3200", "3300") };
+        var stale = await Service(new CapturingLifecycle(), new FixedSource(changed)).CreateAsync(request, "exchange-changed-source");
+        Assert.Equal(AccountingApiStatus.Conflict, stale.Status);
+    }
+
     private static NormalJournalDraftPublicServiceV1 Service(
         INormalJournalDraftLifecycleV1 lifecycle,
         INormalJournalDraftServerSourceProviderV1 provider)

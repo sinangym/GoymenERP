@@ -9,8 +9,12 @@ public static class NormalJournalSourceKindsV1
     public const string RecordedManualReceipt = "finance.manual-receipt.recorded.v1";
     public const string RecordedExpensePayment = "finance.expense-payment.recorded.v1";
     public const string RecordedCashTransfer = "finance.cash-transfer.recorded.v1";
+    public const string RecordedCashExchange = "finance.cash-exchange.recorded.v1";
+    public const string ApprovedCashExchangeBookValue = "finance.cash-exchange.book-value-approved.v1";
 
-    public static bool IsSupported(string? value) => value is RecordedManualReceipt or RecordedExpensePayment or RecordedCashTransfer;
+    // Recording an FX movement alone does not prove its carrying value and is deliberately not postable.
+    public static bool IsSupported(string? value) => value is RecordedManualReceipt or RecordedExpensePayment or RecordedCashTransfer
+        or ApprovedCashExchangeBookValue;
 }
 
 /// <summary>Routes a source identity only from its actual approved Accounting package; ambiguity is unavailable.</summary>

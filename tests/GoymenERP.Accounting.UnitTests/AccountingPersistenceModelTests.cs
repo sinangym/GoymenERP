@@ -199,8 +199,8 @@ public sealed class AccountingPersistenceModelTests
                 "20261117123611_AddSourceVoucherLifecycle", "20261117154311_AddPeriodClosureCarryAndReopening",
                 "20261117171929_WidenPostingMappingsToCogs", "20261117175214_AddInventoryCostProposals",
                 "20261117190022_AddPostedManufacturingCostAttribution", "20261117194231_AddInventoryCostComponentRounding",
-                "20261117205436_AddPostedPurchaseCostAttribution"],
-            context.Database.GetMigrations().TakeLast(11));
+                "20261117205436_AddPostedPurchaseCostAttribution", "20261117213704_AllowCashExchangeJournalSources"],
+            context.Database.GetMigrations().TakeLast(12));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
