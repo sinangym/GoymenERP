@@ -1,6 +1,6 @@
 # SAT-S12 golden DOCS incelemesi — tek istem
 
-Aşağıdaki istemi iki ayrı bağımsız oturumda kullanın. İlkine `DOCS-REVIEW-1`, ikincisine `DOCS-REVIEW-2` verin. Yazar veya diğer reviewer oturumu kendi yerine imza atamaz. Bu inceleme son K3 uygulama incelemesi değildir.
+Aşağıdaki istemi iki ayrı bağımsız oturumda kullanın. SAT-D265(5) gereği en az biri ayrı ChatGPT oturumu olmalıdır; diğerini ayrı Claude oturumunda kullanabilirsiniz. İlkine `DOCS-REVIEW-1`, ikincisine `DOCS-REVIEW-2` verin. Yazar veya diğer reviewer oturumu kendi yerine imza atamaz. Bu inceleme son K3 uygulama incelemesi değildir.
 
 ```text
 GöymenERP — PR #1200 için bağımsız DOCS incelemesi.

@@ -6,6 +6,52 @@ namespace GoymenERP.Sales.UnitTests;
 public sealed partial class SalesDraftServiceTests
 {
     [Fact]
+    public async Task SAT_S12_zero_owner_cost_is_unavailable_and_does_not_block_internal_approval()
+    {
+        var source = new MarginCostSource { Cost = 0m };
+        var world = new World { MarginCosts = source };
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("margin-zero-create"))).Detail;
+        var preview = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Margin.Lines!);
+        Assert.Equal("CostUnreadable", preview.UnavailableReason);
+        Assert.Null(preview.Amount);
+        Assert.Null(preview.Percent);
+
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("margin-zero-submit"));
+        await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("margin-zero-approve"));
+
+        var draft = Assert.Single(world.Store.Drafts);
+        Assert.Equal(InternalApprovalState.Approved, draft.ApprovalState);
+        var pin = Assert.Single(draft.MarginCosts);
+        Assert.Equal(SalesLineMarginUnavailableReason.CostUnreadable, pin.UnavailableReason);
+        Assert.Null(pin.CostPerUnit);
+        Assert.Null(pin.CurrencyId);
+    }
+
+    [Fact]
+    public async Task SAT_S12_restored_zero_snapshot_is_not_rewritten_or_disclosed_as_one_hundred_percent()
+    {
+        var source = new MarginCostSource();
+        var world = new World { MarginCosts = source };
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("margin-zero-restored"))).Detail;
+        var draft = Assert.Single(world.Store.Drafts);
+        draft.Submit(draft.Version, Actor, DateTimeOffset.UtcNow);
+        draft.Approve(draft.Version, Actor, DateTimeOffset.UtcNow);
+        var line = draft.Lines[0];
+        var original = new SalesMarginCostSnapshot(line.Id, draft.Revision, line.Product.ProductId,
+            line.OrderUnit.UnitId, line.Quantity.Value, Currency, 0m, null,
+            "{\"syntheticRestoredZeroCost\":true}", DateTimeOffset.UtcNow);
+        draft.PinMarginCosts([original]);
+
+        var result = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Margin.Lines!);
+
+        Assert.Equal("CostUnreadable", result.UnavailableReason);
+        Assert.Null(result.Amount);
+        Assert.Null(result.Percent);
+        Assert.Equal(original, Assert.Single(draft.MarginCosts));
+        Assert.Equal(0, source.Reads);
+    }
+
+    [Fact]
     public async Task SAT_S12_legacy_approved_line_is_not_backfilled_when_a_cost_provider_arrives()
     {
         var source = new MarginCostSource();

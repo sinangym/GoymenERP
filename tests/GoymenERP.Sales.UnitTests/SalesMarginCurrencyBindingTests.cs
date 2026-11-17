@@ -41,6 +41,19 @@ public sealed class SalesMarginCurrencyBindingTests
         Assert.Equal(80m, result.Percent);
     }
 
+    [Fact]
+    public void SAT_S12_zero_cost_is_unavailable_in_the_actual_application_binding_even_after_golden_acceptance()
+    {
+        var tl = SettingsCurrencyIdentitiesV1.TurkishLira;
+        var result = SalesDraftService.CalculateMarginInTurkishLira(Money.Of(100m, tl, 2), Unit, 1m,
+            Snapshot(tl) with { CostPerUnit = 0m });
+
+        Assert.Equal(SalesLineMarginState.Unavailable, result.State);
+        Assert.Equal(SalesLineMarginUnavailableReason.CostUnreadable, result.UnavailableReason);
+        Assert.Null(result.Amount);
+        Assert.Null(result.Percent);
+    }
+
     private static SalesMarginCostSnapshot Snapshot(Guid currencyId) => new(
         Guid.Parse("11111111-1111-4111-8111-111111111111"), 0,
         Guid.Parse("22222222-2222-4222-8222-222222222222"), Unit, 1m, currencyId, 20m, null,

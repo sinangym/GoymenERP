@@ -74,6 +74,10 @@ public sealed partial class SalesDraftService
             result.Validate();
             using var proof = JsonDocument.Parse(result.SourceProof);
             if (proof.RootElement.ValueKind != JsonValueKind.Object) throw new JsonException();
+            // Direct user answer 6960913297: an unreadable zero cost never becomes a 100% margin.
+            // Approval still pins an unavailable observation; it is not blocked by this display-only cost source.
+            if (result.UnavailableReason is null && result.CostPerUnit == 0m)
+                return UnavailableCost(draft, line, SalesLineMarginUnavailableReason.CostUnreadable);
             return result;
         }
         catch (Exception exception) when (exception is InvalidOperationException or JsonException or ArgumentException)
@@ -101,6 +105,7 @@ public sealed partial class SalesDraftService
                     ? UnavailableCost(draft, line, SalesLineMarginUnavailableReason.CostSourceMissing)
                     : await ReadMarginCostAsync(scope, bindings.ReadPermission, draft, line, cancellationToken);
             var margin = cost.UnavailableReason is { } reason ? SalesLineMargin.Unavailable(reason)
+                : cost.CostPerUnit == 0m ? SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.CostUnreadable)
                 : !MarginGoldenAccepted ? SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.FormulaGoldenPending)
                 : CalculateMarginInTurkishLira(
                     totals.Lines.Single(item => item.LineId == line.Id).NetAmountBeforeSurcharge,
@@ -120,7 +125,9 @@ public sealed partial class SalesDraftService
     // SAT-D259 / OPEN-INV-AVGCOST-FX: a restored snapshot is data, never the currency authority.
     // This binding is shared by the live read and the regression tests; the independent golden gate stays above it.
     internal static SalesLineMargin CalculateMarginInTurkishLira(Money? netSale, Guid orderUnitId,
-        decimal quantity, SalesMarginCostSnapshot cost) => SalesLineMarginCalculator.Calculate(new SalesLineMarginInput(
+        decimal quantity, SalesMarginCostSnapshot cost) => cost.CostPerUnit == 0m
+        ? SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.CostUnreadable)
+        : SalesLineMarginCalculator.Calculate(new SalesLineMarginInput(
             netSale, orderUnitId, quantity, SettingsCurrencyIdentitiesV1.TurkishLira,
             SalesLineMarginCost.Of(cost.CostPerUnit!.Value, cost.CurrencyId!.Value, cost.UnitId)));
 }
