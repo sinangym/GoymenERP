@@ -1,4 +1,7 @@
 using GoymenERP.Modules.Purchasing.Domain.Invoices;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 
@@ -27,5 +30,26 @@ public static class PurchaseIncomingInvoiceFinalizationV1
     {
         var payload = Event(invoice);
         return FormattableString.Invariant($"purchasing-invoice:{payload.InvoiceId:D}:{payload.Version}");
+    }
+
+    public static PurchaseInvoiceFinanceAdmissionRequestV1 Finance(PurchaseIncomingInvoice invoice,
+        string actorId, string correlationId, string? causationId)
+    {
+        _ = Event(invoice); // Validates the frozen finalisation, never the acknowledgement version.
+        if (string.IsNullOrWhiteSpace(actorId) || actorId != actorId.Trim()
+            || string.IsNullOrWhiteSpace(correlationId) || correlationId != correlationId.Trim())
+            throw new ArgumentException("Finans kabulünün aktörü ve correlation bilgisi gereklidir.");
+        // A different authorised retry actor uses another transport key, while the SAME AdmissionId preserves
+        // Finance's source dedup. Never impersonate the original finaliser or change invoice/instalment identities.
+        var actorHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(actorId)));
+        var key = $"purchasing-invoice:{invoice.AdmissionId!.Value:N}:{actorHash}";
+        return new(invoice.CompanyId, actorId, correlationId, causationId, key, invoice.AdmissionId.Value, invoice.Id,
+            invoice.FinalizedVersion!.Value.ToString(CultureInfo.InvariantCulture), invoice.SupplierPartyId,
+            invoice.CompanyAccountId, invoice.CurrencyId, invoice.OfficialRate?.ToString("0.############################", CultureInfo.InvariantCulture),
+            Array.AsReadOnly(invoice.Installments.Select(item => new PurchaseInvoiceFinanceInstallmentV1(item.OpenItemId, item.Id,
+                item.Sequence, item.DueOn, Text(item.Amount, invoice.MoneyScale),
+                item.FunctionalAmount is { } functional ? Text(functional, invoice.FunctionalScale) : null)).ToArray()));
+
+        static string Text(decimal value, int scale) => value.ToString("F" + scale.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
     }
 }

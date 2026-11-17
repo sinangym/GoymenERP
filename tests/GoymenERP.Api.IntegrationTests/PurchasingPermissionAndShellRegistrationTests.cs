@@ -40,6 +40,11 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
     [InlineData(PurchasingPermissionManifestV1.GoodsReceiptsApproveOverdelivery, ErpPermissions.PurchasingGoodsReceiptsApproveOverdelivery)]
     [InlineData(PurchasingPermissionManifestV1.FutureAllocationRelease, ErpPermissions.PurchasingFutureAllocationRelease)]
     [InlineData(PurchasingPermissionManifestV1.SupplierReturnsRecord, ErpPermissions.PurchasingSupplierReturnsRecord)]
+    [InlineData(PurchaseIncomingInvoicePermissionNamesV1.Read, ErpPermissions.PurchasingInvoicesRead)]
+    [InlineData(PurchaseIncomingInvoicePermissionNamesV1.Import, ErpPermissions.PurchasingInvoicesImport)]
+    [InlineData(PurchaseIncomingInvoicePermissionNamesV1.Match, ErpPermissions.PurchasingInvoicesMatch)]
+    [InlineData(PurchaseIncomingInvoicePermissionNamesV1.ApproveVariance, ErpPermissions.PurchasingInvoicesApproveVariance)]
+    [InlineData(PurchaseIncomingInvoicePermissionNamesV1.Finalize, ErpPermissions.PurchasingInvoicesFinalize)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);

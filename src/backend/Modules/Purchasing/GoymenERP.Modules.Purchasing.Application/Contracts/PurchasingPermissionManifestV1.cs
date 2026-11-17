@@ -117,5 +117,7 @@ public static class PurchasingPermissionManifestV1
     public static readonly IReadOnlyList<string> Names =
         [OrdersCreate, OrdersRead, OrdersApprove, GoodsReceiptsRecord, RequestsApprove, RequestsWithdraw, OrdersCancel, OrdersPriceRead,
             OrdersRevise, OrdersClose, GoodsReceiptsApproveVariance, GoodsReceiptsApproveOverdelivery, FutureAllocationRelease,
-            SupplierReturnsRecord];
+            SupplierReturnsRecord, PurchaseIncomingInvoicePermissionNamesV1.Read, PurchaseIncomingInvoicePermissionNamesV1.Import,
+            PurchaseIncomingInvoicePermissionNamesV1.Match, PurchaseIncomingInvoicePermissionNamesV1.ApproveVariance,
+            PurchaseIncomingInvoicePermissionNamesV1.Finalize];
 }
