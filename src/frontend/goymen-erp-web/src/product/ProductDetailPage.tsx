@@ -80,6 +80,7 @@ import { ProductDimensionPanel } from './ProductDimensionPanel'
 import { ProfileWeightTablePanel } from './ProfileWeightTablePanel'
 import { PackageApprovalPanel } from './PackageApprovalPanel'
 import { PackageImportPanel } from './PackageImportPanel'
+import { CogsClassificationPanel } from './cogsClassification/CogsClassificationPanel'
 import {
   duplicateIds,
   duplicateQueryKey,
@@ -947,6 +948,10 @@ function ProductCardView({
 
       {itemTypeCompany !== null && itemTypeNamespace !== null ? (
         <ProductItemTypePanel companyId={itemTypeCompany} productId={product.id} queryNamespace={itemTypeNamespace} />
+      ) : null}
+
+      {itemTypeCompany !== null && itemTypeNamespace !== null ? (
+        <CogsClassificationPanel companyId={itemTypeCompany} productId={product.id} queryNamespace={itemTypeNamespace} />
       ) : null}
 
       {/* BS-9: the "Ebat/kalınlık" row of the shared card, read like the item type in a single-company context. */}

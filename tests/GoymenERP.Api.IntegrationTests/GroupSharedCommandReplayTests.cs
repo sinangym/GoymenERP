@@ -166,6 +166,56 @@ public sealed class GroupSharedCommandReplayTests
         Assert.Throws<ArgumentOutOfRangeException>(() => GroupSharedCommandTerminal.Create(binding, 201, "{}", "corr", 0));
     }
 
+    [Theory]
+    [InlineData("same")]
+    [InlineData("actor")]
+    [InlineData("origin")]
+    [InlineData("payload")]
+    public async Task Cogs_replay_uses_one_global_key_and_releases_only_the_original_immutable_binding(string change)
+    {
+        var original = Snapshot(GroupSharedMasterOperation.SetCogsClassification);
+        var current = change switch
+        {
+            "actor" => original with { LocalActorId = Guid.NewGuid() },
+            "origin" => original with { OriginCompanyId = Guid.NewGuid() },
+            _ => original,
+        };
+        var reader = new Reader(Terminal(original));
+        var authority = new Authority { Before = current, After = current };
+        var result = await new GroupSharedCommandReplayResolver(authority, reader).ResolveAsync(
+            GroupSharedMasterOperation.SetCogsClassification, Key, change == "payload" ? new string('C', 64) : Payload);
+        Assert.Equal(2, authority.Calls);
+        Assert.Equal(1, reader.Reads);
+        Assert.Equal(change == "same" ? GroupSharedCommandReplayKind.MatchingReplay : GroupSharedCommandReplayKind.Conflict, result.Kind);
+        if (change == "same") Assert.Equal(" {\"id\":\"unchanged\"} ", result.Terminal!.ResponseJson);
+        else Assert.Null(result.Terminal);
+    }
+
+    [Theory]
+    [InlineData("revoked")]
+    [InlineData("operation")]
+    [InlineData("revision")]
+    [InlineData("actor")]
+    [InlineData("origin")]
+    public async Task Cogs_authority_drift_during_owner_lookup_never_releases_a_terminal(string change)
+    {
+        var before = Snapshot(GroupSharedMasterOperation.SetCogsClassification);
+        var after = change switch
+        {
+            "revoked" => before with { IsGranted = false },
+            "operation" => before with { Operation = GroupSharedMasterOperation.DraftBasicEdit },
+            "revision" => before with { AuthorityRevision = "rev-2" },
+            "actor" => before with { LocalActorId = Guid.NewGuid() },
+            "origin" => before with { OriginCompanyId = Guid.NewGuid() },
+            _ => throw new ArgumentException(nameof(change)),
+        };
+        var reader = new Reader(Terminal(before));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => new GroupSharedCommandReplayResolver(
+            new Authority { Before = before, After = after }, reader).ResolveAsync(
+            GroupSharedMasterOperation.SetCogsClassification, Key, Payload));
+        Assert.Equal(1, reader.Reads);
+    }
+
     private static GroupSharedMasterAuthorizationSnapshot Snapshot(
         GroupSharedMasterOperation operation = GroupSharedMasterOperation.DraftCreate) =>
         new(true, GroupSharedMasterKind.Product, operation, Actor, Origin, "rev-1");

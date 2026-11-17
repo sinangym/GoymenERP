@@ -74,6 +74,10 @@ public sealed record GroupSharedAuditEventEnvelope(
                 && EntityVersionBefore is >= 1 and < long.MaxValue && EntityVersionAfter == EntityVersionBefore + 1,
             "Reactivate" => EventType == "product.card.reactivated.v1" && PermissionCode == "product.card.reactivate"
                 && EntityVersionBefore is >= 1 and < long.MaxValue && EntityVersionAfter == EntityVersionBefore + 1,
+            // SAT-D422: this card extension changes its own classification revision, not the Product row version.
+            "SetCogsClassification" => EventType == "product.card.cogs-classification.changed.v1"
+                && PermissionCode == "product.cogs-classifications.manage"
+                && EntityVersionBefore is >= 1 && EntityVersionAfter == EntityVersionBefore,
             _ => false,
         };
         if (!validOperation) throw new ArgumentException("The Product audit operation/version transition is invalid.");

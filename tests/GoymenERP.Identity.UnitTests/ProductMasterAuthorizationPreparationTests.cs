@@ -24,20 +24,23 @@ public sealed class ProductMasterAuthorizationPreparationTests
         var authority = new SqlProductMasterAuthorizationService(database, new Actor(Guid.NewGuid(), company.CompanyId), company, null);
         Assert.False((await authority.GetSnapshotAsync(GroupSharedMasterKind.Product, GroupSharedMasterOperation.Read)).IsGranted);
         Assert.False((await authority.GetSnapshotAsync(GroupSharedMasterKind.Product, GroupSharedMasterOperation.DraftCreate)).IsGranted);
+        Assert.False((await authority.GetSnapshotAsync(GroupSharedMasterKind.Product, GroupSharedMasterOperation.SetCogsClassification)).IsGranted);
     }
 
-    [Fact]
-    public async Task SameScopedAdapterSeesRevocationInsteadOfCachingItsFirstGrant()
+    [Theory]
+    [InlineData(ProductMasterOperation.DraftCreate)]
+    [InlineData(ProductMasterOperation.SetCogsClassification)]
+    public async Task SameScopedAdapterSeesRevocationInsteadOfCachingItsFirstGrant(ProductMasterOperation operation)
     {
-        await using var setup = await Fixture.CreateAsync();
-        var before = await setup.Authority.GetSnapshotAsync(GroupSharedMasterKind.Product, GroupSharedMasterOperation.DraftCreate);
-        var unchanged = await setup.Authority.GetSnapshotAsync(GroupSharedMasterKind.Product, GroupSharedMasterOperation.DraftCreate);
+        await using var setup = await Fixture.CreateAsync(operation);
+        var before = await setup.Authority.GetSnapshotAsync(GroupSharedMasterKind.Product, ToShared(operation));
+        var unchanged = await setup.Authority.GetSnapshotAsync(GroupSharedMasterKind.Product, ToShared(operation));
         Assert.True(before.IsGranted);
         Assert.Equal(before.AuthorityRevision, unchanged.AuthorityRevision);
         Assert.False((await setup.Authority.GetSnapshotAsync(GroupSharedMasterKind.Product, GroupSharedMasterOperation.Read)).IsGranted);
         setup.Grant.Revoke(Guid.NewGuid(), "explicit-test-revocation", DateTimeOffset.UtcNow);
         await setup.Seed.SaveChangesAsync();
-        var after = await setup.Authority.GetSnapshotAsync(GroupSharedMasterKind.Product, GroupSharedMasterOperation.DraftCreate);
+        var after = await setup.Authority.GetSnapshotAsync(GroupSharedMasterKind.Product, ToShared(operation));
         Assert.False(after.IsGranted);
     }
 
@@ -53,6 +56,7 @@ public sealed class ProductMasterAuthorizationPreparationTests
         await setup.Seed.SaveChangesAsync();
         setup.Current.ActorId = other.Id;
         Assert.False((await setup.Authority.GetSnapshotAsync(GroupSharedMasterKind.Product, GroupSharedMasterOperation.DraftCreate)).IsGranted);
+        Assert.False((await setup.Authority.GetSnapshotAsync(GroupSharedMasterKind.Product, GroupSharedMasterOperation.SetCogsClassification)).IsGranted);
     }
 
     [Fact]
@@ -107,6 +111,7 @@ public sealed class ProductMasterAuthorizationPreparationTests
     [InlineData(ProductMasterOperation.Activate)]
     [InlineData(ProductMasterOperation.Deactivate)]
     [InlineData(ProductMasterOperation.Reactivate)]
+    [InlineData(ProductMasterOperation.SetCogsClassification)]
     public async Task A_lifecycle_grant_opens_only_its_own_operation(ProductMasterOperation granted)
     {
         await using var setup = await Fixture.CreateAsync(granted);
@@ -115,6 +120,7 @@ public sealed class ProductMasterAuthorizationPreparationTests
                      GroupSharedMasterOperation.Read, GroupSharedMasterOperation.DraftCreate,
                      GroupSharedMasterOperation.DraftBasicEdit, GroupSharedMasterOperation.Activate,
                      GroupSharedMasterOperation.Deactivate, GroupSharedMasterOperation.Reactivate,
+                     GroupSharedMasterOperation.SetCogsClassification,
                  })
         {
             var snapshot = await setup.Authority.GetSnapshotAsync(GroupSharedMasterKind.Product, operation);
@@ -125,13 +131,32 @@ public sealed class ProductMasterAuthorizationPreparationTests
 
     [Theory]
     [InlineData(0)]
-    [InlineData(7)]
+    [InlineData(8)]
     [InlineData(99)]
     public async Task An_unknown_operation_is_denied_not_mapped(int unknown)
     {
         await using var setup = await Fixture.CreateAsync(ProductMasterOperation.DraftBasicEdit);
         var snapshot = await setup.Authority.GetSnapshotAsync(GroupSharedMasterKind.Product, (GroupSharedMasterOperation)unknown);
         Assert.False(snapshot.IsGranted);
+    }
+
+    [Theory]
+    [InlineData("actor")]
+    [InlineData("origin")]
+    public async Task A_cogs_assignment_is_not_released_after_the_captured_request_identity_moves(string changed)
+    {
+        await using var setup = await Fixture.CreateAsync(ProductMasterOperation.SetCogsClassification);
+        setup.Current.AfterNextAccess = () =>
+        {
+            if (changed == "actor") setup.Current.ActorId = Guid.NewGuid();
+            else setup.Company.Set(Guid.NewGuid());
+        };
+        var snapshot = await setup.Authority.GetSnapshotAsync(GroupSharedMasterKind.Product,
+            GroupSharedMasterOperation.SetCogsClassification);
+        Assert.False(snapshot.IsGranted);
+        Assert.Equal(Guid.Empty, snapshot.LocalActorId);
+        Assert.Equal(Guid.Empty, snapshot.OriginCompanyId);
+        Assert.Equal(string.Empty, snapshot.AuthorityRevision);
     }
 
     private static GroupSharedMasterOperation ToShared(ProductMasterOperation operation) => operation switch
@@ -142,16 +167,25 @@ public sealed class ProductMasterAuthorizationPreparationTests
         ProductMasterOperation.Activate => GroupSharedMasterOperation.Activate,
         ProductMasterOperation.Deactivate => GroupSharedMasterOperation.Deactivate,
         ProductMasterOperation.Reactivate => GroupSharedMasterOperation.Reactivate,
+        ProductMasterOperation.SetCogsClassification => GroupSharedMasterOperation.SetCogsClassification,
         _ => throw new ArgumentOutOfRangeException(nameof(operation)),
     };
 
     private sealed class Actor(Guid actorId, Guid origin) : ICurrentUser
     {
         public Guid ActorId { get; set; } = actorId;
+        public Action? AfterNextAccess { get; set; }
         public bool IsAuthenticated => true;
         public string UserId => ActorId.ToString("D");
         public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { origin };
-        public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
+        public bool CanAccessCompany(Guid companyId)
+        {
+            var allowed = AllowedCompanyIds.Contains(companyId);
+            var callback = AfterNextAccess;
+            AfterNextAccess = null;
+            callback?.Invoke();
+            return allowed;
+        }
     }
 
     private sealed class AuthorityModel(DbContextOptions<AuthorityModel> options) : DbContext(options)

@@ -190,6 +190,9 @@ public static class ErpPermissions
     /// <summary>BS-10: explicit paint membership import and maintenance only. Name registration grants no role or actor.</summary>
     public const string ProductPaintMembershipsManage = "product.paint-memberships.manage";
 
+    /// <summary>SAT-D422 global Product card classification name only; company roles never authorize its owner operation.</summary>
+    public const string ProductCogsClassificationsManage = "product.cogs-classifications.manage";
+
     /// <summary>
     /// SAT-D382 (STK-SC36-c): the Product owner's name for approving (from an effective date) or rejecting the package standard
     /// version waiting for approval (<c>ProductPackageStandardPermissionsV3.Approve</c>). Registered, not granted: no role, seed
@@ -1672,6 +1675,7 @@ public static class ErpPermissions
             ProductProfileWeightsImport,
             ProductPackageStandardsManage,
             ProductPaintMembershipsManage,
+            ProductCogsClassificationsManage,
             ProductPackageStandardsApprove,
             SalesDraftsCreate,
             SalesDraftsRead,
