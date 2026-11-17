@@ -317,3 +317,44 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
 - Composition test kaynağı gerçek registry doğrulayıcısı, tüketici/source event eşleşmesi, gerçek scoped store türü ve dispatcher başlatılmamasını kontrol eder. Yeni tablo/migration/immutable guard kaynakları owner raporundadır; sessiz guard izin listesi eklenmedi.
 - Birleşik kaynakta API, Purchasing.UnitTests, Inventory.UnitTests ve Api.IntegrationTests derlemeleri exit 0, 0 uyarı/hata; `git diff --check` exit 0. Runtime birim/SQL/Vitest/browser/CI ve pin üretimi NOT_RUN.
 - İlk maliyet tanımasının kısmi stok/sevk payı ve parasal artık politikası için #1189 `6954342313` ve `6954297311` cevapları bekleniyor. Accounting gerçek SMM önerisi/eşleme kaynağı ilgili owner'da sürüyor. Dilim PARTIAL; bu bağlantı maliyet kabulü veya production aktivasyonu değildir.
+
+
+## ALC-S5 / SAT-D306,D392,D393 — gerçek alış iade maliyet sağlayıcısı
+
+- Owner `c67daf71f` merkezi entegrasyona alındı; `IPurchaseSupplierReturnInvoiceCostReadPortV1` gerçek `PurchaseSupplierReturnInvoiceCostReadPort` scoped kaydıyla bağlandı. Fiziksel kabul okuması mevcut gerçek `PurchaseGoodsReceiptHost` üzerinden sürer.
+- Normal komutun işlem öncesi sorgusunda tek kesin fatura satırının tek tam kabule bağlı net TL/orijinal kg kanıtı kullanılır. Kaynak yokluğu mevcut manuel/onay yolundan ayrıdır: bozuk kanıt, tam dört ondalıkta temsil edilemeyen kesin maliyet ve desteklenmeyen aktif borrowed transaction açık 503 verir. Başka bağlantı aynı işlem diye gösterilmez.
+- Owner altı gerçek SQL fact kaynağı yazdı; merkezi composition testi gerçek scoped sağlayıcının varlığını kontrol eder. Birleşik API, Accounting.UnitTests, Logistics.UnitTests ve IntegrationTests derlemeleri exit 0, 0 uyarı/hata. Owner Purchasing.UnitTests de exit 0; ilk eksik assets/dar restore kanıtı owner raporundadır.
+- Runtime testler, merkezi pinler ve tren fast-forward henüz NOT_RUN; kabul/production değildir.
+
+
+## STK-SC36-a / SAT-D419,D420 — gerçek SMM hesap eşleme merkezi akışı
+
+- Owner `c51d83d86` gerçek eşleme workspace'i, yalnız onaylı plandaki 621/620 seçenekleri, Product sınıfı/eşleme sürümlü resolver ve gerçek hazırlama/yayımlama ekranıyla entegrasyona alındı. Mevcut diğer eşlemeler hazırlanırken korunur; hesap planı veya eşleme kendiliğinden kurulmaz.
+- Gerçek workspace endpoint'i ve scoped resolver bağlandı. Muhasebe altında tek hesap eşleme rotası/menü girişi ve ayrı hazırlama/etkinleştirme kontrolleri eklendi. Üç yetenek mevcut muhasebe eşleme izinlerini kullanır, şirket bazlıdır ve `ImplementationAvailable:false` kalır. Provider 1.8; yeni izin, grant veya Critical sınıf değişikliği yoktur.
+- Shell/route drift ve owner capability test kaynakları yeni kaydı ve mevcut yayımlanmış kümenin korunmasını doğrular. Birleşik API, Accounting.UnitTests, Logistics.UnitTests, IntegrationTests derlemeleri exit 0, 0 uyarı/hata; merkezi TSC exit 0. Owner gerçek EF `20261117171929_WidenPostingMappingsToCogs`, Down 51929 ve SQL fact kaynakları raporundadır.
+- Runtime SQL/Vitest/browser/CI, merkezi pin üretimi ve tren FF NOT_RUN. Bu kayıt ilk SMM veya geç fatura farkı önerisinin tamamlandığı anlamına gelmez; ilgili Accounting sahibi kaynak akışını sürdürür.
+
+
+## STK-SC36-a / SAT-D419 — ilk SMM için gerçek sevk kimlik zinciri
+
+- Sales owner `fdc417b38` / rapor `c0a799e09` normal kesinleşmiş fatura satırına değişmez `ShipmentSource` ekler; bu yeni bir stok/para olayı değildir. Ticari fatura kg'sı fiziksel çıkış kg'sı sayılmaz ve geçmiş outbox yeniden yazılmaz.
+- Inventory owner `0eedb43ba` gerçek shipment kimliğinden kendi tek komut/sonuç/hareket/outbox izini çözerek mevcut orijinal TL damgası okuyucusuna bağlanır. Available yalnız fiziksel iz kanıtıdır, Known TL iddiası değildir. Yeni model/EF yoktur.
+- Logistics owner iç `ILogisticsInvoicedShipmentProofReadPortV1` okuması aynı şirket ve dayanıklı sürümde onaylı irsaliye satırı, gerçek sevk payı, talimat satırı, sipariş/ürün/birim kimliklerini çapraz doğrular. Fiyat, maliyet ve oran üretmez. Kullanıcı yetkili irsaliye seçicisi değiştirilmez; yeni browser route veya grant yoktur. Bu sistem amaçlı çapraz modül okuma yüzeyi K3 review bekler; guard izin listesine sessiz eklenmedi.
+- Altı unit fact kaynağı ve mevcut gerçek SQL source fact'inde çoklu sipariş, yabancı şirket, yanlış sevk ve iptal kanıtları eklendi. API, Accounting.UnitTests, Logistics.UnitTests, IntegrationTests birleşik kaynak derlemeleri exit 0, 0 uyarı/hata; runtime NOT_RUN. Yeni ilişkisel FQN yok; Inventory owner üç yeni SQL fact'i final envanter üretiminde alınacak.
+- Accounting gerçek hazırlama/onay ve iptal zincirini diğer kaynaklarla birleştirir; ilk SMM bütünü henüz DONE değildir. Merkezi pinler, tren FF ve gerçek kabul NOT_RUN.
+
+
+## STK-SC36-a / SAT-D419 — sevk kanıtı değişirken fail-closed kaynak testi
+
+- Logistics owner kaynak anlık görüntüsü alındıktan sonra irsaliyenin gerçek domain iptalini araya alan deterministik bir unit fact kaynağı eklendi. İkinci owner okuması değişen sürüm/iptali görür; maliyet tüketicisine eski onaylı kanıt verilmez. Mevcut fake-store hook varsayılan boş kalır.
+- Birleşik API, Accounting.UnitTests, Logistics.UnitTests, Finance.UnitTests, IntegrationTests derlemeleri exit0; runtime unit/SQL ve eşzamanlı gerçek SQL kanıtı NOT_RUN. Bu kaynak testi gerçek SQL yarış kabulü diye sunulmaz.
+
+
+## STK-SC36-a / FIN-S13 / FIN-S14 — gerçek maliyet önerileri ve kur kaynaklarının merkezi montajı
+
+- Accounting owner `b5dbcca00` ve P2 düzeltmesi `5e459ceff` merkeze alındı. İlk Sales sevk SMM ve geç Inventory alış farkı, gerçek owner source reader/store/service ile bağlandı; `accounting.inventory-cost-proposals` Work tüketicisi iki gerçek yayımlanmış olaya kayıtlıdır. Dispatch kendiliğinden açılmaz. Gerçek endpoint grubu, mevcut prepare/approve/reversal izinlerine ayrı beş ekran rotası ve menüyle bağlandı; tüm yeni declarations staged kalır. Accounting provider1.9/28declaration; yeni permission/grant/Critical yoktur.
+- Owner ilk SMM kaydı mevcut invoice-line/version trace ve iki satırlı gerçek fiş akışını korur. Kaynak/fatura iptali, açık dönem, profil, sınıf ve hesap eşleme güncelliği hazırlama/onayda tekrar ölçülür; eski stok hareketi yeniden yazılmaz. Kaynak seçenek okumasının hata yolundaki fresh authority kontrolü ve on test vaka kaynağı korunur.
+- FIN-S14 owner `92235738f` / rapor `da6397da6` gerçek Settings para profili/TCMB quote kaynağı, değişmez kur snapshot'ı ve existing transfer UI ile merkeze alındı. `AddFinanceCashExchangeSources()` merkezi DI'ya bağlandı. İki finansal TL değerinin kararı ve muhasebe eşleme sınırı halen açıktır; benchmark farkı otomatik kâr/zarar değildir.
+- Birleşik API, Accounting.UnitTests, Logistics.UnitTests, Finance.UnitTests ve IntegrationTests derlemeleri exit0, sıfır uyarı/hata; merkezi `tsc -b` exit0. Work registry ve DI kaynak testleri gerçek iki event ve owner implementasyonlarını kapsar. Yeni shell beyanları mevcut published kümeyi değiştirmez; route drift kaynakları eklendi. Güncel parent-control sayısı mevcut altı kayıtla hizalandı; guard fingerprint üretici aşamasındadır, elle hash değiştirilmedi.
+- EF kaynakları owner raporlarındadır: Accounting inventory proposals51930/51931/51932 ve Finance cash snapshot51933. İki Finance raporu append çatışması her iki kayıt korunarak çözüldü; uygulama kaynak/test çatışması olmadı.
+- Kalan: para ölçeğine sığmayan exact ilk SMM/fark ve BS1 pay kararları; original-Unavailable sevkin sonradan generic üretim SMM'sine gerçek fatura satırı bağlantısı; gerçek iptal producer yetkisi; kur değerleme kararı. Bunlar tamamlanmadan ilgili dilimler DONE/usable sayılmaz. Runtime birim/SQL/Vitest/browser/CI, pin üretimi ve tren FF NOT_RUN.

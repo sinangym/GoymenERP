@@ -44,7 +44,23 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     /// own narrow read name (<see cref="AccountPlanPermissionNamesV1.Read"/>) is declared.
     /// </para>
     /// </summary>
-    public const string OwnerContractVersion = "1.7";
+    public const string OwnerContractVersion = "1.9";
+
+    public const string InvoicedShipmentPrepareCapabilityId = "accounting.invoiced-shipment-costs.prepare";
+    public const string InvoicedShipmentPrepareRoutePath = "/muhasebe/sevk-smm-hazirla";
+    public const string InvoicedShipmentApproveCapabilityId = "accounting.invoiced-shipment-costs.approve";
+    public const string InvoicedShipmentApproveRoutePath = "/muhasebe/sevk-smm-onay";
+    public const string InvoicedShipmentReverseCapabilityId = "accounting.invoiced-shipment-costs.reverse";
+    public const string InvoicedShipmentReverseRoutePath = "/muhasebe/sevk-smm-ters-kayit";
+    public const string PurchaseCostPrepareCapabilityId = "accounting.purchase-cost-differences.prepare";
+    public const string PurchaseCostPrepareRoutePath = "/muhasebe/alis-maliyet-farki-hazirla";
+    public const string PurchaseCostApproveCapabilityId = "accounting.purchase-cost-differences.approve";
+    public const string PurchaseCostApproveRoutePath = "/muhasebe/alis-maliyet-farki-onay";
+
+    public const string PostingMappingsReadCapabilityId = "accounting.posting-mappings.read";
+    public const string PostingMappingsPrepareCapabilityId = "accounting.posting-mappings.prepare";
+    public const string PostingMappingsActivateCapabilityId = "accounting.posting-mappings.activate";
+    public const string PostingMappingsRoutePath = "/muhasebe/hesap-eslemeleri";
     public const string SourceVouchersCapabilityId = "accounting.source-vouchers.list";
     public const string SourceVouchersApproveCapabilityId = "accounting.source-vouchers.approve";
     public const string SourceVouchersRoutePath = "/muhasebe/kaynak-fisler";
@@ -129,8 +145,25 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
         // The actual owner is composed; financial browser acceptance remains a separate staged gate.
         var sourceVouchers = Declaration(SourceVouchersCapabilityId, SourceVouchersCapabilityId, SourceVouchersRoutePath,
             "M-04-SOURCE", ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.JournalsRead], available: false);
+        var mappings = Declaration(PostingMappingsReadCapabilityId, PostingMappingsReadCapabilityId, PostingMappingsRoutePath,
+            "M-05-COGS-MAPPING", ShellCapabilityRoutePrecedence.Static, [AccountingPostingAccountMappingPermissionNamesV1.Read], available: false);
         return
         [
+            Declaration(InvoicedShipmentPrepareCapabilityId, InvoicedShipmentPrepareCapabilityId, InvoicedShipmentPrepareRoutePath,
+                "M-04-INVOICEDSHIPMENTPREPARE", ShellCapabilityRoutePrecedence.Static, [NormalJournalPermissionNamesV1.DraftCreate], available: false),
+            Declaration(InvoicedShipmentApproveCapabilityId, InvoicedShipmentApproveCapabilityId, InvoicedShipmentApproveRoutePath,
+                "M-04-INVOICEDSHIPMENTAPPROVE", ShellCapabilityRoutePrecedence.Static, [NormalJournalPermissionNamesV1.DraftApprove], available: false),
+            Declaration(InvoicedShipmentReverseCapabilityId, InvoicedShipmentReverseCapabilityId, InvoicedShipmentReverseRoutePath,
+                "M-04-INVOICEDSHIPMENTREVERSE", ShellCapabilityRoutePrecedence.Static, [AccountingJournalReversalPermissionNamesV1.Propose], available: false),
+            Declaration(PurchaseCostPrepareCapabilityId, PurchaseCostPrepareCapabilityId, PurchaseCostPrepareRoutePath,
+                "M-04-PURCHASECOSTPREPARE", ShellCapabilityRoutePrecedence.Static, [AccountingJournalReversalPermissionNamesV1.Propose], available: false),
+            Declaration(PurchaseCostApproveCapabilityId, PurchaseCostApproveCapabilityId, PurchaseCostApproveRoutePath,
+                "M-04-PURCHASECOSTAPPROVE", ShellCapabilityRoutePrecedence.Static, [AccountingJournalReversalPermissionNamesV1.Approve], available: false),
+            mappings,
+            mappings with { CapabilityId = PostingMappingsPrepareCapabilityId, ParentCapabilityId = PostingMappingsReadCapabilityId,
+                RequiredPermissions = [AccountingPostingAccountMappingPermissionNamesV1.Read, AccountingPostingAccountMappingPermissionNamesV1.Prepare] },
+            mappings with { CapabilityId = PostingMappingsActivateCapabilityId, ParentCapabilityId = PostingMappingsReadCapabilityId,
+                RequiredPermissions = [AccountingPostingAccountMappingPermissionNamesV1.Read, AccountingPostingAccountMappingPermissionNamesV1.Activate] },
             sourceVouchers,
             sourceVouchers with { CapabilityId = SourceVouchersApproveCapabilityId, ParentCapabilityId = SourceVouchersCapabilityId,
                 RequiredPermissions = [AccountingPermissionManifestV1.JournalsRead, NormalJournalPermissionNamesV1.DraftApprove] },

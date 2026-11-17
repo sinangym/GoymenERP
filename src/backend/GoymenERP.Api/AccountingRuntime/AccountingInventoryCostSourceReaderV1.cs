@@ -1,0 +1,131 @@
+using System.Globalization;
+using System.Text.Json;
+using GoymenERP.BuildingBlocks.Messaging;
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Accounting.Application;
+using GoymenERP.Modules.Accounting.Application.Inbox;
+using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.Stock;
+using GoymenERP.Modules.Logistics.Application.Contracts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
+
+namespace GoymenERP.Api.AccountingRuntime;
+
+/// <summary>
+/// Adapts committed owner evidence, without pricing, averaging or proportional allocation. Sales claims one whole
+/// dispatch line. Commercial invoice kg can differ from physical stock kg; only the original Inventory TL stamp is money.
+/// An unavailable original stamp stays unavailable even if a later manufacturing generation has posted a consumed-cost
+/// proposal. It cannot be turned into a second initial cost without a separately proved economic lineage.
+/// </summary>
+public sealed class AccountingInventoryCostSourceReaderV1(ICompanyContext company,
+    ILogisticsInvoicedShipmentProofReadPortV1 logistics, IInventoryShipmentCostReadPortV1 inventory)
+    : IAccountingInventoryCostSourceReaderV1
+{
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    public async Task<AccountingInventoryCostSourceV1> ReadAsync(WorkInboxEventV1 envelope,
+        CancellationToken cancellationToken = default)
+    {
+        var captured = Company();
+        AccountingInventoryCostSourceValidationV1.RequireEnvelope(envelope, captured);
+        if (envelope.SourceName == AccountingInventoryCostInboxV1.InventorySourceName)
+            return AccountingPurchaseInvoiceCostSourceV1.Read(envelope, captured);
+        AccountingSalesInvoiceFinalizedEventV1? source;
+        try { source = JsonSerializer.Deserialize<AccountingSalesInvoiceFinalizedEventV1>(envelope.PayloadJson, Json); }
+        catch (JsonException) { throw Invalid("sales_cost_source_invalid"); }
+        if (source is null || source.CompanyId != captured || source.InvoiceId == Guid.Empty || source.Version < 1
+            || source.AdmissionId == Guid.Empty || source.InvoiceDate is null || source.InvoiceDate == default(DateOnly)
+            || !Guid.TryParse(source.FinalizedBy, out var actor) || actor == Guid.Empty
+            || source.Lines is not { Count: > 0 and <= 10000 }) throw Invalid("sales_cost_source_invalid");
+        var components = new List<AccountingInventoryCostComponentV1>();
+        var lineIds = new HashSet<Guid>();
+        var numbers = new HashSet<int>();
+        var claimed = new HashSet<(Guid, int)>();
+        var movementLines = new HashSet<(Guid, int)>();
+        foreach (var line in source.Lines)
+        {
+            if (line is null || line.LineId == Guid.Empty || line.LineNo < 1 || !lineIds.Add(line.LineId)
+                || !numbers.Add(line.LineNo)) throw Invalid("sales_cost_line_invalid");
+            if (line.ItemType == "Service")
+            {
+                if (line.ShipmentSource is not null) throw Invalid("sales_cost_service_shipment_invalid");
+                continue;
+            }
+            var claim = line.ShipmentSource;
+            if (claim is null) throw Pending("sales_cost_shipment_source_missing");
+            if (claim.ShipmentId == Guid.Empty || claim.DispatchNoteId == Guid.Empty || claim.DispatchNoteLineNo < 1
+                || claim.SalesOrderId == Guid.Empty || claim.SalesOrderLineId == Guid.Empty || claim.PriceBasisRevision < 1
+                || claim.ProductId == Guid.Empty || claim.UnitId == Guid.Empty || !Quantity(claim.InvoicedQuantity, out var commercialQuantity)
+                || !claimed.Add((claim.DispatchNoteId, claim.DispatchNoteLineNo))) throw Invalid("sales_cost_shipment_source_invalid");
+            var proofRead = await logistics.GetAsync(captured, claim.DispatchNoteId, claim.DispatchNoteLineNo, claim.ShipmentId, cancellationToken);
+            SameCompany(captured);
+            var proof = Proof(proofRead, claim, captured, commercialQuantity);
+            var stock = await inventory.GetByShipmentAsync(captured, claim.ShipmentId, cancellationToken);
+            SameCompany(captured);
+            if (stock is null || stock.Outcome != InventoryShipmentCostReadOutcomeV1.Available || stock.CompanyId != captured
+                || stock.ShipmentId != claim.ShipmentId || stock.MovementId == Guid.Empty || string.IsNullOrWhiteSpace(stock.SourceVersion)
+                || stock.Lines is not { Count: > 0 and <= 10000 }) throw Pending("sales_cost_inventory_proof_unavailable");
+            // The owner currently proves one physical movement line. Reject extra unrelated lines rather than drop them.
+            var total = AccountingInventoryCostAmountsV1.FromDecimal(0m);
+            foreach (var actual in stock.Lines)
+            {
+                if (actual is null || actual.MovementLineNumber < 1 || !movementLines.Add((stock.MovementId, actual.MovementLineNumber))
+                    || actual.LoadingInstructionId != proof.InstructionId || actual.LoadingInstructionLineId != proof.InstructionLineId
+                    || actual.ProductId != claim.ProductId || string.IsNullOrWhiteSpace(actual.ProductVersion)
+                    || actual.AllocationId == Guid.Empty || actual.LabelId == Guid.Empty || string.IsNullOrWhiteSpace(actual.LabelCode)
+                    || actual.LocationId == Guid.Empty || actual.QuantityKg <= 0m || actual.OwnerKind != StockPartyKind.Company
+                    || actual.OwnerId != captured || actual.CustodianKind != StockPartyKind.Company || actual.CustodianId != captured
+                    || actual.Block != BlockState.Free) throw Pending("sales_cost_inventory_binding_unavailable");
+                if (actual.Tl is not { Status: InventoryMovementCostStampStatusV1.Known, LedgerVersion: >= 1 } stamp
+                    || stamp.CurrencyId != SettingsCurrencyIdentitiesV1.TurkishLira || string.IsNullOrWhiteSpace(stamp.StampVersion)
+                    || stamp.Reason is not null) throw Pending("sales_cost_original_tl_unavailable");
+                var exactUnit = stamp.UnitCostRatio is { } ratio
+                    ? new AccountingInventoryCostRatioV1(ratio.Numerator, ratio.Denominator)
+                    : stamp.UnitCostPerKg is { } scalar ? AccountingInventoryCostAmountsV1.FromDecimal(scalar) : null;
+                if (!AccountingInventoryCostAmountsV1.TryRead(exactUnit, out var numerator, out _) || numerator.Sign < 0)
+                    throw Pending("sales_cost_original_tl_unavailable");
+                var exactAmount = AccountingInventoryCostAmountsV1.Multiply(exactUnit!, AccountingInventoryCostAmountsV1.FromDecimal(actual.QuantityKg));
+                if (stamp.Amount is { } amount && AccountingInventoryCostAmountsV1.FromDecimal(amount) != exactAmount)
+                    throw Pending("sales_cost_inventory_proof_unavailable");
+                total = AccountingInventoryCostAmountsV1.Add(total, exactAmount);
+            }
+            var reread = await logistics.GetAsync(captured, claim.DispatchNoteId, claim.DispatchNoteLineNo, claim.ShipmentId, cancellationToken);
+            SameCompany(captured);
+            if (Proof(reread, claim, captured, commercialQuantity) != proof) throw Pending("sales_cost_logistics_proof_changed");
+            var body = JsonSerializer.Serialize(new { source.CompanyId, source.InvoiceId, source.Version, source.AdmissionId,
+                line.LineId, line.LineNo, Claim = claim, Logistics = proof, Inventory = stock }, Json);
+            components.Add(new(AccountingInventoryCostTraceV1.SalesComponent(line.LineId), claim.ProductId, line.LineId,
+                line.LineNo, null, total, body, AccountingInventoryCostSourceValidationV1.Sha256(body)));
+        }
+        var result = new AccountingInventoryCostSourceV1(captured, envelope.EventId, AccountingInventoryCostKindV1.SalesInvoicedShipment,
+            source.InvoiceId, source.Version, source.AdmissionId, source.InvoiceDate.Value, source.OfficialInvoiceNo, actor,
+            AccountingInventoryCostSourceValidationV1.Sha256(envelope.PayloadJson), components);
+        SameCompany(captured);
+        AccountingInventoryCostSourceValidationV1.Require(envelope, result, captured);
+        return result;
+    }
+
+    private static LogisticsInvoicedShipmentProofV1 Proof(LogisticsInvoicedShipmentProofReadV1? read,
+        AccountingSalesInvoiceShipmentSourceV1 claim, Guid companyId, decimal commercialQuantity)
+    {
+        if (read is not { Outcome: LogisticsInvoicedShipmentProofOutcomeV1.Found, Proof: { } proof }
+            || proof.CompanyId != companyId || proof.DispatchNoteId != claim.DispatchNoteId || proof.DispatchNoteLineNo != claim.DispatchNoteLineNo
+            || proof.ShipmentId != claim.ShipmentId || proof.InstructionId == Guid.Empty || proof.InstructionLineId == Guid.Empty
+            || proof.SalesOrderId != claim.SalesOrderId || proof.SalesOrderLineId != claim.SalesOrderLineId
+            || proof.SourceOrderRevision < 1 || proof.ProductId != claim.ProductId || proof.UnitId != claim.UnitId
+            || proof.DispatchQuantity != commercialQuantity || string.IsNullOrWhiteSpace(proof.SourceVersion))
+            throw Pending("sales_cost_logistics_proof_unavailable");
+        // SourceOrderRevision is the physical source revision; PriceBasisRevision is commercial and may differ.
+        return proof;
+    }
+    private static bool Quantity(string? text, out decimal value)
+    {
+        value = default;
+        return !string.IsNullOrWhiteSpace(text) && text == text.Trim() && decimal.TryParse(text,
+            NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out value) && value > 0;
+    }
+    private Guid Company() => company.IsResolved && company.CompanyId != Guid.Empty ? company.CompanyId : throw Pending("company_context_mismatch");
+    private void SameCompany(Guid id) { if (Company() != id) throw Pending("company_context_mismatch"); }
+    private static AccountingInvoiceJournalRetryException Pending(string code) => new(code, "SMM için gerçek sevk maliyeti kanıtı bekleniyor.");
+    private static OutboxPermanentFailureException Invalid(string code) => AccountingInventoryCostSourceValidationV1.Invalid(code);
+}

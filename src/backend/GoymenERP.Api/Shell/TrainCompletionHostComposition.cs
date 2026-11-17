@@ -10,6 +10,7 @@ using GoymenERP.Api.WorkRuntime;
 using GoymenERP.BuildingBlocks.Messaging;
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Accounting.Application.Inbox;
+using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
@@ -33,12 +34,20 @@ public static class TrainCompletionHostComposition
     public static IServiceCollection AddTrainCompletionOwnerBindings(this IServiceCollection services)
     {
         services.AddFinanceCreditLenderOwnerRead();
+        services.AddFinanceCashExchangeSources();
         services.AddPurchaseInvoiceFinanceAdmissionHost();
         services.AddPurchaseServiceOrderHostV1();
         services.AddInventoryTransferPolicyHostPorts();
         services.AddFinancePartyBalanceTransfersV1();
         services.AddAccountingInvoiceLineCogsRuntime();
+        services.AddScoped<IAccountingCogsAccountResolverV1, AccountingCogsAccountResolverV1>();
+        services.AddScoped<IAccountingInventoryCostSourceReaderV1, AccountingInventoryCostSourceReaderV1>();
+        services.AddScoped<IAccountingInventoryCostStoreV1, AccountingInventoryCostStoreV1>();
+        services.AddScoped<AccountingInventoryCostServiceV1>();
+        services.AddWorkInboxConsumer<AccountingInventoryCostInboxConsumerV1>(AccountingInventoryCostInboxV1.ConsumerName,
+            AccountingInventoryCostInboxV1.Subscriptions.ToArray());
         services.AddInventoryPurchaseInvoiceCostsV1();
+        services.AddScoped<IPurchaseSupplierReturnInvoiceCostReadPortV1, PurchaseSupplierReturnInvoiceCostReadPort>();
         services.AddScoped<ISalesMarginCostReadPortV1, InventorySalesMarginCostReadPortV1>();
         services.AddScoped<IPurchasingPartyAccountPortV2>(provider =>
             (IPurchasingPartyAccountPortV2)provider.GetRequiredService<IPurchasingPartyAccountPortV1>());

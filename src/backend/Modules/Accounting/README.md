@@ -517,3 +517,31 @@ Its availability alone is not a posted SMM journal or proof that every consuming
 EF-generated `20261117171929_WidenPostingMappingsToCogs` widens only the existing mapping-key constraint.
 Up is pure DDL. Down first refuses with **THROW 51929** while any COGS mapping row (prepared, active or
 historical) exists; old-purpose-only data may roll back. No old rows are rewritten or removed.
+
+## STK-SC36-a/b / FIN-S13: actual shipment cost and late invoice residual proposals
+
+The `accounting.inventory-cost-proposals` inbox consumes the existing finalized Sales invoice and Inventory's
+committed late-purchase-cost-difference events. Sales components require the actual Logistics whole-dispatch-line
+proof and Inventory's original physical TL stamp; commercial invoice kg never scales a physical cost. The physical
+order revision and commercial price revision are deliberately distinct. Missing original stamps are not replaced by
+today's average, zero, USD or a later manufacturing generation. Late purchase components preserve each signed
+Product/location residual and the owner's exact absorption proof, including opposite residuals whose total is zero.
+
+Sources and every proposal version are immutable. A human selects an open period/date and an actual approved-plan
+counter account; the SMM account is the approved invoice-line override or the existing explicit Product-class mapping.
+Classification, Product/mapping version, account-plan evidence and money-profile identity/version/scale are frozen
+at preparation and revalidated on approval. A different authorized actor approves the existing Accounting posting.
+The first Sales posting uses `InvoiceLineCogsPostingTraceV1`, so the existing later line-classification correction
+can identify its exact two-line component. Actual cancellation blocks pending posting and later classification
+changes; a posted component uses the existing selected-period reversal proposal/approval workflow.
+
+EF-generated `20261117175214_AddInventoryCostProposals` adds two company-scoped tables. SQL triggers reject update
+or deletion of source/history with **51931/51932**. Down first rejects any source/history with **51930**; empty stores
+may roll back. No data backfill, database application, automatic journal approval, dispatch activation or grant occurs.
+The SQL guards require K3 review and are not silently added to architecture allowlists.
+
+The source currently preserves an exact amount and refuses an amount not representable by the actual money profile;
+rounding/remainder policy is not invented. A shipment originally stamped Unavailable and subsequently included in a
+generic manufacturing consumed-cost proposal still lacks a proved invoice-line economic lineage. That case remains
+explicitly unavailable/partial: neither a second initial SMM nor fabricated manufacturing identifiers are introduced.
+Runtime unit/SQL/Vitest/browser acceptance and central registry/pin integration are distinct from source compilation.

@@ -943,6 +943,8 @@ public sealed partial class LogisticsInstructionServiceTests
         public int SalesOrderReads { get; private set; }
 
         public int InvoiceSourceReads { get; private set; }
+        public Action? AfterInvoiceSourceRead { get; set; }
+        public Action? AfterInvoiceSourceSnapshot { get; set; }
         public int? InvoiceSourceRevisionOverride { get; set; }
         public string? InvoiceSourceIntegrityFault { get; set; }
 
@@ -950,6 +952,7 @@ public sealed partial class LogisticsInstructionServiceTests
             CancellationToken cancellationToken = default)
         {
             InvoiceSourceReads++;
+            AfterInvoiceSourceRead?.Invoke();
             if (InvoiceSourceIntegrityFault is not null)
             {
                 throw new LogisticsStoreException(LogisticsStoreCodes.InvoiceSourceInvalid, InvoiceSourceIntegrityFault);
@@ -962,7 +965,7 @@ public sealed partial class LogisticsInstructionServiceTests
                     continue;
                 }
 
-                return Task.FromResult<StoredApprovedDispatchInvoiceSource?>(new StoredApprovedDispatchInvoiceSource(
+                var sourceSnapshot = new StoredApprovedDispatchInvoiceSource(
                     stored.Instruction.CompanyId,
                     note.DispatchNoteId,
                     stored.Instruction.Id,
@@ -978,7 +981,9 @@ public sealed partial class LogisticsInstructionServiceTests
                         return new StoredApprovedDispatchInvoiceSourceLine(line.LineNo, source.Source.OrderId,
                             InvoiceSourceRevisionOverride ?? source.Source.Revision, source.Source.LineId,
                             line.ShipmentId, source.ProductId, source.UnitId, line.Quantity.Value);
-                    })]));
+                    })]);
+                AfterInvoiceSourceSnapshot?.Invoke();
+                return Task.FromResult<StoredApprovedDispatchInvoiceSource?>(sourceSnapshot);
             }
 
             return Task.FromResult<StoredApprovedDispatchInvoiceSource?>(null);

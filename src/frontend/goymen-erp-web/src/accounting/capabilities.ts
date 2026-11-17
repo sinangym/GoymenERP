@@ -14,6 +14,14 @@
  */
 
 export const ACCOUNTING_CAPABILITY = {
+  invoicedShipmentPrepare: 'accounting.invoiced-shipment-costs.prepare',
+  invoicedShipmentApprove: 'accounting.invoiced-shipment-costs.approve',
+  invoicedShipmentReverse: 'accounting.invoiced-shipment-costs.reverse',
+  purchaseCostPrepare: 'accounting.purchase-cost-differences.prepare',
+  purchaseCostApprove: 'accounting.purchase-cost-differences.approve',
+  postingMappingsRead: 'accounting.posting-mappings.read',
+  postingMappingsPrepare: 'accounting.posting-mappings.prepare',
+  postingMappingsActivate: 'accounting.posting-mappings.activate',
   sourceVouchers: 'accounting.source-vouchers.list',
   sourceVouchersApprove: 'accounting.source-vouchers.approve',
   invoiceLineCogsPrepare: 'accounting.invoice-line-cogs.prepare',
@@ -53,6 +61,12 @@ export const ACCOUNTING_CAPABILITY = {
 export type AccountingCapabilityId = (typeof ACCOUNTING_CAPABILITY)[keyof typeof ACCOUNTING_CAPABILITY]
 
 export const ACCOUNTING_ROUTE = {
+  invoicedShipmentPrepare: '/muhasebe/sevk-smm-hazirla',
+  invoicedShipmentApprove: '/muhasebe/sevk-smm-onay',
+  invoicedShipmentReverse: '/muhasebe/sevk-smm-ters-kayit',
+  purchaseCostPrepare: '/muhasebe/alis-maliyet-farki-hazirla',
+  purchaseCostApprove: '/muhasebe/alis-maliyet-farki-onay',
+  postingMappings: '/muhasebe/hesap-eslemeleri',
   sourceVouchers: '/muhasebe/kaynak-fisler',
   invoiceLineCogsPrepare: '/muhasebe/fatura-satiri-smm',
   invoiceLineCogsApprove: '/muhasebe/fatura-satiri-smm-onay',
