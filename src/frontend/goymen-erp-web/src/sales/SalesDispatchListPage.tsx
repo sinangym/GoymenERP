@@ -13,6 +13,8 @@ import { fetchDispatchPage } from './dispatchApi'
 import { DISPATCH_STATE, type DispatchState, type DispatchSummary } from './dispatchContract'
 import { DISPATCH_STATE_TEXT, DISPATCH_TEXT } from './dispatchText'
 import { DispatchCustomerCell, DispatchOrderCell, DispatchTabs } from './SalesDispatchShared'
+import { SalesDispatchWeighingSummary } from './SalesDispatchWeighingSummary'
+import { DISPATCH_WEIGHING_TEXT } from './dispatchWeighingText'
 import { PoolContinuation } from './SalesPoolShared'
 import { usePoolPages } from './usePoolPages'
 import { formatInstant } from './format'
@@ -130,6 +132,8 @@ function DispatchList({ namespace }: { readonly namespace: string | null }) {
       ),
     },
     { key: 'createdAt', header: T.createdAt, cell: (row) => formatInstant(row.createdAtUtc) },
+    { key: 'weighingDifference', header: DISPATCH_WEIGHING_TEXT.heading,
+      cell: (row) => <SalesDispatchWeighingSummary key={`${namespace}:${row.id}`} id={row.id} companyId={row.companyId} /> },
     { key: 'approvedAt', header: T.approvedAt, cell: (row) => (row.approvedAtUtc === null ? C.none : formatInstant(row.approvedAtUtc)) },
   ]
 

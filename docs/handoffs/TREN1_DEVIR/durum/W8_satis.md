@@ -51,3 +51,15 @@ FNS-D73/D83/D107 için Sales owner okuma portu eklendi. Mevcut onaylı revizyon 
 - Birim, gerçek SQL ve strict istemci/ekran test kaynakları eklendi. TypeScript derlemesi
   exit 0; backend kaynak derlemesi merkez entegrasyonda sıradadır. Runtime Unit/SQL/HTTP/
   Vitest/browser/CI **NOT_RUN**. Migration/izin yok; plan durumu ve yüzde artırılmadı.
+
+### SAT-S13 — irsaliye listesinde gerçek kantar farkı
+
+- Kullanıcı satırı açınca mevcut Sales owner endpointinden teorik/kantar/fark/fazla kg,
+  kayıt/onay/bant ve fatura bekleme nedeni okunur. Ekran dağılım, fark veya tolerans
+  hesaplamaz. Satır açılmadan arka planda her irsaliyeye ayrı istek gönderilmez.
+- Şirket ve irsaliye kimliği, miktar metinleri ve onay tutarlılığı istemcide doğrulanır.
+  Eksik kayıt, yetkisiz, bulunamadı, çakışma, çevrimdışı, 503 ve bozuk yanıt ayrı kalır.
+  İstek şirket bağlamına ve iptal sinyaline bağlıdır; `no-store` kullanır.
+- Sözleşme/HTTP ve gerçek shell üzerinde ekran test kaynakları eklendi. `npx tsc -b`
+  exit 0. Runtime Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**; yeni izin/migration yok.
+  Merkezi pin üretimi ve trene entegrasyon öncesi plan yüzdesi artırılmadı.
