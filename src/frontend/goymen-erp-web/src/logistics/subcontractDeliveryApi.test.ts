@@ -57,3 +57,61 @@ describe('unknown subcontract writes preserve their exact key and body', () => {
     expect(await sendSubcontractAttempt(sent)).toEqual({ type: 'unknown', reason: 'conflict' })
   })
 })
+
+describe('subcontract physical terminal details are authoritative bounded text', () => {
+  const detail = 'Sistemde 20 kg var, 80 kg istendi.'
+  const physical = 'inventory_physical_stock_insufficient'
+  it.each([false, true])('retains an original physical refusal and its immutable replay=%s without recalculating kilograms', async replayed => {
+    const sent = beginSubcontractAttempt('SENTETIK-physical', company, instruction, `${PATH}/${instruction}/ship`, 'subcontract', {})!
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ status: 409, code: physical, detail }), {
+      status: 409, headers: replayed ? { 'Idempotency-Replayed': 'true', 'Idempotency-Original-Correlation-Id': 'SENTETIK-original' } : {},
+    })))
+    const outcome = await sendSubcontractAttempt(sent)
+    expect(outcome).toEqual({ type: 'refused', status: 409, code: physical, detail, replayed,
+      originalCorrelationId: replayed ? 'SENTETIK-original' : null })
+    finishSubcontractAttempt(sent, outcome)
+    expect(subcontractAttempt('different-company-actor-session')).toEqual({ phase: 'idle' })
+  })
+  it('keeps legacy physical terminal JSON with no optional detail readable', async () => {
+    const sent = beginSubcontractAttempt('SENTETIK-legacy', company, instruction, `${PATH}/${instruction}/ship`, 'subcontract', {})!
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ status: 409, code: physical }), { status: 409 })))
+    expect(await sendSubcontractAttempt(sent)).toEqual({ type: 'refused', status: 409, code: physical,
+      detail: null, replayed: false, originalCorrelationId: null })
+  })
+  it.each(['Sistemde -0 kg var, 80 kg istendi.', 'Sistemde 20.000 kg var, 80 kg istendi.',
+    'Sistemde 20 kg var, 80 kg istendi.\n', 'SENTETIK arbitrary exception text', '<script>unsafe</script>', 20])(
+    'does not admit malformed physical owner detail %s', async value => {
+      const sent = beginSubcontractAttempt('SENTETIK-malformed-physical', company, instruction, `${PATH}/${instruction}/ship`, 'subcontract', {})!
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ status: 409, code: physical, detail: value }), { status: 409 })))
+      expect(await sendSubcontractAttempt(sent)).toEqual({ type: 'unknown', reason: 'malformed-response' })
+    })
+  it.each([401, 403, 404, 503])('never discloses kilograms or replay provenance on status %s', async status => {
+    const sent = beginSubcontractAttempt('SENTETIK-nondisclosable', company, instruction, `${PATH}/${instruction}/ship`, 'subcontract', {})!
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ status, code: physical, detail }), {
+      status, headers: { 'Idempotency-Replayed': 'true', 'Idempotency-Original-Correlation-Id': 'SENTETIK-private' },
+    })))
+    const result = await sendSubcontractAttempt(sent)
+    if (status === 503) expect(result).toEqual({ type: 'unknown', reason: 'service-unavailable' })
+    else expect(result).toEqual({ type: 'refused', status, code: null, detail: null, replayed: false, originalCorrelationId: null })
+  })
+  it('never treats a different business refusal message as physical-stock proof', async () => {
+    const sent = beginSubcontractAttempt('SENTETIK-not-physical', company, instruction, `${PATH}/${instruction}/ship`, 'subcontract', {})!
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ status: 409, code: 'logistics_subcontract_delivery_active_invoice', detail }), { status: 409 })))
+    expect(await sendSubcontractAttempt(sent)).toMatchObject({ type: 'refused', detail: null })
+  })
+  const replayFaults: readonly Record<string, string>[] = [
+    { 'Idempotency-Replayed': 'true' },
+    { 'Idempotency-Replayed': 'invalid' },
+    { 'Idempotency-Replayed': 'false', 'Idempotency-Original-Correlation-Id': 'SENTETIK-wrong' },
+  ]
+  it.each(replayFaults)('keeps malformed physical terminal replay metadata unresolved', async headers => {
+    const sent = beginSubcontractAttempt('SENTETIK-replay-fault', company, instruction, `${PATH}/${instruction}/ship`, 'subcontract', {})!
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ status: 409, code: physical, detail }), { status: 409, headers })))
+    expect(await sendSubcontractAttempt(sent)).toEqual({ type: 'unknown', reason: 'malformed-response' })
+  })
+  it('does not admit a physical terminal whose declared status differs from the HTTP response', async () => {
+    const sent = beginSubcontractAttempt('SENTETIK-status-fault', company, instruction, `${PATH}/${instruction}/ship`, 'subcontract', {})!
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ status: 503, code: physical, detail }), { status: 409 })))
+    expect(await sendSubcontractAttempt(sent)).toEqual({ type: 'unknown', reason: 'malformed-response' })
+  })
+})

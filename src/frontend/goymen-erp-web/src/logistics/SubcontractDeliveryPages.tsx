@@ -20,6 +20,9 @@ import styles from './LogisticsPages.module.css'
 import { formatInstant } from './format'
 
 const statusText = { Draft: T.draft, Issued: T.issued, Cancelled: T.cancelled }
+const commandCapability = (snapshot: SubcontractAttempt) => snapshot.path === PATH ? CAP.create : snapshot.path.endsWith('/ship') ? CAP.ship
+  : snapshot.path.endsWith('/weighing-corrections') ? CAP.correct : snapshot.path.endsWith('/issue') ? CAP.issue
+    : snapshot.path.endsWith('/loads') ? CAP.load : CAP.weigh
 function Frame({ children }: { readonly children: ReactNode }) { return <section className={styles.page} aria-labelledby="subcontract-title">
   <h1 id="subcontract-title">{T.title}</h1><p>{T.intro}</p>{children}</section> }
 function Boundary({ capability, children }: { readonly capability: string; readonly children: (company: string, binding: string, shell: ShellState) => ReactNode }) {
@@ -45,12 +48,15 @@ function useCommands(binding: string, shell: ShellState, onApplied: (view: Subco
   }
   const notice = state.phase === 'sending' ? <p role="status">{T.pending}</p> : state.phase === 'unknown' ? <div>
     <p role="alert">{T.unknown}</p><StateBlock subject={T.subject} state={{ kind: state.outcome.reason }} />
-    {hasCapability(shell, state.snapshot.path === PATH ? CAP.create : state.snapshot.path.endsWith('/ship') ? CAP.ship
-      : state.snapshot.path.endsWith('/weighing-corrections') ? CAP.correct : state.snapshot.path.endsWith('/issue') ? CAP.issue
-        : state.snapshot.path.endsWith('/loads') ? CAP.load : CAP.weigh)
+    {hasCapability(shell, commandCapability(state.snapshot))
       ? <Button type="button" onClick={() => void send(retrySubcontractAttempt(binding))}>{T.retry}</Button> : null}</div>
     : state.phase === 'completed' ? state.outcome.type === 'applied' ? <p role="status">{state.outcome.replayed ? T.replayed : T.saved}</p>
       : state.outcome.type === 'refused' ? <div role="alert"><p>{state.outcome.code === 'logistics_subcontract_delivery_active_invoice' ? T.activeInvoice : T.refused}</p>
+        {hasCapability(shell, commandCapability(state.snapshot)) && <>
+          {state.outcome.status === 409 && state.outcome.replayed && <p>{T.replayedRefusal}</p>}
+          {state.outcome.status === 409 && state.outcome.code === 'inventory_physical_stock_insufficient'
+            && state.outcome.detail !== null && <p>{state.outcome.detail}</p>}
+        </>}
         {state.outcome.status !== 400 && state.outcome.status !== 422 ? <StateBlock subject={T.subject} state={classifyOutcome({ type: 'http', status: state.outcome.status })} /> : null}</div> : null : null
   return { state, frozen: subcontractFrozen(state), send, notice }
 }

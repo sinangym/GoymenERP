@@ -48,7 +48,11 @@ public sealed partial class LogisticsStore : ILogisticsSubcontractDeliverySource
         {
             var refusal = JsonSerializer.Deserialize<LogisticsTerminalRefusal>(attempt.RefusalJson!, Json)
                 ?? throw new InvalidOperationException("Kayıtlı ret okunamıyor.");
-            throw new LogisticsInstructionServiceException(refusal.Status, refusal.Code, refusal.Errors, isReplay: true, originalCorrelationId: attempt.CorrelationId);
+            if (refusal.Status is < 400 or > 599 || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null
+                || !LogisticsPhysicalStockRefusalDetailV1.IsValid(refusal.Status, refusal.Code, refusal.Detail))
+                throw new InvalidOperationException("Kayıtlı terminal ret okunamıyor.");
+            throw new LogisticsInstructionServiceException(refusal.Status, refusal.Code, refusal.Errors, isReplay: true,
+                originalCorrelationId: attempt.CorrelationId, detail: refusal.Detail);
         }
         var result = attempt.ResultJson is not null ? JsonSerializer.Deserialize<LogisticsSubcontractInstructionV1>(attempt.ResultJson, Json) : null;
         if (result is null || result.CompanyId != RequireResolvedCompany() || result.InstructionId != attempt.InstructionId)

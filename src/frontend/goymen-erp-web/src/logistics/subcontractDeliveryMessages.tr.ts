@@ -13,6 +13,7 @@ export const SUBCONTRACT_DELIVERY_TEXT = {
   net: 'Güncel kantar net kg', difference: 'Kantar ile fiilî yükleme farkı kg', revision: 'Tartım sürümü', history: 'Tartım düzeltme geçmişi',
   pending: 'Komut sonucu bekleniyor.', unknown: 'Sonuç kesinleşmedi. Aynı anahtar ve değişmeyen içerikle yeniden sorgulayın.', retry: 'Aynı komutu yeniden sorgula',
   saved: 'Komut kaydedildi.', replayed: 'Önceden kaydedilen sonuç alındı.', refused: 'Komut reddedildi. Güncel kaynağı yenileyip kontrol edin.',
+  replayedRefusal: 'Önceden kaydedilen ret sonucu alındı. Varsa kilogram bilgisi ilk denemeye aittir.',
   activeInvoice: 'Etkin fatura bağlantısı var. Tartımı düzeltmeden önce faturayı iptal edin.', sourceMissing: 'Stok veya kaynak sürümü okunamadı; güncel kaydı yenileyin.',
   original: 'Önceki net kg', originalWeighing: 'İlk kantar tartımı', corrected: 'Düzeltilmiş net kg', status: 'Durum', instruction: 'Talimat', detail: 'Talimatı aç', cancellation: 'İptal ve indirme işlemlerini yükleme talimatı ayrıntısından izleyin.',
   draft: 'Taslak', issued: 'Yayımlandı', cancelled: 'İptal',
