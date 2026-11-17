@@ -1,6 +1,6 @@
 {
  "meta": {
-  "tarih": "2026-11-17",
+  "tarih": "2026-11-18",
   "tren_dali": "claude/tren-1",
   "kod_head": "6edcbf09266c5d9f6038cadb8bd5fdcc725a8284",
   "durum_sozlugu": {
@@ -46,8 +46,8 @@
   ],
   "toplam": 174,
   "done": 165,
-  "partial": 7,
-  "remaining_not_started": 2,
+  "partial": 9,
+  "remaining_not_started": 0,
   "last_wave": 8,
   "progress_meaning": "DONE yalnız kaynak kapsamıdır. Tam birim/mimari/gerçek SQL/Vitest/browser/CI koşumları NOT_RUN; K3 kabulü ve production değildir.",
   "w6_source_done_ids": [
@@ -268,7 +268,9 @@
    "SAT-S13"
   ],
   "published_train_done_at_last_checkpoint": 135,
-  "w8_status": "IN_PROGRESS: local source scope updated; combined builds/pins/light checks and train fast-forward pending. No W9."
+  "w8_status": "IN_PROGRESS: local source scope updated; combined builds/pins/light checks and train fast-forward pending. No W9.",
+  "w8_last_combined_source_build": "65618ac1ec70b97d2a5d05bc6f6cf05e2f2dcea9",
+  "w8_last_sales_source_build": "11e2f6e11ddf58c54f4adc71aa0a1a86d681ee2a"
  },
  "teams": [
   {
@@ -567,7 +569,9 @@
      "blocked_reason": "",
      "wave": 5,
      "w5_raporu": "durum/W5_kimlik.md",
-     "w6_report": "durum/W6_kimlik.md"
+     "w6_report": "durum/W6_kimlik.md",
+     "w8_report": "durum/W8_KIM_S19_IZIN_KAYDI.md",
+     "w8_source_note": "PARTIAL: numbering and opening-period source integrated. No133 record-only names f520ac7af queued for compile; approval/cash policy families in owner WIP; K6 bank institution question 6961108461 unanswered."
     },
     {
      "id": "KIM-SC32-a",
@@ -714,11 +718,13 @@
      "contracts": [
       "tüketir: Stok ortalama maliyet okuma portu (stok_lojistik, mevcut #1044)"
      ],
-     "status": "READY",
+     "status": "PARTIAL",
      "blocked_reason": "",
      "wave": 3,
      "decision_note": "SAT-D347 okunamazsa marj yok. Marj formülü etkinleştirmesi golden gelene kadar kapalı (SAT-D265/5); kod + snapshot yazılır.",
-     "w6_report": "durum/W6_satis.md"
+     "w6_report": "durum/W6_satis.md",
+     "w8_report": "durum/W8_SAT_S12_GOLDEN_DUZELTME.md",
+     "w8_source_note": "PARTIAL: P2-1 TL binding source compiled at 65618ac1e; zero-cost user answer 6960913297 source compiled at 11e2f6e. Golden docs PR1200 exact 63913e087f850441f51be2136977344b6410102a awaits two DOCS reviews, independent ChatGPT acceptance and main. Formula gate remains false."
     },
     {
      "id": "SAT-S13",
@@ -1301,7 +1307,9 @@
      "status": "PARTIAL",
      "wave": 5,
      "w5_raporu": "durum/W5_stok_lojistik.md",
-     "w6_report": "durum/W6_stok_lojistik.md"
+     "w6_report": "durum/W6_stok_lojistik.md",
+     "w8_report": "durum/W8_finans.md",
+     "w8_source_note": "PARTIAL: actual purchase posted attribution 3ea0f8300 integrated and mounted at 65618ac1e, combined source builds exit0. SAT-D422 purchase correction in next owner checkpoint; cancellation/generation and full-return witness gaps remain explicit."
     },
     {
      "id": "STK-SC36-b",
@@ -1650,10 +1658,12 @@
       "src/backend/Modules/Accounting/**/Sources/*Cash*"
      ],
      "contracts": [],
-     "status": "READY",
+     "status": "PARTIAL",
      "blocked_reason": "",
      "wave": 6,
-     "w6_report": "durum/W6_finans.md"
+     "w6_report": "durum/W6_finans.md",
+     "w8_report": "durum/W8_FIN14_DOVIZ_KAYNAGI.md",
+     "w8_source_note": "PARTIAL: Q10 reference values and event/book-value source owner checkpoint is frozen, build/EF queued. Actual source book-value user answer 6960684942; Accounting bridge still pending. Target FX actual TL value is not inferred from TCMB."
     },
     {
      "id": "FIN-S17",
