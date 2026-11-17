@@ -19,7 +19,7 @@ public sealed class FounderRecoverySystemAuditTests
         using var owner = new AuditDbContext(new DbContextOptionsBuilder<AuditDbContext>().UseSqlServer("Server=model-only;Database=model-only;Trusted_Connection=True;TrustServerCertificate=True").Options, new CompanyContext());
         var entity = owner.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(AuditEvent))!;
         Assert.True(entity.FindProperty(nameof(AuditEvent.PermissionCode))!.IsNullable);
-        Assert.Equal(AuditEventModelBuilderExtensions.FounderRecoveryPermissionCheck,
+        Assert.Equal(AuditEventModelBuilderExtensions.TypedPermissionCheck,
             Assert.Single(entity.GetCheckConstraints(), check => check.Name == "CK_AuditEvents_PermissionOrFounderRecovery").Sql);
         var migration = new AddTypedFounderRecoverySystemAudit();
         Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);

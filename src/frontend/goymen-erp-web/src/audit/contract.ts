@@ -138,6 +138,22 @@ function isFounderRecoverySystemItem(v: Record<string, unknown>): boolean {
     && typeof declaration.machineName === 'string' && declaration.machineName.trim().length > 0 && declaration.machineName.length <= 256
 }
 
+function isCredentialSelfServiceItem(v: Record<string, unknown>): boolean {
+  if (v.actorType !== 'User' || !isGuid(v.actorId) || v.actorId !== v.entityId || v.entityType !== 'Identity.LocalCredential'
+    || v.sourceChannel !== 'Web' || v.outcome !== 'Succeeded' || v.schemaVersion !== 1 || v.aiInvolvement !== 'None' || v.aiContextJson !== null
+    || !Array.isArray(v.roleCodes) || v.roleCodes.length !== 0 || v.clientIpAddress !== null || v.userAgent !== null
+    || typeof v.entityVersionBefore !== 'number' || !Number.isSafeInteger(v.entityVersionBefore) || v.entityVersionBefore < 0
+    || typeof v.entityVersionAfter !== 'number' || !Number.isSafeInteger(v.entityVersionAfter) || v.entityVersionAfter !== v.entityVersionBefore + 1
+    || !((v.eventType === 'identity.local-credentials.two-factor-enabled.v1' && v.operation === 'EnableTwoFactor')
+      || (v.eventType === 'identity.local-credentials.two-factor-disabled.v1' && v.operation === 'DisableTwoFactor')
+      || (v.eventType === 'identity.local-credentials.recovery-codes-regenerated.v1' && v.operation === 'RegenerateRecoveryCodes'))
+    || typeof v.approvalContextJson !== 'string') return false
+  let declaration: unknown
+  try { declaration = JSON.parse(v.approvalContextJson) } catch { return false }
+  return isRecord(declaration) && hasExactKeys(declaration, ['kind', 'method'])
+    && declaration.kind === 'IdentityLocalCredentialSelfServiceV1' && declaration.method === 'TOTP'
+}
+
 function decodeItem(value: unknown, companyId: string, expectedOutcome: AuditOutcome | null): AuditEvent | null {
   if (!isRecord(value) || !hasExactKeys(value, AUDIT_ITEM_FIELDS)) return null
   const v = value
@@ -173,7 +189,7 @@ function decodeItem(value: unknown, companyId: string, expectedOutcome: AuditOut
   ) {
     return null
   }
-  if (v.permissionCode === null && !isFounderRecoverySystemItem(v)) return null
+  if (v.permissionCode === null && !isFounderRecoverySystemItem(v) && !isCredentialSelfServiceItem(v)) return null
   if (!isInt32(v.schemaVersion)) return null
   if (!isAuditOutcome(v.outcome)) return null
   if (expectedOutcome !== null && v.outcome !== expectedOutcome) return null
