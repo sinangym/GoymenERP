@@ -6,6 +6,23 @@ namespace GoymenERP.Accounting.UnitTests;
 public sealed partial class AccountingSourceDocumentAdmissionV1Tests
 {
     [Fact]
+    public async Task Typed_purchase_expense_uses_expense_mapping_and_missing_mapping_never_defaults_to_inventory()
+    {
+        var harness = new Harness { Mappings = { ExpectedPurpose = AccountingPostingAccountMappingPurposesV1.PurchaseInvoice, Missing = "expense" } };
+        var source = Purchase();
+        source = source with { Lines = [source.Lines[0] with { ItemType = "Expense", LinePurpose = "expense" },
+            source.Lines[1] with { ItemType = "Expense", LinePurpose = "expense" }] };
+        var waiting = await harness.AdmitAsync(source);
+        Assert.Equal(AccountingSourceDocumentAdmissionReasonsV1.MappingPending, waiting.Reason);
+        Assert.Empty(await harness.DraftsAsync());
+        harness.Mappings.Missing = null;
+        Assert.Equal(AccountingSourceDocumentAdmissionOutcomeV1.Admitted, (await harness.AdmitAsync(source)).Outcome);
+        var lines = await harness.LinesAsync();
+        Assert.DoesNotContain(lines, line => line.MappingKey == "inventory");
+        Assert.Equal(1200m, lines.Where(line => line.MappingKey == "expense").Sum(line => line.Amount));
+    }
+
+    [Fact]
     public async Task Purchase_invoice_keeps_full_input_VAT_and_posts_withholding_payable_separately_without_guessing_accounts()
     {
         var harness = new Harness { Mappings = { ExpectedPurpose = AccountingPostingAccountMappingPurposesV1.PurchaseInvoice } };

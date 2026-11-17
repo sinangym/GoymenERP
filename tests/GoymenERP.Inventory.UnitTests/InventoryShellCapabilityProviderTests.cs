@@ -12,12 +12,12 @@ public sealed class InventoryShellCapabilityProviderTests
     {
         var provider = new InventoryShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
-        Assert.Equal(17, declarations.Count);
+        Assert.Equal(20, declarations.Count);
         var declaration = Assert.Single(declarations,
             item => item.CapabilityId == InventoryShellCapabilityProvider.OpeningStockCapabilityId);
 
         Assert.Equal("INVENTORY", provider.Owner);
-        Assert.Equal("1.11", provider.ContractVersion);
+        Assert.Equal("1.12", provider.ContractVersion);
         Assert.Equal(ErpPermissions.InventoryOpeningStockRecord, declaration.CapabilityId);
         Assert.Equal("inventory.opening-stock", declaration.RouteId);
         Assert.Equal("/stok/acilis", declaration.RoutePath);
@@ -65,6 +65,21 @@ public sealed class InventoryShellCapabilityProviderTests
             declaration.RequiredPermissions);
         Assert.True(declaration.ImplementationAvailable);
         Assert.Null(declaration.ParentCapabilityId);
+    }
+
+    [Theory]
+    [InlineData(ErpPermissions.InventoryStockTransferOverageApprove, InventoryShellCapabilityProvider.TransferOverageApprovalRoutePath)]
+    [InlineData(ErpPermissions.InventoryStockTransferLossRecord, InventoryShellCapabilityProvider.TransferLossRequestRoutePath)]
+    [InlineData(ErpPermissions.InventoryStockTransferLossApprove, InventoryShellCapabilityProvider.TransferLossApprovalRoutePath)]
+    public void Transfer_decision_workspaces_use_only_the_existing_action_authority_without_stock_report_grants(string permission, string path)
+    {
+        var declaration = Assert.Single(new InventoryShellCapabilityProvider().GetDeclarations(), item => item.CapabilityId == permission);
+        Assert.Equal(path, declaration.RoutePath);
+        Assert.Equal([permission], declaration.RequiredPermissions);
+        Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, declaration.ScopeRequirement);
+        Assert.Null(declaration.ParentCapabilityId);
+        Assert.True(declaration.ImplementationAvailable);
     }
 
     [Fact]

@@ -111,7 +111,7 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
 - ALC-S7 fiyat/actual vergi kaynağı `7e3aad912` / rapor `9c2812891`; ALC-S8 kayıt
   `60a2e3110` / rapor `93e1f98c3`, additive ExpenseTypeId `a3d1512a5` alındı.
   Ek masraf mevcut OrdersRevise ile kaydedilir; ilgili API/route merkezde bağlandı.
-  Parçalı fatura eşleştirmesi sonraki owner checkpointinde tamamlanmaktadır;
+  Parçalı fatura eşleştirmesi `368216c5d` / rapor `555503e1b` ile alındı;
   fiziksel kabul, stok hareketi veya Inventory ortalama maliyeti üretilmez.
 - ALS-D105 güncel insan cevabı [6947126872](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6947126872):
   satış fason vergi varsayılanı/satır kodu mevcut sales.orders.approve, alış tarafı
@@ -133,8 +133,91 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
   Identity UnitTests ve Api.IntegrationTests derlemeleri exit 0 alındı.
   Counterparty test kaynağındaki ConfigurationBuilder bağımlılığı ve xUnit
   predicate kullanımı derleme hataları düzeltildi; proje yeniden exit 0 verdi.
-  Son merkez
-  TypeScript derlemesi exit 0; daha sonra alınan owner'ların birleşimi yeniden
-  derlenecektir. Test çalışma zamanı, gerçek SQL, Vitest/browser ve CI **NOT_RUN**.
+  Son merkez TypeScript derlemesi, bu owner birleşimleriyle birlikte exit 0 aldı.
+  Son parçalı masraf eşleştirmesi kendi owner'ında C# exit 0 aldı; bu son deltanın
+  merkez C# derlemesi sonraki entegrasyon derlemesine dahildir.
+  Test çalışma zamanı, gerçek SQL, Vitest/browser ve CI **NOT_RUN**.
   Shell/OpenAPI/recovery/mimari/ilişkisel pin üretimi ve tren FF push henüz yapılmadı.
   Sabit ölçüm **135/174 (%77,6)**, W8 son pakettir; yeni dalga açılmadı.
+
+## Transfer kabul owner'ı ve fatura commit çiti — devam
+
+- STK-S8 gerçek plan/kabul kaynağı `1127e5993` alındı. Inventory kabul belgesi
+  Draft/Effective değişmez geçmişi ve typed belge kanıtı, action-purpose kuyruk
+  okumaları, gerçek plan adayları ve komut ekranı vardır. EF üretimi
+  `20261117122205_AddInventoryTransferReceiptDocuments`, Down **51999**; DB'ye
+  uygulanmadı. Owner API, Inventory/Counterparty/Organization UnitTests,
+  Api.IntegrationTests ve TypeScript derlemeleri exit 0, uyarı/hata 0 aldı.
+- İki yeni Inventory endpoint map'i gerçek host'a bağlandı. Fazla kabul onayı,
+  kayıp talebi ve kayıp onayı mevcut ayrı yetkileriyle bağımsız gateway'e açıldı;
+  genel stok raporu veya Product gösterim yetkisi komuta eklenmedi. Inventory
+  shell provider **1.12**, 20 bildirimdir. Merkez birleşik TypeScript exit 0;
+  bu son mount/provider C# derlemesi sıradaki merkez derlemesini bekler.
+- FIN-S13 `87fac44cd`: fatura kayıt ve terminal ret işlemleri kendi transaction'ında
+  SQL Save sonrası fresh yetki çitinden geçer. Ret halinde belge/geçmiş/denetim/
+  attempt commit edilmez. İki SQL fact kaynağı, Purchasing.UnitTests ve
+  Api.IntegrationTests derlemeleri exit 0; runtime **NOT_RUN**. Alış fason vergi
+  snapshot'ının immutable eşleştirme metadata'sı `bc0524b5f` de alındı; resmî
+  fatura tutarları değiştirilmez. D105 yetki düzeltmesinin kalan owner kaynağı sürer.
+- Kaynakta TL satır/toplam olmayan dövizli alış faturası yuvarlama dağılımı için
+  [6947890400](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6947890400)
+  karar bekler. Linked GİB gerçek provider'ı 503 kalır; mock veya unavailable
+  kullanılabilirlik sayılmaz. Pin/son tren FF ve runtime kabulü henüz alınmadı.
+
+## Kaynak fişi onayı ve resmî fatura kimliği — devam
+
+- FIN-S13 kaynak fiş owner'ı `3044b80fb` alındı. Gerçek hesap planı ve açık dönemle
+  ayrı hazırlayan/onaylayan fiş akışı, iptal olayı önce gelirse tombstone ve
+  onaylanmamış kaynak fişin iptal kaydı vardır. Kesinleşmiş yevmiyenin ters kayıt
+  dönem/tarihi yanıtı bekler; kendiliğinden ters kayıt veya dönem açma yapılmaz.
+- Kaynak fişi endpoint'i host'a, okuma ekranı tek menü/gateway'e bağlandı.
+  Onay aynı ekranın ayrı kontrolüdür: mevcut JournalsRead ve normal fiş onay
+  yetkileri gerekir. Accounting provider **1.7**, 20 bildirimdir; yeni izin/grant
+  yoktur. Yeni finans ekranları SQL/browser kabulüne kadar staged kalır.
+- Muhasebe iptal tüketicisinin host kimliği mevcut kapalı başlangıç anahtarını
+  korur. Gerçek Sales iptal üreticisi tamamlanmadan Work aboneliği kaydedilmez;
+  DI kaydı olayın işlendiği veya iptalin uçtan uca tamamlandığı anlamına gelmez.
+- `987759ebd`: alış faturasının resmî numarası additive/null-omit olay alanıyla
+  Muhasebe kaynağına taşınır. Eski olaylar için numara tahmin edilmez. Purchasing
+  UnitTests ve Api.IntegrationTests derlemeleri exit 0, uyarı/hata 0 aldı.
+- Bu birleşim ve host/provider kaynaklarıyla merkez API, Inventory.UnitTests,
+  Accounting.UnitTests, Api.IntegrationTests ve TypeScript derlemeleri exit 0,
+  uyarı/hata 0 aldı. Çalışma zamanı testleri, SQL, HTTP, Vitest/browser ve CI
+  **NOT_RUN**. Sabit ölçüm **135/174 (%77,6)**; pinler ve tren FF henüz yoktur.
+
+## ALS-D105 son yetki cevabının entegrasyonu
+
+- `e67f53fc7` / rapor `46eeef92f` alındı. Satış ve alış fason varsayılanları ve
+  satır vergi kodu değişiklikleri mevcut ayrı sipariş onay yetkilerini kullanır.
+  Önceki “iki yeni izin” yanıtı geri alınmıştır; yeni ERP permission, grant,
+  rol veya Critical sınıflaması yoktur. Vergi revizyonu normal yeniden onaya gider.
+- İki ayrı Ayarlar route'u gerçek `SubcontractTaxDefaultPage` bileşenine bağlandı.
+  Settings provider **1.15**, 31 bildirimdir; yeni adlar yalnız teknik ekran
+  capability kimliğidir. Satış ekranı yalnız sales.orders.approve, alış ekranı
+  yalnız purchasing.orders.approve gerektirir. Yeni iki ekran runtime kabulüne
+  kadar staged kalır. Mevcut genel vergi ana verisi yetkisi değiştirilmez.
+- Owner API, Purchasing/Sales/Settings UnitTests ve Api.IntegrationTests
+  derlemeleri exit 0, uyarı/hata 0 aldı. Birleşik merkez TypeScript exit 0;
+  son merkez provider/authority-test kaynaklarının C# derlemesi sıradadır.
+  Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**; kaynak DONE sayısı artırılmadı.
+
+## Sıralı devam ve tartı/fatura claim kaynağı
+
+- ALS-D105 merkez birleşimiyle API, Settings/Purchasing/Sales UnitTests ve
+  Api.IntegrationTests kaynak derlemeleri exit 0, uyarı/hata 0 aldı. İki Ayarlar
+  ekranının önceki merkez TypeScript derlemesi exit 0'dır.
+- `f8f39bbc9` / rapor `4c6aaa3e1` ile fiyat taşımayan Sales claim reader ve
+  gerçek Lojistik işlem içi yeniden okuması alındı. Merkez Sales.UnitTests ve
+  Api.IntegrationTests derlemeleri exit 0; index Down round-trip fact kaynağı da
+  bu derlemeye dahildir. Runtime kabulü **NOT_RUN**; tartı düzeltme host'unun
+  claim bağlaması ve kesinleşmiş iptal zinciri halen açıktır.
+- EF `20261117135232_AddSubcontractInvoiceClaimRange` yalnız index ekler/kaldırır;
+  veri kaybı yok, yeni THROW yok, DB uygulaması yok. İki yeni borrowed read-context
+  construction kaynağı K3 incelemesine bırakıldı; guard allowlist genişletilmedi.
+- Paralel yürütücüler sonlandı; kalan kaynak işi tek yazarla sırayla sürer.
+  STK-S3 / STK-S29 yarım kaynakları korunur; migration/host/PDF bağlantısı
+  tamamlanmış sayılmaz. Üretim completion V2 kanıtı henüz yazılmadı.
+- Ana plan ALC-S7 ve ALC-S8 için PLANNED yerine gerçek PARTIAL durumuna geçirildi.
+  **135 DONE (%77,6), 25 PARTIAL, 14 diğer açık; toplam 174, açık 39**.
+  Kaynak kodun ilerlemesi tam dilim DONE veya runtime kabulü diye sayılmadı.
+  W8 son pakettir; yeni dalga yok. Pinler ve tren FF henüz tamamlanmadı.

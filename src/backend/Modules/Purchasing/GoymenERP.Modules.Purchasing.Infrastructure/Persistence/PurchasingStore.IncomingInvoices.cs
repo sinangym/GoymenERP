@@ -52,6 +52,7 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
             || invoice.RecordedBy != envelope.ActorId.Trim()) throw new InvalidOperationException("Fatura kayıt kapsamı uyuşmuyor.");
         var now = timeProvider.GetUtcNow();
         var snapshot = PurchaseIncomingInvoiceSnapshot.Capture(invoice); var json = JsonSerializer.Serialize(snapshot, Json);
+        await using var owned = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         await requireStillAuthorized(cancellationToken);
         dbContext.IncomingInvoices.Add(new()
         {
@@ -64,6 +65,8 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
         Audit(envelope, company, "Purchasing.IncomingInvoice", invoice.Id, "purchasing.incoming-invoice.recorded.v1", "Record",
             null, invoice.Version, "{}", json, "Resmî alış faturası içe aktarıldı");
         await SaveAsync(cancellationToken);
+        await RequireIncomingInvoiceCommitAsync(requireStillAuthorized, cancellationToken);
+        await owned.CommitAsync(cancellationToken);
         return new(snapshot, null, false, envelope.CorrelationId.Trim());
     }
 
@@ -88,10 +91,12 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
             .Select(line => line.LineId).ToArrayAsync(cancellationToken);
         var serviceLineIds = await dbContext.ServiceAcceptances.AsNoTracking().Where(row => lockedOrders.Contains(row.OrderId))
             .Select(row => row.LineId).Distinct().ToArrayAsync(cancellationToken);
+        var expenseIds = await dbContext.AdditionalCosts.AsNoTracking().Where(row => lockedOrders.Contains(row.OrderId))
+            .Select(row => row.CostId).ToArrayAsync(cancellationToken);
         try
         {
             await PurchaseLineSerializationLock.Bind(dbContext.Database.GetDbConnection(), owned.GetDbTransaction(), company)
-                .AcquireAllAsync(generalLineIds.Concat(serviceLineIds), cancellationToken);
+                .AcquireAllAsync(generalLineIds.Concat(serviceLineIds).Concat(expenseIds), cancellationToken);
         }
         catch (PurchaseLineBusyException exception)
         { throw Refused(PurchasingStoreCodes.LineBusy, "Sipariş satırı başka bir işlem tarafından kilitli; hiçbir şey kaydedilmedi.", exception); }
@@ -123,6 +128,7 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
         Audit(envelope, company, "Purchasing.IncomingInvoice", invoice.Id, command.Replace(".v1", ".recorded.v1", StringComparison.Ordinal),
             command, before.Version, after.Version, JsonSerializer.Serialize(before, Json), json, "Alış faturası işlem geçmişi");
         await SaveAsync(cancellationToken);
+        await requireStillAuthorized(cancellationToken);
         await owned.CommitAsync(cancellationToken);
         return new(after, null, false, envelope.CorrelationId.Trim());
     }
@@ -138,16 +144,28 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
         await requireStillAuthorized(cancellationToken);
         var replay = await FindIncomingInvoiceAttemptAsync(command, envelope, requestHash, cancellationToken);
         if (replay is not null) { await requireStillAuthorized(cancellationToken); return replay; }
+        await using var owned = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         await requireStillAuthorized(cancellationToken);
         AddInvoiceAttempt(RequireResolvedCompany(), command, envelope, requestHash, null, JsonSerializer.Serialize(refusal, Json), timeProvider.GetUtcNow());
         await SaveAsync(cancellationToken);
+        await RequireIncomingInvoiceCommitAsync(requireStillAuthorized, cancellationToken);
+        await owned.CommitAsync(cancellationToken);
         return new(null, refusal, false, envelope.CorrelationId.Trim());
+    }
+
+    // A permission revoked while SQL saved is still a refusal: the owned transaction
+    // rolls back rows and audit together. Never keep its accepted tracker snapshot for reuse.
+    private async Task RequireIncomingInvoiceCommitAsync(Func<CancellationToken, Task> requireStillAuthorized, CancellationToken token)
+    {
+        try { await requireStillAuthorized(token); }
+        catch { dbContext.ChangeTracker.Clear(); throw; }
     }
 
     private async Task<Action> PrepareIncomingInvoiceReceiptBindingsAsync(PurchaseIncomingInvoice invoice, Guid[] lockedOrders, CancellationToken token)
     {
         var receipts = new List<PurchaseInvoiceReceiptBindingRow>();
         var services = new List<PurchaseServiceInvoiceBindingRow>();
+        var expenses = await PrepareAdditionalCostInvoiceBindingsAsync(invoice, lockedOrders, token);
         foreach (var match in invoice.Matches)
         {
             if (!lockedOrders.Contains(match.OrderId)) throw new InvalidOperationException("Fatura bağı sipariş kilidi gerektirir.");
@@ -180,7 +198,8 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
                 OrderId = match.OrderId, OrderLineId = match.OrderLineId, OrderVersion = match.OrderVersion,
                 SupplierPartyId = invoice.SupplierPartyId, RecordedAtUtc = timeProvider.GetUtcNow(),
             }).ToArray();
-        return () => { dbContext.InvoiceReceiptBindings.AddRange(receipts); dbContext.InvoiceOrderBindings.AddRange(orders); dbContext.ServiceInvoiceBindings.AddRange(services); };
+        return () => { dbContext.InvoiceReceiptBindings.AddRange(receipts); dbContext.InvoiceOrderBindings.AddRange(orders);
+            dbContext.ServiceInvoiceBindings.AddRange(services); dbContext.AdditionalCostInvoiceBindings.AddRange(expenses); };
     }
 
     private void AddInvoiceRevision(PurchaseIncomingInvoiceSnapshot snapshot, string json, DateTimeOffset now) => dbContext.IncomingInvoiceRevisions.Add(new()

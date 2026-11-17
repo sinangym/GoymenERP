@@ -263,6 +263,7 @@ export const CAPABILITY = {
   accountingCostDifferenceApprove: 'accounting.manufacturing-cost-differences.approve',
   accountingInvoiceLineCogsPrepare: 'accounting.invoice-line-cogs.prepare',
   accountingInvoiceLineCogsApprove: 'accounting.invoice-line-cogs.approve',
+  accountingSourceVouchers: 'accounting.source-vouchers.list',
   identityUsersManage: 'identity.users.manage',
   productPaintMemberships: 'paint-memberships.manage',
   /** M-07 Muhasebe Dönemleri. Route `/muhasebe/donemler`, owner the Accounting lane (FİNANS). */
@@ -292,6 +293,9 @@ export const CAPABILITY = {
   /** ST-01 bounded, company-scoped physical stock-position read. */
   inventoryStockPositionsList: 'inventory.stock-positions.list',
   inventoryTransferPlanning: 'inventory.stock-transfer.write',
+  inventoryTransferOverageApproval: 'inventory.stock-transfer.overage-approve',
+  inventoryTransferLossRequest: 'inventory.stock-transfer.loss-record',
+  inventoryTransferLossApproval: 'inventory.stock-transfer.loss-approve',
   /** SY-01 read subset "Kullanıcılar ve yetkiler". Route `/ayarlar/kullanicilar-ve-yetkiler`, owner Identity. Read-only. */
   identityAssignmentsList: 'identity.assignments.list',
   /** SY-02 read subset: one role's permissions and holders. Reached from a row, never the sidebar. */
@@ -362,6 +366,8 @@ export const CAPABILITY = {
   settingsPurchasingReferenceLists: 'settings.reference-lists.manage',
   settingsPurchaseInvoiceVariance: 'settings.purchase-invoice-variance-policies.manage',
   settingsWarehouseTransferScale: 'settings.warehouse-transfer-scale.manage',
+  settingsSalesSubcontractTax: 'settings.sales-subcontract-tax-default.manage',
+  settingsPurchasingSubcontractTax: 'settings.purchasing-subcontract-tax-default.manage',
   /**
    * B-14, KIM-D51 Ayarlar > Boya rengi ve hurda türü: the company's paint color and scrap kind lists (no seed). Route
    * `/ayarlar/uretim-referans-listeleri`, owner Settings 1.6; one non-Critical name, granted to no role here.
@@ -493,6 +499,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.accountingCostDifferenceApprove]: '/muhasebe/uretim-maliyet-farki-onay',
   [CAPABILITY.accountingInvoiceLineCogsPrepare]: '/muhasebe/fatura-satiri-smm',
   [CAPABILITY.accountingInvoiceLineCogsApprove]: '/muhasebe/fatura-satiri-smm-onay',
+  [CAPABILITY.accountingSourceVouchers]: '/muhasebe/kaynak-fisler',
   [CAPABILITY.identityUsersManage]: '/ayarlar/kullanicilar',
   [CAPABILITY.productPaintMemberships]: '/boya-urunleri',
   [CAPABILITY.accountingPeriodsList]: '/muhasebe/donemler',
@@ -508,6 +515,9 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.inventoryOpeningStockRecord]: '/stok/acilis',
   [CAPABILITY.inventoryStockPositionsList]: '/stok/pozisyonlar',
   [CAPABILITY.inventoryTransferPlanning]: '/stok/transferler/planla',
+  [CAPABILITY.inventoryTransferOverageApproval]: '/stok/transferler/fazla-kabul-onaylari',
+  [CAPABILITY.inventoryTransferLossRequest]: '/stok/transferler/kayip-talepleri',
+  [CAPABILITY.inventoryTransferLossApproval]: '/stok/transferler/kayip-onaylari',
   [CAPABILITY.identityAssignmentsList]: '/ayarlar/kullanicilar-ve-yetkiler',
   [CAPABILITY.identityRolesDetail]: '/ayarlar/kullanicilar-ve-yetkiler/roller/:roleId',
   [CAPABILITY.identityAuditList]: '/ayarlar/denetim-kaydi',
@@ -532,6 +542,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.settingsPurchasingReferenceLists]: '/ayarlar/referans-listeleri',
   [CAPABILITY.settingsPurchaseInvoiceVariance]: '/ayarlar/alis-fatura-fark-toleransi',
   [CAPABILITY.settingsWarehouseTransferScale]: '/ayarlar/depo-transfer-tartisi',
+  [CAPABILITY.settingsSalesSubcontractTax]: '/ayarlar/satis-fason-vergi-varsayilani',
+  [CAPABILITY.settingsPurchasingSubcontractTax]: '/ayarlar/alis-fason-vergi-varsayilani',
   [CAPABILITY.settingsProductionReferenceLists]: '/ayarlar/uretim-referans-listeleri',
   [CAPABILITY.logisticsInstructionsList]: '/lojistik/yukleme-talimatlari',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as an instruction id.

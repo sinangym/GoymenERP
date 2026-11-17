@@ -135,9 +135,13 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'accounting.periods.list',
   'accounting.journals.list',
   'accounting.posting-queues',
+  'accounting.source-vouchers.list',
   'inventory.opening-stock.record',
   'inventory.stock-positions.list',
   'inventory.stock-transfer.write',
+  'inventory.stock-transfer.overage-approve',
+  'inventory.stock-transfer.loss-record',
+  'inventory.stock-transfer.loss-approve',
   /**
    * Listed together with the routes that serve them (LOG-4b). Each renders only where the server's
    * snapshot carries the capability (staged until the l04 suite); the detail is reached from a row.
@@ -192,6 +196,8 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'settings.document-number-series.manage',
   'settings.purchase-invoice-variance-policies.manage',
   'settings.warehouse-transfer-scale.manage',
+  'settings.sales-subcontract-tax-default.manage',
+  'settings.purchasing-subcontract-tax-default.manage',
   'settings.manufacturing-parameter-profiles.read',
   'settings.manufacturing-tolerance-profiles.read',
   /** URT-D89: the Settings work center capacity screen, drawn only where the server granted its one name. */
@@ -301,11 +307,15 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'accounting.posting-queues': 'Muhasebe Kontrol',
   // Staged until the actual M-06 browser acceptance; no sidebar publication yet.
   'accounting.trial-balance': '',
+  'accounting.source-vouchers.list': 'Kaynak fişler',
   // NAV-OPENING-01: the one-time opening count is set-up work, drawn under Ayarlar (see NAV_GROUPS). Same route,
   // same capability; only the sidebar place and its wording changed.
   'inventory.opening-stock.record': 'Açılış stokları',
   'inventory.stock-positions.list': 'Stok / Malzeme Pozisyonu',
   'inventory.stock-transfer.write': 'Depo transferi planlama',
+  'inventory.stock-transfer.overage-approve': 'Transfer fazla kabul onayları',
+  'inventory.stock-transfer.loss-record': 'Transfer kayıp talepleri',
+  'inventory.stock-transfer.loss-approve': 'Transfer kayıp onayları',
   'identity.assignments.list': 'Kullanıcılar ve yetkiler',
   // The role card is opened from a row of the access list, never from the sidebar.
   'identity.roles.detail': '',
@@ -313,6 +323,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'settings.sales-discount-limits.manage': 'İskonto limitleri',
   'settings.purchase-invoice-variance-policies.manage': 'Alış faturası fark toleransı',
   'settings.warehouse-transfer-scale.manage': 'Depo transfer tartısı',
+  'settings.sales-subcontract-tax-default.manage': 'Satış fason vergi varsayılanı',
+  'settings.purchasing-subcontract-tax-default.manage': 'Alış fason vergi varsayılanı',
   'settings.tax-master.manage': 'Vergi (KDV / tevkifat)',
   'settings.exchange-rates.read': 'Kurlar',
   'settings.sales-delivery-tolerances.manage': 'Teslim toleransı',
@@ -432,6 +444,9 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     entries: [
       'inventory.stock-positions.list',
       'inventory.stock-transfer.write',
+      'inventory.stock-transfer.overage-approve',
+      'inventory.stock-transfer.loss-record',
+      'inventory.stock-transfer.loss-approve',
       'logistics.operations-work.sales',
       'logistics.instructions.list',
       'logistics.operations-work.purchase',
@@ -467,7 +482,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   {
     id: 'accounting',
     label: 'Muhasebe',
-    entries: ['accounting.journals.list', 'accounting.periods.list', 'accounting.posting-queues', 'finance.party-ledger.accounting',
+    entries: ['accounting.journals.list', 'accounting.periods.list', 'accounting.posting-queues', 'accounting.source-vouchers.list', 'finance.party-ledger.accounting',
       'accounting.manufacturing-cost-differences.prepare', 'accounting.manufacturing-cost-differences.approve',
       'accounting.invoice-line-cogs.prepare', 'accounting.invoice-line-cogs.approve'],
   },
@@ -496,6 +511,8 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       'settings.money-profiles.manage',
       'settings.purchase-invoice-variance-policies.manage',
       'settings.warehouse-transfer-scale.manage',
+      'settings.sales-subcontract-tax-default.manage',
+      'settings.purchasing-subcontract-tax-default.manage',
       'settings.sales-contract-discount-limit.manage',
   'settings.collateral-types.manage',
   'settings.finance-opening-period.manage',

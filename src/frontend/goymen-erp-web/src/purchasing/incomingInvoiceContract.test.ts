@@ -1,7 +1,23 @@
 import { describe, expect, it } from 'vitest'
-import { decodeIncomingInvoice, decodeInvoiceCommand, decodeInvoicePage, decodeInvoiceReceipts } from './incomingInvoiceContract'
+import { decodeIncomingInvoice, decodeInvoiceCommand, decodeInvoicePage, decodeInvoiceReceipts, decodeInvoiceAdditionalCosts } from './incomingInvoiceContract'
 import { incomingInvoiceFixture, invoiceReceiptFixture, invoiceTestId as id } from './incomingInvoiceFixtures.testSupport'
 describe('Incoming invoice exact read contract (synthetic, NOT_ENV)', () => {
+  it('binds monetary expense choices to the exact invoice revision, currency, type and VAT without a fictitious acceptance', () => {
+    const existing = incomingInvoiceFixture(), empty = '00000000-0000-0000-0000-000000000000'
+    const line = { ...existing.lines[0], productId: empty, itemType: 'Expense', linePurpose: 'expense' }
+    const invoice = { ...existing, lines: [line] }
+    const page = { invoiceId: invoice.id, invoiceLineId: line.id, invoiceVersion: invoice.version, currencyId: invoice.currencyId,
+      pageIndex: 0, hasNext: false, items: [{ costId: id(90), purchaseOrderId: id(91), purchaseOrderNumber: 'SENTETIK-EXP-1',
+        description: 'SENTETIK nakliye', expenseTypeId: null, expenseTypeName: null, businessDate: '2026-11-17',
+        netAmount: '10000', availableNetAmount: '4000', vatPercent: line.vatPercent }] }
+    expect(decodeIncomingInvoice(invoice, invoice.companyId)).toEqual(invoice)
+    expect(decodeInvoiceAdditionalCosts(page, invoice, line, 0)).toEqual(page)
+    expect(decodeInvoiceAdditionalCosts({ ...page, invoiceVersion: '99' }, invoice, line, 0)).toBeNull()
+    expect(decodeInvoiceAdditionalCosts({ ...page, currencyId: id(92) }, invoice, line, 0)).toBeNull()
+    expect(decodeInvoiceAdditionalCosts({ ...page, items: [{ ...page.items[0], acceptanceId: id(93) }] }, invoice, line, 0)).toBeNull()
+    expect(decodeInvoiceAdditionalCosts({ ...page, items: [{ ...page.items[0], availableNetAmount: '0' }] }, invoice, line, 0)).toBeNull()
+    expect(decodeInvoiceAdditionalCosts({ ...page, items: [{ ...page.items[0], expenseTypeId: id(94), expenseTypeName: 'SENTETIK' }] }, invoice, line, 0)).toBeNull()
+  })
   it('binds a typed service acceptance without disguising the service type as a Product', () => {
     const existing = incomingInvoiceFixture(), empty = '00000000-0000-0000-0000-000000000000'
     const line = { ...existing.lines[0], productId: empty, itemType: 'Service', linePurpose: 'service' as const, serviceTypeId: id(90) }

@@ -2,6 +2,7 @@ import { API_BASE, purchasingHeaders } from './api'
 import type { AdjustmentOutcome } from './receiptAdjustmentApi'
 import type { ViewOutcome } from '../shell/uiState'
 import { decodeServiceOrder, decodeServiceOrders, decodeServiceReferences, decodeServiceReceipt, type ServiceOrderReceipt } from './serviceOrderContract'
+import { decodeSubcontractTaxOptions } from '../settings/subcontractTaxContract'
 const base = `${API_BASE}/purchasing/service-orders`
 async function read<T>(company: string, path: string, signal: AbortSignal, decode: (v: unknown) => T | null): Promise<ViewOutcome<T>> {
   try {
@@ -15,9 +16,10 @@ async function read<T>(company: string, path: string, signal: AbortSignal, decod
 export const fetchServiceOrders = (company: string, signal: AbortSignal) => read(company, base, signal, v => decodeServiceOrders(v, company))
 export const fetchServiceOrder = (company: string, id: string, signal: AbortSignal) => read(company, `${base}/${encodeURIComponent(id)}`, signal, v => decodeServiceOrder(v, company, id))
 export const fetchServiceOrderReferences = (company: string, signal: AbortSignal) => read(company, `${base}/references`, signal, v => decodeServiceReferences(v, company))
-export async function submitServiceOrder(company: string, id: string, action: 'create' | 'approve' | 'accept' | 'prices', payload: unknown, key: string): Promise<AdjustmentOutcome<ServiceOrderReceipt>> {
+export const fetchServiceOrderTaxOptions = (company: string, id: string, on: string, signal: AbortSignal) => read(company, `${base}/${encodeURIComponent(id)}/tax-options`, signal, v => decodeSubcontractTaxOptions(v, company, 'purchasing', on))
+export async function submitServiceOrder(company: string, id: string, action: 'create' | 'approve' | 'accept' | 'prices' | 'tax', payload: unknown, key: string): Promise<AdjustmentOutcome<ServiceOrderReceipt>> {
   try {
-    const path = action === 'create' ? base : `${base}/${encodeURIComponent(id)}/${action === 'approve' ? 'approval' : action === 'prices' ? 'price-revisions' : 'service-acceptances'}`
+    const path = action === 'create' ? base : `${base}/${encodeURIComponent(id)}/${action === 'approve' ? 'approval' : action === 'prices' ? 'price-revisions' : action === 'tax' ? 'tax' : 'service-acceptances'}`
     const response = await fetch(path, { method: 'POST', headers: { ...purchasingHeaders(company), 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(payload) })
     let body: unknown = null; try { body = await response.json() } catch { /* Unknown outcomes keep the same request. */ }
     if (response.status >= 500) return { type: 'unknown', reason: 'service-unavailable', status: response.status }

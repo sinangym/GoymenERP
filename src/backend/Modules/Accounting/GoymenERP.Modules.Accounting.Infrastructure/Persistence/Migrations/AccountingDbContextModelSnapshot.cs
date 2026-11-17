@@ -461,6 +461,12 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTimeOffset?>("ApprovedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("ApprovedBy")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -522,8 +528,15 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("InvoiceId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("JournalId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<long>("MappingVersion")
                         .HasColumnType("bigint");
+
+                    b.Property<string>("OfficialInvoiceNo")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
 
                     b.Property<Guid>("PartyId")
                         .HasColumnType("uniqueidentifier");
@@ -555,6 +568,10 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
 
                     b.HasKey("CompanyId", "Id");
 
+                    b.HasIndex("CompanyId", "JournalId");
+
+                    b.HasIndex("CompanyId", "PeriodId");
+
                     b.HasIndex("CompanyId", "SourceDocumentId")
                         .IsUnique()
                         .HasDatabaseName("UX_SourceDocumentVoucherDrafts_Source");
@@ -565,9 +582,76 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_SourceDocumentVoucherDrafts_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [SourceDocumentId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' AND [SourceActorId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [FinalizedVersion] >= 1 AND [MappingVersion] >= 1");
 
-                            t.HasCheckConstraint("CK_SourceDocumentVoucherDrafts_Status", "[Status] = 1");
+                            t.HasCheckConstraint("CK_SourceDocumentVoucherDrafts_Status", "([Status] IN (1,3) AND [JournalId] IS NULL AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL) OR ([Status] = 2 AND [JournalId] IS NOT NULL AND [JournalId] = [Id] AND [PeriodId] IS NOT NULL AND [ApprovedBy] IS NOT NULL AND [ApprovedBy] <> [SourceActorId] AND [ApprovedBy] <> '00000000-0000-0000-0000-000000000000' AND [ApprovedAtUtc] IS NOT NULL)");
 
                             t.HasCheckConstraint("CK_SourceDocumentVoucherDrafts_Version", "[Version] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingSourceInvoiceCancellationRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CancellationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CancelledAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("CancelledBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("DocumentKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<long>("FinalizedVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("SourceDocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("CompanyId", "CancellationId");
+
+                    b.HasIndex("CompanyId", "SourceDocumentId")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "DocumentKind", "InvoiceId", "FinalizedVersion")
+                        .IsUnique();
+
+                    b.ToTable("SourceInvoiceCancellations", "accounting", t =>
+                        {
+                            t.HasCheckConstraint("CK_SourceInvoiceCancellations_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [CancellationId] <> '00000000-0000-0000-0000-000000000000' AND [SourceDocumentId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' AND [CancelledBy] <> '00000000-0000-0000-0000-000000000000' AND [FinalizedVersion] > 0");
+
+                            t.HasCheckConstraint("CK_SourceInvoiceCancellations_Kind", "[DocumentKind] IN ('sales-invoice','purchase-invoice')");
+
+                            t.HasCheckConstraint("CK_SourceInvoiceCancellations_Reason", "LEN([Reason]) > 0");
                         });
                 });
 
@@ -1819,6 +1903,27 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingSourceDocumentVoucherDraftRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.JournalRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "JournalId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.PeriodRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "PeriodId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingSourceInvoiceCancellationRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.OrganizationCompanyReference", null)
                         .WithMany()

@@ -22,8 +22,15 @@ public static class PurchaseIncomingInvoiceFinalizationV1
             invoice.FunctionalAmounts?.Withholding, Array.AsReadOnly(invoice.Lines.Select(line => new PurchaseInvoiceFinalizedLineV1(
                 line.Id, line.LineNo, line.ItemType, line.LinePurpose, line.VatPercent, line.Amounts.Net, line.Amounts.Vat,
                 line.Amounts.Withholding, line.FunctionalAmounts?.Net, line.FunctionalAmounts?.Vat, line.FunctionalAmounts?.Withholding,
-                line.ServiceTypeId, line.ExpenseTypeId)).ToArray()),
-            invoice.Source.InvoiceDate, invoice.FinalizedBy, invoice.Installments.Min(item => item.DueOn));
+                line.ServiceTypeId, line.ExpenseTypeId, TaxSources(invoice, line.Id))).ToArray()),
+            invoice.Source.InvoiceDate, invoice.FinalizedBy, invoice.Installments.Min(item => item.DueOn), invoice.Source.OfficialNumber);
+    }
+
+    private static IReadOnlyList<PurchaseInvoiceSubcontractTaxSourceV1>? TaxSources(PurchaseIncomingInvoice invoice, Guid lineId)
+    {
+        var sources = invoice.Matches.Where(x => x.InvoiceLineId == lineId && x.SubcontractTax is not null)
+            .Select(x => new PurchaseInvoiceSubcontractTaxSourceV1(x.OrderId, x.OrderVersion, x.AcceptanceId, x.SubcontractTax!)).ToArray();
+        return sources.Length == 0 ? null : Array.AsReadOnly(sources);
     }
 
     /// <summary>Technical stable retry identity; independent of an HTTP retry key and never recomputed from the current version.</summary>

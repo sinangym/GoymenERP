@@ -15,7 +15,10 @@ import type { ProductStockCandidate } from '../inventory/contract'
 import { fetchPurchasingCurrencyCandidates, fetchPurchasingSupplierOptions } from './api'
 import { useReceiptAdjustmentAttempt } from './useReceiptAdjustmentAttempt'
 import { receiptIdentity } from './goodsReceiptAttempt'
-import { fetchServiceOrder, fetchServiceOrders, fetchServiceOrderReferences, submitServiceOrder } from './serviceOrderApi'
+import { fetchServiceOrder, fetchServiceOrders, fetchServiceOrderReferences, fetchServiceOrderTaxOptions, submitServiceOrder } from './serviceOrderApi'
+import { SubcontractTaxChoiceFields, emptySubcontractTaxChoice } from '../settings/SubcontractTaxChoiceFields'
+import { selectedSubcontractTax } from '../settings/subcontractTaxContract'
+import { SUBCONTRACT_TAX_TEXT as TAX } from '../settings/subcontractTaxText'
 import { ADDITIONAL_COST_CAPABILITY, additionalCostPath } from './additionalCostContract'
 import { ADDITIONAL_COST_TEXT } from './additionalCostText'
 import { SERVICE_ORDER_CAPABILITY as C, SERVICE_ORDER_PATH, serviceOrderPath, serviceGuid, type ServiceOrder, type ServiceCreate,
@@ -176,9 +179,34 @@ function ServiceDetail({ scope, id }: { readonly scope: Scope; readonly id: stri
       {value.status === 'Draft' && hasCapability(shell, C.approve) && <ServiceAction scope={scope} order={value} kind="approve" changed={changed} />}
       {value.status === 'Approved' && value.isOpen && hasCapability(shell, C.accept) && <ServiceAction scope={scope} order={value} kind="accept" changed={changed} />}
       {value.status === 'Approved' && hasCapability(shell, C.revisePrices) && <ServicePriceRevision scope={scope} order={value} changed={changed} />}
+      {value.kind === 'OwnMaterialSubcontract' && value.status !== 'Cancelled' && hasCapability(shell, C.approve)
+        && <ServiceTaxRevision key={value.version} scope={scope} order={value} changed={changed} />}
       <h2>{T.acceptanceHistory}</h2><ul>{value.acceptances.map(a => <li key={a.acceptanceId}>{a.acceptedOn} — {a.quantity} — {a.reason}</li>)}</ul>
     </>}
   </section>
+}
+function ServiceTaxRevision({ scope, order, changed }: { readonly scope: Scope; readonly order: ServiceOrder; readonly changed: () => void }) {
+  const source = useRead(scope, ['tax-options', order.orderId, order.version], signal => fetchServiceOrderTaxOptions(scope.company, order.orderId, order.businessDate, signal))
+  const options = !source.isFetching && source.data?.type === 'ok-single' ? source.data.data : null
+  const [choice, setChoice] = useState(emptySubcontractTaxChoice), [line, setLine] = useState(''), [reason, setReason] = useState(''), [invalid, setInvalid] = useState(false)
+  const attempt = useReceiptAdjustmentAttempt<unknown, ServiceOrderReceipt>(`${scope.namespace}:service-tax:${order.orderId}`, `${scope.entry}:${order.version}`,
+    (payload, key) => submitServiceOrder(scope.company, order.orderId, 'tax', payload, key), changed)
+  function submit() {
+    if (options === null || options.defaultVersion === '0' || !order.lines.some(x => x.lineId === line) || !reason.trim() || selectedSubcontractTax(options, choice) === null) { setInvalid(true); return }
+    setInvalid(false); attempt.submit({ expectedVersion: order.version, lineId: line, useDefault: choice.useDefault,
+      expectedDefaultVersion: options.defaultVersion, expectedSourceVersion: options.sourceVersion,
+      vatRateCode: choice.useDefault ? null : choice.vatRateCode, exemptionCode: choice.useDefault || choice.exemptionCode === '' ? null : choice.exemptionCode,
+      withholdingRatioCode: choice.useDefault || choice.withholdingRatioCode === '' ? null : choice.withholdingRatioCode, reason: reason.trim() })
+  }
+  return <form onSubmit={event => { event.preventDefault(); submit() }}><h2>{TAX.taxRevision}</h2><p>{TAX.revisionHelp}</p>
+    <ReadState value={source.data} loading={source.isPending || source.isFetching} refresh={() => void source.refetch()} />
+    <fieldset disabled={attempt.locked || options === null}><Field label={T.serviceType}>{p => <select {...p} required value={line} onChange={e => setLine(e.target.value)}>
+      <option value="">{T.choose}</option>{order.lines.map(x => <option key={x.lineId} value={x.lineId}>{x.serviceName}</option>)}</select>}</Field>
+      {options !== null && <SubcontractTaxChoiceFields options={options} value={choice} onChange={setChoice} allowDefault />}
+      {options?.defaultVersion === '0' && <p role="status">{TAX.noSource}</p>}
+      <Field label={TAX.reason}>{p => <textarea {...p} required maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} />}</Field>
+    </fieldset>{invalid && <p role="alert">{TAX.invalid}</p>}<AttemptState attempt={attempt} />
+    <Button type="submit" disabled={attempt.locked || options === null || options.defaultVersion === '0'}>{TAX.save}</Button></form>
 }
 function ServicePriceRevision({ scope, order, changed }: { readonly scope: Scope; readonly order: ServiceOrder; readonly changed: () => void }) {
   const [prices, setPrices] = useState<Readonly<Record<string, string>>>({}), [reason, setReason] = useState(''), [invalid, setInvalid] = useState(false)

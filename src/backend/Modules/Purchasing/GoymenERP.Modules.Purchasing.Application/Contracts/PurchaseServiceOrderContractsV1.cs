@@ -14,6 +14,8 @@ public sealed record CreatePurchaseServiceLineV1(Guid LineId, Guid ServiceTypeId
 public sealed record ApprovePurchaseServiceOrderV1(string ExpectedVersion, string Reason);
 public sealed record PurchaseServiceLinePriceV1(Guid LineId, string UnitPrice);
 public sealed record RevisePurchaseServiceOrderPricesV1(string ExpectedVersion, IReadOnlyList<PurchaseServiceLinePriceV1> Lines, string Reason);
+public sealed record RevisePurchaseServiceOrderTaxV1(string ExpectedVersion, Guid LineId, bool UseDefault, string ExpectedDefaultVersion, string ExpectedSourceVersion,
+    string? VatRateCode, string? ExemptionCode, string? WithholdingRatioCode, string Reason);
 public sealed record AcceptPurchaseServiceV1(string ExpectedVersion, Guid AcceptanceId, Guid LineId, string Quantity,
     DateOnly AcceptedOn, string Reason);
 public sealed record PurchaseServiceOrderResponseV1(PurchaseServiceOrderViewV1 Order, bool IsReplay, string OriginalCorrelationId);
@@ -21,7 +23,8 @@ public sealed record PurchaseServiceLineViewV1(Guid LineId, Guid ServiceTypeId, 
     Guid UnitId, string UnitCode, string Quantity, string AcceptedQuantity, string? UnitPrice, string? Amount,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseServiceTaxViewV1? Tax = null);
 public sealed record PurchaseServiceTaxViewV1(bool VatApplies, string? VatPercent, string? ExemptionCode,
-    bool WithholdingApplies, string? WithholdingPercent, string? WithholdingCode, string SettingsVersion);
+    bool WithholdingApplies, string? WithholdingPercent, string? WithholdingCode, string SettingsVersion,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseServiceTaxChange? Change = null);
 public sealed record PurchaseServiceOrderViewV1(Guid CompanyId, Guid OrderId, string DocumentNumber, string Version, string Kind, string Status,
     Guid SupplierPartyId, Guid CompanyAccountId, DateOnly BusinessDate, Guid CurrencyId, string CurrencyCode, bool IsOpen,
     string PriceDisclosure, IReadOnlyList<PurchaseServiceLineViewV1> Lines, IReadOnlyList<PurchaseServiceMaterialInputV1> Materials,
@@ -40,6 +43,10 @@ public interface IPurchaseServiceOrderServiceV1
     Task<PurchaseServiceOrderResponseV1> CreateAsync(CreatePurchaseServiceOrderV1 request, PurchasingCommandMetadata metadata, CancellationToken token = default);
     Task<PurchaseServiceOrderResponseV1> ApproveAsync(Guid orderId, ApprovePurchaseServiceOrderV1 request, PurchasingCommandMetadata metadata, CancellationToken token = default);
     Task<PurchaseServiceOrderResponseV1> RevisePricesAsync(Guid orderId, RevisePurchaseServiceOrderPricesV1 request, PurchasingCommandMetadata metadata, CancellationToken token = default);
+    Task<GoymenERP.Modules.Settings.Application.Contracts.V1.SubcontractTaxOptionsV1> TaxOptionsAsync(Guid orderId, CancellationToken token = default) =>
+        throw new PurchasingServiceException(503, "service_unavailable");
+    Task<PurchaseServiceOrderResponseV1> ReviseTaxAsync(Guid orderId, RevisePurchaseServiceOrderTaxV1 request, PurchasingCommandMetadata metadata, CancellationToken token = default) =>
+        throw new PurchasingServiceException(503, "service_unavailable");
     Task<PurchaseServiceOrderResponseV1> AcceptAsync(Guid orderId, AcceptPurchaseServiceV1 request, PurchasingCommandMetadata metadata, CancellationToken token = default);
 }
 
@@ -77,6 +84,8 @@ public interface IPurchaseServiceOrderStoreV1
 {
     Task<PurchaseServiceOrderState?> ReadAsync(Guid orderId, CancellationToken token);
     Task<IReadOnlyList<PurchaseServiceOrderState>> ListAsync(CancellationToken token);
+    Task<bool> HasApprovedPhysicalReferencesAsync(PurchaseServiceOrderState order, CancellationToken token) => Task.FromResult(false);
+    Task<bool> HasApprovedTaxSnapshotAsync(PurchaseServiceOrderState order, Guid lineId, CancellationToken token) => Task.FromResult(false);
     Task<PurchaseServiceOrderWriteV1?> ReplayAsync(string command, PurchasingWriteEnvelope envelope, string hash, CancellationToken token);
     Task<PurchaseServiceOrderWriteV1?> WriteAsync(Guid orderId, string command, PurchasingWriteEnvelope envelope, string hash, string reason,
         Func<PurchaseServiceOrderState?, CancellationToken, Task<PurchaseServiceOrderState>> mutate,
@@ -88,5 +97,6 @@ public static class PurchaseServiceOrderCommandsV1
     public const string Approve = "purchasing.service-order.approve.v1";
     public const string Accept = "purchasing.service-order.accept.v1";
     public const string RevisePrices = "purchasing.service-order.prices-revise.v1";
-    public static bool IsKnown(string command) => command is Create or Approve or Accept or RevisePrices;
+    public const string ReviseTax = "purchasing.service-order.tax-revise.v1";
+    public static bool IsKnown(string command) => command is Create or Approve or Accept or RevisePrices or ReviseTax;
 }

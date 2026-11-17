@@ -14,7 +14,12 @@ public sealed record PurchaseInvoiceFinalizedLineV1(Guid LineId, int LineNo, str
     decimal VatPercent, decimal Net, decimal Vat, decimal Withholding,
     decimal? FunctionalNet, decimal? FunctionalVat, decimal? FunctionalWithholding,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] Guid? ServiceTypeId = null,
-    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] Guid? ExpenseTypeId = null);
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] Guid? ExpenseTypeId = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseInvoiceSubcontractTaxSourceV1>? SubcontractTaxSources = null);
+
+/// <summary>Approved service-source metadata only. Official invoice amounts are unchanged and never recalculated from it.</summary>
+public sealed record PurchaseInvoiceSubcontractTaxSourceV1(Guid OrderId, long OrderVersion, Guid AcceptanceId,
+    GoymenERP.Modules.Purchasing.Domain.Services.PurchaseServiceTax Tax);
 
 /// <summary>The admission identity is allocated once with finalisation. Functional values and rate are absent for TL,
 /// and use the supplier invoice's own rate for foreign currency (ALS-D41). The consumer does not choose an exchange rate.</summary>
@@ -22,4 +27,5 @@ public sealed record PurchaseInvoiceFinalizedPayloadV1(Guid InvoiceId, long Vers
     Guid CurrencyId, decimal? Rate, decimal Payable, decimal? FunctionalPayable, Guid CompanyId,
     decimal Net, decimal Vat, decimal Withholding, decimal? FunctionalNet, decimal? FunctionalVat,
     decimal? FunctionalWithholding, IReadOnlyList<PurchaseInvoiceFinalizedLineV1> Lines,
-    DateOnly InvoiceDate, string FinalizedBy, DateOnly? DueDate = null);
+    DateOnly InvoiceDate, string FinalizedBy, DateOnly? DueDate = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? OfficialInvoiceNo = null);

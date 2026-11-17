@@ -14,6 +14,20 @@ public sealed class AccountingPurchaseInvoiceFinalizedInboxConsumerV1Tests
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     [Fact]
+    public void Expense_identity_uses_only_the_explicit_expense_mapping_and_preserves_frozen_source_amounts()
+    {
+        var source = Payload();
+        var expense = source.Lines![0]! with { ItemType = "Expense", LinePurpose = "expense", ExpenseTypeId = Guid.NewGuid() };
+        var read = AccountingPurchaseInvoiceFinalizedInboxConsumer.Read(Event(source with { Lines = [expense] }), Context());
+        var line = Assert.Single(read.Lines);
+        Assert.Equal(("Expense", "expense", "100"), (line.ItemType, line.LinePurpose, line.Net));
+        foreach (var invalid in new[] { expense with { ItemType = "Goods" }, expense with { LinePurpose = "resale" },
+            expense with { ExpenseTypeId = Guid.Empty }, expense with { ServiceTypeId = Guid.NewGuid() } })
+            Assert.Throws<OutboxPermanentFailureException>(() => AccountingPurchaseInvoiceFinalizedInboxConsumer.Read(
+                Event(source with { Lines = [invalid] }), Context()));
+    }
+
+    [Fact]
     public void Purchase_service_type_metadata_keeps_the_service_purpose_and_frozen_amounts()
     {
         var payload = Payload();

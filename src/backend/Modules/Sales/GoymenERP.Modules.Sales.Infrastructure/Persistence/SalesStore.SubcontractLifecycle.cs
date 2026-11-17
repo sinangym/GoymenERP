@@ -54,6 +54,24 @@ public sealed partial class SalesStore : ISalesSubcontractInvoiceLifecycleStoreV
         string requestHash, string commandName, Guid invoiceId, Action<SalesSubcontractServiceInvoice, DateTimeOffset> mutate,
         SalesDraftStateAudit audit, CancellationToken cancellationToken = default)
     {
+        RequireSubcontractCommand(envelope, requestHash, commandName);
+        // Locate the immutable key without taking a header lock first. Both Logistics correction and
+        // Sales mutation then use the same claim-range -> owner weighing -> invoice-header lock order.
+        var key = await dbContext.SubcontractServiceInvoices.AsNoTracking().Where(row => row.Id == invoiceId)
+            .Select(row => new { row.LoadingInstructionId, row.WeighingId }).SingleOrDefaultAsync(cancellationToken);
+        if (key is null) return null;
+        return await InSubcontractTransactionAsync(async () =>
+        {
+            await SalesSubcontractInvoiceClaimReadSession.ReadRangeAsync(dbContext, RequireResolvedCompany(),
+                key.LoadingInstructionId, key.WeighingId, cancellationToken);
+            return await UpdateLifecycleCoreAsync(envelope, requestHash, commandName, invoiceId, mutate, audit, cancellationToken);
+        }, cancellationToken);
+    }
+
+    private async Task<SalesSubcontractServiceInvoiceStoreResult?> UpdateLifecycleCoreAsync(SalesDraftWriteEnvelope envelope,
+        string requestHash, string commandName, Guid invoiceId, Action<SalesSubcontractServiceInvoice, DateTimeOffset> mutate,
+        SalesDraftStateAudit audit, CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(mutate);
         RequireAudit(audit);
         RequireSubcontractCommand(envelope, requestHash, commandName);

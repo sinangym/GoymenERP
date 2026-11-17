@@ -16,7 +16,7 @@ namespace GoymenERP.Api.Endpoints;
 /// no role). Nothing recorded is "not recorded", never open.</item>
 /// <item><c>/manufacturing-due-date-buffer</c> — URT-D96/URT-D100 company default buffer in working days (start value 0).</item>
 /// <item><c>/sales-subcontract-tax-default</c> — SAT-D381 default subcontract VAT/withholding; codes are checked against the
-/// tax master lists (422 when unlisted). The purchasing record (ALS-D105) is read-only until its write authority is decided.</item>
+/// tax master lists (422 when unlisted). The separate purchasing record uses its own purchase-order approval authority.</item>
 /// </list>
 /// Commands (<c>POST …/versions</c>, 204): one Idempotency-Key (stored terminal answers replay with
 /// <c>Idempotency-Replayed</c>), the expected version as decimal text, a mandatory reason (≤ 4000).
@@ -161,7 +161,7 @@ public static partial class SettingsCompanyPolicyEndpoints
                 CancellationToken cancellationToken) =>
             await ReadAsync(httpContext, () => service.GetSalesSubcontractTaxDefaultAsync(cancellationToken)))
             .RequireCompanyContext()
-            .RequireAuthorization(ErpPermissions.PurchasingOrdersApprove)
+            .RequireAuthorization(ErpPermissions.SalesOrdersApprove)
             .WithName("GetSettingsSalesSubcontractTaxDefaultV1")
             .Produces<SubcontractTaxDefaultViewV1>(StatusCodes.Status200OK)
             .ProducesErpBadRequest(CompanyPolicyProblemCodesV1.RequestInvalid)
@@ -179,7 +179,7 @@ public static partial class SettingsCompanyPolicyEndpoints
             await CommandAsync(httpContext, currentUser, companyContext, correlationContext,
                 metadata => service.RecordSalesSubcontractTaxDefaultAsync(request, metadata, cancellationToken)))
             .RequireCompanyContext()
-            .RequireAuthorization(ErpPermissions.PurchasingOrdersApprove)
+            .RequireAuthorization(ErpPermissions.SalesOrdersApprove)
             .WithName("RecordSettingsSalesSubcontractTaxDefaultV1")
             .WithIdempotencyContract(StatusCodes.Status204NoContent, StatusCodes.Status409Conflict,
                 StatusCodes.Status422UnprocessableEntity)
@@ -193,10 +193,12 @@ public static partial class SettingsCompanyPolicyEndpoints
                 CompanyPolicyProblemCodesV1.VersionConflict)
             .ProducesErpUnprocessableEntity(
                 CompanyPolicyProblemCodesV1.ExemptionCodeUnknown,
-                CompanyPolicyProblemCodesV1.WithholdingCodeUnknown)
+                CompanyPolicyProblemCodesV1.WithholdingCodeUnknown,
+                CompanyPolicyProblemCodesV1.RateUnknown)
             .ProducesErpServiceUnavailable(CompanyPolicyProblemCodesV1.ProviderUnavailable)
             .ProducesErpAuthenticatedProblems();
 
+        MapPurchasingSubcontractTaxDefault(group);
         MapOperationalPolicies(group);
         MapDocumentNumberPolicies(group);
         return endpoints;
