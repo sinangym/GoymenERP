@@ -15,7 +15,7 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 /// <summary>FNS-D97 / TK-30: source acceptance is durable, but no unspecified account, VAT, exchange rate or posting is invented.</summary>
 public sealed class CreditMovementProposalStoreV1(AccountingDbContext db, ICompanyContext company,
     ISettingsFinanceCreditAccountMappingProviderV1 mappings, IAuditEventCollector audit, TimeProvider clock,
-    IAuditTransactionWriterV1? auditOwner = null) : ICreditMovementProposalStoreV1
+    IAuditTransactionWriterV1? auditOwner = null, ICreditMovementNormalJournalSourceProviderV1? journalSource = null) : ICreditMovementProposalStoreV1
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     public async Task AcceptAsync(WorkInboxEventV1 envelope, CancellationToken cancellationToken)
@@ -65,7 +65,7 @@ public sealed class CreditMovementProposalStoreV1(AccountingDbContext db, ICompa
         var actor = "inbox." + CreditMovementProposalInboxV1.ConsumerName;
         audit.Enqueue(new AuditEventDraft(row.CompanyId, "accounting.credit-movement-proposal.received.v1", "Accounting.CreditMovementProposal",
             row.Id.ToString("D"), "Receive", null, 1, AuditActorTypes.System, actor, actor, [], "{}", JsonSerializer.Serialize(View(row), Json),
-            "Kredi kaynağı bir kez alındı; TK-30 eşleme ayrıntısı tamamlanmadan fiş oluşmaz.", "{}", AuditAiInvolvement.None, null,
+            "Kredi kaynağı bir kez alındı; onaylı belge bileşeni eşlemesi olmadan fiş oluşmaz.", "{}", AuditAiInvolvement.None, null,
             SourceChannels.System, null, null, envelope.CorrelationId, envelope.CausationId ?? envelope.EventId.ToString("D"), envelope.EventId.ToString("D")));
         try
         {
@@ -85,7 +85,22 @@ public sealed class CreditMovementProposalStoreV1(AccountingDbContext db, ICompa
         Fence(companyId);
         var rows = await db.CreditMovementProposals.AsNoTracking().OrderByDescending(x => x.ReceivedAtUtc).ThenBy(x => x.Id).ToListAsync(cancellationToken);
         Fence(companyId);
-        return rows.Select(View).ToArray();
+        var result = new List<CreditMovementProposalViewV1>();
+        foreach (var row in rows)
+        {
+            var view = View(row);
+            if (journalSource is not null)
+            {
+                var source = await journalSource.ResolveAsync(companyId, row.Id, cancellationToken);
+                Fence(companyId);
+                view = source is null ? view with { MappingStatus = "MappingMissing", MappingVersion = null,
+                    WaitingReasons = [CreditMovementJournalComponentsV1.Purpose(view.Source.Kind) is null || row.IsReversal
+                        ? "credit_opening_journal_source_unavailable" : "credit_approved_source_package_missing"] }
+                    : view with { Status = "ReadyForPreparation", MappingStatus = "MappingReady", MappingVersion = null, WaitingReasons = [] };
+            }
+            result.Add(view);
+        }
+        return result;
     }
     private void Fence(Guid companyId)
     {

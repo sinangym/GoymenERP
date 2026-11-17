@@ -99,6 +99,7 @@ public static class NormalJournalDraftStoreCodesV1
     public const string ContentConflict = "accounting_normal_journal_draft_content_conflict";
     public const string NotPending = "accounting_normal_journal_draft_not_pending";
     public const string PostingConflict = "accounting_normal_journal_draft_posting_conflict";
+    public const string CreditSelfApproval = "accounting_credit_journal_self_approval";
 }
 
 public interface IAccountingNormalJournalDraftStore
@@ -444,7 +445,7 @@ public sealed class NormalJournalDraftServiceV1(
             {
                 NormalJournalDraftStoreCodesV1.NotFound or AccountingStoreCodes.PeriodNotFound =>
                     new AccountingApiResult<T>(AccountingApiStatus.NotFound, null, false, null),
-                AccountingStoreCodes.CompanyContextMismatch => Denied<T>(),
+                AccountingStoreCodes.CompanyContextMismatch or NormalJournalDraftStoreCodesV1.CreditSelfApproval => Denied<T>(),
                 NormalJournalDraftStoreCodesV1.ContentConflict or NormalJournalDraftStoreCodesV1.NotPending
                     or NormalJournalDraftStoreCodesV1.PostingConflict =>
                     new AccountingApiResult<T>(AccountingApiStatus.Conflict, null, false, exception.Code),

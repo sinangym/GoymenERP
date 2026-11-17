@@ -69,6 +69,7 @@ public static class AccountingModuleExtensions
             serviceProvider.GetRequiredService<ApprovedAccountingSourceCatalogStoreV1>());
         services.TryAddScoped<FinanceManualReceiptNormalJournalSourceProviderV1>();
         services.TryAddScoped<IFinanceCashExchangeJournalSourceProviderV1, FinanceCashExchangeJournalSourceProviderV1>();
+        services.TryAddScoped<ICreditMovementNormalJournalSourceProviderV1, CreditMovementNormalJournalSourceProviderV1>();
         services.TryAddScoped<INormalJournalDraftServerSourceProviderV1,
             FinanceFinancialMovementNormalJournalSourceProviderV1>();
         services.AddScoped<NormalJournalDraftApprovalPolicyV1>();

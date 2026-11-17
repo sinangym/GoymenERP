@@ -36,6 +36,10 @@ describe('actual credit movements', () => {
     const proposal = { proposalId: Movement, companyId: Company, status: 'AwaitingMapping', mappingStatus: 'MappingMissing', mappingVersion: null,
       waitingReasons: ['credit_mapping_details_pending_TK30', 'credit_mapping_missing', 'credit_functional_source_amount_missing'], receivedAtUtc: '2026-11-17T09:00:00Z', source }
     expect(decodeCreditPostingProposals({ companyId: Company, items: [proposal] }, Company)?.[0]?.source.components[0]?.functionalAmount).toBeNull()
+    const ready = { ...proposal, status: 'ReadyForPreparation', mappingStatus: 'MappingReady', waitingReasons: [] }
+    expect(decodeCreditPostingProposals({ companyId: Company, items: [ready] }, Company)?.[0]?.status).toBe('ReadyForPreparation')
+    expect(decodeCreditPostingProposals({ companyId: Company, items: [{ ...ready, waitingReasons: ['credit_mapping_missing'] }] }, Company)).toBeNull()
+    expect(decodeCreditPostingProposals({ companyId: Company, items: [{ ...proposal, mappingStatus: 'MappingReady' }] }, Company)).toBeNull()
     expect(decodeCreditPostingProposals({ companyId: Company, items: [{ ...proposal, source: { ...source, bankEffect: {} } }] }, Company)).toBeNull()
     expect(decodeCreditPostingProposals({ companyId: Company, items: [{ ...proposal, source: { ...source, components: [...source.components, ...source.components] } }] }, Company)).toBeNull()
   })

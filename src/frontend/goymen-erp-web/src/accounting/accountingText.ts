@@ -241,6 +241,7 @@ export const NORMAL_JOURNAL_TEXT = {
   sourceMode: 'Kaynak grubu',
   manualSources: 'Kaydedilmiş manuel tahsilatlar',
   financialSources: 'Muhasebeye ulaşan masraf ve virmanlar',
+  creditSources: 'Onaylanmış gerçek kredi hareketleri',
   expenseSource: 'Masraf ödemesi',
   transferSource: 'Aynı para biriminde virman',
   exchangeSource: 'Döviz bozdurma — defter değeri onayı bekliyor',

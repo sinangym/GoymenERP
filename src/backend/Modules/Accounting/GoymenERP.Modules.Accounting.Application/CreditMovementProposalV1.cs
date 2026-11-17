@@ -19,6 +19,7 @@ public interface ICreditMovementProposalStoreV1
     Task AcceptAsync(WorkInboxEventV1 envelope, CancellationToken cancellationToken);
     Task<IReadOnlyList<CreditMovementProposalViewV1>> ListAsync(CancellationToken cancellationToken);
 }
+public interface ICreditMovementNormalJournalSourceProviderV1 : INormalJournalDraftServerSourceProviderV1 { }
 public static class CreditMovementProposalInboxV1
 {
     public const string SourceName = "finance.outbox.v1";
