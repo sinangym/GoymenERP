@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -37,7 +38,8 @@ public sealed record NormalJournalDraftSourcePreparationV1(
         if (companyId == Guid.Empty || sourceId == Guid.Empty || source is null
             || source.CurrencyId == Guid.Empty || source.Rule.Mirror.CompanyId != companyId
             || !IsCanonical(source.SourceVersion) || !IsCanonical(source.OwnerProfileId)
-            || !IsCanonical(source.OwnerProfileVersion))
+            || !IsCanonical(source.OwnerProfileVersion)
+            || source.ExactSourceAmount is { } exact && !TryExactAmount(exact, out _))
         {
             return null;
         }
@@ -94,8 +96,12 @@ public sealed record NormalJournalDraftSourcePreparationV1(
             },
             mappings,
         };
-        var fingerprint = Convert.ToHexString(SHA256.HashData(
-            Encoding.UTF8.GetBytes(JsonSerializer.Serialize(canonical, Json))));
+        // Keep the existing fingerprint shape for unconstrained manual sources. The two B-28
+        // owner sources additionally bind the exact amount, so re-reading a changed amount conflicts.
+        var canonicalJson = source.ExactSourceAmount is null
+            ? JsonSerializer.Serialize(canonical, Json)
+            : JsonSerializer.Serialize(new { source = canonical, exactSourceAmount = source.ExactSourceAmount }, Json);
+        var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalJson)));
         return new NormalJournalDraftSourcePreparationV1(
             companyId,
             sourceId,
@@ -113,6 +119,21 @@ public sealed record NormalJournalDraftSourcePreparationV1(
 
     public static bool IsPreparationVersion(string? value) => value is { Length: 64 }
         && value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f' or >= 'A' and <= 'F');
+
+    public static bool TryExactAmount(string? value, out decimal amount)
+    {
+        amount = default;
+        if (!(value is { Length: > 0 and <= 128 } && value[0] != '.' && value[^1] != '.'
+            && value.All(c => char.IsAsciiDigit(c) || c == '.') && value.Count(c => c == '.') <= 1
+            && decimal.TryParse(value, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out amount)
+            && amount > 0m)) return false;
+        var parts = value.Split('.');
+        var integer = parts[0].TrimStart('0');
+        if (integer.Length == 0) integer = "0";
+        var fraction = parts.Length == 2 ? parts[1].TrimEnd('0') : string.Empty;
+        var normalized = fraction.Length == 0 ? integer : integer + "." + fraction;
+        return normalized == amount.ToString("0.############################", CultureInfo.InvariantCulture);
+    }
 
     private static bool IsCanonical(string? value) =>
         !string.IsNullOrWhiteSpace(value) && string.Equals(value, value.Trim(), StringComparison.Ordinal);
