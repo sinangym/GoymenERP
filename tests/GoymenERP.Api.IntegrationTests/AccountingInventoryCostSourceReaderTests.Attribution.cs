@@ -85,6 +85,9 @@ public sealed partial class AccountingInventoryCostSourceReaderTests
 
     private sealed class PostedPort : IPostedManufacturingShipmentCostReaderV1
     {
+        public Task<PostedManufacturingShipmentCostV1?> ReadPostedDeltasAsync(Guid companyId, Guid shipmentId, Guid movementId,
+            int movementLineNumber, Guid productId, decimal quantityKg, Func<CancellationToken, Task> freshConsumerFence,
+            CancellationToken cancellationToken = default) => throw new InvalidOperationException("Synthetic original-source fixture has no later-delta owner.");
         public PostedManufacturingCostShareV1 Share { get; }
         public Action? AfterRead { get; set; }
         public PostedPort(Fixture f)

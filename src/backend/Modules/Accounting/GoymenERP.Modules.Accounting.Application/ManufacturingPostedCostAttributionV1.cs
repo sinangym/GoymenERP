@@ -46,4 +46,12 @@ public interface IPostedManufacturingShipmentCostReaderV1
         int movementLineNumber, Guid productId, decimal quantityKg,
         Func<CancellationToken, Task> freshConsumerFence, CancellationToken cancellationToken = default) =>
         ReadAsync(companyId, shipmentId, movementId, movementLineNumber, productId, quantityKg, freshConsumerFence, cancellationToken);
+
+    /// <summary>
+    /// Reads only actual posted deltas for a physical line whose original known cost is independently proven by
+    /// the consumer's completed initial source/claim. It cannot establish an unknown original cost or its coverage.
+    /// </summary>
+    Task<PostedManufacturingShipmentCostV1?> ReadPostedDeltasAsync(Guid companyId, Guid shipmentId, Guid movementId,
+        int movementLineNumber, Guid productId, decimal quantityKg,
+        Func<CancellationToken, Task> freshConsumerFence, CancellationToken cancellationToken = default);
 }

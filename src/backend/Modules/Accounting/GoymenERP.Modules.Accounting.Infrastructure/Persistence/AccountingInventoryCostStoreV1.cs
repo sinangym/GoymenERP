@@ -68,13 +68,14 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
                 AuditAiInvolvement.None, null, SourceChannels.System, null, null, metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey));
             foreach (var component in source.Components)
             {
-                await RecordPurchaseCandidates(envelope, source, component, cancellationToken);
+                var hasPurchasePhysicalSource = await RecordPurchaseCandidates(envelope, source, component, cancellationToken);
                 await ClaimPhysicalCost(source, component, cancellationToken);
                 AccountingInventoryCostAmountsV1.TryRead(component.UnpostedTlAmount ?? component.SignedTlAmount, out var amount, out _);
                 var view = new AccountingInventoryCostProposalV1(Guid.NewGuid(), captured, source.EventId, source.Kind,
                     source.InvoiceId, source.InvoiceVersion, source.AdmissionId, source.InvoiceDate, source.OfficialInvoiceNumber,
                     component, 1, component.HasPostedComponents && (component.UnpostedTlAmount is null || amount == 0) ? "AlreadyAccounted"
-                        : amount == 0 && component.RecordedRounding is null ? "NoCost" : "AwaitingPreparation", envelope.OccurredAtUtc);
+                        : amount == 0 && (component.RecordedRounding is null || hasPurchasePhysicalSource == false)
+                            ? "NoCost" : "AwaitingPreparation", envelope.OccurredAtUtc);
                 Add(view);
                 Audit(view, metadata, "received", null, system: true);
             }
