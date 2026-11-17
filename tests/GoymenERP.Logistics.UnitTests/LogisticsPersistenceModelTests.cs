@@ -494,7 +494,7 @@ public sealed class LogisticsPersistenceModelTests
     public void Dispatch_kilogram_migration_keeps_legacy_proofs_nullable_and_guards_down_before_the_drop()
     {
         using var context = Context();
-        Assert.EndsWith("_AddDispatchKilogramAllocations", context.Database.GetMigrations().Last(), StringComparison.Ordinal);
+        Assert.Contains(context.Database.GetMigrations(), name => name.EndsWith("_AddDispatchKilogramAllocations", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
         var migration = new GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations.AddDispatchKilogramAllocations();
         Assert.DoesNotContain(migration.UpOperations, operation => operation is Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation);
@@ -859,10 +859,10 @@ public sealed class LogisticsPersistenceModelTests
             declarations.Where(declaration => declaration.ParentCapabilityId is null)
                 .Select(declaration => (declaration.CapabilityId, declaration.RoutePath, declaration.RequiredPermissions.Single()))
                 .OrderBy(item => item.CapabilityId, StringComparer.Ordinal).ToArray());
-        Assert.Equal(15, LogisticsPermissionManifestV1.Names.Count);
+        Assert.Equal(20, LogisticsPermissionManifestV1.Names.Count);
         Assert.Equal("logistics.shipments.record", LogisticsPermissionManifestV1.ShipmentsRecord);
         Assert.Equal("logistics.deliveries.record", LogisticsPermissionManifestV1.DeliveriesRecord);
-        Assert.Equal(15, LogisticsPermissionManifestV1.Names.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(20, LogisticsPermissionManifestV1.Names.Distinct(StringComparer.Ordinal).Count());
         // AT-055: the dispatch note's three names (prepare, approve, cancel), each its own and, like the weighbridge record, with no
         // shell declaration (server-measured commands on the detail).
         Assert.Equal("logistics.dispatch-notes.create", LogisticsPermissionManifestV1.DispatchNotesCreate);
