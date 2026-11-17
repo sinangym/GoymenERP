@@ -33,6 +33,21 @@ public sealed class LogisticsPlanExcessTests
         instruction.MarkShipped(instruction.Version, Guid.NewGuid(), line.Id, Kg(120), Now);
         Assert.Equal((100m, 120m), (line.InstructedQuantity.Value, line.ShippedQuantity.Value));
     }
+    [Theory]
+    [InlineData("tr-TR", "20.000", "20")]
+    [InlineData("de-DE", "20.000", "20")]
+    [InlineData("tr-TR", "20.125", "20.125")]
+    [InlineData("de-DE", "20.125", "20.125")]
+    public void Approved_quantities_are_canonical_invariant_and_preserve_all_three_decimals(string culture, string stored, string expected)
+    {
+        var prior = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.GetCultureInfo(culture);
+            Assert.Equal(expected, LogisticsStore.PlanExcessQuantity(decimal.Parse(stored, System.Globalization.CultureInfo.InvariantCulture)));
+        }
+        finally { System.Globalization.CultureInfo.CurrentCulture = prior; }
+    }
     [Fact]
     public void Legacy_physical_request_hash_omits_null_excess_and_explicit_proof_is_not_discarded()
     {

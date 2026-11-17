@@ -27,7 +27,7 @@ public sealed partial class LogisticsInstructionService : ILogisticsPlanExcessSe
         var owner = store as ILogisticsPlanExcessStoreV1 ?? throw PlanExcessUnavailable();
         var envelope = Envelope(scope, metadata, permission!);
         var hash = LogisticsRequestHash.Compute(LogisticsPlanExcessV1.ProposeCommand, instructionId, new { lineId, request });
-        if (await GuardedAsync(scope, permission, () => owner.FindPlanExcessReplayAsync(envelope, hash, LogisticsPlanExcessV1.ProposeCommand, token), token) is { } replay) return replay;
+        if (await PlanExcessReplayAsync(scope, permission, owner, envelope, hash, LogisticsPlanExcessV1.ProposeCommand, token) is { } replay) return replay;
         var instruction = await GuardedAsync(scope, permission, () => store.FindInstructionAsync(instructionId, token), token)
             ?? throw new LogisticsInstructionServiceException(404, "not_found");
         var line = instruction.Instruction.Lines.SingleOrDefault(line => line.Id == lineId)
@@ -47,9 +47,15 @@ public sealed partial class LogisticsInstructionService : ILogisticsPlanExcessSe
         var owner = store as ILogisticsPlanExcessStoreV1 ?? throw PlanExcessUnavailable();
         var envelope = Envelope(scope, metadata, permission);
         var hash = LogisticsRequestHash.Compute(LogisticsPlanExcessV1.ApproveCommand, exceptionId, request);
-        if (await GuardedAsync(scope, permission, () => owner.FindPlanExcessReplayAsync(envelope, hash, LogisticsPlanExcessV1.ApproveCommand, token), token) is { } replay) return replay;
+        if (await PlanExcessReplayAsync(scope, permission, owner, envelope, hash, LogisticsPlanExcessV1.ApproveCommand, token) is { } replay) return replay;
         return await WritePlanExcessAsync(scope, permission, owner, envelope, hash, LogisticsPlanExcessV1.ApproveCommand,
             ct => owner.ApprovePlanExcessAsync(envelope, hash, exceptionId, request, ct), token);
+    }
+    private async Task<LogisticsPlanExcessResultV1?> PlanExcessReplayAsync(Scope scope, string? permission,
+        ILogisticsPlanExcessStoreV1 owner, LogisticsWriteEnvelope envelope, string hash, string command, CancellationToken token)
+    {
+        try { return await GuardedAsync(scope, permission, () => owner.FindPlanExcessReplayAsync(envelope, hash, command, token), token); }
+        catch (LogisticsStoreException error) { throw Store(error); }
     }
     private async Task<LogisticsPlanExcessResultV1> WritePlanExcessAsync(Scope scope, string? permission,
         ILogisticsPlanExcessStoreV1 owner, LogisticsWriteEnvelope envelope, string hash, string command,

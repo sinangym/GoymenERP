@@ -112,11 +112,12 @@ public sealed partial class LogisticsStore : ILogisticsPlanExcessStoreV1
             throw new LogisticsInstructionServiceException(503, LogisticsPlanExcessV1.Unavailable);
         return new(row.CompanyId, row.ExceptionId, row.InstructionId, row.LineId, line.SourceOrderId, line.SourceOrderLineId, line.UnitId,
             row.Version.ToString(CultureInfo.InvariantCulture), instruction.Version.ToString(CultureInfo.InvariantCulture), row.Status == 1 ? "Pending" : "Approved",
-            line.Instructed.ToString(CultureInfo.InvariantCulture), row.Quantity.ToString(CultureInfo.InvariantCulture), loaded.ToString(CultureInfo.InvariantCulture),
-            shipped.ToString(CultureInfo.InvariantCulture), row.Reason, row.ProposedBy, row.ProposedAtUtc, row.ApprovedBy, row.ApprovedAtUtc,
-            (row.Status == 2 ? row.Quantity - loaded : 0m).ToString(CultureInfo.InvariantCulture),
-            (row.Status == 2 ? loaded - shipped : 0m).ToString(CultureInfo.InvariantCulture));
+            PlanExcessQuantity(line.Instructed), PlanExcessQuantity(row.Quantity), PlanExcessQuantity(loaded),
+            PlanExcessQuantity(shipped), row.Reason, row.ProposedBy, row.ProposedAtUtc, row.ApprovedBy, row.ApprovedAtUtc,
+            PlanExcessQuantity(row.Status == 2 ? row.Quantity - loaded : 0m),
+            PlanExcessQuantity(row.Status == 2 ? loaded - shipped : 0m));
     }
+    internal static string PlanExcessQuantity(decimal value) => value.ToString("0.###", CultureInfo.InvariantCulture);
     private void RequirePlanExcessTransaction()
     {
         if (dbContext.Database.CurrentTransaction?.GetDbTransaction().IsolationLevel != IsolationLevel.Serializable)
