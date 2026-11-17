@@ -28,9 +28,10 @@ internal sealed partial class SettingsManufacturingProfileAdministration
         var (headers, values) = await ReadAsync(async () => (
             await database.ManufacturingParameterProfiles.AsNoTracking().ToListAsync(cancellationToken),
             await database.ManufacturingParameterProfileValues.AsNoTracking().ToListAsync(cancellationToken)));
+        var baseline = await ReadAsync(() => ManufacturingProfileBaselineReads.ParametersAsync(database, companyId, cancellationToken));
         await RequireStillAsync(ManufacturingParameterProfileActionsV1.Read, companyId, cancellationToken);
         var byProfile = values.ToLookup(row => row.ProfileId);
-        var profiles = ApprovedManufacturingProfileCatalog.ParametersFor(companyId).Select(CatalogView)
+        var profiles = baseline.Values.Select(CatalogView)
             .Concat(headers.Select(row => ParameterView(row, byProfile[row.ProfileId])))
             .OrderBy(view => view.Process, StringComparer.Ordinal)
             .ThenBy(view => view.WorkCenterId)
@@ -40,7 +41,7 @@ internal sealed partial class SettingsManufacturingProfileAdministration
             .Select(definition => new ManufacturingParameterDefinitionViewV1(definition.Key, definition.Unit,
                 definition.Kind.ToString(), definition.MaximumScale, definition.Processes, definition.Choices))
             .ToArray();
-        return new ManufacturingParameterProfileListViewV1(companyId, SettingsBusinessDate.Today(timeProvider), keys, profiles);
+        return new ManufacturingParameterProfileListViewV1(companyId, SettingsBusinessDate.Today(timeProvider), keys, profiles, baseline.Version);
     }
 
     async Task<ManufacturingParameterProfileViewV1?> ISettingsManufacturingParameterProfileAdministrationV1.GetAsync(
@@ -48,7 +49,8 @@ internal sealed partial class SettingsManufacturingProfileAdministration
     {
         var companyId = RequireContextCompany();
         await RequireAsync(ManufacturingParameterProfileActionsV1.Read, companyId, cancellationToken);
-        if (ApprovedManufacturingProfileCatalog.ParametersFor(companyId).SingleOrDefault(entry => entry.ProfileId == profileId)
+        var baseline = await ReadAsync(() => ManufacturingProfileBaselineReads.ParametersAsync(database, companyId, cancellationToken));
+        if (baseline.Values.SingleOrDefault(entry => entry.ProfileId == profileId)
             is { } catalog)
         {
             await RequireStillAsync(ManufacturingParameterProfileActionsV1.Read, companyId, cancellationToken);

@@ -1038,3 +1038,15 @@ roll back on every exception. Prefix and minimum sequence width require explicit
 Annual counters do not reset on format changes; cancellations append history and never free a number.
 The 90-day notification and scrap-cost inclusion starting values are decided policy reads only after a successful
 empty-store read; storage failure never becomes a default success. Runtime SQL/HTTP/browser tests are NOT_RUN.
+
+## KIM-S15 / TK-38 manufacturing starting-value transfer
+
+The existing parameter/tolerance publish permission allows an explicit company-scoped transfer of that company's
+reviewed version-0 starting values. It copies exact values, source identities, dates and decimal representation into
+an immutable snapshot; it does not publish a draft, revise a formula or create values for an unconfigured company.
+The parameter and tolerance scopes each transfer once. Expected version `0`, a reason, actor-bound idempotency,
+fresh permission/company checks and Audit accompany the same save. Providers read the persisted snapshot after
+transfer; an invalid persisted source fails closed. Existing draft/published versions and past document proofs stay intact.
+The two `starting-values-transfer` commands use existing publish permissions and do not grant rights to any person.
+The forward-fix guard is **51966** and refuses while a baseline snapshot exists. Migration generation and source-build
+results are recorded in the W8 identity report; SQL/HTTP/browser acceptance is **NOT_RUN** until the final test phase.
