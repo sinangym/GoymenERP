@@ -19,7 +19,7 @@ namespace GoymenERP.Sales.UnitTests;
 /// technical document number and the opaque list cursor. What SQL Server enforces is proven by the
 /// relational acceptance tests, not here. SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class SalesPersistenceModelTests
+public sealed partial class SalesPersistenceModelTests
 {
     private static readonly Guid CompanyA = Guid.Parse("11111111-1111-4111-8111-111111111111");
     private static readonly Guid CompanyB = Guid.Parse("22222222-2222-4222-8222-222222222222");
@@ -219,8 +219,8 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesContracts", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddShipmentRiskExceptionUsages", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSubcontractServiceInvoices", StringComparison.Ordinal));
-        Assert.Equal(new[] { "AddSalesOutboxCommittedCursor", "AddSalesMarginCostSnapshots" },
-            context.Database.GetMigrations().TakeLast(2).Select(name => name[(name.IndexOf('_') + 1)..]));
+        Assert.Equal(new[] { "AddSalesOutboxCommittedCursor", "AddSalesMarginCostSnapshots", "AddSubcontractInvoiceLifecycle" },
+            context.Database.GetMigrations().TakeLast(3).Select(name => name[(name.IndexOf('_') + 1)..]));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

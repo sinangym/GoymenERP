@@ -44,7 +44,7 @@ describe('F2 subcontract service invoice decoder', () => {
 
   it.each([
     ['an unknown member', { extra: 1 }],
-    ['a state other than Draft', { state: 'Approved' }],
+    ['an approved invoice without its due plan', { state: 'Approved' }],
     ['a zero net kg', { netKg: '0.000' }],
     ['a negative net kg', { netKg: '-1.5' }],
     ['a numeric net kg', { netKg: 1234.56 }],

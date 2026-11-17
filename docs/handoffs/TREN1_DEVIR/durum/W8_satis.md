@@ -49,3 +49,45 @@ FNS-D73/D83/D107 için Sales owner okuma portu eklendi. Mevcut onaylı revizyon 
 - Merkezi kayıt: `ISalesMarginCostReadPortV1` → `InventorySalesMarginCostReadPortV1` scoped adapter. Sales modülündeki gerçek servis factory bağlantısı bu değişikliktedir; merkezi Program/host kaydı ve pinler kök entegrasyondadır. Inventory para birimi kanıtı bağımlılığı `f9b175a42`.
 - Kaynak derlemeleri: Api, Sales.UnitTests ve Api.IntegrationTests exit 0; 0 uyarı/hata. İlk Sales.Unit derlemesindeki hedef türü belirsiz test kurucusu düzeltildi, tekrar exit 0. `OpenApiGenerateDocumentsOnBuild=false`; OpenAPI üretilmedi. `npx --no-install tsc -b` ve `git diff --check` exit 0.
 - SQL, Unit, HTTP, Vitest, browser ve CI: **NOT_RUN**. Veritabanına migration uygulanmadı. Formül golden/insan kararı, merkezi entegrasyon ve kapanış kanıtları ayrı beklemektedir.
+
+## SAT-SC34 — PARTIAL: fason fatura yaşam döngüsü ve resmî tarih kuru
+
+- Kararlar: SAT-D129/D379/D399, SAT-D376/D377/D402, SAT-D380, SAT-D204/D208/D241.
+  Dövizli fason hizmet faturası kendi para biriminde hazırlanır; taslak gününden kur
+  seçilmez. Ayrı kişinin onayı sonrası gerçek Finance resmî fatura kaynağı okunur;
+  belge tarihi, kaynak kimliği/sürümü/checksum veya PDF kanıtı ve o tarihin Settings
+  kuru eşleştirmede saklanır. Eksik kur, belge veya şirket kanıtı başarı sayılmaz.
+- Vade, onaylı siparişin vade koşulundan ve gerektiğinde gerçek Logistics sevk olayının
+  İstanbul tarihinden gelir. Tartım kayıt zamanı veya fatura tarihi yerine konmaz.
+  Dondurulmuş satırlar ve mevcut deterministik fatura/taksit hesaplayıcıları kullanılır;
+  ekran miktar, kur, vergi veya tutar hesaplamaz. Eski taslaklara vade uydurulmaz.
+- Submit/approve/reject/cancel/match/finalize/resend-finance komutları mevcut Satış
+  izinleri, şirket, sürüm, idempotency, correlation/causation ve audit sınırındadır.
+  Hazırlayan/gönderen onaylayamaz. Kesinleştirme tek outbox olayı ve bekleyen Finance
+  kabulü yazar; tekrar aynı AdmissionId/kalem kimliklerini kullanır. Kullanılamayan
+  Finance veya muhasebe tüketimi kabul edilmiş gibi gösterilmez.
+- Normal ve fason faturalar aynı şirket/resmî numara/ETTN tekillik kaydını kullanır.
+  Eski normal eşleşmelerin kimlikleri migration ile korunur; yeni fatura üretilmez.
+  EF migration: `20261117113343_AddSubcontractInvoiceLifecycle`; Down ilk işlemde
+  kanıt varken **51994** ile reddeder. Başlık geçişi ve append-only tarihçe/komut/kimlik
+  trigger'ları **51997** kullanır. Migration/designer/snapshot üreticiyle oluşturuldu.
+- Kaynak testleri: gerçek resmî tarih ve yabancı şirket reddi, kur eksikliği, taze yetki
+  kaybı, maker/checker, replay, ortak belge kimliği, SQL atomik outbox/audit/attempt
+  rollback ve Down; HTTP katı gövde/başlıklar; frontend bozuk yanıt, yetkisizlik ve
+  ekran kapanınca aynı anahtarla belirsiz komutu yeniden deneme.
+- Kaynak derleme: Api, Sales.UnitTests ve Api.IntegrationTests exit 0; ilk Api
+  denemesindeki namespace importu düzeltildi. OpenAPI üretimi derlemede kapalıdır.
+  TypeScript ilk denemede ortak istek yardımcısının eksik argümanını yakaladı;
+  düzeltme sonrası `npx --no-install tsc -b` exit 0. Runtime Unit/SQL/HTTP/Vitest,
+  browser ve CI **NOT_RUN**. Veritabanı oluşturulmadı/migration uygulanmadı.
+- Merkezi entegrasyon: yalnız okuma/onay yetkilileri için lifecycle panelinin sipariş
+  detayında ayrıca açılması kök yazardadır; Program/Shell/generated pinler bu şeritte
+  değiştirilmedi. Sales modül factory ve endpoint kayıtları kaynakta tamamlandı.
+- Açık kalan: SAT-D378'in kesinleşmiş faturayı iptal etme/finansal tersleme ve ardından
+  tartı düzeltme akışı mevcut normal fatura iptaliyle de tamamlanmış değildir. Bu
+  checkpoint yalnız taslak/onay bekleyen iptalini sunar; kesinleşmiş faturaya veya
+  eski tartıya sessizce müdahale etmez. Merkezi pinler, bu kalan kaynak bağı ve kapanış
+  kabulü tamamlanmadan dilim DONE veya yüzde artışı sayılmaz.
+- K3 review: ortak resmî belge kimliği backfill'i, dört trigger ve guarded Down,
+  tarihli kur/para snapshotı, tek Finance kabulü/outbox, kaynak kanıtı ve yetki
+  kaybı kontrolleri. Yeni bypass allowlist girdisi, rol/grant veya aktivasyon yok.

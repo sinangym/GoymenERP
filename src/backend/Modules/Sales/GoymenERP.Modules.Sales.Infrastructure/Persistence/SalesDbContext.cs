@@ -534,7 +534,7 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
     internal const string InvoiceStateConstraint = "[State] IN (1, 2, 3, 4, 5, 6)";
 
     /// <summary>F2: a subcontract service invoice is recorded as a Draft (1) only in this slice; a later state is a declared widening.</summary>
-    internal const string SubcontractServiceInvoiceStateConstraint = "[State] = 1";
+    internal const string SubcontractServiceInvoiceStateConstraint = "[State] IN (1,2,3,4,5,6)";
 
     /// <summary>F2 (LOJ-D9): the billed weighing carries a positive revision and instruction version and its verbatim net kg text.</summary>
     internal const string SubcontractServiceInvoiceSourceConstraint =
@@ -769,6 +769,7 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
         ConfigureCustomerReturns(modelBuilder);
         ConfigureContracts(modelBuilder);
         ConfigureSubcontractServiceInvoices(modelBuilder);
+        ConfigureSubcontractLifecycle(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -2175,6 +2176,8 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
         var invoice = modelBuilder.Entity<SubcontractServiceInvoiceRow>();
         invoice.ToTable("SubcontractServiceInvoices", Schema, table =>
         {
+            table.HasTrigger("TR_SubcontractServiceInvoices_Lifecycle");
+            table.UseSqlOutputClause(false);
             table.HasCheckConstraint("CK_SubcontractServiceInvoices_Identity",
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' "
@@ -2204,6 +2207,7 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
         invoice.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
         invoice.HasIndex(x => new { x.CompanyId, x.DocumentNo }).IsUnique().HasDatabaseName("UX_SubcontractServiceInvoices_DocumentNo");
         invoice.HasIndex(x => new { x.CompanyId, x.LoadingInstructionId, x.WeighingId, x.SalesOrderId }).IsUnique()
+            .HasFilter("[State] IN (1,2,3,6)")
             .HasDatabaseName("UX_SubcontractServiceInvoices_Weighing");
         invoice.HasIndex(x => new { x.CompanyId, x.SalesOrderId }).HasDatabaseName("IX_SubcontractServiceInvoices_Order");
         invoice.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
@@ -2452,9 +2456,11 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
                         nameof(ContractRow.RejectionReason), nameof(ContractRow.UpdatedAtUtc),
                     ],
                     ContractAttemptRow => [],
-                    // F2 (SAT-D309/D312): a subcontract service invoice draft, its lines and its attempts are APPEND-ONLY in this
-                    // slice (the approval axis joins the invoice flow later, with its own declared widening).
-                    SubcontractServiceInvoiceRow => [],
+                    // SAT-D380: only the declared lifecycle state/version may change; source lines and lifecycle history remain append-only.
+                    SubcontractServiceInvoiceRow => [nameof(SubcontractServiceInvoiceRow.State), nameof(SubcontractServiceInvoiceRow.Version)],
+                    SubcontractInvoiceLifecycleRow => [],
+                    OfficialInvoiceClaimRow => [],
+                    SubcontractInvoiceCommandAttemptRow => [],
                     SubcontractServiceInvoiceLineRow => [],
                     SubcontractServiceInvoiceAttemptRow => [],
                     _ => [],
