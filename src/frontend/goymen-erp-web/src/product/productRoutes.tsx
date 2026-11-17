@@ -31,6 +31,7 @@ import { ProductCreatePage } from './ProductCreatePage'
 import { ProductEditPage } from './ProductEditPage'
 import { ProductImportPage } from './ProductImportPage'
 import { priceListRoutes } from './priceLists/priceListRoutes'
+import { paintMembershipRoutes } from './paintMemberships/paintMembershipRoutes'
 
 /**
  * `CapabilityRoute` types its prop as the shell's `CapabilityId` union, which does
@@ -116,4 +117,5 @@ export const productRoutes: RouteObject[] = [
    * ./priceLists/capabilities.ts). Spread here so the shell mounts them with no shell edit.
    */
   ...priceListRoutes,
+  ...paintMembershipRoutes,
 ]

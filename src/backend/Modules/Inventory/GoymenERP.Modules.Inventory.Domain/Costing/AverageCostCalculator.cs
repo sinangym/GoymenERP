@@ -54,7 +54,42 @@ public sealed record AverageCostTransferShortageValuation(decimal QuantityKg, de
 /// </summary>
 public static class AverageCostCalculator
 {
-    public static AverageCostPosition Apply(AverageCostPosition? current, AverageCostMovement movement)
+    /// <summary>Restores the value of a previously Known movement, including the approved zero stock residual. A new
+    /// zero-priced purchase receipt still follows Apply/ZeroCostReceipt; a recorded zero is never an unknown price.</summary>
+    public static AverageCostPosition RestoreKnownMovementValue(AverageCostPosition? current, decimal stockOnHandBeforeKg,
+        decimal quantityKg, ExactCostRatio knownValue)
+    {
+        ArgumentNullException.ThrowIfNull(knownValue);
+        if (quantityKg <= 0m || stockOnHandBeforeKg < 0m || knownValue.Sign < 0) throw new ArgumentOutOfRangeException(nameof(quantityKg));
+        if (current?.Status == AverageCostStatus.Unreadable) return current;
+        if ((current?.QuantityKg ?? 0m) != stockOnHandBeforeKg)
+            return AverageCostPosition.Unreadable(AverageCostUnreadableReason.LedgerStockMismatch);
+        var totalKg = stockOnHandBeforeKg + quantityKg;
+        var total = ExactCostRatio.Of(stockOnHandBeforeKg).Multiply(current?.AverageCostPerKg ?? 0m).Add(knownValue);
+        return AverageCostPosition.Known(totalKg, total.Divide(totalKg).Round(AverageCostPrecision.InternalScale));
+    }
+
+    /// <summary>Reverses an immutable effect actually written to the rounded pool. That effect is signed: a valid positive
+    /// receipt may lower the total rounded pool value. It is not an economic unit price and may be zero or negative.</summary>
+    public static AverageCostPosition ReverseRecordedPoolEffect(AverageCostPosition current, decimal stockOnHandBeforeKg,
+        decimal quantityKg, ExactCostRatio recordedValueEffect)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        ArgumentNullException.ThrowIfNull(recordedValueEffect);
+        if (quantityKg <= 0m || stockOnHandBeforeKg < 0m) throw new ArgumentOutOfRangeException(nameof(quantityKg));
+        if (current.Status == AverageCostStatus.Unreadable) return current;
+        if (current.QuantityKg != stockOnHandBeforeKg)
+            return AverageCostPosition.Unreadable(AverageCostUnreadableReason.LedgerStockMismatch);
+        if (quantityKg > stockOnHandBeforeKg) return AverageCostPosition.Unreadable(AverageCostUnreadableReason.NegativeStock);
+        var remainingKg = stockOnHandBeforeKg - quantityKg;
+        var remainingValue = ExactCostRatio.Of(stockOnHandBeforeKg).Multiply(current.AverageCostPerKg!.Value).Subtract(recordedValueEffect);
+        if (remainingValue.Sign < 0 || remainingKg == 0m && remainingValue.Sign != 0)
+            return AverageCostPosition.Unreadable(AverageCostUnreadableReason.Return);
+        return AverageCostPosition.Known(remainingKg, remainingKg == 0m ? current.AverageCostPerKg!.Value
+            : remainingValue.Divide(remainingKg).Round(AverageCostPrecision.InternalScale));
+    }
+
+    public static AverageCostPosition Apply(AverageCostPosition? current, AverageCostMovement movement, ExactCostRatio? exactUnitCost = null)
     {
         ArgumentNullException.ThrowIfNull(movement);
         if (!Enum.IsDefined(movement.Kind))
@@ -73,13 +108,13 @@ public static class AverageCostCalculator
         }
 
         if (movement.Kind == AverageCostMovementKind.PurchaseReceipt
-            && (movement.UnitCostPerStockKg is null or < 0m))
+            && (exactUnitCost is null ? movement.UnitCostPerStockKg is null or < 0m : exactUnitCost.Sign < 0))
         {
             throw new ArgumentOutOfRangeException(nameof(movement), "A purchase receipt carries a non-negative unit cost.");
         }
 
         if (movement.Kind is AverageCostMovementKind.CustomerReturn or AverageCostMovementKind.PurchaseReturn
-            && movement.UnitCostPerStockKg is < 0m)
+            && (movement.UnitCostPerStockKg is < 0m || exactUnitCost?.Sign < 0))
         {
             throw new ArgumentOutOfRangeException(nameof(movement), "A return's original unit cost is not negative.");
         }
@@ -104,12 +139,12 @@ public static class AverageCostCalculator
 
         return movement.Kind switch
         {
-            AverageCostMovementKind.PurchaseReceipt => ApplyReceipt(current, movement),
+            AverageCostMovementKind.PurchaseReceipt => ApplyReceipt(current, movement, exactUnitCost),
             AverageCostMovementKind.Issue => ApplyIssue(current, movement),
             AverageCostMovementKind.ProductionReceipt =>
                 AverageCostPosition.Unreadable(AverageCostUnreadableReason.ProductionSource),
-            AverageCostMovementKind.CustomerReturn => ApplyCustomerReturn(current, movement),
-            AverageCostMovementKind.PurchaseReturn => ApplyPurchaseReturn(current, movement),
+            AverageCostMovementKind.CustomerReturn => ApplyCustomerReturn(current, movement, exactUnitCost),
+            AverageCostMovementKind.PurchaseReturn => ApplyPurchaseReturn(current, movement, exactUnitCost),
             _ => AverageCostPosition.Unreadable(AverageCostUnreadableReason.Return),
         };
     }
@@ -238,7 +273,7 @@ public static class AverageCostCalculator
             : new(shortageKg, null, null);
     }
 
-    private static AverageCostPosition ApplyReceipt(AverageCostPosition? current, AverageCostMovement movement)
+    private static AverageCostPosition ApplyReceipt(AverageCostPosition? current, AverageCostMovement movement, ExactCostRatio? exactUnitCost = null)
     {
         if (!movement.UnitCostIsPerStockKg)
         {
@@ -253,8 +288,8 @@ public static class AverageCostCalculator
         // SAT-D302 (1): additional cost (freight, customs) never enters the v1 average. The receipt entering at its own
         // purchase price is the implementation reading of that decision (reversible). Turning it on later is a setting
         // whose key, default and owner come with the expense structure (SAT-D302 (2), ALS-D80).
-        var receiptCost = movement.UnitCostPerStockKg!.Value;
-        if (receiptCost == 0m)
+        var receiptCost = exactUnitCost ?? ExactCostRatio.Of(movement.UnitCostPerStockKg!.Value);
+        if (receiptCost.Sign == 0)
         {
             // Sinan 2026-11-11: a zero unit cost is "cost unknown", it never enters the average.
             return AverageCostPosition.Unreadable(AverageCostUnreadableReason.ZeroCostReceipt);
@@ -264,26 +299,26 @@ public static class AverageCostCalculator
         var newKg = heldKg + movement.QuantityKg;
         if (heldKg == 0m)
         {
-            return AverageCostPosition.Known(newKg, AverageCostPrecision.Round(receiptCost));
+            return AverageCostPosition.Known(newKg, receiptCost.Round(AverageCostPrecision.InternalScale));
         }
 
         var heldCost = current!.AverageCostPerKg!.Value;
-        var blended = ((heldKg * heldCost) + (movement.QuantityKg * receiptCost)) / newKg;
-        return AverageCostPosition.Known(newKg, AverageCostPrecision.Round(blended));
+        var blended = ExactCostRatio.Of(heldKg).Multiply(heldCost).Add(receiptCost.Multiply(movement.QuantityKg)).Divide(newKg);
+        return AverageCostPosition.Known(newKg, blended.Round(AverageCostPrecision.InternalScale));
     }
 
     /// <summary>
     /// SAT-D303 / KLN-D64: the reversal of the original issue enters at that issue's unit cost and blends like a
     /// receipt. Without the original cost the position is unreadable; nothing is guessed from the current average.
     /// </summary>
-    private static AverageCostPosition ApplyCustomerReturn(AverageCostPosition? current, AverageCostMovement movement)
+    private static AverageCostPosition ApplyCustomerReturn(AverageCostPosition? current, AverageCostMovement movement, ExactCostRatio? exactUnitCost)
     {
-        if (movement.UnitCostPerStockKg is null)
+        if (movement.UnitCostPerStockKg is null && exactUnitCost is null)
         {
             return AverageCostPosition.Unreadable(AverageCostUnreadableReason.Return);
         }
 
-        return ApplyReceipt(current, movement);
+        return ApplyReceipt(current, movement, exactUnitCost);
     }
 
     /// <summary>
@@ -293,7 +328,7 @@ public static class AverageCostCalculator
     /// value that is not positive, needs a cost-difference record whose posting is not specified (SAT-D306 (c)): the
     /// position is unreadable instead, fail-closed.
     /// </summary>
-    private static AverageCostPosition ApplyPurchaseReturn(AverageCostPosition? current, AverageCostMovement movement)
+    private static AverageCostPosition ApplyPurchaseReturn(AverageCostPosition? current, AverageCostMovement movement, ExactCostRatio? exactUnitCost)
     {
         var heldKg = current?.QuantityKg ?? 0m;
         if (current is null || movement.QuantityKg > heldKg)
@@ -301,7 +336,8 @@ public static class AverageCostCalculator
             return AverageCostPosition.Unreadable(AverageCostUnreadableReason.NegativeStock);
         }
 
-        if (movement.UnitCostPerStockKg is not { } returnCost)
+        var returnCost = exactUnitCost ?? (movement.UnitCostPerStockKg is { } scalar ? ExactCostRatio.Of(scalar) : null);
+        if (returnCost is null)
         {
             return AverageCostPosition.Unreadable(AverageCostUnreadableReason.Return);
         }
@@ -316,26 +352,26 @@ public static class AverageCostCalculator
             return AverageCostPosition.Unreadable(AverageCostUnreadableReason.ForeignCurrency);
         }
 
-        if (returnCost == 0m)
+        if (returnCost.Sign == 0)
         {
             // A zero cost is "cost unknown" (Sinan 2026-11-11), on the way out as on the way in.
             return AverageCostPosition.Unreadable(AverageCostUnreadableReason.ZeroCostReceipt);
         }
 
         var heldCost = current.AverageCostPerKg!.Value;
-        if (LeavesCostDifference(heldKg, heldCost, movement.QuantityKg, returnCost))
+        var remainingKg = heldKg - movement.QuantityKg;
+        var remainingValue = ExactCostRatio.Of(heldKg).Multiply(heldCost).Subtract(returnCost.Multiply(movement.QuantityKg));
+        if (remainingKg == 0m ? remainingValue.Sign != 0 : remainingValue.Sign <= 0)
         {
             return AverageCostPosition.Unreadable(AverageCostUnreadableReason.Return);
         }
 
-        var remainingKg = heldKg - movement.QuantityKg;
         if (remainingKg == 0m)
         {
             return AverageCostPosition.Known(0m, heldCost);
         }
 
-        var remainingValue = (heldKg * heldCost) - (movement.QuantityKg * returnCost);
-        return AverageCostPosition.Known(remainingKg, AverageCostPrecision.Round(remainingValue / remainingKg));
+        return AverageCostPosition.Known(remainingKg, remainingValue.Divide(remainingKg).Round(AverageCostPrecision.InternalScale));
     }
 
     /// <summary>

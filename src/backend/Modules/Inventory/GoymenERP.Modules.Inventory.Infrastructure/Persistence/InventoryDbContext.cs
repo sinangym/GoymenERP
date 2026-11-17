@@ -30,7 +30,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// </list>
 /// The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// </summary>
-public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> options, ICompanyContext companyContext)
+public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbContext> options, ICompanyContext companyContext)
     : DbContext(options)
 {
     public const string Schema = "inventory";
@@ -287,6 +287,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         ConfigureAllocations(modelBuilder);
         ConfigureAllocationChanges(modelBuilder);
         ConfigureAverageCostLedger(modelBuilder);
+        ConfigureMovementCosting(modelBuilder);
         ConfigureOutboxMessages(modelBuilder);
         ConfigureOpeningCounts(modelBuilder);
         ConfigureCommands(modelBuilder);
@@ -793,6 +794,8 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         entity.Property(x => x.PayloadJson).HasColumnType("nvarchar(max)").IsRequired();
         entity.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation("Latin1_General_100_BIN2").IsRequired();
         entity.Property(x => x.CausationId).HasMaxLength(128).UseCollation("Latin1_General_100_BIN2");
+        entity.Property(x => x.Position).IsRowVersion().HasConversion<byte[]>();
+        entity.HasIndex(x => new { x.CompanyId, x.Position }).HasDatabaseName("IX_OutboxMessages_CompanyId_Position");
         entity.HasIndex(x => new { x.CompanyId, x.EventType, x.AggregateId, x.Sequence })
             .IsUnique().HasDatabaseName("UX_OutboxMessages_AggregateSequence");
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
@@ -1671,6 +1674,23 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                         nameof(AverageCostLedgerRow.Status), nameof(AverageCostLedgerRow.UnreadableReason),
                         nameof(AverageCostLedgerRow.QuantityKg), nameof(AverageCostLedgerRow.AverageCostPerKg),
                         nameof(AverageCostLedgerRow.Version), nameof(AverageCostLedgerRow.UpdatedAtUtc),
+                    ],
+                    CurrencyAverageCostLedgerRow =>
+                    [
+                        nameof(CurrencyAverageCostLedgerRow.Status), nameof(CurrencyAverageCostLedgerRow.UnreadableReason),
+                        nameof(CurrencyAverageCostLedgerRow.QuantityKg), nameof(CurrencyAverageCostLedgerRow.AverageCostPerKg),
+                        nameof(CurrencyAverageCostLedgerRow.Version), nameof(CurrencyAverageCostLedgerRow.UpdatedAtUtc),
+                    ],
+                    ExactCostPoolRow =>
+                    [
+                        nameof(ExactCostPoolRow.Status), nameof(ExactCostPoolRow.UnreadableReason),
+                        nameof(ExactCostPoolRow.QuantityRatioJson), nameof(ExactCostPoolRow.AverageCostPerKg),
+                        nameof(ExactCostPoolRow.Version), nameof(ExactCostPoolRow.UpdatedAtUtc),
+                    ],
+                    ManufacturingCostGenerationRow =>
+                    [
+                        nameof(ManufacturingCostGenerationRow.Version), nameof(ManufacturingCostGenerationRow.State),
+                        nameof(ManufacturingCostGenerationRow.LastResultJson), nameof(ManufacturingCostGenerationRow.UpdatedAtUtc),
                     ],
                     AllocationRow =>
                     [
