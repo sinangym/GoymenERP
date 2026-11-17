@@ -31,7 +31,7 @@ public sealed class DocumentsDbContext(DbContextOptions<DocumentsDbContext> opti
     /// The stored content kinds (<c>DocumentFileKind</c>): the standard PDF/PNG/JPEG and, since FNS-D52,
     /// the bank-statement import kinds XLSX/MT940/CSV. Tests compare the model's check with it.
     /// </summary>
-    internal const string ContentKindCheck = "[ContentKind] IN (1, 2, 3, 4, 5, 6)";
+    internal const string ContentKindCheck = "[ContentKind] IN (1, 2, 3, 4, 5, 6, 7)";
 
     /// <summary>
     /// DEC-DOC-009 / KLN-D60: a Clean (2) version names its scanner; a NotScanned (1) or a SystemGenerated (3) version —

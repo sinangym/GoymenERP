@@ -42,6 +42,7 @@ public static class DocumentContentPolicy
         // Banks name MT940 exports .sta, .mt940, .940 or plain .txt; the content check decides, not the name.
         new DocumentFileKindInfo(DocumentFileKind.Mt940, PlainTextContentType, [".sta", ".mt940", ".940", ".txt"]),
         new DocumentFileKindInfo(DocumentFileKind.Csv, CsvContentType, [".csv"]),
+        new DocumentFileKindInfo(DocumentFileKind.UblInvoiceXml, "application/xml", [".xml"]),
     ];
 
     /// <summary>The kinds every owner record accepts (DEC-DOC-009 as it stood before FNS-D52); the default of an owner port.</summary>
@@ -53,6 +54,10 @@ public static class DocumentContentPolicy
     /// </summary>
     public static IReadOnlyList<DocumentFileKind> BankStatementImportKinds { get; } =
         [DocumentFileKind.Xlsx, DocumentFileKind.Mt940, DocumentFileKind.Csv];
+
+    /// <summary>ALS-D7: source imports only. Existing owners and their type lists are unchanged.</summary>
+    public static IReadOnlyList<DocumentFileKind> PurchaseInvoiceImportKinds { get; } =
+        [DocumentFileKind.UblInvoiceXml, DocumentFileKind.Xlsx, DocumentFileKind.Csv];
 
     public static DocumentFileKindInfo Info(DocumentFileKind kind) =>
         KnownKinds.SingleOrDefault(info => info.Kind == kind) ?? throw new ArgumentOutOfRangeException(nameof(kind));
@@ -119,6 +124,8 @@ public static class DocumentContentPolicy
         DocumentFileKind.Xlsx => string.Equals(declared, XlsxContentType, StringComparison.OrdinalIgnoreCase),
         DocumentFileKind.Mt940 => string.Equals(declared, PlainTextContentType, StringComparison.OrdinalIgnoreCase),
         DocumentFileKind.Csv => CsvDeclaredTypes.Contains(declared),
+        DocumentFileKind.UblInvoiceXml => string.Equals(declared, "application/xml", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(declared, "text/xml", StringComparison.OrdinalIgnoreCase),
         _ => false,
     };
 
@@ -131,6 +138,7 @@ public static class DocumentContentPolicy
         DocumentFileKind.Xlsx => DocumentContentInspection.IsPassiveWorkbook(content),
         DocumentFileKind.Mt940 => DocumentContentInspection.IsMt940Statement(content),
         DocumentFileKind.Csv => DocumentContentInspection.IsDelimitedTable(content),
+        DocumentFileKind.UblInvoiceXml => DocumentUblInvoiceInspection.IsPassiveInvoice(content),
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 

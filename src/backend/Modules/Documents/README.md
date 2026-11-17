@@ -87,3 +87,11 @@ injected process runner, registration — `DocumentsProductionAdaptersTests`; a 
 above, not a test);
 `DocumentVaultSqlServerRelationalAcceptanceTests` (real SQL); `src/frontend/.../documents` + `cari/CariDocuments.test.tsx`;
 browser `tests/e2e/cari-c02/specs/c02-documents.spec.ts`.
+# FIN-S13 — UBL fatura kaynak dosyası
+
+`20261117112418_AddPurchaseInvoiceXmlContentKind`, `dotnet ef` ile üretildi. XML,
+yalnız `purchasing.invoice-import` belge sahibinin açık dosya türüdür; genel belge
+ve banka ekstresi türleri genişletilmedi. DTD/dış varlık/işleme talimatı reddedilir;
+zararlı içerik taraması ve değişmez sürüm/hash kontrolleri korunur. Resmî belge veya
+e-imza doğrulaması iddiası yoktur. Down, XML kaynak baytı varken önce `THROW 51995`
+ile durur; veri silmez. Kalıcılık modeli ve gerçek SQL guard test kaynakları yazıldı.

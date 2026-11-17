@@ -500,6 +500,7 @@ builder.Services.AddLogisticsDefiniteShipmentOutbox();
 builder.Services.AddSalesRiskExceptionUsageInbox();
 builder.Services.AddCompanySetupMessaging();
 builder.Services.AddTrainCompletionOwnerBindings();
+builder.Services.AddPurchaseInvoiceImportHost();
 builder.Services.AddCompanyLifecycleAuthorizationGate();
 // SAT-D406 / SAT-D367: the Sales risk remainder's plan quantity, answered by the Logistics owner's planned-quantity read.
 builder.Services.AddSalesOrderPlannedQuantityReadAdapter();
