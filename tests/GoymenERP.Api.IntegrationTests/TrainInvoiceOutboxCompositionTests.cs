@@ -3,6 +3,10 @@ using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Accounting.Application.Inbox;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
+using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
+using GoymenERP.Modules.Purchasing.Application.Contracts;
+using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Infrastructure.Outbox;
 using GoymenERP.Modules.Work.Infrastructure;
 using GoymenERP.Modules.Work.Infrastructure.Outbox;
@@ -31,6 +35,26 @@ public sealed class TrainInvoiceOutboxCompositionTests
         Assert.Equal(typeof(AccountingSalesInvoiceFinalizedInboxConsumer), consumer.ImplementationType);
         foreach (var subscription in consumer.Subscriptions)
             Assert.Contains(source.Publishes, item => item.EventType == subscription.EventType && item.Version == subscription.Version);
+        var purchaseCostConsumer = Assert.Single(registry.Consumers,
+            item => item.ConsumerName == InventoryPurchaseInvoiceCostInboxV1.ConsumerName);
+        Assert.Equal(typeof(InventoryPurchaseInvoiceCostInboxConsumerV1), purchaseCostConsumer.ImplementationType);
+        var purchasing = Assert.Single(registry.Sources,
+            item => item.SourceName == InventoryPurchaseInvoiceCostInboxV1.SourceName);
+        foreach (var subscription in purchaseCostConsumer.Subscriptions)
+            Assert.Contains(purchasing.Publishes,
+                item => item.EventType == subscription.EventType && item.Version == subscription.Version);
+        var costStore = Assert.Single(services,
+            item => item.ServiceType == typeof(IInventoryPurchaseInvoiceCostStoreV1));
+        Assert.Equal(typeof(InventoryPurchaseInvoiceCostStoreV1), costStore.ImplementationType);
+        Assert.Equal(ServiceLifetime.Scoped, costStore.Lifetime);
+        var supplierReturnCost = Assert.Single(services,
+            item => item.ServiceType == typeof(IPurchaseSupplierReturnInvoiceCostReadPortV1));
+        Assert.Equal(typeof(PurchaseSupplierReturnInvoiceCostReadPort), supplierReturnCost.ImplementationType);
+        Assert.Equal(ServiceLifetime.Scoped, supplierReturnCost.Lifetime);
+        var inventory = Assert.Single(registry.Sources,
+            item => item.SourceName == InventoryOutboxContractV1.SourceName);
+        Assert.Contains(inventory.Publishes,
+            item => item.EventType == InventoryPurchaseInvoiceCostDifferenceV1.EventType && item.Version == 1);
         var finance = Assert.Single(registry.Sources, item => item.SourceName == FinanceFinancialMovementEventsV1.SourceName);
         Assert.Equal(typeof(FinanceCreditOutboxEventSourceV1), finance.ImplementationType);
         var financeConsumer = Assert.Single(registry.Consumers, item => item.ConsumerName == FinanceJournalSourceInboxV1.ConsumerName);

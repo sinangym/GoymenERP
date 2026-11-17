@@ -208,6 +208,8 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
             Assert.Equal((SalesDraftWriteOutcome.Replayed, invoiceId, run.Correlation), (replay!.Outcome, replay.Invoice.Id, replay.OriginalCorrelationId));
             Assert.Equal(stored.Invoice.Totals, replay.Invoice.Totals);
             Assert.Equal(stored.Invoice.FunctionalTotals, replay.Invoice.FunctionalTotals);
+            Assert.Equal(stored.Invoice.Lines.OrderBy(line => line.LineNo).Select(line => line.Share),
+                replay.Invoice.Lines.OrderBy(line => line.LineNo).Select(line => line.Share));
             Assert.Equal(stored.Invoice.Lines.Select(line => (line.Functional!.Amounts, string.Join(',', line.Functional.Adjusted))),
                 replay.Invoice.Lines.Select(line => (line.Functional!.Amounts, string.Join(',', line.Functional.Adjusted))));
             var mismatch = await Assert.ThrowsAsync<SalesDraftStoreException>(() =>
@@ -731,6 +733,42 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id AND EventType = N'sales.invoice.finalized.v1' "
             + "AND EntityVersionBefore = 3 AND EntityVersionAfter = 4", ("@id", approved.Id.ToString("D"))));
 
+        var originalPayload = await run.ScalarAsync<string>(
+            "SELECT PayloadJson FROM sales.OutboxMessages WHERE CompanyId = @company AND AggregateId = @id AND EventType = N'sales.invoice.finalized.v1'",
+            ("@company", CompanyA), ("@id", approved.Id));
+        using (var payload = System.Text.Json.JsonDocument.Parse(originalPayload))
+        {
+            var lines = payload.RootElement.GetProperty("lines").EnumerateArray().ToArray();
+            var frozenLines = finalized.Invoice.Lines.OrderBy(line => line.LineNo).ToArray();
+            Assert.Equal(frozenLines.Length, lines.Length);
+            foreach (var (line, frozen) in lines.Zip(frozenLines))
+            {
+                Assert.Equal(frozen.Id, line.GetProperty("lineId").GetGuid());
+                var source = System.Text.Json.JsonSerializer.Deserialize<SalesInvoiceShipmentSourceV1>(
+                    line.GetProperty("shipmentSource").GetRawText(), SalesDraftJson.Options);
+                Assert.Equal(new SalesInvoiceShipmentSourceV1(frozen.Share.ShipmentId, frozen.Share.DispatchNoteId,
+                    frozen.Share.NoteLineNo, frozen.Share.SalesOrderId, frozen.Share.SalesOrderLineId,
+                    frozen.Share.PriceBasisRevision, frozen.Share.ProductId, frozen.Share.UnitId, frozen.Share.QuantityText), source);
+                Assert.Equal(frozen.Share.Quantity, line.GetProperty("quantity").GetDecimal());
+            }
+        }
+
+        // The additive source leaves the existing amount consumer contract readable; it does not redefine physical kg/cost.
+        var legacyConsumer = System.Text.Json.JsonSerializer.Deserialize<
+            GoymenERP.Modules.Accounting.Application.Inbox.AccountingSalesInvoiceFinalizedEventV1>(originalPayload,
+                new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        Assert.NotNull(legacyConsumer);
+        Assert.Equal(finalized.Invoice.Totals.Net.Amount, legacyConsumer.Net);
+        await using (var scope = run.Store(CompanyA))
+        {
+            var replay = await scope.Invoices.FinalizeInvoiceAsync(
+                run.Envelope("f1-final", actor: finalizer, permission: SalesPermissionManifestV1.InvoicesFinalize), Hash('2'), approved.Id,
+                (_, _) => throw new InvalidOperationException("A replay must not produce another source event."),
+                new SalesDraftStateAudit("sales.invoice.finalized.v1", "Finalize", "SENTETIK"));
+            Assert.Equal(SalesDraftWriteOutcome.Replayed, replay!.Outcome);
+            Assert.Equal(run.Correlation, replay.OriginalCorrelationId);
+        }
+
         // The hand-off answer is a second, separate save of the ledger only.
         await using (var scope = run.Store(CompanyA))
         {
@@ -743,6 +781,9 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceFinalizations WHERE InvoiceId = @id AND FinanceStatus = 2 AND AttemptCount = 1",
             ("@id", approved.Id)));
         Assert.Equal(4L, await run.ScalarAsync<long>("SELECT Version FROM sales.Invoices WHERE Id = @id", ("@id", approved.Id)));
+        Assert.Equal(originalPayload, await run.ScalarAsync<string>(
+            "SELECT PayloadJson FROM sales.OutboxMessages WHERE CompanyId = @company AND AggregateId = @id AND EventType = N'sales.invoice.finalized.v1'",
+            ("@company", CompanyA), ("@id", approved.Id)));
 
         foreach (var (sql, number) in new[]
         {

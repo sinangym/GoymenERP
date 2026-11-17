@@ -1,6 +1,6 @@
 import type { ViewOutcome } from '../shell/uiState'
 import { API_BASE, logisticsHeaders } from './api'
-import { decodeInstructionMutation } from './contract'
+import { decodeInstructionMutation, decodePhysicalStockRefusalDetail } from './contract'
 import { decodeSubcontractCandidates, decodeSubcontractInstruction, decodeSubcontractSalesLines, decodeSubcontractList,
   SUBCONTRACT_DELIVERY_PATH as PATH, type SubcontractCandidate, type SubcontractInstruction } from './subcontractDeliveryContract'
 
@@ -28,7 +28,8 @@ export interface SubcontractAttempt {
   readonly family: 'subcontract' | 'standard'; readonly body: string; readonly key: string; readonly correlation: string
 }
 export type SubcontractResult = { readonly type: 'applied'; readonly replayed: boolean; readonly view: SubcontractInstruction | null }
-  | { readonly type: 'refused'; readonly status: number; readonly code: string | null }
+  | { readonly type: 'refused'; readonly status: number; readonly code: string | null; readonly detail: string | null;
+      readonly replayed: boolean; readonly originalCorrelationId: string | null }
   | { readonly type: 'unknown'; readonly reason: 'offline' | 'network-error' | 'service-unavailable' | 'malformed-response' | 'conflict' }
 export type SubcontractAttemptState = { readonly phase: 'idle' }
   | { readonly phase: 'sending'; readonly snapshot: SubcontractAttempt }
@@ -114,8 +115,22 @@ export async function sendSubcontractAttempt(snapshot: SubcontractAttempt): Prom
   const problem = typeof body === 'object' && body !== null && !Array.isArray(body) ? body as Record<string, unknown> : null
   const code = typeof problem?.code === 'string' ? problem.code : null
   if (response.status >= 500) return { type: 'unknown', reason: 'service-unavailable' }
+  if ([401, 403, 404].includes(response.status)) return { type: 'refused', status: response.status, code: null,
+    detail: null, replayed: false, originalCorrelationId: null }
   if (response.status === 409 && (code === null || code.includes('concurrent') || code.includes('busy'))) return { type: 'unknown', reason: 'conflict' }
-  return { type: 'refused', status: response.status, code }
+  const original = response.headers.get('Idempotency-Original-Correlation-Id')
+  if (replayHeader !== null && replayHeader !== 'true' && replayHeader !== 'false'
+    || replayed && (original === null || original.length < 1 || original.length > 128 || original.trim() !== original || /[\u0000-\u001f\u007f]/u.test(original))
+    || !replayed && original !== null) return { type: 'unknown', reason: 'malformed-response' }
+  let detail: string | null = null
+  if (response.status === 409 && code === 'inventory_physical_stock_insufficient') {
+    if (problem?.status !== 409) return { type: 'unknown', reason: 'malformed-response' }
+    if (problem.detail !== null && problem.detail !== undefined) {
+      detail = decodePhysicalStockRefusalDetail(problem.detail, response.status)
+      if (detail === null) return { type: 'unknown', reason: 'malformed-response' }
+    }
+  }
+  return { type: 'refused', status: response.status, code, detail, replayed, originalCorrelationId: replayed ? original : null }
 }
 export const subcontractCreateLine = (item: SubcontractCandidate, quantityKg: string, reason: string) => ({
   lineId: crypto.randomUUID(), allocationId: crypto.randomUUID(), salesOrderId: item.salesOrderId, salesOrderLineId: item.salesOrderLineId,

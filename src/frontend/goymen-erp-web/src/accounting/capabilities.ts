@@ -14,6 +14,9 @@
  */
 
 export const ACCOUNTING_CAPABILITY = {
+  postingMappingsRead: 'accounting.posting-mappings.read',
+  postingMappingsPrepare: 'accounting.posting-mappings.prepare',
+  postingMappingsActivate: 'accounting.posting-mappings.activate',
   sourceVouchers: 'accounting.source-vouchers.list',
   sourceVouchersApprove: 'accounting.source-vouchers.approve',
   invoiceLineCogsPrepare: 'accounting.invoice-line-cogs.prepare',
@@ -53,6 +56,7 @@ export const ACCOUNTING_CAPABILITY = {
 export type AccountingCapabilityId = (typeof ACCOUNTING_CAPABILITY)[keyof typeof ACCOUNTING_CAPABILITY]
 
 export const ACCOUNTING_ROUTE = {
+  postingMappings: '/muhasebe/hesap-eslemeleri',
   sourceVouchers: '/muhasebe/kaynak-fisler',
   invoiceLineCogsPrepare: '/muhasebe/fatura-satiri-smm',
   invoiceLineCogsApprove: '/muhasebe/fatura-satiri-smm-onay',

@@ -58,10 +58,11 @@ describe('actual-reference invoice admission workspace', () => {
     mount(); expect(fetchImportMappingReferences).not.toHaveBeenCalled(); await map()
     expect(resolveImportSupplier).toHaveBeenCalledWith(id(2), id(1), importRequestFixture(), id(14), id(15), expect.any(AbortSignal))
     expect((screen.getByLabelText(T.amount) as HTMLInputElement).readOnly).toBe(true)
+    expect(screen.getByText(`${T.actualItemType}: ${T.steel} · ${T.sourceVersion}: 7`)).not.toBeNull()
     expect(screen.queryByRole('textbox', { name: /guid|json|kimlik/i })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: T.recordInvoice })); await screen.findByText(T.unknown)
     expect(recordInvoiceImport).toHaveBeenCalledWith(id(2), id(1), expect.objectContaining({ request: expect.objectContaining({ expectedPartyVersion: '4', expectedAccountVersion: '5',
-      lines: [expect.objectContaining({ productId: id(16), expectedProductVersion: '6', linePurpose: 'resale' })],
+      lines: [expect.objectContaining({ productId: id(16), expectedProductVersion: '6', itemType: 'Steel', expectedItemTypeVersion: '7', linePurpose: 'resale' })],
       installments: [expect.objectContaining({ amount: '12', functionalAmount: null })] }) }), expect.any(String))
   })
   it('freezes the original request and retries with the same key after an unknown response', async () => {
@@ -71,6 +72,14 @@ describe('actual-reference invoice admission workspace', () => {
     view.unmount(); mount(); fireEvent.click(screen.getByRole('button', { name: T.mapAndRecord }))
     fireEvent.click(await screen.findByRole('button', { name: T.retry })); await waitFor(() => expect(recordInvoiceImport).toHaveBeenCalledTimes(2))
     expect(vi.mocked(recordInvoiceImport).mock.calls[1]).toEqual(first)
+  })
+  it('shows an actual Service product but directs the actor to the independent Settings service source instead of making it goods', async () => {
+    const products = admissionProducts()
+    vi.mocked(fetchImportProducts).mockResolvedValue({ type: 'ok-single', data: { ...products, items: [{ ...products.items[0], itemType: 'Service' }] } })
+    mount(); await map(); await screen.findByText(T.productServiceMapping)
+    expect((screen.getByLabelText(T.purchasePurpose) as HTMLSelectElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: T.recordInvoice })); await screen.findByText(T.admissionInvalid)
+    expect(recordInvoiceImport).not.toHaveBeenCalled()
   })
   it.each([403, 404, 409, 503])('renders mapping source status %s and refuses unavailable mapping', async status => {
     vi.mocked(fetchImportMappingReferences).mockResolvedValue({ type: 'http', status }); mount()

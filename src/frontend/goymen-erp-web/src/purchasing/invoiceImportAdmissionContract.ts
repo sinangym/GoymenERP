@@ -11,12 +11,13 @@ export interface ImportMappingReferences { readonly companyId: string; readonly 
 export interface ImportSupplier { readonly companyId: string; readonly importId: string; readonly supplierPartyId: string; readonly companyAccountId: string
   readonly partyVersion: string; readonly accountVersion: string }
 export interface ImportProduct { readonly productId: string; readonly productVersion: string; readonly code: string; readonly name: string
-  readonly unitId: string; readonly unitCode: string; readonly profileId: string; readonly profileVersion: string }
+  readonly unitId: string; readonly unitCode: string; readonly profileId: string; readonly profileVersion: string
+  readonly itemType: 'Steel' | 'Scrap' | 'Service'; readonly itemTypeVersion: string }
 export interface ImportProducts { readonly companyId: string; readonly importId: string; readonly items: readonly ImportProduct[]; readonly searchWindowFull: boolean }
 export interface ImportLineMapping { readonly sourceLineId: string; readonly lineId: string; readonly productId: string; readonly expectedProductVersion: string
-  readonly unitId: string; readonly itemType: 'General' | 'Service' | 'Expense'; readonly linePurpose: 'production-input' | 'resale' | 'service' | 'expense'
+  readonly unitId: string; readonly itemType: 'Steel' | 'Scrap' | 'Service' | 'Expense'; readonly linePurpose: 'production-input' | 'resale' | 'service' | 'expense'
   readonly vatTaxCode: string; readonly serviceTypeId?: string; readonly expectedServiceTypeVersion?: string
-  readonly expenseTypeId?: string; readonly expectedExpenseTypeVersion?: string }
+  readonly expenseTypeId?: string; readonly expectedExpenseTypeVersion?: string; readonly expectedItemTypeVersion?: string }
 export interface ImportInstallment { readonly id: string; readonly openItemId: string; readonly sequence: number; readonly dueOn: string
   readonly amount: string; readonly functionalAmount: string | null }
 export interface ImportAdmission { readonly source: ImportPreviewRequest; readonly expectedInvoiceVersion: '0'; readonly supplierPartyId: string
@@ -54,9 +55,10 @@ export function decodeImportSupplier(v: unknown, company: string, id: string, pa
 export function decodeImportProducts(v: unknown, company: string, id: string): ImportProducts | null {
   if (!object(v) || !exact(v, ['companyId', 'importId', 'items', 'searchWindowFull']) || v.companyId !== company || v.importId !== id
     || typeof v.searchWindowFull !== 'boolean' || !Array.isArray(v.items) || v.items.length > 25
-    || v.items.some(x => !object(x) || !exact(x, ['productId', 'productVersion', 'code', 'name', 'unitId', 'unitCode', 'profileId', 'profileVersion'])
+    || v.items.some(x => !object(x) || !exact(x, ['productId', 'productVersion', 'code', 'name', 'unitId', 'unitCode', 'profileId', 'profileVersion', 'itemType', 'itemTypeVersion'])
       || !guid(x.productId) || !text(x.productVersion) || !text(x.code) || !text(x.name) || !guid(x.unitId) || !text(x.unitCode)
-      || !guid(x.profileId) || !version(x.profileVersion)) || !unique(v.items, x => `${(x as ImportProduct).productId}:${(x as ImportProduct).unitId}`)) return null
+      || !guid(x.profileId) || !version(x.profileVersion) || !['Steel', 'Scrap', 'Service'].includes(x.itemType as string) || !version(x.itemTypeVersion))
+    || !unique(v.items, x => `${(x as ImportProduct).productId}:${(x as ImportProduct).unitId}`)) return null
   return v as unknown as ImportProducts
 }
 export function decodeImportRecord(v: unknown, company: string, id: string, snapshot: ImportRecordSnapshot, replay: boolean): InvoiceCommandResponse | null {

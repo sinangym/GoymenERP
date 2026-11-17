@@ -130,7 +130,10 @@ public static class LogisticsSubcontractDeliveryEndpoints
     private static IResult Problem(HttpContext http, LogisticsInstructionServiceException error)
     {
         if (error.IsReplay) { http.Response.Headers["Idempotency-Replayed"] = "true"; http.Response.Headers["Idempotency-Original-Correlation-Id"] = error.OriginalCorrelationId; }
-        return error.Status is 400 or 401 or 403 or 404 or 503 ? Results.Problem(statusCode: error.Status)
-            : Results.Problem(statusCode: error.Status, extensions: new Dictionary<string, object?> { ["code"] = error.Code });
+        if (error.Status is 400 or 401 or 403 or 404 or 503) return Results.Problem(statusCode: error.Status);
+        var extensions = new Dictionary<string, object?> { ["code"] = error.Code };
+        var detail = LogisticsPhysicalStockRefusalDetailV1.IsValid(error.Status, error.Code, error.Detail)
+            ? InventoryRuntime.InventoryPhysicalStockRefusalProblem.Apply(error.Status, error, extensions, error.Detail) : null;
+        return Results.Problem(statusCode: error.Status, detail: detail, extensions: extensions);
     }
 }

@@ -25,6 +25,7 @@ import { ManufacturingCostDifferencesPage } from './ManufacturingCostDifferences
 import { InvoiceLineCogsCorrectionPage } from './InvoiceLineCogsCorrectionPage'
 import { JournalReversalApprovalPage } from './JournalReversalPages'
 import { SourceVouchersPage } from './SourceVouchersPage'
+import { CogsMappingPage } from './CogsMappingPage'
 import {
   NormalJournalDraftCreatePage,
   NormalJournalDraftPage,
@@ -42,6 +43,7 @@ function gate(capability: AccountingCapabilityId, children: ReactNode) {
 }
 
 export const accountingRoutes: RouteObject[] = [
+  { path: ACCOUNTING_ROUTE.postingMappings.slice(1), element: gate(ACCOUNTING_CAPABILITY.postingMappingsRead, <PostingMappingWorkspace />) },
   { path: ACCOUNTING_ROUTE.sourceVouchers.slice(1), element: gate(ACCOUNTING_CAPABILITY.sourceVouchers, <SourceVoucherWorkspace />) },
   { path: ACCOUNTING_ROUTE.invoiceLineCogsPrepare.slice(1), element: gate(ACCOUNTING_CAPABILITY.invoiceLineCogsPrepare, <InvoiceLineCogsCorrectionPage mode="prepare" />) },
   { path: ACCOUNTING_ROUTE.invoiceLineCogsApprove.slice(1), element: gate(ACCOUNTING_CAPABILITY.invoiceLineCogsApprove, <InvoiceLineCogsCorrectionPage mode="approve" />) },
@@ -87,4 +89,10 @@ export const accountingRoutes: RouteObject[] = [
 function SourceVoucherWorkspace() {
   const shell = useShellState()
   return <SourceVouchersPage mode={hasCapability(shell, ACCOUNTING_CAPABILITY.sourceVouchersApprove) ? 'approve' : 'read'} />
+}
+
+function PostingMappingWorkspace() {
+  const shell = useShellState()
+  return <CogsMappingPage canPrepare={hasCapability(shell, ACCOUNTING_CAPABILITY.postingMappingsPrepare)}
+    canActivate={hasCapability(shell, ACCOUNTING_CAPABILITY.postingMappingsActivate)} />
 }

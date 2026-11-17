@@ -33,11 +33,19 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             var first = await admission.RecordAsync(id, request, metadata);
             Assert.Equal(GoymenERP.Modules.Purchasing.Domain.Invoices.PurchaseIncomingInvoiceStatus.Recorded, first.Invoice.Status);
             Assert.Contains("001", first.Invoice.Source.ImportProof!.MappingJson, StringComparison.Ordinal);
+            using var typeProof = System.Text.Json.JsonDocument.Parse(first.Invoice.Source.ImportProof.ProductItemTypesJson!);
+            Assert.Equal("Steel", Assert.Single(typeProof.RootElement.EnumerateArray()).GetProperty("itemType").GetString());
+            Assert.Equal(7, typeProof.RootElement[0].GetProperty("itemTypeVersion").GetInt64());
             var reads = inputs.DocumentReads;
             var replay = await admission.RecordAsync(id, request, metadata with { CorrelationId = "SENTETIK-retry" });
             Assert.True(replay.IsReplay); Assert.Equal(run.Correlation, replay.OriginalCorrelationId);
             Assert.Equal(reads, inputs.DocumentReads);
             Assert.Equal(System.Text.Json.JsonSerializer.Serialize(first.Invoice), System.Text.Json.JsonSerializer.Serialize(replay.Invoice));
+        }
+        await using (var stored = run.Store(CompanyA))
+        {
+            var invoice = await ((IPurchasingIncomingInvoiceStoreV1)stored.Store).FindIncomingInvoiceAsync(id);
+            Assert.Contains("Steel", invoice!.Source.ImportProof!.ProductItemTypesJson!, StringComparison.Ordinal);
         }
         await using (var other = run.Store(CompanyB)) Assert.Null(await ((IPurchasingIncomingInvoiceStoreV1)other.Store).FindIncomingInvoiceAsync(id));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.IncomingInvoices WHERE InvoiceId=@id", ("@id", id)));
@@ -80,7 +88,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
     private sealed class SyntheticImportAdmissionInputs(string actor, Guid companyId) : ICompanyContext, ICurrentUser,
         IErpAuthorityRevalidationService, ICorrelationContext, IPurchaseInvoiceImportDocumentReadV1,
         IPurchasingPartyAccountPortV2, IProductPurchaseEligibilityPortV1, ISettingsPrerequisiteProvider,
-        ISettingsReferenceListReaderV1, ISettingsUnitIdentityCatalogV1, ISettingsMoneyCandidateReaderV2
+        ISettingsReferenceListReaderV1, ISettingsUnitIdentityCatalogV1, ISettingsMoneyCandidateReaderV2, IPurchasingProductItemTypePortV1
     {
         public Guid UnitId { get; } = Guid.NewGuid();
         private readonly Guid productId = Guid.NewGuid(), partyId = Guid.NewGuid(), accountId = Guid.NewGuid(), documentId = Guid.NewGuid();
@@ -94,10 +102,10 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         public int DocumentReads { get; private set; }
         public PurchaseInvoiceImport Imports(object store) => new(this, this, this, this, (IPurchaseInvoiceImportReservationStoreV1)store, this, new PurchaseInvoiceFileReader());
         public PurchaseInvoiceImportAdmission Admission(IPurchaseInvoiceImportV1 imports, object store) => new(this, this, this, this, imports,
-            (IPurchasingIncomingInvoiceStoreV1)store, this, this, this, this, TimeProvider.System, this, this);
+            (IPurchasingIncomingInvoiceStoreV1)store, this, this, this, this, TimeProvider.System, this, this, itemTypes: this);
         public PurchaseInvoiceImportAdmissionRequestV1 Request() => new(new("1", documentId, 1, Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(),
             new(PurchaseInvoiceFileFormatV1.Csv, Columns: Columns.ToDictionary(x => x, x => x), Delimiter: ';')), "0", partyId, accountId, "1", "1",
-            SettingsCurrencyIdentitiesV1.TurkishLira, [new("001", lineId, productId, "1", UnitId, "General", "resale", "0015")],
+            SettingsCurrencyIdentitiesV1.TurkishLira, [new("001", lineId, productId, "1", UnitId, "Steel", "resale", "0015", ExpectedItemTypeVersion: "7")],
             [new(installmentId, openItemId, 1, new(2026, 12, 17), "120", null)]);
         public Task<PurchaseInvoiceImportDocumentV1> ReadAsync(Guid importId, Guid id, int version, CancellationToken token = default)
         { DocumentReads++; return Task.FromResult(new PurchaseInvoiceImportDocumentV1(companyId, documentId, 1, Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(), PurchaseInvoiceFileFormatV1.Csv, bytes)); }
@@ -113,6 +121,8 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             => Task.FromResult(new PurchasingPartyAccountAnswerV2(PurchasingPartyAccountOutcomeV1.Found, new(partyId, accountId, companyId, true, true, true, false, "1", "1")));
         public Task<ProductPurchaseEligibilityAnswerV1> EvaluateAsync(ProductPurchaseSelectionV1 selection, CancellationToken token = default)
             => Task.FromResult(new ProductPurchaseEligibilityAnswerV1(ProductPurchaseEligibilityOutcomeV1.Eligible, "1", []));
+        public Task<PurchasingProductItemTypeSourceV1> GetAsync(Guid id, CancellationToken token = default)
+            => Task.FromResult(new PurchasingProductItemTypeSourceV1(PurchasingProductItemTypeOutcomeV1.Found, companyId, id, PurchasingProductItemTypeKindV1.Steel, 7));
         public Task<UnitProfileV1> GetUnitProfileAsync(Guid id, DateOnly date, CancellationToken token = default)
             => Task.FromResult(new UnitProfileV1(companyId, id, "KGM", "mass", true, new(id, 1), 3, true, date, null));
         public Task<MoneyProfileV1> GetMoneyProfileAsync(Guid id, string operation, DateOnly date, CancellationToken token = default)

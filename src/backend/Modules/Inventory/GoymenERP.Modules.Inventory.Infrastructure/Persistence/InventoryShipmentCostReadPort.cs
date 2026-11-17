@@ -22,6 +22,46 @@ public sealed class InventoryShipmentCostReadPort(InventoryDbContext db, ICompan
     private const string ShipmentSource = "logistics.definite-shipment";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
+    public async Task<InventoryShipmentCostReadV1> GetByShipmentAsync(Guid companyId, Guid shipmentId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!SameCompany(companyId) || shipmentId == Guid.Empty)
+            return Unreadable();
+        try
+        {
+            // Bounded uniqueness evidence, not first/last candidate selection. No other module's table is consulted.
+            var commands = await db.Commands.AsNoTracking().Where(row => row.CompanyId == companyId && row.TargetId == shipmentId
+                    && row.CommandName == InventoryDefiniteShipmentOutboxV1.SourceOperation)
+                .OrderBy(row => row.IdempotencyKeyHash).Select(row => row.ResultJson).Take(2).ToArrayAsync(cancellationToken);
+            if (!SameCompany(companyId)) return Unreadable();
+            var movements = await db.Movements.AsNoTracking().Where(row => row.CompanyId == companyId
+                    && row.SourceKind == ShipmentSource && row.SourceId == shipmentId)
+                .OrderBy(row => row.Id).Select(row => row.Id).Take(2).ToArrayAsync(cancellationToken);
+            if (!SameCompany(companyId)) return Unreadable();
+            if (commands.Length == 0 && movements.Length == 0)
+                return Failure(InventoryShipmentCostReadOutcomeV1.NotFound, companyId, shipmentId, Guid.Empty);
+            if (commands is not [var body] || movements is not [var movementId]) return Unreadable();
+            var result = JsonSerializer.Deserialize<InventoryDefiniteShipmentResultV1>(body, Json);
+            if (result is null || result.CompanyId != companyId || result.ShipmentId != shipmentId
+                || result.MovementId == Guid.Empty || result.MovementId != movementId || result.IsReplay)
+                return Unreadable();
+
+            // This existing strict read binds command + movement + outbox + loading-instruction line + actual TL stamp.
+            // It supplies the exact same source fingerprint and original amount; no new price/quantity projection occurs.
+            var answer = await GetAsync(companyId, shipmentId, movementId, cancellationToken);
+            if (!SameCompany(companyId) || answer.Outcome != InventoryShipmentCostReadOutcomeV1.Available
+                || answer.CompanyId != companyId || answer.ShipmentId != shipmentId || answer.MovementId != movementId)
+                return Unreadable();
+            return answer;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception) { return Unreadable(); }
+
+        InventoryShipmentCostReadV1 Unreadable() => Failure(InventoryShipmentCostReadOutcomeV1.Unreadable,
+            companyId, shipmentId, Guid.Empty);
+    }
+
     public async Task<InventoryShipmentCostReadV1> GetAsync(Guid companyId, Guid shipmentId, Guid movementId,
         CancellationToken cancellationToken = default)
     {

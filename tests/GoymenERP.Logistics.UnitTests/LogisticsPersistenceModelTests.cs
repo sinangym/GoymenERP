@@ -843,8 +843,9 @@ public sealed class LogisticsPersistenceModelTests
     public void The_shell_declarations_are_published_and_bound_to_the_manifest_names()
     {
         var provider = new LogisticsShellCapabilityProvider();
-        var declarations = provider.GetDeclarations();
-        Assert.Equal("1.4", provider.ContractVersion);
+        var declarations = provider.GetDeclarations().Where(item =>
+            !item.CapabilityId.StartsWith("logistics.subcontract-deliveries.", StringComparison.Ordinal)).ToList();
+        Assert.Equal("1.5", provider.ContractVersion);
         Assert.Equal(12, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
         Assert.Equal(

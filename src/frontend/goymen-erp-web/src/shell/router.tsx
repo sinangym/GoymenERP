@@ -26,6 +26,7 @@ import { manufacturingRoutes } from '../manufacturing/manufacturingRoutes'
 import { financeRoutes } from '../finance/financeRoutes'
 import { accountingRoutes } from '../accounting/accountingRoutes'
 import { logisticsRoutes } from '../logistics/logisticsRoutes'
+import { logisticsSubcontractRoutes } from './logisticsSubcontractRoutes'
 import { purchasingRoutes } from '../purchasing/purchasingRoutes'
 import { inventoryRoutes } from '../inventory/inventoryRoutes'
 import { identityRoutes } from '../identity/identityRoutes'
@@ -200,6 +201,7 @@ export const shellRoutes: RouteObject[] = [
        * suite), every Logistics route closes onto the neutral not-found block and reads nothing.
       */
       ...logisticsRoutes,
+          ...logisticsSubcontractRoutes,
       /**
        * Purchasing owns the P-03 list/detail and P-04 create route table. Its static `yeni` entry
        * precedes `:orderId` inside the owner table, and every entry keeps its own capability gate.

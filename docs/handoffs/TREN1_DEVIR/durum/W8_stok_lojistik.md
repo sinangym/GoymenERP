@@ -348,3 +348,102 @@
 - **DONE — owner kaynak kapsamı**: ana S29 checkpoint'i ve bu takip, gerçek yönetim/renderer/üç producer ile dar MIME
   kaynak eksiğini tamamlar. Merkezi mount/registry/pin ve birleşik baştaki doğrulama koordinatördedir. Kabul/SQL/browser/CI,
   K3 exact-head review ve kurumsal gerçek asset/grant/UAT kapıları ayrıdır; runtime **NOT_RUN**, OPEN-019 açık kalır.
+
+### STK-S21 — fason sevk ret günlüğü ve özgün kg mesajı
+
+- SAT-D328/D336..D339: gerçek fason sevk host'u, Inventory owner'ın fiziksel çıkış doğrulamasında ürettiği
+  proof'u ancak doğrulanmış rollback sonrasında mevcut `InventoryNegativeStockAttemptRecording` yoluna verir.
+  Fresh şirket/aktör/komut yetkisi kayıt öncesinde ve sonuçtan önce tekrar ölçülür; kaydedici kendi fresh owner
+  transaction'ında aynı proof'un şirket/aktör/izin çitini ve immutable dedup'unu korur. Rezervasyon yetersizliği
+  bu proof'u üretmez; belirsiz rollback veya kaydedici arızası 503'tür ve terminal ret kaydı oluşturmaz.
+- Yalnız gerçek physical proof'tan üretilen eldeki/istenen kg metni Command dönüşümüne, mevcut terminal JSON'una
+  ve özgün replay'e taşınır. Fason terminal okuyucusu mevcut bounded detail sözleşmesini doğrular; eski null/missing
+  detail JSON'u geçerlidir. 401/403/404/503 yanıtlarında fiziksel ayrıntı gösterilmez; keyfî exception/body metni alınmaz.
+- Mevcut frontend canonical kg-text decoder'ı uygun 409 physical code için kullanılır. Bozuk detail/status/replay
+  metadata'sı belirsiz yanıttır; eski kg yeniden hesaplanmaz. Ekran özgün veya replay ret metnini yalnız aynı
+  şirket/aktör/oturum binding'inde ve mevcut komut capability'si altında gösterir. Türkçe replay açıklaması kaynaklıdır.
+- Beş gerçek SQL fact kaynağı: gerçek ShipAsync fiziksel ret + bir kez jurnal/audit + stok değişse de aynı kg ile replay;
+  kaydedici arızası; doğrulanamayan rollback; rollback anında şirket/aktör/komut yetkisi kaybı; yalnız rezervasyon
+  yetersizliğinde fiziksel jurnal oluşmaması. SQL fault'ları açıkça sentetiktir; gerçek owner/ledger/transaction/replay
+  kullanılır. HTTP kaynakları güvenli özgün/replay detail ve nondisclosable yanıtları; Vitest kaynakları strict decoder,
+  legacy null detail, malformed replay/status ve ekranın şirket/aktör/oturum/izin çitlerini kapsar.
+- Kaynak derlemeleri: API **exit0 / 0 uyarı / 0 hata** (2:37,72); Logistics.UnitTests **exit0 / 0 uyarı / 0 hata**
+  (6,26sn); Api.IntegrationTests **exit0 / 0 uyarı / 0 hata** (47,97sn). İlk Logistics.UnitTests denemesi yalnız eksik
+  owner assets nedeniyle NETSDK1004/exit1 verdi; mevcut projeye dar restore exit0 ve ardından final build exit0 alındı.
+  Frontend son `npx tsc -b` **exit0**; bu delta C# kaynağını değiştirmedi. Her native süreç başlangıcında >=2GiB
+  fiziksel RAM doğrulandı, exit'ler anında ve ham loglar depodışında korundu. `git diff --check` exit0.
+- **SOURCE_COMPLETE — dar S21 kapanış kaynağı.** HTTP/unit/SQL/Vitest/browser/CI runtime **NOT_RUN**.
+  Yeni model/migration/permission veya guard allowlist girdisi yok. Merkezi ilişkisel envanter/grup/pin üretimi ve
+  exact-head K3 kabulü koordinatörde; bu beş fact'in sınıfı `ManufacturingSqlServerRelationalAcceptanceTests`'tir.
+
+### ALC-S5 — gerçek ilgili fatura maliyeti owner sağlayıcısı
+
+- SAT-D306/D392/D393/D396: `PurchaseSupplierReturnInvoiceCostReadPort`, Purchasing'in değişmez kabulü, gerçek fatura
+  eşleme defteri, resmî belge kimliği ve en son doğrulanan immutable fatura sürümünü okur. Tek kesinleşmiş satırın
+  tamamı tek kabulün tamamını faturalamışsa yalnız satırın kayıtlı net TL tutarını gerçek Inventory ilk kabulünün
+  ölçülen kg miktarına böler. Vergi/tevkifat, sipariş fiyatı, bugünkü ortalama, miktar birimi veya geçici kur maliyet
+  yerine geçmez. Dövizli faturada kayıtlı satırın resmî fonksiyonel TL tutarı kullanılır; yeniden kur hesaplanmaz.
+- Hiç fatura yok, henüz kesinleşmemiş, kısmi faturalı, birden çok faturalı veya tek net tutarı başka kabulle paylaşan
+  kaynak tek kabul maliyetini kanıtlamaz. Bunlar SAT-D393'ün mevcut elle bedel + istisna onayı yolunda kalır; bu
+  sağlayıcı farklı fiyatları seçmez veya yeni ağırlıklı fiyat/bedel dağıtım politikası üretmez. Null maliyet başarı
+  değildir; ilgili mevcut akış onay gelmeden stok çıkarmaz. Geçerli fakat TL kaynağı olmayan fonksiyonel para birimi
+  de bu dar TL sözleşmesinin okunamayan kaynak sınırındadır.
+- Kanıtlı tam maliyetin pozitif/tam dört basamaklı sözleşmeye sığmaması (ör. 1 TL / 3 kg), bozuk snapshot, yetim
+  veya çelişen eşleme, eksik fiziksel owner proof'u **InvoiceCostInvalid/503** verir; bu durumlar manuel fiyat yoluna
+  çevrilmez ve sessiz yuvarlanmaz. Teknik tamlık kontrolü tamsayı pay/payda ile yapılır. Aktör/şirket/üyelik her await
+  sonrasında yeniden ölçülür; başka şirketin kabulü bilinmeyenle aynı null cevaptır. Consumer mevcut komut izin
+  çitini korur; yeni izin/grant yoktur. Sonradan değişmiş sipariş tedarikçisinden tarihsel fiyat türetilmez.
+- Fiziksel kg, `PurchaseGoodsReceiptHost` üzerinden gerçek Inventory immutable kabul kaynağından gelir; Purchasing
+  başka modül tablosunu okumaz. Mevcut iade servisi bu maliyet okumasını iade transaction'ından önce yapar. Aktif
+  Purchasing transaction'ı varken ayrı Inventory bağlantısına sessiz geçiş yasak olduğundan bu provider açık 503
+  verir; yeni borrowed-reader işi veya transaction sahipliği iddiası yoktur.
+- Altı gerçek SQL fact kaynağı gerçek Purchasing/Inventory participant kayıtlarını, gerçek invoice domain/store
+  geçmişini ve actual host reader'ını kullanır: net/payable/ölçülen kg ayrımı; resmî dövizli satır TL tutarı ve Finance
+  ack öncesi/sonrası; no/pending/partial/multiple/shared-line sınırı; tam dört basamak reddi; fatura/fiziksel kanıt
+  bozulması; await sonrası aktör/şirket/üyelik kaybı; aktif transaction'da 503 ve transaction'a sahip olmama. Test
+  aktörü ve önceden yetkilendirilmiş seed metadata'sı sentetiktir; fiziksel kg veya fatura maliyeti mock değildir.
+- Dar salt-okunur ikinci gözde bulunan tarihsel sürüm kanıtı eksiği kapatıldı: gerçek `InvoiceOrderBindings` aynı
+  source statement'inde company/invoice/line/order/orderLine anahtarıyla okunur; snapshot eşlemesinin tarihsel sipariş
+  sürümü ve tedarikçisi bununla doğrulanır. Tek snapshot alanını 999 sürümüne bozma SQL fact assertion'ı 503 bekler.
+  Güncel sipariş sürümü tarihsel eşlemenin yerine geçmez. Bu kaynak kontrolü bağımsız K3 exact-head imzası değildir.
+- Merkezi gerçek DI kaydı koordinatörde: `IPurchaseSupplierReturnInvoiceCostReadPortV1` →
+  `PurchaseSupplierReturnInvoiceCostReadPort` (scoped). `PurchasingModuleExtensions`, import/ItemType, model/migration,
+  Program, permission ve pin dosyalarına dokunulmadı. Runtime unit/SQL/HTTP/browser/Vitest/CI **NOT_RUN**.
+- Kaynak derlemeleri **exit0 / 0 uyarı / 0 hata**: API 2:41,86; Purchasing.UnitTests 6,37sn; Api.IntegrationTests
+  57,12sn. İlk Purchasing.UnitTests derlemesi NETSDK1004/exit1 verdi; yalnız o mevcut owner projesine dar restore
+  exit0 ardından aynı build tekrarlandı. Yeni paket/sürüm/lock değişimi yoktur; ilk başarısız deneme ve bütün native
+  exit/ham loglar depodışında korundu. Her süreç öncesi ≥2GiB RAM kapısı ölçüldü. EF/DB apply/test koşumu yoktur.
+- **PARTIAL — merkezi DI bekliyor**: bu dar provider ve test kaynakları derlenmiştir; gerçek DI + birleşik kaynak
+  derlemesi koordinatördedir. Eski raporun sağlayıcı yok notunu bu kaynak tamamlar; kabul veya K3 kanıtı yerine geçmez.
+
+### STK-SC36-a — ilk SMM tüketimi için sevk kimliğinden gerçek maliyet izi
+
+- SAT-D419/D422'nin ilk SMM tüketici bağımlılığı için mevcut `IInventoryShipmentCostReadPortV1` sözleşmesine yalnız
+  `GetByShipmentAsync(companyId, shipmentId, cancellationToken)` owner okuması eklendi. Eski üç kimlikli `GetAsync`,
+  sonuç DTO'su ve gerçek DI kaydı değişmedi; başka implementor/test double bulunmadı. Sahte hareket kimliği üretilmez.
+- Inventory'nin kendi şirket filtreli `Commands` kaydında gerçek shipment target + definite-shipment operation ve
+  kendi `Movements` kaynak kimliğinde aynı shipment aranır. Her aday kümesi sıralı `Take(2)` ile sınırlıdır; tam birer
+  kayıt ve immutable result'taki hareket kimliğiyle tam eşleşme şarttır. Sonra eski strict okuyucu gerçek komut,
+  hareket, outbox envelope/payload, LoadingInstructionId/LineId, MovementLineNumber ve orijinal TL damgasını doğrular.
+  Başarılı cevap aynı kaynak fingerprint'ini ve kayıtlı TL tutarını taşır; güncel ortalama/sipariş/fatura fiyatı,
+  USD veya kg oranlaması maliyetin yerine geçmez.
+- Tamamen bilinmeyen ve başka şirkete ait sevk aynı non-disclosing NotFound cevabıdır. Tek tarafı eksik kanonik
+  kaynak, bozuk/çelişkili result veya outbox, birden çok komut/hareket Unreadable'dır; consumer ikisini de mevcut
+  kaynak-hazır-değil/503 sınırına map eder. Başarısız çözümlemede hareket kimliği boş ve satırlar boştur; bu boş
+  kimlik başarıya dönüştürülmez. Her await sonrasında şirket scope'u tekrar ölçülür. Actor/permission ve muhasebe
+  admission çiti tüketicidedir; bu internal port yetki veya SMM tetikleyicisi sağlamaz. Available yalnız fiziksel
+  provenance kanıtıdır; legacy/missing TL damgası ayrıca Unavailable kalır ve finansal maliyet başarısı sayılmaz.
+- Üç yeni gerçek SQL fact kaynağı çift komut/çift gerçek hareket, eksik veya bozulmuş immutable komut bağı ve
+  çözümleme await'i sırasında şirket değişimini kapsar. Mevcut gerçek receipt/average/allocation/shipment/outbox
+  fact'leri yeni yöntemde aynı original TL/fingerprint, sonraki gerçek girişle değişen ortalamadan bağımsızlık,
+  legacy TL eksikliği, outbox bozma ve başka şirket/bilinmeyen ayrımını da doğrulayacak şekilde genişletildi.
+  Owner unit kaynakları iptal ve boş/uyuşmayan şirket/kimliklerde hiç bağlantı açılmamasını kapsar.
+- Yeni model/migration/ham SQL üretim yüzeyi, başka modül tablo erişimi, Program/permission/pin veya SMM producer
+  değişimi yoktur. SQL bozma yalnız test fixture'ındadır. Unit/SQL/HTTP/Vitest/browser/CI runtime **NOT_RUN**;
+  muhasebe/fatura tüketici bağını ve merkezi kapanış kanıtını koordinatör tamamlar.
+- Kaynak derlemeleri **exit0 / 0 uyarı / 0 hata**: API 2:42,02; Inventory.UnitTests 6,83sn; Api.IntegrationTests
+  48,00sn. İlk Inventory.UnitTests denemesi NETSDK1004/exit1 verdi; yalnız o mevcut projenin dar restore'u exit0 aldı.
+  Ardından yeni test assertion'ında parametre/yerel `resolved` adı çakışması exit1 verdi; yalnız testte dar ad düzeltmesi
+  sonrası final build exit0'dır. Üretim kaynağı değişmediğinden başarılı API derlemesi tekrar edilmedi. Yeni paket/sürüm/
+  lock değişimi yok; her süreç öncesi ≥2GiB kapısı ölçüldü, native exit/ilk hata/ham loglar depodışında korundu.
+  **DONE — bu dar owner read kaynak kapsamı**; ilk SMM finansal producer veya uçtan uca kabul iddiası değildir.
