@@ -88,6 +88,27 @@ public sealed class InventoryShipmentCostReadContractTests
     }
 
     [Theory]
+    [InlineData("unresolved")]
+    [InlineData("foreign")]
+    [InlineData("empty-company")]
+    [InlineData("empty-shipment")]
+    public async Task Shipment_only_resolution_keeps_the_same_owner_company_fence_without_opening_a_connection(string fault)
+    {
+        var company = new CompanyContext();
+        if (fault != "unresolved") company.Set(fault == "foreign" ? CompanyB : CompanyA);
+        var tripwire = new NoConnectionOpen();
+        await using var context = Context(company, tripwire);
+        IInventoryShipmentCostReadPortV1 reader = new InventoryShipmentCostReadPort(context, company);
+        var answer = await reader.GetByShipmentAsync(fault == "empty-company" ? Guid.Empty : CompanyA,
+            fault == "empty-shipment" ? Guid.Empty : Shipment);
+        Assert.Equal(InventoryShipmentCostReadOutcomeV1.Unreadable, answer.Outcome);
+        Assert.Equal(Guid.Empty, answer.MovementId);
+        Assert.Empty(answer.Lines);
+        Assert.Equal("inventory.shipment-cost.v1/unreadable", answer.SourceVersion);
+        Assert.Equal(0, tripwire.Calls);
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task Cancellation_precedes_both_company_admission_and_any_connection(bool resolved)
@@ -102,6 +123,8 @@ public sealed class InventoryShipmentCostReadContractTests
 
         var error = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => reader.GetAsync(CompanyA, Shipment, Movement, canceled.Token));
         Assert.Equal(canceled.Token, error.CancellationToken);
+        var resolutionCanceled = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => reader.GetByShipmentAsync(CompanyA, Shipment, canceled.Token));
+        Assert.Equal(canceled.Token, resolutionCanceled.CancellationToken);
         Assert.Equal(0, tripwire.Calls);
     }
 
