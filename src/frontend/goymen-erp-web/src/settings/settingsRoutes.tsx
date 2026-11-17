@@ -26,8 +26,11 @@ import { OperationalPolicyPage } from './OperationalPolicyPage'
 import { DocumentNumberSeriesPage } from './DocumentNumberSeriesPage'
 import { PurchaseInvoiceVariancePolicyPage } from './PurchaseInvoiceVariancePolicyPage'
 import { WarehouseTransferScalePage } from './WarehouseTransferScalePage'
+import { SubcontractTaxDefaultPage } from './SubcontractTaxDefaultPage'
 
 export const settingsRoutes: RouteObject[] = [
+  { path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.salesSubcontractTax].slice(1), element: <CapabilityRoute capability={SETTINGS_CAPABILITY.salesSubcontractTax}><SubcontractTaxDefaultPage side="sales" /></CapabilityRoute> },
+  { path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.purchasingSubcontractTax].slice(1), element: <CapabilityRoute capability={SETTINGS_CAPABILITY.purchasingSubcontractTax}><SubcontractTaxDefaultPage side="purchasing" /></CapabilityRoute> },
   { path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.warehouseTransferScale].slice(1), element: <CapabilityRoute capability={SETTINGS_CAPABILITY.warehouseTransferScale}><WarehouseTransferScalePage /></CapabilityRoute> },
   { path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.purchaseInvoiceVariance].slice(1), element: <CapabilityRoute capability={SETTINGS_CAPABILITY.purchaseInvoiceVariance}><PurchaseInvoiceVariancePolicyPage /></CapabilityRoute> },
   { path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.documentNumberSeries].slice(1), element: <CapabilityRoute capability={SETTINGS_CAPABILITY.documentNumberSeries}><DocumentNumberSeriesPage /></CapabilityRoute> },

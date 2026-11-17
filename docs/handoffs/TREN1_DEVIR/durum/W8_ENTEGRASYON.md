@@ -184,3 +184,19 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
   Accounting.UnitTests, Api.IntegrationTests ve TypeScript derlemeleri exit 0,
   uyarı/hata 0 aldı. Çalışma zamanı testleri, SQL, HTTP, Vitest/browser ve CI
   **NOT_RUN**. Sabit ölçüm **135/174 (%77,6)**; pinler ve tren FF henüz yoktur.
+
+## ALS-D105 son yetki cevabının entegrasyonu
+
+- `e67f53fc7` / rapor `46eeef92f` alındı. Satış ve alış fason varsayılanları ve
+  satır vergi kodu değişiklikleri mevcut ayrı sipariş onay yetkilerini kullanır.
+  Önceki “iki yeni izin” yanıtı geri alınmıştır; yeni ERP permission, grant,
+  rol veya Critical sınıflaması yoktur. Vergi revizyonu normal yeniden onaya gider.
+- İki ayrı Ayarlar route'u gerçek `SubcontractTaxDefaultPage` bileşenine bağlandı.
+  Settings provider **1.15**, 31 bildirimdir; yeni adlar yalnız teknik ekran
+  capability kimliğidir. Satış ekranı yalnız sales.orders.approve, alış ekranı
+  yalnız purchasing.orders.approve gerektirir. Yeni iki ekran runtime kabulüne
+  kadar staged kalır. Mevcut genel vergi ana verisi yetkisi değiştirilmez.
+- Owner API, Purchasing/Sales/Settings UnitTests ve Api.IntegrationTests
+  derlemeleri exit 0, uyarı/hata 0 aldı. Birleşik merkez TypeScript exit 0;
+  son merkez provider/authority-test kaynaklarının C# derlemesi sıradadır.
+  Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**; kaynak DONE sayısı artırılmadı.

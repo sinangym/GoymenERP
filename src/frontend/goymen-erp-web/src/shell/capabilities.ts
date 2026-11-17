@@ -366,6 +366,8 @@ export const CAPABILITY = {
   settingsPurchasingReferenceLists: 'settings.reference-lists.manage',
   settingsPurchaseInvoiceVariance: 'settings.purchase-invoice-variance-policies.manage',
   settingsWarehouseTransferScale: 'settings.warehouse-transfer-scale.manage',
+  settingsSalesSubcontractTax: 'settings.sales-subcontract-tax-default.manage',
+  settingsPurchasingSubcontractTax: 'settings.purchasing-subcontract-tax-default.manage',
   /**
    * B-14, KIM-D51 Ayarlar > Boya rengi ve hurda türü: the company's paint color and scrap kind lists (no seed). Route
    * `/ayarlar/uretim-referans-listeleri`, owner Settings 1.6; one non-Critical name, granted to no role here.
@@ -540,6 +542,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.settingsPurchasingReferenceLists]: '/ayarlar/referans-listeleri',
   [CAPABILITY.settingsPurchaseInvoiceVariance]: '/ayarlar/alis-fatura-fark-toleransi',
   [CAPABILITY.settingsWarehouseTransferScale]: '/ayarlar/depo-transfer-tartisi',
+  [CAPABILITY.settingsSalesSubcontractTax]: '/ayarlar/satis-fason-vergi-varsayilani',
+  [CAPABILITY.settingsPurchasingSubcontractTax]: '/ayarlar/alis-fason-vergi-varsayilani',
   [CAPABILITY.settingsProductionReferenceLists]: '/ayarlar/uretim-referans-listeleri',
   [CAPABILITY.logisticsInstructionsList]: '/lojistik/yukleme-talimatlari',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as an instruction id.
