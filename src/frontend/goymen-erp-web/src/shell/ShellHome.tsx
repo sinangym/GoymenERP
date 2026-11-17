@@ -12,6 +12,8 @@ import { useShellState } from './shellContext'
 import { useCompanyDirectory } from './useShellOrchestrator'
 import { ApprovalsHomeEntry } from '../work/ApprovalsHomeEntry'
 import { NotificationsHomeEntry } from '../work/NotificationsPage'
+import { Link } from 'react-router'
+import { TWO_FACTOR_TEXT } from '../identity/twoFactorText'
 
 export function ShellHome() {
   const state = useShellState()
@@ -34,6 +36,7 @@ export function ShellHome() {
       </p>
       <ApprovalsHomeEntry />
       <NotificationsHomeEntry />
+      <p><Link to="/hesap/iki-asamali-dogrulama">{TWO_FACTOR_TEXT.title}</Link></p>
     </section>
   )
 }

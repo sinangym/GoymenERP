@@ -255,6 +255,13 @@ export const CAPABILITY = {
    * FIN-S9 (FNS-D23) Açılış Bakiyeleri. Its propose and approve are CONTROLS of this list, never routes.
    */
   financeOpeningBalancesList: 'finance.opening-balances.list',
+  financeCreditsWorkspace: 'finance.credits.workspace',
+  financeOfficialInvoicesRecord: 'finance.official-sales-invoices.record',
+  financeOfficialInvoicesApprove: 'finance.official-sales-invoices.approve',
+  accountingCostDifferencePrepare: 'accounting.manufacturing-cost-differences.prepare',
+  accountingCostDifferenceApprove: 'accounting.manufacturing-cost-differences.approve',
+  identityUsersManage: 'identity.users.manage',
+  productPaintMemberships: 'paint-memberships.manage',
   /** M-07 Muhasebe Dönemleri. Route `/muhasebe/donemler`, owner the Accounting lane (FİNANS). */
   accountingPeriodsList: 'accounting.periods.list',
   /** M-07 propose a period opening. Route `/muhasebe/donemler/yeni`. A SEPARATE grant from reading. */
@@ -465,6 +472,13 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.financeCreditLimitsList]: '/finans/kredi-limitleri',
   [CAPABILITY.financeCollateralsList]: '/finans/teminatlar',
   [CAPABILITY.financeOpeningBalancesList]: '/finans/acilis-bakiyeleri',
+  [CAPABILITY.financeCreditsWorkspace]: '/finans/krediler',
+  [CAPABILITY.financeOfficialInvoicesRecord]: '/finans/resmi-satis-faturalari',
+  [CAPABILITY.financeOfficialInvoicesApprove]: '/finans/resmi-satis-faturasi-onaylari',
+  [CAPABILITY.accountingCostDifferencePrepare]: '/muhasebe/uretim-maliyet-farklari',
+  [CAPABILITY.accountingCostDifferenceApprove]: '/muhasebe/uretim-maliyet-farki-onay',
+  [CAPABILITY.identityUsersManage]: '/ayarlar/kullanicilar',
+  [CAPABILITY.productPaintMemberships]: '/boya-urunleri',
   [CAPABILITY.accountingPeriodsList]: '/muhasebe/donemler',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a period id.
   [CAPABILITY.accountingPeriodsPropose]: '/muhasebe/donemler/yeni',

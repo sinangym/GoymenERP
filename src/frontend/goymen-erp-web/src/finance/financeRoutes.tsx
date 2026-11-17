@@ -44,6 +44,8 @@ import { AllocationPage } from './AllocationPages'
 import { OpenItemDetailPage, OpenItemListPage } from './OpenItemReadPage'
 import { ExpensePaymentPage } from './ExpensePaymentPage'
 import { CreditLimitPage } from './CreditLimitPage'
+import { CreditAccountsPage } from './CreditAccountsPage'
+import { OfficialSalesInvoicesPage } from './OfficialSalesInvoicesPage'
 import { CollateralPage } from './CollateralPage'
 import { OpeningBalancePage } from './OpeningBalancePage'
 import { EXPENSE_PAYMENT_TEXT } from './expensePaymentText'
@@ -230,6 +232,9 @@ function OfficialInvoiceImportApprovalsRoute() {
 }
 
 export const financeRoutes: RouteObject[] = [
+  { path: FINANCE_ROUTE.creditsWorkspace.slice(1), element: gate(FINANCE_CAPABILITY.creditsWorkspace, <CreditAccountsPage />) },
+  { path: FINANCE_ROUTE.officialInvoicesRecord.slice(1), element: gate(FINANCE_CAPABILITY.officialInvoicesRecord, <OfficialSalesInvoicesPage />) },
+  { path: FINANCE_ROUTE.officialInvoicesApprove.slice(1), element: gate(FINANCE_CAPABILITY.officialInvoicesApprove, <OfficialSalesInvoicesPage />) },
   {
     path: FINANCE_ROUTE.customerInstrumentsList.slice(1),
     element: gate(FINANCE_CAPABILITY.customerInstrumentsList, <CustomerInstrumentPortfolioPage />),

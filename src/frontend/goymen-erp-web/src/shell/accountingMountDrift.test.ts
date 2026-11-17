@@ -22,6 +22,8 @@ import { ACCOUNTING_CAPABILITY, ACCOUNTING_ROUTE, journalDetailPath } from '../a
 
 /** The lane's routed ids, paired with the route key that serves each. */
 const ROUTED = [
+  [CAPABILITY.accountingCostDifferencePrepare, ACCOUNTING_CAPABILITY.costDifferencePrepare, ACCOUNTING_ROUTE.costDifferencePrepare],
+  [CAPABILITY.accountingCostDifferenceApprove, ACCOUNTING_CAPABILITY.costDifferenceApprove, ACCOUNTING_ROUTE.costDifferenceApprove],
   [CAPABILITY.accountingPeriodsList, ACCOUNTING_CAPABILITY.periodsList, ACCOUNTING_ROUTE.periodsList],
   [CAPABILITY.accountingPeriodsPropose, ACCOUNTING_CAPABILITY.periodsPropose, ACCOUNTING_ROUTE.periodsPropose],
   [CAPABILITY.accountingJournalsList, ACCOUNTING_CAPABILITY.journalsList, ACCOUNTING_ROUTE.journalsList],

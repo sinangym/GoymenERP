@@ -1,0 +1,70 @@
+# TREN-1 W8 — devam eden son kaynak paketi
+
+W8 sürüyor; yeni dalga açılmadı. Son yayımlanmış ana plan **135/174 DONE (%77,6)**,
+39 açık dilimdir. Aşağıdaki birleşimler kaynak checkpoint'idir; eksik gerçek owner
+bağlantısı veya dilim kapsamı yalnız derleme geçtiği için DONE yapılmaz.
+
+## Birleştirilen ekip kaynakları
+
+| Ekip | Alınan kaynak | Entegrasyon |
+|---|---|---|
+| satis | `a27517bd5` | `06825b5bb` |
+| alis_cari | `82d31f300` | `e77f3d8bd` |
+| uretim | `4d9b8bfca` | `d8a2f100d` |
+| finans | `9e9b8eebe`, ardından B-28 kaynak takibi `0f9d4bc71` | `2294f9763`, `167a4a4ac` |
+| kimlik / Settings / Work | `f2781f6eb`, hesap güvenliği `244783f03` | `9ce344a0b`, `a840b380e` |
+| stok_lojistik / Product | `b6ba56727` | `04ee1f625` |
+
+Platformun bağımsız yeni ekip dalı yoktur; kişisel bildirim deposu Kimlik/Work
+checkpoint'indedir. Finans B-28 tamamlayıcı kaydı stok birleşiminden önce alındı.
+Birleşimler `--no-ff` ile yapıldı; rebase, force veya eski commit değişikliği yoktur.
+
+## Çatışma ve merkezi bağlantı
+
+- Manufacturing'in taşıdığı eski Purchasing kopyasında güncel numaralama ve cari
+  revizyonu korundu. Ortak Inventory sözleşmelerinde exact oran ve ilk giriş kuru
+  birlikte kaldı. Purchasing batch tersleme/tedarikçi iade ilaveleri korundu.
+- Kimlik birleşiminde Inventory geçmiş satış bağlantısı okuyucusunun ortak
+  transaction'a katılan güncel sürümü ve bu sürümün SQL testi korundu.
+- Stok birleşiminde owner'ın strict ilk giriş kur doğrulaması ve Product boya
+  üyeliği sözleşmesi alındı. Güncel Purchasing onaylı sipariş kuru kanıtı,
+  Settings numara serisi kayıtları ve Kimlik raporu korundu.
+- Belge owner sözlüğüne hem lojistik irsaliye hem resmî satış faturası eklendi.
+- Gerçek Product birim dönüşümü mevcut runtime koşuluna bağlandı. Inventory
+  consumer'ı aynı owner calculator'ını kullanır; yeni katsayı veya aktivasyon yoktur.
+- Tekli/toplu mal kabul ve kabul düzeltmesi, yeni Purchasing kabulünü aynı açık
+  transaction üzerinden okuyan maliyet kaynağına bağlandı. Bilinmeyen TL/USD
+  maliyet sıfır olmaz; ödünç kaynak commit/rollback sahibi değildir. Bunun SQL
+  kaynak testi `Receipt_cost_host_reads_the_uncommitted_acceptance_and_keeps_unknown_prices_null_without_owning_the_transaction` adındadır.
+- Alış kabul geri alma/batch factory'leri, Cari V2 portu, üretim boya seçimi,
+  gerçek Settings teminat listesi ve kredi Cari owner'ı merkezi DI'a bağlandı.
+- Inventory/Purchasing/Finance outbox kaynakları ile bildirim, üretim SMM ve kredi
+  muhasebe tüketicileri kaydedildi. Purchasing fatura tüketicisi kayıtlıdır;
+  gerçek gelen fatura producer'ı hâlâ açık iştir. Dispatcher etkinleştirilmedi.
+- Kredi, resmî satış faturası, üretim maliyet farkı, kullanıcı yönetimi ve boya
+  ürünleri route/menüleri bağlandı. Hesap güvenliği sayfasına ana sayfadan giriş
+  eklendi. Mevcut capability/permission kapıları korunur; staged Finance ve
+  Accounting bildirimleri runtime kabulü olarak yükseltilmedi.
+
+## Kaynak doğrulaması ve kalan
+
+- Birleşik API ve Api.IntegrationTests kaynakları exit 0, .NET uyarı/hata 0.
+  TypeScript `npx tsc -b` exit 0. Son merkezi DI ilavesinden sonra API tekrar
+  derlemesi de exit 0, uyarı/hata 0 verdi.
+  Derlemede OpenAPI üretimi kapalıdır; otomatik uygulama veya DB başlatılmadı.
+- Bütün UnitTests/ArchitectureTests ortak derlemesi ve pin üretimi bu son merkezi
+  bağlantılardan sonra yapılacaktır. Pin sırası Shell → OpenAPI → recovery/release
+  → mimari guard → ilişkisel envanter/test gruplarıdır.
+- Runtime Unit/SQL/HTTP/Vitest/browser/CI ve bağımsız K3 kabulü **NOT_RUN**.
+  Yeni context construction ve sabit SQL horizon okumaları için K3 gerekçeleri
+  korunur; guard izin listesine sessiz ekleme yapılmadı.
+- Açık geliştirme: üretim maliyet/reopen gerçek provider bileşimi; Product açık
+  ticari mal/mamul sınıfı; gelen alış faturası/muhasebe zinciri; Finans dönem/devir
+  ve diğer B-28 kaynakları; Sales maliyet pini/son resmî kaynak provenance'ı;
+  W5 kaynak hizaları ve son tamamlanma denetimi.
+- Cevabı beklenen kararlar: KIM-D27 kurtarma kapsamı (`6933574705`), SAT-S12 pin
+  yenileme sınırı (`6934716192`), FIN-S17 yeni dönem yokken devir ve yeniden açma
+  yetkisi (`6935152814`). Yanıt gelmeden bu politikalar uygulanmaz; diğer işler sürer.
+
+Bu rapor W8'in bittiği, trene push edildiği veya ürünün kullanılabilir/kabul
+edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonra güncellenir.

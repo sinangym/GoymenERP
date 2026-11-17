@@ -21,8 +21,9 @@ internal sealed partial class PurchaseReceiptReversalHost
         var next = write.Request.ReplacementReceipt;
         if (next is null) return null;
         var metadata = batchMetadata ?? Metadata(envelope, write.CommandName);
+        await using var cost = await PurchaseReceiptCostScope.EnlistAsync(connection, transaction, companyId, services, token);
         await using var receipt = await InventoryGoodsReceiptParticipant.EnlistAsync(connection, transaction, companyId,
-            services.GetRequiredService<ISettingsPrerequisiteProvider>(), token, clock);
+            services.GetRequiredService<ISettingsPrerequisiteProvider>(), token, clock, costSource: cost.Source);
         InventoryGoodsReceiptRequestV1 request;
         if (adjusted.IsReplay)
         {
