@@ -17,6 +17,20 @@ Kararlar: SAT-D343, SAT-D421, SAT-D424, SAT-D425. İrsaliye kg kaydı ve ekranı
 
 SAT-S9, SAT-S12 ve SAT-SC34 ile sipariş kurunun gerçek üretim tüketicisine bağlanması mevcut açık W8 kapsamı olarak sürer.
 
+### SAT-S13 — tek fatura kuru ve USD sevk günü sınırı
+
+- 17 Kasım kullanıcı cevabı, Issue #1189 `6943483644` ajan aktarımıdır; doğrudan insan
+  GitHub yorumu olarak sunulmaz. USD fiyatlı farklı İstanbul iş günlerinin sevkleri aynı
+  fatura taslağına alınmaz; TCMB yayını veya kur aynı çıksa da gün sınırı korunur.
+  Aynı İstanbul gününün UTC gece sınırındaki sevkleri birlikte kalabilir. TL sevklerine
+  bu cevaptan yeni gün kısıtı çıkarılmadı; mevcut para birimi/vade/tek kur kontrolleri sürer.
+- Üç birim test kaynağı ve Türkçe ret metni eklendi. API, Sales.UnitTests ve
+  Api.IntegrationTests kaynak derlemeleri exit 0, uyarı/hata 0; TypeScript exit 0.
+  Sales.UnitTests ilk no-restore denemesinde assets eksikti; yalnız ilgili proje restore
+  edildikten sonra derlendi. Runtime Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**.
+- Bu kayıt genel vergi mevzuatı yorumu değildir. Merkezi pinler ve trene entegrasyon
+  tamamlanmadan SAT-S13 için DONE veya yüzde artışı yapılmadı.
+
 ## URT-SC36 bağlantısı — gerçek satış siparişi kur kaynağı
 
 FNS-D73/D83/D107 için Sales owner okuma portu eklendi. Mevcut onaylı revizyon ve arşivlenmiş onaylı revizyon kendi satır kimliğiyle doğrulanır. Siparişte ayrı kur türü/tarihi alanı bulunmadığından FNS-D83'ün sipariş tarihi ve TCMB döviz satış varsayılanı, mevcut Ayarlar SAT-D54/D170 çözümleyicisine aktarılır. Tarih algoritması burada tekrarlanmaz. Üretimin talep ettiği kaynak para birimi açıkça iletilir; okunamayan sipariş veya kur için mal kabul kuruna geçilmez. TL stok maliyeti değiştirilmez.

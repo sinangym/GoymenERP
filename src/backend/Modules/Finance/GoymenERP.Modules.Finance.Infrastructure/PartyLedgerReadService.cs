@@ -50,13 +50,15 @@ public sealed class PartyLedgerReadService(
         }
 
         var open = FinanceOpenItemStatuses.Open;
-        var rows = await dbContext.OpenItems.AsNoTracking()
+        var originals = await dbContext.OpenItems.AsNoTracking()
             .Where(row => row.Status == open)
             .OrderBy(row => row.PartyId).ThenBy(row => row.CompanyAccountId).ThenBy(row => row.Id)
-            .Take(PartyAccountReadRules.MaximumOpenItems + 1)
-            .Select(row => new OpenItemSum(row.PartyId, row.CompanyAccountId, row.CurrencyId, row.Direction,
-                row.OutstandingAmountText))
-            .ToListAsync(cancellationToken);
+            .Take(PartyAccountReadRules.MaximumOpenItems + 1).ToListAsync(cancellationToken);
+        IReadOnlyList<FinanceOpenItemPosition> positions;
+        try { positions = await FinancePartyBalanceAssignment.OpenPositionsAsync(dbContext, originals, cancellationToken); }
+        catch (InvalidOperationException) { return ListRefused(PartyAccountListOutcome.Unavailable); }
+        var rows = positions.Select(x => new OpenItemSum(x.Balance.PartyId, x.Balance.CompanyAccountId,
+            x.Source.CurrencyId, x.Source.Direction, x.Balance.AvailableAmount)).ToList();
 
         // Both authorities are measured afresh after the read: a revoked actor never receives what was read.
         var again = await permissions.CheckAsync(context, FinanceAction.ReadPartyLedger, null, cancellationToken);
@@ -72,7 +74,7 @@ public sealed class PartyLedgerReadService(
             return ListRefused(ListRefusal(amountAgain));
         }
 
-        if (rows.Count > PartyAccountReadRules.MaximumOpenItems)
+        if (originals.Count > PartyAccountReadRules.MaximumOpenItems || rows.Count > PartyAccountReadRules.MaximumOpenItems)
         {
             return ListRefused(PartyAccountListOutcome.TooManyOpenItems);
         }
@@ -151,14 +153,17 @@ public sealed class PartyLedgerReadService(
         var partyId = request.PartyId;
         var accountId = request.CompanyAccountId;
         var open = FinanceOpenItemStatuses.Open;
-        var rows = await dbContext.OpenItems.AsNoTracking()
-            .Where(row => row.PartyId == partyId && row.CompanyAccountId == accountId && row.Status == open)
+        var originals = await FinancePartyBalanceAssignment.OpenItemsOf(dbContext, partyId, accountId).AsNoTracking()
+            .Where(row => row.Status == open)
             .OrderBy(row => row.DueOn == null).ThenBy(row => row.DueOn).ThenBy(row => row.CreatedAtUtc)
-            .ThenBy(row => row.Id)
-            .Take(PartyAccountReadRules.MaximumAccountOpenItems + 1)
-            .Select(row => new OpenItemDetail(row.Id, row.Direction, row.SourceId, row.CurrencyId, row.DueOn,
-                row.OriginalAmountText, row.OutstandingAmountText))
+            .ThenBy(row => row.Id).Take(PartyAccountReadRules.MaximumAccountOpenItems + 1)
             .ToListAsync(cancellationToken);
+        IReadOnlyList<FinanceOpenItemPosition> positions;
+        try { positions = await FinancePartyBalanceAssignment.OpenPositionsAsync(dbContext, originals, cancellationToken); }
+        catch (InvalidOperationException) { return Refused(PartyAccountReadOutcome.Unavailable); }
+        var rows = positions.Where(x => x.Balance.PartyId == partyId && x.Balance.CompanyAccountId == accountId)
+            .Select(x => new OpenItemDetail(x.Source.Id, x.Source.Direction, x.Source.SourceId, x.Source.CurrencyId,
+                x.Source.DueOn, x.Source.OriginalAmountText, x.Balance.AvailableAmount)).ToList();
 
         var amount = await permissions.CheckAsync(context, FinanceAction.ReadPartyLedgerAmount, null, cancellationToken);
         var again = await permissions.CheckAsync(context, FinanceAction.ReadPartyLedger, null, cancellationToken);
@@ -180,7 +185,7 @@ public sealed class PartyLedgerReadService(
             return Found(context, summary.Balance, disclosure, []);
         }
 
-        if (rows.Count > PartyAccountReadRules.MaximumAccountOpenItems)
+        if (originals.Count > PartyAccountReadRules.MaximumAccountOpenItems || rows.Count > PartyAccountReadRules.MaximumAccountOpenItems)
         {
             return Refused(PartyAccountReadOutcome.TooManyOpenItems);
         }

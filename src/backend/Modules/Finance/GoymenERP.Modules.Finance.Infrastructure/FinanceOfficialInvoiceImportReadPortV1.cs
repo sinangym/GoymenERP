@@ -52,8 +52,20 @@ public sealed class FinanceOfficialInvoiceImportReadPortV1(
                 row.OutstandingAmountText,
                 row.DueOn,
                 row.Status,
-                row.Version.ToString(System.Globalization.CultureInfo.InvariantCulture)))
+                row.Version.ToString(System.Globalization.CultureInfo.InvariantCulture), null))
             .ToListAsync(cancellationToken);
+
+        var ids = rows.Select(x => x.Id).ToArray();
+        var assignments = await dbContext.PartyBalanceAssignments.AsNoTracking()
+            .Where(x => x.Kind == FinanceBalanceAssignmentKinds.OpenItem && ids.Contains(x.SourceId)).ToListAsync(cancellationToken);
+        try
+        {
+            rows = rows.Select(row => row with { AllocationPositions = new FinanceAllocationPositions(row.PartyId,
+                row.CompanyAccountId, row.CurrencyId, row.OutstandingAmount, assignments.Where(x => x.SourceId == row.Id).ToArray())
+                .All().Select(x => new FinanceAllocationPositionV1(x.PartyId, x.CompanyAccountId, x.AvailableAmount,
+                    x.AssignmentVersion.ToString(System.Globalization.CultureInfo.InvariantCulture), x.TransferId)).ToArray() }).ToList();
+        }
+        catch (InvalidOperationException) { return Refused(ReadOutcome.Unavailable); }
 
         IReadOnlyList<FinanceOfficialInvoiceImportedDocumentViewV1>? documents;
         try { documents = await ReadDocuments(context, batchId, cancellationToken); }

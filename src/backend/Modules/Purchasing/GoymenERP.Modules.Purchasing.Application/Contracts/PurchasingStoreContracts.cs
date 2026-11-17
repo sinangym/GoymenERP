@@ -178,7 +178,7 @@ public sealed record PurchasingRequestStoreResult(StoredPurchaseRequest Request,
 public sealed record PurchasingOrderStoreResult(StoredPurchaseOrder Order, PurchasingWriteOutcome Outcome, string OriginalCorrelationId);
 
 /// <summary>ADR-011 §7: a terminal refusal recorded under the attempt key (stale version, state, Σ-shares), answered again on the same key.</summary>
-public sealed record PurchasingTerminalRefusal(int Status, string Code, IReadOnlyList<PurchasingFieldError> Errors);
+public sealed record PurchasingTerminalRefusal(int Status, string Code, IReadOnlyList<PurchasingFieldError> Errors, string? Detail = null);
 
 /// <summary>What the key holds: the stored request, the stored order or the recorded refusal — exactly one.</summary>
 public sealed record PurchasingReplay(StoredPurchaseRequest? Request, StoredPurchaseOrder? Order, PurchasingTerminalRefusal? Refusal, string OriginalCorrelationId);

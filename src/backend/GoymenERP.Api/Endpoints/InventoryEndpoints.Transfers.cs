@@ -641,7 +641,13 @@ public static partial class InventoryEndpoints
                         ?? throw new InvalidOperationException("Replayed refusal without its original correlation."));
                 }
 
-                return OpeningProblem(exception.Status, exception.Code, correlation);
+                var extensions = new Dictionary<string, object?>
+                {
+                    ["code"] = exception.Code,
+                    ["correlationId"] = correlation.IsResolved ? correlation.CorrelationId : null,
+                };
+                var detail = InventoryRuntime.InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, extensions);
+                return Results.Problem(statusCode: exception.Status, detail: detail, extensions: extensions);
             default:
                 return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
         }

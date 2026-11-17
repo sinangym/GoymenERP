@@ -174,6 +174,8 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
             ("@command", ExpensePaymentService.RecordCommand), ("@hash", FinanceCommandKeys.Hash("partial-save-record"))));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType=N'finance.expense-payment.recorded.v1' AND EntityId=@id",
             ("@id", expense.Id.ToString("D"))));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OutboxMessages WHERE AggregateId=@id",
+            ("@id", expense.Id)));
         Assert.Equal(TreasuryBalanceOutcome.Sufficient, (await run.ProtectedBalanceAsync(bank, "2000")).Outcome);
         await using (var retry = run.OpenLedger(CompanyA, Recorder))
         {
@@ -191,6 +193,8 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
         }
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType=N'finance.expense-payment.recorded.v1' AND EntityId=@id",
             ("@id", expense.Id.ToString("D"))));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OutboxMessages WHERE AggregateId=@id",
+            ("@id", expense.Id)));
     }
 
     /// <summary>MaxBatchSize(1) ensures the real canonical debit UPDATE executes before this injected EF failure.</summary>

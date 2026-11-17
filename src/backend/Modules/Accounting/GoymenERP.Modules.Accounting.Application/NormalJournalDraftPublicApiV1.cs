@@ -29,7 +29,8 @@ public sealed record NormalJournalDraftServerSourceV1(
     Guid CurrencyId,
     string? SourceVersion = null,
     string? OwnerProfileId = null,
-    string? OwnerProfileVersion = null);
+    string? OwnerProfileVersion = null,
+    string? ExactSourceAmount = null);
 
 public interface INormalJournalDraftServerSourceProviderV1
 {
@@ -137,6 +138,27 @@ public sealed class NormalJournalDraftPublicServiceV1(
         {
             return new AccountingApiResult<NormalJournalDraftViewV1>(AccountingApiStatus.Conflict,
                 null, false, NormalJournalDraftPreparationCodesV1.VersionConflict);
+        }
+
+        // B-28 recorded expense / same-currency transfer: the owner supplies the exact amount.
+        // A balanced draft still must not enlarge or shrink that economic fact. Sources without
+        // this explicit constraint retain their existing manual-journal behavior.
+        if (source.ExactSourceAmount is { } exact)
+        {
+            if (!NormalJournalDraftSourcePreparationV1.TryExactAmount(exact, out var sourceAmount))
+                return new(AccountingApiStatus.Unavailable, null, false, null);
+            if (request.Lines.Any(line => !NormalJournalDraftSourcePreparationV1.TryExactAmount(line.Amount, out _)))
+                return Unprocessable(NormalJournalDraftPreparationCodesV1.SourceAmountMismatch);
+            try
+            {
+                if (parsedLines.Where(x => x.Side == PostingSide.Debit).Sum(x => x.Amount) != sourceAmount
+                    || parsedLines.Where(x => x.Side == PostingSide.Credit).Sum(x => x.Amount) != sourceAmount)
+                    return Unprocessable(NormalJournalDraftPreparationCodesV1.SourceAmountMismatch);
+            }
+            catch (OverflowException)
+            {
+                return Unprocessable(NormalJournalDraftPreparationCodesV1.SourceAmountMismatch);
+            }
         }
 
         var proposed = new List<ProposedLine>(request.Lines.Count);

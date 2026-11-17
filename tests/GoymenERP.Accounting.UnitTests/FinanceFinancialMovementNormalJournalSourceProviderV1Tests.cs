@@ -29,6 +29,7 @@ public sealed class FinanceFinancialMovementNormalJournalSourceProviderV1Tests
         var answer = await fixture.Provider.ResolveAsync(Company, Source);
         Assert.NotNull(answer); Assert.Same(fixture.Rule, answer.Rule); Assert.Equal(Currency, answer.CurrencyId);
         Assert.Equal("3", answer.SourceVersion); Assert.Equal(Profile.ProfileId, answer.OwnerProfileId);
+        Assert.Equal("10.25", answer.ExactSourceAmount);
         Assert.Equal([action], fixture.Permission.Actions);
         Assert.Equal(kind == NormalJournalSourceKindsV1.RecordedExpensePayment ? 1 : 0, fixture.Expense.Calls);
         Assert.Equal(kind == NormalJournalSourceKindsV1.RecordedCashTransfer ? 1 : 0, fixture.Transfer.Calls);

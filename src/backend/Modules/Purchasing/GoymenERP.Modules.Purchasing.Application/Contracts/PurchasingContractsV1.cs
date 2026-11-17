@@ -800,9 +800,11 @@ public static class PurchasingProblemCodesV1
 }
 
 public sealed class PurchasingServiceException(int status, string code,
-    IReadOnlyList<PurchasingFieldError>? errors = null, bool isReplay = false, string? originalCorrelationId = null)
-    : Exception($"{status} {code}")
+    IReadOnlyList<PurchasingFieldError>? errors = null, bool isReplay = false, string? originalCorrelationId = null,
+    Exception? innerException = null, string? detail = null)
+    : Exception($"{status} {code}", innerException)
 {
+    public string? Detail { get; } = detail;
     public int Status { get; } = status;
     public string Code { get; } = code;
     public IReadOnlyList<PurchasingFieldError> Errors { get; } = errors ?? [];

@@ -141,6 +141,7 @@ public sealed partial class AccountingDbContext(DbContextOptions<AccountingDbCon
         ConfigureSourceDocumentVoucherDraftLines(modelBuilder);
         ConfigureManufacturingCostDifferences(modelBuilder);
         ConfigureCreditMovementProposals(modelBuilder);
+        ConfigureFinanceJournalSources(modelBuilder);
         ConfigureInvoiceLineCogs(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()

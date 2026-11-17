@@ -104,6 +104,15 @@ afterEach(() => {
 })
 
 describe('StockScrapPanel on the label detail', () => {
+  it('shows the physical owner kg refusal verbatim alongside the existing failure message', async () => {
+    const detail = 'Sistemde 1 kg var, 50.5 kg istendi.'
+    api.record.mockResolvedValueOnce({ type: 'failed', status: 409, code: 'inventory_negative_physical_stock', detail })
+    const user = userEvent.setup(); mount(); await panel()
+    await user.type(screen.getByLabelText('Hurda kg'), '50,5')
+    await user.type(screen.getByLabelText('Hurda gerekçesi'), 'SENTETIK physical refusal')
+    await user.click(screen.getByRole('button', { name: 'Hurdayı kaydet' }))
+    expect(await screen.findByText((text) => text.includes(detail))).toBeTruthy()
+  })
   it('is absent without either server-advertised scrap capability', async () => {
     scenario.canRecord = false; mount()
     await screen.findByRole('heading', { name: 'LBL-100' })

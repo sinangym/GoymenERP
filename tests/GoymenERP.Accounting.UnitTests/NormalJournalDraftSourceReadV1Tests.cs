@@ -76,6 +76,20 @@ public sealed class NormalJournalDraftSourceReadV1Tests
         Assert.Equal(AccountingApiStatus.Unavailable, result.Status);
     }
 
+    [Fact]
+    public void Exact_amount_and_profile_are_bound_into_preparation_and_cannot_cross_company()
+    {
+        var source = SourceSnapshot() with { ExactSourceAmount = "100.00" };
+        var first = NormalJournalDraftSourcePreparationV1.TryCreate(Company, Source, source)!;
+        var changed = NormalJournalDraftSourcePreparationV1.TryCreate(Company, Source, source with { ExactSourceAmount = "101.00" })!;
+        var profile = NormalJournalDraftSourcePreparationV1.TryCreate(Company, Source, source with { OwnerProfileVersion = "8" })!;
+        Assert.NotEqual(first.PreparationVersion, changed.PreparationVersion);
+        Assert.NotEqual(first.PreparationVersion, profile.PreparationVersion);
+        Assert.Null(NormalJournalDraftSourcePreparationV1.TryCreate(Guid.NewGuid(), Source, source));
+        Assert.Null(NormalJournalDraftSourcePreparationV1.TryCreate(Company, Source,
+            source with { ExactSourceAmount = "100.00000000000000000000000000001" }));
+    }
+
     private static NormalJournalDraftServerSourceV1 SourceSnapshot(
         bool reverseMappings = false,
         string ruleVersion = "rule-v1")

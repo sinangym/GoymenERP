@@ -123,6 +123,8 @@ public enum FinanceAction
     ReadOpeningBalances, ProposeOpeningBalance, ApproveOpeningBalance,
     // FIN-SC47 (FNS-D88): the credit account (kredi) with its imported repayment plan; read, proposal and decision.
     ReadCredits, ProposeCredit, ApproveCredit,
+    // KLN-D72/76: one-step full balance transfer to the recorded legal successor; registration grants nothing.
+    RecordPartyBalanceTransfer,
 }
 public enum PermissionDecision { Unavailable, Denied, Allowed }
 
@@ -150,7 +152,11 @@ public sealed record SourceSummary(Guid Id, Guid CompanyId, string SourceNumber,
 public sealed record SourceDetail(SourceSummary Source, ProfileReference Profile, string? BankReference,
     string? Description, DateTimeOffset? RecordedAtUtc, Guid? ReversalSourceId, Guid? ReversesSourceId,
     UnallocatedView Unallocated,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PosCollectionView? Pos = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PosCollectionView? Pos = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<FinanceAllocationPositionV1>? AllocationPositions = null);
+/// <summary>Exact available amount held by the original account or by an explicit, bounded balance transfer.</summary>
+public sealed record FinanceAllocationPositionV1(Guid PartyId, Guid CompanyAccountId, string AvailableAmount,
+    string AssignmentVersion, Guid? TransferId);
 public sealed record SourcePage(Guid CompanyId, IReadOnlyList<SourceSummary> Items, string? NextCursor);
 public sealed record BankAccountPage(Guid CompanyId, IReadOnlyList<BankAccountView> Items);
 public sealed record ReadResult<T>(ReadOutcome Outcome, T? Resource) where T : class;

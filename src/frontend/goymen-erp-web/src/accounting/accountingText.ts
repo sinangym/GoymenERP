@@ -237,11 +237,20 @@ export const NORMAL_JOURNAL_TEXT = {
   approvalUnknown: 'Onay sonucu bilinmiyor.',
   resend: 'Aynı isteği yeniden gönder',
   source: 'Onaylı finans kaynağı',
+  sourceMode: 'Kaynak grubu',
+  manualSources: 'Kaydedilmiş manuel tahsilatlar',
+  financialSources: 'Muhasebeye ulaşan masraf ve virmanlar',
+  expenseSource: 'Masraf ödemesi',
+  transferSource: 'Aynı para biriminde virman',
+  sourceAmount: 'Kaynak tutarı',
+  receivedSourceHelp: 'Bu listeye alınmış kaynaklar henüz muhasebe fişi değildir. Taslak hazırlama ve farklı yetkilinin onayı ayrıca gerekir.',
+  bindingUnavailable: 'Bu kaynak için onaylı hesap eşlemesi yok. Eşleme tamamlanmadan fiş taslağı hazırlanamaz.',
   chooseSource: 'Kaynak seçin',
   transactionDate: 'İşlem tarihi',
   accountingDate: 'Muhasebe tarihi',
   valueDate: 'Valör tarihi',
   sourcesSubject: 'yetkili finans kaynakları',
+  sourcesEmpty: 'Bu kaynak grubunda fiş hazırlığı için seçilebilecek kayıt yok.',
   preparationSubject: 'onaylı hesap hazırlığı',
   preparationUnreadable: 'Kaynağın onaylı hesap hazırlığı okunamadı.',
   account: 'Onaylı hesap',
@@ -352,6 +361,7 @@ function normalJournalFailureDetail(failure: NormalJournalFailure): string {
     case 'preparation-version-conflict':
       return 'Onaylı hesap hazırlığı değişti.'
     case 'rule':
+      if (failure.code === 'accounting_normal_journal_source_amount_mismatch') return 'Borç ve alacak toplamları kaynaktaki tutara ayrı ayrı eşit olmalıdır. Kaynak para birimi ve tutarı değiştirilemez.'
       return NORMAL_JOURNAL_CODE_TEXT[failure.code] ?? `Kural reddetti (${failure.code}).`
     case 'unsupported-media':
       return 'İstek biçimi desteklenmiyor.'
