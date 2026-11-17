@@ -146,3 +146,11 @@ kırmızıların geçtiği veya bu kaynakların kabul aldığı iddia edilmez.
   API, Purchasing.UnitTests, Api.IntegrationTests ve TypeScript kaynak derlemeleri exit 0, hata/uyarı 0; runtime
   Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**. Inventory ortak receipt fixture'ının aynı
   gerçek numara test owner'ına bağlanması ve merkezi pin/kontrat üretimi entegrasyondadır.
+
+### STK-SC36-b tedarik kaynağı — FNS-D103
+
+- Gerçek mal kabul maliyet kanıtı aynı ödünç transaction içinden onaylı sipariş kurunu da
+  ayrı tipli alan olarak okur. Fatura kuru bulunmadığında sipariş kuru fatura kuru yerine geçmez.
+- SQL kaynakları onaylı sipariş kuru varken faturanın hâlâ kayıtsız kalmasını, kur belirtilmeyen
+  siparişi, şirket izolasyonunu ve read-only rollback'i kapsar. Bu ek kaynak henüz derlenmedi;
+  SQL/runtime **NOT_RUN**. Stok ilk giriş kuru sahibinin bağlantısı ayrı dilimdedir.

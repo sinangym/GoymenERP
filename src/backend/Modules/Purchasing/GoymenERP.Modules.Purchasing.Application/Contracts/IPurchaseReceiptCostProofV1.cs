@@ -11,4 +11,4 @@ public interface IPurchaseReceiptCostProofV1 : IAsyncDisposable
 public sealed record PurchaseReceiptCostProofV1(Guid CompanyId, Guid PurchaseOrderId, Guid PurchaseOrderLineId,
     Guid AcceptanceId, Guid ProductId, string ProductVersion, string AcceptedQuantity,
     string AcceptanceOrderVersion, DateTimeOffset ReceivedAtUtc, PurchaseOrderLineCostAnswerV1 Price,
-    PurchaseInvoiceCostRateAnswerV1 InvoiceRate);
+    PurchaseInvoiceCostRateAnswerV1 InvoiceRate, PurchaseOrderExchangeRateAnswerV1? ApprovedOrderRate = null);

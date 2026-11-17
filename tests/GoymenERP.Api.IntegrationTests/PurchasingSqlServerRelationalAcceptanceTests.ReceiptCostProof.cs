@@ -4,6 +4,7 @@ using GoymenERP.BuildingBlocks.Quantities;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Domain.Orders;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application.Contracts;
 using Microsoft.Data.SqlClient;
 using Quantity = GoymenERP.BuildingBlocks.Quantities.Quantity<GoymenERP.Modules.Purchasing.Domain.Quantities.PurchasingQuantityRefusals>;
 
@@ -32,6 +33,9 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             Assert.Equal(PurchaseOrderLineCostReasonsV1.PricePending, actual.Price.UnreadableReason);
             Assert.Null(actual.Price.Price);
             Assert.Equal(PurchaseInvoiceCostRateReasonsV1.InvoiceNotRecorded, actual.InvoiceRate.UnavailableReason);
+            var orderRate = Assert.IsType<PurchaseOrderExchangeRateAnswerV1>(actual.ApprovedOrderRate);
+            Assert.Equal(PurchaseOrderExchangeRateReasonsV1.RateNotSpecified, orderRate.UnavailableReason);
+            Assert.Equal(actual.Price.OrderVersion, orderRate.OrderVersion);
             Assert.Null(await proof.ReadAsync(seed.OrderId, Guid.NewGuid(), acceptanceId));
             Assert.Null(await proof.ReadAsync(Guid.NewGuid(), seed.LineId, acceptanceId));
         }
@@ -56,12 +60,17 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         {
             var order = PurchaseOrder.Create(orderId, CompanyA, AcceptanceSupplier,
                 PurchaseOrderMoney.Of(OrderLineCostCurrency, "USD", OrderLineCostProfile, 1, 2, 4), AcceptanceTime);
+            var day = DateOnly.FromDateTime(AcceptanceTime.UtcDateTime);
+            order.AssignDefaultExchangeRate(new PurchaseOrderExchangeRate(34.5m, SettingsCurrencyIdentitiesV1.TurkishLira,
+                PurchaseOrderExchangeRateKind.TcmbForexSelling, day, PurchaseOrderExchangeRateSource.Automatic,
+                day.AddDays(-1)), run.Actor, AcceptanceTime);
             order.AddLine(order.Version, lineId, AcceptanceProduct, AcceptanceUnit, Quantity.Of(10m, QuantityUnit.Kilogram),
                 null, new PurchaseOrderLinePrice(12.3456m, AcceptanceUnit, 10m, null, 2m), AcceptanceTime);
             await scope.Store.StoreOrderAsync(run.Envelope("cost-proof-create"), Hash("cost-proof-create"), AcceptanceAccount,
                 DateOnly.FromDateTime(AcceptanceTime.UtcDateTime), () => order, new Dictionary<Guid, string> { [lineId] = "product-v1" });
             var approved = await scope.Store.MutateOrderAsync(run.Envelope("cost-proof-approve"), Hash("cost-proof-approve"),
-                PurchasingCommands.OrderApproveV1, orderId, (candidate, now) => candidate.Approve(candidate.Version, OrderApprover, now), Approved);
+                PurchasingCommands.OrderApproveV1, orderId, (candidate, now) => candidate.Approve(candidate.Version, OrderApprover, now,
+                    SettingsCurrencyIdentitiesV1.TurkishLira), Approved);
             approvedVersion = approved!.Order.Order.Version;
         }
         var seed = new AcceptanceSeed(orderId, lineId, AcceptanceUnit, approvedVersion);
@@ -78,6 +87,10 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             Assert.Equal(11.3332608m, price.NetUnitPrice);
             Assert.Equal((OrderLineCostCurrency, "USD"), (actual.InvoiceRate.OrderCurrencyId, actual.InvoiceRate.OrderCurrencyCode));
             Assert.Equal(PurchaseInvoiceCostRateReasonsV1.InvoiceNotRecorded, actual.InvoiceRate.UnavailableReason);
+            var orderRate = Assert.IsType<PurchaseOrderExchangeRateAnswerV1>(actual.ApprovedOrderRate);
+            Assert.Equal(PurchaseOrderExchangeRateOutcomeV1.Rate, orderRate.Outcome);
+            Assert.Equal((CompanyA, orderId, actual.Price.OrderVersion), (orderRate.CompanyId, orderRate.PurchaseOrderId, orderRate.OrderVersion));
+            Assert.Equal(34.5m, orderRate.Rate!.Value.Rate);
             await transaction.RollbackAsync();
         }
         Assert.Equal(counts, await InvoiceCostRateWriteCountsAsync(run));
