@@ -66,19 +66,31 @@ public sealed class ManufacturingPostedCostAttributionStoreV1(AccountingDbContex
             }
             if (!AccountingInventoryCostAmountsV1.TryRead(proof.ConsumedRootQuantityKg, out var consumed, out _)
                 || proof.ReceiptMovementId != output.ReceiptMovementId || proof.LabelId != output.LabelId
-                || proof.NetQuantityKg != output.NetQuantityKg) throw Refuse("manufacturing_attribution_output_invalid");
+                || proof.NetQuantityKg != output.NetQuantityKg || proof.Shipments.Any(x => !ManufacturingAttributionShipmentEvidenceV1.IsValid(x)))
+                throw Refuse("manufacturing_attribution_output_invalid");
+            PostedCostAttributionCalculationV1? calculated;
             if (consumed == 0)
             {
                 if (output.ConsumedTlDifference != 0 || proof.Shipments.Any(x => x.NetRootQuantityKg.Numerator != "0"))
                     throw Refuse("manufacturing_attribution_output_invalid");
-                continue;
+                calculated = new(0, journal.Header.CurrencyId, profile.Scale, proof.ConsumedRootQuantityKg, []);
             }
-            var weighted = proof.Shipments.Where(x => x.NetRootQuantityKg.Numerator != "0").Select(x =>
-                new PostedCostAttributionWeightV1(x.ShipmentId, x.MovementId, x.MovementLineNumber, x.NetRootQuantityKg,
-                    x.RecordedAtUtc, x.ProvenOriginalSequence)).ToArray();
-            if (!PostedManufacturingCostAttributionCalculatorV1.TryCalculate(output.ConsumedTlDifference!.Value,
-                    journal.Header.CurrencyId, profile.Scale, proof.ConsumedRootQuantityKg, weighted, out var calculated, out var reason))
-                throw Refuse(reason ?? "manufacturing_attribution_amount_unavailable");
+            else
+            {
+                var weighted = proof.Shipments.Where(x => x.NetRootQuantityKg.Numerator != "0").Select(x =>
+                    new PostedCostAttributionWeightV1(x.ShipmentId, x.MovementId, x.MovementLineNumber, x.NetRootQuantityKg,
+                        x.RecordedAtUtc, x.ProvenOriginalSequence)).ToArray();
+                if (!PostedManufacturingCostAttributionCalculatorV1.TryCalculate(output.ConsumedTlDifference!.Value,
+                        journal.Header.CurrencyId, profile.Scale, proof.ConsumedRootQuantityKg, weighted, out calculated, out var reason))
+                    throw Refuse(reason ?? "manufacturing_attribution_amount_unavailable");
+            }
+            // A completely returned shipment has a proved zero net share. Retain that evidence without
+            // assigning any money or participating in the positive-weight rounding/remainder order.
+            var zero = AccountingInventoryCostAmountsV1.FromDecimal(0m);
+            calculated = calculated! with { Shares = calculated!.Shares.Concat(proof.Shipments.Where(x => x.NetRootQuantityKg == zero)
+                .Select(x => new PostedCostAttributionAmountV1(new(x.ShipmentId, x.MovementId, x.MovementLineNumber,
+                    zero, x.RecordedAtUtc, x.ProvenOriginalSequence), zero, 0, 0)))
+                .OrderBy(x => x.Source.ShipmentId).ThenBy(x => x.Source.MovementLineNumber).ToArray() };
             var at = clock.GetUtcNow();
             db.ManufacturingCostAttributions.Add(new() { CompanyId = captured, SourceEventId = sourceEventId,
                 OutputId = output.OutputId, GenerationId = source.GenerationId, GenerationVersion = source.GenerationVersion,
@@ -128,9 +140,8 @@ public sealed class ManufacturingPostedCostAttributionStoreV1(AccountingDbContex
             if (row.CompanyId != companyId || row.ShipmentId != shipmentId || row.ProductId != productId
                 || share.CompanyId != companyId || share.SourceEventId != row.SourceEventId || share.OutputId != row.OutputId
                 || physical.ShipmentId != shipmentId || physical.MovementId != movementId || physical.MovementLineNumber != movementLineNumber
-                || physical.ProductId != productId || physical.PhysicalQuantityKg != quantityKg || physical.HasReturns
-                || physical.NetRootQuantityKg != AccountingInventoryCostAmountsV1.Multiply(
-                    AccountingInventoryCostAmountsV1.FromDecimal(quantityKg), physical.RootShare)
+                || physical.ProductId != productId || physical.PhysicalQuantityKg != quantityKg
+                || !ManufacturingAttributionShipmentEvidenceV1.IsValid(physical)
                 || share.Fingerprint != row.SourceHash || Hash(Encode(share with { Fingerprint = "" })) != share.Fingerprint)
                 throw Refuse("manufacturing_attribution_physical_share_unavailable");
             var journal = await ActualJournal(share.JournalId, share.SourceEventId, companyId, freshConsumerFence, cancellationToken);
