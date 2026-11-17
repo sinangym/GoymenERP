@@ -64,6 +64,10 @@ public sealed class TrainInvoiceOutboxCompositionTests
                 item => item.EventType == subscription.EventType && item.Version == subscription.Version);
         var costStore = Assert.Single(services,
             item => item.ServiceType == typeof(IInventoryPurchaseInvoiceCostStoreV1));
+        var manufacturingLineage = Assert.Single(services,
+            item => item.ServiceType == typeof(IManufacturingAttributionLineageReaderV1));
+        Assert.Equal(typeof(ManufacturingAttributionLineageReaderV1), manufacturingLineage.ImplementationType);
+        Assert.Equal(ServiceLifetime.Scoped, manufacturingLineage.Lifetime);
         Assert.Equal(typeof(InventoryPurchaseInvoiceCostStoreV1), costStore.ImplementationType);
         Assert.Equal(ServiceLifetime.Scoped, costStore.Lifetime);
         var supplierReturnCost = Assert.Single(services,

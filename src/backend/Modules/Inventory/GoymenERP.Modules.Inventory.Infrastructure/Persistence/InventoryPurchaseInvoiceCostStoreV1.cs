@@ -17,9 +17,10 @@ using Microsoft.EntityFrameworkCore.Storage;
 namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 
 /// <summary>SAT-D385/D404/D413: one immutable invoice share changes the current original-position average, never
-/// historical receipt/issue stamps. BS-1 first recognition requires its own decided split and remains unavailable here.</summary>
-public sealed class InventoryPurchaseInvoiceCostStoreV1(InventoryDbContext db, ICompanyContext company,
-    IAuditEventCollector audit, IAuditTransactionWriterV1 auditWriter, TimeProvider clock) : IInventoryPurchaseInvoiceCostStoreV1
+/// historical receipt/issue stamps. BS-1 first recognition retains its decided partial-material split separately.</summary>
+public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbContext db, ICompanyContext company,
+    IAuditEventCollector audit, IAuditTransactionWriterV1 auditWriter, TimeProvider clock,
+    IInventoryFirstCostPrerequisitesV1? firstCostPrerequisites = null) : IInventoryPurchaseInvoiceCostStoreV1
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static readonly Guid Tl = SettingsCurrencyIdentitiesV1.TurkishLira;
@@ -27,6 +28,7 @@ public sealed class InventoryPurchaseInvoiceCostStoreV1(InventoryDbContext db, I
     public async Task ApplyAsync(WorkInboxEventV1 envelope, CancellationToken cancellationToken = default)
     {
         var source = InventoryPurchaseInvoiceCostSourceReaderV1.Read(envelope, company);
+        firstCostFencedLabels.Clear();
         if (auditWriter.HasPendingDrafts) throw Unavailable("purchase_invoice_cost_audit_scope_busy");
         var companyId = source.CompanyId;
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(envelope.PayloadJson)));
@@ -48,6 +50,7 @@ public sealed class InventoryPurchaseInvoiceCostStoreV1(InventoryDbContext db, I
                 || row.AdmissionId == source.AdmissionId, cancellationToken)) throw Invalid("purchase_invoice_cost_duplicate_invoice");
 
             var receipts = new List<InventoryPurchaseInvoiceCostReceiptResultV1>();
+            var firstRecognitions = new List<InventoryPurchaseFirstCostRecognitionV1>();
             foreach (var share in source.Receipts.OrderBy(value => value.AcceptanceId))
             {
                 var priorShares = await db.PurchaseInvoiceReceiptCostEffects.Where(row => row.AcceptanceId == share.AcceptanceId)
@@ -69,8 +72,18 @@ public sealed class InventoryPurchaseInvoiceCostStoreV1(InventoryDbContext db, I
                     throw Invalid("purchase_invoice_cost_receipt_reversed");
                 var stamp = await db.MovementCostStamps.AsNoTracking().SingleOrDefaultAsync(row => row.MovementId == receipt.MovementId
                     && row.LineNumber == 1 && row.CurrencyId == Tl, cancellationToken);
-                if (stamp?.Status != (int)InventoryMovementCostStampStatusV1.Known || stamp.StampVersion < 1)
-                    throw Unavailable("purchase_invoice_cost_first_recognition_pending");
+                if (stamp is null || stamp.StampVersion < 1) throw Unavailable("purchase_invoice_cost_receipt_unavailable");
+                if (stamp.Status != (int)InventoryMovementCostStampStatusV1.Known)
+                {
+                    var recognition = await RecognizeFirstCostAsync(source, share, receipt.MovementId,
+                        receipt.LabelId, receipt.LocationId, receipt.QuantityKg, stamp, cancellationToken);
+                    firstRecognitions.Add(recognition);
+                    db.PurchaseInvoiceReceiptCostEffects.Add(new() { CompanyId = companyId, SourceEventId = envelope.EventId,
+                        AcceptanceId = share.AcceptanceId, InvoiceLineId = share.InvoiceLineId, MovementId = receipt.MovementId,
+                        MovementLineNumber = 1, MatchedQuantity = share.MatchedQuantity, AcceptedQuantity = share.AcceptedQuantity,
+                        ResultJson = JsonSerializer.Serialize(recognition, Json) });
+                    continue;
+                }
                 var originalUnit = InventoryExactCostRatioV1.Resolve(stamp.UnitCostPerKg, stamp.UnitCostRatioJson is null ? null
                     : JsonSerializer.Deserialize<InventoryExactCostRatioV1>(stamp.UnitCostRatioJson, Json));
                 if (originalUnit.Sign < 0) throw Invalid("purchase_invoice_cost_receipt_source_conflict");
@@ -105,12 +118,15 @@ public sealed class InventoryPurchaseInvoiceCostStoreV1(InventoryDbContext db, I
                 positions.Add(new(group.Key.ProductId, group.Key.LocationId, Ratio(difference), Ratio(applied.AbsorbedDifference),
                     Ratio(applied.UnabsorbedDifference), Ratio(applied.RecordedPoolValueEffect), Ratio(applied.AverageRoundingDifference), version));
             }
-            var unabsorbed = positions.Aggregate(ExactCostRatio.Of(0m), (sum, value) => sum.Add(value.UnabsorbedDifference.Value()));
+            var unabsorbed = positions.Aggregate(ExactCostRatio.Of(0m), (sum, value) => sum.Add(value.UnabsorbedDifference.Value()))
+                .Add(firstRecognitions.Aggregate(ExactCostRatio.Of(0m), (sum, value) => sum.Add(ExactCostRatio.Of(value.ConsumedTlAmount))));
             // Preserve each nonzero residual even when opposite signed positions net to zero; Accounting receives the facts.
-            var costEventId = positions.Any(value => value.UnabsorbedDifference.Value().Sign != 0) ? Guid.NewGuid() : (Guid?)null;
+            var costEventId = positions.Any(value => value.UnabsorbedDifference.Value().Sign != 0)
+                || firstRecognitions.Any(value => value.ConsumedExactTlAmount.Value().Sign != 0) ? Guid.NewGuid() : (Guid?)null;
             var resultOfApplication = new InventoryPurchaseInvoiceCostApplicationResultV1(companyId, source.InvoiceId, source.InvoiceVersion,
                 envelope.EventId, source.AdmissionId, source.InvoiceDate, source.OfficialDocument, hash,
-                receipts.OrderBy(value => value.InvoiceLineNo).ThenBy(value => value.AcceptanceId).ToArray(), positions, costEventId, Ratio(unabsorbed));
+                receipts.OrderBy(value => value.InvoiceLineNo).ThenBy(value => value.AcceptanceId).ToArray(), positions, costEventId,
+                Ratio(unabsorbed), firstRecognitions.Count == 0 ? null : firstRecognitions);
             var resultJson = JsonSerializer.Serialize(resultOfApplication, Json);
             db.PurchaseInvoiceCostApplications.Add(new() { CompanyId = companyId, SourceEventId = envelope.EventId,
                 InvoiceId = source.InvoiceId, InvoiceVersion = source.InvoiceVersion, AdmissionId = source.AdmissionId,
