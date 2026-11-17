@@ -11,10 +11,11 @@ public static class CashExchangeBookValuePermissionsV1
 
 public sealed record CashExchangeBookValueEvidenceV1(Guid DocumentId, int VersionNo, string Sha256);
 
-/// <summary>Exact source currency carrying value in TL on the exchange's occurrence day. No TCMB/FIFO/average inference.</summary>
+/// <summary>Document-backed actual source carrying and target functional TL values. No TCMB/FIFO/average inference.</summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ProposeCashExchangeBookValueV1(Guid TransferId, string ExpectedTransferVersion,
-    string SourceBookValueTl, CashExchangeBookValueEvidenceV1 Evidence, string Reason);
+    string SourceBookValueTl, CashExchangeBookValueEvidenceV1 Evidence, string Reason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TargetFunctionalValueTl = null);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record DecideCashExchangeBookValueV1(Guid ProposalId, string ExpectedVersion, bool Approve, string? Reason);
@@ -26,7 +27,8 @@ public enum CashExchangeBookValueStatusV1 { Pending = 1, Approved = 2, Rejected 
 public sealed record CashExchangeBookValueViewV1(Guid Id, Guid CompanyId, Guid TransferId, string TransferVersion,
     string TransferSourceHash, string SourceBookValueTl, CashExchangeBookValueEvidenceV1 Evidence, string Reason,
     string PreparedBy, DateTimeOffset PreparedAtUtc, CashExchangeBookValueStatusV1 Status, string Version,
-    string? DecidedBy, DateTimeOffset? DecidedAtUtc, string? DecisionReason);
+    string? DecidedBy, DateTimeOffset? DecidedAtUtc, string? DecisionReason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TargetFunctionalValueTl = null);
 
 public sealed record CashExchangeBookValueWorkspaceV1(Guid CompanyId, CashTransferView Transfer,
     IReadOnlyList<CashExchangeBookValueViewV1> Proposals);
