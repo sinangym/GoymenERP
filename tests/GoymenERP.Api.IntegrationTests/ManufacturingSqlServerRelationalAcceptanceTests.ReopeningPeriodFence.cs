@@ -23,6 +23,9 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     {
         await using var run = await StartManufacturingInventoryRunAsync();
         var periodId = await OpenReopeningPeriodAsync(run);
+        // FIN-S17: a genuine close needs the next explicitly OPEN period and the real Finance carry owner.
+        // Prepare before the Manufacturing transaction, so setup cannot interfere with the lock being tested.
+        await AccountingPeriodCarrySqlFixture.PrepareAsync(run.Factory, CompanyA, periodId, run.Approver);
         var (_, orderId) = await run.ApprovedOrderAsync(CompanyA);
         await using (var close = run.Store(CompanyA))
             await close.Orders.CloseOrderAsync(orderId, 1, run.Actor, At, Metadata(run));
@@ -52,7 +55,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
                 var closingDb = closingScope.ServiceProvider.GetRequiredService<AccountingDbContext>();
                 await closingDb.Database.OpenConnectionAsync(token);
                 await closingDb.Database.ExecuteSqlRawAsync("SET LOCK_TIMEOUT 0", token);
-                var closer = closingScope.ServiceProvider.GetRequiredService<AccountingStore>();
+                var closer = AccountingPeriodCarrySqlFixture.Store(closingScope.ServiceProvider, run.Factory.Services, run.Approver);
                 var blocked = await Record.ExceptionAsync(() => closer.ClosePeriodAsync(periodId, 2, run.Approver,
                     ReopeningPeriodMetadata(run, run.Approver), token));
                 Assert.NotNull(blocked);
@@ -65,10 +68,8 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             Assert.Equal(1, finalFenceCalls); Assert.Equal(OrderStatus.Open, reopened.Status);
         }
         // Only after the host commits may the real Accounting owner close the same period.
-        await using var after = run.Factory.Services.CreateAsyncScope();
-        after.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
-        var periods = after.ServiceProvider.GetRequiredService<AccountingStore>();
-        var closed = await periods.ClosePeriodAsync(periodId, 2, run.Approver, ReopeningPeriodMetadata(run, run.Approver));
+        var closed = await AccountingPeriodCarrySqlFixture.CloseAsync(run.Factory, CompanyA, periodId, 2,
+            run.Approver, ReopeningPeriodMetadata(run, run.Approver));
         Assert.Equal("Closed", closed.Period.Status.ToString());
         await using var fresh = run.Store(CompanyA);
         Assert.Equal(OrderStatus.Open, (await fresh.Orders.FindOrderAsync(orderId))!.Status);
@@ -83,12 +84,8 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         var (_, orderId) = await run.ApprovedOrderAsync(CompanyA);
         await using (var close = run.Store(CompanyA))
             await close.Orders.CloseOrderAsync(orderId, 1, run.Actor, At, Metadata(run));
-        await using (var closingScope = run.Factory.Services.CreateAsyncScope())
-        {
-            closingScope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
-            await closingScope.ServiceProvider.GetRequiredService<AccountingStore>().ClosePeriodAsync(periodId, 2,
-                run.Approver, ReopeningPeriodMetadata(run, run.Approver));
-        }
+        await AccountingPeriodCarrySqlFixture.CloseAsync(run.Factory, CompanyA, periodId, 2,
+            run.Approver, ReopeningPeriodMetadata(run, run.Approver));
         var auditsBefore = await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents");
         await using (var host = GenerationHostScope.Create(run))
         {
@@ -151,12 +148,15 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
         await scope.ServiceProvider.GetRequiredService<AccountingDbContext>().Database.MigrateAsync();
         var store = scope.ServiceProvider.GetRequiredService<AccountingStore>(); var id = Guid.NewGuid();
-        var (created, _) = await store.ProposePeriodAsync(id, new(2026, 9, 1), new(2026, 9, 30), run.Actor, ReopeningPeriodMetadata(run, run.Actor));
-        await store.ApprovePeriodAsync(id, created.Version, run.Approver, ReopeningPeriodMetadata(run, run.Approver));
+        var (created, _) = await store.ProposePeriodAsync(id, new(2026, 9, 1), new(2026, 9, 30), run.Actor,
+            ReopeningPeriodMetadata(run, run.Actor, AccountingPermissionManifestV1.PeriodsPropose));
+        await store.ApprovePeriodAsync(id, created.Version, run.Approver,
+            ReopeningPeriodMetadata(run, run.Approver, AccountingPermissionManifestV1.PeriodsApprove));
         return id;
     }
-    private static AccountingCommandMetadata ReopeningPeriodMetadata(Run run, Guid actor) =>
-        new(actor.ToString("D"), "synthetic.accounting.period-write", [], run.Correlation, null, Guid.NewGuid().ToString("D"), "Web");
+    private static AccountingCommandMetadata ReopeningPeriodMetadata(Run run, Guid actor,
+        string permission = AccountingPermissionManifestV1.PeriodsClose) =>
+        new(actor.ToString("D"), permission, [], run.Correlation, null, Guid.NewGuid().ToString("D"), "Web");
     private sealed class MutableReopeningCompany(Guid id) : ICompanyContext
     {
         public bool IsResolved => CompanyId != Guid.Empty;
