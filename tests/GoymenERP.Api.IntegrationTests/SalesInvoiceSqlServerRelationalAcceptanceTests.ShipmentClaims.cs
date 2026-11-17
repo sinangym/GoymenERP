@@ -123,6 +123,56 @@ public sealed partial class SalesInvoiceSqlServerRelationalAcceptanceTests
         }
     }
 
+    [SqlServerFact]
+    public async Task Officially_cancelled_shipment_retains_exact_historical_finalization_and_cancellation_proof_without_an_active_claim_on_real_sql()
+    {
+        await using var run = await Run.StartAsync(); var actor = Guid.NewGuid().ToString("D");
+        var invoice = await FinalizedAsync(run, "claim-history", "SENTETIK-CLAIM-HISTORY", Guid.NewGuid().ToString("D"),
+            "SENTETIK-checker", actor);
+        var finalized = await run.ScalarAsync<string>("SELECT PayloadJson FROM sales.OutboxMessages WHERE CompanyId=@company AND AggregateId=@id AND EventType=N'sales.invoice.finalized.v1'",
+            ("@company", CompanyA), ("@id", invoice.Id));
+        var finalizedEventId = await run.ScalarAsync<Guid>("SELECT Id FROM sales.OutboxMessages WHERE CompanyId=@company AND AggregateId=@id AND EventType=N'sales.invoice.finalized.v1'",
+            ("@company", CompanyA), ("@id", invoice.Id));
+        SalesOfficialInvoiceCancellationResultV1 cancellation;
+        await using (var scope = run.OfficialStore(CompanyA))
+            cancellation = await scope.Store.RecordAsync(run.Envelope("claim-history-cancel", actor: actor,
+                permission: SalesPermissionManifestV1.InvoicesFinalize), Hash('c'), SalesOfficialInvoiceKindV1.Normal,
+                invoice.Id, invoice.Version, "SENTETIK", OfficialProof(invoice), _ => Task.CompletedTask);
+        var cancelled = await run.ScalarAsync<string>("SELECT PayloadJson FROM sales.OutboxMessages WHERE CompanyId=@company AND Id=@id",
+            ("@company", CompanyA), ("@id", cancellation.Cancellation.CancellationId));
+        var ids = invoice.Lines.Select(x => x.Share.ShipmentId).ToArray();
+        await using (var scope = run.Store(CompanyA))
+        {
+            var reader = new SalesFinalizedShipmentClaimReadPortV1(scope.Context, new ClaimCompany(CompanyA));
+            var result = await reader.ReadAsync(CompanyA, ids, _ => Task.CompletedTask);
+            Assert.Equal(SalesShipmentClaimReadOutcomeV1.Available, result.Outcome);
+            foreach (var line in invoice.Lines)
+            {
+                var item = Assert.Single(result.Items, x => x.ShipmentId == line.Share.ShipmentId);
+                Assert.Equal(SalesShipmentClaimReadOutcomeV1.NotInvoiced, item.Outcome); Assert.Null(item.Claim);
+                var history = Assert.Single(item.HistoricalFinalizedClaims!);
+                Assert.Equal((CompanyA, invoice.Id, line.Id, invoice.Finalization!.AdmissionId, invoice.Version),
+                    (history.Finalization.CompanyId, history.Finalization.InvoiceId, history.Finalization.InvoiceLineId,
+                    history.Finalization.AdmissionId, history.Finalization.FinalizedVersion));
+                Assert.Equal(finalizedEventId, history.Finalization.FinalizedEventId);
+                Assert.Equal(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(finalized))), history.Finalization.FinalizedPayloadSha256);
+                Assert.Equal(cancellation.Cancellation.CancellationId, history.CancellationId);
+                Assert.Equal(history.CancellationId, history.CancellationEventId);
+                Assert.Equal(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(cancelled))), history.CancellationPayloadSha256);
+                Assert.Equal(Guid.Parse(actor), history.CancelledBy);
+                Assert.Equal("OfficiallyCancelled", history.Finalization.Lifecycle.State);
+                Assert.Equal(history.CancelledAtUtc, history.Finalization.Lifecycle.ReleasedAtUtc);
+            }
+        }
+        await using (var scope = run.Store(CompanyB))
+        {
+            var result = await new SalesFinalizedShipmentClaimReadPortV1(scope.Context, new ClaimCompany(CompanyB))
+                .ReadAsync(CompanyB, ids, _ => Task.CompletedTask);
+            Assert.All(result.Items, item => { Assert.Null(item.Claim); Assert.Null(item.HistoricalFinalizedClaims); });
+        }
+        Assert.Equal(finalized, await run.ScalarAsync<string>("SELECT PayloadJson FROM sales.OutboxMessages WHERE Id=@id", ("@id", finalizedEventId)));
+    }
+
     private sealed class ClaimCompany(Guid id) : ICompanyContext
     {
         public Guid CompanyId { get; private set; } = id;

@@ -105,6 +105,7 @@ public sealed class SalesFinalizedShipmentClaimReadPortV1(SalesDbContext db, ICo
             || lines.Select(x => x.InvoiceId).Distinct().Count() != lines.Length
             || lines.Count(x => x.ReleasedAtUtc is null) > 1) throw Invalid();
         var lifecycles = new List<SalesShipmentInvoiceLifecycleV1>();
+        var historical = new List<SalesHistoricalFinalizedShipmentClaimV1>();
         SalesFinalizedShipmentClaimV1? claim = null;
         foreach (var line in lines)
         {
@@ -185,14 +186,19 @@ public sealed class SalesFinalizedShipmentClaimReadPortV1(SalesDbContext db, ICo
                     || bodyCancellation.InvoiceId != header.InvoiceId || bodyCancellation.AdmissionId != finalized.AdmissionId
                     || bodyCancellation.FinalizedVersion != finalized.Version || bodyCancellation.CancelledBy != Guid.Parse(view.RecordedBy)
                     || bodyCancellation.CancelledAtUtc != view.RecordedAtUtc || bodyCancellation.Reason != view.Reason) throw Invalid();
-                continue; // Keep the original historical finalization proof; only its active economic claim is released.
+                historical.Add(new(new(companyId, header.InvoiceId, line.LineId, line.LineNo, finalized.AdmissionId,
+                    finalized.Version, expected, envelope.Id, Sha(envelope.PayloadJson), finalized.FinalizedAtUtc, lifecycle),
+                    cancelled.Id, cancelledEvent.Id, Sha(cancelledEvent.PayloadJson), bodyCancellation.CancelledBy,
+                    bodyCancellation.CancelledAtUtc, bodyCancellation.Reason));
+                continue; // Historical evidence is never returned as an active quantity/economic claim.
             }
             claim = new(companyId, header.InvoiceId, line.LineId, line.LineNo, finalized.AdmissionId, finalized.Version,
                 expected, envelope.Id, Sha(envelope.PayloadJson), finalized.FinalizedAtUtc, lifecycle);
         }
-        var sourceVersion = Sha(Encode(new { companyId, shipmentId, claim, lifecycles }));
+        var sourceVersion = historical.Count == 0 ? Sha(Encode(new { companyId, shipmentId, claim, lifecycles }))
+            : Sha(Encode(new { companyId, shipmentId, claim, lifecycles, historical }));
         return new(shipmentId, claim is null ? SalesShipmentClaimReadOutcomeV1.NotInvoiced : SalesShipmentClaimReadOutcomeV1.Available,
-            claim, lifecycles, sourceVersion);
+            claim, lifecycles, sourceVersion, HistoricalFinalizedClaims: historical.Count == 0 ? null : historical);
     }
 
     private static void RequireUniqueProperties(JsonElement element)

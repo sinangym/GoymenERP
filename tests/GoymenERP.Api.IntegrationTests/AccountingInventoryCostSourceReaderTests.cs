@@ -7,6 +7,7 @@ using GoymenERP.Modules.Accounting.Application.Inbox;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Logistics.Application.Contracts;
+using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -115,6 +116,7 @@ public sealed partial class AccountingInventoryCostSourceReaderTests
         public InventoryPort Inventory { get; }
         public AccountingInventoryCostSourceReaderV1 Reader { get; }
         public AccountingSalesInvoiceFinalizedLineV1 Line { get; }
+        public WorkInboxEventV1? LastEnvelope { get; private set; }
         public Fixture()
         {
             var claim = new AccountingSalesInvoiceShipmentSourceV1(Guid.NewGuid(), Guid.NewGuid(), 1, Guid.NewGuid(), Guid.NewGuid(),
@@ -127,16 +129,23 @@ public sealed partial class AccountingInventoryCostSourceReaderTests
                     claim.ProductId, "product-1", StockPartyKind.Company, Company.CompanyId, StockPartyKind.Company, Company.CompanyId,
                     Guid.NewGuid(), BlockState.Free, 3m, new(InventoryMovementCostStampStatusV1.Known,
                         SettingsCurrencyIdentitiesV1.TurkishLira, null, 100.01m, 3, "1", null, new("10001", "300")))], "SENTETIK-inventory-1"));
-            Reader = new(Company, Logistics, Inventory);
+            Reader = new(Company, Logistics, Inventory, salesClaims: new CurrentFixtureClaims(this));
         }
         public WorkInboxEventV1 Envelope(IReadOnlyList<AccountingSalesInvoiceFinalizedLineV1?>? lines = null)
         {
             var source = new AccountingSalesInvoiceFinalizedEventV1(Guid.NewGuid(), 5, Guid.NewGuid(), Guid.NewGuid(),
                 SettingsCurrencyIdentitiesV1.TurkishLira, 1m, 600m, 600m, Company.CompanyId, 500m, 100m, 0m, 500m, 100m, 0m,
                 lines ?? [Line], new(2026, 11, 17), Guid.NewGuid().ToString("D"), "SENTETIK-2026-1");
-            return new("sales", Guid.NewGuid(), Company.CompanyId, "sales.invoice.finalized.v1", 1,
+            return LastEnvelope = new("sales", Guid.NewGuid(), Company.CompanyId, "sales.invoice.finalized.v1", 1,
                 JsonSerializer.Serialize(source, new JsonSerializerOptions(JsonSerializerDefaults.Web)), DateTimeOffset.UtcNow, "SENTETIK-cost", null);
         }
+    }
+    private sealed class CurrentFixtureClaims(Fixture f) : ISalesFinalizedShipmentClaimReadPortV1
+    {
+        public Task<SalesShipmentClaimBatchV1> ReadAsync(Guid companyId, IReadOnlyCollection<Guid> shipmentIds,
+            Func<CancellationToken, Task> fence, CancellationToken cancellationToken = default) =>
+            new FinalizedClaims(f, f.LastEnvelope ?? throw new InvalidOperationException("SENTETIK envelope missing"))
+                .ReadAsync(companyId, shipmentIds, fence, cancellationToken);
     }
     private sealed class MutableCompany : ICompanyContext
     { public Guid CompanyId { get; set; } = Guid.NewGuid(); public bool IsResolved => true; public void Set(Guid id) => CompanyId = id; }
