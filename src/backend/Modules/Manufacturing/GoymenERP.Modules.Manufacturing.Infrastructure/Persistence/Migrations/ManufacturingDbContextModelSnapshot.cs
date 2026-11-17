@@ -1664,6 +1664,9 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("PaintSelectionJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<decimal?>("PerimeterMm")
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
@@ -1718,6 +1721,8 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_PlanRevisions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PlanId] <> '00000000-0000-0000-0000-000000000000' AND [WorkCenterId] <> '00000000-0000-0000-0000-000000000000' AND [RevisionNo] >= 1 AND [PlanVersion] >= 2");
 
                             t.HasCheckConstraint("CK_PlanRevisions_LineSpeed", "[LineSpeedMetresPerMinute] IS NULL OR [LineSpeedMetresPerMinute] > 0");
+
+                            t.HasCheckConstraint("CK_PlanRevisions_PaintSelection", "[PaintSelectionJson] IS NULL OR ISJSON([PaintSelectionJson]) = 1");
 
                             t.HasCheckConstraint("CK_PlanRevisions_ProcessSpecValues", "([PackageCount] IS NULL OR [PackageCount] >= 1) AND ([PiecesPerPackage] IS NULL OR [PiecesPerPackage] >= 1) AND ([PieceLengthMm] IS NULL OR [PieceLengthMm] > 0) AND ([UnitKg] IS NULL OR [UnitKg] > 0) AND ([PerimeterMm] IS NULL OR [PerimeterMm] > 0) AND ([TargetThicknessMm] IS NULL OR [TargetThicknessMm] > 0) AND ([PaintDescription] IS NULL OR LEN([PaintDescription]) > 0) AND ([PaintColorCode] IS NULL OR LEN([PaintColorCode]) > 0)");
 
@@ -1781,6 +1786,9 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                     b.Property<string>("PaintDescription")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("PaintSelectionJson")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("PayloadHash")
                         .IsRequired()
@@ -1899,7 +1907,9 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_Plans_NetUsableWidth", "[NetUsableWidthMm] IS NULL OR ([NetUsableWidthMm] > 0 AND [Process] = 1)");
 
-                            t.HasCheckConstraint("CK_Plans_ProcessSpecProcess", "([PackageCount] IS NULL AND [PiecesPerPackage] IS NULL AND [PieceLengthMm] IS NULL OR [Process] IN (3, 4)) AND ([UnitKg] IS NULL OR [Process] = 3) AND ([PerimeterMm] IS NULL AND [PaintDescription] IS NULL AND [PaintColorCode] IS NULL OR [Process] = 4) AND ([TargetThicknessMm] IS NULL OR [Process] = 2) AND ([Process] <> 4 OR [PaintDescription] IS NOT NULL OR ([PackageCount] IS NULL AND [PiecesPerPackage] IS NULL AND [PieceLengthMm] IS NULL AND [PerimeterMm] IS NULL AND [PaintColorCode] IS NULL))");
+                            t.HasCheckConstraint("CK_Plans_PaintSelection", "[PaintSelectionJson] IS NULL OR ISJSON([PaintSelectionJson]) = 1");
+
+                            t.HasCheckConstraint("CK_Plans_ProcessSpecProcess", "([PackageCount] IS NULL AND [PiecesPerPackage] IS NULL AND [PieceLengthMm] IS NULL OR [Process] IN (3, 4)) AND ([UnitKg] IS NULL OR [Process] = 3) AND ([PerimeterMm] IS NULL AND [PaintDescription] IS NULL AND [PaintColorCode] IS NULL AND [PaintSelectionJson] IS NULL OR [Process] = 4) AND ([TargetThicknessMm] IS NULL OR [Process] = 2) AND ([Process] <> 4 OR [PaintDescription] IS NOT NULL OR [PaintSelectionJson] IS NOT NULL OR ([PackageCount] IS NULL AND [PiecesPerPackage] IS NULL AND [PieceLengthMm] IS NULL AND [PerimeterMm] IS NULL AND [PaintColorCode] IS NULL))");
 
                             t.HasCheckConstraint("CK_Plans_ProcessSpecValues", "([PackageCount] IS NULL OR [PackageCount] >= 1) AND ([PiecesPerPackage] IS NULL OR [PiecesPerPackage] >= 1) AND ([PieceLengthMm] IS NULL OR [PieceLengthMm] > 0) AND ([UnitKg] IS NULL OR [UnitKg] > 0) AND ([PerimeterMm] IS NULL OR [PerimeterMm] > 0) AND ([TargetThicknessMm] IS NULL OR [TargetThicknessMm] > 0) AND ([PaintDescription] IS NULL OR LEN([PaintDescription]) > 0) AND ([PaintColorCode] IS NULL OR LEN([PaintColorCode]) > 0)");
 

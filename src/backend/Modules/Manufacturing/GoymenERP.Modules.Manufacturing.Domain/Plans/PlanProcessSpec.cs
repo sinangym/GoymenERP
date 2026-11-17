@@ -6,8 +6,8 @@ public sealed record PlanEnteredValue(string Key, string Unit, decimal Number);
 /// <summary>
 /// Üretim U2-b1 (API-12; URT-D25, URT-D26, URT-D27): the values a Tube / Profile, Paint or Cold Rolling plan enters
 /// itself for its engines. Every value is optional: one that is absent stays unknown and the engine names it (fail-closed),
-/// never defaulted. The package standard and the paint product would come from Product; until that module starts they are
-/// entered here by hand ("ertelendi: Ürün başlayınca"). Part of the plan's content: a Draft revision replaces it with the
+/// never defaulted. Paint selection carries explicit immutable Product/Cari/Settings references; the old description
+/// is retained as historical content, not evidence of membership. Part of the plan's content: a Draft revision replaces it with the
 /// rest, and the approval snapshot captures the numbers with source <c>Plan</c>.
 /// <list type="bullet">
 /// <item>Tube / Profile: package count, pieces per package (URT-D27: proposed later from the product, editable, captured),
@@ -38,7 +38,7 @@ public sealed record PlanProcessSpec
 
     public PlanProcessSpec(int? packageCount = null, int? piecesPerPackage = null, decimal? pieceLengthMm = null,
         decimal? unitKg = null, decimal? perimeterMm = null, decimal? targetThicknessMm = null,
-        string? paintDescription = null, string? paintColorCode = null)
+        string? paintDescription = null, string? paintColorCode = null, PlanPaintSelectionV1? paintSelection = null)
     {
         RequireCount(packageCount, nameof(packageCount));
         RequireCount(piecesPerPackage, nameof(piecesPerPackage));
@@ -48,6 +48,9 @@ public sealed record PlanProcessSpec
         RequireMeasure(targetThicknessMm, MeasureScale, nameof(targetThicknessMm));
         PaintDescription = RequireText(paintDescription, PaintDescriptionMaximumLength, nameof(paintDescription));
         PaintColorCode = RequireText(paintColorCode, PaintColorCodeMaximumLength, nameof(paintColorCode));
+        if (paintSelection is not null && !paintSelection.IsWellFormed())
+            throw new ArgumentException("Boya seçiminin kaynak kimliği ve sürümü eksiktir.", nameof(paintSelection));
+        PaintSelection = paintSelection;
         PackageCount = packageCount;
         PiecesPerPackage = piecesPerPackage;
         PieceLengthMm = pieceLengthMm;
@@ -68,10 +71,11 @@ public sealed record PlanProcessSpec
     public decimal? TargetThicknessMm { get; }
     public string? PaintDescription { get; }
     public string? PaintColorCode { get; }
+    public PlanPaintSelectionV1? PaintSelection { get; }
 
     private bool IsEmpty => PackageCount is null && PiecesPerPackage is null && PieceLengthMm is null && UnitKg is null
                             && PerimeterMm is null && TargetThicknessMm is null && PaintDescription is null
-                            && PaintColorCode is null;
+                            && PaintColorCode is null && PaintSelection is null;
 
     /// <summary>
     /// The values this process may carry; anything else is a caller error (the API refuses it as an invalid field first).
@@ -82,11 +86,11 @@ public sealed record PlanProcessSpec
         var allowed = process switch
         {
             ManufacturingProcess.TubeProfile => PerimeterMm is null && TargetThicknessMm is null
-                                                && PaintDescription is null && PaintColorCode is null,
+                                                && PaintDescription is null && PaintColorCode is null && PaintSelection is null,
             ManufacturingProcess.Paint => UnitKg is null && TargetThicknessMm is null,
             ManufacturingProcess.ColdRolling => PackageCount is null && PiecesPerPackage is null && PieceLengthMm is null
                                                 && UnitKg is null && PerimeterMm is null && PaintDescription is null
-                                                && PaintColorCode is null,
+                                                && PaintColorCode is null && PaintSelection is null,
             _ => false,
         };
         if (!allowed)
@@ -94,7 +98,7 @@ public sealed record PlanProcessSpec
             throw new ArgumentException("Süreç ayrıntısındaki değerler planın sürecine uymuyor.", parameterName);
         }
 
-        if (process == ManufacturingProcess.Paint && PaintDescription is null)
+        if (process == ManufacturingProcess.Paint && PaintDescription is null && PaintSelection is null)
         {
             throw new ArgumentException("Boyama ayrıntısı boya cinsini/tedarikçisini taşımalıdır.", parameterName);
         }

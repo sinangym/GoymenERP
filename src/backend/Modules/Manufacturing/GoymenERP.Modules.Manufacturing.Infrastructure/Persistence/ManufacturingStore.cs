@@ -2120,6 +2120,9 @@ public sealed partial class ManufacturingStore(
                 .Append(processSpec.PaintColorCode is { } color ? Convert.ToBase64String(Encoding.UTF8.GetBytes(color)) : null);
         }
 
+        if (plan.ProcessSpec?.PaintSelection is { } paintSelection)
+            builder.Append("|paint-selection.v1|").Append(JsonSerializer.Serialize(paintSelection, Json));
+
         return Hash(builder.ToString());
     }
 
@@ -2623,6 +2626,7 @@ public sealed partial class ManufacturingStore(
         row.TargetThicknessMm = spec?.TargetThicknessMm;
         row.PaintDescription = spec?.PaintDescription;
         row.PaintColorCode = spec?.PaintColorCode;
+        row.PaintSelectionJson = spec?.PaintSelection is { } selection ? JsonSerializer.Serialize(selection, Json) : null;
         return row;
     }
 
@@ -2631,7 +2635,7 @@ public sealed partial class ManufacturingStore(
     {
         if (row.PackageCount is null && row.PiecesPerPackage is null && row.PieceLengthMm is null && row.UnitKg is null
             && row.PerimeterMm is null && row.TargetThicknessMm is null && row.PaintDescription is null
-            && row.PaintColorCode is null)
+            && row.PaintColorCode is null && row.PaintSelectionJson is null)
         {
             return null;
         }
@@ -2639,9 +2643,11 @@ public sealed partial class ManufacturingStore(
         try
         {
             return new PlanProcessSpec(row.PackageCount, row.PiecesPerPackage, row.PieceLengthMm, row.UnitKg,
-                row.PerimeterMm, row.TargetThicknessMm, row.PaintDescription, row.PaintColorCode);
+                row.PerimeterMm, row.TargetThicknessMm, row.PaintDescription, row.PaintColorCode,
+                row.PaintSelectionJson is { } paintJson ? JsonSerializer.Deserialize<PlanPaintSelectionV1>(paintJson, Json)
+                    ?? throw new ArgumentException("Boya kaynak kanıtı okunamadı.") : null);
         }
-        catch (ArgumentException)
+        catch (Exception exception) when (exception is ArgumentException or JsonException)
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
                 "Kayıtlı süreç ayrıntısı planın kurallarını karşılamıyor.");

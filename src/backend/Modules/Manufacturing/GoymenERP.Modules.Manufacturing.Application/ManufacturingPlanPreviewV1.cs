@@ -160,6 +160,9 @@ public sealed partial class ManufacturingCommandService
             return fenced;
         }
 
+        if (await VerifyPaintSelectionAsync(processSpec.Value, process.Value, permission, companyId, actorId, cancellationToken) is { } paintRefusal)
+            return Refusal<PlanPreviewViewV1>(paintRefusal);
+
         ProductionPlan plan;
         try
         {

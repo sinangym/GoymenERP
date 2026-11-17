@@ -550,7 +550,8 @@ public sealed partial class ManufacturingCommandService(
     IManufacturingCostGenerationStoreV1? costGenerations = null,
     IManufacturingClosedOrderCostRecognitionPortV1? costRecognition = null,
     IManufacturingScrapCostDistributionSourceV1? costSource = null,
-    IManufacturingNonKgInputStoreV1? nonKgInputs = null)
+    IManufacturingNonKgInputStoreV1? nonKgInputs = null,
+    IManufacturingPaintSelectionSourceV1? paintSelections = null)
 {
     // These owner-provider codes stay inside the application result. The public endpoint continues to
     // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the
@@ -660,6 +661,9 @@ public sealed partial class ManufacturingCommandService(
                 }
 
                 saveParameters = parameters.Snapshot;
+                if (await VerifyPaintSelectionAsync(processSpec.Value, process.Value, permission, companyId, actorId, cancellationToken) is { } paintRefusal)
+                    return Refusal<PlanViewV1>(paintRefusal);
+
                 if (await FenceCapturedAsync<PlanViewV1>(permission, companyId, actorId, cancellationToken) is { } fenced)
                 {
                     return fenced;
@@ -837,6 +841,9 @@ public sealed partial class ManufacturingCommandService(
                         current.ParameterSnapshot, candidate.Inputs.ToDictionary(input => input.ParentRollId, _ => true)));
                 }
                 reviseParameters = parameters.Snapshot;
+                if (await VerifyPaintSelectionAsync(processSpec.Value, process.Value, permission, companyId, actorId, cancellationToken) is { } paintRefusal)
+                    return Refusal<PlanViewV1>(paintRefusal);
+
                 if (await FenceCapturedAsync<PlanViewV1>(permission, companyId, actorId, cancellationToken) is { } fenced)
                 {
                     return fenced;
@@ -1426,6 +1433,10 @@ public sealed partial class ManufacturingCommandService(
                     return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unavailable, null, false,
                         ManufacturingPlanAllocationCodesV1.Incomplete);
                 }
+
+                if (current is { Status: PlanStatus.Draft } && current.Version == request.ExpectedVersion
+                    && await VerifyPaintSelectionAsync(current.ProcessSpec, current.Process, permission, companyId, actor, cancellationToken, approval: true) is { } paintRefusal)
+                    return Refusal<PlanViewV1>(paintRefusal);
 
                 var approvedAt = timeProvider.GetUtcNow();
                 Task<ProductionPlan> Approve(CancellationToken token) => plans.ApprovePlanAsync(planId,

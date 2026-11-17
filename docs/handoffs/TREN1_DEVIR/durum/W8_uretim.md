@@ -130,3 +130,19 @@ ayrılan üyeler sonraki snapshot'tan çıkar, önceki history korunur. Yeni DB 
 
 - Son kaynak başı `8863c9424` için Manufacturing.UnitTests ve Api.IntegrationTests kaynak derlemeleri **exit 0 / 0 uyarı / 0 hata**. Exact ilk giriş kur sözleşmesinin gerçek Domain hesaplayıcı bağımlılıkları `07a19d29e` ile owner committed bloblarından alındı; Product boya App sözleşmesi `8863c9424` ile paylaşıldı. Yeni sipariş/ilk-kabul öncelik adapteri ve exact FX test kaynakları derlemeye dahildir. Komutlar `--no-restore -m:1 -nr:false -p:UseSharedCompilation=false -p:OpenApiGenerateDocumentsOnBuild=false`; yeni OpenAPI üretimi ve tüm runtime **NOT_RUN**. Actual Sales kuru ve Product üyelik owner implementasyonları merkezi entegrasyonda bağlanacaktır.
 
+
+### URT-S4 / URT-D25 — gerçek boya seçim kaynağı (kaynak hazırlığı)
+
+- Paint süreç ayrıntısı Product boya üyeliği, ürün/üyelik sürümleri ve kaynak sürümü; Cari aktif Supplier party/account ve iki sürümü; isteğe bağlı Settings PaintColor kimliği/sürümü taşır. Serbest metin üyelik veya uygunluk kanıtı değildir; varsayılan ilk ürün, tedarikçi ya da renk seçilmez.
+- Create/revise/preview, gönderilen Paint ayrıntısını aynı gerçek owner kaynağında doğrular. İçeriği henüz olmayan Draft davranışı korunur; approval/reapproval typed seçimi zorunlu doğrular. Replay ilk immutable cevabı döndürür, yeni master sürümünü geçmişe taşımaz. Yetki/aktör/şirket sahibi await sonrası yeniden çitlenir.
+- Plan yaratımı ve her immutable revision nullable JSON snapshot saklar; eski free-text içerik okunur ve null seçim eski hash'e eklenmez. EF CLI `20261117014136_AddManufacturingPaintSelections` migration/designer/snapshot dosyalarını üretti. Down ilk işlemde Plans veya PlanRevisions üzerinde typed boya kanıtı varken **THROW 51976** ile reddeder. Up yalnız DDL; veritabanına uygulanmadı. Yeni GET `/api/v1/manufacturing/references/paint-selections` mevcut PlansWrite yetkisiyle çalışır. Program DI ve merkezi pin/OpenAPI/envanter entegrasyon sahibindedir; eksik composition 503'tür, boş katalog sayılmaz.
+- UI create/edit/preview ve tarihçe typed seçimi taşır; bozuk/çevrimdışı/404/403/503/boş/stale kaynak açık görünür. Bir para veya üretim hesabı eklenmedi. Unit/model/gerçek-SQL/HTTP/strict-decoder/DOM test kaynakları yazıldı, runtime **NOT_RUN**. Son TypeScript ve Manufacturing.UnitTests kaynak derlemeleri exit0. Integration kaynak derlemesinde yanlış SQL test helper çağrısı mevcut ScalarAsync yoluna düzeltildi; runtime koşulmadı.
+
+- Bu checkpoint'in API (Integration bağımlılığı), Manufacturing.UnitTests, Api.IntegrationTests ve `npx tsc -b`
+  kaynak derlemeleri **exit 0**; .NET uyarı/hata 0. Backend `--no-restore -m:1 -nr:false
+  -p:UseSharedCompilation=false -p:OpenApiGenerateDocumentsOnBuild=false` ile derlendi. `git diff --check` exit 0.
+  Eksik paint provider açık 503 döndürür; GET parametresi service olarak işaretlenerek eksik merkezi
+  composition'ın diğer endpointlerin başlangıcını bozması engellendi. Gerçek Product üyelik kaynağı,
+  Cari/Settings adapteri ve ManufacturingCommandService bağlantısı merkezi entegrasyonda tamamlanmalıdır.
+  Runtime Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**; bağımsız K3 kabulü verilmedi.
+

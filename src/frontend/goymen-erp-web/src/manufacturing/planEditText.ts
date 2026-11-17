@@ -1,3 +1,5 @@
+import { paintSelectionFailureText } from './paintSelectionText'
+import { samePaintSelection } from './paintSelectionContract'
 /**
  * MFG-PLAN-EDIT screen text: the Draft edit form, its refusals and the plan history.
  *
@@ -79,6 +81,8 @@ export const CUT_LINE_TEXT = {
 
 /** The server's refusal, in the user's terms. */
 export function revisionFailureText(status: number, code: string | null, field: string | null, process: string): string {
+  const paintFailure = paintSelectionFailureText(code)
+  if (status !== 401 && status !== 403 && paintFailure !== null) return paintFailure
   if (status === 401 || status === 403) return 'Plan düzenleme yetkiniz artık geçerli değil.'
   if (status === 404) return 'Plan bu şirket bağlamında bulunamadı.'
   switch (code) {
@@ -164,6 +168,10 @@ export function describeRevisionChanges(previous: PlanRevision, next: PlanRevisi
   ) {
     changes.push('Boy kesme ayrıntısı: aynı değerli satırların kimliği değişti.')
   }
+  if (!samePaintSelection(previous.processSpec?.paintSelection, next.processSpec?.paintSelection))
+    changes.push('Boya seçimi: ürün, üyelik, tedarikçi veya renk kaynak sürümü değişti.')
+  if (previous.processSpec?.paintColorCode !== next.processSpec?.paintColorCode)
+    changes.push(`Renk notu: ${previous.processSpec?.paintColorCode ?? '—'} → ${next.processSpec?.paintColorCode ?? '—'}`)
   if (changes.length === 0) changes.push('Ana rulo sırası değişti.')
   return changes
 }

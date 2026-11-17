@@ -1,3 +1,4 @@
+import { decodePaintSelection, type PlanPaintSelection } from './paintSelectionContract'
 /**
  * Wire contract of `GET /api/v1/manufacturing/orders/{orderId}` (`OrderViewV1`, MFG-API #313)
  * and of the fact commands' request bodies.
@@ -199,6 +200,7 @@ export interface PlanProcessSpecView {
   readonly targetThicknessMm: string | null
   readonly paintDescription: string | null
   readonly paintColorCode: string | null
+  readonly paintSelection?: PlanPaintSelection
 }
 
 /** Üretim U2-a: the cancellation of a plan (`PlanCancellationViewV1`). */
@@ -1031,7 +1033,9 @@ const PROCESS_SPEC_KEYS = [
  */
 export function decodePlanProcessSpec(value: unknown): PlanProcessSpecView | null | undefined {
   if (value === undefined || value === null) return null
-  if (!isObject(value) || !hasExactKeys(value, PROCESS_SPEC_KEYS)) return undefined
+  if (!isObject(value) || !hasExactKeys(value, Object.hasOwn(value, 'paintSelection') ? [...PROCESS_SPEC_KEYS, 'paintSelection'] : PROCESS_SPEC_KEYS)) return undefined
+  const selection = Object.hasOwn(value, 'paintSelection') ? decodePaintSelection(value.paintSelection) : undefined
+  if (Object.hasOwn(value, 'paintSelection') && selection === undefined) return undefined
   const count = (raw: unknown): number | null | undefined =>
     raw === null ? null : typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 1 ? raw : undefined
   const measure = (raw: unknown): string | null | undefined =>
@@ -1053,8 +1057,8 @@ export function decodePlanProcessSpec(value: unknown): PlanProcessSpecView | nul
     paintColorCode: text(value.paintColorCode, 32),
   }
   const values = Object.values(spec)
-  if (values.some((member) => member === undefined) || values.every((member) => member === null)) return undefined
-  return spec as PlanProcessSpecView
+  if (values.some((member) => member === undefined) || selection === undefined && values.every((member) => member === null)) return undefined
+  return { ...spec, ...(selection === undefined ? {} : { paintSelection: selection }) } as PlanProcessSpecView
 }
 
 const REJECTION_KEYS = ['number', 'reason', 'rejectedByUserId', 'rejectedAtUtc', 'planVersion'] as const

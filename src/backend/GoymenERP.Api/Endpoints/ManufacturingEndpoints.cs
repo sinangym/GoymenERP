@@ -4,6 +4,7 @@ using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
@@ -103,6 +104,7 @@ public static class ManufacturingEndpoints
         .. ConflictCodes,
         InventoryParentRollCodesV1.VersionConflict,
         InventoryParentRollCodesV1.ReadConflict,
+        ManufacturingPaintCodesV1.VersionConflict,
     ];
 
     private static readonly string[] SavePlanUnprocessableCodes =
@@ -113,6 +115,8 @@ public static class ManufacturingEndpoints
         // Üretim U2-a: the slitting spec's net usable width is wider than a planned parent coil.
         ManufacturingRuleCodes.PlanNetWidthExceedsParent,
         ManufacturingRuleCodes.PlanLabelNotUsable,
+        ManufacturingPaintCodesV1.Required,
+        ManufacturingPaintCodesV1.Ineligible,
     ];
 
     // Üretim U3-a (URT-D21, URT-D3, B-01): the approval allocates the plan's inputs in Inventory with the approval, at the
@@ -152,6 +156,8 @@ public static class ManufacturingEndpoints
     private static readonly string[] ApprovePlanUnprocessableCodes =
     [
         .. ManufacturingProblemCodes.Unprocessable,
+        ManufacturingPaintCodesV1.Required,
+        ManufacturingPaintCodesV1.Ineligible,
         ManufacturingRuleCodes.PlanSelfApproval,
         ManufacturingRuleCodes.PlanDueDateRequired,
         ManufacturingRuleCodes.DueDateInPast,
@@ -270,6 +276,8 @@ public static class ManufacturingEndpoints
     private static readonly string[] ReapprovePlanUnprocessableCodes =
     [
         .. ManufacturingProblemCodes.Unprocessable,
+        ManufacturingPaintCodesV1.Required,
+        ManufacturingPaintCodesV1.Ineligible,
         ManufacturingRuleCodes.PlanCancelled,
         ManufacturingRuleCodes.PlanOrderExists,
         ManufacturingRuleCodes.PlanSelfApproval,
@@ -297,6 +305,24 @@ public static class ManufacturingEndpoints
         var group = endpoints.MapGroup("/api/v1/manufacturing")
             .RequireAuthorization()
             .WithTags("Manufacturing");
+
+        group.MapGet("/references/paint-selections", async (HttpContext context,
+                ICompanyContext company, CancellationToken cancellationToken, [FromServices] IManufacturingPaintSelectionSourceV1? source = null) =>
+            {
+                SetPrivateNoStore(context.Response.Headers);
+                if (context.Request.Query.Keys.Any(key => key != "q") || context.Request.Query["q"].Count > 1)
+                    return Problem(400, ManufacturingApiCodes.RequestInvalid, null);
+                if (source is null) return Results.Problem(statusCode: 503);
+                try { return Results.Ok(await source.ListAsync(company.CompanyId, context.Request.Query["q"].FirstOrDefault(), cancellationToken)); }
+                catch (OperationCanceledException) { throw; }
+                catch (UnauthorizedAccessException) { return Results.Problem(statusCode: 403); }
+                catch (ArgumentException) { return Problem(400, ManufacturingApiCodes.RequestInvalid, null); }
+                catch (Exception) { return Results.Problem(statusCode: 503); }
+            })
+            .RequireCompanyContext().RequireAuthorization(ErpPermissions.ManufacturingPlansWrite)
+            .WithName("GetManufacturingPaintSelectionsV1")
+            .Produces<ManufacturingPaintCatalogV1>(200).ProducesErpBadRequest(ManufacturingApiCodes.RequestInvalid)
+            .ProducesErpAuthenticatedProblems().ProducesErpServiceUnavailable();
 
         group.MapGet("/references/output-products", async (
                 HttpContext httpContext,

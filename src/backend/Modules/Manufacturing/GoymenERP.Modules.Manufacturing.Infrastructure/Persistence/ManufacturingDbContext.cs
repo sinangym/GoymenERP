@@ -34,6 +34,7 @@ public sealed partial class ManufacturingDbContext(DbContextOptions<Manufacturin
     : DbContext(options)
 {
     public const string Schema = "manufacturing";
+    internal const string PlanPaintSelectionJsonCheck = "[PaintSelectionJson] IS NULL OR ISJSON([PaintSelectionJson]) = 1";
 
     /// <summary>
     /// Üretim F-010a (URT-D29): the termin revision is never negative and counts every stored termin (a termin was set at
@@ -343,9 +344,9 @@ public sealed partial class ManufacturingDbContext(DbContextOptions<Manufacturin
             table.HasCheckConstraint("CK_Plans_ProcessSpecProcess",
                 "([PackageCount] IS NULL AND [PiecesPerPackage] IS NULL AND [PieceLengthMm] IS NULL OR [Process] IN (3, 4)) "
                 + "AND ([UnitKg] IS NULL OR [Process] = 3) "
-                + "AND ([PerimeterMm] IS NULL AND [PaintDescription] IS NULL AND [PaintColorCode] IS NULL OR [Process] = 4) "
+                + "AND ([PerimeterMm] IS NULL AND [PaintDescription] IS NULL AND [PaintColorCode] IS NULL AND [PaintSelectionJson] IS NULL OR [Process] = 4) "
                 + "AND ([TargetThicknessMm] IS NULL OR [Process] = 2) "
-                + "AND ([Process] <> 4 OR [PaintDescription] IS NOT NULL OR ([PackageCount] IS NULL "
+                + "AND ([Process] <> 4 OR [PaintDescription] IS NOT NULL OR [PaintSelectionJson] IS NOT NULL OR ([PackageCount] IS NULL "
                 + "AND [PiecesPerPackage] IS NULL AND [PieceLengthMm] IS NULL AND [PerimeterMm] IS NULL "
                 + "AND [PaintColorCode] IS NULL))");
             // U2-d (URT-D2): the preparer, when kept, is a non-empty actor id.
@@ -470,6 +471,7 @@ public sealed partial class ManufacturingDbContext(DbContextOptions<Manufacturin
             + "AND ([PerimeterMm] IS NULL OR [PerimeterMm] > 0) AND ([TargetThicknessMm] IS NULL OR [TargetThicknessMm] > 0) "
             + "AND ([PaintDescription] IS NULL OR LEN([PaintDescription]) > 0) "
             + "AND ([PaintColorCode] IS NULL OR LEN([PaintColorCode]) > 0)");
+        table.HasCheckConstraint($"CK_{tableName}_PaintSelection", PlanPaintSelectionJsonCheck);
     }
 
     private static void ProcessSpecColumns<TRow>(EntityTypeBuilder<TRow> entity)
@@ -481,6 +483,7 @@ public sealed partial class ManufacturingDbContext(DbContextOptions<Manufacturin
         entity.Property(x => x.TargetThicknessMm).HasPrecision(18, 3);
         entity.Property(x => x.PaintDescription).HasMaxLength(PlanProcessSpec.PaintDescriptionMaximumLength);
         entity.Property(x => x.PaintColorCode).HasMaxLength(PlanProcessSpec.PaintColorCodeMaximumLength);
+        entity.Property(x => x.PaintSelectionJson).HasColumnType("nvarchar(max)");
     }
 
     /// <summary>

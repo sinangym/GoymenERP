@@ -150,6 +150,8 @@ public sealed class ManufacturingPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddManufacturingManualQueues", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddManufacturingOrderReopenings", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddManufacturingCostGenerations", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddManufacturingNonKgInputFacts", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddManufacturingPaintSelections", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

@@ -3218,9 +3218,54 @@ public sealed partial class ManufacturingCommandServiceTests
         }
     }
 
+    [Fact]
+    public async Task Paint_save_and_preview_require_actual_owner_references_but_replay_does_not_replace_the_stored_snapshot()
+    {
+        var source = new PaintSelectionPort();
+        var fixture = new Fixture(paintSelections: source); fixture.WorkCenters.Kind = "Paint";
+        var selection = new PlanPaintSelectionV1(Guid.NewGuid(), "12", "3", "synthetic-source:3", Guid.NewGuid(), Guid.NewGuid(), "4", "5");
+        var request = Plan(LabelVersion) with { ProcessSpec = new(PaintSelection: selection) };
+        var preview = await fixture.Service.PreviewPlanAsync(new(WorkCenter, request.Inputs, request.Target,
+            ProcessSpec: request.ProcessSpec), ErpPermissions.ManufacturingPlansWrite, default);
+        Assert.Equal(ManufacturingApiStatus.Ok, preview.Status); Assert.Empty(fixture.Store.Writes);
+        var saved = await fixture.Service.SavePlanAsync(request, "paint-save", ErpPermissions.ManufacturingPlansWrite, default);
+        Assert.Equal(ManufacturingApiStatus.Created, saved.Status); Assert.Equal(selection, saved.Resource!.ProcessSpec!.PaintSelection);
+        var readsBeforeReplay = source.Reads; source.Outcome = ManufacturingPaintSelectionOutcomeV1.Unavailable;
+        var replay = await fixture.Service.SavePlanAsync(request, "paint-save", ErpPermissions.ManufacturingPlansWrite, default);
+        Assert.True(replay.IsReplay); Assert.Equal(readsBeforeReplay, source.Reads);
+        Assert.Equal(selection, replay.Resource!.ProcessSpec!.PaintSelection);
+        var unavailable = await fixture.Service.SavePlanAsync(request with { PlanId = Guid.NewGuid() }, "paint-unavailable", ErpPermissions.ManufacturingPlansWrite, default);
+        Assert.Equal(ManufacturingApiStatus.Unavailable, unavailable.Status); Assert.Single(fixture.Store.Plans);
+    }
+
+    [Fact]
+    public async Task Paint_free_text_is_not_a_product_membership_and_revoked_authority_after_owner_read_writes_nothing()
+    {
+        var source = new PaintSelectionPort(); var fixture = new Fixture(paintSelections: source); fixture.WorkCenters.Kind = "Paint";
+        var freeText = Plan(LabelVersion) with { ProcessSpec = new(PaintDescription: "Sentetik boya / tedarikçi notu") };
+        var refused = await fixture.Service.SavePlanAsync(freeText, "paint-free-text", ErpPermissions.ManufacturingPlansWrite, default);
+        Assert.Equal(ManufacturingPaintCodesV1.Required, refused.Code); Assert.Empty(fixture.Store.Writes); Assert.Equal(0, source.Reads);
+        source.DuringRead = () => fixture.Authority.Scope = PermissionScope.Denied;
+        var selection = new PlanPaintSelectionV1(Guid.NewGuid(), "12", "3", "synthetic-source:3", Guid.NewGuid(), Guid.NewGuid(), "4", "5");
+        var denied = await fixture.Service.SavePlanAsync(freeText with { ProcessSpec = new(PaintSelection: selection) },
+            "paint-revoked", ErpPermissions.ManufacturingPlansWrite, default);
+        Assert.Equal(ManufacturingApiStatus.Denied, denied.Status); Assert.Empty(fixture.Store.Writes);
+    }
+
+    private sealed class PaintSelectionPort : IManufacturingPaintSelectionSourceV1
+    {
+        public int Reads; public Action? DuringRead;
+        public ManufacturingPaintSelectionOutcomeV1 Outcome = ManufacturingPaintSelectionOutcomeV1.Available;
+        public Task<ManufacturingPaintSelectionAnswerV1> ValidateAsync(Guid companyId, PlanPaintSelectionV1 selection, CancellationToken cancellationToken)
+        { Reads++; DuringRead?.Invoke(); return Task.FromResult(new ManufacturingPaintSelectionAnswerV1(Outcome, companyId,
+            Outcome == ManufacturingPaintSelectionOutcomeV1.Available ? selection : null)); }
+        public Task<ManufacturingPaintCatalogV1> ListAsync(Guid companyId, string? query, CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
     private sealed class Fixture
     {
-        public Fixture(bool withWorkCenters = true, bool withPlanAllocations = true, bool withOutputCorrections = true)
+        public Fixture(bool withWorkCenters = true, bool withPlanAllocations = true, bool withOutputCorrections = true,
+            IManufacturingPaintSelectionSourceV1? paintSelections = null)
         {
             CompanyContext = new MutableCompanyContext(Company);
             var correlation = new CorrelationContext();
@@ -3241,7 +3286,7 @@ public sealed partial class ManufacturingCommandServiceTests
                 planRevisions: Store,
                 productTechnicalSnapshots: ProductSnapshots, partyAccounts: PartyAccounts,
                 contextualParentRolls: ParentRolls, planAllocations: withPlanAllocations ? PlanAllocations : null,
-                outputCorrections: withOutputCorrections ? OutputCorrections : null);
+                outputCorrections: withOutputCorrections ? OutputCorrections : null, paintSelections: paintSelections);
         }
 
         public List<string> Calls { get; } = [];

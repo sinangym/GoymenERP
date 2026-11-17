@@ -1,3 +1,4 @@
+import { paintSelectionFailureText } from './paintSelectionText'
 /**
  * MFG-PLAN create and detail screen text, in Turkish and in its own file. The edit form's own words and the plan
  * history stay in `./planEditText.ts`; the preview's in `./planPreviewText.ts`. `PLAN_FORM_TEXT` is what the create
@@ -108,6 +109,8 @@ export const PLAN_CREATE_TEXT = {
 
 /** The plan save's refusal, in the user's terms. */
 export function saveFailureText(status: number, code: string | null): string {
+  const paintFailure = paintSelectionFailureText(code)
+  if (status !== 401 && status !== 403 && paintFailure !== null) return paintFailure
   if (status === 401 || status === 403) return 'Plan kaydetme yetkiniz artık geçerli değil.'
   if (status === 404) return 'Seçilen ana rulo veya şirket bağlamı artık bulunamıyor.'
   if (status === 409) return `Seçilen kayıtların sürümü veya yazma durumu değişti (${code ?? 'conflict'}).`
@@ -196,6 +199,8 @@ type LifecycleKind = 'approve' | 'create-order' | 'reject' | 'cancel'
 
 /** An approval's or order creation's refusal, in the user's terms (a revision's is `revisionFailureText`). */
 export function lifecycleFailureText(kind: LifecycleKind, status: number, code: string | null): string {
+  const paintFailure = paintSelectionFailureText(code)
+  if (status !== 401 && status !== 403 && paintFailure !== null) return paintFailure
   const subject = kind === 'approve' ? 'Plan onayı'
     : kind === 'reject' ? 'Plan reddi'
       : kind === 'cancel' ? 'Plan iptali'

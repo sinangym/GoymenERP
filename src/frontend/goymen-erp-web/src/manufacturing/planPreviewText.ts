@@ -1,3 +1,4 @@
+import { paintSelectionFailureText } from './paintSelectionText'
 /**
  * Display names for the plan preview. Labels only: every name is the server's own parameter or value name, shown with
  * its Turkish label; an unknown name is shown as it came, never dropped. Nothing here is a value, a default or a
@@ -128,6 +129,8 @@ export function previewFailure(reason: 'offline' | 'network-error' | 'service-un
 }
 
 export function previewRefusal(status: number, code: string | null, field: string | null): string {
+  const paintFailure = paintSelectionFailureText(code)
+  if (status !== 401 && status !== 403 && paintFailure !== null) return paintFailure
   const where = field === null ? '' : ` Alan: ${field}.`
   if (status === 401 || status === 403) return 'Önizleme için plan yazma yetkiniz artık geçerli değil.'
   if (status === 404) return 'Önizlenen ana rulo bu şirket bağlamında bulunamadı.'
