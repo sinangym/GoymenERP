@@ -71,8 +71,10 @@ internal sealed class ManufacturingInputRatePriorityReaderV1(ICompanyContext com
             }
             var freshOrder = await orders.FindOrderAsync(manufacturingOrderId, ct);
             var freshPlan = await plans.FindPlanAsync(order.PlanId, ct);
-            if (!Scope() || freshOrder is null || freshOrder.CompanyId != companyId || freshOrder.Version != orderVersion
-                || freshPlan is null || freshPlan.CompanyId != companyId || freshPlan.SalesOrderLinkRevision != linkRevision || freshPlan.SalesOrderLink != link) return null;
+            if (!Scope() || freshOrder is null || freshOrder.Id != manufacturingOrderId || freshOrder.PlanId != order.PlanId
+                || freshOrder.CompanyId != companyId || freshOrder.Version != orderVersion
+                || freshPlan is null || freshPlan.Id != plan.Id || freshPlan.CompanyId != companyId
+                || freshPlan.SalesOrderLinkRevision != linkRevision || freshPlan.SalesOrderLink != link) return null;
             var json = JsonSerializer.Serialize(new { companyId, manufacturingOrderId, orderVersion, planId = plan.Id,
                 linkRevision, issueFactId, parentLabelId, source, missing, evidence });
             var version = "manufacturing.input-rate-priority.v1/" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))).ToLowerInvariant();
