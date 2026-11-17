@@ -40,9 +40,11 @@ public sealed partial class PurchasingDbContext
         attempt.Property(x => x.SnapshotJson).HasColumnType("nvarchar(max)"); attempt.Property(x => x.RefusalJson).HasColumnType("nvarchar(max)");
         attempt.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
         attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+        ConfigureAdditionalCostInvoiceBindings(builder);
     }
     private void GuardAdditionalCosts()
     {
+        GuardAdditionalCostInvoiceBindings();
         foreach (var entry in ChangeTracker.Entries<PurchaseAdditionalCostRow>())
         {
             if (entry.State is EntityState.Modified or EntityState.Deleted) throw new InvalidOperationException("Ek masraf faktörü değiştirilemez.");

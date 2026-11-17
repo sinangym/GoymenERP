@@ -28,6 +28,17 @@ public static partial class PurchasingEndpoints
             try { return Results.Json(await service.CandidatesAsync(id, lineId, pageIndex ?? 0, token), PurchasingJson.Options); }
             catch (PurchasingServiceException exception) { return Problem(context, exception, correlation); }
         }).WithName("GetPurchaseInvoiceReceiptCandidatesV1").Produces<PurchaseInvoiceReceiptCandidatePageV1>());
+        InvoiceWorkspaceRead(group.MapGet("/{id:guid}/lines/{lineId:guid}/additional-cost-candidates", async (Guid id, Guid lineId, int? pageIndex,
+            HttpContext context, [FromServices] IPurchaseIncomingInvoiceWorkspaceV1 service, ICorrelationContext correlation, CancellationToken token) =>
+        {
+            SetPrivateNoStore(context.Response);
+            if (context.Request.Query.Keys.Any(key => key != "pageIndex") || context.Request.Query["pageIndex"].Count > 1)
+                return Problem(400, "validation_failed", correlation);
+            try { return Results.Json(await service.AdditionalCostCandidatesAsync(id, lineId, pageIndex ?? 0, token), PurchasingJson.Options); }
+            catch (PurchasingServiceException exception) { return Problem(context, exception, correlation); }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception) { return Problem(503, "service_unavailable", correlation); }
+        }).WithName("GetPurchaseInvoiceAdditionalCostCandidatesV1").Produces<PurchaseInvoiceAdditionalCostCandidatePageV1>());
         group.MapGet("/{id:guid}", async (Guid id, HttpContext context, [FromServices] IPurchaseIncomingInvoiceWorkflowV1 service,
             ICorrelationContext correlation, CancellationToken token) =>
         {

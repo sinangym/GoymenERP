@@ -7,6 +7,7 @@ export interface IncomingInvoiceLine {
   readonly itemType: string; readonly linePurpose: string; readonly vatPercent: string
   readonly amounts: InvoiceAmounts; readonly functionalAmounts: InvoiceAmounts | null
   readonly serviceTypeId?: string
+  readonly expenseTypeId?: string
 }
 export interface IncomingInvoice {
   readonly id: string; readonly companyId: string; readonly version: string
@@ -31,7 +32,14 @@ export interface InvoiceReceiptPage {
   readonly pageIndex: number; readonly hasNext: boolean; readonly items: readonly InvoiceReceiptCandidate[]
 }
 export interface InvoiceReceiptSelection { readonly invoiceLineId: string; readonly purchaseOrderId: string; readonly acceptanceId: string; readonly quantity: string }
-export type InvoiceCommand = { readonly action: 'matching'; readonly request: { readonly expectedVersion: string; readonly receipts: readonly InvoiceReceiptSelection[] } }
+export interface InvoiceAdditionalCostSelection { readonly invoiceLineId: string; readonly purchaseOrderId: string; readonly costId: string; readonly netAmount: string }
+export interface InvoiceAdditionalCostCandidate { readonly costId: string; readonly purchaseOrderId: string; readonly purchaseOrderNumber: string | null;
+  readonly description: string; readonly expenseTypeId: string | null; readonly expenseTypeName: string | null; readonly businessDate: string;
+  readonly netAmount: string; readonly availableNetAmount: string; readonly vatPercent: string }
+export interface InvoiceAdditionalCostPage { readonly invoiceId: string; readonly invoiceLineId: string; readonly invoiceVersion: string; readonly currencyId: string;
+  readonly pageIndex: number; readonly hasNext: boolean; readonly items: readonly InvoiceAdditionalCostCandidate[] }
+export type InvoiceCommand = { readonly action: 'matching'; readonly request: { readonly expectedVersion: string; readonly receipts: readonly InvoiceReceiptSelection[];
+    readonly additionalCosts?: readonly InvoiceAdditionalCostSelection[] } }
   | { readonly action: 'variance-approval'; readonly request: { readonly expectedVersion: string; readonly reason: string } }
   | { readonly action: 'finalization' | 'finance-admission'; readonly request: { readonly expectedVersion: string } }
 export interface InvoiceCommandResponse { readonly invoice: IncomingInvoice; readonly isReplay: boolean; readonly originalCorrelationId: string; readonly financeOutcome: string | null }
@@ -70,10 +78,14 @@ export function decodeIncomingInvoice(value: unknown, companyId: string, invoice
   for (const raw of item.lines) {
     const line = obj(raw)
     if (line === null || !exact(line, ['id', 'lineNo', 'productId', 'unitId', 'quantity', 'itemType', 'linePurpose', 'vatPercent', 'amounts', 'functionalAmounts',
-      ...(Object.hasOwn(line, 'serviceTypeId') ? ['serviceTypeId'] : [])])
+      ...(Object.hasOwn(line, 'serviceTypeId') ? ['serviceTypeId'] : []), ...(Object.hasOwn(line, 'expenseTypeId') ? ['expenseTypeId'] : [])])
       || !guid(line.id) || ids.has(line.id) || !positiveInt(line.lineNo) || numbers.has(line.lineNo as number)
-      || (Object.hasOwn(line, 'serviceTypeId') ? !guid(line.serviceTypeId) || line.productId !== '00000000-0000-0000-0000-000000000000'
-        || line.itemType !== 'Service' || line.linePurpose !== 'service' : !guid(line.productId))
+      || (line.itemType === 'Expense' && line.linePurpose === 'expense'
+        ? line.productId !== '00000000-0000-0000-0000-000000000000' || Object.hasOwn(line, 'serviceTypeId')
+          || Object.hasOwn(line, 'expenseTypeId') && !guid(line.expenseTypeId)
+        : Object.hasOwn(line, 'expenseTypeId') || line.itemType === 'Expense' || line.linePurpose === 'expense'
+          || (Object.hasOwn(line, 'serviceTypeId') ? !guid(line.serviceTypeId) || line.productId !== '00000000-0000-0000-0000-000000000000'
+            || line.itemType !== 'Service' || line.linePurpose !== 'service' : !guid(line.productId)))
       || !guid(line.unitId) || !invoiceQuantity(line.quantity) || !text(line.itemType) || !text(line.linePurpose)
       || !decimal(line.vatPercent) || !amounts(line.amounts, item.moneyScale)
       || (line.functionalAmounts !== null && !amounts(line.functionalAmounts, item.functionalScale))) return null
@@ -82,7 +94,7 @@ export function decodeIncomingInvoice(value: unknown, companyId: string, invoice
   for (const raw of item.variances) {
     const variance = obj(raw)
     if (variance === null || !exact(variance, ['invoiceLineId', 'kind', 'expected', 'actual']) || !guid(variance.invoiceLineId)
-      || !ids.has(variance.invoiceLineId) || (variance.kind !== 'Price' && variance.kind !== 'ExchangeRate') || !decimal(variance.expected) || !decimal(variance.actual)) return null
+      || !ids.has(variance.invoiceLineId) || (variance.kind !== 'Price' && variance.kind !== 'ExchangeRate' && variance.kind !== 'Quantity') || !decimal(variance.expected) || !decimal(variance.actual)) return null
   }
   if (item.varianceDecision !== null) {
     const decision = obj(item.varianceDecision)
@@ -124,4 +136,24 @@ export function decodeInvoiceCommand(value: unknown, companyId: string, invoiceI
     || !text(item.originalCorrelationId) || (item.financeOutcome !== null && !text(item.financeOutcome))) return null
   const invoice = decodeIncomingInvoice(item.invoice, companyId, invoiceId)
   return invoice === null ? null : { invoice, isReplay: replay, originalCorrelationId: item.originalCorrelationId, financeOutcome: item.financeOutcome as string | null }
+}
+export function decodeInvoiceAdditionalCosts(value: unknown, invoice: IncomingInvoice, line: IncomingInvoiceLine, pageIndex: number): InvoiceAdditionalCostPage | null {
+  const page = obj(value)
+  if (line.itemType !== 'Expense' || line.linePurpose !== 'expense' || page === null
+    || !exact(page, ['invoiceId', 'invoiceLineId', 'invoiceVersion', 'currencyId', 'pageIndex', 'hasNext', 'items'])
+    || page.invoiceId !== invoice.id || page.invoiceLineId !== line.id || page.invoiceVersion !== invoice.version || page.currencyId !== invoice.currencyId
+    || page.pageIndex !== pageIndex || typeof page.hasNext !== 'boolean' || !Array.isArray(page.items) || page.items.length > 25) return null
+  const ids = new Set<string>()
+  for (const raw of page.items) {
+    const item = obj(raw)
+    if (item === null || !exact(item, ['costId', 'purchaseOrderId', 'purchaseOrderNumber', 'description', 'expenseTypeId', 'expenseTypeName',
+      'businessDate', 'netAmount', 'availableNetAmount', 'vatPercent']) || !guid(item.costId) || ids.has(item.costId) || !guid(item.purchaseOrderId)
+      || item.purchaseOrderNumber !== null && !text(item.purchaseOrderNumber) || !text(item.description)
+      || item.expenseTypeId !== (line.expenseTypeId ?? null)
+      || (item.expenseTypeId === null ? item.expenseTypeName !== null : !guid(item.expenseTypeId) || !text(item.expenseTypeName))
+      || typeof item.businessDate !== 'string' || !isDateOnly(item.businessDate) || !decimal(item.netAmount)
+      || !invoiceQuantity(item.availableNetAmount) || item.vatPercent !== line.vatPercent) return null
+    ids.add(item.costId)
+  }
+  return page as unknown as InvoiceAdditionalCostPage
 }

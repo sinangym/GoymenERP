@@ -10,9 +10,9 @@ import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
 import { currencyShown, WithCurrencyCodes } from '../finance/currencyCodes'
 import { useReceiptAdjustmentAttempt } from './useReceiptAdjustmentAttempt'
-import { fetchIncomingInvoice, fetchIncomingInvoices, fetchInvoiceReceipts, submitInvoiceCommand } from './incomingInvoiceApi'
+import { fetchIncomingInvoice, fetchIncomingInvoices, fetchInvoiceReceipts, fetchInvoiceAdditionalCosts, submitInvoiceCommand } from './incomingInvoiceApi'
 import { invoiceQuantity, type IncomingInvoice, type IncomingInvoiceLine, type InvoiceCommand, type InvoiceCommandResponse,
-  type InvoiceReceiptSelection } from './incomingInvoiceContract'
+  type InvoiceReceiptSelection, type InvoiceAdditionalCostSelection } from './incomingInvoiceContract'
 import { INCOMING_INVOICE_TEXT as T, INCOMING_INVOICE_STATUS as STATUS } from './incomingInvoiceText'
 import { PURCHASING_CAPABILITY as C } from './capabilities'
 import { isPurchasingGuid } from './contract'
@@ -28,7 +28,7 @@ function useBinding() {
 type Binding = NonNullable<ReturnType<typeof useBinding>>
 function useInvoiceRead<T>(binding: Binding, suffix: readonly unknown[], fetcher: (signal: AbortSignal) => Promise<ViewOutcome<T>>) {
   const boundary = useAuthBoundary()
-  return useQuery({ queryKey: [binding.namespace, 'incoming-invoices', ...suffix], retry: false,
+  return useQuery({ queryKey: [binding.namespace, 'incoming-invoices', binding.entry, ...suffix], retry: false,
     queryFn: async ({ signal }) => {
       const fence = boundary.capture(), answer = await fetcher(signal)
       if (answer.type === 'http' && (answer.status === 401 || answer.status === 403)) boundary.report(answer.status, fence)
@@ -85,18 +85,24 @@ function InvoiceDetail({ binding, id }: { readonly binding: Binding; readonly id
 function InvoiceWorkspace({ binding, invoice }: { readonly binding: Binding; readonly invoice: IncomingInvoice }) {
   const shell = useShellState(), client = useQueryClient()
   const [selected, setSelected] = useState<readonly InvoiceReceiptSelection[]>([]), [reason, setReason] = useState(''), [error, setError] = useState<string | null>(null)
+  const [expenseSelected, setExpenseSelected] = useState<readonly InvoiceAdditionalCostSelection[]>([])
   const refresh = () => { void client.invalidateQueries({ queryKey: [binding.namespace, 'incoming-invoices'] }) }
   const attempt = useReceiptAdjustmentAttempt<InvoiceCommand, InvoiceCommandResponse>(JSON.stringify([binding.namespace, 'invoice-command', invoice.id]),
     binding.namespace, (command, key) => submitInvoiceCommand(binding.company, invoice.id, command, key), refresh)
   const canMatch = hasCapability(shell, C.invoiceMatch), canApprove = hasCapability(shell, C.invoiceApproveVariance), canFinalize = hasCapability(shell, C.invoiceFinalize)
   function match() {
     if (attempt.locked || !canMatch) return
-    if (invoice.lines.some((line) => !selected.some((item) => item.invoiceLineId === line.id)) || selected.some((item) => !invoiceQuantity(item.quantity))) {
+    if (invoice.lines.some(line => line.linePurpose === 'expense'
+      ? !expenseSelected.some(item => item.invoiceLineId === line.id) : !selected.some(item => item.invoiceLineId === line.id))
+      || selected.some(item => !invoiceQuantity(item.quantity)) || expenseSelected.some(item => !invoiceQuantity(item.netAmount))) {
       setError(T.invalidSelection); return
     }
     // Canonical wire text only; no quantity arithmetic or allocation calculation in the browser.
     const receipts = selected.map((item) => ({ ...item, quantity: item.quantity.includes('.') ? item.quantity.replace(/0+$/, '').replace(/\.$/, '') : item.quantity }))
-    setError(null); attempt.submit({ action: 'matching', request: { expectedVersion: invoice.version, receipts } })
+    const additionalCosts = expenseSelected.map(item => ({ ...item,
+      netAmount: item.netAmount.includes('.') ? item.netAmount.replace(/0+$/, '').replace(/\.$/, '') : item.netAmount }))
+    setError(null); attempt.submit({ action: 'matching', request: { expectedVersion: invoice.version, receipts,
+      ...(additionalCosts.length === 0 ? {} : { additionalCosts }) } })
   }
   const answer = attempt.outcome
   return <>
@@ -109,12 +115,13 @@ function InvoiceWorkspace({ binding, invoice }: { readonly binding: Binding; rea
     </dl>}</WithCurrencyCodes>
     {invoice.lines.map((line) => <article key={line.id} className={styles.card}>
       <h3>{T.line} {line.lineNo}</h3><p>{T.quantity}: {line.quantity}</p>
-      {invoice.status === 'Recorded' && canMatch ? <ReceiptChoices binding={binding} invoice={invoice} line={line} selected={selected}
-        locked={attempt.locked} onSelected={setSelected} /> : null}
+      {invoice.status === 'Recorded' && canMatch ? line.linePurpose === 'expense'
+        ? <ExpenseChoices binding={binding} invoice={invoice} line={line} selected={expenseSelected} locked={attempt.locked} onSelected={setExpenseSelected} />
+        : <ReceiptChoices binding={binding} invoice={invoice} line={line} selected={selected} locked={attempt.locked} onSelected={setSelected} /> : null}
     </article>)}
     {invoice.variances.length === 0 ? null : <section aria-label={T.variances}>
       <h3>{T.variances}</h3>{invoice.variances.map((item, index) => <p key={`${item.invoiceLineId}:${index}`}>
-        {T.line} {invoice.lines.find((line) => line.id === item.invoiceLineId)?.lineNo}: {item.kind === 'ExchangeRate' ? T.exchangeRate : T.price}
+        {T.line} {invoice.lines.find((line) => line.id === item.invoiceLineId)?.lineNo}: {item.kind === 'ExchangeRate' ? T.exchangeRate : item.kind === 'Quantity' ? T.quantity : T.price}
         {' — '}{T.expected}: {item.expected}; {T.actual}: {item.actual}</p>)}
       {invoice.varianceDecision !== null ? <p>{T.approvalDone}</p> : null}
     </section>}
@@ -168,5 +175,33 @@ function ReceiptChoices({ binding, invoice, line, selected, locked, onSelected }
       <Button type="button" disabled={page === 0 || read.isFetching} onClick={() => setPage((value) => value - 1)}>{T.previous}</Button>
       <Button type="button" disabled={!data?.hasNext || read.isFetching} onClick={() => setPage((value) => value + 1)}>{T.next}</Button>
     </div>
+  </fieldset>
+}
+function ExpenseChoices({ binding, invoice, line, selected, locked, onSelected }: { readonly binding: Binding; readonly invoice: IncomingInvoice;
+  readonly line: IncomingInvoiceLine; readonly selected: readonly InvoiceAdditionalCostSelection[]; readonly locked: boolean;
+  readonly onSelected: (value: readonly InvoiceAdditionalCostSelection[]) => void }) {
+  const [page, setPage] = useState(0)
+  const read = useInvoiceRead(binding, ['expenses', invoice.id, invoice.version, line.id, page],
+    signal => fetchInvoiceAdditionalCosts(binding.company, invoice, line, page, signal))
+  const data = !read.isFetching && read.data?.type === 'ok-single' ? read.data.data : null
+  return <fieldset disabled={locked}><legend>{T.chooseExpenses}</legend><p>{T.expenseHint}</p>
+    <ReadState data={read.data} loading={read.isFetching} refresh={() => void read.refetch()} />
+    {data?.items.length === 0 ? <StateBlock subject={T.chooseExpenses} state={{ kind: 'empty-filtered' }} /> : null}
+    {data?.items.map(item => {
+      const choice = selected.find(x => x.costId === item.costId && x.invoiceLineId === line.id)
+      return <div key={item.costId} className={styles.card}>
+        <p>{T.order}: {item.purchaseOrderNumber ?? T.orderUnavailable}</p><p>{T.expenseDescription}: {item.description}</p>
+        <WithCurrencyCodes>{codes => <><p>{T.expenseTotal}: {item.netAmount} {currencyShown(invoice.currencyId, codes)}</p>
+          <p>{T.expenseAvailable}: {item.availableNetAmount} {currencyShown(invoice.currencyId, codes)}</p></>}</WithCurrencyCodes>
+        <label><input type="checkbox" checked={choice !== undefined} onChange={event => onSelected(event.target.checked
+          ? [...selected, { invoiceLineId: line.id, purchaseOrderId: item.purchaseOrderId, costId: item.costId, netAmount: '' }]
+          : selected.filter(x => x.costId !== item.costId || x.invoiceLineId !== line.id))} />{T.select}</label>
+        {choice === undefined ? null : <Field label={T.expenseShare}>{props => <input {...props} inputMode="decimal" value={choice.netAmount}
+          onChange={event => onSelected(selected.map(x => x.costId === item.costId && x.invoiceLineId === line.id
+            ? { ...x, netAmount: event.target.value.replace(',', '.') } : x))} />}</Field>}
+      </div>
+    })}
+    <div className={styles.actions}><Button type="button" disabled={page === 0 || read.isFetching} onClick={() => setPage(x => x - 1)}>{T.previous}</Button>
+      <Button type="button" disabled={!data?.hasNext || read.isFetching} onClick={() => setPage(x => x + 1)}>{T.next}</Button></div>
   </fieldset>
 }
