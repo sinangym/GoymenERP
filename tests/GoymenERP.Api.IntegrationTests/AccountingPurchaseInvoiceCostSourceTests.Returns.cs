@@ -20,6 +20,13 @@ public sealed partial class AccountingPurchaseInvoiceCostSourceTests
         Assert.Equal(new("0", "1"), component.RecordedRounding!.Rounding.ExactSignedAmount);
         Assert.Equal(new("0", "1"), component.RecordedRounding.Rounding.ExactSignedResidue);
         Assert.Contains("returns", component.SourceProofJson);
+        AccountingInventoryCostSourceValidationV1.Require(Envelope(source), result, source.CompanyId);
+        // Zero may enter only the canonical line path, whose store verifies actual returned physical candidates.
+        var legacy = component with { ComponentKey = AccountingInventoryCostTraceV1.PurchaseFirstComponent(
+            source.InitialRecognitions[0].Receipts[0].AcceptanceId, source.InitialRecognitions[0].InvoiceLineId),
+            LocationId = source.InitialRecognitions[0].Receipts[0].ReceiptLocationId };
+        Assert.Throws<OutboxPermanentFailureException>(() => AccountingInventoryCostSourceValidationV1.Require(
+            Envelope(source), result with { Components = [legacy] }, source.CompanyId));
         var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
         foreach (var allStock in new[] { false, true })
         {

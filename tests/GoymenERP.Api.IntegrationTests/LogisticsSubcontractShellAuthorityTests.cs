@@ -8,6 +8,22 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed class LogisticsSubcontractShellAuthorityTests
 {
     [Fact]
+    public void Plan_excess_purposes_stay_staged_and_the_approver_needs_only_its_own_authority()
+    {
+        var declarations = new LogisticsShellCapabilityProvider().GetDeclarations();
+        var prepare = Assert.Single(declarations, x => x.CapabilityId == LogisticsShellCapabilityProvider.PlanExcessPrepareCapabilityId);
+        Assert.False(prepare.ImplementationAvailable);
+        Assert.Equal(LogisticsShellCapabilityProvider.DetailCapabilityId, prepare.ParentCapabilityId);
+        Assert.Equal([LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.LoadsRecord], prepare.RequiredPermissions);
+        var approve = Assert.Single(declarations, x => x.CapabilityId == LogisticsShellCapabilityProvider.PlanExcessApproveCapabilityId);
+        Assert.False(approve.ImplementationAvailable);
+        Assert.Null(approve.ParentCapabilityId);
+        Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, approve.ContextRequirement);
+        Assert.Equal([ErpPermissions.LogisticsShipmentPlanExcessApprove], approve.RequiredPermissions);
+        Assert.Equal("/lojistik/plan-ustu-sevk-onay", approve.RoutePath);
+    }
+
+    [Fact]
     public void Subcontract_delivery_screens_and_actions_preserve_current_permissions_without_publishing_acceptance()
     {
         var declarations = new LogisticsShellCapabilityProvider().GetDeclarations()

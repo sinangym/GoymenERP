@@ -22,6 +22,10 @@ public sealed partial class AccountingInventoryCostStoreV1
             || lineage.SourceProofSha256 != component.SourceProofSha256 || lineage.RecordedRounding != component.RecordedRounding)
             throw Refuse("purchase_cost_attribution_source_conflict");
         var candidates = PurchaseFirstCostCandidatesV1.Build(lineage);
+        if (component.RecordedRounding?.Rounding.ExactSignedAmount is { Numerator: "0", Denominator: "1" }
+            && (candidates.Count == 0 || candidates.Any(x => x.InvoicedNetQuantityKg != new AccountingInventoryCostRatioV1("0", "1")
+                || x.ExactTlAmount != new AccountingInventoryCostRatioV1("0", "1") || x.Shipment.Returns.Count == 0)))
+            throw Refuse("purchase_cost_attribution_source_conflict");
         var json = Encode(lineage); var at = clock.GetUtcNow();
         db.PurchaseCostAttributionSources.Add(new() { CompanyId = source.CompanyId, SourceEventId = source.EventId,
             InvoiceLineId = lineage.InvoiceLineId, InvoiceId = source.InvoiceId, ProductId = component.ProductId,

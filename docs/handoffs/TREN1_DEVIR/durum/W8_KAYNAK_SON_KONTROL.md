@@ -33,3 +33,7 @@ Backend 0 uyarı/hata; her süreç öncesi en az2GiB boş fiziksel bellek ölç�
 ## Eski takip notları
 
 `KALAN_PLAN.json` içindeki 14 kayıtlı karar takibi gerçek kaynakla karşılaştırıldı. Bildirim deposu/pasifleştirme `adee18054`, kg ağırlıklı ilk kur `4bd80d9dc`, Product/hesap eşlemesi `c51d83d86`/`e13015a66`, numaralama ve kapalı dönem kredi düzeltmesi kaynakları eski PLANNED/PARTIAL notlarından ileridedir. URT-D109 maliyet kuralı değildir: boya iade üst sınırı emir toplamındadır (`f0efbaebb` ve golden kaynağı). Kredi taslak/insan aktivasyonu, yalnız izin kayıtları ve runtime eksikleri ayrı korunur; yeni işletme kararı veya OPEN kapanışı türetilmedi.
+
+## SAT-D417 doğrudan kullanıcı cevabı
+
+Kullanıcı: “100 kg kalıp 20 kg için ayrı istisna kaydedilsin, satış müdürü,”. [6963301286](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6963301286) bu doğrudan oturum cevabının açıkça işaretlenmiş ajan aktarımıdır. Talimat miktarı korunacak, ek miktar ayrı kalıcı istisna ve satış müdürü onayıyla yürütülecek. Aynı STK-S3 içinde kaynak çalışması başlatıldı; fiziksel yükleme/sevk ve diğer gerçek owner limitleri korunur. Yeni soru/OPEN kapanışı/grant/production kararı türetilmez. Mevcut172/174 kaynak sayısı değişmedi; iki kalan iş de uygulama aşamasındadır.

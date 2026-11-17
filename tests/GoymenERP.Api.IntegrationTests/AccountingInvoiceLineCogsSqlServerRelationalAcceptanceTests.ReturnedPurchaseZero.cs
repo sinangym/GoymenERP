@@ -1,4 +1,5 @@
 using System.Text.Json;
+using GoymenERP.BuildingBlocks.Messaging;
 using GoymenERP.Api.AccountingRuntime;
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
@@ -55,4 +56,33 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
         Assert.Equal(1, await run.Count("accounting.PurchaseCostAttributionApprovals"));
     }
 
+    [SqlServerFact]
+    public async Task Exact_zero_purchase_cost_cannot_be_accepted_when_the_actual_attribution_reader_has_no_returned_shipment_candidate()
+    {
+        await using var run = await Run.Start();
+        var owner = AccountingPurchaseInvoiceCostSourceTests.FirstReturnedSource(Company); var reader = new ActualPurchaseCostReader(owner);
+        await using var scope = run.Open();
+        var store = Costs(scope, reader, lineage: new MissingReturnedCandidates(new PurchaseFirstCostLineageReaderV1(scope.CompanyContext)));
+        var error = await Assert.ThrowsAsync<AccountingStoreException>(() => store.AcceptAsync(reader.Envelope));
+        Assert.Equal("purchase_cost_attribution_source_conflict", error.Code);
+        Assert.Equal(0, await run.Count("accounting.InventoryCostSources"));
+        Assert.Equal(0, await run.Count("accounting.InventoryCostProposals"));
+        Assert.Equal(0, await run.Count("accounting.PurchaseCostAttributionSources"));
+        Assert.Equal(0, await run.Count("accounting.PurchaseCostAttributionCandidates"));
+        Assert.Equal(0, await run.Count("accounting.Journals"));
+        await Costs(scope, reader, lineage: new PurchaseFirstCostLineageReaderV1(scope.CompanyContext)).AcceptAsync(reader.Envelope);
+        Assert.Equal(1, await run.Count("accounting.InventoryCostSources"));
+        Assert.Equal(2, await run.Count("accounting.PurchaseCostAttributionCandidates"));
+        Assert.Equal(0, await run.Count("accounting.Journals"));
+    }
+
+    private sealed class MissingReturnedCandidates(IPurchaseFirstCostLineageReaderV1 inner) : IPurchaseFirstCostLineageReaderV1
+    {
+        public async Task<PurchaseFirstCostLineageV1> ReadAsync(WorkInboxEventV1 envelope, AccountingInventoryCostSourceV1 source,
+            AccountingInventoryCostComponentV1 component, Func<CancellationToken, Task> fence, CancellationToken cancellationToken = default)
+        {
+            var actual = await inner.ReadAsync(envelope, source, component, fence, cancellationToken);
+            return actual with { Receipts = actual.Receipts.Select(x => x with { Shipments = [] }).ToArray() };
+        }
+    }
 }

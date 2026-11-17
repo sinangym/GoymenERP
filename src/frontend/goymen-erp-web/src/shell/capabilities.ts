@@ -405,6 +405,7 @@ export const CAPABILITY = {
   logisticsOperationsSales: 'logistics.operations-work.sales',
   /** AT-025 L-09 operations work — the PURCHASE section. Route `/lojistik/operasyon-isleri/satinalma`. Its own grant. */
   logisticsOperationsPurchase: 'logistics.operations-work.purchase',
+  logisticsPlanExcessApprove: 'logistics.shipments.plan-excess.approve',
   logisticsTransferDepartures: 'logistics.transfer-departures.record',
   logisticsSubcontractList: 'logistics.subcontract-deliveries.list',
   logisticsSubcontractCreate: 'logistics.subcontract-deliveries.create',
@@ -603,6 +604,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.logisticsInstructionsDetail]: '/lojistik/yukleme-talimatlari/:instructionId',
   [CAPABILITY.logisticsOperationsSales]: '/lojistik/operasyon-isleri/satis',
   [CAPABILITY.logisticsOperationsPurchase]: '/lojistik/operasyon-isleri/satinalma',
+  [CAPABILITY.logisticsPlanExcessApprove]: '/lojistik/plan-ustu-sevk-onay',
   [CAPABILITY.logisticsTransferDepartures]: '/lojistik/transfer-cikislari',
   [CAPABILITY.logisticsSubcontractList]: '/lojistik/fason-teslimler',
   [CAPABILITY.logisticsSubcontractCreate]: '/lojistik/fason-teslimler/yeni',

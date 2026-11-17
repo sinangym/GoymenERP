@@ -42,6 +42,7 @@ public sealed class AccountingInventoryCostSourceReaderV1(ICompanyContext compan
             || !Guid.TryParse(source.FinalizedBy, out var actor) || actor == Guid.Empty
             || source.Lines is not { Count: > 0 and <= 10000 }) throw Invalid("sales_cost_source_invalid");
         var components = new List<AccountingInventoryCostComponentV1>();
+        AccountingInventoryCostSourceCancellationV1? historicalCancellation = null;
         var lineIds = new HashSet<Guid>();
         var numbers = new HashSet<int>();
         var claimed = new HashSet<(Guid, int)>();
@@ -136,25 +137,18 @@ public sealed class AccountingInventoryCostSourceReaderV1(ICompanyContext compan
                 unposted = AccountingInventoryCostAmountsV1.Add(unposted, exactAmount);
                 hasOriginalCost = true;
             }
-            if (alreadyPosted.Count != 0 || alreadyPurchased.Count != 0)
+            // Known original stamps still need the real invoice lifecycle: a delayed event may arrive after its
+            // cancellation and after a replacement invoice has claimed the same physical shipment.
+            if (salesClaims is null) throw Pending("sales_cost_owner_claim_unavailable");
+            var owned = await salesClaims.ReadAsync(captured, [claim.ShipmentId],
+                _ => { SameCompany(captured); return Task.CompletedTask; }, cancellationToken);
+            SameCompany(captured);
+            var cancelled = RequireOwnerClaim(owned, captured, source, line, claim, envelope);
+            if (cancelled is not null)
             {
-                if (salesClaims is null) throw Pending("sales_cost_owner_claim_unavailable");
-                var owned = await salesClaims.ReadAsync(captured, [claim.ShipmentId],
-                    _ => { SameCompany(captured); return Task.CompletedTask; }, cancellationToken);
-                SameCompany(captured);
-                var item = owned.Items.SingleOrDefault();
-                var actualClaim = item?.Claim;
-                if (owned.CompanyId != captured || owned.Outcome != SalesShipmentClaimReadOutcomeV1.Available
-                    || item?.ShipmentId != claim.ShipmentId || item.Outcome != SalesShipmentClaimReadOutcomeV1.Available
-                    || actualClaim is null || actualClaim.CompanyId != captured || actualClaim.InvoiceId != source.InvoiceId
-                    || actualClaim.InvoiceLineId != line.LineId || actualClaim.InvoiceLineNumber != line.LineNo
-                    || actualClaim.AdmissionId != source.AdmissionId || actualClaim.FinalizedVersion != source.Version
-                    || actualClaim.FinalizedEventId != envelope.EventId
-                    || actualClaim.FinalizedPayloadSha256 != AccountingInventoryCostSourceValidationV1.Sha256(envelope.PayloadJson)
-                    || actualClaim.Lifecycle.State != "Finalized" || actualClaim.Lifecycle.ReleasedAtUtc is not null
-                    || actualClaim.Lifecycle.CancelledAtUtc is not null || actualClaim.Lifecycle.CancelledBy is not null
-                    || JsonSerializer.Serialize(actualClaim.ShipmentSource, Json) != JsonSerializer.Serialize(claim, Json))
+                if (historicalCancellation is not null && historicalCancellation != cancelled)
                     throw Pending("sales_cost_owner_claim_unavailable");
+                historicalCancellation = cancelled;
             }
             var reread = await logistics.GetAsync(captured, claim.DispatchNoteId, claim.DispatchNoteLineNo, claim.ShipmentId, cancellationToken);
             SameCompany(captured);
@@ -171,10 +165,45 @@ public sealed class AccountingInventoryCostSourceReaderV1(ICompanyContext compan
         }
         var result = new AccountingInventoryCostSourceV1(captured, envelope.EventId, AccountingInventoryCostKindV1.SalesInvoicedShipment,
             source.InvoiceId, source.Version, source.AdmissionId, source.InvoiceDate.Value, source.OfficialInvoiceNo, actor,
-            AccountingInventoryCostSourceValidationV1.Sha256(envelope.PayloadJson), components);
+            AccountingInventoryCostSourceValidationV1.Sha256(envelope.PayloadJson), components, historicalCancellation);
         SameCompany(captured);
         AccountingInventoryCostSourceValidationV1.Require(envelope, result, captured);
         return result;
+    }
+
+    private static AccountingInventoryCostSourceCancellationV1? RequireOwnerClaim(SalesShipmentClaimBatchV1 owned,
+        Guid companyId, AccountingSalesInvoiceFinalizedEventV1 source, AccountingSalesInvoiceFinalizedLineV1 line,
+        AccountingSalesInvoiceShipmentSourceV1 shipment, WorkInboxEventV1 envelope)
+    {
+        var item = owned.Items.Count == 1 ? owned.Items[0] : null;
+        if (owned.CompanyId != companyId || owned.Outcome != SalesShipmentClaimReadOutcomeV1.Available
+            || item is null || item.ShipmentId != shipment.ShipmentId
+            || item.Outcome is not (SalesShipmentClaimReadOutcomeV1.Available or SalesShipmentClaimReadOutcomeV1.NotInvoiced))
+            throw Pending("sales_cost_owner_claim_unavailable");
+        bool SameFinalization(SalesFinalizedShipmentClaimV1? value) => value is not null
+            && value.CompanyId == companyId && value.InvoiceId == source.InvoiceId
+            && value.InvoiceLineId == line.LineId && value.InvoiceLineNumber == line.LineNo
+            && value.AdmissionId == source.AdmissionId && value.FinalizedVersion == source.Version
+            && value.FinalizedEventId == envelope.EventId
+            && value.FinalizedPayloadSha256 == AccountingInventoryCostSourceValidationV1.Sha256(envelope.PayloadJson)
+            && JsonSerializer.Serialize(value.ShipmentSource, Json) == JsonSerializer.Serialize(shipment, Json);
+        if (SameFinalization(item.Claim) && item.Claim!.Lifecycle is { State: "Finalized", ReleasedAtUtc: null,
+                CancelledAtUtc: null, CancelledBy: null }) return null;
+        var history = item.HistoricalFinalizedClaims;
+        if (history is not { Count: > 0 and <= 2048 }) throw Pending("sales_cost_owner_claim_unavailable");
+        var matches = history.Where(x => x is not null && SameFinalization(x.Finalization)).ToArray();
+        if (matches is not [var historical] || historical.CancellationId == Guid.Empty
+            || historical.CancellationEventId != historical.CancellationId || historical.CancelledBy == Guid.Empty
+            || historical.CancelledAtUtc == default || historical.CancelledAtUtc.Offset != TimeSpan.Zero
+            || historical.CancellationPayloadSha256 is not { Length: 64 } || !historical.CancellationPayloadSha256.All(Uri.IsHexDigit)
+            || string.IsNullOrWhiteSpace(historical.Reason) || historical.Reason.Length > 1000
+            || historical.Finalization.Lifecycle is not { State: "OfficiallyCancelled" } lifecycle
+            || lifecycle.InvoiceId != source.InvoiceId || lifecycle.Version != checked(source.Version + 1)
+            || lifecycle.CancelledBy != historical.CancelledBy.ToString("D")
+            || lifecycle.CancelledAtUtc != historical.CancelledAtUtc || lifecycle.ReleasedAtUtc != historical.CancelledAtUtc)
+            throw Pending("sales_cost_owner_claim_unavailable");
+        return new(historical.CancellationId, historical.CancelledBy, historical.CancelledAtUtc,
+            historical.Reason, historical.CancellationPayloadSha256);
     }
 
     private static LogisticsInvoicedShipmentProofV1 Proof(LogisticsInvoicedShipmentProofReadV1? read,

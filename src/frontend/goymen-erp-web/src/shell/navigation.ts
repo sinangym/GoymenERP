@@ -166,6 +166,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   // AT-025: the operations work list's two separate sections, each shown only to an actor holding its own grant.
   'logistics.operations-work.sales',
   'logistics.operations-work.purchase',
+  'logistics.shipments.plan-excess.approve',
   'logistics.transfer-departures.record',
   /**
    * P-01 and P-03 are Purchasing's two list entries. Their create actions live inside their lists
@@ -409,6 +410,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // AT-025: one sidebar entry per section, because each section is its own grant.
   'logistics.operations-work.sales': 'Operasyon işleri — Satış',
   'logistics.operations-work.purchase': 'Operasyon işleri — Satın alma',
+  'logistics.shipments.plan-excess.approve': 'Plan üstü sevk onayı',
   'logistics.transfer-departures.record': 'Transfer çıkışları',
   'purchasing.requests.list': 'Satın alma talepleri',
   // K5: create is reached through the list's single action; detail is reached from a row.
@@ -510,6 +512,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       'logistics.instructions.list',
       'logistics.subcontract-deliveries.list',
       'logistics.operations-work.purchase',
+      'logistics.shipments.plan-excess.approve',
       'logistics.transfer-departures.record',
     ],
   },

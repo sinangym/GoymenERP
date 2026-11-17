@@ -57,18 +57,37 @@ describe('Logistics lane ↔ backend shell provider', () => {
     expect(constant('DetailScreenId')).toBe(LOGISTICS_SCREEN_ID[LOGISTICS_CAPABILITY.instructionsDetail])
   })
 
-  it('the provider publishes all three declarations after the accepted staged-profile journey', () => {
+  it('preserves accepted route availability and stages the two new plan-excess purposes', () => {
     // The declaration form ends with `)`; the provider's doc comment mentions the same words inside `<c>…</c>`.
-    expect(constant('OwnerContractVersion')).toBe('1.4')
+    expect(constant('OwnerContractVersion')).toBe('1.6')
     // The three instruction screens and the two AT-025 operations sections (L-01, L-09).
     expect((providerText.match(/ImplementationAvailable: true\)/g) ?? []).length).toBe(6)
-    expect(providerText).not.toMatch(/ImplementationAvailable: false\)/)
+    expect((providerText.match(/ImplementationAvailable: false/g) ?? []).length).toBe(2)
+  })
+
+  it('keeps plan-excess preparation a child control and approval a separate narrow staged route', () => {
+    expect(constant('PlanExcessPrepareCapabilityId')).toBe(LOGISTICS_CAPABILITY.planExcessPrepare)
+    expect(constant('PlanExcessApproveCapabilityId')).toBe(LOGISTICS_CAPABILITY.planExcessApprove)
+    expect(constant('PlanExcessApproveRoutePath')).toBe(LOGISTICS_ROUTE.planExcessApprove)
+    expect(constant('PlanExcessApproveScreenId')).toBe(LOGISTICS_SCREEN_ID[LOGISTICS_CAPABILITY.planExcessApprove])
+    const prepare = declaration('PlanExcessPrepareCapabilityId')
+    expect(prepare).toContain('ParentCapabilityId: DetailCapabilityId')
+    expect(prepare).toContain('LogisticsPermissionManifestV1.InstructionsRead')
+    expect(prepare).toContain('LogisticsPermissionManifestV1.LoadsRecord')
+    expect(prepare).toContain('ImplementationAvailable: false')
+    const approve = declaration('PlanExcessApproveCapabilityId')
+    expect(approve).toContain('ErpPermissions.LogisticsShipmentPlanExcessApprove')
+    expect(approve).toContain('ImplementationAvailable: false')
+    expect(approve).not.toContain('ParentCapabilityId:')
+    expect(approve).not.toContain('LogisticsPermissionManifestV1.InstructionsRead')
+    expect(approve).not.toContain('LogisticsPermissionManifestV1.LoadsRecord')
+    expect(approve).not.toContain('LogisticsPermissionManifestV1.ShipmentsRecord')
   })
 
   it('pins the shipment and delivery child controls to detail with separate authorities', () => {
     expect(constant('ShipmentCapabilityId')).toBe('logistics.shipments.record')
     expect(constant('DeliveryCapabilityId')).toBe('logistics.deliveries.record')
-    expect((providerText.match(/ParentCapabilityId: DetailCapabilityId/g) ?? []).length).toBe(6)
+    expect((providerText.match(/ParentCapabilityId: DetailCapabilityId/g) ?? []).length).toBe(7)
 
     const shipment = declaration('ShipmentCapabilityId')
     expect(shipment).toContain('DetailCapabilityId, DetailRoutePath, DetailScreenId')

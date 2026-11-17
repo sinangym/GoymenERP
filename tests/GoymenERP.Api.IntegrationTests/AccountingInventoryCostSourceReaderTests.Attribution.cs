@@ -113,6 +113,10 @@ public sealed partial class AccountingInventoryCostSourceReaderTests
     private sealed class FinalizedClaims(Fixture f, WorkInboxEventV1 envelope) : ISalesFinalizedShipmentClaimReadPortV1
     {
         public bool Cancelled { get; set; }
+        public bool Historical { get; set; }
+        public bool DuplicateHistory { get; set; }
+        public Guid CancellationId { get; } = Guid.NewGuid();
+        public Guid CancelledBy { get; } = Guid.NewGuid();
         public bool WrongEvent { get; set; }
         public int Calls { get; private set; }
         public async Task<SalesShipmentClaimBatchV1> ReadAsync(Guid companyId, IReadOnlyCollection<Guid> shipmentIds,
@@ -121,15 +125,28 @@ public sealed partial class AccountingInventoryCostSourceReaderTests
             Calls++; await freshConsumerFence(cancellationToken);
             var source = JsonSerializer.Deserialize<AccountingSalesInvoiceFinalizedEventV1>(envelope.PayloadJson,
                 new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
-            var ship = f.Line.ShipmentSource!;
+            Assert.Equal(f.Company.CompanyId, companyId);
+            // This synthetic owner represents the first real claim; duplicate input lines remain the adapter's own rejection case.
+            var line = source.Lines!.First(x => x?.ShipmentSource?.ShipmentId == shipmentIds.Single())!;
+            var ship = line.ShipmentSource!;
             var lifecycle = new SalesShipmentInvoiceLifecycleV1(source.InvoiceId, source.Version, "Finalized",
                 Cancelled ? envelope.OccurredAtUtc : null, Cancelled ? "SENTETIK" : null, Cancelled ? envelope.OccurredAtUtc : null);
-            var claim = new SalesFinalizedShipmentClaimV1(companyId, source.InvoiceId, f.Line.LineId, f.Line.LineNo,
+            var claim = new SalesFinalizedShipmentClaimV1(companyId, source.InvoiceId, line.LineId, line.LineNo,
                 source.AdmissionId, source.Version, new(ship.ShipmentId, ship.DispatchNoteId, ship.DispatchNoteLineNo,
                     ship.SalesOrderId, ship.SalesOrderLineId, ship.PriceBasisRevision, ship.ProductId, ship.UnitId, ship.InvoicedQuantity),
                 WrongEvent ? Guid.NewGuid() : envelope.EventId, AccountingInventoryCostSourceValidationV1.Sha256(envelope.PayloadJson),
                 envelope.OccurredAtUtc, lifecycle);
             await freshConsumerFence(cancellationToken);
+            if (Historical)
+            {
+                var at = envelope.OccurredAtUtc.AddMinutes(1);
+                lifecycle = new(source.InvoiceId, source.Version + 1, "OfficiallyCancelled", at, CancelledBy.ToString("D"), at);
+                var historical = new SalesHistoricalFinalizedShipmentClaimV1(claim with { Lifecycle = lifecycle },
+                    CancellationId, CancellationId, new string('A', 64), CancelledBy, at, "SENTETIK official cancellation");
+                return new(companyId, SalesShipmentClaimReadOutcomeV1.Available,
+                    [new(ship.ShipmentId, SalesShipmentClaimReadOutcomeV1.NotInvoiced, null, [lifecycle], "SENTETIK-history",
+                        HistoricalFinalizedClaims: DuplicateHistory ? [historical, historical] : [historical])], "SENTETIK-history-batch");
+            }
             return new(companyId, SalesShipmentClaimReadOutcomeV1.Available,
                 [new(ship.ShipmentId, SalesShipmentClaimReadOutcomeV1.Available, claim, [lifecycle], "SENTETIK-1")], "SENTETIK-batch-1");
         }

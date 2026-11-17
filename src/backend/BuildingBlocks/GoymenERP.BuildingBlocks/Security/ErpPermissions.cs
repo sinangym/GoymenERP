@@ -1136,6 +1136,13 @@ public static class ErpPermissions
     /// <inheritdoc cref="LogisticsLoadingInstructionsCreate"/>
     public const string LogisticsShipmentsRecord = "logistics.shipments.record";
 
+    /// <summary>
+    /// SAT-D417, direct user answer transferred at #1189/6963301286: approve a separately recorded plan-excess share.
+    /// Company-wide registration only. The Sales manager assignment is a human grant; no role or Critical class is assigned.
+    /// This name does not confer load, shipment, general Logistics read or physical quantity override authority.
+    /// </summary>
+    public const string LogisticsShipmentPlanExcessApprove = "logistics.shipments.plan-excess.approve";
+
     /// <inheritdoc cref="LogisticsLoadingInstructionsCreate"/>
     public const string LogisticsDeliveriesRecord = "logistics.deliveries.record";
 
@@ -1805,6 +1812,7 @@ public static class ErpPermissions
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
             LogisticsShipmentsRecord,
+            LogisticsShipmentPlanExcessApprove,
             LogisticsDeliveriesRecord,
             LogisticsWeighingsRecord,
             LogisticsWeighingsCorrect,
@@ -2106,6 +2114,7 @@ public static class ErpPermissions
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
             LogisticsShipmentsRecord,
+            LogisticsShipmentPlanExcessApprove,
             LogisticsDeliveriesRecord,
             LogisticsWeighingsRecord,
             LogisticsWeighingsCorrect,

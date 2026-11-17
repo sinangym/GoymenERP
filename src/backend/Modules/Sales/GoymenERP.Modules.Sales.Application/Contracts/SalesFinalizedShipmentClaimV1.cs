@@ -16,9 +16,16 @@ public sealed record SalesFinalizedShipmentClaimV1(Guid CompanyId, Guid InvoiceI
     Guid FinalizedEventId, string FinalizedPayloadSha256, DateTimeOffset FinalizedAtUtc,
     SalesShipmentInvoiceLifecycleV1 Lifecycle);
 
+/// <summary>Immutable finalization and official cancellation evidence; never an active quantity or a new economic claim.</summary>
+public sealed record SalesHistoricalFinalizedShipmentClaimV1(SalesFinalizedShipmentClaimV1 Finalization,
+    Guid CancellationId, Guid CancellationEventId, string CancellationPayloadSha256,
+    Guid CancelledBy, DateTimeOffset CancelledAtUtc, string Reason);
+
 public sealed record SalesShipmentClaimReadV1(Guid ShipmentId, SalesShipmentClaimReadOutcomeV1 Outcome,
     SalesFinalizedShipmentClaimV1? Claim, IReadOnlyList<SalesShipmentInvoiceLifecycleV1> Lifecycles,
-    string? SourceVersion, string? Reason = null);
+    string? SourceVersion, string? Reason = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<SalesHistoricalFinalizedShipmentClaimV1>? HistoricalFinalizedClaims = null);
 
 public sealed record SalesShipmentClaimBatchV1(Guid CompanyId, SalesShipmentClaimReadOutcomeV1 Outcome,
     IReadOnlyList<SalesShipmentClaimReadV1> Items, string? SourceVersion, string? Reason = null);

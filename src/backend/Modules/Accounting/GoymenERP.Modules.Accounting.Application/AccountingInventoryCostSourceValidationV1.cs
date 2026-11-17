@@ -88,6 +88,14 @@ public static partial class AccountingInventoryCostSourceValidationV1
             || expectedKind == AccountingInventoryCostKindV1.PurchaseInvoiceDifference && source.Components.Count == 0)
             throw Invalid("inventory_cost_source_invalid");
         var identities = new HashSet<string>(StringComparer.Ordinal);
+        // Only the Accounting store may append a terminal receipt after reading its own immutable owners.
+        if (source.ObsoleteComponents is not null) throw Invalid("inventory_cost_source_invalid");
+        if (source.HistoricalCancellation is { } cancelled
+            && (expectedKind != AccountingInventoryCostKindV1.SalesInvoicedShipment || cancelled.CancellationId == Guid.Empty
+                || cancelled.CancelledBy == Guid.Empty || cancelled.CancelledAtUtc == default || cancelled.CancelledAtUtc.Offset != TimeSpan.Zero
+                || !Text(cancelled.Reason, 1000) || cancelled.CancellationPayloadSha256 is not { Length: 64 }
+                || !cancelled.CancellationPayloadSha256.All(Uri.IsHexDigit)))
+            throw Invalid("inventory_cost_cancellation_proof_invalid");
         var lineNumbers = new HashSet<int>();
         var firstAggregateLines = new HashSet<Guid>();
         var firstLegacyLines = new HashSet<Guid>();
@@ -132,7 +140,8 @@ public static partial class AccountingInventoryCostSourceValidationV1
                     throw Invalid("inventory_cost_attribution_invalid");
                 if (first ? component.RecordedRounding is not { } recorded || amount < 0
                         || !AccountingInventoryCostRoundingV1Rules.IsValidRecorded(component.SignedTlAmount, recorded)
-                        || !AccountingInventoryCostAmountsV1.TryRead(recorded.Rounding.ExactSignedAmount, out var original, out _) || original <= 0
+                        || !AccountingInventoryCostAmountsV1.TryRead(recorded.Rounding.ExactSignedAmount, out var original, out _)
+                        || original < 0 || original == 0 && !aggregate
                     : component.RecordedRounding is not null) throw Invalid("inventory_cost_rounding_invalid");
             }
         }

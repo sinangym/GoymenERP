@@ -27,10 +27,12 @@ public sealed class SalesFinalizedShipmentClaimReadPortTests
         Assert.Equal(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(f.Event.PayloadJson))), claim.FinalizedPayloadSha256);
         Assert.Equal("Finalized", claim.Lifecycle.State);
         Assert.Null(claim.Lifecycle.ReleasedAtUtc);
+        Assert.Null(item.HistoricalFinalizedClaims);
         var wire = JsonSerializer.Serialize(answer, Json);
         Assert.DoesNotContain("unitPrice", wire);
         Assert.DoesNotContain("vatAmount", wire);
         Assert.DoesNotContain("900.99", wire);
+        Assert.DoesNotContain("historicalFinalizedClaims", wire);
     }
 
     [Theory]
@@ -140,6 +142,14 @@ public sealed class SalesFinalizedShipmentClaimReadPortTests
         Assert.Null(answer.Claim);if(fault=="valid")Assert.Equal("OfficiallyCancelled",Assert.Single(answer.Lifecycles).State);
         if(fault=="valid")
         {
+            var historical = Assert.Single(answer.HistoricalFinalizedClaims!);
+            Assert.Equal(f.Line.InvoiceId, historical.Finalization.InvoiceId);
+            Assert.Equal(f.Finalization.AdmissionId, historical.Finalization.AdmissionId);
+            Assert.Equal(f.Event.Id, historical.Finalization.FinalizedEventId);
+            Assert.Equal(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(f.Event.PayloadJson))), historical.Finalization.FinalizedPayloadSha256);
+            Assert.Equal(id, historical.CancellationId); Assert.Equal(ev.Id, historical.CancellationEventId);
+            Assert.Equal(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(ev.PayloadJson))), historical.CancellationPayloadSha256);
+            Assert.Equal(actor, historical.CancelledBy); Assert.Equal(at, historical.CancelledAtUtc);
             // One canceled historical invoice may sort before OR after its real active replacement.
             foreach(var replacementId in new[]{Guid.Parse("00000000-0000-4000-8000-000000000001"),Guid.Parse("ffffffff-ffff-4fff-8fff-ffffffffffff")})
             {
@@ -151,6 +161,7 @@ public sealed class SalesFinalizedShipmentClaimReadPortTests
                 var withReplacement=snapshot with {Lines=[..snapshot.Lines,activeLine],Headers=[..snapshot.Headers,activeHeader],Finalizations=[..snapshot.Finalizations,activeFinal],Events=[..snapshot.Events,activeEvent]};
                 var replaced=Assert.Single(Reader.Project(f.Company,[f.Line.ShipmentId],withReplacement).Items);
                 Assert.Equal(SalesShipmentClaimReadOutcomeV1.Available,replaced.Outcome);Assert.Equal(replacementId,replaced.Claim!.InvoiceId);
+                Assert.Equal(historical, Assert.Single(replaced.HistoricalFinalizedClaims!));
             }
         }
     }

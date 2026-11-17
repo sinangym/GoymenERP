@@ -622,6 +622,7 @@ app.MapInventoryTransferReceiptDocumentEndpoints();
 app.MapManufacturingEndpoints();
 app.MapLogisticsEndpoints();
 app.MapLogisticsSubcontractDeliveryEndpoints();
+app.MapLogisticsPlanExcessEndpoints();
 app.MapLogisticsTransferDepartureEndpoints();
 app.MapLogisticsTransferOutgoingDocumentEndpoints();
 app.MapLogisticsWeighingDifferenceEndpoints();
