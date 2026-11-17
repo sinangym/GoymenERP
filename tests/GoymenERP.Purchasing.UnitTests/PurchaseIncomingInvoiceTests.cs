@@ -166,6 +166,7 @@ public sealed class PurchaseIncomingInvoiceTests
         invoice.Match(1, [Match(invoice)], Policy(), "matcher");
         invoice.Finalize(2, Guid.NewGuid(), "finalizer", Now);
         var original = PurchaseIncomingInvoiceFinalizationV1.Event(invoice);
+        Assert.Equal(invoice.Source.OfficialNumber, original.OfficialInvoiceNo);
         var key = PurchaseIncomingInvoiceFinalizationV1.AdmissionKey(invoice);
         invoice.AcknowledgeFinance(3, invoice.AdmissionId!.Value, Now.AddMinutes(1));
         var json = JsonSerializer.Serialize(PurchaseIncomingInvoiceSnapshot.Capture(invoice));

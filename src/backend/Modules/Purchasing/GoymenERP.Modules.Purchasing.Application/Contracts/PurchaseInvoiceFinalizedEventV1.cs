@@ -27,4 +27,5 @@ public sealed record PurchaseInvoiceFinalizedPayloadV1(Guid InvoiceId, long Vers
     Guid CurrencyId, decimal? Rate, decimal Payable, decimal? FunctionalPayable, Guid CompanyId,
     decimal Net, decimal Vat, decimal Withholding, decimal? FunctionalNet, decimal? FunctionalVat,
     decimal? FunctionalWithholding, IReadOnlyList<PurchaseInvoiceFinalizedLineV1> Lines,
-    DateOnly InvoiceDate, string FinalizedBy, DateOnly? DueDate = null);
+    DateOnly InvoiceDate, string FinalizedBy, DateOnly? DueDate = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? OfficialInvoiceNo = null);
