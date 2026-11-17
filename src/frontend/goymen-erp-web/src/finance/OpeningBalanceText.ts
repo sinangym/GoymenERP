@@ -169,6 +169,7 @@ export const OPENING_BALANCE_ISSUE: Readonly<Record<string, string>> = {
   opening_currency_mismatch: 'Seçilen para birimi kasanın veya banka hesabının para birimi değil.',
   opening_direction_required: 'Cari açılışı için cari ve yön gerekir; kasa ve banka açılışında yön verilmez.',
   opening_period_closed: 'Açılış dönemi kapalı; işlem yapılamaz.',
+  opening_balance_period_carried: 'Bu tarihli bakiye kapalı dönem devir fişine alınmış. Devir geçerliyken açılış veya ters açılış onaylanamaz.',
   opening_period_unavailable: 'Açılış dönemi ayarı şu anda okunamıyor; işlem yapılamaz.',
   opening_target_kind_invalid: 'Hedef türü tanınmıyor.',
   opening_target_not_eligible: 'Hedef bu şirkette bulunamadı veya açılış bakiyesi için uygun değil.',

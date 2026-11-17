@@ -5,7 +5,7 @@
  * What the ledger is: one party account's RECORDED Finance facts in an inclusive date range — admitted open items,
  * recorded receipts, their reversals (their own rows), cheque / note collections, recorded payments and invoice
  * cancellations' open-item reversals (F2b, their own rows) — per currency,
- * with a running balance that starts at ZERO on the first day (OPEN-018: no carry-forward / devir). Currencies are
+ * with an explicitly proven FNS-D42 opening balance when a real period carry applies; otherwise a zero start. Currencies are
  * never converted or added (OPEN-012). The client computes nothing: sides, balances and totals are the server's.
  *
  * Two refusals are not "not found" and not a transport failure, so the HTTP adapter hands them to this decoder as
@@ -64,6 +64,16 @@ export interface PartyLedgerCurrency {
   readonly debitTotal: AmountView
   readonly creditTotal: AmountView
   readonly closingBalance: PartyLedgerBalance
+  readonly openingBalance?: PartyLedgerBalance
+}
+
+export interface PartyLedgerPeriodCarry {
+  readonly voucherId: string
+  readonly sourcePeriodId: string
+  readonly sourceEndsOn: string
+  readonly targetPeriodId: string
+  readonly targetStartsOn: string
+  readonly sourceHash: string
 }
 
 export interface PartyLedgerView {
@@ -72,8 +82,9 @@ export interface PartyLedgerView {
   readonly companyAccountId: string
   readonly from: string
   readonly to: string
-  readonly carryForward: 'NoneOpen018'
+  readonly carryForward: 'NoneOpen018' | 'PeriodClosureVoucher'
   readonly currencies: readonly PartyLedgerCurrency[]
+  readonly periodCarry?: PartyLedgerPeriodCarry
 }
 
 export type PartyLedgerAnswer =
@@ -221,11 +232,12 @@ function decodeEntry(value: unknown, currencyId: string, from: string, to: strin
   }
 }
 
-function decodeCurrency(value: unknown, from: string, to: string): PartyLedgerCurrency | null {
-  if (!isRecord(value) || !hasExactKeys(value, ['currencyId', 'entries', 'debitTotal', 'creditTotal', 'closingBalance'])) {
+function decodeCurrency(value: unknown, from: string, to: string, carried: boolean): PartyLedgerCurrency | null {
+  const keys = ['currencyId', 'entries', 'debitTotal', 'creditTotal', 'closingBalance', ...(carried ? ['openingBalance'] : [])]
+  if (!isRecord(value) || !hasExactKeys(value, keys)) {
     return null
   }
-  if (!isBoundUuid(value.currencyId) || !Array.isArray(value.entries) || value.entries.length === 0) return null
+  if (!isBoundUuid(value.currencyId) || !Array.isArray(value.entries) || (!carried && value.entries.length === 0)) return null
   const currencyId = value.currencyId
   const entries: PartyLedgerEntry[] = []
   for (const raw of value.entries) {
@@ -239,10 +251,18 @@ function decodeCurrency(value: unknown, from: string, to: string): PartyLedgerCu
   const creditTotal = decodeAmount(value.creditTotal, currencyId, true)
   const closingBalance = decodeBalance(value.closingBalance, currencyId)
   if (debitTotal === null || creditTotal === null || closingBalance === null) return null
-  // The closing balance is the last row's running balance, as the server computed it.
-  const last = entries[entries.length - 1].runningBalance
-  if (last.side !== closingBalance.side || last.amount.money?.amount !== closingBalance.amount.money?.amount) return null
-  return { currencyId, entries, debitTotal, creditTotal, closingBalance }
+  const openingBalance = carried ? decodeBalance(value.openingBalance, currencyId) : undefined
+  if (openingBalance === null) return null
+  const disclosure = closingBalance.amount.disclosure
+  if (debitTotal.disclosure !== disclosure || creditTotal.disclosure !== disclosure
+    || (openingBalance && openingBalance.amount.disclosure !== disclosure)
+    || entries.some(entry => entry.amount.disclosure !== disclosure)) return null
+  // The server's last running balance, or the untouched opening when there are no movements.
+  const last = entries.at(-1)?.runningBalance ?? openingBalance
+  if (!last || last.side !== closingBalance.side || last.amount.money?.amount !== closingBalance.amount.money?.amount) return null
+  if (entries.length === 0 && [debitTotal, creditTotal].some(amount =>
+    amount.disclosure === 'Visible' && /[1-9]/.test(amount.money.amount))) return null
+  return { currencyId, entries, debitTotal, creditTotal, closingBalance, ...(openingBalance ? { openingBalance } : {}) }
 }
 
 export function decodePartyLedgerAnswer(value: unknown, companyId: string): Decoded<PartyLedgerAnswer> {
@@ -251,17 +271,30 @@ export function decodePartyLedgerAnswer(value: unknown, companyId: string): Deco
       ? ok({ kind: 'refused', refusal: value.partyLedgerRefusal })
       : FAIL
   }
-  const keys = ['companyId', 'partyId', 'companyAccountId', 'from', 'to', 'carryForward', 'currencies']
-  if (!isRecord(value) || !hasExactKeys(value, keys)) return FAIL
+  if (!isRecord(value)) return FAIL
+  const carried = value.carryForward === 'PeriodClosureVoucher'
+  const keys = ['companyId', 'partyId', 'companyAccountId', 'from', 'to', 'carryForward', 'currencies', ...(carried ? ['periodCarry'] : [])]
+  if (!hasExactKeys(value, keys)) return FAIL
   if (value.companyId !== companyId || !isBoundUuid(value.partyId) || !isBoundUuid(value.companyAccountId)
-    || !isDate(value.from) || !isDate(value.to) || value.to < value.from || value.carryForward !== 'NoneOpen018'
+    || !isDate(value.from) || !isDate(value.to) || value.to < value.from || (!carried && value.carryForward !== 'NoneOpen018')
     || !Array.isArray(value.currencies)) {
     return FAIL
+  }
+  let periodCarry: PartyLedgerPeriodCarry | undefined
+  if (carried) {
+    const proof = value.periodCarry
+    if (!isRecord(proof) || !hasExactKeys(proof, ['voucherId', 'sourcePeriodId', 'sourceEndsOn', 'targetPeriodId', 'targetStartsOn', 'sourceHash'])
+      || !isBoundUuid(proof.voucherId) || !isBoundUuid(proof.sourcePeriodId) || !isBoundUuid(proof.targetPeriodId)
+      || proof.sourcePeriodId === proof.targetPeriodId || !isDate(proof.sourceEndsOn) || !isDate(proof.targetStartsOn)
+      || proof.sourceEndsOn >= proof.targetStartsOn || proof.targetStartsOn > value.from
+      || typeof proof.sourceHash !== 'string' || !/^[a-f0-9]{64}$/i.test(proof.sourceHash)) return FAIL
+    periodCarry = { voucherId: proof.voucherId, sourcePeriodId: proof.sourcePeriodId, sourceEndsOn: proof.sourceEndsOn,
+      targetPeriodId: proof.targetPeriodId, targetStartsOn: proof.targetStartsOn, sourceHash: proof.sourceHash }
   }
   const currencies: PartyLedgerCurrency[] = []
   const seen = new Set<string>()
   for (const raw of value.currencies) {
-    const currency = decodeCurrency(raw, value.from, value.to)
+    const currency = decodeCurrency(raw, value.from, value.to, carried)
     if (currency === null || seen.has(currency.currencyId)) return FAIL
     seen.add(currency.currencyId)
     currencies.push(currency)
@@ -274,8 +307,9 @@ export function decodePartyLedgerAnswer(value: unknown, companyId: string): Deco
       companyAccountId: value.companyAccountId,
       from: value.from,
       to: value.to,
-      carryForward: 'NoneOpen018',
+      carryForward: carried ? 'PeriodClosureVoucher' : 'NoneOpen018',
       currencies,
+      ...(periodCarry ? { periodCarry } : {}),
     },
   })
 }

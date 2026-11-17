@@ -20,10 +20,13 @@ internal sealed record PartyLedgerFact(
     Guid? DocumentId,
     DateOnly? DueOn);
 
+/// <summary>Exact balance carried into a date range; never represented as a new economic fact.</summary>
+internal sealed record PartyLedgerOpeningBalance(Guid CurrencyId, PartyLedgerBalanceSide Side, string AmountText);
+
 /// <summary>
 /// The first-release party ledger, pure: each currency's facts in date order (then the recording instant, the kind and
-/// the id, so the order never depends on the database), a running balance that starts at ZERO on the range's first
-/// day (OPEN-018: no carry-forward), and the debit / credit totals and closing balance. Exact decimal text only — no
+/// the id, so the order never depends on the database), a running balance starting at the verified FNS-D42 carry
+/// when present, and range-only debit / credit totals and closing balance. Exact decimal text only — no
 /// floating point, no rounding, no local digit limit; currencies are never converted or added (OPEN-012). Every
 /// amount of a currency, a zero included, is written at the widest scale that currency's facts carry.
 /// <para>
@@ -59,20 +62,18 @@ internal static class PartyLedgerPolicy
         _ => throw new InvalidOperationException("Cari ekstre satır türü tanınmadı; ekstre hesaplanmaz."),
     };
 
-    public static IReadOnlyList<PartyLedgerCurrency> Build(IEnumerable<PartyLedgerFact> facts, AmountDisclosure disclosure)
+    public static IReadOnlyList<PartyLedgerCurrency> Build(IEnumerable<PartyLedgerFact> facts, AmountDisclosure disclosure,
+        IReadOnlyList<PartyLedgerOpeningBalance>? opening = null)
     {
         ArgumentNullException.ThrowIfNull(facts);
-        return
-        [
-            .. facts
-                .GroupBy(fact => fact.CurrencyId)
-                .OrderBy(group => group.Key)
-                .Select(group => Currency(group.Key, group, disclosure)),
-        ];
+        var byCurrency = facts.ToLookup(x => x.CurrencyId);
+        var openings = (opening ?? []).ToLookup(x => x.CurrencyId);
+        return byCurrency.Select(x => x.Key).Union(openings.Select(x => x.Key)).OrderBy(x => x)
+            .Select(id => Currency(id, byCurrency[id], disclosure, opening is null ? null : openings[id])).ToArray();
     }
 
     private static PartyLedgerCurrency Currency(Guid currencyId, IEnumerable<PartyLedgerFact> facts,
-        AmountDisclosure disclosure)
+        AmountDisclosure disclosure, IEnumerable<PartyLedgerOpeningBalance>? opening)
     {
         var ordered = facts
             .OrderBy(fact => fact.OccurredOn)
@@ -81,10 +82,22 @@ internal static class PartyLedgerPolicy
             .ThenBy(fact => fact.EntryId)
             .Select(fact => (Fact: fact, Amount: Parse(fact.AmountText)))
             .ToList();
-        var scale = ordered.Count == 0 ? 0 : ordered.Max(item => item.Amount.Scale);
+        var starts = (opening ?? []).Select(value =>
+        {
+            if (value.CurrencyId == Guid.Empty || !FinanceExactDecimalText.TryParseNonNegative(value.AmountText, out var amount)
+                || (amount.IsZero ? value.Side != PartyLedgerBalanceSide.Zero
+                    : value.Side is not (PartyLedgerBalanceSide.Debit or PartyLedgerBalanceSide.Credit)))
+                throw new InvalidOperationException("Cari devir başlangıç bakiyesi doğrulanamadı.");
+            return (value.Side, Amount: amount);
+        }).ToArray();
+        var scale = Math.Max(ordered.Count == 0 ? 0 : ordered.Max(item => item.Amount.Scale),
+            starts.Length == 0 ? 0 : starts.Max(item => item.Amount.Scale));
 
         var entries = new List<PartyLedgerEntry>(ordered.Count);
-        var balance = BigInteger.Zero;
+        var balance = starts.Aggregate(BigInteger.Zero, (sum, value) => sum
+            + (value.Side == PartyLedgerBalanceSide.Credit ? -1 : 1)
+            * value.Amount.Unscaled * BigInteger.Pow(10, scale - value.Amount.Scale));
+        var openingBalance = opening is null ? null : Balance(balance, scale, currencyId, disclosure);
         var debit = BigInteger.Zero;
         var credit = BigInteger.Zero;
         foreach (var (fact, amount) in ordered)
@@ -108,7 +121,7 @@ internal static class PartyLedgerPolicy
         }
 
         return new PartyLedgerCurrency(currencyId, entries, Amount(debit, scale, currencyId, disclosure),
-            Amount(credit, scale, currencyId, disclosure), Balance(balance, scale, currencyId, disclosure));
+            Amount(credit, scale, currencyId, disclosure), Balance(balance, scale, currencyId, disclosure), openingBalance);
     }
 
     private static FinanceExactDecimalText Parse(string amountText) =>

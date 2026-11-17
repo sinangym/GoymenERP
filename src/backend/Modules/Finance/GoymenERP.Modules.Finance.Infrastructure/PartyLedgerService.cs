@@ -24,22 +24,34 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// </list>
 /// Drafts are never read: a draft has no money event and no open item. Each fact is one stored row, read once, so a
 /// replayed command (which stored nothing new) and a reversal (which stored its own counter-event) appear exactly as
-/// recorded. F-03 allocations are not rows (DEC-FIN-006: a distribution is not a second movement). OPEN-018: nothing
-/// before the range is carried in. A money event kind this read does not know fails the read rather than being
+/// recorded. F-03 allocations are not rows (DEC-FIN-006: a distribution is not a second movement). FNS-D42: a verified
+/// active closure voucher supplies the starting balance, never another movement. Without one the legacy zero start
+/// remains. A money event kind this read does not know fails the read rather than being
 /// silently left out, because a missing row would be a wrong balance.
 /// <para>
 /// Authority follows the portfolio's risk view: <c>ReadPartyLedger</c> is measured afresh before anything is read and
 /// again after the reads; every amount, total and balance is disclosed only with a fresh <c>ReadPartyLedgerAmount</c>.
 /// </para>
 /// </summary>
-public sealed class PartyLedgerService(
+public sealed partial class PartyLedgerService(
     FinanceDbContext dbContext,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
     IFinancePermissionPort permissions) : IPartyLedgerService
 {
-    public async Task<PartyLedgerResult> ReadAuthorizedAsync(FinanceContext context, PartyLedgerRequest request,
-        CancellationToken cancellationToken)
+    public Task<PartyLedgerResult> ReadAuthorizedAsync(FinanceContext context, PartyLedgerRequest request,
+        CancellationToken cancellationToken) => ReadCoreAsync(context, request, PartyLedgerRules.MaximumEntries,
+            includePeriodCarry: true, cancellationToken);
+
+    /// <summary>Actual owner boundary read for a closing voucher, independent of the UI's 1000-row page limit.
+    /// The established complete-summary cap still refuses excess rather than truncating; no prior carry is added.</summary>
+    internal Task<PartyLedgerResult> ReadBoundaryAuthorizedAsync(FinanceContext context, Guid partyId,
+        Guid accountId, DateOnly through, CancellationToken cancellationToken) => ReadCoreAsync(context,
+            new(partyId, accountId, DateOnly.MinValue, through), PartyBalanceRules.MaximumFacts,
+            includePeriodCarry: false, cancellationToken);
+
+    private async Task<PartyLedgerResult> ReadCoreAsync(FinanceContext context, PartyLedgerRequest request,
+        int maximumEntries, bool includePeriodCarry, CancellationToken cancellationToken, bool projectInternalAmounts = false)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(request);
@@ -68,7 +80,7 @@ public sealed class PartyLedgerService(
         // An open item's day is the UTC day of its admission: [from 00:00Z, to+1 00:00Z).
         var admittedFrom = new DateTimeOffset(from.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
         var admittedBefore = new DateTimeOffset(to.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-        var take = PartyLedgerRules.MaximumEntries + 1;
+        var take = maximumEntries + 1;
 
         var moneyEvents = await dbContext.MoneyEvents.AsNoTracking()
             .Where(row => row.PartyId == partyId && row.CompanyAccountId == accountId
@@ -113,7 +125,7 @@ public sealed class PartyLedgerService(
             .Take(take)
             .ToListAsync(cancellationToken);
         if (moneyEvents.Count + payments.Count + paymentReversals.Count + openItems.Count + cancellations.Count
-            + openings.Count > PartyLedgerRules.MaximumEntries)
+            + openings.Count > maximumEntries)
         {
             return await AfterReadAsync(context, PartyLedgerOutcome.TooManyEntries, cancellationToken);
         }
@@ -136,6 +148,12 @@ public sealed class PartyLedgerService(
         var transfers = await FinancePartyBalanceTransferLedger.ReadAsync(dbContext, partyId, accountId, from, to, cancellationToken);
         if (transfers is null) return Refused(PartyLedgerOutcome.Unavailable);
 
+        PeriodCarryOpening? carry = null;
+        if (includePeriodCarry)
+        {
+            try { carry = await ReadPeriodCarryOpeningAsync(context, request, cancellationToken); }
+            catch (InvalidOperationException) { return Refused(PartyLedgerOutcome.Unavailable); }
+        }
         var amount = await permissions.CheckAsync(context, FinanceAction.ReadPartyLedgerAmount, null, cancellationToken);
         var again = await permissions.CheckAsync(context, FinanceAction.ReadPartyLedger, null, cancellationToken);
         if (again != PermissionDecision.Allowed || !SameContext(context))
@@ -200,21 +218,36 @@ public sealed class PartyLedgerService(
         }
 
         facts.AddRange(transfers);
-        if (facts.Count > PartyLedgerRules.MaximumEntries)
+        if (facts.Count > maximumEntries)
             return await AfterReadAsync(context, PartyLedgerOutcome.TooManyEntries, cancellationToken);
+
+        if (carry is not null)
+        {
+            if (!await PeriodCarryStillActiveAsync(carry.Proof, cancellationToken))
+                return Refused(PartyLedgerOutcome.Unavailable);
+            // The proof re-read is another await; do not disclose amounts using authority measured before it.
+            amount = await permissions.CheckAsync(context, FinanceAction.ReadPartyLedgerAmount, null, cancellationToken);
+            again = await permissions.CheckAsync(context, FinanceAction.ReadPartyLedger, null, cancellationToken);
+            if (again != PermissionDecision.Allowed || !SameContext(context))
+                return Refused(again == PermissionDecision.Unavailable ? PartyLedgerOutcome.Unavailable : PartyLedgerOutcome.Denied);
+        }
 
         IReadOnlyList<PartyLedgerCurrency> currencies;
         try
         {
-            currencies = PartyLedgerPolicy.Build(facts, Disclosure(amount));
+            // The private bridge result remains inside this owner calculation. Its caller always applies
+            // the fresh outer disclosure to opening, running and closing balances before returning anything.
+            currencies = PartyLedgerPolicy.Build(facts, projectInternalAmounts ? AmountDisclosure.Visible : Disclosure(amount), carry?.Balances);
         }
         catch (InvalidOperationException)
         {
             return Refused(PartyLedgerOutcome.Unavailable);
         }
 
+        if (!SameContext(context)) return Refused(PartyLedgerOutcome.Denied);
         return new PartyLedgerResult(PartyLedgerOutcome.Found, new PartyLedgerView(context.CompanyId, partyId, accountId,
-            from, to, PartyLedgerCarryForward.NoneOpen018, currencies));
+            from, to, carry is null ? PartyLedgerCarryForward.NoneOpen018 : PartyLedgerCarryForward.PeriodClosureVoucher,
+            currencies, carry?.Proof));
     }
 
     /// <summary>
