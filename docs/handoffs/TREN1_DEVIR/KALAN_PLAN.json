@@ -107,8 +107,8 @@
    {
     "work": "EK24 geç fatura farkının satılan malın maliyetine aktarımı",
     "slice": "STK-SC36-a",
-    "status": "PARTIAL",
-    "note": "Actual cost, posting and historical cancellation proofs connected through16cf9dccd. Accepted/cancelled/reversed invoice A then real reinvoice B requires immutable economic claim succession; source implementation remains PARTIAL."
+    "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
+    "note": "Actual late invoice cost and cancelled-invoice claim succession connected through62e65d6a6/0ad1b8f45. Enclosing SC36-a remains PARTIAL only for actual SAT-D331/D334 count cost wiring."
    },
    {
     "work": "EK24 mal kabul otomatik kuru ve birleşen etikette kg ağırlıklı kur",
@@ -1358,7 +1358,7 @@
      "w5_raporu": "durum/W5_stok_lojistik.md",
      "w6_report": "durum/W6_stok_lojistik.md",
      "w8_report": "durum/W8_finans.md",
-     "w8_source_note": "PARTIAL: actual cost/source/posting, attributed cancellation and historical finalized/cancelled invoice proofs integrated through16cf9dccd. Final missing case: accepted invoice A is officially cancelled/reversed then actual reinvoice B must acquire the same physical economic claim without reviving A or creating duplicate global cost. Append-only claim succession source/model/tests in progress; no policy guess or runtime acceptance."
+     "w8_source_note": "PARTIAL: actual first/late purchase cost, SAT-D422, historical cancellation and immutable invoice claim succession integrated at0ad1b8f45 from62e65d6a6; owner API/EF/Accounting.Unit/Integration/TSC source builds exit0. Final scope check found SAT-D331/D334 StockCountCostCalculator not connected to real count approval: known surplus must retain average; unreadable shortage must roll back physical deduction. Narrow actual count cost/status/SQL/contract source wiring in progress. No new slice/policy or runtime acceptance."
     },
     {
      "id": "STK-SC36-b",
