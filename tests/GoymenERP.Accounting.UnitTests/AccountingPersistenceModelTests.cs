@@ -32,7 +32,23 @@ public sealed class AccountingPersistenceModelTests
         typeof(ManufacturingCostDifferenceRow), typeof(CreditMovementProposalRow),
         typeof(InvoiceLineCogsProposalRow), typeof(InvoiceLineCogsRevisionRow),
         typeof(ManufacturingCostAttributionRow), typeof(ManufacturingCostAttributionShareRow), typeof(InvoiceCogsEconomicClaimRow),
+        typeof(PurchaseCostAttributionSourceRow), typeof(PurchaseCostAttributionCandidateRow), typeof(PurchaseCostAttributionApprovalRow),
     ];
+
+    [Fact]
+    public void Purchase_cost_candidates_keep_real_receipt_roots_and_one_approval_per_actual_invoice_line_source()
+    {
+        using var context = Context();
+        var candidates = context.Model.FindEntityType(typeof(PurchaseCostAttributionCandidateRow))!;
+        Assert.Equal(["CompanyId", "SourceEventId", "InvoiceLineId", "AcceptanceId", "MovementId", "MovementLineNumber"],
+            candidates.FindPrimaryKey()!.Properties.Select(x => x.Name));
+        Assert.False(Assert.Single(candidates.GetIndexes(), x => x.Properties.Select(p => p.Name)
+            .SequenceEqual(["CompanyId", "MovementId", "MovementLineNumber"])).IsUnique);
+        var approval = context.Model.FindEntityType(typeof(PurchaseCostAttributionApprovalRow))!;
+        Assert.Equal(["CompanyId", "SourceEventId", "InvoiceLineId"], approval.FindPrimaryKey()!.Properties.Select(x => x.Name));
+        Assert.True(approval.FindProperty("JournalId")!.IsNullable);
+        Assert.All(approval.GetForeignKeys(), x => Assert.Equal(DeleteBehavior.Restrict, x.DeleteBehavior));
+    }
 
     [Fact]
     public void Posted_cost_shares_allow_two_output_roots_on_one_physical_line_but_the_initial_economic_claim_is_unique()
@@ -52,6 +68,28 @@ public sealed class AccountingPersistenceModelTests
             Assert.All(entity.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
             Assert.All(entity.GetIndexes().Where(x => x.IsUnique), index => Assert.Equal("CompanyId", index.Properties[0].Name));
         });
+    }
+
+    [Fact]
+    public void Purchase_cost_attribution_migration_is_append_only_and_refuses_rollback_before_any_evidence_is_dropped()
+    {
+        var migration = new GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations.AddPostedPurchaseCostAttribution();
+        Assert.Equal(3, migration.UpOperations.OfType<CreateTableOperation>().Count());
+        var triggers = migration.UpOperations.OfType<SqlOperation>().ToArray();
+        Assert.Equal(3, triggers.Length);
+        Assert.All(triggers, sql =>
+        {
+            Assert.Contains("AFTER UPDATE, DELETE", sql.Sql);
+            Assert.Contains("THROW 51805", sql.Sql);
+            Assert.Contains("THROW 51806", sql.Sql);
+        });
+        var down = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51804", down.Sql);
+        Assert.Contains("PurchaseCostAttributionSources", down.Sql);
+        Assert.Contains("PurchaseCostAttributionCandidates", down.Sql);
+        Assert.Contains("PurchaseCostAttributionApprovals", down.Sql);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        Assert.Equal(3, migration.DownOperations.OfType<DropTableOperation>().Count());
     }
 
     [Fact]
@@ -160,8 +198,9 @@ public sealed class AccountingPersistenceModelTests
                 "20261117095844_AddInvoiceLineCogsCorrections", "20261117102540_AddFinanceJournalSources",
                 "20261117123611_AddSourceVoucherLifecycle", "20261117154311_AddPeriodClosureCarryAndReopening",
                 "20261117171929_WidenPostingMappingsToCogs", "20261117175214_AddInventoryCostProposals",
-                "20261117190022_AddPostedManufacturingCostAttribution"],
-            context.Database.GetMigrations().TakeLast(9));
+                "20261117190022_AddPostedManufacturingCostAttribution", "20261117194231_AddInventoryCostComponentRounding",
+                "20261117205436_AddPostedPurchaseCostAttribution"],
+            context.Database.GetMigrations().TakeLast(11));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -176,6 +215,25 @@ public sealed class AccountingPersistenceModelTests
         var guards = migration.UpOperations.OfType<SqlOperation>().ToArray();
         Assert.Equal(3, guards.Length);
         Assert.All(guards, guard => { Assert.Contains("THROW 51801", guard.Sql); Assert.Contains("THROW 51802", guard.Sql); });
+    }
+
+    [Fact]
+    public void Inventory_cost_rounding_widens_only_the_approved_zero_state_and_protects_exact_evidence_before_rollback()
+    {
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var row = model.FindEntityType(typeof(AccountingInventoryCostProposalRow))!;
+        Assert.Equal(AccountingDbContext.InventoryCostProposalStateCheck,
+            row.GetCheckConstraints().Single(x => x.Name == "CK_InventoryCostProposals_State").Sql);
+        var migration = new GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations.AddInventoryCostComponentRounding();
+        Assert.Empty(migration.UpOperations.OfType<SqlOperation>());
+        Assert.Collection(migration.UpOperations,
+            op => Assert.IsType<DropCheckConstraintOperation>(op), op => Assert.IsType<AddCheckConstraintOperation>(op));
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51803", guard.Sql);
+        Assert.Contains("$.preparation.rounding", guard.Sql);
+        Assert.Contains("$.component.recordedRounding", guard.Sql);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
     }
 
     [Fact]

@@ -43,15 +43,22 @@ public sealed record InventoryPurchaseInvoiceCostApplicationResultV1(Guid Compan
 
 /// <summary>BS-1 first recognition, distinct from a late difference against a known receipt stamp.
 /// Exact physical/profile evidence is retained; uninvoiced material stays pending.</summary>
-public sealed record InventoryPurchaseFirstCostRecognitionV1(string AllocationVersion, Guid AcceptanceId,
-    Guid InvoiceLineId, int InvoiceLineNo, Guid ReceiptMovementId, Guid RootLabelId, Guid ProductId, Guid ReceiptLocationId,
-    decimal MatchedQuantity, decimal AcceptedQuantity, InventoryExactCostRatioV1 AcceptedPhysicalKg,
+public sealed record InventoryPurchaseFirstCostRecognitionV1(string AllocationVersion,
+    Guid InvoiceLineId, int InvoiceLineNo, Guid ProductId,
     InventoryExactCostRatioV1 InvoicedPhysicalKg, InventoryExactCostRatioV1 InvoiceTlValue,
     InventoryExactCostRatioV1 ConsumedQuantityKg, decimal ConsumedTlAmount,
     InventoryExactCostRatioV1 ConsumedExactTlAmount, InventoryExactCostRatioV1 ConsumedRoundingResidue,
     Guid CurrencyId, Guid MoneyProfileId, long MoneyProfileVersion, int MoneyScale, DateOnly MoneyEffectiveOn,
-    string PhysicalSourceJson, string PhysicalSourceSha256,
+    IReadOnlyList<InventoryPurchaseFirstCostReceiptV1> Receipts,
     IReadOnlyList<InventoryPurchaseFirstCostPositionV1> Positions);
+
+/// <summary>Actual receipt fractions beneath a single invoice-line rounding component.
+/// No receipt is assigned a separately rounded SMM amount or a fictitious production identity.</summary>
+public sealed record InventoryPurchaseFirstCostReceiptV1(Guid AcceptanceId, Guid ReceiptMovementId,
+    Guid RootLabelId, Guid ReceiptLocationId, decimal MatchedQuantity, decimal AcceptedQuantity,
+    InventoryExactCostRatioV1 AcceptedPhysicalKg, InventoryExactCostRatioV1 InvoicedPhysicalKg,
+    InventoryExactCostRatioV1 InvoiceTlValue, InventoryExactCostRatioV1 ConsumedQuantityKg,
+    InventoryExactCostRatioV1 ConsumedExactTlAmount, string PhysicalSourceJson, string PhysicalSourceSha256);
 
 public sealed record InventoryPurchaseFirstCostPositionV1(Guid LocationId, string LocationCode,
     InventoryExactCostRatioV1 InvoicedQuantityKg, InventoryExactCostRatioV1 TlValue,

@@ -77,8 +77,9 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
         var attributed = await AttributedEvidence(source, cancellationToken);
         if (attributed is { Count: > 0 })
         {
-            if (evidence is not null) throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
-            state = "AttributedPostedCogs";
+            if (state == "Unreadable") throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
+            await RequireMixedPosting(source, evidence, cancellationToken);
+            state = evidence is null ? "AttributedPostedCogs" : "MixedPostedCogs";
         }
         RequireCompany(companyId);
         return new(companyId, source.InvoiceId, source.InvoiceLineId, FinalizedInvoiceLineReferenceV1.From(source), history.LastOrDefault()?.Version ?? 0,
@@ -113,7 +114,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
             var (state, evidence) = await Evidence(source, current, cancellationToken);
             if (state == "Unreadable") throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
             var attributed = await AttributedEvidence(source, cancellationToken);
-            if (evidence is not null && attributed is not null) throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
+            if (attributed is not null) await RequireMixedPosting(source, evidence, cancellationToken);
             var view = new InvoiceLineCogsCorrectionViewV1(request.ProposalId, source.CompanyId, source.InvoiceId,
                 source.InvoiceLineId, source.FinalizedVersion, 1, request.ExpectedLineVersion, "Prepared", request.Classification,
                 plan, request.PeriodId, request.TransactionDate, request.AccountingDate, request.ValueDate,
@@ -151,8 +152,9 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
             if (state == "Unreadable") throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
             if (Encode(evidence) != Encode(prepared.PostedEvidence)) throw Refuse(InvoiceLineCogsCorrectionCodesV1.SourceChanged);
             var attributed = await AttributedEvidence(source, cancellationToken);
-            if (Encode(attributed) != Encode(prepared.AttributedEvidence) || evidence is not null && attributed is not null)
+            if (Encode(attributed) != Encode(prepared.AttributedEvidence))
                 throw Refuse(InvoiceLineCogsCorrectionCodesV1.SourceChanged);
+            if (attributed is not null) await RequireMixedPosting(source, evidence, cancellationToken);
             Guid? reverseId = null, replacementId = null;
             if (evidence is not null && evidence.CogsAccountId != prepared.AccountPlan.Account.AccountId)
             {

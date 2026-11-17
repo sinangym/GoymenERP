@@ -58,6 +58,7 @@ public sealed class SalesShellCapabilityProviderTests
                 ("sales.invoice-candidates.list", "/satis/faturaya-hazir", SalesPermissionManifestV1.InvoicesRead, null),
                 // UI-63 (Sales 1.19; SAT-D238, 1.20): the S-09 invoice list on the invoice read alone; its list read withholds the amounts.
                 ("sales.invoices.list", "/satis/faturalar", SalesPermissionManifestV1.InvoicesRead, null),
+                ("sales.invoices.official-cancellation", "/satis/fatura-resmi-iptal", SalesPermissionManifestV1.InvoicesFinalize, null),
                 ("sales.orders.approve", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersApprove}", "sales.drafts.detail"),
                 ("sales.orders.cancel", "/satis/siparisler/:draftId",

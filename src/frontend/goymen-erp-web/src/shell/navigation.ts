@@ -98,6 +98,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'sales.invoice-candidates.list',
   /** UI-63: the read-only S-09 invoice list, on the invoice read plus the price read. */
   'sales.invoices.list',
+  'sales.invoices.official-cancellation',
   /** UI-80: the read-only Sales reports screen, on its own grant. */
   'sales.reports.view',
   /** UI-70b S-10: the customer return list, on the return read plus the price read; create and detail are reached from it. */
@@ -144,6 +145,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'accounting.purchase-cost-differences.approve',
   'inventory.opening-stock.record',
   'inventory.stock-positions.list',
+  'inventory.subcontract-allocations.release-unused',
   'inventory.stock-transfer.write',
   'inventory.stock-transfer.overage-approve',
   'inventory.stock-transfer.loss-record',
@@ -261,6 +263,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'sales.dispatches.list': 'Sevkiyat / İrsaliyeler',
   'sales.invoice-candidates.list': 'Faturaya Hazır',
   'sales.invoices.list': 'Satış faturaları',
+  'sales.invoices.official-cancellation': 'Resmî fatura iptal kaydı',
   'sales.reports.view': 'Satış raporları',
   'sales.customer-returns.list': 'Müşteri iadeleri',
   // UI-70b: create and detail are reached from the return list, never from the sidebar.
@@ -329,6 +332,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // same capability; only the sidebar place and its wording changed.
   'inventory.opening-stock.record': 'Açılış stokları',
   'inventory.stock-positions.list': 'Stok / Malzeme Pozisyonu',
+  'inventory.subcontract-allocations.release-unused': 'Kullanılmayan fason ayırmayı bırak',
   'inventory.stock-transfer.write': 'Depo transferi planlama',
   'inventory.stock-transfer.overage-approve': 'Transfer fazla kabul onayları',
   'inventory.stock-transfer.loss-record': 'Transfer kayıp talepleri',
@@ -470,7 +474,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   {
     id: 'sales',
     label: 'Satış',
-    entries: ['sales.requests.list', 'sales.quotes.list', 'sales.drafts.list', 'sales.dispatches.list', 'sales.invoice-candidates.list', 'sales.invoices.list', 'sales.customer-returns.list', 'sales.reports.view', 'price-lists.list'],
+    entries: ['sales.requests.list', 'sales.quotes.list', 'sales.drafts.list', 'sales.dispatches.list', 'sales.invoice-candidates.list', 'sales.invoices.list', 'sales.invoices.official-cancellation', 'sales.customer-returns.list', 'sales.reports.view', 'price-lists.list'],
   },
   { id: 'purchasing', label: 'Satın Alma', entries: ['purchasing.requests.list', 'purchasing.orders.list', 'purchasing.service-orders.list', 'purchasing.invoices.list'] },
   { id: 'manufacturing', label: 'Üretim', entries: ['manufacturing.orders.list'] },
@@ -483,6 +487,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     label: 'Stok & Lojistik',
     entries: [
       'inventory.stock-positions.list',
+      'inventory.subcontract-allocations.release-unused',
       'inventory.stock-transfer.write',
       'inventory.stock-transfer.overage-approve',
       'inventory.stock-transfer.loss-record',

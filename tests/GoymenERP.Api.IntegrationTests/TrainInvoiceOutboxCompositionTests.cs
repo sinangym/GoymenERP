@@ -39,6 +39,11 @@ public sealed class TrainInvoiceOutboxCompositionTests
         Assert.Equal(typeof(AccountingSalesInvoiceFinalizedInboxConsumer), consumer.ImplementationType);
         foreach (var subscription in consumer.Subscriptions)
             Assert.Contains(source.Publishes, item => item.EventType == subscription.EventType && item.Version == subscription.Version);
+        var cancellationConsumer = Assert.Single(registry.Consumers,
+            item => item.ConsumerName == AccountingSalesInvoiceCancelledInboxV1.ConsumerName);
+        Assert.Equal(typeof(AccountingSalesInvoiceCancelledInboxConsumerV1), cancellationConsumer.ImplementationType);
+        foreach (var subscription in cancellationConsumer.Subscriptions)
+            Assert.Contains(source.Publishes, item => item.EventType == subscription.EventType && item.Version == subscription.Version);
         var accountingCosts = Assert.Single(registry.Consumers,
             item => item.ConsumerName == AccountingInventoryCostInboxV1.ConsumerName);
         Assert.Equal(typeof(AccountingInventoryCostInboxConsumerV1), accountingCosts.ImplementationType);
@@ -68,6 +73,14 @@ public sealed class TrainInvoiceOutboxCompositionTests
             item => item.ServiceType == typeof(IManufacturingAttributionLineageReaderV1));
         Assert.Equal(typeof(ManufacturingAttributionLineageReaderV1), manufacturingLineage.ImplementationType);
         Assert.Equal(ServiceLifetime.Scoped, manufacturingLineage.Lifetime);
+        var purchaseLineage = Assert.Single(services,
+            item => item.ServiceType == typeof(IPurchaseFirstCostLineageReaderV1));
+        Assert.Equal(typeof(PurchaseFirstCostLineageReaderV1), purchaseLineage.ImplementationType);
+        Assert.Equal(ServiceLifetime.Scoped, purchaseLineage.Lifetime);
+        var postedPurchase = Assert.Single(services,
+            item => item.ServiceType == typeof(IPostedPurchaseShipmentCostReaderV1));
+        Assert.Equal(typeof(PurchasePostedCostAttributionStoreV1), postedPurchase.ImplementationType);
+        Assert.Equal(ServiceLifetime.Scoped, postedPurchase.Lifetime);
         Assert.Equal(typeof(InventoryPurchaseInvoiceCostStoreV1), costStore.ImplementationType);
         Assert.Equal(ServiceLifetime.Scoped, costStore.Lifetime);
         var supplierReturnCost = Assert.Single(services,

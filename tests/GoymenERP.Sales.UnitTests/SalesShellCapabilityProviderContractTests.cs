@@ -16,6 +16,18 @@ public sealed class SalesShellCapabilityProviderContractTests
     private const string FrontendCapabilities = "src/frontend/goymen-erp-web/src/sales/capabilities.ts";
 
     [Fact]
+    public void Official_cancellation_is_a_single_company_price_free_route_with_only_existing_finalize_authority()
+    {
+        var declaration = Assert.Single(new SalesShellCapabilityProvider().GetDeclarations(), x =>
+            x.CapabilityId == SalesShellCapabilityProvider.OfficialCancellationCapabilityId);
+        Assert.Equal("/satis/fatura-resmi-iptal", declaration.RoutePath);
+        Assert.Equal([SalesPermissionManifestV1.InvoicesFinalize], declaration.RequiredPermissions);
+        Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, declaration.ScopeRequirement);
+        Assert.Null(declaration.ParentCapabilityId);
+    }
+
+    [Fact]
     public void The_three_screens_and_the_two_controls_are_declared_with_the_frontends_ids_and_routes()
     {
         var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(), FrontendCapabilities));
@@ -43,8 +55,8 @@ public sealed class SalesShellCapabilityProviderContractTests
         // API-07 / SAT-D153..SAT-D162 (1.24, merged after API-34 1.23): registers the two risk exception names (manifest v29) and their detail controls.
         // API-40 / UI-70b / SAT-D288..SAT-D294 (1.25, merged after API-07 1.24): registers the four return names (manifest v30), the S-10
         // return list, create and detail screens and the detail's submission, approval and finalisation controls.
-        Assert.Equal(("SALES", "1.25"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(38, declarations.Count);
+        Assert.Equal(("SALES", "1.26"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(39, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);

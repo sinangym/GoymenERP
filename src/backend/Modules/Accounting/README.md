@@ -582,3 +582,40 @@ existing posted source evidence without new stock/journal effects. A completely 
 evidence when another output supplies the actual nonzero aggregate journal. Missing legacy return lists remain
 unavailable. A wholly zero source with no actual journal is not assigned a fabricated journal identity. The remaining
 mixed-component and later-delta integration above is still pending.
+
+Inventory cost component rounding follows the explicit Q11 answer (#1189 / 6958102286): one exact component total is
+rounded once using the actual company Accounting money profile. The preparation freezes the exact ratio, profile
+identity/version/scale, posted amount and signed residue (`exact = posted + residue`). Approval revalidates that
+proof and the current profile. General manual-journal scale rules are unchanged; residue writes neither another
+journal nor a physical stock effect. A nonzero exact amount rounded to zero still requires a different approver;
+`RoundedNoCost` retains the approved proof without fabricating a zero journal.
+
+First purchase recognition is keyed by `purchase-first-line/{invoiceLineId}`, separate from later product/location
+differences. It aggregates all actual receipt/root/location proofs for the invoice line; `LocationId` is null, not
+an invented representative position. The older `purchase-first/{acceptanceId}/{invoiceLineId}` evidence remains
+readable, but it cannot coexist with a line aggregate for the same source line. Inventory has already fixed the stock remainder from its rounded consumed amount,
+so Accounting keeps that amount and its optional `RecordedRounding` proof exactly. The historical source profile
+and the selected open-period journal profile are separate evidence. A different profile identity/version is
+allowed when the same currency amount fits the current journal scale exactly; no second rounding is performed.
+An unrepresentable amount refuses preparation. Approval still rechecks the frozen current journal profile. Legacy components omit the new
+field. Real physical attribution of these purchase components is a separate remaining owner integration; the key
+and rounding proof alone do not establish an invoice-line economic claim.
+
+EF migration `20261117194231_AddInventoryCostComponentRounding` widens only the proposal state constraint for
+approved zero amounts. Down first refuses with **51803** while a rounded preparation, recorded owner-rounding
+snapshot or approved-zero version exists. Empty/legacy-only stores remain rollback-safe. The SQL guard is pending
+K3 review; no automatic guard allowlist was added and no database migration was applied.
+
+First purchase posted attribution uses the real invoice-line aggregate, receipt/root proofs and immutable physical
+shipments. Candidate evidence is captured in the same transaction as the source proposal. A different approver
+posts the one source total (or approves its rounded-zero proof without a journal), and the same transaction records
+each actual shipment share. Each shipment retains its exact cost; only rounding residue follows the approved
+largest-kg/earliest-recorded priority with a zero floor. Original-known and already-accounted manufacturing/purchase
+shares must jointly prove full physical coverage before Sales claims the cost. Pending or incomplete sources never
+become a zero cost, and no second SMM journal or physical movement is produced.
+
+EF-generated `20261117205436_AddPostedPurchaseCostAttribution` adds three company-scoped append-only tables.
+Down refuses any retained candidate/source/approval evidence with **51804**; update/delete triggers use
+**51805/51806**. These fixed migration SQL guards await K3 review and were not allowlisted. No database application
+or historical backfill occurred. The purchase-specific SAT-D422 correction binding remains a separate technical
+follow-up within the same slice; source build and test sources do not constitute runtime acceptance.

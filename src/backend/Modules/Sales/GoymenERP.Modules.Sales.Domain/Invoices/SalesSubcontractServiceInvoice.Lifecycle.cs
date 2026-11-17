@@ -194,7 +194,7 @@ public sealed partial class SalesSubcontractServiceInvoice
             || (facts.DuePlan.Count > 0 && facts.DuePlan.Sum(item => item.Amount) != Totals.Payable.Amount)
             || (State is not (SalesSubcontractServiceInvoiceState.Draft or SalesSubcontractServiceInvoiceState.Cancelled)
                 && facts.DuePlan.Count == 0)
-            || (facts.Match is not null && State is not (SalesSubcontractServiceInvoiceState.Approved or SalesSubcontractServiceInvoiceState.Finalized))
+            || (facts.Match is not null && State is not (SalesSubcontractServiceInvoiceState.Approved or SalesSubcontractServiceInvoiceState.Finalized or SalesSubcontractServiceInvoiceState.OfficiallyCancelled))
             || (facts.Match is null && (facts.Rate is not null || facts.FunctionalLines.Count > 0 || facts.FunctionalCurrencyId is not null))
             || (facts.Match is not null && (facts.FunctionalCurrencyId is null || facts.FunctionalCurrencyId == Guid.Empty
                 || (facts.FunctionalCurrencyId == Header.CurrencyId ? facts.Rate is not null
@@ -227,7 +227,7 @@ public sealed partial class SalesSubcontractServiceInvoice
                 || taxes.InvoiceVatAmount != amount.Vat.Amount || taxes.InvoiceWithholdingAmount != amount.Withholding.Amount)
                 throw new InvalidOperationException("Kayıtlı fason fatura resmî eşleme kanıtı tutarsız.");
         }
-        if ((State == SalesSubcontractServiceInvoiceState.Finalized) != (facts.Finalization is not null))
+        if ((State is SalesSubcontractServiceInvoiceState.Finalized or SalesSubcontractServiceInvoiceState.OfficiallyCancelled) != (facts.Finalization is not null))
             throw new InvalidOperationException("Kayıtlı fason fatura kesinleştirme durumu tutarsız.");
         if (facts.Finalization is { } final)
         {
@@ -235,7 +235,7 @@ public sealed partial class SalesSubcontractServiceInvoice
             var expectedFunctional = SalesInvoiceInstalmentCalculator.FunctionalAmounts(duePlan.Select(item =>
                 new SalesInvoiceInstalment(item.SequenceNo, item.DueDate, item.SharePercent,
                     Money.Of(item.Amount, Header.CurrencyId, Header.AmountScale))).ToArray(), Rate, Header.CurrencyId, FunctionalTotals?.Payable);
-            if (Match is null || Match.HasOpenDifference || final.AdmissionId == Guid.Empty || final.FinalizedVersion != Version
+            if (Match is null || Match.HasOpenDifference || final.AdmissionId == Guid.Empty || final.FinalizedVersion != (State == SalesSubcontractServiceInvoiceState.OfficiallyCancelled ? Version - 1 : Version)
                 || string.IsNullOrWhiteSpace(final.FinalizedBy) || final.FinalizedAtUtc == default || final.AttemptCount < 0
                 || !Enum.IsDefined(final.FinanceStatus) || admitted != final.AdmittedAtUtc.HasValue
                 || (final.AttemptCount == 0) != (final.LastAttemptAtUtc is null)

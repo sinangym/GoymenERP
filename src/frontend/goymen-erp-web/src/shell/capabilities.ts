@@ -163,6 +163,7 @@ export const CAPABILITY = {
   salesInvoiceCandidatesList: 'sales.invoice-candidates.list',
   /** UI-63 S-09 Satış faturaları (API-32 list). Route `/satis/faturalar`. Granted on `sales.invoices.read` (SAT-D238: amounts withheld without `sales.orders.price.read`; Sales shell 1.20). */
   salesInvoicesList: 'sales.invoices.list',
+  salesOfficialInvoiceCancellation: 'sales.invoices.official-cancellation',
   /** UI-80 Satış raporları (API-41 / API-42). Route `/satis/raporlar`. Granted on its own `sales.reports.read`. */
   salesReportsView: 'sales.reports.view',
   /** UI-70b S-10 Müşteri iade faturaları (API-40 list). Route `/satis/iadeler`. Granted on `sales.returns.read` + `sales.orders.price.read` (Sales shell 1.25). */
@@ -298,6 +299,7 @@ export const CAPABILITY = {
   inventoryOpeningStockRecord: 'inventory.opening-stock.record',
   /** ST-01 bounded, company-scoped physical stock-position read. */
   inventoryStockPositionsList: 'inventory.stock-positions.list',
+  inventorySubcontractRelease: 'inventory.subcontract-allocations.release-unused',
   inventoryTransferPlanning: 'inventory.stock-transfer.write',
   inventoryTransferOverageApproval: 'inventory.stock-transfer.overage-approve',
   inventoryTransferLossRequest: 'inventory.stock-transfer.loss-record',
@@ -471,6 +473,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.salesInvoiceCandidatesList]: '/satis/faturaya-hazir',
   // UI-63: another static Sales sibling, never a draft id.
   [CAPABILITY.salesInvoicesList]: '/satis/faturalar',
+  [CAPABILITY.salesOfficialInvoiceCancellation]: '/satis/fatura-resmi-iptal',
   // UI-80: another static Sales sibling, never a draft id.
   [CAPABILITY.salesReportsView]: '/satis/raporlar',
   // UI-70b: static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a return id.
@@ -541,6 +544,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.accountingTrialBalance]: '/muhasebe/mizan',
   [CAPABILITY.inventoryOpeningStockRecord]: '/stok/acilis',
   [CAPABILITY.inventoryStockPositionsList]: '/stok/pozisyonlar',
+  [CAPABILITY.inventorySubcontractRelease]: '/stok/fason-ayirma-birak',
   [CAPABILITY.inventoryTransferPlanning]: '/stok/transferler/planla',
   [CAPABILITY.inventoryTransferOverageApproval]: '/stok/transferler/fazla-kabul-onaylari',
   [CAPABILITY.inventoryTransferLossRequest]: '/stok/transferler/kayip-talepleri',

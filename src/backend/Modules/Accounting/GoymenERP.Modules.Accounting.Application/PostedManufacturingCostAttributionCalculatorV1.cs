@@ -11,6 +11,9 @@ public sealed record PostedCostAttributionWeightV1(Guid ShipmentId, Guid Movemen
 public sealed record PostedCostAttributionAmountV1(PostedCostAttributionWeightV1 Source,
     AccountingInventoryCostRatioV1 ExactSignedAmount, decimal RoundedSignedAmount, decimal SignedResidue);
 
+public sealed record PostedCostAttributionExactSourceV1(PostedCostAttributionWeightV1 Source,
+    AccountingInventoryCostRatioV1 ExactSignedAmount);
+
 public sealed record PostedCostAttributionCalculationV1(decimal SignedTotal, Guid CurrencyId, int Scale,
     AccountingInventoryCostRatioV1 ConsumedQuantityKg, IReadOnlyList<PostedCostAttributionAmountV1> Shares);
 
@@ -26,6 +29,29 @@ public static class PostedManufacturingCostAttributionCalculatorV1
 
     public static bool TryCalculate(decimal signedTotal, Guid currencyId, int scale,
         AccountingInventoryCostRatioV1 expectedConsumedQuantityKg, IReadOnlyCollection<PostedCostAttributionWeightV1>? weights,
+        out PostedCostAttributionCalculationV1? result, out string? reason)
+        => TryCalculateCore(signedTotal, currencyId, scale, expectedConsumedQuantityKg, weights, null, out result, out reason);
+
+    /// <summary>
+    /// The separately approved purchase extension retains each shipment's actual exact cost; kg orders only the
+    /// rounding residue. The supplied total is the owner's already rounded line amount, not a new stock valuation.
+    /// </summary>
+    public static bool TryCalculatePurchase(decimal signedTotal, Guid currencyId, int scale,
+        AccountingInventoryCostRatioV1 expectedConsumedQuantityKg, IReadOnlyCollection<PostedCostAttributionExactSourceV1>? sources,
+        out PostedCostAttributionCalculationV1? result, out string? reason)
+    {
+        result = null; reason = "attribution_source_invalid";
+        if (signedTotal < 0 || sources is not { Count: > 0 and <= MaximumShares }
+            || sources.Any(x => x is null || x.Source is null
+                || !AccountingInventoryCostAmountsV1.TryRead(x.ExactSignedAmount, out var n, out _) || n < 0)
+            || sources.Select(x => (x.Source.MovementId, x.Source.MovementLineNumber)).Distinct().Count() != sources.Count) return false;
+        return TryCalculateCore(signedTotal, currencyId, scale, expectedConsumedQuantityKg, sources.Select(x => x.Source).ToArray(),
+            sources.ToDictionary(x => (x.Source.MovementId, x.Source.MovementLineNumber), x => x.ExactSignedAmount), out result, out reason);
+    }
+
+    private static bool TryCalculateCore(decimal signedTotal, Guid currencyId, int scale,
+        AccountingInventoryCostRatioV1 expectedConsumedQuantityKg, IReadOnlyCollection<PostedCostAttributionWeightV1>? weights,
+        IReadOnlyDictionary<(Guid, int), AccountingInventoryCostRatioV1>? exactSourceAmounts,
         out PostedCostAttributionCalculationV1? result, out string? reason)
     {
         result = null; reason = "attribution_source_invalid";
@@ -51,8 +77,9 @@ public static class PostedManufacturingCostAttributionCalculatorV1
             var amounts = new List<PostedCostAttributionAmountV1>(rows.Length);
             foreach (var row in rows)
             {
-                var ratio = AccountingInventoryCostAmountsV1.Multiply(outputAmount,
-                    AccountingInventoryCostAmountsV1.Multiply(row.NetQuantityKg, Ratio(weightD, weightN)));
+                var ratio = exactSourceAmounts is not null ? exactSourceAmounts[(row.MovementId, row.MovementLineNumber)]
+                    : AccountingInventoryCostAmountsV1.Multiply(outputAmount,
+                        AccountingInventoryCostAmountsV1.Multiply(row.NetQuantityKg, Ratio(weightD, weightN)));
                 AccountingInventoryCostAmountsV1.TryRead(ratio, out var numerator, out var denominator);
                 amounts.Add(new(row, ratio, Money.Round(numerator, denominator, currencyId, scale).Amount, 0));
             }

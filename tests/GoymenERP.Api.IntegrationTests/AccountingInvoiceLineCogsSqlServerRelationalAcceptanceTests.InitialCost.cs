@@ -148,9 +148,11 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
     }
 
     private static PrepareAccountingInventoryCostV1 CostPreparation(Guid period) => new(1, period, new(2026, 11, 17), new(2026, 11, 17), Counter, "SENTETIK actual source cost proposal");
-    private static AccountingInventoryCostStoreV1 Costs(Scope scope, CostReader reader) => new(scope.Db, scope.Posting, reader,
-        new CogsMapping(), new Plan(), new CostCurrencies(), new(new AccountingSqlServerRelationalAcceptanceTests.SyntheticMoneyProfiles(Company)),
-        scope.CompanyContext, scope.Audit, scope.AuditWriter, TimeProvider.System);
+    private static AccountingInventoryCostStoreV1 Costs(Scope scope, IAccountingInventoryCostSourceReaderV1 reader,
+        ISettingsPrerequisiteProvider? profiles = null, IPurchaseFirstCostLineageReaderV1? lineage = null) => new(scope.Db, scope.Posting, reader,
+        new CogsMapping(), new Plan(), new CostCurrencies(), new(profiles ?? new AccountingSqlServerRelationalAcceptanceTests.SyntheticMoneyProfiles(Company)),
+        scope.CompanyContext, scope.Audit, scope.AuditWriter, TimeProvider.System, purchaseLineage: lineage,
+        postedPurchasing: new PurchasePostedCostAttributionStoreV1(scope.Db, scope.CompanyContext));
     private sealed class CostCurrencies : ISettingsMoneyCandidateReader
     {
         public Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(CancellationToken cancellationToken = default) =>

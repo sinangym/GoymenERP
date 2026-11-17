@@ -383,6 +383,7 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         try
         {
             run = await Run.StartAsync(useRealFinanceSource: true);
+            await FinanceDocumentNumbersSqlFixture.PrepareAsync(run.Factory.Services, CompanyA);
         }
         catch
         {

@@ -12,7 +12,9 @@ public sealed record AccountingInventoryCostRatioV1(string Numerator, string Den
 /// <summary>
 /// Sales uses one component per invoice line; its evidence names the whole claimed dispatch line and every actual
 /// Inventory movement line selected by the Logistics owner proof. Commercial invoice kg is not a physical-cost ratio.
-/// Purchasing uses one component per Product/location residual; opposite signed components are never netted away.
+/// Purchasing uses one component per Product/location residual; first recognition instead aggregates every receipt
+/// of one actual invoice line and uses its recorded rounding profile. The receipt-key shape remains readable for legacy evidence.
+/// First recognition and later differences are never netted away.
 /// SourceProofJson contains immutable owner facts, not a request from the preparer's browser.
 /// </summary>
 public sealed record AccountingInventoryCostComponentV1(string ComponentKey, Guid ProductId,
@@ -21,7 +23,19 @@ public sealed record AccountingInventoryCostComponentV1(string ComponentKey, Gui
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     IReadOnlyList<AccountingSalesPhysicalCostClaimV1>? SalesPhysicalClaims = null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-    IReadOnlyList<PostedManufacturingCostShareV1>? AlreadyPostedComponents = null);
+    IReadOnlyList<PostedManufacturingCostShareV1>? AlreadyPostedComponents = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    AccountingInventoryCostRecordedRoundingV1? RecordedRounding = null,
+    // Only a mixed Sales line uses this partition: source total = already posted shares + unposted original stamps.
+    // Zero is meaningful when the remaining original stamps prove zero; null retains the legacy all-or-none shape.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    AccountingInventoryCostRatioV1? UnpostedTlAmount = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<PostedPurchaseCostShareV1>? AlreadyPostedPurchaseComponents = null)
+{
+    [JsonIgnore] public bool HasPostedComponents => AlreadyPostedComponents is { Count: > 0 }
+        || AlreadyPostedPurchaseComponents is { Count: > 0 };
+}
 
 public sealed record AccountingSalesPhysicalCostClaimV1(Guid ShipmentId, Guid MovementId, int MovementLineNumber,
     Guid ProductId, decimal QuantityKg);
@@ -47,7 +61,8 @@ public sealed record AccountingInventoryCostPreparationV1(Guid PeriodId, DateOnl
     DateOnly TransactionDate, Guid CurrencyId, string SignedAmount, Guid MoneyProfileId, long MoneyProfileVersion, int MoneyScale,
     AccountingInventoryCostClassificationV1 Classification, InvoiceLineCogsAccountV1 CounterAccount,
     Guid AccountPlanPackageId, long AccountPlanPackageVersion, long? AccountPlanCatalogVersion,
-    string AccountPlanSourceVersion, string AccountPlanSha256, Guid PreparedBy, DateTimeOffset PreparedAtUtc, string Reason);
+    string AccountPlanSourceVersion, string AccountPlanSha256, Guid PreparedBy, DateTimeOffset PreparedAtUtc, string Reason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AccountingInventoryCostRoundingV1? Rounding = null);
 
 public sealed record AccountingInventoryCostProposalV1(Guid ProposalId, Guid CompanyId, Guid EventId,
     AccountingInventoryCostKindV1 Kind, Guid InvoiceId, long InvoiceVersion, Guid AdmissionId, DateOnly InvoiceDate,
@@ -60,6 +75,10 @@ public sealed record AccountingInventoryCostProposalV1(Guid ProposalId, Guid Com
     public string ExactTlAmount => AccountingInventoryCostAmountsV1.TryExactDecimal(Component.SignedTlAmount, 28, out var amount)
         ? amount.ToString("0.############################", System.Globalization.CultureInfo.InvariantCulture)
         : Component.SignedTlAmount.Numerator + " / " + Component.SignedTlAmount.Denominator;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? UnpostedTlAmountText => Component.UnpostedTlAmount is { } amount
+        ? AccountingInventoryCostRoundingV1Rules.Display(amount) : null;
 }
 
 public sealed record AccountingInventoryCostListV1(Guid CompanyId, IReadOnlyList<AccountingInventoryCostProposalV1> Items);
@@ -115,4 +134,29 @@ public static class AccountingInventoryCostTraceV1
     public static string PurchaseComponent(Guid productId, Guid locationId) => productId != Guid.Empty && locationId != Guid.Empty
         ? "product-location:" + productId.ToString("D") + ":" + locationId.ToString("D")
         : throw new ArgumentException("A real product and original receipt location are required.");
+
+    public static string PurchaseFirstComponent(Guid acceptanceId, Guid invoiceLineId) => acceptanceId != Guid.Empty && invoiceLineId != Guid.Empty
+        ? "purchase-first/" + acceptanceId.ToString("D") + "/" + invoiceLineId.ToString("D")
+        : throw new ArgumentException("A real acceptance and source invoice line are required.");
+
+    public static string PurchaseFirstLineComponent(Guid invoiceLineId) => invoiceLineId != Guid.Empty
+        ? "purchase-first-line/" + invoiceLineId.ToString("D")
+        : throw new ArgumentException("A real source invoice line is required.");
+
+    public static bool IsPurchaseFirstLineComponent(string? value)
+    {
+        var parts = value?.Split('/');
+        return parts is { Length: 2 } && parts[0] == "purchase-first-line"
+            && Guid.TryParseExact(parts[1], "D", out var line) && line != Guid.Empty
+            && value == PurchaseFirstLineComponent(line);
+    }
+
+    public static bool IsPurchaseFirstComponent(string? value)
+    {
+        var parts = value?.Split('/');
+        return parts is { Length: 3 } && parts[0] == "purchase-first"
+            && Guid.TryParseExact(parts[1], "D", out var acceptance) && acceptance != Guid.Empty
+            && Guid.TryParseExact(parts[2], "D", out var line) && line != Guid.Empty
+            && value == PurchaseFirstComponent(acceptance, line);
+    }
 }

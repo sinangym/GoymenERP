@@ -12,6 +12,45 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed partial class AccountingInventoryCostSourceReaderTests
 {
     [Fact]
+    public async Task Mixed_original_and_posted_physical_cost_keeps_total_separate_from_the_only_unposted_amount()
+    {
+        var f = new Fixture(); var known = f.Inventory.Value.Lines[0];
+        var unknown = known with { Tl = known.Tl with { Status = InventoryMovementCostStampStatusV1.Unavailable,
+            Amount = null, UnitCostRatio = null, Reason = "unknown-at-shipment" } };
+        f.Inventory.Value = f.Inventory.Value with { Lines = [unknown, known with { MovementLineNumber = 2 }] };
+        var envelope = f.Envelope(); var posted = new PostedPort(f); var claims = new FinalizedClaims(f, envelope);
+        var reader = new AccountingInventoryCostSourceReaderV1(f.Company, f.Logistics, f.Inventory, posted, claims);
+        var source = await reader.ReadAsync(envelope); var component = Assert.Single(source.Components);
+        Assert.Equal(new("10001", "50"), component.SignedTlAmount);
+        Assert.Equal(new("10001", "100"), component.UnpostedTlAmount);
+        Assert.Equal(2, component.SalesPhysicalClaims!.Count);
+        Assert.Single(component.AlreadyPostedComponents!);
+        Assert.True(AccountingInventoryCostRoundingV1Rules.TryResolve(component, SettingsCurrencyIdentitiesV1.TurkishLira,
+            Guid.NewGuid(), 1, 2, out var amount, out var rounding));
+        Assert.Equal(100.01m, amount); Assert.Equal(component.UnpostedTlAmount, rounding!.ExactSignedAmount);
+        foreach (var invalid in new[] { component with { UnpostedTlAmount = null },
+            component with { UnpostedTlAmount = new("-1", "1") }, component with { UnpostedTlAmount = new("0", "1") },
+            component with { AlreadyPostedComponents = null },
+            component with { SalesPhysicalClaims = [component.SalesPhysicalClaims[0]] } })
+            Assert.Throws<OutboxPermanentFailureException>(() => AccountingInventoryCostSourceValidationV1.Require(envelope,
+                source with { Components = [invalid] }, source.CompanyId));
+    }
+
+    [Fact]
+    public async Task A_proven_zero_original_stamp_in_a_mixed_line_does_not_invent_another_journal_amount()
+    {
+        var f = new Fixture(); var known = f.Inventory.Value.Lines[0];
+        f.Inventory.Value = f.Inventory.Value with { Lines = [known with { Tl = known.Tl with {
+            Status = InventoryMovementCostStampStatusV1.Unavailable, Amount = null, UnitCostRatio = null, Reason = "pending" } },
+            known with { MovementLineNumber = 2, Tl = known.Tl with { Amount = 0m, UnitCostRatio = new("0", "1") } }] };
+        var envelope = f.Envelope(); var posted = new PostedPort(f);
+        var reader = new AccountingInventoryCostSourceReaderV1(f.Company, f.Logistics, f.Inventory, posted, new FinalizedClaims(f, envelope));
+        var component = Assert.Single((await reader.ReadAsync(envelope)).Components);
+        Assert.Equal(new("10001", "100"), component.SignedTlAmount);
+        Assert.Equal(new("0", "1"), component.UnpostedTlAmount);
+    }
+
+    [Fact]
     public async Task Original_unknown_cost_links_actual_posted_money_only_when_the_same_finalized_sales_owner_claim_is_proven()
     {
         var f = new Fixture(); var original = f.Inventory.Value.Lines[0];

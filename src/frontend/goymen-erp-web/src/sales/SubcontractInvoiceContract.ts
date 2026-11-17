@@ -69,7 +69,7 @@ export const SUBCONTRACT_INVOICE_REASON = {
 
 /* ── Detail ───────────────────────────────────────────────────────────────── */
 
-export const SUBCONTRACT_INVOICE_STATES = ['Draft', 'PendingApproval', 'Approved', 'Rejected', 'Cancelled', 'Finalized'] as const
+export const SUBCONTRACT_INVOICE_STATES = ['Draft', 'PendingApproval', 'Approved', 'Rejected', 'Cancelled', 'Finalized', 'OfficiallyCancelled'] as const
 export type SubcontractInvoiceState = (typeof SUBCONTRACT_INVOICE_STATES)[number]
 const isState = (value: unknown): value is SubcontractInvoiceState =>
   typeof value === 'string' && (SUBCONTRACT_INVOICE_STATES as readonly string[]).includes(value)
@@ -168,7 +168,7 @@ export function decodeSubcontractInvoiceDetail(value: unknown, invoiceId: string
   const lifecycle = o.lifecycle === null ? null : decodeSubcontractLifecycle(o.lifecycle)
   if (totals === null || (o.lifecycle !== null && lifecycle === null)
     || (o.state !== 'Draft' && o.state !== 'Cancelled' && (lifecycle === null || lifecycle.instalments.length === 0))
-    || ((o.state === 'Finalized') !== (lifecycle?.finalization != null))) return null
+    || ((o.state === 'Finalized' || o.state === 'OfficiallyCancelled') !== (lifecycle?.finalization != null))) return null
   const lines: SubcontractInvoiceLine[] = []
   for (const entry of o.lines) {
     const line = decodeLine(entry)

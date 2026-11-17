@@ -30,6 +30,7 @@ export const INVOICE_STATE_TEXT: Record<InvoiceState, string> = {
   Rejected: 'Reddedildi',
   Cancelled: 'İptal edildi',
   Finalized: 'Kesinleşti',
+  OfficiallyCancelled: 'Resmî iptal kaydedildi',
 }
 
 export const FINANCE_STAGE_TEXT: Record<FinanceStage, string> = {

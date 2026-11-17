@@ -32,7 +32,7 @@ export interface CogsHistory { readonly companyId: string; readonly invoiceId: s
     readonly dispatchNoteLineNo: number; readonly invoiceLineNo: number; readonly invoiceDate: string; readonly officialInvoiceNumber: string; readonly ettn: string
     readonly fingerprint: string }
   readonly lineVersion: number; readonly current: CogsRevision | null; readonly revisions: readonly CogsRevision[]
-  readonly proposals: readonly CogsProposal[]; readonly postingEvidenceState: 'NoPostedCogs' | 'PostedCogs' | 'Unreadable' | 'AttributedPostedCogs'
+  readonly proposals: readonly CogsProposal[]; readonly postingEvidenceState: 'NoPostedCogs' | 'PostedCogs' | 'Unreadable' | 'AttributedPostedCogs' | 'MixedPostedCogs'
   readonly attributedEvidence?: readonly CogsAttributedEvidence[]
   readonly postedEvidence: CogsEvidence | null; readonly productReference: { readonly companyId: string; readonly productId: string
     readonly outcome: 'Available' | 'NotSet' | 'NotFound' | 'Unavailable'; readonly classification: 1 | 2 | null
@@ -92,7 +92,7 @@ export function decodeCogsProposal(v: unknown, company: string, invoice: string,
     || !guid(v.periodId) || !date(v.transactionDate) || !date(v.accountingDate) || v.valueDate !== null && !date(v.valueDate)
     || !guid(v.preparedBy) || !instant(v.preparedAtUtc) || !text(v.reason) || !pair(v) || !evidence(v.postedEvidence, company, invoice, line)
     || !attributedEvidence(v.attributedEvidence, company) || !attributedCorrections(v.attributedCorrections)
-    || v.attributedEvidence !== undefined && (v.postedEvidence !== null || v.reversingCorrectionJournalId !== null)) return null
+    || v.postedEvidence === null && v.reversingCorrectionJournalId !== null) return null
   if (v.status === 'Prepared' ? v.version !== 1 || v.approvedBy !== null || v.approvedAtUtc !== null || v.reversingCorrectionJournalId !== null
     : v.status !== 'Approved' || v.version !== 2 || !guid(v.approvedBy) || !instant(v.approvedAtUtc)
       || v.preparedBy.toLowerCase() === v.approvedBy.toLowerCase()) return null
@@ -134,9 +134,9 @@ export function decodeCogsHistory(v: unknown, company: string, invoice: string, 
     || v.proposals.some(p => decodeCogsProposal(p, company, invoice, line) === null)
     || new Set(v.proposals.map(p => (p as CogsProposal).proposalId.toLowerCase())).size !== v.proposals.length
     || (v.lineVersion === 0 ? v.current !== null : !revision(v.current) || JSON.stringify(v.current) !== JSON.stringify(v.revisions.at(-1)))
-    || !['NoPostedCogs', 'PostedCogs', 'Unreadable', 'AttributedPostedCogs'].includes(v.postingEvidenceState as string)
-    || !evidence(v.postedEvidence, company, invoice, line) || (v.postingEvidenceState === 'PostedCogs') !== (v.postedEvidence !== null)
-    || !attributedEvidence(v.attributedEvidence, company) || (v.postingEvidenceState === 'AttributedPostedCogs') !== (v.attributedEvidence !== undefined)
+    || !['NoPostedCogs', 'PostedCogs', 'Unreadable', 'AttributedPostedCogs', 'MixedPostedCogs'].includes(v.postingEvidenceState as string)
+    || !evidence(v.postedEvidence, company, invoice, line) || ['PostedCogs', 'MixedPostedCogs'].includes(v.postingEvidenceState as string) !== (v.postedEvidence !== null)
+    || !attributedEvidence(v.attributedEvidence, company) || ['AttributedPostedCogs', 'MixedPostedCogs'].includes(v.postingEvidenceState as string) !== (v.attributedEvidence !== undefined)
     || !attributedSourceMatches(v.attributedEvidence, v.source)
     || !record(v.productReference) || !same(v.productReference.companyId, company) || !same(v.productReference.productId, v.source.productId as string)
     || !['Available', 'NotSet', 'NotFound', 'Unavailable'].includes(v.productReference.outcome as string)

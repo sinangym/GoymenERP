@@ -264,6 +264,46 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Single(await verify.Movements.Where(x => x.Id == receipt.MovementId).ToListAsync());
     }
 
+    [SqlServerFact]
+    public async Task One_first_invoice_line_spanning_two_shipped_receipts_records_one_cent_not_two()
+    {
+        await using var run = await Run.StartAsync();
+        var first = await SeedInvoiceCostReceipt(run, null);
+        var second = await SeedInvoiceCostReceipt(run, null);
+        foreach (var receipt in new[] { first, second })
+        {
+            GoymenERP.Modules.Inventory.Domain.Labels.MaterialLabel label;
+            await using (var owner = run.Store(CompanyA)) label = (await owner.Labels.FindLabelAsync(receipt.LabelId))!;
+            var issue = Movement(CompanyA, StockMovementKind.Issue,
+                new StockSourceReference(InventoryLabelDispositionReader.DefiniteShipmentSourceKind, Guid.NewGuid(), Guid.NewGuid()),
+                Out(Position(CompanyA, receipt.LocationId, label, BlockState.Free), 4m));
+            await using var writer = run.Store(CompanyA);
+            await writer.Store.RecordMovementAsync(issue, Metadata(run));
+        }
+        var envelope = InvoiceCostEvent(first, 4m, .01m);
+        var payload = JsonSerializer.Deserialize<PurchaseInvoiceFinalizedPayloadV1>(envelope.PayloadJson, PurchaseCostJson)!;
+        var line = payload.Lines[0]; var goods = line.GoodsCostSource!;
+        payload = payload with { Lines = [line with { GoodsCostSource = goods with { InvoiceQuantity = 8m,
+            Receipts = [goods.Receipts[0], new(second.AcceptanceId, second.PurchaseOrderId, second.PurchaseOrderLineId,
+                long.Parse(second.PurchaseOrderVersionAfter, CultureInfo.InvariantCulture), 4m, 4m)] } }] };
+        envelope = envelope with { PayloadJson = JsonSerializer.Serialize(payload, PurchaseCostJson) };
+        await ApplyInvoiceCostCore(run, envelope, new FirstCostPrerequisites());
+        await ApplyInvoiceCostCore(run, envelope, new FirstCostPrerequisites());
+        await using var verify = run.Context(CompanyA);
+        var application = Assert.Single(await verify.PurchaseInvoiceCostApplications.ToListAsync());
+        var result = JsonSerializer.Deserialize<InventoryPurchaseInvoiceCostApplicationResultV1>(application.ResultJson, PurchaseCostJson)!;
+        var component = Assert.Single(result.InitialRecognitions!);
+        Assert.Equal(.01m, component.ConsumedTlAmount);
+        Assert.Equal(2, component.Receipts.Count);
+        Assert.Empty(component.Positions);
+        Assert.Equal(2, await verify.PurchaseInvoiceReceiptCostEffects.CountAsync());
+        var message = Assert.Single(await verify.OutboxMessages.Where(x => x.EventType == InventoryPurchaseInvoiceCostDifferenceV1.EventType).ToListAsync());
+        var accountingSource = GoymenERP.Api.AccountingRuntime.AccountingPurchaseInvoiceCostSourceV1.Read(new(
+            GoymenERP.Modules.Accounting.Application.AccountingInventoryCostInboxV1.InventorySourceName, message.Id,
+            CompanyA, message.EventType, 1, message.PayloadJson, message.OccurredAtUtc, message.CorrelationId, message.CausationId), CompanyA);
+        Assert.Equal(new("1", "100"), Assert.Single(accountingSource.Components).SignedTlAmount);
+    }
+
     private sealed class FirstCostPrerequisites : IInventoryFirstCostPrerequisitesV1
     {
         public Task<InventoryFirstCostPrerequisitesV1> ReadAsync(Guid companyId, DateOnly effectiveOn,

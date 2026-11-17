@@ -137,7 +137,7 @@ public sealed partial class SalesSubcontractServiceInvoiceSqlServerRelationalAcc
         public ValueTask DisposeAsync() => dbContext.DisposeAsync();
     }
 
-    private sealed class Run : IAsyncDisposable
+    private sealed partial class Run : IAsyncDisposable
     {
         private readonly string baseConnectionString;
 

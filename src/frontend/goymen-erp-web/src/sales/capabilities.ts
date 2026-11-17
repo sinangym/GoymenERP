@@ -30,6 +30,7 @@ export const SALES_CAPABILITY = {
    * required — without it the amounts come withheld; Sales shell contract 1.20). No control: a row opens the invoice detail read-only.
    */
   invoicesList: 'sales.invoices.list',
+  officialCancellation: 'sales.invoices.official-cancellation',
   /** UI-80 Satış raporları — API-41 / API-42 under their own `sales.reports.read` (Sales shell contract 1.11). */
   reportsView: 'sales.reports.view',
   /**
@@ -170,6 +171,7 @@ export const SALES_ROUTE = {
   invoiceCandidates: '/satis/faturaya-hazir',
   /** UI-63 S-09: static, never a draft id. */
   invoices: '/satis/faturalar',
+  officialCancellation: '/satis/fatura-resmi-iptal',
   /** UI-80: static, never a draft id. */
   reports: '/satis/raporlar',
   /** UI-50 S-05 Fiyat–İskonto–Marj–Risk Kontrolü: a read-only view of one draft, under the detail's own id. */

@@ -1076,7 +1076,7 @@ public sealed partial class SalesInvoiceSqlServerRelationalAcceptanceTests
             SalesDueDateCalculator.Compute(terms, Day, Day).DueDates, terms, actor, DateTimeOffset.UtcNow);
     }
 
-    private sealed class Run : IAsyncDisposable
+    private sealed partial class Run : IAsyncDisposable
     {
         private readonly string baseConnectionString;
 

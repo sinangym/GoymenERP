@@ -17,7 +17,7 @@ public sealed partial class AccountingInventoryCostStoreV1
         try { view = Decode<AccountingInventoryCostProposalV1>(row.ViewJson); source = Decode<AccountingInventoryCostSourceV1>(header.SourceJson); }
         catch (System.Text.Json.JsonException) { throw Refuse("inventory_cost_source_unavailable"); }
         var component = source.Components?.SingleOrDefault(x => x.ComponentKey == row.ComponentKey);
-        var status = row.Status switch { 1 => "AwaitingPreparation", 2 => "Prepared", 3 => "Posted", 4 => "NoCost", 5 => "AlreadyAccounted", _ => "" };
+        var status = row.Status switch { 1 => "AwaitingPreparation", 2 => "Prepared", 3 => "Posted", 4 => "NoCost", 5 => "AlreadyAccounted", 6 => "RoundedNoCost", _ => "" };
         if (header.CompanyId != Company() || source.CompanyId != header.CompanyId || source.EventId != header.EventId
             || (int)source.Kind != header.Kind || source.InvoiceId != header.InvoiceId || source.InvoiceVersion != header.InvoiceVersion
             || source.AdmissionId != header.AdmissionId || source.SourcePayloadSha256 != header.PayloadHash
@@ -30,6 +30,14 @@ public sealed partial class AccountingInventoryCostStoreV1
             || !AccountingInventoryCostAmountsV1.TryRead(component.SignedTlAmount, out _, out _)
             || view.Preparation?.PreparedBy != row.PreparedBy || view.Preparation?.PeriodId != row.PeriodId
             || view.ApprovedBy != row.ApprovedBy || view.JournalId != row.JournalId || view.CancellationId is not null || view.ReversalProposal is not null)
+            throw Refuse("inventory_cost_source_unavailable");
+        if (view.Preparation?.Rounding is { } rounding && (!AccountingInventoryCostRoundingV1Rules.TryResolve(component,
+                view.Preparation.CurrencyId, view.Preparation.MoneyProfileId, view.Preparation.MoneyProfileVersion,
+                view.Preparation.MoneyScale, out _, out var expectedRounding)
+            || rounding != expectedRounding || rounding.RoundedSignedAmount != view.Preparation.SignedAmount)
+            || component.RecordedRounding is { } sourceRounding && !AccountingInventoryCostRoundingV1Rules.IsValidRecorded(component.SignedTlAmount, sourceRounding)
+            || component.UnpostedTlAmount is not null && view.Preparation is { Rounding: null }
+            || status == "RoundedNoCost" && view.Preparation is not { Rounding: not null, SignedAmount: "0" })
             throw Refuse("inventory_cost_source_unavailable");
         return view;
     }
@@ -117,9 +125,10 @@ public sealed partial class AccountingInventoryCostStoreV1
     {
         var cancelled = await Cancellation(view, token);
         if (cancelled is null) return view;
-        if (view.Component.AlreadyPostedComponents is { Count: > 0 })
-            return view with { Status = "AttributedCancellationPending", CancellationId = cancelled.CancellationId };
-        if (view.JournalId is null) return view with { Status = "Cancelled", CancellationId = cancelled.CancellationId };
+        if (view.Component.HasPostedComponents)
+            return view with { Status = view.Component.UnpostedTlAmount is null ? "AttributedCancellationPending" : "MixedCancellationPending",
+                CancellationId = cancelled.CancellationId };
+        if (view.JournalId is null) return view with { Status = view.Status == "RoundedNoCost" ? "RoundedNoCostCancelled" : "Cancelled", CancellationId = cancelled.CancellationId };
         var journal = await CurrentPostedJournal(view, token);
         var reversals = await db.JournalReversalProposals.AsNoTracking().Where(x => x.SourceJournalId == journal).ToListAsync(token);
         var proposal = reversals.OrderByDescending(x => x.Status == (int)AccountingJournalReversalProposalStatusV1.Approved)
@@ -148,7 +157,8 @@ public sealed partial class AccountingInventoryCostStoreV1
             var row = await db.InventoryCostProposals.AsNoTracking().Where(x => x.Id == proposalId).OrderByDescending(x => x.Version).FirstAsync(cancellationToken);
             if (request.ExpectedVersion != row.Version) throw new AccountingVersionConflictException(request.ExpectedVersion, row.Version);
             var view = await ReadStored(row, cancellationToken);
-            if (view.Status != "Posted") throw Refuse("inventory_cost_reversal_not_proposable");
+            if (view.Status != "Posted" || view.Component.HasPostedComponents)
+                throw Refuse("inventory_cost_reversal_not_proposable");
             var journal = await CurrentPostedJournal(view, cancellationToken);
             if (await db.JournalReversalProposals.AnyAsync(x => x.SourceJournalId == journal
                 && (x.Status == (int)AccountingJournalReversalProposalStatusV1.Pending || x.Status == (int)AccountingJournalReversalProposalStatusV1.Approved), cancellationToken)

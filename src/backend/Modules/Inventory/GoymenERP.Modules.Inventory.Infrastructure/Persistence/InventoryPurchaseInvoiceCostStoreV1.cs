@@ -51,6 +51,7 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
 
             var receipts = new List<InventoryPurchaseInvoiceCostReceiptResultV1>();
             var firstRecognitions = new List<InventoryPurchaseFirstCostRecognitionV1>();
+            var firstPlans = new List<FirstCostReceiptPlan>();
             foreach (var share in source.Receipts.OrderBy(value => value.AcceptanceId))
             {
                 var priorShares = await db.PurchaseInvoiceReceiptCostEffects.Where(row => row.AcceptanceId == share.AcceptanceId)
@@ -75,13 +76,8 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
                 if (stamp is null || stamp.StampVersion < 1) throw Unavailable("purchase_invoice_cost_receipt_unavailable");
                 if (stamp.Status != (int)InventoryMovementCostStampStatusV1.Known)
                 {
-                    var recognition = await RecognizeFirstCostAsync(source, share, receipt.MovementId,
-                        receipt.LabelId, receipt.LocationId, receipt.QuantityKg, stamp, cancellationToken);
-                    firstRecognitions.Add(recognition);
-                    db.PurchaseInvoiceReceiptCostEffects.Add(new() { CompanyId = companyId, SourceEventId = envelope.EventId,
-                        AcceptanceId = share.AcceptanceId, InvoiceLineId = share.InvoiceLineId, MovementId = receipt.MovementId,
-                        MovementLineNumber = 1, MatchedQuantity = share.MatchedQuantity, AcceptedQuantity = share.AcceptedQuantity,
-                        ResultJson = JsonSerializer.Serialize(recognition, Json) });
+                    firstPlans.Add(await PrepareFirstCostAsync(source, share, receipt.MovementId,
+                        receipt.LabelId, receipt.LocationId, receipt.QuantityKg, stamp, cancellationToken));
                     continue;
                 }
                 var originalUnit = InventoryExactCostRatioV1.Resolve(stamp.UnitCostPerKg, stamp.UnitCostRatioJson is null ? null
@@ -100,6 +96,21 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
                     AcceptanceId = share.AcceptanceId, InvoiceLineId = share.InvoiceLineId, MovementId = receipt.MovementId,
                     MovementLineNumber = 1, MatchedQuantity = share.MatchedQuantity, AcceptedQuantity = share.AcceptedQuantity,
                     ResultJson = JsonSerializer.Serialize(result, Json) });
+            }
+
+            foreach (var line in firstPlans.GroupBy(x => x.Share.InvoiceLineId).OrderBy(x => x.First().Share.InvoiceLineNo))
+            {
+                var recognition = await RecognizeFirstCostLineAsync(source, line.ToArray(), cancellationToken);
+                firstRecognitions.Add(recognition);
+                // Publish each real receipt's normalized quantity only after its aggregate pool additions.
+                // Reading a pool midway through those additions must still see the prior costed fraction.
+                foreach (var item in line)
+                    db.PurchaseInvoiceReceiptCostEffects.Add(new() { CompanyId = companyId, SourceEventId = envelope.EventId,
+                        AcceptanceId = item.Share.AcceptanceId, InvoiceLineId = item.Share.InvoiceLineId,
+                        MovementId = item.Receipt.ReceiptMovementId, MovementLineNumber = 1,
+                        MatchedQuantity = item.Share.MatchedQuantity, AcceptedQuantity = item.Share.AcceptedQuantity,
+                        ResultJson = JsonSerializer.Serialize(new { recognition.InvoiceLineId, receipt = item.Receipt,
+                            recognition.AllocationVersion }, Json) });
             }
 
             var positions = new List<InventoryPurchaseInvoiceCostPositionResultV1>();

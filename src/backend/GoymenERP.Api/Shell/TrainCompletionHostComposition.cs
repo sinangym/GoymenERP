@@ -44,6 +44,8 @@ public static class TrainCompletionHostComposition
         services.AddScoped<IAccountingCogsAccountResolverV1, AccountingCogsAccountResolverV1>();
         services.AddScoped<IAccountingInventoryCostSourceReaderV1, AccountingInventoryCostSourceReaderV1>();
         services.AddScoped<IManufacturingAttributionLineageReaderV1, ManufacturingAttributionLineageReaderV1>();
+        services.AddScoped<IPurchaseFirstCostLineageReaderV1, PurchaseFirstCostLineageReaderV1>();
+        services.AddScoped<IPostedPurchaseShipmentCostReaderV1, PurchasePostedCostAttributionStoreV1>();
         services.AddScoped<IAccountingInventoryCostStoreV1, AccountingInventoryCostStoreV1>();
         services.AddScoped<AccountingInventoryCostServiceV1>();
         services.AddWorkInboxConsumer<AccountingInventoryCostInboxConsumerV1>(AccountingInventoryCostInboxV1.ConsumerName,
@@ -92,6 +94,8 @@ public static class TrainCompletionHostComposition
             AccountingPurchaseInvoiceFinalizedInboxV1.Subscriptions.ToArray());
         services.AddWorkInboxConsumer<AccountingSalesInvoiceFinalizedInboxConsumer>(AccountingSalesInvoiceFinalizedInboxV1.ConsumerName,
             AccountingSalesInvoiceFinalizedInboxV1.Subscriptions.ToArray());
+        services.AddWorkInboxConsumer<AccountingSalesInvoiceCancelledInboxConsumerV1>(AccountingSalesInvoiceCancelledInboxV1.ConsumerName,
+            AccountingSalesInvoiceCancelledInboxV1.Subscriptions.ToArray());
         services.AddWorkInboxConsumer<FinanceJournalSourceInboxConsumerV1>(FinanceJournalSourceInboxV1.ConsumerName,
             FinanceJournalSourceInboxV1.Subscriptions.ToArray());
         return services;

@@ -531,10 +531,10 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
         + SalesInvoiceCommands.ResendFinanceV1 + "')";
 
     /// <summary>CK_Invoices_State (API-33/36): Draft 1, PendingApproval 2, Approved 3, Rejected 4, Cancelled 5, Finalized 6.</summary>
-    internal const string InvoiceStateConstraint = "[State] IN (1, 2, 3, 4, 5, 6)";
+    internal const string InvoiceStateConstraint = "[State] IN (1, 2, 3, 4, 5, 6, 7)";
 
     /// <summary>F2: a subcontract service invoice is recorded as a Draft (1) only in this slice; a later state is a declared widening.</summary>
-    internal const string SubcontractServiceInvoiceStateConstraint = "[State] IN (1,2,3,4,5,6)";
+    internal const string SubcontractServiceInvoiceStateConstraint = "[State] IN (1,2,3,4,5,6,7)";
 
     /// <summary>F2 (LOJ-D9): the billed weighing carries a positive revision and instruction version and its verbatim net kg text.</summary>
     internal const string SubcontractServiceInvoiceSourceConstraint =
@@ -560,7 +560,9 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
         + "OR ([State] = 4 AND [SubmittedBy] IS NOT NULL AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL "
         + "AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL) "
         + "OR ([State] = 5 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionReason] IS NULL "
-        + "AND [CancelledBy] IS NOT NULL AND [CancelledAtUtc] IS NOT NULL))";
+        + "AND [CancelledBy] IS NOT NULL AND [CancelledAtUtc] IS NOT NULL) "
+        + "OR ([State] = 7 AND [SubmittedBy] IS NOT NULL AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND [DecisionReason] IS NULL "
+        + "AND [CancelledBy] IS NOT NULL AND [CancelledAtUtc] IS NOT NULL AND [CancellationReason] IS NOT NULL AND LEN([CancellationReason]) > 0))";
 
     /// <summary>
     /// CK_Invoices_MakerChecker (SAT-D88/D204): the approver or rejecter is neither the preparer nor the submitter — compared on
@@ -770,6 +772,7 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
         ConfigureContracts(modelBuilder);
         ConfigureSubcontractServiceInvoices(modelBuilder);
         ConfigureSubcontractLifecycle(modelBuilder);
+        ConfigureOfficialInvoiceCancellations(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);

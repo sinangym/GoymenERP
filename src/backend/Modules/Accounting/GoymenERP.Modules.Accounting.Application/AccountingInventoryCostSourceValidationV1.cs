@@ -71,7 +71,7 @@ public static class AccountingInventoryCostAmountsV1
     }
 }
 
-public static class AccountingInventoryCostSourceValidationV1
+public static partial class AccountingInventoryCostSourceValidationV1
 {
     public static string Sha256(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
     public static void Require(WorkInboxEventV1 envelope, AccountingInventoryCostSourceV1 source, Guid companyId)
@@ -89,6 +89,8 @@ public static class AccountingInventoryCostSourceValidationV1
             throw Invalid("inventory_cost_source_invalid");
         var identities = new HashSet<string>(StringComparer.Ordinal);
         var lineNumbers = new HashSet<int>();
+        var firstAggregateLines = new HashSet<Guid>();
+        var firstLegacyLines = new HashSet<Guid>();
         foreach (var component in source.Components)
         {
             if (component is null || component.ProductId == Guid.Empty || !identities.Add(component.ComponentKey)
@@ -99,38 +101,40 @@ public static class AccountingInventoryCostSourceValidationV1
             catch (JsonException) { throw Invalid("inventory_cost_proof_invalid"); }
             if (expectedKind == AccountingInventoryCostKindV1.SalesInvoicedShipment)
             {
+                if (component.RecordedRounding is not null) throw Invalid("inventory_cost_rounding_invalid");
                 if (component.InvoiceLineId is null || component.InvoiceLineId == Guid.Empty) throw Invalid("inventory_cost_line_missing");
                 if (component.InvoiceLineNumber is null or < 1 || !lineNumbers.Add(component.InvoiceLineNumber.Value)
                     || component.LocationId is not null || amount < 0
                     || component.ComponentKey != AccountingInventoryCostTraceV1.SalesComponent(component.InvoiceLineId.Value))
                     throw Invalid("inventory_cost_line_invalid");
-                if (component.AlreadyPostedComponents is { } posted)
-                {
-                    if (component.SalesPhysicalClaims is not { Count: > 0 } physical || posted.Count is < 1 or > 10000
-                        || posted.Select(x => (x.SourceEventId, x.OutputId, x.Shipment.MovementId, x.Shipment.MovementLineNumber)).Distinct().Count() != posted.Count
-                        || posted.Any(x => x.CompanyId != companyId || x.SourceEventId == Guid.Empty || x.OutputId == Guid.Empty
-                            || x.JournalId == Guid.Empty || x.CurrencyId == Guid.Empty || x.CogsAccountId == Guid.Empty
-                            || x.CounterAccountId == Guid.Empty || x.CogsAccountId == x.CounterAccountId
-                            || x.Fingerprint != Sha256(JsonSerializer.Serialize(x with { Fingerprint = "" }, new JsonSerializerOptions(JsonSerializerDefaults.Web)))
-                            || !physical.Any(p => p.MovementId == x.Shipment.MovementId && p.MovementLineNumber == x.Shipment.MovementLineNumber
-                                && p.ShipmentId == x.Shipment.ShipmentId && p.ProductId == x.Shipment.ProductId && p.QuantityKg == x.Shipment.PhysicalQuantityKg)))
-                        throw Invalid("inventory_cost_attribution_invalid");
-                    var sum = AccountingInventoryCostAmountsV1.FromDecimal(0);
-                    foreach (var share in posted)
-                    {
-                        if (!decimal.TryParse(share.SignedAmount, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
-                                CultureInfo.InvariantCulture, out var signed)) throw Invalid("inventory_cost_attribution_invalid");
-                        sum = AccountingInventoryCostAmountsV1.Add(sum, AccountingInventoryCostAmountsV1.FromDecimal(signed));
-                    }
-                    if (sum != component.SignedTlAmount) throw Invalid("inventory_cost_attribution_invalid");
-                }
+                RequirePostedComponents(component, companyId);
+
             }
-            else if (component.InvoiceLineId is not null || component.InvoiceLineNumber is not null || component.LocationId is null
-                || component.LocationId == Guid.Empty || amount == 0
-                || component.ComponentKey != AccountingInventoryCostTraceV1.PurchaseComponent(component.ProductId, component.LocationId.Value))
-                throw Invalid("inventory_cost_position_invalid");
-            else if (component.SalesPhysicalClaims is not null || component.AlreadyPostedComponents is not null)
-                throw Invalid("inventory_cost_attribution_invalid");
+            else
+            {
+                var aggregate = AccountingInventoryCostTraceV1.IsPurchaseFirstLineComponent(component.ComponentKey);
+                var first = aggregate || AccountingInventoryCostTraceV1.IsPurchaseFirstComponent(component.ComponentKey);
+                if (component.InvoiceLineId is not null || component.InvoiceLineNumber is not null
+                    || (aggregate ? component.LocationId is not null : component.LocationId is null || component.LocationId == Guid.Empty)
+                    || !first && (amount == 0
+                        || component.ComponentKey != AccountingInventoryCostTraceV1.PurchaseComponent(component.ProductId, component.LocationId!.Value)))
+                    throw Invalid("inventory_cost_position_invalid");
+                if (first)
+                {
+                    var line = Guid.Parse(component.ComponentKey.Split('/')[aggregate ? 1 : 2]);
+                    // A line aggregate and its old individual receipts must never both create economic components.
+                    if (aggregate ? firstLegacyLines.Contains(line) : firstAggregateLines.Contains(line))
+                        throw Invalid("inventory_cost_component_invalid");
+                    (aggregate ? firstAggregateLines : firstLegacyLines).Add(line);
+                }
+                if (component.SalesPhysicalClaims is not null || component.AlreadyPostedComponents is not null
+                    || component.AlreadyPostedPurchaseComponents is not null || component.UnpostedTlAmount is not null)
+                    throw Invalid("inventory_cost_attribution_invalid");
+                if (first ? component.RecordedRounding is not { } recorded || amount < 0
+                        || !AccountingInventoryCostRoundingV1Rules.IsValidRecorded(component.SignedTlAmount, recorded)
+                        || !AccountingInventoryCostAmountsV1.TryRead(recorded.Rounding.ExactSignedAmount, out var original, out _) || original <= 0
+                    : component.RecordedRounding is not null) throw Invalid("inventory_cost_rounding_invalid");
+            }
         }
     }
 
