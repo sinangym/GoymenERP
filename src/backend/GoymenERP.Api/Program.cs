@@ -700,7 +700,8 @@ if (IdentityCommandLine.IsIdentityCommand(args))
         new ConsoleFounderRecoveryConsole(Console.Out, app.Environment.EnvironmentName),
         Console.Out,
         Console.Error,
-        CancellationToken.None);
+        CancellationToken.None,
+        operatorRecoveryConsole: new ConsoleLocalTwoFactorOperatorRecoveryConsoleV1(Console.Out, app.Environment.EnvironmentName));
 }
 
 await app.RunAsync();
