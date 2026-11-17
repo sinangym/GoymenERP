@@ -7,6 +7,8 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations;
 
 namespace GoymenERP.Finance.UnitTests;
 
@@ -32,6 +34,28 @@ public sealed class FinanceDocumentNumberingTests
             Assert.Contains(entity.GetCheckConstraints(), x => x.Name.EndsWith("_DocumentNumber", StringComparison.Ordinal)
                 && x.Sql.Contains("[DocumentNumber] IS NULL AND [DocumentNumberFormatVersion] IS NULL", StringComparison.Ordinal));
         }
+    }
+
+    [Fact]
+    public void Recorded_number_migration_has_only_nullable_DDL_and_a_first_guard_while_legacy_rows_remain_untouched()
+    {
+        var company = new CompanyContext(); company.Set(Company);
+        using var db = new FinanceDbContext(new DbContextOptionsBuilder<FinanceDbContext>()
+            .UseSqlServer("Server=unused;Database=unused;Integrated Security=true;TrustServerCertificate=true").Options, company);
+        Assert.EndsWith("_AddFinanceRecordedDocumentNumbers", db.Database.GetMigrations().Last());
+        Assert.False(db.Database.HasPendingModelChanges());
+        var migration = new AddFinanceRecordedDocumentNumbers();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var columns = migration.UpOperations.OfType<AddColumnOperation>().ToArray();
+        Assert.Equal(8, columns.Length);
+        Assert.All(columns, column => { Assert.True(column.IsNullable); Assert.Null(column.DefaultValue); Assert.Null(column.DefaultValueSql); });
+        Assert.Equal(4, migration.UpOperations.OfType<CreateIndexOperation>().Count());
+        Assert.Equal(4, migration.UpOperations.OfType<AddCheckConstraintOperation>().Count());
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql;
+        Assert.Contains("THROW 51911", guard);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        foreach (var table in new[] { "ReceiptDrafts", "ManualBankPayments", "ExpensePayments", "CashTransfers" })
+            Assert.Contains("[finance].[" + table + "] WHERE [DocumentNumber] IS NOT NULL OR [DocumentNumberFormatVersion] IS NOT NULL", guard);
     }
 
     [Fact]

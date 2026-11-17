@@ -1087,3 +1087,12 @@ EF-generated `20261117111242_AddWarehouseTransferScalePolicies` adds only the ve
 refuses with **THROW 51990** while any history exists. The real provider and administrator are module-registered;
 `MapSettingsWarehouseTransferScaleEndpoints` and `/ayarlar/depo-transfer-tartisi` are coordinator mounts. Runtime unit,
 SQL, Vitest, browser and CI acceptance remains **NOT_RUN**.
+
+### Finance receipt and voucher series — KIM-D53 / Q7
+
+`AddFinanceDocumentNumberSeries` (EF-generated `20261117200733`) widens only the four existing series identity CHECKs
+to include `FinanceReceipt=5` and `FinanceVoucher=6`. No company format, prefix, counter, role or grant is seeded.
+The actual Finance record permission reserves through the borrowed SERIALIZABLE owner transaction; cancellation and
+format administration retain their existing purpose gates. The first Down operation refuses with **THROW 51910**
+while any of the four series tables contains a receipt/voucher row; old series alone can roll back.
+SQL/Unit/HTTP/UI acceptance sources accompany this change; runtime remains **NOT_RUN**.

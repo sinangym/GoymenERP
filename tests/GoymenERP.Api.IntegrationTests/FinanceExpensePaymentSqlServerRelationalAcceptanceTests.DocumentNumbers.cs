@@ -8,6 +8,9 @@ using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using Microsoft.Data.SqlClient;
+using GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -15,6 +18,26 @@ namespace GoymenERP.Api.IntegrationTests;
 /// Account seed, money profile, period and permission answers remain explicit synthetic seams.</summary>
 public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTests
 {
+    [SqlServerFact]
+    public async Task Finance_document_number_Down_allows_unnumbered_drafts_and_refuses_51911_while_recorded_number_proof_exists()
+    {
+        await using var run = await Run.StartAsync();
+        var guard = Assert.IsType<SqlOperation>(new AddFinanceRecordedDocumentNumbers().DownOperations[0]).Sql;
+        await run.ExecuteAsync(guard);
+        var bank = await run.ApprovedBankAccountAsync(CompanyA, "SENTETIK Down numbered bank");
+        var approved = await NumberedApprovedAsync(run, bank);
+        await run.ExecuteAsync(guard);
+        await using var numbers = await FinanceNumbersAsync(run);
+        await using (var scope = OpenNumbered(run, numbers.Numbers))
+        {
+            var recorded = await scope.Payments.RecordAsync(scope.Context, Key("SENTETIK-number-down"), new(approved.Id, approved.Version, true), default);
+            Assert.Equal(CommandOutcome.Succeeded, recorded.Outcome);
+        }
+        Assert.Equal(51911, (await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard))).Number);
+        Assert.Equal("DEK-2026-000001", await run.ScalarAsync<string>("SELECT DocumentNumber FROM finance.ExpensePayments WHERE Id=@id", ("@id", approved.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM settings.DocumentNumberReservations"));
+    }
+
     [SqlServerFact]
     public async Task A_finance_record_reserves_its_number_only_after_draft_and_approval_and_replays_its_frozen_format()
     {

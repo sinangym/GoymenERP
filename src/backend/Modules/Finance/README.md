@@ -827,3 +827,17 @@ while any snapshot exists; legacy null evidence does not prevent rollback. SQL t
 source/target internal ledger effects, replay/company scope and rollback after an actual SQL insert. Runtime,
 database apply and external TCMB acceptance remain NOT_RUN. Financial TL valuation and FNS-D63 posting policy
 are separate pending human decisions; the quote difference does not select either one.
+
+### Actual-record receipt and voucher numbers — KIM-D53 / Q7
+
+Actual manual receipt recording and customer instrument collection share the explicitly configured annual receipt
+series; manual bank payment, expense payment and cash transfer recording share the voucher series. Draft, approval,
+portfolio entry and the bank's external reference are separate. The Settings reservation, Audit, original command
+receipt and one economic record commit/roll back in the same SERIALIZABLE transaction. Replay returns the frozen
+number/format version even after a format change; missing configuration refuses the record without creating a seed.
+
+EF-generated `20261117200743_AddFinanceRecordedDocumentNumbers` adds eight nullable legacy-safe proof columns, four
+filtered company/number unique indexes and four pair/record-state CHECKs. It performs no backfill. The first Down
+operation refuses with **THROW 51911** while any of the four source tables carries number/version proof; unnumbered
+legacy rows remain eligible for rollback. Credit money-event numbering is not inferred from this bounded decision.
+SQL/Unit/HTTP/UI acceptance sources are written; runtime remains **NOT_RUN**.
