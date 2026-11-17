@@ -52,6 +52,7 @@ public static class ManufacturingModuleExtensions
         services.AddScoped<IManufacturingPlanSalesOrderLinkStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         services.AddScoped<IManufacturingSalesOrderSupplyReadPortV1, ManufacturingSalesOrderSupplyReadPort>();
         services.AddScoped<IManufacturingSubcontractCompletionReadPortV1, ManufacturingSubcontractCompletionReadPort>();
+        services.AddScoped<IManufacturingSubcontractCompletionReadPortV2, ManufacturingSubcontractCompletionReadPortV2>();
         // URT-S20 (URT-D62, URT-D63): the output lineage edges with their shares, backward and forward; reads only.
         services.AddScoped<IManufacturingLabelLineageReadPortV1, ManufacturingLabelLineageReadPort>();
         // Üretim F-010a (URT-D29): the plan's hand-entered termin, the same store and DbContext as the plan.
