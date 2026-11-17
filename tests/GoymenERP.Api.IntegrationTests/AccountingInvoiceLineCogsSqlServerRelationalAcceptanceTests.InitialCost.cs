@@ -132,7 +132,13 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
             new(2026, 11, 17), new(2026, 11, 17), "SENTETIK selected open period cancellation reversal"), Maker, Fence, Metadata(Maker));
         Assert.Equal("CancellationReversalPending", pending.Status);
         Assert.Equal(corrected.ReplacementCorrectionJournalId, pending.ReversalProposal!.SourceJournalId);
+        Assert.Equal(posted.JournalId, pending.JournalId);
+        Assert.Equal(corrected.ReplacementCorrectionJournalId, pending.CurrentPostedJournalId);
         Assert.NotEqual(posted.JournalId, pending.ReversalProposal.SourceJournalId);
+        var read = Assert.Single(await store.ListAsync(AccountingInventoryCostKindV1.SalesInvoicedShipment));
+        Assert.Equal(posted.JournalId, read.JournalId);
+        Assert.Equal(corrected.ReplacementCorrectionJournalId, read.CurrentPostedJournalId);
+        Assert.Equal(read.CurrentPostedJournalId, read.ReversalProposal!.SourceJournalId);
         Assert.Equal(3, await run.Count("accounting.Journals"));
         Assert.Equal(1, await run.Count("accounting.JournalReversalProposals"));
         var later = Request(run.Source.Facts, period) with { ExpectedLineVersion = 1 };
