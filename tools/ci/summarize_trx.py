@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Produce a bounded, secret-free JSON summary from VSTest TRX results."""
+"""Summarize observed VSTest TRX results, without certifying job completeness."""
 
 from __future__ import annotations
 
@@ -97,6 +97,13 @@ DIAGNOSTIC_CODES = frozenset(
         "product_technical_release_rollback_reapply",
     }
 ).union(FINANCE_WORK_LEGACY_DIAGNOSTIC_CODES)
+# TRX files cannot establish discovery equivalence, verifier success, or whether
+# subsequent batches ran. These additive fields deliberately never certify a job.
+TRX_EVIDENCE_SCOPE = {
+    "evidenceScope": "observed_trx_results_only",
+    "groupCompleteness": "unknown",
+    "jobAcceptance": "not_evaluated",
+}
 FailureKey = tuple[str | None, str, str | None]
 
 
@@ -564,6 +571,7 @@ def build_summary(
     reported_groups = safe_groups[:failure_group_limit]
     return {
         "schemaVersion": 2,
+        **TRX_EVIDENCE_SCOPE,
         "sourceHead": source_head.lower(),
         "testedCommit": tested_commit.lower(),
         "job": job,
@@ -590,6 +598,7 @@ def build_failure_summary(
 ) -> dict[str, object]:
     return {
         "schemaVersion": 2,
+        **TRX_EVIDENCE_SCOPE,
         "sourceHead": source_head.lower(),
         "testedCommit": tested_commit.lower(),
         "job": job,
@@ -651,7 +660,9 @@ def produce(args: argparse.Namespace) -> int:
             ),
         )
         print(
-            f"CI_SAFE_TEST_SUMMARY: FAIL category={failure.category}",
+            f"CI_SAFE_TEST_SUMMARY: FAIL category={failure.category} "
+            "scope=observed_trx_results_only groupCompleteness=unknown "
+            "jobAcceptance=not_evaluated",
             file=sys.stderr,
         )
         return 1
@@ -660,7 +671,9 @@ def produce(args: argparse.Namespace) -> int:
     print(
         "CI_SAFE_TEST_SUMMARY: "
         f"job={args.job} phase={args.phase} total={summary['totals']['total']} "
-        f"failed={summary['totals']['failed']} skipped={summary['totals']['skipped']}"
+        f"failed={summary['totals']['failed']} skipped={summary['totals']['skipped']} "
+        "scope=observed_trx_results_only groupCompleteness=unknown "
+        "jobAcceptance=not_evaluated"
     )
     return 0
 
