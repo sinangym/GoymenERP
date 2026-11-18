@@ -2282,7 +2282,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // Re-fingerprinted for API-23: a reversed payment is refused with its own code
                         // (finance_source_already_reversed) through one tracked read; token counts unchanged.
-                        "ca50bd2b77ad8edd2924aaded915862234b89ef4cbc354e056d955827740627e",
+                        // W8: pure allocation error priority precedes availability fences; same single SqlClient race classification. K3 pending.
+                        "d2aaf08c47463649bd1cf41cc4c05b816c3c29ee7b5c7fb362f987c98de5bbe1",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -3898,13 +3899,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
     // Migration data/raw SQL operations are deployment-time DDL/DML, not runtime global-query-
     // filter behavior. They remain exact source/API reviewed because they can mutate tenant data.
+    private const string ReviewedCounterpartyIdentityRevisionRepairMigrationPath =
+        "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/Migrations/20261118165020_RepairPartyIdentityRevisionTaxNumberFormat.cs";
     private static readonly IReadOnlyDictionary<string, ReviewedMigrationMutationSource>
         ReviewedMigrationMutationSources =
             new Dictionary<string, ReviewedMigrationMutationSource>(StringComparer.Ordinal)
             {
                 // W8 Unicode history check repair: Down refuses before restoring the broken old check while tax history exists.
                 // Group-level history guard only; no data rewrite or runtime bypass. K3 review pending; THROW 51799 is unique.
-                ["src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/Migrations/20261118165020_RepairPartyIdentityRevisionTaxNumberFormat.cs"] =
+                [ReviewedCounterpartyIdentityRevisionRepairMigrationPath] =
                     new("64d48934a449bc8115ca919cc6855b82aa211b0477b79b81acedc28b7d612d90",
                         new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 // Tren-1 W7; K3 review pending. Down first refuses with THROW 51941 while owner history exists; one SQL guard, no runtime bypass.
@@ -6064,7 +6067,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ReviewedSqlServerRcsiWrapperPath.Replace(
                     '/',
                     Path.DirectorySeparatorChar)))));
-        errors.AddRange(ValidateReviewedMigrationMutationSurface(inventory.Sources));
+        // Counterparty keeps its separate runtime guard. Include only this newly reviewed deployment migration
+        // in the mutation inventory; this does not admit any Counterparty runtime source or bypass.
+        var migrationSources = inventory.Sources.ToDictionary(
+            entry => entry.Key, entry => entry.Value, StringComparer.Ordinal);
+        migrationSources.Add(
+            ReviewedCounterpartyIdentityRevisionRepairMigrationPath,
+            File.ReadAllText(Path.Combine(repositoryRoot,
+                ReviewedCounterpartyIdentityRevisionRepairMigrationPath.Replace('/', Path.DirectorySeparatorChar))));
+        errors.AddRange(ValidateReviewedMigrationMutationSurface(migrationSources));
         errors.AddRange(ValidateReviewedPlatformDbContextInventory(inventory.Sources));
         errors.AddRange(ValidateReviewedPlatformContextConstructions(inventory.Sources));
 
