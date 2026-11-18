@@ -1,6 +1,6 @@
 # W8 son kaynak kontrolü
 
-**172/174 (%98,9) kaynak DONE; iki açık dilim.** W8 son pakettir. Yayımlanan tren135/174; son pin/hafif kontroller ve fast-forward henüz yapılmadı.
+**Güncel: yerel174/174 (%100) kaynak DONE.** Son iki kapanış ve donuk23-proje/TSC derleme kanıtı `W8_KAYNAK_TAMAMLANDI.md` içindedir. Aşağıdaki kayıtlar önceki kaynak incelemesinin tarihçesidir; yayımlanan tren135/174 ve son kapanış doğrulamaları ayrı durur.
 
 ## Yeni kapanış ve düzeltme
 

@@ -2,7 +2,7 @@
  "meta": {
   "tarih": "2026-11-18",
   "tren_dali": "claude/tren-1",
-  "kod_head": "15a6342904570eb9e93cda2cdb0acac4ce10cb69",
+  "kod_head": "146f1ec79a30ca9a55d5fa78b119abc13e4bec75",
   "durum_sozlugu": {
    "PARTIAL": "kapsamın bir kısmı kaynakta; kalan kısım son W<n> ekip raporunda",
    "PLANNED/READY": "başlanmadı",
@@ -45,8 +45,8 @@
    "STK-S13 + ALC-S7/S8 (KIM-S18 sonrası)"
   ],
   "toplam": 174,
-  "done": 172,
-  "partial": 2,
+  "done": 174,
+  "partial": 0,
   "remaining_not_started": 0,
   "last_wave": 8,
   "progress_meaning": "DONE yalnız kaynak kapsamıdır. Tam birim/mimari/gerçek SQL/Vitest/browser/CI koşumları NOT_RUN; K3 kabulü ve production değildir.",
@@ -89,8 +89,8 @@
    {
     "work": "EK24 plan üstü sevk uyarısı",
     "slice": "STK-S3",
-    "status": "ANSWERED_SOURCE_IN_PROGRESS",
-    "note": "Direct user answer transferred #1189/6963301286: original instruction quantity unchanged; extra quantity separately recorded and approved by Sales manager. Actual source implementation in progress. No grants/Critical choice or production implied."
+    "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
+    "note": "Direct answer #1189/6963301286; actual approved separate exception/reservation/usage sourcead3e0caeb, combined146f source builds exit0. No grant/Critical or production change."
    },
    {
     "work": "EK24 satır bazlı iskonto",
@@ -108,7 +108,7 @@
     "work": "EK24 geç fatura farkının satılan malın maliyetine aktarımı",
     "slice": "STK-SC36-a",
     "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
-    "note": "Actual late invoice cost and cancelled-invoice claim succession connected through62e65d6a6/0ad1b8f45. Enclosing SC36-a remains PARTIAL only for actual SAT-D331/D334 count cost wiring."
+    "note": "Actual cost/cancellation/succession connected through62e65d6a6; actual count costing49bd8c9ea also closes enclosing source scope. Combined146f source builds exit0; runtime/CI/K3 separate."
    },
    {
     "work": "EK24 mal kabul otomatik kuru ve birleşen etikette kg ağırlıklı kur",
@@ -235,10 +235,10 @@
   },
   "dispatch_rounding_followup": {
    "decision": "SAT-D424",
-   "status": "ANSWERED_SOURCE_PENDING",
+   "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
    "source": "#1189/6929718990",
    "decision_pr": 1198,
-   "note": "Computed dispatch only: remainder to the first of equally heaviest lines; finalized genuine external document allocations remain authoritative."
+   "note": "Actual Documents proof/per-line dispatch distribution and exact invoice-source carry implemented under SAT-D424/D425; W8_satis report. Genuine finalized external source is authoritative; no invoice redistribution or money policy derived. Combined146f source builds exit0."
   },
   "w8_source_done_ids": [
    "URT-S4",
@@ -277,27 +277,29 @@
    "FIN-S14",
    "FIN-SC47-KREDI",
    "KIM-S19",
-   "SAT-SC34"
+   "SAT-SC34",
+   "STK-S3",
+   "STK-SC36-a"
   ],
   "published_train_done_at_last_checkpoint": 135,
-  "w8_status": "IN_PROGRESS: local source scope updated; combined builds/pins/light checks and train fast-forward pending. No W9.",
+  "w8_status": "SOURCE_DONE: local integration174/174; final pins/light checks/train fast-forward/full runtime/CI/K3 remain pending. No W9 or new scope.",
   "w8_last_combined_source_build": {
-   "head": "15a6342904570eb9e93cda2cdb0acac4ce10cb69",
+   "head": "146f1ec79a30ca9a55d5fa78b119abc13e4bec75",
    "source_exit": 0,
    "projects": [
     "Api",
-    "Settings.UnitTests",
-    "Finance.UnitTests",
-    "Inventory.UnitTests",
-    "Sales.UnitTests",
-    "Accounting.UnitTests",
     "Api.IntegrationTests",
+    "ArchitectureTests",
+    "18 UnitTests",
+    "DocumentGeneration.Pdf.Tests",
+    "SqlServerRcsiReadiness.Tests",
     "tsc -b"
    ],
+   "dotnet_project_count": 23,
    "runtime": "NOT_RUN",
    "warnings": 0,
    "errors": 0,
-   "note": "Frozen complete chain; actual log/native exit preserved; RAM >=2GiB before each process. Later historical cancellation source excluded."
+   "note": "Full frozen23-project chain after locked restore and TSC exit0. Original stale Manufacturing.Unit restore-graph failure preserved; no source/test deletion or package/version/config change."
   },
   "w8_last_sales_source_build": "19ca53a178dc97e86cdc576ba775d9ee89543a4f",
   "w8_last_mounted_source_build": "6ff5e4f63",
@@ -1026,8 +1028,8 @@
     "Product"
    ],
    "toplam": 45,
-   "done": 43,
-   "partial": 2,
+   "done": 45,
+   "partial": 0,
    "kalan": [
     {
      "id": "STK-S1",
@@ -1082,13 +1084,13 @@
       "tüketir: ISalesShipmentRiskGateReadPortV1 (satis)",
       "tüketir: Üretim fason emri okuma (uretim)"
      ],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
      "wave": 5,
      "w5_raporu": "durum/W5_stok_lojistik.md",
      "w6_report": "durum/W6_stok_lojistik.md",
-     "w8_report": "durum/W8_KAYNAK_SON_KONTROL.md",
-     "w8_source_note": "Original LOJ flow/unused release source compiled. SAT-D417 direct answer recorded #1189/6963301286: keep plan100; separate20 exception; Sales manager approves. Actual durable exception/admission/usage and tests in progress under same slice; physical loaded cap and other owner limits preserved."
+     "w8_report": "durum/W8_KAYNAK_TAMAMLANDI.md",
+     "w8_source_note": "SOURCE_DONE: actual plan-excess exception/approval, explicit extra physical reservation and immutable load/ship usage integrated fromad3e0caeb at96487201f. Instruction plan remains unchanged; narrow registered-only approver, real physical and other owner gates preserved. Final combined146f API/all22 test-project builds/TSC exit0; runtime/CI/K3 NOT_RUN."
     },
     {
      "id": "STK-S8",
@@ -1353,12 +1355,13 @@
      ],
      "contracts": [],
      "finding": "SC36-SC47 kararları",
-     "status": "PARTIAL",
+     "status": "DONE",
      "wave": 5,
      "w5_raporu": "durum/W5_stok_lojistik.md",
      "w6_report": "durum/W6_stok_lojistik.md",
-     "w8_report": "durum/W8_finans.md",
-     "w8_source_note": "PARTIAL: actual first/late purchase cost, SAT-D422, historical cancellation and immutable invoice claim succession integrated at0ad1b8f45 from62e65d6a6; owner API/EF/Accounting.Unit/Integration/TSC source builds exit0. Final scope check found SAT-D331/D334 StockCountCostCalculator not connected to real count approval: known surplus must retain average; unreadable shortage must roll back physical deduction. Narrow actual count cost/status/SQL/contract source wiring in progress. No new slice/policy or runtime acceptance."
+     "w8_report": "durum/W8_KAYNAK_TAMAMLANDI.md",
+     "w8_source_note": "SOURCE_DONE: actual first/late purchase cost, SAT-D422, cancellation/reinvoice immutable claim succession62e65d6a6 and actual SAT-D331/D334 count costing49bd8c9ea integrated in146f. Shared calculator, frozen price-free status and TL unreadable shortage rollback connected. Final API/all22 test-project builds/TSC exit0; runtime/CI/K3 NOT_RUN.",
+     "blocked_reason": ""
     },
     {
      "id": "STK-SC36-b",

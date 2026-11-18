@@ -440,3 +440,9 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
 - FIN14 gerçek belge kanıtı, owner-link DI, endpoint, iki ayrı staged purpose route ve Finance outbox manifesti merkez `6ff5e4f63` kaynağında bağlandı. API/Finance.Unit/Integration/TSC kaynak derlemeleri exit0, backend0 uyarı/hata; ayrıntı `W8_FIN14_MERKEZ_BAGLANTISI.md`. Yeni shell kayıtları ImplementationAvailable:false; kabul öncesi açılmadı.
 - Accounting owner `c6555ab24` gerçek onaylı bozdurma kaynak/eşleme köprüsü trene no-ff alındı. Finance5/Accounting4 gerçek SQL fact adı sıralı envantere eklendi. Hedef de dövizken ayrı belgeli hedef TL consumer/owner kaynak checkpointleri ve gerçek sıfır maliyet atıfları ekiplerde sürer; FIN14/STK-SC36-a henüz DONE sayılmaz.
 - Kaynaklar ayrı worktree'lerde sürer. Ağır .NET/EF/Node sahibi, açık lease devriyle Settings/K6 sahibine geçti. Runtime Unit/SQL/HTTP/Vitest/browser/CI, pin üretimi ve son tam dalga kabulü NOT_RUN. Yayımlanmış tren135/174; bu ara kayıt tren fast-forward veya yeni implementation PR değildir.
+
+## Son W8 kaynak kapanışı — yerel174/174 (%100)
+
+Plan üstü sevk `ad3e0caeb` ve sayım maliyeti `49bd8c9ea` no-ff/çakışmasız entegrasyonla donuk `146f1ec79a30ca9a55d5fa78b119abc13e4bec75` içinde. API,22 test projesi ve TSC kaynak derlemeleri exit0/0 uyarı-hata. Eski Manufacturing.Unit restore grafiği hatası korundu; sabit sürümlü restore sonrası aynı kaynakta düzeldi, test/kod silinmedi. Güncel main3c1b ancestor exit0. KALAN_PLAN174 DONE/0PARTIAL/0başlanmamış, W8de39/39 kaynak kapanışı; W9 yok.
+
+Ayrıntı `W8_KAYNAK_TAMAMLANDI.md`. Son pin/envanter/hafif kontroller, tren fast-forward, runtime/SQL/browser/CI ve K3 kapıları ayrıca bekler. Yerel kaynak yüzdesi production veya kullanılabilirlik değildir. Yeni iş kapsamı açılmaz.

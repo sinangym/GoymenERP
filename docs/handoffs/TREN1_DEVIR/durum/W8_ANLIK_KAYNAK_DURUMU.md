@@ -1,9 +1,9 @@
 # W8 mevcut kaynak durumu — son paket
 
 - Son yayımlanan tren planı: **135/174 (%77,6)**.
-- Yerel entegrasyon planı: **172/174 (%98,9) kaynak DONE**, **2 açık**.
+- Yerel entegrasyon planı: **174/174 (%100) kaynak DONE**, **0 açık**.
 - Bu güncelleme yeni kapsam veya yeni dalga açmaz. W8 son pakettir.
-- İlk 16 kapanışın gerçek commitleri yerel entegrasyon head'inin atası olarak doğrulandı; owner raporlarında kaynak derleme sonuçları vardır. Tüm yeni değişikliklerin birleşik dalga derlemesi, pin üretimi ve hafif kontrolleri henüz tamamlanmadığı için tren fast-forward/push yapılmadı.
+- İlk 16 kapanışın gerçek commitleri yerel entegrasyon head'inin atası olarak doğrulandı; owner raporlarında kaynak derleme sonuçları vardır. Son donuk146f kaynağında API +22 test projesi ve TSC exit0; ayrıntı `W8_KAYNAK_TAMAMLANDI.md` içindedir. Pin/hafif kontroller ve son runtime doğrulaması henüz tamamlanmadığı için tren fast-forward yapılmadı.
 - DONE kaynak kapsamıdır; Unit/gerçek SQL/HTTP/Vitest/browser/CI kabulü NOT_RUN. Sağlayıcı veya insan kapısı kapalı yüzey kullanılabilir sayılmaz.
 
 ## Bu kayıtla kaynak kapanışı sayılanlar
