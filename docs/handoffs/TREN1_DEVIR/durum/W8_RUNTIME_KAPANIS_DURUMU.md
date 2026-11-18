@@ -8,15 +8,15 @@ ve kapanış düzeltmeleri entegrasyon dalındadır.
 | Kanıt | Gerçek sonuç / sınır |
 |---|---|
 | İlk tam 18 UnitTests koşumu, `a8f4440ec` | 13.168 test: 13.091 PASS, 77 FAIL, 0 skip; 18 build exit0. İlk proje dağılımı 5 PASS / 13 FAIL. |
-| Son modül tekrarları | 18 projenin 17'si kendi son koşusunda yeşil. Bunlar farklı kaynak checkpoint'leridir; final birleşik koşum değildir. |
-| Purchasing, `203d0536b` | 882/884 PASS, 2 FAIL, 0 skip. İki assertion düzeltmesi `78cdaba10` ile alındı; tekrar QUEUED. |
+| Son modül tekrarları | 18 projenin tamamı kendi son koşusunda yeşil. Bunlar farklı kaynak checkpoint'leridir; final birleşik koşum değildir. |
+| Purchasing, `1b55f5e10` | 884/884 PASS, 0 skip, build0/test0. İlk iki assertion hatası ve native kanıtları korundu. |
 | Manufacturing, `203d0536b` | 1.424/1.424 PASS, 0 skip. |
-| PDF, `203d0536b` | 77/79 PASS, 2 FAIL, 0 skip. Aynı içerikte rastgele font adı yüzünden bayt farkı; kaynak düzeltmesi ve iki ek regresyon `be81bae4c`, tekrar QUEUED. |
-| RCSI CLI araç testleri, `203d0536b` | 71/72 PASS, 1 FAIL, 0 skip. Windows symbolic-link fixture izni; gerçek junction fixture düzeltmesi `78cdaba10`, tekrar QUEUED. Gerçek SQL/RCSI kabulü değildir. |
+| PDF, `1b55f5e10` | Build0, 77/81 PASS, 4 FAIL, 0 skip. Font adı farkı giderildikten sonra eski iki ve yeni iki exact-byte testi dosyanın daha ilerideki baytlarında hâlâ farklılık buldu. Kök neden takibi sürer; eski ve yeni assertion'lar korunur. |
+| RCSI CLI araç testleri | İlk `203d0536b`: 71/72 PASS, 1 fixture FAIL, 0 skip. Junction kaynak düzeltmesinin `1b55f5e10` derlemesinde iki xUnit2009 hatası çıktı; aynı path-bound kontrolleri `Assert.StartsWith` biçimine çevrildi, tekrar QUEUED. Gerçek SQL/RCSI kabulü değildir. |
 | Inventory takipli maliyet izolasyonu, `031728b6f` | Integration projesinde 4/4 PASS, 0 skip; mevcut InMemory sağlayıcısı, gerçek SQL değildir. |
 | Mimari bypass guard grubu, `031728b6f` | 338/340 PASS, 2 FAIL. Recovery dalındaki iki gerçek Purchasing kaynak düzeltmesi henüz birleşmediği için iki fingerprint farklı; ayrıca Product price-list tasarım factory girdisi `203d0536b` ile gerekçeli eklendi. Final tekrar QUEUED. |
-| Frontend, `203d0536b` | TSC exit0. Tam Vitest çalışıyor; ilk başarısızlıklar korunuyor, sonuç PASS değildir. |
-| Recovery | Ayrı, sabit kaynak dalında gerçek üretici exit0; uzun tam Python paketi çalışıyor. Entegrasyon sonrası final kaynak pinleri ayrıca üretilir. |
+| Frontend, `203d0536b` | TSC exit0. İlk tam Vitest: 614 dosya, 550 PASS / 64 FAIL; 9.813 test, 9.571 PASS / 242 FAIL, exit1, 2061.96 saniye. Tam JSON/log korundu; fixture ve gerçek UI hataları ayrı düzeltilir. |
+| Recovery | Eski sabit `c8d7d7c3e` gerçek üretici0 ve 36/36 Python PASS. Birleşik ölçüm99 ve yedi typed-constructor metadata hizalaması sonrası temiz `3123ef92f` gerçek üretici exit0; recovery ve release tam paketleri ayrı donuk çalışma alanında sırayla çalışıyor. Final kabul değildir. |
 | Hafif doğrulayıcılar | Backlog ve bootstrap exit0; backlog 64 test/skip0, bootstrap 56 test/9 mevcut koşullu skip, backend grup 28 test/skip0, OpenAPI drift 16 test/2 mevcut koşullu skip. |
 | İlişkisel envanter Python paketi | İlk koşumda Work'un dört yeni gerçek bildirim fact'ini eski exact beklenti saymadığı için 1 FAIL. Kaynak/envanter doğrulanan `586176b32` beklenti düzeltmesi birleşti; kök tekrar 48/48 PASS, skip0, exit0. Gate gevşetilmedi. |
 | Gerçek SQL, tarayıcı, final CI, iki bağımsız K3 | Henüz tamamlanmadı. Yerel SQL yapılandırılmamıştır; yeni DB/container/service oluşturulmadı. |

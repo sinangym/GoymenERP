@@ -1297,8 +1297,8 @@ public sealed class SqlServerRcsiReadinessCliTests : IDisposable
         var temporaryRoot = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar)
             + Path.DirectorySeparatorChar;
         var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        Assert.True(Path.GetFullPath(container).StartsWith(temporaryRoot, comparison));
-        Assert.True(Path.GetFullPath(target).StartsWith(temporaryRoot, comparison));
+        Assert.StartsWith(temporaryRoot, Path.GetFullPath(container), comparison);
+        Assert.StartsWith(temporaryRoot, Path.GetFullPath(target), comparison);
         Assert.Equal(Path.GetFullPath(container), Path.GetDirectoryName(Path.GetFullPath(link)));
         Assert.False(Directory.Exists(link));
         Assert.True(Directory.Exists(target));
