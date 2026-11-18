@@ -94,7 +94,7 @@ public sealed class InventoryNegativeStockAttemptProofTests
             InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient,
             new InventoryManufacturingStockShortfallV1(StockMovementKind.Issue, "manufacturing.input-issue", Guid.NewGuid(),
                 Guid.NewGuid(), Label1, BandProduct, Warehouse1, Kilograms.Positive(30m), Kilograms.Of(100m), Kilograms.Of(80m)));
-        Assert.Null(InventoryNegativeStockAttemptEvidenceException.Find(refusal));
+        Assert.Null(InventoryNegativeStockAttemptEvidenceException.FindEvidence(refusal));
         Assert.Equal(20m, refusal.StockShortfall!.AvailableKg.Value);
     }
 }

@@ -230,7 +230,7 @@ internal sealed class ManufacturingInventoryInputIssueHost(
             }
 
             manufacturing.ChangeTracker.Clear();
-            if (!committed && InventoryNegativeStockAttemptEvidenceException.Find(exception) is not null)
+            if (!committed && InventoryNegativeStockAttemptEvidenceException.FindEvidence(exception) is not null)
             {
                 try
                 {

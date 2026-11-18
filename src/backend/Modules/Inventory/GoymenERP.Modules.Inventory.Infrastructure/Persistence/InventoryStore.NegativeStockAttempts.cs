@@ -117,7 +117,7 @@ public sealed partial class InventoryStore
 
     private async Task RecordPhysicalRefusalAfterRollbackAsync(Exception refusal)
     {
-        if (InventoryNegativeStockAttemptEvidenceException.Find(refusal) is null) return;
+        if (InventoryNegativeStockAttemptEvidenceException.FindEvidence(refusal) is null) return;
         if (negativeStockAttempts is null)
             throw new InventoryNegativeStockAttemptException(503, InventoryNegativeStockAttemptCodesV1.Unavailable, refusal);
         await negativeStockAttempts.RecordAfterRollbackAsync(refusal, CancellationToken.None);

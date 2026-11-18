@@ -225,7 +225,7 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
         ? key : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(commandName + "\n" + key))).ToLowerInvariant();
     private async Task RecordPhysicalRefusalAsync(Exception exception, bool rolledBack)
     {
-        if (InventoryNegativeStockAttemptEvidenceException.Find(exception) is null) return;
+        if (InventoryNegativeStockAttemptEvidenceException.FindEvidence(exception) is null) return;
         if (!rolledBack) throw Unavailable();
         try { await InventoryNegativeStockAttemptRecording.AfterRollbackAsync(services, exception); }
         catch (Exception) { throw Unavailable(); }

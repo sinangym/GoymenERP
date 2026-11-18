@@ -22,7 +22,7 @@ internal sealed class InventoryNegativeStockAttempts(ICompanyContext company, IC
 {
     public async Task RecordAfterRollbackAsync(Exception refusal, CancellationToken cancellationToken = default)
     {
-        var proof = InventoryNegativeStockAttemptEvidenceException.Find(refusal);
+        var proof = InventoryNegativeStockAttemptEvidenceException.FindEvidence(refusal);
         if (proof is null) return; // An allocation shortage, version fault or arbitrary 409 supplies no physical proof.
         Validate(proof);
         var identity = await RequireAsync(null, [proof.Metadata.PermissionCode], cancellationToken);

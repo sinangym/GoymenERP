@@ -170,7 +170,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         public IInventoryNegativeStockAttemptRecorderV1 Bind(IInventoryNegativeStockAttemptRecorderV1 owner) { actual = owner; return this; }
         public Task RecordAfterRollbackAsync(Exception refusal, CancellationToken token = default)
         {
-            Calls++; Proof = InventoryNegativeStockAttemptEvidenceException.Find(refusal);
+            Calls++; Proof = InventoryNegativeStockAttemptEvidenceException.FindEvidence(refusal);
             Assert.NotNull(Proof); Assert.False(token.IsCancellationRequested);
             if (Fail) throw new InvalidOperationException("SENTETIK recorder outage after confirmed rollback");
             return actual!.RecordAfterRollbackAsync(refusal, token);

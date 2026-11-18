@@ -89,7 +89,7 @@ internal sealed class PurchaseGoodsReceiptHost(
                 {
                     var rolledBack = await RollbackQuietlyAsync(transaction);
                     purchasing.ChangeTracker.Clear();
-                    if (InventoryNegativeStockAttemptEvidenceException.Find(exception) is not null)
+                    if (InventoryNegativeStockAttemptEvidenceException.FindEvidence(exception) is not null)
                     {
                         if (!rolledBack) throw new PurchasingServiceException(503, InventoryGoodsReceiptCodesV1.Unavailable);
                         try { await InventoryNegativeStockAttemptRecording.AfterRollbackAsync(services, exception); }

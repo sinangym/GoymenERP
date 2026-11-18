@@ -20,10 +20,7 @@ public static class InventoryTransferRegistration
         services.AddScoped<IInventoryTransferReaderV1>(provider => provider.GetRequiredService<InventoryStore>());
         services.AddScoped<IInventoryTransferCommandV1, InventoryTransferCommandService>();
         services.AddScoped<IInventoryTransferQueryV1, InventoryTransferQueryService>();
-        services.AddScoped<IInventoryTransferPlanCandidatesV1>(provider => new InventoryTransferPlanCandidates(
-            provider.GetRequiredService<ICompanyContext>(), provider.GetRequiredService<ICurrentUser>(),
-            provider.GetRequiredService<IErpAuthorityRevalidationService>(),
-            provider.GetService<InventoryDbContext>() is { } database ? new SqlInventoryStockPositionReader(database) : null));
+        services.AddScoped<IInventoryTransferPlanCandidatesV1>(CreateTransferPlanCandidates);
         // LOJ-D20: the read-only list of dispatches whose source scale setting could not be read ("kontrol edilemedi").
         services.AddScoped<IInventoryTransferScaleCheckReviewReaderV1, InventoryTransferScaleCheckReviewReader>();
         services.AddScoped<IInventoryTransferScaleCheckReviewQueryV1, InventoryTransferScaleCheckReviewQueryService>();
@@ -39,4 +36,9 @@ public static class InventoryTransferRegistration
         services.AddScoped<IInventoryTransferReverseQueryV1, InventoryTransferReverseQueryService>();
         return services;
     }
+
+    private static IInventoryTransferPlanCandidatesV1 CreateTransferPlanCandidates(IServiceProvider provider) =>
+        new InventoryTransferPlanCandidates(provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(), provider.GetRequiredService<IErpAuthorityRevalidationService>(),
+            provider.GetService<InventoryDbContext>() is { } database ? new SqlInventoryStockPositionReader(database) : null);
 }

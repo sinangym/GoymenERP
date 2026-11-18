@@ -200,7 +200,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         var failed = await NegativeAttemptEvidenceAsync(run, "SYN-NEG-GAP-REFUSAL");
-        Assert.Equal(0L, InventoryNegativeStockAttemptEvidenceException.Find(failed.Refusal)!.ObservedCountBoundaryVersion);
+        Assert.Equal(0L, InventoryNegativeStockAttemptEvidenceException.FindEvidence(failed.Refusal)!.ObservedCountBoundaryVersion);
         // A different label of the SAME actual product/location is a valid SAT-D339 corrective count.
         var counted = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-NEG-GAP-COUNT", 100m);
         var countId = Guid.NewGuid();
@@ -223,7 +223,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.False(await reads.Movements.AnyAsync(row => row.Id == failed.Movement.Id));
         Assert.Equal(100m, await LabelKgAsync(run, failed.LabelId)); // Resolution never makes the refused physical movement succeed.
         var after = await NegativeAttemptEvidenceAsync(run, "SYN-NEG-GAP-AFTER-COUNT");
-        Assert.Equal(1L, InventoryNegativeStockAttemptEvidenceException.Find(after.Refusal)!.ObservedCountBoundaryVersion);
+        Assert.Equal(1L, InventoryNegativeStockAttemptEvidenceException.FindEvidence(after.Refusal)!.ObservedCountBoundaryVersion);
         await service.RecordAfterRollbackAsync(after.Refusal);
         var open = Assert.Single((await service.SearchAsync(new(OpenOnly: true))).Items);
         Assert.Equal(after.Movement.Id, open.MovementId);
@@ -431,7 +431,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var metadata = Metadata(run);
         await using var transaction = await physical.DbContext.Database.BeginTransactionAsync();
         var failure = await Assert.ThrowsAsync<InventoryRuleException>(() => physical.Movements.RecordMovementAsync(movement, metadata));
-        Assert.NotNull(InventoryNegativeStockAttemptEvidenceException.Find(failure));
+        Assert.NotNull(InventoryNegativeStockAttemptEvidenceException.FindEvidence(failure));
         await transaction.RollbackAsync();
         return new(failure, movement, metadata, source.LabelId);
     }

@@ -83,7 +83,7 @@ internal sealed class LogisticsRealizationTransactionRunner(
             var rolledBack = await RollBackAsync(transaction, CancellationToken.None);
             logistics.ChangeTracker.Clear();
             var cause = stock.PhysicalRefusal ?? exception;
-            if (InventoryNegativeStockAttemptEvidenceException.Find(cause) is not null)
+            if (InventoryNegativeStockAttemptEvidenceException.FindEvidence(cause) is not null)
             {
                 if (!rolledBack) throw new LogisticsInstructionServiceException(503, LogisticsRealizationCodesV1.Unavailable);
                 try { await InventoryNegativeStockAttemptRecording.AfterRollbackAsync(services, cause); }

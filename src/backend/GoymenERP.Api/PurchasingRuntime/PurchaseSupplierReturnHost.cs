@@ -47,7 +47,7 @@ internal sealed class PurchaseSupplierReturnHost(
             {
                 var rolledBack = await RollbackQuietlyAsync(transaction);
                 purchasing.ChangeTracker.Clear();
-                if (InventoryNegativeStockAttemptEvidenceException.Find(exception) is not null)
+                if (InventoryNegativeStockAttemptEvidenceException.FindEvidence(exception) is not null)
                 {
                     if (!rolledBack) throw new PurchasingServiceException(503, InventorySupplierReturnExitCodesV1.Unavailable);
                     try { await InventoryNegativeStockAttemptRecording.AfterRollbackAsync(services, exception); }

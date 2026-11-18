@@ -15,7 +15,7 @@ internal static class InventoryPhysicalStockRefusalProblem
         string? recordedDetail = null)
     {
         if (statusCode != StatusCodes.Status409Conflict) return null;
-        var evidence = InventoryNegativeStockAttemptEvidenceException.Find(exception);
+        var evidence = InventoryNegativeStockAttemptEvidenceException.FindEvidence(exception);
         if (evidence is null) return CanonicalDetailOrNull(recordedDetail);
         var shortfall = evidence.Shortfall;
         if (evidence.MovementId == Guid.Empty || shortfall.LineNumber is not >= 1) return null;

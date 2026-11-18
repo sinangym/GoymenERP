@@ -86,7 +86,7 @@ public sealed partial class LogisticsSubcontractDeliveryHost(LogisticsDbContext 
             try { await tx.RollbackAsync(CancellationToken.None); rolledBack = true; } catch { }
             auditWriter.DiscardPending(); db.ChangeTracker.Clear();
             if (!rolledBack) throw Error(503, Unavailable);
-            if (InventoryNegativeStockAttemptEvidenceException.Find(failure) is not null)
+            if (InventoryNegativeStockAttemptEvidenceException.FindEvidence(failure) is not null)
             {
                 // SAT-D328: only the actual physical owner proof survives a confirmed rollback. The recorder
                 // owns a fresh transaction; neither a reservation refusal nor an uncertain rollback may use it.

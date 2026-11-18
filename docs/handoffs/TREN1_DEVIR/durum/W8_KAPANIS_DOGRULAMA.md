@@ -24,6 +24,16 @@ Kaynak kapsamı174/174 (%100), W8 son pakettir. `W8_KAYNAK_TAMAMLANDI.md` içind
 
 ## Kalan kapanış sırası
 
+### İlk mimari koşum ve kaynak düzeltmeleri
+
+İlk dar mimari guard koşumu340 testte334 başarılı/6 başarısız/0 skip, native exit1 oldu. İlk TRX/log korundu. Hatalar eski fingerprint/envanter, yeni gerçek owner transaction yüzeyleri ve muhafazakâr kaynak taramasına takılan typed JSON/DI çağrılarıdır; henüz yeşil kabul yoktur.
+
+- Üç DI lambda aynı scoped service/constructor/fallback ile adlandırılmış factory'ye taşındı. Gerçek `ICompanyContext` kaydı hâlâ Program içindeki tek scoped kayıttır; taramanın lambda içindeki bağımlılık çözümünü yanlış kayıt sayması giderilir.
+- Negatif stok denemesi kanıtını exception zincirinde arayan typed yardımcı `FindEvidence` diye adlandırıldı;15 çağırıcı/test kaynağı aynı davranışı kullanır. EF `Find` veya yeni sorgu değildir; kanıt üretimi/değişmezleri değişmez.
+- Gerçek compiled discovery1755 ayrı ilişkisel ad/1762 beklenen execution verir; sekiz satırlı eski MemberData korunur. Altı eski ad yeni kullanıcı kararlarını uygulayan aynı testlerin yeni adlarına eşlendi; test silinmedi.379 yeni ad,13 modül dosyasında ordinal sıralandı. Bu, SQL koşumu değildir; son exact-head keşfi ayrıca gerekir.
+-89 mevcut kaynak fingerprint eşlemesi gerçek guard çıktısı ve güncel kaynakla yeniden ölçüldü. Mevcut API occurrence şartları ve K3 pending notları korunur.81 yeni SQL kaynak kaydı (80 migration+1 eski guard helper'ının yeni sürümü) kaynak incelemesindeki gerçek lexical çağrı sayısı ve Down/append-only/backfill gerekçesiyle eklendi. Counterparty'nin ayrı guard kapsamındaki kaynakları bu listeye alınmadı. Bu kayıtlar bağımsız K3 onayı değildir.
+- Yeni runtime SQL/borrowed-context yüzeylerinin tenant/owner/transaction gerekçeleri ayrıca inceleniyor; guard yalnız yeşile dönsün diye topluca izin listesine alınmaz. Bu ara checkpointte yeniden derleme/guard kabulü bekler.
+
 Shell son doğrulama → gerçek OpenAPI JSON ve sözleşme beklentileri → committed kaynak recovery/release pinleri → gerekçeli mimari guard ve gerçek ilişkisel keşif/envanter → hafif kontroller → tam birim/mimari/API/Vitest ve mevcut yetkili SQL/CI kanıtı → train fast-forward → tek taslak K3 PR.
 
 Yerel SQL yapılandırılmamış; yeni DB/container/servis açılmaz. Gerçek SQL/RCSI/browser/CI ve tam test kabulü henüz tamamlanmış sayılmaz. Mevcut12 bypass/5 context construction girdisinin K3 pending durumu korunur; hash yenilemek bağımsız onay değildir. Grant/rol/Critical politikası, OPEN kapatma, Finance STOP ve production değişmez.

@@ -12,9 +12,7 @@ public static class FinancePartyBalanceTransferHostV1
 {
     public static IServiceCollection AddFinancePartyBalanceTransfersV1(this IServiceCollection services)
     {
-        services.AddScoped<IFinancePaymentAllocationCandidatesV1>(provider => new FinancePaymentAllocationCandidatesV1(
-            provider.GetRequiredService<FinanceDbContext>(), provider.GetRequiredService<ICompanyContext>(),
-            provider.GetRequiredService<ICurrentUser>(), provider.GetRequiredService<FinancePermissionPort>()));
+        services.AddScoped<IFinancePaymentAllocationCandidatesV1>(CreatePaymentAllocationCandidates);
         services.AddScoped<IFinancePartyBalanceTransferOwnerPortV1, CounterpartyFinancePartyBalanceTransferOwnerPortV1>();
         services.AddScoped<IFinancePartyBalanceTransferEvidencePortV1, DocumentsFinancePartyBalanceTransferEvidencePortV1>();
         services.AddScoped<IFinancePartyBalanceTransferServiceV1>(provider =>
@@ -33,4 +31,9 @@ public static class FinancePartyBalanceTransferHostV1
         });
         return services;
     }
+
+    private static IFinancePaymentAllocationCandidatesV1 CreatePaymentAllocationCandidates(IServiceProvider provider) =>
+        new FinancePaymentAllocationCandidatesV1(provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(), provider.GetRequiredService<ICurrentUser>(),
+            provider.GetRequiredService<FinancePermissionPort>());
 }

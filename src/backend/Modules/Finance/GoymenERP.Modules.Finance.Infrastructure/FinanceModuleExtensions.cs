@@ -88,11 +88,7 @@ public static class FinanceModuleExtensions
         // API-85b (F018 §L2; FNS-D57/D31/D58): the customer collateral master, one step. The type and its rate are
         // Settings' (FNS-D31); until a Settings adapter registers its catalog the default answers Unavailable, so a
         // record and the weighted collateral fail closed.
-        services.TryAddScoped<IFinanceCollateralTypeCatalogReader>(provider =>
-            provider.GetService<ISettingsCollateralTypeCatalogV1>() is { } catalog
-                ? new SettingsFinanceCollateralTypeCatalogReaderV1(provider.GetRequiredService<ICompanyContext>(),
-                    provider.GetRequiredService<ICurrentUser>(), catalog, provider.GetRequiredService<TimeProvider>())
-                : new UnavailableFinanceCollateralTypeCatalogReader());
+        services.TryAddScoped<IFinanceCollateralTypeCatalogReader>(CreateCollateralTypeCatalogReader);
         services.AddScoped(CreatePartyCollateralService);
         services.AddScoped<IFinancePartyCollateralMaster>(provider => provider.GetRequiredService<FinancePartyCollateralService>());
         services.AddScoped<IFinanceCollateralBankCandidatesV1>(provider => provider.GetRequiredService<FinancePartyCollateralService>());
@@ -547,6 +543,12 @@ public static class FinanceModuleExtensions
             provider.GetRequiredService<ICompanyContext>(),
             provider.GetRequiredService<ICurrentUser>(),
             provider.GetRequiredService<FinancePermissionPort>());
+
+    private static IFinanceCollateralTypeCatalogReader CreateCollateralTypeCatalogReader(IServiceProvider provider) =>
+        provider.GetService<ISettingsCollateralTypeCatalogV1>() is { } catalog
+            ? new SettingsFinanceCollateralTypeCatalogReaderV1(provider.GetRequiredService<ICompanyContext>(),
+                provider.GetRequiredService<ICurrentUser>(), catalog, provider.GetRequiredService<TimeProvider>())
+            : new UnavailableFinanceCollateralTypeCatalogReader();
 
     private static PartyLedgerReadService CreatePartyLedgerReadService(IServiceProvider provider) =>
         new PartyLedgerReadService(

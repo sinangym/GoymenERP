@@ -51,7 +51,7 @@ public sealed class InventoryNegativeStockAttemptEvidenceException(InventoryNega
 {
     public InventoryNegativeStockAttemptEvidenceV1 Evidence { get; } = evidence;
 
-    public static InventoryNegativeStockAttemptEvidenceV1? Find(Exception exception)
+    public static InventoryNegativeStockAttemptEvidenceV1? FindEvidence(Exception exception)
     {
         // A bounded chain prevents an untrusted/custom exception from turning this into unbounded work.
         for (var depth = 0; exception is not null && depth < 32; depth++, exception = exception.InnerException!)

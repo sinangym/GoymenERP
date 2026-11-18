@@ -899,7 +899,7 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
             manufacturing.ChangeTracker.Clear();
             throw new ManufacturingInventoryReturnOutputRecoveryException(attempt, rollback);
         }
-        if (InventoryNegativeStockAttemptEvidenceException.Find(attempt) is not null)
+        if (InventoryNegativeStockAttemptEvidenceException.FindEvidence(attempt) is not null)
         {
             try
             {
