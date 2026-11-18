@@ -1,8 +1,10 @@
 # W8 recovery / release kapanışı
 
 Kaynak tabanı `3e85cbbb1bbee5efc5ec4dbe9afcfa6669677034`.
-Bu çalışma yalnız recovery generator/schema/test pinlerini hizalar; mimari guard,
-ilişkisel envanter, backend kaynakları ve K3 onay durumunu değiştirmez.
+Bu çalışma recovery generator/schema/test pinlerini gerçek kaynakla hizalar.
+Koordinatörün sonradan verdiği dar yetkiyle üç mevcut runtime metodunun yalnız
+source şekli değiştirildi; transaction, iş kuralı ve SQL/model değişikliği yoktur.
+Mimari guard, ilişkisel envanter ve K3 onay durumları değiştirilmedi.
 
 ## İlk pin checkpoint'i
 
@@ -142,3 +144,38 @@ yalnız AuditEvents hariç 48 replay tablosu; altı business istisnası dahil 24
 adayı. Metadata-only ve non-message istisnaları değiştirilmedi. Bu source tanısı
 tam üretici veya test kabulü değildir; temiz commit sonrası gerçek üretici yeniden
 çalıştırılacaktır.
+
+## Bu dalın nihai bounded doğrulama sonucu
+
+Doğrulanan temiz kaynak commit'i: `c8d7d7c3e70016d1ba6e1e1eeedee1eb5afb1806`.
+
+| Gerçek komut | Native çıkış | Kanıt |
+|---|---:|---|
+| `python -I -S -B tools/generate_recovery_surface_inventory.py` | 0 | Exact HEAD bloblarından gerçek JSON üretildi; 19 DbContext, 339 migration, 66 durable store. |
+| `python -I -S -B -m unittest discover -s tests/recovery_surface_inventory -p "test_*.py"` | 0 | 36 test, 2402.347 saniye, `OK`; skip yok. |
+| Release manifest Python paketi | NOT_RUN | Koordinatör son talimatıyla eski tabanda başlatılmadı. Recovery ve release tam paketleri son birleşik frozen head üzerinde birlikte tekrar koşulacak. |
+| `git diff --check` | 0 | Son kaynak pin checkpoint'i. |
+
+Gerçek üretici JSON'u 3116 kaynak dosyası için source fingerprint
+`b89b1f7f052eeea3b27ba8ba3b561fc6dc76421a8990c3b777f1fa8a97e0aafe`,
+1458 risky dosya için
+`1dda5bbe2bda2284b176dab393241b5598226551f36741a5941e21b8b60d0b98`
+döndürdü. Bu sayılar ve hash'ler bu dalın kaynak tabanına aittir; koordinatörün
+sonraki backend değişiklikleriyle birleşik son head için yeniden üretilecek.
+
+İlk gerçek üretici çıkışları silinmedi: `9701a7dd0`, `8ce76bd90`, `c3d1bac1a`
+ve `ac471096e` denemeleri native exit 2; sonraki temiz `c8d7d7c3e` native exit 0.
+Depo dışı native log/exit dosyalarının adları
+`t1-w8-recovery-<head>-generator.stderr.log`,
+`t1-w8-recovery-<head>-generator.exit` ve
+`t1-w8-recovery-c8d7d7c3e-suite.stderr.log` /
+`t1-w8-recovery-c8d7d7c3e-suite.exit` biçimindedir. İlk hata kanıtları korunur.
+
+Üç ayrı runtime source-shape dosyası (`SalesStore.OfficialCancellations.cs`,
+`PurchasingStore.IncomingInvoices.cs`, `PurchasingStore.InvoiceImports.cs`)
+için bu dalda .NET derlemesi **QUEUED** kaldı; .NET/Node lease kullanılmadı.
+Gerçek SQL, HTTP runtime, Vitest, browser ve CI **NOT_RUN**.
+
+Yeni guard bypass/SQL/context izni veya semantik validator gevşetmesi yoktur.
+Mevcut K3 pending yüzeyleri korunur; bu dalın Python sonucu son birleşik head
+kabulü, bağımsız K3 imzası veya production aktivasyonu değildir.
