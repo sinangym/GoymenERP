@@ -804,3 +804,28 @@ Tam modül 13.325/13.325, frontend 9.854/9.854, OpenAPI 10/10 PASS;
 kaynak SHA ve sınırlar W8_RUNTIME_KAPANIS_DURUMU.md son bölümündedir.
 Eski 12 bypass + 5 context ve yeni gerekçeli girdiler bağımsız K3 review bekler;
 yerel guard başarısı bağımsız onay değildir.
+
+## Son CI kaynak düzeltmeleri ve ölçülen pin eki
+
+`edf25498d0d39915ab1ffcb5b3c68ec1e1468697` birleşik kaynakta yeni migration:
+`20261118050006_RepairSalesOfficialInvoiceCancellationActorCollation` (EF10.0.8).
+Main163 -> tren340, yeni177 migration. Yeni THROW yok; 313 toplam/199 yeni
+numara listesi değişmez. Up ve Down aynı düzeltilmiş sales invoice trigger'ını
+ALTER ile korur; satır/kolon silmez veya unsafe actor karşılaştırmasına dönmez.
+Bootstrap helper da düzeltilir, çünkü yeni DB zinciri eski adımda duruyordu.
+CompanyId/sürüm/tarih/immutable evidence şartları korunur; actor iki operandda
+Latin1_General_100_BIN2 ile exact karşılaştırılır. Helper 7 ve forward migration
+2 lexical Sql çağrısı gerekçeli exact-path/fingerprint kaydıyla K3 review bekler.
+
+Gerçek kaynak ölçümü: 19 context, 340 migration, 66 durable store; riskli kaynak
+1461, SHA256 `9af854faccd37fccca382a68dd8d6316d4d00824fbd438ec91b3784243ac9854`.
+Migration declaration SHA256 `3a0f712509f11c2648f54b5cba036561613286c10e36de27ea7a23c682d68edc`.
+Audit42/context fingerprint ve owner method/source pinlerinde başka drift yok.
+
+OpenAPI gerçek producer: `091cc64a9e71f90ddc12b7c2ab9784b3f22fd8e181234f7f7b50603dc30dec04`,
+9.746.060 byte, 826 operasyon/1721 şema. Yalnız schema üyelerinin ordinal wire
+sırası değişti; JSON değerleri aynıdır. Açık kaynak serializer override testi
+11/11 PASS; işletme kültürü ve paket/SDK/workflow değişmedi.
+118 permission adı, W5 12+5 ve W8 82+16 bekleyen review listeleri aynen korunur.
+Yeni kayıt runtime tenant SQL bypass'ı değildir; guard başarısı bağımsız review
+veya gerçek SQL kabulünün yerine geçmez. Ayrıntılar son runtime ekindedir.
