@@ -140,6 +140,17 @@ Bağlantı değişkeni yoksa bu özel test standart yerel test koşusunda açık
 görünür; CI’daki `SQL Server relational acceptance` işi değişkeni zorunlu tanımlar ve
 testi atlamadan çalıştırır.
 
+Yerel testlerde SQL Server'ın varsayılan veri diskinden farklı bir konum gerekirse,
+`GOYMEN_ERP_TEST_SQLSERVER_DATA_DIRECTORY` yalnız test sürecinde, önceden hazırlanmış
+mutlak bir test dizinine ayarlanabilir. Bu seçenek `SqlServerRelationalApiFactory`
+kullanan yeni ve benzersiz test veritabanlarında EF Core'un `AttachDBFilename`
+desteğini kullanır; veri ve log dosyaları seçilen dizinde oluşturulur. Sunucunun
+genel dosya konumu, TLS ayarı ve mevcut veritabanları değiştirilmez. Dizin erişimi
+önceden doğrulanmalıdır. Yalnız localhost bağlantıları ve sentetik benzersiz adlar
+kabul edilir; mevcut dosyalar üzerine yazılmaz. Elle `CREATE DATABASE` sınayan
+diğer fixture'lar bu seçenekten etkilenmez. Bu yerel tanı koşumu, exact-head CI ve
+gerçek SQL kabulünün yerine geçmez.
+
 Idempotent SQL migration betiği:
 
 ```powershell

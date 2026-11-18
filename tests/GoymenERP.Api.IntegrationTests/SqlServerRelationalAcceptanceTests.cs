@@ -1190,16 +1190,37 @@ internal sealed class SqlServerRelationalApiFactory : WebApplicationFactory<Prog
         _configurationOverrides = configurationOverrides
             ?? new Dictionary<string, string?>();
         DatabaseName = databaseName ?? $"goymen_erp_ci_{Guid.NewGuid():N}";
-        var builder = new SqlConnectionStringBuilder(baseConnectionString)
-        {
-            InitialCatalog = DatabaseName,
-        };
-        _databaseConnectionString = builder.ConnectionString;
+        _databaseConnectionString = BuildDatabaseConnectionString(baseConnectionString, DatabaseName,
+            Environment.GetEnvironmentVariable("GOYMEN_ERP_TEST_SQLSERVER_DATA_DIRECTORY"));
     }
 
     public string DatabaseName { get; }
 
     public string DatabaseConnectionString => _databaseConnectionString;
+
+    internal static string BuildDatabaseConnectionString(string baseConnectionString, string databaseName,
+        string? localDataDirectory)
+    {
+        var connection = new SqlConnectionStringBuilder(baseConnectionString) { InitialCatalog = databaseName };
+        if (string.IsNullOrWhiteSpace(localDataDirectory)) return connection.ConnectionString;
+
+        // Opt-in local test storage only. EF Core creates both data/log files here and retains its RCSI setup.
+        // Never change the SQL instance defaults or attach an existing application database.
+        if (connection.DataSource is not ("localhost" or "." or "127.0.0.1" or "(local)")
+            || !Path.IsPathFullyQualified(localDataDirectory) || !Directory.Exists(localDataDirectory)
+            || !databaseName.StartsWith("goymen_", StringComparison.Ordinal)
+            || databaseName.Length > 128
+            || databaseName.Any(character => !char.IsAsciiLetterOrDigit(character) && character != '_')
+            || databaseName.Length < 33
+            || !Guid.TryParseExact(databaseName[^32..], "N", out _))
+            throw new InvalidOperationException("Local SQL test storage requires a local server, an existing absolute directory and a unique synthetic database name.");
+
+        var file = Path.Combine(Path.GetFullPath(localDataDirectory), databaseName + ".mdf");
+        if (File.Exists(file) || File.Exists(Path.Combine(Path.GetDirectoryName(file)!, databaseName + "_log.ldf")))
+            throw new InvalidOperationException("Local SQL test files must not already exist.");
+        connection.AttachDBFilename = file;
+        return connection.ConnectionString;
+    }
 
     protected override void ConfigureClient(HttpClient client)
     {
