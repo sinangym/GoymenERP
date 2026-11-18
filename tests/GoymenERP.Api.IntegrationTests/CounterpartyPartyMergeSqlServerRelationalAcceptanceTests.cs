@@ -385,6 +385,7 @@ public sealed class CounterpartyPartyMergeSqlServerRelationalAcceptanceTests
     public async Task The_party_merge_migrations_Down_passes_with_no_merge_and_refuses_while_a_merge_exists()
     {
         await using var test = new MergeTest(grantMerge: true);
+        using var admin = test.Client();
         var guard = Assert.IsType<SqlOperation>(new AddCounterpartyPartyMerge().DownOperations[0]).Sql;
 
         // No merge yet: the guard passes, the migration rolls back and migrates forward again.
@@ -394,7 +395,6 @@ public sealed class CounterpartyPartyMergeSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM sys.tables WHERE [object_id] = OBJECT_ID(N'[counterparty].[PartyMerges]');", Guid.Empty));
         await test.MigrateCounterpartyToAsync(null);
 
-        using var admin = test.Client();
         var survivor = await CreatePartyAsync(admin, "Geri Alma Korumalı Ana Kart");
         var duplicate = await CreatePartyAsync(admin, "Geri Alma Korumalı Mükerrer Kart");
         await MergeAsync(admin, survivor, duplicate);

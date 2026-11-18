@@ -15,6 +15,21 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
 {
     private const string PreFiscalMigration =
         "20260827174140_AddSqlRowVersionConcurrency";
+    // Exact Organization migration identities at this fixture's head, in application order.
+    private static readonly string[] ExpectedOrganizationMigrations =
+    [
+        "20260827125758_InitialOrganization",
+        "20260827174140_AddSqlRowVersionConcurrency",
+        "20260831142045_AddCompanyFiscalRuntimeSeed",
+        "20261013155012_AddLocationOperatorParty",
+        "20261114220943_AddWorkCenterCalendar",
+        "20261115145301_AddCompanyTaxIdChangeRequests",
+        "20261115153652_AllowWorkCenterOvernightShifts",
+        "20261115200655_ClearPlaceholderCompanyVkn",
+        "20261116111056_StageCompanyTaxIdCorrections",
+        "20261116185536_AddCompanySetupLifecycleAndMessaging",
+        "20261116205304_AddAuthorizedCompanyOpening",
+    ];
     private const string GdcLegalName =
         "Göymen Demir Çelik İnş. San. ve Tic. Ltd. Şti.";
     private const string GspLegalName =
@@ -151,11 +166,7 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
             await AssertLegacyForeignKeysAsync(connection);
             await AssertLegacyGspDeterministicTopologyRetiredAsync(connection);
             await AssertCustomGspTopologyRemainsActiveAsync(connection);
-            Assert.Equal(
-                4,
-                await ScalarAsync<int>(
-                    connection,
-                    "SELECT COUNT(*) FROM [organization].[__EFMigrationsHistory];"));
+            await AssertAppliedOrganizationMigrationsAsync(connection);
         }
         finally
         {
@@ -290,13 +301,9 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
                 vkn: GinPlaceholderVkn,
                 isPlaceholder: true,
                 invoiceCapable: false);
-            // 11 -> 12 by the fiscal migration's normalization, 12 -> 13 by KIM-D35 clearing the stand-in VKN.
-            Assert.Equal(13, company.Version);
-            Assert.Equal(
-                4,
-                await ScalarAsync<int>(
-                    verification,
-                    "SELECT COUNT(*) FROM [organization].[__EFMigrationsHistory];"));
+            // 11 -> 12 by fiscal normalization. KIM-D48 stages the VKN correction; only approval changes the company.
+            Assert.Equal(12, company.Version);
+            await AssertAppliedOrganizationMigrationsAsync(verification);
         }
         finally
         {
@@ -447,6 +454,22 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
             new SqlParameter("@LocationId", LegacyLocationId),
             new SqlParameter("@WorkCenterId", LegacyWorkCenterId));
         await InsertLegacyGspTopologyAsync(connection);
+    }
+
+    private static async Task AssertAppliedOrganizationMigrationsAsync(SqlConnection connection)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT [MigrationId] FROM [organization].[__EFMigrationsHistory] ORDER BY [MigrationId];";
+        await using var reader = await command.ExecuteReaderAsync();
+        var migrations = new List<string>();
+        while (await reader.ReadAsync())
+        {
+            migrations.Add(reader.GetString(0));
+        }
+
+        Assert.Equal(11, migrations.Count);
+        Assert.Equal(ExpectedOrganizationMigrations, migrations);
     }
 
     private static async Task MigrateOrganizationDatabaseAsync(
