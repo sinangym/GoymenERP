@@ -142,14 +142,20 @@ public sealed partial class ShellCapabilityRegistryTests
         var combined = AuthorizedRegistry([.. normal, Provider("PRODUCT", ProductDeclarations())]);
         // Counterparty's four + Organization's thirteen (ORG-03 and ORG-04 joined; the master edit adds five child
         // controls; B-15 adds the work-centre calendar edit control; KIM-S23 adds the company tax-id route) +
-        // Product's seven (four screens, the approve / deactivate / reactivate controls).
-        Assert.Equal(24, combined.Registrations.Count);
-        Assert.Equal(7, combined.Registrations.Count(item => item.Declaration.GlobalProductOperation is not null));
-        Assert.Equal(11, combined.Registrations.Count(item => item.Declaration.ParentCapabilityId is not null));
+        // Product's eight (four screens, the approve / deactivate / reactivate controls and
+        // SAT-D419 / SAT-D422's explicit global COGS classification control).
+        Assert.Equal(25, combined.Registrations.Count);
+        Assert.Equal(8, combined.Registrations.Count(item => item.Declaration.GlobalProductOperation is not null));
+        Assert.Equal(12, combined.Registrations.Count(item => item.Declaration.ParentCapabilityId is not null));
         var activation = Assert.Single(combined.Registrations,
             item => item.Declaration.CapabilityId == "product.items.activate");
         Assert.Equal("product.items.detail", activation.Declaration.ParentCapabilityId);
         Assert.Equal(GroupSharedMasterOperation.Activate, activation.Declaration.GlobalProductOperation);
+        var classification = Assert.Single(combined.Registrations,
+            item => item.Declaration.CapabilityId == "product.items.set-cogs-classification");
+        Assert.Equal("product.items.detail", classification.Declaration.ParentCapabilityId);
+        Assert.Equal(GroupSharedMasterOperation.SetCogsClassification, classification.Declaration.GlobalProductOperation);
+        Assert.Empty(classification.Declaration.RequiredPermissions);
         Assert.All(combined.Registrations.Where(item => item.Declaration.ParentCapabilityId is not null
                 && !item.Declaration.CapabilityId.StartsWith("product.items.", StringComparison.Ordinal)),
             item => Assert.Null(item.Declaration.GlobalProductOperation));
