@@ -201,11 +201,11 @@ public sealed class SqlServerRelationalAcceptanceTests
             INSERT INTO [identity].[AccessGrantRequests]
                 ([Id], [RequestedByUserId], [TargetUserId], [RoleId], [CompanyId],
                  [RequiresSecondApproval], [Status], [RequestedAtUtc],
-                 [DecidedByUserId], [DecidedAtUtc], [Version])
+                 [DecidedByUserId], [DecidedAtUtc], [Version], [ApprovalMode])
             VALUES
                 (@Id, @RequesterId, @TargetId, @RoleId, @CompanyId,
                  1, N'Approved', SYSUTCDATETIME(),
-                 @RequesterId, SYSUTCDATETIME(), 1);
+                 @DeciderId, SYSUTCDATETIME(), 1, @ApprovalMode);
             """;
         selfApprovalInsert.Parameters.AddWithValue("@Id", Guid.NewGuid());
         selfApprovalInsert.Parameters.AddWithValue(
@@ -219,10 +219,30 @@ public sealed class SqlServerRelationalAcceptanceTests
             Guid.Parse("30000000-0000-0000-0000-000000000001"));
         selfApprovalInsert.Parameters.AddWithValue("@CompanyId", TestCompanyIds.CompanyA);
 
-        var selfApprovalException = await Assert.ThrowsAsync<SqlException>(
-            () => selfApprovalInsert.ExecuteNonQueryAsync());
-
-        Assert.Equal(547, selfApprovalException.Number);
+        selfApprovalInsert.Parameters.AddWithValue("@DeciderId", selfApprovalInsert.Parameters["@RequesterId"].Value);
+        selfApprovalInsert.Parameters.Add("@ApprovalMode", System.Data.SqlDbType.NVarChar, 32).Value = DBNull.Value;
+        // NULL mode must not turn either CHECK predicate into SQL UNKNOWN (which CHECK accepts).
+        foreach (var decider in new[]
+                 {
+                     (Guid)selfApprovalInsert.Parameters["@RequesterId"].Value,
+                     Guid.Parse("20000000-0000-0000-0000-000000000002")
+                 })
+        {
+            selfApprovalInsert.Parameters["@DeciderId"].Value = decider;
+            Assert.Equal(547, (await Assert.ThrowsAsync<SqlException>(
+                () => selfApprovalInsert.ExecuteNonQueryAsync())).Number);
+        }
+        selfApprovalInsert.Parameters["@ApprovalMode"].Value = "SecondApproval";
+        foreach (var decider in new[]
+                 {
+                     (Guid)selfApprovalInsert.Parameters["@RequesterId"].Value,
+                     (Guid)selfApprovalInsert.Parameters["@TargetId"].Value
+                 })
+        {
+            selfApprovalInsert.Parameters["@DeciderId"].Value = decider;
+            Assert.Equal(547, (await Assert.ThrowsAsync<SqlException>(
+                () => selfApprovalInsert.ExecuteNonQueryAsync())).Number);
+        }
     }
 
     private static async Task AssertTenantWriteGuardAsync(
