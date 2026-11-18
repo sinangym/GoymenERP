@@ -7,12 +7,16 @@ import argparse
 import contextlib
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import xml.etree.ElementTree as ET
 
 
@@ -459,7 +463,153 @@ def trx_logger(trx_path: Path) -> str:
     return f"trx;LogFileName={trx_path.name}"
 
 
+TEST_EXECUTION_TIMEOUT_SECONDS = 2400
+MAX_PROGRESS_LINE_BYTES = 8192
+MAX_PROGRESS_EVENTS = 4096
+PROGRESS_FQN = r"GoymenERP\.Api\.IntegrationTests\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+"
+RESULT_PROGRESS = re.compile(
+    rf"^\s*(Passed|Failed|Skipped) ({PROGRESS_FQN})(?:\(.*\))? "
+    r"\[((?:< )?\d+(?:\.\d+)? (?:ms|s|m|h)(?: \d+(?:\.\d+)? (?:ms|s|m|h))*)\]\s*$"
+)
+LONG_RUNNING_PROGRESS = re.compile(
+    rf"^\s*(?:\[xUnit\.net [0-9:.]+\]\s*)?(?:GoymenERP\.Api\.IntegrationTests:\s*)?"
+    rf"\[Long Running Test\] '({PROGRESS_FQN})(?:\(.*\))?', Elapsed: (\d{{2}}:[0-5]\d:[0-5]\d)\s*$"
+)
+
+
+class TestProgress:
+    """Bounded, lossy diagnostic projection, never an input to the acceptance gate."""
+
+    def __init__(self) -> None:
+        self.pending = bytearray()
+        self.discard_line = False
+        self.events = 0
+        self.allowed = frozenset(BROAD_EXPECTED_TESTS) | frozenset(EXPECTED_TESTS)
+
+    def feed(self, chunk: bytes, *, final: bool = False) -> None:
+        parts = chunk.split(b"\n")
+        for index, part in enumerate(parts):
+            if len(self.pending) + len(part) > MAX_PROGRESS_LINE_BYTES:
+                self.pending.clear()
+                self.discard_line = True
+            if not self.discard_line:
+                self.pending.extend(part)
+            if index < len(parts) - 1 or final:
+                if not self.discard_line:
+                    self.report(self.pending.decode("utf-8", errors="replace"))
+                self.pending.clear()
+                self.discard_line = False
+
+    def report(self, line: str) -> None:
+        if self.events >= MAX_PROGRESS_EVENTS:
+            return
+        match = RESULT_PROGRESS.fullmatch(line)
+        if match:
+            outcome, name, duration = match.groups()
+            seconds = sum(
+                float(value) * {"ms": .001, "s": 1, "m": 60, "h": 3600}[unit]
+                for value, unit in re.findall(r"(\d+(?:\.\d+)?) (ms|s|m|h)", duration)
+            )
+        else:
+            match = LONG_RUNNING_PROGRESS.fullmatch(line)
+            if not match:
+                return
+            name, duration = match.groups()
+            hours, minutes, seconds_part = map(int, duration.split(":"))
+            seconds = hours * 3600 + minutes * 60 + seconds_part
+            outcome = "long-running"
+        if name in self.allowed and math.isfinite(seconds):
+            # Display names may contain theory arguments. Only the checked-in method name escapes.
+            print(f"SQL-DIAGNOSTIC phase=test-execution fqn={name} "
+                  f"outcome={outcome} duration_seconds={seconds:.3f}", flush=True)
+            self.events += 1
+
+
+def stop_test_process(process: subprocess.Popen[bytes]) -> None:
+    """Kill the POSIX group (Windows tree best effort), then reap the direct child silently."""
+    try:
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                check=False, timeout=10,
+            )
+        else:
+            os.killpg(process.pid, signal.SIGKILL)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    try:
+        process.kill()
+    except OSError:
+        pass
+    process.wait(timeout=10)
+
+
+def run_test_checked(arguments: list[str], repository_root: Path) -> subprocess.CompletedProcess[str]:
+    # One deadline covers the whole shard, including pipe completion. Progress never renews it.
+    started = time.monotonic()
+    deadline = started + TEST_EXECUTION_TIMEOUT_SECONDS
+    progress = TestProgress()
+    reader_errors: list[type[BaseException]] = []
+    print("SQL-DIAGNOSTIC phase=test-execution outcome=started duration_seconds=0.000", flush=True)
+    process = subprocess.Popen(
+        arguments, cwd=repository_root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        bufsize=0, start_new_session=os.name != "nt",
+    )
+    assert process.stdout is not None
+
+    def read_output() -> None:
+        try:
+            while chunk := process.stdout.read(4096):
+                progress.feed(chunk)
+            progress.feed(b"", final=True)
+        except Exception as exception:
+            reader_errors.append(type(exception))
+
+    reader = threading.Thread(target=read_output, daemon=True)
+    reader_started = False
+    try:
+        reader.start()
+        reader_started = True
+        returncode = process.wait(timeout=max(0, deadline - time.monotonic()))
+        if returncode != 0:
+            # A failed runner may leave a descendant holding the pipe. Keep its native failure;
+            # do not replace it with an output-drain timeout.
+            raise RuntimeError(f"RCSI acceptance command exited with native code {returncode}.")
+        reader.join(timeout=max(0, deadline - time.monotonic()))
+        if reader.is_alive():
+            raise subprocess.TimeoutExpired(arguments, TEST_EXECUTION_TIMEOUT_SECONDS)
+        if reader_errors:
+            raise RuntimeError("RCSI acceptance test output could not be read.")
+    except BaseException as exception:
+        # Cleanup must not replace the timeout/native error that caused acceptance to fail.
+        try:
+            stop_test_process(process)
+        except (OSError, subprocess.SubprocessError):
+            pass
+        if reader_started:
+            reader.join(timeout=10)
+        if isinstance(exception, subprocess.TimeoutExpired):
+            print(f"SQL-DIAGNOSTIC phase=test-execution outcome=timeout "
+                  f"duration_seconds={time.monotonic() - started:.3f}", flush=True)
+            raise RuntimeError(
+                f"RCSI acceptance test execution timed out after {TEST_EXECUTION_TIMEOUT_SECONDS} seconds."
+            ) from exception
+        print(f"SQL-DIAGNOSTIC phase=test-execution outcome=failed "
+              f"duration_seconds={time.monotonic() - started:.3f}", flush=True)
+        raise
+    finally:
+        if not reader.is_alive():
+            process.stdout.close()
+    print(f"SQL-DIAGNOSTIC phase=test-execution outcome=completed "
+          f"duration_seconds={time.monotonic() - started:.3f}", flush=True)
+    # Raw test output is deliberately not replayed: live diagnostics are already safely projected.
+    return subprocess.CompletedProcess(arguments, returncode, stdout="", stderr="")
+
+
 def run_checked(arguments: list[str], repository_root: Path) -> subprocess.CompletedProcess[str]:
+    if "--no-build" in arguments and "--results-directory" in arguments:
+        return run_test_checked(arguments, repository_root)
     result = subprocess.run(
         arguments,
         cwd=repository_root,
@@ -626,6 +776,11 @@ def main() -> int:
                 str(results_directory),
                 "--logger",
                 trx_logger(trx_path),
+                "--logger",
+                "console;verbosity=detailed",
+                "--",
+                "xUnit.DiagnosticMessages=true",
+                "xUnit.LongRunningTestSeconds=60",
             ],
             repository_root,
         )
