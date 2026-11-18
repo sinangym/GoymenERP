@@ -353,9 +353,27 @@ describe('plan edit on the detail screen', () => {
       targetThicknessMm: null,
       paintDescription: 'Polyester toz boya, Tedarikçi A',
       paintColorCode: 'RAL 9010',
+      paintSelection: {
+        productId: '20000000-0000-0000-0000-000000000002', productVersion: '12',
+        membershipVersion: '3', productSourceVersion: 'source:3',
+        supplierPartyId: '30000000-0000-0000-0000-000000000003',
+        supplierCompanyAccountId: '40000000-0000-0000-0000-000000000004',
+        supplierPartyVersion: '4', supplierAccountVersion: '5', colorId: null, colorVersion: null,
+      },
     }
     const fake = server(undefined, [planRevision({ processSpec: paint })], plan({ process: 'Paint', processSpec: paint }))
-    const recorded = installFetch({ capabilities: EDITOR_CAPABILITIES, respond: fake.respond })
+    const recorded = installFetch({ capabilities: EDITOR_CAPABILITIES, respond: (url, init) => {
+      if (url.includes('/manufacturing/references/paint-selections')) return json({
+        companyId: COMPANY_A,
+        products: [{ productId: paint.paintSelection.productId, productVersion: '12', membershipVersion: '3',
+          sourceVersion: 'source:3', code: 'SENTETIK-PNT', name: 'SENTETIK Boya' }],
+        suppliers: [{ partyId: paint.paintSelection.supplierPartyId,
+          companyAccountId: paint.paintSelection.supplierCompanyAccountId, partyVersion: '4', accountVersion: '5',
+          code: 'SENTETIK-TED', name: 'SENTETIK Tedarikçi' }],
+        colors: [], supplierSearchWindowFull: false,
+      })
+      return fake.respond(url, init)
+    } })
     renderAt(`/uretim/plan/${PLAN}`)
 
     await openEditForm(user)

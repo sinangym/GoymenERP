@@ -131,11 +131,17 @@ function requestSchemaName(pathName: string): string {
 describe('Manufacturing port ↔ canonical OpenAPI', () => {
   it('reads exactly the properties OrderViewV1 and its parts declare, all required', () => {
     const rollView = { ...roll(ROLL_1), commercialContext: null }
-    expect(Object.keys(order()).sort()).toEqual(names('OrderViewV1'))
+    expect(Object.keys(order({ cancellationReason: null, cancelledAtUtc: null, cancelledByUserId: null,
+      dueDate: null, dueDateDiffersFromPlan: false, dueDateRevision: 0, outputLines: [], planDueDate: null,
+      reopenings: [] })).sort()).toEqual(names('OrderViewV1'))
     expect(Object.keys(rollView).sort()).toEqual(names('RollBalanceViewV1'))
     expect(Object.keys(order().remainingTarget).sort()).toEqual(names('RemainingTargetViewV1'))
     expect(['basis', 'kg']).toEqual(names('TargetViewV1'))
-    for (const name of ['OrderViewV1', 'RemainingTargetViewV1', 'TargetViewV1']) {
+    expect([...(schema('OrderViewV1').required ?? [])].sort()).toEqual([
+      'closedAtUtc', 'closedByUserId', 'companyId', 'costStatus', 'orderId', 'planId', 'process',
+      'remainingTarget', 'rolls', 'status', 'target', 'version', 'workCenterId',
+    ])
+    for (const name of ['RemainingTargetViewV1', 'TargetViewV1']) {
       expect([...(schema(name).required ?? [])].sort()).toEqual(names(name))
     }
     expect([...(schema('RollBalanceViewV1').required ?? [])].sort()).toEqual(
@@ -147,7 +153,7 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
 
   it('reads exactly the current PlanViewV1 properties and keeps additive legacy projections optional', () => {
     const inputView = { ...plannedInput(ROLL_1), commercialContext: null }
-    expect(Object.keys(plan()).sort()).toEqual(names('PlanViewV1'))
+    expect(Object.keys(plan({ requiresReapproval: false, reapprovals: [] })).sort()).toEqual(names('PlanViewV1'))
     expect(Object.keys(inputView).sort()).toEqual(names('PlannedInputViewV1'))
     expect([...(schema('PlanViewV1').required ?? [])].sort()).toEqual(
       names('PlanViewV1').filter(
@@ -155,7 +161,8 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
           && name !== 'parameterSnapshot' && name !== LINE_SPEED && name !== 'orderId' && name !== 'rejections'
           && name !== 'cancellation' && name !== PROCESS_SPEC && name !== 'preparedBy'
           && name !== 'salesOrderLink' && name !== 'salesOrderLinkRevision'
-          && name !== 'requestedDueDate' && name !== 'dueDateRevision',
+          && name !== 'requestedDueDate' && name !== 'dueDateRevision'
+          && name !== 'requiresReapproval' && name !== 'reapprovals',
       ),
     )
     // F-010a (URT-D29): the termin is an optional nullable calendar day, never required.
@@ -240,7 +247,7 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
       expect(schema(name).properties, name).toHaveProperty(PROCESS_SPEC)
       expect(schema(name).required ?? [], name).not.toContain(PROCESS_SPEC)
     }
-    const processSpecNames = ['packageCount', 'paintColorCode', 'paintDescription', 'perimeterMm', 'pieceLengthMm',
+    const processSpecNames = ['packageCount', 'paintColorCode', 'paintDescription', 'paintSelection', 'perimeterMm', 'pieceLengthMm',
       'piecesPerPackage', 'targetThicknessMm', 'unitKg']
     expect(names('PlanProcessSpecRequestV1')).toEqual(processSpecNames)
     expect(names('PlanProcessSpecViewV1')).toEqual(processSpecNames)
@@ -304,7 +311,7 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
           'requiredDocuments',
         ],
         // URT-S16 (BS-14): the usable remnant's label classification is an additive optional member.
-        optional: ['remnantClassification'],
+        optional: ['outputLine', 'remnantClassification'],
       },
     ] as const
 

@@ -383,7 +383,7 @@ describe('decodeOrderList', () => {
     ['a cursor that is neither text nor null', orderList([orderSummary()], 7 as unknown as string)],
     ['an empty cursor', orderList([orderSummary()], '')],
     ['an id that is not a guid', orderList([orderSummary({ orderId: 'nope' })])],
-    ['a status the contract does not have', orderList([orderSummary({ status: 'Cancelled' })])],
+    ['a status the contract does not have', orderList([orderSummary({ status: 'UnknownStatus' })])],
     ['a kilogram that is not the server’s text', orderList([orderSummary({ plannedInputKg: '1,5' })])],
     ['a negative roll count', orderList([orderSummary({ plannedRollCount: -1 })])],
     ['a version of zero', orderList([orderSummary({ version: 0 })])],
