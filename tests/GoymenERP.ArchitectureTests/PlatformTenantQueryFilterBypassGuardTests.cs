@@ -4856,6 +4856,249 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Sql"] = 1
                         }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Manufacturing cost-difference source or human decision exists; use a forward fix. 1 lexical Sql call(s).
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117000534_AddManufacturingCostDifferenceProposals.cs"] =
+                    new("51923346b5c45e5e7df4b518c8544a6e3920a19253530b04c4e8644004f108cf", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; An immutable credit movement proposal source exists; use a forward fix. 1 lexical Sql call(s).
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117005516_AddCreditMovementProposals.cs"] =
+                    new("8cb16498b72880e56ab2e8e1186fc8d9d54ca36ea77a7b5d78a20879b0fb2b37", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Invoice line COGS correction history exists; AddInvoiceLineCogsCorrections is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117095844_AddInvoiceLineCogsCorrections.cs"] =
+                    new("b6665d4a933d06d773d80251a940412d318861c4fdede2455c528435ad85c1f7", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Received Finance source provenance exists; AddFinanceJournalSources is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117102540_AddFinanceJournalSources.cs"] =
+                    new("fb65bfec47d4c6be4a6df5ca215bfb3705d12ffad8a53924185e1a203d5b23c3", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Source voucher approval, cancellation or official document facts exist; AddSourceVoucherLifecycle is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117123611_AddSourceVoucherLifecycle.cs"] =
+                    new("8911e81f66cadb87310c6add8222d251a40efae490bb98092c3d9914a0bd15b3", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Period closure and reopening history exists; AddPeriodClosureCarryAndReopening is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117154311_AddPeriodClosureCarryAndReopening.cs"] =
+                    new("4fbb25886fb66576bfbc977a82b43091c601004cd722c618bee06a5ab96073ea", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; COGS mapping choices exist; WidenPostingMappingsToCogs is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117171929_WidenPostingMappingsToCogs.cs"] =
+                    new("e3c1dbacf6b43bc6319e5d2a566aa1f61c25f25d90fddb60b23a145b36083699", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Owner-only new immutable/forward-only evidence trigger(s), THROW 51930,51931,51932; Down refuses history loss before owner schema rollback. No data backfill or cross-module DML in inspected SQL. 3 lexical Sql call(s).
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117175214_AddInventoryCostProposals.cs"] =
+                    new("2f1a32d058444cbd70bb24d6704d4a6d2eafbd308703a0a583ba8ec5c9373667", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 3 }),
+                // Tren-1 W8; K3 review pending. Owner-only new immutable/forward-only evidence trigger(s), THROW 51800,51801,51802; Down refuses history loss before owner schema rollback. No data backfill or cross-module DML in inspected SQL. 2 lexical Sql call(s).
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117190022_AddPostedManufacturingCostAttribution.cs"] =
+                    new("75ddbe7f68f3bb1f46b46db2099dc4778920e684dba26dc91aab589b8e8df629", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 2 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Exact component rounding evidence exists; AddInventoryCostComponentRounding is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117194231_AddInventoryCostComponentRounding.cs"] =
+                    new("61b7744e87199289f618aa1ec38788381e73b4d05b75e3be95c30b2947d28be5", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Owner-only new immutable/forward-only evidence trigger(s), THROW 51804,51805,51806; Down refuses history loss before owner schema rollback. No data backfill or cross-module DML in inspected SQL. 2 lexical Sql call(s).
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117205436_AddPostedPurchaseCostAttribution.cs"] =
+                    new("605a1640baad035b3c59e3b34a1d031fd28f14b911056fbdb3484136905acca6", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 2 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Cash exchange source evidence exists; AllowCashExchangeJournalSources is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117213704_AllowCashExchangeJournalSources.cs"] =
+                    new("090593568186c67313d24d68a03c226ed5da6fa550ff7251a39cee80e2c6eb2b", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Owner-only new immutable/forward-only evidence trigger(s), THROW 51812,51813,51814; Down refuses history loss before owner schema rollback. No data backfill or cross-module DML in inspected SQL. 2 lexical Sql call(s).
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117223234_AddInventoryCostComponentCancellations.cs"] =
+                    new("31f37361161b5b320662ac4a94db9f63e391ea47c1e849cb0dbd9111636417cc", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 2 }),
+                // Tren-1 W8; K3 review pending. Owner-only new immutable/forward-only evidence trigger(s), THROW 51840,51842,51843; Down refuses history loss before owner schema rollback. No data backfill or cross-module DML in inspected SQL. 2 lexical Sql call(s).
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117232712_AddInvoiceCogsClaimSuccessions.cs"] =
+                    new("5dfc6d82c93a3877e83fde70ee7fcd3cf7a718b5c237f572f59134abc21e9bd1", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 2 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Typed System audit history exists; AddTypedFounderRecoverySystemAudit is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Persistence/Migrations/20261116220434_AddTypedFounderRecoverySystemAudit.cs"] =
+                    new("2eaba0016516fd9541dd91d55ff66e958c019c2fac2e7db868c34da690d08c20", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Self-service credential audit history exists; AddLocalCredentialSelfServiceAudit requires a forward fix. 1 lexical Sql call(s).
+                ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Persistence/Migrations/20261117003912_AddLocalCredentialSelfServiceAudit.cs"] =
+                    new("8e3265b87aff8462b16f246689f5e5fdd5136db263b1c9b3405a6c0397e7ffec", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Platform credential recovery audit exists; AddPlatformCredentialRecoveryAudit requires a forward fix. 1 lexical Sql call(s).
+                ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Persistence/Migrations/20261117160915_AddPlatformCredentialRecoveryAudit.cs"] =
+                    new("a0c09cc3546cb4025ecdda1b2ada6709dd7d58c2b0c8d6501d2fdef0612cb925", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; UBL invoice source exists; AddPurchaseInvoiceXmlContentKind is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Persistence/Migrations/20261117112418_AddPurchaseInvoiceXmlContentKind.cs"] =
+                    new("a79686204a833c18e35c9fccdd55be81e789dd17412ec00e1f870ba7ecae987d", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Document branding or publication evidence exists; AddDocumentBrandingPublications is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Persistence/Migrations/20261117140908_AddDocumentBrandingPublications.cs"] =
+                    new("cc36054353dd505cdebd58b455e06a99bf7903c6d023a524e7e37f6f3b436243", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Credit source profiles or bank charges exist; AddCreditSourceProfiles is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261116233417_AddCreditSourceProfiles.cs"] =
+                    new("770b93ee56c293cbba7ba744fa8fbd08859d8d7eb3373718537624e477489a17", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Official invoice source dates exist; use a forward fix. 1 lexical Sql call(s).
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261117000542_AddOfficialSalesInvoiceSourceDate.cs"] =
+                    new("7d53de1ad7d9d3267f5065b738a1cd44e3e37101fd7008af357e81b827c1d423", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Credit actual source, command receipt or outbox event exists; use a forward fix. 1 lexical Sql call(s).
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261117005509_AddCreditActualMovements.cs"] =
+                    new("552c40158bf69769ad184ccd9aeed9b521ecddfe1678b747350a50b7ee3e079c", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Credit bank/group limit source history exists; preserve it with a forward fix. 1 lexical Sql call(s).
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261117012305_AddCreditBankGroupLimits.cs"] =
+                    new("7516e0b2cae0b7f6c30391b0c7cdface4cafae44fb53ce1989cb70d67e472003", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Party balance transfer or allocation beneficiary evidence exists; AddFinancePartyBalanceTransfers is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261117093515_AddFinancePartyBalanceTransfers.cs"] =
+                    new("17c8a81438c4c40a7c7833e6fea8bc6a42a2f5f24361269f7ec13975b35f42dd", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Period carry source or reversal proof exists; AddPeriodCarryVouchers is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261117154319_AddPeriodCarryVouchers.cs"] =
+                    new("2f8843fa7207771188e2fe3b9689582b0b01e106eed4d7c6a9c8a4a1ca6c321d", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Recorded exchange source evidence exists; AddCashTransferExchangeSnapshots is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261117175952_AddCashTransferExchangeSnapshots.cs"] =
+                    new("160f82e3e1399e867cc5269d6ef3b14f168d2671c930880170543fc2b534289e", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Recorded finance document number proof exists; AddFinanceRecordedDocumentNumbers is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261117200743_AddFinanceRecordedDocumentNumbers.cs"] =
+                    new("530d732675dc055b3b1f8ad871e659c01893718802ccd0f7f530cba1ab1ec294", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Owner-only new immutable/forward-only evidence trigger(s), THROW 51912,51913,51914,51915; Down refuses history loss before owner schema rollback. No data backfill or cross-module DML in inspected SQL. 4 lexical Sql call(s).
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261117212319_AddCashExchangeBookValues.cs"] =
+                    new("4b796833e8ee92039effd8868d64e8dbb0f138f30ab7a78421e35ee5af48b096", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 4 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Explicit collateral bank proof exists; AddCollateralBankProof is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261117220054_AddCollateralBankProof.cs"] =
+                    new("90aa325edba4dc64deb81eb8cd6590b644e06b6b92aab408414fcf7e5df9248c", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Explicit COGS classification evidence exists; AddProductCogsClassificationTerminals is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Persistence/Migrations/20261117082927_AddProductCogsClassificationTerminals.cs"] =
+                    new("b56cc14affae99cd499f5f2f53c38d73c3ddabe749c7977bbea75b2db9a81549", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; AddExplicitCompanySetupAuthority history exists; rollback is refused (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20261116205256_AddExplicitCompanySetupAuthority.cs"] =
+                    new("641b74d691ef5dadd04659ac2d9460d3c5d3e4116e4f3571601b7745e42fc105", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Two-factor credentials or command evidence exist; AddLocalTwoFactorSecrets is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20261117004612_AddLocalTwoFactorSecrets.cs"] =
+                    new("74870470e4301b0899189f7b1876da65abf89da8a24307e9a2018446b0e3756d", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Explicit COGS classification evidence exists; AddProductCogsClassificationAuthority is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20261117082918_AddProductCogsClassificationAuthority.cs"] =
+                    new("1b02d353c6a49f74f3c14a106e4c7dea0ac059e1769c59cee5ffddd66f1722fb", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Owner-only new immutable/forward-only evidence trigger(s), THROW 51922,51925; Down refuses history loss before owner schema rollback. No data backfill or cross-module DML in inspected SQL. 2 lexical Sql call(s).
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20261117160905_AddOperatorTwoFactorRecoveryAttempts.cs"] =
+                    new("4b499e3f856fb4da64b5b709a9ced08c928b678e86032a605525d26d707e2b01", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 2 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Receipt reversal history or movements exist; AddInventoryGoodsReceiptReversals is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261116210057_AddInventoryGoodsReceiptReversals.cs"] =
+                    new("0778c5f84f323a61e219f361a3a357f06a7b9f14aed48d316256016ee3ab13da", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Inventory movement cost provenance exists; AddInventoryMovementCostProvenance is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261116232813_AddInventoryMovementCostProvenance.cs"] =
+                    new("c52bfc58adf18d074f3acbeaaf5c85ea28d7d3c4ef9942e9ca1131c7c18b862c", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Inventory exact movement cost provenance exists; forward fix is required. 2 lexical Sql call(s).
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261116235649_AddInventoryOutboxCursorAndExactCostRatios.cs"] =
+                    new("11e2b783b1b671a9bf0cb98f1d707364e2e7dac8b716b8dff9dbf40843a8353f", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 2 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Exact cost pool or recognition mass provenance exists; AddInventoryExactCostPools is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261117003341_AddInventoryExactCostPools.cs"] =
+                    new("220178b663ba7477f5b38426bbd9a6ef4ad691d625db0f15dd93fa780065acc1", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Immutable first-entry or exact issue FX proof exists; AddInventoryFirstEntryExchangeRateProof is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261117010119_AddInventoryFirstEntryExchangeRateProof.cs"] =
+                    new("81f3418a14b90870fd2fda820f9b6cbe8a62ff6675938c0bfa8139f9177fbd26", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Negative stock attempt history is append-only; use a reviewed forward fix. 1 lexical Sql call(s).
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261117091723_AddInventoryNegativeStockAttempts.cs"] =
+                    new("02a8fef9fe8d112a48bc5763f4a7e3c5bda7f7acdd5a6e59366edeeb19d2522b", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Negative stock count-boundary proof is retained; use a reviewed forward fix. 1 lexical Sql call(s).
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261117095345_AddInventoryNegativeStockCountBoundaries.cs"] =
+                    new("9e895764548defb2a74e4c77a9c6900e0718f91265fe865550a2d9c3e21f4f61", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Transfer receipt document history exists; AddInventoryTransferReceiptDocuments is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261117122205_AddInventoryTransferReceiptDocuments.cs"] =
+                    new("5074d0c03b98dd09d44854d091c3349c1c0b330e7b503001082b57c43102bf19", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Customer-owned subcontract allocation evidence exists; AddInventorySubcontractDeliverySources is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261117140912_AddInventorySubcontractDeliverySources.cs"] =
+                    new("3b895c4c9d1867a446ea3372a41c1348810ac6f1f1783f6d7865d0456e111b43", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Owner-only new immutable/forward-only evidence trigger(s), THROW 51926,51927,51928; Down refuses history loss before owner schema rollback. No data backfill or cross-module DML in inspected SQL. 3 lexical Sql call(s).
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261117165518_AddPurchaseInvoiceCostApplications.cs"] =
+                    new("d030c29e2862cb59d8701d260e8d14bdb4ef7e8ffb271abfb216798b0af5b189", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 3 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Dispatch kilogram source allocations exist; AddDispatchKilogramAllocations is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261117010812_AddDispatchKilogramAllocations.cs"] =
+                    new("67b9b0cab9569062490b2b4d77ed5ebb4f56fabed30129e1f7db48695c316bb5", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Transfer departure, association or no-exit history exists; AddTransferDepartures is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261117111253_AddTransferDepartures.cs"] =
+                    new("55903d515b4d99af93b8fc6c60588e603ea78edc8bb9b1f1136251c19c69a269", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Subcontract delivery, correction or replay evidence exists; AddLogisticsSubcontractDeliveries is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261117151710_AddLogisticsSubcontractDeliveries.cs"] =
+                    new("66a0051d39d32eb336ac4cd5fe2429400d1578d9e469a6a2154f6069be8e3bc1", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Owner-only new immutable/forward-only evidence trigger(s), THROW 51817,51818,51819,51820; Down refuses history loss before owner schema rollback. One pending1/version1 to approved2/version2 exception transition only; evidence fields stay fixed. 4 lexical Sql call(s).
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261117233641_AddLogisticsShipmentPlanExcess.cs"] =
+                    new("9a3a5579147cdf1e31d30f7caa137d3a3da04363efa81c8017a2b2f5ddc6275a", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 4 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Recorded work-center queue history exists; AddManufacturingManualQueues is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/20261116210842_AddManufacturingManualQueues.cs"] =
+                    new("9e89fe6607f60f88bf23c5985bf800ca672e6f2a1f3b68da1cbe7b37f6d2f281", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Recorded reopening or multiple closure generations exist; AddManufacturingOrderReopenings is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/20261116214107_AddManufacturingOrderReopenings.cs"] =
+                    new("177548934fcefa7f94f76edd4ebeb946b45d862e503038fef0933a3a3a12d7d2", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Immutable manufacturing cost generations exist; AddManufacturingCostGenerations is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/20261116232039_AddManufacturingCostGenerations.cs"] =
+                    new("b48ac008b61994fbf0dcf756d82ff5e3e33b13b3da54a31bccc531ccfe2fea0d", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Actual non-kg consumption history exists; AddManufacturingNonKgInputFacts is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/20261116234916_AddManufacturingNonKgInputFacts.cs"] =
+                    new("9eeb1d8145841223da49d66cbe30e72c32557578f000182c6f66ca3ff4c635c6", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Stored paint owner references would be lost; AddManufacturingPaintSelections is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/20261117014136_AddManufacturingPaintSelections.cs"] =
+                    new("f0364d671f6b5b179567f6372687ae9f6c9d18252ce7922e6be841afd88299b8", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; AddAuthorizedCompanyOpening history exists; rollback is refused (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/Migrations/20261116205304_AddAuthorizedCompanyOpening.cs"] =
+                    new("d8188f063f4bbf7428c75ec9f5245e146ca27925d88de187a13219bfd53a6a0c", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Explicit COGS classification evidence exists; AddProductCogsClassifications is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/20261117082903_AddProductCogsClassifications.cs"] =
+                    new("d204be52e71238aa76c5e9a8e0ab74444a9e0642487643effb01bbc631626332", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Paint membership source, history or command answers exist; AddProductPaintMemberships is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/Migrations/20261117013540_AddProductPaintMemberships.cs"] =
+                    new("2c7290a512b1decc59d86621ca150237181f7d3c61de84734993c50977599afc", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Up copies existing cancelled purchase orders into new PurchaseOrderCancellationHistory, preserving CompanyId/OrderId/version/actor/reason/time, only Status=3. Down51949 refuses any adjustment, cancellation, receipt or supplier-return history. No cross-module DML. 2 lexical Sql call(s).
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261116213347_AddPurchaseReceiptAdjustments.cs"] =
+                    new("6534bd550b87b2cd0d98f7a6ba3233980f60e6476ba5aea2b9c3edbec99fbbc9", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 2 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Recorded supplier-return response snapshots require a forward fix. 1 lexical Sql call(s).
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261116215806_AddPurchaseSupplierReturnResponseSnapshots.cs"] =
+                    new("0d0274ee83e51843cfe0e833622d4a69ed5601d1e26c173df4e25bda2facb748", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Receipt adjustment batch or outbox cursor history exists; AddPurchaseReceiptAdjustmentBatches is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261116222957_AddPurchaseReceiptAdjustmentBatches.cs"] =
+                    new("4a268970bcdebd1029964588b824011fa5809bd31181663c7432d51be6c01493", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Purchase order number history exists; AddPurchaseOrderDocumentNumbers is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261117002600_AddPurchaseOrderDocumentNumbers.cs"] =
+                    new("5637b2475144747a429a387108b53e69fcd733605fd78d7c0ce639cbc415e74c", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Supplier revision or invoice binding history exists; AddPurchaseSupplierRevisions is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261117072202_AddPurchaseSupplierRevisions.cs"] =
+                    new("2ee0321ca47fdeee9ab673832b2a28ffadd0f9533a99e7079672a832df37a944", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Incoming invoice source, history or terminal records exist; AddPurchaseIncomingInvoices is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261117084001_AddPurchaseIncomingInvoices.cs"] =
+                    new("b39355d6aac1cf8e6372106682efd4f5ba1dd3c012ed3dcd608be92f55672f7c", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Service order, acceptance, invoice binding or terminal history exists; AddPurchaseServiceOrders is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261117110054_AddPurchaseServiceOrders.cs"] =
+                    new("57b9fc8eb27f584e9e422778bcc2b1de6eb61b68e32acfd8aa71bbd93770dd2d", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Invoice import owner identity exists; AddPurchaseInvoiceImportReservations is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261117112436_AddPurchaseInvoiceImportReservations.cs"] =
+                    new("3278858d7fb61bb296cd1a022bc5e9a87321aa6fca35d17c0340d0f8133afa53", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Additional purchase expense history exists; AddPurchaseAdditionalCosts is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261117114517_AddPurchaseAdditionalCosts.cs"] =
+                    new("2baebc361924345f4823d54f47aa9465e874ce9666ad926a9eee5f162ba5e293", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Purchase expense invoice matching history requires a forward fix. 1 lexical Sql call(s).
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261117120452_AddPurchaseAdditionalCostInvoiceBindings.cs"] =
+                    new("dd5de753e963574b8552aaee95d5f0022440800f46d5ceb26ec28e46537da761", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Official invoice source evidence exists; AddSalesInvoiceOfficialSourceProof is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261117081514_AddSalesInvoiceOfficialSourceProof.cs"] =
+                    new("25cbcc65bbab142cd8a9e3e4f9b3f6c43a8faeae401cdd48dd1e3731852487ad", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Sales outbox events retain cursor evidence; AddSalesOutboxCommittedCursor requires a forward fix. 1 lexical Sql call(s).
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261117084843_AddSalesOutboxCommittedCursor.cs"] =
+                    new("3aceeb931798464c76be74153d0e1d611228593c0d87e0f96fcb6c29b7c8db37", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Recorded approval margin cost evidence exists; AddSalesMarginCostSnapshots is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261117105309_AddSalesMarginCostSnapshots.cs"] =
+                    new("9b32e6cd4a2a907e341b675d40c5590bf40be7bbdbcdc9b1720619d24cbd2f3c", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Up copies existing sales InvoiceMatches into new OfficialInvoiceClaims with CompanyId/InvoiceId/official number/ETTN and source kind dispatch; new owner append-only/lifecycle triggers51997. Down51994 refuses non-reconstructable lifecycle/identity evidence before dropping new triggers/tables. No cross-module DML. 6 lexical Sql call(s).
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261117113343_AddSubcontractInvoiceLifecycle.cs"] =
+                    new("9750c2069e5318e97ec5283475aa8d9c06b185495450310bc63734fed04da966", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 6 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Exact subcontract invoice command response history exists; AddSubcontractInvoiceReplaySequence is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261117155825_AddSubcontractInvoiceReplaySequence.cs"] =
+                    new("8e8977d99ab13cf9a075b2b2dfefd711c4237186ce5d053b72a4842686cc0c3a", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. One lexical Sql call runs SalesOfficialInvoiceCancellationGuards.DownSql. The guard51919 refuses cancellation/attempt/delivery or state7 history before dropping new triggers; Up calls the separately fingerprinted helper to install owner cancellation/lifecycle guards. Both files must be pinned. 1 lexical Sql call(s).
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261117195343_AddSalesOfficialInvoiceCancellation.cs"] =
+                    new("ffe4980fd1853d3afa0d3426dafb8b79454611e0b7e90e91ba604995ad5da3a4", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Seven lexical Sql calls install three immutable cancellation evidence triggers51916/17/18 and alter four sales-only existing guards. Normal finalized6 to officially-cancelled7 requires exact same-company immutable cancellation fact; invoice line release is one same-owner UPDATE joined by CompanyId and InvoiceId. DownSql51919 blocks recorded cancellation history then restores old guard definitions. Reuses existing51223/24/32/51997 intentionally; no new cross-module write. 7 lexical Sql call(s).
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/SalesOfficialInvoiceCancellationGuards.cs"] =
+                    new("171ea7dd2fe60e256f4ee9230ae8eacb50aebd98b86bd8a5060ef73230cb378c", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 7 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Operator two-factor recovery security history exists; AddOperatorTwoFactorRecoverySecurityEvents requires a forward fix. 1 lexical Sql call(s).
+                ["src/backend/Modules/SecurityEvents/GoymenERP.Modules.SecurityEvents.Infrastructure/Persistence/Migrations/20261117161010_AddOperatorTwoFactorRecoverySecurityEvents.cs"] =
+                    new("f455411dd08aaefaedbd6e40fbcf9eb1d40a3cedbbbc631f85a1d17ded93af3b", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Document number or operational policy history exists; AddDocumentNumberSeriesAndOperationalPolicies is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/20261116220424_AddDocumentNumberSeriesAndOperationalPolicies.cs"] =
+                    new("f63ed6f51a44421deb2e83992dfcae3014ead46fd857c1de9bf0156e5dbd3bfa", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Manufacturing baseline source history exists; AddManufacturingProfileBaselineTransfers is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/20261117001828_AddManufacturingProfileBaselineTransfers.cs"] =
+                    new("71ad691efe3a071a0564c224b0bc290ffb5200634d00676bc68880c3f189d7eb", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Published purchase invoice variance history exists; AddPurchaseInvoiceVariancePolicies is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/20261117085524_AddPurchaseInvoiceVariancePolicies.cs"] =
+                    new("2fd6131e7fe6b757a14966b3d6258fb0ccd70b1307adfe0395627cbc5b72aaed", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Warehouse transfer scale history exists; AddWarehouseTransferScalePolicies is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/20261117111242_AddWarehouseTransferScalePolicies.cs"] =
+                    new("80359213e4c141de9d79182ac5697b0493345f3f8a8b50d8e5cdda65867a618d", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Finance receipt or voucher number history exists; AddFinanceDocumentNumberSeries is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/20261117200733_AddFinanceDocumentNumberSeries.cs"] =
+                    new("be5146a204c1eec60dbdea2e3dd1506b9a738ec67101e7f6ecf6aed3a478f463", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Financial policy or bank source history exists; AddFinancePolicyFamilies is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/20261117220044_AddFinancePolicyFamilies.cs"] =
+                    new("3d7264a234b9c41fa1738da1f9870b7a2327a55e8ccbf0a79d1e3dbc439f8381", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Notification delivery, deduplication or passivation history exists; use a forward fix. 1 lexical Sql call(s).
+                ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261116234150_AddPersonalNotifications.cs"] =
+                    new("410215fe07c1fc94023109418d24e027019103b05932f6839482f0eccac27682", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
             };
 
     private static readonly HashSet<string> ReviewedProjectSdks =
@@ -4863,249 +5106,6 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         {
             "Microsoft.NET.Sdk",
             "Microsoft.NET.Sdk.Web"
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Manufacturing cost-difference source or human decision exists; use a forward fix. 1 lexical Sql call(s).
-            ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117000534_AddManufacturingCostDifferenceProposals.cs"] =
-                new("51923346b5c45e5e7df4b518c8544a6e3920a19253530b04c4e8644004f108cf", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; An immutable credit movement proposal source exists; use a forward fix. 1 lexical Sql call(s).
-            ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117005516_AddCreditMovementProposals.cs"] =
-                new("8cb16498b72880e56ab2e8e1186fc8d9d54ca36ea77a7b5d78a20879b0fb2b37", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Invoice line COGS correction history exists; AddInvoiceLineCogsCorrections is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117095844_AddInvoiceLineCogsCorrections.cs"] =
-                new("b6665d4a933d06d773d80251a940412d318861c4fdede2455c528435ad85c1f7", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Received Finance source provenance exists; AddFinanceJournalSources is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117102540_AddFinanceJournalSources.cs"] =
-                new("fb65bfec47d4c6be4a6df5ca215bfb3705d12ffad8a53924185e1a203d5b23c3", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Source voucher approval, cancellation or official document facts exist; AddSourceVoucherLifecycle is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117123611_AddSourceVoucherLifecycle.cs"] =
-                new("8911e81f66cadb87310c6add8222d251a40efae490bb98092c3d9914a0bd15b3", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Period closure and reopening history exists; AddPeriodClosureCarryAndReopening is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117154311_AddPeriodClosureCarryAndReopening.cs"] =
-                new("4fbb25886fb66576bfbc977a82b43091c601004cd722c618bee06a5ab96073ea", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; COGS mapping choices exist; WidenPostingMappingsToCogs is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117171929_WidenPostingMappingsToCogs.cs"] =
-                new("e3c1dbacf6b43bc6319e5d2a566aa1f61c25f25d90fddb60b23a145b36083699", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Owner-only new immutable/forward-only evidence trigger(s), THROW 51930,51931,51932; Down refuses history loss before owner schema rollback. No data backfill or cross-module DML in inspected SQL. 3 lexical Sql call(s).
-            ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117175214_AddInventoryCostProposals.cs"] =
-                new("2f1a32d058444cbd70bb24d6704d4a6d2eafbd308703a0a583ba8ec5c9373667", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 3 }),
-            // Tren-1 W8; K3 review pending. Owner-only new immutable/forward-only evidence trigger(s), THROW 51800,51801,51802; Down refuses history loss before owner schema rollback. No data backfill or cross-module DML in inspected SQL. 2 lexical Sql call(s).
-            ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117190022_AddPostedManufacturingCostAttribution.cs"] =
-                new("75ddbe7f68f3bb1f46b46db2099dc4778920e684dba26dc91aab589b8e8df629", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 2 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Exact component rounding evidence exists; AddInventoryCostComponentRounding is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117194231_AddInventoryCostComponentRounding.cs"] =
-                new("61b7744e87199289f618aa1ec38788381e73b4d05b75e3be95c30b2947d28be5", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Owner-only new immutable/forward-only evidence trigger(s), THROW 51804,51805,51806; Down refuses history loss before owner schema rollback. No data backfill or cross-module DML in inspected SQL. 2 lexical Sql call(s).
-            ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117205436_AddPostedPurchaseCostAttribution.cs"] =
-                new("605a1640baad035b3c59e3b34a1d031fd28f14b911056fbdb3484136905acca6", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 2 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Cash exchange source evidence exists; AllowCashExchangeJournalSources is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117213704_AllowCashExchangeJournalSources.cs"] =
-                new("090593568186c67313d24d68a03c226ed5da6fa550ff7251a39cee80e2c6eb2b", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Owner-only new immutable/forward-only evidence trigger(s), THROW 51812,51813,51814; Down refuses history loss before owner schema rollback. No data backfill or cross-module DML in inspected SQL. 2 lexical Sql call(s).
-            ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117223234_AddInventoryCostComponentCancellations.cs"] =
-                new("31f37361161b5b320662ac4a94db9f63e391ea47c1e849cb0dbd9111636417cc", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 2 }),
-            // Tren-1 W8; K3 review pending. Owner-only new immutable/forward-only evidence trigger(s), THROW 51840,51842,51843; Down refuses history loss before owner schema rollback. No data backfill or cross-module DML in inspected SQL. 2 lexical Sql call(s).
-            ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20261117232712_AddInvoiceCogsClaimSuccessions.cs"] =
-                new("5dfc6d82c93a3877e83fde70ee7fcd3cf7a718b5c237f572f59134abc21e9bd1", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 2 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Typed System audit history exists; AddTypedFounderRecoverySystemAudit is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Persistence/Migrations/20261116220434_AddTypedFounderRecoverySystemAudit.cs"] =
-                new("2eaba0016516fd9541dd91d55ff66e958c019c2fac2e7db868c34da690d08c20", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Self-service credential audit history exists; AddLocalCredentialSelfServiceAudit requires a forward fix. 1 lexical Sql call(s).
-            ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Persistence/Migrations/20261117003912_AddLocalCredentialSelfServiceAudit.cs"] =
-                new("8e3265b87aff8462b16f246689f5e5fdd5136db263b1c9b3405a6c0397e7ffec", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Platform credential recovery audit exists; AddPlatformCredentialRecoveryAudit requires a forward fix. 1 lexical Sql call(s).
-            ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Persistence/Migrations/20261117160915_AddPlatformCredentialRecoveryAudit.cs"] =
-                new("a0c09cc3546cb4025ecdda1b2ada6709dd7d58c2b0c8d6501d2fdef0612cb925", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; UBL invoice source exists; AddPurchaseInvoiceXmlContentKind is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Persistence/Migrations/20261117112418_AddPurchaseInvoiceXmlContentKind.cs"] =
-                new("a79686204a833c18e35c9fccdd55be81e789dd17412ec00e1f870ba7ecae987d", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Document branding or publication evidence exists; AddDocumentBrandingPublications is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Persistence/Migrations/20261117140908_AddDocumentBrandingPublications.cs"] =
-                new("cc36054353dd505cdebd58b455e06a99bf7903c6d023a524e7e37f6f3b436243", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Credit source profiles or bank charges exist; AddCreditSourceProfiles is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261116233417_AddCreditSourceProfiles.cs"] =
-                new("770b93ee56c293cbba7ba744fa8fbd08859d8d7eb3373718537624e477489a17", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Official invoice source dates exist; use a forward fix. 1 lexical Sql call(s).
-            ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261117000542_AddOfficialSalesInvoiceSourceDate.cs"] =
-                new("7d53de1ad7d9d3267f5065b738a1cd44e3e37101fd7008af357e81b827c1d423", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Credit actual source, command receipt or outbox event exists; use a forward fix. 1 lexical Sql call(s).
-            ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261117005509_AddCreditActualMovements.cs"] =
-                new("552c40158bf69769ad184ccd9aeed9b521ecddfe1678b747350a50b7ee3e079c", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Credit bank/group limit source history exists; preserve it with a forward fix. 1 lexical Sql call(s).
-            ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261117012305_AddCreditBankGroupLimits.cs"] =
-                new("7516e0b2cae0b7f6c30391b0c7cdface4cafae44fb53ce1989cb70d67e472003", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Party balance transfer or allocation beneficiary evidence exists; AddFinancePartyBalanceTransfers is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261117093515_AddFinancePartyBalanceTransfers.cs"] =
-                new("17c8a81438c4c40a7c7833e6fea8bc6a42a2f5f24361269f7ec13975b35f42dd", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Period carry source or reversal proof exists; AddPeriodCarryVouchers is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261117154319_AddPeriodCarryVouchers.cs"] =
-                new("2f8843fa7207771188e2fe3b9689582b0b01e106eed4d7c6a9c8a4a1ca6c321d", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Recorded exchange source evidence exists; AddCashTransferExchangeSnapshots is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261117175952_AddCashTransferExchangeSnapshots.cs"] =
-                new("160f82e3e1399e867cc5269d6ef3b14f168d2671c930880170543fc2b534289e", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Recorded finance document number proof exists; AddFinanceRecordedDocumentNumbers is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261117200743_AddFinanceRecordedDocumentNumbers.cs"] =
-                new("530d732675dc055b3b1f8ad871e659c01893718802ccd0f7f530cba1ab1ec294", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Owner-only new immutable/forward-only evidence trigger(s), THROW 51912,51913,51914,51915; Down refuses history loss before owner schema rollback. No data backfill or cross-module DML in inspected SQL. 4 lexical Sql call(s).
-            ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261117212319_AddCashExchangeBookValues.cs"] =
-                new("4b796833e8ee92039effd8868d64e8dbb0f138f30ab7a78421e35ee5af48b096", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 4 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Explicit collateral bank proof exists; AddCollateralBankProof is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261117220054_AddCollateralBankProof.cs"] =
-                new("90aa325edba4dc64deb81eb8cd6590b644e06b6b92aab408414fcf7e5df9248c", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Explicit COGS classification evidence exists; AddProductCogsClassificationTerminals is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Persistence/Migrations/20261117082927_AddProductCogsClassificationTerminals.cs"] =
-                new("b56cc14affae99cd499f5f2f53c38d73c3ddabe749c7977bbea75b2db9a81549", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; AddExplicitCompanySetupAuthority history exists; rollback is refused (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20261116205256_AddExplicitCompanySetupAuthority.cs"] =
-                new("641b74d691ef5dadd04659ac2d9460d3c5d3e4116e4f3571601b7745e42fc105", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Two-factor credentials or command evidence exist; AddLocalTwoFactorSecrets is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20261117004612_AddLocalTwoFactorSecrets.cs"] =
-                new("74870470e4301b0899189f7b1876da65abf89da8a24307e9a2018446b0e3756d", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Explicit COGS classification evidence exists; AddProductCogsClassificationAuthority is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20261117082918_AddProductCogsClassificationAuthority.cs"] =
-                new("1b02d353c6a49f74f3c14a106e4c7dea0ac059e1769c59cee5ffddd66f1722fb", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Owner-only new immutable/forward-only evidence trigger(s), THROW 51922,51925; Down refuses history loss before owner schema rollback. No data backfill or cross-module DML in inspected SQL. 2 lexical Sql call(s).
-            ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20261117160905_AddOperatorTwoFactorRecoveryAttempts.cs"] =
-                new("4b499e3f856fb4da64b5b709a9ced08c928b678e86032a605525d26d707e2b01", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 2 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Receipt reversal history or movements exist; AddInventoryGoodsReceiptReversals is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261116210057_AddInventoryGoodsReceiptReversals.cs"] =
-                new("0778c5f84f323a61e219f361a3a357f06a7b9f14aed48d316256016ee3ab13da", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Inventory movement cost provenance exists; AddInventoryMovementCostProvenance is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261116232813_AddInventoryMovementCostProvenance.cs"] =
-                new("c52bfc58adf18d074f3acbeaaf5c85ea28d7d3c4ef9942e9ca1131c7c18b862c", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Inventory exact movement cost provenance exists; forward fix is required. 2 lexical Sql call(s).
-            ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261116235649_AddInventoryOutboxCursorAndExactCostRatios.cs"] =
-                new("11e2b783b1b671a9bf0cb98f1d707364e2e7dac8b716b8dff9dbf40843a8353f", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 2 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Exact cost pool or recognition mass provenance exists; AddInventoryExactCostPools is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261117003341_AddInventoryExactCostPools.cs"] =
-                new("220178b663ba7477f5b38426bbd9a6ef4ad691d625db0f15dd93fa780065acc1", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Immutable first-entry or exact issue FX proof exists; AddInventoryFirstEntryExchangeRateProof is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261117010119_AddInventoryFirstEntryExchangeRateProof.cs"] =
-                new("81f3418a14b90870fd2fda820f9b6cbe8a62ff6675938c0bfa8139f9177fbd26", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Negative stock attempt history is append-only; use a reviewed forward fix. 1 lexical Sql call(s).
-            ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261117091723_AddInventoryNegativeStockAttempts.cs"] =
-                new("02a8fef9fe8d112a48bc5763f4a7e3c5bda7f7acdd5a6e59366edeeb19d2522b", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Negative stock count-boundary proof is retained; use a reviewed forward fix. 1 lexical Sql call(s).
-            ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261117095345_AddInventoryNegativeStockCountBoundaries.cs"] =
-                new("9e895764548defb2a74e4c77a9c6900e0718f91265fe865550a2d9c3e21f4f61", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Transfer receipt document history exists; AddInventoryTransferReceiptDocuments is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261117122205_AddInventoryTransferReceiptDocuments.cs"] =
-                new("5074d0c03b98dd09d44854d091c3349c1c0b330e7b503001082b57c43102bf19", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Customer-owned subcontract allocation evidence exists; AddInventorySubcontractDeliverySources is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261117140912_AddInventorySubcontractDeliverySources.cs"] =
-                new("3b895c4c9d1867a446ea3372a41c1348810ac6f1f1783f6d7865d0456e111b43", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Owner-only new immutable/forward-only evidence trigger(s), THROW 51926,51927,51928; Down refuses history loss before owner schema rollback. No data backfill or cross-module DML in inspected SQL. 3 lexical Sql call(s).
-            ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261117165518_AddPurchaseInvoiceCostApplications.cs"] =
-                new("d030c29e2862cb59d8701d260e8d14bdb4ef7e8ffb271abfb216798b0af5b189", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 3 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Dispatch kilogram source allocations exist; AddDispatchKilogramAllocations is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261117010812_AddDispatchKilogramAllocations.cs"] =
-                new("67b9b0cab9569062490b2b4d77ed5ebb4f56fabed30129e1f7db48695c316bb5", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Transfer departure, association or no-exit history exists; AddTransferDepartures is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261117111253_AddTransferDepartures.cs"] =
-                new("55903d515b4d99af93b8fc6c60588e603ea78edc8bb9b1f1136251c19c69a269", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Subcontract delivery, correction or replay evidence exists; AddLogisticsSubcontractDeliveries is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261117151710_AddLogisticsSubcontractDeliveries.cs"] =
-                new("66a0051d39d32eb336ac4cd5fe2429400d1578d9e469a6a2154f6069be8e3bc1", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Owner-only new immutable/forward-only evidence trigger(s), THROW 51817,51818,51819,51820; Down refuses history loss before owner schema rollback. One pending1/version1 to approved2/version2 exception transition only; evidence fields stay fixed. 4 lexical Sql call(s).
-            ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261117233641_AddLogisticsShipmentPlanExcess.cs"] =
-                new("9a3a5579147cdf1e31d30f7caa137d3a3da04363efa81c8017a2b2f5ddc6275a", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 4 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Recorded work-center queue history exists; AddManufacturingManualQueues is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/20261116210842_AddManufacturingManualQueues.cs"] =
-                new("9e89fe6607f60f88bf23c5985bf800ca672e6f2a1f3b68da1cbe7b37f6d2f281", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Recorded reopening or multiple closure generations exist; AddManufacturingOrderReopenings is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/20261116214107_AddManufacturingOrderReopenings.cs"] =
-                new("177548934fcefa7f94f76edd4ebeb946b45d862e503038fef0933a3a3a12d7d2", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Immutable manufacturing cost generations exist; AddManufacturingCostGenerations is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/20261116232039_AddManufacturingCostGenerations.cs"] =
-                new("b48ac008b61994fbf0dcf756d82ff5e3e33b13b3da54a31bccc531ccfe2fea0d", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Actual non-kg consumption history exists; AddManufacturingNonKgInputFacts is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/20261116234916_AddManufacturingNonKgInputFacts.cs"] =
-                new("9eeb1d8145841223da49d66cbe30e72c32557578f000182c6f66ca3ff4c635c6", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Stored paint owner references would be lost; AddManufacturingPaintSelections is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/20261117014136_AddManufacturingPaintSelections.cs"] =
-                new("f0364d671f6b5b179567f6372687ae9f6c9d18252ce7922e6be841afd88299b8", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; AddAuthorizedCompanyOpening history exists; rollback is refused (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/Migrations/20261116205304_AddAuthorizedCompanyOpening.cs"] =
-                new("d8188f063f4bbf7428c75ec9f5245e146ca27925d88de187a13219bfd53a6a0c", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Explicit COGS classification evidence exists; AddProductCogsClassifications is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/20261117082903_AddProductCogsClassifications.cs"] =
-                new("d204be52e71238aa76c5e9a8e0ab74444a9e0642487643effb01bbc631626332", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Paint membership source, history or command answers exist; AddProductPaintMemberships is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/Migrations/20261117013540_AddProductPaintMemberships.cs"] =
-                new("2c7290a512b1decc59d86621ca150237181f7d3c61de84734993c50977599afc", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Up copies existing cancelled purchase orders into new PurchaseOrderCancellationHistory, preserving CompanyId/OrderId/version/actor/reason/time, only Status=3. Down51949 refuses any adjustment, cancellation, receipt or supplier-return history. No cross-module DML. 2 lexical Sql call(s).
-            ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261116213347_AddPurchaseReceiptAdjustments.cs"] =
-                new("6534bd550b87b2cd0d98f7a6ba3233980f60e6476ba5aea2b9c3edbec99fbbc9", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 2 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Recorded supplier-return response snapshots require a forward fix. 1 lexical Sql call(s).
-            ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261116215806_AddPurchaseSupplierReturnResponseSnapshots.cs"] =
-                new("0d0274ee83e51843cfe0e833622d4a69ed5601d1e26c173df4e25bda2facb748", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Receipt adjustment batch or outbox cursor history exists; AddPurchaseReceiptAdjustmentBatches is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261116222957_AddPurchaseReceiptAdjustmentBatches.cs"] =
-                new("4a268970bcdebd1029964588b824011fa5809bd31181663c7432d51be6c01493", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Purchase order number history exists; AddPurchaseOrderDocumentNumbers is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261117002600_AddPurchaseOrderDocumentNumbers.cs"] =
-                new("5637b2475144747a429a387108b53e69fcd733605fd78d7c0ce639cbc415e74c", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Supplier revision or invoice binding history exists; AddPurchaseSupplierRevisions is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261117072202_AddPurchaseSupplierRevisions.cs"] =
-                new("2ee0321ca47fdeee9ab673832b2a28ffadd0f9533a99e7079672a832df37a944", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Incoming invoice source, history or terminal records exist; AddPurchaseIncomingInvoices is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261117084001_AddPurchaseIncomingInvoices.cs"] =
-                new("b39355d6aac1cf8e6372106682efd4f5ba1dd3c012ed3dcd608be92f55672f7c", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Service order, acceptance, invoice binding or terminal history exists; AddPurchaseServiceOrders is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261117110054_AddPurchaseServiceOrders.cs"] =
-                new("57b9fc8eb27f584e9e422778bcc2b1de6eb61b68e32acfd8aa71bbd93770dd2d", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Invoice import owner identity exists; AddPurchaseInvoiceImportReservations is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261117112436_AddPurchaseInvoiceImportReservations.cs"] =
-                new("3278858d7fb61bb296cd1a022bc5e9a87321aa6fca35d17c0340d0f8133afa53", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Additional purchase expense history exists; AddPurchaseAdditionalCosts is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261117114517_AddPurchaseAdditionalCosts.cs"] =
-                new("2baebc361924345f4823d54f47aa9465e874ce9666ad926a9eee5f162ba5e293", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Purchase expense invoice matching history requires a forward fix. 1 lexical Sql call(s).
-            ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261117120452_AddPurchaseAdditionalCostInvoiceBindings.cs"] =
-                new("dd5de753e963574b8552aaee95d5f0022440800f46d5ceb26ec28e46537da761", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Official invoice source evidence exists; AddSalesInvoiceOfficialSourceProof is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261117081514_AddSalesInvoiceOfficialSourceProof.cs"] =
-                new("25cbcc65bbab142cd8a9e3e4f9b3f6c43a8faeae401cdd48dd1e3731852487ad", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Sales outbox events retain cursor evidence; AddSalesOutboxCommittedCursor requires a forward fix. 1 lexical Sql call(s).
-            ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261117084843_AddSalesOutboxCommittedCursor.cs"] =
-                new("3aceeb931798464c76be74153d0e1d611228593c0d87e0f96fcb6c29b7c8db37", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Recorded approval margin cost evidence exists; AddSalesMarginCostSnapshots is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261117105309_AddSalesMarginCostSnapshots.cs"] =
-                new("9b32e6cd4a2a907e341b675d40c5590bf40be7bbdbcdc9b1720619d24cbd2f3c", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Up copies existing sales InvoiceMatches into new OfficialInvoiceClaims with CompanyId/InvoiceId/official number/ETTN and source kind dispatch; new owner append-only/lifecycle triggers51997. Down51994 refuses non-reconstructable lifecycle/identity evidence before dropping new triggers/tables. No cross-module DML. 6 lexical Sql call(s).
-            ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261117113343_AddSubcontractInvoiceLifecycle.cs"] =
-                new("9750c2069e5318e97ec5283475aa8d9c06b185495450310bc63734fed04da966", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 6 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Exact subcontract invoice command response history exists; AddSubcontractInvoiceReplaySequence is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261117155825_AddSubcontractInvoiceReplaySequence.cs"] =
-                new("8e8977d99ab13cf9a075b2b2dfefd711c4237186ce5d053b72a4842686cc0c3a", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. One lexical Sql call runs SalesOfficialInvoiceCancellationGuards.DownSql. The guard51919 refuses cancellation/attempt/delivery or state7 history before dropping new triggers; Up calls the separately fingerprinted helper to install owner cancellation/lifecycle guards. Both files must be pinned. 1 lexical Sql call(s).
-            ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261117195343_AddSalesOfficialInvoiceCancellation.cs"] =
-                new("ffe4980fd1853d3afa0d3426dafb8b79454611e0b7e90e91ba604995ad5da3a4", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Seven lexical Sql calls install three immutable cancellation evidence triggers51916/17/18 and alter four sales-only existing guards. Normal finalized6 to officially-cancelled7 requires exact same-company immutable cancellation fact; invoice line release is one same-owner UPDATE joined by CompanyId and InvoiceId. DownSql51919 blocks recorded cancellation history then restores old guard definitions. Reuses existing51223/24/32/51997 intentionally; no new cross-module write. 7 lexical Sql call(s).
-            ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/SalesOfficialInvoiceCancellationGuards.cs"] =
-                new("171ea7dd2fe60e256f4ee9230ae8eacb50aebd98b86bd8a5060ef73230cb378c", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 7 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Operator two-factor recovery security history exists; AddOperatorTwoFactorRecoverySecurityEvents requires a forward fix. 1 lexical Sql call(s).
-            ["src/backend/Modules/SecurityEvents/GoymenERP.Modules.SecurityEvents.Infrastructure/Persistence/Migrations/20261117161010_AddOperatorTwoFactorRecoverySecurityEvents.cs"] =
-                new("f455411dd08aaefaedbd6e40fbcf9eb1d40a3cedbbbc631f85a1d17ded93af3b", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Document number or operational policy history exists; AddDocumentNumberSeriesAndOperationalPolicies is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/20261116220424_AddDocumentNumberSeriesAndOperationalPolicies.cs"] =
-                new("f63ed6f51a44421deb2e83992dfcae3014ead46fd857c1de9bf0156e5dbd3bfa", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Manufacturing baseline source history exists; AddManufacturingProfileBaselineTransfers is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/20261117001828_AddManufacturingProfileBaselineTransfers.cs"] =
-                new("71ad691efe3a071a0564c224b0bc290ffb5200634d00676bc68880c3f189d7eb", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Published purchase invoice variance history exists; AddPurchaseInvoiceVariancePolicies is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/20261117085524_AddPurchaseInvoiceVariancePolicies.cs"] =
-                new("2fd6131e7fe6b757a14966b3d6258fb0ccd70b1307adfe0395627cbc5b72aaed", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Warehouse transfer scale history exists; AddWarehouseTransferScalePolicies is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/20261117111242_AddWarehouseTransferScalePolicies.cs"] =
-                new("80359213e4c141de9d79182ac5697b0493345f3f8a8b50d8e5cdda65867a618d", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Finance receipt or voucher number history exists; AddFinanceDocumentNumberSeries is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/20261117200733_AddFinanceDocumentNumberSeries.cs"] =
-                new("be5146a204c1eec60dbdea2e3dd1506b9a738ec67101e7f6ecf6aed3a478f463", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Financial policy or bank source history exists; AddFinancePolicyFamilies is not rolled back (forward fix). 1 lexical Sql call(s).
-            ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/20261117220044_AddFinancePolicyFamilies.cs"] =
-                new("3d7264a234b9c41fa1738da1f9870b7a2327a55e8ccbf0a79d1e3dbc439f8381", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-            // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Notification delivery, deduplication or passivation history exists; use a forward fix. 1 lexical Sql call(s).
-            ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261116234150_AddPersonalNotifications.cs"] =
-                new("410215fe07c1fc94023109418d24e027019103b05932f6839482f0eccac27682", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
         };
 
     private static readonly IReadOnlyDictionary<string, string> ReviewedPackageReferences =
