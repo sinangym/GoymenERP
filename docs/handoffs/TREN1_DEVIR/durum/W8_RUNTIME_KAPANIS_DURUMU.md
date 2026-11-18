@@ -119,3 +119,30 @@ WSL RPC hata koduyla çıkıyordu. Yalnız Windows test harness'i kurulu Git'in
 assertlar aynıdır. Tam `ci_safe_trx_summary` **64/64 PASS, 0 skip**, native exit0,
 48.895 saniye. Önceki başarısız kayıtlar korunur. Ayrı salt okuma tanısında
 162 shell çağrısı özgün prose/kod/geçersiz-head sonuçlarıyla doğrulandı.
+
+### İlk API ve gerçek SQL denemelerinden kapanış girdisi
+
+`94e0e88e98ca3374cb3149d943a9d4e9db5d6bd7`, CI `44238350645`:
+backend build/vulnerability/migration üretimi, modül grubu, mimari grup ve dört
+frontend shard PASS. API-1 PASS; API-2 ve API-3 mevcut fixture hizalama hatalarıyla
+FAIL. Cari C006 378 testte 377 PASS/1 FAIL: gerçek frontend üç alan gönderirken
+fixture yeni opsiyonel false alanını da serialleştiriyordu. Düzeltme yalnız açık
+üç alanlı fixture projection'dır. Gelecek tedarik HTTP fixture'ına eksik mevcut
+fresh authority double kaydı eklendi; production permission/seed genişletilmedi.
+
+Accounting lineage testinin bağımsız native tekrarı, ikinci gerçek CompanyContext.Set
+çağrısının immutable context tarafından InvalidOperationException ile reddedildiğini
+kanıtladı; beklenen AccountingStoreException üretilen kaynağa ulaşmıyordu. Bu yalnız
+hata enjeksiyon fixture'ında mutable ICompanyContext ile düzeltilir; gerçek
+CompanyContext değişmez. Aynı kesin hata/yanlış olumlu durumlar için mevcut
+Accounting/Counterparty/Manufacturing test fixture'ları dar biçimde hizalandı;
+gerçek scoped DbContext şirket filtresi ve bütün state/rollback/Denied kontrolleri
+korundu. Bu yeni kaynakların native tekrarı henüz tamamlanmamıştır.
+
+İlk SQL shard A: 638 FAIL/0 PASS; B: 623 FAIL/4 PASS; C: 486 FAIL/11 PASS;
+üçünde skip0. RCSI 14 test: 9 PASS/5 FAIL/skip0. Bunlar başarı sayılmaz.
+RCSI ve C01 başlangıç stack'inde Sales iptal trigger'ı migration aşamasında
+SQL468 collation hatası görüldü: ActorId BIN2, CancelledBy DB-default.
+İki operandı aynı açık binary collation ile karşılaştıran bootstrap repair ve
+uygulanmış geliştirme DB'leri için forward migration hazırlanır. Yeni politika
+seçilmez; CompanyId/sürüm/tarih ve exact actor kimliği şartları korunur.
