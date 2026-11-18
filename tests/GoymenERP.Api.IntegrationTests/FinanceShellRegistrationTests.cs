@@ -95,6 +95,7 @@ public sealed class FinanceShellRegistrationTests
                 (SalesShellCapabilityProvider.InvoiceCandidateListCapabilityId, null, SalesPermissionManifestV1.InvoicesRead),
                 // Sales 1.19 (UI-63); 1.20 (SAT-D238): the S-09 invoice list on the invoice read alone; its list read withholds the amounts.
                 (SalesShellCapabilityProvider.InvoiceListCapabilityId, null, SalesPermissionManifestV1.InvoicesRead),
+                (SalesShellCapabilityProvider.OfficialCancellationCapabilityId, null, SalesPermissionManifestV1.InvoicesFinalize),
                 (SalesShellCapabilityProvider.ApproveCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersApprove}"),
                 (SalesShellCapabilityProvider.CancelCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,

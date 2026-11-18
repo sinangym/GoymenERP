@@ -22,13 +22,13 @@ public sealed class DocumentTemplateShellAuthorityTests
             Assert.False(ErpPermissions.IsCritical(item.CapabilityId));
             Assert.False(item.ImplementationAvailable);
         }
-        Assert.Equal(4, declarations.Count(item => item.ParentCapabilityId is null));
+        Assert.Single(declarations, item => item.ParentCapabilityId is null);
         foreach (var module in Enum.GetValues<DocumentTemplateModuleV1>())
         {
             var prepare = Assert.Single(declarations, item => item.CapabilityId == DocumentBrandingPermissionsV1.Prepare(module));
             var publish = Assert.Single(declarations, item => item.CapabilityId == DocumentBrandingPermissionsV1.Publish(module));
-            Assert.Null(prepare.ParentCapabilityId);
-            Assert.Equal(prepare.CapabilityId, publish.ParentCapabilityId);
+            Assert.NotNull(prepare.ParentCapabilityId);
+            Assert.Equal(prepare.ParentCapabilityId, publish.ParentCapabilityId);
             Assert.Equal((prepare.RouteId, prepare.RoutePath, prepare.ScreenId), (publish.RouteId, publish.RoutePath, publish.ScreenId));
             Assert.DoesNotContain(prepare.CapabilityId, publish.RequiredPermissions);
         }

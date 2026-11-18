@@ -25,10 +25,10 @@ public static class LogisticsSubcontractDeliveryEndpoints
             .ProducesErpBadRequest().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
         group.MapGet("/candidates/{salesOrderId:guid}/{salesOrderLineId:guid}", CandidatesAsync).RequireAuthorization(LogisticsPermissionManifestV1.InstructionsCreate)
             .WithName("ListLogisticsSubcontractCandidatesV1").Produces<LogisticsSubcontractCandidatesV1>()
-            .ProducesErpBadRequest().ProducesErpNotFound().ProducesErpConflict(SourceConflict).ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
+            .ProducesErpBadRequest().ProducesErpCodeLessNotFound().ProducesErpConflict(SourceConflict).ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
         group.MapGet("/{instructionId:guid}", ReadAsync).RequireAuthorization(LogisticsPermissionManifestV1.InstructionsRead)
             .WithName("GetLogisticsSubcontractDeliveryV1").Produces<LogisticsSubcontractInstructionV1>()
-            .ProducesErpBadRequest().ProducesErpNotFound().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
+            .ProducesErpBadRequest().ProducesErpCodeLessNotFound().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
         Command(group.MapPost("", CreateAsync).RequireAuthorization(LogisticsPermissionManifestV1.InstructionsCreate)
             .WithName("CreateLogisticsSubcontractDeliveryV1").Accepts<CreateSubcontractDeliveryV1>("application/json"));
         Command(group.MapPost("/{instructionId:guid}/ship", ShipAsync).RequireAuthorization(LogisticsPermissionManifestV1.ShipmentsRecord)
@@ -43,7 +43,7 @@ public static class LogisticsSubcontractDeliveryEndpoints
         return endpoints;
     }
     private static void Command(RouteHandlerBuilder route) => route.Produces<LogisticsSubcontractInstructionV1>().WithIdempotencyContract(200, 409)
-        .ProducesErpBadRequest().AllowsCodeLessErpBadRequestBody().ProducesErpNotFound().ProducesErpUnsupportedMediaType()
+        .ProducesErpBadRequest().AllowsCodeLessErpBadRequestBody().ProducesErpCodeLessNotFound().ProducesErpUnsupportedMediaType()
         .ProducesErpUnprocessableEntity(Invalid).ProducesErpConflict(SourceConflict, ActiveInvoice,
             LogisticsPlanExcessV1.ApprovalRequired, LogisticsPlanExcessV1.Conflict,
             LogisticsProblemCodesV1.SameKeyPayloadMismatch, LogisticsProblemCodesV1.ConcurrentChange, LogisticsProblemCodesV1.OrderLineAggregateLimitExceeded,

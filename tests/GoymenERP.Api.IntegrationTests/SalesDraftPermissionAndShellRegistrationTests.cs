@@ -170,7 +170,8 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         // S-09 invoice list screen (on the invoice read alone since Sales 1.20, SAT-D238); Sales 1.22 (S-2 API-11) the source-plan
         // control; Sales 1.24 (API-07) the risk exception request and decision controls; Sales 1.25 (UI-70b) the three S-10 customer
         // return screens and the submit / approve / finalize controls of the return detail.
-        Assert.Equal(38, sales.Length);
+        // W8: external official cancellation is a distinct route on invoice finalization authority.
+        Assert.Equal(39, sales.Length);
         Assert.Equal(SalesShellCapabilityProvider.CustomerReturnDetailCapabilityId,
             Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.CustomerReturnApproveCapabilityId)
                 .Declaration.ParentCapabilityId);

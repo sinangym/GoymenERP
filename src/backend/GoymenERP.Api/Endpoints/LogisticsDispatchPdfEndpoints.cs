@@ -90,7 +90,7 @@ public static class LogisticsDispatchPdfEndpoints
             }).RequireCompanyContext().RequireAuthorization(ErpPermissions.LogisticsLoadingInstructionsRead)
             .WithTags("Logistics").WithName("GetLogisticsDispatchPdfV1")
             .Produces<Stream>(200, TechnicalPdfGenerator.PdfMediaType).ProducesErpCodeLessNotFound()
-            .ProducesErpConflict().ProducesErpUnprocessableEntity("logistics_dispatch_pdf_too_large")
+            .ProducesErpCodeLessConflict().ProducesErpUnprocessableEntity("logistics_dispatch_pdf_too_large")
             .ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
         return endpoints;
     }

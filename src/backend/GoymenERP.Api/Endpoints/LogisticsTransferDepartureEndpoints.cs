@@ -23,7 +23,7 @@ public static class LogisticsTransferDepartureEndpoints
         group.MapGet("/candidates", CandidatesAsync).WithName("ListLogisticsTransferDepartureCandidatesV1")
             .Produces<LogisticsTransferDepartureCandidatesV1>().ProducesErpBadRequest().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
         group.MapGet("/{transferId:guid}", ReadAsync).WithName("GetLogisticsTransferDepartureV1")
-            .Produces<LogisticsTransferDepartureFactsV1>().ProducesErpBadRequest().ProducesErpNotFound()
+            .Produces<LogisticsTransferDepartureFactsV1>().ProducesErpBadRequest().ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable("logistics_transfer_departure_unavailable").ProducesErpAuthenticatedProblems();
         group.MapPost("/{transferId:guid}", RecordAsync).WithName("RecordLogisticsTransferDepartureV1")
             .Accepts<RecordTransferDepartureV1>("application/json").Produces<LogisticsTransferDepartureRecordedV1>()

@@ -31,7 +31,7 @@ public static partial class SettingsManufacturingProfileEndpoints
         .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict)
         .Produces<ManufacturingProfileCommandReceiptV1>(StatusCodes.Status200OK)
         .ProducesErpBadRequest(CommandBadRequestCodes).AllowsCodeLessErpBadRequestBody()
-        .ProducesErpNotFound().ProducesErpUnsupportedMediaType()
+        .ProducesErpCodeLessNotFound().ProducesErpUnsupportedMediaType()
         .ProducesErpConflict(ManufacturingProfileProblemCodesV1.IdempotencyConflict, ManufacturingProfileProblemCodesV1.VersionConflict)
         .ProducesErpServiceUnavailable(ManufacturingProfileProblemCodesV1.ProviderUnavailable)
         .ProducesErpAuthenticatedProblems();

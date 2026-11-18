@@ -94,9 +94,11 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         var purchasing = registry.Registrations
             .Where(item => item.Owner == PurchasingShellCapabilityProvider.OwnerId)
             .ToArray();
-        Assert.Equal(20, purchasing.Length);
+        Assert.Equal(29, purchasing.Length);
         string[] published =
         [
+            PurchasingShellCapabilityProvider.AdditionalCostReadCapabilityId,
+            PurchasingShellCapabilityProvider.AdditionalCostRecordCapabilityId,
             PurchasingShellCapabilityProvider.GoodsReceiptCapabilityId,
             PurchasingShellCapabilityProvider.ApproveCapabilityId,
             PurchasingShellCapabilityProvider.CancelCapabilityId,
@@ -111,12 +113,19 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
             PurchasingShellCapabilityProvider.RequestListCapabilityId,
             PurchasingShellCapabilityProvider.RequestSubmitCapabilityId,
             PurchasingShellCapabilityProvider.RequestWithdrawCapabilityId,
+            PurchasingShellCapabilityProvider.ServiceOrderAcceptCapabilityId,
+            PurchasingShellCapabilityProvider.ServiceOrderApproveCapabilityId,
+            PurchasingShellCapabilityProvider.ServiceOrderCreateCapabilityId,
+            PurchasingShellCapabilityProvider.ServiceOrderDetailCapabilityId,
+            PurchasingShellCapabilityProvider.ServiceOrderListCapabilityId,
+            PurchasingShellCapabilityProvider.ServiceOrderRevisePricesCapabilityId,
             PurchasingShellCapabilityProvider.SupplierReturnCapabilityId,
         ];
         Assert.Equal(published, purchasing.Where(item => item.Declaration.ImplementationAvailable)
             .Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
         string[] staged = [PurchasingShellCapabilityProvider.InvoiceApproveVarianceCapabilityId,
             PurchasingShellCapabilityProvider.InvoiceDetailCapabilityId, PurchasingShellCapabilityProvider.InvoiceFinalizeCapabilityId,
+            PurchasingShellCapabilityProvider.InvoiceImportCapabilityId,
             PurchasingShellCapabilityProvider.InvoiceListCapabilityId, PurchasingShellCapabilityProvider.InvoiceMatchCapabilityId];
         Assert.Equal(staged, purchasing.Where(item => !item.Declaration.ImplementationAvailable)
             .Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());

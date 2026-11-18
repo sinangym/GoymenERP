@@ -14,6 +14,7 @@ using GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 using GoymenERP.Modules.Sales.Infrastructure.Shell;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using GoymenERP.Modules.Settings.Infrastructure.Shell;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -31,6 +32,31 @@ namespace GoymenERP.Api.IntegrationTests;
 /// </summary>
 public sealed class SettingsShellAuthorityTests
 {
+    [Fact]
+    public void Template_publishing_preserves_its_independent_permission_under_a_staged_workspace()
+    {
+        var provider = new SettingsShellCapabilityProvider();
+        _ = ShellCapabilityRegistry.ComputeCandidateRevision([provider]);
+        var declarations = provider.GetDeclarations();
+        foreach (var (prepare, publish) in new[]
+        {
+            (ErpPermissions.DocumentsSalesTemplatePrepare, ErpPermissions.DocumentsSalesTemplatePublish),
+            (ErpPermissions.DocumentsInventoryTemplatePrepare, ErpPermissions.DocumentsInventoryTemplatePublish),
+            (ErpPermissions.DocumentsLogisticsTemplatePrepare, ErpPermissions.DocumentsLogisticsTemplatePublish),
+        })
+        {
+            var preparation = Assert.Single(declarations, item => item.CapabilityId == prepare);
+            var publication = Assert.Single(declarations, item => item.CapabilityId == publish);
+            Assert.Equal([prepare], preparation.RequiredPermissions);
+            Assert.Equal([publish], publication.RequiredPermissions);
+            Assert.Equal(preparation.ParentCapabilityId, publication.ParentCapabilityId);
+            var workspace = Assert.Single(declarations, item => item.CapabilityId == preparation.ParentCapabilityId);
+            Assert.Null(workspace.ParentCapabilityId);
+            Assert.Empty(workspace.RequiredPermissions);
+            Assert.All(new[] { workspace, preparation, publication }, item => Assert.False(item.ImplementationAvailable));
+        }
+    }
+
     [Fact]
     public void Finance_policy_routes_use_registered_prepare_and_publish_purposes_without_enabling_staged_screens()
     {
@@ -123,6 +149,31 @@ public sealed class SettingsShellAuthorityTests
     }
 
     [Fact]
+    public void Actual_host_including_paint_memberships_uses_its_exact_provider_authority()
+    {
+        IShellCapabilityProvider[] providers =
+        [
+            new CounterpartyShellCapabilityProvider(), new OrganizationShellCapabilityProvider(),
+            new ProductShellCapabilityProvider(), new SalesShellCapabilityProvider(),
+            new FinanceShellCapabilityProvider(), new ManufacturingShellCapabilityProvider(),
+            new LogisticsShellCapabilityProvider(), new PurchasingShellCapabilityProvider(),
+            new AccountingShellCapabilityProvider(), new InventoryShellCapabilityProvider(),
+            new IdentityShellCapabilityProvider(), new ProductPriceListShellCapabilityProvider(),
+            new SettingsShellCapabilityProvider(), new ProductPaintMembershipShellCapabilityProvider(),
+        ];
+        var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
+        Assert.True(string.Equals(ShellCapabilityRegistryAuthorities.FullNormalHostWithSettingsAndPaintMemberships,
+            actual, StringComparison.Ordinal), $"Actual normal-host authority drifted. Actual: {actual}");
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+        foreach (var provider in providers)
+            services.AddSingleton(typeof(IShellCapabilityProvider), provider.GetType());
+        var configured = C01E2eShellCapabilityActivation.Configure(services,
+            new Microsoft.Extensions.Hosting.Internal.HostingEnvironment { EnvironmentName = "Testing" },
+            new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build());
+        Assert.Equal(actual, configured);
+    }
+
+    [Fact]
     public void The_screen_stands_on_the_one_limit_name_company_wide_in_one_company()
     {
         var declaration = Assert.Single(new SettingsShellCapabilityProvider().GetDeclarations(),
@@ -140,8 +191,8 @@ public sealed class SettingsShellAuthorityTests
     public void The_tax_master_screen_stands_on_the_one_tax_master_name_company_wide_in_one_company()
     {
         var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
-        Assert.Equal(44, declarations.Count);
-        Assert.Equal("1.17", new SettingsShellCapabilityProvider().ContractVersion);
+        Assert.Equal(47, declarations.Count);
+        Assert.Equal("1.18", new SettingsShellCapabilityProvider().ContractVersion);
         var declaration = Assert.Single(declarations,
             candidate => candidate.CapabilityId == SettingsShellCapabilityProvider.TaxMasterCapabilityId);
 

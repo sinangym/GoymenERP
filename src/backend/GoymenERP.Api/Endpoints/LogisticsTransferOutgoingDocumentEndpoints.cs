@@ -17,7 +17,7 @@ public static class LogisticsTransferOutgoingDocumentEndpoints
             .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata());
         group.MapGet("/by-transfer/{transferId:guid}", ReadAsync)
             .RequireAuthorization(LogisticsTransferOutgoingDocumentPermissionsV1.Read).WithName("GetLogisticsTransferOutgoingDocumentByTransferV1")
-            .Produces<TransferOutgoingDocumentForTransferV1>().ProducesErpBadRequest().ProducesErpNotFound()
+            .Produces<TransferOutgoingDocumentForTransferV1>().ProducesErpBadRequest().ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
         group.MapPost("", (CreateTransferOutgoingDocumentV1 request, HttpContext http, ICorrelationContext correlation,
             ILogisticsTransferOutgoingDocumentScopeV1 scopes, [FromServices] ILogisticsTransferOutgoingDocumentServiceV1? service, CancellationToken token) =>
@@ -36,7 +36,7 @@ public static class LogisticsTransferOutgoingDocumentEndpoints
             .RequireAuthorization(LogisticsPermissionManifestV1.DispatchNotesApprove).WithName("FinalizeLogisticsTransferOutgoingDocumentV1")
             .Accepts<FinalizeTransferOutgoingDocumentV1>("application/json").Produces<TransferOutgoingDocumentResponseV1>()
             .WithIdempotencyContract(200, 409).ProducesErpBadRequest().AllowsCodeLessErpBadRequestBody().ProducesErpUnsupportedMediaType()
-            .ProducesErpUnprocessableEntity("validation_failed").ProducesErpNotFound()
+            .ProducesErpUnprocessableEntity("validation_failed").ProducesErpNotFound(LogisticsTransferOutgoingDocumentCodesV1.NotFound)
             .ProducesErpConflict(LogisticsStoreCodes.SameKeyPayloadMismatch, LogisticsTransferOutgoingDocumentCodesV1.VersionConflict,
                 LogisticsTransferOutgoingDocumentCodesV1.State).ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
         group.MapPost("/{documentId:guid}/cancel", (Guid documentId, CancelTransferOutgoingDocumentV1 request,
@@ -47,7 +47,7 @@ public static class LogisticsTransferOutgoingDocumentEndpoints
             .RequireAuthorization(LogisticsPermissionManifestV1.DispatchNotesCancel).WithName("CancelLogisticsTransferOutgoingDocumentV1")
             .Accepts<CancelTransferOutgoingDocumentV1>("application/json").Produces<TransferOutgoingDocumentResponseV1>()
             .WithIdempotencyContract(200, 409).ProducesErpBadRequest().AllowsCodeLessErpBadRequestBody().ProducesErpUnsupportedMediaType()
-            .ProducesErpUnprocessableEntity("validation_failed").ProducesErpNotFound()
+            .ProducesErpUnprocessableEntity("validation_failed").ProducesErpNotFound(LogisticsTransferOutgoingDocumentCodesV1.NotFound)
             .ProducesErpConflict(LogisticsStoreCodes.SameKeyPayloadMismatch, LogisticsTransferOutgoingDocumentCodesV1.VersionConflict,
                 LogisticsTransferOutgoingDocumentCodesV1.State).ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
         return endpoints;

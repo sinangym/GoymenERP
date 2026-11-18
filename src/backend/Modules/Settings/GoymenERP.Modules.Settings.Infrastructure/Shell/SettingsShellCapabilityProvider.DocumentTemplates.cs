@@ -18,8 +18,12 @@ public sealed partial class SettingsShellCapabilityProvider
                    (ErpPermissions.DocumentsLogisticsTemplatePrepare, ErpPermissions.DocumentsLogisticsTemplatePublish, "lojistik", "AY-BS-LOJ") })
         {
             var route = TemplateRoute(prepare, "/ayarlar/belge-sablonlari/" + segment, screen);
-            declarations.Add(route);
-            declarations.Add(route with { CapabilityId = publish, RequiredPermissions = [publish], ParentCapabilityId = prepare });
+            // A staged, permission-neutral parent describes the shared workspace only.
+            // Each purpose retains its own permission; publishing does not require preparing.
+            var workspace = "settings.document-templates." + segment;
+            declarations.Add(route with { CapabilityId = workspace, RequiredPermissions = [] });
+            declarations.Add(route with { ParentCapabilityId = workspace });
+            declarations.Add(route with { CapabilityId = publish, RequiredPermissions = [publish], ParentCapabilityId = workspace });
         }
         return declarations.AsReadOnly();
     }
