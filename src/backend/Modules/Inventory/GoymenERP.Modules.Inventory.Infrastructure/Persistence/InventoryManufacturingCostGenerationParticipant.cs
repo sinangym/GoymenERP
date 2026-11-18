@@ -307,9 +307,9 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
         }
         var version = await InventoryStore.WriteCostPoolAsync(db, company, clock, location, product, currency, pool, after, token);
         pools[key] = pool with { ExactPosition = after, Version = version, CostedKg = after.QuantityKg,
-            ExactRow = db.ExactCostPools.Local.Single(row => row.LocationId == location && row.ProductId == product && row.CurrencyId == currency),
-            TlRow = currency == SettingsCurrencyIdentitiesV1.TurkishLira ? db.AverageCostLedger.Local.Single(row => row.LocationId == location && row.ProductId == product) : null,
-            ForeignRow = currency != SettingsCurrencyIdentitiesV1.TurkishLira ? db.CurrencyAverageCostLedger.Local.Single(row => row.LocationId == location && row.ProductId == product && row.CurrencyId == currency) : null };
+            ExactRow = db.ExactCostPools.Local.Single(row => row.CompanyId == company.CompanyId && row.LocationId == location && row.ProductId == product && row.CurrencyId == currency),
+            TlRow = currency == SettingsCurrencyIdentitiesV1.TurkishLira ? db.AverageCostLedger.Local.Single(row => row.CompanyId == company.CompanyId && row.LocationId == location && row.ProductId == product) : null,
+            ForeignRow = currency != SettingsCurrencyIdentitiesV1.TurkishLira ? db.CurrencyAverageCostLedger.Local.Single(row => row.CompanyId == company.CompanyId && row.LocationId == location && row.ProductId == product && row.CurrencyId == currency) : null };
         var actualDelta = after.Value.Subtract(current.Value);
         var signedAuthoritative = authoritativeValue.Multiply(reverse ? -1m : 1m);
         var difference = actualDelta.Subtract(signedAuthoritative);

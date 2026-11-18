@@ -24,7 +24,7 @@ public sealed class InventoryTransferReceiptDocuments(InventoryDbContext databas
 {
     internal const string CreateDocumentCommand = "inventory.transfer.receipt-document.create.v1";
     internal const string FinalizeCommand = "inventory.transfer.receipt-document.finalize.v1";
-    internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
+    internal static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web)
     { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, RespectRequiredConstructorParameters = true };
 
     public async Task<InventoryTransferReceiptDocumentsV1> ListAsync(Guid transferId, string? cursor = null, CancellationToken cancellationToken = default)
@@ -57,7 +57,7 @@ public sealed class InventoryTransferReceiptDocuments(InventoryDbContext databas
                 if (cursors is not { IsAvailable: true }) throw Error(503, InventoryTransferCodesV1.Unavailable);
                 next = cursors.Protect(scope.CompanyId, scope.ActorId, transferId, selected[^1]);
             }
-            return new(scope.CompanyId, transferId, result, more, next);
+            return new InventoryTransferReceiptDocumentsV1(scope.CompanyId, transferId, result, more, next);
         }
         catch (OperationCanceledException) { throw; }
         catch (InventoryTransferException) { await Fence(scope, cancellationToken); throw; }
@@ -178,7 +178,7 @@ public sealed class InventoryTransferReceiptDocuments(InventoryDbContext databas
             await database.SaveChangesAsync(token);
             await Fence(scope, token);
             await transaction.CommitAsync(token);
-            return new(result, false, metadata.CorrelationId);
+            return new InventoryTransferReceiptDocumentResultV1(result, false, metadata.CorrelationId);
         }
         catch (DbUpdateException error) when (error.GetBaseException() is SqlException { Number: 2601 or 2627 })
         {
@@ -203,7 +203,7 @@ public sealed class InventoryTransferReceiptDocuments(InventoryDbContext databas
         var value = JsonSerializer.Deserialize<InventoryTransferReceiptDocumentViewV1>(row.ResultJson, Json);
         if (row.CompanyId != scope.CompanyId || value is null || value.CompanyId != scope.CompanyId || value.DocumentId != id
             || !Valid(value) || !Text(row.CorrelationId, 128)) throw Error(503, InventoryTransferCodesV1.Unavailable);
-        return new(value, true, row.CorrelationId);
+        return new InventoryTransferReceiptDocumentResultV1(value, true, row.CorrelationId);
     }
     private async Task<InventoryTransferViewV1> RequireTransfer(Scope scope, Guid id, long expected, CancellationToken token)
     {
@@ -226,7 +226,7 @@ public sealed class InventoryTransferReceiptDocuments(InventoryDbContext databas
     {
         if (!company.IsResolved || company.CompanyId == Guid.Empty || !user.IsAuthenticated || string.IsNullOrWhiteSpace(user.UserId)
             || !user.CanAccessCompany(company.CompanyId)) throw Error(403, InventoryTransferCodesV1.Forbidden);
-        return new(company.CompanyId, user.UserId);
+        return new Scope(company.CompanyId, user.UserId);
     }
     private async Task<PermissionScope> Fence(Scope scope, CancellationToken token)
     {
@@ -285,7 +285,7 @@ public sealed class InventoryTransferReceiptDocuments(InventoryDbContext databas
         && value > 0 && text == value.ToString(CultureInfo.InvariantCulture);
     private static bool Text(string? value, int max) => !string.IsNullOrWhiteSpace(value) && value == value.Trim()
         && value.Length <= max && !value.Any(char.IsControl);
-    private static InventoryTransferException Error(int status, string code) => new(status, code);
+    private static InventoryTransferException Error(int status, string code) => new InventoryTransferException(status, code);
     private sealed record Scope(Guid CompanyId, string ActorId);
     private sealed record Staged(InventoryTransferReceiptDocumentViewV1 Document, InventoryTransferReceiptDocumentViewV1? Before);
 }

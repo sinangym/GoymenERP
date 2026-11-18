@@ -258,12 +258,12 @@ public sealed partial class InventoryStore
                     PhysicalKg = pool.PhysicalKg + (incoming ? kg : -kg), CostedKg = pool.CostedKg.Add(costedDelta),
                     UnpricedShares = pendingShares,
                     Reason = afterPosition is null && afterVersion != pool.Version ? AverageCostUnreadableReason.Return : pool.Reason,
-                    ExactRow = dbContext.ExactCostPools.Local.SingleOrDefault(row => row.LocationId == position.LocationId
+                    ExactRow = dbContext.ExactCostPools.Local.SingleOrDefault(row => row.CompanyId == companyContext.CompanyId && row.LocationId == position.LocationId
                         && row.ProductId == position.ProductId && row.CurrencyId == currency),
                     TlRow = currency == SettingsCurrencyIdentitiesV1.TurkishLira
-                        ? dbContext.AverageCostLedger.Local.SingleOrDefault(r => r.LocationId == position.LocationId && r.ProductId == position.ProductId) : null,
+                        ? dbContext.AverageCostLedger.Local.SingleOrDefault(r => r.CompanyId == companyContext.CompanyId && r.LocationId == position.LocationId && r.ProductId == position.ProductId) : null,
                     ForeignRow = currency != SettingsCurrencyIdentitiesV1.TurkishLira
-                        ? dbContext.CurrencyAverageCostLedger.Local.SingleOrDefault(r => r.LocationId == position.LocationId && r.ProductId == position.ProductId && r.CurrencyId == currency) : null,
+                        ? dbContext.CurrencyAverageCostLedger.Local.SingleOrDefault(r => r.CompanyId == companyContext.CompanyId && r.LocationId == position.LocationId && r.ProductId == position.ProductId && r.CurrencyId == currency) : null,
                 };
                 stamp.Reason ??= stamp.Status == (int)InventoryMovementCostStampStatusV1.Known ? null : "movement_cost_source_unreadable";
                 dbContext.MovementCostStamps.Add(stamp);
