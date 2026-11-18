@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -231,8 +231,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // W8: normal adapter Warning RunInfo metadata occurs in completed runs as well.
     // W8 diagnostic collection: RunInfo is not a veto once an exact complete Failed TRX is proved.
     // This branch always retains native failure and cannot write proof; passing acceptance is unchanged.
+    // User decision 2026-11-18: one broad SQL shard budget is 10800s; each native process stays capped at 2400s.
+    // No renewal, retries, inventory changes, skips or partial proof; independent exact-head K3 review is pending.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "2424570c84737c5d403479a2ecf1dc9bfcbc09cae3c20c8789783dec1508e76a";
+        "43af48e91901fb24b77b7cec50bcc3738b6b8e501f3fd591e1bf78a1fcc0f73e";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";

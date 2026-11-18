@@ -86,8 +86,9 @@ class LiveProgressTests(unittest.TestCase):
         self.assertEqual(3, len(text.splitlines()))
         self.assertEqual("", self.project(f"  Passed {FQN} [{'9' * 400} s]\n".encode()))
 
-    def test_default_execution_deadline_remains_2400_seconds(self) -> None:
+    def test_native_process_cap_remains_2400_and_broad_shard_budget_is_10800_seconds(self) -> None:
         self.assertEqual(2400, VERIFIER.TEST_EXECUTION_TIMEOUT_SECONDS)
+        self.assertEqual(10800, VERIFIER.SQL_SHARD_EXECUTION_TIMEOUT_SECONDS)
 
     def test_native_success_drains_large_stdout_and_stderr_without_raw_replay(self) -> None:
         code = (
@@ -315,6 +316,29 @@ class LiveProgressTests(unittest.TestCase):
         execution.assert_not_called()
         self.assertEqual(2400, run.call_args.kwargs["timeout"])
         self.assertTrue(run.call_args.kwargs["capture_output"])
+
+    def test_long_shard_budget_does_not_expand_individual_setup_process_timeout(self) -> None:
+        with (
+            mock.patch.object(VERIFIER.time, "monotonic", return_value=100),
+            mock.patch.object(VERIFIER.subprocess, "run") as run,
+        ):
+            run.return_value.returncode = 0
+            VERIFIER.run_checked(["dotnet", "test", "--list-tests"], ROOT, execution_deadline=10900)
+        self.assertEqual(2400, run.call_args.kwargs["timeout"])
+
+    def test_long_shard_budget_does_not_expand_native_test_process_timeout(self) -> None:
+        process = mock.Mock(pid=123, stdout=io.BytesIO())
+        process.wait.return_value = 0
+        reader = mock.Mock()
+        reader.is_alive.return_value = False
+        with (
+            mock.patch.object(VERIFIER.subprocess, "Popen", return_value=process),
+            mock.patch.object(VERIFIER.threading, "Thread", return_value=reader),
+            mock.patch.object(VERIFIER.time, "monotonic", return_value=100),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            VERIFIER.run_test_checked(["synthetic"], ROOT, execution_deadline=10900)
+        process.wait.assert_called_once_with(timeout=2400)
 
     def test_only_execution_boundary_uses_live_projection(self) -> None:
         arguments = ["dotnet", "test", "--no-build", "--results-directory", "synthetic"]

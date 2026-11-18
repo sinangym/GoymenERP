@@ -466,6 +466,8 @@ def trx_logger(trx_path: Path) -> str:
 
 
 TEST_EXECUTION_TIMEOUT_SECONDS = 2400
+# User decision 2026-11-18: one broad-shard budget; each native process remains capped at 2400s.
+SQL_SHARD_EXECUTION_TIMEOUT_SECONDS = 10800
 MAX_PROGRESS_LINE_BYTES = 8192
 MAX_PROGRESS_EVENTS = 4096
 PROGRESS_FQN = r"GoymenERP\.Api\.IntegrationTests\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+"
@@ -558,7 +560,7 @@ class NativeTestFailure(RuntimeError):
 def run_test_checked(
     arguments: list[str], repository_root: Path, *, execution_deadline: float | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    # One deadline covers the whole shard, including pipe completion. Progress never renews it.
+    # Cap this process and its pipe completion by the remaining shard budget; progress never renews either.
     started = time.monotonic()
     deadline = started + TEST_EXECUTION_TIMEOUT_SECONDS
     if execution_deadline is not None:
@@ -810,7 +812,7 @@ def run_sql_batches(
     if (any(path.exists() or path.is_symlink() for path in paths)
             or any(trx_path.parent.glob(f"{trx_path.stem}.batch-*.trx"))):
         raise RuntimeError("SQL batch TRX outputs must be fresh; existing evidence cannot be reused.")
-    deadline = time.monotonic() + TEST_EXECUTION_TIMEOUT_SECONDS
+    deadline = time.monotonic() + SQL_SHARD_EXECUTION_TIMEOUT_SECONDS
     executed: dict[str, int] = {}
     seen_execution_ids: set[str] = set()
     first_test_failure: NativeTestFailure | None = None

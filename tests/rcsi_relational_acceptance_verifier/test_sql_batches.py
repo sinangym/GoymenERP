@@ -195,8 +195,8 @@ class SqlBatchTests(unittest.TestCase):
             ), mock.patch.object(V.time, "monotonic", return_value=100):
                 self.assertEqual(expected, V.run_sql_batches(root, root / "result.trx", expected))
             self.assertEqual(["result.batch-0001.trx", "result.batch-0002.trx"], sorted(path.name for path in root.glob("*.trx")))
-        self.assertEqual([2500, 2500], [kwargs["execution_deadline"] for _, kwargs in calls])
-        self.assertEqual([2500, 2500], [call.kwargs["execution_deadline"] for call in preflight.call_args_list])
+        self.assertEqual([10900, 10900], [kwargs["execution_deadline"] for _, kwargs in calls])
+        self.assertEqual([10900, 10900], [call.kwargs["execution_deadline"] for call in preflight.call_args_list])
 
     def test_first_native_failure_retains_trx_and_does_not_execute_remaining_batches(self) -> None:
         expected = {PREFIX + f"Case{i}": 1 for i in range(10)}
@@ -242,7 +242,7 @@ class SqlBatchTests(unittest.TestCase):
             path.write_text(source, encoding="utf-8")
             if len(calls) == 1:
                 if advance_clock is not None:
-                    advance_clock[0] = 2500
+                    advance_clock[0] = 100 + V.SQL_SHARD_EXECUTION_TIMEOUT_SECONDS
                 raise V.NativeTestFailure(exit_code)
             return subprocess.CompletedProcess(arguments, 0, stdout="", stderr="")
         return run
@@ -258,7 +258,7 @@ class SqlBatchTests(unittest.TestCase):
             self.assertEqual(3, len(calls))
             self.assertEqual(3, len(list(root.glob("*.trx"))))
             self.assertFalse(list(root.glob("*.json")))
-            self.assertEqual([2500, 2500, 2500], [kwargs["execution_deadline"] for _, kwargs in calls])
+            self.assertEqual([10900, 10900, 10900], [kwargs["execution_deadline"] for _, kwargs in calls])
             self.assertEqual(3, len({args[args.index("--filter") + 1] for args, _ in calls}))
 
     def test_adapter_warning_allows_diagnostic_continuation_but_retains_native_failure(self) -> None:
@@ -437,7 +437,7 @@ class SqlBatchTests(unittest.TestCase):
         fake = self.fake_runner(expected, calls)
         def run(arguments, root, **kwargs):
             result = fake(arguments, root, **kwargs)
-            clock[0] = 2500
+            clock[0] = 100 + V.SQL_SHARD_EXECUTION_TIMEOUT_SECONDS
             return result
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(V.time, "monotonic", side_effect=lambda: clock[0]), mock.patch.object(V, "run_bootstrap_preflight"), mock.patch.object(V, "run_checked", side_effect=run):
             with self.assertRaisesRegex(RuntimeError, "global deadline"):
