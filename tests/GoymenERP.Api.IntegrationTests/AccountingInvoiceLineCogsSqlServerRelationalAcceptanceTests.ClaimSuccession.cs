@@ -1,5 +1,6 @@
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Messaging;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Accounting.Application.Inbox;
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
@@ -181,7 +182,7 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
         Assert.Equal(1, await run.Count("accounting.InvoiceCogsEconomicClaims"));
         Assert.Equal(1, await run.Count("accounting.InvoiceCogsEconomicClaimSuccessions"));
         Assert.Equal(0, await run.Count("accounting.Journals"));
-        await using var foreign = run.Open(); foreign.CompanyContext.Set(Guid.NewGuid());
+        await using var foreign = run.Open(Guid.NewGuid());
         Assert.Empty(await foreign.Db.InvoiceCogsEconomicClaimSuccessions.AsNoTracking().ToListAsync());
     }
 
@@ -231,9 +232,12 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
         Assert.Equal("inventory_cost_source_changed", failed.Code);
         Assert.Equal(1, await run.Count("accounting.InventoryCostSources"));
         Assert.Equal(0, await run.Count("accounting.InvoiceCogsEconomicClaimSuccessions"));
-        var moved = new ChangedSuccessionOwner(new CancellationCostReader(b, bFacts), () => scope.CompanyContext.Set(Guid.NewGuid()));
-        await Assert.ThrowsAsync<AccountingStoreException>(() => SuccessionCosts(scope, moved, ledger).AcceptAsync(b.Envelope));
-        scope.CompanyContext.Set(Company);
+        var consumerCompany = new MutableCompany(Company); var foreignCompany = Guid.NewGuid();
+        var moved = new ChangedSuccessionOwner(new CancellationCostReader(b, bFacts), () => consumerCompany.Set(foreignCompany));
+        var movedFailure = await Assert.ThrowsAsync<AccountingStoreException>(() => SuccessionCosts(scope, moved, ledger, consumerCompany).AcceptAsync(b.Envelope));
+        Assert.Equal(AccountingStoreCodes.CompanyContextMismatch, movedFailure.Code);
+        Assert.Equal(foreignCompany, consumerCompany.CompanyId);
+        Assert.Equal(Company, scope.CompanyContext.CompanyId);
         Assert.Equal(1, await run.Count("accounting.InventoryCostSources"));
         Assert.Equal(0, await run.Count("accounting.InvoiceCogsEconomicClaimSuccessions"));
         await SuccessionCosts(scope, new CancellationCostReader(b, bFacts), ledger).AcceptAsync(b.Envelope);
@@ -256,8 +260,8 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
     private static FinalizedInvoiceLineSourceV1 Reinvoice(FinalizedInvoiceLineSourceV1 source) => source with {
         InvoiceId = Guid.NewGuid(), InvoiceLineId = Guid.NewGuid(), FinalizationAdmissionId = Guid.NewGuid() };
     private static AccountingInventoryCostStoreV1 SuccessionCosts(Scope scope, IAccountingInventoryCostSourceReaderV1 reader,
-        ManufacturingPostedCostAttributionStoreV1 ledger) => new(scope.Db, scope.Posting, reader, new CogsMapping(), new Plan(),
-        new CostCurrencies(), new(new AccountingSqlServerRelationalAcceptanceTests.SyntheticMoneyProfiles(Company)), scope.CompanyContext,
+        ManufacturingPostedCostAttributionStoreV1 ledger, ICompanyContext? consumerCompany = null) => new(scope.Db, scope.Posting, reader, new CogsMapping(), new Plan(),
+        new CostCurrencies(), new(new AccountingSqlServerRelationalAcceptanceTests.SyntheticMoneyProfiles(Company)), consumerCompany ?? scope.CompanyContext,
         scope.Audit, scope.AuditWriter, TimeProvider.System, ledger, postedPurchasing: new PurchasePostedCostAttributionStoreV1(scope.Db, scope.CompanyContext));
     private static async Task PostSuccession(AccountingInventoryCostStoreV1 store, AccountingInventoryCostProposalV1 item, Guid period)
     {

@@ -329,7 +329,7 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
             catch { await run.DisposeAsync(); throw; }
         }
         private static HttpClient factoryClient(Run run) => run.Factory.CreateClient();
-        public Scope Open() => new(factory.Services.CreateAsyncScope());
+        public Scope Open(Guid? companyId = null) => new(factory.Services.CreateAsyncScope(), companyId ?? Company);
         public async Task<Guid> Period()
         {
             await using var scope = Open(); var id = Guid.NewGuid();
@@ -368,9 +368,9 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
             await command.ExecuteNonQueryAsync();
         }
     }
-    private sealed class Scope(AsyncServiceScope scope) : IAsyncDisposable
+    private sealed class Scope(AsyncServiceScope scope, Guid companyId) : IAsyncDisposable
     {
-        private readonly ICompanyContext company = Context(scope);
+        private readonly ICompanyContext company = Context(scope, companyId);
         public ICompanyContext CompanyContext => company;
         public ISalesInvoiceStore Invoices => scope.ServiceProvider.GetRequiredService<ISalesInvoiceStore>();
         public AccountingDbContext Db => scope.ServiceProvider.GetRequiredService<AccountingDbContext>();
@@ -380,9 +380,16 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
             new AccountingAmountScaleVerifier(new AccountingSqlServerRelationalAcceptanceTests.SyntheticMoneyProfiles(Company)));
         public InvoiceLineCogsCorrectionStoreV1 Store => new(Db, company, new Plan(), scope.ServiceProvider.GetRequiredService<IAuditEventCollector>(),
             scope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>(), TimeProvider.System);
-        private static ICompanyContext Context(AsyncServiceScope scope)
-        { var context = scope.ServiceProvider.GetRequiredService<ICompanyContext>(); context.Set(Company); return context; }
+        private static ICompanyContext Context(AsyncServiceScope scope, Guid companyId)
+        { var context = scope.ServiceProvider.GetRequiredService<ICompanyContext>(); context.Set(companyId); return context; }
         public ValueTask DisposeAsync() => scope.DisposeAsync();
+    }
+    // Failure injection belongs to the consumer fence, never the scoped persistence context.
+    private sealed class MutableCompany(Guid companyId) : ICompanyContext
+    {
+        public bool IsResolved => true;
+        public Guid CompanyId { get; private set; } = companyId;
+        public void Set(Guid value) => CompanyId = value;
     }
     private sealed class SyntheticAuthorizedUser : ICurrentUser
     {
