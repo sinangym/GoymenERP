@@ -52,7 +52,7 @@ EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
 # Tren-1 W8 source closure (3e85cbbb1): exact producer measurements only; K3 review remains pending.
 EXPECTED_MIGRATION_COUNT = 341
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
-    "3a0f712509f11c2648f54b5cba036561613286c10e36de27ea7a23c682d68edc"
+    "fb8da83bdebb07da212adceebb537a5ad801706a13301a8259bf7d910c09663d"
 )
 # tren-1 wave 3 integration: +7 durable stores from platform/alis_cari/uretim/finans/kimlik and
 # +1 from stok_lojistik (product.profile-weight-attempts); every new classification is
@@ -97,10 +97,10 @@ EXPECTED_DURABLE_STORE_COUNT = 66
 # The full src/backend byte digest is still computed and emitted as `sourceSurface` in the
 # inventory (and copied into the release manifest).  The manifest sourceSurface is post-hoc
 # evidence, not a merge block: it is never compared with a pinned constant.
-EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 1461
+EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 1463
 # W8 STK-S17 canonical version validation: exact producer measurement, same 1461 risky inputs.
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    'a0912a048e044efd925d4d75cb3d8d7fc650ea28534f871b2df5ec6e64651a8a'
+    '7f7ecd3b78c28a94ba49b7f4ca075ceb2e0fa6467c21bd4c760ec7576b3376bc'
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
