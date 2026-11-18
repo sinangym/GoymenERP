@@ -203,7 +203,8 @@ public sealed class FinanceExpensePaymentHttpAcceptanceTests(GoymenErpApiFactory
         Assert.Equal<(ExpensePaymentSourceKind, Guid, DateOnly)?>((ExpensePaymentSourceKind.Cash, TreasuryId, OccurredOn),
             service.DraftContextQuery);
 
-        Assert.Equal(10, service.Calls);
+        // Four commands (including the draft update) and five reads (including the next page), each forwarded once.
+        Assert.Equal(9, service.Calls);
         // Bootstrap subjects are resolved to the host's user id before the owner is called: never empty, never
         // request data, and the same for every route.
         Assert.Single(service.Contexts.Select(context => context.ActorId).Distinct(StringComparer.Ordinal));
