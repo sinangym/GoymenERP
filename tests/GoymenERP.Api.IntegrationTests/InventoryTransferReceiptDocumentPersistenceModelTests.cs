@@ -31,7 +31,8 @@ public sealed class InventoryTransferReceiptDocumentPersistenceModelTests
     {
         using var database = Database();
         Assert.False(database.Database.HasPendingModelChanges());
-        Assert.EndsWith("_AddInventoryTransferReceiptDocuments", database.Database.GetMigrations().Last(), StringComparison.Ordinal);
+        Assert.Single(database.Database.GetMigrations(), name =>
+            name.EndsWith("_AddInventoryTransferReceiptDocuments", StringComparison.Ordinal));
         var migration = new AddInventoryTransferReceiptDocuments();
         Assert.DoesNotContain(migration.UpOperations, x => x is SqlOperation or InsertDataOperation or UpdateDataOperation or DeleteDataOperation);
         Assert.Equal("TransferReceiptDocumentVersions", Assert.Single(migration.UpOperations.OfType<CreateTableOperation>()).Name);
