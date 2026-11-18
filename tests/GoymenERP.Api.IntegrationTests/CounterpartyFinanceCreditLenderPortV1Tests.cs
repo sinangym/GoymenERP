@@ -35,10 +35,11 @@ public sealed class CounterpartyFinanceCreditLenderPortV1Tests
         Assert.Equal(FinanceCreditLenderStatusV1.Unavailable, answer.Status);
         Assert.Null(answer.DisplayName);
         Assert.Null(answer.PartyVersion);
-        var context = Context();
-        owner = new Owner(Detail()) { DuringRead = () => context.Set(Guid.NewGuid()) };
+        var context = new MutableCompany(Company); var foreignCompany = Guid.NewGuid();
+        owner = new Owner(Detail()) { DuringRead = () => context.Set(foreignCompany) };
         Assert.Equal(FinanceCreditLenderStatusV1.Unavailable,
             (await new CounterpartyFinanceCreditLenderPortV1(context, new User(), owner).ReadAsync(Company, Party, Account)).Status);
+        Assert.Equal(foreignCompany, context.CompanyId);
     }
 
     [Fact]
@@ -52,6 +53,12 @@ public sealed class CounterpartyFinanceCreditLenderPortV1Tests
 
     private static CounterpartyFinanceCreditLenderPortV1 Port(Owner owner, User? user = null) => new(Context(), user ?? new User(), owner);
     private static CompanyContext Context() { var value = new CompanyContext(); value.Set(Company); return value; }
+    private sealed class MutableCompany(Guid companyId) : ICompanyContext
+    {
+        public bool IsResolved => true;
+        public Guid CompanyId { get; private set; } = companyId;
+        public void Set(Guid value) => CompanyId = value;
+    }
     private static CounterpartyDetailView Detail() => new(Party, "SENTETIK-1", PartyKind.LegalEntity,
         "SENTETIK kurum", null, true, "3", [new(Account, Company, PartyRole.None, true, "4")]);
     private sealed class Owner(CounterpartyDetailView? value) : ICounterpartyReadService

@@ -74,21 +74,28 @@ public sealed class CounterpartyFinancePartyBalanceTransferOwnerPortV1Tests
     [InlineData(4)]
     public async Task Changed_company_during_any_owner_await_withholds_all_transfer_data(int read)
     {
-        var company = new CompanyContext(); company.Set(Company);
+        var company = new MutableCompany(Company); var foreignCompany = Guid.NewGuid();
         var owner = new Owner();
         owner.Previous = owner.Previous with { IsActive = false };
         owner.History = owner.History with { Successor = null };
-        owner.DuringRead = call => { if (call == read) company.Set(Guid.NewGuid()); };
+        owner.DuringRead = call => { if (call == read) company.Set(foreignCompany); };
         var result = await Read(owner, company);
         Assert.Equal(FinancePartyBalanceTransferOwnerOutcomeV1.Unavailable, result.Outcome);
         Assert.Null(result.Proof);
+        Assert.Equal(foreignCompany, company.CompanyId);
     }
 
-    private static Task<FinancePartyBalanceTransferOwnerAnswerV1> Read(Owner owner, CompanyContext? company = null)
+    private static Task<FinancePartyBalanceTransferOwnerAnswerV1> Read(Owner owner, ICompanyContext? company = null)
     {
         if (company is null) { company = new CompanyContext(); company.Set(Company); }
         return new CounterpartyFinancePartyBalanceTransferOwnerPortV1(company, new User(), owner, owner, owner)
             .ReadAsync(Context, Previous, PreviousAccount, Next, NextAccount, default);
+    }
+    private sealed class MutableCompany(Guid companyId) : ICompanyContext
+    {
+        public bool IsResolved => true;
+        public Guid CompanyId { get; private set; } = companyId;
+        public void Set(Guid value) => CompanyId = value;
     }
     private sealed class User : ICurrentUser
     {
