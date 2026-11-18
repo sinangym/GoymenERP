@@ -886,6 +886,9 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
         // ORG-04's card stands on the same `organization.work-centers.read` alone, so it is published exactly with the
         // list for every actor above (same seed reasoning; no separate flag).
         expected.Add(OrganizationShellCapabilityProvider.WorkCenterDetailCapabilityId);
+        // ORG-05 requires only the existing company-wide context-read grant held by these seeded actors.
+        // Tax-id values still require their separate read authority at the endpoint.
+        expected.Add(OrganizationShellCapabilityProvider.CompanyTaxIdCapabilityId);
         Assert.Equal(expected.Order(StringComparer.Ordinal), snapshot.Capabilities);
     }
 

@@ -26,7 +26,10 @@ public sealed partial class SettingsMoneyProfileSqlServerRelationalAcceptanceTes
         var updated = await run.InventoryCostProfile(CompanyA, CompanyA, before.Today);
         Assert.Equal((2L, 3), (updated.Profile.Version, updated.Scale));
         Assert.Equal(1L, (await run.InventoryCostProfile(CompanyA, CompanyA, before.Today.AddDays(-1))).Profile.Version);
-        Assert.Equal(CompanyB, (await run.InventoryCostProfile(CompanyB, CompanyB, before.Today)).CompanyId);
+        // SAT-D18: GSP has no approved Accounting profile; a foreign company must not borrow GDC's baseline.
+        var unavailable = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() =>
+            run.InventoryCostProfile(CompanyB, CompanyB, before.Today));
+        Assert.Equal("settings_money_profile_not_found", unavailable.Code);
         var mismatch = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() =>
             run.InventoryCostProfile(CompanyA, CompanyB, before.Today));
         Assert.Equal("settings_access_denied", mismatch.Code);

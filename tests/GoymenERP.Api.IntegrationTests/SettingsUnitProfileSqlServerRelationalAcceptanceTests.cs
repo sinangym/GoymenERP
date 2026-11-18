@@ -65,10 +65,10 @@ public sealed class SettingsUnitProfileSqlServerRelationalAcceptanceTests
         var transfer = new TransferUnitProfileBaselineRequestV1("SENTETIK birim profili başlangıç aktarımı");
         var record = new RecordUnitProfileRequestV1("1", Kilogram, approvedA.Scale, approvedA.IsActive, "SENTETIK birim profili");
 
-        // The host composes the persistent provider behind the unchanged port.
+        // The outer persistent money provider composes the persistent unit provider behind the unchanged port.
         await using (var scope = run.Factory.Services.CreateAsyncScope())
         {
-            Assert.IsType<SettingsUnitProfilePrerequisiteProvider>(
+            Assert.IsType<SettingsMoneyProfilePrerequisiteProvider>(
                 scope.ServiceProvider.GetRequiredService<ISettingsPrerequisiteProvider>());
         }
 

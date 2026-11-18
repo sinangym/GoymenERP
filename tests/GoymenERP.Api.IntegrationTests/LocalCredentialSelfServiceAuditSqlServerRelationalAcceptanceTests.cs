@@ -49,8 +49,12 @@ public sealed class LocalCredentialSelfServiceAuditSqlServerRelationalAcceptance
         }
         foreach (var change in new[] { "[ActorType] = N'System'", "[EntityId] = N'00000000-0000-0000-0000-000000000001'",
             "[ApprovalContextJson] = N'{}'", "[Operation] = N'ResetPassword'", "[EntityVersionAfter] = 5", "[PermissionCode] = N''" })
-            Assert.Equal(547, (await Assert.ThrowsAsync<SqlException>(() => ExecuteAsync(factory.DatabaseConnectionString,
+        {
+            Assert.Equal(51000, (await Assert.ThrowsAsync<SqlException>(() => ExecuteAsync(factory.DatabaseConnectionString,
                 "UPDATE [audit].[AuditEvents] SET " + change + " WHERE [EntityType] = N'Identity.LocalCredential' AND [PermissionCode] IS NULL"))).Number);
+            Assert.Equal(547, (await Assert.ThrowsAsync<SqlException>(() => AuditSqlConstraintProbe.InsertInvalidCloneAsync(
+                factory.DatabaseConnectionString, "[EntityType] = N'Identity.LocalCredential' AND [PermissionCode] IS NULL", change))).Number);
+        }
         Assert.Equal(1, await CountAsync(factory, TestCompanyIds.CompanyA, user));
     }
 

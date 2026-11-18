@@ -60,7 +60,10 @@ public sealed class FounderRecoverySystemAuditSqlServerRelationalAcceptanceTests
         {
             var refused = await Assert.ThrowsAsync<SqlException>(() => ExecuteAsync(factory.DatabaseConnectionString,
                 "UPDATE [audit].[AuditEvents] SET " + change + " WHERE [ActorId] = N'identity.recover-founder'"));
-            Assert.Equal(547, refused.Number);
+            Assert.Equal(51000, refused.Number); // The append-only trigger refuses every UPDATE before CHECK evaluation.
+            var invalidInsert = await Assert.ThrowsAsync<SqlException>(() => AuditSqlConstraintProbe.InsertInvalidCloneAsync(
+                factory.DatabaseConnectionString, "[ActorId] = N'identity.recover-founder'", change));
+            Assert.Equal(547, invalidInsert.Number);
         }
         Assert.Equal(2, await CountAsync(factory.DatabaseConnectionString));
     }
