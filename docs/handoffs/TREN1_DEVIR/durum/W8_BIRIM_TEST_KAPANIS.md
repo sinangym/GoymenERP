@@ -11,3 +11,9 @@ Kaynak174/174 korunur. Tam ilk birim koşusu a8f4440ec88da785ee08ff5d2fa4500e72b
 - Muhasebe Shell negatif/route envanteri, ilk SMM ve geç alış maliyeti için mevcut altı staged route ile hizalandı; gerçek permission, grant veya availability değişmez. Beklenti listesi kaynak provider üzerinden tek tek doğrulandı.
 
 Düzeltilmiş Accounting koşusu QUEUED. Test silme, skip, karantina veya doğrulama gevşetmesi yoktur.
+
+## Counterparty ve Documents
+
+- Counterparty ilk3 hata EF read-optimized modelde saklanmayan check-constraint metadata’sına erişimden gelir. Aynı model test dosyasındaki mevcut IDesignTimeModel örneği uygulanır; aynı üç testin bütün constraint/filter/index/append-only beklentileri korunur. DDL veya uygulama davranışı değişmez.
+- Documents ilk1 hata byte[] içeren tuple’ın referans eşitliğinden gelir. İndirilen PDF baytları ve SHA256 ayrı yapısal assertion ile karşılaştırılır; belge/scanner kuralı ve her iki beklenen değer aynen korunur.
+- Düzeltilmiş koşular QUEUED; ilk native hata kayıtları korunur.

@@ -339,7 +339,8 @@ public sealed class GeneratedDocumentStoreTests
         var document = Assert.Single(world.Documents);
         Assert.Null(document.ScannerId);
         var content = await a.Service.GetContentAsync(document.Id);
-        Assert.Equal((Pdf, document.Sha256), (content.Content, content.Sha256));
+        Assert.Equal(Pdf, content.Content);
+        Assert.Equal(document.Sha256, content.Sha256);
     }
 
     [Fact]

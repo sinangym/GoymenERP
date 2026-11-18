@@ -430,7 +430,7 @@ public sealed class CounterpartyPersistenceModelTests
     public void Outbox_is_company_scoped_append_only_and_keyed_by_aggregate_sequence()
     {
         using var dbContext = CreateContext(ResolvedCompanyContext(Guid.NewGuid()));
-        var outbox = dbContext.Model.FindEntityType(typeof(CounterpartyOutboxRow))!;
+        var outbox = dbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(CounterpartyOutboxRow))!;
         Assert.Equal("counterparty", outbox.GetSchema());
         Assert.Equal("OutboxMessages", outbox.GetTableName());
         Assert.NotNull(outbox.GetDeclaredQueryFilters().SingleOrDefault());
@@ -509,7 +509,7 @@ public sealed class CounterpartyPersistenceModelTests
         // F-027 / EK-18 #76-#77: Party is global, so the merge record carries no company query filter; it names the
         // company the approval was given in. A duplicate is merged at most once; nothing cascades.
         using var dbContext = CreateContext(ResolvedCompanyContext(Guid.NewGuid()));
-        var party = dbContext.Model.FindEntityType(typeof(Party))!;
+        var party = dbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(Party))!;
         Assert.Equal(
             CounterpartyDbContext.PartyMergedIntoCheck,
             party.GetCheckConstraints().Single(check => check.Name == "CK_Parties_MergedInto").Sql);
@@ -526,7 +526,7 @@ public sealed class CounterpartyPersistenceModelTests
         Assert.False(mergedIndex.IsUnique);
         Assert.Equal("[MergedIntoPartyId] IS NOT NULL", mergedIndex.GetFilter());
 
-        var merge = dbContext.Model.FindEntityType(typeof(PartyMerge))!;
+        var merge = dbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PartyMerge))!;
         Assert.Equal("counterparty", merge.GetSchema());
         Assert.Equal("PartyMerges", merge.GetTableName());
         Assert.Empty(merge.GetDeclaredQueryFilters());
@@ -696,7 +696,7 @@ public sealed class CounterpartyPersistenceModelTests
     public void Legal_name_change_request_is_company_scoped_with_one_pending_slot_and_the_maker_checker_checks()
     {
         using var dbContext = CreateContext(ResolvedCompanyContext(Guid.NewGuid()));
-        var request = dbContext.Model.FindEntityType(typeof(PartyLegalNameChangeRequest))!;
+        var request = dbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PartyLegalNameChangeRequest))!;
         Assert.Equal("counterparty", request.GetSchema());
         Assert.Equal("PartyLegalNameChangeRequests", request.GetTableName());
         Assert.NotNull(request.GetDeclaredQueryFilters().SingleOrDefault());
