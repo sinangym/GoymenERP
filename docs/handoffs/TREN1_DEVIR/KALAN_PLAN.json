@@ -2,7 +2,7 @@
  "meta": {
   "tarih": "2026-11-18",
   "tren_dali": "claude/tren-1",
-  "kod_head": "3a7f4caa896070424e0863988a443520f3003b3c",
+  "kod_head": "1dcfa332897cb6265eb8d40cb12176d06d774538",
   "durum_sozlugu": {
    "PARTIAL": "kapsamın bir kısmı kaynakta; kalan kısım son W<n> ekip raporunda",
    "PLANNED/READY": "başlanmadı",
@@ -49,7 +49,7 @@
   "partial": 0,
   "remaining_not_started": 0,
   "last_wave": 8,
-  "progress_meaning": "174/174 kaynak DONE (%100), W8 son paket; yeni dalga yok. Son tam Release build 581d01e78 exit0. Son hedef testleri ve exact kaynaklari W8_RUNTIME_KAPANIS_DURUMU raporunda ayridir. Tam final CI, gercek SQL/browser ve iki bagimsiz K3 kabulu bekler; production degildir.",
+  "progress_meaning": "174/174 kaynak DONE (%100), W8 son paket; yeni dalga yok. Son SQL kaynak duzeltmeleri ve hedefli kanitlar W8_RUNTIME_KAPANIS_DURUMU raporundadir. Yeni exact-head CI, tam gercek SQL, frontend guvenlik kapisi ve iki bagimsiz tam K3 kabulu bekler; production degildir.",
   "w6_source_done_ids": [
    "KIM-S13",
    "KIM-S18",
