@@ -49,8 +49,12 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
         Assert.Equal(run.Correlation, delivered.CorrelationId);
         Assert.Equal(1, await database.OutboxMessages.CountAsync(item => item.AggregateId == recorded.Id));
         Assert.Empty(await source.ReadAfterAsync(delivered.Position, 50, CancellationToken.None));
-        company.Set(CompanyB);
-        Assert.Empty(await source.ReadAfterAsync(null, 50, CancellationToken.None));
+        var foreignCompany = new CompanyContext(); foreignCompany.Set(CompanyB);
+        await using var foreignDatabase = OutboxDatabase(run, foreignCompany);
+        var foreignSource = new FinanceCreditOutboxEventSourceV1(foreignDatabase, foreignCompany);
+        Assert.Empty(await foreignSource.ReadAfterAsync(null, 50, CancellationToken.None));
+        Assert.Equal(CompanyA, company.CompanyId);
+        Assert.Equal(CompanyB, foreignCompany.CompanyId);
     }
 
     /// <summary>Real SQL source/command/audit/outbox transaction; permission, period and balance ports are synthetic.</summary>

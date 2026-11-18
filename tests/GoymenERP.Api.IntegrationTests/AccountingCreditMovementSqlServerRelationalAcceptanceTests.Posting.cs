@@ -1,4 +1,5 @@
 using System.Globalization;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Accounting.Application;
@@ -65,6 +66,7 @@ public sealed partial class AccountingCreditMovementSqlServerRelationalAcceptanc
         foreach (var change in new[] { "mapping", "amount", "profile", "status", "reversed", "owner-denied", "permission", "company", "actor", "membership" })
         {
             await using var scope = run.Open(); var user = new CreditUser(); var owner = new CreditOwner(source); var permissions = new CreditPermission();
+            var consumerCompany = new CreditConsumerCompany(source.CompanyId);
             var binding = CreditBinding(source, owner.Value);
             if (change == "amount") owner.Value = owner.Value with { Source = owner.Value.Source with { Components = [new("principal", "101", null), new("fee", "1.50", null)] } };
             if (change == "profile") owner.Value = owner.Value with { MoneyProfile = owner.Value.MoneyProfile with { ProfileVersion = 2 } };
@@ -72,11 +74,17 @@ public sealed partial class AccountingCreditMovementSqlServerRelationalAcceptanc
             if (change == "reversed") owner.Value = owner.Value with { ReversedByMovementId = Guid.NewGuid() };
             if (change == "owner-denied") owner.Outcome = ReadOutcome.Denied;
             if (change == "permission") permissions.Decision = PermissionDecision.Denied;
-            if (change == "company") owner.DuringRead = () => scope.Company.Set(TestCompanyIds.CompanyB);
+            if (change == "company") owner.DuringRead = () => consumerCompany.Set(TestCompanyIds.CompanyB);
             if (change == "actor") owner.DuringRead = () => user.Actor = Guid.NewGuid();
             if (change == "membership") owner.DuringRead = () => user.Member = false;
-            Assert.Null(await CreditProvider(scope, user, owner, change == "mapping" ? null : binding, permissions)
+            Assert.Null(await CreditProvider(scope, user, owner, change == "mapping" ? null : binding, permissions, consumerCompany)
                 .ResolveAsync(source.CompanyId, source.EventId));
+            if (change == "company")
+            {
+                Assert.Equal(TestCompanyIds.CompanyB, consumerCompany.CompanyId);
+                Assert.Equal(source.CompanyId, scope.Company.CompanyId);
+                Assert.Equal(1, owner.ReadCalls);
+            }
         }
         Assert.Equal(0, await run.Count("accounting.Journals"));
     }
@@ -84,10 +92,10 @@ public sealed partial class AccountingCreditMovementSqlServerRelationalAcceptanc
     private static FinanceCreditMovementRecordedV1 PostedSource() => Source() with { Components = [new("principal", "100", null), new("fee", "1.50", null)] };
     private static AccountingCommandMetadata CreditMetadata(Guid actor) => new(actor.ToString("D"), "SENTETIK-accounting", [], "SENTETIK-credit", null, Guid.NewGuid().ToString("D"), "API");
     private static CreditMovementNormalJournalSourceProviderV1 CreditProvider(Scope scope, CreditUser user, CreditOwner owner,
-        ApprovedNormalJournalSourceBindingV1? binding, CreditPermission permission)
+        ApprovedNormalJournalSourceBindingV1? binding, CreditPermission permission, ICompanyContext? consumerCompany = null)
     {
         var correlation = new CorrelationContext(); correlation.Set("SENTETIK-credit", null, "API", null, null);
-        return new(scope.Db, scope.Company, user, correlation, owner,
+        return new(scope.Db, consumerCompany ?? scope.Company, user, correlation, owner,
             new ApprovedNormalJournalSourceBindingCatalogV1(binding is null ? [] : [binding]), permission);
     }
     private static ApprovedNormalJournalSourceBindingV1 CreditBinding(FinanceCreditMovementRecordedV1 source, CreditMovementViewV1 value)
@@ -100,6 +108,13 @@ public sealed partial class AccountingCreditMovementSqlServerRelationalAcceptanc
              new("credit.component.principal", PostingSide.Credit, accounts[2])]);
         return new(source.CompanyId, source.EventId, NormalJournalSourceKindsV1.RecordedCreditMovement, value.Version,
             value.MoneyProfile.ProfileId.ToString("D"), value.MoneyProfile.ProfileVersion.ToString(CultureInfo.InvariantCulture), source.CurrencyId, rule);
+    }
+    // The real SQL scope keeps its original company; only the provider's consumer context drifts.
+    private sealed class CreditConsumerCompany(Guid companyId) : ICompanyContext
+    {
+        public bool IsResolved => CompanyId != Guid.Empty;
+        public Guid CompanyId { get; private set; } = companyId;
+        public void Set(Guid value) => CompanyId = value;
     }
     private sealed class CreditUser : ICurrentUser
     {
@@ -116,12 +131,13 @@ public sealed partial class AccountingCreditMovementSqlServerRelationalAcceptanc
     private sealed class CreditOwner(FinanceCreditMovementRecordedV1 source) : IFinanceCreditMovementServiceV1
     {
         public ReadOutcome Outcome { get; set; } = ReadOutcome.Found; public Action? DuringRead { get; set; }
+        public int ReadCalls { get; private set; }
         public CreditMovementViewV1 Value { get; set; } = new(source.MovementId, source.CompanyId, "2", CreditMovementStatusV1.Approved,
             new(source.CreditAccountId, "2", source.Kind, source.SourceDocument, source.TransactionDate, source.AccountingDate,
                 source.Components, source.BankEffect, null, null, source.Reason), source.CurrencyId, false, At, At.AddMinutes(1), null, null, null,
             new(Guid.NewGuid(), 1, 2, "0.01"));
         public Task<ReadResult<CreditMovementPageV1>> ListAsync(FinanceContext context, Guid id, CancellationToken ct)
-        { DuringRead?.Invoke(); return Task.FromResult(new ReadResult<CreditMovementPageV1>(Outcome, Outcome == ReadOutcome.Found ? new(Value.CompanyId, [Value]) : null)); }
+        { ReadCalls++; DuringRead?.Invoke(); return Task.FromResult(new ReadResult<CreditMovementPageV1>(Outcome, Outcome == ReadOutcome.Found ? new(Value.CompanyId, [Value]) : null)); }
         public Task<CreditMovementResultV1> ProposeAsync(FinanceContext context, CommandMetadata metadata, CreditMovementProposeV1 request, CancellationToken ct) => throw new NotSupportedException();
         public Task<CreditMovementResultV1> DecideAsync(FinanceContext context, CommandMetadata metadata, CreditMovementDecisionV1 request, CancellationToken ct) => throw new NotSupportedException();
     }

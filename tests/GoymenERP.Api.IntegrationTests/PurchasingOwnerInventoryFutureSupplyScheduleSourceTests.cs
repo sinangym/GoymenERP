@@ -65,10 +65,12 @@ public sealed class PurchasingOwnerInventoryFutureSupplyScheduleSourceTests
         foreach (var answer in malformed)
             Assert.False((await new PurchasingOwnerInventoryFutureSupplyScheduleSource(new Owner(answer), Context())
                 .GetLineScheduleAsync(Order, Line)).IsReadable);
-        var context = Context();
+        var context = new ScheduleConsumerCompany(Company);
         var switched = new Owner(Found([slice]), () => context.Set(TestCompanyIds.CompanyB));
         Assert.False((await new PurchasingOwnerInventoryFutureSupplyScheduleSource(switched, context)
             .GetLineScheduleAsync(Order, Line)).IsReadable);
+        Assert.Equal(TestCompanyIds.CompanyB, context.CompanyId);
+        Assert.Equal([(Order, Line)], switched.Asked);
     }
 
     [Fact]
@@ -82,6 +84,13 @@ public sealed class PurchasingOwnerInventoryFutureSupplyScheduleSourceTests
     }
 
     private static CompanyContext Context() { var company = new CompanyContext(); company.Set(Company); return company; }
+    // Adversarial consumer only; production CompanyContext refuses a second company assignment.
+    private sealed class ScheduleConsumerCompany(Guid companyId) : ICompanyContext
+    {
+        public bool IsResolved => CompanyId != Guid.Empty;
+        public Guid CompanyId { get; private set; } = companyId;
+        public void Set(Guid value) => CompanyId = value;
+    }
     private static PurchaseFutureSupplyScheduleV1 Found(IReadOnlyList<PurchaseFutureSupplyScheduleSliceV1> slices) =>
         new(PurchaseFutureSupplyScheduleOutcomeV1.Found, Company, Order, Line, Unit, 3, slices);
     private static PurchaseFutureSupplyScheduleSliceV1 Slice(int sequence, DateOnly day, string quantity, string remaining) =>
