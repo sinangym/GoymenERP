@@ -36,6 +36,7 @@ public sealed class AuthenticationProvidersTests
     private const string Authority = "https://identity.example.test";
     private const string Audience = "goymen-erp-api";
     private const string LoginPath = "/api/v1/identity/session/login";
+    private const string AntiforgeryPath = "/api/v1/identity/session/antiforgery";
     private const string MePath = "/api/v1/identity/me";
 
     [Fact]
@@ -218,9 +219,18 @@ public sealed class AuthenticationProvidersTests
         var userId = await factory.SeedLocalUserAsync("sentetik.coklu", password);
         using var client = factory.CreateClient();
 
-        using (var login = await client.PostAsJsonAsync(
-                   LoginPath,
-                   new { userName = "sentetik.coklu", password }))
+        using var antiforgery = await client.GetAsync(AntiforgeryPath);
+        Assert.Equal(HttpStatusCode.OK, antiforgery.StatusCode);
+        using var tokenBody = JsonDocument.Parse(await antiforgery.Content.ReadAsStringAsync());
+        var token = Assert.IsType<string>(tokenBody.RootElement.GetProperty("requestToken").GetString());
+        Assert.NotEmpty(token);
+        using var loginRequest = new HttpRequestMessage(HttpMethod.Post, LoginPath)
+        {
+            Content = JsonContent.Create(new { userName = "sentetik.coklu", password }),
+        };
+        loginRequest.Headers.Add(LocalAccountAntiforgery.HeaderName, token);
+
+        using (var login = await client.SendAsync(loginRequest))
         {
             Assert.Equal(HttpStatusCode.NoContent, login.StatusCode);
         }
@@ -285,6 +295,10 @@ public sealed class AuthenticationProvidersTests
                 ["Identity:LocalAccount:PasswordHashing:Algorithm"] = LocalAccountPasswordHashingSettings.Pbkdf2Algorithm,
                 ["Identity:LocalAccount:PasswordHashing:Pbkdf2Iterations"] =
                     LocalAccountOptions.MinimumPbkdf2Iterations.ToString(CultureInfo.InvariantCulture),
+                ["Identity:LocalAccount:PasswordPolicy:MinimumLength"] = "8",
+                ["Identity:LocalAccount:PasswordPolicy:MaximumLength"] = "128",
+                ["Identity:LocalAccount:PasswordPolicy:RequireCharacterClasses"] = "false",
+                ["Identity:LocalAccount:PasswordPolicy:BlocklistEnabled"] = "true",
                 ["Identity:LocalAccount:RateLimit:Login:PermitLimit"] = "100",
                 ["Identity:LocalAccount:RateLimit:Login:Window"] = "00:01:00",
                 ["Identity:LocalAccount:RateLimit:Login:PartitionBy"] =
