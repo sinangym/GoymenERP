@@ -29,3 +29,9 @@ Beş hata dört kaynak nedenine ayrıldı:
 Son kaynak değişiklikleri tekrar koşulmadan PASS sayılmaz. Yeni backend factory
 baytları için recovery üretimi/pin freshness ayrıca yenilenecek. Gerçek SQL,
 tarayıcı, CI ve iki bağımsız exact-head K3 incelemesi ayrı kanıtlardır.
+
+Son gerçek üretici yardımcısı c6168c8e2 kaynağında exit0 verdi: risk yüzeyi1459,
+parmakizi e64d43adbbd335ce7c60db5f39fb1359b837d0f4c5e1c8237e7f619fc759cd19.
+19 context,339 migration ve42 Audit kaynak sayısı/parmakizi değişmedi; reviewed
+method/blob drift'i bulunmadı. Yalnız ölçülen risk hash'i güncellendi; seçim/parser
+kuralları değişmedi. Tam gerçek üretici tekrarı henüz QUEUED.
