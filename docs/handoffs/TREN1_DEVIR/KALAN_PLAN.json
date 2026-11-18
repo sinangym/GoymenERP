@@ -2,7 +2,7 @@
  "meta": {
   "tarih": "2026-11-18",
   "tren_dali": "claude/tren-1",
-  "kod_head": "e35cd8cb4ecf502b0cb77cf81a334dd92077adff",
+  "kod_head": "581d01e7807bdb4dcbfcf7b9a5965ddb664b3924",
   "durum_sozlugu": {
    "PARTIAL": "kapsamın bir kısmı kaynakta; kalan kısım son W<n> ekip raporunda",
    "PLANNED/READY": "başlanmadı",
@@ -49,7 +49,7 @@
   "partial": 0,
   "remaining_not_started": 0,
   "last_wave": 8,
-  "progress_meaning": "174/174 kaynak DONE (%100), W8 son paket. Yerel tam modül 13325/13325, tam frontend 9854/9854, önceki tam mimari 405/405; son hedef 69/69 ve Cari 378/378 PASS. Güncel gerçek SQL/browser/final CI ve bağımsız K3 kabulü ayrıdır. Production değildir.",
+  "progress_meaning": "174/174 kaynak DONE (%100), W8 son paket; yeni dalga yok. Son tam Release build 581d01e78 exit0. Son hedef testleri ve exact kaynaklari W8_RUNTIME_KAPANIS_DURUMU raporunda ayridir. Tam final CI, gercek SQL/browser ve iki bagimsiz K3 kabulu bekler; production degildir.",
   "w6_source_done_ids": [
    "KIM-S13",
    "KIM-S18",
@@ -330,7 +330,7 @@
     "browser": "NOT_RUN"
    },
    "recovery_release": {
-    "head": "3123ef92faf38f4296fed23bd92744e84c6f1208",
+    "head": "8eb2668d0bc866816c5ab1698e0eb704231ffc73",
     "recovery_tests": 36,
     "release_tests": 16,
     "failed": 0,
@@ -338,18 +338,21 @@
     "native_exits": [
      0,
      0
-    ]
+    ],
+    "note": "Historical exact-head full packages; not final candidate proof."
    },
    "final_recovery_producer": {
-    "head": "54bec41070da4f8c2e42c5e40c64d847094df8e4",
+    "head": "6f9ca88db4cb71e46d098ee44cae2972ef840f49",
     "native_exit": 0,
     "db_contexts": 19,
     "migrations": 340,
     "durable_stores": 66,
     "source_files": 3119,
     "risky_source_files": 1461,
-    "risky_sha256": "9af854faccd37fccca382a68dd8d6316d4d00824fbd438ec91b3784243ac9854",
-    "backend_source_sha256": "289924152475593651da46416b55619b1de7480c472a580cd63d0a7800ef86b5"
+    "risky_sha256": "f83a4a44766f40bb6666735273a586720fb90fc9762b9dfb790e6d25873ba93d",
+    "backend_source_sha256": "3e481305b77de7a12cdd6315b30fc91c2e5404ca63c7406adf171db395d9206e",
+    "release_manifest_native_exit": 0,
+    "mode": "SOURCE_ONLY"
    },
    "architecture_first": {
     "head": "380901177",
@@ -374,15 +377,22 @@
    "ci": {
     "pr": 1201,
     "first_head": "e838ca9079eda6c52d0d31cd909e8541f121f976",
-    "run": 44238350645,
-    "status": "FAILED_API_FIXTURES_OPENAPI_ORDER_SQL_STARTUP_REPAIRED_LOCALLY_NEW_CI_PENDING",
+    "run": 44244586757,
+    "status": "FAIL_PREVIOUS_PUBLISHED_HEAD_FINAL_CANDIDATE_CI_PENDING",
     "security": "UPSTREAM_BLOCKER_GHSA-fc5q-39xc-vjpf_PATCHED_NONE",
-    "last_published_head": "94e0e88e98ca3374cb3149d943a9d4e9db5d6bd7",
+    "last_published_head": "8eb2668d0bc866816c5ab1698e0eb704231ffc73",
     "recovery_inventory": "PASS",
     "release_manifest": "PASS",
     "modules": "PASS",
     "architecture": "PASS",
-    "frontend_shards": "4_OF_4_PASS"
+    "frontend_shards": "4_OF_4_PASS",
+    "tested_merge_sha": "44a2749f8fb28061e24cefdb3a6e7e6e8ca69763",
+    "api_1": "PASS",
+    "api_2": "FAIL_FIXTURE_CORRECTIONS_LOCALLY_VERIFIED",
+    "api_3": "FAIL_FIXTURE_CORRECTIONS_LOCALLY_VERIFIED",
+    "real_rcsi": "14_PASS_0_SKIP",
+    "sql_a_b_c": "2400_SECONDS_TIMEOUT_COMPLETED_COUNT_UNKNOWN",
+    "c014": "BROWSER_10_PASS_NETWORK_EVIDENCE_FAIL_ACTIVATION_SKIPPED_LOCAL_EVIDENCE_FIX_PENDING_NEW_CI"
    },
    "independent_K3": "PENDING_EXTERNAL_EXACT_HEAD_REVIEWS",
    "report": "durum/W8_RUNTIME_KAPANIS_DURUMU.md",
@@ -455,9 +465,28 @@
     "errors": 0,
     "seconds": 365.88,
     "real_sql": "NOT_CONFIGURED_LOCAL_PENDING_CI"
+   },
+   "finite_validation_closure": {
+    "production_source_head": "581d01e7807bdb4dcbfcf7b9a5965ddb664b3924",
+    "fixture_head": "6f9ca88db4cb71e46d098ee44cae2972ef840f49",
+    "full_release_integration_build_exit": 0,
+    "shell_cases_passed": 10,
+    "api_target_cases": 138,
+    "api_initial_passed": 137,
+    "api_initial_failed": 1,
+    "api_failure_retained": true,
+    "authentication_followup_passed": 15,
+    "canonical_unit_passed": 45,
+    "runtime_guard_followup_passed": 3,
+    "rcsi_discovery_guard_passed": 1,
+    "skipped": 0,
+    "official_full_api_group_proof": false,
+    "full_backend_rebuild_at_fixture_head": false,
+    "sql_progress_python_tests": 68,
+    "windows_filter_python_tests": 38
    }
   },
-  "published_train_head_at_last_checkpoint": "94e0e88e98ca3374cb3149d943a9d4e9db5d6bd7"
+  "published_train_head_at_last_checkpoint": "8eb2668d0bc866816c5ab1698e0eb704231ffc73"
  },
  "teams": [
   {

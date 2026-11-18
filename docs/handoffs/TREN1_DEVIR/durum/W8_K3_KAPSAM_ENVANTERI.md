@@ -829,3 +829,11 @@ sırası değişti; JSON değerleri aynıdır. Açık kaynak serializer override
 118 permission adı, W5 12+5 ve W8 82+16 bekleyen review listeleri aynen korunur.
 Yeni kayıt runtime tenant SQL bypass'ı değildir; guard başarısı bağımsız review
 veya gerçek SQL kabulünün yerine geçmez. Ayrıntılar son runtime ekindedir.
+
+## Son doğrulama deltası — 6f9ca88db
+
+Sabit kapsam 174/174 kaynak DONE; toplam340/yenimain177 migration, toplam313/yeni199 THROW ve118 yeni izin kaydı değişmedi. Eski12 bypass/5 context ve yeni82 runtime/16 gerçek context girdisinin K3 bekleme durumları korunur.
+
+InventoryFutureAllocationContractsV1 mevcut System.Data.Common1/DbConnection1 girdisi, kanonik pozitif Int64 sürüm kontrolü için gerçek guard üreticisiyle `b1e1473c5d9d7799928263ab9f32c96106514a76d81ed9c1b553e361fce0c195` olarak yeniden üretildi. Yeni bypass girdisi/ham SQL API/tenant istisnası eklenmedi; K3 review bekler. Recovery riskli kaynak1461/f83a4a44766f40bb6666735273a586720fb90fc9762b9dfb790e6d25873ba93d gerçek üretici çıktısıdır.
+
+Kalite aracı kaynak hashleri: SQL verifier `28a5a658704d0b63b3fd67a6b8f7d709b3ba7b105e806b64f894c3843f48a347`; backend group verifier `4c43b0ab9dc3d052253937d67e59c8163d9344ef41349014e155f394412eaa04`. Son kaynak ve native kanıt sınırları W8_RUNTIME_KAPANIS_DURUMU son ekindedir. Önceki CI FAIL; son exact-head CI ve iki bağımsız tam K3 review halen gereklidir.
