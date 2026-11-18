@@ -167,7 +167,7 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
         var view = Assert.IsType<FinanceOfficialSalesInvoiceViewV1>((await ResultAsync(approved)).Resource);
         Assert.Equal((FinanceOfficialSalesInvoiceStatusV1.Approved, "2", Recorder, Checker),
             (view.Status, view.Version, view.RecordedBy, view.ApprovedBy));
-        Assert.Equal(pending with
+        AssertViewWithNoImportedSourceDifferences(pending with
         {
             Status = view.Status, Version = view.Version, ApprovedBy = view.ApprovedBy, ApprovedAtUtc = view.ApprovedAtUtc,
         }, view);
@@ -175,12 +175,13 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
             Correlation());
         Assert.Equal(HttpStatusCode.OK, approvedAgain.StatusCode);
         AssertReplay(approvedAgain, approveCorrelation);
-        Assert.Equal(view, (await ResultAsync(approvedAgain)).Resource);
+        AssertViewWithNoImportedSourceDifferences(view, (await ResultAsync(approvedAgain)).Resource);
 
         using var detail = await checker.GetAsync(DetailPath(invoiceId));
         Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
         PrivateNoStore(detail);
-        Assert.Equal(view, await detail.Content.ReadFromJsonAsync<FinanceOfficialSalesInvoiceViewV1>(Json));
+        AssertViewWithNoImportedSourceDifferences(view,
+            await detail.Content.ReadFromJsonAsync<FinanceOfficialSalesInvoiceViewV1>(Json));
         using var list = await checker.GetAsync(Path + "?pendingOnly=true");
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
         var page = Assert.IsType<FinanceOfficialSalesInvoicePageV1>(
@@ -271,7 +272,8 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
         // Both stay readable with their trail; the pending list holds neither.
         using var detail = await checker.GetAsync(DetailPath(rejectedId));
         Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
-        Assert.Equal(rejectedView, await detail.Content.ReadFromJsonAsync<FinanceOfficialSalesInvoiceViewV1>(Json));
+        AssertViewWithNoImportedSourceDifferences(rejectedView,
+            await detail.Content.ReadFromJsonAsync<FinanceOfficialSalesInvoiceViewV1>(Json));
         using var list = await checker.GetAsync(Path + "?pendingOnly=true");
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
         var page = Assert.IsType<FinanceOfficialSalesInvoicePageV1>(
@@ -610,6 +612,18 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
             Correlation());
         await AssertProblemAsync(withdrawn, HttpStatusCode.BadRequest, "company_context_invalid");
         Assert.Equal(0, service.Calls);
+    }
+
+    private static void AssertViewWithNoImportedSourceDifferences(FinanceOfficialSalesInvoiceViewV1 expected,
+        FinanceOfficialSalesInvoiceViewV1? actual)
+    {
+        // FNS-D90/KLN-D104: approval and detail actively compare sources. This fixture has no imported counterpart;
+        // unlike an older command snapshot, that read must prove an empty list rather than omit the result.
+        Assert.NotNull(actual);
+        Assert.NotNull(actual.SourceDifferences);
+        Assert.Empty(actual.SourceDifferences);
+        if (expected.SourceDifferences is { } expectedDifferences) Assert.Empty(expectedDifferences);
+        Assert.Equal(expected with { SourceDifferences = null }, actual with { SourceDifferences = null });
     }
 
     private WebApplicationFactory<Program> RealHost(CleanPdf? pdf = null) =>
