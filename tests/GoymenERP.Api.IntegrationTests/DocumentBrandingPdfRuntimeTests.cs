@@ -14,11 +14,12 @@ public sealed class DocumentBrandingPdfRuntimeTests
     [Fact]
     public void The_producer_frame_refuses_a_new_actor_or_company_even_if_that_new_context_itself_can_read_a_record()
     {
-        var company = new CompanyContext(); company.Set(Company); var user = new User();
+        var company = new MutableCompanyContext(Company); var user = new User();
         var frame = new DocumentPdfProducerFrame(company, user); frame.Require();
         user.UserId = "SENTETIK-different-authorized-actor";
         Assert.Equal(403, Assert.Throws<DocumentBrandingServiceException>(frame.Require).Status);
         user.UserId = "SENTETIK-maker"; company.Set(TestCompanyIds.CompanyB);
+        Assert.True(user.CanAccessCompany(company.CompanyId));
         Assert.Equal(403, Assert.Throws<DocumentBrandingServiceException>(frame.Require).Status);
     }
     [Fact]
@@ -47,14 +48,17 @@ public sealed class DocumentBrandingPdfRuntimeTests
     [Fact]
     public async Task Company_or_permission_loss_during_the_owner_call_never_releases_asset_content()
     {
-        var company = new CompanyContext(); company.Set(Company); var authority = new Authority();
+        var company = new MutableCompanyContext(Company); var authority = new Authority();
         var owner = new Owner(Available()) { DuringRead = () => company.Set(TestCompanyIds.CompanyB) };
         var reader = Reader(owner, company, authority);
         Assert.Equal(403, (await Assert.ThrowsAsync<DocumentBrandingServiceException>(() => reader.ReadAsync(Company,
             DocumentTemplateModuleV1.Inventory, "inventory.labels.read"))).Status);
+        Assert.Equal(TestCompanyIds.CompanyB, company.CompanyId);
+        Assert.Equal(1, owner.LatestCalls);
         company.Set(Company); owner.DuringRead = () => authority.Granted = false;
         Assert.Equal(403, (await Assert.ThrowsAsync<DocumentBrandingServiceException>(() => reader.ReadAsync(Company,
             DocumentTemplateModuleV1.Inventory, "inventory.labels.read"))).Status);
+        Assert.Equal(2, owner.LatestCalls);
     }
     [Fact]
     public async Task Foreign_asset_hash_change_self_publication_and_unknown_outcomes_are_not_printable_success()
@@ -69,7 +73,7 @@ public sealed class DocumentBrandingPdfRuntimeTests
             Assert.Equal(503, (await Assert.ThrowsAsync<DocumentBrandingServiceException>(() => Reader(new Owner(value))
                 .ReadAsync(Company, DocumentTemplateModuleV1.Inventory, "inventory.labels.read"))).Status);
     }
-    private static PublishedDocumentBrandingReader Reader(Owner owner, CompanyContext? company = null, Authority? authority = null)
+    private static PublishedDocumentBrandingReader Reader(Owner owner, ICompanyContext? company = null, Authority? authority = null)
     { company ??= new CompanyContext(); if (!company.IsResolved) company.Set(Company); return new(owner, company, new User(), authority ?? new()); }
     private static DocumentPublishedTemplateReadV1 Absent() => new(DocumentPublishedTemplateOutcomeV1.NoSource, Company,
         DocumentTemplateModuleV1.Inventory, DocumentBrandingContractV1.InventoryTemplate, null, null, null);
@@ -90,6 +94,13 @@ public sealed class DocumentBrandingPdfRuntimeTests
         { LatestCalls++; DuringRead?.Invoke(); return Task.FromResult(Answer); }
         public Task<DocumentPublishedTemplateReadV1> ReadPublicationAsync(Guid companyId, DocumentTemplateModuleV1 module, string code,
             Guid id, string version, CancellationToken cancellationToken = default) { Selection = (id, version); DuringRead?.Invoke(); return Task.FromResult(Answer); }
+    }
+    // Adversarial consumer double: production CompanyContext intentionally refuses this drift.
+    private sealed class MutableCompanyContext(Guid companyId) : ICompanyContext
+    {
+        public bool IsResolved => CompanyId != Guid.Empty;
+        public Guid CompanyId { get; private set; } = companyId;
+        public void Set(Guid value) => CompanyId = value;
     }
     private sealed class User : ICurrentUser
     { public bool IsAuthenticated => true; public string UserId { get; set; } = "SENTETIK-maker"; public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { Company, TestCompanyIds.CompanyB }; public bool CanAccessCompany(Guid id) => AllowedCompanyIds.Contains(id); }
