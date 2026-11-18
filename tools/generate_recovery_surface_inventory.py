@@ -461,7 +461,7 @@ DURABLE_STORE_SPECS = (
             _evidence('src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDbContext.cs', 'Schema = "work"'),
             _evidence('src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDbContext.Notifications.cs', 'Entity<WorkNotificationInboxRow>()', 'ToTable("NotificationInbox", Schema', 'HasKey'),
             _evidence('src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261116234150_AddPersonalNotifications.cs', 'name: "NotificationInbox"'),
-            _evidence('src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkNotificationStoreV1.cs', 'database.NotificationInbox.Add(new()', 'PayloadSha256 = fingerprint', 'await database.SaveChangesAsync(cancellationToken)', live_code=True),
+            _evidence('src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkNotificationStoreV1.cs', 'database.NotificationInbox.Add(new WorkNotificationInboxRow()', 'PayloadSha256 = fingerprint', 'await database.SaveChangesAsync(cancellationToken)', live_code=True),
         ),
     ),
     # W8 discovered replay stores: actual unique keys, owner DDL and operative writers; K3 pending.
@@ -488,7 +488,7 @@ DURABLE_STORE_SPECS = (
         (
             _evidence('src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationDbContext.CompanyOpening.cs', 'Entity<CompanyOpeningExecution>()', 'ToTable("CompanyOpeningExecutions", "organization"', 'IdempotencyKeyHash', 'HasKey'),
             _evidence('src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/Migrations/20261116205304_AddAuthorizedCompanyOpening.cs', 'name: "CompanyOpeningExecutions"'),
-            _evidence('src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanyOpeningV1.cs', 'database.CompanyOpeningExecutions.Add(new(', live_code=True),
+            _evidence('src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanyOpeningV1.cs', 'database.CompanyOpeningExecutions.Add(new CompanyOpeningExecution(', live_code=True),
         ),
     ),
     DurableStoreSpec(
@@ -546,7 +546,7 @@ DURABLE_STORE_SPECS = (
                       "database.OutboxMessages.Add(new FinanceOutboxRow", "CompanyId = companyId",
                       "SchemaVersion = FinanceFinancialMovementEventsV1.SchemaVersion", live_code=True),
             _evidence("src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCreditMovementServiceV1.cs",
-                      "db.OutboxMessages.Add(new()", "CompanyId = context.CompanyId",
+                      "db.OutboxMessages.Add(new FinanceOutboxRow()", "CompanyId = context.CompanyId",
                       "EventType = FinanceCreditMovementEventsV1.Recorded", live_code=True),
             _evidence("src/backend/Modules/Finance/GoymenERP.Modules.Finance.Contracts/FinanceFinancialMovementEventsV1.cs",
                       'SourceName = "finance.outbox.v1"', "SchemaVersion = 1",
@@ -712,7 +712,7 @@ DURABLE_STORE_SPECS = (
         "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/IdentityDbContext.CompanySetup.cs",
         "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20261116185533_AddCompanySetupInboxAndOutboxPosition.cs",
         "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityCompanySetupService.cs",
-        ("database.CompanySetupInboxReceipts.Add(new(", "BeginTransactionAsync(IsolationLevel.Serializable",
+        ("database.CompanySetupInboxReceipts.Add(new CompanySetupInboxReceipt(", "BeginTransactionAsync(IsolationLevel.Serializable",
          "database.CompanySetupInboxReceipts.AsNoTracking()", "receipt.PayloadHash != hash",
          "database.SaveChangesAsync(cancellationToken)", "transaction.CommitAsync(cancellationToken)"),
         mapping_tokens=("HasKey(x => new { x.CompanyId, x.EventId })", "HasQueryFilter(x => x.CompanyId == CompanySetupCompanyId)"),
@@ -743,7 +743,7 @@ DURABLE_STORE_SPECS = (
             ),
             _evidence(
                 "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityCompanySetupService.cs",
-                "database.OutboxMessages.Add(new(IdentityCompanyFirstAdminAssignedV1.EventId(metadata.CompanyId)",
+                "database.OutboxMessages.Add(new IdentityOutboxMessage(IdentityCompanyFirstAdminAssignedV1.EventId(metadata.CompanyId)",
                 "var payload = new IdentityCompanyFirstAdminAssignedV1(",
                 "IdentityCompanyFirstAdminAssignedV1.EventType", "IdentityPermissionChangedV1.EventType",
                 live_code=True,
@@ -1064,7 +1064,7 @@ DURABLE_STORE_SPECS = (
         "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationDbContext.CompanySetup.cs",
         "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/Migrations/20261116185536_AddCompanySetupLifecycleAndMessaging.cs",
         "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanySetupInboxConsumer.cs",
-        ("database.CompanySetupInboxReceipts.Add(new(", "BeginTransactionAsync(IsolationLevel.Serializable",
+        ("database.CompanySetupInboxReceipts.Add(new CompanySetupInboxReceipt(", "BeginTransactionAsync(IsolationLevel.Serializable",
          "database.CompanySetupInboxReceipts.AsNoTracking()", "receipt.PayloadHash != hash", "company.CompleteSetup(now)",
          "database.SaveChangesAsync(cancellationToken)", "transaction.CommitAsync(cancellationToken)"),
         mapping_tokens=("HasKey(x => new { x.CompanyId, x.EventId })", "HasQueryFilter(x => x.CompanyId == companyContext.CompanyId)"),
@@ -1095,7 +1095,7 @@ DURABLE_STORE_SPECS = (
                       "OrganizationCompanyOpenedV1.EventType"),
             _evidence("src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Messaging/CompanySetupEventsV1.cs",
                       "public sealed record OrganizationCompanyOpenedV1", 'EventType = "organization.company.opened.v1"'),
-            _evidence('src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanyOpeningV1.cs', "database.CompanySetupOutboxMessages.Add(new(", "OrganizationCompanyOpenedV1", live_code=True),
+            _evidence('src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanyOpeningV1.cs', "database.CompanySetupOutboxMessages.Add(new OrganizationCompanySetupOutboxMessage(", "OrganizationCompanyOpenedV1", live_code=True),
         ),
     ),
     # tren-1 wave 5 integration (alis_cari supplier returns): K3 review pending (alis_cari).
