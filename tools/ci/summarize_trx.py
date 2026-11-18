@@ -68,6 +68,9 @@ DIAGNOSTIC_CODES = frozenset(
         "product_price_list_startup_sql_2627",
         "product_price_list_startup_sql_2714",
         "product_price_list_startup_unknown",
+        "finance_command_startup_health",
+        "finance_command_startup_migrate",
+        "finance_command_startup_document_numbers",
         "mfg_customer_arrange",
         "mfg_customer_issue",
         "mfg_customer_return",
@@ -118,7 +121,39 @@ ASSERTION_KINDS = frozenset({
     "Matches", "DoesNotMatch", "StrictEqual", "NotStrictEqual",
 })
 ASSERTION_HEADER = re.compile(r"(?m)^Assert\.([A-Za-z]+)\(\) Failure(?=:|$)")
-FailureKey = tuple[str | None, str, str | None, str | None, str | None, int | None]
+EXCEPTION_KINDS = {
+    "System.InvalidOperationException": "invalid_operation",
+    "System.ArgumentException": "argument",
+    "System.ArgumentNullException": "argument_null",
+    "System.ArgumentOutOfRangeException": "argument_out_of_range",
+    "System.NullReferenceException": "null_reference",
+    "System.ObjectDisposedException": "object_disposed",
+    "System.TimeoutException": "timeout",
+    "System.IO.IOException": "io",
+    "System.IO.InvalidDataException": "invalid_data",
+    "System.FormatException": "format",
+    "System.OverflowException": "overflow",
+    "System.NotSupportedException": "not_supported",
+    "System.UnauthorizedAccessException": "unauthorized_access",
+    "System.OperationCanceledException": "operation_canceled",
+    "System.Threading.Tasks.TaskCanceledException": "task_canceled",
+    "System.Collections.Generic.KeyNotFoundException": "key_not_found",
+    "Microsoft.EntityFrameworkCore.DbUpdateException": "ef_db_update",
+    "Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException": "ef_db_update_concurrency",
+    "Microsoft.Data.SqlClient.SqlException": "sql_client",
+    "Xunit.Sdk.XunitException": "xunit_assertion",
+    **{"Xunit.Sdk." + kind + "Exception": "xunit_" + kind.lower() for kind in ASSERTION_KINDS},
+}
+EXCEPTION_HEADER = re.compile(
+    r"^(?:---> )?([A-Za-z_][A-Za-z0-9_.+`]{0,255}Exception)(?: \(0x[0-9A-Fa-f]{8}\))?[ \t]*:"
+)
+FailureKey = tuple[str | None, str, str | None, str | None, str | None, int | None, str | None, str | None]
+
+
+def closed_exception_kind(message: str) -> str | None:
+    first = next((line.strip() for line in message.splitlines() if line.strip()), "")
+    header = EXCEPTION_HEADER.match(first)
+    return EXCEPTION_KINDS.get(header[1], "unknown") if header is not None else None
 
 
 def closed_assertion_kind(message: str) -> str | None:
@@ -130,19 +165,31 @@ def closed_assertion_kind(message: str) -> str | None:
     return candidates[0]
 
 
-def matching_source_line(stack: str, test_fqn: str | None) -> int | None:
-    """Keep only a canonical line from a unique exact test method frame."""
+def matching_source_frame(stack: str, test_fqn: str | None) -> tuple[int | None, str | None]:
+    """Project untrusted TRX line metadata, never a path or unverified helper name."""
     if test_fqn is None:
-        return None
-    frame = re.compile(
-        r"(?m)^[ \t]*at " + re.escape(test_fqn)
-        + r"\([^()\r\n]*\) in [^\r\n]+:line ([1-9][0-9]{0,5})[ \t]*\r?$"
-    )
-    matching_frames = re.findall(r"(?m)^[ \t]*at " + re.escape(test_fqn) + r"\(", stack)
-    if len(matching_frames) != 1:
-        return None
-    candidates = frame.findall(stack)
-    return int(candidates[0]) if len(candidates) == 1 else None
+        return None, None
+    frame_tail = r"\([^()\r\n]*\) in [^\r\n]+:line ([1-9][0-9]{0,5})[ \t]*\r?$"
+    exact_prefix = r"(?m)^[ \t]*at " + re.escape(test_fqn)
+    exact_count = len(re.findall(exact_prefix + r"\(", stack))
+    if exact_count:
+        candidates = re.findall(exact_prefix + frame_tail, stack)
+        if exact_count == 1 and len(candidates) == 1:
+            return int(candidates[0]), "exact_test_method"
+        return None, None
+    class_name, _ = test_fqn.rsplit(".", 1)
+    helper_prefix = r"(?m)^[ \t]*at " + re.escape(class_name) + r"\."
+    # Count even malformed/noncanonical same-class frames before considering one.
+    class_count = len(re.findall(helper_prefix, stack))
+    candidates = re.findall(helper_prefix + r"([A-Za-z_][A-Za-z0-9_]*)" + frame_tail, stack)
+    if (
+        1 <= class_count <= 8
+        and len(candidates) == class_count
+        and len(set(candidates)) == len(candidates)
+    ):
+        # Stack order localizes the nearest frame; this is not source validation.
+        return int(candidates[0][1]), "same_test_class_helper"
+    return None, None
 
 
 def closed_sql_error_code(message: str) -> str | None:
@@ -346,12 +393,14 @@ class ResultCollector:
         self.stdout_chars = 0
         self.stdout_overflow = False
         self.stdout_has_unexpected_child = False
+        self.exception_kind: str | None = None
         self.assertion_kind: str | None = None
         self.stack_depth: int | None = None
         self.stack_parts: list[str] = []
         self.stack_chars = 0
         self.stack_rejected = False
         self.source_line: int | None = None
+        self.source_frame_scope: str | None = None
         self.stack_count = 0
         self.sql_error_code: str | None = None
         self.diagnostic_code: str | None = None
@@ -379,12 +428,14 @@ class ResultCollector:
             self.stdout_chars = 0
             self.stdout_overflow = False
             self.stdout_has_unexpected_child = False
+            self.exception_kind = None
             self.assertion_kind = None
             self.stack_depth = None
             self.stack_parts = []
             self.stack_chars = 0
             self.stack_rejected = False
             self.source_line = None
+            self.source_frame_scope = None
             self.stack_count = 0
             self.sql_error_code = None
             self.diagnostic_code = None
@@ -444,8 +495,9 @@ class ResultCollector:
     def end(self, name: str, depth: int) -> None:
         if name == "StackTrace" and depth == self.stack_depth:
             self.source_line = None
+            self.source_frame_scope = None
             if not self.stack_rejected and self.stack_count == 1 and self.failure_identity is not None:
-                self.source_line = matching_source_line("".join(self.stack_parts), self.failure_identity[0])
+                self.source_line, self.source_frame_scope = matching_source_frame("".join(self.stack_parts), self.failure_identity[0])
             self.stack_depth = None
             self.stack_parts = []
             self.stack_chars = 0
@@ -491,7 +543,11 @@ class ResultCollector:
                 self._accept_diagnostic(code)
             kind = None
             if not self.message_overflow and not self.message_has_unexpected_child:
-                kind = closed_assertion_kind("".join(self.message_parts))
+                message = "".join(self.message_parts)
+                kind = closed_assertion_kind(message)
+                exception = closed_exception_kind(message)
+                if exception is not None:
+                    self.exception_kind = exception if self.exception_kind is None else "unknown"
             if kind is not None:
                 self.assertion_kind = kind if self.assertion_kind is None else "unknown"
             if not self.message_overflow and not self.message_has_unexpected_child:
@@ -517,7 +573,7 @@ class ResultCollector:
                     and test_fqn != FINANCE_WORK_LEGACY_TEST_FQN
                 ):
                     diagnostic = None
-                self.failures[(test_fqn, category, diagnostic, self.sql_error_code, self.assertion_kind, self.source_line)] += 1
+                self.failures[(test_fqn, category, diagnostic, self.sql_error_code, self.assertion_kind, self.source_line, self.exception_kind, self.source_frame_scope)] += 1
             self.result_depth = None
             self.failure_identity = None
             self.output_depth = None
@@ -671,7 +727,7 @@ def build_summary(
         failures.update(file_failures)
 
     unresolved_failure_count = sum(
-        count for (test_fqn, _, _, _, _, _), count in failures.items() if test_fqn is None
+        count for (test_fqn, _, _, _, _, _, _, _), count in failures.items() if test_fqn is None
     )
     safe_groups = sorted(
         (
@@ -680,13 +736,15 @@ def build_summary(
                 **({"diagnosticCode": diagnostic_code} if diagnostic_code is not None else {}),
                 **({"sqlErrorCode": sql_error_code} if sql_error_code is not None else {}),
                 **({"assertionKind": assertion_kind} if assertion_kind is not None else {}),
+                **({"exceptionKind": exception_kind} if exception_kind is not None else {}),
                 **({"sourceLine": source_line} if source_line is not None else {}),
+                **({"sourceFrameScope": source_frame_scope} if source_frame_scope is not None else {}),
             }
-            for (test_fqn, category, diagnostic_code, sql_error_code, assertion_kind, source_line), count in failures.items()
+            for (test_fqn, category, diagnostic_code, sql_error_code, assertion_kind, source_line, exception_kind, source_frame_scope), count in failures.items()
             if test_fqn is not None
         ),
         key=lambda item: (
-            str(item["testFqn"]), str(item["category"]), str(item.get("diagnosticCode", "")), str(item.get("sqlErrorCode", "")), str(item.get("assertionKind", "")), int(item.get("sourceLine", 0))
+            str(item["testFqn"]), str(item["category"]), str(item.get("diagnosticCode", "")), str(item.get("sqlErrorCode", "")), str(item.get("assertionKind", "")), int(item.get("sourceLine", 0)), str(item.get("exceptionKind", "")), str(item.get("sourceFrameScope", ""))
         ),
     )
     reported_groups = safe_groups[:failure_group_limit]

@@ -63,7 +63,7 @@ class ClosedAssertionDiagnosticsTests(unittest.TestCase):
         self.assertNotIn("sourceLine", group)
 
     def test_foreign_or_noncanonical_frame_never_emits_line(self):
-        for stack in (FRAME.replace(FQN, FQN + "Other"), FRAME.replace("Records", "Other"), FRAME.replace("123", "0123"), FRAME.replace("123", "0"), FRAME.replace("123", "12345678901234567890"), FRAME + " trailing-private-data", "private-data:line 123"):
+        for stack in (FRAME.replace("ReceiptSqlTests", "ReceiptSqlTestsOther"), FRAME.replace("123", "0123"), FRAME.replace("123", "0"), FRAME.replace("123", "12345678901234567890"), FRAME + " trailing-private-data", "private-data:line 123"):
             with self.subTest(stack=stack):
                 self.assertNotIn("sourceLine", self.group(stack=stack))
 
@@ -118,6 +118,75 @@ class ClosedAssertionDiagnosticsTests(unittest.TestCase):
             result = self.result(outcome=outcome)
             self.assertEqual([], result["failureGroups"])
             self.assertEqual(0, result["totals"]["failed"])
+
+    def test_reviewed_exception_headers_emit_only_closed_aliases(self):
+        for exception, alias in SUMMARY.EXCEPTION_KINDS.items():
+            with self.subTest(exception=exception):
+                group = self.group(exception + " : private-data", stack="", chunk=1)
+                self.assertEqual(alias, group["exceptionKind"])
+        group = self.group("\n ---> Microsoft.Data.SqlClient.SqlException (0x80131904): private-data", stack="")
+        self.assertEqual("sql_client", group["exceptionKind"])
+
+    def test_unknown_header_is_closed_and_later_quoted_headers_are_ignored(self):
+        group = self.group("Private.SecretException: private-data", stack="")
+        self.assertEqual("unknown", group["exceptionKind"])
+        self.assertNotIn("Private", json.dumps(group))
+        for message in ("private-data\nSystem.InvalidOperationException: private-data", "prefix System.InvalidOperationException: private-data", "Assert.Equal() Failure: System.InvalidOperationException: private-data"):
+            self.assertNotIn("exceptionKind", self.group(message, stack=""))
+
+    def test_exception_header_must_have_exact_reviewed_name(self):
+        for header in ("System.InvalidOperationExceptionOtherException", "Other.System.InvalidOperationException", "System.InvalidOperationExceptionExtraException"):
+            self.assertEqual("unknown", self.group(header + ": private-data", stack="")["exceptionKind"])
+
+    def test_exception_overflow_markup_and_passed_results_are_ignored(self):
+        self.assertNotIn("exceptionKind", self.group("System.InvalidOperationException: " + "x" * 16384, stack=""))
+        self.assertNotIn("exceptionKind", self.group("<Foreign>System.InvalidOperationException: private-data</Foreign>", stack="", raw=True))
+        for outcome in ("Passed", "Skipped"):
+            self.assertEqual({}, self.group("System.InvalidOperationException: private-data", stack="", outcome=outcome))
+
+    def test_unique_same_class_helper_emits_scope_and_line_but_never_helper_name(self):
+        frame = FRAME.replace("Records()", "PrivateHelperIdentifier()")
+        group = self.group(stack=frame)
+        self.assertEqual(123, group["sourceLine"])
+        self.assertEqual("same_test_class_helper", group["sourceFrameScope"])
+        self.assertNotIn("PrivateHelperIdentifier", json.dumps(group))
+
+    def test_exact_test_frame_has_precedence_over_helpers(self):
+        stack = FRAME.replace("Records()", "Helper()") + "\n" + FRAME
+        group = self.group(stack=stack)
+        self.assertEqual(123, group["sourceLine"])
+        self.assertEqual("exact_test_method", group["sourceFrameScope"])
+
+    def test_multiple_or_invalid_same_class_helpers_are_omitted(self):
+        helper = FRAME.replace("Records()", "Helper()")
+        for stack in (helper + "\n" + helper, helper + "\n" + helper.replace("123", "0123"), helper.replace("Helper", "Helper12345678901234567890" ) + " trailing", helper.replace("Helper", "Helper\u0131"), helper.replace("123", "0123")):
+            group = self.group(stack=stack)
+            self.assertNotIn("sourceLine", group)
+            self.assertNotIn("sourceFrameScope", group)
+
+    def test_multiple_canonical_helpers_choose_first_but_are_bounded(self):
+        first = FRAME.replace("Records()", "FirstPrivateHelper()")
+        second = FRAME.replace("Records()", "SecondPrivateHelper()").replace("123", "456")
+        group = self.group(stack=first + "\n" + second)
+        self.assertEqual(123, group["sourceLine"])
+        self.assertEqual("same_test_class_helper", group["sourceFrameScope"])
+        self.assertNotIn("PrivateHelper", json.dumps(group))
+        self.assertEqual(456, self.group(stack=second + "\n" + first)["sourceLine"])
+        many = "\n".join(FRAME.replace("Records()", "Helper" + str(n) + "()") for n in range(9))
+        self.assertNotIn("sourceLine", self.group(stack=many))
+        eight = "\n".join(FRAME.replace("Records()", "Helper" + str(n) + "()") for n in range(8))
+        self.assertEqual(123, self.group(stack=eight)["sourceLine"])
+
+    def test_finance_setup_markers_are_closed_and_unknown_suffix_is_ignored(self):
+        codes = ("finance_command_startup_health", "finance_command_startup_migrate", "finance_command_startup_document_numbers")
+        for code in codes:
+            self.assertEqual(code, self.group("CI_SAFE_DIAGNOSTIC:" + code, stack="")["diagnosticCode"])
+            self.assertNotIn("diagnosticCode", self.group("CI_SAFE_DIAGNOSTIC:" + code + "_private", stack=""))
+
+    def test_invalid_exact_test_frame_cannot_fall_back_to_helper(self):
+        group = self.group(stack=FRAME.replace("123", "0123") + "\n" + FRAME.replace("Records()", "Helper()"))
+        self.assertNotIn("sourceLine", group)
+        self.assertNotIn("sourceFrameScope", group)
 
     def test_sql_and_existing_marker_are_preserved_with_assertion_metadata(self):
         message = ("CI_SAFE_DIAGNOSTIC:mfg_customer_arrange\nAssert.Single() Failure: private-data\n"
