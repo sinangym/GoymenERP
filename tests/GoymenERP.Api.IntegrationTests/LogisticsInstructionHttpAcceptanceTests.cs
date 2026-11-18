@@ -459,8 +459,10 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
                 instruction.GetProperty("id").GetGuid()));
             // F-020 (LOJ-D6..D8): who cancelled (a user id), when and why are three flat members of the summary; every member is on the wire.
             Assert.Equal(["id", "companyId", "status", "version", "customerPartyId", "companyAccountId", "effectiveOn", "createdAtUtc", "updatedAtUtc",
-                    "lineCount", "cancelledBy", "cancelledAtUtc", "cancelReason"],
+                    "lineCount", "cancelledBy", "cancelledAtUtc", "cancelReason", "unloadRecord"],
                 instruction.EnumerateObject().Select(property => property.Name).ToArray());
+            // LOJ-D17 (3): the owner-provided unload marker also remains on a cancelled summary.
+            Assert.Equal(cancelled.Instruction.UnloadRecord, instruction.GetProperty("unloadRecord").GetString());
             Assert.Equal(("SENTETIK-kullanici", cancelledAt, "Müşteri vazgeçti"), (instruction.GetProperty("cancelledBy").GetString(),
                 instruction.GetProperty("cancelledAtUtc").GetDateTimeOffset(), instruction.GetProperty("cancelReason").GetString()));
         }
