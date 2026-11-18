@@ -1,6 +1,6 @@
 # W8 tek taslak K3 kapsam envanteri
 
-**Son kapsam eki:** `5064a06ddbb3409a24a36170af76d5e3785f0f7b`. Aşağıdaki önceki
+**Son kapsam eki:** `e73727bc4d7c134b1238f08cfd890bd0ad47f8ff`. Aşağıdaki önceki
 donuk envanter ve bütün listeleri korunur; bu head'e kadar gelen son delta ve ara
 koşum sınırları belgenin sonundaki ekte ayrılır. Daha sonraki exact PR head'i için
 kaynak/pin/test/inceleme kanıtı yeniden bağlanmalıdır.
@@ -841,3 +841,8 @@ Kalite aracı kaynak hashleri: SQL verifier `28a5a658704d0b63b3fd67a6b8f7d709b3b
 ## K3 ön inceleme sonrası kalite deltası — 5064a06dd
 
 174 kaynak dilim,340/177 migration,313/199 THROW ve118 yeni izin kayıt sayıları değişmedi. Yeni runtime bypass/context/izin girişi veya production/grant yok. SQL verifier yöntem-grupları ve global2400s/exact UUID+TRX+union/skip0 kapıları, gözlenen-only özet ve kapalı provider tanısı bağımsız K3 review bekler. Gerçek ev üretimi verifier hash8adf932dec0fee8f16e121d74392b863530b76c96cb375269bdf529a1aa297e9, verifier-test hashf81256442c584997842457d45f57e383ee6af10c13dbd4a22c7e23c4bf8d4162; yeni tenant bypass allowlist girdisi yok. İki SQL fact güçlendirildi, FQN/ilişkisel envanter aynı; yerel SQL NOT_CONFIGURED. Ayrıntı ve kısmi/iptal edilmiş tanı sınırları W8_RUNTIME_KAPANIS_DURUMU son ekindedir. Önceki4d2 CI FAIL ve A/B REQUEST-CHANGES korunur; tam yeni-head K3 review henüz yoktur.
+
+
+## SQL tanısı sonrası son delta
+
+Kaynak e73727bc4: Counterparty owner migration kimlik eşliği, kapalı assertion türü/satır tanısı ve yalnız exact tamamlanmış Failed TRX için kalıcı kırmızı sonuçlu tanısal devam. Yeni migration/THROW/izin/bypass/context/inventory girdisi yok. Önceki K3 listeleri ve source/runtime ayrımı korunur. Güncel native kanıt ve başarısız SQL yöntemleri W8_RUNTIME_KAPANIS_DURUMU içindedir; iki yeni tam exact-head review ve gerçek SQL kabulü beklenir.

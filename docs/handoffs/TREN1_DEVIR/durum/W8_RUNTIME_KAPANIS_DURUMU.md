@@ -206,3 +206,49 @@ Son kayıt üzerinde iki hafif validator exit0; backlog64/64 PASS/skip0; bootstr
 - Picomatch advisory GHSA-fc5q-39xc-vjpf düzeltilmiş sürümNone; güvenlik kapısı açık. Audit-ignore/force downgrade uygulanmadı. Yeni exact-head CI, gerçek geniş SQL ve iki bağımsız **tam** K3 review gereklidir; yeni karar sorusu veya yeni dalga yok, production/grant/OPEN/Finance STOP değişmedi.
 
 Son hafif kontroller: backlog64/64 ve backend-group38/38 PASS/skip0; iki validator0. Bootstrap ilk koşumunda iki kesin şablon sayısı testi2 beklerken yeni üçüncü komut nedeniyle başarısızdı; keşif/RCSI/batch komutlarının üçünde de noAutoResponse ve no-restore zorunlu kalacak şekilde tam beklenti3 yapıldı. Tekrar56 test/native0,9 mevcut Windows koşullu skip. Önceki başarısız log korunur; diff-check0. Workflow, kilitli restore girdisi veya kalite kapısı gevşetilmedi.
+
+
+## Yeni SQL tanısı ve sınırlı düzeltme — 18 Kasım
+
+**174/174 kaynak DONE (%100), W8 son paket; runtime kabulü açık.**
+Yayımlı kaynak `9ddaa2e5cb7d249e2a7771c1912cadcd5befda48`,
+[CI 44276883719](https://github.com/sinangym/GoymenERP/actions/runs/44276883719),
+test edilen birleşik ağaç `5fabb3397d4cc10f5dcf893d47b71f3579c80b96`.
+Önceki başarısız koşumlar ve iki kısmi REQUEST-CHANGES incelemesi korunur.
+
+- Derleme, modül, mimari, API1, OpenAPI, RCSI, release manifest ve dört frontend shard PASS.
+  C01 gerçek tarayıcı, Cari C006 ve UI catalog ayrı koşumları PASS.
+  API2, API3 ve recovery bu kayıt anında sürüyor; başarı sayılmaz.
+  Picomatch audit FAIL, ardından lint/build SKIPPED; güvenlik kapısı gevşetilmedi.
+- Yeni SQL batch yolu gerçek TRX bıraktı: A ilk8 testte7 PASS/1 FAIL, B iki batch16 testte15 PASS/1 FAIL,
+  C ilk8 testte7 PASS/1 FAIL; üçünde skip0. Bunlar yalnız tamamlanan32 sonucun29 PASS/3 FAIL
+  kaydıdır; tam shard veya kabul proof'u değildir.
+  Başarısız yöntemler:
+  `ManufacturingCostDifferenceSqlServerRelationalAcceptanceTests.Concurrent_approvals_leave_one_journal_and_one_proposal_decision`,
+  `FinanceCommandApiSqlServerRelationalAcceptanceTests.A_customer_POS_collection_is_saved_reopened_and_recorded_once_over_HTTP`,
+  `CounterpartyAuditEventTenantGuardSqlServerRelationalAcceptanceTests.AuditSidecar_IsTenantFilteredAndAllWritePathsFailClosed`.
+- Counterparty testindeki eski7 migration beklentisi, sahibin güncel11 migration kimliğini
+  gerçek SQL geçmişindeki tam kimlik listesiyle ordinal eşitleyen kontrolle değişti.
+  Tenant/yazma/atomicity kontrolleri ve audit sayısı2 korunur.
+  `1eeac20ba980dc9ac5e0ed6a083e5cb8ea4f3236` Integration fixture build exit0,
+  0 hata/0 uyarı,118.05 saniye. Bu yerel derleme SQL PASS değildir.
+- `66a97595785b9b08cd23d750b19e89023d0b4796`: güvenli özet kapalı assertionKind ve
+  yalnız tek tam FQN frame'inden sayısal sourceLine yansıtır. Ham mesaj, expected/actual veya
+  yerel yol yayımlanmaz. Satır untrusted TRX metaverisidir; kaynakla doğrulanmış kök neden değildir.
+  Taşma/yinelenen/nested/foreign alanlar kapalıdır. Python **86/86 PASS, skip0**.
+  Üretim eşzamanlı onay ve Finans POS hatalarının kesin kök nedeni hâlâ bilinmiyor;
+  beklenti veya para/yetki davranışı tahminle değiştirilmedi.
+- `e73727bc4d7c134b1238f08cfd890bd0ad47f8ff`: yalnız gerçek native1 ve eksiksiz,
+  exact kimlik/sayım/counter doğrulaması geçen Failed TRX'ten sonra kalan SQL batch'leri
+  tanı için birer kez sürer. İlk hata kalıcıdır, nihai komut başarısızdır, kabul proof'u yazılmaz.
+  Altyapı/eksik/bozuk/skip/diğer native hata hemen durdurur.
+  Tek toplam2400 saniye, aynı envanter ve RCSI tek süreç yolu korunur; workflow değişmedi.
+  Python **99/99 PASS, skip0**. Ev üreticisi verifier fingerprint:
+  `8fbae0393b3510886508bb6b0af594b572a6bbd149b2f3df6f9494f6a35d8958`.
+  Aynı head'de mimari fixture build0, fresh discovery ve strict TRX ile ilgili guard **1/1 PASS, skip0**;
+  tam backend yeniden derlenmedi, üretim ağacı581d01e78 ile aynıdır.
+- İki hafif validator exit0; backlog64/64 PASS/skip0; bootstrap56 test/9 mevcut Windows koşullu skip,
+  native0; diff-check0. Yerel SQL NOT_CONFIGURED/NOT_RUN.
+  Mevcut CI işlerini otomatik iptal etmemek için yeni tren push'u işlerin bitmesini bekler.
+  Yeni exact-head CI, geniş gerçek SQL/collation kanıtı ve iki bağımsız tam K3 review hâlâ gerekir.
+  Yeni dalga/karar sorusu, grant/rol/production/OPEN/Finance STOP değişikliği yok.
