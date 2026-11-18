@@ -52,11 +52,11 @@ public sealed class AccountingPeriodStatusReadSession : IAsyncDisposable
         var period = await db.Periods.AsNoTracking()
             .SingleOrDefaultAsync(row => row.StartsOn <= on && row.EndsOn >= on, cancellationToken);
         RequireActive();
-        if (period is null) return new(AccountingPeriodStatusOutcomeV1.None, null, null);
+        if (period is null) return new AccountingPeriodStatusAnswerV1(AccountingPeriodStatusOutcomeV1.None, null, null);
         if (period.CompanyId != companyId) throw new UnauthorizedAccessException();
         var status = (AccountingPeriodStatus)period.Status;
         if (!Enum.IsDefined(status)) throw new InvalidOperationException("The Accounting period status is unreadable.");
-        return new(status == AccountingPeriodStatus.Open ? AccountingPeriodStatusOutcomeV1.Open : AccountingPeriodStatusOutcomeV1.NotOpen,
+        return new AccountingPeriodStatusAnswerV1(status == AccountingPeriodStatus.Open ? AccountingPeriodStatusOutcomeV1.Open : AccountingPeriodStatusOutcomeV1.NotOpen,
             period.Id, status.ToString());
     }
 

@@ -9,7 +9,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 public sealed class InventoryManufacturingConsumedCostLineageReadPort(InventoryDbContext db, ICompanyContext company)
     : IInventoryManufacturingConsumedCostLineageReadPortV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     private const string Source = InventoryManufacturingConsumedCostLineageEvidenceV1.SourceVersion;
 
     public async Task<InventoryManufacturingConsumedCostLineageReadV1> ReadAsync(Guid companyId, Guid generationId,
@@ -17,7 +17,7 @@ public sealed class InventoryManufacturingConsumedCostLineageReadPort(InventoryD
     {
         cancellationToken.ThrowIfCancellationRequested();
         InventoryManufacturingConsumedCostLineageReadV1 Failed(InventoryManufacturingConsumedCostLineageOutcomeV1 outcome) =>
-            new(outcome, companyId, generationId, generationVersion, null, Source + "/" + outcome.ToString().ToLowerInvariant(),
+            new InventoryManufacturingConsumedCostLineageReadV1(outcome, companyId, generationId, generationVersion, null, Source + "/" + outcome.ToString().ToLowerInvariant(),
                 outcome == InventoryManufacturingConsumedCostLineageOutcomeV1.NotFound ? "generation_not_found"
                 : outcome == InventoryManufacturingConsumedCostLineageOutcomeV1.UnreadableLegacy ? "generation_lineage_not_recorded"
                 : "generation_lineage_unreadable");
@@ -91,7 +91,7 @@ public sealed class InventoryManufacturingConsumedCostLineageReadPort(InventoryD
                     new InventoryManufacturingConsumedCostOutputV1(output.OutputId, output.ReceiptMovementId, output.LabelId,
                         output.NetQuantityKg, InventoryExactCostRatioV1.From(InventoryExactCostRatioV1.Resolve(
                             output.ConsumedQuantityKg, output.ConsumedQuantityKgRatio)), output.ConsumedCostLineage!)).ToArray()));
-            return new(InventoryManufacturingConsumedCostLineageOutcomeV1.Available, companyId, generationId, generationVersion,
+            return new InventoryManufacturingConsumedCostLineageReadV1(InventoryManufacturingConsumedCostLineageOutcomeV1.Available, companyId, generationId, generationVersion,
                 snapshot, Source + "/" + InventoryManufacturingConsumedCostLineageEvidenceV1.Sha256(history.ResultJson));
         }
         catch (OperationCanceledException) { throw; }

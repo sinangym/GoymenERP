@@ -31,7 +31,7 @@ public sealed class IdentityCompanySetupService(IdentityDbContext database, ICom
 {
     public const string ConsumerName = "identity.company-opened";
     public const string CommandName = "identity.company.first-admin.assign.v1";
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web) { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
 
     public async Task<bool> IsActiveFounderAsync(CancellationToken cancellationToken = default)
     {
@@ -73,7 +73,7 @@ public sealed class IdentityCompanySetupService(IdentityDbContext database, ICom
             }
             // KIM-D56 supersedes the automatic opener grant. Retain the original event and dedup history,
             // including late/repeated pre-change events, without creating any request, assignment or activation event.
-            database.CompanySetupInboxReceipts.Add(new(message.CompanyId, message.EventId, hash,
+            database.CompanySetupInboxReceipts.Add(new CompanySetupInboxReceipt(message.CompanyId, message.EventId, hash,
                 timeProvider.GetUtcNow().ToUniversalTime()));
             await database.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
@@ -147,7 +147,7 @@ public sealed class IdentityCompanySetupService(IdentityDbContext database, ICom
                     throw new InvalidOperationException("First Admin replay is inconsistent.");
                 await RequireStillAsync(authority, companyId, cancellationToken);
                 if (answer.StatusCode == 409) refusedAttempts.NoteReplayedRefusal(RefusalClass(answer));
-                return new(answer, true, previous.OriginalCorrelationId);
+                return new IdentityAccessCommandResultV1(answer, true, previous.OriginalCorrelationId);
             }
             var now = timeProvider.GetUtcNow().ToUniversalTime();
             var role = await AdminRoleAsync(cancellationToken);
@@ -166,11 +166,11 @@ public sealed class IdentityCompanySetupService(IdentityDbContext database, ICom
                 selectionProof = database.BeginSelectedFirstAdminWrite(companyId, request.UserId, role.Id, authority);
                 var assignment = await StageAssignmentAsync(Guid.Parse(metadata.ActorId), request.UserId, role.Id, role.Code,
                     AccessGrantApprovalMode.CompanySetupAuthority, request.Reason.Trim(), metadata, now, cancellationToken);
-                terminal = new(201, null, string.Empty, string.Empty, new(assignment.Id, "1", "Active", assignment.Id));
+                terminal = new IdentityAccessCommandAnswerV1(201, null, string.Empty, string.Empty, new IdentityAccessCommandOutcomeV1(assignment.Id, "1", "Active", assignment.Id));
             }
             await RequireStillAsync(authority, companyId, cancellationToken);
             if (terminal.StatusCode == 409) refusedAttempts.Record(Attempt(terminal, metadata, request.ExpectedCompanyVersion));
-            database.CommandExecutions.Add(CommandExecution.Complete(new(Guid.NewGuid(), companyId, CommandName, keyHash,
+            database.CommandExecutions.Add(CommandExecution.Complete(new CommandExecutionData(Guid.NewGuid(), companyId, CommandName, keyHash,
                 requestHash, metadata.ActorId, terminal.Code ?? "Succeeded", terminal.StatusCode, JsonSerializer.Serialize(terminal, Json),
                 metadata.CorrelationId, now, 1)));
             await database.SaveChangesAsync(cancellationToken);
@@ -225,20 +225,20 @@ public sealed class IdentityCompanySetupService(IdentityDbContext database, ICom
         database.AccessGrantRequests.Add(request);
         database.RoleAssignments.Add(assignment);
         var payload = new IdentityCompanyFirstAdminAssignedV1(metadata.CompanyId, user, assignment.Id, actor, now);
-        database.OutboxMessages.Add(new(IdentityCompanyFirstAdminAssignedV1.EventId(metadata.CompanyId), metadata.CompanyId,
+        database.OutboxMessages.Add(new IdentityOutboxMessage(IdentityCompanyFirstAdminAssignedV1.EventId(metadata.CompanyId), metadata.CompanyId,
             IdentityCompanyFirstAdminAssignedV1.EventType, 1, CommandName, "identity.company-setup", metadata.CompanyId,
             1, JsonSerializer.Serialize(payload, Json), now, metadata.CorrelationId, metadata.CausationId));
         var permissions = await database.RolePermissions.AsNoTracking().Where(x => x.RoleId == roleId)
             .Select(x => x.PermissionCode).Distinct().ToListAsync(cancellationToken);
         foreach (var permission in permissions.Order(StringComparer.Ordinal))
-            database.OutboxMessages.Add(new(Guid.NewGuid(), metadata.CompanyId, IdentityPermissionChangedV1.EventType, 1,
+            database.OutboxMessages.Add(new IdentityOutboxMessage(Guid.NewGuid(), metadata.CompanyId, IdentityPermissionChangedV1.EventType, 1,
                 CommandName, "identity.role-assignment", assignment.Id, 1,
                 JsonSerializer.Serialize(new IdentityPermissionChangedV1(metadata.CompanyId, user, permission,
                     IdentityPermissionChangedV1.Granted, actor, request.Id, now), Json), now, metadata.CorrelationId, metadata.CausationId));
         var approval = JsonSerializer.Serialize(new { approvalMode = mode.ToString(), requestId = request.Id, decidedByUserId = actor }, Json);
         foreach (var item in new[] { (Type: "Identity.AccessGrantRequest", Id: request.Id, Event: "identity.access-grant-request.approved.v1", Op: "Approve", Image: (object)request),
             (Type: "Identity.RoleAssignment", Id: assignment.Id, Event: "identity.role-assignment.granted.v1", Op: "Assign", Image: (object)new { assignment.Id, assignment.CompanyId, user, roleId, roleCode, assignment.ValidUntilUtc }) })
-            auditEvents.Enqueue(new(metadata.CompanyId, item.Event, item.Type, item.Id.ToString("D"), item.Op, null,
+            auditEvents.Enqueue(new AuditEventDraft(metadata.CompanyId, item.Event, item.Type, item.Id.ToString("D"), item.Op, null,
                 item.Image is AccessGrantRequest ? request.Version : assignment.Version, AuditActorTypes.User, metadata.ActorId,
                 ErpPermissions.IdentityCompanyFirstAdminAssign, [], "{}", JsonSerializer.Serialize(item.Image, Json), reason,
                 approval, AuditAiInvolvement.None, null, metadata.SourceChannel, metadata.ClientIpAddress,
@@ -258,7 +258,7 @@ public sealed class IdentityCompanySetupService(IdentityDbContext database, ICom
         }, cancellationToken);
         if (!security.CallerMayContinue) throw new InvalidOperationException("First Admin security event unavailable.");
     }
-    private static RefusedAttemptV1 Attempt(IdentityAccessCommandAnswerV1 answer, IdentityAccessCommandMetadataV1 metadata, long version) => new()
+    private static RefusedAttemptV1 Attempt(IdentityAccessCommandAnswerV1 answer, IdentityAccessCommandMetadataV1 metadata, long version) => new RefusedAttemptV1()
     {
         CompanyId = metadata.CompanyId, CommandName = CommandName, Operation = "Assign", TargetType = "Organization.Company",
         TargetId = metadata.CompanyId.ToString("D"), ExpectedVersion = version, ActorType = AuditActorTypes.User,
@@ -275,8 +275,8 @@ public sealed class IdentityCompanySetupService(IdentityDbContext database, ICom
         _ => RefusedAttemptClassesV1.BusinessRule,
     };
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
-    private static IdentityAccessCommandAnswerV1 Refusal(string code, string detail) => new(409, code, "İşlem uygulanamadı.", detail);
-    private static IdentityAccessCommandAnswerV1 Unavailable() => new(503, null, "Kurulum doğrulanamadı.", "Daha sonra yeniden deneyin.");
-    private static IdentityAccessCommandResultV1 Result(IdentityAccessCommandAnswerV1 answer, IdentityAccessCommandMetadataV1 metadata) => new(answer, false, metadata.CorrelationId);
-    private static OutboxPermanentFailureException Poison(string code) => new(code, "Şirket kurulum olayı sözleşmeye uymuyor.");
+    private static IdentityAccessCommandAnswerV1 Refusal(string code, string detail) => new IdentityAccessCommandAnswerV1(409, code, "İşlem uygulanamadı.", detail);
+    private static IdentityAccessCommandAnswerV1 Unavailable() => new IdentityAccessCommandAnswerV1(503, null, "Kurulum doğrulanamadı.", "Daha sonra yeniden deneyin.");
+    private static IdentityAccessCommandResultV1 Result(IdentityAccessCommandAnswerV1 answer, IdentityAccessCommandMetadataV1 metadata) => new IdentityAccessCommandResultV1(answer, false, metadata.CorrelationId);
+    private static OutboxPermanentFailureException Poison(string code) => new OutboxPermanentFailureException(code, "Şirket kurulum olayı sözleşmeye uymuyor.");
 }

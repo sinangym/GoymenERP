@@ -20,7 +20,7 @@ public sealed class InventoryShipmentCostReadPort(InventoryDbContext db, ICompan
 {
     private const string Version = "inventory.shipment-cost.v1";
     private const string ShipmentSource = "logistics.definite-shipment";
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<InventoryShipmentCostReadV1> GetByShipmentAsync(Guid companyId, Guid shipmentId,
         CancellationToken cancellationToken = default)
@@ -137,7 +137,7 @@ public sealed class InventoryShipmentCostReadPort(InventoryDbContext db, ICompan
                     OriginalEnvelope = envelope.PayloadJson, StampEvidence = stamp?.EvidenceJson,
                     StampRecordedAtUtc = stamp?.RecordedAtUtc, StampCurrencySourceVersion = stamp?.CurrencySourceVersion,
                     Line = answer }, Json))));
-            return new(InventoryShipmentCostReadOutcomeV1.Available, companyId, shipmentId, movementId, [answer], Version + "/" + fingerprint);
+            return new InventoryShipmentCostReadV1(InventoryShipmentCostReadOutcomeV1.Available, companyId, shipmentId, movementId, [answer], Version + "/" + fingerprint);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception) { return Failure(InventoryShipmentCostReadOutcomeV1.Unreadable, companyId, shipmentId, movementId); }
@@ -147,6 +147,6 @@ public sealed class InventoryShipmentCostReadPort(InventoryDbContext db, ICompan
     private static bool PositiveVersion(string value) => long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture,
         out var parsed) && parsed > 0 && value == parsed.ToString(CultureInfo.InvariantCulture);
     private static InventoryShipmentCostReadV1 Failure(InventoryShipmentCostReadOutcomeV1 outcome, Guid company, Guid shipment, Guid movement) =>
-        new(outcome, company, shipment, movement, [], Version + (outcome == InventoryShipmentCostReadOutcomeV1.NotFound ? "/not-found" : "/unreadable"),
+        new InventoryShipmentCostReadV1(outcome, company, shipment, movement, [], Version + (outcome == InventoryShipmentCostReadOutcomeV1.NotFound ? "/not-found" : "/unreadable"),
             outcome == InventoryShipmentCostReadOutcomeV1.NotFound ? "shipment_movement_not_found" : "shipment_cost_provenance_unreadable");
 }

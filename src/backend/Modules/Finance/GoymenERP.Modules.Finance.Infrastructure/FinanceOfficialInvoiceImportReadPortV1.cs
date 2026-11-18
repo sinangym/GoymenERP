@@ -91,7 +91,7 @@ public sealed class FinanceOfficialInvoiceImportReadPortV1(
             return Refused(ReadOutcome.Unavailable);
         }
 
-        return new(ReadOutcome.Found, new FinanceOfficialInvoiceAppliedBatchV1(
+        return new ReadResult<FinanceOfficialInvoiceAppliedBatchV1>(ReadOutcome.Found, new FinanceOfficialInvoiceAppliedBatchV1(
             batchId,
             context.CompanyId,
             first.SourceBatchVersion,
@@ -122,7 +122,7 @@ public sealed class FinanceOfficialInvoiceImportReadPortV1(
             var approved = matching.Where(row => row.Status == 2).ToArray();
             if (approved.Length > 1) return null;
             var winner = approved.SingleOrDefault();
-            result.Add(new(imported.SourceDocumentId, imported.OfficialNo, imported.Ettn, imported.InvoiceDate,
+            result.Add(new FinanceOfficialInvoiceImportedDocumentViewV1(imported.SourceDocumentId, imported.OfficialNo, imported.Ettn, imported.InvoiceDate,
                 imported.PayableFunctionalAmount, matching.Any(row => row.Status == 1), winner?.Id,
                 winner?.PayableFunctionalAmountText ?? imported.PayableFunctionalAmount,
                 winner is null ? [] : FinanceOfficialInvoiceSourceComparison.Differences(winner, imported)));
@@ -138,7 +138,7 @@ public sealed class FinanceOfficialInvoiceImportReadPortV1(
         && currentUser.CanAccessCompany(context.CompanyId);
 
     private static ReadResult<FinanceOfficialInvoiceAppliedBatchV1> Refused(ReadOutcome outcome) =>
-        new(outcome, null);
+        new ReadResult<FinanceOfficialInvoiceAppliedBatchV1>(outcome, null);
 
     private static ReadOutcome Refusal(PermissionDecision decision) =>
         decision == PermissionDecision.Unavailable ? ReadOutcome.Unavailable : ReadOutcome.Denied;

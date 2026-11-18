@@ -18,7 +18,7 @@ public sealed class ManufacturingPostedCostAttributionStoreV1(AccountingDbContex
     IManufacturingAttributionLineageReaderV1 lineage, AccountingAmountScaleVerifier amounts, TimeProvider clock)
     : IPostedManufacturingShipmentCostReaderV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task RecordPostedAsync(Guid sourceEventId, Func<CancellationToken, Task> freshFence,
         CancellationToken token = default)
@@ -73,7 +73,7 @@ public sealed class ManufacturingPostedCostAttributionStoreV1(AccountingDbContex
             {
                 if (output.ConsumedTlDifference != 0 || proof.Shipments.Any(x => x.NetRootQuantityKg.Numerator != "0"))
                     throw Refuse("manufacturing_attribution_output_invalid");
-                calculated = new(0, journal.Header.CurrencyId, profile.Scale, proof.ConsumedRootQuantityKg, []);
+                calculated = new PostedCostAttributionCalculationV1(0, journal.Header.CurrencyId, profile.Scale, proof.ConsumedRootQuantityKg, []);
             }
             else
             {
@@ -88,11 +88,11 @@ public sealed class ManufacturingPostedCostAttributionStoreV1(AccountingDbContex
             // assigning any money or participating in the positive-weight rounding/remainder order.
             var zero = AccountingInventoryCostAmountsV1.FromDecimal(0m);
             calculated = calculated! with { Shares = calculated!.Shares.Concat(proof.Shipments.Where(x => x.NetRootQuantityKg == zero)
-                .Select(x => new PostedCostAttributionAmountV1(new(x.ShipmentId, x.MovementId, x.MovementLineNumber,
+                .Select(x => new PostedCostAttributionAmountV1(new PostedCostAttributionWeightV1(x.ShipmentId, x.MovementId, x.MovementLineNumber,
                     zero, x.RecordedAtUtc, x.ProvenOriginalSequence), zero, 0, 0)))
                 .OrderBy(x => x.Source.ShipmentId).ThenBy(x => x.Source.MovementLineNumber).ToArray() };
             var at = clock.GetUtcNow();
-            db.ManufacturingCostAttributions.Add(new() { CompanyId = captured, SourceEventId = sourceEventId,
+            db.ManufacturingCostAttributions.Add(new ManufacturingCostAttributionRow() { CompanyId = captured, SourceEventId = sourceEventId,
                 OutputId = output.OutputId, GenerationId = source.GenerationId, GenerationVersion = source.GenerationVersion,
                 ReceiptMovementId = output.ReceiptMovementId, JournalId = journal.Header.Id, CurrencyId = journal.Header.CurrencyId,
                 MoneyProfileId = profile.Profile.ProfileId, MoneyProfileVersion = profile.Profile.Version, MoneyScale = profile.Scale,
@@ -109,7 +109,7 @@ public sealed class ManufacturingPostedCostAttributionStoreV1(AccountingDbContex
                     share.ExactSignedAmount, Text(share.SignedResidue), profile.Profile.ProfileId, profile.Profile.Version, profile.Scale,
                     journal.Header.AccountingDate, physical, row.SourceHash, proof.LineageSha256, frozen.HistorySha256, "");
                 value = value with { Fingerprint = Hash(Encode(value)) };
-                db.ManufacturingCostAttributionShares.Add(new() { CompanyId = captured, SourceEventId = sourceEventId,
+                db.ManufacturingCostAttributionShares.Add(new ManufacturingCostAttributionShareRow() { CompanyId = captured, SourceEventId = sourceEventId,
                     OutputId = output.OutputId, MovementId = physical.MovementId, MovementLineNumber = physical.MovementLineNumber,
                     ShipmentId = physical.ShipmentId, ProductId = physical.ProductId, SourceHash = value.Fingerprint,
                     ViewJson = Encode(value), RecordedAtUtc = at });
@@ -194,7 +194,7 @@ public sealed class ManufacturingPostedCostAttributionStoreV1(AccountingDbContex
         if (!AccountingInventoryCostAmountsV1.TryRead(coverage, out var covered, out var denominator) || covered <= 0 || covered > denominator
             || requireWholeLine && covered != denominator) throw Refuse("manufacturing_attribution_root_incomplete");
         await Fence(companyId, freshConsumerFence, cancellationToken);
-        return new(companyId, shipmentId, movementId, movementLineNumber, productId, quantityKg,
+        return new PostedManufacturingShipmentCostV1(companyId, shipmentId, movementId, movementLineNumber, productId, quantityKg,
             shares.OrderBy(x => x.SourceEventId).ThenBy(x => x.OutputId).ToArray());
     }
 
@@ -262,5 +262,5 @@ public sealed class ManufacturingPostedCostAttributionStoreV1(AccountingDbContex
     private static string Encode<T>(T value) => JsonSerializer.Serialize(value, Json);
     private static string Hash(string text) => AccountingInventoryCostSourceValidationV1.Sha256(text);
     private static string Text(decimal value) => value.ToString("0.############################", CultureInfo.InvariantCulture);
-    private static AccountingStoreException Refuse(string code) => new(code, "Kaydedilmiş üretim maliyeti sevk payı kanıtı bekleniyor.");
+    private static AccountingStoreException Refuse(string code) => new AccountingStoreException(code, "Kaydedilmiş üretim maliyeti sevk payı kanıtı bekleniyor.");
 }

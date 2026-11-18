@@ -307,14 +307,14 @@ internal sealed record DispositionLineFact(Guid MovementId, int Kind, string Sou
     int Direction, int OwnerKind, Guid OwnerId, int CustodianKind, Guid CustodianId, Guid LocationId, Guid ProductId,
     int Block, decimal QuantityKg)
 {
-    public DispositionPositionKey Key => new(OwnerKind, OwnerId, CustodianKind, CustodianId, LocationId);
+    public DispositionPositionKey Key => new DispositionPositionKey(OwnerKind, OwnerId, CustodianKind, CustodianId, LocationId);
 }
 
 /// <summary>A balance bucket, or an active allocation's remaining kg on its position.</summary>
 internal sealed record DispositionBalanceFact(int OwnerKind, Guid OwnerId, int CustodianKind, Guid CustodianId, Guid LocationId,
     Guid ProductId, int Block, decimal QuantityKg)
 {
-    public DispositionPositionKey Key => new(OwnerKind, OwnerId, CustodianKind, CustodianId, LocationId);
+    public DispositionPositionKey Key => new DispositionPositionKey(OwnerKind, OwnerId, CustodianKind, CustodianId, LocationId);
 }
 
 /// <summary>
@@ -355,5 +355,5 @@ internal sealed record InventoryLabelDispositionSnapshot(
         Empty(InventoryLabelDispositionStatusV1.Unreadable);
 
     private static InventoryLabelDispositionSnapshot Empty(InventoryLabelDispositionStatusV1 status) =>
-        new(status, Guid.Empty, Guid.Empty, 0L, null, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0);
+        new InventoryLabelDispositionSnapshot(status, Guid.Empty, Guid.Empty, 0L, null, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0);
 }

@@ -21,7 +21,7 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
     private const string StageCommand = "inventory.manufacturing-cost.stage.v1";
     private const string ReverseCommand = "inventory.manufacturing-cost.reverse.v1";
     private const string DifferenceEvent = InventoryOutboxContractV1.ManufacturingCostDifferenceProposed;
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     private readonly InventoryDbContext db;
     private readonly CompanyContext company;
     private readonly DbConnection connection;
@@ -95,7 +95,7 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
                     candidate.GenerationId == row!.Id && candidate.Version == row.Version, cancellationToken);
                 if (history.InputEvidenceJson != Evidence(command)) throw Error(409, "inventory_manufacturing_cost_generation_conflict");
                 var unchanged = before with { IsReplay = false, OriginalCorrelationId = metadata.CorrelationId };
-                db.Commands.Add(new() { CompanyId = company.CompanyId, CommandName = StageCommand,
+                db.Commands.Add(new InventoryCommandRow() { CompanyId = company.CompanyId, CommandName = StageCommand,
                     IdempotencyKeyHash = Hash(metadata.IdempotencyKey), PayloadHash = Hash(JsonSerializer.Serialize(command, Json)),
                     ActorId = metadata.ActorId, TargetId = row!.Id, ResultJson = JsonSerializer.Serialize(unchanged, Json),
                     CorrelationId = metadata.CorrelationId, RecordedAtUtc = clock.GetUtcNow() });
@@ -160,7 +160,7 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
                 var label = await db.Labels.SingleOrDefaultAsync(candidate => candidate.Id == output.LabelId, cancellationToken)
                     ?? throw Error(503, "inventory_manufacturing_cost_unavailable");
                 _ = label; // Every actual positive-share descendant is fenced by OutputEffectAsync.
-                results.Add(await OutputEffectAsync(new(output.OutputId, output.ReceiptMovementId, output.LabelId, output.NetQuantityKg,
+                results.Add(await OutputEffectAsync(new InventoryManufacturingCostGenerationOutputV1(output.OutputId, output.ReceiptMovementId, output.LabelId, output.NetQuantityKg,
                     output.TlUnitCostPerKg, output.UsdUnitCostPerKg, output.OriginalTlAmount),
                     before.State == InventoryManufacturingCostGenerationStateV1.Recognized, reverse: true,
                     row.Id, before.InputFingerprint, metadata, cancellationToken, output.PoolEffects, output.Positions));
@@ -221,7 +221,7 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
                 : remainingTl is { } fullRemaining && remaining.Sign > 0 ? ExactCostRatio.Of(fullRemaining).Multiply(kg).Divide(remaining) : ExactCostRatio.Of(0m);
             allocatedValue = allocatedValue.Add(value);
             var signedValue = value.Multiply(sign);
-            if (recognized && output.TlAmount is not null) positions.Add(new(group.Key.LocationId, Scalar(kg), Scalar(signedValue),
+            if (recognized && output.TlAmount is not null) positions.Add(new InventoryManufacturingCostPositionEffectV1(group.Key.LocationId, Scalar(kg), Scalar(signedValue),
                 group.Key.Included, Ratio(kg), Ratio(signedValue)));
             if (!recognized || !group.Key.Included) continue;
             if (output.TlAmount is not null)
@@ -247,7 +247,7 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
                 Ratio(shipment.RootShare), Ratio(shipment.NetRootQuantityKg), Array.AsReadOnly(shipment.Returns.Select(item =>
                     new InventoryManufacturingConsumedCostReturnV1(item.ReturnId, item.MovementId, item.LineNumber,
                         item.SourceIssueMovementId, item.QuantityKg, item.RecordedAtUtc)).ToArray()), shipment.RecordedAtUtc)).ToArray()));
-        return new(output.OutputId, output.ReceiptMovementId, output.LabelId, output.NetQuantityKg, Scalar(remaining), Scalar(consumed),
+        return new InventoryManufacturingCostGenerationOutputResultV1(output.OutputId, output.ReceiptMovementId, output.LabelId, output.NetQuantityKg, Scalar(remaining), Scalar(consumed),
             recognized ? output.TlUnitCostPerKg : null, sign * remainingTl, sign * consumedTl,
             recognized ? output.UsdUnitCostPerKg : null, positions, recognized ? output.TlAmount : null, poolEffects, Ratio(remaining), Ratio(consumed),
             consumedLineage);
@@ -257,7 +257,7 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
             var pending = await db.PendingMovementCosts.SingleOrDefaultAsync(row => row.MovementId == output.ReceiptMovementId
                 && row.LineNumber == 1 && row.CurrencyId == currency, token);
             if (pending is null) throw Error(503, "inventory_manufacturing_cost_pending_source_missing");
-            db.MovementCostRecognitions.Add(new() { Id = Guid.NewGuid(), CompanyId = company.CompanyId,
+            db.MovementCostRecognitions.Add(new MovementCostRecognitionRow() { Id = Guid.NewGuid(), CompanyId = company.CompanyId,
                 MovementId = output.ReceiptMovementId, LineNumber = 1, CurrencyId = currency, GenerationId = generationId,
                 UnitCostPerKg = unit, RemainingQuantityKg = MassScalar(remaining), ConsumedQuantityKg = MassScalar(consumed),
                 RemainingQuantityRatioJson = JsonSerializer.Serialize(Ratio(remaining), Json), ConsumedQuantityRatioJson = JsonSerializer.Serialize(Ratio(consumed), Json),
@@ -291,7 +291,7 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
         var key = (location, product, currency);
         if (!pools.TryGetValue(key, out var pool)) pool = await InventoryStore.ReadCostPoolAsync(db, company, location, product, currency, token);
         if (!pool.IsConsistent || authoritativeValue.Sign < 0) throw Error(503, "inventory_manufacturing_cost_ledger_unreadable");
-        var current = pool.ExactPosition ?? new(ExactCostRatio.Of(0m), 0m);
+        var current = pool.ExactPosition ?? new ExactAverageCostPool(ExactCostRatio.Of(0m), 0m);
         ExactAverageCostPool after;
         if (!reverse) after = current.Add(kg, authoritativeValue);
         else
@@ -313,7 +313,7 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
         var actualDelta = after.Value.Subtract(current.Value);
         var signedAuthoritative = authoritativeValue.Multiply(reverse ? -1m : 1m);
         var difference = actualDelta.Subtract(signedAuthoritative);
-        return new(currency, location, product, Scalar(kg), Scalar(current.QuantityKg), pool.ExactPosition?.AverageCostPerKg,
+        return new InventoryManufacturingCostPoolEffectV1(currency, location, product, Scalar(kg), Scalar(current.QuantityKg), pool.ExactPosition?.AverageCostPerKg,
             Scalar(after.QuantityKg), after.AverageCostPerKg, Scalar(signedAuthoritative), Scalar(actualDelta), Scalar(difference),
             Ratio(kg), Ratio(current.QuantityKg), Ratio(after.QuantityKg), Ratio(signedAuthoritative), Ratio(actualDelta), Ratio(difference));
     }
@@ -365,10 +365,10 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
         var json = JsonSerializer.Serialize(result, Json);
         row.Version = long.Parse(result.GenerationVersion, CultureInfo.InvariantCulture); row.State = (int)result.State;
         row.LastResultJson = json; row.UpdatedAtUtc = clock.GetUtcNow();
-        db.ManufacturingCostGenerationHistory.Add(new() { CompanyId = company.CompanyId, GenerationId = row.Id,
+        db.ManufacturingCostGenerationHistory.Add(new ManufacturingCostGenerationHistoryRow() { CompanyId = company.CompanyId, GenerationId = row.Id,
             Version = row.Version, InputFingerprint = result.InputFingerprint, InputEvidenceJson = Evidence(command), ResultJson = json,
             ActorId = metadata.ActorId, CorrelationId = metadata.CorrelationId, RecordedAtUtc = clock.GetUtcNow() });
-        db.Commands.Add(new() { CompanyId = company.CompanyId, CommandName = operation, IdempotencyKeyHash = Hash(metadata.IdempotencyKey),
+        db.Commands.Add(new InventoryCommandRow() { CompanyId = company.CompanyId, CommandName = operation, IdempotencyKeyHash = Hash(metadata.IdempotencyKey),
             PayloadHash = Hash(JsonSerializer.Serialize(command, Json)), ActorId = metadata.ActorId, TargetId = row.Id,
             ResultJson = json, CorrelationId = metadata.CorrelationId, RecordedAtUtc = clock.GetUtcNow() });
         audit.Enqueue(new AuditEventDraft(company.CompanyId, operation, "Inventory.ManufacturingCostGeneration", row.Id.ToString("D"),
@@ -377,7 +377,7 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
             json, reason, ApprovalContextJson: null, AuditAiInvolvement.None, AiContextJson: null, metadata.SourceChannel,
             metadata.ClientIpAddress, metadata.UserAgent, metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey));
         if (result.CostDifferenceEventId is { } eventId)
-            db.OutboxMessages.Add(new() { CompanyId = company.CompanyId, Id = eventId, EventType = DifferenceEvent, SchemaVersion = 1,
+            db.OutboxMessages.Add(new InventoryOutboxRow() { CompanyId = company.CompanyId, Id = eventId, EventType = DifferenceEvent, SchemaVersion = 1,
                 SourceOperation = operation, AggregateType = "Inventory.ManufacturingCostGeneration", AggregateId = row.Id,
                 AggregateVersion = row.Version, Sequence = row.Version,
                 PayloadJson = JsonSerializer.Serialize(InventoryManufacturingConsumedCostLineageEvidenceV1.ForOutbox(result, json), Json), OccurredAtUtc = occurredAt,
@@ -504,6 +504,6 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
     private static bool Version(string value) => long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var version) && version > 0 && Text(version) == value;
     private static string Text(long value) => value.ToString(CultureInfo.InvariantCulture);
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
-    private static InventoryManufacturingCostGenerationException Error(int status, string code) => new(status, code);
+    private static InventoryManufacturingCostGenerationException Error(int status, string code) => new InventoryManufacturingCostGenerationException(status, code);
     public async ValueTask DisposeAsync() { if (disposed) return; disposed = true; await db.DisposeAsync(); }
 }

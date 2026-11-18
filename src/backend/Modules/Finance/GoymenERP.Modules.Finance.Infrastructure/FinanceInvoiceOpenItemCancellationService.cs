@@ -376,7 +376,7 @@ public sealed class FinanceInvoiceOpenItemCancellationService(
 
     private static FinanceInvoiceOpenItemCancellationResultV1 Refused(FinanceContext context, CommandOutcome outcome,
         params ValidationIssue[] issues) =>
-        new(outcome, [], false, context.CorrelationId, issues);
+        new FinanceInvoiceOpenItemCancellationResultV1(outcome, [], false, context.CorrelationId, issues);
 
     private bool ValidRequestIdentity(FinanceContext context, CommandMetadata metadata) =>
         !string.IsNullOrWhiteSpace(metadata.IdempotencyKey)

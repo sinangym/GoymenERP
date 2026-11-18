@@ -16,7 +16,7 @@ public sealed class FinanceJournalSourceStoreV1(AccountingDbContext db, ICompany
     IAuditEventCollector audit, TimeProvider clock, IAuditTransactionWriterV1? auditOwner = null,
     IFinanceCashExchangeJournalSourceProviderV1? exchanges = null) : IFinanceJournalSourceStoreV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     public async Task AcceptAsync(WorkInboxEventV1 envelope, CancellationToken cancellationToken)
     {
         if (db.ChangeTracker.HasChanges() || auditOwner is { HasPendingDrafts: true })
@@ -86,7 +86,7 @@ public sealed class FinanceJournalSourceStoreV1(AccountingDbContext db, ICompany
                 row.SourceVersion, row.OwnerProfileId, row.OwnerProfileVersion, row.CurrencyId, cancellationToken) : null;
             Fence(companyId);
             var preparation = rule is null ? null : NormalJournalDraftSourcePreparationV1.TryCreate(companyId, row.SourceId,
-                new(rule, row.CurrencyId, row.SourceVersion, row.OwnerProfileId, row.OwnerProfileVersion, row.AmountText));
+                new NormalJournalDraftServerSourceV1(rule, row.CurrencyId, row.SourceVersion, row.OwnerProfileId, row.OwnerProfileVersion, row.AmountText));
             answer.Add(View(row, preparation?.PreparationVersion));
         }
         return answer;
@@ -97,7 +97,7 @@ public sealed class FinanceJournalSourceStoreV1(AccountingDbContext db, ICompany
         if (!company.IsResolved || companyId == Guid.Empty || company.CompanyId != companyId)
             throw new InvalidOperationException("Finans muhasebe kaynağının şirket bağlamı değişti.");
     }
-    private static FinanceJournalSourceViewV1 View(FinanceJournalSourceRow row, string? preparation) => new(row.Id, row.CompanyId,
+    private static FinanceJournalSourceViewV1 View(FinanceJournalSourceRow row, string? preparation) => new FinanceJournalSourceViewV1(row.Id, row.CompanyId,
         row.SourceId, row.SourceKind, row.SourceVersion, row.CurrencyId, row.AmountText, row.OwnerProfileId, row.OwnerProfileVersion,
         row.OccurredOn, row.RecordedAtUtc, row.ReceivedAtUtc, "Received", preparation is null ? "BindingUnavailable" : "BindingAvailable", preparation,
         FinanceJournalSourceReaderV1.ReadStoredExchange(row));

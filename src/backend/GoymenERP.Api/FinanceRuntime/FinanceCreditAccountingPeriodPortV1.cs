@@ -46,9 +46,9 @@ public sealed class FinanceCreditAccountingPeriodPortV1(FinanceDbContext finance
         if (!await Allowed()) return RecordPeriodAnswer.Unavailable;
         return answer.Outcome switch
         {
-            AccountingPeriodStatusOutcomeV1.Open => new(RecordPeriodOutcome.Open, null),
+            AccountingPeriodStatusOutcomeV1.Open => new RecordPeriodAnswer(RecordPeriodOutcome.Open, null),
             AccountingPeriodStatusOutcomeV1.NotOpen or AccountingPeriodStatusOutcomeV1.None =>
-                new(RecordPeriodOutcome.NotOpen, RecordPeriodAnswer.PeriodNotOpenCode),
+                new RecordPeriodAnswer(RecordPeriodOutcome.NotOpen, RecordPeriodAnswer.PeriodNotOpenCode),
             _ => RecordPeriodAnswer.Unavailable
         };
     }

@@ -22,7 +22,7 @@ public sealed class ManufacturingSubcontractCompletionReadSessionV2 : IManufactu
         DbTransaction transaction, ICompanyContext company, Guid companyId)
     {
         this.db = db; this.connection = connection; this.transaction = transaction; this.company = company; this.companyId = companyId;
-        reader = new(db, company, TimeProvider.System);
+        reader = new ManufacturingSubcontractCompletionReadPortV2(db, company, TimeProvider.System);
     }
 
     public static async Task<ManufacturingSubcontractCompletionReadSessionV2> EnlistAsync(DbConnection connection,
@@ -42,7 +42,7 @@ public sealed class ManufacturingSubcontractCompletionReadSessionV2 : IManufactu
             if (!company.IsResolved || company.CompanyId != companyId || connection.State != ConnectionState.Open
                 || !ReferenceEquals(transaction.Connection, connection) || transaction.IsolationLevel != IsolationLevel.Serializable)
                 throw new InvalidOperationException("Completion proof scope changed while enlisting the owner read.");
-            return new(db, connection, transaction, company, companyId);
+            return new ManufacturingSubcontractCompletionReadSessionV2(db, connection, transaction, company, companyId);
         }
         catch { await db.DisposeAsync(); throw; }
     }

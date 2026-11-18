@@ -14,12 +14,12 @@ public sealed class SalesFinalizedShipmentClaimReadPortV1(SalesDbContext db, ICo
 {
     public const int MaximumShipmentIds = 128;
     private const int MaximumHistoryRows = 2048;
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<SalesShipmentClaimBatchV1> ReadAsync(Guid companyId, IReadOnlyCollection<Guid> shipmentIds,
         Func<CancellationToken, Task> freshConsumerFence, CancellationToken cancellationToken = default)
     {
-        SalesShipmentClaimBatchV1 Unavailable(string reason) => new(companyId, SalesShipmentClaimReadOutcomeV1.Unavailable, [], null, reason);
+        SalesShipmentClaimBatchV1 Unavailable(string reason) => new SalesShipmentClaimBatchV1(companyId, SalesShipmentClaimReadOutcomeV1.Unavailable, [], null, reason);
         cancellationToken.ThrowIfCancellationRequested();
         if (!Current(companyId) || freshConsumerFence is null) return Unavailable("consumer_context_unavailable");
         if (shipmentIds is null || shipmentIds.Count > MaximumShipmentIds || shipmentIds.Any(id => id == Guid.Empty)
@@ -54,13 +54,13 @@ public sealed class SalesFinalizedShipmentClaimReadPortV1(SalesDbContext db, ICo
         }
         async Task<Snapshot> ReadSnapshot()
         {
-            if (ids.Length == 0) return new([], [], [], []);
+            if (ids.Length == 0) return new Snapshot([], [], [], []);
             var lines = await Rows(db.InvoiceLines.AsNoTracking().Where(x => x.CompanyId == companyId && ids.Contains(x.ShipmentId))
                 .OrderBy(x => x.InvoiceId).ThenBy(x => x.LineNo)
                 .Select(x => new Line(x.CompanyId, x.InvoiceId, x.LineId, x.LineNo, x.ShipmentId, x.DispatchNoteId, x.NoteLineNo,
                     x.SalesOrderId, x.SalesOrderLineId, x.PriceBasisRevision, x.ProductId, x.UnitId, x.QuantityText, x.ReleasedAtUtc)));
             var invoiceIds = lines.Select(x => x.InvoiceId).Distinct().ToArray();
-            if (invoiceIds.Length == 0) return new(lines, [], [], []);
+            if (invoiceIds.Length == 0) return new Snapshot(lines, [], [], []);
             var headers = await Rows(db.Invoices.AsNoTracking().Where(x => x.CompanyId == companyId && invoiceIds.Contains(x.Id))
                 .OrderBy(x => x.Id).Select(x => new Header(x.CompanyId, x.Id, x.Version, x.State, x.CancelledBy, x.CancelledAtUtc, x.CancellationReason)));
             var finalizations = await Rows(db.InvoiceFinalizations.AsNoTracking().Where(x => x.CompanyId == companyId && invoiceIds.Contains(x.InvoiceId))
@@ -78,7 +78,7 @@ public sealed class SalesFinalizedShipmentClaimReadPortV1(SalesDbContext db, ICo
                     && invoiceIds.Contains(x.AggregateId) && x.EventType == SalesOfficialInvoiceCancellationCommandsV1.EventType)
                 .OrderBy(x => x.AggregateId).ThenBy(x => x.Id).Select(x => new Event(x.CompanyId, x.Id, x.AggregateId,
                     x.AggregateType, x.AggregateVersion, x.SchemaVersion, x.Sequence, x.PayloadJson, x.OccurredAtUtc, x.CorrelationId)));
-            return new(lines, headers, finalizations, events, cancellations, cancellationEvents);
+            return new Snapshot(lines, headers, finalizations, events, cancellations, cancellationEvents);
         }
     }
 
@@ -92,9 +92,9 @@ public sealed class SalesFinalizedShipmentClaimReadPortV1(SalesDbContext db, ICo
         {
             try { items.Add(ProjectShipment(companyId, shipmentId, snapshot)); }
             catch (Exception exception) when (exception is JsonException or InvalidOperationException or ArgumentException or FormatException)
-            { items.Add(new(shipmentId, SalesShipmentClaimReadOutcomeV1.Unavailable, null, [], null, "shipment_claim_proof_invalid")); }
+            { items.Add(new SalesShipmentClaimReadV1(shipmentId, SalesShipmentClaimReadOutcomeV1.Unavailable, null, [], null, "shipment_claim_proof_invalid")); }
         }
-        return new(companyId, SalesShipmentClaimReadOutcomeV1.Available, items, Sha(Encode(new { companyId, items })));
+        return new SalesShipmentClaimBatchV1(companyId, SalesShipmentClaimReadOutcomeV1.Available, items, Sha(Encode(new { companyId, items })));
     }
 
     private static SalesShipmentClaimReadV1 ProjectShipment(Guid companyId, Guid shipmentId, Snapshot snapshot)
@@ -186,18 +186,18 @@ public sealed class SalesFinalizedShipmentClaimReadPortV1(SalesDbContext db, ICo
                     || bodyCancellation.InvoiceId != header.InvoiceId || bodyCancellation.AdmissionId != finalized.AdmissionId
                     || bodyCancellation.FinalizedVersion != finalized.Version || bodyCancellation.CancelledBy != Guid.Parse(view.RecordedBy)
                     || bodyCancellation.CancelledAtUtc != view.RecordedAtUtc || bodyCancellation.Reason != view.Reason) throw Invalid();
-                historical.Add(new(new(companyId, header.InvoiceId, line.LineId, line.LineNo, finalized.AdmissionId,
+                historical.Add(new SalesHistoricalFinalizedShipmentClaimV1(new SalesFinalizedShipmentClaimV1(companyId, header.InvoiceId, line.LineId, line.LineNo, finalized.AdmissionId,
                     finalized.Version, expected, envelope.Id, Sha(envelope.PayloadJson), finalized.FinalizedAtUtc, lifecycle),
                     cancelled.Id, cancelledEvent.Id, Sha(cancelledEvent.PayloadJson), bodyCancellation.CancelledBy,
                     bodyCancellation.CancelledAtUtc, bodyCancellation.Reason));
                 continue; // Historical evidence is never returned as an active quantity/economic claim.
             }
-            claim = new(companyId, header.InvoiceId, line.LineId, line.LineNo, finalized.AdmissionId, finalized.Version,
+            claim = new SalesFinalizedShipmentClaimV1(companyId, header.InvoiceId, line.LineId, line.LineNo, finalized.AdmissionId, finalized.Version,
                 expected, envelope.Id, Sha(envelope.PayloadJson), finalized.FinalizedAtUtc, lifecycle);
         }
         var sourceVersion = historical.Count == 0 ? Sha(Encode(new { companyId, shipmentId, claim, lifecycles }))
             : Sha(Encode(new { companyId, shipmentId, claim, lifecycles, historical }));
-        return new(shipmentId, claim is null ? SalesShipmentClaimReadOutcomeV1.NotInvoiced : SalesShipmentClaimReadOutcomeV1.Available,
+        return new SalesShipmentClaimReadV1(shipmentId, claim is null ? SalesShipmentClaimReadOutcomeV1.NotInvoiced : SalesShipmentClaimReadOutcomeV1.Available,
             claim, lifecycles, sourceVersion, HistoricalFinalizedClaims: historical.Count == 0 ? null : historical);
     }
 
@@ -212,7 +212,7 @@ public sealed class SalesFinalizedShipmentClaimReadPortV1(SalesDbContext db, ICo
         else if (element.ValueKind == JsonValueKind.Array)
             foreach (var child in element.EnumerateArray()) RequireUniqueProperties(child);
     }
-    private static InvalidOperationException Invalid() => new("Sales shipment claim evidence is inconsistent.");
+    private static InvalidOperationException Invalid() => new InvalidOperationException("Sales shipment claim evidence is inconsistent.");
     private static string Encode<T>(T value) => JsonSerializer.Serialize(value, Json);
     private static string Sha(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
     private sealed record Payload(Guid CompanyId, Guid InvoiceId, long Version, Guid AdmissionId, string FinalizedBy, PayloadLine[] Lines);

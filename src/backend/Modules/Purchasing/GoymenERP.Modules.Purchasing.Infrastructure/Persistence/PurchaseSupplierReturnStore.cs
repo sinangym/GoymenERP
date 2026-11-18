@@ -65,7 +65,7 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
                     || original.Return.QuantityKg <= 0 || original.Return.UnitCostTryPerKg <= 0
                     || string.IsNullOrWhiteSpace(original.RequestedBy))
                     throw new InvalidOperationException("Kayıtlı iade yanıtı deneme kimlikleriyle uyuşmuyor.");
-                return new(original.Return.ReturnId, null, attempt.CorrelationId, original);
+                return new PurchaseSupplierReturnReplay(original.Return.ReturnId, null, attempt.CorrelationId, original);
             }
             // Older attempts did not persist an original response; their explicit legacy fallback stays identifiable.
             return attempt.ReturnId is { } returnId

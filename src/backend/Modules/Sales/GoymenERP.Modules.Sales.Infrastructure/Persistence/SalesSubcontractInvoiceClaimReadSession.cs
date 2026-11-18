@@ -76,7 +76,7 @@ public sealed class SalesSubcontractInvoiceClaimReadSession : IAsyncDisposable
             proof.Append('|').Append(row.Id.ToString("D")).Append(':').Append(row.State.ToString(CultureInfo.InvariantCulture))
                 .Append(':').Append(row.Version.ToString(CultureInfo.InvariantCulture));
         var active = ordered.Where(row => row.State is 1 or 2 or 3 or 6).Select(row => row.Id).ToArray();
-        return new(companyId, instructionId, weighingId, SalesSubcontractInvoiceClaimStatusV1.Available,
+        return new SalesSubcontractInvoiceClaimV1(companyId, instructionId, weighingId, SalesSubcontractInvoiceClaimStatusV1.Available,
             active.Length != 0, active, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(proof.ToString()))));
     }
 

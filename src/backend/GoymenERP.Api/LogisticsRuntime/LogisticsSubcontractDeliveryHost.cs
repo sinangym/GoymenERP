@@ -32,7 +32,7 @@ public sealed partial class LogisticsSubcontractDeliveryHost(LogisticsDbContext 
     : ILogisticsSubcontractDeliveryHostV1
 {
     private sealed record Scope(Guid CompanyId, string ActorId, IReadOnlyCollection<string> Roles, string Permission, string[] Additional);
-    private static LogisticsInstructionServiceException Error(int status, string code) => new(status, code);
+    private static LogisticsInstructionServiceException Error(int status, string code) => new LogisticsInstructionServiceException(status, code);
     private static string Number(long value) => value.ToString(CultureInfo.InvariantCulture);
     private static string Kg(decimal value) => value.ToString("0.###", CultureInfo.InvariantCulture);
     private static decimal Quantity(string text) => InventorySubcontractDeliveryContractV1.Quantity(text).Value;
@@ -52,7 +52,7 @@ public sealed partial class LogisticsSubcontractDeliveryHost(LogisticsDbContext 
             if (!measured.IsGranted || !measured.IsCompanyWide || !Member(id, actor)) throw Error(403, "forbidden");
             roles.UnionWith(measured.RoleCodes);
         }
-        return new(id, actor, roles.Order(StringComparer.Ordinal).ToArray(), permission, additional);
+        return new Scope(id, actor, roles.Order(StringComparer.Ordinal).ToArray(), permission, additional);
     }
     private bool Member(Guid id, string actor) => company.IsResolved && company.CompanyId == id && user.IsAuthenticated
         && user.UserId == actor && user.CanAccessCompany(id);
@@ -66,9 +66,9 @@ public sealed partial class LogisticsSubcontractDeliveryHost(LogisticsDbContext 
     {
         if (metadata is null || string.IsNullOrWhiteSpace(metadata.IdempotencyKey) || metadata.IdempotencyKey.Length > 128
             || string.IsNullOrWhiteSpace(metadata.CorrelationId)) throw Error(400, Invalid);
-        return new(scope.ActorId, scope.Permission, scope.Roles, metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey, "Web");
+        return new LogisticsWriteEnvelope(scope.ActorId, scope.Permission, scope.Roles, metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey, "Web");
     }
-    private InventoryCommandMetadata InventoryMetadata(Scope scope, LogisticsWriteEnvelope envelope) => new(scope.ActorId,
+    private InventoryCommandMetadata InventoryMetadata(Scope scope, LogisticsWriteEnvelope envelope) => new InventoryCommandMetadata(scope.ActorId,
         ErpPermissions.InventoryPhysicalAllocationWrite, scope.Roles, envelope.CorrelationId, envelope.CausationId, envelope.IdempotencyKey, envelope.SourceChannel);
     private async Task<T> TransactionAsync<T>(Scope scope, Func<CancellationToken, Task<T>> work, CancellationToken token)
     {
@@ -155,7 +155,7 @@ public sealed partial class LogisticsSubcontractDeliveryHost(LogisticsDbContext 
             throw Error(409, SourceConflict);
         return order;
     }
-    private static InventorySubcontractDeliverySourceV1 InventorySource(LogisticsSubcontractSourceV1 s) => new(s.CompanyId,
+    private static InventorySubcontractDeliverySourceV1 InventorySource(LogisticsSubcontractSourceV1 s) => new InventorySubcontractDeliverySourceV1(s.CompanyId,
         s.CustomerPartyId, s.CustomerAccountId, s.SalesOrderId, s.SalesOrderLineId, s.SalesOrderVersion, s.SalesLineRevision,
         s.ProductId, s.ProductVersion, s.ManufacturingOrderId, s.ManufacturingOrderVersion, s.ManufacturingPlanId,
         s.ManufacturingPlanVersion, s.OutputFactId, s.LabelId, s.OutputNetKg, InventorySubcontractDeliveryContractV1.SourceVersion,

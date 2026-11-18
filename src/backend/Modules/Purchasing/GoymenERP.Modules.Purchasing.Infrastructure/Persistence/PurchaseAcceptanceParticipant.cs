@@ -20,7 +20,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipantV1
 {
     private const decimal ColumnBound = 1_000_000_000_000_000m;
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     private readonly PurchasingDbContext _dbContext;
     private readonly AuditEventCollector _auditEvents;
     private readonly DbConnection _connection;
@@ -98,7 +98,7 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
                 && row.LineId == general.Value && row.Kind == (int)PurchaseOrderLineKind.General && row.ParentLineId == null,
                 cancellationToken))
             throw Refused(PurchaseAcceptanceParticipantCodes.Unavailable, 503, "Kabul hedefi okunamadı.");
-        return new(_companyId, purchaseOrderId, purchaseOrderLineId, general.Value,
+        return new PurchaseAcceptanceReceiptTargetV1(_companyId, purchaseOrderId, purchaseOrderLineId, general.Value,
             version.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 
@@ -400,5 +400,5 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
     }
 
     private static PurchaseAcceptanceParticipantException Refused(string code, int status, string message, Exception? inner = null) =>
-        new(code, status, message, inner);
+        new PurchaseAcceptanceParticipantException(code, status, message, inner);
 }

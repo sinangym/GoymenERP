@@ -92,6 +92,6 @@ public sealed partial class PurchasingDbContext
         }
 
         static PurchaseOrderLinePrice? Price(PurchaseOrderLineRow row) => row.UnitPrice is { } price && row.PriceUnitId is { } unit
-            ? new(price, unit, row.DiscountPercent, row.DiscountAmount, row.DeferralPercent, row.DeferralAmount) : null;
+            ? new PurchaseOrderLinePrice(price, unit, row.DiscountPercent, row.DiscountAmount, row.DeferralPercent, row.DeferralAmount) : null;
     }
 }

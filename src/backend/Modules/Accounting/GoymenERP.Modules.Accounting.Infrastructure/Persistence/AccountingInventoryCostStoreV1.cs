@@ -26,13 +26,13 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
     IPostedPurchaseShipmentCostReaderV1? postedPurchasing = null)
     : IAccountingInventoryCostStoreV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public Task RecordAttemptAsync(AccountingCommandRecord record, Func<CancellationToken, Task> freshFence,
-        CancellationToken cancellationToken = default) => Atomic(new(record.ActorId, "", [], record.OriginalCorrelationId,
+        CancellationToken cancellationToken = default) => Atomic(new AccountingCommandMetadata(record.ActorId, "", [], record.OriginalCorrelationId,
             null, record.IdempotencyKeyHash, SourceChannels.System), freshFence, () =>
         {
-            db.Commands.Add(new() { CompanyId = Company(), CommandName = record.CommandName, IdempotencyKeyHash = record.IdempotencyKeyHash,
+            db.Commands.Add(new AccountingCommandRow() { CompanyId = Company(), CommandName = record.CommandName, IdempotencyKeyHash = record.IdempotencyKeyHash,
                 ActorId = record.ActorId, PayloadHash = record.RequestHash, ResultJson = record.ResultJson,
                 CorrelationId = record.OriginalCorrelationId, RecordedAtUtc = clock.GetUtcNow() });
             return Task.FromResult(true);
@@ -72,7 +72,7 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
                 AccountingInventoryCostSourceValidationV1.Require(envelope, fresh, captured);
                 if (Encode(fresh) != observedSource) throw Refuse("inventory_cost_source_changed");
             }
-            db.InventoryCostSources.Add(new() { CompanyId = captured, EventId = source.EventId, Kind = (int)source.Kind,
+            db.InventoryCostSources.Add(new AccountingInventoryCostSourceRow() { CompanyId = captured, EventId = source.EventId, Kind = (int)source.Kind,
                 InvoiceId = source.InvoiceId, InvoiceVersion = source.InvoiceVersion, AdmissionId = source.AdmissionId,
                 SourceJson = Encode(source), PayloadHash = source.SourcePayloadSha256,
                 OccurredAtUtc = envelope.OccurredAtUtc, ReceivedAtUtc = clock.GetUtcNow() });
@@ -136,7 +136,7 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
         var periods = await db.Periods.AsNoTracking().Where(x => x.Status == 1).OrderBy(x => x.StartsOn)
             .Select(x => new InvoiceLineCogsPeriodOptionV1(x.Id, x.StartsOn, x.EndsOn)).ToListAsync(cancellationToken);
         RequireCompany(captured);
-        return new(captured, plan.Package.Mirror.Rows.OrderBy(x => x.Code, StringComparer.Ordinal)
+        return new InvoiceLineCogsOptionsV1(captured, plan.Package.Mirror.Rows.OrderBy(x => x.Code, StringComparer.Ordinal)
             .Select(x => new InvoiceLineCogsAccountV1(x.Account.AccountId, x.Code, x.Name)).ToArray(), periods);
     }
 
@@ -153,8 +153,8 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
             await Period(request.PeriodId, request.AccountingDate, cancellationToken);
             var classification = await Classification(view, request.AccountingDate, cancellationToken);
             var plan = await Plan(cancellationToken);
-            var counter = plan.Package.Mirror.Lookup(new(Company(), request.CounterAccountId));
-            if (counter is null || plan.Package.Mirror.Lookup(new(Company(), classification.AccountId)) is null
+            var counter = plan.Package.Mirror.Lookup(new AccountRef(Company(), request.CounterAccountId));
+            if (counter is null || plan.Package.Mirror.Lookup(new AccountRef(Company(), classification.AccountId)) is null
                 || request.CounterAccountId == classification.AccountId) throw Refuse("inventory_cost_account_invalid");
             var currency = await TlCurrency(cancellationToken);
             var moneyProfile = await amounts.ReadProfileAsync(Company(), currency, request.AccountingDate, cancellationToken);
@@ -165,7 +165,7 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
             var preparation = new AccountingInventoryCostPreparationV1(request.PeriodId, request.AccountingDate, request.TransactionDate,
                 currency, amount.ToString("0.############################", CultureInfo.InvariantCulture),
                 moneyProfile.Profile.ProfileId, moneyProfile.Profile.Version, moneyProfile.Scale, classification,
-                new(counter.Account.AccountId, counter.Code, counter.Name), plan.PackageId, plan.Version, plan.CatalogVersion,
+                new InvoiceLineCogsAccountV1(counter.Account.AccountId, counter.Code, counter.Name), plan.PackageId, plan.Version, plan.CatalogVersion,
                 plan.AccountPlanSourceVersion, plan.AccountsSourceSha256, actorId, clock.GetUtcNow(), request.Reason, rounding);
             var result = view with { Version = checked(view.Version + 1), Status = "Prepared", Preparation = preparation };
             Add(result); Audit(result, metadata, "prepared", view);
@@ -223,10 +223,10 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
             var cogsSide = signed > 0 ? PostingSide.Debit : PostingSide.Credit;
             var counterSide = signed > 0 ? PostingSide.Credit : PostingSide.Debit;
             var request = new PostingRequest(AccountingInventoryCostInboxV1.ConsumerName, view.ProposalId.ToString("D"),
-                Guid.NewGuid(), new(Company(), sourceId, purpose), "human-cost-proposal/" + view.Version.ToString(CultureInfo.InvariantCulture),
-                prepared.CurrencyId, new(prepared.TransactionDate, prepared.AccountingDate, null, clock.GetUtcNow()),
-                [new("cogs", new(Company(), classification.AccountId), cogsSide, Math.Abs(signed)),
-                 new("selected-counter", new(Company(), prepared.CounterAccount.AccountId), counterSide, Math.Abs(signed))]);
+                Guid.NewGuid(), new SourceReference(Company(), sourceId, purpose), "human-cost-proposal/" + view.Version.ToString(CultureInfo.InvariantCulture),
+                prepared.CurrencyId, new PostingDates(prepared.TransactionDate, prepared.AccountingDate, null, clock.GetUtcNow()),
+                [new ProposedLine("cogs", new AccountRef(Company(), classification.AccountId), cogsSide, Math.Abs(signed)),
+                 new ProposedLine("selected-counter", new AccountRef(Company(), prepared.CounterAccount.AccountId), counterSide, Math.Abs(signed))]);
             var posted = await posting.ReceiveAsync(request, prepared.PeriodId,
                 metadata with { Completion = null, FreshAuthorityFence = freshFence }, cancellationToken);
             if (posted.Kind != PostingOutcomeKind.Posted || posted.Journal is null) throw Refuse("inventory_cost_posting_conflict");
@@ -252,7 +252,7 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
         return await ReadStored(row, token);
     }
 
-    private void Add(AccountingInventoryCostProposalV1 view) => db.InventoryCostProposals.Add(new()
+    private void Add(AccountingInventoryCostProposalV1 view) => db.InventoryCostProposals.Add(new AccountingInventoryCostProposalRow()
     {
         CompanyId = view.CompanyId, Id = view.ProposalId, Version = view.Version, EventId = view.EventId,
         ComponentKey = view.Component.ComponentKey, Status = view.Status switch
@@ -276,7 +276,7 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
             var result = await operation();
             if (fence is not null) await fence(token);
             RequireCompany(captured);
-            if (metadata.Completion?.Invoke(result!) is { } command) db.Commands.Add(new()
+            if (metadata.Completion?.Invoke(result!) is { } command) db.Commands.Add(new AccountingCommandRow()
             { CompanyId = captured, CommandName = command.CommandName, IdempotencyKeyHash = command.IdempotencyKeyHash,
                 ActorId = command.ActorId, PayloadHash = command.RequestHash, ResultJson = command.ResultJson,
                 CorrelationId = command.OriginalCorrelationId, RecordedAtUtc = clock.GetUtcNow() });
@@ -309,5 +309,5 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
     { if (id == Guid.Empty || !Guid.TryParse(metadata.ActorId, out var actor) || actor != id) throw Refuse("inventory_cost_authority_denied"); }
     private static string Encode<T>(T value) => JsonSerializer.Serialize(value, Json);
     private static T Decode<T>(string value) => JsonSerializer.Deserialize<T>(value, Json) ?? throw Refuse("inventory_cost_source_unavailable");
-    private static AccountingStoreException Refuse(string code) => new(code, "SMM kaynak önerisi işlemi tamamlanamadı.");
+    private static AccountingStoreException Refuse(string code) => new AccountingStoreException(code, "SMM kaynak önerisi işlemi tamamlanamadı.");
 }

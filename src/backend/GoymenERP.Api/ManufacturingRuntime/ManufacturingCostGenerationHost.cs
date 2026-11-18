@@ -33,7 +33,7 @@ internal sealed class ManufacturingCostGenerationHost(ManufacturingDbContext db,
     : IManufacturingClosedOrderCostRecognitionPortV1, IManufacturingOrderReopeningInventoryPortV1
 {
     internal const string CalculatorVersion = "production-cost-rounding:v1";
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     internal async Task StageClosedAsync(Guid orderId, ManufacturingCommandMetadata metadata, CancellationToken token)
     {
@@ -115,7 +115,7 @@ internal sealed class ManufacturingCostGenerationHost(ManufacturingDbContext db,
             else
             {
                 RequireMatching(previous, active, companyId, order.Id, order.Version);
-                var result = await owner.ReverseAsync(new(companyId, order.Id, previous.GenerationId, previous.InventoryVersion,
+                var result = await owner.ReverseAsync(new InventoryManufacturingCostGenerationReversalV1(companyId, order.Id, previous.GenerationId, previous.InventoryVersion,
                     Text(order.Version), command.Reason ?? throw Unavailable(), clock.GetUtcNow()), InventoryMetadata(metadata, previous.GenerationId, "reverse"), cancellationToken);
                 RequireResult(result, companyId, order.Id, previous.GenerationId, order.Version, ManufacturingCostGenerationStateV1.Reversed,
                     previous.InputFingerprint, JsonSerializer.Deserialize<InventoryManufacturingCostGenerationResultV1>(previous.ResultJson, Json)!.Outputs);
@@ -159,7 +159,7 @@ internal sealed class ManufacturingCostGenerationHost(ManufacturingDbContext db,
         else RequireMatching(previous, active, companyId, orderId, order.Version);
 
         var read = await source.ReadAsync(companyId, orderId, token)
-            ?? new(ManufacturingScrapCostDistributionSourceStatusV1.Unavailable, companyId, orderId, null);
+            ?? new ManufacturingScrapCostDistributionSourceReadV1(ManufacturingScrapCostDistributionSourceStatusV1.Unavailable, companyId, orderId, null);
         if (read.CompanyId != companyId || read.OrderId != orderId) throw Unavailable();
         var stock = read.MovementEvidence ?? await movements.ReadAsync(companyId, orderId, token);
         if (stock is null || stock.CompanyId != companyId || stock.OrderId != orderId || string.IsNullOrWhiteSpace(stock.SourceVersion)
@@ -204,7 +204,7 @@ internal sealed class ManufacturingCostGenerationHost(ManufacturingDbContext db,
                 ? usdCost.Lines.SingleOrDefault(item => item.OutputLabelId == physical.LabelId) : null;
             if (state == ManufacturingCostGenerationStateV1.Recognized && net > 0 && output.Class != OutputClass.Scrap
                 && (line is null || line.Kilograms != net || line.RecordedUnitCostPerKgTl is null || line.RecordedAmountTl is null)) throw Unavailable();
-            outputLines.Add(new(output.OutputId, physical.MovementId, physical.LabelId, net,
+            outputLines.Add(new InventoryManufacturingCostGenerationOutputV1(output.OutputId, physical.MovementId, physical.LabelId, net,
                 state == ManufacturingCostGenerationStateV1.Recognized ? line?.RecordedUnitCostPerKgTl : null,
                 state == ManufacturingCostGenerationStateV1.Recognized ? usdLine?.RecordedUnitCostPerKgTl : null,
                 state == ManufacturingCostGenerationStateV1.Recognized ? line?.RecordedAmountTl : null));
@@ -212,7 +212,7 @@ internal sealed class ManufacturingCostGenerationHost(ManufacturingDbContext db,
         await FenceAsync(companyId, metadata, token);
         var fresh = await store.FindOrderAsync(orderId, token);
         if (fresh is null || fresh.Version != order.Version || fresh.Status != OrderStatus.Closed) throw Concurrent();
-        var staged = await owner.StageAsync(new(companyId, orderId, generationId, previous?.InventoryVersion ?? "0", Text(order.Version),
+        var staged = await owner.StageAsync(new InventoryManufacturingCostGenerationCommandV1(companyId, orderId, generationId, previous?.InventoryVersion ?? "0", Text(order.Version),
             (InventoryManufacturingCostGenerationStateV1)state, fingerprint, CalculatorVersion, evidence, outputLines, reason,
             clock.GetUtcNow()), InventoryMetadata(metadata, generationId, "recognize:" + fingerprint), token);
         RequireResult(staged, companyId, orderId, generationId, order.Version, state, fingerprint, outputLines.Select(item =>
@@ -301,7 +301,7 @@ internal sealed class ManufacturingCostGenerationHost(ManufacturingDbContext db,
         if (!scope.IsGranted || !scope.IsCompanyWide || Company(metadata) != companyId)
             throw new ManufacturingInventoryRealizationPortException(ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied);
     }
-    private static InventoryCommandMetadata InventoryMetadata(ManufacturingCommandMetadata value, Guid id, string operation) => new(value.ActorId,
+    private static InventoryCommandMetadata InventoryMetadata(ManufacturingCommandMetadata value, Guid id, string operation) => new InventoryCommandMetadata(value.ActorId,
         value.PermissionCode, value.RoleCodes, value.CorrelationId, value.CausationId, $"manufacturing-cost:{id:N}:{operation}",
         value.SourceChannel, value.ClientIpAddress, value.UserAgent);
     private async Task RollbackAsync(IDbContextTransaction transaction)
@@ -310,12 +310,12 @@ internal sealed class ManufacturingCostGenerationHost(ManufacturingDbContext db,
         catch { throw Unavailable(); }
     }
     internal static ManufacturingInventoryRealizationPortException Map(InventoryManufacturingCostGenerationException fault) =>
-        new(fault.Status == 409 ? ManufacturingApiStatus.Conflict : ManufacturingApiStatus.Unavailable,
+        new ManufacturingInventoryRealizationPortException(fault.Status == 409 ? ManufacturingApiStatus.Conflict : ManufacturingApiStatus.Unavailable,
             fault.Status == 409 && fault.Code == "inventory_manufacturing_cost_transfer_reversal_required"
                 ? ManufacturingStoreCodes.CostTransferReversalRequired
                 : fault.Status == 409 ? ManufacturingStoreCodes.ConcurrentChange : "cost_source_unavailable");
-    private static ManufacturingInventoryRealizationPortException Unavailable() => new(ManufacturingApiStatus.Unavailable, "cost_source_unavailable");
-    private static ManufacturingInventoryRealizationPortException Concurrent() => new(ManufacturingApiStatus.Conflict, ManufacturingStoreCodes.ConcurrentChange);
+    private static ManufacturingInventoryRealizationPortException Unavailable() => new ManufacturingInventoryRealizationPortException(ManufacturingApiStatus.Unavailable, "cost_source_unavailable");
+    private static ManufacturingInventoryRealizationPortException Concurrent() => new ManufacturingInventoryRealizationPortException(ManufacturingApiStatus.Conflict, ManufacturingStoreCodes.ConcurrentChange);
     private static string Text(long value) => value.ToString(CultureInfo.InvariantCulture);
     private sealed class FrozenSource(ManufacturingScrapCostDistributionSourceReadV1 value) : IManufacturingScrapCostDistributionSourceV1
     {

@@ -43,7 +43,7 @@ internal sealed class DocumentBrandingAssetReader(ICompanyContext company, IDocu
         var info = DocumentContentPolicy.Info(kind);
         var classification = DocumentContentPolicy.Classify(name, info.ContentType, bytes, bindings.MaximumUploadBytes);
         if (!classification.IsAccepted || classification.Kind!.Kind != kind) throw Invalid();
-        return new(new(companyId, item.DocumentId, item.VersionNo, info.ContentType, bytes.LongLength, item.Sha256,
+        return new DocumentBrandingAssetContentV1(new DocumentBrandingAssetProofV1(companyId, item.DocumentId, item.VersionNo, info.ContentType, bytes.LongLength, item.Sha256,
             item.ScannerId, item.UploadedBy, item.UploadedAtUtc), bytes.AsMemory());
     }
 
@@ -52,6 +52,6 @@ internal sealed class DocumentBrandingAssetReader(ICompanyContext company, IDocu
         if (companyId == Guid.Empty || !company.IsResolved || company.CompanyId != companyId)
             throw new DocumentBrandingServiceException(403, "forbidden");
     }
-    private static DocumentBrandingServiceException Invalid() => new(409, "document_branding_asset_invalid");
-    private static DocumentBrandingServiceException Unavailable() => new(503, "service_unavailable");
+    private static DocumentBrandingServiceException Invalid() => new DocumentBrandingServiceException(409, "document_branding_asset_invalid");
+    private static DocumentBrandingServiceException Unavailable() => new DocumentBrandingServiceException(503, "service_unavailable");
 }

@@ -28,7 +28,7 @@ public sealed class SettingsWarehouseTransferScalePolicy(SettingsDbContext datab
     private const string InvalidCode = "settings_warehouse_transfer_scale_request_invalid";
     private const string VersionConflict = "settings_warehouse_transfer_scale_version_conflict";
     private const string KeyConflict = "settings_warehouse_transfer_scale_idempotency_conflict";
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<SettingsWarehouseTransferScalePolicyV1> GetAsync(Guid companyId, Guid locationId,
         CancellationToken cancellationToken = default)
@@ -47,7 +47,7 @@ public sealed class SettingsWarehouseTransferScalePolicy(SettingsDbContext datab
         catch
         {
             Still(companyId, actor, cancellationToken);
-            return new(SettingsWarehouseTransferScaleStatusV1.Unavailable, companyId, locationId, null, null,
+            return new SettingsWarehouseTransferScalePolicyV1(SettingsWarehouseTransferScaleStatusV1.Unavailable, companyId, locationId, null, null,
                 SettingsWarehouseTransferScaleV1.SourceVersion + "/unavailable");
         }
     }
@@ -65,7 +65,7 @@ public sealed class SettingsWarehouseTransferScalePolicy(SettingsDbContext datab
             await FenceAsync(companyId, actor, fresh: true, cancellationToken);
             foreach (var row in rows) Validate(row, companyId, locationId);
             if (rows.Select(x => x.Version).Where((version, index) => version != rows.Length - index).Any()) throw Unavailable();
-            return new(companyId, locationId, Policy(companyId, locationId, rows.FirstOrDefault()), rows.Select(View).ToArray());
+            return new WarehouseTransferScaleViewV1(companyId, locationId, Policy(companyId, locationId, rows.FirstOrDefault()), rows.Select(View).ToArray());
         }
         catch (OperationCanceledException) { throw; }
         catch (UnauthorizedAccessException) { throw; }
@@ -84,12 +84,12 @@ public sealed class SettingsWarehouseTransferScalePolicy(SettingsDbContext datab
         if (locationId == Guid.Empty || metadata.CompanyId != companyId || metadata.ActorId != actor
             || string.IsNullOrWhiteSpace(metadata.IdempotencyKey) || metadata.IdempotencyKey.Length > 128
             || string.IsNullOrWhiteSpace(metadata.CorrelationId) || string.IsNullOrWhiteSpace(metadata.SourceChannel))
-            return new(Invalid("Şirket, depo ve komut bilgileri geçerli olmalıdır."), false, metadata.CorrelationId);
+            return new CompanyPolicyCommandResultV1(Invalid("Şirket, depo ve komut bilgileri geçerli olmalıdır."), false, metadata.CorrelationId);
         var reason = request.Reason?.Trim() ?? string.Empty;
         if (!long.TryParse(request.ExpectedVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var expected)
             || expected < 0 || request.ExpectedVersion != Text(expected) || request.RequireExitWeighing is not { } enabled
             || reason.Length is 0 or > SettingsWarehouseTransferScaleV1.MaximumReasonLength || reason.Any(char.IsControl))
-            return new(Invalid("Beklenen sürüm, açık depo ayarı ve gerekçe zorunludur."), false, metadata.CorrelationId);
+            return new CompanyPolicyCommandResultV1(Invalid("Beklenen sürüm, açık depo ayarı ve gerekçe zorunludur."), false, metadata.CorrelationId);
         if (database.Database.CurrentTransaction is not null || System.Transactions.Transaction.Current is not null
             || database.ChangeTracker.HasChanges() || auditWriter.HasPendingDrafts) throw Unavailable();
         var key = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
@@ -116,10 +116,10 @@ public sealed class SettingsWarehouseTransferScalePolicy(SettingsDbContext datab
             var latest = await LatestAsync(locationId, cancellationToken);
             if (latest is not null) Validate(latest, companyId, locationId);
             CompanyPolicyCommandAnswerV1 answer;
-            if (expected != (latest?.Version ?? 0)) answer = new(409, VersionConflict, "Kayıt değişmiş.", "Güncel depo ayarını okuyup yeniden deneyin.");
+            if (expected != (latest?.Version ?? 0)) answer = new CompanyPolicyCommandAnswerV1(409, VersionConflict, "Kayıt değişmiş.", "Güncel depo ayarını okuyup yeniden deneyin.");
             else
             {
-                answer = new(204, null, "Kaydedildi.", "Transfer çıkış tartısı depo ayarı kaydedildi.");
+                answer = new CompanyPolicyCommandAnswerV1(204, null, "Kaydedildi.", "Transfer çıkış tartısı depo ayarı kaydedildi.");
                 // Explicit first Off is a real recorded choice; it is not collapsed into virgin configuration.
                 if (latest is null || latest.RequireExitWeighing != enabled)
                 {
@@ -148,7 +148,7 @@ public sealed class SettingsWarehouseTransferScalePolicy(SettingsDbContext datab
             await database.SaveChangesAsync(cancellationToken);
             await FenceAsync(companyId, actor, fresh: true, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return new(answer, false, metadata.CorrelationId);
+            return new CompanyPolicyCommandResultV1(answer, false, metadata.CorrelationId);
         }
         catch (DbUpdateException exception) when (exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
         {
@@ -203,23 +203,23 @@ public sealed class SettingsWarehouseTransferScalePolicy(SettingsDbContext datab
             || string.IsNullOrWhiteSpace(row.RecordedBy) || row.RecordedBy.Length > 128 || string.IsNullOrWhiteSpace(row.Reason)
             || row.Reason.Length > SettingsWarehouseTransferScaleV1.MaximumReasonLength) throw Unavailable();
     }
-    private static WarehouseTransferScaleVersionV1 View(WarehouseTransferScaleVersionRow row) => new(row.RecordId, Text(row.Version),
+    private static WarehouseTransferScaleVersionV1 View(WarehouseTransferScaleVersionRow row) => new WarehouseTransferScaleVersionV1(row.RecordId, Text(row.Version),
         row.RequireExitWeighing, row.LocationVersion, row.RecordedBy, row.RecordedAtUtc, row.Reason);
     private static SettingsWarehouseTransferScalePolicyV1 Policy(Guid companyId, Guid locationId, WarehouseTransferScaleVersionRow? row) =>
-        new(row is null ? SettingsWarehouseTransferScaleStatusV1.NotConfigured : SettingsWarehouseTransferScaleStatusV1.Configured,
+        new SettingsWarehouseTransferScalePolicyV1(row is null ? SettingsWarehouseTransferScaleStatusV1.NotConfigured : SettingsWarehouseTransferScaleStatusV1.Configured,
             companyId, locationId, row?.RequireExitWeighing ?? false, row?.Version,
             SettingsWarehouseTransferScaleV1.SourceVersion + "/" + (row is null ? "not-configured" : Text(row.Version)));
     private static CompanyPolicyCommandResultV1 Replay(CommandExecution row, string hash, SettingsCommandMetadataV1 metadata)
     {
-        if (row.ActorId != metadata.ActorId || row.RequestHash != hash) return new(new(409, KeyConflict,
+        if (row.ActorId != metadata.ActorId || row.RequestHash != hash) return new CompanyPolicyCommandResultV1(new CompanyPolicyCommandAnswerV1(409, KeyConflict,
             "İşlem anahtarı kullanılmış.", "Bu anahtar başka bir istek veya aktörle kullanıldı."), false, metadata.CorrelationId);
         var answer = JsonSerializer.Deserialize<CompanyPolicyCommandAnswerV1>(row.ResponseJson, Json);
         if (row.SchemaVersion != 1 || row.CompanyId != metadata.CompanyId || answer is null || answer.StatusCode != row.HttpStatusCode
             || (answer.Code ?? "Succeeded") != row.Outcome || !(answer.StatusCode == 204 && answer.Code is null
                 || answer.StatusCode == 409 && answer.Code == VersionConflict)) throw Unavailable();
-        return new(answer, true, row.OriginalCorrelationId);
+        return new CompanyPolicyCommandResultV1(answer, true, row.OriginalCorrelationId);
     }
-    private static CompanyPolicyCommandAnswerV1 Invalid(string detail) => new(400, InvalidCode, "İstek geçersiz.", detail);
-    private static SettingsPrerequisiteException Unavailable() => new("settings_provider_unavailable");
+    private static CompanyPolicyCommandAnswerV1 Invalid(string detail) => new CompanyPolicyCommandAnswerV1(400, InvalidCode, "İstek geçersiz.", detail);
+    private static SettingsPrerequisiteException Unavailable() => new SettingsPrerequisiteException("settings_provider_unavailable");
     private static string Text(long value) => value.ToString(CultureInfo.InvariantCulture);
 }

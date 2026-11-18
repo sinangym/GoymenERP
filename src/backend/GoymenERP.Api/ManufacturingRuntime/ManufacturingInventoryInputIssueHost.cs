@@ -330,7 +330,7 @@ internal sealed class ManufacturingInventoryInputIssueHost(
     }
 
     private static InventoryCommandMetadata InventoryMetadata(ManufacturingCommandMetadata metadata,
-        Guid companyId, ManufacturingInventoryInputIssueCommand command) => new(
+        Guid companyId, ManufacturingInventoryInputIssueCommand command) => new InventoryCommandMetadata(
         metadata.ActorId,
         metadata.PermissionCode,
         metadata.RoleCodes,
@@ -381,7 +381,7 @@ internal sealed class ManufacturingInventoryInputIssueHost(
 
     private static ManufacturingInventoryRealizationPortException PortRefusal(int status, string code,
         ManufacturingInventoryStockShortfallV1? stockShortfall = null) =>
-        new(status switch
+        new ManufacturingInventoryRealizationPortException(status switch
         {
             StatusCodes.Status400BadRequest => ManufacturingApiStatus.Invalid,
             StatusCodes.Status404NotFound => ManufacturingApiStatus.NotFound,

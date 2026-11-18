@@ -14,9 +14,9 @@ public static class SalesOutboxContractV1
     public const string SourceName = "sales";
     public static IReadOnlyList<WorkOutboxEventTypeV1> Publishes { get; } = Array.AsReadOnly<WorkOutboxEventTypeV1>(
     [
-        new(SalesStore.InvoiceFinalizedEventType, 1),
-        new(SalesStore.CustomerReturnFinalizedEventType, 1),
-        new(GoymenERP.Modules.Sales.Application.Contracts.SalesOfficialInvoiceCancellationCommandsV1.EventType, 1),
+        new WorkOutboxEventTypeV1(SalesStore.InvoiceFinalizedEventType, 1),
+        new WorkOutboxEventTypeV1(SalesStore.CustomerReturnFinalizedEventType, 1),
+        new WorkOutboxEventTypeV1(GoymenERP.Modules.Sales.Application.Contracts.SalesOfficialInvoiceCancellationCommandsV1.EventType, 1),
     ]);
 }
 

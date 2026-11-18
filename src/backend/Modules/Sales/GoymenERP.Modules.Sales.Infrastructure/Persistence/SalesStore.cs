@@ -2283,7 +2283,7 @@ public sealed partial class SalesStore(
             }
 
             foreach (var cost in marginCostRows.Where(item => item.DraftId == draft.Id).OrderBy(item => item.Revision))
-                draft.RestoreMarginCost(new(cost.LineId, cost.Revision, cost.ProductId, cost.UnitId, cost.Quantity,
+                draft.RestoreMarginCost(new SalesMarginCostSnapshot(cost.LineId, cost.Revision, cost.ProductId, cost.UnitId, cost.Quantity,
                     cost.CurrencyId, cost.CostPerUnit, cost.UnavailableReason is { } reason ? (SalesLineMarginUnavailableReason)reason : null,
                     cost.SourceProof, cost.RecordedAtUtc));
 

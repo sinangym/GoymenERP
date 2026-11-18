@@ -15,12 +15,12 @@ public sealed class SalesOrderInvoicedQuantityReadPortV1(SalesDbContext db, ICom
     : ISalesOrderInvoicedQuantityReadPortV1
 {
     private const int MaximumEvidenceLines = 10000;
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<SalesOrderInvoicedQuantityReadV1> ReadAsync(Guid companyId, Guid salesOrderId,
         Func<CancellationToken, Task> freshConsumerFence, CancellationToken cancellationToken = default)
     {
-        SalesOrderInvoicedQuantityReadV1 Unavailable() => new(companyId, salesOrderId,
+        SalesOrderInvoicedQuantityReadV1 Unavailable() => new SalesOrderInvoicedQuantityReadV1(companyId, salesOrderId,
             SalesOrderInvoicedQuantityReadOutcomeV1.Unavailable, [], null);
         if (companyId == Guid.Empty || salesOrderId == Guid.Empty || freshConsumerFence is null) return Unavailable();
         try
@@ -52,7 +52,7 @@ public sealed class SalesOrderInvoicedQuantityReadPortV1(SalesDbContext db, ICom
                     var source = claim.ShipmentSource;
                     if (!decimal.TryParse(source.InvoicedQuantity, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var quantity)
                         || quantity <= 0m) return Unavailable();
-                    lines.Add(new(claim.InvoiceId, claim.InvoiceLineId, source.SalesOrderLineId, source.UnitId,
+                    lines.Add(new SalesOrderInvoicedQuantityLineV1(claim.InvoiceId, claim.InvoiceLineId, source.SalesOrderLineId, source.UnitId,
                         quantity, "Normal", item.SourceVersion));
                 }
             }
@@ -84,7 +84,7 @@ public sealed class SalesOrderInvoicedQuantityReadPortV1(SalesDbContext db, ICom
                         line.Input.Quantity, line.Input.QuantityText }).ToArray() }, Json));
                 versions.Add(sourceVersion);
                 foreach (var line in invoice.Lines)
-                    lines.Add(new(invoice.Id, line.Id, line.Input.SalesOrderLineId, line.Input.UnitId,
+                    lines.Add(new SalesOrderInvoicedQuantityLineV1(invoice.Id, line.Id, line.Input.SalesOrderLineId, line.Input.UnitId,
                         line.Input.Quantity, "Subcontract", sourceVersion));
                 if (lines.Count > MaximumEvidenceLines) return Unavailable();
             }
@@ -97,7 +97,7 @@ public sealed class SalesOrderInvoicedQuantityReadPortV1(SalesDbContext db, ICom
             await Fence();
             var version = ISalesOrderInvoicedQuantityReadPortV1.SourceVersionPrefix
                 + Sha(JsonSerializer.Serialize(new { companyId, salesOrderId, after, versions, lines }, Json));
-            return new(companyId, salesOrderId, SalesOrderInvoicedQuantityReadOutcomeV1.Available,
+            return new SalesOrderInvoicedQuantityReadV1(companyId, salesOrderId, SalesOrderInvoicedQuantityReadOutcomeV1.Available,
                 lines.AsReadOnly(), version);
         }
         catch (OperationCanceledException) { throw; }
@@ -134,7 +134,7 @@ public sealed class SalesOrderInvoicedQuantityReadPortV1(SalesDbContext db, ICom
             await Fence();
             if (normal.Length > MaximumEvidenceLines || subcontract.Length > MaximumEvidenceLines)
                 throw new InvalidOperationException("Invoice quantity evidence exceeds its bounded read.");
-            return new(normal, subcontract);
+            return new Discovery(normal, subcontract);
         }
     }
 

@@ -27,7 +27,7 @@ public sealed class CreditMovementNormalJournalSourceProviderV1(AccountingDbCont
         catch (JsonException) { return null; }
         if (source is null || source.CompanyId != companyId || source.EventId != row.Id || source.MovementId != row.MovementId
             || source.ReversesMovementId is not null || CreditMovementJournalComponentsV1.Purpose(source.Kind) is null) return null;
-        var actual = await movements.ListAsync(new(companyId, actor, correlation.CorrelationId, correlation.CausationId), source.CreditAccountId, cancellationToken);
+        var actual = await movements.ListAsync(new FinanceContext(companyId, actor, correlation.CorrelationId, correlation.CausationId), source.CreditAccountId, cancellationToken);
         if (!Same(companyId, actor) || actual is not { Outcome: ReadOutcome.Found, Resource: { } page }
             || page.CompanyId != companyId || page.Items.Count(x => x.Id == source.MovementId) != 1) return null;
         var movement = page.Items.Single(x => x.Id == source.MovementId); var request = movement.Source;
@@ -49,7 +49,7 @@ public sealed class CreditMovementNormalJournalSourceProviderV1(AccountingDbCont
         if (!Same(companyId, actor) || rule is null || rule.Mirror.CompanyId != companyId) return null;
         var exact = CreditMovementJournalComponentsV1.TryCreate(source, rule, profile.CurrencyScale);
         if (exact is null) return null;
-        var allowed = await permissions.CheckAsync(new(companyId, actor, correlation.CorrelationId, correlation.CausationId),
+        var allowed = await permissions.CheckAsync(new FinanceContext(companyId, actor, correlation.CorrelationId, correlation.CausationId),
             FinanceAction.ReadCredits, source.CreditAccountId, cancellationToken);
         if (!Same(companyId, actor) || allowed != PermissionDecision.Allowed) return null;
         var answer = new NormalJournalDraftServerSourceV1(rule, source.CurrencyId, movement.Version, profileId, version,

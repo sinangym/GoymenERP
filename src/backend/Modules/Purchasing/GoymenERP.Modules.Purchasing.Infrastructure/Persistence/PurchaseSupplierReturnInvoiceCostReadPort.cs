@@ -20,7 +20,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 public sealed class PurchaseSupplierReturnInvoiceCostReadPort(PurchasingDbContext database, ICompanyContext company,
     ICurrentUser user, IPurchaseGoodsReceiptReadsV1 physicalReceipts) : IPurchaseSupplierReturnInvoiceCostReadPortV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     private const int UnitCostScale = 4;
     private const decimal UnitCostUpperBound = 100_000_000_000_000m;
 
@@ -122,7 +122,7 @@ public sealed class PurchaseSupplierReturnInvoiceCostReadPort(PurchasingDbContex
                 || physical.MovementId == Guid.Empty || physical.LabelId == Guid.Empty || physical.LotId == Guid.Empty
                 || !decimal.TryParse(physical.MeasuredQuantityKg, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var kg)
                 || kg <= 0m || PurchaseAcceptanceParticipantContractV1.FormatQuantity(kg) != physical.MeasuredQuantityKg) throw Invalid();
-            return new(ExactUnitCost(netTl, kg));
+            return new PurchaseSupplierReturnInvoiceCostV1(ExactUnitCost(netTl, kg));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception)
@@ -166,5 +166,5 @@ public sealed class PurchaseSupplierReturnInvoiceCostReadPort(PurchasingDbContex
     }
 
     private static PurchaseSupplierReturnInvoiceCostV1 Missing() => PurchaseSupplierReturnInvoiceCostV1.Unavailable;
-    private static PurchasingServiceException Invalid() => new(503, PurchaseSupplierReturnCodesV1.InvoiceCostInvalid);
+    private static PurchasingServiceException Invalid() => new PurchasingServiceException(503, PurchaseSupplierReturnCodesV1.InvoiceCostInvalid);
 }

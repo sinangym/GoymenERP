@@ -17,7 +17,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 internal static class FinanceTreasuryTransaction
 {
     private sealed class Attempt { internal bool NumberReservationAttempted; }
-    private static readonly ConditionalWeakTable<FinanceDbContext, Attempt> ActiveAttempts = new();
+    private static readonly ConditionalWeakTable<FinanceDbContext, Attempt> ActiveAttempts = new ConditionalWeakTable<FinanceDbContext, Attempt>();
 
     internal static void MarkNumberReservation(FinanceDbContext dbContext)
     {

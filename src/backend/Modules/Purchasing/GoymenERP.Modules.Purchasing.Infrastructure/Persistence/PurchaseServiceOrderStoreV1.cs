@@ -18,7 +18,7 @@ public sealed class PurchaseServiceOrderStoreV1(PurchasingDbContext database, IC
     IAuditEventCollector audit, IAuditTransactionWriterV1 auditWriter, ISettingsDocumentNumberSeriesV1 numbers) : IPurchaseServiceOrderStoreV1,
     IPurchaseSubcontractOrderReadPortV1, IPurchaseServiceAcceptanceReadPortV1
 {
-    internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    internal static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     public async Task<PurchaseServiceOrderState?> ReadAsync(Guid orderId, CancellationToken token)
     {
         var scope = Company();
@@ -81,7 +81,7 @@ public sealed class PurchaseServiceOrderStoreV1(PurchasingDbContext database, IC
         if (row is null) return null;
         if (row.ActorId != envelope.ActorId || row.RequestHash != hash)
             throw new PurchasingStoreException(PurchasingStoreCodes.SameKeyPayloadMismatch, "Aynı anahtar farklı içerikle kullanılamaz.");
-        return new(row.SnapshotJson is null ? null : Restore(row.SnapshotJson), row.RefusalJson is null ? null
+        return new PurchaseServiceOrderWriteV1(row.SnapshotJson is null ? null : Restore(row.SnapshotJson), row.RefusalJson is null ? null
             : JsonSerializer.Deserialize<PurchasingTerminalRefusal>(row.RefusalJson, Json) ?? throw new InvalidOperationException(), true, row.CorrelationId);
     }
     public async Task<PurchaseServiceOrderWriteV1?> WriteAsync(Guid orderId, string command, PurchasingWriteEnvelope envelope, string hash, string reason,
@@ -102,7 +102,7 @@ public sealed class PurchaseServiceOrderStoreV1(PurchasingDbContext database, IC
             if (before is null && command != PurchaseServiceOrderCommandsV1.Create) return null;
             PurchaseServiceOrderState? after = null; PurchasingTerminalRefusal? refusal = null;
             try { after = await mutate(before, token); }
-            catch (PurchaseServiceOrderException exception) { refusal = new(409, exception.Code, []); }
+            catch (PurchaseServiceOrderException exception) { refusal = new PurchasingTerminalRefusal(409, exception.Code, []); }
             await requireStill(token);
             if (Company() != scope) throw new InvalidOperationException();
             string? snapshot = null;
@@ -116,7 +116,7 @@ public sealed class PurchaseServiceOrderStoreV1(PurchasingDbContext database, IC
                     var format = await numbers.GetPolicyAsync(scope, SettingsDocumentSeriesV1.PurchaseOrder, token);
                     await requireStill(token);
                     var reserved = await numbers.ReservePurchaseOrderNumberAsync(transaction.GetDbTransaction(), scope, orderId, after.BusinessDate,
-                        format.Version, new(scope, envelope.ActorId, envelope.CorrelationId, envelope.CausationId, envelope.SourceChannel,
+                        format.Version, new SettingsCommandMetadataV1(scope, envelope.ActorId, envelope.CorrelationId, envelope.CausationId, envelope.SourceChannel,
                             envelope.ClientIpAddress, envelope.UserAgent, envelope.IdempotencyKey), token);
                     await requireStill(token);
                     if (reserved.CompanyId != scope || reserved.Series != SettingsDocumentSeriesV1.PurchaseOrder || reserved.DocumentId != orderId
@@ -126,20 +126,20 @@ public sealed class PurchaseServiceOrderStoreV1(PurchasingDbContext database, IC
                     after = after with { DocumentNumber = reserved.Number };
                 }
                 var parent = await database.ServiceOrders.SingleOrDefaultAsync(x => x.OrderId == orderId, token);
-                if (parent is null) database.ServiceOrders.Add(new() { CompanyId = scope, OrderId = orderId, Version = after.Version });
+                if (parent is null) database.ServiceOrders.Add(new PurchaseServiceOrderRow() { CompanyId = scope, OrderId = orderId, Version = after.Version });
                 else { if (parent.Version != before!.Version) throw new DbUpdateConcurrencyException(); parent.Version = after.Version; }
                 snapshot = JsonSerializer.Serialize(after, Json);
-                database.ServiceOrderRevisions.Add(new() { CompanyId = scope, OrderId = orderId, Version = after.Version, SnapshotJson = snapshot });
+                database.ServiceOrderRevisions.Add(new PurchaseServiceOrderRevisionRow() { CompanyId = scope, OrderId = orderId, Version = after.Version, SnapshotJson = snapshot });
                 foreach (var acceptance in after.Acceptances.Where(x => before is null || before.Acceptances.All(old => old.AcceptanceId != x.AcceptanceId)))
                 {
                     var acceptedLine = after.Lines.Single(x => x.LineId == acceptance.LineId);
-                    database.ServiceAcceptances.Add(new() { CompanyId = scope, OrderId = orderId, LineId = acceptance.LineId,
+                    database.ServiceAcceptances.Add(new PurchaseServiceAcceptanceRow() { CompanyId = scope, OrderId = orderId, LineId = acceptance.LineId,
                         AcceptanceId = acceptance.AcceptanceId, Quantity = acceptance.Quantity, OrderVersionAfter = acceptance.OrderVersionAfter,
                         SupplierPartyId = after.SupplierPartyId, CompanyAccountId = after.CompanyAccountId, CurrencyId = after.Money.CurrencyId,
                         ServiceTypeId = acceptedLine.ServiceTypeId, UnitId = acceptedLine.UnitId });
                 }
             }
-            database.ServiceOrderAttempts.Add(new() { CompanyId = scope, Command = command, KeyHash = Hash(envelope.IdempotencyKey),
+            database.ServiceOrderAttempts.Add(new PurchaseServiceOrderAttemptRow() { CompanyId = scope, Command = command, KeyHash = Hash(envelope.IdempotencyKey),
                 RequestHash = hash, ActorId = envelope.ActorId, CorrelationId = envelope.CorrelationId,
                 SnapshotJson = snapshot, RefusalJson = refusal is null ? null : JsonSerializer.Serialize(refusal, Json) });
             await requireStill(token);
@@ -153,7 +153,7 @@ public sealed class PurchaseServiceOrderStoreV1(PurchasingDbContext database, IC
             await auditWriter.WritePendingAsync(transaction.GetDbTransaction(), token);
             await requireStill(token);
             await transaction.CommitAsync(token);
-            return new(after, refusal, false, envelope.CorrelationId);
+            return new PurchaseServiceOrderWriteV1(after, refusal, false, envelope.CorrelationId);
         }
         catch (DbUpdateConcurrencyException)
         { await transaction.RollbackAsync(CancellationToken.None); database.ChangeTracker.Clear(); auditWriter.DiscardPending(); throw new PurchasingServiceException(409, PurchasingProblemCodesV1.ConcurrentChange); }
@@ -164,37 +164,37 @@ public sealed class PurchaseServiceOrderStoreV1(PurchasingDbContext database, IC
     }
     public async Task<PurchaseSubcontractOrderAnswerV1> GetAsync(Guid companyId, Guid orderId, CancellationToken token = default)
     {
-        if (!IsCompany(companyId)) return new(PurchaseSubcontractOrderOutcomeV1.Unavailable, null);
+        if (!IsCompany(companyId)) return new PurchaseSubcontractOrderAnswerV1(PurchaseSubcontractOrderOutcomeV1.Unavailable, null);
         try
         {
             var value = await ReadAsync(orderId, token);
-            if (!IsCompany(companyId)) return new(PurchaseSubcontractOrderOutcomeV1.Unavailable, null);
-            if (value is null) return new(PurchaseSubcontractOrderOutcomeV1.NotFound, null);
-            if (value.Kind != PurchaseServiceOrderKind.OwnMaterialSubcontract) return new(PurchaseSubcontractOrderOutcomeV1.NotSubcontract, null);
-            return new(PurchaseSubcontractOrderOutcomeV1.Available, new(value.CompanyId, value.OrderId, Text(value.Version), value.SupplierPartyId,
+            if (!IsCompany(companyId)) return new PurchaseSubcontractOrderAnswerV1(PurchaseSubcontractOrderOutcomeV1.Unavailable, null);
+            if (value is null) return new PurchaseSubcontractOrderAnswerV1(PurchaseSubcontractOrderOutcomeV1.NotFound, null);
+            if (value.Kind != PurchaseServiceOrderKind.OwnMaterialSubcontract) return new PurchaseSubcontractOrderAnswerV1(PurchaseSubcontractOrderOutcomeV1.NotSubcontract, null);
+            return new PurchaseSubcontractOrderAnswerV1(PurchaseSubcontractOrderOutcomeV1.Available, new PurchaseSubcontractOrderV1(value.CompanyId, value.OrderId, Text(value.Version), value.SupplierPartyId,
                 value.CompanyAccountId, value.Status == PurchaseServiceOrderStatus.Approved, value.IsOpen,
                 value.Lines.Select(x => new PurchaseSubcontractServiceLineV1(x.LineId, x.ServiceTypeId, Text(x.ServiceTypeVersion), x.UnitId,
                     Text(x.Quantity), Text(x.AcceptedQuantity))).ToArray(), value.Materials, value.ExpectedOutputs));
         }
         catch (OperationCanceledException) { throw; }
-        catch { return new(PurchaseSubcontractOrderOutcomeV1.Unavailable, null); }
+        catch { return new PurchaseSubcontractOrderAnswerV1(PurchaseSubcontractOrderOutcomeV1.Unavailable, null); }
     }
     public async Task<PurchaseServiceAcceptanceAnswerV1> GetAsync(Guid companyId, Guid orderId, Guid acceptanceId, CancellationToken token = default)
     {
-        if (!IsCompany(companyId)) return new(PurchaseServiceAcceptanceOutcomeV1.Unavailable, null);
+        if (!IsCompany(companyId)) return new PurchaseServiceAcceptanceAnswerV1(PurchaseServiceAcceptanceOutcomeV1.Unavailable, null);
         try
         {
             var value = await ReadAsync(orderId, token);
-            if (!IsCompany(companyId)) return new(PurchaseServiceAcceptanceOutcomeV1.Unavailable, null);
+            if (!IsCompany(companyId)) return new PurchaseServiceAcceptanceAnswerV1(PurchaseServiceAcceptanceOutcomeV1.Unavailable, null);
             var acceptance = value?.Acceptances.SingleOrDefault(x => x.AcceptanceId == acceptanceId);
-            if (value is null || acceptance is null) return new(PurchaseServiceAcceptanceOutcomeV1.NotFound, null);
+            if (value is null || acceptance is null) return new PurchaseServiceAcceptanceAnswerV1(PurchaseServiceAcceptanceOutcomeV1.NotFound, null);
             var line = value.Lines.Single(x => x.LineId == acceptance.LineId);
-            return new(PurchaseServiceAcceptanceOutcomeV1.Available, new(value.CompanyId, orderId, Text(value.Version), value.SupplierPartyId,
+            return new PurchaseServiceAcceptanceAnswerV1(PurchaseServiceAcceptanceOutcomeV1.Available, new PurchaseServiceAcceptanceSourceV1(value.CompanyId, orderId, Text(value.Version), value.SupplierPartyId,
                 value.CompanyAccountId, acceptanceId, line.LineId, line.ServiceTypeId, line.UnitId, Text(acceptance.Quantity), acceptance.AcceptedOn,
                 value.Money.CurrencyId, line.UnitPrice, $"purchasing.service-acceptance:{orderId:D}:{acceptanceId:D}:{acceptance.OrderVersionAfter}"));
         }
         catch (OperationCanceledException) { throw; }
-        catch { return new(PurchaseServiceAcceptanceOutcomeV1.Unavailable, null); }
+        catch { return new PurchaseServiceAcceptanceAnswerV1(PurchaseServiceAcceptanceOutcomeV1.Unavailable, null); }
     }
     private Guid Company() => company.IsResolved && company.CompanyId != Guid.Empty ? company.CompanyId : throw new InvalidOperationException("Şirket bağlamı gerekli.");
     private bool IsCompany(Guid id) => id != Guid.Empty && company.IsResolved && company.CompanyId == id;

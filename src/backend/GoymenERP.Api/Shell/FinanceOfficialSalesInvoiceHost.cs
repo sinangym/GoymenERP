@@ -52,7 +52,7 @@ public static class FinanceOfficialSalesInvoiceHostExtensions
 
     private static FinanceAuditEnvelope Envelope(string permission,
         IReadOnlyCollection<string> roleCodes, ICorrelationContext correlation) =>
-        new(permission, roleCodes, correlation.SourceChannel, correlation.ClientIpAddress, correlation.UserAgent);
+        new FinanceAuditEnvelope(permission, roleCodes, correlation.SourceChannel, correlation.ClientIpAddress, correlation.UserAgent);
 }
 
 /// <summary>
@@ -212,9 +212,9 @@ public sealed class FinanceOfficialSalesInvoiceDocumentPort(IDocumentService doc
         {
             return Refused(FinanceOfficialSalesInvoicePdfOutcomeV1.NotDownloadable);
         }
-        return new(FinanceOfficialSalesInvoicePdfOutcomeV1.Accepted, view.VersionNo, view.Sha256);
+        return new FinanceOfficialSalesInvoicePdfCheckV1(FinanceOfficialSalesInvoicePdfOutcomeV1.Accepted, view.VersionNo, view.Sha256);
     }
 
     private static FinanceOfficialSalesInvoicePdfCheckV1 Refused(FinanceOfficialSalesInvoicePdfOutcomeV1 outcome) =>
-        new(outcome, null, null);
+        new FinanceOfficialSalesInvoicePdfCheckV1(outcome, null, null);
 }

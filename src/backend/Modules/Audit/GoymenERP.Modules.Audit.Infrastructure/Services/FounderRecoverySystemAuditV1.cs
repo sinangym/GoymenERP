@@ -23,8 +23,8 @@ internal sealed class FounderRecoverySystemAuditV1(IServiceScopeFactory scopes) 
         var events = records.Select(row =>
         {
             if (string.IsNullOrWhiteSpace(row.IdempotencyKey)) throw new ArgumentException("A per-run recovery key is required.");
-            return AuditEvent.CreateFounderRecovery(new(Guid.NewGuid(), row.CompanyId, row.FounderUserId,
-                (FounderRecoveryAuditOperation)row.Operation, new(row.Operator.OperatingSystemUser, row.Operator.MachineName),
+            return AuditEvent.CreateFounderRecovery(new FounderRecoveryAuditData(Guid.NewGuid(), row.CompanyId, row.FounderUserId,
+                (FounderRecoveryAuditOperation)row.Operation, new FounderRecoveryOperatorDeclaration(row.Operator.OperatingSystemUser, row.Operator.MachineName),
                 row.PreconditionCompanyIds, row.RestoredAssignmentIds, row.UserVersionBefore, row.UserVersionAfter, row.OccurredAtUtc,
                 row.CorrelationId, row.CausationId, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(row.IdempotencyKey)))));
         }).ToArray();

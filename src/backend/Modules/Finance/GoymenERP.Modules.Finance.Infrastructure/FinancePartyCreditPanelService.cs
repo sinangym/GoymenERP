@@ -240,5 +240,5 @@ public sealed class FinancePartyCreditPanelService : IFinancePartyCreditPanelRea
                 figure.ReasonCode ?? FinancePartyCollateralFigures.CollateralUnreadable);
 
     private static PartyCreditPanelFigureView Withheld(string reasonCode) =>
-        new(PartyCreditPanelFigureState.Withheld, [], reasonCode);
+        new PartyCreditPanelFigureView(PartyCreditPanelFigureState.Withheld, [], reasonCode);
 }

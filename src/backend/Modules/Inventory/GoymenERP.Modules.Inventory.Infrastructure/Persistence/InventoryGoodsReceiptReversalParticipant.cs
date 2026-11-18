@@ -112,12 +112,12 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
                 throw Error(503, Codes.Unavailable);
             Engine.RestoreStored(future);
             if (undone.GetValueOrDefault(link.Id) == link.Quantity) continue;
-            views.Add(new(link.Id, future.Id, future.DemandId, future.DemandLineId, future.PurchaseOrderLineId,
+            views.Add(new InventoryGoodsReceiptReversalLinkV1(link.Id, future.Id, future.DemandId, future.DemandLineId, future.PurchaseOrderLineId,
                 Text(future.Version), Text(link.Quantity), Text(link.PhysicalQuantityKg.Value),
                 Text(undone.GetValueOrDefault(link.Id)), physicalId, originalOrder[link.FutureAllocationId]));
         }
         var returned = await ReversedKgAsync(original.OriginalResult.MovementId, cancellationToken);
-        return new(original, Text(label.Version), Text(returned), views);
+        return new InventoryGoodsReceiptReversalTargetV1(original, Text(label.Version), Text(returned), views);
     }
 
     public async Task<InventoryGoodsReceiptReversalResultV1?> ReadReplayAsync(InventoryGoodsReceiptReversalRequestV1 request,
@@ -287,7 +287,7 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
                 {
                     row.ReleaseReasonCode = Codes.NoSupplyReason; row.ReleaseOrigin = InventoryFutureAllocationOriginsV1.Purchasing;
                     row.ReleaseReason = request.Reason; row.ReleasedAtUtc = clock.GetUtcNow();
-                    Engine.AddReleasedOutbox(context, row, new(before, Engine.View(row), FutureSupplyQuantity.Of(plan.OverflowReleasedQuantity), previousVersion), metadata, clock.GetUtcNow());
+                    Engine.AddReleasedOutbox(context, row, new Engine.ReleaseStep(before, Engine.View(row), FutureSupplyQuantity.Of(plan.OverflowReleasedQuantity), previousVersion), metadata, clock.GetUtcNow());
                 }
                 Engine.Audit(audit, metadata, companyId, row.Id, "inventory.future-allocation.receipt-reversed.v1", "ReverseReceipt",
                     previousVersion, row.Version, JsonSerializer.Serialize(before, Engine.Json), JsonSerializer.Serialize(Engine.View(row), Engine.Json), request.Reason);
@@ -300,10 +300,10 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
                 supplyRemaining -= plan.ReopenedQuantity;
                 heldKg[link.SalesOrderLineId] += FutureSupplyReceiptReversal.ExactRatio(plan.ReopenedQuantity, originalKg, originalQuantity);
             }
-            reversalRows.Add(new() { CompanyId = companyId, ReversalId = request.ReversalId,
+            reversalRows.Add(new FutureSupplyConversionReversalRow() { CompanyId = companyId, ReversalId = request.ReversalId,
                 ConversionId = link.ConversionId, UndoneQuantity = plan.UndoneQuantity, UndoneKg = plan.UndoneKg,
                 ReopenedQuantity = plan.ReopenedQuantity, OverflowReleasedQuantity = plan.OverflowReleasedQuantity, UnheldQuantity = plan.UnheldQuantity });
-            results.Add(new(link.ConversionId, link.FutureAllocationId, Text(plan.UndoneQuantity), Text(plan.UndoneKg),
+            results.Add(new InventoryGoodsReceiptConversionReversalV1(link.ConversionId, link.FutureAllocationId, Text(plan.UndoneQuantity), Text(plan.UndoneKg),
                 Text(plan.ReopenedQuantity), Text(plan.OverflowReleasedQuantity), Text(plan.UnheldQuantity)));
             remainingKg -= takeKg;
         }
@@ -315,7 +315,7 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
         {
             await using var exit = await InventorySupplierReturnExitParticipant.EnlistAsync(connection, transaction, companyId,
                 settings, cancellationToken, clock);
-            var result = await exit.StageAsync(new(companyId, request.ReversalId, request.ReversalLineId, request.AcceptanceId,
+            var result = await exit.StageAsync(new InventorySupplierReturnExitRequestV1(companyId, request.ReversalId, request.ReversalLineId, request.AcceptanceId,
                 request.InventoryMovementId, request.SourceBlock, request.QuantityKg, request.OriginalUnitCostTryPerKg,
                 request.OccurredAtUtc), metadata, cancellationToken);
             if (result.IsReplay) throw Error(409, Codes.IdempotencyConflict);
@@ -326,7 +326,7 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
         var answerResult = new InventoryGoodsReceiptReversalResultV1(companyId, request.ReversalId, request.AcceptanceId,
             request.InventoryMovementId, original.MovementId, original.LabelId, labelVersion, request.QuantityKg,
             results, false, metadata.CorrelationId);
-        context.GoodsReceiptReversals.Add(new() { CompanyId = companyId, Id = request.ReversalId, AcceptanceId = request.AcceptanceId,
+        context.GoodsReceiptReversals.Add(new GoodsReceiptReversalRow() { CompanyId = companyId, Id = request.ReversalId, AcceptanceId = request.AcceptanceId,
             LabelId = original.LabelId, OriginalMovementId = original.MovementId, MovementId = request.InventoryMovementId,
             Kind = (int)request.Kind, QuantityKg = undoKg, Reason = request.Reason, RecordedBy = metadata.ActorId,
             CorrelationId = metadata.CorrelationId, RecordedAtUtc = clock.GetUtcNow() });
@@ -336,10 +336,10 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
             "{}", JsonSerializer.Serialize(answerResult, Engine.Json), request.Reason, ApprovalContextJson: null,
             AuditAiInvolvement.None, AiContextJson: null, metadata.SourceChannel, metadata.ClientIpAddress, metadata.UserAgent,
             metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey));
-        context.Commands.Add(new() { CompanyId = companyId, CommandName = Codes.CommandName, IdempotencyKeyHash = Engine.KeyHash(metadata.IdempotencyKey),
+        context.Commands.Add(new InventoryCommandRow() { CompanyId = companyId, CommandName = Codes.CommandName, IdempotencyKeyHash = Engine.KeyHash(metadata.IdempotencyKey),
             PayloadHash = Engine.PayloadHash(request), ActorId = metadata.ActorId, TargetId = request.ReversalId,
             ResultJson = JsonSerializer.Serialize(answerResult, Engine.Json), CorrelationId = metadata.CorrelationId, RecordedAtUtc = clock.GetUtcNow() });
-        context.OutboxMessages.Add(new() { Id = Guid.NewGuid(), CompanyId = companyId, EventType = Codes.EventType,
+        context.OutboxMessages.Add(new InventoryOutboxRow() { Id = Guid.NewGuid(), CompanyId = companyId, EventType = Codes.EventType,
             SchemaVersion = 1, SourceOperation = Codes.CommandName, AggregateType = "Inventory.GoodsReceiptReversal",
             AggregateId = request.ReversalId, AggregateVersion = 1, Sequence = 1, PayloadJson = JsonSerializer.Serialize(answerResult, Engine.Json),
             OccurredAtUtc = request.OccurredAtUtc, CorrelationId = metadata.CorrelationId, CausationId = metadata.CausationId, RecordedAtUtc = clock.GetUtcNow() });
@@ -385,7 +385,7 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
         else { row.RemainingKg -= kg; row.AllocatedKg -= kg; }
         row.Version = checked(row.Version + 1); row.UpdatedAtUtc = clock.GetUtcNow();
         if (row.RemainingKg > 0m)
-            context.AllocationChanges.Add(new() { Id = Guid.NewGuid(), CompanyId = companyId, Kind = ResizeChangeKind,
+            context.AllocationChanges.Add(new AllocationChangeRow() { Id = Guid.NewGuid(), CompanyId = companyId, Kind = ResizeChangeKind,
                 SourceAllocationId = row.Id, SourceVersion = version, SourceLabelId = row.LabelId, SourceRemainingKg = before,
                 TargetAllocationId = row.Id, TargetLabelId = row.LabelId, TargetRemainingKg = row.RemainingKg, Reason = reason,
                 ChangedBy = metadata.ActorId, CorrelationId = metadata.CorrelationId, ChangedAtUtc = clock.GetUtcNow() });
@@ -455,7 +455,7 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
         ? quantity.Value : throw Error(503, Codes.Unavailable);
     private static string Text(decimal value) => value.ToString("0.###", CultureInfo.InvariantCulture);
     private static string Text(long value) => value.ToString(CultureInfo.InvariantCulture);
-    private static InventoryGoodsReceiptReversalException Error(int status, string code, Exception? inner = null) => new(status, code, inner);
+    private static InventoryGoodsReceiptReversalException Error(int status, string code, Exception? inner = null) => new InventoryGoodsReceiptReversalException(status, code, inner);
     internal static InventoryGoodsReceiptReversalException StoreRefusal(string code, Exception? inner = null) => code switch
     {
         InventoryStoreCodes.MovementIdConflict or InventoryStoreCodes.DuplicateSource or InventoryStoreCodes.SourceGrainMismatch

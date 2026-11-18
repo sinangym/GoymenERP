@@ -14,7 +14,7 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 public sealed class AccountingSourceInvoiceCancellationStoreV1(AccountingDbContext db, ICompanyContext company,
     IAuditEventCollector audit, TimeProvider clock) : IAccountingSourceInvoiceCancellationStoreV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<AccountingSourceInvoiceCancellationAnswerV1> CancelAsync(AccountingSourceInvoiceCancellationV1 request,
         AccountingCommandMetadata metadata, Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken = default)
@@ -41,7 +41,7 @@ public sealed class AccountingSourceInvoiceCancellationStoreV1(AccountingDbConte
                 await freshAuthorityFence(cancellationToken);
                 RequireCompany(request.CompanyId);
                 await transaction.CommitAsync(cancellationToken);
-                return new("Recorded", true);
+                return new AccountingSourceInvoiceCancellationAnswerV1("Recorded", true);
             }
             var admission = await db.SourceDocumentAdmissions.AsNoTracking().SingleOrDefaultAsync(x => x.SourceDocumentId == request.SourceDocumentId,
                 cancellationToken);
@@ -77,7 +77,7 @@ public sealed class AccountingSourceInvoiceCancellationStoreV1(AccountingDbConte
                 metadata.CausationId, metadata.IdempotencyKey));
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return new("Recorded");
+            return new AccountingSourceInvoiceCancellationAnswerV1("Recorded");
         }
         catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
             || exception.InnerException is SqlException { Number: 2601 or 2627 })
@@ -104,5 +104,5 @@ public sealed class AccountingSourceInvoiceCancellationStoreV1(AccountingDbConte
     {
         if (!company.IsResolved || company.CompanyId != id || id == Guid.Empty) throw Refuse(AccountingStoreCodes.CompanyContextMismatch);
     }
-    private static AccountingStoreException Refuse(string code) => new(code, "Kaynak fatura iptal kabulü tamamlanamadı.");
+    private static AccountingStoreException Refuse(string code) => new AccountingStoreException(code, "Kaynak fatura iptal kabulü tamamlanamadı.");
 }

@@ -14,20 +14,20 @@ public sealed class FinancePaymentAllocationCandidatesV1(FinanceDbContext databa
     public async Task<ReadResult<FinancePaymentAllocationCandidatesViewV1>> ReadAsync(FinanceContext context,
         Guid paymentId, int pageIndex, CancellationToken cancellationToken)
     {
-        if (await FenceAsync(context, cancellationToken) is { } denied) return new(denied, null);
-        if (paymentId == Guid.Empty || pageIndex is < 0 or > 100_000) return new(ReadOutcome.NotFound, null);
+        if (await FenceAsync(context, cancellationToken) is { } denied) return new ReadResult<FinancePaymentAllocationCandidatesViewV1>(denied, null);
+        if (paymentId == Guid.Empty || pageIndex is < 0 or > 100_000) return new ReadResult<FinancePaymentAllocationCandidatesViewV1>(ReadOutcome.NotFound, null);
         var payment = await database.ManualBankPayments.AsNoTracking().SingleOrDefaultAsync(x => x.Id == paymentId, cancellationToken);
-        if (await FenceAsync(context, cancellationToken) is { } first) return new(first, null);
-        if (payment is null || payment.Status != ManualBankPaymentStatuses.Recorded) return new(ReadOutcome.NotFound, null);
+        if (await FenceAsync(context, cancellationToken) is { } first) return new ReadResult<FinancePaymentAllocationCandidatesViewV1>(first, null);
+        if (payment is null || payment.Status != ManualBankPaymentStatuses.Recorded) return new ReadResult<FinancePaymentAllocationCandidatesViewV1>(ReadOutcome.NotFound, null);
         var reversed = await database.OutgoingMoneyEventReversals.AsNoTracking().AnyAsync(x => x.PaymentId == paymentId, cancellationToken);
-        if (await FenceAsync(context, cancellationToken) is { } afterReversal) return new(afterReversal, null);
-        if (reversed) return new(ReadOutcome.NotFound, null);
+        if (await FenceAsync(context, cancellationToken) is { } afterReversal) return new ReadResult<FinancePaymentAllocationCandidatesViewV1>(afterReversal, null);
+        if (reversed) return new ReadResult<FinancePaymentAllocationCandidatesViewV1>(ReadOutcome.NotFound, null);
         var state = await database.PaymentAllocationStates.AsNoTracking().SingleOrDefaultAsync(x => x.PaymentId == paymentId, cancellationToken);
-        if (await FenceAsync(context, cancellationToken) is { } afterState) return new(afterState, null);
+        if (await FenceAsync(context, cancellationToken) is { } afterState) return new ReadResult<FinancePaymentAllocationCandidatesViewV1>(afterState, null);
         try
         {
             if (state is not null && (state.CurrencyId != payment.CurrencyId
-                || !FinanceExactDecimalText.Equal(state.OriginalAmountText, payment.AmountText))) return new(ReadOutcome.Unavailable, null);
+                || !FinanceExactDecimalText.Equal(state.OriginalAmountText, payment.AmountText))) return new ReadResult<FinancePaymentAllocationCandidatesViewV1>(ReadOutcome.Unavailable, null);
             var available = await FinancePartyBalanceAssignment.ReadAsync(database, FinanceBalanceAssignmentKinds.Payment,
                 paymentId, payment.PartyId, payment.CompanyAccountId, payment.CurrencyId,
                 state?.UnallocatedAmountText ?? payment.AmountText, false, cancellationToken);
@@ -52,13 +52,13 @@ public sealed class FinancePaymentAllocationCandidatesV1(FinanceDbContext databa
             var allocations = await database.PaymentAllocations.AsNoTracking().Where(x => x.PaymentId == paymentId)
                 .OrderByDescending(x => x.CreatedAtUtc).ThenBy(x => x.Id).Skip(checked(pageIndex * PageSize))
                 .Take(PageSize + 1).ToArrayAsync(cancellationToken);
-            if (await FenceAsync(context, cancellationToken) is { } late) return new(late, null);
-            return new(ReadOutcome.Found, new(context.CompanyId, paymentId, payment.Version.ToString(CultureInfo.InvariantCulture),
+            if (await FenceAsync(context, cancellationToken) is { } late) return new ReadResult<FinancePaymentAllocationCandidatesViewV1>(late, null);
+            return new ReadResult<FinancePaymentAllocationCandidatesViewV1>(ReadOutcome.Found, new FinancePaymentAllocationCandidatesViewV1(context.CompanyId, paymentId, payment.Version.ToString(CultureInfo.InvariantCulture),
                 payment.CurrencyId, payment.PartyId, payment.CompanyAccountId, positions.Select(View).ToArray(), candidates,
                 pageIndex, items.Length > PageSize, allocations.Take(PageSize).Select(FinancePaymentAllocationService.View).ToArray(),
                 allocations.Length > PageSize));
         }
-        catch (InvalidOperationException) { return new(ReadOutcome.Unavailable, null); }
+        catch (InvalidOperationException) { return new ReadResult<FinancePaymentAllocationCandidatesViewV1>(ReadOutcome.Unavailable, null); }
     }
     private async Task<ReadOutcome?> FenceAsync(FinanceContext context, CancellationToken token)
     {
@@ -74,6 +74,6 @@ public sealed class FinancePaymentAllocationCandidatesV1(FinanceDbContext databa
         bool Same() => company.IsResolved && company.CompanyId == context.CompanyId && user.IsAuthenticated
             && user.UserId == context.ActorId && user.CanAccessCompany(context.CompanyId);
     }
-    private static FinanceAllocationPositionV1 View(FinanceAllocationPosition position) => new(position.PartyId,
+    private static FinanceAllocationPositionV1 View(FinanceAllocationPosition position) => new FinanceAllocationPositionV1(position.PartyId,
         position.CompanyAccountId, position.AvailableAmount, position.AssignmentVersion.ToString(CultureInfo.InvariantCulture), position.TransferId);
 }

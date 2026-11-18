@@ -26,7 +26,7 @@ public sealed class InventorySubcontractAllocationReleaseStoreV1(InventoryDbCont
     IAuditTransactionWriterV1 auditWriter, IRefusedAttemptRecorderV1 refusals, TimeProvider clock)
     : IInventorySubcontractAllocationReleaseStoreV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web)
     { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, RespectRequiredConstructorParameters = true, RespectNullableAnnotations = true };
     private const string Command = InventorySubcontractAllocationReleaseV1.Command;
     private sealed record StoredOutcome(int Status, string? Code, InventorySubcontractAllocationReleaseViewV1? Release);
@@ -53,7 +53,7 @@ public sealed class InventorySubcontractAllocationReleaseStoreV1(InventoryDbCont
             return new InventorySubcontractAllocationReleaseCandidateV1(View(row), label.Code, TextVersion(label.Version),
                 source.CustomerPartyId, source.CustomerAccountId, source.ManufacturingOrderId, source.OutputFactId);
         }).ToArray();
-        return new(items, rows.Count > 50 ? page[^1].Id.ToString("D") : null);
+        return new InventorySubcontractAllocationReleaseCandidatesV1(items, rows.Count > 50 ? page[^1].Id.ToString("D") : null);
     }
 
     public async Task<InventorySubcontractAllocationReleaseResultV1> ReleaseAsync(Guid allocationId,
@@ -98,12 +98,12 @@ public sealed class InventorySubcontractAllocationReleaseStoreV1(InventoryDbCont
             if (label is null) throw Error(503, InventorySubcontractAllocationReleaseV1.Unavailable);
             await db.Entry(label).ReloadAsync(cancellationToken); await freshAuthority(cancellationToken);
             ValidateLabel(row, label, source);
-            if (row.Version != expected) outcome = new(409, InventoryAllocationCodesV1.AllocationVersionConflict, null);
-            else if (row.Status != (int)StockAllocationStatus.Active) outcome = new(409, InventoryAllocationCodesV1.AllocationStateConflict, null);
+            if (row.Version != expected) outcome = new StoredOutcome(409, InventoryAllocationCodesV1.AllocationVersionConflict, null);
+            else if (row.Status != (int)StockAllocationStatus.Active) outcome = new StoredOutcome(409, InventoryAllocationCodesV1.AllocationStateConflict, null);
             else
             {
                 var before = View(row); var position = new StockPosition(company.CompanyId,
-                    new((StockPartyKind)row.OwnerKind, row.OwnerId), new((StockPartyKind)row.CustodianKind, row.CustodianId), row.LocationId,
+                    new StockOwner((StockPartyKind)row.OwnerKind, row.OwnerId), new StockCustodian((StockPartyKind)row.CustodianKind, row.CustodianId), row.LocationId,
                     new MaterialLabel(label.Id, label.CompanyId, label.Code, label.ProductId, label.LotId, label.ProductVersion), (BlockState)row.Block);
                 var allocation = StockAllocation.Restore(row.Id, position, Kilograms.Positive(row.AllocatedKg), Kilograms.Of(row.RemainingKg), row.Version, (StockAllocationStatus)row.Status);
                 var consumed = row.AllocatedKg - row.RemainingKg; var released = allocation.Release(expected); var now = clock.GetUtcNow();
@@ -111,7 +111,7 @@ public sealed class InventorySubcontractAllocationReleaseStoreV1(InventoryDbCont
                 row.UpdatedAtUtc = now; row.ReleasedAtUtc = now; row.ReleaseReason = request.Reason;
                 label.Version = checked(label.Version + 1); label.UpdatedAtUtc = now;
                 var view = new InventorySubcontractAllocationReleaseViewV1(View(row), TextVersion(label.Version), Kg(released.Value), Kg(consumed), request.Reason, now);
-                outcome = new(200, null, view);
+                outcome = new StoredOutcome(200, null, view);
                 audit.Enqueue(new AuditEventDraft(company.CompanyId, InventorySubcontractAllocationReleaseV1.Event, "Inventory.StockAllocation", row.Id.ToString("D"),
                     "Release", expected, row.Version,
                     AuditActorTypes.User, metadata.ActorId, metadata.PermissionCode, metadata.RoleCodes, JsonSerializer.Serialize(before, Json),
@@ -209,9 +209,9 @@ public sealed class InventorySubcontractAllocationReleaseStoreV1(InventoryDbCont
         if (outcome.Status == 409 && outcome.Release is null && outcome.Code is InventoryAllocationCodesV1.AllocationVersionConflict or InventoryAllocationCodesV1.AllocationStateConflict)
             throw new InventoryAllocationException(409, outcome.Code, replay, correlation);
         if (outcome.Status != 200 || outcome.Code is not null || outcome.Release is null) throw Error(503, InventorySubcontractAllocationReleaseV1.Unavailable);
-        return new(outcome.Release, replay, correlation);
+        return new InventorySubcontractAllocationReleaseResultV1(outcome.Release, replay, correlation);
     }
-    private static InventoryPhysicalAllocationViewV1 View(AllocationRow row) => new(row.Id, row.CompanyId, TextVersion(row.Version),
+    private static InventoryPhysicalAllocationViewV1 View(AllocationRow row) => new InventoryPhysicalAllocationViewV1(row.Id, row.CompanyId, TextVersion(row.Version),
         ((StockAllocationStatus)row.Status).ToString(), row.LabelId, row.DemandProductId!.Value, row.DemandKind!, row.DemandId!.Value,
         row.DemandLineId!.Value, row.DemandProductVersion!, Kg(row.AllocatedKg), Kg(row.RemainingKg), row.Reason!, row.ReservedUntilUtc,
         row.CreatedAtUtc, row.UpdatedAtUtc, row.IsSubstitute);
@@ -230,5 +230,5 @@ public sealed class InventorySubcontractAllocationReleaseStoreV1(InventoryDbCont
     private static string TextVersion(long value) => value.ToString(CultureInfo.InvariantCulture);
     private static string Hash<T>(T value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value, Json))));
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
-    private static InventoryAllocationException Error(int status, string code) => new(status, code);
+    private static InventoryAllocationException Error(int status, string code) => new InventoryAllocationException(status, code);
 }

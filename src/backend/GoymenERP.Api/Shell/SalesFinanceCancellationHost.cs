@@ -40,7 +40,7 @@ public sealed class SalesFinanceCancellationAdapterV1(ISalesFinanceAdmissionPort
     IFinanceInvoiceOpenItemCancellationPortV1 cancellation, ISalesOfficialInvoiceCancellationStoreV1 sales,
     SalesFinanceCancellationAuthorityV1 authority) : ISalesFinanceCancellationPortV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     public async Task<SalesFinanceCancellationAnswerV1> CancelAsync(SalesFinanceCancellationRequestV1 request, CancellationToken cancellationToken = default)
     {
         var context = new FinanceContext(request.CompanyId, request.ActorId, request.CorrelationId, request.CausationId);
@@ -54,25 +54,25 @@ public sealed class SalesFinanceCancellationAdapterV1(ISalesFinanceAdmissionPort
         if (source is null || source.Cancellation.CompanyId != request.CompanyId || source.Cancellation.Reason != request.Reason
             || source.Cancellation.InvoiceId != request.Admission.InvoiceId
             || JsonSerializer.Serialize(source.Admission, Json) != JsonSerializer.Serialize(request.Admission, Json))
-            return new("Pending", "cancellation_source_unavailable");
+            return new SalesFinanceCancellationAnswerV1("Pending", "cancellation_source_unavailable");
         if (!request.Admission.WasAdmitted)
         {
             var original = request.Admission;
-            var answer = await admission.AdmitAsync(new(request.CompanyId, request.ActorId, request.CorrelationId,
+            var answer = await admission.AdmitAsync(new SalesFinanceAdmissionRequestV1(request.CompanyId, request.ActorId, request.CorrelationId,
                 request.CausationId, Key("admit", request), original.AdmissionId, original.InvoiceId, original.InvoiceVersion,
                 original.PartyId, original.CompanyAccountId, original.CurrencyId,
                 original.ExchangeRate?.ToString("0.############################", CultureInfo.InvariantCulture), original.Instalments,
                 original.OfficialInvoiceNo, original.Ettn), cancellationToken);
             await Fence(cancellationToken);
-            if (answer.Outcome != SalesFinanceAdmissionOutcomeV1.Admitted) return new("Pending", "original_admission_pending");
+            if (answer.Outcome != SalesFinanceAdmissionOutcomeV1.Admitted) return new SalesFinanceCancellationAnswerV1("Pending", "original_admission_pending");
         }
-        var result = await cancellation.CancelAsync(context, new(Key("cancel", request)),
-            new(request.CancellationId, FinanceInvoiceProducerV1.Sales, request.Admission.InvoiceId,
+        var result = await cancellation.CancelAsync(context, new CommandMetadata(Key("cancel", request)),
+            new FinanceInvoiceOpenItemCancellationV1(request.CancellationId, FinanceInvoiceProducerV1.Sales, request.Admission.InvoiceId,
                 request.Admission.InvoiceVersion, request.Reason, request.ReleaseActiveAllocations), cancellationToken);
         await Fence(cancellationToken);
-        if (result.Outcome == CommandOutcome.Succeeded) return new("Cancelled");
-        if (result.Issues.Any(x => x.Code == "finance_invoice_cancellation_has_allocations")) return new("AllocationConfirmationRequired");
-        return new("Pending", "finance_cancellation_pending");
+        if (result.Outcome == CommandOutcome.Succeeded) return new SalesFinanceCancellationAnswerV1("Cancelled");
+        if (result.Issues.Any(x => x.Code == "finance_invoice_cancellation_has_allocations")) return new SalesFinanceCancellationAnswerV1("AllocationConfirmationRequired");
+        return new SalesFinanceCancellationAnswerV1("Pending", "finance_cancellation_pending");
     }
     private static string Key(string step, SalesFinanceCancellationRequestV1 request) => "sales-cancel-" + step + ":"
         + request.CancellationId.ToString("N") + ":" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(request.IdempotencyKey)))[..32];

@@ -21,8 +21,8 @@ internal sealed class FinanceOfficialSalesInvoiceImportDocumentsV2
     private static readonly string[] Columns = FinanceOfficialSalesInvoiceImportTemplateV2.DocumentColumns.Split(',');
     private readonly List<FinanceOfficialSalesInvoiceImportDocumentV2> ordered = [];
     private readonly Dictionary<Guid, FinanceOfficialSalesInvoiceImportDocumentV2> byDocument = [];
-    private readonly Dictionary<string, Guid> byOfficialNo = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, Guid> byEttn = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Guid> byOfficialNo = new Dictionary<string, Guid>(StringComparer.Ordinal);
+    private readonly Dictionary<string, Guid> byEttn = new Dictionary<string, Guid>(StringComparer.Ordinal);
 
     public IReadOnlyList<FinanceOfficialSalesInvoiceImportDocumentV2> InOrder => ordered;
 
@@ -36,32 +36,32 @@ internal sealed class FinanceOfficialSalesInvoiceImportDocumentsV2
     {
         if (fields.Length != Columns.Length + (isV3 ? 2 : 0))
         {
-            issues.Add(new(rowNumber, "row", FinanceOfficialInvoiceImportCodesV1.RowShapeInvalid));
+            issues.Add(new FinanceOfficialInvoiceImportIssueV1(rowNumber, "row", FinanceOfficialInvoiceImportCodesV1.RowShapeInvalid));
             return null;
         }
         var before = issues.Count;
         var officialNo = fields[0];
         if (officialNo.Length == 0)
         {
-            issues.Add(new(rowNumber, Columns[0], FinanceOfficialSalesInvoiceImportCodesV2.OfficialNoRequired));
+            issues.Add(new FinanceOfficialInvoiceImportIssueV1(rowNumber, Columns[0], FinanceOfficialSalesInvoiceImportCodesV2.OfficialNoRequired));
         }
         else if (!string.Equals(officialNo, officialNo.Trim(), StringComparison.Ordinal)
             || officialNo.Length > FinanceDbContext.OfficialSalesInvoiceMaximumOfficialNoLength
             || officialNo.Any(char.IsControl))
         {
-            issues.Add(new(rowNumber, Columns[0], FinanceOfficialSalesInvoiceImportCodesV2.OfficialNoInvalid));
+            issues.Add(new FinanceOfficialInvoiceImportIssueV1(rowNumber, Columns[0], FinanceOfficialSalesInvoiceImportCodesV2.OfficialNoInvalid));
         }
 
         var ettn = fields[1];
         var canonicalEttn = string.Empty;
         if (ettn.Length == 0)
         {
-            issues.Add(new(rowNumber, Columns[1], FinanceOfficialSalesInvoiceImportCodesV2.EttnRequired));
+            issues.Add(new FinanceOfficialInvoiceImportIssueV1(rowNumber, Columns[1], FinanceOfficialSalesInvoiceImportCodesV2.EttnRequired));
         }
         else if (ettn.Length != FinanceDbContext.OfficialSalesInvoiceEttnLength
             || !Guid.TryParseExact(ettn, "D", out var parsedEttn) || parsedEttn == Guid.Empty)
         {
-            issues.Add(new(rowNumber, Columns[1], FinanceOfficialSalesInvoiceImportCodesV2.EttnInvalid));
+            issues.Add(new FinanceOfficialInvoiceImportIssueV1(rowNumber, Columns[1], FinanceOfficialSalesInvoiceImportCodesV2.EttnInvalid));
         }
         else
         {
@@ -77,13 +77,13 @@ internal sealed class FinanceOfficialSalesInvoiceImportDocumentsV2
         {
             if (!DateOnly.TryParseExact(fields[5], "yyyy-MM-dd", CultureInfo.InvariantCulture,
                     DateTimeStyles.None, out var parsedDate) || parsedDate == default)
-                issues.Add(new(rowNumber, "invoiceDate", FinanceOfficialInvoiceImportCodesV1.DateInvalid));
+                issues.Add(new FinanceOfficialInvoiceImportIssueV1(rowNumber, "invoiceDate", FinanceOfficialInvoiceImportCodesV1.DateInvalid));
             else invoiceDate = parsedDate;
             // FNS-D89: an absent TL amount stays unknown; an invalid supplied amount is refused.
             if (fields[6].Length > 0)
             {
                 if (!FinanceExactDecimalText.TryParsePositive(fields[6], out var parsedPayable))
-                    issues.Add(new(rowNumber, "payableFunctionalAmount", FinanceOfficialSalesInvoiceImportCodesV2.FunctionalAmountInvalid));
+                    issues.Add(new FinanceOfficialInvoiceImportIssueV1(rowNumber, "payableFunctionalAmount", FinanceOfficialSalesInvoiceImportCodesV2.FunctionalAmountInvalid));
                 else payableTl = parsedPayable.Text;
             }
         }
@@ -103,7 +103,7 @@ internal sealed class FinanceOfficialSalesInvoiceImportDocumentsV2
         {
             if (!Same(first, document))
             {
-                issues.Add(new(rowNumber, "sourceDocumentId", FinanceOfficialSalesInvoiceImportCodesV2.DocumentInconsistent));
+                issues.Add(new FinanceOfficialInvoiceImportIssueV1(rowNumber, "sourceDocumentId", FinanceOfficialSalesInvoiceImportCodesV2.DocumentInconsistent));
             }
             return;
         }
@@ -112,12 +112,12 @@ internal sealed class FinanceOfficialSalesInvoiceImportDocumentsV2
         if (byOfficialNo.TryGetValue(document.OfficialNo, out var officialNoHolder)
             && officialNoHolder != document.SourceDocumentId)
         {
-            issues.Add(new(rowNumber, Columns[0], FinanceOfficialSalesInvoiceImportCodesV2.OfficialNoDuplicateInFile));
+            issues.Add(new FinanceOfficialInvoiceImportIssueV1(rowNumber, Columns[0], FinanceOfficialSalesInvoiceImportCodesV2.OfficialNoDuplicateInFile));
             refused = true;
         }
         if (byEttn.TryGetValue(document.Ettn, out var ettnHolder) && ettnHolder != document.SourceDocumentId)
         {
-            issues.Add(new(rowNumber, Columns[1], FinanceOfficialSalesInvoiceImportCodesV2.EttnDuplicateInFile));
+            issues.Add(new FinanceOfficialInvoiceImportIssueV1(rowNumber, Columns[1], FinanceOfficialSalesInvoiceImportCodesV2.EttnDuplicateInFile));
             refused = true;
         }
         if (refused)
@@ -152,12 +152,12 @@ internal sealed class FinanceOfficialSalesInvoiceImportDocumentsV2
     {
         if (value.Length == 0)
         {
-            issues.Add(new(rowNumber, field, FinanceOfficialSalesInvoiceImportCodesV2.FunctionalAmountRequired));
+            issues.Add(new FinanceOfficialInvoiceImportIssueV1(rowNumber, field, FinanceOfficialSalesInvoiceImportCodesV2.FunctionalAmountRequired));
             return string.Empty;
         }
         if (!FinanceExactDecimalText.TryParseNonNegative(value, out var parsed))
         {
-            issues.Add(new(rowNumber, field, FinanceOfficialSalesInvoiceImportCodesV2.FunctionalAmountInvalid));
+            issues.Add(new FinanceOfficialInvoiceImportIssueV1(rowNumber, field, FinanceOfficialSalesInvoiceImportCodesV2.FunctionalAmountInvalid));
             return string.Empty;
         }
         return parsed.Text;

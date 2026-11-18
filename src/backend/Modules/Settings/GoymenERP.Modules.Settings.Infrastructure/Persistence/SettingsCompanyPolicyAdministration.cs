@@ -71,7 +71,7 @@ internal sealed partial class SettingsCompanyPolicyAdministration(
         "Settings.SalesSubcontractTaxDefault",
         "Satış fason vergi varsayılanı sürümü kaydedildi; gerekçe kayıt içeriğindedir");
 
-    private static readonly KeySpec PurchasingSubcontractTaxDefault = new(
+    private static readonly KeySpec PurchasingSubcontractTaxDefault = new KeySpec(
         CompanyPolicyKeysV1.PurchasingSubcontractTaxDefault,
         ErpPermissions.PurchasingOrdersApprove,
         "settings.purchasing-subcontract-tax-default.record.v1",
@@ -79,7 +79,7 @@ internal sealed partial class SettingsCompanyPolicyAdministration(
         "Settings.PurchasingSubcontractTaxDefault",
         "Alış fason vergi varsayılanı sürümü kaydedildi; gerekçe kayıt içeriğindedir");
 
-    private static readonly KeySpec SalesContractDiscountLimit = new(
+    private static readonly KeySpec SalesContractDiscountLimit = new KeySpec(
         CompanyPolicyKeysV1.SalesContractDiscountLimit,
         SettingsSalesContractDiscountLimitPermissionsV1.Manage,
         "settings.sales-contract-discount-limit.record.v1",
@@ -92,7 +92,7 @@ internal sealed partial class SettingsCompanyPolicyAdministration(
         var (companyId, rows) = await ReadHistoryAsync(SalesContractDiscountLimit, cancellationToken);
         var versions = rows.Select(row => new SalesContractDiscountLimitVersionViewV1(Text(row.Version),
             TaxMasterCalculatorV1.Format(ContractRate(row)), row.RecordedBy, row.RecordedAtUtc, row.Reason)).ToArray();
-        return new(companyId, versions.FirstOrDefault()?.LimitPercent, Text(rows.FirstOrDefault()?.Version ?? 0), versions);
+        return new SalesContractDiscountLimitViewV1(companyId, versions.FirstOrDefault()?.LimitPercent, Text(rows.FirstOrDefault()?.Version ?? 0), versions);
     }
 
     public async Task<CompanyPolicyCommandResultV1> RecordSalesContractDiscountLimitAsync(RecordSalesContractDiscountLimitRequestV1 request,
@@ -616,7 +616,7 @@ internal sealed partial class SettingsCompanyPolicyAdministration(
             if (conflict) await transaction.RollbackAsync(CancellationToken.None);
             else { await RequireReplayStillAsync(spec, metadata, cancellationToken); await transaction.CommitAsync(cancellationToken); }
         }
-        if (!conflict) return new(answer, false, metadata.CorrelationId);
+        if (!conflict) return new CompanyPolicyCommandResultV1(answer, false, metadata.CorrelationId);
         database.ChangeTracker.Clear();
         var winner = await FindExecutionAsync(spec, keyHash, cancellationToken);
         if (winner is not null)

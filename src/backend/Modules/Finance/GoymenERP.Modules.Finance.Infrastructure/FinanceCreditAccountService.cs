@@ -342,10 +342,10 @@ public sealed partial class FinanceCreditAccountService(
 
         if (request.CurrencyId is not { } currencyId || currencyId == Guid.Empty || request.EffectiveOn is not { } effectiveOn
             || effectiveOn == default)
-            return new(ReadOutcome.Found, new(context.CompanyId, false, null, [Issue("currencyId", "credit_plan_profile_required")]));
+            return new ReadResult<CreditPlanValidationView>(ReadOutcome.Found, new CreditPlanValidationView(context.CompanyId, false, null, [Issue("currencyId", "credit_plan_profile_required")]));
         var profileRead = await MoneyProfileAsync(context, FinanceAction.ProposeCredit, currencyId, effectiveOn, cancellationToken);
         if (profileRead.Refusal is { } failure)
-            return new(failure.Outcome == CommandOutcome.Denied ? ReadOutcome.Denied : ReadOutcome.Unavailable, null);
+            return new ReadResult<CreditPlanValidationView>(failure.Outcome == CommandOutcome.Denied ? ReadOutcome.Denied : ReadOutcome.Unavailable, null);
         var verdict = FinanceCreditPlanCalculator.Validate(request.PrincipalAmount, request.Installments, profileRead.Profile!.Scale);
         return new ReadResult<CreditPlanValidationView>(ReadOutcome.Found,
             new CreditPlanValidationView(context.CompanyId, verdict.IsValid, verdict.Totals, verdict.Issues,
@@ -449,7 +449,7 @@ public sealed partial class FinanceCreditAccountService(
         var storedProfile = Profile(row);
         if (status == Approved && storedProfile is not null)
         {
-            var source = await SourcesAsync(context, action, new(GroupOf(row.CreditGroup), row.LenderName,
+            var source = await SourcesAsync(context, action, new CreditAccountProposeRequest(GroupOf(row.CreditGroup), row.LenderName,
                 row.ContractReference, row.CurrencyId, row.PrincipalAmountText, row.StartDate, Inputs(lines), storedProfile), cancellationToken);
             if (source.Refusal is not null) { dbContext.ChangeTracker.Clear(); return source.Refusal; }
             if (source.MoneyProfile!.Profile.ProfileId != row.MoneyProfileId

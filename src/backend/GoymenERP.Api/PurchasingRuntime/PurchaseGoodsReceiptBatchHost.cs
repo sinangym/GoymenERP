@@ -170,11 +170,11 @@ internal sealed class PurchaseGoodsReceiptBatchHost(
                 when (exception.Code == InventoryGoodsReceiptCodesV1.LabelAlreadyRegistered)
             {
                 throw new PurchasingServiceException(StatusCodes.Status409Conflict, PurchaseGoodsReceiptBatchCodesV1.LabelCodeConflict,
-                    [new($"labels[{labelIndex}].labelCode", PurchaseGoodsReceiptBatchCodesV1.LabelCodeConflict)]);
+                    [new PurchasingFieldError($"labels[{labelIndex}].labelCode", PurchaseGoodsReceiptBatchCodesV1.LabelCodeConflict)]);
             }
             catch (InventoryGoodsReceiptException exception)
             {
-                throw new PurchasingServiceException(exception.Status, exception.Code, [new($"labels[{labelIndex}]", exception.Code)],
+                throw new PurchasingServiceException(exception.Status, exception.Code, [new PurchasingFieldError($"labels[{labelIndex}]", exception.Code)],
                     innerException: exception, detail: InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, new Dictionary<string, object?>()));
             }
         }

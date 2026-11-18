@@ -337,7 +337,7 @@ public sealed class ReceiptDraftService(
                 positions = held.All().Select(x => new FinanceAllocationPositionV1(x.PartyId, x.CompanyAccountId,
                     x.AvailableAmount, x.AssignmentVersion.ToString(System.Globalization.CultureInfo.InvariantCulture), x.TransferId)).ToArray();
             }
-            catch (InvalidOperationException) { return new(ReadOutcome.Unavailable, null); }
+            catch (InvalidOperationException) { return new ReadResult<SourceDetail>(ReadOutcome.Unavailable, null); }
         }
         // Amount authority is measured after the new ownership read as well; a revoked grant exposes no position amounts.
         amount = await permissions.CheckAsync(context, FinanceAction.ReadAmount, request.SourceId, cancellationToken);

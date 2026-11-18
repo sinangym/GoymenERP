@@ -76,7 +76,7 @@ internal static class FinancePartyBalanceAssignment
     {
         var query = forWrite ? database.PartyBalanceAssignments.AsTracking() : database.PartyBalanceAssignments.AsNoTracking();
         var rows = await query.Where(x => x.Kind == kind && x.SourceId == sourceId).ToListAsync(cancellationToken);
-        return new(originalPartyId, originalAccountId, currencyId, available, rows);
+        return new FinanceAllocationPositions(originalPartyId, originalAccountId, currencyId, available, rows);
     }
 
     public static async Task ClearAsync(FinanceDbContext database, int kind, Guid sourceId, CancellationToken cancellationToken)

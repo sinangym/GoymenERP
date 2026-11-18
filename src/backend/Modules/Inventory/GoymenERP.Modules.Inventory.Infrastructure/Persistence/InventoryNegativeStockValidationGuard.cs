@@ -26,7 +26,7 @@ internal static class InventoryNegativeStockValidationGuard
         var row = await guard.NegativeStockValidationGuards.SingleOrDefaultAsync(
             item => item.CompanyId == companyId, token);
         if (row is null)
-            guard.NegativeStockValidationGuards.Add(new() { CompanyId = companyId, Version = 1 });
+            guard.NegativeStockValidationGuards.Add(new NegativeStockValidationGuardRow() { CompanyId = companyId, Version = 1 });
         else row.Version = checked(row.Version + 1);
         // A real UPDATE/INSERT holds the SQL write lock until the borrowed transaction ends, including RCSI.
         // Version is optimistic concurrency proof: a competing reader never overwrites a newer guard.

@@ -19,7 +19,7 @@ internal sealed class InventoryFirstReceiptExchangeRateReadPort(InventoryDbConte
     internal const int MaximumLineageDepth = 64;
     private const int MaximumLabels = 4096;
     private const int MaximumRows = WeightedFirstReceiptExchangeRateCalculator.MaximumInputs;
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<InventoryFirstReceiptExchangeRateV1> GetAsync(Guid companyId, Guid labelId,
         CancellationToken cancellationToken = default)
@@ -97,7 +97,7 @@ internal sealed class InventoryFirstReceiptExchangeRateReadPort(InventoryDbConte
                         else result = InventoryFirstReceiptExchangeRateV1.RatedExact(companyId, current,
                             snapshot.SourceCurrencyId!.Value, snapshot.TargetCurrencyId!.Value,
                             InventoryExactCostRatioV1.From(InventoryExactCostRatioV1.Resolve(snapshot.Rate, snapshot.RateRatio)),
-                            snapshot.SourceVersion, [new(factual, InventoryExactCostRatioV1.From(ExactCostRatio.Of(1m)), snapshot)]);
+                            snapshot.SourceVersion, [new InventoryFirstReceiptRateSourceV1(factual, InventoryExactCostRatioV1.From(ExactCostRatio.Of(1m)), snapshot)]);
                     }
                 }
                 else

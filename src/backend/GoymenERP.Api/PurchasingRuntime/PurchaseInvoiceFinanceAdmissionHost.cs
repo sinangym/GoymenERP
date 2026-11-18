@@ -39,18 +39,18 @@ public sealed class PurchaseInvoiceFinanceAdmissionAdapter(IFinanceInvoiceOpenIt
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var result = await finance.AdmitAsync(new(request.CompanyId, request.ActorId, request.CorrelationId, request.CausationId),
-            new(request.IdempotencyKey), new(request.AdmissionId, FinanceInvoiceProducerV1.Purchasing, request.InvoiceId,
+        var result = await finance.AdmitAsync(new FinanceContext(request.CompanyId, request.ActorId, request.CorrelationId, request.CausationId),
+            new CommandMetadata(request.IdempotencyKey), new FinanceInvoiceOpenItemAdmissionV1(request.AdmissionId, FinanceInvoiceProducerV1.Purchasing, request.InvoiceId,
                 request.FinalizedVersion, request.SupplierPartyId, request.CompanyAccountId, request.CurrencyId, request.OfficialRate,
                 request.Installments.Select(item => new FinanceInvoiceInstallmentV1(item.OpenItemId, item.InstallmentId,
                     item.Sequence, item.DueOn, item.Amount, item.FunctionalAmount)).ToArray()), cancellationToken);
         return result.Outcome switch
         {
-            CommandOutcome.Succeeded => new(PurchaseInvoiceFinanceAdmissionOutcomeV1.Admitted, "admitted"),
-            CommandOutcome.IdempotencyConflict => new(PurchaseInvoiceFinanceAdmissionOutcomeV1.KeyConflict, "key_conflict"),
-            CommandOutcome.VersionConflict => new(PurchaseInvoiceFinanceAdmissionOutcomeV1.Retry, "version_conflict"),
-            CommandOutcome.Denied => new(PurchaseInvoiceFinanceAdmissionOutcomeV1.Refused, "denied"),
-            CommandOutcome.ValidationFailed => new(PurchaseInvoiceFinanceAdmissionOutcomeV1.Refused,
+            CommandOutcome.Succeeded => new PurchaseInvoiceFinanceAdmissionAnswerV1(PurchaseInvoiceFinanceAdmissionOutcomeV1.Admitted, "admitted"),
+            CommandOutcome.IdempotencyConflict => new PurchaseInvoiceFinanceAdmissionAnswerV1(PurchaseInvoiceFinanceAdmissionOutcomeV1.KeyConflict, "key_conflict"),
+            CommandOutcome.VersionConflict => new PurchaseInvoiceFinanceAdmissionAnswerV1(PurchaseInvoiceFinanceAdmissionOutcomeV1.Retry, "version_conflict"),
+            CommandOutcome.Denied => new PurchaseInvoiceFinanceAdmissionAnswerV1(PurchaseInvoiceFinanceAdmissionOutcomeV1.Refused, "denied"),
+            CommandOutcome.ValidationFailed => new PurchaseInvoiceFinanceAdmissionAnswerV1(PurchaseInvoiceFinanceAdmissionOutcomeV1.Refused,
                 result.Issues.FirstOrDefault()?.Code ?? "refused"),
             _ => PurchaseInvoiceFinanceAdmissionAnswerV1.Unavailable,
         };

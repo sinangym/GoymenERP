@@ -916,7 +916,7 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
             ManufacturingInventoryReturnOutputHostCodes.IncompleteRealization);
 
     private static ManufacturingInventoryRealizationPortException PortRefusal(int status, string code) =>
-        new(status switch
+        new ManufacturingInventoryRealizationPortException(status switch
         {
             StatusCodes.Status400BadRequest => ManufacturingApiStatus.Invalid,
             StatusCodes.Status404NotFound => ManufacturingApiStatus.NotFound,

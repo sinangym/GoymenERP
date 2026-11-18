@@ -22,7 +22,7 @@ public sealed partial class LogisticsTransferOutgoingDocumentStore(
     : ILogisticsTransferOutgoingDocumentStoreV2, ILogisticsTransferOutgoingDocumentProofSourceV1, ILogisticsTransferOutgoingDocumentReaderV1
 {
     private const string EntityType = "Logistics.TransferOutgoingDocument";
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public Task<TransferOutgoingDocumentStoreResultV1> StoreDraftAsync(LogisticsWriteEnvelope envelope,
         string requestHash, TransferOutgoingDocument document, Func<CancellationToken, Task> beforeCommit,
@@ -61,7 +61,7 @@ public sealed partial class LogisticsTransferOutgoingDocumentStore(
                 var restored = RestoreResult(replay.ResultJson);
                 await beforeCommit(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
-                return new(restored, LogisticsWriteOutcome.Replayed, replay.CorrelationId);
+                return new TransferOutgoingDocumentStoreResultV1(restored, LogisticsWriteOutcome.Replayed, replay.CorrelationId);
             }
 
             if (await dbContext.TransferOutgoingDocuments.AsNoTracking()
@@ -94,7 +94,7 @@ public sealed partial class LogisticsTransferOutgoingDocumentStore(
             await SaveAsync(cancellationToken);
             await beforeCommit(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return new(document, LogisticsWriteOutcome.Recorded, envelope.CorrelationId);
+            return new TransferOutgoingDocumentStoreResultV1(document, LogisticsWriteOutcome.Recorded, envelope.CorrelationId);
         }
         catch (Exception exception)
         {
@@ -129,7 +129,7 @@ public sealed partial class LogisticsTransferOutgoingDocumentStore(
                 var restored = RestoreResult(replay.ResultJson);
                 await beforeCommit(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
-                return new(restored, LogisticsWriteOutcome.Replayed, replay.CorrelationId);
+                return new TransferOutgoingDocumentStoreResultV1(restored, LogisticsWriteOutcome.Replayed, replay.CorrelationId);
             }
 
             var row = await dbContext.TransferOutgoingDocuments.SingleOrDefaultAsync(
@@ -157,7 +157,7 @@ public sealed partial class LogisticsTransferOutgoingDocumentStore(
             await beforeCommit(cancellationToken);
             await SaveAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return new(before, LogisticsWriteOutcome.Recorded, envelope.CorrelationId);
+            return new TransferOutgoingDocumentStoreResultV1(before, LogisticsWriteOutcome.Recorded, envelope.CorrelationId);
         }
         catch (Exception exception)
         {
@@ -189,7 +189,7 @@ public sealed partial class LogisticsTransferOutgoingDocumentStore(
             TransferOutgoingDocumentStatus.Cancelled => LogisticsTransferOutgoingDocumentProofStateV1.Cancelled,
             _ => throw new InvalidOperationException("Stored transfer outgoing-document state is invalid."),
         };
-        return new(row.CompanyId, row.TransferId, row.DocumentId, row.Version, lines, state);
+        return new LogisticsTransferOutgoingDocumentOwnerSnapshotV1(row.CompanyId, row.TransferId, row.DocumentId, row.Version, lines, state);
     }
 
     private async Task<TransferOutgoingDocumentAttemptRow?> FindAttemptAsync(string command, string keyHash,
@@ -197,7 +197,7 @@ public sealed partial class LogisticsTransferOutgoingDocumentStore(
         .SingleOrDefaultAsync(item => item.CommandName == command && item.IdempotencyKeyHash == keyHash,
             cancellationToken);
 
-    private static TransferOutgoingDocumentRow ToRow(TransferOutgoingDocument item) => new()
+    private static TransferOutgoingDocumentRow ToRow(TransferOutgoingDocument item) => new TransferOutgoingDocumentRow()
     {
         CompanyId = item.CompanyId,
         DocumentId = item.DocumentId,
@@ -233,7 +233,7 @@ public sealed partial class LogisticsTransferOutgoingDocumentStore(
         row.CancellationReason);
 
     private TransferOutgoingDocumentAttemptRow Attempt(Guid companyId, string command, string keyHash,
-        string requestHash, LogisticsWriteEnvelope envelope, TransferOutgoingDocument item) => new()
+        string requestHash, LogisticsWriteEnvelope envelope, TransferOutgoingDocument item) => new TransferOutgoingDocumentAttemptRow()
     {
         CompanyId = companyId,
         CommandName = command,
@@ -349,7 +349,7 @@ public sealed partial class LogisticsTransferOutgoingDocumentStore(
     }
 
     private static LogisticsStoreException Refused(string code, string message, Exception? inner = null) =>
-        new(code, message, inner);
+        new LogisticsStoreException(code, message, inner);
 
     private sealed record ResultSnapshot(
         Guid CompanyId,
@@ -367,7 +367,7 @@ public sealed partial class LogisticsTransferOutgoingDocumentStore(
         DateTimeOffset? CancelledAtUtc,
         string? CancellationReason)
     {
-        public static ResultSnapshot From(TransferOutgoingDocument item) => new(
+        public static ResultSnapshot From(TransferOutgoingDocument item) => new ResultSnapshot(
             item.CompanyId, item.DocumentId, item.TransferId, item.OrderedTransferLineIds.ToArray(),
             item.EDispatchNumber, item.Status, item.Version, item.CreatedBy, item.CreatedAtUtc,
             item.EffectiveBy, item.EffectiveAtUtc, item.CancelledBy, item.CancelledAtUtc,

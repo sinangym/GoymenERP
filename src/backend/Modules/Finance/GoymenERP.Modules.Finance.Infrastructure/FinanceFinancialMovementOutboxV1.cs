@@ -11,7 +11,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// </summary>
 internal static class FinanceFinancialMovementOutboxV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     internal static void Expense(FinanceDbContext database, FinanceContext context, ExpensePaymentView source)
     {

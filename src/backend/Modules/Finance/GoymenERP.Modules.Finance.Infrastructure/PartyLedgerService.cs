@@ -47,7 +47,7 @@ public sealed partial class PartyLedgerService(
     /// The established complete-summary cap still refuses excess rather than truncating; no prior carry is added.</summary>
     internal Task<PartyLedgerResult> ReadBoundaryAuthorizedAsync(FinanceContext context, Guid partyId,
         Guid accountId, DateOnly through, CancellationToken cancellationToken) => ReadCoreAsync(context,
-            new(partyId, accountId, DateOnly.MinValue, through), PartyBalanceRules.MaximumFacts,
+            new PartyLedgerRequest(partyId, accountId, DateOnly.MinValue, through), PartyBalanceRules.MaximumFacts,
             includePeriodCarry: false, cancellationToken);
 
     private async Task<PartyLedgerResult> ReadCoreAsync(FinanceContext context, PartyLedgerRequest request,
@@ -335,13 +335,13 @@ public sealed partial class PartyLedgerService(
                 .ToListAsync(cancellationToken)).ToHashSet();
 
         var transfers = await FinancePartyBalanceTransferLedger.ReadAsync(dbContext, partyId, accountId, null, null, cancellationToken);
-        if (transfers is null) return new(PartyBalanceOutcome.Unavailable, null);
+        if (transfers is null) return new PartyBalanceResult(PartyBalanceOutcome.Unavailable, null);
         var currentOpenItems = await FinancePartyBalanceAssignment.OpenItemsOf(dbContext, partyId, accountId).AsNoTracking()
             .Where(row => row.Status == FinanceOpenItemStatuses.Open).OrderBy(row => row.Id).Take(take)
             .ToListAsync(cancellationToken);
         IReadOnlyList<FinanceOpenItemPosition> currentPositions;
         try { currentPositions = await FinancePartyBalanceAssignment.OpenPositionsAsync(dbContext, currentOpenItems, cancellationToken); }
-        catch (InvalidOperationException) { return new(PartyBalanceOutcome.Unavailable, null); }
+        catch (InvalidOperationException) { return new PartyBalanceResult(PartyBalanceOutcome.Unavailable, null); }
         tooMany |= currentOpenItems.Count > PartyBalanceRules.MaximumFacts || transfers.Count > PartyBalanceRules.MaximumFacts;
 
         var amount = await permissions.CheckAsync(context, FinanceAction.ReadPartyLedgerAmount, null, cancellationToken);
@@ -419,11 +419,11 @@ public sealed partial class PartyLedgerService(
             var row = position.Source;
             if (row.Direction is not (FinanceOpenItemDirectionCodes.Receivable or FinanceOpenItemDirectionCodes.Payable)
                 || !FinanceExactDecimalText.TryParseNonNegative(position.Balance.AvailableAmount, out var outstanding))
-                return new(PartyBalanceOutcome.Unavailable, null);
+                return new PartyBalanceResult(PartyBalanceOutcome.Unavailable, null);
             var sums = row.Direction == FinanceOpenItemDirectionCodes.Receivable ? receivable : payable;
             sums[row.CurrencyId] = sums.TryGetValue(row.CurrencyId, out var sum) ? sum.Add(outstanding) : outstanding;
         }
-        if (facts.Count > PartyBalanceRules.MaximumFacts) return new(PartyBalanceOutcome.TooManyFacts, null);
+        if (facts.Count > PartyBalanceRules.MaximumFacts) return new PartyBalanceResult(PartyBalanceOutcome.TooManyFacts, null);
 
         IReadOnlyList<PartyLedgerCurrency> ledger;
         try

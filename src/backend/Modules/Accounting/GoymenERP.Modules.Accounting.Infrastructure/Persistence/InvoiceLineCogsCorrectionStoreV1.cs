@@ -20,7 +20,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
     TimeProvider clock, IPostedManufacturingShipmentCostReaderV1? postedManufacturing = null,
     IPostedPurchaseShipmentCostReaderV1? postedPurchasing = null) : IInvoiceLineCogsCorrectionStoreV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     private const string Entity = "Accounting.InvoiceLineCogsCorrection";
 
     public async Task<InvoiceLineCogsOptionsV1> OptionsAsync(CancellationToken cancellationToken = default)
@@ -32,7 +32,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
         var periods = await db.Periods.AsNoTracking().Where(x => x.Status == (int)AccountingPeriodStatus.Open)
             .OrderBy(x => x.StartsOn).Select(x => new InvoiceLineCogsPeriodOptionV1(x.Id, x.StartsOn, x.EndsOn)).ToListAsync(cancellationToken);
         RequireCompany(captured);
-        return new(captured, plan.Package.Mirror.Rows.OrderBy(x => x.Code, StringComparer.Ordinal)
+        return new InvoiceLineCogsOptionsV1(captured, plan.Package.Mirror.Rows.OrderBy(x => x.Code, StringComparer.Ordinal)
             .Select(x => new InvoiceLineCogsAccountV1(x.Account.AccountId, x.Code, x.Name)).ToArray(), periods);
     }
 
@@ -48,7 +48,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
             await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
             started = true;
             await freshFence(cancellationToken);
-            db.Commands.Add(new() { CompanyId = captured, CommandName = record.CommandName,
+            db.Commands.Add(new AccountingCommandRow() { CompanyId = captured, CommandName = record.CommandName,
                 IdempotencyKeyHash = record.IdempotencyKeyHash, ActorId = record.ActorId, PayloadHash = record.RequestHash,
                 ResultJson = record.ResultJson, CorrelationId = record.OriginalCorrelationId, RecordedAtUtc = clock.GetUtcNow() });
             await db.SaveChangesAsync(cancellationToken);
@@ -84,7 +84,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
             state = evidence is null ? "AttributedPostedCogs" : "MixedPostedCogs";
         }
         RequireCompany(companyId);
-        return new(companyId, source.InvoiceId, source.InvoiceLineId, FinalizedInvoiceLineReferenceV1.From(source), history.LastOrDefault()?.Version ?? 0,
+        return new InvoiceLineCogsHistoryV1(companyId, source.InvoiceId, source.InvoiceLineId, FinalizedInvoiceLineReferenceV1.From(source), history.LastOrDefault()?.Version ?? 0,
             history.LastOrDefault(), history, proposals.Select(x => approved.TryGetValue(x.Id, out var decision)
                 ? Decode<InvoiceLineCogsCorrectionViewV1>(decision.ViewJson) : Decode<InvoiceLineCogsCorrectionViewV1>(x.ViewJson)).ToArray(), state, evidence,
                 AttributedEvidence: attributed, PurchaseAttributedEvidence: purchased);
@@ -123,7 +123,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
                 plan, request.PeriodId, request.TransactionDate, request.AccountingDate, request.ValueDate,
                 actorId, clock.GetUtcNow(), null, null, request.Reason, evidence, null, null, attributed,
                 PurchaseAttributedEvidence: purchased);
-            db.InvoiceLineCogsProposals.Add(new() { CompanyId = source.CompanyId, Id = request.ProposalId,
+            db.InvoiceLineCogsProposals.Add(new InvoiceLineCogsProposalRow() { CompanyId = source.CompanyId, Id = request.ProposalId,
                 InvoiceId = source.InvoiceId, InvoiceLineId = source.InvoiceLineId, ExpectedLineVersion = request.ExpectedLineVersion,
                 PreparedBy = actorId, PreparedAtUtc = view.PreparedAtUtc, SourceJson = Encode(source), ViewJson = Encode(view) });
             Enqueue(source, metadata, view, "prepared", current?.Version ?? 0, current);
@@ -190,7 +190,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
             var revision = new InvoiceLineCogsRevisionViewV1(checked(row.ExpectedLineVersion + 1), proposalId,
                 prepared.Classification, prepared.AccountPlan, row.PreparedBy, actorId, now, prepared.PeriodId,
                 prepared.TransactionDate, prepared.AccountingDate, reverseId, replacementId, prepared.Reason, attributedCorrections);
-            db.InvoiceLineCogsRevisions.Add(new() { CompanyId = source.CompanyId, InvoiceId = source.InvoiceId,
+            db.InvoiceLineCogsRevisions.Add(new InvoiceLineCogsRevisionRow() { CompanyId = source.CompanyId, InvoiceId = source.InvoiceId,
                 InvoiceLineId = source.InvoiceLineId, Version = revision.Version, ProposalId = proposalId,
                 PreparedBy = row.PreparedBy, ApprovedBy = actorId, ApprovedAtUtc = now,
                 ViewJson = Encode(approved), RevisionJson = Encode(revision) });
@@ -226,7 +226,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
             var result = await operation();
             await fence(cancellationToken);
             RequireCompany(companyId);
-            if (metadata.Completion?.Invoke(result) is { } completion) db.Commands.Add(new()
+            if (metadata.Completion?.Invoke(result) is { } completion) db.Commands.Add(new AccountingCommandRow()
             {
                 CompanyId = companyId, CommandName = completion.CommandName, IdempotencyKeyHash = completion.IdempotencyKeyHash,
                 ActorId = completion.ActorId, PayloadHash = completion.RequestHash, ResultJson = completion.ResultJson,
@@ -295,7 +295,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
         }
         if (rows.Any(x => x.SourceId == source.InvoiceId && x.PostingPurpose == candidate.PostingPurpose && x.Id != candidate.Id
             && x.Kind != (int)JournalKind.Original && !ownCorrections.Contains(x.Id))) return ("Unreadable", null);
-        return ("PostedCogs", new(source.CompanyId, source.InvoiceId, source.InvoiceLineId, source.FinalizedVersion,
+        return ("PostedCogs", new InvoiceLineCogsPostedEvidenceV1(source.CompanyId, source.InvoiceId, source.InvoiceLineId, source.FinalizedVersion,
             candidate.Id, 1, 2, lines[0].AccountId, lines[1].AccountId, candidate.CurrencyId,
             lines[0].Debit.ToString("0.############################", CultureInfo.InvariantCulture), source.Fingerprint));
     }
@@ -317,10 +317,10 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
         RequireCompany(captured);
         if (plan is null || plan.CompanyId != captured || plan.Status != ApprovedAccountingSourceCatalogStatusV1.Active
             || plan.Package.Mirror.CompanyId != captured) throw Refuse(InvoiceLineCogsCorrectionCodesV1.AccountPlanUnavailable);
-        var account = plan.Package.Mirror.Lookup(new(captured, accountId))
+        var account = plan.Package.Mirror.Lookup(new AccountRef(captured, accountId))
             ?? throw Refuse(InvoiceLineCogsCorrectionCodesV1.AccountNotInActivePlan);
-        return new(plan.PackageId, plan.Version, plan.CatalogVersion, plan.AccountPlanSourceVersion, plan.AccountsSourceSha256,
-            new(account.Account.AccountId, account.Code, account.Name));
+        return new InvoiceLineCogsAccountPlanV1(plan.PackageId, plan.Version, plan.CatalogVersion, plan.AccountPlanSourceVersion, plan.AccountsSourceSha256,
+            new InvoiceLineCogsAccountV1(account.Account.AccountId, account.Code, account.Name));
     }
 
     private async Task<PeriodRow> Period(Guid id, DateOnly date, CancellationToken token)
@@ -336,13 +336,13 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
     {
         var row = await db.Journals.AsNoTracking().SingleAsync(x => x.Id == id, token);
         var lines = await db.JournalLines.AsNoTracking().Where(x => x.JournalId == id).OrderBy(x => x.LineNumber).ToListAsync(token);
-        return GoymenERP.Modules.Accounting.Domain.Journals.Journal.Restore(row.Id, (JournalKind)row.Kind, new(row.CompanyId, row.SourceId, row.PostingPurpose),
-            row.PostingRuleVersion, row.CurrencyId, new(row.TransactionDate, row.AccountingDate, row.ValueDate, row.RecordedAtUtc),
-            lines.Select(x => new JournalLine(new(x.CompanyId, x.AccountId), x.Debit, x.Credit)), row.LinkedJournalId);
+        return GoymenERP.Modules.Accounting.Domain.Journals.Journal.Restore(row.Id, (JournalKind)row.Kind, new SourceReference(row.CompanyId, row.SourceId, row.PostingPurpose),
+            row.PostingRuleVersion, row.CurrencyId, new PostingDates(row.TransactionDate, row.AccountingDate, row.ValueDate, row.RecordedAtUtc),
+            lines.Select(x => new JournalLine(new AccountRef(x.CompanyId, x.AccountId), x.Debit, x.Credit)), row.LinkedJournalId);
     }
     private void Add(Journal journal, Guid periodId, Guid correctionId, AccountingCommandMetadata metadata)
     {
-        db.Journals.Add(new() { CompanyId = journal.CompanyId, Id = journal.Id, Kind = (int)journal.Kind,
+        db.Journals.Add(new JournalRow() { CompanyId = journal.CompanyId, Id = journal.Id, Kind = (int)journal.Kind,
             SourceId = journal.Source.SourceId, PostingPurpose = journal.Source.PostingPurpose, PostingRuleVersion = journal.PostingRuleVersion,
             CurrencyId = journal.CurrencyId, TransactionDate = journal.Dates.TransactionDate, AccountingDate = journal.Dates.AccountingDate,
             ValueDate = journal.Dates.ValueDate, RecordedAtUtc = journal.Dates.RecordedAtUtc, LinkedJournalId = journal.LinkedJournalId,
@@ -384,5 +384,5 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
     private void RequireCompany(Guid id) { if (Company() != id) throw Refuse(AccountingStoreCodes.CompanyContextMismatch); }
     private static string Encode<T>(T value) => JsonSerializer.Serialize(value, Json);
     private static T Decode<T>(string value) => JsonSerializer.Deserialize<T>(value, Json) ?? throw Refuse(InvoiceLineCogsCorrectionCodesV1.SourceUnavailable);
-    private static AccountingStoreException Refuse(string code) => new(code, "Fatura satırı sınıfı ve SMM hesabı düzeltmesi tamamlanamadı.");
+    private static AccountingStoreException Refuse(string code) => new AccountingStoreException(code, "Fatura satırı sınıfı ve SMM hesabı düzeltmesi tamamlanamadı.");
 }

@@ -13,7 +13,7 @@ internal sealed class SalesLineResponsibleReadPort(SalesDbContext database, ICom
         cancellationToken.ThrowIfCancellationRequested();
         var companyId = company.IsResolved ? company.CompanyId : Guid.Empty;
         SalesLineResponsibleAnswerV1 Answer(SalesLineResponsibleOutcomeV1 outcome, Guid? user = null, long? version = null) =>
-            new(outcome, companyId, orderId, lineId, user, version);
+            new SalesLineResponsibleAnswerV1(outcome, companyId, orderId, lineId, user, version);
         if (companyId == Guid.Empty) return Answer(SalesLineResponsibleOutcomeV1.Unavailable);
         if (orderId == Guid.Empty || lineId == Guid.Empty) return Answer(SalesLineResponsibleOutcomeV1.NotFound);
         try

@@ -24,8 +24,8 @@ internal sealed class SettingsSubcontractTaxCatalogV1(SettingsDbContext database
                 ?? throw new SettingsPrerequisiteException(CompanyPolicyProblemCodesV1.ProfileInvalid);
             var vat = ApprovedTaxRateListCatalog.InForce(versions, TaxRateListKindsV1.VatRate, on);
             var withholding = ApprovedTaxRateListCatalog.InForce(versions, TaxRateListKindsV1.WithholdingRatio, on);
-            return new(companyId, side, on, (row?.Version ?? 0).ToString(CultureInfo.InvariantCulture), value is null ? null :
-                new(value.VatApplies, value.VatPercent is { } v ? TaxMasterCalculatorV1.Format(v) : null, value.ExemptionCode,
+            return new SubcontractTaxOptionsV1(companyId, side, on, (row?.Version ?? 0).ToString(CultureInfo.InvariantCulture), value is null ? null :
+                new SubcontractTaxDefaultValueViewV1(value.VatApplies, value.VatPercent is { } v ? TaxMasterCalculatorV1.Format(v) : null, value.ExemptionCode,
                     value.WithholdingApplies, value.WithholdingPercent is { } w ? TaxMasterCalculatorV1.Format(w) : null, value.WithholdingCode),
                 Rates(vat), Rates(withholding), TaxMasterCalculatorV1.ListInForce(data, TaxCodeListKindsV1.Exemption, on)?.Entries ?? [],
                 TaxMasterCalculatorV1.ListInForce(data, TaxCodeListKindsV1.Withholding, on)?.Entries ?? [],

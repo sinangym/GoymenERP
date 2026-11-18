@@ -30,7 +30,7 @@ internal sealed class SettingsInventoryCostProfileReaderV1(SettingsDbContext dat
         var row = entry.Value;
         if (!row.IsActive) throw new SettingsPrerequisiteException("settings_profile_invalid");
         Fence();
-        return new(companyId, currency, row.CurrencyCode, Operation, new(row.ProfileId, row.Version), row.Scale,
+        return new MoneyProfileV1(companyId, currency, row.CurrencyCode, Operation, new ProfileVersionV1(row.ProfileId, row.Version), row.Scale,
             row.IsActive, entry.EffectiveFrom, entry.EffectiveThrough, row.UnitPriceScale);
     }
 }

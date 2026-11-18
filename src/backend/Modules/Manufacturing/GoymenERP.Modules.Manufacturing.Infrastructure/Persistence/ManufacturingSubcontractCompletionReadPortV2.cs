@@ -19,17 +19,17 @@ public sealed class ManufacturingSubcontractCompletionReadPortV2 : IManufacturin
     {
         this.db = db; this.company = company;
         var store = new ManufacturingStore(db, company, new ReadOnlyAuditCollector(), time);
-        reader = new(store, store, new ManufacturingLabelLineageReadPort(db, company), company);
+        reader = new ManufacturingSubcontractCompletionReaderV2(store, store, new ManufacturingLabelLineageReadPort(db, company), company);
     }
 
     public Task<ManufacturingSubcontractCompletionReadV2> GetAsync(Guid companyId, Guid orderId, CancellationToken token = default) =>
         ConsistentAsync(companyId, () => reader.GetAsync(companyId, orderId, token),
-            () => new(ManufacturingSubcontractCompletionOutcomeV1.Unavailable, companyId, orderId, null), token);
+            () => new ManufacturingSubcontractCompletionReadV2(ManufacturingSubcontractCompletionOutcomeV1.Unavailable, companyId, orderId, null), token);
 
     public Task<ManufacturingSubcontractCompletionPageV2> ReadBySalesLineAsync(Guid companyId, Guid salesOrderId,
         Guid salesOrderLineId, int pageIndex, CancellationToken token = default)
     {
-        ManufacturingSubcontractCompletionPageV2 Closed() => new(ManufacturingSubcontractCompletionOutcomeV1.Unavailable,
+        ManufacturingSubcontractCompletionPageV2 Closed() => new ManufacturingSubcontractCompletionPageV2(ManufacturingSubcontractCompletionOutcomeV1.Unavailable,
             companyId, salesOrderId, salesOrderLineId, pageIndex, false, []);
         if (salesOrderId == Guid.Empty || salesOrderLineId == Guid.Empty || pageIndex < 0 || pageIndex > int.MaxValue / PageSize)
             return Task.FromResult(Closed());

@@ -28,7 +28,7 @@ public sealed class SettingsPurchaseInvoiceVariancePolicy(
     private const string Permission = SettingsPurchaseInvoiceVariancePolicyPermissionsV1.Manage;
     private const string Command = "settings.purchase-invoice-variance-policy.publish.v1";
     private const string EntityType = "Settings.PurchaseInvoiceVariancePolicy";
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<SettingsPurchaseInvoiceVariancePolicyV1> GetAsync(Guid companyId, CancellationToken cancellationToken = default)
     {
@@ -38,7 +38,7 @@ public sealed class SettingsPurchaseInvoiceVariancePolicy(
         RequireSameMember(companyId, actor, cancellationToken);
         if (row is null) throw new SettingsPrerequisiteException(PurchaseInvoiceVariancePolicyCodesV1.NotPublished);
         Validate(row, companyId);
-        return new(companyId, row.PolicyId, row.Version, row.AmountTolerance, row.RateTolerance);
+        return new SettingsPurchaseInvoiceVariancePolicyV1(companyId, row.PolicyId, row.Version, row.AmountTolerance, row.RateTolerance);
     }
 
     public async Task<PurchaseInvoiceVariancePolicyViewV1> ReadAsync(CancellationToken cancellationToken = default)
@@ -51,7 +51,7 @@ public sealed class SettingsPurchaseInvoiceVariancePolicy(
         await RequirePermissionAsync(companyId, actor, fresh: true, cancellationToken);
         foreach (var row in rows) Validate(row, companyId);
         var versions = rows.Select(View).ToArray();
-        return new(companyId, versions.FirstOrDefault()?.Version ?? "0", versions.FirstOrDefault(), versions);
+        return new PurchaseInvoiceVariancePolicyViewV1(companyId, versions.FirstOrDefault()?.Version ?? "0", versions.FirstOrDefault(), versions);
     }
 
     public async Task<CompanyPolicyCommandResultV1> PublishAsync(PublishPurchaseInvoiceVariancePolicyRequestV1 request,
@@ -101,7 +101,7 @@ public sealed class SettingsPurchaseInvoiceVariancePolicy(
             if (expected != (latest?.Version ?? 0)) answer = Conflict();
             else
             {
-                answer = new(204, null, "Yayımlandı.", "Fatura fark toleransı yayımlandı.");
+                answer = new CompanyPolicyCommandAnswerV1(204, null, "Yayımlandı.", "Fatura fark toleransı yayımlandı.");
                 if (latest is null || latest.AmountTolerance != amount || latest.RateTolerance != rate)
                 {
                     var row = new PurchaseInvoiceVariancePolicyRow { CompanyId = companyId,
@@ -194,7 +194,7 @@ public sealed class SettingsPurchaseInvoiceVariancePolicy(
     private static CompanyPolicyCommandResultV1 Replay(CommandExecution existing, string requestHash, SettingsCommandMetadataV1 metadata)
     {
         if (existing.ActorId != metadata.ActorId || existing.RequestHash != requestHash)
-            return Result(new(409, PurchaseInvoiceVariancePolicyCodesV1.IdempotencyConflict, "İşlem anahtarı kullanılmış.",
+            return Result(new CompanyPolicyCommandAnswerV1(409, PurchaseInvoiceVariancePolicyCodesV1.IdempotencyConflict, "İşlem anahtarı kullanılmış.",
                 "Bu Idempotency-Key başka bir istekle kullanıldı."), metadata);
         var answer = JsonSerializer.Deserialize<CompanyPolicyCommandAnswerV1>(existing.ResponseJson, Json);
         if (answer is null || answer.StatusCode != existing.HttpStatusCode
@@ -202,7 +202,7 @@ public sealed class SettingsPurchaseInvoiceVariancePolicy(
             || !(answer.StatusCode == 204 && answer.Code is null
                  || answer.StatusCode == 409 && answer.Code == PurchaseInvoiceVariancePolicyCodesV1.VersionConflict))
             throw new SettingsPrerequisiteException(PurchaseInvoiceVariancePolicyCodesV1.ProfileInvalid);
-        return new(answer, true, existing.OriginalCorrelationId);
+        return new CompanyPolicyCommandResultV1(answer, true, existing.OriginalCorrelationId);
     }
 
     private static void Validate(PurchaseInvoiceVariancePolicyRow row, Guid companyId)
@@ -217,7 +217,7 @@ public sealed class SettingsPurchaseInvoiceVariancePolicy(
     }
 
     private static PurchaseInvoiceVariancePolicyVersionViewV1 View(PurchaseInvoiceVariancePolicyRow row) =>
-        new(row.PolicyId, PurchaseInvoiceVariancePolicyRulesV1.Text(row.Version),
+        new PurchaseInvoiceVariancePolicyVersionViewV1(row.PolicyId, PurchaseInvoiceVariancePolicyRulesV1.Text(row.Version),
             PurchaseInvoiceVariancePolicyRulesV1.Text(row.AmountTolerance), PurchaseInvoiceVariancePolicyRulesV1.Text(row.RateTolerance),
             row.PublishedBy, row.PublishedAtUtc, row.Reason);
 
@@ -229,9 +229,9 @@ public sealed class SettingsPurchaseInvoiceVariancePolicy(
     }
 
     private static CompanyPolicyCommandResultV1 Result(CompanyPolicyCommandAnswerV1 answer, SettingsCommandMetadataV1 metadata) =>
-        new(answer, false, metadata.CorrelationId);
+        new CompanyPolicyCommandResultV1(answer, false, metadata.CorrelationId);
     private static CompanyPolicyCommandAnswerV1 Invalid(string detail) =>
-        new(400, PurchaseInvoiceVariancePolicyCodesV1.RequestInvalid, "İstek geçersiz.", detail);
-    private static CompanyPolicyCommandAnswerV1 Conflict() => new(409, PurchaseInvoiceVariancePolicyCodesV1.VersionConflict,
+        new CompanyPolicyCommandAnswerV1(400, PurchaseInvoiceVariancePolicyCodesV1.RequestInvalid, "İstek geçersiz.", detail);
+    private static CompanyPolicyCommandAnswerV1 Conflict() => new CompanyPolicyCommandAnswerV1(409, PurchaseInvoiceVariancePolicyCodesV1.VersionConflict,
         "Kayıt değişmiş.", "Güncel tolerans sürümünü okuyup yeniden deneyin.");
 }

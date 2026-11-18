@@ -571,7 +571,7 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1(
         }
         if (invoiceId == Guid.Empty)
         {
-            return new(ReadOutcome.NotFound, null);
+            return new ReadResult<FinanceOfficialSalesInvoiceViewV1>(ReadOutcome.NotFound, null);
         }
 
         FinanceOfficialSalesInvoiceRow? row;
@@ -594,8 +594,8 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1(
         {
             return afterRead;
         }
-        return differences is null ? new(ReadOutcome.Unavailable, null)
-            : row is null ? new(ReadOutcome.NotFound, null) : new(ReadOutcome.Found, View(row) with { SourceDifferences = differences });
+        return differences is null ? new ReadResult<FinanceOfficialSalesInvoiceViewV1>(ReadOutcome.Unavailable, null)
+            : row is null ? new ReadResult<FinanceOfficialSalesInvoiceViewV1>(ReadOutcome.NotFound, null) : new ReadResult<FinanceOfficialSalesInvoiceViewV1>(ReadOutcome.Found, View(row) with { SourceDifferences = differences });
     }
 
     public async Task<ReadResult<FinanceOfficialSalesInvoicePageV1>> ListAsync(
@@ -613,7 +613,7 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1(
         }
         if (!TryCursor(context.CompanyId, pendingOnly, cursor, out var offset))
         {
-            return new(ReadOutcome.NotFound, null);
+            return new ReadResult<FinanceOfficialSalesInvoicePageV1>(ReadOutcome.NotFound, null);
         }
 
         List<FinanceOfficialSalesInvoiceRow> rows;
@@ -646,7 +646,7 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1(
         }
 
         var hasMore = rows.Count > PageSize;
-        return new(ReadOutcome.Found, new FinanceOfficialSalesInvoicePageV1(
+        return new ReadResult<FinanceOfficialSalesInvoicePageV1>(ReadOutcome.Found, new FinanceOfficialSalesInvoicePageV1(
             context.CompanyId,
             [.. rows.Take(PageSize).Select(View)],
             hasMore ? EncodeCursor(context.CompanyId, pendingOnly, checked(offset + PageSize)) : null));
@@ -972,21 +972,21 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1(
     private async Task<ReadResult<T>?> ReadFenceAsync<T>(
         FinanceContext context, Guid invoiceId, CancellationToken cancellationToken) where T : class
     {
-        if (!SameContext(context)) return new(ReadOutcome.Denied, null);
+        if (!SameContext(context)) return new ReadResult<T>(ReadOutcome.Denied, null);
         var decision = await authority.CheckAsync(context, FinanceOfficialSalesInvoiceAuthorityActionV1.Read,
             invoiceId, cancellationToken);
-        if (!SameContext(context)) return new(ReadOutcome.Denied, null);
+        if (!SameContext(context)) return new ReadResult<T>(ReadOutcome.Denied, null);
         return decision switch
         {
             PermissionDecision.Allowed => null,
-            PermissionDecision.Unavailable => new(ReadOutcome.Unavailable, null),
-            _ => new(ReadOutcome.Denied, null),
+            PermissionDecision.Unavailable => new ReadResult<T>(ReadOutcome.Unavailable, null),
+            _ => new ReadResult<T>(ReadOutcome.Denied, null),
         };
     }
 
     private async Task<ReadResult<T>> FailureAfterReadAsync<T>(
         FinanceContext context, Guid invoiceId, CancellationToken cancellationToken) where T : class =>
-        await ReadFenceAsync<T>(context, invoiceId, cancellationToken) ?? new(ReadOutcome.Unavailable, null);
+        await ReadFenceAsync<T>(context, invoiceId, cancellationToken) ?? new ReadResult<T>(ReadOutcome.Unavailable, null);
 
     private void AddCommand<TResult>(FinanceContext context, string command, string keyHash, string payloadHash,
         Guid invoiceId, TResult result, DateTimeOffset now) =>
@@ -1023,7 +1023,7 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1(
         && company.IsResolved && company.CompanyId == context.CompanyId
         && context.CompanyId != Guid.Empty && user.CanAccessCompany(context.CompanyId);
 
-    private static FinanceOfficialSalesInvoiceViewV1 View(FinanceOfficialSalesInvoiceRow row) => new(
+    private static FinanceOfficialSalesInvoiceViewV1 View(FinanceOfficialSalesInvoiceRow row) => new FinanceOfficialSalesInvoiceViewV1(
         row.Id, row.CompanyId, row.OfficialNo, row.Ettn, row.CustomerPartyId, row.CurrencyId,
         row.PayableAmountText, row.PayableFunctionalAmountText, row.TaxBaseFunctionalAmountText,
         row.VatFunctionalAmountText,
@@ -1078,14 +1078,14 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1(
         }
     }
 
-    private static ValidationIssue Issue(string field, string code) => new(field, code);
+    private static ValidationIssue Issue(string field, string code) => new ValidationIssue(field, code);
 
     private static FinanceOfficialSalesInvoiceResultV1 Succeeded(FinanceContext context,
-        FinanceOfficialSalesInvoiceViewV1 resource) => new(CommandOutcome.Succeeded, resource, false,
+        FinanceOfficialSalesInvoiceViewV1 resource) => new FinanceOfficialSalesInvoiceResultV1(CommandOutcome.Succeeded, resource, false,
         context.CorrelationId, [], null);
 
     private static FinanceOfficialSalesInvoiceResultV1 Refused(FinanceContext context, CommandOutcome outcome,
-        params ValidationIssue[] issues) => new(outcome, null, false, context.CorrelationId, issues, null);
+        params ValidationIssue[] issues) => new FinanceOfficialSalesInvoiceResultV1(outcome, null, false, context.CorrelationId, issues, null);
 
     private static FinanceOfficialSalesInvoiceReservationResultV1 Reservation(
         FinanceOfficialSalesInvoiceResultV1 refusal) => new FinanceOfficialSalesInvoiceReservationResultV1(

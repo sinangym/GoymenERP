@@ -19,7 +19,7 @@ public sealed class PurchaseAdditionalCostStoreV1(PurchasingDbContext database, 
     IPurchasingStore orders, IPurchaseAcceptanceSourceV1 goodsAcceptances, IPurchaseServiceOrderStoreV1 serviceOrders,
     IAuditEventCollector audit, IAuditTransactionWriterV1 auditWriter) : IPurchaseAdditionalCostStoreV1
 {
-    internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    internal static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     public async Task<PurchaseAdditionalCostSourceV1?> ReadSourceAsync(PurchaseAdditionalCostSourceKind kind, Guid orderId, Guid? acceptanceId, CancellationToken token)
     {
         var scope = Company();
@@ -38,8 +38,8 @@ public sealed class PurchaseAdditionalCostStoreV1(PurchasingDbContext database, 
                 if (fact.CompanyId != scope || fact.PurchaseOrderId != orderId || fact.AcceptanceId != accepted) throw new InvalidOperationException();
                 line = fact.PurchaseOrderLineId;
             }
-            return new(scope, orderId, source.Order.Version, source.DocumentNumber, kind, acceptanceId, line,
-                new(money.CurrencyId, money.CurrencyCode, money.ProfileId, money.ProfileVersion, money.Scale, money.UnitPriceScale))
+            return new PurchaseAdditionalCostSourceV1(scope, orderId, source.Order.Version, source.DocumentNumber, kind, acceptanceId, line,
+                new PurchaseServiceMoney(money.CurrencyId, money.CurrencyCode, money.ProfileId, money.ProfileVersion, money.Scale, money.UnitPriceScale))
             { Acceptances = source.Order.Acceptances.Select(x => new PurchaseAdditionalCostAcceptanceOptionV1(x.AcceptanceId, x.LineId,
                 PurchaseAcceptanceParticipantContractV1.FormatQuantity(x.Quantity.Value), x.RecordedAtUtc)).ToArray() };
         }
@@ -48,7 +48,7 @@ public sealed class PurchaseAdditionalCostStoreV1(PurchasingDbContext database, 
         if (service.CompanyId != scope || service.OrderId != orderId) throw new InvalidOperationException();
         var serviceAcceptance = acceptanceId is null ? null : service.Acceptances.SingleOrDefault(x => x.AcceptanceId == acceptanceId);
         if (acceptanceId is not null && serviceAcceptance is null) return null;
-        return new(scope, orderId, service.Version, service.DocumentNumber, kind, acceptanceId, serviceAcceptance?.LineId, service.Money)
+        return new PurchaseAdditionalCostSourceV1(scope, orderId, service.Version, service.DocumentNumber, kind, acceptanceId, serviceAcceptance?.LineId, service.Money)
         { Acceptances = service.Acceptances.Select(x => new PurchaseAdditionalCostAcceptanceOptionV1(x.AcceptanceId, x.LineId,
             PurchaseAcceptanceParticipantContractV1.FormatQuantity(x.Quantity), x.RecordedAtUtc)).ToArray() };
     }
@@ -67,7 +67,7 @@ public sealed class PurchaseAdditionalCostStoreV1(PurchasingDbContext database, 
         if (row is null) return null;
         if (row.ActorId != envelope.ActorId || row.RequestHash != hash)
             throw new PurchasingStoreException(PurchasingStoreCodes.SameKeyPayloadMismatch, "Aynı anahtar farklı içerik veya aktörle kullanılamaz.");
-        return new(row.SnapshotJson is null ? null : Restore(row.SnapshotJson), row.RefusalJson is null ? null
+        return new PurchaseAdditionalCostWriteV1(row.SnapshotJson is null ? null : Restore(row.SnapshotJson), row.RefusalJson is null ? null
             : JsonSerializer.Deserialize<PurchasingTerminalRefusal>(row.RefusalJson, Json) ?? throw new InvalidOperationException(), true, row.CorrelationId);
     }
     public async Task<PurchaseAdditionalCostWriteV1> RecordAsync(Guid costId, PurchasingWriteEnvelope envelope, string hash,
@@ -86,7 +86,7 @@ public sealed class PurchaseAdditionalCostStoreV1(PurchasingDbContext database, 
             if (replay is not null) { await requireStill(token); return replay; }
             PurchaseAdditionalCostState? value = null; PurchasingTerminalRefusal? refusal = null;
             try { value = await create(token); }
-            catch (PurchaseAdditionalCostException exception) { refusal = new(409, exception.Code, []); }
+            catch (PurchaseAdditionalCostException exception) { refusal = new PurchasingTerminalRefusal(409, exception.Code, []); }
             await requireStill(token); Same(scope);
             string? snapshot = null;
             if (value is not null)
@@ -94,7 +94,7 @@ public sealed class PurchaseAdditionalCostStoreV1(PurchasingDbContext database, 
                 PurchaseAdditionalCost.Validate(value);
                 if (value.CompanyId != scope || value.CostId != costId || value.RecordedBy != envelope.ActorId) throw new InvalidOperationException();
                 snapshot = JsonSerializer.Serialize(value, Json);
-                database.AdditionalCosts.Add(new() { CompanyId = scope, CostId = costId, OrderId = value.OrderId, SourceKind = (int)value.SourceKind,
+                database.AdditionalCosts.Add(new PurchaseAdditionalCostRow() { CompanyId = scope, CostId = costId, OrderId = value.OrderId, SourceKind = (int)value.SourceKind,
                     NormalOrderId = value.SourceKind == PurchaseAdditionalCostSourceKind.GoodsOrder ? value.OrderId : null,
                     NormalLineId = value.SourceKind == PurchaseAdditionalCostSourceKind.GoodsOrder ? value.AcceptanceLineId : null,
                     NormalAcceptanceId = value.SourceKind == PurchaseAdditionalCostSourceKind.GoodsOrder ? value.AcceptanceId : null,
@@ -103,7 +103,7 @@ public sealed class PurchaseAdditionalCostStoreV1(PurchasingDbContext database, 
                     ServiceAcceptanceId = value.SourceKind == PurchaseAdditionalCostSourceKind.ServiceOrder ? value.AcceptanceId : null,
                     RecordedAtUtc = value.RecordedAtUtc, SnapshotJson = snapshot });
             }
-            database.AdditionalCostAttempts.Add(new() { CompanyId = scope, KeyHash = Key(envelope.IdempotencyKey), RequestHash = hash,
+            database.AdditionalCostAttempts.Add(new PurchaseAdditionalCostAttemptRow() { CompanyId = scope, KeyHash = Key(envelope.IdempotencyKey), RequestHash = hash,
                 ActorId = envelope.ActorId, CorrelationId = envelope.CorrelationId, SnapshotJson = snapshot,
                 RefusalJson = refusal is null ? null : JsonSerializer.Serialize(refusal, Json) });
             await requireStill(token); await database.SaveChangesAsync(token);
@@ -113,7 +113,7 @@ public sealed class PurchaseAdditionalCostStoreV1(PurchasingDbContext database, 
                 null, AuditAiInvolvement.None, null, envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent,
                 envelope.CorrelationId, envelope.CausationId, envelope.IdempotencyKey));
             await auditWriter.WritePendingAsync(tx.GetDbTransaction(), token); await requireStill(token); Same(scope);
-            await tx.CommitAsync(token); return new(value, refusal, false, envelope.CorrelationId);
+            await tx.CommitAsync(token); return new PurchaseAdditionalCostWriteV1(value, refusal, false, envelope.CorrelationId);
         }
         catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException || exception.InnerException is SqlException { Number: 2601 or 2627 })
         { await tx.RollbackAsync(CancellationToken.None); database.ChangeTracker.Clear(); auditWriter.DiscardPending(); throw new PurchasingServiceException(409, PurchasingProblemCodesV1.ConcurrentChange); }

@@ -30,7 +30,7 @@ public sealed class SalesSubcontractServiceOrderReadSession : ISalesSubcontractS
         this.context = context; this.company = company; this.connection = connection;
         this.transaction = transaction; companyId = company.CompanyId;
         var store = new SalesStore(context, company, new ReadOnlyAuditCollector(), TimeProvider.System);
-        reader = new(store, company); loadingReader = new(store, company);
+        reader = new SalesSubcontractServiceOrderReadPort(store, company); loadingReader = new SalesOrderLineReferencePort(store, company);
     }
 
     public static async Task<SalesSubcontractServiceOrderReadSession> EnlistAsync(DbConnection connection,
@@ -93,7 +93,7 @@ public sealed class SalesSubcontractServiceOrderReadSession : ISalesSubcontractS
         catch (Exception error) when (error is InvalidOperationException or ObjectDisposedException) { return false; }
     }
 
-    private static SalesSubcontractServiceOrderAnswerV1 Unavailable() => new(
+    private static SalesSubcontractServiceOrderAnswerV1 Unavailable() => new SalesSubcontractServiceOrderAnswerV1(
         SalesSubcontractServiceOrderOutcomeV1.Unreadable, null, SalesSubcontractServiceOrderUnreadableReasonsV1.StoreUnavailable);
 
     public async ValueTask DisposeAsync()

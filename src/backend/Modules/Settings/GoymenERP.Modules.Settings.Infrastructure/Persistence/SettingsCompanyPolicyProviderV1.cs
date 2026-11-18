@@ -133,13 +133,13 @@ public sealed partial class SettingsCompanyPolicyProviderV1 :
         CancellationToken cancellationToken = default)
     {
         var row = await LatestAsync(companyId, CompanyPolicyKeysV1.SalesContractDiscountLimit, cancellationToken);
-        if (row is null) return new(companyId, null, 0);
+        if (row is null) return new SettingsSalesContractDiscountLimitV1(companyId, null, 0);
         if (row.PercentValue is not { } rate || rate < 0 || rate > 100 || decimal.Round(rate, 4) != rate
             || row.BooleanValue is not null || row.WholeNumberValue is not null || row.VatApplies is not null
             || row.VatPercent is not null || row.ExemptionCode is not null || row.WithholdingApplies is not null
             || row.WithholdingPercent is not null || row.WithholdingCode is not null)
             throw new SettingsPrerequisiteException(CompanyPolicyProblemCodesV1.ProfileInvalid);
-        return new(companyId, rate, row.Version);
+        return new SettingsSalesContractDiscountLimitV1(companyId, rate, row.Version);
     }
 
     private async Task<CompanyPolicyVersionRow?> LatestAsync(Guid companyId, string policyKey,
