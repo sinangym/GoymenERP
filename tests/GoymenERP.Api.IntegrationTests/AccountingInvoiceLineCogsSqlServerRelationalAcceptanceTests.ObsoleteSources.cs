@@ -51,7 +51,9 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
         var originalStore = AttributedCosts(scope,
             new HistoricalCostReader(new CancellationCostReader(original, run.Source.Facts), cancellation), ledger);
         await originalStore.AcceptAsync(original.Envelope); await originalStore.AcceptAsync(original.Envelope);
-        Assert.Equal(winner, Assert.Single(await replacementStore.ListAsync(winner.Kind)));
+        // The SQL reread rebuilds nested collection instances; compare the complete value graph.
+        Assert.Equal(JsonSerializer.Serialize(winner),
+            JsonSerializer.Serialize(Assert.Single(await replacementStore.ListAsync(winner.Kind))));
         Assert.Equal(2, await run.Count("accounting.InventoryCostSources"));
         Assert.Equal(1, await run.Count("accounting.InventoryCostProposals"));
         Assert.Equal(1, await run.Count("accounting.InvoiceCogsEconomicClaims"));
