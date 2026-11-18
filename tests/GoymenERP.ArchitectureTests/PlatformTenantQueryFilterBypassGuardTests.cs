@@ -1897,7 +1897,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): the future supply conversion port joins the contracts (32b1ac1d… -> dec5f299…).
                         // Re-fingerprinted for tren-1 W6: SAT-S8: expose the enlisted demand reduction contract; reviewed API counts unchanged (dec5f299... -> e86e0233...).
-                        "b7f36f55a7aa896b8015a3f137c982c740c79f3d80a0d273d79c8146bb8bfaf5",
+                        // W8 STK-S17: reject noncanonical version text; existing port signatures and API counts unchanged. K3 review pending.
+                        "b1e1473c5d9d7799928263ab9f32c96106514a76d81ed9c1b553e361fce0c195",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
