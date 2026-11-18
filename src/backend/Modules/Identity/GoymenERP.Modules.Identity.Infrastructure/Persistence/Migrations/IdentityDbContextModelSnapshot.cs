@@ -186,7 +186,7 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
 
                     b.ToTable("AccessGrantRequests", "identity", t =>
                         {
-                            t.HasCheckConstraint("CK_AccessGrantRequests_ApprovalMode", "([Status] = N'Approved' AND [ApprovalMode] IN (N'SecondApproval', N'FounderDirect', N'CompanyOpener', N'CompanySetupAuthority')) OR ([Status] <> N'Approved' AND [ApprovalMode] IS NULL)");
+                            t.HasCheckConstraint("CK_AccessGrantRequests_ApprovalMode", "([Status] = N'Approved' AND [ApprovalMode] IS NOT NULL AND [ApprovalMode] IN (N'SecondApproval', N'FounderDirect', N'CompanyOpener', N'CompanySetupAuthority')) OR ([Status] <> N'Approved' AND [ApprovalMode] IS NULL)");
 
                             t.HasCheckConstraint("CK_AccessGrantRequests_DecisionReason", "[DecisionReasonCode] IS NULL OR [Status] = N'Rejected'");
 
@@ -194,7 +194,7 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_AccessGrantRequests_ResultingAssignment", "[ResultingRoleAssignmentId] IS NULL OR [Status] = N'Approved'");
 
-                            t.HasCheckConstraint("CK_AccessGrantRequests_SecondApproval", "[RequiresSecondApproval] = 0 OR [DecidedByUserId] IS NULL OR ([Status] = N'Withdrawn' AND [DecidedByUserId] = [RequestedByUserId]) OR ([Status] = N'Approved' AND [ApprovalMode] IN (N'FounderDirect', N'CompanyOpener', N'CompanySetupAuthority') AND [DecidedByUserId] = [RequestedByUserId]) OR ([DecidedByUserId] <> [RequestedByUserId] AND [DecidedByUserId] <> [TargetUserId])");
+                            t.HasCheckConstraint("CK_AccessGrantRequests_SecondApproval", "[RequiresSecondApproval] = 0 OR [DecidedByUserId] IS NULL OR ([Status] = N'Withdrawn' AND [DecidedByUserId] = [RequestedByUserId]) OR ([Status] = N'Approved' AND [ApprovalMode] IS NOT NULL AND [ApprovalMode] IN (N'FounderDirect', N'CompanyOpener', N'CompanySetupAuthority') AND [DecidedByUserId] = [RequestedByUserId]) OR ([DecidedByUserId] <> [RequestedByUserId] AND [DecidedByUserId] <> [TargetUserId])");
 
                             t.HasCheckConstraint("CK_AccessGrantRequests_Validity", "[ValidUntilUtc] IS NULL OR ([ValidFromUtc] IS NOT NULL AND [ValidUntilUtc] > [ValidFromUtc])");
                         });
