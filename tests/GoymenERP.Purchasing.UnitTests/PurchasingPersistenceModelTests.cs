@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Audit.Domain.Events;
@@ -144,7 +145,7 @@ public sealed class PurchasingPersistenceModelTests
     public void The_request_and_order_screens_and_their_controls_are_published()
     {
         var declarations = new PurchasingShellCapabilityProvider().GetDeclarations();
-        Assert.Equal("1.14", PurchasingShellCapabilityProvider.OwnerContractVersion);
+        Assert.Equal("1.15", PurchasingShellCapabilityProvider.OwnerContractVersion);
         Assert.Equal(29, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(!declaration.CapabilityId.StartsWith("purchasing.invoices.", StringComparison.Ordinal), declaration.ImplementationAvailable));
         var byId = declarations.ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
@@ -253,6 +254,12 @@ public sealed class PurchasingPersistenceModelTests
             byId[PurchasingShellCapabilityProvider.AdditionalCostReadCapabilityId].RequiredPermissions);
         Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersPriceRead, PurchasingPermissionManifestV1.OrdersRevise],
             byId[PurchasingShellCapabilityProvider.AdditionalCostRecordCapabilityId].RequiredPermissions);
+        Assert.Equal(("/satinalma/ek-masraflar/:sourceKind/:orderId", "ALC-S8-READ"),
+            (byId[PurchasingShellCapabilityProvider.AdditionalCostReadCapabilityId].RoutePath,
+                byId[PurchasingShellCapabilityProvider.AdditionalCostReadCapabilityId].ScreenId));
+        Assert.Equal(("/satinalma/hizmet-siparisleri", "ALC-S7-LIST"),
+            (byId[PurchasingShellCapabilityProvider.ServiceOrderListCapabilityId].RoutePath,
+                byId[PurchasingShellCapabilityProvider.ServiceOrderListCapabilityId].ScreenId));
         Assert.Contains("purchasing.requests.approve", PurchasingPermissionManifestV1.Names);
         Assert.Contains("purchasing.requests.withdraw", PurchasingPermissionManifestV1.Names);
         Assert.Contains("purchasing.orders.cancel", PurchasingPermissionManifestV1.Names);
@@ -422,7 +429,7 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Contains("([ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL)", check.Sql, StringComparison.Ordinal);
         Assert.Contains("[Status] IN (2, 3)", check.Sql, StringComparison.Ordinal);
         // ALS-D3: maker ≠ checker compares binary, the domain's ordinal rule (the #900 P3 lesson).
-        Assert.Contains("[ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [CreatedBy] COLLATE Latin1_General_100_BIN2", check.Sql,
+        Assert.Contains("[ApprovedBy] COLLATE Latin1_General_100_BIN2 <> COALESCE([CurrentPreparedBy], [CreatedBy]) COLLATE Latin1_General_100_BIN2", check.Sql,
             StringComparison.Ordinal);
 
         // Up adds two nullable columns and the check (no SQL, no backfill); Down refuses (51172) before any drop while an approver exists.
@@ -487,9 +494,10 @@ public sealed class PurchasingPersistenceModelTests
         var lineChecks = lines.GetCheckConstraints().ToDictionary(check => check.Name!, check => check.Sql);
         Assert.Equal(PurchasingDbContext.OrderLineSharesCheck, lineChecks["CK_PurchaseOrderLines_Shares"]);
         Assert.Contains("[Closed] >= 0", lineChecks["CK_PurchaseOrderLines_Shares"], StringComparison.Ordinal);
-        Assert.Contains("[Technical] + [Accepted] + [Cancelled] + [Closed] <= [Ordered]", lineChecks["CK_PurchaseOrderLines_Shares"],
+        Assert.Contains("[Technical] + [Accepted] + [Cancelled] + [Closed] + [DefinitiveReturned] <= [Ordered]", lineChecks["CK_PurchaseOrderLines_Shares"],
             StringComparison.Ordinal);
-        Assert.Equal("[Closed] = 0 OR [Cancelled] = 0", lineChecks["CK_PurchaseOrderLines_ClosedOrCancelled"]);
+        // Receipt reopening preserves historical closure/cancellation shares; both remain nonnegative and bounded above.
+        Assert.Equal("[Closed] >= 0 AND [Cancelled] >= 0", lineChecks["CK_PurchaseOrderLines_ClosedOrCancelled"]);
 
         // One closure event per order version, bound to the order and to the line of the same company.
         var events = model.FindEntityType(typeof(PurchaseOrderLineClosureEventRow))!;
@@ -635,7 +643,7 @@ public sealed class PurchasingPersistenceModelTests
     [Fact]
     public async Task The_write_guard_lets_the_closed_share_move_but_refuses_a_changed_closure_event_or_outbox_message()
     {
-        await using (PurchasingDbContext context = Context())
+        await using (PurchasingDbContext context = Context(probeSave: true))
         {
             var line = new PurchaseOrderLineRow
             {
@@ -644,13 +652,12 @@ public sealed class PurchasingPersistenceModelTests
             };
             context.OrderLines.Attach(line);
             line.Closed = 6m;
-            // The closed share is on the allow-list: the guard passes it (only the database is unreachable here).
-            var onlyShare = await Assert.ThrowsAnyAsync<Exception>(() => context.SaveChangesAsync());
+            // The closed share is on the allow-list: the guard passes it (a sentinel stops EF before a database connection).
+            var onlyShare = await Assert.ThrowsAsync<SaveReachedProbeException>(() => context.SaveChangesAsync());
             Assert.DoesNotContain("izinli alan", onlyShare.Message, StringComparison.Ordinal);
-            Assert.IsAssignableFrom<System.Data.Common.DbException>(onlyShare.InnerException);
         }
 
-        await using (PurchasingDbContext context = Context())
+        await using (PurchasingDbContext context = Context(probeSave: true))
         {
             var closure = new PurchaseOrderLineClosureEventRow
             {
@@ -663,7 +670,7 @@ public sealed class PurchasingPersistenceModelTests
             Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
         }
 
-        await using (PurchasingDbContext context = Context())
+        await using (PurchasingDbContext context = Context(probeSave: true))
         {
             var message = new PurchasingOutboxRow
             {
@@ -751,7 +758,7 @@ public sealed class PurchasingPersistenceModelTests
     [Fact]
     public async Task The_write_guard_lets_the_cancellation_facts_and_the_cancelled_share_move_but_not_another_field()
     {
-        await using (PurchasingDbContext context = Context())
+        await using (PurchasingDbContext context = Context(probeSave: true))
         {
             var order = new PurchaseOrderRow
             {
@@ -764,16 +771,15 @@ public sealed class PurchasingPersistenceModelTests
             order.CancelledBy = "SENTETIK-manager";
             order.CancelledAtUtc = DateTimeOffset.UtcNow;
             order.CancellationReason = "SENTETIK";
-            // The cancellation facts alone are on the allow-list: the guard passes them (only the database is unreachable here).
-            var onlyFacts = await Assert.ThrowsAnyAsync<Exception>(() => context.SaveChangesAsync());
+            // The cancellation facts alone are on the allow-list: the guard passes them (a sentinel stops EF before a database connection).
+            var onlyFacts = await Assert.ThrowsAsync<SaveReachedProbeException>(() => context.SaveChangesAsync());
             Assert.DoesNotContain("izinli alan", onlyFacts.Message, StringComparison.Ordinal);
-            Assert.IsAssignableFrom<System.Data.Common.DbException>(onlyFacts.InnerException);
             order.SupplierPartyId = Guid.NewGuid(); // not allowed: the supplier never moves
             var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
             Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
         }
 
-        await using (PurchasingDbContext context = Context())
+        await using (PurchasingDbContext context = Context(probeSave: true))
         {
             var line = new PurchaseOrderLineRow
             {
@@ -782,9 +788,8 @@ public sealed class PurchasingPersistenceModelTests
             };
             context.OrderLines.Attach(line);
             line.Cancelled = 6m;
-            var onlyShare = await Assert.ThrowsAnyAsync<Exception>(() => context.SaveChangesAsync());
+            var onlyShare = await Assert.ThrowsAsync<SaveReachedProbeException>(() => context.SaveChangesAsync());
             Assert.DoesNotContain("izinli alan", onlyShare.Message, StringComparison.Ordinal);
-            Assert.IsAssignableFrom<System.Data.Common.DbException>(onlyShare.InnerException);
             line.Ordered = 7m; // not allowed: the first commitment never moves
             var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
             Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
@@ -794,7 +799,7 @@ public sealed class PurchasingPersistenceModelTests
     [Fact]
     public async Task The_write_guard_lets_the_A2a_5a_approval_facts_move_but_not_the_preparer()
     {
-        await using PurchasingDbContext context = Context();
+        await using PurchasingDbContext context = Context(probeSave: true);
         var order = new PurchaseOrderRow
         {
             Id = Guid.NewGuid(), CompanyId = CompanyA, SupplierPartyId = Guid.NewGuid(), CompanyAccountId = Guid.NewGuid(), Status = 1, Version = 2,
@@ -805,10 +810,9 @@ public sealed class PurchasingPersistenceModelTests
         order.Status = 2;
         order.ApprovedBy = "SENTETIK-approver";
         order.ApprovedAtUtc = DateTimeOffset.UtcNow;
-        // The approval facts are on the allow-list: the guard passes them (only the database is unreachable here).
-        var onlyFacts = await Assert.ThrowsAnyAsync<Exception>(() => context.SaveChangesAsync());
+        // The approval facts are on the allow-list: the guard passes them (a sentinel stops EF before a database connection).
+        var onlyFacts = await Assert.ThrowsAsync<SaveReachedProbeException>(() => context.SaveChangesAsync());
         Assert.DoesNotContain("izinli alan", onlyFacts.Message, StringComparison.Ordinal);
-        Assert.IsAssignableFrom<System.Data.Common.DbException>(onlyFacts.InnerException);
         order.CreatedBy = "SENTETIK-approver"; // not allowed: the preparer never moves (it would launder maker ≠ checker)
         var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
         Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
@@ -823,12 +827,12 @@ public sealed class PurchasingPersistenceModelTests
             var line = new PurchaseOrderLineRow
             {
                 CompanyId = CompanyA, OrderId = Guid.NewGuid(), LineNo = 1, LineId = Guid.NewGuid(), Kind = 1, ProductId = Guid.NewGuid(),
-                ProductVersion = "7", UnitId = Guid.NewGuid(), UnitIsKilogram = true, Ordered = 6m, UnitPrice = 10m,
+                ProductVersion = "7", UnitId = Guid.NewGuid(), UnitIsKilogram = true, Ordered = 6m, UnitPrice = 10m, PriceUnitId = Guid.NewGuid(),
             };
             context.OrderLines.Attach(line);
             line.UnitPrice = 9m;
             var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
-            Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
+            Assert.Equal("Fiyat değişikliği sipariş revizyonunu gerektirir.", refusal.Message);
         }
 
         await using (PurchasingDbContext context = Context())
@@ -913,7 +917,7 @@ public sealed class PurchasingPersistenceModelTests
     [Fact]
     public async Task The_write_guard_lets_the_withdrawal_facts_move_but_not_another_field()
     {
-        await using PurchasingDbContext context = Context();
+        await using PurchasingDbContext context = Context(probeSave: true);
         var row = new PurchaseRequestRow
         {
             Id = Guid.NewGuid(), CompanyId = CompanyA, Status = 2, Version = 3, EffectiveOn = new DateOnly(2026, 11, 2),
@@ -925,10 +929,9 @@ public sealed class PurchasingPersistenceModelTests
         row.WithdrawnBy = "SENTETIK";
         row.WithdrawnAtUtc = DateTimeOffset.UtcNow;
         row.WithdrawalReason = "SENTETIK";
-        // The withdrawal facts alone are on the allow-list: the guard passes them (only the database is unreachable here).
-        var onlyFacts = await Assert.ThrowsAnyAsync<Exception>(() => context.SaveChangesAsync());
+        // The withdrawal facts alone are on the allow-list: the guard passes them (a sentinel stops EF before a database connection).
+        var onlyFacts = await Assert.ThrowsAsync<SaveReachedProbeException>(() => context.SaveChangesAsync());
         Assert.DoesNotContain("izinli alan", onlyFacts.Message, StringComparison.Ordinal);
-        Assert.IsAssignableFrom<System.Data.Common.DbException>(onlyFacts.InnerException);
 
         row.EffectiveOn = new DateOnly(2026, 11, 3); // not allowed: the business date never moves
         var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
@@ -941,7 +944,7 @@ public sealed class PurchasingPersistenceModelTests
         EffectiveOn = new DateOnly(2026, 9, 19), CreatedAtUtc = DateTimeOffset.UtcNow, UpdatedAtUtc = DateTimeOffset.UtcNow, CreatedBy = "SENTETIK", CorrelationId = "SENTETIK",
     };
 
-    private static PurchasingDbContext Context(bool resolved = true)
+    private static PurchasingDbContext Context(bool resolved = true, bool probeSave = false)
     {
         CompanyContext company = new CompanyContext();
         if (resolved)
@@ -949,8 +952,10 @@ public sealed class PurchasingPersistenceModelTests
             company.Set(CompanyA);
         }
 
-        return new PurchasingDbContext(new DbContextOptionsBuilder<PurchasingDbContext>()
-            .UseSqlServer("Server=unused.invalid;Database=unused;Connect Timeout=1;").Options, company);
+        var options = new DbContextOptionsBuilder<PurchasingDbContext>()
+            .UseSqlServer("Server=unused.invalid;Database=unused;Connect Timeout=1;");
+        if (probeSave) options.AddInterceptors(new PreDatabaseSaveProbe());
+        return new PurchasingDbContext(options.Options, company);
     }
 
     [Fact]
@@ -982,4 +987,13 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
         Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>(migration.DownOperations[1]);
     }
+    // This proves that the owner's pre-save guard accepted a permitted change, never that SQL accepted it.
+    private sealed class SaveReachedProbeException : Exception { }
+    private sealed class PreDatabaseSaveProbe : SaveChangesInterceptor
+    {
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
+            InterceptionResult<int> result, CancellationToken cancellationToken = default) =>
+            throw new SaveReachedProbeException();
+    }
+
 }

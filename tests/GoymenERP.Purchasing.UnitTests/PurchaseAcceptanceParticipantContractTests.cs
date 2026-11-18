@@ -8,7 +8,14 @@ public sealed class PurchaseAcceptanceParticipantContractTests
     public void Contract_is_single_use_host_transaction_participant_shape()
     {
         Assert.Contains(typeof(IAsyncDisposable), typeof(IPurchaseAcceptanceParticipantV1).GetInterfaces());
-        var stage = Assert.Single(typeof(IPurchaseAcceptanceParticipantV1).GetMethods());
+        var methods = typeof(IPurchaseAcceptanceParticipantV1).GetMethods();
+        Assert.Equal([nameof(IPurchaseAcceptanceParticipantV1.ResolveReceiptTargetAsync), nameof(IPurchaseAcceptanceParticipantV1.StageAsync)],
+            methods.Select(method => method.Name).Order(StringComparer.Ordinal));
+        var resolve = Assert.Single(methods, method => method.Name == nameof(IPurchaseAcceptanceParticipantV1.ResolveReceiptTargetAsync));
+        Assert.Equal(typeof(Task<PurchaseAcceptanceReceiptTargetV1>), resolve.ReturnType);
+        Assert.Equal([typeof(Guid), typeof(Guid), typeof(CancellationToken)],
+            resolve.GetParameters().Select(parameter => parameter.ParameterType).ToArray());
+        var stage = Assert.Single(methods, method => method.Name == nameof(IPurchaseAcceptanceParticipantV1.StageAsync));
         Assert.Equal(nameof(IPurchaseAcceptanceParticipantV1.StageAsync), stage.Name);
         Assert.Equal(typeof(Task<PurchaseAcceptanceStageResultV1>), stage.ReturnType);
         Assert.Equal(

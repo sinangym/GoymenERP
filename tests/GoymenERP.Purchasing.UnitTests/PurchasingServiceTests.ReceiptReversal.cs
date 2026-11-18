@@ -50,7 +50,7 @@ public sealed partial class PurchasingServiceTests
         Assert.Equal((first.Code, "synthetic-correlation", 1), (replay.Code, replay.OriginalCorrelationId, host.BusinessCalls));
         var changed = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service(reversals: host)
             .ReverseGoodsReceiptAsync(order, acceptance, request with { UndoQuantity = "1.5" }, Metadata("reverse-terminal")));
-        Assert.Equal(PurchasingProblemCodesV1.SameKeyPayloadMismatch, changed.Code);
+        Assert.Equal(PurchasingStoreCodes.SameKeyPayloadMismatch, changed.Code);
     }
 
     [Theory]
