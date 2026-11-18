@@ -2331,15 +2331,17 @@ public sealed partial class ManufacturingCommandServiceTests
         Assert.Equal((50, (string?)null, (OrderStatus?)null), Assert.Single(fixture.Store.ListCalls));
     }
 
-    [Fact]
-    public async Task The_list_passes_the_status_filter_and_the_cursor_it_was_given()
+    [Theory]
+    [InlineData("Closed", OrderStatus.Closed)]
+    [InlineData("Cancelled", OrderStatus.Cancelled)]
+    public async Task The_list_passes_the_status_filter_and_the_cursor_it_was_given(string status, OrderStatus expected)
     {
         var fixture = new Fixture();
 
-        var result = await fixture.Service.ListOrdersAsync(10, "cursor-1", "Closed", CancellationToken.None);
+        var result = await fixture.Service.ListOrdersAsync(10, "cursor-1", status, CancellationToken.None);
 
         Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
-        Assert.Equal((10, "cursor-1", (OrderStatus?)OrderStatus.Closed), Assert.Single(fixture.Store.ListCalls));
+        Assert.Equal((10, "cursor-1", (OrderStatus?)expected), Assert.Single(fixture.Store.ListCalls));
     }
 
     [Theory]
@@ -2347,7 +2349,7 @@ public sealed partial class ManufacturingCommandServiceTests
     [InlineData(101, null, "pageSize")]
     [InlineData(null, "open", "status")]
     [InlineData(null, "1", "status")]
-    [InlineData(null, "Cancelled", "status")]
+    [InlineData(null, "cancelled", "status")]
     public async Task A_list_request_outside_the_contract_is_invalid_and_the_store_is_not_asked(int? pageSize,
         string? status, string field)
     {
@@ -3203,6 +3205,16 @@ public sealed partial class ManufacturingCommandServiceTests
     {
         public List<(Guid PlanId, ManufacturingPlanAllocationReleaseReasonV1 Reason)> Releases { get; } = [];
 
+        public List<Guid> ReleasedPlanWrites { get; } = [];
+
+        public async Task<T> WriteReleasedPlanAsync<T>(Guid planId, Func<CancellationToken, Task<T>> write,
+            ManufacturingCommandMetadata metadata, CancellationToken cancellationToken)
+        {
+            var written = await write(cancellationToken);
+            ReleasedPlanWrites.Add(planId);
+            return written;
+        }
+
         public Task<T> ApproveAndAllocateAsync<T>(Guid planId, IReadOnlyDictionary<Guid, long> labelVersions,
             Func<CancellationToken, Task<T>> approve, ManufacturingCommandMetadata metadata,
             CancellationToken cancellationToken) =>
@@ -3265,7 +3277,8 @@ public sealed partial class ManufacturingCommandServiceTests
     private sealed class Fixture
     {
         public Fixture(bool withWorkCenters = true, bool withPlanAllocations = true, bool withOutputCorrections = true,
-            IManufacturingPaintSelectionSourceV1? paintSelections = null)
+            IManufacturingPaintSelectionSourceV1? paintSelections = null,
+            ISettingsManufacturingParameterProviderV1? manufacturingParameters = null)
         {
             CompanyContext = new MutableCompanyContext(Company);
             var correlation = new CorrelationContext();
@@ -3286,7 +3299,8 @@ public sealed partial class ManufacturingCommandServiceTests
                 planRevisions: Store,
                 productTechnicalSnapshots: ProductSnapshots, partyAccounts: PartyAccounts,
                 contextualParentRolls: ParentRolls, planAllocations: withPlanAllocations ? PlanAllocations : null,
-                outputCorrections: withOutputCorrections ? OutputCorrections : null, paintSelections: paintSelections);
+                outputCorrections: withOutputCorrections ? OutputCorrections : null, paintSelections: paintSelections,
+                manufacturingParameters: manufacturingParameters);
         }
 
         public List<string> Calls { get; } = [];
@@ -3916,8 +3930,17 @@ public sealed partial class ManufacturingCommandServiceTests
 
         public Task<ProductionPlan> RevisePlanAsync(Guid planId, long expectedVersion, Guid workCenterId,
             ManufacturingProcess workCenterProcess, IReadOnlyList<PlannedInput> inputs, ProductionTarget? target,
-            string reason, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+            string reason, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            Guard();
+            OnWrite?.Invoke(metadata);
+            var plan = Plans.GetValueOrDefault(planId)
+                ?? throw new ManufacturingStoreException(ManufacturingStoreCodes.PlanNotFound, "yok");
+            plan.Revise(expectedVersion, workCenterId, workCenterProcess, inputs, target);
+            Complete(metadata, plan);
+            Writes.Add(metadata);
+            return Task.FromResult(plan);
+        }
 
         public Task<IReadOnlyList<ManufacturingPlanRevision>?> ListPlanRevisionsAsync(Guid planId,
             CancellationToken cancellationToken = default)

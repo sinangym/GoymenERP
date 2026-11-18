@@ -3,6 +3,7 @@ using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Manufacturing.UnitTests;
 
@@ -102,7 +103,9 @@ public sealed partial class ManufacturingCommandServiceTests
     public async Task Draft_and_cancelled_order_plan_revisions_share_the_physical_cap_without_a_free_quantity_read(
         bool released, string requestedKg, bool accepted)
     {
-        var fixture = new Fixture();
+        // URT-D39: the original approval and the current owner read must carry the same nonempty profile.
+        var profile = CapturedProfile(new PlanParameterValueV1("densityKgPerCubicMetre", "kg/m3", 7850m, null));
+        var fixture = new Fixture(manufacturingParameters: new At044ParameterPort(profile));
         fixture.ParentRolls.PhysicalKg = "1000.125";
         fixture.ParentRolls.UnblockedPhysicalKg = "100";
         fixture.ParentRolls.BlockedPhysicalKg = "900.125";
@@ -110,7 +113,7 @@ public sealed partial class ManufacturingCommandServiceTests
             [new PlannedInput(Roll, new Kilograms(900m), long.Parse(LabelVersion))]);
         if (released)
         {
-            plan.WithDueDate().Approve(plan.Version, Guid.NewGuid(), At);
+            plan.WithDueDate().Approve(plan.Version, Guid.NewGuid(), At, null, profile);
             var order = ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
             order.Cancel(order.Version, Actor, At, "SENTETIK cancellation");
             plan.ReleaseCancelledOrder(order.Id);
@@ -129,6 +132,8 @@ public sealed partial class ManufacturingCommandServiceTests
             Assert.Equal(version + 1, plan.Version);
             Assert.Single(fixture.Store.Writes);
             Assert.Equal(released, plan.RequiresReapproval);
+            Assert.Equal(released ? new[] { plan.Id } : Array.Empty<Guid>(), fixture.PlanAllocations.ReleasedPlanWrites);
+            Assert.Single(fixture.Store.Commands);
         }
         else
         {
@@ -136,6 +141,21 @@ public sealed partial class ManufacturingCommandServiceTests
             Assert.Equal(version, plan.Version);
             Assert.Empty(fixture.Store.Writes);
             Assert.Empty(fixture.Store.Commands);
+        }
+    }
+
+    private sealed class At044ParameterPort(PlanParameterSnapshotV1 profile) : ISettingsManufacturingParameterProviderV1
+    {
+        public Task<ManufacturingParameterProfileSnapshotV1> GetManufacturingParametersAsync(string process,
+            Guid? workCenterId, DateOnly effectiveOn, CancellationToken cancellationToken = default)
+        {
+            Assert.Equal(profile.Process.ToString(), process);
+            Assert.Equal(profile.WorkCenterId, workCenterId);
+            Assert.Equal(profile.SelectedForDate, effectiveOn);
+            return Task.FromResult(new ManufacturingParameterProfileSnapshotV1(Company, process, workCenterId,
+                profile.ProfileId, profile.ProfileVersion, profile.Source, profile.EffectiveFrom, profile.EffectiveThrough,
+                profile.Values.Select(value => new ManufacturingParameterValueV1(value.Key, value.Unit, value.Number,
+                    value.Choice)).ToArray()));
         }
     }
 
