@@ -350,8 +350,11 @@ public sealed class CounterpartyPersistenceModelTests
         Assert.Contains(
             "20261115165158_AddCounterpartyPartyMerge",
             dbContext.Database.GetMigrations());
+        Assert.Contains(
+            "20261116111257_AddCounterpartyLegalNameChangeRequests",
+            dbContext.Database.GetMigrations());
         Assert.EndsWith(
-            "_AddCounterpartyLegalNameChangeRequests",
+            "_RepairPartyIdentityRevisionTaxNumberFormat",
             dbContext.Database.GetMigrations().Last(),
             StringComparison.Ordinal);
         Assert.False(dbContext.Database.HasPendingModelChanges());
@@ -811,6 +814,57 @@ public sealed class CounterpartyPersistenceModelTests
                 migration.DownOperations,
                 operation => operation is DropTableOperation { Schema: "counterparty" } drop && drop.Name == table);
         }
+    }
+
+    [Fact]
+    public void Identity_revision_tax_number_repair_changes_only_its_constraint_and_Down_first_refuses_tax_history()
+    {
+        var migration = new GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations.RepairPartyIdentityRevisionTaxNumberFormat();
+        const string repaired = "LEN([Value]) > 0 AND ([Attribute] <> 1 OR (LEN([Value]) IN (10, 11)"
+            + " AND DATALENGTH([Value]) = 2 * LEN([Value])"
+            + " AND [Value] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9]%'))";
+        const string previous = "LEN([Value]) > 0 AND ([Attribute] <> 1 OR (LEN([Value]) IN (10, 11)"
+            + " AND DATALENGTH([Value]) = LEN([Value])"
+            + " AND [Value] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9]%'))";
+        Assert.Collection(migration.UpOperations,
+            operation =>
+            {
+                var drop = Assert.IsType<DropCheckConstraintOperation>(operation);
+                Assert.Equal("counterparty", drop.Schema);
+                Assert.Equal("PartyIdentityRevisions", drop.Table);
+                Assert.Equal("CK_PartyIdentityRevisions_Value", drop.Name);
+            },
+            operation =>
+            {
+                var add = Assert.IsType<AddCheckConstraintOperation>(operation);
+                Assert.Equal("counterparty", add.Schema);
+                Assert.Equal("PartyIdentityRevisions", add.Table);
+                Assert.Equal("CK_PartyIdentityRevisions_Value", add.Name);
+                Assert.Equal(repaired, add.Sql);
+            });
+        Assert.Collection(migration.DownOperations,
+            operation =>
+            {
+                var guard = Assert.IsType<SqlOperation>(operation);
+                Assert.False(guard.SuppressTransaction);
+                Assert.Contains("FROM [counterparty].[PartyIdentityRevisions] WHERE [Attribute] = 1", guard.Sql, StringComparison.Ordinal);
+                Assert.Contains("THROW 51799", guard.Sql, StringComparison.Ordinal);
+            },
+            operation =>
+            {
+                var drop = Assert.IsType<DropCheckConstraintOperation>(operation);
+                Assert.Equal("counterparty", drop.Schema);
+                Assert.Equal("PartyIdentityRevisions", drop.Table);
+                Assert.Equal("CK_PartyIdentityRevisions_Value", drop.Name);
+            },
+            operation =>
+            {
+                var add = Assert.IsType<AddCheckConstraintOperation>(operation);
+                Assert.Equal("counterparty", add.Schema);
+                Assert.Equal("PartyIdentityRevisions", add.Table);
+                Assert.Equal("CK_PartyIdentityRevisions_Value", add.Name);
+                Assert.Equal(previous, add.Sql);
+            });
     }
 
     [Fact]

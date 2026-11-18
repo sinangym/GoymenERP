@@ -42,8 +42,25 @@ public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
     {
         await using var test = new TaxTest();
         using var maker = test.Client();
-        var first = await CreateAsync(maker, "Birinci");
+        var first = await CreateAsync(maker, "Birinci Şirket");
         var second = await CreateAsync(maker, "İkinci Şube");
+        var repair = new GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations.RepairPartyIdentityRevisionTaxNumberFormat();
+        var downGuard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(repair.DownOperations[0]).Sql;
+        // With no tax history, the forward-fix Down guard does not block.
+        await test.ExecuteAsync(downGuard, first);
+        // A matching Unicode legal-name baseline is permitted too; only tax history
+        // is incompatible with restoring the former one-byte numeric constraint.
+        await test.ExecuteAsync("""
+            INSERT INTO [counterparty].[PartyIdentityRevisions]
+                ([Id], [PartyId], [Attribute], [Sequence], [Value], [EffectiveFrom], [Kind], [Reason],
+                 [SourceChangeRequestId], [RecordedByUserId], [RecordedInCompanyId], [RecordedAtUtc])
+            SELECT NEWID(), [Id], 2, [Version], [LegalName], NULL, 1, NULL,
+                   NULL, NULL, NULL, SYSDATETIMEOFFSET()
+            FROM [counterparty].[Parties] WHERE [Id]=@Party;
+            """, first);
+        Assert.Equal(1, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [counterparty].[PartyIdentityRevisions] WHERE [PartyId]=@Party AND [Attribute]=2 AND [Value] LIKE N'%Şirket%';", first));
+        await test.ExecuteAsync(downGuard, first);
 
         var empty = await ReadAsync(maker, PathFor(first));
         Assert.Equal(JsonValueKind.Null, empty.GetProperty("taxIdentityNumber").ValueKind);
@@ -97,8 +114,14 @@ public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
                 test.InsertTaxIdentityRevisionAsync(first, invalidHistoryValue));
             Assert.Equal(547, invalid.Number);
         }
+        var downRefused = await Assert.ThrowsAsync<SqlException>(() => test.ExecuteAsync(downGuard, first));
+        Assert.Equal(51799, downRefused.Number);
+        Assert.Equal(Vkn, await test.ScalarAsync<string>(
+            "SELECT [Value] FROM [counterparty].[PartyIdentityRevisions] WHERE [PartyId]=@Party AND [Attribute]=1;", first));
         Assert.Equal(1, await test.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [counterparty].[PartyIdentityRevisions] WHERE [PartyId]=@Party AND [Attribute]=1;", first));
+        Assert.Equal(1, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [counterparty].[PartyIdentityRevisions] WHERE [PartyId]=@Party AND [Attribute]=2 AND [Value] LIKE N'%Şirket%';", first));
 
         // The warning before saving the same number on the second card…
         var check = await CheckDuplicatesAsync(maker, second, Vkn);
