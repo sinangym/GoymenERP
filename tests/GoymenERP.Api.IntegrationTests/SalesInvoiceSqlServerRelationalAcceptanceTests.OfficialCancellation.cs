@@ -52,14 +52,32 @@ public sealed partial class SalesInvoiceSqlServerRelationalAcceptanceTests
         await using var run=await Run.StartAsync();var actor="aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
         var invoice=await FinalizedAsync(run,"official-cancel","SENTETIK-OC-1",Guid.NewGuid().ToString("D"),"SENTETIK-checker",actor);
         var original=await run.ScalarAsync<string>("SELECT PlanJson FROM sales.InvoiceFinalizations WHERE InvoiceId=@id",("@id",invoice.Id));
-        // The generated forward repair and its Down both reapply the corrected trigger with live finalization rows intact.
+        // Execute each generated direction independently, twice: Down is a safe forward repair,
+        // so both repeated Up and repeated Down must preserve rows and the exact-actor boundary.
         var repair = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.RepairSalesOfficialInvoiceCancellationActorCollation();
-        foreach (var operation in repair.UpOperations.Concat(repair.DownOperations))
+        foreach (var operation in repair.UpOperations.Concat(repair.UpOperations).Concat(repair.DownOperations).Concat(repair.DownOperations))
+        {
             await run.ExecuteAsync(Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(operation).Sql);
-        Assert.Equal(original, await run.ScalarAsync<string>("SELECT PlanJson FROM sales.InvoiceFinalizations WHERE InvoiceId=@id", ("@id", invoice.Id)));
-        // The exact actor must remain binary even when the legacy header uses the database collation.
-        // Real INSERT + UPDATE exercise the installed trigger; rollback leaves the positive workflow untouched.
-        var differentCaseActor = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync("""
+            foreach (var factActor in new[] { actor, actor.ToUpperInvariant() })
+            {
+                var headerActor = factActor == actor ? actor.ToUpperInvariant() : actor;
+                var differentCaseActor = await Assert.ThrowsAsync<SqlException>(() => ProbeCancellationAsync(factActor, headerActor));
+                Assert.Equal(51223, differentCaseActor.Number);
+                // A blanket refusal or a broken trigger must not masquerade as an actor check.
+                // The same SQL succeeds with the exact actor and releases shares in that transaction.
+                Assert.Equal(1, await ProbeCancellationAsync(factActor, factActor));
+                Assert.Equal(6, await run.ScalarAsync<int>("SELECT State FROM sales.Invoices WHERE CompanyId=@company AND Id=@id", ("@company", CompanyA), ("@id", invoice.Id)));
+                Assert.Equal(invoice.Version, await run.ScalarAsync<long>("SELECT Version FROM sales.Invoices WHERE CompanyId=@company AND Id=@id", ("@company", CompanyA), ("@id", invoice.Id)));
+                Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.OfficialInvoiceCancellations WHERE CompanyId=@company AND InvoiceId=@id", ("@company", CompanyA), ("@id", invoice.Id)));
+                Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceLines WHERE CompanyId=@company AND InvoiceId=@id AND ReleasedAtUtc IS NOT NULL", ("@company", CompanyA), ("@id", invoice.Id)));
+                Assert.Equal(original, await run.ScalarAsync<string>("SELECT PlanJson FROM sales.InvoiceFinalizations WHERE CompanyId=@company AND InvoiceId=@id", ("@company", CompanyA), ("@id", invoice.Id)));
+            }
+        }
+
+        // Every probe rolls back both the successful and refused transition. The real store
+        // workflow below must still commit once, preserving its original audit/outbox/replay checks.
+        Task<int> ProbeCancellationAsync(string factActor, string headerActor) => run.ScalarAsync<int>("""
+            DECLARE @proved int;
             BEGIN TRY
                 BEGIN TRANSACTION;
                 INSERT INTO sales.OfficialInvoiceCancellations
@@ -67,21 +85,25 @@ public sealed partial class SalesInvoiceSqlServerRelationalAcceptanceTests
                      FinalizedVersion, InvoiceVersion, AdmissionId, ActorId, RecordedAtUtc, CorrelationId, ViewJson, AdmissionJson)
                 VALUES (@company, @cancellation, @invoice, 1, @invoice, NULL,
                         @version, @version + 1, @admission, @actor, @at, N'SENTETIK', N'{"reason":"SENTETIK"}', N'{}');
-                UPDATE sales.Invoices SET State=7, Version=Version+1, CancelledBy=@differentCaseActor,
+                UPDATE sales.Invoices SET State=7, Version=Version+1, CancelledBy=@headerActor,
                     CancelledAtUtc=@at, CancellationReason=N'SENTETIK'
                     WHERE CompanyId=@company AND Id=@invoice;
+                SET @proved = CASE WHEN EXISTS
+                    (SELECT 1 FROM sales.Invoices WHERE CompanyId=@company AND Id=@invoice AND State=7 AND Version=@version+1)
+                    AND EXISTS (SELECT 1 FROM sales.InvoiceLines WHERE CompanyId=@company AND InvoiceId=@invoice)
+                    AND NOT EXISTS
+                    (SELECT 1 FROM sales.InvoiceLines WHERE CompanyId=@company AND InvoiceId=@invoice AND ReleasedAtUtc IS NULL)
+                    THEN 1 ELSE 0 END;
                 ROLLBACK TRANSACTION;
+                SELECT @proved;
             END TRY
             BEGIN CATCH
                 IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
                 THROW;
             END CATCH;
             """, ("@company", CompanyA), ("@cancellation", Guid.NewGuid()), ("@invoice", invoice.Id),
-            ("@version", invoice.Version), ("@admission", Guid.NewGuid()), ("@actor", actor),
-            ("@differentCaseActor", actor.ToUpperInvariant()), ("@at", DateTimeOffset.UtcNow)));
-        Assert.Equal(51223, differentCaseActor.Number);
-        Assert.Equal(6, await run.ScalarAsync<int>("SELECT State FROM sales.Invoices WHERE CompanyId=@company AND Id=@id", ("@company", CompanyA), ("@id", invoice.Id)));
-        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.OfficialInvoiceCancellations WHERE CompanyId=@company AND InvoiceId=@id", ("@company", CompanyA), ("@id", invoice.Id)));
+            ("@version", invoice.Version), ("@admission", Guid.NewGuid()), ("@actor", factActor),
+            ("@headerActor", headerActor), ("@at", DateTimeOffset.UtcNow));
         var proof=OfficialProof(invoice);SalesOfficialInvoiceCancellationResultV1 first;
         await using(var scope=run.OfficialStore(CompanyA))
         {
