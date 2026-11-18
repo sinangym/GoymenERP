@@ -493,7 +493,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
 
     def test_current_source_inventory_is_exact_and_schema_valid(self) -> None:
         self.assertEqual(
-            {"dbContexts": 19, "migrations": 258, "durableStores": 56},
+            {"dbContexts": 19, "migrations": 339, "durableStores": 56},
             self.inventory["counts"],
         )
         actual = {
@@ -1998,7 +1998,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
         contexts = generator._discover_csharp_subclasses(self.snapshot, "DbContext")
         migrations = generator._discover_csharp_subclasses(self.snapshot, "Migration")
         self.assertEqual(19, len(contexts))
-        self.assertEqual(258, len(migrations))
+        self.assertEqual(339, len(migrations))
         accepted_main_migrations = {
             "20261014120000_AddManufacturingPlanCutLines.cs",
             "20261015110000_ReleaseHotRolledCutSheetPlateTechnicalDefinition.cs",
