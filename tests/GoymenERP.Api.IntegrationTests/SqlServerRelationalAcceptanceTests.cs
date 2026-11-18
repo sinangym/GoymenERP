@@ -7,6 +7,8 @@ using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
+using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
+using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Organization.Domain.Sites;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
@@ -39,7 +41,7 @@ public sealed class SqlServerRelationalAcceptanceTests
             var healthResponse = await healthClient.GetAsync("/health/live");
             Assert.Equal(HttpStatusCode.OK, healthResponse.StatusCode);
 
-            await AssertMigrationAndSeedAsync(factory.DatabaseConnectionString);
+            await AssertMigrationAndSeedAsync(factory);
             await AssertIdentityRelationalConstraintsAsync(factory.DatabaseConnectionString);
             await AssertTenantWriteGuardAsync(factory);
             await AssertCompositeForeignKeyAsync(factory.DatabaseConnectionString);
@@ -58,28 +60,15 @@ public sealed class SqlServerRelationalAcceptanceTests
         }
     }
 
-    private static async Task AssertMigrationAndSeedAsync(string connectionString)
+    private static async Task AssertMigrationAndSeedAsync(SqlServerRelationalApiFactory factory)
     {
-        await using var connection = new SqlConnection(connectionString);
+        await AssertOwnerMigrationHistoryAsync<OrganizationDbContext>(factory);
+        await AssertOwnerMigrationHistoryAsync<IdentityDbContext>(factory);
+        await AssertOwnerMigrationHistoryAsync<AuditDbContext>(factory);
+        await AssertOwnerMigrationHistoryAsync<CommandExecutionDbContext>(factory);
+        await using var connection = new SqlConnection(factory.DatabaseConnectionString);
         await connection.OpenAsync();
 
-        Assert.Equal(
-            4,
-            await ScalarAsync<int>(
-                connection,
-                "SELECT COUNT(*) FROM [organization].[__EFMigrationsHistory];"));
-        // Identity: initial + explicit Product assignments + #329 activate + DEC-CAR-003 deactivate/reactivate.
-        Assert.Equal(
-            4,
-            await ScalarAsync<int>(
-                connection,
-                "SELECT COUNT(*) FROM [identity].[__EFMigrationsHistory];"));
-        // Audit: initial + global Product subject + F023-5a outcome query index.
-        Assert.Equal(
-            3,
-            await ScalarAsync<int>(
-                connection,
-                "SELECT COUNT(*) FROM [audit].[__EFMigrationsHistory];"));
         Assert.Equal(1, await ScalarAsync<int>(connection,
             "SELECT COUNT(*) FROM [identity].[__EFMigrationsHistory] WHERE [MigrationId] = '20260912175120_AddExplicitProductAssignments';"));
         Assert.Equal(1, await ScalarAsync<int>(connection,
@@ -88,11 +77,7 @@ public sealed class SqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM [audit].[__EFMigrationsHistory] WHERE [MigrationId] = '20261115121446_AddAuditOutcomeQueryIndex';"));
         Assert.Equal(0, await ScalarAsync<int>(connection,
             "SELECT COUNT(*) FROM [identity].[ProductMasterAssignments];"));
-        Assert.Equal(
-            1,
-            await ScalarAsync<int>(
-                connection,
-                "SELECT COUNT(*) FROM [idempotency].[__EFMigrationsHistory];"));
+
         Assert.Equal(
             3,
             await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [organization].[Companies];"));
@@ -146,6 +131,19 @@ public sealed class SqlServerRelationalAcceptanceTests
             await ScalarAsync<int>(
                 connection,
                 "SELECT COUNT(*) FROM [idempotency].[CommandExecutions];"));
+    }
+
+    private static async Task AssertOwnerMigrationHistoryAsync<TContext>(SqlServerRelationalApiFactory factory)
+        where TContext : DbContext
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(TestCompanyIds.CompanyA);
+        var owner = scope.ServiceProvider.GetRequiredService<TContext>();
+        var expected = owner.Database.GetMigrations().OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        Assert.NotEmpty(expected);
+        var applied = (await owner.Database.GetAppliedMigrationsAsync())
+            .OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        Assert.Equal(expected, applied);
     }
 
     private static async Task AssertTopologyCountsAsync(
