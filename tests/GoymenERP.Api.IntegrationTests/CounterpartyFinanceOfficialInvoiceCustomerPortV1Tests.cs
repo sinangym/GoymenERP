@@ -31,13 +31,21 @@ public sealed class CounterpartyFinanceOfficialInvoiceCustomerPortV1Tests
     [Fact]
     public async Task Changed_actor_or_company_after_owner_read_does_not_release_membership_or_not_found()
     {
-        var company = CompanyContext(); var user = new User();
+        var company = new MutableCompany(Company); var user = new User();
         var owner = new Owner(Detail()) { DuringRead = () => user.UserId = "SENTETIK-other" };
         Assert.Equal(ReadOutcome.Denied, await new CounterpartyFinanceOfficialInvoiceCustomerPortV1(company, user, owner).CheckCompanyPartyAsync(Context(), Party, default));
-        owner = new Owner(null) { DuringRead = () => company.Set(Guid.NewGuid()) };
+        var foreignCompany = Guid.NewGuid();
+        owner = new Owner(null) { DuringRead = () => company.Set(foreignCompany) };
         Assert.Equal(ReadOutcome.Denied, await new CounterpartyFinanceOfficialInvoiceCustomerPortV1(company, new User(), owner).CheckCompanyPartyAsync(Context(), Party, default));
+        Assert.Equal(foreignCompany, company.CompanyId);
     }
     private static CompanyContext CompanyContext() { var value = new CompanyContext(); value.Set(Company); return value; }
+    private sealed class MutableCompany(Guid companyId) : ICompanyContext
+    {
+        public bool IsResolved => true;
+        public Guid CompanyId { get; private set; } = companyId;
+        public void Set(Guid value) => CompanyId = value;
+    }
     private static CounterpartyDetailView Detail() => new(Party, "SENTETIK-1", PartyKind.LegalEntity,
         "SENTETIK kaynak cari", null, false, "3", [new(Account, Company, PartyRole.None, false, "4")]);
     private sealed class Owner(CounterpartyDetailView? value) : ICounterpartyReadService

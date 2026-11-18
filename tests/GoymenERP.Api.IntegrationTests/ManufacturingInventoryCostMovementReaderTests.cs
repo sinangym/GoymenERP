@@ -117,15 +117,17 @@ public sealed class ManufacturingInventoryCostMovementReaderTests
     [InlineData("actor")]
     public async Task A_foreign_scope_or_wrong_movement_proof_is_not_used_as_cost(string fault)
     {
-        var fixture = new Fixture(); var value = fixture.Owner.Value;
+        var fixture = new Fixture(new MutableCompany()); var value = fixture.Owner.Value;
+        var foreignCompany = Guid.NewGuid();
         if (fault == "owner-company") value = value with { CompanyId = Guid.NewGuid() };
         if (fault == "owner-order") value = value with { ManufacturingOrderId = Guid.NewGuid() };
         if (fault == "source-kind") value = value with { Issues = [value.Issues[0] with { SourceKind = "sales.shipment" }] };
         if (fault == "movement-kind") value = value with { Issues = [value.Issues[0] with { MovementKind = StockMovementKind.Receipt }] };
         if (fault == "wrong-TL-currency") value = value with { Issues = [value.Issues[0] with { Tl = value.Issues[0].Tl with { CurrencyId = Guid.NewGuid() } }] };
         fixture.Owner.Value = value;
-        fixture.Owner.BeforeRead = () => { if (fault == "scope") fixture.Company.Set(Guid.NewGuid()); if (fault == "actor") fixture.User.Actor = "another-synthetic-actor"; };
+        fixture.Owner.BeforeRead = () => { if (fault == "scope") fixture.Company.Set(foreignCompany); if (fault == "actor") fixture.User.Actor = "another-synthetic-actor"; };
         Assert.Null(await fixture.Reader.ReadAsync(fixture.CompanyId, fixture.OrderId, CancellationToken.None));
+        if (fault == "scope") Assert.Equal(foreignCompany, fixture.Company.CompanyId);
     }
 
     private static InventoryMovementCostStampV1 MissingStamp() => new(InventoryMovementCostStampStatusV1.Unavailable,
@@ -133,10 +135,11 @@ public sealed class ManufacturingInventoryCostMovementReaderTests
     private sealed class Fixture
     {
         public Guid CompanyId { get; } = Guid.NewGuid(); public Guid OrderId { get; } = Guid.NewGuid();
-        public CompanyContext Company { get; } = new(); public User User { get; } public Owner Owner { get; }
+        public ICompanyContext Company { get; } public User User { get; } public Owner Owner { get; }
         public ManufacturingInventoryCostMovementReader Reader { get; }
-        public Fixture()
+        public Fixture(ICompanyContext? company = null)
         {
+            Company = company ?? new CompanyContext();
             Company.Set(CompanyId); User = new(CompanyId);
             Owner = new() { Value = new(InventoryManufacturingCostReadOutcomeV1.Available, CompanyId, OrderId,
                 [new(Guid.NewGuid(), Guid.NewGuid(), InventoryManufacturingRealizationContractV1.InputIssueSourceKind, StockMovementKind.Issue,
@@ -146,6 +149,12 @@ public sealed class ManufacturingInventoryCostMovementReaderTests
             // These bridge tests isolate stamp/representation mapping; real owner priority composition has its own tests.
             Reader = new(Company, User, Owner, new SyntheticPriorityProjection());
         }
+    }
+    private sealed class MutableCompany : ICompanyContext
+    {
+        public bool IsResolved => CompanyId != Guid.Empty;
+        public Guid CompanyId { get; private set; }
+        public void Set(Guid value) => CompanyId = value;
     }
     private sealed class Owner : IInventoryManufacturingCostReadPortV1
     {

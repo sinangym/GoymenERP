@@ -97,13 +97,17 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
         await store.ApproveAsync(proposal.ProposalId, proposal.Kind, 2, Checker, Fence, Metadata(Checker));
         var physical = reader.Physical()[0];
         await using var tx = await scope.Db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
-        var posted = new PurchasePostedCostAttributionStoreV1(scope.Db, scope.CompanyContext);
+        var consumerCompany = new MutableCompany(Company);
+        var posted = new PurchasePostedCostAttributionStoreV1(scope.Db, consumerCompany);
         await Assert.ThrowsAsync<AccountingStoreException>(() => posted.ReadProvenSharesAsync(TestCompanyIds.CompanyB, physical.ShipmentId,
             physical.MovementId, physical.MovementLineNumber, physical.ProductId, physical.PhysicalQuantityKg, Fence));
-        await Assert.ThrowsAsync<AccountingStoreException>(() => posted.ReadProvenSharesAsync(Company, physical.ShipmentId,
+        var movedFailure = await Assert.ThrowsAsync<AccountingStoreException>(() => posted.ReadProvenSharesAsync(Company, physical.ShipmentId,
             physical.MovementId, physical.MovementLineNumber, physical.ProductId, physical.PhysicalQuantityKg,
-            _ => { scope.CompanyContext.Set(TestCompanyIds.CompanyB); return Task.CompletedTask; }));
-        scope.CompanyContext.Set(Company); await tx.RollbackAsync();
+            _ => { consumerCompany.Set(TestCompanyIds.CompanyB); return Task.CompletedTask; }));
+        Assert.Equal("company_context_mismatch", movedFailure.Code);
+        Assert.Equal(TestCompanyIds.CompanyB, consumerCompany.CompanyId);
+        Assert.Equal(Company, scope.CompanyContext.CompanyId);
+        await tx.RollbackAsync();
         Assert.Equal(1, await run.Count("accounting.Journals"));
     }
 

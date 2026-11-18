@@ -31,8 +31,7 @@ public sealed class ManufacturingSubcontractCompletionHostPortTests
     [Fact]
     public async Task A_foreign_or_malformed_owner_answer_and_a_changed_context_are_unavailable()
     {
-        var company = new CompanyContext();
-        company.Set(Company);
+        var company = new MutableCompany(Company);
         var answers = new[] { Available() with { CompanyId = Guid.NewGuid() },
             Available() with { ManufacturingOrderId = Guid.NewGuid() }, Available() with { CustomerPartyId = Guid.Empty },
             Available() with { OutputLabelIds = [Label, Label] }, Available() with { OutputLabelIds = [Guid.Empty] } };
@@ -42,11 +41,19 @@ public sealed class ManufacturingSubcontractCompletionHostPortTests
             Assert.Equal(LogisticsSubcontractOrderReadOutcomeV1.Unavailable, result.Outcome);
             Assert.Empty(result.OutputLabelIds);
         }
-        var switched = new Owner(Available(), () => company.Set(Guid.NewGuid()));
+        var foreignCompany = Guid.NewGuid();
+        var switched = new Owner(Available(), () => company.Set(foreignCompany));
         Assert.Equal(LogisticsSubcontractOrderReadOutcomeV1.Unavailable,
             (await new ManufacturingLogisticsSubcontractOrderReadPort(switched, company).GetAsync(Order)).Outcome);
+        Assert.Equal(foreignCompany, company.CompanyId);
     }
 
+    private sealed class MutableCompany(Guid companyId) : ICompanyContext
+    {
+        public bool IsResolved => true;
+        public Guid CompanyId { get; private set; } = companyId;
+        public void Set(Guid value) => CompanyId = value;
+    }
     private sealed class Owner(ManufacturingSubcontractCompletionReadV1 answer, Action? beforeAnswer = null)
         : IManufacturingSubcontractCompletionReadPortV1
     {

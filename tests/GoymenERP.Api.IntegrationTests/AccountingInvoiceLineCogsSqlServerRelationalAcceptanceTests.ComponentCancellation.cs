@@ -62,7 +62,7 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
         }
         var results = await Task.WhenAll(Approve(), Approve()); Assert.Single(results, x => x);
         Assert.Equal(2, await run.Count("accounting.Journals")); Assert.Equal(1, await run.Count("accounting.InventoryCostCancellationClaims"));
-        await using var foreign = run.Open(); foreign.CompanyContext.Set(Guid.NewGuid());
+        await using var foreign = run.Open(Guid.NewGuid());
         Assert.Empty(await foreign.Db.InventoryCostCancellationClaims.AsNoTracking().ToListAsync());
         Assert.Empty(await foreign.Db.InventoryCostCancellationVersions.AsNoTracking().ToListAsync());
     }

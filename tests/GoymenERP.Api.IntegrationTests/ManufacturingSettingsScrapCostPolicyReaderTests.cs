@@ -28,10 +28,11 @@ public sealed class ManufacturingSettingsScrapCostPolicyReaderTests
     [InlineData("owner-failure")]
     public async Task Scope_changes_and_unreadable_owner_answers_never_become_a_default_true(string fault)
     {
-        var companyId = Guid.NewGuid(); var company = new CompanyContext(); company.Set(companyId); var user = new User(companyId);
+        var companyId = Guid.NewGuid(); var company = new MutableCompany(companyId); var user = new User(companyId);
+        var foreignCompany = Guid.NewGuid();
         var owner = new Owner { Value = new(companyId, true, 0), BeforeRead = () =>
         {
-            if (fault == "company") company.Set(Guid.NewGuid());
+            if (fault == "company") company.Set(foreignCompany);
             if (fault == "actor") user.Actor = "another-synthetic-actor";
             if (fault == "membership") user.Allowed = false;
         }};
@@ -39,6 +40,13 @@ public sealed class ManufacturingSettingsScrapCostPolicyReaderTests
         if (fault == "owner-version") owner.Value = owner.Value with { Version = -1 };
         if (fault == "owner-failure") owner.Failure = new InvalidOperationException("SENTETIK owner unavailable");
         Assert.Null(await new ManufacturingSettingsScrapCostPolicyReader(company, user, owner).ReadAsync(companyId, CancellationToken.None));
+        if (fault == "company") Assert.Equal(foreignCompany, company.CompanyId);
+    }
+    private sealed class MutableCompany(Guid companyId) : ICompanyContext
+    {
+        public bool IsResolved => true;
+        public Guid CompanyId { get; private set; } = companyId;
+        public void Set(Guid value) => CompanyId = value;
     }
     private sealed class Owner : ISettingsManufacturingScrapCostPolicyProviderV1
     {
