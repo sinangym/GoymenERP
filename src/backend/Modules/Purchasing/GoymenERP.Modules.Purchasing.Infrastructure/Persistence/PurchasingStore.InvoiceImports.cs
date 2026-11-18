@@ -30,16 +30,7 @@ public sealed partial class PurchasingStore : IPurchaseInvoiceImportReservationS
         RequireInvoiceTransactionOwnership(); RequireEnvelope(envelope);
         if (envelope.PermissionCode != PurchaseIncomingInvoicePermissionNamesV1.Import) throw new ArgumentException("Import authority required.");
         var companyId = RequireResolvedCompany(); var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
-        async Task<PurchaseInvoiceImportReservationResultV1?> Prior()
-        {
-            await requireStillAuthorized(token);
-            var row = await dbContext.InvoiceImportReservations.AsNoTracking().SingleOrDefaultAsync(item => item.IdempotencyKeyHash == keyHash, token);
-            await requireStillAuthorized(token);
-            if (row is null) return null;
-            if (row.ActorId != envelope.ActorId.Trim()) throw Refused(PurchasingStoreCodes.SameKeyPayloadMismatch, "İşlem anahtarı başka aktöre ait.");
-            return new(ImportReservation(row, companyId), true, row.CorrelationId);
-        }
-        if (await Prior() is { } prior) return prior;
+        if (await FindInvoiceImportReservationReplayAsync(envelope, companyId, keyHash, requireStillAuthorized, token) is { } prior) return prior;
         var created = new PurchaseInvoiceImportReservationRow
         {
             CompanyId = companyId, Id = Guid.NewGuid(), ActorId = envelope.ActorId.Trim(), IdempotencyKeyHash = keyHash,
@@ -52,8 +43,20 @@ public sealed partial class PurchasingStore : IPurchaseInvoiceImportReservationS
             null, 1, "{}", JsonSerializer.Serialize(reservation, Json), "Alış faturası kaynak belgesi için kimlik ayrıldı; para etkisi yok");
         try { await SaveAsync(token); }
         catch (PurchasingStoreException exception) when (exception.Code == PurchasingStoreCodes.ConcurrentChange)
-        { if (await Prior() is { } winner) return winner; throw; }
+        { if (await FindInvoiceImportReservationReplayAsync(envelope, companyId, keyHash, requireStillAuthorized, token) is { } winner) return winner; throw; }
         return new(reservation, false, created.CorrelationId);
+    }
+
+    private async Task<PurchaseInvoiceImportReservationResultV1?> FindInvoiceImportReservationReplayAsync(
+        PurchasingWriteEnvelope envelope, Guid companyId, string keyHash,
+        Func<CancellationToken, Task> requireStillAuthorized, CancellationToken token)
+    {
+        await requireStillAuthorized(token);
+        var row = await dbContext.InvoiceImportReservations.AsNoTracking().SingleOrDefaultAsync(item => item.IdempotencyKeyHash == keyHash, token);
+        await requireStillAuthorized(token);
+        if (row is null) return null;
+        if (row.ActorId != envelope.ActorId.Trim()) throw Refused(PurchasingStoreCodes.SameKeyPayloadMismatch, "İşlem anahtarı başka aktöre ait.");
+        return new(ImportReservation(row, companyId), true, row.CorrelationId);
     }
 
     private static PurchaseInvoiceImportReservationV1 ImportReservation(PurchaseInvoiceImportReservationRow row, Guid companyId)
