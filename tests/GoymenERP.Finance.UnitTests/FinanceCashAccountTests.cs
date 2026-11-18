@@ -958,9 +958,9 @@ public sealed class FinanceCashAccountTests
             balances: new NoBalanceRead(), currencies: other);
 
         AssertIssue(refused, CommandOutcome.ValidationFailed, "accountId", "cash_account_currency_not_a_candidate");
-        // The authority is measured at the start and again after Settings answered.
+        // Authority is checked at the outer entry, again inside the treasury transaction and after Settings answered.
         var action = ActionOf(CashAccountStateChange.Reactivation, step);
-        Assert.Equal([action, action], permissions.Actions);
+        Assert.Equal([action, action, action], permissions.Actions);
         // Not stored, not audited, still passive and in its own currency: the same request may come again once
         // Settings allows the currency again.
         Assert.Equal(before, await run.SnapshotAsync(seeded.Id));

@@ -266,6 +266,8 @@ public sealed class FinanceShellCapabilityProviderTests
             cashTransferCommit.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
         foreach (var (parentId, controlIds) in new (string, string[])[]
                  {
+                     (FinanceShellCapabilityProvider.OfficialInvoiceRecordCapabilityId,
+                         [FinanceShellCapabilityProvider.OfficialInvoiceWithdrawCapabilityId]),
                      (FinanceShellCapabilityProvider.CollateralListCapabilityId,
                          [FinanceShellCapabilityProvider.CollateralRecordCapabilityId]),
                      (FinanceShellCapabilityProvider.OpeningBalanceListCapabilityId,
@@ -282,7 +284,7 @@ public sealed class FinanceShellCapabilityProviderTests
                     control.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
             }
         }
-        Assert.Equal(19, declarations.Count(item => item.ParentCapabilityId is not null));
+        Assert.Equal(20, declarations.Count(item => item.ParentCapabilityId is not null));
     }
 
     [Fact]

@@ -276,6 +276,8 @@ public sealed class FinanceCashAccountService(
         var kind = KindOf(change);
         if (await StartAsync(context, metadata, kind.Propose, request.AccountId, cancellationToken)
             is { } denied) return denied;
+        // Canonical identity validation precedes opening a treasury transaction or reading its target.
+        if (IdentityRefusal(context, request.AccountId, request.ExpectedVersion) is { } malformed) return malformed;
         return await FinanceTreasuryTransaction.ExecuteAsync(dbContext,
             () => ProposeStateChangeTreasuryCoreAsync(context, metadata, change, request, cancellationToken),
             async () => await FenceAsync(context, kind.Propose, request.AccountId, cancellationToken)
@@ -369,6 +371,8 @@ public sealed class FinanceCashAccountService(
         var kind = KindOf(change);
         if (await StartAsync(context, metadata, kind.Approve, request.AccountId, cancellationToken)
             is { } denied) return denied;
+        // Canonical identity validation precedes opening a treasury transaction or reading its target.
+        if (IdentityRefusal(context, request.AccountId, request.ExpectedVersion) is { } malformed) return malformed;
         return await FinanceTreasuryTransaction.ExecuteAsync(dbContext,
             () => ApproveStateChangeTreasuryCoreAsync(context, metadata, change, request, cancellationToken),
             async () => await FenceAsync(context, kind.Approve, request.AccountId, cancellationToken)

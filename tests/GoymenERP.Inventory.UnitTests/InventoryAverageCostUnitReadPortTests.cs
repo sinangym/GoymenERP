@@ -60,7 +60,7 @@ public sealed class InventoryAverageCostUnitReadPortTests
     {
         Assert.Equal(
             [
-                "CompanyId", "CompanyWide", "ContractVersion", "ConversionRefusalCode", "CostCurrencyBasis", "CostPerUnit",
+                "CompanyId", "CompanyWide", "ContractVersion", "ConversionRefusalCode", "CostCurrencyBasis", "CostCurrencyId", "CostPerUnit",
                 "KilogramsPerUnitCoefficient", "PolicyProfileId", "PolicyVersion", "ProductId", "Status", "UnitId",
             ],
             typeof(InventoryAverageCostUnitReadAnswerV1).GetProperties().Select(property => property.Name)

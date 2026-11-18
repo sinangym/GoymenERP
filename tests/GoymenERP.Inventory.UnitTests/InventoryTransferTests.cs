@@ -711,7 +711,7 @@ public sealed partial class InventoryTransferTests
             .Select(property => property.Name));
 
         var movement = model.FindEntityType(typeof(MovementRow))!;
-        Assert.Equal("[Kind] BETWEEN 1 AND 15",
+        Assert.Equal("[Kind] BETWEEN 1 AND 16",
             movement.GetCheckConstraints().Single(check => check.Name == "CK_Movements_Kind").Sql);
         Assert.Equal((8, 9), ((int)StockMovementKind.TransferDispatch, (int)StockMovementKind.TransferAccept));
     }

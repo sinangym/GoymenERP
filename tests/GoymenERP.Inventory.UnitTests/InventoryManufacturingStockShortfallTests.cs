@@ -37,7 +37,7 @@ public sealed class InventoryManufacturingStockShortfallTests
         Assert.Throws<InvalidOperationException>(() => InventoryManufacturingRealizationException.Refused(503,
             InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient, shortfall));
         Assert.Throws<ArgumentNullException>(() => InventoryManufacturingRealizationException.Refused(409,
-            InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient, null!));
+            InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient, stockShortfall: null!));
     }
 
     [Fact]

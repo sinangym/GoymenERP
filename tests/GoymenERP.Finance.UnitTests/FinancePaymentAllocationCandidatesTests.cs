@@ -46,7 +46,7 @@ public sealed class FinancePaymentAllocationCandidatesTests
         public Guid Payment { get; } = Guid.NewGuid(); public Guid Party { get; } = Guid.NewGuid();
         public Guid Account { get; } = Guid.NewGuid(); public Guid Target { get; } = Guid.NewGuid();
         public Guid TargetAccount { get; } = Guid.NewGuid(); public Guid Currency { get; } = Guid.NewGuid();
-        public Guid GoodItem { get; } = Guid.NewGuid(); public CompanyContext Company { get; } = new();
+        public Guid GoodItem { get; } = Guid.NewGuid(); public AdversarialCompanyContext Company { get; } = new();
         public FinanceDbContext Db { get; } public Permission Permission { get; } = new();
         public FinanceContext Context { get; } public FinancePaymentAllocationCandidatesV1 Reader { get; }
         public Run()
@@ -87,4 +87,12 @@ public sealed class FinancePaymentAllocationCandidatesTests
     private sealed class User(Guid company) : ICurrentUser
     { public bool IsAuthenticated => true; public string UserId => "SENTETIK";
       public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { company }; public bool CanAccessCompany(Guid id) => company == id; }
+    // SENTETIK adversarial port: production CompanyContext intentionally rejects this drift at Set().
+    private sealed class AdversarialCompanyContext : ICompanyContext
+    {
+        public bool IsResolved { get; private set; }
+        public Guid CompanyId { get; private set; }
+        public void Set(Guid companyId) { CompanyId = companyId; IsResolved = true; }
+    }
+
 }

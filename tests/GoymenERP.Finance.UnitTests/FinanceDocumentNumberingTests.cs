@@ -42,7 +42,8 @@ public sealed class FinanceDocumentNumberingTests
         var company = new CompanyContext(); company.Set(Company);
         using var db = new FinanceDbContext(new DbContextOptionsBuilder<FinanceDbContext>()
             .UseSqlServer("Server=unused;Database=unused;Integrated Security=true;TrustServerCertificate=true").Options, company);
-        Assert.EndsWith("_AddFinanceRecordedDocumentNumbers", db.Database.GetMigrations().Last());
+        Assert.Equal("20261117200743_AddFinanceRecordedDocumentNumbers",
+            Assert.Single(db.Database.GetMigrations(), id => id.EndsWith("_AddFinanceRecordedDocumentNumbers", StringComparison.Ordinal)));
         Assert.False(db.Database.HasPendingModelChanges());
         var migration = new AddFinanceRecordedDocumentNumbers();
         Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);

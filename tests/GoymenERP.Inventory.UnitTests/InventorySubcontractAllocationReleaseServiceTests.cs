@@ -57,7 +57,7 @@ public sealed class InventorySubcontractAllocationReleaseServiceTests
     private static InventoryCommandMetadata Transport() => new("SENTETIK-untrusted-actor", "SENTETIK-untrusted-permission", ["SENTETIK-untrusted-role"], "SENTETIK-correlation", null, "SENTETIK-key", "Integration");
     private sealed class World
     {
-        public Guid Id { get; } = Guid.NewGuid(); public CompanyContext Company { get; } = new(); public User User { get; } = new();
+        public Guid Id { get; } = Guid.NewGuid(); public AdversarialCompanyContext Company { get; } = new(); public User User { get; } = new();
         public Authority Authority { get; } = new(); public Store Store { get; }
         public InventorySubcontractAllocationReleaseServiceV1 Service { get; }
         public World() { Company.Set(User.Company); Store = new(Company, Id); Service = new(Company, User, Authority, Store); }
@@ -75,7 +75,7 @@ public sealed class InventorySubcontractAllocationReleaseServiceTests
         public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default)
         { Requests.Add(permission); return Task.FromResult(new PermissionScope(Granted, Wide, new HashSet<string> { "SENTETIK-role" }, new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>())); }
     }
-    private sealed class Store(CompanyContext company, Guid id) : IInventorySubcontractAllocationReleaseStoreV1
+    private sealed class Store(ICompanyContext company, Guid id) : IInventorySubcontractAllocationReleaseStoreV1
     {
         public Action? BeforeFence { get; set; } public InventoryCommandMetadata? Metadata { get; private set; }
         public int Reads { get; private set; } public int Writes { get; private set; } public bool Fail { get; set; }
@@ -95,4 +95,12 @@ public sealed class InventorySubcontractAllocationReleaseServiceTests
             return new(new(allocation, "4", "20", "80", request.Reason, now), false, metadata.CorrelationId);
         }
     }
+    // SENTETIK adversarial port: production CompanyContext intentionally rejects this drift at Set().
+    private sealed class AdversarialCompanyContext : ICompanyContext
+    {
+        public bool IsResolved { get; private set; }
+        public Guid CompanyId { get; private set; }
+        public void Set(Guid companyId) { CompanyId = companyId; IsResolved = true; }
+    }
+
 }
