@@ -4,7 +4,10 @@ using System.Text.Json;
 using System.Globalization;
 using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.SalesRuntime;
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.DocumentGeneration.Pdf;
+using GoymenERP.Modules.Documents.Application.Contracts;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -288,6 +291,36 @@ public sealed class SalesOrderPdfHttpAcceptanceTests(GoymenErpApiFactory factory
         }
 
         Assert.Equal((0, 0), (detailService.Calls, pricing.Calls));
+    }
+
+    [Fact]
+    public async Task A_missing_fresh_draft_read_grant_stops_before_the_template_and_does_not_repeat_the_record_reads()
+    {
+        var draftId = Guid.NewGuid();
+        var (detail, pricing) = Order(draftId, SalesPriceDisclosure.Visible);
+        var calls = new List<string>();
+        var detailService = new StubDetail(_ => { calls.Add("detail"); return Task.FromResult(detail); });
+        var pricingService = new StubPricing(_ => { calls.Add("pricing"); return Task.FromResult(pricing); });
+        var templates = new CountingTemplateSource();
+        using var host = CreateHost(detailService, pricingService, services =>
+        {
+            services.RemoveAll<IDocumentPublishedTemplateReadPortV1>();
+            services.AddSingleton<IDocumentPublishedTemplateReadPortV1>(templates);
+            services.RemoveAll<IErpAuthorityRevalidationService>();
+            services.AddScoped<IErpAuthorityRevalidationService>(provider => new SyntheticPdfReadAuthority(
+                provider.GetRequiredService<ICompanyContext>(), provider.GetRequiredService<ICurrentUser>())
+            { Granted = false, BeforeRead = () => calls.Add("authority") });
+        });
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync(PdfPath(draftId));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.True(response.Headers.CacheControl is { Private: true, NoStore: true });
+        Assert.NotEqual("application/pdf", response.Content.Headers.ContentType?.MediaType);
+        // The endpoint's initial record reads precede the template's fresh permission fence.
+        Assert.Equal(new[] { "detail", "pricing", "authority" }, calls);
+        Assert.Equal((1, 1, 0), (detailService.Calls, pricingService.Calls, templates.Calls));
     }
 
     /// <summary>
@@ -734,6 +767,9 @@ public sealed class SalesOrderPdfHttpAcceptanceTests(GoymenErpApiFactory factory
         {
             services.RemoveAll<GoymenERP.Modules.Documents.Application.Contracts.IDocumentPublishedTemplateReadPortV1>();
             services.AddSingleton<GoymenERP.Modules.Documents.Application.Contracts.IDocumentPublishedTemplateReadPortV1, TechnicalDocumentTemplateSourceForTests>();
+            // STK-S29: the synthetic Sales reads also supply their narrow fresh producer permission.
+            services.RemoveAll<IErpAuthorityRevalidationService>();
+            services.AddScoped<IErpAuthorityRevalidationService, SyntheticPdfReadAuthority>();
             services.RemoveAll<ISalesDraftReadServiceV1>();
             services.AddSingleton(detail);
             services.RemoveAll<ISalesOrderPrintReadServiceV1>();
@@ -765,6 +801,38 @@ public sealed class SalesOrderPdfHttpAcceptanceTests(GoymenErpApiFactory factory
         client.DefaultRequestHeaders.Add("X-Development-User", TestUsers.GroupAdmin);
         client.DefaultRequestHeaders.Add("X-Company-Id", CompanyA.ToString("D"));
         return client;
+    }
+
+    private sealed class SyntheticPdfReadAuthority(ICompanyContext company, ICurrentUser user) : IErpAuthorityRevalidationService
+    {
+        public bool Granted { get; init; } = true;
+        public Action? BeforeRead { get; init; }
+
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            BeforeRead?.Invoke();
+            var granted = Granted && permission == ErpPermissions.SalesDraftsRead && companyId == CompanyA
+                && company.IsResolved && company.CompanyId == companyId && user.IsAuthenticated
+                && !string.IsNullOrWhiteSpace(user.UserId) && user.CanAccessCompany(companyId);
+            return Task.FromResult(granted
+                ? new PermissionScope(true, false, new HashSet<string>(StringComparer.Ordinal),
+                    new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>())
+                : PermissionScope.Denied);
+        }
+    }
+
+    private sealed class CountingTemplateSource : IDocumentPublishedTemplateReadPortV1
+    {
+        public int Calls { get; private set; }
+
+        public Task<DocumentPublishedTemplateReadV1> ReadAsync(Guid companyId, DocumentTemplateModuleV1 module,
+            string code, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return new TechnicalDocumentTemplateSourceForTests().ReadAsync(companyId, module, code, cancellationToken);
+        }
     }
 
     private sealed class StubDetail(Func<Guid, Task<SalesOrderDraftReadDetailViewV1>> detail) : ISalesDraftReadServiceV1
