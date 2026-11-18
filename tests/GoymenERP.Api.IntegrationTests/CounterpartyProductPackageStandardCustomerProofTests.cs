@@ -40,19 +40,39 @@ public sealed class CounterpartyProductPackageStandardCustomerProofTests
         Assert.Equal(ProductPackageStandardCustomerOutcomeV3.Found, empty.Outcome); Assert.Empty(empty.Customers);
     }
 
-    public static IEnumerable<object[]> MalformedCustomers()
-    {
-        yield return [Customer() with { CompanyId = Other }]; yield return [Customer() with { PartyId = Other }];
-        yield return [Customer() with { CompanyAccountId = Guid.Empty }]; yield return [Customer() with { PartyIsActive = false }];
-        yield return [Customer() with { AccountIsActive = false }]; yield return [Customer() with { HasCustomerRole = false }];
-        yield return [Customer() with { PartyVersion = "0" }]; yield return [Customer() with { AccountVersion = "01" }];
-        yield return [Customer() with { AccountVersion = "9223372036854775808" }]; yield return [Customer() with { Code = "supplier-display-only" }];
-        yield return [Customer() with { LegalName = "" }]; yield return [Customer() with { TradeName = "\nSENTETIK" }];
-    }
+    // Serializable case labels let TestSDK enumerate every negative row before execution.
+    // Keep the original twelve malformed owner records; never relax exact discovery counts.
     [Theory]
-    [MemberData(nameof(MalformedCustomers))]
-    public async Task Found_without_actual_bound_active_customer_evidence_is_unavailable(CounterpartyProductPackageStandardCustomerV1 value)
+    [InlineData("foreign-company")]
+    [InlineData("foreign-party")]
+    [InlineData("empty-account")]
+    [InlineData("inactive-party")]
+    [InlineData("inactive-account")]
+    [InlineData("missing-customer-role")]
+    [InlineData("zero-party-version")]
+    [InlineData("noncanonical-account-version")]
+    [InlineData("overflow-account-version")]
+    [InlineData("supplier-display-code")]
+    [InlineData("empty-legal-name")]
+    [InlineData("control-character-trade-name")]
+    public async Task Found_without_actual_bound_active_customer_evidence_is_unavailable(string kind)
     {
+        var value = kind switch
+        {
+            "foreign-company" => Customer() with { CompanyId = Other },
+            "foreign-party" => Customer() with { PartyId = Other },
+            "empty-account" => Customer() with { CompanyAccountId = Guid.Empty },
+            "inactive-party" => Customer() with { PartyIsActive = false },
+            "inactive-account" => Customer() with { AccountIsActive = false },
+            "missing-customer-role" => Customer() with { HasCustomerRole = false },
+            "zero-party-version" => Customer() with { PartyVersion = "0" },
+            "noncanonical-account-version" => Customer() with { AccountVersion = "01" },
+            "overflow-account-version" => Customer() with { AccountVersion = "9223372036854775808" },
+            "supplier-display-code" => Customer() with { Code = "supplier-display-only" },
+            "empty-legal-name" => Customer() with { LegalName = "" },
+            "control-character-trade-name" => Customer() with { TradeName = "\nSENTETIK" },
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
         var answer = await Port(new(new Owner { Answer = Found(value) })).ReadAsync([Party]);
         Assert.Equal(ProductPackageStandardCustomerOutcomeV3.Unavailable, answer.Outcome); Assert.Empty(answer.Customers);
     }
