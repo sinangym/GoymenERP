@@ -220,8 +220,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // the subprocess timeout changes; the exact inventory, every listed test and the 0-skip rule are unchanged.
     // Re-fingerprinted for CI-HIZ: SHARD_MODULES moves logistics from shard C to shard B (wall-clock balance only);
     // the exact inventory, every listed test and the 0-skip rule are unchanged.
+    // W8 SQL diagnostics: bounded allowlisted FQN/outcome/duration progress survives execution timeout.
+    // The single 2400-second deadline, exact discovery/theory multiplicity, skip0 and TRX/proof gates remain.
+    // Re-fingerprinted from the house producer; independent exact-head K3 review is still pending.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "f932bda3bc39f2b4c10b15e034a6c75c472eefce641c095be4bcb5c197a9a342";
+        "28a5a658704d0b63b3fd67a6b8f7d709b3ba7b105e806b64f894c3843f48a347";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
