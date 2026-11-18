@@ -40,7 +40,8 @@ public sealed class SettingsCollateralTypePersistenceModelTests
         Assert.Equal(["CompanyId", "EntryId"], Assert.Single(version.GetForeignKeys()).Properties.Select(property => property.Name));
         Assert.Single(entry.GetDeclaredQueryFilters()); Assert.Single(version.GetDeclaredQueryFilters());
         Assert.Empty(entry.GetSeedData()); Assert.Empty(version.GetSeedData());
-        Assert.All(entry.GetProperties().Concat(version.GetProperties()), property => { Assert.Null(property.GetDefaultValue()); Assert.Null(property.GetDefaultValueSql()); });
+        // Configured database defaults are annotations; GetDefaultValue also returns a non-null CLR type default.
+        Assert.All(entry.GetProperties().Concat(version.GetProperties()), property => { Assert.Null(property.FindAnnotation(RelationalAnnotationNames.DefaultValue)); Assert.Null(property.GetDefaultValueSql()); });
         Assert.Equal(64, version.FindProperty("RatePercent")!.GetMaxLength());
         Assert.Equal("Latin1_General_100_BIN2", version.FindProperty("RatePercent")!.GetCollation());
         Assert.Equal(SettingsDbContext.CollateralRateCheck, version.GetCheckConstraints().Single(check => check.Name == "CK_SettingsCollateralTypeVersions_RateText").Sql);

@@ -22,7 +22,7 @@ public sealed class SettingsMoneyProfilePersistenceModelTests
         Assert.Equal(SettingsDbContext.MoneyProfileScaleCheck,
             Assert.Single(entity.GetCheckConstraints(), constraint => constraint.Name == "CK_SettingsMoneyProfileVersions_Scale").Sql);
         Assert.Equal(128, entity.FindProperty(nameof(MoneyProfileVersionRow.Operation))!.GetMaxLength());
-        Assert.All(entity.GetProperties(), property => { Assert.Null(property.GetDefaultValue()); Assert.Null(property.GetDefaultValueSql()); });
+        Assert.All(entity.GetProperties(), property => { Assert.Null(property.FindAnnotation(RelationalAnnotationNames.DefaultValue)); Assert.Null(property.GetDefaultValueSql()); });
     }
 
     [Fact]
