@@ -228,8 +228,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Process/static lifetime changes require independent K3 review; no workflow or runtime bypass added.
     // W8: complete exact failed batches continue only for diagnostics; the first native failure
     // stays fatal and prevents proof. Infrastructure failures still stop; one global deadline remains.
-    // W8: normal adapter Warning RunInfo metadata does not stop an otherwise exact failed batch;
-    // Error/Aborted/unknown outcomes still stop, and the final native failure remains mandatory.
+    // W8: normal adapter Warning RunInfo metadata occurs in completed runs as well.
     // W8 diagnostic collection: RunInfo is not a veto once an exact complete Failed TRX is proved.
     // This branch always retains native failure and cannot write proof; passing acceptance is unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =

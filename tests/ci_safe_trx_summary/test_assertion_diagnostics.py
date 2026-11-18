@@ -188,6 +188,110 @@ class ClosedAssertionDiagnosticsTests(unittest.TestCase):
         self.assertNotIn("sourceLine", group)
         self.assertNotIn("sourceFrameScope", group)
 
+    def test_real_tracked_repository_frame_redacts_private_prefix_and_method(self):
+        relative = "tests/GoymenERP.Api.IntegrationTests/InventoryCustomerReturnSqlServerRelationalAcceptanceTests.cs"
+        frame = " at PrivateMethodOwner.PrivateMethod() in /private-path/checkout/" + relative + ":line 1"
+        group = self.group(stack=frame)
+        self.assertEqual(relative, group["sourcePath"])
+        self.assertEqual(1, group["sourceLine"])
+        self.assertEqual("repository_source", group["sourceFrameScope"])
+        self.assertNotIn("PrivateMethod", json.dumps(group))
+        windows = frame.replace("/private-path/checkout/", "C:\\private-path\\checkout\\").replace("/", "\\")
+        self.assertEqual(relative, self.group(stack=windows)["sourcePath"])
+
+    def test_inner_message_repository_frame_precedes_outer_stack(self):
+        relative = "tests/GoymenERP.Api.IntegrationTests/InventoryCustomerReturnSqlServerRelationalAcceptanceTests.cs"
+        frame = " at PrivateMethodOwner.PrivateMethod() in /private-path/checkout/" + relative + ":line 1"
+        group = self.group("System.InvalidOperationException: private-data\n" + frame, stack=FRAME)
+        self.assertEqual(relative, group["sourcePath"])
+        self.assertEqual("repository_message_frame", group["sourceFrameScope"])
+        self.assertEqual(1, group["sourceLine"])
+
+    def test_repository_projection_uses_first_valid_source_frame_and_caps_frame_count(self):
+        relative = "tests/GoymenERP.Api.IntegrationTests/InventoryCustomerReturnSqlServerRelationalAcceptanceTests.cs"
+        first = " at Other.First() in /private-path/" + relative + ":line 1"
+        second = " at Other.Second() in /private-path/" + relative + ":line 2"
+        self.assertEqual(1, self.group(stack=first + "\n" + second)["sourceLine"])
+        self.assertEqual(2, self.group(stack=second + "\n" + first)["sourceLine"])
+        missing = " at Other.Missing() in /private-path/tests/UntrackedPrivate.cs:line 1"
+        self.assertEqual(relative, self.group(stack=missing + "\n" + first)["sourcePath"])
+        self.assertNotIn("sourcePath", self.group(stack="\n".join([first] * 9)))
+
+    def test_repository_projection_rejects_traversal_nonexistent_outside_and_oversized_line(self):
+        relative = "tests/GoymenERP.Api.IntegrationTests/InventoryCustomerReturnSqlServerRelationalAcceptanceTests.cs"
+        for path, line in (("tests/../" + relative, "1"), ("tests/UntrackedPrivate.cs", "1"), ("outside/Public.cs", "1"), ("/src/Other.cs", "1"), (relative, "999999"), (relative, "01"), (relative, "12345678901234567890"), ("tests/C:/" + relative, "1")):
+            with self.subTest(path=path, line=line):
+                group = self.group(stack=" at Other.Method() in /private-path/" + path + ":line " + line)
+                self.assertNotIn("sourcePath", group)
+
+    def test_repository_projection_requires_tracked_file_and_safe_resolved_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            relative = "tests/Public.cs"
+            candidate = root / relative
+            candidate.parent.mkdir()
+            candidate.write_text("public class Public {}\n", encoding="utf-8")
+            with mock.patch.object(SUMMARY, "REPOSITORY_ROOT", root):
+                resolver = SUMMARY.RepositorySourceResolver()
+                # Existing but untracked files do not become public source evidence.
+                with mock.patch.object(SUMMARY.subprocess, "run", return_value=mock.Mock(returncode=1)):
+                    self.assertIsNone(resolver.frame(" at Other.Method() in /private-path/" + relative + ":line 1"))
+                resolver = SUMMARY.RepositorySourceResolver()
+                original = Path.resolve
+                outside = root.parent / "outside-private.cs"
+                def resolve(path, *args, **kwargs):
+                    return outside if path == candidate else original(path, *args, **kwargs)
+                # Model the resolved target of a symlink escaping the repository.
+                with mock.patch.object(Path, "resolve", resolve), mock.patch.object(SUMMARY.subprocess, "run") as git:
+                    self.assertIsNone(resolver.frame(" at Other.Method() in /private-path/" + relative + ":line 1"))
+                    git.assert_not_called()
+
+    def test_repository_projection_has_file_lookup_and_time_bounds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate = root / "tests/Public.cs"
+            candidate.parent.mkdir()
+            candidate.write_text("one\ntwo\n", encoding="utf-8")
+            frame = " at Other.Method() in /private-path/tests/Public.cs:line 2"
+            with mock.patch.object(SUMMARY, "REPOSITORY_ROOT", root):
+                resolver = SUMMARY.RepositorySourceResolver()
+                with mock.patch.object(SUMMARY.subprocess, "run", return_value=mock.Mock(returncode=0)) as git:
+                    self.assertEqual(("tests/Public.cs", 2), resolver.frame(frame))
+                    self.assertEqual(("tests/Public.cs", 2), resolver.frame(frame))
+                    self.assertEqual(1, git.call_count)
+                resolver = SUMMARY.RepositorySourceResolver()
+                resolver.lookup_seconds = 5.0
+                with mock.patch.object(SUMMARY.subprocess, "run") as git:
+                    self.assertIsNone(resolver.frame(frame))
+                    git.assert_not_called()
+                resolver = SUMMARY.RepositorySourceResolver()
+                with mock.patch.object(SUMMARY, "MAX_SOURCE_FILE_BYTES", 1), mock.patch.object(SUMMARY.subprocess, "run") as git:
+                    self.assertIsNone(resolver.frame(frame))
+                    git.assert_not_called()
+                resolver = SUMMARY.RepositorySourceResolver()
+                with mock.patch.object(SUMMARY, "MAX_SOURCE_PATH_LOOKUPS", 0), mock.patch.object(SUMMARY.subprocess, "run") as git:
+                    self.assertIsNone(resolver.frame(frame))
+                    git.assert_not_called()
+
+    def test_repository_frames_remain_closed_on_overflow_and_duplicate_stack_or_message(self):
+        relative = "tests/GoymenERP.Api.IntegrationTests/InventoryCustomerReturnSqlServerRelationalAcceptanceTests.cs"
+        frame = " at Other.Method() in /private-path/" + relative + ":line 1"
+        self.assertNotIn("sourcePath", self.group(stack=frame + "\n" + "x" * 16384))
+        self.assertNotIn("sourcePath", self.group("System.InvalidOperationException: private-data\n" + frame + "\n" + "x" * 16384, stack=""))
+        for element in ("StackTrace", "Message"):
+            collector = SUMMARY.ResultCollector({"one": FQN})
+            collector.start("UnitTestResult", {"testId": "one", "outcome": "Failed"}, 1)
+            collector.start("Output", {}, 2)
+            collector.start("ErrorInfo", {}, 3)
+            for _ in range(2):
+                collector.start(element, {}, 4)
+                collector.data(frame)
+                collector.end(element, 4)
+            collector.end("ErrorInfo", 3)
+            collector.end("Output", 2)
+            collector.end("UnitTestResult", 1)
+            self.assertTrue(all(key[-1] is None for key in collector.failures))
+
     def test_sql_and_existing_marker_are_preserved_with_assertion_metadata(self):
         message = ("CI_SAFE_DIAGNOSTIC:mfg_customer_arrange\nAssert.Single() Failure: private-data\n"
                    "Microsoft.Data.SqlClient.SqlException (0x80131904)\nError Number:468,State:9,Class:16")
