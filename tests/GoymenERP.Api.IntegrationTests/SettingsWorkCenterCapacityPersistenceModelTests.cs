@@ -63,7 +63,7 @@ public sealed class SettingsWorkCenterCapacityPersistenceModelTests
         Assert.All(capacity.GetProperties(), property =>
         {
             Assert.Null(property.GetDefaultValueSql());
-            Assert.Null(property.GetDefaultValue());
+            Assert.Null(property.FindAnnotation(RelationalAnnotationNames.DefaultValue));
         });
     }
 

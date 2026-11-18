@@ -14,8 +14,8 @@ public sealed class SettingsDocumentNumberPersistenceModelTests
     public void The_number_series_and_operational_policy_migration_is_DDL_with_a_first_forward_fix_guard_and_matching_snapshot()
     {
         using var database = Create();
-        Assert.Equal(new[] { "20261116220424_AddDocumentNumberSeriesAndOperationalPolicies", "20261117001828_AddManufacturingProfileBaselineTransfers", "20261117085524_AddPurchaseInvoiceVariancePolicies", "20261117111242_AddWarehouseTransferScalePolicies", "20261117200733_AddFinanceDocumentNumberSeries" },
-            database.Database.GetMigrations().TakeLast(5));
+        Assert.Equal(new[] { "20261116220424_AddDocumentNumberSeriesAndOperationalPolicies", "20261117001828_AddManufacturingProfileBaselineTransfers", "20261117085524_AddPurchaseInvoiceVariancePolicies", "20261117111242_AddWarehouseTransferScalePolicies", "20261117200733_AddFinanceDocumentNumberSeries", "20261117220044_AddFinancePolicyFamilies" },
+            database.Database.GetMigrations().TakeLast(6));
         Assert.False(database.Database.HasPendingModelChanges());
         var migration = new AddDocumentNumberSeriesAndOperationalPolicies();
         Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
@@ -56,7 +56,7 @@ public sealed class SettingsDocumentNumberPersistenceModelTests
             Assert.Equal("settings", entity.GetSchema());
             Assert.Equal("CompanyId", entity.FindPrimaryKey()!.Properties[0].Name);
             Assert.Single(entity.GetDeclaredQueryFilters());
-            Assert.All(entity.GetProperties(), property => { Assert.Null(property.GetDefaultValueSql()); Assert.Null(property.GetDefaultValue()); });
+            Assert.All(entity.GetProperties(), property => { Assert.Null(property.GetDefaultValueSql()); Assert.Null(property.FindAnnotation(RelationalAnnotationNames.DefaultValue)); });
         }
         var reservation = model.FindEntityType(typeof(DocumentNumberReservationRow))!;
         var unique = reservation.GetIndexes().Where(index => index.IsUnique).Select(index => string.Join(",", index.Properties.Select(property => property.Name))).ToArray();

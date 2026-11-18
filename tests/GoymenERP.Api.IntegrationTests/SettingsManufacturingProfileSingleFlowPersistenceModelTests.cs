@@ -18,8 +18,8 @@ public sealed class SettingsManufacturingProfileSingleFlowPersistenceModelTests
     private static readonly string[] SingleFlowChecks =
     [
         "CK_SettingsMfgParameterProfiles_Lifecycle",
-        "CK_SettingsMfgTolerance_Approval",
         "CK_SettingsMfgToleranceVersions_Lifecycle",
+        "CK_SettingsMfgTolerance_Approval",
     ];
 
     [Fact]
