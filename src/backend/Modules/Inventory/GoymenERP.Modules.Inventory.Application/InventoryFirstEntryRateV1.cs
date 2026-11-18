@@ -49,10 +49,10 @@ public static class InventoryFirstEntryRateAdmissionV1
         {
             using var evidence = JsonDocument.Parse(value.EvidenceJson);
             var root = evidence.RootElement;
-            if (root.ValueKind != JsonValueKind.Object || root.GetProperty("companyId").GetGuid() != companyId
-                || root.GetProperty("acceptanceId").GetGuid() != acceptanceId
-                || root.GetProperty("purchaseOrderId").GetGuid() != value.PurchaseOrderId
-                || root.GetProperty("entryDay").GetString() != value.EntryDay.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            if (root.ValueKind != JsonValueKind.Object || RequiredJsonField(root, "companyId").GetGuid() != companyId
+                || RequiredJsonField(root, "acceptanceId").GetGuid() != acceptanceId
+                || RequiredJsonField(root, "purchaseOrderId").GetGuid() != value.PurchaseOrderId
+                || RequiredJsonField(root, "entryDay").GetString() != value.EntryDay.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
                 || value.SourceVersion != SourceVersionOf(value)) return false;
             return value.State switch
             {
@@ -71,5 +71,9 @@ public static class InventoryFirstEntryRateAdmissionV1
         catch (Exception exception) when (exception is JsonException or InvalidOperationException or ArgumentException
             or FormatException or KeyNotFoundException or OverflowException) { return false; }
     }
+
+    // Required JSON lookup retains missing-key failure and never uses runtime reflection.
+    private static JsonElement RequiredJsonField(JsonElement value, string name) =>
+        value.TryGetProperty(name, out var field) ? field : throw new KeyNotFoundException();
 
 }

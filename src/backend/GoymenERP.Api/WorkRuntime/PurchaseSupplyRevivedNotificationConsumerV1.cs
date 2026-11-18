@@ -24,7 +24,7 @@ internal sealed class PurchaseSupplyRevivedNotificationConsumerV1(IWorkNotificat
         {
             using var json = JsonDocument.Parse(message.PayloadJson);
             RequireFields(json.RootElement, Fields);
-            var targets = json.RootElement.GetProperty("salesTargets");
+            var targets = RequiredJsonField(json.RootElement, "salesTargets");
             if (targets.ValueKind != JsonValueKind.Array) throw new JsonException();
             foreach (var target in targets.EnumerateArray()) RequireFields(target, TargetFields);
             value = JsonSerializer.Deserialize<PurchasingOrderLineRevivedPayloadV1>(message.PayloadJson, Json) ?? throw new JsonException();
@@ -58,4 +58,8 @@ internal sealed class PurchaseSupplyRevivedNotificationConsumerV1(IWorkNotificat
         && decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var number)
         && number > 0 && number < 1_000_000_000_000_000m && decimal.Round(number, 6) == number
         && number.ToString("0.######", CultureInfo.InvariantCulture) == text;
+    // Required JSON lookup retains missing-key failure and never uses runtime reflection.
+    private static JsonElement RequiredJsonField(JsonElement value, string name) =>
+        value.TryGetProperty(name, out var field) ? field : throw new KeyNotFoundException();
+
 }

@@ -100,6 +100,32 @@ public sealed class FinanceDocumentNumberingTests
         Assert.Equal(ReceiptDraftService.RecordPayloadHash(request), ReceiptDraftService.RecordPayloadHash(request with { }));
     }
 
+    [Fact]
+    public async Task A_nested_treasury_attempt_is_unavailable_without_removing_the_outer_marker_and_the_context_can_be_reused()
+    {
+        var company = new CompanyContext(); company.Set(Company);
+        await using var db = new FinanceDbContext(new DbContextOptionsBuilder<FinanceDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options, company);
+        var nestedOperationRan = false;
+        var outer = await FinanceTreasuryTransaction.ExecuteAsync(db, async () =>
+        {
+            Assert.True(FinanceTreasuryTransaction.RequiresFullRollback(db));
+            var nested = await FinanceTreasuryTransaction.ExecuteAsync(db,
+                () => { nestedOperationRan = true; return Task.FromResult("unexpected"); },
+                () => Task.FromResult("unavailable"), null, default);
+            Assert.Equal("unavailable", nested);
+            Assert.True(FinanceTreasuryTransaction.RequiresFullRollback(db));
+            return "outer";
+        }, () => Task.FromResult("unavailable"), null, default);
+        Assert.Equal("outer", outer);
+        Assert.False(nestedOperationRan);
+        Assert.False(FinanceTreasuryTransaction.RequiresFullRollback(db));
+        var later = await FinanceTreasuryTransaction.ExecuteAsync(db, () => Task.FromResult("later"),
+            () => Task.FromResult("unavailable"), null, default);
+        Assert.Equal("later", later);
+        Assert.False(FinanceTreasuryTransaction.RequiresFullRollback(db));
+    }
+
     private sealed class ForeignNumber : IFinanceDocumentNumberReservationV1
     {
         public Task<SettingsDocumentNumberReservationV1> ReserveAsync(FinanceContext context, CommandMetadata metadata,

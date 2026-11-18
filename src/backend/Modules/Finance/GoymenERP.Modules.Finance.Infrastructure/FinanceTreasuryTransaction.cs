@@ -30,6 +30,17 @@ internal static class FinanceTreasuryTransaction
     // rethrow before a legacy conflict/replay conversion can hide a partially executed SQL save.
     internal static bool RequiresFullRollback(FinanceDbContext dbContext) => ActiveAttempts.TryGetValue(dbContext, out _);
 
+    private static bool TryRegisterAttempt(FinanceDbContext dbContext, Attempt attempt)
+    {
+        // A competing or nested operation cannot replace the original rollback marker.
+        lock (ActiveAttempts)
+        {
+            if (ActiveAttempts.TryGetValue(dbContext, out _)) return false;
+            ActiveAttempts.Add(dbContext, attempt);
+            return true;
+        }
+    }
+
     internal static async Task<T> ExecuteAsync<T>(
         FinanceDbContext dbContext, Func<Task<T>> operation, Func<Task<T>> unavailable,
         IAuditTransactionWriterV1? auditOwner, CancellationToken cancellationToken, Func<T, bool>? successful = null)
@@ -38,7 +49,7 @@ internal static class FinanceTreasuryTransaction
         if (dbContext.ChangeTracker.HasChanges() || auditOwner is { HasPendingDrafts: true })
             return await unavailable();
         var attempt = new Attempt();
-        if (!ReferenceEquals(ActiveAttempts.GetValue(dbContext, _ => attempt), attempt)) return await unavailable();
+        if (!TryRegisterAttempt(dbContext, attempt)) return await unavailable();
         IDbContextTransaction? transaction = null;
         var ownsTransaction = false;
         var completed = false;

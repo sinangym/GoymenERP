@@ -65,8 +65,8 @@ public sealed partial class ManufacturingCommandService
     private static ManufacturingCostGenerationViewV1 GenerationView(ManufacturingCostGenerationV1 row)
     {
         using var document = JsonDocument.Parse(row.ResultJson); var root = document.RootElement;
-        var outputs = root.GetProperty("outputs").EnumerateArray().Select(output => new ManufacturingCostGenerationOutputViewV1(
-            output.GetProperty("outputId").GetGuid(), output.GetProperty("labelId").GetGuid(), Number(output, "netQuantityKg")!,
+        var outputs = RequiredJsonField(root, "outputs").EnumerateArray().Select(output => new ManufacturingCostGenerationOutputViewV1(
+            RequiredJsonField(output, "outputId").GetGuid(), RequiredJsonField(output, "labelId").GetGuid(), Number(output, "netQuantityKg")!,
             Number(output, "remainingQuantityKg"), Number(output, "consumedQuantityKg"), Number(output, "originalTlAmount"),
             Number(output, "remainingTlValue"), Number(output, "consumedTlDifference"), Number(output, "usdUnitCostPerKg"),
             Ratio(output, "remainingQuantityKg", "remainingQuantityKgRatio"), Ratio(output, "consumedQuantityKg", "consumedQuantityKgRatio"))).ToArray();
@@ -77,7 +77,7 @@ public sealed partial class ManufacturingCommandService
             ? number.GetDecimal().ToString("0.############################", CultureInfo.InvariantCulture) : null;
         static ManufacturingCostQuantityRatioV1? Ratio(JsonElement value, string scalarName, string ratioName)
         {
-            var scalar = value.GetProperty(scalarName).ValueKind == JsonValueKind.Null ? (decimal?)null : value.GetProperty(scalarName).GetDecimal();
+            var scalar = RequiredJsonField(value, scalarName).ValueKind == JsonValueKind.Null ? (decimal?)null : RequiredJsonField(value, scalarName).GetDecimal();
             var ratio = value.TryGetProperty(ratioName, out var field) && field.ValueKind != JsonValueKind.Null
                 ? JsonSerializer.Deserialize<InventoryExactCostRatioV1>(field.GetRawText(), new JsonSerializerOptions(JsonSerializerDefaults.Web)) : null;
             var exact = InventoryExactCostRatioV1.Resolve(scalar, ratio);
@@ -85,4 +85,8 @@ public sealed partial class ManufacturingCommandService
             return ratio is null ? null : new(ratio.Numerator, ratio.Denominator);
         }
     }
+    // Required JSON lookup retains missing-key failure and never uses runtime reflection.
+    private static JsonElement RequiredJsonField(JsonElement value, string name) =>
+        value.TryGetProperty(name, out var field) ? field : throw new KeyNotFoundException();
+
 }
