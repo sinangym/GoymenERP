@@ -104,7 +104,26 @@ TRX_EVIDENCE_SCOPE = {
     "groupCompleteness": "unknown",
     "jobAcceptance": "not_evaluated",
 }
-FailureKey = tuple[str | None, str, str | None]
+# This is a closed numeric projection, never a SQL message or a root-cause claim.
+SQL_PROVIDER_HEADER = "Microsoft.Data.SqlClient.SqlException (0x80131904)"
+SQL_ERROR_NUMBERS = frozenset({"468", "207", "208", "547", "2601", "2627", "2714", "1776", "1205", "-2", "4060", "18456"})
+SQL_ERROR_RECORD = re.compile(
+    r"(?m)^Error Number:(-?(?:0|[1-9][0-9]{0,9})),State:(0|[1-9][0-9]{0,2}),Class:(0|[1-9][0-9]{0,2})[ \t]*\r?$"
+)
+FailureKey = tuple[str | None, str, str | None, str | None]
+
+
+def closed_sql_error_code(message: str) -> str | None:
+    """Project a provider record only; all unreviewed/ambiguous values stay closed."""
+    if SQL_PROVIDER_HEADER not in message:
+        return None
+    records = list(SQL_ERROR_RECORD.finditer(message))
+    if message.count(SQL_PROVIDER_HEADER) != 1 or message.count("Error Number:") != 1 or len(records) != 1:
+        return "sql_error_unknown"
+    number, state, severity = records[0].groups()
+    if number not in SQL_ERROR_NUMBERS or int(state) > 255 or int(severity) > 255:
+        return "sql_error_unknown"
+    return "sql_error_timeout" if number == "-2" else "sql_error_" + number
 
 
 class SummaryInputFailure(RuntimeError):
@@ -286,6 +305,8 @@ class ResultCollector:
         self.error_info_depth: int | None = None
         self.message_depth: int | None = None
         self.message_scanner: ClosedDiagnosticMarkerScanner | None = None
+        self.message_parts: list[str] = []
+        self.message_has_unexpected_child = False
         self.message_chars = 0
         self.message_overflow = False
         self.stdout_depth: int | None = None
@@ -293,6 +314,7 @@ class ResultCollector:
         self.stdout_chars = 0
         self.stdout_overflow = False
         self.stdout_has_unexpected_child = False
+        self.sql_error_code: str | None = None
         self.diagnostic_code: str | None = None
         self.diagnostic_ambiguous = False
 
@@ -318,8 +340,11 @@ class ResultCollector:
             self.stdout_chars = 0
             self.stdout_overflow = False
             self.stdout_has_unexpected_child = False
+            self.sql_error_code = None
             self.diagnostic_code = None
             self.diagnostic_ambiguous = False
+        elif self.message_depth is not None and _depth > self.message_depth:
+            self.message_has_unexpected_child = True
         elif self.stdout_depth is not None and _depth > self.stdout_depth:
             self.stdout_has_unexpected_child = True
         elif (
@@ -352,6 +377,8 @@ class ResultCollector:
         ):
             self.message_depth = _depth
             self.message_scanner = ClosedDiagnosticMarkerScanner()
+            self.message_parts = []
+            self.message_has_unexpected_child = False
             self.message_chars = 0
             self.message_overflow = False
 
@@ -382,10 +409,11 @@ class ResultCollector:
             self.stdout_has_unexpected_child = False
         elif name == "Message" and depth == self.message_depth:
             code = None
-            if not self.message_overflow and self.message_scanner is not None:
+            if not self.message_overflow and not self.message_has_unexpected_child and self.message_scanner is not None:
                 code = self.message_scanner.finish()
             if (
                 self.message_overflow
+                or self.message_has_unexpected_child
                 or code in FINANCE_WORK_LEGACY_DIAGNOSTIC_CODES
                 or (
                     self.message_scanner is not None
@@ -395,6 +423,12 @@ class ResultCollector:
                 self._reject_diagnostic()
             else:
                 self._accept_diagnostic(code)
+            if not self.message_overflow and not self.message_has_unexpected_child:
+                sql_code = closed_sql_error_code("".join(self.message_parts))
+                if sql_code is not None:
+                    self.sql_error_code = sql_code if self.sql_error_code is None else "sql_error_unknown"
+            self.message_parts = []
+            self.message_has_unexpected_child = False
             self.message_depth = None
             self.message_scanner = None
             self.message_chars = 0
@@ -412,7 +446,7 @@ class ResultCollector:
                     and test_fqn != FINANCE_WORK_LEGACY_TEST_FQN
                 ):
                     diagnostic = None
-                self.failures[(test_fqn, category, diagnostic)] += 1
+                self.failures[(test_fqn, category, diagnostic, self.sql_error_code)] += 1
             self.result_depth = None
             self.failure_identity = None
             self.output_depth = None
@@ -447,6 +481,7 @@ class ResultCollector:
                 if text:
                     self.message_overflow = True
                 return
+            self.message_parts.append(text[:remaining])
             consumed = self.message_scanner.feed(text, remaining)
             self.message_chars += consumed
             if consumed < len(text):
@@ -553,19 +588,20 @@ def build_summary(
         failures.update(file_failures)
 
     unresolved_failure_count = sum(
-        count for (test_fqn, _, _), count in failures.items() if test_fqn is None
+        count for (test_fqn, _, _, _), count in failures.items() if test_fqn is None
     )
     safe_groups = sorted(
         (
             {
                 **{"testFqn": test_fqn, "category": category, "count": count},
                 **({"diagnosticCode": diagnostic_code} if diagnostic_code is not None else {}),
+                **({"sqlErrorCode": sql_error_code} if sql_error_code is not None else {}),
             }
-            for (test_fqn, category, diagnostic_code), count in failures.items()
+            for (test_fqn, category, diagnostic_code, sql_error_code), count in failures.items()
             if test_fqn is not None
         ),
         key=lambda item: (
-            str(item["testFqn"]), str(item["category"]), str(item.get("diagnosticCode", ""))
+            str(item["testFqn"]), str(item["category"]), str(item.get("diagnosticCode", "")), str(item.get("sqlErrorCode", ""))
         ),
     )
     reported_groups = safe_groups[:failure_group_limit]
