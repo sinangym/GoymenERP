@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.Json;
 using GoymenERP.Api.ManufacturingRuntime;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
@@ -111,11 +112,16 @@ public sealed class ManufacturingInputRatePriorityReaderTests
             Calls++;
             InventoryFirstReceiptRateSourceV1 Source(string numerator, string denominator, decimal rate)
             {
-                var acceptance = Guid.NewGuid();
+                var acceptance = Guid.NewGuid(); var order = Guid.NewGuid(); var day = DateOnly.FromDateTime(now.DateTime);
+                // FNS-D103/D104: synthetic owner facts still satisfy the immutable first-entry envelope.
+                var evidence = JsonSerializer.Serialize(new { companyId = company, acceptanceId = acceptance,
+                    purchaseOrderId = order, entryDay = day, source = "synthetic-first-entry:1" });
+                var snapshot = new InventoryFirstEntryRateV1(company, acceptance, order, day, InventoryFirstEntryRateStateV1.Rated,
+                    sourceCurrency, SettingsCurrencyIdentitiesV1.TurkishLira, rate, null, InventoryFirstEntryRateSourcesV1.ApprovedPurchaseOrder,
+                    string.Empty, evidence, null, 1);
+                snapshot = snapshot with { SourceVersion = InventoryFirstEntryRateAdmissionV1.SourceVersionOf(snapshot) };
                 return new(new(Guid.NewGuid(), Guid.NewGuid(), now, acceptance, sourceCurrency), new(numerator, denominator),
-                    new(company, acceptance, Guid.NewGuid(), DateOnly.FromDateTime(now.DateTime), InventoryFirstEntryRateStateV1.Rated,
-                        sourceCurrency, SettingsCurrencyIdentitiesV1.TurkishLira, rate, null, InventoryFirstEntryRateSourcesV1.ApprovedPurchaseOrder,
-                        "synthetic-first-entry:1", "{}", null, 1));
+                    snapshot);
             }
             return Task.FromResult(InventoryFirstReceiptExchangeRateV1.RatedExact(company, label, sourceCurrency,
                 SettingsCurrencyIdentitiesV1.TurkishLira, new("100", "3"), "synthetic-weighted-first-entry:1", [Source("2", "3", 40m), Source("1", "3", 20m)]));
