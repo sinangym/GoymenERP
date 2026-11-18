@@ -17,6 +17,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -389,6 +390,9 @@ public sealed class AuthenticationProvidersTests
             builder.ConfigureServices(services =>
             {
                 GoymenErpApiFactory.UseInMemoryDatabases(services, databaseName);
+                // Match the existing local-login fixture: InMemory cannot execute the SQL store's set-based updates.
+                services.RemoveAll<ILocalCredentialStore>();
+                services.AddScoped<ILocalCredentialStore, TrackingLocalCredentialStore>();
                 services.PostConfigure<JwtBearerOptions>(
                     JwtBearerDefaults.AuthenticationScheme,
                     options =>
