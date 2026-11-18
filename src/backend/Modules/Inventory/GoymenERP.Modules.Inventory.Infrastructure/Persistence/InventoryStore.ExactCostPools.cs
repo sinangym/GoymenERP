@@ -37,9 +37,9 @@ public sealed partial class InventoryStore
                 || generation!.State == (int)InventoryManufacturingCostGenerationStateV1.Recognized)
             select new { recognition.MovementId, recognition.LineNumber }).ToListAsync(token);
         pending.RemoveAll(row => recognized.Any(done => done.MovementId == row.MovementId && done.LineNumber == row.LineNumber)
-            || context.MovementCostRecognitions.Local.Any(done => done.CurrencyId == currency && done.MovementId == row.MovementId
+            || context.MovementCostRecognitions.Local.Any(done => done.CompanyId == company.CompanyId && done.CurrencyId == currency && done.MovementId == row.MovementId
                 && done.LineNumber == row.LineNumber && (done.GenerationId == null || context.ManufacturingCostGenerations.Local.Any(
-                    generation => generation.Id == done.GenerationId && generation.State == (int)InventoryManufacturingCostGenerationStateV1.Recognized))));
+                    generation => generation.CompanyId == company.CompanyId && generation.Id == done.GenerationId && generation.State == (int)InventoryManufacturingCostGenerationStateV1.Recognized))));
         // BS-1 partial first invoices price only their immutable receipt fraction. The original
         // unavailable stamp/pending entry stays intact; it is not a new whole-receipt recognition.
         var purchasePriced = new Dictionary<Guid, ExactCostRatio>();
@@ -86,12 +86,12 @@ public sealed partial class InventoryStore
         var priced = ExactCostRatio.Of(physicalKg).Subtract(unpriced);
         if (priced.Sign < 0) readable = false;
         var tl = currency == SettingsCurrencyIdentitiesV1.TurkishLira
-            ? context.AverageCostLedger.Local.SingleOrDefault(row => row.LocationId == location && row.ProductId == product)
+            ? context.AverageCostLedger.Local.SingleOrDefault(row => row.CompanyId == company.CompanyId && row.LocationId == location && row.ProductId == product)
                 ?? await context.AverageCostLedger.SingleOrDefaultAsync(row => row.LocationId == location && row.ProductId == product, token) : null;
         var foreign = currency != SettingsCurrencyIdentitiesV1.TurkishLira
-            ? context.CurrencyAverageCostLedger.Local.SingleOrDefault(row => row.LocationId == location && row.ProductId == product && row.CurrencyId == currency)
+            ? context.CurrencyAverageCostLedger.Local.SingleOrDefault(row => row.CompanyId == company.CompanyId && row.LocationId == location && row.ProductId == product && row.CurrencyId == currency)
                 ?? await context.CurrencyAverageCostLedger.SingleOrDefaultAsync(row => row.LocationId == location && row.ProductId == product && row.CurrencyId == currency, token) : null;
-        var exact = context.ExactCostPools.Local.SingleOrDefault(row => row.LocationId == location && row.ProductId == product && row.CurrencyId == currency)
+        var exact = context.ExactCostPools.Local.SingleOrDefault(row => row.CompanyId == company.CompanyId && row.LocationId == location && row.ProductId == product && row.CurrencyId == currency)
             ?? await context.ExactCostPools.SingleOrDefaultAsync(row => row.LocationId == location && row.ProductId == product && row.CurrencyId == currency, token);
         ExactAverageCostPool? position = null;
         AverageCostUnreadableReason? reason = null;
