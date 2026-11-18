@@ -88,7 +88,7 @@ function Page({ namespace, invoiceId, lineId, mode }: { readonly namespace: stri
     {!single ? <StateBlock state={{ kind: 'no-authorized-company' }} subject={T.subject} />
       : state.kind !== 'ready' ? <StateBlock state={state} subject={T.subject} onRetry={() => void query.refetch()} />
         : <>
-          <button disabled={frozen} onClick={() => void query.refetch()}>{T.refresh}</button>
+          <button type="button" disabled={frozen} onClick={() => void query.refetch()}>{T.refresh}</button>
           <dl><dt>{T.source}</dt><dd>{state.data.source.officialInvoiceNumber} · {state.data.source.invoiceDate} · {state.data.source.ettn}</dd>
             <dt>{T.version}</dt><dd>{state.data.lineVersion}</dd><dt>{T.product}</dt>
             <dd>{state.data.productReference.classification === null ? T.sourceUnknown : T.classes[state.data.productReference.classification]}</dd></dl>
@@ -109,12 +109,12 @@ function Page({ namespace, invoiceId, lineId, mode }: { readonly namespace: stri
             <p>{T.statuses[row.status]} · {T.classes[row.classification]} · {row.accountPlan.account.code} · {row.accountPlan.account.name}</p>
             <p>{row.transactionDate} / {row.accountingDate} · {row.reason}</p>
             {mode === 'approve' && row.status === 'Prepared' ? row.preparedBy.toLowerCase() === actor.toLowerCase() ? <p>{T.own}</p>
-              : <button disabled={frozen || state.data.postingEvidenceState === 'Unreadable' || row.expectedLineVersion !== state.data.lineVersion}
+              : <button type="button" disabled={frozen || state.data.postingEvidenceState === 'Unreadable' || row.expectedLineVersion !== state.data.lineVersion}
                 onClick={() => void send({ key: crypto.randomUUID(), invoiceId, lineId, proposalId: row.proposalId, operation: 'approve',
                   request: { expectedVersion: row.version } })}>{T.approve}</button> : null}
           </article>)}
         </>}
-    {outcome?.type === 'unknown' ? <div role="alert"><p>{T.unknown}</p><button disabled={sending || attempt === null}
+    {outcome?.type === 'unknown' ? <div role="alert"><p>{T.unknown}</p><button type="button" disabled={sending || attempt === null}
       onClick={() => attempt !== null && void send(attempt, true)}>{T.resend}</button></div> : null}
     {outcome?.type === 'refused' ? <p role="alert">{T.refused} ({outcome.status}{outcome.code ? ` · ${outcome.code}` : ''})</p> : null}
     {outcome?.type === 'applied' ? <p role="status">{T.done}</p> : null}

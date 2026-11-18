@@ -11,8 +11,8 @@ async function read<T>(company: string, id: string, action: string, payload: unk
   try {
     const response = await fetch(`${base}/${encodeURIComponent(id)}/${action}`, { method: 'POST', cache: 'no-store', signal,
       headers: { ...purchasingHeaders(company), 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-    if (!response.ok) return { type: 'http', status: response.status }
-    if (response.status !== 200) return { type: 'malformed' }
+    if (response.status !== 200) return response.status >= 200 && response.status < 300
+      ? { type: 'malformed' } : { type: 'http', status: response.status }
     let body: unknown; try { body = await response.json() } catch { return { type: 'malformed' } }
     const value = decode(body); return value === null ? { type: 'malformed' } : { type: 'ok-single', data: value }
   } catch { return signal.aborted ? { type: 'fence-stale' } : { type: navigator.onLine ? 'network-error' : 'offline' } }
@@ -31,12 +31,13 @@ export async function recordInvoiceImport(company: string, id: string, snapshot:
     let body: unknown = null; try { body = await response.json() } catch { /* A malformed success remains unresolved. */ }
     const header = response.headers.get('Idempotency-Replayed'), replay = header === 'true'
     if (response.status >= 500) return { type: 'unknown', reason: 'service-unavailable' }
-    if (!response.ok) {
+    if (response.status !== 200) {
+      if (response.status >= 200 && response.status < 300) return { type: 'unknown', reason: 'malformed' }
       const code = body !== null && typeof body === 'object' && 'code' in body && typeof body.code === 'string' ? body.code : null
       if (response.status === 409 && (code === null || code.includes('concurrent') || code.includes('busy'))) return { type: 'unknown', reason: 'network-error' }
       return { type: 'failed', status: response.status, code, isReplay: replay }
     }
-    if (response.status !== 200 || header !== null && header !== 'true' && header !== 'false') return { type: 'unknown', reason: 'malformed' }
+    if (header !== null && header !== 'true' && header !== 'false') return { type: 'unknown', reason: 'malformed' }
     const answer = decodeImportRecord(body, company, id, snapshot, replay)
     return answer === null || (replay ? response.headers.get('Idempotency-Original-Correlation-Id') !== answer.originalCorrelationId
       : answer.originalCorrelationId !== correlation) ? { type: 'unknown', reason: 'malformed' } : { type: 'applied', response: answer }

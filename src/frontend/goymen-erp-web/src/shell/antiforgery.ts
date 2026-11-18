@@ -169,7 +169,7 @@ export function createAntiforgeryFetch(options: AntiforgeryFetchOptions): typeof
 
     const resolved = new URL(url, options.origin)
     const path = `${resolved.origin}${resolved.pathname}`
-    if (response.ok && userBindingUrls.has(trimTrailingSlash(path))) dropToken()
+    if (response.status === 204 && userBindingUrls.has(trimTrailingSlash(path))) dropToken()
     return response
   }
 }

@@ -38,4 +38,12 @@ describe('ALC-S7 transport source (synthetic, NOT_ENV)', () => {
     expect((await submitServiceOrder(id(1), id(2), 'accept', {}, 'same-key')).type).toBe('unknown')
     expect(fetch).toHaveBeenCalledTimes(1)
   })
+  it.each([201, 202, 204])('does not accept HTTP %s for a service-order read or write', async status => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(status === 204 ? null : JSON.stringify(serviceFixture()), { status })))
+    expect(await fetchServiceOrder(id(1), id(2), new AbortController().signal)).toEqual({ type: 'malformed' })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(status === 204 ? null : JSON.stringify({ order: serviceFixture(), isReplay: false, originalCorrelationId: 'SENTETIK' }), { status })))
+    expect(await submitServiceOrder(id(1), id(2), 'approve', { expectedVersion: '1', reason: 'SENTETIK' }, 'same-key'))
+      .toEqual({ type: 'unknown', reason: 'malformed' })
+  })
+
 })

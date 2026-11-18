@@ -42,4 +42,12 @@ describe('Purchase invoice file transport (synthetic, NOT_ENV)', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ ...importPreviewFixture(), companyId: id(99) })))
     expect(await previewInvoiceImport(id(2), id(1), importRequestFixture(), new AbortController().signal)).toEqual({ type: 'malformed' })
   })
+  it.each([201, 202, 204])('keeps HTTP %s outside the exact reservation and preview contracts', async status => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(status === 204 ? null : JSON.stringify(importReservationFixture()), { status })))
+    expect(await reserveInvoiceImport(id(2), 'same-key')).toEqual({ type: 'unknown', reason: 'malformed' })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(status === 204 ? null : JSON.stringify(importPreviewFixture()), { status })))
+    expect(await previewInvoiceImport(id(2), id(1), importRequestFixture(), new AbortController().signal)).toEqual({ type: 'malformed' })
+    expect(await fetchInvoiceImports(id(2), 0, new AbortController().signal)).toEqual({ type: 'malformed' })
+  })
+
 })

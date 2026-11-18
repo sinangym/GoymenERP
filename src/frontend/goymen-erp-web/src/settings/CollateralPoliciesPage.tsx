@@ -84,7 +84,7 @@ function Editor({ data, family, changed }: { readonly data: BankInstitutionsWork
   return <section><p>{banks ? K.unpublished : K.priority}</p><p>{K.noDefault}</p>{notice && <p role={held ? 'alert' : 'status'}>{notice}</p>}
     {held && <Button type="button" disabled={busy} onClick={() => void execute(held.suffix, held.body)}>{busy ? T.pending : T.retry}</Button>}
     {data.versions.length === 0 && <p>{banks ? K.emptyBanks : K.noRates}</p>}
-    <table className={styles.table}><caption>{T.history}</caption><thead><tr><th>{T.version}</th><th>{T.state}</th><th>{T.from}</th><th>{T.through}</th><th>{T.reason}</th><th>{T.publish}</th></tr></thead><tbody>
+    <table className={styles.table}><caption>{T.history}</caption><thead><tr><th scope="col">{T.version}</th><th scope="col">{T.state}</th><th scope="col">{T.from}</th><th scope="col">{T.through}</th><th scope="col">{T.reason}</th><th scope="col">{T.publish}</th></tr></thead><tbody>
       {data.versions.map(row => <tr key={row.policyId}><td>{row.version}</td><td>{row.state === 'Draft' ? T.draft : row.state === 'Published' ? T.published : T.retired}</td><td>{row.validFrom}</td><td>{row.retiredFrom ?? row.validThrough ?? '—'}</td><td>{row.reason}</td><td>{row.state !== 'Retired' && canPublish && <Button type="button" disabled={frozen} onClick={() => setTarget(row)}>{row.state === 'Draft' ? T.publish : T.retire}</Button>}</td></tr>)}
     </tbody></table>
     {!rateData && (data as BankInstitutionsWorkspace).versions.map(row => <ul key={row.policyId}>{row.entries.map(e => <li key={e.bankInstitutionId}>{e.name} / {e.eftCode} / {e.active ? K.active : T.retired} / {T.source}: {e.sourceVersion}</li>)}</ul>)}

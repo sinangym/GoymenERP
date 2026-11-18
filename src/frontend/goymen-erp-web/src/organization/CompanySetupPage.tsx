@@ -155,7 +155,7 @@ function CompanySetupWorkspace() {
     setView({ kind: 'ready', data: { ...previous, candidates: candidates.data } }); setUserId('')
   }
   const disabled = busy || storageUnsafe || pending !== null || view.kind !== 'ready' || storageKey(view.data.identity) === null
-  return <main className={styles.page} aria-labelledby="company-setup-heading">
+  return <section className={styles.page} aria-labelledby="company-setup-heading">
     <h1 id="company-setup-heading">{T.title}</h1><p>{T.lead}</p><Link to="/">{T.home}</Link>
     {notice && <p role="status">{notice}</p>}
     {view.kind !== 'ready' ? <StateBlock state={view} subject={T.title} onRetry={refresh} /> : <>
@@ -187,7 +187,7 @@ function CompanySetupWorkspace() {
         <Button type="button" disabled={busy || pending !== null} onClick={refresh}>{T.reload}</Button>
       </section>}
     </>}
-  </main>
+  </section>
 }
 function storageKey(identity: IdentitySummary): string | null {
   return identity.authenticationSessionBinding === null ? null

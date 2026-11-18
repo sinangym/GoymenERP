@@ -50,14 +50,14 @@ function TransferView({ namespace }: { readonly namespace: string | null }) {
   if (namespace === null || companyId === null) return <StateBlock subject={T.subject} state={{ kind: 'no-authorized-company' }} />
   const state = (!canRead ? { kind: 'forbidden' } : list.isPending ? { kind: 'initial-loading' } : classifyOutcome(list.data ?? { type: 'malformed' })) as RemoteViewState<TransferList>
   const detailState = (!canRead ? { kind: 'forbidden' } : detail.isPending ? { kind: 'initial-loading' } : classifyOutcome(detail.data ?? { type: 'malformed' })) as RemoteViewState<TransferDetail>
-  return <main className={styles.page}>
+  return <section className={styles.page}>
     <nav><Link to={INVENTORY_STOCK_POSITIONS_ROUTE}>{T.back}</Link></nav><h1>{T.title}</h1>
     {hasCapability(shell, TRANSFER_PLAN_CAPABILITY) ? <TransferPlanPanel onPlanned={(transferId) => { if (canRead) void list.refetch(); setSelected(transferId) }} /> : null}
     <TransferReceiptPanel transferId={selected} onChanged={(transferId) => { if (canRead) { void list.refetch(); if (selected === transferId) void detail.refetch() } setSelected(transferId) }} />
     {!canRead ? null : state.kind !== 'ready' ? <StateBlock state={state} subject={T.subject} onRetry={() => void list.refetch()} /> : <>
     {state.data.windowFull ? <p role="status">{T.window}</p> : null}
     {state.data.items.length === 0 ? <StateBlock state={{ kind: 'empty-no-data' }} subject={T.subject} /> : <table>
-      <caption>{T.title}</caption><thead><tr><th>{T.plannedAt}</th><th>{T.from}</th><th>{T.to}</th><th>{T.status}</th><th>{T.detail}</th></tr></thead>
+      <caption>{T.title}</caption><thead><tr><th scope="col">{T.plannedAt}</th><th scope="col">{T.from}</th><th scope="col">{T.to}</th><th scope="col">{T.status}</th><th scope="col">{T.detail}</th></tr></thead>
       <tbody>{state.data.items.map(item => <tr key={item.transfer.transferId}>
         <td>{new Date(item.transfer.plannedAtUtc).toLocaleString('tr-TR')}</td>
         <td>{item.sourceLocationCode} — {item.sourceLocationName}</td><td>{item.destinationLocationCode} — {item.destinationLocationName}</td>
@@ -65,7 +65,7 @@ function TransferView({ namespace }: { readonly namespace: string | null }) {
       </tr>)}</tbody></table>}</>}
     {selected === null || !canRead ? null : <section aria-labelledby="transfer-detail"><h2 id="transfer-detail">{T.detail}</h2>
       {detailState.kind !== 'ready' ? <StateBlock state={detailState} subject={T.detail} onRetry={canRead ? () => void detail.refetch() : undefined} /> : <><table>
-        <caption>{T.detail}</caption><thead><tr><th>{T.line}</th><th>{T.plannedKg}</th><th>{T.shippedKg}</th><th>{T.differenceKg}</th><th>{T.status}</th><th>{T.label}</th></tr></thead>
+        <caption>{T.detail}</caption><thead><tr><th scope="col">{T.line}</th><th scope="col">{T.plannedKg}</th><th scope="col">{T.shippedKg}</th><th scope="col">{T.differenceKg}</th><th scope="col">{T.status}</th><th scope="col">{T.label}</th></tr></thead>
         <tbody>{detailState.data.lines.map((line, index) => <tr key={line.lineId}><td>{index + 1}</td><td>{line.plannedKg}</td>
           <td>{line.actualShippedKg ?? T.unknown}</td><td>{line.differenceKg ?? T.unknown}</td><td>{T.statuses[line.status]}</td>
           <td><Link to={inventoryLabelDetailPath(line.labelId)}>{T.openLabel}</Link></td></tr>)}</tbody>
@@ -74,5 +74,5 @@ function TransferView({ namespace }: { readonly namespace: string | null }) {
         <TransferCancelPanel transfer={detailState.data} binding={transferCancelBinding(shell, selected)} canCancel={hasCapability(shell, INVENTORY_TRANSFER_CANCEL_CAPABILITY)}
           onChanged={() => { void list.refetch(); void detail.refetch() }} /></>}</>}
     </section>}
-  </main>
+  </section>
 }

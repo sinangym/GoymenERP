@@ -107,7 +107,7 @@ function KilogramPanel({ shell, note, companyId, binding }: { readonly shell: Sh
     {view && <>
       <p>{view.status === 'Approved' ? T.approved : view.status === 'PendingApproval' ? T.pending : T.recorded}</p>
       <dl><dt>{T.total}</dt><dd>{view.scaleKg}</dd><dt>{T.difference}</dt><dd>{view.differenceKg}</dd></dl>
-      {view.kilogramAllocation === null ? <p>{T.legacy}</p> : <table><caption>{T.title}</caption><thead><tr><th>{T.line}</th><th>{T.sourceKg}</th><th>{T.assignedKg}</th></tr></thead>
+      {view.kilogramAllocation === null ? <p>{T.legacy}</p> : <table><caption>{T.title}</caption><thead><tr><th scope="col">{T.line}</th><th scope="col">{T.sourceKg}</th><th scope="col">{T.assignedKg}</th></tr></thead>
         <tbody>{view.kilogramAllocation.lines.map(line => <tr key={line.shipmentId}><td>{line.lineNo}</td><td>{line.theoreticalKg}</td><td>{line.kilograms}</td></tr>)}</tbody></table>}
       {view.status === 'PendingApproval' && <Button type="button" disabled={busy || unresolved} onClick={() => submit(kgApprovePath(view.recordId), { expectedVersion: view.version })}>{T.approve}</Button>}
     </>}

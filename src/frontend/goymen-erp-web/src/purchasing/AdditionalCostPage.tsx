@@ -74,8 +74,8 @@ function AdditionalCosts({ scope, orderId, kind }: { readonly scope: Scope; read
     <ReadState value={costs.data} loading={costs.isFetching} refresh={() => void costs.refetch()} />
     {selectedSource && <h2>{selectedSource.orderNumber ?? T.noNumber}</h2>}
     {rows?.length === 0 && <StateBlock subject={T.subject} state={{ kind: 'empty-no-data' }} />}
-    {rows !== null && <><table><caption>{T.title}</caption><thead><tr><th>{T.description}</th><th>{T.type}</th><th>{T.net}</th><th>{T.vatAmount}</th><th>{T.gross}</th></tr></thead>
-      <tbody>{rows.map(row => <tr key={row.costId}><th>{row.description}</th><td>{row.expenseTypeName ?? row.description}</td>
+    {rows !== null && <><table><caption>{T.title}</caption><thead><tr><th scope="col">{T.description}</th><th scope="col">{T.type}</th><th scope="col">{T.net}</th><th scope="col">{T.vatAmount}</th><th scope="col">{T.gross}</th></tr></thead>
+      <tbody>{rows.map(row => <tr key={row.costId}><th scope="row">{row.description}</th><td>{row.expenseTypeName ?? row.description}</td>
         <td>{row.netAmount} {row.currencyCode}</td><td>{row.vatAmount} {row.currencyCode}</td><td>{row.grossAmount} {row.currencyCode}</td></tr>)}</tbody></table><p>{T.window}</p></>}
     {!canRecord && <p>{T.unavailableWrite}</p>}
     {canRecord && selectedSource !== null && <form onSubmit={event => { event.preventDefault(); submit() }}>

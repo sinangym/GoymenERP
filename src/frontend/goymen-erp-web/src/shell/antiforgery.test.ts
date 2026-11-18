@@ -134,7 +134,8 @@ describe('KIM-D31 antiforgery fetch', () => {
 
   it('drops the token after a successful login and logout, not after a failed one', async () => {
     const { calls, wrapped, tokenReads } = harness({
-      write: (call) => (call.url.endsWith('/logout') && call.token === 'SENTETIK-token-2' ? json(401, {}) : json(200, {})),
+      write: (call) => call.url.endsWith('/login') ? new Response(null, { status: 204 })
+        : call.url.endsWith('/logout') && call.token === 'SENTETIK-token-2' ? json(401, {}) : json(200, {}),
     })
 
     await wrapped('/api/v1/identity/session/login', { method: 'POST', body: '{}' })
@@ -151,5 +152,30 @@ describe('KIM-D31 antiforgery fetch', () => {
       'SENTETIK-token-2',
       'SENTETIK-token-2',
     ])
+  })
+})
+
+// IdentityEndpoints declares only 204 for both session-changing commands (KIM-D31 / LF-10).
+describe('antiforgery session-binding exact response contract', () => {
+  it.each(['login', 'logout'])('drops the token after the real %s 204 result', async (action) => {
+    const { calls, wrapped, tokenReads } = harness({ write: call => call.url.endsWith(`/${action}`)
+      ? new Response(null, { status: 204 }) : json(200, {}) })
+    await wrapped(`/api/v1/identity/session/${action}`, { method: 'POST', body: '{}' })
+    await wrapped('/api/v1/sales/drafts', { method: 'POST' })
+    expect(tokenReads()).toBe(2)
+    expect(calls.filter(call => call.url !== TOKEN_URL).map(call => call.token))
+      .toEqual(['SENTETIK-token-1', 'SENTETIK-token-2'])
+  })
+
+  it.each(['login', 'logout'].flatMap(action => [200, 201, 202, 401].map(status => ({ action, status }))))
+  ('does not treat $action HTTP $status as the declared session change', async ({ action, status }) => {
+    const { calls, wrapped, tokenReads } = harness({ write: call => call.url.endsWith(`/${action}`)
+      ? json(status, {}) : json(200, {}) })
+    const answer = await wrapped(`/api/v1/identity/session/${action}`, { method: 'POST', body: '{}' })
+    expect(answer.status).toBe(status)
+    await wrapped('/api/v1/sales/drafts', { method: 'POST' })
+    expect(tokenReads()).toBe(1)
+    expect(calls.filter(call => call.url !== TOKEN_URL).map(call => call.token))
+      .toEqual(['SENTETIK-token-1', 'SENTETIK-token-1'])
   })
 })

@@ -60,7 +60,7 @@ export function CreditAccountingProposalsPanel({ company, accountId, namespace }
   const query = useQuery({ queryKey: [namespace, 'credit-accounting-proposals'], enabled: opened, queryFn: ({ signal }) => fetchCreditPostingProposals(company, signal) })
   const state = (query.isPending ? { kind: 'initial-loading' } : classifyOutcome(query.data ?? { type: 'malformed' })) as RemoteViewState<readonly CreditPostingProposal[]>
   const rows = state.kind === 'ready' ? state.data.filter(x => x.source.creditAccountId === accountId) : []
-  return <section><button onClick={() => { setOpened(true); if (opened) void query.refetch() }}>{P.show}</button>
+  return <section><button type="button" onClick={() => { setOpened(true); if (opened) void query.refetch() }}>{P.show}</button>
     {opened ? state.kind !== 'ready' ? <StateBlock state={state} subject={P.subject} onRetry={() => void query.refetch()} /> : rows.length === 0
       ? <p>{P.empty}</p> : rows.map(row => <article key={row.proposalId}>
         <h4>{T.kinds[row.source.kind]} · {row.source.sourceDocument.reference}</h4><p>{row.status === 'ReadyForPreparation' ? P.ready : P.waiting}</p>

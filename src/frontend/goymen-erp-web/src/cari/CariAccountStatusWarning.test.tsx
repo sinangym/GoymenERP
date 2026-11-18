@@ -122,9 +122,14 @@ describe('ALS-D99: an open line asks for an acknowledgement, never blocks the ch
     await userEvent.click(submit(panel))
     await settle()
     expect(fetches.activeStateUpdates()).toHaveLength(0)
-    expect(within(panel).getByText(TEXT.warning.acknowledgeRequired)).toBeTruthy()
+    expect(within(panel).getByRole('alert').textContent).toBe(TEXT.warning.acknowledgeRequired)
+    const acknowledgement = within(panel).getByRole('checkbox', { name: TEXT.warning.acknowledge })
+    expect(acknowledgement.getAttribute('aria-invalid')).toBe('true')
+    expect(acknowledgement.getAttribute('aria-describedby')).toBe('cari-account-status-warning-ack-error')
+    expect(panel.querySelector('#cari-account-status-warning-ack-error')?.textContent)
+      .toBe(TEXT.warning.acknowledgeRequired)
 
-    await userEvent.click(within(panel).getByRole('checkbox', { name: TEXT.warning.acknowledge }))
+    await userEvent.click(acknowledgement)
     await userEvent.click(submit(panel))
     await waitFor(() => expect(fetches.activeStateUpdates()).toHaveLength(1), CHAIN)
     expect(fetches.activeStateUpdates()[0].body).toEqual({
