@@ -295,7 +295,7 @@ public sealed partial class AccountingSourceDocumentAdmissionV1Tests
     public async Task An_unsupported_kind_or_a_malformed_key_is_refused_without_any_record()
     {
         var harness = new Harness();
-        var kind = await harness.AdmitAsync(Valid() with { DocumentKind = "purchase-invoice" });
+        var kind = await harness.AdmitAsync(Valid() with { DocumentKind = "unsupported-source" });
         var key = await harness.AdmitAsync(Valid() with { IdempotencyKey = "sales-invoice-accounting:" + Invoice.ToString("D") + ":2" });
         var empty = await harness.AdmitAsync(Valid() with { InvoiceId = Guid.Empty });
 

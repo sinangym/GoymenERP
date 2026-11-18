@@ -62,7 +62,7 @@ public sealed class AccountingCogsAccountMappingTests
     [Fact]
     public async Task Company_drift_during_owner_reads_never_returns_an_account_snapshot()
     {
-        var company = Context(); var mappings = new Mappings { AfterRead = () => company.Set(Guid.NewGuid()) };
+        var company = new MutableCompanyContextForFenceTests(Company); var mappings = new Mappings { AfterRead = () => company.Set(Guid.NewGuid()) };
         var result = await new AccountingCogsAccountResolverV1(new Products(), mappings, company).ResolveAsync(Company, Product, new(2026, 11, 17));
         Assert.Equal("Unavailable", result.Outcome); Assert.Null(result.Value);
     }

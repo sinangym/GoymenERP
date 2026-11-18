@@ -145,7 +145,7 @@ public sealed class ManufacturingCostDifferenceV1Tests
         var authority = new Authority { RevokeAtCall = 4 };
         Assert.Equal(AccountingApiStatus.Denied, (await Service(store, Maker, authority).PrepareAsync(Preparation(), "revoked")).Status);
         Assert.Equal(0, store.Writes);
-        var context = Context();
+        var context = new MutableCompanyContextForFenceTests(Company);
         store.DuringList = () => context.Set(Guid.NewGuid());
         var service = new ManufacturingCostDifferenceServiceV1(store, store, new Authority(), context, new User(Maker), new Correlation());
         Assert.Equal(AccountingApiStatus.Denied, (await service.ListAsync()).Status);

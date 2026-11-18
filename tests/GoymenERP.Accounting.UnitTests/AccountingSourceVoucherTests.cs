@@ -142,14 +142,14 @@ public sealed class AccountingSourceVoucherTests
         Assert.Equal(payload.AdmissionId, read.SourceDocumentId); Assert.Equal(4, read.FinalizedVersion);
         Assert.Throws<GoymenERP.BuildingBlocks.Messaging.OutboxPermanentFailureException>(() =>
             AccountingSalesInvoiceCancelledInboxConsumerV1.Read(envelope with { EventId = Guid.NewGuid() }, company));
-        company.Set(Guid.NewGuid());
+        var foreignCompany = new CompanyContext(); foreignCompany.Set(Guid.NewGuid());
         Assert.Throws<GoymenERP.BuildingBlocks.Messaging.OutboxPermanentFailureException>(() =>
-            AccountingSalesInvoiceCancelledInboxConsumerV1.Read(envelope, company));
+            AccountingSalesInvoiceCancelledInboxConsumerV1.Read(envelope, foreignCompany));
     }
 
     private sealed class Fixture
     {
-        public CompanyContext Company { get; } = new(); public User User { get; } = new(); public Authority Authority { get; } = new();
+        public MutableCompanyContextForFenceTests Company { get; } = new(AccountingSourceVoucherTests.Company); public User User { get; } = new(); public Authority Authority { get; } = new();
         public Commands Commands { get; } = new(); public Store Store { get; } public AccountingSourceVoucherServiceV1 Service { get; }
         public Fixture() { Company.Set(AccountingSourceVoucherTests.Company); Store = new(Commands); Service = new(Store, Commands, Authority, Company, User, new Correlation()); }
     }
