@@ -25,6 +25,13 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql("""
+                IF EXISTS (SELECT 1 FROM [counterparty].[PartyIdentityRevisions] WHERE [Attribute] = 1)
+                BEGIN
+                    THROW 51799, 'Tax identity revision history exists; RepairPartyIdentityRevisionTaxNumberFormat is not rolled back (forward fix).', 1;
+                END;
+                """);
+
             migrationBuilder.DropCheckConstraint(
                 name: "CK_PartyIdentityRevisions_Value",
                 schema: "counterparty",
