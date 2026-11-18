@@ -1,4 +1,5 @@
 using GoymenERP.Api.Endpoints;
+using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -67,7 +68,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     }
 
     private static InventoryCommandMetadata ReductionMetadata() =>
-        new("SENTETIK-actor", "sales.order.revise", [], "SENTETIK-reduction", null, "SENTETIK-reduction-key", "test", null, null);
+        new("SENTETIK-actor", "sales.order.revise", [], "SENTETIK-reduction", null, "SENTETIK-reduction-key", SourceChannels.Web, null, null);
 
     private sealed class ReductionKilograms : IInventoryFutureUnitConverterV1
     {
