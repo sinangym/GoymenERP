@@ -60,6 +60,8 @@ MAX_PROOF_BYTES = 2 * 1024 * 1024
 # Release per-process memory between API batches on the bounded local runner.
 # Keep complete classes together; a large class remains one indivisible batch.
 API_BATCH_METHOD_BUDGET = 32
+# CreateProcessW includes the final NUL in its UTF-16 command-line limit.
+WINDOWS_COMMAND_LINE_LIMIT = 32767
 HEAD_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
 HASH_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 FQN_PATTERN = re.compile(r"GoymenERP\.[A-Za-z0-9_.+`]+\Z")
@@ -579,6 +581,39 @@ def api_test_batches(discovered: Counter[str]) -> list[Counter[str]]:
     return batches
 
 
+def api_batch_filter(
+    arguments: list[str], batch: Counter[str], full_discovery: Counter[str], *,
+    windows: bool | None = None,
+) -> str:
+    """Compact only an oversized Windows command, without changing its cases."""
+    exact = "|".join(f"FullyQualifiedName={name}" for name in sorted(batch))
+    if windows is None:
+        windows = os.name == "nt"
+
+    def command_units(value: str) -> int:
+        command = subprocess.list2cmdline([*arguments, "--filter", value])
+        return len(command.encode("utf-16-le")) // 2 + 1
+
+    if not windows or command_units(exact) <= WINDOWS_COMMAND_LINE_LIMIT:
+        return exact
+    classes = _api_classes(batch)
+    _api_classes(full_discovery)
+    tokens = [name + "." for name in sorted(classes)]
+    # VSTest's ~ is case-insensitive contains, not a prefix operator. Validate
+    # against ALL project discovery, including classes assigned to other shards.
+    # FQN_PATTERN permits ASCII only, so lower() preserves that comparison.
+    selected = Counter({
+        name: count for name, count in full_discovery.items()
+        if any(token in name.lower() for token in tokens)
+    })
+    if selected != batch:
+        raise RuntimeError("API compact class filter differs from complete project discovery.")
+    compact = "|".join(f"FullyQualifiedName~{token}" for token in tokens)
+    if command_units(compact) > WINDOWS_COMMAND_LINE_LIMIT:
+        raise RuntimeError("API whole-class filter still exceeds the Windows command-line limit.")
+    return compact
+
+
 def api_shard_partition(
     discovered: Counter[str], count: int, skipped_facts: set[str],
 ) -> list[Counter[str]]:
@@ -878,6 +913,7 @@ def run_group(
         ], root))
         discovered_ids = structured_discovery(diagnostic, root, project)
         discovered = Counter({name: len(cases) for name, cases in discovered_ids.items()})
+        full_discovery = discovered.copy()
         full_hashes.append(digest(sorted(discovered.items())))
         if shard_count > 1:
             discovered = api_shard_partition(
@@ -908,9 +944,7 @@ def run_group(
                 "--logger", "console;verbosity=quiet",
             ]
             if group == "api":
-                arguments += ["--filter", "|".join(
-                    f"FullyQualifiedName={method}" for method in sorted(batch)
-                )]
+                arguments += ["--filter", api_batch_filter(arguments, batch, full_discovery)]
                 print(f"BACKEND_API_BATCH: START batch={index}/{len(batches)} "
                       f"methods={len(batch)} discoveredCases={sum(batch.values())}", flush=True)
             measure(Stage.BOOTSTRAP_PREFLIGHT, lambda: run_bootstrap_preflight(root))
