@@ -50,3 +50,9 @@ kabulü değildir. .NET/Node, SQL, browser, Vitest, CI veya DB apply çalıştı
   keşfedilmemiş W8 tabloları bu sayıdan çıkarımla sınıflandırılmaz. Yeni required
   evidence ve registry girdisi dışında validator semantiği gevşetilmedi. Yeni evidence
   yolunun risky-surface kapsamına etkisi temiz commit'te gerçek yardımcıyla ölçülecektir.
+
+Temiz `d154f7fea` üzerinde gerçek actuals helper native **exit 0** verdi. Yeni Finance
+contract evidence dosyaları risky kümeye katıldığı için gerçek count **1458**, fingerprint
+`50213dd8efedb28fa55eac6425dcce8e3cd2c384e09ee28731ed5773038a1b6f` oldu. Diğer
+declaration/Audit/method/live-blob pinlerinde drift yoktur. Bu değer sonraki temiz
+producer denemesi için hizalandı; helper sonucu durable discovery'nin geçtiği anlamına gelmez.
