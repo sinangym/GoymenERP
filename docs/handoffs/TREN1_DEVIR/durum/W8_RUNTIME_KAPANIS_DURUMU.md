@@ -110,3 +110,12 @@ audit-ignore eklenmedi, audit kapısı gevşetilmedi. Güvenli upstream düzeltm
 olmadan bu CI güvenlik kapısı PASS sayılamaz.
 Kaynak: https://github.com/advisories/GHSA-fc5q-39xc-vjpf ve
 https://registry.npmjs.org/picomatch . Kaynak %100 bu engeli kapatmaz.
+
+### Windows Faz0 tekrar sonucu
+
+Geçici Git fixture'ında çıplak `bash` Windows System32 WSL aracını seçiyordu;
+WSL RPC hata koduyla çıkıyordu. Yalnız Windows test harness'i kurulu Git'in
+`bin/bash.exe` dosyasını açıkça seçer; Linux çağrısı, shell scripti ve bütün
+assertlar aynıdır. Tam `ci_safe_trx_summary` **64/64 PASS, 0 skip**, native exit0,
+48.895 saniye. Önceki başarısız kayıtlar korunur. Ayrı salt okuma tanısında
+162 shell çağrısı özgün prose/kod/geçersiz-head sonuçlarıyla doğrulandı.
