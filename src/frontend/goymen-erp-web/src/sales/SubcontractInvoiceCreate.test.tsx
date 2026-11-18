@@ -153,7 +153,7 @@ describe('F2 subcontract service invoice create', () => {
       S.notReadyItem(subcontractInvoiceFieldText('lines[0]'), subcontractInvoiceReasonText('subcontract_share_policy_pending')),
       S.notReadyItem(subcontractInvoiceFieldText('salesOrderId'), 'some_future_code'),
     ])
-    expect((within(panel).getByTestId('sales-subcontract-invoice-weighingId') as HTMLInputElement).disabled).toBe(false)
+    expect(within(panel).getByTestId('sales-subcontract-invoice-weighingId').matches(':disabled')).toBe(false)
     expect(within(panel).queryByTestId('sales-subcontract-invoice-retry')).toBeNull()
   })
 
@@ -176,7 +176,7 @@ describe('F2 subcontract service invoice create', () => {
     fill(panel)
     create(panel)
     expect((await notice()).textContent).toContain(T.unknownServiceUnavailable)
-    expect((within(panel).getByTestId('sales-subcontract-invoice-weighingId') as HTMLInputElement).disabled).toBe(true)
+    expect(within(panel).getByTestId('sales-subcontract-invoice-weighingId').matches(':disabled')).toBe(true)
     fireEvent.click(within(panel).getByTestId('sales-subcontract-invoice-retry'))
     await screen.findByTestId('sales-subcontract-invoice-created')
     expect(calls).toHaveLength(2)

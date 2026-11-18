@@ -45,14 +45,17 @@ function purchaseOrderDocument(over: Record<string, unknown> = {}) {
 }
 
 describe('document owner contract', () => {
-  it('pins the canonical counterparty, inventory label, purchase-order and sales-order identities', () => {
+  it('pins every canonical document owner identity', () => {
     expect(OWNER_KIND).toEqual({
+      companyBranding: 'documents.company-branding',
       counterpartyParty: 'counterparty.party',
       inventoryMaterialLabel: 'inventory.material-label',
       purchasingPurchaseOrder: 'purchasing.purchase-order',
       purchasingInvoiceImport: 'purchasing.invoice-import',
       financeCashExchange: 'finance.cash-exchange',
       salesOrder: 'sales.order',
+      logisticsDispatchNote: 'logistics.dispatch-note',
+      financeOfficialSalesInvoice: 'finance.official-sales-invoice',
     });
   });
 

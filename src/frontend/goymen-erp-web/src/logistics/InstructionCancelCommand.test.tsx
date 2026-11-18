@@ -131,7 +131,7 @@ describe('F-020 instruction cancellation on L-02-DETAIL', () => {
     first.reject(new TypeError('Failed to fetch'))
     await screen.findByText(INSTRUCTION_DETAIL_TEXT.command.unknown)
     // While the outcome is unknown the reason cannot be changed into a second, different cancel.
-    expect((screen.getByLabelText(T.reasonLabel) as HTMLTextAreaElement).disabled).toBe(true)
+    expect(screen.getByLabelText(T.reasonLabel).matches(':disabled')).toBe(true)
     await userEvent.click(screen.getByRole('button', { name: INSTRUCTION_DETAIL_TEXT.command.retry }))
     await waitFor(() => expect(screen.getByTestId('logistics-instruction-cancel-notice').textContent).toBe(INSTRUCTION_DETAIL_TEXT.command.replayed))
 

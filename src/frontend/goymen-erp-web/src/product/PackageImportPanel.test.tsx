@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { readableFile } from '../test/readableFile'
 import { PackageImportPanel } from './PackageImportPanel'
 import {
   PACKAGE_STANDARD_CURRENT_PATH,
@@ -94,7 +95,7 @@ function renderPanel() {
 }
 
 function xlsxFile(bytes: Uint8Array<ArrayBuffer> = XLSX_BYTES, name = 'paket.xlsx') {
-  return new File([bytes], name, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  return readableFile([bytes], name, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
 }
 
 async function openImport(user: ReturnType<typeof userEvent.setup>) {

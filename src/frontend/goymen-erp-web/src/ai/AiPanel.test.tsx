@@ -230,7 +230,6 @@ describe('Plan AI-5 — sağ AI paneli', () => {
   it.each([
     [503, 'ai_tool_unavailable', AI_TEXT.askToolUnavailableTitle],
     [503, 'ai_disabled', AI_TEXT.askDisabledTitle],
-    [403, 'ai_tool_not_allowed', AI_TEXT.askRefusedTitle],
   ])('soru %i %s ile reddedilirse dürüst durum gösterilir, sahte cevap yoktur', async (status, code, title) => {
     installFetch([], { capabilities: () => json(READY), ask: () => json({ status, code }, status) })
     renderShell()
@@ -238,6 +237,26 @@ describe('Plan AI-5 — sağ AI paneli', () => {
     await userEvent.type(await within(panel).findByRole('textbox', { name: AI_TEXT.questionLabel }), 'Soru')
     await userEvent.click(within(panel).getByRole('button', { name: AI_TEXT.submit }))
     expect(await within(panel).findByText(title)).toBeTruthy()
+    expect(within(panel).queryByText(AI_TEXT.answerHeading)).toBeNull()
+  })
+
+  it('soru 403 sonrası yeni yetki okuması paneli kapalı tutar; eski soru ve yeniden gönderme kalmaz', async () => {
+    let refused = false
+    const capabilityRead = vi.fn(() => json(refused ? { availability: 'ready', panelAvailable: false, tools: [] } : READY))
+    const fetchMock = installFetch([], { capabilities: capabilityRead, ask: () => {
+      refused = true
+      return json({ status: 403, code: 'ai_tool_not_allowed' }, 403)
+    } })
+    renderShell()
+    const panel = await openPanel()
+    await userEvent.type(await within(panel).findByRole('textbox', { name: AI_TEXT.questionLabel }), 'Soru')
+    await userEvent.click(within(panel).getByRole('button', { name: AI_TEXT.submit }))
+    // The real shared boundary strips the old generation; its AskForm cannot retain the old response or authority.
+    expect(await within(panel).findByText(AI_TEXT.panelForbiddenTitle)).toBeTruthy()
+    expect(capabilityRead).toHaveBeenCalledTimes(2)
+    expect(askCalls(fetchMock)).toHaveLength(1)
+    expect(within(panel).queryByRole('textbox')).toBeNull()
+    expect(within(panel).queryByRole('button', { name: AI_TEXT.submit })).toBeNull()
     expect(within(panel).queryByText(AI_TEXT.answerHeading)).toBeNull()
   })
 

@@ -113,9 +113,11 @@ const props = (patch: Partial<ExpensePaymentPageProps> = {}): ExpensePaymentPage
 
 function show(patch: Partial<ExpensePaymentPageProps> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: 0 } } })
-  return render(<QueryClientProvider client={client}>
-    <MemoryRouter><ExpensePaymentPage {...props(patch)} /></MemoryRouter>
-  </QueryClientProvider>)
+  const tree = (next: Partial<ExpensePaymentPageProps>) => <QueryClientProvider client={client}>
+    <MemoryRouter><ExpensePaymentPage {...props(next)} /></MemoryRouter>
+  </QueryClientProvider>
+  const view = render(tree(patch))
+  return { ...view, rerenderPage: (next: Partial<ExpensePaymentPageProps> = patch) => view.rerender(tree(next)) }
 }
 
 async function openPayment() {
@@ -142,33 +144,33 @@ describe('ExpensePaymentPage reads', () => {
     shell.state = { activeContext: null, routeEntryGeneration: 0, sessionEpoch: 0 }
     serve(() => undefined)
     show()
-    expect(screen.getByText('Yetkili şirket yok')).toBeTruthy()
+    expect(screen.getByText(`Yetkili şirket yok — ${T.subject}`)).toBeTruthy()
   })
 
   it('shows loading until the list answers', () => {
     serve(() => new Promise<Response>(() => {}))
     show()
-    expect(screen.getAllByText('Yükleniyor').length).toBeGreaterThan(0)
+    expect(screen.getByText(`Yükleniyor — ${T.subject}`)).toBeTruthy()
   })
 
   it('shows the empty state for an empty first page', async () => {
     const calls = reads(() => json(page([])))
     show()
-    expect(await screen.findByText('Kayıt yok')).toBeTruthy()
+    expect(await screen.findByText(`Kayıt yok — ${T.subject}`)).toBeTruthy()
     expect(calls.every((call) => call.company === COMPANY)).toBe(true)
   })
 
   it('reports a 401 to the shell and draws the session-ended state', async () => {
     reads(() => json({}, 401))
     show()
-    expect(await screen.findByText('Oturum sonlandı')).toBeTruthy()
+    expect(await screen.findByText(`Oturum sonlandı — ${T.subject}`)).toBeTruthy()
     expect(boundary.report).toHaveBeenCalledWith(401, { token: 1 })
   })
 
   it('reports a 403 and draws the non-disclosing forbidden state', async () => {
     reads(() => json({}, 403))
     show()
-    expect(await screen.findByText('Yetkiniz yok')).toBeTruthy()
+    expect(await screen.findByText(`Yetkiniz yok — ${T.subject}`)).toBeTruthy()
     expect(boundary.report).toHaveBeenCalledWith(403, { token: 1 })
   })
 
@@ -176,7 +178,7 @@ describe('ExpensePaymentPage reads', () => {
     let answers = 0
     reads(() => (answers++ === 0 ? json({}, 503) : json(page([draft()]))))
     show()
-    expect(await screen.findByText('Servis geçici olarak kullanılamıyor')).toBeTruthy()
+    expect(await screen.findByText(`Servis geçici olarak kullanılamıyor — ${T.subject}`)).toBeTruthy()
     await userEvent.setup().click(screen.getByRole('button', { name: 'Tekrar dene' }))
     expect(await screen.findByText('SENTETIK kırtasiye gideri')).toBeTruthy()
     // FNS-D25: the item is shown by the catalog code's label, read by identity.
@@ -186,7 +188,7 @@ describe('ExpensePaymentPage reads', () => {
   it('treats a page for another company as malformed', async () => {
     reads(() => json(page([], null, OTHER_COMPANY)))
     show()
-    expect(await screen.findByText('Beklenmeyen yanıt')).toBeTruthy()
+    expect(await screen.findByText(`Beklenmeyen yanıt — ${T.subject}`)).toBeTruthy()
   })
 })
 
@@ -210,6 +212,8 @@ describe('ExpensePaymentPage approval', () => {
     const { user, detail } = await openPayment()
     await user.click(await within(detail).findByRole('button', { name: T.approve }))
     expect(await within(detail).findByText(T.applied)).toBeTruthy()
+    expect(within(detail).queryByRole('button', { name: T.approve })).toBeNull()
+    expect(within(detail).getByRole('button', { name: T.record })).toBeTruthy()
     const post = calls.find((call) => call.method === 'POST')
     expect(post?.key).toMatch(/^[0-9a-f]{32}$/)
     expect(post?.company).toBe(COMPANY)
@@ -264,6 +268,49 @@ describe('ExpensePaymentPage approval', () => {
     const { user, detail } = await openPayment()
     await user.click(await within(detail).findByRole('button', { name: T.approve }))
     expect(await within(detail).findByText(T.appliedReplay)).toBeTruthy()
+    expect(within(detail).queryByRole('button', { name: T.approve })).toBeNull()
+    expect(within(detail).getByRole('button', { name: T.record })).toBeTruthy()
+  })
+
+  it.each(['company', 'route-entry'] as const)('does not retain an approval notice after a %s change', async (change) => {
+    serve((call) => {
+      if (call.url === ITEMS_URL) return json({ ...catalog, companyId: call.company })
+      if (call.url === LIST_URL) return json(page([draft({ companyId: call.company })], null, call.company))
+      if (call.method === 'GET' && call.url === DETAIL_URL) return json(draft({ companyId: call.company }))
+      if (call.url === APPROVAL_URL) return json(succeeded(approved()))
+      return undefined
+    })
+    const view = show()
+    const { user, detail } = await openPayment()
+    await user.click(await within(detail).findByRole('button', { name: T.approve }))
+    expect(await within(detail).findByText(T.applied)).toBeTruthy()
+
+    const companyId = change === 'company' ? OTHER_COMPANY : COMPANY
+    shell.state = { ...shell.state, routeEntryGeneration: shell.state.routeEntryGeneration + 1,
+      activeContext: { scopeMode: 'single', companyId, userId: ACTOR } }
+    view.rerenderPage({ companyId })
+    const reopened = await openPayment()
+    expect(within(reopened.detail).queryByText(T.applied)).toBeNull()
+    expect(within(reopened.detail).queryByText(T.appliedReplay)).toBeNull()
+    expect(await within(reopened.detail).findByRole('button', { name: T.approve })).toBeTruthy()
+  })
+
+  it('clears the approval notice when the subsequent record has an unknown outcome', async () => {
+    reads(() => json(page([draft()])), (call) => {
+      if (call.method === 'GET' && call.url === DETAIL_URL) return json(draft())
+      if (call.url === APPROVAL_URL) return json(succeeded(approved()))
+      if (call.url === RECORD_URL) return json({}, 503)
+      return undefined
+    })
+    show()
+    const { user, detail } = await openPayment()
+    await user.click(await within(detail).findByRole('button', { name: T.approve }))
+    expect(await within(detail).findByText(T.applied)).toBeTruthy()
+    await user.click(within(detail).getByRole('checkbox', { name: T.recordConfirm }))
+    await user.click(within(detail).getByRole('button', { name: T.record }))
+    expect(await within(detail).findByText(T.unknownHeading)).toBeTruthy()
+    expect(within(detail).queryByText(T.applied)).toBeNull()
+    expect(within(detail).getByRole('button', { name: T.retrySame })).toBeTruthy()
   })
 
   it('shows a version conflict with a reload', async () => {

@@ -290,6 +290,11 @@ export function installPoolFetch(onSales: (call: PoolCall) => Response | Promise
       if (url.includes('/shell/capabilities')) {
         return json({ contractVersion: SHELL_CAPABILITY_CONTRACT_VERSION, generation: 'gen-1', capabilities })
       }
+      // The shell's group-level setup link reads its own authority even on a gated Sales route.
+      // This actor has neither setup right; that shell read is not a Sales business call.
+      if (url.endsWith('/organization/company-setup/capabilities')) {
+        return json({ canOpenCompany: false, canAssignFirstAdmin: false })
+      }
       const call: PoolCall = {
         url,
         method: (init?.method ?? 'GET').toUpperCase(),

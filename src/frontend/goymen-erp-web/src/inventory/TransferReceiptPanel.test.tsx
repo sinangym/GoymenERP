@@ -227,7 +227,14 @@ describe('actual pending requests and stale context fences', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: T.lossDecision })); await screen.findByText(T.saved)
     expect(JSON.parse(String(commands()[0].init?.body))).toMatchObject({ expectedTransferVersion: '2', requestNumber: 2, decision: 'Reject', reason: 'SENTETIK karar' })
     expect(commands()[0].url).toBe(`/api/v1/inventory/transfers/${TRANSFER}/lines/${LINE}/loss-decision`)
-    expect(screen.getByText(T.statuses.Rejected)).toBeTruthy()
+    await waitFor(() => {
+      const history = screen.getByRole('table', { name: T.losses })
+      const row = within(history).getAllByRole('row')[1]
+      const cells = within(row).getAllByRole('cell')
+      expect(cells[0].textContent).toBe(LINE)
+      expect(cells[1].textContent).toBe('2')
+      expect(cells[3].textContent).toBe(`${T.statuses.Rejected}SENTETIK karar`)
+    })
   })
   it('shows actual pending overage and requires an explicit choice instead of assuming approval', async () => {
     const source = work(); owner = { ...source, transfer: { ...source.transfer, version: '3', status: 'Accepted', lines: source.transfer.lines.map((line) => ({ ...line, status: 'Accepted' })) },

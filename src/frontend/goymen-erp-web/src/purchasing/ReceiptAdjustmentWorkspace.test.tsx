@@ -72,7 +72,7 @@ describe('Receipt undo, correction and supplier return workflow, synthetic NOT_E
       .mockResolvedValueOnce({ type: 'applied', response: answer })
     const first = mount(); await openAndFill(); await userEvent.click(screen.getByRole('button', { name: T.save }))
     await screen.findByText(T.unknown)
-    expect((screen.getByLabelText(T.purchaseQuantity) as HTMLInputElement).disabled).toBe(true)
+    expect(screen.getByLabelText(T.purchaseQuantity).matches(':disabled')).toBe(true)
     first.unmount()
     mount({ binding: 'read-generation-2' }); await userEvent.click(screen.getByRole('button', { name: T.show }))
     await userEvent.click(await screen.findByRole('button', { name: T.retry }))

@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { readableFile } from '../test/readableFile'
 import { ProfileWeightTablePanel } from './ProfileWeightTablePanel'
 import {
   PROFILE_WEIGHT_CURRENT_PATH,
@@ -98,7 +99,7 @@ function renderPanel() {
 }
 
 function csvFile(content = CSV, name = 'agirlik.csv') {
-  return new File([content], name, { type: 'text/csv' })
+  return readableFile([content], name, { type: 'text/csv' })
 }
 
 async function openForm(user: ReturnType<typeof userEvent.setup>) {
@@ -152,6 +153,7 @@ describe('company kg/m table panel (URN-D13…D16)', () => {
     expect(structural.textContent).toContain('200')
     expect(structural.textContent).toContain('22.4')
     expect(screen.getByText(PROFILE_WEIGHT_TEXT.columnSeries)).toBeTruthy()
+    await openForm(userEvent.setup())
     expect(screen.getByText(PROFILE_WEIGHT_TEXT.extendedFileFormat, { exact: false })).toBeTruthy()
   })
 

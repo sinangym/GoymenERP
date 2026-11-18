@@ -19,7 +19,7 @@ const prep = { kind: 'CurrencyExchange', sourceKind: 'Bank', sourceAccountId: AC
 const transfer = { id: ID, companyId: C, preparation: prep, recordedBy: 'SENTETIK-treasurer', recordedAtUtc: `${date}T08:00:00Z`, transferConfirmed: true, version: '1',
   exchange: { companyId: C, occurredOn: date, sourceMoney, targetMoney, sourceProfile: profile, targetProfile: profile,
     transactionRate: '33.00', comparisonRate: '34.00', rateDeviation: '-1.00', exactTransactionRate: { numerator: '33', denominator: '1' }, exactComparisonRate: { numerator: '34', denominator: '1' },
-    sourceComparison: { currencyId: USD, sellingRate: '34', rateDay: date, source: 'Tcmb', recordId: OTHER, recordVersion: '1', bulletinDate: date, provenance: 'SENTETIK' },
+    sourceComparison: { currencyId: USD, sellingRate: '34', rateDay: date, source: 'Tcmb', recordId: OTHER, recordVersion: '1', bulletinDate: '2026-11-17', provenance: 'SENTETIK' },
     targetComparison: { currencyId: TRY, sellingRate: '1', rateDay: date, source: 'FunctionalCurrency', recordId: null, recordVersion: null, bulletinDate: null, provenance: null },
     sourceReferenceTl: { currencyId: TRY, amount: '3400', sourceVersion: 'finance.cash-transfer.tl-reference.v1' }, targetReferenceTl: { currencyId: TRY, amount: '3300', sourceVersion: 'finance.cash-transfer.tl-reference.v1' } } }
 const evidence = { documentId: DOC, versionNo: 2, sha256: 'a'.repeat(64) }
@@ -40,6 +40,9 @@ beforeEach(() => { boundary.report.mockClear() })
 describe('FIN14 typed book-value proof', () => {
   it('keeps actual book value separate from the benchmark and rejects foreign, self-approved or malformed proof', () => {
     expect(decodeBookValueWorkspace({ companyId: C, transfer, proposals: [value] }, C, ID)?.proposals[0].sourceBookValueTl).toBe('3500.00')
+    expect(decodeBookValueWorkspace({ companyId: C, proposals: [value], transfer: { ...transfer,
+      exchange: { ...transfer.exchange, sourceComparison: { ...transfer.exchange.sourceComparison, bulletinDate: date } },
+    } }, C, ID)).toBeNull()
     expect(decodeBookValue({ ...value, companyId: OTHER }, C)).toBeNull()
     expect(decodeBookValue({ ...value, status: 'Approved', version: '2', decidedBy: actor, decidedAtUtc: `${date}T09:00:00Z` }, C)).toBeNull()
     expect(decodeBookValue({ ...value, sourceBookValueTl: 3500 }, C)).toBeNull()

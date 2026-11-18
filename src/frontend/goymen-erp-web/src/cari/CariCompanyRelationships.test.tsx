@@ -109,19 +109,10 @@ function installFetch(config: Config = {}) {
       throw new Error(`unexpected fetch: ${url}`)
     }),
   )
-  // The card's AT-009 VKN/TCKN block, SAT-D57 customer group panel, SAT-D102 e-belge panel and F-027 trade name and
-  // legal name panels and the F-027 merge panel read their own sub-resources; they are not the card read these cases count.
+  // Tax, name, identity history and account panels read their own sub-resources.
+  // Only the exact party endpoint is the company-bound or group card read counted here.
   const partyCalls = () =>
-    calls.filter(
-      (c) =>
-        c.url.includes(`/counterparties/${PARTY}`) &&
-        !c.url.includes('/tax-identity') &&
-        !c.url.includes('/trade-name') &&
-        !c.url.includes('/legal-name') &&
-        !c.url.includes('/merge') &&
-        !c.url.includes('/company-account/customer-group') &&
-        !c.url.includes('/company-account/e-document'),
-    )
+    calls.filter((c) => new URL(c.url, 'https://synthetic.invalid').pathname === `/api/v1/counterparties/${PARTY}`)
   return { calls, partyCalls, groupCalls: () => partyCalls().filter((c) => c.companyId === null) }
 }
 
