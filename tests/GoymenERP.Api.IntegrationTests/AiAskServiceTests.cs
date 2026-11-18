@@ -71,7 +71,10 @@ public sealed class AiAskServiceTests
     public async Task A_company_the_actor_cannot_access_is_refused_before_the_provider()
     {
         var harness = new Harness();
-        harness.CompanyScope.Set(OtherCompany);
+        var inaccessibleScope = new CompanyContext();
+        inaccessibleScope.Set(OtherCompany);
+        harness.CompanyScope = inaccessibleScope;
+        Assert.Equal(OtherCompany, harness.CompanyScope.CompanyId);
 
         var result = await harness.Service().AskAsync(Ask());
 
