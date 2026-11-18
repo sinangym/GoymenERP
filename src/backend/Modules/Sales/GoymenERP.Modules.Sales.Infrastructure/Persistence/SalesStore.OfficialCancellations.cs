@@ -211,7 +211,13 @@ public sealed partial class SalesStore : ISalesOfficialInvoiceCancellationStoreV
 
     public Task<SalesOfficialInvoiceCancellationResultV1> RecordDeliveryAsync(SalesDraftWriteEnvelope envelope, string requestHash,
         Guid cancellationId, long expectedDeliveryVersion, bool releaseActiveAllocations, SalesFinanceCancellationAnswerV1 answer,
-        Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken = default) => OfficialTransaction(async () =>
+        Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken = default) => OfficialTransaction(
+            () => RecordDeliveryCoreAsync(envelope, requestHash, cancellationId, expectedDeliveryVersion,
+                releaseActiveAllocations, answer, freshFence, cancellationToken), freshFence, cancellationToken);
+
+    private async Task<SalesOfficialInvoiceCancellationResultV1> RecordDeliveryCoreAsync(SalesDraftWriteEnvelope envelope, string requestHash,
+        Guid cancellationId, long expectedDeliveryVersion, bool releaseActiveAllocations, SalesFinanceCancellationAnswerV1 answer,
+        Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken)
     {
         const string command = SalesOfficialInvoiceCancellationCommandsV1.RetryFinance;
         RequireOfficialCommand(envelope, requestHash, command);
@@ -231,7 +237,7 @@ public sealed partial class SalesStore : ISalesOfficialInvoiceCancellationStoreV
         OfficialAudit(envelope, view, "OfficialCancellationFinanceRetry", null, null, JsonSerializer.Serialize(source.Cancellation, Json), now);
         await SaveOfficialAudit(view.CompanyId, freshFence, cancellationToken);
         return new(view, false, envelope.CorrelationId);
-    }, freshFence, cancellationToken);
+    }
 
     public async Task<SalesOfficialInvoiceCancellationResultV1> RecordRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash,
         string commandName, SalesDraftTerminalRefusal refusal, Func<CancellationToken, Task> freshFence,

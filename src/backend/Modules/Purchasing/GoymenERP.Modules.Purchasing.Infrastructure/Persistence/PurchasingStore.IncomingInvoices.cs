@@ -208,12 +208,15 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
         SnapshotJson = json, RecordedAtUtc = now,
     });
     private void AddInvoiceAttempt(Guid company, string command, PurchasingWriteEnvelope envelope, string requestHash,
-        string? snapshotJson, string? refusalJson, DateTimeOffset now) => dbContext.IncomingInvoiceAttempts.Add(new()
+        string? snapshotJson, string? refusalJson, DateTimeOffset now)
     {
-        CompanyId = company, CommandName = command, IdempotencyKeyHash = IdempotencyKeyHash(envelope.IdempotencyKey),
-        RequestHash = requestHash, ActorId = envelope.ActorId.Trim(), CorrelationId = envelope.CorrelationId.Trim(),
-        SnapshotJson = snapshotJson, RefusalJson = refusalJson, RecordedAtUtc = now,
-    });
+        dbContext.IncomingInvoiceAttempts.Add(new()
+        {
+            CompanyId = company, CommandName = command, IdempotencyKeyHash = IdempotencyKeyHash(envelope.IdempotencyKey),
+            RequestHash = requestHash, ActorId = envelope.ActorId.Trim(), CorrelationId = envelope.CorrelationId.Trim(),
+            SnapshotJson = snapshotJson, RefusalJson = refusalJson, RecordedAtUtc = now,
+        });
+    }
     private static PurchaseIncomingInvoiceSnapshot ReadInvoiceSnapshot(string json)
     {
         var snapshot = JsonSerializer.Deserialize<PurchaseIncomingInvoiceSnapshot>(json, Json)
