@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using GoymenERP.Api.Endpoints;
+using GoymenERP.Api.Errors;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -256,7 +257,7 @@ public sealed class SalesCustomerReturnHttpAcceptanceTests(GoymenErpApiFactory f
     [InlineData(409, "state_conflict", true)]
     [InlineData(403, "forbidden", false)]
     [InlineData(404, "not_found", false)]
-    public async Task An_installment_read_refusal_keeps_its_code_except_403_and_404(int status, string code, bool coded)
+    public async Task An_installment_read_refusal_keeps_business_codes_and_redacts_platform_failures(int status, string code, bool coded)
     {
         var service = new StubCustomerReturnService { Installments = _ => throw new SalesDraftServiceException(status, code) };
         using var host = CreateHost(service);
@@ -265,7 +266,15 @@ public sealed class SalesCustomerReturnHttpAcceptanceTests(GoymenErpApiFactory f
         using var response = await client.GetAsync($"{SalesEndpoints.CustomerReturnsPath}/{Guid.NewGuid():D}/installments");
 
         Assert.Equal(status, (int)response.StatusCode);
-        if (coded)
+        if (status == 503)
+        {
+            // The platform writer keeps Finance unavailable fail-closed without exposing its internal provider code.
+            var text = await response.Content.ReadAsStringAsync();
+            using var body = JsonDocument.Parse(text);
+            Assert.Equal(ErpProblemCodes.ServiceUnavailable, body.RootElement.GetProperty("code").GetString());
+            Assert.DoesNotContain(code, text, StringComparison.Ordinal);
+        }
+        else if (coded)
         {
             using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             Assert.Equal(code, body.RootElement.GetProperty("code").GetString());
