@@ -10,6 +10,12 @@ const supplier = { partyId: '30000000-0000-0000-0000-000000000003', companyAccou
 const catalog = { companyId: company, products: [product], suppliers: [supplier], colors: [], supplierSearchWindowFull: false }
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks() })
 describe('paint selection editor', () => {
+  it('rejects an unexpected successful status even with a valid catalog body', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(catalog), { status: 201 })))
+    render(<PaintSelectionEditor companyId={company} value={null} disabled={false} onChange={vi.fn()} />)
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', T.unavailable)
+    expect(screen.queryByRole('combobox')).toBeNull()
+  })
   it('selects neither the first product nor supplier automatically and carries their actual versions after explicit choices', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(catalog))))
     const change = vi.fn()

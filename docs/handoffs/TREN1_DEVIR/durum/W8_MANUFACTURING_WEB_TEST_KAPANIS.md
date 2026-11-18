@@ -35,3 +35,11 @@ Create fixture artık kabul edilen aynı plan/version/work-center/inputs/label-v
 target/spec için gerçek revision-list şeklini üretir. Bilinmeyen history'yi kabul
 eden bir production değişikliği yapılmaz; form ve gönderilmemiş revision POST
 assertion'ları korunur. Yeni fixture tekrar koşulmadan geçmiş sayılmaz.
+
+Paint kataloğu GET sözleşmesi yalnız HTTP 200 üretir. Okuyucu genel 2xx yerine
+yalnız 200 kabul eder; geçerli katalog gövdesiyle 201 cevabının seçenek açmadığı
+regresyon testi eklendi. Yetki, katalog hesapları veya izin kaydı değişmez.
+
+Bu iki dosyanın hedefli tekrarı: TSC exit0, 28/28 Vitest PASS, skip0, test exit0.
+Koşulan kaynak: cf36e505e + yukarıdaki Paint HTTP200 değişikliği; tam frontend
+koşumu değildir. İlk başarısız native kayıtlar korundu.

@@ -29,7 +29,7 @@ export function PaintSelectionEditor({ companyId, value, disabled, onChange }: {
         })
         if (controller.signal.aborted) return
         if (response.status === 401 || response.status === 403) report(response.status, security)
-        if (!response.ok) {
+        if (response.status !== 200) {
           setState({ type: 'failed', text: response.status === 401 || response.status === 403 ? T.denied : response.status === 404 ? T.missing : T.unavailable }); return
         }
         const data = decodePaintCatalog(await response.json(), companyId)
