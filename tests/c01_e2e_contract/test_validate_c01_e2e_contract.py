@@ -3,6 +3,7 @@ import hashlib
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import tempfile
 import textwrap
@@ -496,8 +497,17 @@ class ComposeContractTests(unittest.TestCase):
 
             def gate(head, base):
                 git("checkout", "-q", "--detach", head)
+                # Windows resolves an unqualified bash through System32 before PATH.
+                # Keep this Git fixture in Git Bash; Linux keeps its existing shell.
+                bash = "bash"
+                if os.name == "nt":
+                    git_binary = shutil.which("git")
+                    self.assertIsNotNone(git_binary)
+                    git_bash = pathlib.Path(git_binary).resolve().parent.parent / "bin" / "bash.exe"
+                    self.assertTrue(git_bash.is_file(), "Git Bash is required for the Git fixture")
+                    bash = str(git_bash)
                 return subprocess.run(
-                    ["bash", "-c", script],
+                    [bash, "-c", script],
                     cwd=repository, capture_output=True, text=True,
                     env={**environment, "EXPECTED_HEAD_SHA": head, "EXPECTED_BASE_SHA": base},
                 )
