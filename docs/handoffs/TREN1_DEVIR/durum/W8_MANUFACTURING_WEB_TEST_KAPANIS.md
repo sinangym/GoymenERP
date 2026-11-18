@@ -25,3 +25,13 @@ değişmez. Ayrı RCSI/PDF/recovery kanıtı bu frontend testlerini geçmiş say
 
 Bu kaynak değişikliklerinde TSC/Vitest tekrar **QUEUED**; Node lease PDF kapanışı
 bitince devredilir. Test atlama, silme, baseline büyütme veya assertion gevşetme yoktur.
+
+## Hedef tekrar ve kalan history fixture
+
+`edab5c3c9` hedef tekrarında bu grupta yalnız slitting create→reopen→edit testi
+kaldı. Fixture, `/plans/{created-id}/revisions` GET'ine planın kendisini döndürüyor;
+gerçek history decoder bunu haklı olarak reddedip düzenleme formunu kapatıyor.
+Create fixture artık kabul edilen aynı plan/version/work-center/inputs/label-version/
+target/spec için gerçek revision-list şeklini üretir. Bilinmeyen history'yi kabul
+eden bir production değişikliği yapılmaz; form ve gönderilmemiş revision POST
+assertion'ları korunur. Yeni fixture tekrar koşulmadan geçmiş sayılmaz.

@@ -14,10 +14,13 @@ import {
   installFetch,
   json,
   plan,
+  planRevision,
+  planRevisions,
   problem,
   reloadDocument,
   renderAt,
   requestsFor,
+  revisionInput,
   sessionBinding,
   type RecordedRequest,
 } from './testHarness'
@@ -94,6 +97,7 @@ function installPlanApi(options: {
 } = {}) {
   let saves = 0
   let stored: Record<string, unknown> | null = null
+  let storedRevision: ReturnType<typeof planRevision> | null = null
   const actor = options.actor ?? (() => IDENTITY.userId)
   const session = options.session ?? (() => SESSION_1)
   const recorded = installFetch({
@@ -130,7 +134,7 @@ function installPlanApi(options: {
         const request = JSON.parse(init.body as string) as {
           planId: string
           workCenterId: string
-          inputs: Array<{ parentRollId: string; plannedKg: string }>
+          inputs: Array<{ parentRollId: string; plannedKg: string; expectedLabelVersion: string }>
           target: { basis: string; kg: string } | null
           slittingSpec?: {
             lines: Array<{ bandWidthMm: string; count: number }>
@@ -164,6 +168,17 @@ function installPlanApi(options: {
                   : canonicalDecimal(request.slittingSpec.windingTargetKg),
               },
         })
+        storedRevision = planRevision({
+          planVersion: stored.version,
+          workCenterId: request.workCenterId,
+          inputs: request.inputs.map(input => revisionInput(
+            input.parentRollId, canonicalDecimal(input.plannedKg), input.expectedLabelVersion,
+          )),
+          target: request.target,
+          cutToLengthSpec: stored.cutToLengthSpec,
+          lineSpeedMetresPerMinute: stored.lineSpeedMetresPerMinute,
+          processSpec: stored.processSpec,
+        })
         if (options.commitThenLoseFirstSave && saves === 1) throw new TypeError('response lost after commit')
         return json(stored, 201, {
           Location: `/api/v1/manufacturing/plans/${request.planId}`,
@@ -171,6 +186,10 @@ function installPlanApi(options: {
             ? { 'Idempotency-Replayed': 'true', 'Idempotency-Original-Correlation-Id': 'corr-slitting-1' }
             : {}),
         })
+      }
+      if (stored !== null && storedRevision !== null
+        && url.endsWith(`/manufacturing/plans/${stored.planId}/revisions`)) {
+        return json(planRevisions([storedRevision], stored.planId as string))
       }
       if (url.includes('/manufacturing/plans/') && init?.method !== 'POST' && stored !== null) return json(stored)
       return undefined
