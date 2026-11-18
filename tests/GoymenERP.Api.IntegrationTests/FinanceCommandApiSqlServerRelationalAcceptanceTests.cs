@@ -1463,19 +1463,38 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
             var factory = new SqlServerRelationalApiFactory(baseConnectionString, configureServices);
             var run = new Run(baseConnectionString, factory);
-            using var client = factory.CreateClient();
-            using var health = await client.GetAsync("/health/live");
-            health.EnsureSuccessStatusCode();
-            // Idempotent if the host already applied Finance's migrations.
-            var companyContext = new CompanyContext();
-            companyContext.Set(CompanyA);
-            await using var context = new FinanceDbContext(new DbContextOptionsBuilder<FinanceDbContext>()
-                .UseSqlServer(factory.DatabaseConnectionString,
-                    sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", FinanceDbContext.Schema))
-                .Options, companyContext);
-            await context.Database.MigrateAsync();
-            await FinanceDocumentNumbersSqlFixture.PrepareAsync(factory.Services, CompanyA, CompanyB);
-            return run;
+            var phase = "finance_command_startup_health";
+            try
+            {
+                using var client = factory.CreateClient();
+                using var health = await client.GetAsync("/health/live");
+                health.EnsureSuccessStatusCode();
+                phase = "finance_command_startup_migrate";
+                // Idempotent if the host already applied Finance's migrations.
+                var companyContext = new CompanyContext();
+                companyContext.Set(CompanyA);
+                await using var context = new FinanceDbContext(new DbContextOptionsBuilder<FinanceDbContext>()
+                    .UseSqlServer(factory.DatabaseConnectionString,
+                        sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", FinanceDbContext.Schema))
+                    .Options, companyContext);
+                await context.Database.MigrateAsync();
+                phase = "finance_command_startup_document_numbers";
+                await FinanceDocumentNumbersSqlFixture.PrepareAsync(factory.Services, CompanyA, CompanyB);
+                return run;
+            }
+            catch (Exception exception)
+            {
+                try
+                {
+                    await run.DisposeAsync();
+                }
+                catch (Exception)
+                {
+                    // Cleanup must not replace the original failed setup or its closed phase.
+                }
+
+                throw new InvalidOperationException($"CI_SAFE_DIAGNOSTIC:{phase}", exception);
+            }
         }
 
         /// <summary>A client whose key and correlation are set per request, never by default.</summary>
