@@ -2764,7 +2764,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // PurchaseLineSerializationLock (sp_getapplock only); no command is created here. K3 review.
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (31b03aa5… -> 35f883d4…).
                         // Re-fingerprinted for tren-1 W6: KLN-D105 / SAT-S8: serialize schedule changes with future-allocation reduction using the existing order-line locks; reviewed API counts unchanged (35f883d4... -> 8bd3ca9b...).
-                        "b2e983d8ca8a4d129594a9854da7fc8575c8046f5d8a9cdf00ab538f331fa8f8",
+                        // W8 numbered cancellation uses one Serializable owner transaction; same API counts, K3 pending.
+                        "ebaac3eb7efcd7e0adc530d45904b0e11d57df1eac1e7ca1731d73026b1ebc8a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["GetDbConnection"] = 1,
@@ -3899,6 +3900,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedMigrationMutationSources =
             new Dictionary<string, ReviewedMigrationMutationSource>(StringComparer.Ordinal)
             {
+                // W8 Unicode history check repair: Down refuses before restoring the broken old check while tax history exists.
+                // Group-level history guard only; no data rewrite or runtime bypass. K3 review pending; THROW 51799 is unique.
+                ["src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/Migrations/20261118165020_RepairPartyIdentityRevisionTaxNumberFormat.cs"] =
+                    new("64d48934a449bc8115ca919cc6855b82aa211b0477b79b81acedc28b7d612d90",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 // Tren-1 W7; K3 review pending. Down first refuses with THROW 51941 while owner history exists; one SQL guard, no runtime bypass.
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/20261116181354_AddCollateralTypeCatalog.cs"] =
                     new("a79b1853a1327224090f450f26bc5f4879996780a791ac78cab4d6aafc0649d6",

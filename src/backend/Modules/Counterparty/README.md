@@ -263,3 +263,14 @@ group companies instead of the holding ones.
 
 No migration: the command reuses the existing account, command-execution, audit and outbox tables. The group screen is
 a follow-up (it needs a new shell capability); the frontend carries its decoders and transport (`src/cari/deactivationWarning*.ts`).
+
+
+## W8 SQL constraint repair — identity history Unicode value
+
+`20261118165020_RepairPartyIdentityRevisionTaxNumberFormat` was generated with EF Core 10.0.8.
+`PartyIdentityRevisions.Value` remains Unicode for Turkish legal names. Its tax-number branch now checks
+10/11 ASCII digits with `DATALENGTH = 2 * LEN`; ordinary varchar tax-number columns keep their original check.
+Up replaces only this check constraint; no column or data is changed. Down first refuses with **THROW 51799**
+while any tax-number history (`Attribute = 1`) exists, then restores the previous constraint. With only legal-name
+history or an empty table the guard passes. Existing tax history is retained; use a reviewed forward fix instead.
+The model, ASCII/trailing-space SQL regression and Down guard evidence remain subject to the final K3 review.

@@ -21,7 +21,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // CommandExecution tenant filter unchanged.
         // Re-fingerprinted for tren-1 wave 3 (integration): the Counterparty outbox and the deactivation/merge slices combined; token counts checked by the guard (f8ae21fd… -> 55069c28…).
         // Re-fingerprinted for tren-1 W5 (integration): ALC-SC47 legal-name change requests; values from the guard output (55069c28… -> 6d51033c…).
-        "6d51033c5536f43ea7a7fc21c408f24e7a49deab4ad3710225a34a323816d7ae";
+        // W8 SQL repair: nvarchar revision digits use two-byte length; tenant/group scopes unchanged. K3 review pending.
+        "2337ec79630718f11fbc6e2d90ea3a8a8380da073df34eb021b5527d5c38999f";
     private const string ReviewedCounterpartyPurchasingRecordPartyDisplaySourcePath =
         "src/backend/Modules/Counterparty/"
         + "GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"
