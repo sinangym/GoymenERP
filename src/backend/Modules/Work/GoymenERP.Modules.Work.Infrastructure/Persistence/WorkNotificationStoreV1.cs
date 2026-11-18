@@ -62,11 +62,11 @@ public sealed class WorkNotificationStoreV1(IServiceScopeFactory scopes, ICompan
             RequireOriginalCompany(companyId);
             if (recorded is not null) { RequireSame(recorded, command, fingerprint); return; }
             var now = time.GetUtcNow();
-            database.NotificationInbox.Add(new() { CompanyId = companyId, SourceName = command.SourceName,
+            database.NotificationInbox.Add(new WorkNotificationInboxRow() { CompanyId = companyId, SourceName = command.SourceName,
                 EventId = command.EventId, EventType = command.EventType, SchemaVersion = command.SchemaVersion,
                 PayloadSha256 = fingerprint, RecordedAtUtc = now });
             foreach (var (target, recipient) in resolved)
-                database.Notifications.Add(new() { Id = Guid.NewGuid(), CompanyId = companyId, SourceName = command.SourceName,
+                database.Notifications.Add(new WorkNotificationRow() { Id = Guid.NewGuid(), CompanyId = companyId, SourceName = command.SourceName,
                     EventId = command.EventId, Kind = (int)command.Kind, RecipientUserId = recipient.UserId!.Value,
                     SalesOrderId = target.SalesOrderId, SalesOrderLineId = target.SalesOrderLineId,
                     ObservedSalesOrderVersion = recipient.ObservedSalesOrderVersion!.Value, SourceEntityId = command.SourceEntityId,
@@ -75,7 +75,7 @@ public sealed class WorkNotificationStoreV1(IServiceScopeFactory scopes, ICompan
                     CorrelationId = command.CorrelationId, CausationId = command.CausationId });
             if (purchase is not null)
                 foreach (var recipientId in purchase.UserIds)
-                    database.Notifications.Add(new() { Id = Guid.NewGuid(), CompanyId = companyId, SourceName = command.SourceName,
+                    database.Notifications.Add(new WorkNotificationRow() { Id = Guid.NewGuid(), CompanyId = companyId, SourceName = command.SourceName,
                         EventId = command.EventId, Kind = (int)command.Kind, RecipientUserId = recipientId,
                         PurchaseOrderId = purchase.PurchaseOrderId, PurchaseOrderLineId = purchase.PurchaseOrderLineId,
                         ObservedPurchaseOrderVersion = purchase.ObservedOrderVersion, SourceEntityId = command.SourceEntityId,
@@ -113,7 +113,7 @@ public sealed class WorkNotificationStoreV1(IServiceScopeFactory scopes, ICompan
                     && !database.NotificationPassivations.Any(passive => passive.NotificationId == row.Id))
                 .OrderBy(row => row.Id).Select(row => row.Id).ToArrayAsync(cancellationToken);
             RequireOriginalCompany(companyId);
-            foreach (var id in expired) database.NotificationPassivations.Add(new() { CompanyId = companyId,
+            foreach (var id in expired) database.NotificationPassivations.Add(new WorkNotificationPassivationRow() { CompanyId = companyId,
                 NotificationId = id, PassivatedAtUtc = now, ActiveDays = policy.ActiveDays, PolicyVersion = policy.Version });
             await database.SaveChangesAsync(cancellationToken);
             RequireOriginalCompany(companyId);
@@ -186,7 +186,7 @@ public sealed class WorkNotificationReadV1(WorkDbContext database, ICompanyConte
                 item.SourceEntityId, item.SourceVersion, item.ReasonCode, item.ReasonText, item.OccurredAtUtc,
                 item.RecordedAtUtc, passive == null ? null : passive.PassivatedAtUtc, item.PurchaseOrderId, item.PurchaseOrderLineId)).Take(101).ToArrayAsync(cancellationToken);
         await RequireStillAsync(companyId, actor!, cancellationToken);
-        return new(companyId, rows.Take(100).ToArray(), rows.Length > 100, rows.Length > 100 ? rows[99].Id : null);
+        return new WorkNotificationPageV1(companyId, rows.Take(100).ToArray(), rows.Length > 100, rows.Length > 100 ? rows[99].Id : null);
     }
     private async Task RequireStillAsync(Guid companyId, string actor, CancellationToken token)
     {

@@ -213,11 +213,11 @@ public sealed class PartyLedgerReadService(
         return Found(context, summary.Balance, disclosure, items);
     }
 
-    private static readonly FinanceExactDecimalText Zero = new(0, 0);
+    private static readonly FinanceExactDecimalText Zero = new FinanceExactDecimalText(0, 0);
 
     private static PartyAccountReadResultV1 Found(FinanceContext context, PartyBalanceView balance,
         AmountDisclosure disclosure, IReadOnlyList<PartyAccountOpenItemV1> items) =>
-        new(PartyAccountReadOutcome.Found, new PartyAccountViewV1(context.CompanyId, balance.PartyId,
+        new PartyAccountReadResultV1(PartyAccountReadOutcome.Found, new PartyAccountViewV1(context.CompanyId, balance.PartyId,
             balance.CompanyAccountId, balance.Currencies, disclosure, items));
 
     private bool SameContext(FinanceContext context) =>
@@ -233,12 +233,12 @@ public sealed class PartyLedgerReadService(
         _ => AmountDisclosure.Unavailable,
     };
 
-    private static PartyAccountReadResultV1 Refused(PartyAccountReadOutcome outcome) => new(outcome, null);
+    private static PartyAccountReadResultV1 Refused(PartyAccountReadOutcome outcome) => new PartyAccountReadResultV1(outcome, null);
 
     private static PartyAccountReadOutcome ReadRefusal(PermissionDecision decision) =>
         decision == PermissionDecision.Unavailable ? PartyAccountReadOutcome.Unavailable : PartyAccountReadOutcome.Denied;
 
-    private static PartyAccountListResultV1 ListRefused(PartyAccountListOutcome outcome) => new(outcome, null);
+    private static PartyAccountListResultV1 ListRefused(PartyAccountListOutcome outcome) => new PartyAccountListResultV1(outcome, null);
 
     private static PartyAccountListOutcome ListRefusal(PermissionDecision decision) =>
         decision == PermissionDecision.Unavailable ? PartyAccountListOutcome.Unavailable : PartyAccountListOutcome.Denied;

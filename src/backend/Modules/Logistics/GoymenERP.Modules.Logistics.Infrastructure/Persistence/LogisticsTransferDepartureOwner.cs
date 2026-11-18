@@ -26,7 +26,7 @@ public sealed class LogisticsTransferDepartureOwner(LogisticsDbContext database,
 {
     internal const string RecordCommand = "logistics.transfer-departure.record.v1";
     internal const string ConfirmCommand = "logistics.transfer-departure.confirm-no-exit.v1";
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<bool> SupportsWarehouseAsync(Guid companyId, Guid locationId, CancellationToken cancellationToken = default)
     {
@@ -91,7 +91,7 @@ public sealed class LogisticsTransferDepartureOwner(LogisticsDbContext database,
             Advance(row, request.Kind.ToString(), request.OccurredAtUtc, reason, envelope, weighing);
             return Facts(row, proof);
         }, cancellationToken);
-        return new(recorded.Value, recorded.IsReplay, recorded.OriginalCorrelationId);
+        return new LogisticsTransferDepartureRecordedV1(recorded.Value, recorded.IsReplay, recorded.OriginalCorrelationId);
     }
 
     public async Task<LogisticsTransferCancelConfirmationV1> ConfirmAsync(LogisticsTransferCancelIntentV1 intent,
@@ -160,7 +160,7 @@ public sealed class LogisticsTransferDepartureOwner(LogisticsDbContext database,
                 await FenceAsync(companyId, actor, freshAuthority, token);
                 var replay = Replay<T>(prior, companyId, transferId, envelope.ActorId, hash);
                 await transaction.CommitAsync(token);
-                return new(replay, true, prior.CorrelationId);
+                return new OwnerWrite<T>(replay, true, prior.CorrelationId);
             }
             var result = await stage(token);
             await FenceAsync(companyId, actor, freshAuthority, token);
@@ -172,7 +172,7 @@ public sealed class LogisticsTransferDepartureOwner(LogisticsDbContext database,
             await database.SaveChangesAsync(token);
             await FenceAsync(companyId, actor, freshAuthority, token);
             await transaction.CommitAsync(token);
-            return new(result, false, envelope.CorrelationId);
+            return new OwnerWrite<T>(result, false, envelope.CorrelationId);
         }
         catch (DbUpdateConcurrencyException) { throw Conflict("logistics_transfer_departure_version_conflict"); }
         catch (Exception exception) when (SqlNumber(exception) is 2601 or 2627 or 1205)
@@ -260,13 +260,13 @@ public sealed class LogisticsTransferDepartureOwner(LogisticsDbContext database,
             || row.VehicleExitAtUtc is { } exit && (exit.Offset != TimeSpan.Zero || exit < query.DispatchedAtUtc)) throw Unavailable();
     }
     private static LogisticsTransferDepartureQueryV1 Query(LogisticsTransferReferenceV1 reference) =>
-        new(reference.CompanyId, reference.TransferId, reference.SourceLocationId, reference.DispatchedAtUtc!.Value);
+        new LogisticsTransferDepartureQueryV1(reference.CompanyId, reference.TransferId, reference.SourceLocationId, reference.DispatchedAtUtc!.Value);
     private static LogisticsTransferDepartureFactsV1 Facts(TransferDepartureStateRow row, LogisticsTransferEDispatchEvidenceV1? proof) =>
-        new(row.CompanyId, row.TransferId, row.SourceLocationId, (LogisticsTransferEDispatchAssociationV1)row.Association,
+        new LogisticsTransferDepartureFactsV1(row.CompanyId, row.TransferId, row.SourceLocationId, (LogisticsTransferEDispatchAssociationV1)row.Association,
             row.Version, row.ExitWeighingAtUtc, row.VehicleExitAtUtc, row.NoFurtherExitVersion is not null, proof,
             LogisticsTransferDepartureV1.SourceVersion + "/" + Text(row.Version));
     private static LogisticsTransferDepartureFactsV1 Unknown(LogisticsTransferDepartureQueryV1 query) =>
-        new(query.CompanyId, query.TransferId, query.SourceLocationId, LogisticsTransferEDispatchAssociationV1.Unknown,
+        new LogisticsTransferDepartureFactsV1(query.CompanyId, query.TransferId, query.SourceLocationId, LogisticsTransferEDispatchAssociationV1.Unknown,
             null, null, null, false, null, LogisticsTransferDepartureV1.SourceVersion + "/legacy-unknown");
     private static T Replay<T>(TransferDepartureAttemptRow row, Guid companyId, Guid transferId, string actor, string hash)
     {
@@ -306,7 +306,7 @@ public sealed class LogisticsTransferDepartureOwner(LogisticsDbContext database,
         {
             var net = WeighbridgeCalculator.Net((WeighingDirection)weighing.Direction,
                 Quantity.Of(first, QuantityUnit.Kilogram), Quantity.Of(second, QuantityUnit.Kilogram));
-            return new(weighing.Direction, first, second, net.Value);
+            return new WeighingSnapshot(weighing.Direction, first, second, net.Value);
         }
         catch (ArgumentException) { throw Invalid(); }
         catch (GoymenERP.Modules.Logistics.Domain.LogisticsRuleException) { throw Invalid(); }
@@ -329,8 +329,8 @@ public sealed class LogisticsTransferDepartureOwner(LogisticsDbContext database,
         {
             if (weighing.WeighingDirection is not { } direction || weighing.FirstWeighingKg is not { } first
                 || weighing.SecondWeighingKg is not { } second || weighing.NetWeighingKg is not { } recorded) throw Unavailable();
-            var actual = Weighing(new("1", LogisticsTransferDepartureEventKindV1.ExitWeighing, weighing.OccurredAtUtc,
-                weighing.Reason, new(direction, first.ToString(CultureInfo.InvariantCulture), second.ToString(CultureInfo.InvariantCulture))));
+            var actual = Weighing(new RecordTransferDepartureV1("1", LogisticsTransferDepartureEventKindV1.ExitWeighing, weighing.OccurredAtUtc,
+                weighing.Reason, new TransferDepartureWeighingV1(direction, first.ToString(CultureInfo.InvariantCulture), second.ToString(CultureInfo.InvariantCulture))));
             if (actual?.NetKg != recorded) throw Unavailable();
         }
     }
@@ -344,7 +344,7 @@ public sealed class LogisticsTransferDepartureOwner(LogisticsDbContext database,
         && proof.Version >= row.InitialOfficialDocumentVersion && row.OfficialLinkedAtUtc == proof.LinkedAtUtc;
     private static int? SqlNumber(Exception exception)
     { for (Exception? item = exception; item is not null; item = item.InnerException) if (item is SqlException sql) return sql.Number; return null; }
-    private static LogisticsTransferDepartureException Unavailable() => new(503, "logistics_transfer_departure_unavailable");
-    private static LogisticsTransferDepartureException Invalid() => new(422, "logistics_transfer_departure_request_invalid");
-    private static LogisticsTransferDepartureException Conflict(string code) => new(409, code);
+    private static LogisticsTransferDepartureException Unavailable() => new LogisticsTransferDepartureException(503, "logistics_transfer_departure_unavailable");
+    private static LogisticsTransferDepartureException Invalid() => new LogisticsTransferDepartureException(422, "logistics_transfer_departure_request_invalid");
+    private static LogisticsTransferDepartureException Conflict(string code) => new LogisticsTransferDepartureException(409, code);
 }

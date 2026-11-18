@@ -26,7 +26,7 @@ internal sealed class SettingsFinanceDocumentNumberReservationV1(FinanceDbContex
             || db.Database.CurrentTransaction?.GetDbTransaction() is not { IsolationLevel: IsolationLevel.Serializable } transaction)
             throw new SettingsPrerequisiteException(SettingsDocumentNumberSeriesProblemCodesV1.Unavailable);
         return owner.ReserveFinanceNumberAsync(transaction, context.CompanyId, purpose, sourceId, businessDate,
-            new(context.CompanyId, context.ActorId, context.CorrelationId, context.CausationId,
+            new SettingsCommandMetadataV1(context.CompanyId, context.ActorId, context.CorrelationId, context.CausationId,
                 envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent, metadata.IdempotencyKey), cancellationToken);
     }
 }
@@ -39,7 +39,7 @@ internal static class FinanceDocumentNumbering
 
     internal static FinanceDocumentNumberV1? View(IFinanceNumberedSource row) => row.DocumentNumber is null
         && row.DocumentNumberFormatVersion is null ? null
-        : new(row.DocumentNumber ?? throw new InvalidOperationException("Belge numarası okunamadı."),
+        : new FinanceDocumentNumberV1(row.DocumentNumber ?? throw new InvalidOperationException("Belge numarası okunamadı."),
             row.DocumentNumberFormatVersion ?? throw new InvalidOperationException("Belge biçim sürümü okunamadı."));
 
     internal static async Task<Answer> ReserveAsync(FinanceDbContext db, IFinanceDocumentNumberReservationV1? owner,
@@ -48,7 +48,7 @@ internal static class FinanceDocumentNumbering
     {
         FinanceTreasuryTransaction.MarkNumberReservation(db);
         if (owner is null)
-            return new(null, false, SettingsDocumentNumberSeriesProblemCodesV1.Unavailable);
+            return new Answer(null, false, SettingsDocumentNumberSeriesProblemCodesV1.Unavailable);
         try
         {
             var result = await owner.ReserveAsync(context, metadata, envelope, purpose, sourceId, businessDate, token);
@@ -59,12 +59,12 @@ internal static class FinanceDocumentNumbering
                 || !long.TryParse(result.FormatVersion, System.Globalization.NumberStyles.None,
                     System.Globalization.CultureInfo.InvariantCulture, out var version) || version < 1 || result.Sequence < 1
                 || result.FormatVersion != version.ToString(System.Globalization.CultureInfo.InvariantCulture))
-                return new(null, false, SettingsDocumentNumberSeriesProblemCodesV1.Unavailable);
-            return new(result, false, null);
+                return new Answer(null, false, SettingsDocumentNumberSeriesProblemCodesV1.Unavailable);
+            return new Answer(result, false, null);
         }
         catch (SettingsPrerequisiteException error)
-        { return new(null, error.Code == "settings_access_denied", error.Code); }
+        { return new Answer(null, error.Code == "settings_access_denied", error.Code); }
         catch (UnauthorizedAccessException)
-        { return new(null, true, "settings_access_denied"); }
+        { return new Answer(null, true, "settings_access_denied"); }
     }
 }

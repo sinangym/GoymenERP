@@ -27,7 +27,7 @@ public sealed class LogisticsSubcontractDeliveryReadSession : ILogisticsSubcontr
         DbConnection connection, DbTransaction transaction, Guid companyId)
     {
         this.context = context; this.connection = connection; this.transaction = transaction; this.companyId = companyId;
-        reader = new(new LogisticsStore(context, company, new ReadOnlyAuditCollector(), TimeProvider.System), company);
+        reader = new LogisticsSubcontractDeliveryNetWeightReadPort(new LogisticsStore(context, company, new ReadOnlyAuditCollector(), TimeProvider.System), company);
     }
 
     public static async Task<LogisticsSubcontractDeliveryReadSession> EnlistAsync(DbConnection connection,
@@ -42,7 +42,7 @@ public sealed class LogisticsSubcontractDeliveryReadSession : ILogisticsSubcontr
         try
         {
             await context.Database.UseTransactionAsync(transaction, cancellationToken);
-            return new(context, company, connection, transaction, companyId);
+            return new LogisticsSubcontractDeliveryReadSession(context, company, connection, transaction, companyId);
         }
         catch { await context.DisposeAsync(); throw; }
     }

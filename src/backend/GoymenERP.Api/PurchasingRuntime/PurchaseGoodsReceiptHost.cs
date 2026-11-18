@@ -140,7 +140,7 @@ internal sealed class PurchaseGoodsReceiptHost(
                     && parsed.ToString() == text => text,
             _ => throw PurchaseGoodsReceiptPrelock.Unavailable(),
         };
-        return new(source.CompanyId, source.PurchaseOrderId, source.PurchaseOrderGeneralLineId, source.UnitId, quantity);
+        return new PurchaseReceiptFutureSupplySummaryV1(source.CompanyId, source.PurchaseOrderId, source.PurchaseOrderGeneralLineId, source.UnitId, quantity);
     }
 
     public async Task<PurchaseGoodsReceiptViewV1?> GetReceiptAsync(Guid orderId, Guid acceptanceId,
@@ -213,7 +213,7 @@ internal sealed class PurchaseGoodsReceiptHost(
             var status = await locations.ReadAsync(source.CompanyId, locationId, cancellationToken);
             if (status is null || !status.IsActive || status.IsExternal)
                 throw InventoryGoodsReceiptException.Refused(404, InventoryGoodsReceiptCodesV1.InvalidReference);
-            return new(source.CompanyId, source.ProductId, source.ProductVersion, locationId,
+            return new PurchaseReceiptFactsV1(source.CompanyId, source.ProductId, source.ProductVersion, locationId,
                 StockPartyKind.Company.ToString(), companyId, StockPartyKind.Company.ToString(), companyId);
         }
 
@@ -246,7 +246,7 @@ internal sealed class PurchaseGoodsReceiptHost(
                 releases = [.. releases, .. await ReleaseRemainingActiveAsync(releases[0].FailureCode, envelope, cancellationToken)];
             }
 
-            return new(result.CompanyId, result.AcceptanceId, result.PurchaseOrderId, result.PurchaseOrderLineId,
+            return new PurchaseReceiptStockResultV1(result.CompanyId, result.AcceptanceId, result.PurchaseOrderId, result.PurchaseOrderLineId,
                 result.PurchaseOrderVersion, result.ProductId, result.ProductVersion, result.PurchaseUnitId,
                 result.LotId, result.LabelId, result.LabelVersion, result.MovementId, result.QuantityKg,
                 result.IsReplay, result.OriginalCorrelationId)
@@ -375,7 +375,7 @@ internal sealed class PurchaseGoodsReceiptHost(
             return releases;
         }
 
-        private static InventoryCommandMetadata Metadata(PurchasingWriteEnvelope envelope) => new(
+        private static InventoryCommandMetadata Metadata(PurchasingWriteEnvelope envelope) => new InventoryCommandMetadata(
             envelope.ActorId, envelope.PermissionCode, envelope.RoleCodes, envelope.CorrelationId,
             envelope.CausationId, envelope.IdempotencyKey, envelope.SourceChannel,
             envelope.ClientIpAddress, envelope.UserAgent);

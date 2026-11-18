@@ -14,7 +14,7 @@ internal static class FinancePartyBalanceTransferSnapshotReader
         CancellationToken cancellationToken)
     {
         var balance = await ledger.SummarizeAuthorizedAsync(context,
-            new(owner.PredecessorPartyId, owner.PredecessorAccountId), cancellationToken);
+            new PartyBalanceRequest(owner.PredecessorPartyId, owner.PredecessorAccountId), cancellationToken);
         if (balance.Outcome != PartyBalanceOutcome.Found || balance.Balance is null) return null;
         var currencies = FinancePartyBalanceTransferPolicy.Currencies(balance.Balance);
         var party = owner.PredecessorPartyId;
@@ -65,7 +65,7 @@ internal static class FinancePartyBalanceTransferSnapshotReader
                 payment.Version, state?.Version, payment.AmountText, state?.UnallocatedAmountText ?? payment.AmountText);
         }
         var version = FinancePartyBalanceTransferPolicy.SnapshotVersion(owner, currencies, sources);
-        return new(new(context.CompanyId, owner, version, currencies,
+        return new FinancePartyBalanceTransferSnapshot(new FinancePartyBalanceTransferPreviewV1(context.CompanyId, owner, version, currencies,
             sources.Count(x => x.Kind == FinanceBalanceAssignmentKinds.OpenItem),
             sources.Count(x => x.Kind == FinanceBalanceAssignmentKinds.Receipt),
             sources.Count(x => x.Kind == FinanceBalanceAssignmentKinds.Payment),
@@ -78,7 +78,7 @@ internal static class FinancePartyBalanceTransferSnapshotReader
             var position = new FinanceAllocationPositions(originalParty, originalAccount, currency, available, rows).All()
                 .SingleOrDefault(x => x.PartyId == party && x.CompanyAccountId == account);
             if (position is null || FinanceAllocationPositions.Amount(position.AvailableAmount).IsZero) return;
-            sources.Add(new(kind, id, originalParty, originalAccount, currency, version, allocationVersion,
+            sources.Add(new FinanceBalanceTransferSourceFact(kind, id, originalParty, originalAccount, currency, version, allocationVersion,
                 originalAmount, position.AvailableAmount, party, account, position.AssignmentVersion,
                 FinancePartyBalanceTransferPolicy.Hash(rows.Select(x => new { x.CurrentPartyId, x.CurrentAccountId,
                     x.AvailableAmountText, x.LastTransferId, x.Version }))));

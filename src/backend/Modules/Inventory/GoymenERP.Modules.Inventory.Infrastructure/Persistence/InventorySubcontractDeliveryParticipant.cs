@@ -31,7 +31,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// </summary>
 public sealed partial class InventorySubcontractDeliveryParticipant : IInventorySubcontractDeliveryParticipantV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web)
     { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, RespectRequiredConstructorParameters = true, RespectNullableAnnotations = true };
     private readonly InventoryDbContext context;
     private readonly InventoryStore store;
@@ -72,7 +72,7 @@ public sealed partial class InventorySubcontractDeliveryParticipant : IInventory
         {
             await context.Database.UseTransactionAsync(transaction, token);
             var effectiveClock = clock ?? TimeProvider.System;
-            return new(context, new InventoryStore(context, company, audit, new InventoryKilogramScale(settings), effectiveClock),
+            return new InventorySubcontractDeliveryParticipant(context, new InventoryStore(context, company, audit, new InventoryKilogramScale(settings), effectiveClock),
                 connection, transaction, companyId, audit, auditWriter, effectiveClock, salesLineLocks);
         }
         catch { await context.DisposeAsync(); throw; }
@@ -286,11 +286,11 @@ public sealed partial class InventorySubcontractDeliveryParticipant : IInventory
     }
     private static void RequireLabel(LabelRow row, InventorySubcontractDeliverySourceV1 source)
     { if (row.CompanyId != source.CompanyId || row.Id != source.LabelId || row.ProductId != source.ProductId || row.ProductVersion != source.ProductVersion) throw Refused(409, SourceMismatch); }
-    private static InventoryPhysicalAllocationViewV1 View(AllocationRow row) => new(row.Id, row.CompanyId, row.Version.ToString(CultureInfo.InvariantCulture),
+    private static InventoryPhysicalAllocationViewV1 View(AllocationRow row) => new InventoryPhysicalAllocationViewV1(row.Id, row.CompanyId, row.Version.ToString(CultureInfo.InvariantCulture),
         ((StockAllocationStatus)row.Status).ToString(), row.LabelId, row.DemandProductId!.Value, row.DemandKind!, row.DemandId!.Value,
         row.DemandLineId!.Value, row.DemandProductVersion!, row.AllocatedKg.ToString("0.###", CultureInfo.InvariantCulture),
         row.RemainingKg.ToString("0.###", CultureInfo.InvariantCulture), row.Reason!, null, row.CreatedAtUtc, row.UpdatedAtUtc);
-    private static InventorySubcontractAllocationSourceRow SourceRow(Guid allocationId, InventorySubcontractDeliverySourceV1 source) => new()
+    private static InventorySubcontractAllocationSourceRow SourceRow(Guid allocationId, InventorySubcontractDeliverySourceV1 source) => new InventorySubcontractAllocationSourceRow()
     {
         CompanyId = source.CompanyId, AllocationId = allocationId, LabelId = source.LabelId, CustomerPartyId = source.CustomerPartyId,
         CustomerAccountId = source.CustomerAccountId, SalesOrderId = source.SalesOrderId, SalesOrderLineId = source.SalesOrderLineId,

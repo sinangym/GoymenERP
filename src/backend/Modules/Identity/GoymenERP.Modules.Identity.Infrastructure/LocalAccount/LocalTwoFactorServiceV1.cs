@@ -31,7 +31,7 @@ internal sealed class LocalTwoFactorServiceV1(IdentityDbContext database, ICurre
         var secret = await database.LocalTwoFactorSecrets.AsNoTracking().SingleOrDefaultAsync(row => row.UserId == userId, ct);
         if (credential.TwoFactorEnabled != (secret is { IsActive: true })) throw new InvalidOperationException("Two factor owner state is unavailable.");
         if (await RequireSessionAsync(userId, stamp, ct) is null) return null;
-        return new(Text(credential.Version), credential.TwoFactorEnabled, credential.TwoFactorEnabled ? secret!.RecoveryCodeCount : 0);
+        return new LocalTwoFactorStateV1(Text(credential.Version), credential.TwoFactorEnabled, credential.TwoFactorEnabled ? secret!.RecoveryCodeCount : 0);
     }
 
     public async Task<LocalTwoFactorEnrollmentV1?> BeginEnrollmentAsync(Guid userId, Guid stamp, LocalTwoFactorProofV1 request, CancellationToken ct)
@@ -47,7 +47,7 @@ internal sealed class LocalTwoFactorServiceV1(IdentityDbContext database, ICurre
         var uri = $"otpauth://totp/{Uri.EscapeDataString("Göymen ERP:" + credential.UserName)}?secret={secret}&issuer={Uri.EscapeDataString("Göymen ERP")}&algorithm=SHA1&digits=6&period=30";
         // Read-only preparation: the token is encrypted and bound to the current stamp/version. No seed/code is
         // persisted until the user proves possession with a TOTP code. The response is NoStore and never logged.
-        return new(Text(credential.Version), secret, uri, codes, token);
+        return new LocalTwoFactorEnrollmentV1(Text(credential.Version), secret, uri, codes, token);
     }
 
     public async Task<LocalTwoFactorCommandResultV1> ChangeAsync(Guid userId, Guid stamp, string action,
@@ -66,43 +66,43 @@ internal sealed class LocalTwoFactorServiceV1(IdentityDbContext database, ICurre
             CultureInfo.InvariantCulture, out var expected) || expected < 1 || request.ExpectedVersion != Text(expected)
             || string.IsNullOrWhiteSpace(request.CurrentPassword)
             || string.IsNullOrWhiteSpace(metadata.IdempotencyKey) || metadata.IdempotencyKey.Length > LocalCredentialCommand.IdempotencyKeyMaxLength)
-            return new(LocalTwoFactorCommandStatusV1.InvalidRequest);
+            return new LocalTwoFactorCommandResultV1(LocalTwoFactorCommandStatusV1.InvalidRequest);
         var credential = await RequireSessionAsync(userId, stamp, ct);
-        if (credential is null) return new(LocalTwoFactorCommandStatusV1.SessionNotCurrent);
+        if (credential is null) return new LocalTwoFactorCommandResultV1(LocalTwoFactorCommandStatusV1.SessionNotCurrent);
         if (metadata.CompanyId != company.CompanyId || metadata.ActorId != user.UserId || string.IsNullOrWhiteSpace(metadata.CorrelationId))
             throw new UnauthorizedAccessException();
         if (hasher.Verify(credential.PasswordHash, request.CurrentPassword) == LocalPasswordVerification.Failed)
-            return new(LocalTwoFactorCommandStatusV1.InvalidProof);
+            return new LocalTwoFactorCommandResultV1(LocalTwoFactorCommandStatusV1.InvalidProof);
         var operation = "identity.local_account.two_factor." + action;
         var fingerprint = SHA256.HashData(Encoding.UTF8.GetBytes($"{operation}|{metadata.IdempotencyKey}|{userId:D}|{expected.ToString(CultureInfo.InvariantCulture)}"));
         await using var transaction = await database.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var fresh = await RequireSessionAsync(userId, stamp, ct);
-        if (fresh is null || fresh.PasswordHash != credential.PasswordHash) return new(LocalTwoFactorCommandStatusV1.SessionNotCurrent);
+        if (fresh is null || fresh.PasswordHash != credential.PasswordHash) return new LocalTwoFactorCommandResultV1(LocalTwoFactorCommandStatusV1.SessionNotCurrent);
         var recorded = await database.LocalCredentialCommands.AsNoTracking().SingleOrDefaultAsync(row => row.UserId == userId
             && row.Operation == operation && row.IdempotencyKey == metadata.IdempotencyKey, ct);
         if (recorded is not null)
         {
             if (string.IsNullOrWhiteSpace(recorded.OriginalCorrelationId)) throw new InvalidOperationException("Two factor replay evidence is incomplete.");
             return CryptographicOperations.FixedTimeEquals(recorded.RequestFingerprint, fingerprint)
-                ? new(LocalTwoFactorCommandStatusV1.Replayed, Text(recorded.ResultVersion), null, action != "disable", null, recorded.OriginalCorrelationId)
-                : new(LocalTwoFactorCommandStatusV1.IdempotencyConflict);
+                ? new LocalTwoFactorCommandResultV1(LocalTwoFactorCommandStatusV1.Replayed, Text(recorded.ResultVersion), null, action != "disable", null, recorded.OriginalCorrelationId)
+                : new LocalTwoFactorCommandResultV1(LocalTwoFactorCommandStatusV1.IdempotencyConflict);
         }
-        if (fresh.Version != expected) return new(LocalTwoFactorCommandStatusV1.VersionConflict);
+        if (fresh.Version != expected) return new LocalTwoFactorCommandResultV1(LocalTwoFactorCommandStatusV1.VersionConflict);
         var tracked = await database.LocalCredentials.SingleAsync(row => row.UserId == userId, ct);
-        if (tracked.Version != expected || tracked.SecurityStamp != stamp) return new(LocalTwoFactorCommandStatusV1.VersionConflict);
+        if (tracked.Version != expected || tracked.SecurityStamp != stamp) return new LocalTwoFactorCommandResultV1(LocalTwoFactorCommandStatusV1.VersionConflict);
         var secretRow = await database.LocalTwoFactorSecrets.SingleOrDefaultAsync(row => row.UserId == userId, ct);
         IReadOnlyList<string>? newCodes = null;
         LocalCredentialSelfServiceOperationV1 auditOperation;
         if (action == "enable")
         {
-            if (tracked.TwoFactorEnabled) return new(LocalTwoFactorCommandStatusV1.StateConflict);
+            if (tracked.TwoFactorEnabled) return new LocalTwoFactorCommandResultV1(LocalTwoFactorCommandStatusV1.StateConflict);
             Enrollment? enrollment;
             try { enrollment = JsonSerializer.Deserialize<Enrollment>(protection.Unprotect(userId, "enrollment", request.EnrollmentToken ?? string.Empty)); }
-            catch (Exception error) when (error is CryptographicException or JsonException or ArgumentException) { return new(LocalTwoFactorCommandStatusV1.InvalidProof); }
+            catch (Exception error) when (error is CryptographicException or JsonException or ArgumentException) { return new LocalTwoFactorCommandResultV1(LocalTwoFactorCommandStatusV1.InvalidProof); }
             if (enrollment is null || enrollment.UserId != userId || enrollment.Stamp != stamp || enrollment.Version != expected)
-                return new(LocalTwoFactorCommandStatusV1.InvalidProof);
+                return new LocalTwoFactorCommandResultV1(LocalTwoFactorCommandStatusV1.InvalidProof);
             var step = LocalTotpV1.Match(enrollment.Secret, request.Code, clock.GetUtcNow(), null);
-            if (step is null) return new(LocalTwoFactorCommandStatusV1.InvalidProof);
+            if (step is null) return new LocalTwoFactorCommandResultV1(LocalTwoFactorCommandStatusV1.InvalidProof);
             var protectedSecret = protection.Protect(userId, "authenticator", enrollment.Secret);
             if (secretRow is null) database.LocalTwoFactorSecrets.Add(new LocalTwoFactorSecret(userId, protectedSecret, enrollment.RecoveryHashes, step.Value));
             else secretRow.Replace(protectedSecret, enrollment.RecoveryHashes, step.Value);
@@ -110,8 +110,8 @@ internal sealed class LocalTwoFactorServiceV1(IdentityDbContext database, ICurre
         }
         else
         {
-            if (!tracked.TwoFactorEnabled || secretRow is not { IsActive: true }) return new(LocalTwoFactorCommandStatusV1.StateConflict);
-            if (!LocalTwoFactorProofVerifierV1.Consume(secretRow, request.Code, protection, clock.GetUtcNow())) return new(LocalTwoFactorCommandStatusV1.InvalidProof);
+            if (!tracked.TwoFactorEnabled || secretRow is not { IsActive: true }) return new LocalTwoFactorCommandResultV1(LocalTwoFactorCommandStatusV1.StateConflict);
+            if (!LocalTwoFactorProofVerifierV1.Consume(secretRow, request.Code, protection, clock.GetUtcNow())) return new LocalTwoFactorCommandResultV1(LocalTwoFactorCommandStatusV1.InvalidProof);
             if (action == "disable")
             {
                 secretRow.Deactivate(); tracked.ChangeTwoFactor(false, Guid.NewGuid());
@@ -126,19 +126,19 @@ internal sealed class LocalTwoFactorServiceV1(IdentityDbContext database, ICurre
         // Snapshot only evidence of the authenticated operation; never the proof, seed, protected token or code hashes.
         database.LocalCredentialCommands.Add(new LocalCredentialCommand(Guid.NewGuid(), userId, operation, metadata.IdempotencyKey,
             fingerprint, tracked.Version, clock.GetUtcNow(), metadata.CorrelationId));
-        if ((await RequireSessionAsync(userId, stamp, ct))?.Version != expected) return new(LocalTwoFactorCommandStatusV1.SessionNotCurrent);
+        if ((await RequireSessionAsync(userId, stamp, ct))?.Version != expected) return new LocalTwoFactorCommandResultV1(LocalTwoFactorCommandStatusV1.SessionNotCurrent);
         try
         {
             await database.SaveChangesAsync(ct);
-            await audit.AppendAsync(transaction.GetDbTransaction(), new(company.CompanyId, userId, userId, auditOperation, expected,
+            await audit.AppendAsync(transaction.GetDbTransaction(), new LocalCredentialSelfServiceAuditV1(company.CompanyId, userId, userId, auditOperation, expected,
                 tracked.Version, "TOTP", clock.GetUtcNow(), AuditReason(action), metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey), ct);
             if (await RequireSessionAsync(userId, tracked.SecurityStamp, ct) is null) throw new UnauthorizedAccessException();
             await transaction.CommitAsync(ct);
-            return new(LocalTwoFactorCommandStatusV1.Applied, Text(tracked.Version), tracked.SecurityStamp, tracked.TwoFactorEnabled, newCodes, metadata.CorrelationId);
+            return new LocalTwoFactorCommandResultV1(LocalTwoFactorCommandStatusV1.Applied, Text(tracked.Version), tracked.SecurityStamp, tracked.TwoFactorEnabled, newCodes, metadata.CorrelationId);
         }
         catch (DbUpdateConcurrencyException)
         {
-            await transaction.RollbackAsync(ct); database.ChangeTracker.Clear(); return new(LocalTwoFactorCommandStatusV1.VersionConflict);
+            await transaction.RollbackAsync(ct); database.ChangeTracker.Clear(); return new LocalTwoFactorCommandResultV1(LocalTwoFactorCommandStatusV1.VersionConflict);
         }
     }
 

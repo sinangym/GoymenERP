@@ -27,7 +27,7 @@ public sealed class IdentityFinancePolicyRoleReferences(IdentityDbContext databa
         if (rows.Length > MaximumRoles || rows.Any(x => x.Id == Guid.Empty || string.IsNullOrWhiteSpace(x.Code)
             || string.IsNullOrWhiteSpace(x.Name) || x.Permissions.Any(p => string.IsNullOrWhiteSpace(p.PermissionCode))))
             throw new InvalidOperationException("identity_finance_policy_source_unavailable");
-        return new(companyId, rows.Select(x => new IdentityFinancePolicyRoleReferenceV1(x.Id, x.Code, x.Name,
+        return new IdentityFinancePolicyRoleReferencesV1(companyId, rows.Select(x => new IdentityFinancePolicyRoleReferenceV1(x.Id, x.Code, x.Name,
             "identity.role-policy-source:" + Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
             {
                 x.Id, x.Code, x.Name, x.IsActive, x.Version,

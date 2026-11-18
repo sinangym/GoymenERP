@@ -117,7 +117,7 @@ internal sealed class FinanceOfficialSalesInvoiceReadPortV1(FinanceDbContext dbC
         if (imported.CustomerPartyId is not { } party || imported.CurrencyId is not { } currency
             || !IsExact(imported.PayableAmount, true) || !IsExact(imported.PayableFunctionalAmount, true))
             return FinanceOfficialSalesInvoiceReadAnswerV1.Unavailable;
-        return new(FinanceOfficialSalesInvoiceReadOutcomeV1.Approved, new(document.SourceDocumentId, companyId,
+        return new FinanceOfficialSalesInvoiceReadAnswerV1(FinanceOfficialSalesInvoiceReadOutcomeV1.Approved, new FinanceOfficialSalesInvoiceFactsV1(document.SourceDocumentId, companyId,
             officialNo, ettn, party, currency, imported.PayableAmount!, imported.PayableFunctionalAmount!,
             document.TaxBaseFunctionalAmount, document.VatFunctionalAmount, document.WithholdingFunctionalAmount,
             null, null, null, upload.BatchVersion, approval.ApprovedAtUtc, document.InvoiceDate,
@@ -139,7 +139,7 @@ internal sealed class FinanceOfficialSalesInvoiceReadPortV1(FinanceDbContext dbC
             return FinanceOfficialSalesInvoiceReadAnswerV1.Unavailable;
         }
 
-        return new(FinanceOfficialSalesInvoiceReadOutcomeV1.Approved, new FinanceOfficialSalesInvoiceFactsV1(
+        return new FinanceOfficialSalesInvoiceReadAnswerV1(FinanceOfficialSalesInvoiceReadOutcomeV1.Approved, new FinanceOfficialSalesInvoiceFactsV1(
             row.Id,
             row.CompanyId,
             row.OfficialNo,

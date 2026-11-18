@@ -163,7 +163,7 @@ public sealed class InventoryGoodsReceiptParticipant : IInventoryGoodsReceiptPar
         {
             if (costSource is not null)
             {
-                var proof = await costSource.ReadAsync(new(companyId, request.AcceptanceId, request.PurchaseOrderId,
+                var proof = await costSource.ReadAsync(new InventoryPurchaseReceiptCostSelectionV1(companyId, request.AcceptanceId, request.PurchaseOrderId,
                     request.PurchaseOrderLineId, request.ProductId, request.ExpectedProductVersion, request.OccurredAtUtc), cancellationToken);
                 if (proof.CompanyId != companyId || proof.AcceptanceId != request.AcceptanceId
                     || proof.PurchaseOrderId != request.PurchaseOrderId || proof.PurchaseOrderLineId != request.PurchaseOrderLineId)

@@ -17,7 +17,7 @@ public sealed class CreditMovementProposalStoreV1(AccountingDbContext db, ICompa
     ISettingsFinanceCreditAccountMappingProviderV1 mappings, IAuditEventCollector audit, TimeProvider clock,
     IAuditTransactionWriterV1? auditOwner = null, ICreditMovementNormalJournalSourceProviderV1? journalSource = null) : ICreditMovementProposalStoreV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     public async Task AcceptAsync(WorkInboxEventV1 envelope, CancellationToken cancellationToken)
     {
         if (db.ChangeTracker.HasChanges() || auditOwner is { HasPendingDrafts: true })
@@ -107,7 +107,7 @@ public sealed class CreditMovementProposalStoreV1(AccountingDbContext db, ICompa
         if (!company.IsResolved || companyId == Guid.Empty || company.CompanyId != companyId)
             throw new InvalidOperationException("Kredi muhasebe kaynağının şirket bağlamı değişti.");
     }
-    private static CreditMovementProposalViewV1 View(CreditMovementProposalRow row) => new(row.Id, row.CompanyId, "AwaitingMapping",
+    private static CreditMovementProposalViewV1 View(CreditMovementProposalRow row) => new CreditMovementProposalViewV1(row.Id, row.CompanyId, "AwaitingMapping",
         JsonSerializer.Deserialize<CreditMovementSourceV1>(row.SourceJson, Json) ?? throw new InvalidOperationException("Kredi kaynağı okunamadı."),
         row.MappingStatus, row.MappingVersion, JsonSerializer.Deserialize<string[]>(row.WaitingReasonsJson, Json)
             ?? throw new InvalidOperationException("Kredi bekleme gerekçesi okunamadı."), row.ReceivedAtUtc);

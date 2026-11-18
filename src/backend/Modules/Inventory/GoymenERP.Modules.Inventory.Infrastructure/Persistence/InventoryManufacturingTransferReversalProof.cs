@@ -18,7 +18,7 @@ internal static class InventoryManufacturingTransferReversalProof
     internal const string RequiredCode = "inventory_manufacturing_cost_transfer_reversal_required";
     internal const string UnavailableCode = "inventory_manufacturing_cost_transfer_source_unreadable";
     private const int Limit = InventoryCostLineageShares.MaximumQuantityRows;
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     internal sealed record Position(Guid LocationId, int OwnerKind, Guid OwnerId, int CustodianKind,
         Guid CustodianId, InventoryExactCostRatioV1 QuantityKg);
@@ -33,7 +33,7 @@ internal static class InventoryManufacturingTransferReversalProof
     {
         RequireTransaction(db);
         var facts = await ReadAsync(db, lineage, token);
-        return new(lineage.CompanyId, generation, output.OutputId, output.ReceiptMovementId, output.LabelId, lineage.ProductId, sourceVersion,
+        return new Epoch(lineage.CompanyId, generation, output.OutputId, output.ReceiptMovementId, output.LabelId, lineage.ProductId, sourceVersion,
             lineage.Labels.Where(x => x.RootShare.Sign > 0).OrderBy(x => x.LabelId)
                 .Select(x => new Label(x.LabelId, x.Version, x.ProductVersion)).ToArray(), Positions(lineage), facts.Dispatches);
     }
@@ -207,7 +207,7 @@ internal static class InventoryManufacturingTransferReversalProof
                         || x.ProductId != product || x.QuantityKg <= 0 || x.LocationId != header.SourceLocationId
                         || x.CustodianKind != header.SourceCustodianKind || x.CustodianId != header.SourceCustodianId)) throw Unavailable();
                 RequireMovement(line, dispatch.MovementId, StockMovementKind.TransferDispatch, false, null);
-                result.Add(new(line.TransferId, line.LineId, line.LabelId, dispatch.MovementId, measured.LabelVersionAfterDispatch, measured.ActualKg));
+                result.Add(new Dispatch(line.TransferId, line.LineId, line.LabelId, dispatch.MovementId, measured.LabelVersionAfterDispatch, measured.ActualKg));
             }
             Dispatches = result.OrderBy(x => x.TransferId).ThenBy(x => x.LineId).ToArray();
         }
@@ -288,6 +288,6 @@ internal static class InventoryManufacturingTransferReversalProof
     {
         if (!db.Database.IsRelational() || db.Database.CurrentTransaction?.GetDbTransaction().IsolationLevel != IsolationLevel.Serializable) throw Unavailable();
     }
-    private static InventoryManufacturingCostGenerationException Required() => new(409, RequiredCode);
-    private static InventoryManufacturingCostGenerationException Unavailable() => new(503, UnavailableCode);
+    private static InventoryManufacturingCostGenerationException Required() => new InventoryManufacturingCostGenerationException(409, RequiredCode);
+    private static InventoryManufacturingCostGenerationException Unavailable() => new InventoryManufacturingCostGenerationException(503, UnavailableCode);
 }

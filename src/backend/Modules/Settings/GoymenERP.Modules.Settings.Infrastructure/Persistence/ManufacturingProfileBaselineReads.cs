@@ -25,7 +25,7 @@ internal static class ManufacturingProfileBaselineReads
 {
     internal const string Parameters = "parameters";
     internal const string Tolerances = "tolerances";
-    internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    internal static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     internal static string Hash(string json) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
 
     internal static async Task<(IReadOnlyList<ApprovedManufacturingParameterProfileEntry> Values, string Version)> ParametersAsync(
@@ -73,5 +73,5 @@ internal static class ManufacturingProfileBaselineReads
         catch (JsonException) { throw Invalid(); }
     }
 
-    private static SettingsPrerequisiteException Invalid() => new("settings_profile_invalid");
+    private static SettingsPrerequisiteException Invalid() => new SettingsPrerequisiteException("settings_profile_invalid");
 }

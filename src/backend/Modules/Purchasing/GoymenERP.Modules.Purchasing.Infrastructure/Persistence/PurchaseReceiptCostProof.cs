@@ -69,7 +69,7 @@ public sealed class PurchaseReceiptCostProof : IPurchaseReceiptCostProofV1
             || rate.Outcome == PurchaseInvoiceCostRateOutcomeV1.NotFound
             || approvedOrderRate.CompanyId != company.CompanyId || approvedOrderRate.PurchaseOrderId != purchaseOrderId
             || approvedOrderRate.Outcome == PurchaseOrderExchangeRateOutcomeV1.NotFound) throw Unavailable();
-        return new(company.CompanyId, purchaseOrderId, purchaseOrderLineId, acceptanceId, line.ProductId,
+        return new PurchaseReceiptCostProofV1(company.CompanyId, purchaseOrderId, purchaseOrderLineId, acceptanceId, line.ProductId,
             line.ProductVersion, acceptance.AcceptedQuantity, acceptance.PurchaseOrderVersionAfter, acceptance.OccurredAtUtc,
             price, rate, approvedOrderRate);
     }
@@ -85,6 +85,6 @@ public sealed class PurchaseReceiptCostProof : IPurchaseReceiptCostProofV1
     {
         if (Interlocked.Exchange(ref disposed, 1) == 0) await database.DisposeAsync();
     }
-    private static PurchaseAcceptanceParticipantException Unavailable() => new(PurchaseAcceptanceParticipantCodes.Unavailable,
+    private static PurchaseAcceptanceParticipantException Unavailable() => new PurchaseAcceptanceParticipantException(PurchaseAcceptanceParticipantCodes.Unavailable,
         503, "Purchase receipt cost proof is unavailable.");
 }

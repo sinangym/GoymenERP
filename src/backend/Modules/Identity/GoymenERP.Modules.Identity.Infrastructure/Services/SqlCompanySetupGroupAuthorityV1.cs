@@ -28,6 +28,6 @@ public sealed class SqlCompanySetupGroupAuthorityV1(IdentityDbContext database, 
         if (rows.Count != 1 || rows[0].RowVersion.Length != 8 || !currentUser.IsAuthenticated || !Guid.TryParse(currentUser.UserId, out var afterActor) || afterActor != actor)
             return CompanySetupGroupAuthoritySnapshotV1.Denied(operation);
         var revision = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { Actor = actor, Rows = rows })));
-        return new(true, operation, actor, revision);
+        return new CompanySetupGroupAuthoritySnapshotV1(true, operation, actor, revision);
     }
 }

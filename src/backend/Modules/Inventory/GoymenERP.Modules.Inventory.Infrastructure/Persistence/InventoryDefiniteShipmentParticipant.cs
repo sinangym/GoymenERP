@@ -28,7 +28,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// </summary>
 public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShipmentParticipantV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     private readonly InventoryDbContext context;
     private readonly InventoryStore store;
     private readonly DbConnection connection;
@@ -83,7 +83,7 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
             await context.Database.UseTransactionAsync(transaction, cancellationToken);
             var effectiveClock = clock ?? TimeProvider.System;
             var store = new InventoryStore(context, company, audit, new InventoryKilogramScale(settings), effectiveClock);
-            return new(context, store, connection, transaction, companyId, effectiveClock, onStaged);
+            return new InventoryDefiniteShipmentParticipant(context, store, connection, transaction, companyId, effectiveClock, onStaged);
         }
         catch
         {

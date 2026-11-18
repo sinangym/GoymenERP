@@ -281,7 +281,7 @@ internal static class InventoryCostLineageReader
             var from = repackInputs.Where(row => row.TransformationId == header.TransformationId).OrderBy(row => row.Sequence).ToArray();
             var to = repackOutputs.Where(row => row.TransformationId == header.TransformationId).OrderBy(row => row.Sequence).ToArray();
             if (!Consecutive(from) || !Consecutive(to)) return Fault();
-            transformations.Add(new(header.TransformationId, (InventoryLabelTransformationKind)header.Kind,
+            transformations.Add(new InventoryCostLineageTransformation(header.TransformationId, (InventoryLabelTransformationKind)header.Kind,
                 from.Select(row => new InventoryCostLineageQuantity(row.LabelId, row.QuantityKg)),
                 to.Select(row => new InventoryCostLineageQuantity(row.LabelId, row.QuantityKg))));
             foreach (var input in from)
@@ -363,8 +363,8 @@ internal static class InventoryCostLineageReader
                 || !positionKeys.Add((balance.LabelId, balance.OwnerKind, balance.OwnerId, balance.CustodianKind,
                     balance.CustodianId, balance.LocationId, balance.Block))) return Fault();
             actual[balance.LabelId] = actual[balance.LabelId].Add(ExactCostRatio.Of(balance.QuantityKg));
-            positions[balance.LabelId].Add(new(new((StockPartyKind)balance.OwnerKind, balance.OwnerId),
-                new((StockPartyKind)balance.CustodianKind, balance.CustodianId), balance.LocationId, (BlockState)balance.Block, balance.QuantityKg));
+            positions[balance.LabelId].Add(new InventoryCostLineagePositionSnapshot(new StockOwner((StockPartyKind)balance.OwnerKind, balance.OwnerId),
+                new StockCustodian((StockPartyKind)balance.CustodianKind, balance.CustodianId), balance.LocationId, (BlockState)balance.Block, balance.QuantityKg));
         }
 
         var snapshots = new List<InventoryCostLineageLabelSnapshot>();
@@ -381,7 +381,7 @@ internal static class InventoryCostLineageReader
             remainingKg = remainingKg.Add(actual[label.LabelId].Multiply(share));
             shippedKg = shippedKg.Add(shippedByLabel[label.LabelId].Multiply(share));
             returnedKg = returnedKg.Add(returnsByLabel[label.LabelId].Multiply(share));
-            snapshots.Add(new(label.LabelId, label.Version, label.ProductVersion!, share,
+            snapshots.Add(new InventoryCostLineageLabelSnapshot(label.LabelId, label.Version, label.ProductVersion!, share,
                 positions[label.LabelId].OrderBy(row => row.LocationId).ThenBy(row => row.Owner.Kind).ThenBy(row => row.Owner.Id)
                     .ThenBy(row => row.Custodian.Kind).ThenBy(row => row.Custodian.Id).ThenBy(row => row.Block)));
         }
@@ -401,11 +401,11 @@ internal static class InventoryCostLineageReader
                         row.MovementId, row.LineNumber, issue.MovementId, row.QuantityKg, movements[row.MovementId].RecordedAtUtc)).ToArray();
                 return new InventoryCostLineageShipmentSnapshot(movement.SourceId, issue.MovementId, issue.LineNumber,
                     movement.SourceLineId!.Value, issue.LabelId, issue.ProductId, labels[issue.LabelId].ProductVersion!,
-                    new((StockPartyKind)issue.OwnerKind, issue.OwnerId), new((StockPartyKind)issue.CustodianKind, issue.CustodianId),
+                    new StockOwner((StockPartyKind)issue.OwnerKind, issue.OwnerId), new StockCustodian((StockPartyKind)issue.CustodianKind, issue.CustodianId),
                     issue.LocationId, (BlockState)issue.Block, issue.QuantityKg, share,
                     ExactCostRatio.Of(issue.QuantityKg).Subtract(returned).Multiply(share), Array.AsReadOnly(returnSnapshots), movement.RecordedAtUtc);
             }).ToArray();
-        return new(InventoryCostLineageOutcome.Value, companyId, productId, rootLabelId, snapshots, remainingKg, shippedKg, returnedKg,
+        return new InventoryCostLineageSnapshot(InventoryCostLineageOutcome.Value, companyId, productId, rootLabelId, snapshots, remainingKg, shippedKg, returnedKg,
             null, shipmentSnapshots);
     }
 
@@ -432,7 +432,7 @@ internal static class InventoryCostLineageReader
             _ => true,
         });
     private static InventoryCostLineageSnapshot Failed(InventoryCostLineageOutcome outcome, Guid company, Guid product, Guid root) =>
-        new(outcome, company, product, root, [], null, null, null, outcome == InventoryCostLineageOutcome.Unreadable ? UnreadableReason : null);
+        new InventoryCostLineageSnapshot(outcome, company, product, root, [], null, null, null, outcome == InventoryCostLineageOutcome.Unreadable ? UnreadableReason : null);
 }
 
 internal sealed record InventoryCostLineageLabelFact(Guid CompanyId, Guid LabelId, Guid ProductId, string? ProductVersion, long Version);

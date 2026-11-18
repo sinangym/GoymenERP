@@ -33,9 +33,9 @@ public sealed class FinancePartyBalanceTransferServiceV1(FinanceDbContext databa
                         ? ReadOutcome.NotFound : ReadOutcome.Unavailable, null, null);
                 var snapshot = await FinancePartyBalanceTransferSnapshotReader.ReadAsync(database, ledger, context, owner, cancellationToken);
                 if (await FenceAsync(context, cancellationToken) is { } late) return ReadRefused(late);
-                return snapshot is null ? new(ReadOutcome.Unavailable, null, null) : new(ReadOutcome.Found, snapshot.Preview, null);
+                return snapshot is null ? new FinancePartyBalanceTransferReadResultV1(ReadOutcome.Unavailable, null, null) : new FinancePartyBalanceTransferReadResultV1(ReadOutcome.Found, snapshot.Preview, null);
             }
-            catch (InvalidOperationException) { return new(ReadOutcome.Unavailable, null, null); }
+            catch (InvalidOperationException) { return new FinancePartyBalanceTransferReadResultV1(ReadOutcome.Unavailable, null, null); }
         }, () => Task.FromResult(new FinancePartyBalanceTransferReadResultV1(ReadOutcome.Unavailable, null, null)),
             auditOwner, cancellationToken);
     }
@@ -46,10 +46,10 @@ public sealed class FinancePartyBalanceTransferServiceV1(FinanceDbContext databa
         if (await FenceAsync(context, cancellationToken) is { } refusal) return ReadRefused(refusal);
         var row = await database.PartyBalanceTransfers.AsNoTracking().SingleOrDefaultAsync(x => x.Id == transferId, cancellationToken);
         if (await FenceAsync(context, cancellationToken) is { } late) return ReadRefused(late);
-        if (row is null) return new(ReadOutcome.NotFound, null, null);
-        try { return new(ReadOutcome.Found, null, View(row)); }
+        if (row is null) return new FinancePartyBalanceTransferReadResultV1(ReadOutcome.NotFound, null, null);
+        try { return new FinancePartyBalanceTransferReadResultV1(ReadOutcome.Found, null, View(row)); }
         catch (Exception exception) when (exception is JsonException or InvalidOperationException)
-        { return new(ReadOutcome.Unavailable, null, null); }
+        { return new FinancePartyBalanceTransferReadResultV1(ReadOutcome.Unavailable, null, null); }
     }
 
     public async Task<FinancePartyBalanceTransferCommandResultV1> RecordAsync(FinanceContext context,
@@ -122,7 +122,7 @@ public sealed class FinancePartyBalanceTransferServiceV1(FinanceDbContext databa
         database.PartyBalanceTransfers.Add(row);
         foreach (var source in snapshot.Sources) await MovePositionAsync(context, row, source, now, cancellationToken);
         var result = new FinancePartyBalanceTransferCommandResultV1(CommandOutcome.Succeeded, View(row), null);
-        database.PartyBalanceTransferCommands.Add(new()
+        database.PartyBalanceTransferCommands.Add(new FinancePartyBalanceTransferCommandRow()
         {
             CompanyId = context.CompanyId, KeyHash = key, ActorId = context.ActorId,
             PayloadHash = payload, ResultJson = JsonSerializer.Serialize(result, Json),
@@ -159,7 +159,7 @@ public sealed class FinancePartyBalanceTransferServiceV1(FinanceDbContext databa
         }
         else if (to is null)
         {
-            database.PartyBalanceAssignments.Add(new()
+            database.PartyBalanceAssignments.Add(new FinancePartyBalanceAssignmentRow()
             {
                 CompanyId = context.CompanyId, Kind = source.Kind, SourceId = source.SourceId,
                 OriginalPartyId = source.OriginalPartyId, OriginalAccountId = source.OriginalAccountId,
@@ -185,7 +185,7 @@ public sealed class FinancePartyBalanceTransferServiceV1(FinanceDbContext databa
         {
             var state = await database.SourceAllocationStates.SingleOrDefaultAsync(x => x.SourceId == source.SourceId, cancellationToken);
             if (state is null)
-                database.SourceAllocationStates.Add(new() { CompanyId = context.CompanyId, SourceId = source.SourceId,
+                database.SourceAllocationStates.Add(new FinanceSourceAllocationStateRow() { CompanyId = context.CompanyId, SourceId = source.SourceId,
                     CurrencyId = source.CurrencyId, OriginalAmountText = source.OriginalAmount, UnallocatedAmountText = source.OriginalAmount,
                     Version = 1, UpdatedBy = context.ActorId, UpdatedAtUtc = now });
             else
@@ -198,7 +198,7 @@ public sealed class FinancePartyBalanceTransferServiceV1(FinanceDbContext databa
         {
             var state = await database.PaymentAllocationStates.SingleOrDefaultAsync(x => x.PaymentId == source.SourceId, cancellationToken);
             if (state is null)
-                database.PaymentAllocationStates.Add(new() { CompanyId = context.CompanyId, PaymentId = source.SourceId,
+                database.PaymentAllocationStates.Add(new FinancePaymentAllocationStateRow() { CompanyId = context.CompanyId, PaymentId = source.SourceId,
                     CurrencyId = source.CurrencyId, OriginalAmountText = source.OriginalAmount, UnallocatedAmountText = source.OriginalAmount,
                     Version = 1, UpdatedBy = context.ActorId, UpdatedAtUtc = now });
             else
@@ -212,16 +212,16 @@ public sealed class FinancePartyBalanceTransferServiceV1(FinanceDbContext databa
     private async Task<FinancePartyBalanceTransferOwnerAnswerV1> OwnerAsync(FinanceContext context,
         FinancePartyBalanceTransferSelectionV1 selection, CancellationToken cancellationToken)
     {
-        if (selection is null) return new(FinancePartyBalanceTransferOwnerOutcomeV1.InvalidRelation, null);
+        if (selection is null) return new FinancePartyBalanceTransferOwnerAnswerV1(FinancePartyBalanceTransferOwnerOutcomeV1.InvalidRelation, null);
         var answer = await owners.ReadAsync(context, selection.PredecessorPartyId, selection.PredecessorAccountId,
             selection.SuccessorPartyId, selection.SuccessorAccountId, cancellationToken);
-        if (!Same(context)) return new(FinancePartyBalanceTransferOwnerOutcomeV1.Unavailable, null);
+        if (!Same(context)) return new FinancePartyBalanceTransferOwnerAnswerV1(FinancePartyBalanceTransferOwnerOutcomeV1.Unavailable, null);
         if (answer.Outcome != FinancePartyBalanceTransferOwnerOutcomeV1.Available) return answer with { Proof = null };
         return answer.Outcome == FinancePartyBalanceTransferOwnerOutcomeV1.Available
             && answer.Proof is { } proof && proof.CompanyId == context.CompanyId
             && proof.PredecessorPartyId == selection.PredecessorPartyId && proof.PredecessorAccountId == selection.PredecessorAccountId
             && proof.SuccessorPartyId == selection.SuccessorPartyId && proof.SuccessorAccountId == selection.SuccessorAccountId
-                ? answer : new(FinancePartyBalanceTransferOwnerOutcomeV1.Unavailable, null);
+                ? answer : new FinancePartyBalanceTransferOwnerAnswerV1(FinancePartyBalanceTransferOwnerOutcomeV1.Unavailable, null);
     }
 
     private async Task<CommandOutcome?> FenceAsync(FinanceContext context, CancellationToken cancellationToken)
@@ -242,10 +242,10 @@ public sealed class FinancePartyBalanceTransferServiceV1(FinanceDbContext databa
         && (context.CausationId is null || Text(context.CausationId, 128));
     private static bool Text(string? value, int maximum) => !string.IsNullOrWhiteSpace(value) && value.Length <= maximum && value == value.Trim();
     private static FinancePartyBalanceTransferReadResultV1 ReadRefused(CommandOutcome refusal) =>
-        new(refusal == CommandOutcome.Denied ? ReadOutcome.Denied : ReadOutcome.Unavailable, null, null);
-    private static FinancePartyBalanceTransferCommandResultV1 Refused(CommandOutcome refusal, string? code = null) => new(refusal, null, code);
+        new FinancePartyBalanceTransferReadResultV1(refusal == CommandOutcome.Denied ? ReadOutcome.Denied : ReadOutcome.Unavailable, null, null);
+    private static FinancePartyBalanceTransferCommandResultV1 Refused(CommandOutcome refusal, string? code = null) => new FinancePartyBalanceTransferCommandResultV1(refusal, null, code);
     private static FinancePartyBalanceTransferViewV1 View(FinancePartyBalanceTransferRow row) =>
-        new(row.Id, row.CompanyId, "1",
+        new FinancePartyBalanceTransferViewV1(row.Id, row.CompanyId, "1",
             JsonSerializer.Deserialize<FinancePartyBalanceTransferOwnerProofV1>(row.OwnerProofJson, Json) ?? throw new JsonException(),
             JsonSerializer.Deserialize<FinancePartyBalanceTransferCurrencyV1[]>(row.CurrenciesJson, Json) ?? throw new JsonException(),
             row.OccurredOn, row.Reason, row.RecordedBy, row.RecordedAtUtc,

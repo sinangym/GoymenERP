@@ -319,11 +319,11 @@ public static class FinanceModuleExtensions
     private static FinanceCreditMovementServiceV1 CreateCreditMovementService(IServiceProvider provider)
     {
         var permissions = provider.GetRequiredService<FinancePermissionPort>();
-        return new(provider.GetRequiredService<FinanceDbContext>(), provider.GetRequiredService<ICompanyContext>(),
+        return new FinanceCreditMovementServiceV1(provider.GetRequiredService<FinanceDbContext>(), provider.GetRequiredService<ICompanyContext>(),
             provider.GetRequiredService<ICurrentUser>(), permissions, provider.GetRequiredService<ISettingsPrerequisiteProvider>(),
             provider.GetRequiredService<IFinanceOpeningPeriodReader>(), provider.GetRequiredService<IFinanceCreditAccountingPeriodPortV1>(),
             provider.GetRequiredService<IFinanceTreasuryBalanceGuard>(), provider.GetRequiredService<IAuditEventCollector>(),
-            new(Envelope(provider, ErpPermissions.FinanceCreditsPropose, permissions, FinanceAction.ProposeCredit),
+            new FinanceCreditAccountEnvelopes(Envelope(provider, ErpPermissions.FinanceCreditsPropose, permissions, FinanceAction.ProposeCredit),
                 Envelope(provider, ErpPermissions.FinanceCreditsApprove, permissions, FinanceAction.ApproveCredit)),
             provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<IAuditTransactionWriterV1>());
     }
@@ -331,10 +331,10 @@ public static class FinanceModuleExtensions
     private static FinanceCreditLimitServiceV1 CreateCreditLimitService(IServiceProvider provider)
     {
         var permissions = provider.GetRequiredService<FinancePermissionPort>();
-        return new(provider.GetRequiredService<FinanceDbContext>(), provider.GetRequiredService<ICompanyContext>(),
+        return new FinanceCreditLimitServiceV1(provider.GetRequiredService<FinanceDbContext>(), provider.GetRequiredService<ICompanyContext>(),
             provider.GetRequiredService<ICurrentUser>(), permissions, provider.GetRequiredService<IFinanceCreditLenderPortV1>(),
             provider.GetRequiredService<IAuditEventCollector>(),
-            new(Envelope(provider, ErpPermissions.FinanceCreditsPropose, permissions, FinanceAction.ProposeCredit),
+            new FinanceCreditAccountEnvelopes(Envelope(provider, ErpPermissions.FinanceCreditsPropose, permissions, FinanceAction.ProposeCredit),
                 Envelope(provider, ErpPermissions.FinanceCreditsApprove, permissions, FinanceAction.ApproveCredit)),
             provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<IAuditTransactionWriterV1>());
     }

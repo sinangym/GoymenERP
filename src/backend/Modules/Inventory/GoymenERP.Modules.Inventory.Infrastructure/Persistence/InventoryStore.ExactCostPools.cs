@@ -100,7 +100,7 @@ public sealed partial class InventoryStore
         {
             version = Math.Max(version, exact.Version);
             if (exact.Status == (int)AverageCostStatus.Known && exact.QuantityRatioJson is { } json && exact.AverageCostPerKg is { } average)
-                position = new((JsonSerializer.Deserialize<InventoryExactCostRatioV1>(json, CostJson)
+                position = new ExactAverageCostPool((JsonSerializer.Deserialize<InventoryExactCostRatioV1>(json, CostJson)
                     ?? throw new InvalidOperationException("Maliyet havuzu tam payı eksik.")).Value(), average);
             else reason = exact.UnreadableReason is { } raw ? (AverageCostUnreadableReason)raw : AverageCostUnreadableReason.LedgerStockMismatch;
         }
@@ -109,12 +109,12 @@ public sealed partial class InventoryStore
             var status = tl?.Status ?? foreign!.Status;
             if (status == (int)AverageCostStatus.Known && (tl?.QuantityKg ?? foreign?.QuantityKg) is { } kg
                 && (tl?.AverageCostPerKg ?? foreign?.AverageCostPerKg) is { } average)
-                position = new(ExactCostRatio.Of(kg), average);
+                position = new ExactAverageCostPool(ExactCostRatio.Of(kg), average);
             else reason = (AverageCostUnreadableReason)(tl?.UnreadableReason ?? foreign?.UnreadableReason ?? (int)AverageCostUnreadableReason.LedgerStockMismatch);
         }
         // No ledger is a genuinely empty priced pool only when every physical kg has an actual pending source.
         // Legacy unvalued stock without those facts needs its approved opening-cost flow, never a zero-cost seed.
-        return new(position, reason, version, physicalKg, priced, shares, tl, foreign, exact, readable);
+        return new CostPool(position, reason, version, physicalKg, priced, shares, tl, foreign, exact, readable);
     }
 
     internal static Task<long> WriteCostPoolAsync(InventoryDbContext context, ICompanyContext company, TimeProvider clock,

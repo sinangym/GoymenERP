@@ -18,7 +18,7 @@ public sealed class OrganizationCompanySetupInboxConsumer(OrganizationDbContext 
     IAuditEventCollector auditEvents, IAuditTransactionWriterV1 auditWriter, TimeProvider timeProvider) : IWorkInboxConsumerV1
 {
     public const string ConsumerName = "organization.company-first-admin";
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web) { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
     public static IdentityCompanyFirstAdminAssignedV1 Read(WorkInboxEventV1 message, ICompanyContext context)
     {
         if (message.SourceName != IdentityCompanyFirstAdminAssignedV1.SourceName || message.EventType != IdentityCompanyFirstAdminAssignedV1.EventType
@@ -64,7 +64,7 @@ public sealed class OrganizationCompanySetupInboxConsumer(OrganizationDbContext 
                     AuditAiInvolvement.None, null, "System", null, null, message.CorrelationId,
                     message.EventId.ToString("D"), message.EventId.ToString("D")));
             }
-            database.CompanySetupInboxReceipts.Add(new(company.Id, message.EventId, hash, now));
+            database.CompanySetupInboxReceipts.Add(new CompanySetupInboxReceipt(company.Id, message.EventId, hash, now));
             // The owner writer drains the shared collector before the legacy Organization Save interceptor sees it.
             await auditWriter.WritePendingAsync(transaction.GetDbTransaction(), cancellationToken);
             await database.SaveChangesAsync(cancellationToken);
@@ -76,5 +76,5 @@ public sealed class OrganizationCompanySetupInboxConsumer(OrganizationDbContext 
             auditWriter.DiscardPending();
         }
     }
-    private static OutboxPermanentFailureException Poison(string code) => new(code, "Şirket kurulum olayı sözleşmeye uymuyor.");
+    private static OutboxPermanentFailureException Poison(string code) => new OutboxPermanentFailureException(code, "Şirket kurulum olayı sözleşmeye uymuyor.");
 }

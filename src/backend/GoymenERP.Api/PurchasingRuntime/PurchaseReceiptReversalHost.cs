@@ -79,7 +79,7 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
                             ?? throw Unavailable();
                         var corrected = await CorrectionAsync(connection, borrowed, purchase, companyId, write, replay, originalStock,
                             envelope, freshAuthority, cancellationToken);
-                        var replayWritten = await writeReturn(new(replay, View(originalStock), corrected), cancellationToken);
+                        var replayWritten = await writeReturn(new PurchaseReceiptReversalResponseV1(replay, View(originalStock), corrected), cancellationToken);
                         await freshAuthority(cancellationToken);
                         await transaction.CommitAsync(cancellationToken);
                         return replayWritten;
@@ -101,7 +101,7 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
                         throw new PurchasingServiceException(409, PurchaseAcceptanceParticipantCodes.ProductVersionConflict);
                     var notificationSnapshots = await CaptureRevivalNotificationsAsync(connection, borrowed, companyId, write.OrderId,
                         [target], freshAuthority, cancellationToken);
-                    var adjusted = await Checked(() => purchase.StageAsync(new(companyId, write.Request.AdjustmentId,
+                    var adjusted = await Checked(() => purchase.StageAsync(new PurchaseReceiptAdjustmentStageV1(companyId, write.Request.AdjustmentId,
                         write.OrderId, write.AcceptanceId, write.Request.ExpectedPurchaseOrderVersion, write.Request.UndoQuantity,
                         write.ReplacementExpected, write.IsSupplierReturn, write.Request.Reason, write.Request.OccurredAtUtc,
                         write.CommandName, requestHash, next?.AcceptanceId, next?.AcceptedQuantity, notificationSnapshots), envelope,
@@ -110,12 +110,12 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
                     var actual = await Checked(() => purchase.ReadSupplyAsync(write.OrderId, target.GeneralLineId, cancellationToken))
                         ?? throw Unavailable();
                     RequireSupply(actual, adjusted, companyId, target);
-                    var reversed = await Checked(() => inventory.StageAsync(stockRequest, new(companyId, write.OrderId,
+                    var reversed = await Checked(() => inventory.StageAsync(stockRequest, new InventoryGoodsReceiptReversalSupplyV1(companyId, write.OrderId,
                         target.GeneralLineId, Version(adjusted.OrderVersion), adjusted.NetOpenedQuantity, adjusted.AllocatableQuantity,
                         adjusted.NewAcceptedQuantity), metadata, cancellationToken));
                     var correction = await CorrectionAsync(connection, borrowed, purchase, companyId, write, adjusted, reversed,
                         envelope, freshAuthority, cancellationToken);
-                    var written = await writeReturn(new(adjusted, View(reversed), correction), cancellationToken);
+                    var written = await writeReturn(new PurchaseReceiptReversalResponseV1(adjusted, View(reversed), correction), cancellationToken);
                     await freshAuthority(cancellationToken);
                     await transaction.CommitAsync(cancellationToken);
                     return written;
@@ -156,7 +156,7 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
     }
 
     private static PurchaseReceiptReversalStockV1 View(InventoryGoodsReceiptReversalResultV1 result) =>
-        new(result.CompanyId, result.ReversalId, result.AcceptanceId, result.InventoryMovementId, result.OriginalReceiptMovementId,
+        new PurchaseReceiptReversalStockV1(result.CompanyId, result.ReversalId, result.AcceptanceId, result.InventoryMovementId, result.OriginalReceiptMovementId,
             result.LabelId, result.LabelVersion, result.QuantityKg, result.Conversions.Select(item => new PurchaseReceiptReversalConversionV1(
                 item.ConversionId, item.FutureAllocationId, item.UndoneQuantity, item.UndoneKg, item.ReopenedQuantity,
                 item.OverflowReleasedQuantity, item.UnheldQuantity)).ToArray(), result.IsReplay, result.OriginalCorrelationId);
@@ -205,8 +205,8 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
             var value = await owner.ReadSupplyAsync(orderId, lineId, cancellationToken) ?? throw Unavailable();
             if (value.CompanyId != target.CompanyId || value.OrderId != orderId || value.GeneralLineId != lineId
                 || !InventoryFutureAllocationTextV1.TryNonNegativeQuantity(value.AllocatableQuantity, out _)) throw Unavailable();
-            return new(value.IsAllocatable ? InventoryFutureSupplySourceOutcomeV1.Allocatable : InventoryFutureSupplySourceOutcomeV1.NotAllocatable,
-                new(orderId, lineId, target.ProductId, target.ProductVersion, target.UnitId, value.AllocatableQuantity,
+            return new InventoryFutureSupplySourceAnswerV1(value.IsAllocatable ? InventoryFutureSupplySourceOutcomeV1.Allocatable : InventoryFutureSupplySourceOutcomeV1.NotAllocatable,
+                new InventoryFutureSupplyLineV1(orderId, lineId, target.ProductId, target.ProductVersion, target.UnitId, value.AllocatableQuantity,
                     ObservedOrderVersion: Version(value.OrderVersion)));
         }
     }
@@ -216,8 +216,8 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
     private static long Version(string text) => InventoryFutureAllocationTextV1.TryVersion(text, out var version)
         && version.ToString(CultureInfo.InvariantCulture) == text
         ? version : throw Unavailable();
-    private static PurchasingServiceException Unavailable() => new(503, PurchaseReceiptAdjustmentCodesV1.Unavailable);
-    private static InventoryCommandMetadata Metadata(PurchasingWriteEnvelope envelope, string commandName) => new(envelope.ActorId,
+    private static PurchasingServiceException Unavailable() => new PurchasingServiceException(503, PurchaseReceiptAdjustmentCodesV1.Unavailable);
+    private static InventoryCommandMetadata Metadata(PurchasingWriteEnvelope envelope, string commandName) => new InventoryCommandMetadata(envelope.ActorId,
         envelope.PermissionCode, envelope.RoleCodes, envelope.CorrelationId, envelope.CausationId,
         InventoryChildKey(commandName, envelope.IdempotencyKey),
         envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent);

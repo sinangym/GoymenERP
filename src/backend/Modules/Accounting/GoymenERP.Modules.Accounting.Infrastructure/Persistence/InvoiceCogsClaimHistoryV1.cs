@@ -8,7 +8,7 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 /// <summary>One owner of the immutable anchor and every append-only successor. Callers retain their company/actor fence.</summary>
 internal static class InvoiceCogsClaimHistoryV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     internal sealed record Entry(long Generation, InvoiceCogsEconomicClaimRow Claim, InventoryCostClaimSuccessionV1? Succession);
 
     internal static async Task<IReadOnlyList<Entry>> ReadAsync(AccountingDbContext db, Guid companyId, Guid movementId,
@@ -21,7 +21,7 @@ internal static class InvoiceCogsClaimHistoryV1
             && x.MovementLineNumber == line).OrderBy(x => x.Generation).ToListAsync(token); fence();
         if (anchor is null) { if (rows.Count != 0) throw Invalid(); return []; }
         if (anchor.CompanyId != companyId || anchor.SourceHash != AccountingInventoryCostSourceValidationV1.Sha256(anchor.ViewJson)) throw Invalid();
-        var result = new List<Entry> { new(1, anchor, null) };
+        var result = new List<Entry> { new Entry(1, anchor, null) };
         foreach (var row in rows)
         {
             InventoryCostClaimSuccessionV1 proof;
@@ -60,7 +60,7 @@ internal static class InvoiceCogsClaimHistoryV1
             var expected = JsonSerializer.Serialize(new { source.CompanyId, source.EventId, source.InvoiceId, source.InvoiceVersion,
                 source.AdmissionId, component.InvoiceLineId, Physical = physical.Physical, component.SourceProofSha256 }, Json);
             if (row.ViewJson != expected) throw Invalid();
-            result.Add(new(row.Generation, new() { CompanyId = row.CompanyId, MovementId = row.MovementId,
+            result.Add(new Entry(row.Generation, new InvoiceCogsEconomicClaimRow() { CompanyId = row.CompanyId, MovementId = row.MovementId,
                 MovementLineNumber = row.MovementLineNumber, ShipmentId = row.ShipmentId, SalesEventId = row.SalesEventId,
                 InvoiceId = row.InvoiceId, InvoiceLineId = row.InvoiceLineId, AdmissionId = row.AdmissionId,
                 FinalizedVersion = row.FinalizedVersion, Origin = 1, SourceHash = row.SourceHash, ViewJson = row.ViewJson,
@@ -145,5 +145,5 @@ internal static class InvoiceCogsClaimHistoryV1
         fence(); return result;
     }
 
-    internal static AccountingStoreException Invalid() => new("inventory_cost_claim_generation_invalid", "Maliyet payının güncel sahiplik nesli doğrulanamadı.");
+    internal static AccountingStoreException Invalid() => new AccountingStoreException("inventory_cost_claim_generation_invalid", "Maliyet payının güncel sahiplik nesli doğrulanamadı.");
 }

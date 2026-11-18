@@ -49,7 +49,7 @@ public sealed class InventoryFutureAllocationQueryService(InventoryDbContext dat
         await fence.RequireStillAsync(cancellationToken);
         if (items.Any(item => item.CompanyId != fence.CompanyId))
             throw new InventoryAllocationException(503, InventoryFutureAllocationCodesV1.ServiceUnavailable);
-        return new(fence.CompanyId, salesOrderId, salesOrderLineId,
+        return new InventoryFutureAllocationListV1(fence.CompanyId, salesOrderId, salesOrderLineId,
             items.Take(InventoryFutureAllocationApiV1.ReadLimit).ToArray(), items.Length > InventoryFutureAllocationApiV1.ReadLimit,
             unitCodes, evaluatedOn, scheduleViews);
     }

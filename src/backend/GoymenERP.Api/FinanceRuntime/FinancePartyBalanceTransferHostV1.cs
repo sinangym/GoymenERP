@@ -25,7 +25,7 @@ public static class FinancePartyBalanceTransferHostV1
                 provider.GetRequiredService<IFinancePartyBalanceTransferEvidencePortV1>(),
                 provider.GetRequiredService<IPartyLedgerService>(), provider.GetRequiredService<IFinanceRecordPeriodRule>(),
                 provider.GetRequiredService<IAuditEventCollector>(),
-                new(FinancePartyBalanceTransferPermissionsV1.Record, permissions.RoleCodesOf(FinanceAction.RecordPartyBalanceTransfer),
+                new FinanceAuditEnvelope(FinancePartyBalanceTransferPermissionsV1.Record, permissions.RoleCodesOf(FinanceAction.RecordPartyBalanceTransfer),
                     correlation.SourceChannel, correlation.ClientIpAddress, correlation.UserAgent),
                 provider.GetRequiredService<TimeProvider>(), provider.GetService<IAuditTransactionWriterV1>());
         });

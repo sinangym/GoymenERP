@@ -9,7 +9,7 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 public sealed class SettingsMoneyProfilePrerequisiteProvider(SettingsDbContext database, ICompanyContext companyContext,
     ICurrentUser currentUser) : ISettingsPrerequisiteProvider
 {
-    private readonly SettingsUnitProfilePrerequisiteProvider inner = new(database, companyContext, currentUser);
+    private readonly SettingsUnitProfilePrerequisiteProvider inner = new SettingsUnitProfilePrerequisiteProvider(database, companyContext, currentUser);
 
     public Task<UnitProfileV1> GetUnitProfileAsync(Guid unitId, DateOnly effectiveOn, CancellationToken cancellationToken = default) =>
         inner.GetUnitProfileAsync(unitId, effectiveOn, cancellationToken);

@@ -31,7 +31,7 @@ public sealed partial class PurchaseIncomingInvoiceWorkspace(PurchasingDbContext
             if (snapshot.CompanyId != scope.CompanyId || snapshot.Id != id) throw Unavailable();
             items.Add(PurchaseIncomingInvoiceWireV1.View(snapshot));
         }
-        return new(pageIndex, ids.Length > PageSize, items);
+        return new PurchaseIncomingInvoicePageV1(pageIndex, ids.Length > PageSize, items);
     }
 
     public async Task<PurchaseInvoiceReceiptCandidatePageV1> CandidatesAsync(Guid invoiceId, Guid invoiceLineId, int pageIndex,
@@ -45,7 +45,7 @@ public sealed partial class PurchaseIncomingInvoiceWorkspace(PurchasingDbContext
         var line = snapshot.Lines.SingleOrDefault(item => item.Id == invoiceLineId)
             ?? throw new PurchasingServiceException(404, "not_found");
         if (snapshot.Status != PurchaseIncomingInvoiceStatus.Recorded)
-            return new(invoiceId, invoiceLineId, snapshot.Version.ToString(CultureInfo.InvariantCulture), pageIndex, false, []);
+            return new PurchaseInvoiceReceiptCandidatePageV1(invoiceId, invoiceLineId, snapshot.Version.ToString(CultureInfo.InvariantCulture), pageIndex, false, []);
         if (line.ServiceTypeId is not null) return await ServiceCandidatesAsync(scope, snapshot, line, pageIndex, cancellationToken);
         var query = from accepted in context.Acceptances.AsNoTracking()
                     join order in context.Orders.AsNoTracking() on accepted.OrderId equals order.Id
@@ -66,7 +66,7 @@ public sealed partial class PurchaseIncomingInvoiceWorkspace(PurchasingDbContext
         await FenceAsync(scope, cancellationToken);
         if (rows.Any(row => row.CompanyId != scope.CompanyId || row.Available > PurchaseIncomingInvoice.MaximumStoredQuantity
             || row.OrderId == Guid.Empty || row.LineId == Guid.Empty || row.AcceptanceId == Guid.Empty || row.LineNo < 1)) throw Unavailable();
-        return new(invoiceId, invoiceLineId, snapshot.Version.ToString(CultureInfo.InvariantCulture), pageIndex, rows.Length > PageSize,
+        return new PurchaseInvoiceReceiptCandidatePageV1(invoiceId, invoiceLineId, snapshot.Version.ToString(CultureInfo.InvariantCulture), pageIndex, rows.Length > PageSize,
             rows.Take(PageSize).Select(row => new PurchaseInvoiceReceiptCandidateV1(row.OrderId, row.DocumentNumber,
                 row.LineId, row.LineNo, row.AcceptanceId, row.RecordedAtUtc, row.ProductId, row.UnitId,
                 PurchaseAcceptanceParticipantContractV1.FormatQuantity(row.Available))).ToArray());
@@ -94,7 +94,7 @@ public sealed partial class PurchaseIncomingInvoiceWorkspace(PurchasingDbContext
         { await FenceAsync(scope, token); throw Unavailable(); }
     }
     private static void ValidatePage(int pageIndex) { if (pageIndex < 0 || pageIndex > int.MaxValue / PageSize) throw Invalid(); }
-    private static PurchasingServiceException Invalid() => new(400, "validation_failed");
-    private static PurchasingServiceException Forbidden() => new(403, "forbidden");
-    private static PurchasingServiceException Unavailable() => new(503, "service_unavailable");
+    private static PurchasingServiceException Invalid() => new PurchasingServiceException(400, "validation_failed");
+    private static PurchasingServiceException Forbidden() => new PurchasingServiceException(403, "forbidden");
+    private static PurchasingServiceException Unavailable() => new PurchasingServiceException(503, "service_unavailable");
 }

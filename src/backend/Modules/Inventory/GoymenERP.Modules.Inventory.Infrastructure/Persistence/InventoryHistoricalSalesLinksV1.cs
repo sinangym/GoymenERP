@@ -40,7 +40,7 @@ public sealed class InventoryHistoricalSalesLinksV1(InventoryDbContext database,
         cancellationToken.ThrowIfCancellationRequested();
         EnsureBorrowedTransaction();
         var companyId = company.IsResolved ? company.CompanyId : Guid.Empty;
-        InventoryHistoricalSalesLinksAnswerV1 Unavailable() => new(InventoryHistoricalSalesLinksOutcomeV1.Unavailable,
+        InventoryHistoricalSalesLinksAnswerV1 Unavailable() => new InventoryHistoricalSalesLinksAnswerV1(InventoryHistoricalSalesLinksOutcomeV1.Unavailable,
             companyId, purchaseOrderId, purchaseOrderLineId, []);
         if (companyId == Guid.Empty || purchaseOrderId == Guid.Empty || purchaseOrderLineId == Guid.Empty) return Unavailable();
         try
@@ -57,7 +57,7 @@ public sealed class InventoryHistoricalSalesLinksV1(InventoryDbContext database,
                     || row.DemandLineId == Guid.Empty || row.Version < 1)) return Unavailable();
             var lines = rows.Select(row => new InventoryHistoricalSalesLineV1(row.DemandId, row.DemandLineId))
                 .Distinct().OrderBy(row => row.SalesOrderId).ThenBy(row => row.SalesOrderLineId).ToArray();
-            return new(InventoryHistoricalSalesLinksOutcomeV1.Available, companyId, purchaseOrderId, purchaseOrderLineId, lines);
+            return new InventoryHistoricalSalesLinksAnswerV1(InventoryHistoricalSalesLinksOutcomeV1.Available, companyId, purchaseOrderId, purchaseOrderLineId, lines);
         }
         // Error categories only: this reader opens no connection and emits no SQL text.
         catch (DbException) { return Unavailable(); }

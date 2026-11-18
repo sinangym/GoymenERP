@@ -68,7 +68,7 @@ internal sealed class ManufacturingInputRatePriorityReaderV1(ICompanyContext com
                 {
                     if (answer.SourceCurrencyId != currency || answer.TargetCurrencyId != SettingsCurrencyIdentitiesV1.TurkishLira
                         || string.IsNullOrWhiteSpace(answer.SourceVersion) || answer.RateRatio is null) return null;
-                    ratio = new(answer.RateRatio.Numerator, answer.RateRatio.Denominator); rate = answer.Rate?.Rate;
+                    ratio = new ProductionExactRatioV1(answer.RateRatio.Numerator, answer.RateRatio.Denominator); rate = answer.Rate?.Rate;
                     if (!Rate(rate, ratio)) return null;
                     source = answer.SourceVersion;
                 }
@@ -86,7 +86,7 @@ internal sealed class ManufacturingInputRatePriorityReaderV1(ICompanyContext com
             var json = JsonSerializer.Serialize(new { companyId, manufacturingOrderId, orderVersion, planId = plan.Id,
                 linkRevision, issueFactId, parentLabelId, source, missing, evidence });
             var version = "manufacturing.input-rate-priority.v1/" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))).ToLowerInvariant();
-            return new(new(missing is null ? IssueCostCurrencyStatus.Converted : IssueCostCurrencyStatus.RateMissing, currency,
+            return new ManufacturingInputRateProofV1(new IssueCostCurrencyInput(missing is null ? IssueCostCurrencyStatus.Converted : IssueCostCurrencyStatus.RateMissing, currency,
                 recordedCurrency.ForeignUnitCostPerKg, missing is null ? rate : null, recordedCurrency.ForeignUnitCostRatio,
                 missing is null ? ratio : null), version, json);
         }

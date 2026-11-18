@@ -22,7 +22,7 @@ internal sealed class SettingsMoneyProfileAdministration(SettingsDbContext datab
     private const string EntityType = "Settings.MoneyProfile";
     private const string RecordCommandName = "settings.money-profile.record.v1";
     private const string RecordedEvent = "settings.money-profile.recorded.v1";
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<MoneyProfileViewV1> GetAsync(CancellationToken cancellationToken = default)
     {

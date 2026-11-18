@@ -35,18 +35,18 @@ public sealed class PurchaseNotificationRecipients(PurchasingDbContext database,
     {
         if (facts.CompanyId != companyId || facts.OrderId != orderId || facts.GeneralLineId != lineId
             || facts.Version < 1 || (facts.Status != (int)PurchaseOrderStatus.Approved && facts.Status != (int)PurchaseOrderStatus.Cancelled))
-            return new(PurchaseNotificationRecipientsOutcomeV1.Unavailable, companyId, orderId, lineId,
+            return new PurchaseNotificationRecipientsV1(PurchaseNotificationRecipientsOutcomeV1.Unavailable, companyId, orderId, lineId,
                 null, [], "purchase_notification_source_unreadable");
         // Legacy orders can lack approval evidence. A partial recipient set is not reported as complete delivery.
         if (string.IsNullOrWhiteSpace(facts.CreatedBy) || string.IsNullOrWhiteSpace(facts.ApprovedBy)
             || facts.ApprovedAtUtc is null)
-            return new(PurchaseNotificationRecipientsOutcomeV1.Unassigned, companyId, orderId, lineId,
+            return new PurchaseNotificationRecipientsV1(PurchaseNotificationRecipientsOutcomeV1.Unassigned, companyId, orderId, lineId,
                 facts.Version, [], "purchase_notification_actors_unassigned");
         if (!Guid.TryParse(facts.CreatedBy, out var preparer) || preparer == Guid.Empty
             || !Guid.TryParse(facts.ApprovedBy, out var approver) || approver == Guid.Empty)
-            return new(PurchaseNotificationRecipientsOutcomeV1.Unavailable, companyId, orderId, lineId,
+            return new PurchaseNotificationRecipientsV1(PurchaseNotificationRecipientsOutcomeV1.Unavailable, companyId, orderId, lineId,
                 facts.Version, [], "purchase_notification_actor_identity_unreadable");
-        return new(PurchaseNotificationRecipientsOutcomeV1.Found, companyId, orderId, lineId,
+        return new PurchaseNotificationRecipientsV1(PurchaseNotificationRecipientsOutcomeV1.Found, companyId, orderId, lineId,
             facts.Version, new[] { preparer, approver }.Distinct().Order().ToArray());
     }
 
@@ -56,7 +56,7 @@ public sealed class PurchaseNotificationRecipients(PurchasingDbContext database,
             throw new InvalidOperationException("Purchase notification recipients require the original resolved company.");
     }
     private static PurchaseNotificationRecipientsV1 Missing(Guid companyId, Guid orderId, Guid lineId) =>
-        new(PurchaseNotificationRecipientsOutcomeV1.NotFound, companyId, orderId, lineId, null, []);
+        new PurchaseNotificationRecipientsV1(PurchaseNotificationRecipientsOutcomeV1.NotFound, companyId, orderId, lineId, null, []);
 }
 
 internal sealed record PurchaseNotificationRecipientFacts(Guid CompanyId, Guid OrderId, Guid GeneralLineId,

@@ -26,7 +26,7 @@ public sealed partial class InventoryTransferReceiptWork(ICompanyContext company
             if (recorded is null || transfer.CompanyId != id || recorded.CompanyId != id || transfer.TransferId != transferId
                 || recorded.TransferId != transferId || transfer.Version != recorded.Version || transfer.Status != recorded.Status)
                 throw new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable);
-            return new(purpose, transfer, recorded);
+            return new InventoryTransferReceiptWorkV1(purpose, transfer, recorded);
         }
         catch (OperationCanceledException) { throw; }
         catch (InventoryTransferException) { await Fence(); throw; }

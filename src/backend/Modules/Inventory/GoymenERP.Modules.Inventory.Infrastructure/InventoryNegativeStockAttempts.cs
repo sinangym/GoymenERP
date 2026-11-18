@@ -103,7 +103,7 @@ internal sealed class InventoryNegativeStockAttempts(ICompanyContext company, IC
                 };
                 database.NegativeStockAttempts.Add(row);
                 if (laterCount is not null)
-                    database.NegativeStockAttemptResolutions.Add(new()
+                    database.NegativeStockAttemptResolutions.Add(new NegativeStockAttemptResolutionRow()
                     {
                         CompanyId = identity.CompanyId, AttemptId = row.Id, StockCountId = laterCount.StockCountId,
                         CountBoundaryVersion = laterCount.Version, DecidedAtUtc = laterCount.DecidedAtUtc,
@@ -167,7 +167,7 @@ internal sealed class InventoryNegativeStockAttempts(ICompanyContext company, IC
                          select new { Attempt = attempt, Resolution = resolution };
             var rows = await joined.Take(query.Limit + 1).ToArrayAsync(cancellationToken);
             await RequireAsync(identity, permissions, cancellationToken);
-            return new(identity.CompanyId, rows.Take(query.Limit).Select(item =>
+            return new InventoryNegativeStockAttemptPageV1(identity.CompanyId, rows.Take(query.Limit).Select(item =>
             {
                 var row = item.Attempt;
                 return new InventoryNegativeStockAttemptViewV1(
@@ -177,7 +177,7 @@ internal sealed class InventoryNegativeStockAttempts(ICompanyContext company, IC
                     : throw Error(503, InventoryNegativeStockAttemptCodesV1.Unavailable),
                 row.SourceKind, row.SourceId, row.SourceLineId, Kg(row.RequestedKg), Kg(row.AvailableKg), Kg(row.MissingKg),
                 item.Resolution is { } resolution
-                    ? new(resolution.StockCountId, resolution.DecidedAtUtc, resolution.DecidedBy) : null);
+                    ? new InventoryNegativeStockAttemptResolutionV1(resolution.StockCountId, resolution.DecidedAtUtc, resolution.DecidedBy) : null);
             }).ToArray(),
                 rows.Length > query.Limit);
         }
@@ -236,6 +236,6 @@ internal sealed class InventoryNegativeStockAttempts(ICompanyContext company, IC
     }
     private static string Kg(decimal amount) => amount.ToString("0.###", CultureInfo.InvariantCulture);
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
-    private static InventoryNegativeStockAttemptException Error(int status, string code, Exception? inner = null) => new(status, code, inner);
+    private static InventoryNegativeStockAttemptException Error(int status, string code, Exception? inner = null) => new InventoryNegativeStockAttemptException(status, code, inner);
     private sealed record Scope(Guid CompanyId, string ActorId);
 }

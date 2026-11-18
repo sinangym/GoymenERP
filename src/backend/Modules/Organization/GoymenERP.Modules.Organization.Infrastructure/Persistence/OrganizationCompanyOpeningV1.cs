@@ -19,7 +19,7 @@ public sealed class OrganizationCompanyOpeningV1(OrganizationDbContext database,
     IAuditTransactionWriterV1 auditWriter, IRefusedAttemptRecorderV1 refusedAttempts, TimeProvider clock) : IOrganizationCompanyOpeningV1
 {
     private const string CommandName = "organization.company.open.v1";
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web)
         { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
 
     public async Task<CompanySetupCapabilitiesV1> ReadCapabilitiesAsync(CancellationToken cancellationToken = default)
@@ -31,7 +31,7 @@ public sealed class OrganizationCompanyOpeningV1(OrganizationDbContext database,
             throw new UnauthorizedAccessException();
         if (open.IsGranted) await StillAsync(open, null, cancellationToken);
         if (assign.IsGranted) await StillAsync(assign, null, cancellationToken);
-        return new(open.IsGranted, assign.IsGranted);
+        return new CompanySetupCapabilitiesV1(open.IsGranted, assign.IsGranted);
     }
 
     public async Task<IReadOnlyList<CompanySetupCompanyV1>> ReadPendingAsync(CancellationToken cancellationToken = default)
@@ -85,26 +85,26 @@ public sealed class OrganizationCompanyOpeningV1(OrganizationDbContext database,
             }
             CompanyOpeningAnswerV1 answer;
             if (await database.Companies.AnyAsync(company => company.Id == request.CompanyId, cancellationToken))
-                answer = new(409, "organization.company.already_exists", null);
+                answer = new CompanyOpeningAnswerV1(409, "organization.company.already_exists", null);
             else if (await database.Companies.AnyAsync(company => company.Code == proposed.Code, cancellationToken))
-                answer = new(409, "organization.company.code_in_use", null);
+                answer = new CompanyOpeningAnswerV1(409, "organization.company.code_in_use", null);
             else if (await database.Companies.AnyAsync(company => company.Vkn == proposed.Vkn, cancellationToken))
-                answer = new(409, "organization.company.tax_id_in_use", null);
+                answer = new CompanyOpeningAnswerV1(409, "organization.company.tax_id_in_use", null);
             else
-                answer = new(201, null, new(proposed.Id, proposed.Code, proposed.LegalName, proposed.LifecycleState, proposed.Version));
+                answer = new CompanyOpeningAnswerV1(201, null, new CompanySetupCompanyV1(proposed.Id, proposed.Code, proposed.LegalName, proposed.LifecycleState, proposed.Version));
             await StillAsync(scope, request.CompanyId, cancellationToken);
             openingProof = database.BeginCompanyOpeningWrite(request.CompanyId, scope);
             if (answer.StatusCode == 201)
             {
                 database.Companies.Add(proposed);
                 var payload = new OrganizationCompanyOpenedV1(proposed.Id, actor, now);
-                database.CompanySetupOutboxMessages.Add(new(Guid.NewGuid(), proposed.Id, JsonSerializer.Serialize(payload, Json),
+                database.CompanySetupOutboxMessages.Add(new OrganizationCompanySetupOutboxMessage(Guid.NewGuid(), proposed.Id, JsonSerializer.Serialize(payload, Json),
                     now, metadata.CorrelationId, metadata.CausationId));
             }
-            database.CompanyOpeningExecutions.Add(new(keyHash, request.CompanyId, actor, requestHash, answer.StatusCode,
+            database.CompanyOpeningExecutions.Add(new CompanyOpeningExecution(keyHash, request.CompanyId, actor, requestHash, answer.StatusCode,
                 JsonSerializer.Serialize(answer, Json), metadata.CorrelationId, now));
             if (answer.StatusCode == 201)
-                auditEvents.Enqueue(new(request.CompanyId, "organization.company.opened.v1", "Organization.Company",
+                auditEvents.Enqueue(new AuditEventDraft(request.CompanyId, "organization.company.opened.v1", "Organization.Company",
                     request.CompanyId.ToString("D"), "Create", null, 1, AuditActorTypes.User, metadata.ActorId,
                     ErpPermissions.OrganizationCompaniesOpen, [], "{}",
                     JsonSerializer.Serialize(new { companyId = proposed.Id, proposed.Code, proposed.LegalName, proposed.Vkn,
@@ -119,7 +119,7 @@ public sealed class OrganizationCompanyOpeningV1(OrganizationDbContext database,
             await database.SaveChangesAsync(cancellationToken);
             await StillAsync(scope, request.CompanyId, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return new(answer, false, metadata.CorrelationId);
+            return new CompanyOpeningResultV1(answer, false, metadata.CorrelationId);
         }
         catch (DbUpdateException)
         {
@@ -152,7 +152,7 @@ public sealed class OrganizationCompanyOpeningV1(OrganizationDbContext database,
         await StillAsync(scope, request.CompanyId, cancellationToken);
         return result;
     }
-    private static RefusedAttemptV1 Refused(Guid companyId, CompanyOpeningMetadataV1 metadata, string code, string refusalClass) => new()
+    private static RefusedAttemptV1 Refused(Guid companyId, CompanyOpeningMetadataV1 metadata, string code, string refusalClass) => new RefusedAttemptV1()
     {
         CompanyId = companyId, CommandName = CommandName, Operation = "Create", TargetType = "Organization.Company",
         TargetId = companyId.ToString("D"), ExpectedVersion = 0, ActorType = AuditActorTypes.User, ActorId = metadata.ActorId,
@@ -165,7 +165,7 @@ public sealed class OrganizationCompanyOpeningV1(OrganizationDbContext database,
         string requestHash, CompanyOpeningMetadataV1 metadata, Guid actor)
     {
         if (previous.ActorUserId != actor || previous.CompanyId != request.CompanyId || previous.RequestHash != requestHash)
-            return new(new(409, "organization.company.idempotency_conflict", null), false, metadata.CorrelationId);
+            return new CompanyOpeningResultV1(new CompanyOpeningAnswerV1(409, "organization.company.idempotency_conflict", null), false, metadata.CorrelationId);
         var answer = JsonSerializer.Deserialize<CompanyOpeningAnswerV1>(previous.ResponseJson, Json)
             ?? throw new InvalidOperationException("Company-opening terminal is unreadable.");
         if (answer.StatusCode != previous.StatusCode || answer.StatusCode is not (201 or 409)
@@ -174,7 +174,7 @@ public sealed class OrganizationCompanyOpeningV1(OrganizationDbContext database,
             || answer.StatusCode == 409 && (answer.Company is not null || answer.Code is not
                 ("organization.company.already_exists" or "organization.company.code_in_use" or "organization.company.tax_id_in_use")))
             throw new InvalidOperationException("Company-opening terminal is inconsistent.");
-        return new(answer, true, previous.OriginalCorrelationId);
+        return new CompanyOpeningResultV1(answer, true, previous.OriginalCorrelationId);
     }
     private Guid Actor() => currentUser.IsAuthenticated && Guid.TryParse(currentUser.UserId, out var actor) && actor != Guid.Empty
         ? actor : throw new UnauthorizedAccessException();

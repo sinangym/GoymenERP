@@ -24,7 +24,7 @@ public sealed class FinancePolicyCashReferences(FinanceDbContext database, IComp
         if (rows.Length > MaximumAccounts || rows.Any(x => x.CashAccountId == Guid.Empty || x.CurrencyId == Guid.Empty
             || x.Version < 1 || string.IsNullOrWhiteSpace(x.Name)))
             throw new InvalidOperationException("finance_policy_cash_source_unavailable");
-        return new(companyId, rows);
+        return new FinancePolicyCashReferencesV1(companyId, rows);
     }
     private async Task FenceAsync(Guid companyId, string? actor, CancellationToken cancellationToken)
     {

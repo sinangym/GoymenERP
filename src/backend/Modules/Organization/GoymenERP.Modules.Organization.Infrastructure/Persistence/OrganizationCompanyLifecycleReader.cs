@@ -9,7 +9,7 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence;
 public sealed class OrganizationCompanyLifecycleReader(OrganizationDbContext database)
     : ICompanyLifecycleReadPortV1, IOutboxCompanyDirectoryV1
 {
-    private static readonly Meter Meter = new("GoymenERP.Organization.CompanySetup", "1.0");
+    private static readonly Meter Meter = new Meter("GoymenERP.Organization.CompanySetup", "1.0");
     private static int pendingCount;
     private static readonly ObservableGauge<int> PendingGauge = Meter.CreateObservableGauge(
         "organization.company.setup_pending", () => Volatile.Read(ref pendingCount), "companies");
@@ -25,7 +25,7 @@ public sealed class OrganizationCompanyLifecycleReader(OrganizationDbContext dat
             "SetupPending" => CompanyLifecycleStateV1.SetupPending,
             _ => throw new InvalidOperationException("Company lifecycle cannot be read."),
         };
-        return new(company.Id, state, company.IsActive, company.Version);
+        return new CompanyLifecycleViewV1(company.Id, state, company.IsActive, company.Version);
     }
 
     public async Task<IReadOnlyList<Guid>> ListCompanyIdsAsync(CancellationToken cancellationToken)

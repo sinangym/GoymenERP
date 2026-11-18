@@ -22,7 +22,7 @@ public static partial class DocumentsModuleExtensions
         services.AddScoped<IDocumentOwnerLinkPortV1, CompanyBrandingDocumentOwnerLinkPort>();
     }
 
-    private static DocumentBrandingService CreateBrandingService(IServiceProvider provider) => new(
+    private static DocumentBrandingService CreateBrandingService(IServiceProvider provider) => new DocumentBrandingService(
         provider.GetRequiredService<DbContextOptions<DocumentsDbContext>>(), provider.GetRequiredService<ICompanyContext>(),
         provider.GetRequiredService<ICurrentUser>(), provider.GetRequiredService<IErpAuthorityRevalidationService>(),
         provider.GetRequiredService<ICorrelationContext>(), provider.GetRequiredService<IAuditEventCollector>(),

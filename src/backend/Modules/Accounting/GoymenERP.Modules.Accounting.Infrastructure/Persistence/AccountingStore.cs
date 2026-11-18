@@ -903,7 +903,7 @@ public sealed partial class AccountingStore(
     }
 
     private static AccountingJournalReversalProposalRow ToReversalProposalRow(
-        AccountingJournalReversalProposalV1 proposal) => new()
+        AccountingJournalReversalProposalV1 proposal) => new AccountingJournalReversalProposalRow()
         {
             Id = proposal.ProposalId,
             CompanyId = proposal.CompanyId,
@@ -937,7 +937,7 @@ public sealed partial class AccountingStore(
         && stored.ProposedBy == requested.ProposedBy;
 
     private static AccountingJournalReversalProposalV1 RestoreReversalProposal(
-        AccountingJournalReversalProposalRow row) => new(
+        AccountingJournalReversalProposalRow row) => new AccountingJournalReversalProposalV1(
         row.Id,
         row.CompanyId,
         row.SourceJournalId,

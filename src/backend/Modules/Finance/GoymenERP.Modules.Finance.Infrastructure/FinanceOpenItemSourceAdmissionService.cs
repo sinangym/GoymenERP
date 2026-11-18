@@ -251,7 +251,7 @@ public sealed class FinanceOpenItemSourceAdmissionService(
         var holders = FinanceOfficialInvoiceIdentityClaimPolicy.CurrentHolders(claims);
         var holderBatchIds = holders.Values.Select(holder => holder.HolderBatchId).Distinct().ToArray();
         HashSet<(Guid BatchId, Guid DocumentId)> liveHolders = holderBatchIds.Length == 0
-            ? new()
+            ? new HashSet<(Guid BatchId, Guid DocumentId)>()
             : (await dbContext.OpenItems.AsNoTracking()
                 .Where(item => item.SourceKind == FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment
                     && holderBatchIds.Contains(item.SourceBatchId)
@@ -451,7 +451,7 @@ public sealed class FinanceOpenItemSourceAdmissionService(
         FinanceContext context,
         CommandOutcome outcome,
         params ValidationIssue[] issues) =>
-        new(outcome, [], false, context.CorrelationId, issues);
+        new FinanceOpenItemAdmissionResult(outcome, [], false, context.CorrelationId, issues);
 
     private bool ValidRequestIdentity(FinanceContext context, CommandMetadata metadata) =>
         SameContext(context)

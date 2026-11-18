@@ -79,12 +79,12 @@ public sealed partial class PurchaseIncomingInvoiceMatchSource(PurchasingDbConte
             try { expected = CommercialLinePriceCalculator.ExactLineAmount(quantity, value.UnitPrice.Amount,
                 value.DiscountPercent, value.DiscountAmount, value.DeferralPercent, value.DeferralAmount); }
             catch (Exception exception) when (exception is ArgumentException or OverflowException) { throw Unavailable(); }
-            matches.Add(new(invoice.CompanyId, line.Id, accepted.AcceptanceId, order.Id, accepted.PurchaseOrderLineId,
+            matches.Add(new PurchaseInvoiceReceiptMatch(invoice.CompanyId, line.Id, accepted.AcceptanceId, order.Id, accepted.PurchaseOrderLineId,
                 order.Version, order.SupplierPartyId, order.CompanyAccountId, invoice.CurrencyId, line.UnitId,
                 quantity, expected, control, day, AcceptedQuantity: acceptedQuantity));
         }
         RequireScope(invoice.CompanyId);
-        return new(matches, new(policy.PolicyId, policy.Version, policy.AmountTolerance, policy.RateTolerance));
+        return new PurchaseIncomingInvoiceMatchSourceV1(matches, new PurchaseInvoiceVariancePolicy(policy.PolicyId, policy.Version, policy.AmountTolerance, policy.RateTolerance));
     }
 
     private void RequireScope(Guid companyId)
@@ -107,7 +107,7 @@ public sealed partial class PurchaseIncomingInvoiceMatchSource(PurchasingDbConte
     }
     private static PurchasingServiceException SettingsFailure(SettingsPrerequisiteException exception) =>
         exception.Code == PurchaseInvoiceVariancePolicyCodesV1.AccessDenied || exception.Code == ExchangeRateProblemCodesV1.AccessDenied
-            ? new(403, "forbidden") : Unavailable();
-    private static PurchasingServiceException Unavailable() => new(503, "service_unavailable");
-    private static PurchasingRuleException Mismatch() => new(PurchaseIncomingInvoice.SourceMismatch, "Fatura ve gerçek kabul kaynağı uyuşmuyor.");
+            ? new PurchasingServiceException(403, "forbidden") : Unavailable();
+    private static PurchasingServiceException Unavailable() => new PurchasingServiceException(503, "service_unavailable");
+    private static PurchasingRuleException Mismatch() => new PurchasingRuleException(PurchaseIncomingInvoice.SourceMismatch, "Fatura ve gerçek kabul kaynağı uyuşmuyor.");
 }

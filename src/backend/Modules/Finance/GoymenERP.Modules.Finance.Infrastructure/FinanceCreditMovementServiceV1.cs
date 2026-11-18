@@ -21,7 +21,7 @@ public sealed class FinanceCreditMovementServiceV1(FinanceDbContext db, ICompany
     public const string ProposeCommand = "finance.credit-movement.propose";
     public const string DecideCommand = "finance.credit-movement.decide";
     private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
-    private static readonly JsonSerializerOptions AuditJson = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions AuditJson = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<CreditMovementResultV1> ProposeAsync(FinanceContext context, CommandMetadata metadata,
         CreditMovementProposeV1 request, CancellationToken cancellationToken)
@@ -96,7 +96,7 @@ public sealed class FinanceCreditMovementServiceV1(FinanceDbContext db, ICompany
                 if (await Opening(context, action, source, cancellationToken, row.Id) is { } openingFailure) return openingFailure;
                 if (source.Kind == CreditMovementKindV1.Repayment && source.BankEffect is { } bank)
                 {
-                    var balance = await treasury.CheckOutgoingAsync(context, ExpensePaymentSourceKind.Bank, bank.BankAccountId, new(bank.Amount, row.CurrencyId), cancellationToken);
+                    var balance = await treasury.CheckOutgoingAsync(context, ExpensePaymentSourceKind.Bank, bank.BankAccountId, new MoneyText(bank.Amount, row.CurrencyId), cancellationToken);
                     if (await Fence(context, action, cancellationToken) is { } afterBalance) return afterBalance;
                     if (balance.Outcome != TreasuryBalanceOutcome.Sufficient)
                         return Failure(context, balance.Outcome == TreasuryBalanceOutcome.Insufficient ? CommandOutcome.ValidationFailed : CommandOutcome.Unavailable,
@@ -129,12 +129,12 @@ public sealed class FinanceCreditMovementServiceV1(FinanceDbContext db, ICompany
 
     public async Task<ReadResult<CreditMovementPageV1>> ListAsync(FinanceContext context, Guid creditAccountId, CancellationToken cancellationToken)
     {
-        if (await Fence(context, FinanceAction.ReadCredits, cancellationToken) is { } failure) return new(ReadFailure(failure), null);
+        if (await Fence(context, FinanceAction.ReadCredits, cancellationToken) is { } failure) return new ReadResult<CreditMovementPageV1>(ReadFailure(failure), null);
         var account = await db.CreditAccounts.AsNoTracking().AnyAsync(x => x.Id == creditAccountId, cancellationToken);
         var rows = account ? await db.CreditMovements.AsNoTracking().Where(x => x.CreditAccountId == creditAccountId)
             .OrderByDescending(x => x.ProposedAtUtc).ThenBy(x => x.Id).ToListAsync(cancellationToken) : [];
-        if (await Fence(context, FinanceAction.ReadCredits, cancellationToken) is { } after) return new(ReadFailure(after), null);
-        return account ? new(ReadOutcome.Found, new(context.CompanyId, rows.Select(x => View(x, context.ActorId)).ToArray())) : new(ReadOutcome.NotFound, null);
+        if (await Fence(context, FinanceAction.ReadCredits, cancellationToken) is { } after) return new ReadResult<CreditMovementPageV1>(ReadFailure(after), null);
+        return account ? new ReadResult<CreditMovementPageV1>(ReadOutcome.Found, new CreditMovementPageV1(context.CompanyId, rows.Select(x => View(x, context.ActorId)).ToArray())) : new ReadResult<CreditMovementPageV1>(ReadOutcome.NotFound, null);
     }
 
     private async Task<(CreditMovementResultV1? Failure, CreditPlanToleranceSnapshotV1? Profile, string? OpeningVersion)> Sources(
@@ -179,7 +179,7 @@ public sealed class FinanceCreditMovementServiceV1(FinanceDbContext db, ICompany
         if (accounting.Outcome != RecordPeriodOutcome.Open)
             return (Failure(context, accounting.Outcome == RecordPeriodOutcome.NotOpen ? CommandOutcome.ValidationFailed : CommandOutcome.Unavailable,
                 new ValidationIssue("accountingDate", accounting.Code ?? RecordPeriodAnswer.RuleUnavailableCode)), null, null);
-        return (null, new(money.Profile.ProfileId, money.Profile.Version, money.Scale, new FinanceExactDecimalText(1, money.Scale).Text), openingVersion);
+        return (null, new CreditPlanToleranceSnapshotV1(money.Profile.ProfileId, money.Profile.Version, money.Scale, new FinanceExactDecimalText(1, money.Scale).Text), openingVersion);
     }
 
     private async Task<CreditMovementResultV1?> Opening(FinanceContext context, FinanceAction action, CreditMovementProposeV1 source,
@@ -212,7 +212,7 @@ public sealed class FinanceCreditMovementServiceV1(FinanceDbContext db, ICompany
         var payload = new FinanceCreditMovementRecordedV1(eventId, context.CompanyId, row.Id, row.CreditAccountId, row.CurrencyId,
             source.Kind, source.SourceDocument, source.TransactionDate, accountingDate, source.Components, source.BankEffect, reverses, context.ActorId, reason);
         // Reversal is explicit, not a negative source number. The original immutable fact remains available.
-        db.OutboxMessages.Add(new() { Id = eventId, CompanyId = context.CompanyId, AggregateId = row.Id, AggregateVersion = row.Version,
+        db.OutboxMessages.Add(new FinanceOutboxRow() { Id = eventId, CompanyId = context.CompanyId, AggregateId = row.Id, AggregateVersion = row.Version,
             EventType = FinanceCreditMovementEventsV1.Recorded, SchemaVersion = 1, PayloadJson = JsonSerializer.Serialize(payload, Json),
             OccurredAtUtc = time.GetUtcNow(), CorrelationId = context.CorrelationId, CausationId = context.CausationId });
     }
@@ -245,7 +245,7 @@ public sealed class FinanceCreditMovementServiceV1(FinanceDbContext db, ICompany
         string payload, CreditMovementResultV1 result, CancellationToken ct)
     {
         if (await Fence(context, action, ct) is { } fenced) { db.ChangeTracker.Clear(); auditOwner?.DiscardPending(); return fenced; }
-        db.CreditMovementCommands.Add(new() { CompanyId = context.CompanyId, Command = command, KeyHash = FinanceCommandKeys.Hash(metadata.IdempotencyKey),
+        db.CreditMovementCommands.Add(new FinanceCreditMovementCommandRow() { CompanyId = context.CompanyId, Command = command, KeyHash = FinanceCommandKeys.Hash(metadata.IdempotencyKey),
             ActorId = context.ActorId, PayloadHash = payload, ResultJson = JsonSerializer.Serialize(result, Json) });
         await db.SaveChangesAsync(ct);
         return result;
@@ -269,11 +269,11 @@ public sealed class FinanceCreditMovementServiceV1(FinanceDbContext db, ICompany
         new { source.Kind, source.SourceDocument.Reference, source.SourceDocument.DocumentDate, source.SourceDocument.Revision });
     private static CreditMovementProposeV1 ReadSource(FinanceCreditMovementRow row) => JsonSerializer.Deserialize<CreditMovementProposeV1>(row.SourceJson, Json)
         ?? throw new InvalidOperationException("Kredi hareket kaynağı okunamadı.");
-    private static CreditMovementViewV1 View(FinanceCreditMovementRow row, string actor) => new(row.Id, row.CompanyId, row.Version.ToString(CultureInfo.InvariantCulture),
+    private static CreditMovementViewV1 View(FinanceCreditMovementRow row, string actor) => new CreditMovementViewV1(row.Id, row.CompanyId, row.Version.ToString(CultureInfo.InvariantCulture),
         (CreditMovementStatusV1)row.Status, ReadSource(row), row.CurrencyId, row.ProposedBy == actor, row.ProposedAtUtc, row.DecidedAtUtc,
         row.RejectionReason, row.ReversedByMovementId, row.OpeningPeriodVersion,
         JsonSerializer.Deserialize<CreditPlanToleranceSnapshotV1>(row.MoneyProfileJson, Json) ?? throw new InvalidOperationException("Kredi para profili okunamadı."));
-    private static CreditMovementResultV1 Success(FinanceContext context, FinanceCreditMovementRow row) => new(CommandOutcome.Succeeded, View(row, context.ActorId), false, context.CorrelationId, []);
-    private static CreditMovementResultV1 Failure(FinanceContext context, CommandOutcome outcome, params ValidationIssue[] issues) => new(outcome, null, false, context.CorrelationId, issues);
+    private static CreditMovementResultV1 Success(FinanceContext context, FinanceCreditMovementRow row) => new CreditMovementResultV1(CommandOutcome.Succeeded, View(row, context.ActorId), false, context.CorrelationId, []);
+    private static CreditMovementResultV1 Failure(FinanceContext context, CommandOutcome outcome, params ValidationIssue[] issues) => new CreditMovementResultV1(outcome, null, false, context.CorrelationId, issues);
     private static ReadOutcome ReadFailure(CreditMovementResultV1 failure) => failure.Outcome == CommandOutcome.Denied ? ReadOutcome.Denied : ReadOutcome.Unavailable;
 }

@@ -60,7 +60,7 @@ internal sealed class ManufacturingInventoryCostMovementReader(ICompanyContext c
                     {
                         // Keep actual movement identities, never the receipt/invoice quote as an order-rate fallback.
                         // This is an unreadable cost input, not an available rate or a new physical-close refusal.
-                        selected = new(new(IssueCostCurrencyStatus.Unreadable, null, null, null),
+                        selected = new ManufacturingInputRateProofV1(new IssueCostCurrencyInput(IssueCostCurrencyStatus.Unreadable, null, null, null),
                             "manufacturing-input-rate-source-unreadable:v1", JsonSerializer.Serialize(new
                             { reason = "manufacturing_input_rate_source_unreadable", recordedEntryProof = issue.Currency }));
                     }
@@ -73,7 +73,7 @@ internal sealed class ManufacturingInventoryCostMovementReader(ICompanyContext c
                 var status = currency.Status == IssueCostCurrencyStatus.Unreadable ? IssueCostReadStatus.Unreadable
                     : currency.Status == IssueCostCurrencyStatus.RateMissing && issue.Tl.UnitCostPerKg is null ? IssueCostReadStatus.Value
                     : issue.Tl.Status == InventoryMovementCostStampStatusV1.Known ? IssueCostReadStatus.Value : IssueCostReadStatus.Unreadable;
-                issues.Add(new(issue.FactId, issue.MovementId, issue.ParentLabelId, new(issue.QuantityKg), status,
+                issues.Add(new ManufacturingCostIssueSnapshotV1(issue.FactId, issue.MovementId, issue.ParentLabelId, new Kilograms(issue.QuantityKg), status,
                     currency.Status is IssueCostCurrencyStatus.RateMissing or IssueCostCurrencyStatus.Unreadable ? null : issue.Tl.UnitCostPerKg, currency,
                     issue.Tl.StampVersion + "/" + issue.Currency.SourceVersion + (selected is null ? "" : "/" + selected.SourceVersion),
                     issue.Usd.Status == InventoryMovementCostStampStatusV1.Known && issue.Usd.CurrencyId == ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD")
@@ -85,7 +85,7 @@ internal sealed class ManufacturingInventoryCostMovementReader(ICompanyContext c
                 if (entry is null || !Identity(entry.FactId, entry.MovementId, entry.ParentLabelId, entry.QuantityKg)
                     || entry.SourceKind != InventoryManufacturingRealizationContractV1.InputReturnSourceKind || entry.MovementKind != StockMovementKind.Return
                     || entry.SourceIssueMovementId == Guid.Empty || !Stamp(entry.Tl, tl: true) || !Stamp(entry.Usd, tl: false)) return null;
-                returns.Add(new(entry.FactId, entry.MovementId, entry.ParentLabelId, new(entry.QuantityKg), entry.SourceIssueMovementId, entry.Tl.StampVersion));
+                returns.Add(new ManufacturingCostReturnSnapshotV1(entry.FactId, entry.MovementId, entry.ParentLabelId, new Kilograms(entry.QuantityKg), entry.SourceIssueMovementId, entry.Tl.StampVersion));
             }
             foreach (var output in value.Outputs)
             {
@@ -94,15 +94,15 @@ internal sealed class ManufacturingInventoryCostMovementReader(ICompanyContext c
                     || output.LabelId == Guid.Empty || output.ProductId == Guid.Empty || string.IsNullOrWhiteSpace(output.ProductVersion)
                     || string.IsNullOrWhiteSpace(output.LabelCode)) return null;
                 // A production output's absent final cost is expected before closure; only the actual physical receipt identity is needed here.
-                outputs.Add(new(output.FactId, output.ReceiptMovementId, output.ParentLabelId, output.LabelId, output.LabelCode,
-                    new(output.DeclaredQuantityKg), value.SourceVersion));
+                outputs.Add(new ManufacturingCostOutputSnapshotV1(output.FactId, output.ReceiptMovementId, output.ParentLabelId, output.LabelId, output.LabelCode,
+                    new Kilograms(output.DeclaredQuantityKg), value.SourceVersion));
             }
             // V1's actual movement contract contains only kg facts. It does not claim a paint/non-kg consumption fact.
             var prioritySources = issues.Where(issue => issue.RateEvidenceJson is not null).OrderBy(issue => issue.FactId)
                 .Select(issue => issue.StampVersion).ToArray();
             var sourceVersion = value.SourceVersion + (prioritySources.Length == 0 ? "" : "/manufacturing-input-rate/"
                 + Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(prioritySources))).ToLowerInvariant());
-            return new(companyId, orderId, issues, returns, outputs, NonKgInputUse.None, sourceVersion);
+            return new ManufacturingCostMovementSnapshotV1(companyId, orderId, issues, returns, outputs, NonKgInputUse.None, sourceVersion);
         }
         catch (OperationCanceledException) { throw; }
         catch { return null; }
@@ -129,7 +129,7 @@ internal sealed class ManufacturingInventoryCostMovementReader(ICompanyContext c
                 && proof.ForeignUnitCostPerKg is null && proof.ExchangeRate is null && proof.ForeignUnitCostRatio is null && proof.ExchangeRateRatio is null
                 ? IssueCostCurrencyInput.FunctionalCurrency : null;
         if (proof.Status == InventoryIssueCostCurrencyStatusV1.Unreadable)
-            return new(IssueCostCurrencyStatus.Unreadable, proof.OriginalCurrencyId, proof.ForeignUnitCostPerKg, proof.ExchangeRate);
+            return new IssueCostCurrencyInput(IssueCostCurrencyStatus.Unreadable, proof.OriginalCurrencyId, proof.ForeignUnitCostPerKg, proof.ExchangeRate);
         if (proof.OriginalCurrencyId is not { } id || id == Guid.Empty || id == SettingsCurrencyIdentitiesV1.TurkishLira) return null;
         var foreignRatio = Ratio(proof.ForeignUnitCostRatio); var rateRatio = Ratio(proof.ExchangeRateRatio);
         if (proof.ForeignUnitCostRatio is not null && foreignRatio is null || proof.ExchangeRateRatio is not null && rateRatio is null) return null;
@@ -137,10 +137,10 @@ internal sealed class ManufacturingInventoryCostMovementReader(ICompanyContext c
         if (proof.Status == InventoryIssueCostCurrencyStatusV1.Converted && knownForeign
             && (proof.ExchangeRate is > 0m && (rateRatio is null || rateRatio.Represents(proof.ExchangeRate.Value))
                 || proof.ExchangeRate is null && rateRatio is not null))
-            return new(IssueCostCurrencyStatus.Converted, id, proof.ForeignUnitCostPerKg, proof.ExchangeRate, foreignRatio, rateRatio);
+            return new IssueCostCurrencyInput(IssueCostCurrencyStatus.Converted, id, proof.ForeignUnitCostPerKg, proof.ExchangeRate, foreignRatio, rateRatio);
         if (proof.Status == InventoryIssueCostCurrencyStatusV1.RateMissing && proof.ExchangeRate is null && rateRatio is null
             && (knownForeign || proof.ForeignUnitCostPerKg is null && foreignRatio is null))
-            return new(IssueCostCurrencyStatus.RateMissing, id, proof.ForeignUnitCostPerKg, null, foreignRatio);
+            return new IssueCostCurrencyInput(IssueCostCurrencyStatus.RateMissing, id, proof.ForeignUnitCostPerKg, null, foreignRatio);
         return null;
     }
     private static ProductionExactRatioV1? Ratio(InventoryExactCostRatioV1? value)

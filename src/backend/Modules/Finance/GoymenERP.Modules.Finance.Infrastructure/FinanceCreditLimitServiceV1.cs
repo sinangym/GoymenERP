@@ -93,12 +93,12 @@ public sealed class FinanceCreditLimitServiceV1(FinanceDbContext db, ICompanyCon
     public async Task<ReadResult<CreditLimitWorkspaceV1>> ReadAsync(FinanceContext context, Guid creditAccountId, CancellationToken cancellationToken)
     {
         const FinanceAction action = FinanceAction.ReadCredits;
-        ReadResult<CreditLimitWorkspaceV1> Refused(CreditLimitResultV1 answer) => new(answer.Outcome == CommandOutcome.Denied ? ReadOutcome.Denied : ReadOutcome.Unavailable, null);
+        ReadResult<CreditLimitWorkspaceV1> Refused(CreditLimitResultV1 answer) => new ReadResult<CreditLimitWorkspaceV1>(answer.Outcome == CommandOutcome.Denied ? ReadOutcome.Denied : ReadOutcome.Unavailable, null);
         if (await Fence(context, action, cancellationToken) is { } refused) return Refused(refused);
         var account = await db.CreditAccounts.AsNoTracking().SingleOrDefaultAsync(x => x.Id == creditAccountId, cancellationToken);
         if (await Fence(context, action, cancellationToken) is { } afterAccount) return Refused(afterAccount);
-        if (account is null) return new(ReadOutcome.NotFound, null);
-        if (!Usable(account)) return new(ReadOutcome.Unavailable, null);
+        if (account is null) return new ReadResult<CreditLimitWorkspaceV1>(ReadOutcome.NotFound, null);
+        if (!Usable(account)) return new ReadResult<CreditLimitWorkspaceV1>(ReadOutcome.Unavailable, null);
         var rows = await Key(account).AsNoTracking().OrderByDescending(x => x.Revision).ThenByDescending(x => x.ProposedAtUtc).ToListAsync(cancellationToken);
         var current = rows.FirstOrDefault(x => x.Status == 2);
         var ids = await db.CreditAccounts.AsNoTracking().Where(x => x.Status == 2 && x.LenderPartyId == account.LenderPartyId
@@ -106,12 +106,12 @@ public sealed class FinanceCreditLimitServiceV1(FinanceDbContext db, ICompanyCon
             .Select(x => x.Id).ToArrayAsync(cancellationToken);
         var movements = await db.CreditMovements.AsNoTracking().Where(x => ids.Contains(x.CreditAccountId) && (x.Status == 1 || x.Status == 2)).ToListAsync(cancellationToken);
         if (await Fence(context, action, cancellationToken) is { } afterSources) return Refused(afterSources);
-        if (movements.Any(x => x.CompanyId != context.CompanyId || x.CurrencyId != account.CurrencyId)) return new(ReadOutcome.Unavailable, null);
+        if (movements.Any(x => x.CompanyId != context.CompanyId || x.CurrencyId != account.CurrencyId)) return new ReadResult<CreditLimitWorkspaceV1>(ReadOutcome.Unavailable, null);
         CreditLimitAssessmentV1? assessment;
         try { assessment = Assess(movements, current?.AmountText); }
         catch (JsonException) { assessment = null; }
-        if (assessment is null) return new(ReadOutcome.Unavailable, null);
-        return new(ReadOutcome.Found, new(context.CompanyId, account.Id, rows.Select(x => View(x, context.ActorId,
+        if (assessment is null) return new ReadResult<CreditLimitWorkspaceV1>(ReadOutcome.Unavailable, null);
+        return new ReadResult<CreditLimitWorkspaceV1>(ReadOutcome.Found, new CreditLimitWorkspaceV1(context.CompanyId, account.Id, rows.Select(x => View(x, context.ActorId,
             rows.FirstOrDefault(next => next.Status == 2 && next.PreviousLimitId == x.Id)?.Id)).ToArray(), assessment));
     }
 
@@ -123,13 +123,13 @@ public sealed class FinanceCreditLimitServiceV1(FinanceDbContext db, ICompanyCon
             var source = JsonSerializer.Deserialize<CreditMovementProposeV1>(row.SourceJson, Json);
             if (source is null || FinanceCreditMovementPolicyV1.Validate(source).Count != 0 || (int)source.Kind != row.Kind || source.CreditAccountId != row.CreditAccountId) return null;
             var text = source.Components.SingleOrDefault(x => x.Kind == "principal")?.Amount;
-            if (text is null) return new(0, 0);
+            if (text is null) return new FinanceExactDecimalText(0, 0);
             return FinanceExactDecimalText.TryParseNonNegative(text, out var amount) ? amount : null;
         }
         foreach (var row in movements.Where(x => x.Status == 2 && x.ReversedByMovementId is null))
         {
             if (Principal(row) is not { } amount) return null;
-            net = net.Add(row.Kind == 2 ? new(-amount.Unscaled, amount.Scale) : amount);
+            net = net.Add(row.Kind == 2 ? new FinanceExactDecimalText(-amount.Unscaled, amount.Scale) : amount);
         }
         FinanceExactDecimalText? ceiling = null;
         if (limit is not null) { if (!FinanceExactDecimalText.TryParseNonNegative(limit, out var value)) return null; ceiling = value; }
@@ -139,16 +139,16 @@ public sealed class FinanceCreditLimitServiceV1(FinanceDbContext db, ICompanyCon
         foreach (var row in movements.Where(x => x.Status == 1))
         {
             if (Principal(row) is not { } amount) return null;
-            var candidate = net.Add(row.Kind == 2 ? new(-amount.Unscaled, amount.Scale) : amount);
+            var candidate = net.Add(row.Kind == 2 ? new FinanceExactDecimalText(-amount.Unscaled, amount.Scale) : amount);
             if (row.ReplacesOpeningMovementId is { } originalId)
             {
                 var original = movements.SingleOrDefault(x => x.Id == originalId && x.Status == 2 && x.ReversedByMovementId is null);
                 if (original is null || Principal(original) is not { } replaced) return null;
-                candidate = candidate.Add(new(-replaced.Unscaled, replaced.Scale));
+                candidate = candidate.Add(new FinanceExactDecimalText(-replaced.Unscaled, replaced.Scale));
             }
-            projected.Add(new(row.Id, JsonSerializer.Deserialize<CreditMovementProposeV1>(row.SourceJson, Json)!.SourceDocument.Reference, Signed(candidate), Exceeds(candidate)));
+            projected.Add(new CreditLimitMovementAssessmentV1(row.Id, JsonSerializer.Deserialize<CreditMovementProposeV1>(row.SourceJson, Json)!.SourceDocument.Reference, Signed(candidate), Exceeds(candidate)));
         }
-        return new(Signed(net), Exceeds(net), projected);
+        return new CreditLimitAssessmentV1(Signed(net), Exceeds(net), projected);
     }
 
     private IQueryable<FinanceCreditLimitRow> Key(CreditAccountRow account) => db.CreditLimits.Where(x => x.LenderPartyId == account.LenderPartyId
@@ -193,7 +193,7 @@ public sealed class FinanceCreditLimitServiceV1(FinanceDbContext db, ICompanyCon
         string hash, CreditLimitResultV1 result, CancellationToken ct)
     {
         if (await Fence(context, action, ct) is { } denied) { db.ChangeTracker.Clear(); auditOwner?.DiscardPending(); return denied; }
-        db.CreditMovementCommands.Add(new() { CompanyId = context.CompanyId, Command = command, KeyHash = FinanceCommandKeys.Hash(metadata.IdempotencyKey),
+        db.CreditMovementCommands.Add(new FinanceCreditMovementCommandRow() { CompanyId = context.CompanyId, Command = command, KeyHash = FinanceCommandKeys.Hash(metadata.IdempotencyKey),
             ActorId = context.ActorId, PayloadHash = hash, ResultJson = JsonSerializer.Serialize(result, Json) });
         await db.SaveChangesAsync(ct); return result;
     }
@@ -207,10 +207,10 @@ public sealed class FinanceCreditLimitServiceV1(FinanceDbContext db, ICompanyCon
             envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent, context.CorrelationId, context.CausationId, metadata.IdempotencyKey));
     private static CreditLimitProposeV1 Source(FinanceCreditLimitRow row) => JsonSerializer.Deserialize<CreditLimitProposeV1>(row.SourceJson, Json)
         ?? throw new InvalidOperationException("Limit kaynağı okunamadı.");
-    private static CreditLimitViewV1 View(FinanceCreditLimitRow row, string actor, Guid? superseded) => new(row.Id, row.CompanyId, row.LenderPartyId,
+    private static CreditLimitViewV1 View(FinanceCreditLimitRow row, string actor, Guid? superseded) => new CreditLimitViewV1(row.Id, row.CompanyId, row.LenderPartyId,
         row.LenderCompanyPartyAccountId, (CreditAccountGroup)(row.CreditGroup - 1), row.CurrencyId, row.Version.ToString(CultureInfo.InvariantCulture),
         (CreditAccountStatus)(row.Status - 1), Source(row), row.ProposedBy == actor, row.ProposedAtUtc, row.DecidedAtUtc, row.RejectionReason, superseded);
-    private static CreditLimitResultV1 Success(FinanceContext context, FinanceCreditLimitRow row) => new(CommandOutcome.Succeeded, View(row, context.ActorId, null), false, context.CorrelationId, []);
-    private static CreditLimitResultV1 Failure(FinanceContext context, CommandOutcome outcome, string? issue = null) => new(outcome, null, false, context.CorrelationId,
-        issue is null ? [] : [new("request", issue)]);
+    private static CreditLimitResultV1 Success(FinanceContext context, FinanceCreditLimitRow row) => new CreditLimitResultV1(CommandOutcome.Succeeded, View(row, context.ActorId, null), false, context.CorrelationId, []);
+    private static CreditLimitResultV1 Failure(FinanceContext context, CommandOutcome outcome, string? issue = null) => new CreditLimitResultV1(outcome, null, false, context.CorrelationId,
+        issue is null ? [] : [new ValidationIssue("request", issue)]);
 }

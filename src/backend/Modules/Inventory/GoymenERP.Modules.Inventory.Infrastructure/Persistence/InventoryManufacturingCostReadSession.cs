@@ -24,7 +24,7 @@ public sealed class InventoryManufacturingCostReadSession : IInventoryManufactur
         DbTransaction transaction, ICompanyContext company)
     {
         this.db = db; this.connection = connection; this.transaction = transaction; this.company = company;
-        companyId = company.CompanyId; costs = new(db, company); rates = new(db, company);
+        companyId = company.CompanyId; costs = new InventoryManufacturingCostReadPort(db, company); rates = new InventoryFirstReceiptExchangeRateReadPort(db, company);
     }
     public IInventoryManufacturingCostReadPortV1 CostMovements => this;
     public IInventoryFirstReceiptExchangeRateReadPortV1 FirstReceiptRates => this;
@@ -41,7 +41,7 @@ public sealed class InventoryManufacturingCostReadSession : IInventoryManufactur
         try
         {
             await db.Database.UseTransactionAsync(transaction, cancellationToken);
-            return new(db, connection, transaction, company);
+            return new InventoryManufacturingCostReadSession(db, connection, transaction, company);
         }
         catch { await db.DisposeAsync(); throw; }
     }

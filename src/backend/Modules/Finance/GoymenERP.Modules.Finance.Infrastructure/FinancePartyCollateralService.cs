@@ -69,7 +69,7 @@ public sealed partial class FinancePartyCollateralService(
     private const int ReasonMaximumLength = 500;
 
     private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
-    private static readonly JsonSerializerOptions AuditJson = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions AuditJson = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<PartyCollateralCommandResult> RecordAsync(FinanceContext context, CommandMetadata metadata,
         PartyCollateralRecordRequest request, CancellationToken cancellationToken)
@@ -506,7 +506,7 @@ public sealed partial class FinancePartyCollateralService(
             .ToListAsync(cancellationToken);
 
     internal static FinancePartyCollateralFigures.HeldCollateral HeldInput(PartyCollateralRow row) =>
-        new(row.CollateralTypeId, row.CurrencyId, row.AmountText, row.ValidFrom, row.ValidUntil, row.CollateralId, row.Revision,
+        new FinancePartyCollateralFigures.HeldCollateral(row.CollateralTypeId, row.CurrencyId, row.AmountText, row.ValidFrom, row.ValidUntil, row.CollateralId, row.Revision,
             row.BankInstitutionId, row.BankSourceVersion);
 
     /// <summary>
@@ -561,7 +561,7 @@ public sealed partial class FinancePartyCollateralService(
     private static PartyCollateralRow NextRevision(FinanceContext context, PartyCollateralRow current, int kind,
         Guid collateralTypeId, string collateralTypeVersion, Guid currencyId, string amount, DateOnly validFrom,
         DateOnly? validUntil, string? documentReference, string? releaseReason, DateTimeOffset now) =>
-        new()
+        new PartyCollateralRow()
         {
             Id = Guid.NewGuid(),
             CompanyId = context.CompanyId,

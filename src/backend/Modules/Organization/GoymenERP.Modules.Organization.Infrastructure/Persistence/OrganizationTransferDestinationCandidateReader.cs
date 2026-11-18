@@ -27,7 +27,7 @@ internal sealed class OrganizationTransferDestinationCandidateReader(Organizatio
         Same();
         if (page.Any(x => x.Version < 1 || x.IsExternal && (!x.OperatorPartyId.HasValue || x.OperatorPartyId == Guid.Empty)))
             throw new InvalidOperationException("Transfer destination owner facts are incomplete.");
-        return new(page.Take(query.Limit).Select(x => new OrganizationTransferDestinationCandidateV1(x.Id, x.Code, x.Name,
+        return new OrganizationTransferDestinationCandidatesV1(page.Take(query.Limit).Select(x => new OrganizationTransferDestinationCandidateV1(x.Id, x.Code, x.Name,
             x.SiteId, x.SiteCode, x.SiteName, x.IsExternal, x.OperatorPartyId, x.Version)).ToArray(), page.Count > query.Limit);
 
         void Same()

@@ -8,7 +8,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// <summary>The recorded voucher's two party-ledger sides; future original-document corrections are not redirected.</summary>
 internal static class FinancePartyBalanceTransferLedger
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     public static async Task<IReadOnlyList<PartyLedgerFact>?> ReadAsync(FinanceDbContext database,
         Guid partyId, Guid accountId, DateOnly? from, DateOnly? to, CancellationToken cancellationToken)
     {
@@ -35,7 +35,7 @@ internal static class FinancePartyBalanceTransferLedger
                     if (amount.IsZero) continue;
                     var sourceSide = row.PredecessorAccountId == accountId;
                     var debit = (currency.Side == PartyLedgerBalanceSide.Debit) != sourceSide;
-                    facts.Add(new(debit ? PartyLedgerEntryKind.BalanceTransferDebit : PartyLedgerEntryKind.BalanceTransferCredit,
+                    facts.Add(new PartyLedgerFact(debit ? PartyLedgerEntryKind.BalanceTransferDebit : PartyLedgerEntryKind.BalanceTransferCredit,
                         row.Id, row.OccurredOn, row.RecordedAtUtc, currency.CurrencyId, currency.Amount, row.Id, null, null, null, null));
                 }
             }

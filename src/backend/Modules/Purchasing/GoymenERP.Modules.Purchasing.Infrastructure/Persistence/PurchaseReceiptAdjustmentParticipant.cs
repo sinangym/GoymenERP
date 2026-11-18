@@ -20,7 +20,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 /// <summary>ALC-S6: immutable replay and one net mutation on the caller's existing transaction.</summary>
 public sealed partial class PurchaseReceiptAdjustmentParticipant : IPurchaseReceiptAdjustmentParticipantV1, IPurchaseReceiptAdjustmentBatchParticipantV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     private readonly PurchasingDbContext database;
     private readonly CompanyContext company;
     private readonly DbConnection connection;
@@ -112,7 +112,7 @@ public sealed partial class PurchaseReceiptAdjustmentParticipant : IPurchaseRece
         var undone = await database.ReceiptAdjustments.AsNoTracking().Where(item => item.AcceptanceId == acceptanceId)
             .SumAsync(item => (decimal?)item.UndoQuantity, cancellationToken) ?? 0m;
         if (undone < 0m || undone > original.Quantity || order.Version < 1 || string.IsNullOrWhiteSpace(line.ProductVersion)) throw Unavailable();
-        return new(company.CompanyId, orderId, acceptanceId, line.LineId, general, line.ProductId, line.ProductVersion,
+        return new PurchaseReceiptAdjustmentTargetV1(company.CompanyId, orderId, acceptanceId, line.LineId, general, line.ProductId, line.ProductVersion,
             line.UnitId, line.UnitIsKilogram, order.Version.ToString(CultureInfo.InvariantCulture), Text(original.Quantity), Text(undone));
     }
 
@@ -227,7 +227,7 @@ public sealed partial class PurchaseReceiptAdjustmentParticipant : IPurchaseRece
         var answer = await new PurchaseFutureSupplyReadPort(database, company).GetAllocatableLineAsync(orderId, generalLineId, cancellationToken);
         if (answer.Outcome == PurchaseFutureSupplyOutcomeV1.NotFound) return null;
         var line = answer.Line ?? throw Unavailable();
-        return new(company.CompanyId, line.OrderId, line.LineId, Text(line.ObservedOrderVersion),
+        return new PurchaseReceiptAdjustmentSupplyV1(company.CompanyId, line.OrderId, line.LineId, Text(line.ObservedOrderVersion),
             answer.Outcome == PurchaseFutureSupplyOutcomeV1.Allocatable, line.AllocatableText);
     }
 
@@ -268,6 +268,6 @@ public sealed partial class PurchaseReceiptAdjustmentParticipant : IPurchaseRece
     }
 
     private static string Text(decimal quantity) => quantity.ToString("0.###", CultureInfo.InvariantCulture);
-    private static PurchasingServiceException Unavailable() => new(503, PurchaseReceiptAdjustmentCodesV1.Unavailable);
-    private static PurchasingServiceException InvalidRequest() => new(400, "purchasing_receipt_adjustment_invalid");
+    private static PurchasingServiceException Unavailable() => new PurchasingServiceException(503, PurchaseReceiptAdjustmentCodesV1.Unavailable);
+    private static PurchasingServiceException InvalidRequest() => new PurchasingServiceException(400, "purchasing_receipt_adjustment_invalid");
 }

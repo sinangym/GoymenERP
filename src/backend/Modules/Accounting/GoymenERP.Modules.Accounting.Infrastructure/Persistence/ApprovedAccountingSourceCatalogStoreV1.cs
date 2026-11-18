@@ -20,7 +20,7 @@ public sealed class ApprovedAccountingSourceCatalogStoreV1(
     private const int Active = (int)ApprovedAccountingSourceCatalogStatusV1.Active;
     private const int Superseded = (int)ApprovedAccountingSourceCatalogStatusV1.Superseded;
     private const string EntityType = "Accounting.ApprovedSourceCatalog";
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<ApprovedAccountingSourceCatalogRecordV1?> ReadAsync(
         Guid packageId,
@@ -371,7 +371,7 @@ public sealed class ApprovedAccountingSourceCatalogStoreV1(
     }
 
     private static AccountingStoreException Refused(string code, string message, Exception? inner = null) =>
-        new(code, message, inner);
+        new AccountingStoreException(code, message, inner);
 
     private static string AuditJson(ApprovedAccountingSourceCatalogRecordV1 record) =>
         JsonSerializer.Serialize(new
@@ -414,7 +414,7 @@ public sealed class ApprovedAccountingSourceCatalogStoreV1(
         IReadOnlyList<BindingSnapshot> Bindings)
     {
         public static PackageSnapshot From(ApprovedAccountingSourcePackageV1 package) =>
-            new(
+            new PackageSnapshot(
                 package.Mirror.SourceVersion,
                 package.Mirror.SourceSha256.ToUpperInvariant(),
                 [.. package.Mirror.Rows.Select(row => new AccountSnapshot(

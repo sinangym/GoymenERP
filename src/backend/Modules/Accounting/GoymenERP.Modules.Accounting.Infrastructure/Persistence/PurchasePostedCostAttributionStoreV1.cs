@@ -13,7 +13,7 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 public sealed class PurchasePostedCostAttributionStoreV1(AccountingDbContext db, ICompanyContext company)
     : IPostedPurchaseShipmentCostReaderV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<PurchaseShipmentCostAttributionReadV1> ReadProvenSharesAsync(Guid companyId, Guid shipmentId,
         Guid movementId, int movementLineNumber, Guid productId, decimal quantityKg,
@@ -110,7 +110,7 @@ public sealed class PurchasePostedCostAttributionStoreV1(AccountingDbContext db,
             shares.Add(share);
         }
         await Fence(companyId, freshConsumerFence, cancellationToken);
-        return new(companyId, shipmentId, movementId, movementLineNumber, productId, quantityKg, pending,
+        return new PurchaseShipmentCostAttributionReadV1(companyId, shipmentId, movementId, movementLineNumber, productId, quantityKg, pending,
             shares.OrderBy(x => x.Approval.SourceEventId).ThenBy(x => x.Approval.InvoiceLineId).ToArray());
     }
 
@@ -150,5 +150,5 @@ public sealed class PurchasePostedCostAttributionStoreV1(AccountingDbContext db,
     private static T Decode<T>(string text) => JsonSerializer.Deserialize<T>(text, Json) ?? throw Refuse("purchase_cost_attribution_proof_unreadable");
     private static string Encode<T>(T value) => JsonSerializer.Serialize(value, Json);
     private static string Hash(string text) => AccountingInventoryCostSourceValidationV1.Sha256(text);
-    private static AccountingStoreException Refuse(string code) => new(code, "Kaydedilmiş alış maliyetinin gerçek sevk payı kanıtı bekleniyor.");
+    private static AccountingStoreException Refuse(string code) => new AccountingStoreException(code, "Kaydedilmiş alış maliyetinin gerçek sevk payı kanıtı bekleniyor.");
 }

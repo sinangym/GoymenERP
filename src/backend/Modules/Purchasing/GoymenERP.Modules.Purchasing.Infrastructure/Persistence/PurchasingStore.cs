@@ -1353,7 +1353,7 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         return order;
     }
 
-    internal static PurchaseOrderCancellationHistoryRow CancellationRow(Guid companyId, Guid orderId, PurchaseOrderCancellationEvent change) => new()
+    internal static PurchaseOrderCancellationHistoryRow CancellationRow(Guid companyId, Guid orderId, PurchaseOrderCancellationEvent change) => new PurchaseOrderCancellationHistoryRow()
     {
         CompanyId = companyId, OrderId = orderId, OrderVersionAfter = change.OrderVersionAfter,
         RecordedBy = change.Cancellation.CancelledBy, Reason = change.Cancellation.Reason,
@@ -1398,11 +1398,11 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
 
     /// <summary>ALC-SC33: a stored rate through the domain record, so its bounds and its source/bulletin shape apply again.</summary>
     private static PurchaseOrderExchangeRate ExchangeRateOf(PurchaseOrderExchangeRateChangeRow rate) =>
-        new(rate.Rate, rate.TargetCurrencyId, (PurchaseOrderExchangeRateKind)rate.Kind, rate.RateDay,
+        new PurchaseOrderExchangeRate(rate.Rate, rate.TargetCurrencyId, (PurchaseOrderExchangeRateKind)rate.Kind, rate.RateDay,
             (PurchaseOrderExchangeRateSource)rate.Source, rate.BulletinDate);
 
     private static PurchaseOrderExchangeRateChangeRow ExchangeRateChangeRow(Guid companyId, Guid orderId, long orderVersionAfter,
-        PurchaseOrderExchangeRateChange change, string correlationId) => new()
+        PurchaseOrderExchangeRateChange change, string correlationId) => new PurchaseOrderExchangeRateChangeRow()
         {
             CompanyId = companyId,
             OrderId = orderId,
@@ -1615,7 +1615,7 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
     /// version the command produced is both its version and its sequence, so (type, line, sequence) is unique.
     /// </summary>
     private static PurchasingOutboxRow LineClosedMessage(Guid companyId, PurchaseOrder order, Guid lineId, bool closed, PurchasingMutationAudit audit,
-        PurchasingWriteEnvelope envelope, DateTimeOffset now) => new()
+        PurchasingWriteEnvelope envelope, DateTimeOffset now) => new PurchasingOutboxRow()
     {
         Id = Guid.NewGuid(),
         CompanyId = companyId,

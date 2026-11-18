@@ -22,7 +22,7 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
     IAuditEventCollector audit, IAuditTransactionWriterV1 auditWriter, TimeProvider clock,
     IInventoryFirstCostPrerequisitesV1? firstCostPrerequisites = null) : IInventoryPurchaseInvoiceCostStoreV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     private static readonly Guid Tl = SettingsCurrencyIdentitiesV1.TurkishLira;
 
     public async Task ApplyAsync(WorkInboxEventV1 envelope, CancellationToken cancellationToken = default)
@@ -92,7 +92,7 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
                     receipt.MovementId, 1, receipt.LabelId, share.ProductId, receipt.LocationId, share.MatchedQuantity, share.AcceptedQuantity,
                     Ratio(invoicedKg), Ratio(invoiceValue), Ratio(previousValue), Ratio(invoiceValue.Subtract(previousValue)), stamp.StampVersion);
                 receipts.Add(result);
-                db.PurchaseInvoiceReceiptCostEffects.Add(new() { CompanyId = companyId, SourceEventId = envelope.EventId,
+                db.PurchaseInvoiceReceiptCostEffects.Add(new PurchaseInvoiceReceiptCostEffectRow() { CompanyId = companyId, SourceEventId = envelope.EventId,
                     AcceptanceId = share.AcceptanceId, InvoiceLineId = share.InvoiceLineId, MovementId = receipt.MovementId,
                     MovementLineNumber = 1, MatchedQuantity = share.MatchedQuantity, AcceptedQuantity = share.AcceptedQuantity,
                     ResultJson = JsonSerializer.Serialize(result, Json) });
@@ -105,7 +105,7 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
                 // Publish each real receipt's normalized quantity only after its aggregate pool additions.
                 // Reading a pool midway through those additions must still see the prior costed fraction.
                 foreach (var item in line)
-                    db.PurchaseInvoiceReceiptCostEffects.Add(new() { CompanyId = companyId, SourceEventId = envelope.EventId,
+                    db.PurchaseInvoiceReceiptCostEffects.Add(new PurchaseInvoiceReceiptCostEffectRow() { CompanyId = companyId, SourceEventId = envelope.EventId,
                         AcceptanceId = item.Share.AcceptanceId, InvoiceLineId = item.Share.InvoiceLineId,
                         MovementId = item.Receipt.ReceiptMovementId, MovementLineNumber = 1,
                         MatchedQuantity = item.Share.MatchedQuantity, AcceptedQuantity = item.Share.AcceptedQuantity,
@@ -126,7 +126,7 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
                 var version = applied.AbsorbedDifference.Sign == 0 ? pool.Version
                     : await InventoryStore.WriteCostPoolAsync(db, company, clock, group.Key.LocationId, group.Key.ProductId, Tl,
                         pool, applied.Position, cancellationToken);
-                positions.Add(new(group.Key.ProductId, group.Key.LocationId, Ratio(difference), Ratio(applied.AbsorbedDifference),
+                positions.Add(new InventoryPurchaseInvoiceCostPositionResultV1(group.Key.ProductId, group.Key.LocationId, Ratio(difference), Ratio(applied.AbsorbedDifference),
                     Ratio(applied.UnabsorbedDifference), Ratio(applied.RecordedPoolValueEffect), Ratio(applied.AverageRoundingDifference), version));
             }
             var unabsorbed = positions.Aggregate(ExactCostRatio.Of(0m), (sum, value) => sum.Add(value.UnabsorbedDifference.Value()))
@@ -141,12 +141,12 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
                 receipts.OrderBy(value => value.InvoiceLineNo).ThenBy(value => value.AcceptanceId).ToArray(), positions, costEventId,
                 Ratio(unabsorbed), firstRecognitions.Count == 0 ? null : firstRecognitions);
             var resultJson = JsonSerializer.Serialize(resultOfApplication, Json);
-            db.PurchaseInvoiceCostApplications.Add(new() { CompanyId = companyId, SourceEventId = envelope.EventId,
+            db.PurchaseInvoiceCostApplications.Add(new PurchaseInvoiceCostApplicationRow() { CompanyId = companyId, SourceEventId = envelope.EventId,
                 InvoiceId = source.InvoiceId, InvoiceVersion = source.InvoiceVersion, AdmissionId = source.AdmissionId,
                 SourceSha256 = hash, SourceJson = envelope.PayloadJson, ResultJson = resultJson, OccurredAtUtc = envelope.OccurredAtUtc,
                 RecordedAtUtc = clock.GetUtcNow(), CorrelationId = envelope.CorrelationId });
             if (costEventId is { } id)
-                db.OutboxMessages.Add(new() { CompanyId = companyId, Id = id, EventType = InventoryPurchaseInvoiceCostDifferenceV1.EventType,
+                db.OutboxMessages.Add(new InventoryOutboxRow() { CompanyId = companyId, Id = id, EventType = InventoryPurchaseInvoiceCostDifferenceV1.EventType,
                     SchemaVersion = 1, SourceOperation = InventoryPurchaseInvoiceCostInboxV1.ConsumerName,
                     AggregateType = InventoryPurchaseInvoiceCostDifferenceV1.AggregateType, AggregateId = source.InvoiceId,
                     AggregateVersion = source.InvoiceVersion, Sequence = 1, PayloadJson = resultJson,
@@ -181,6 +181,6 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
         if (!company.IsResolved || company.CompanyId != expected) throw Unavailable("purchase_invoice_cost_company_changed");
     }
     private static InventoryExactCostRatioV1 Ratio(ExactCostRatio value) => InventoryExactCostRatioV1.From(value);
-    private static OutboxPermanentFailureException Invalid(string code) => new(code, "Alış faturası maliyet kaynağı çelişiyor.");
-    private static InvalidOperationException Unavailable(string code) => new(code);
+    private static OutboxPermanentFailureException Invalid(string code) => new OutboxPermanentFailureException(code, "Alış faturası maliyet kaynağı çelişiyor.");
+    private static InvalidOperationException Unavailable(string code) => new InvalidOperationException(code);
 }

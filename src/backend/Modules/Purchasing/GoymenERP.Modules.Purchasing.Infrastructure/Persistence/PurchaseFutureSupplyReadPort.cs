@@ -26,7 +26,7 @@ internal sealed class PurchaseFutureSupplyReadPort(PurchasingDbContext dbContext
     private const int TechnicalKind = (int)PurchaseOrderLineKind.Technical;
     private const int SalesSource = (int)PurchaseRequestSourceKind.Sales;
 
-    private static readonly PurchaseFutureSupplyAnswerV1 NotFound = new(PurchaseFutureSupplyOutcomeV1.NotFound, null, null, null);
+    private static readonly PurchaseFutureSupplyAnswerV1 NotFound = new PurchaseFutureSupplyAnswerV1(PurchaseFutureSupplyOutcomeV1.NotFound, null, null, null);
 
     public async Task<PurchaseFutureSupplyAnswerV1> GetAllocatableLineAsync(Guid orderId, Guid lineId, CancellationToken cancellationToken = default)
     {
@@ -257,7 +257,7 @@ internal sealed class PurchaseFutureSupplyReadPort(PurchasingDbContext dbContext
 
     private static string Text(decimal value, QuantityUnit unit) => Quantity.Of(value, unit).Value.ToString(CultureInfo.InvariantCulture);
 
-    private static InvalidOperationException Unreadable() => new("Kayıtlı alış satırı okunamadı.");
+    private static InvalidOperationException Unreadable() => new InvalidOperationException("Kayıtlı alış satırı okunamadı.");
 
     private sealed record OrderFacts(Guid CompanyId, Guid OrderId, Guid SupplierPartyId, Guid CompanyAccountId, Guid? SourceRequestId, int Status,
         long Version, DateOnly EffectiveOn);
@@ -268,7 +268,7 @@ internal sealed class PurchaseFutureSupplyReadPort(PurchasingDbContext dbContext
 
     private sealed record SliceTotals(decimal Ordered, decimal Accepted, decimal Cancelled, decimal Closed, decimal DefinitiveReturned)
     {
-        public static readonly SliceTotals None = new(0m, 0m, 0m, 0m, 0m);
+        public static readonly SliceTotals None = new SliceTotals(0m, 0m, 0m, 0m, 0m);
     }
 
     private sealed record SalesIntent(Guid? SalesOrderId, Guid? SalesOrderLineId);

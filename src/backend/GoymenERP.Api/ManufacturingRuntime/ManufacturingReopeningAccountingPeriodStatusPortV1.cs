@@ -44,5 +44,5 @@ internal sealed class ManufacturingReopeningAccountingPeriodStatusPortV1(Manufac
             && !string.IsNullOrWhiteSpace(capturedActor) && user.IsAuthenticated && user.UserId == capturedActor
             && user.CanAccessCompany(capturedCompany) && ReferenceEquals(manufacturing.Database.CurrentTransaction, capturedTransaction);
     }
-    private static AccountingPeriodStatusAnswerV1 Denied => new(AccountingPeriodStatusOutcomeV1.Denied, null, null);
+    private static AccountingPeriodStatusAnswerV1 Denied => new AccountingPeriodStatusAnswerV1(AccountingPeriodStatusOutcomeV1.Denied, null, null);
 }
