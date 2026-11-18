@@ -677,6 +677,14 @@ class RelationalInventoryLoaderTests(unittest.TestCase):
             dispatch_prefix + "Down_refuses_while_dispatch_records_exist_and_drops_the_empty_tables",
             dispatch_prefix
             + "Inbox_dedup_key_refuses_the_same_consumer_message_from_another_source_in_real_SQL",
+            dispatch_prefix
+            + "Notification_Down_allows_an_empty_store_and_preserves_delivery_dedup_and_passivation_history",
+            dispatch_prefix
+            + "Notification_inbox_is_atomic_idempotent_company_recipient_scoped_and_payload_bound_on_real_sql",
+            dispatch_prefix
+            + "Notification_retention_passivates_without_delete_or_reactivation_and_retains_policy_evidence_on_real_sql",
+            dispatch_prefix
+            + "Revival_notification_delivers_sales_and_recorded_purchase_recipients_atomically_and_replays_without_retargeting",
         }
         self.assertEqual(required, set(VERIFIER.BROAD_INVENTORY["work"]))
         for omitted in required:
