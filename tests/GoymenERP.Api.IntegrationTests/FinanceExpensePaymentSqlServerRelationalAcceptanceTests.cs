@@ -349,15 +349,26 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
             var factory = new SqlServerRelationalApiFactory(baseConnectionString);
             var run = new Run(baseConnectionString, factory);
-            // The host migrates and seeds Organization, Audit and the rest; Finance's own migrations run after it.
-            using var client = factory.CreateClient();
-            using var health = await client.GetAsync("/health/live");
-            health.EnsureSuccessStatusCode();
-            var companyContext = new CompanyContext();
-            companyContext.Set(CompanyA);
-            await using var context = new FinanceDbContext(Options(factory), companyContext);
-            await context.Database.MigrateAsync();
-            return run;
+            try
+            {
+                // The host migrates and seeds Organization, Audit and the rest; Finance's own migrations run after it.
+                using var client = factory.CreateClient();
+                using var health = await client.GetAsync("/health/live");
+                health.EnsureSuccessStatusCode();
+                var companyContext = new CompanyContext();
+                companyContext.Set(CompanyA);
+                await using var context = new FinanceDbContext(Options(factory), companyContext);
+                await context.Database.MigrateAsync();
+                return run;
+            }
+            catch
+            {
+                // A failed initializer never transfers ownership to the caller's await using.
+                // Preserve its original exception and stack even if disposable test cleanup also fails.
+                try { await run.DisposeAsync(); }
+                catch { }
+                throw;
+            }
         }
 
         /// <summary>A SENTETIK approved, money-movement-eligible bank account in the test currency.</summary>

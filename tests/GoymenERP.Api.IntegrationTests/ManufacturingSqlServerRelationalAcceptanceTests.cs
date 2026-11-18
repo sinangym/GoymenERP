@@ -879,14 +879,25 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
             var factory = new SqlServerRelationalApiFactory(baseConnectionString);
             var run = new Run(baseConnectionString, factory);
-            // The host migrates and seeds Organization, Audit and the rest; Manufacturing's own
-            // migration runs after it, as its foreign keys need Organization's tables.
-            using var client = factory.CreateClient();
-            using var health = await client.GetAsync("/health/live");
-            health.EnsureSuccessStatusCode();
-            await using var context = run.Context(CompanyA);
-            await context.Database.MigrateAsync();
-            return run;
+            try
+            {
+                // The host migrates and seeds Organization, Audit and the rest; Manufacturing's own
+                // migration runs after it, as its foreign keys need Organization's tables.
+                using var client = factory.CreateClient();
+                using var health = await client.GetAsync("/health/live");
+                health.EnsureSuccessStatusCode();
+                await using var context = run.Context(CompanyA);
+                await context.Database.MigrateAsync();
+                return run;
+            }
+            catch
+            {
+                // A failed initializer never transfers ownership to the caller's await using.
+                // Preserve its original exception and stack even if disposable test cleanup also fails.
+                try { await run.DisposeAsync(); }
+                catch { }
+                throw;
+            }
         }
 
         /// <summary>
