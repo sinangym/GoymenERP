@@ -1108,29 +1108,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedLogisticsCustomerReturnRuntimePath] = ("LogisticsDbContext", 2),
                 [ReviewedLogisticsCustomerReturnStorePath] = ("LogisticsDbContext", 13),
                 [ReviewedLogisticsCustomerReturnReadPortsPath] = ("LogisticsDbContext", 2),
-                // The conservative target-typed scanner includes DTO/ReadResult construction sites in the
-                // transfer-document store; all ten exact sites remain company-filtered EF/DI operations.
-                [ReviewedLogisticsTransferOutgoingDocumentStorePath] = ("LogisticsDbContext", 10),
                 [ReviewedInventoryGoodsReceiptParticipantPath] = ("InventoryDbContext", 1),
                 [ReviewedInventoryManufacturingRealizationParticipantPath] = ("InventoryDbContext", 1),
-                [ReviewedPurchaseAcceptanceParticipantPath] = ("PurchasingDbContext", 3),
+                [ReviewedPurchaseAcceptanceParticipantPath] = ("PurchasingDbContext", 1),
                 [ReviewedPurchaseAcceptanceSourcePath] = ("PurchasingDbContext", 3),
-                [ReviewedPurchaseGoodsReceiptHostPath] = ("PurchasingDbContext", 3),
-                // tren-1 wave 2 trial integration (FIN-S5 D5): the second counted site is a target-typed issue list; no new writer.
-                [ReviewedFinanceOpenItemSourceAdmissionServicePath] = ("FinanceDbContext", 2),
                 // MOD-04 (F2a) invoice admission: the one counted site is a target-typed refusal result.
                 [ReviewedFinanceInvoiceOpenItemAdmissionServicePath] = ("FinanceDbContext", 1),
-                // F2b invoice cancellation: likewise one target-typed refusal result.
-                [ReviewedFinanceInvoiceOpenItemCancellationServicePath] = ("FinanceDbContext", 1),
                 // Target-typed DTO/cursor/ReadResult return sites are conservatively counted as context
                 // constructions. FI04 has four exact sites; all database access is tenant-filtered EF/DI.
                 [ReviewedFinanceOpenItemReadServicePath] = ("FinanceDbContext", 4),
                 ["src/backend/GoymenERP.Api/Shell/FinanceOfficialInvoiceImportHost.cs"] =
                     ("FinanceDbContext", 2),
-                // F-005 D1: the counted sites are the host's target-typed audit envelope and the document port's PDF
-                // check results; the context is DI-resolved (#66 6860586175: the owner read is registered here too).
-                ["src/backend/GoymenERP.Api/Shell/FinanceOfficialSalesInvoiceHost.cs"] =
-                    ("FinanceDbContext", 3),
                 // tren-1 W5 fix: target-typed JSON-options/result/row/event/issue sites are conservatively counted; each context is
                 // DI-resolved and none is constructed here. Exact source counts, pending the owning teams' K3 review.
                 ["src/backend/GoymenERP.Api/PurchasingRuntime/"
@@ -1143,26 +1131,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "FounderRecoveryService.cs"] = ("IdentityDbContext", 4),
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/"
                  + "LogisticsWeighingDifferenceStore.cs"] = ("LogisticsDbContext", 11),
-                // F-005 D1: target-typed result/view/cursor/ReadResult sites in the official sales invoice service
-                // (#66 6860586175: with the reservation and the owner read) are conservatively counted; the pin is its
-                // exact source count, not a new DbContext writer.
-                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
-                 + "FinanceOfficialSalesInvoiceServiceV1.cs"] = ("FinanceDbContext", 14),
                 // The conservative target-typed scanner includes DTO/ReadResult return sites in the
                 // reviewed approval service; 21 is its exact source count, not a new DbContext writer.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceOfficialInvoiceImportApprovalServiceV1.cs"] = ("FinanceDbContext", 21),
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceOfficialInvoiceImportPendingApprovalReadServiceV1.cs"] = ("FinanceDbContext", 12),
-                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
-                 + "FinanceOfficialInvoiceImportReadPortV1.cs"] = ("FinanceDbContext", 2),
-                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
-                 + "FinanceAllocationReadService.cs"] = ("FinanceDbContext", 1),
-                [ReviewedAccountingStorePath] = ("AccountingDbContext", 2),
-                [ReviewedApprovedAccountingSourceCatalogStorePath] = ("AccountingDbContext", 3),
-                [ReviewedManufacturingInventoryInputIssueHostPath] = ("ManufacturingDbContext", 2),
-                [ReviewedManufacturingInventoryReturnOutputHostPath] = ("ManufacturingDbContext", 1),
-                [ReviewedProductRuntimeExtensionsPath] = ("IdentityDbContext", 1),
                 [ReviewedProductImportSqlCommandRunnerPath] = ("AuditDbContext", 1),
                 // tren-1 wave 3 integration (stok_lojistik): the future supply conversion and the supplier return exit each build ONE
                 // InventoryDbContext on the owner's open connection/transaction under the server-resolved company; the demand cap and the
@@ -1175,31 +1149,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "Persistence/InventoryAllocationDemandCap.cs"] = ("InventoryDbContext", 2),
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
                  + "Persistence/InventoryAllocationSuggestionReader.cs"] = ("InventoryDbContext", 1),
-                // tren-1 wave 3 integration: target-typed result/refusal/figure sites only (no explicit DbContext construction, no new
-                // DbContext writer); exact source counts. Pending the owning teams' K3 review.
-                ["src/backend/GoymenERP.Api/PurchasingRuntime/PurchaseGoodsReceiptBatchHost.cs"] = ("PurchasingDbContext", 2),
-                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
-                 + "FinancePartyCollateralService.cs"] = ("FinanceDbContext", 3),
-                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
-                 + "FinanceOfficialSalesInvoiceReadPortV1.cs"] = ("FinanceDbContext", 1),
-                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
-                 + "FinancePartyCreditPanelService.cs"] = ("FinanceDbContext", 1),
-                // tren-1 wave 2 trial integration: target-typed result/issue/option sites only (no explicit DbContext construction,
-                // no new DbContext writer); exact source counts. Pending the owning teams' K3 review.
-                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
-                 + "FinanceOfficialSalesInvoiceImportDocumentsV2.cs"] = ("FinanceDbContext", 12),
-                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
-                 + "PartyLedgerReadService.cs"] = ("FinanceDbContext", 4),
                 ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/"
                  + "Bootstrap/FounderBootstrapService.cs"] = ("IdentityDbContext", 3),
-                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
-                 // tren-1 W5 (integration, alis_cari): guard count 1 -> 3 (lines 1246/1251/1460 of the merged store). Exact source
-                 // count; pending the owning team's K3 review.
-                 + "Persistence/PurchasingStore.cs"] = ("PurchasingDbContext", 3),
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
                  + "Persistence/SalesQuoteAndEInvoicePolicyReads.cs"] = ("SettingsDbContext", 1),
-                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
-                 + "Persistence/InventoryLabelDispositionReader.cs"] = ("InventoryDbContext", 3),
                 // tren-1 wave 2 trial integration (STK future allocation): the writer and the engine count target-typed result/option
                 // sites only; the read/release port also constructs one InventoryDbContext on the Purchasing owner's open connection and
                 // transaction under the server-resolved company (release session, no own connection). Pending the owning team's K3 review.
@@ -1209,13 +1162,70 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // tren-1 wave 1: target-typed refusal/plan results only (no new DbContext writer); exact source counts.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceInvoiceAcceptanceService.cs"] = ("FinanceDbContext", 2),
-                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
-                 + "Persistence/PurchaseFutureSupplyReadPort.cs"] = ("PurchasingDbContext", 3),
                 // SAT-D66: the multi-company binding write builds ONE Settings context per other company over the request
                 // context's connection and transaction, each with that company's own company context, audit collector and
                 // audit interceptor (the PurchaseAcceptanceParticipant shape), so every row passes its company's write fence.
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
-                 + "Persistence/SettingsSalesDiscountLimitAdministration.Bindings.cs"] = ("SettingsDbContext", 1)
+                 + "Persistence/SettingsSalesDiscountLimitAdministration.Bindings.cs"] = ("SettingsDbContext", 1),
+                // Tren-1 W8; K3 review pending. One module-owned context bound to the explicit resolved company and caller
+                // connection/transaction; owner query filters and transaction lifetime checks remain in force, and disposal does
+                // not commit the borrowed transaction.
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingPeriodStatusReadSession.cs"] = ("AccountingDbContext", 1),
+                // Tren-1 W8; K3 review pending. One Documents-owned context from the existing factory options and resolved
+                // company; its own EF command transaction and owner query filters remain in force.
+                ["src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Persistence/DocumentBrandingService.cs"] = ("DocumentsDbContext", 1),
+                // Tren-1 W8; K3 review pending. One module-owned context bound to the explicit resolved company and caller
+                // connection/transaction; owner query filters and transaction lifetime checks remain in force, and disposal does
+                // not commit the borrowed transaction.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinancePeriodCarryForwardSession.cs"] = ("FinanceDbContext", 1),
+                // Tren-1 W8; K3 review pending. Two Identity-owned contexts for the explicit global CLI confirmation/read and
+                // Serializable recovery write; no company-scoped data or grants are admitted.
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/LocalAccount/LocalTwoFactorOperatorRecoveryServiceV1.cs"] = ("IdentityDbContext", 2),
+                // Tren-1 W8; K3 review pending. One module-owned context bound to the explicit resolved company and caller
+                // connection/transaction; owner query filters and transaction lifetime checks remain in force, and disposal does
+                // not commit the borrowed transaction.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryGoodsReceiptReversalParticipant.cs"] = ("InventoryDbContext", 1),
+                // Tren-1 W8; K3 review pending. One Inventory-owned read context bound to the captured company and the caller
+                // connection/transaction; only historical owner links are read.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryHistoricalSalesLinksV1.cs"] = ("InventoryDbContext", 1),
+                // Tren-1 W8; K3 review pending. One module-owned context bound to the explicit resolved company and caller
+                // connection/transaction; owner query filters and transaction lifetime checks remain in force, and disposal does
+                // not commit the borrowed transaction.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryManufacturingCostGenerationParticipant.cs"] = ("InventoryDbContext", 1),
+                // Tren-1 W8; K3 review pending. One module-owned context bound to the explicit resolved company and caller
+                // connection/transaction; owner query filters and transaction lifetime checks remain in force, and disposal does
+                // not commit the borrowed transaction.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryManufacturingCostReadSession.cs"] = ("InventoryDbContext", 1),
+                // Tren-1 W8; K3 review pending. One Inventory-owned context bound to the validated company and transaction;
+                // physical balance evidence stays inside the Inventory owner.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryNegativeStockValidationGuard.cs"] = ("InventoryDbContext", 1),
+                // Tren-1 W8; K3 review pending. One module-owned context bound to the explicit resolved company and caller
+                // connection/transaction; owner query filters and transaction lifetime checks remain in force, and disposal does
+                // not commit the borrowed transaction.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventorySubcontractDeliveryParticipant.cs"] = ("InventoryDbContext", 1),
+                // Tren-1 W8; K3 review pending. One module-owned context bound to the explicit resolved company and caller
+                // connection/transaction; owner query filters and transaction lifetime checks remain in force, and disposal does
+                // not commit the borrowed transaction.
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsSubcontractDeliveryReadSession.cs"] = ("LogisticsDbContext", 1),
+                // Tren-1 W8; K3 review pending. One module-owned context bound to the explicit resolved company and caller
+                // connection/transaction; owner query filters and transaction lifetime checks remain in force, and disposal does
+                // not commit the borrowed transaction.
+                ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingSubcontractCompletionReadSessionV2.cs"] = ("ManufacturingDbContext", 1),
+                // Tren-1 W8; K3 review pending. One module-owned context bound to the explicit resolved company and caller
+                // connection/transaction; owner query filters and transaction lifetime checks remain in force, and disposal does
+                // not commit the borrowed transaction.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseReceiptAdjustmentParticipant.cs"] = ("PurchasingDbContext", 1),
+                // Tren-1 W8; K3 review pending. One Purchasing-owned read context on the caller open connection/transaction;
+                // company-filtered immutable acceptance evidence, no commit of the borrowed transaction.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseReceiptCostProof.cs"] = ("PurchasingDbContext", 1),
+                // Tren-1 W8; K3 review pending. One module-owned context bound to the explicit resolved company and caller
+                // connection/transaction; owner query filters and transaction lifetime checks remain in force, and disposal does
+                // not commit the borrowed transaction.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesSubcontractInvoiceClaimReadSession.cs"] = ("SalesDbContext", 1),
+                // Tren-1 W8; K3 review pending. One module-owned context bound to the explicit resolved company and caller
+                // connection/transaction; owner query filters and transaction lifetime checks remain in force, and disposal does
+                // not commit the borrowed transaction.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesSubcontractServiceOrderReadSession.cs"] = ("SalesDbContext", 1),
             };
     private const string ReviewedManualBankPaymentServicePath =
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
@@ -1227,15 +1237,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             {
                 // Tren-1 W7; K3 review pending. FNS-D102: namespace only for DbException and borrowed SERIALIZABLE isolation/rollback; no connection creation, command text or filter bypass.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceTreasuryTransaction.cs"] =
-                    new("c9974ff8bd0ab5469fa42ae6e675f491bd6ed2bd11c7bf3e9ee301be01572cc9",
+                    new("3ed558771ea2389bf0bab682850f172b330ff9f53be1e5a07c6739dd22cc85c5",
                         new Dictionary<string, int>(StringComparer.Ordinal) { ["System.Data.Common"] = 1 }),
-                // Tren-1 W7; K3 review pending. FNS-D70: namespace only to recognize SQL unique-key 2601/2627 after owner SaveChanges; no connection, SQL command or filter bypass.
+                // Tren-1 W8; K3 review pending. FNS-D70: SqlClient only classifies duplicate keys; CollateralTypeReads.FindAsync is an owner-filtered AsNoTracking helper, not DbSet.Find. Fresh company/permission checks remain.
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsCollateralTypeAdministration.cs"] =
-                    new("a737a3097bdf067b92ad6cb296bb2c801a61be20982b4d6aecbfe5cadc4268d8",
-                        new Dictionary<string, int>(StringComparer.Ordinal) { ["Microsoft.Data.SqlClient"] = 1 }),
+                    new("175c0ed8c182090bea46dbcf78548d75c6b5e30d1c5659fd0e67f9a8c8fa3f1d",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { [".FindAsync"] = 1, ["Microsoft.Data.SqlClient"] = 1 }),
                 // Tren-1 W7; K3 review pending. SAT-D364: namespace only to recognize SQL unique-key 2601/2627 after owner SaveChanges; no connection, SQL command or filter bypass.
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsCompanyPolicyAdministration.cs"] =
-                    new("17efdc0faa2470492407b289aaeac2ea06bb1182e6e526ab9db2397021d7e7d2",
+                    new("df502050059278a5cec35f1e854c8dcfc9980a3f27f383de1e84888e69cfa2ba",
                         new Dictionary<string, int>(StringComparer.Ordinal) { ["Microsoft.Data.SqlClient"] = 1 }),
                 // Tren-1 W7; K3 review pending. KIM-D20/D21: one fixed parameterless MIN_ACTIVE_ROWVERSION visibility horizon prevents cursor loss; event rows remain explicitly ambient-company filtered and read-only.
                 ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/IdentityCompanySetupOutboxSource.cs"] =
@@ -1275,7 +1285,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-measured for Product stock-display publication: one DI-only batch projection registration
                 // is gated by the existing Product runtime flag; database capability counts stay unchanged.
                 [ReviewedProductRuntimeExtensionsPath] =
-                    new("70f3d072281362dcb077e43254a98408427f1ba3df101d73c476430d19a6ee55",
+                    new("37ce44db3bddf4a215feece2dc2b11ca7dbb46c2c57954bf0e6d71805829f514",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
                 // Re-measured for PRD-UNIT-1: the Product participant gets Settings' unit-identity catalog
@@ -1492,7 +1502,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedInventoryDefiniteShipmentParticipantPath] =
                     new(
                         // Re-fingerprinted for B-01: a definite shipment refuses a non-Sales (plan-input) allocation; provider tokens unchanged.
-                        "95260d2f58c5bf379793e92ab9fc9bbe04db196f11822cd364dc346860300d07",
+                        "5c6f5106974dcf98dd6da309256d867bad49db9184cc9256358645106a84c93a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -1519,7 +1529,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // as computed there, never recomputed here; same token count (091796f7 -> 63ba7632).
                 [ReviewedManufacturingInventoryInputIssueHostPath] =
                     new(
-                        "4e7fc6e3862031ca79a76e902d4abfb6887e734b36accbed31ecbc19001782e2",
+                        "4a43e91c09e40fb989b3d5a15fea914b1150ab3afa2a21217a21271a8c7eab88",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
@@ -1550,7 +1560,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // tren-1 W5 (integration, uretim): a third GetDbConnection (guard count 2 -> 3, URT order cancellation/output
                         // correction on the same borrowed boundary). Exact source count; pending the owning team's K3 review.
                         // Re-fingerprinted for tren-1 W6: URT-S2: forward the explicit output-line reference to Inventory; reviewed API counts unchanged (656d12ae... -> 80abcca8...).
-                        "c15b7033a6f19d1c29dae60ae6ed22fbdb7d380397e601cb8a7afda62dacbf37",
+                        "9a5ad51a3cde5e6ef6cb2157ee33fa4aba15a465e4af3ba621d2fe2f4ee1c2b7",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
@@ -1647,7 +1657,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // EF read admits the reversal period before staging; no SQL, connection, context or filter bypass.
                 [ReviewedAccountingStorePath] =
                     new(
-                        "f1e50ee98d203085bb452be0ae69d50bea4df6740c7c9cbb3154dc1ea5b25090",
+                        "9753a303d40da5210fe67cb2f542edf6c293ebe318ddfaeed8e579d4b8df3368",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1657,7 +1667,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // reviewed context construction sites are pinned together.
                 [ReviewedApprovedAccountingSourceCatalogStorePath] =
                     new(
-                        "909acdcc1e2ccdb0c322e97567b4e9830d1ecfc5cd3a5f4449e8261dbd79db00",
+                        "59878830636538c33306793dea8074d7d4fe2e7507e2ed8b37af0585f80177e8",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 // FIN-T04a (#305): the Finance initializer's one provider branch, as Organization.
                 // Re-fingerprinted for DEC-FIN-016: the customer-instrument service registration; the provider
@@ -1683,7 +1693,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (145799ea… -> 3cd51383…).
                         // tren-1 W5 fix: three read-port lambdas moved to named factories (ICompanyContext single registration); token counts unchanged (3cd51383… -> 46d85fde…).
                         // Re-fingerprinted for tren-1 W7: in-process owner registrations; activation flags unchanged; K3 review pending.
-                        "d53cad795e51db24de0e52f2772681b1278c1ed83acbe9a17e3600589191cd1c",
+                        "981431ddbb7dc595d01e83269c049a3651861e5966369ff7e79a3f51cb540f9c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1701,7 +1711,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs"] =
                     new(
-                        "b8ff7cc8818ab9c28a36100c6c8b488b2dd6b23b9f15c8159ea8b1d54e6672da",
+                        "60f18042fcef1d300340fdfdc6c4bd34c689cbb5a11f8eec14a046ae9e62f7ff",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2020,7 +2030,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): stok merge: the batch host also passes Inventory's future supply port to each label's participants (conflict resolution, K3 review pending) (3f16d9b2… -> 47d40498…).
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (47d40498… -> f64f8304…).
                         // Re-fingerprinted for tren-1 W7: batch prelocks share the caller connection; GetDbConnection 1 to 5; K3 review pending.
-                        "d4e9209f2c689ace2dff9d6999d197798d560053fa9df5d4d5dae1f9694d284e",
+                        "8212b69e653e1d7ea8fed5688f4dc4f58e5c4c1cf6b2fc9bcdc1ab463e4e6d7a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         ["GetDbConnection"] = 5,
@@ -2033,7 +2043,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "FinancePartyCollateralService.cs"] =
                     new(
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (a23d1eed… -> 68315d3a…).
-                        "dc3ab3e66375ae102977c05f11196743a1a90032ec83410f6819a544bb0e3d62",
+                        "ff97f2ec411a72cc3ae7ca57038d0e94447db856da2423dbd09cee8de08629bb",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         ["Microsoft.Data.SqlClient"] = 1
@@ -2103,7 +2113,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "FinanceCreditAccountService.cs"] =
                     new(
                         // Re-fingerprinted for tren-1 W6: FIN-SC47: reject an undefined credit group after authority validation and before request hashing; reviewed API counts unchanged (256ab3b0... -> bf0d7546...).
-                        "e1f1916226008daf2637ed57cf158567d84b492cfc55f36678077a11d4fde019",
+                        "8c3cd1d3609ee51f45ce933e387e199e5e27a10da084b8982a3ef3864b072d21",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         ["Microsoft.Data.SqlClient"] = 1
@@ -2124,7 +2134,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/"
                  + "Bootstrap/FounderRecoveryService.cs"] =
                     new(
-                        "0e59b3b76d15f1ba6c39d55b1534a3a9618fbc0ca8cf773aacf95920cf728435",
+                        "f6b250878159c4f90df3fabe1caf78850a73a0465a6d75f0857b3e2d7dc79c70",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         ["System.Data.Common"] = 1
@@ -2165,7 +2175,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "Persistence/PurchaseSupplierReturnStore.cs"] =
                     new(
                         // Re-fingerprinted for tren-1 W6: W5 correction: replace the unauthorized filter bypass with a company-bound collision lookup; reviewed API counts unchanged (e7e33daa... -> e9eab045...).
-                        "f2da58388475025e2f17ef1a510d672b32b902d28fd34371ccc029231a04b495",
+                        "55e8a86217760de4e1ffc1d6cc7a49ffc3f44347b374bd890d31ccaa9a9639ad",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         ["Microsoft.Data.SqlClient"] = 1
@@ -2204,22 +2214,22 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceOfficialSalesInvoiceReadPortV1.cs"] =
                     new(
-                        "2a4ff883a41bbfce1b1dc856061161d3c853305d84ed7a002db87abb1dc8d588",
+                        "ee6d419229193cf4d3ebfac7f030927d2ffb81058b6a2032661d6013324a6572",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinancePartyCreditPanelService.cs"] =
                     new(
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (ff17932e… -> 6a44e4bb…).
-                        "8bb217a0f1a49cbeebe4ab964be83a1484080c798e69b239d9c340cb2992f542",
+                        "152e087591c2378e207e78d7d567330262a08380645a0425e7cec6e87b60b2c2",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 // tren-1 wave 2 trial integration: construction-only surfaces (target-typed sites); no provider token. Pending K3 review.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialSalesInvoiceImportDocumentsV2.cs"] =
                     new(
-                        "bdf1788ad8cd2445ad2e975f4574088f7ee785c1f04955b88c1d43c3568041e5",
+                        "33db841532f5c744f378e11f57fe395c747781720c588e7bdef723e1906d904a",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/PartyLedgerReadService.cs"] =
                     new(
-                        "70b091f69d4fabf90a74a979d9c9d48d54d40f6b8fa6eb25d7a60807ab91a76f",
+                        "7579c62ff7d75135f7a8f203edd8f9eee498aab2b8a6c8b35577e45695d794f9",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SalesQuoteAndEInvoicePolicyReads.cs"] =
                     new(
@@ -2228,7 +2238,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryLabelDispositionReader.cs"] =
                     new(
                         // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): the substitute allocation and supplier return exit dispositions (b0cf25ca… -> aac2077a…).
-                        "425afd241c74fd31aa6294340a30438fbf604658f3381f9ea0940953f4cf98f8",
+                        "b3b32ebc94095ef5583f140953409b263406b52aab78d8a9afa9e48d011b7231",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 // F-03: allocation writes stay on the tenant-filtered FinanceDbContext. SqlClient is
                 // referenced only to classify 2601/2627 races after SaveChanges; there is no direct
@@ -2273,7 +2283,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialSalesInvoiceServiceV1.cs"] =
                     new(
-                        "a3287909d71ba869a164bbdf725f5a9548a8a8d86e3dc2a074d5b95c2b8aca8c",
+                        "7ad45f56c7c70c7f951530fb407c4af9e3a42d0031df86ed94a6cf4f3df12f65",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2289,7 +2299,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/FinanceAllocationReadService.cs"] =
                     new(
-                        "d4fcb5d9a8bc0facc1e039208bf9e52ab82d9a74bb8c8e1ca17d7a66701ae4c3",
+                        "9cfe9429c78722de63658d7c37a52b587d35061fcade4895720e11f2eee9d1b8",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 // F-03 source admission uses the tenant-filtered FinanceDbContext. SqlClient is
                 // referenced only to classify 2601/2627 races after SaveChanges; there is no direct
@@ -2298,7 +2308,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedFinanceOpenItemSourceAdmissionServicePath] =
                     new(
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (8df7bc91… -> e7d0d213…).
-                        "0e093ffcb58d5454818f14f5670e7d8d7d2048c64c27c560b5529de81f9da933",
+                        "de1afdfe2c221e5bb9fe9eaa49f9ae1763aaf8b5ec127f3de6f8b9f6b79f8c62",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2321,7 +2331,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // #1000 takip: class XML summary now states the confirmed-release rule (comment only; 5f81e19b… -> 51e12213…).
                 [ReviewedFinanceInvoiceOpenItemCancellationServicePath] =
                     new(
-                        "801c3125cd22ce980a9f53871c41e467dae9379347a3be430fe1f92e9f119497",
+                        "c399f24befdd07edfcca0947fd4bde624016765567e9dc8003d9be0dbe8693d0",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2356,7 +2366,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Finance.Infrastructure/FinanceCashAccountService.cs"] =
                     new(
                         // Re-fingerprinted for tren-1 W7: owner transaction or response changes; existing API counts retained; K3 review pending.
-                        "00c2552d1162c27dd102c5385c577dfb50428b466f2963ac2ae2a85e2b89573d",
+                        "88673cddf3d04e897a9232759fcc3bb95de70f32c103bcb7b376570f15c13244",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2400,7 +2410,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // #66 6860586175: the PDF check asks the finance.official-sales-invoice owner (26e7f8d1… -> cbdeeed2…).
                 // FNS-D39: Reject maps to Approve and Withdraw to the new Withdraw permission (cbdeeed2… -> 863996fc…).
                 ["src/backend/GoymenERP.Api/Shell/FinanceOfficialSalesInvoiceHost.cs"] =
-                    new("ae081b4d6f3c218d1d5bf6483c8f243f258c540f64c3aec2915a29123388be07",
+                    new("067738040467806edac14e7cc3d2fa40677619d4e0484fc12f988784c7e749d7",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceOfficialInvoiceImportPendingApprovalReadServiceV1.cs"] =
@@ -2408,7 +2418,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceOfficialInvoiceImportReadPortV1.cs"] =
-                    new("fe637a1717dbf8fe28ae2baf806a65af951235dfc649f7d4c6130268f51d9f7f",
+                    new("51fd30746f0033550fa005a9692c54daa321c98d70900f3d9fcba3708ec83a08",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 // MFG-5 (#303): the Manufacturing initializer's one provider branch, as Organization.
                 // Re-measured for MFG-API (#313): the command surface registrations (mass verifier and
@@ -2558,7 +2568,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // Re-fingerprinted for the read-phase deadlock closure: a SQL 1205 raised by a read inside the
                         // Serializable section maps to ConcurrentChange; no new database API and SqlClient count unchanged.
-                        "ced5e0382825775abeeb1be9ed46b3bfb030c1e5770dfb620652973f7bb58764",
+                        "9cad954953c033049b2b879ba47a16a6c9cde69fd0449673e1f6b4228ea2b918",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2624,7 +2634,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // pinned; changes require a fresh source review rather than broadening this allowlist.
                 [ReviewedInventoryGoodsReceiptParticipantPath] =
                     new(
-                        "ff8fcca7567792bd4fcfe98ced2c0f0d4c30ad57e9cdf7117544e7a7b85ac078",
+                        "d4ad69114b162cbf25762879d2e56c246f606d09623977556374306ec9f4f13b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -2633,6 +2643,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // PUR-HOST: central composes the Purchasing and Inventory owner participants over one
                 // borrowed transaction. The exact source and two connection lookups keep the bridge narrow.
+                // Tren-1 W8; K3 review pending. The seventh connection access enlists the typed Purchasing receipt-cost proof in the same owner transaction; company/actor fences and owner writes are retained.
                 [ReviewedPurchaseGoodsReceiptHostPath] =
                     new(
                         // Re-fingerprinted for tren-1 wave 3 (integration): ALC-S16 (goods-receipt batch) shares the host's helpers; GetDbConnection count unchanged (377d659c… -> 724126ed…).
@@ -2641,10 +2652,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // DbConnection) and the future supply conversion enlists on a third GetDbConnection. K3 review pending.
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (f5285ea4… -> e1ba5d1d…).
                         // Re-fingerprinted for tren-1 W7: Sales-before-Purchase prelocks share the caller connection; GetDbConnection 3 to 6; K3 review pending.
-                        "3b33e488c4a62b95bc04ce5a8c077f1de11229bc86d9ee09eebe08bfd44afce4",
+                        "f87be49a8d3cc123e2ddff5a5d1bb0d76bc0eb0d50e2dd49d047a3c47045fe6c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
-                            ["GetDbConnection"] = 6,
+                            ["GetDbConnection"] = 7,
                             ["System.Data.Common"] = 1,
                             ["DbConnection"] = 1
                         }),
@@ -2660,7 +2671,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
                  + "Persistence/PurchaseFutureSupplyReadPort.cs"] =
                     new(
-                        "f8341003d766da7a4e209861ae903096ab59a53c6c02864df5b56d19816c05d9",
+                        "b1ceec11bcd27ced6c230330e3c7bb72eebd104a9ca14052c335e88956a181a0",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 // R17: the Manufacturing realization participant owns one Inventory transaction and
                 // one reviewed provider connection; exact source/count drift remains fail-closed.
@@ -2694,7 +2705,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // company-filtered context); reviewed tokens and the three construction sites unchanged (23106d16... -> 60aab061...).
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (60aab061… -> 4f423055…).
                         // Re-fingerprinted for tren-1 W7: owner transaction or response changes; existing API counts retained; K3 review pending.
-                        "4b66b781db726f8733dadd04f07a6f99084c8439e19123d968e31961ce2001a5",
+                        "72ae3cae1dae9eff49d017cec110e2e1b62a28740d649c9f88ae624903bfde08",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -2731,7 +2742,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // PurchaseLineSerializationLock (sp_getapplock only); no command is created here. K3 review.
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (31b03aa5… -> 35f883d4…).
                         // Re-fingerprinted for tren-1 W6: KLN-D105 / SAT-S8: serialize schedule changes with future-allocation reduction using the existing order-line locks; reviewed API counts unchanged (35f883d4... -> 8bd3ca9b...).
-                        "2ff4afd95760725398db200f692f0cabf32d578a86d3afdf3a8913022d9e1136",
+                        "b2e983d8ca8a4d129594a9854da7fc8575c8046f5d8a9cdf00ab538f331fa8f8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["GetDbConnection"] = 1,
@@ -2899,7 +2910,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for tren-1 wave 2 trial integration (F-018 S1): the draft transition may append its limit warning in the same save;
                         // reviewed tokens unchanged (44b86f83... -> 07051578...).
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (07051578… -> 35298087…).
-                        "fd4918d64b535511bd5bf18e3441f4efde894ef0c9b0a020699b58c2534c3eee",
+                        "40e8cbe7e8b23c89ce388c314af2f106058d6ecadd156eb2d613b646a0716315",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -2973,7 +2984,786 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["EnsureCreatedAsync"] = 1,
                             ["MigrateAsync"] = 1
-                        })
+                        }),
+                // Tren-1 W8; K3 review pending. System.Data.Common imports DbException solely for endpoint failure-to-503 mapping;
+                // no DbConnection/context/SQL is created. Company-required routes pass current server company/actor metadata to
+                // Identity owner; password/TOTP proofs stay in typed service.
+                ["src/backend/GoymenERP.Api/Endpoints/IdentityEndpoints.TwoFactor.cs"] =
+                    new("a3bc3ba402e21f6e4c734851ecc0c330b024289a2c21383d935f30bed451d998",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Typed ISalesSubcontractWeighingCommitReadPortV1 implementation delegates supplied
+                // SQL handles to LogisticsSubcontractDeliveryReadSession; no direct query/write or handle completion.
+                ["src/backend/GoymenERP.Api/Endpoints/SalesSubcontractWeighingCommitReadHost.cs"] =
+                    new("9e969657440f9ef07bf74400f6ea2b0eb31ef8a6637ff9343c0f113af1d3951e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 1,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. GetDbConnection hands Finance current transaction to
+                // AccountingPeriodStatusReadSession; actual Accounting owner alone reads its Periods. Active same-connection
+                // Serializable requirements live in owner session; bridge never disposes or completes Finance SQL handles.
+                ["src/backend/GoymenERP.Api/FinanceRuntime/FinanceCreditAccountingPeriodPortV1.cs"] =
+                    new("3ca9ea219809fd24b0b542327d019f47809f4b5f972ebea339f17354d7ff6e27",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["GetDbConnection"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. GetDbConnection hands Accounting current transaction to
+                // FinancePeriodCarryForwardSession. Finance alone writes immutable carry voucher/counter-record; bridge invokes
+                // owner contract, never foreign DbSet or SQL.
+                ["src/backend/GoymenERP.Api/FinanceRuntime/FinancePeriodCarryForwardPortV1.cs"] =
+                    new("0fba5bd1cccae07ecf1fc1cd04d0a9f450ff0f9f2a51712f5c7009681be074f6",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["GetDbConnection"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Current Logistics transaction supplies same connection to
+                // SalesSubcontractInvoiceClaimReadSession; claim company/instruction/weighing proof checked before Logistics own
+                // command.
+                ["src/backend/GoymenERP.Api/LogisticsRuntime/LogisticsSubcontractDeliveryHost.Commands.cs"] =
+                    new("63e1799f30f5d733b55d3205ee267ab62d44f6ba8a246b4b4b2cf597d60494de",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["GetDbConnection"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Logistics owns Serializable outer transaction; Sales line locks plus Inventory
+                // write participant, Sales read session and Manufacturing completion read session borrow it. Actual mutations stay
+                // in each owner, caller commits after fresh authority; negative refusal proof recording follows rollback.
+                ["src/backend/GoymenERP.Api/LogisticsRuntime/LogisticsSubcontractDeliveryHost.cs"] =
+                    new("eea479c2fd58d0deb7b20d8400621f26bacedf08bbac0d150a33551666e6ec25",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["GetDbConnection"] = 4,
+                        }),
+                // Tren-1 W8; K3 review pending. Manufacturing owns Serializable outer transaction; supplied participant factory
+                // creates Inventory owner session for cost stage/reversal. Inventory/Manufacturing own persistence and Audit
+                // participate atomically; fresh authority/context validation around command/commit; typed SqlException
+                // classification only.
+                ["src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingCostGenerationHost.cs"] =
+                    new("83f3d81bb57e1591b610739b76a1fac220173164222da4d13082926a0de105d2",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 1,
+                            ["GetDbConnection"] = 4,
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Rate-priority reader borrows current Manufacturing connection only through
+                // InventoryManufacturingCostReadSession; own source order/plan/Sales link and returned label/company proof
+                // validated, Scope checked across awaits.
+                ["src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInputRatePriorityReaderV1.cs"] =
+                    new("35bd5474f6a8b0c9313fdb5d9fffa8cbec6d70f2426f39d7d4c000fdc90cb634",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["GetDbConnection"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Actual Inventory movement-cost reader borrows Manufacturing current transaction
+                // through Inventory owner read session when present; returned company/order/source proof verified, scope
+                // before/after; no crossmodule write.
+                ["src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryCostMovementReader.cs"] =
+                    new("77871e2fbdcf98904cb9ff5248fb8553793a1200af7144ee666016eabcd8d598",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["GetDbConnection"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Manufacturing reopen period bridge invokes AccountingPeriodStatusReadSession on
+                // caller transaction; current company/actor and Accounting period read permission fenced; no period mutation.
+                ["src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingReopeningAccountingPeriodStatusPortV1.cs"] =
+                    new("2a13ee3ac7efa93ec5c9fda6f2cb3702eb9e9e3ecf71afd93ed77c23e03caaa9",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["GetDbConnection"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. The configured Product connection is used for its Serializable global-catalog
+                // transaction. Fresh group/actor/origin-company authority and typed Product/Audit/idempotency participants fence
+                // owner writes; no direct foreign-schema DML.
+                ["src/backend/GoymenERP.Api/ProductRuntime/ProductCogsClassificationRuntime.cs"] =
+                    new("8a77323933b9b0e01ffdfd7a1147c3582c237ffa391adaa6255dba1b6dcb6ad5",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["SqlConnection"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. FindAsync is IPurchaseInvoiceImportReservationStoreV1 typed contract, implemented
+                // by PurchasingStore.InvoiceImports using AsNoTracking.SingleOrDefaultAsync(Id) with Purchasing
+                // InvoiceImportReservations CompanyId query filter. Captured company/returned reservation company/id/version
+                // validated; not DbSet.FindAsync.
+                ["src/backend/GoymenERP.Api/PurchasingRuntime/PurchaseInvoiceImportHost.cs"] =
+                    new("4a985d450852a1d3a1407f43366c19f2e65251fac011aaa7a11e3689edff8468",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            [".FindAsync"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. API PurchaseReceiptCostScope wraps only Purchasing-owned PurchaseReceiptCostProof
+                // borrowed read session; failure disposes proof, normal disposal delegates; no direct foreign table write.
+                ["src/backend/GoymenERP.Api/PurchasingRuntime/PurchaseReceiptCostScope.cs"] =
+                    new("1a194931234b5afd68668ecb3c670c5debd8fd171a857d1bade48cc3f8b8a88b",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 1,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Batch host owns Purchasing Serializable transaction and composes same-handle
+                // Purchasing adjustment, Inventory reversal and future allocation/lock participants; replay and result identities
+                // companybound; fresh authority before commits; all participants disposal scoped.
+                ["src/backend/GoymenERP.Api/PurchasingRuntime/PurchaseReceiptReversalHost.Batch.cs"] =
+                    new("156bb60418ceb9d8e2b4f7ae15d25ccf37e29230e8c6757e3b62977778b46787",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 1,
+                            ["GetDbConnection"] = 1,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Batch prelock accepts supplied DbConnection/transaction solely to enlist Inventory
+                // future allocation owner and bind Sales/Purchasing serialization ports; validates bound company/order/acceptance
+                // identities and lock order.
+                ["src/backend/GoymenERP.Api/PurchasingRuntime/PurchaseReceiptReversalHost.BatchPrelock.cs"] =
+                    new("c3b7927299016732ea8c3e8c36ddacbd0ba5f3f312c98e3f887e4830fa989f3f",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 1,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Correction host composes Purchasing cost proof and Inventory goods-receipt owner
+                // participant on same caller handles; replacement request/actual answers exact company/acceptance proof checked;
+                // no direct foreign DML.
+                ["src/backend/GoymenERP.Api/PurchasingRuntime/PurchaseReceiptReversalHost.Correction.cs"] =
+                    new("9072477383c7eb71d55bee4da80d47dca62f9d441d35a791899b1fdb6d987606",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 1,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Notification helper borrows InventoryHistoricalSalesLinksV1 owner read session;
+                // original company/order/source proof and returned historical Sales targets validated; writes no
+                // notification/Inventory rows directly.
+                ["src/backend/GoymenERP.Api/PurchasingRuntime/PurchaseReceiptReversalHost.Notifications.cs"] =
+                    new("8d1544bdd11aa1db302cb350c5a8c53625bec3a4259b133f252fb8d0abf34f27",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 1,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Single reversal prelock accepts caller handles only for Inventory future-
+                // allocation participant and Sales/Purchasing owner lock binders; actual read targets company/order/acceptance
+                // validated.
+                ["src/backend/GoymenERP.Api/PurchasingRuntime/PurchaseReceiptReversalHost.Prelock.cs"] =
+                    new("3fbd9f56ac8d48ea6600a9af118f57dc8adf0f7d0eec6b268a87cf48f648a604",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 1,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. The existing Purchasing transaction connection is passed to typed owner
+                // participants for receipt reversal. Captured company/actor and fresh authority are fenced; each module writes its
+                // own records. The unused Common import is removed.
+                ["src/backend/GoymenERP.Api/PurchasingRuntime/PurchaseReceiptReversalHost.cs"] =
+                    new("e3e45b4d1bd234aa1458abdb618b91da083041daa4c08045c090434f26749317",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["GetDbConnection"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. FindAsync is IAccountingFinalizedInvoiceLineSourceV1.FindAsync, NOT EF
+                // DbSet.FindAsync. Two fully-qualified System.Data.Common DbException catches map source errors to unavailable; no
+                // connection/raw SQL.
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/InvoiceLineCogsCorrectionServiceV1.cs"] =
+                    new("694dd8b69d3f1e21d9df83918d7a72449ae66521537eb8b29165c77b5a1773fa",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            [".FindAsync"] = 1,
+                            ["System.Data.Common"] = 2,
+                        }),
+                // Tren-1 W8; K3 review pending. SqlClient import is used only for unique/deadlock typed catches;
+                // System.Data.Common.DbException catch maps source failure. Store uses owner injected AccountingDbContext with
+                // query filters and own Serializable transaction.
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingInventoryCostStoreV1.cs"] =
+                    new("ee54a5173e6e5bf8647efaf3f2943bd3cdc5f839754308cb07b2a8d9873b7df3",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. New AccountingDbContext uses supplied connection contextOwnsConnection:false,
+                // UseTransactionAsync on exact supplied transaction. Requires open same connection Serializable; ReadAsync forbids
+                // tracker changes and only AsNoTracking Periods read; DisposeAsync disposes context only.
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingPeriodStatusReadSession.cs"] =
+                    new("0bb24cfdce88b992893f1793a5b1a8ec816b6a479735e1fa6edd9d701f0b8945",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 3,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. SqlClient import only for typed SQL1205/DbUpdate deadlock classification; standard
+                // EF owner Serializable admission transaction and command/audit commit.
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingSourceDocumentAdmissionStoreV1.cs"] =
+                    new("da331a72251cd610f4dcd1f755c88a174b426a12158f164bbe65e9ced98c3dc5",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. SqlClient import only in unique/deadlock filters; owner Accounting cancellation
+                // receipt recorded under Serializable, replay hash proof preserved.
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingSourceInvoiceCancellationStoreV1.cs"] =
+                    new("f2ad1124ffec9b674a9199f02bab9c79329bffe152af76dafb7cfc13628fd79d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. SqlClient import only in unique/deadlock filters; partial reversal store owns
+                // Accounting transaction/command and own sourcevoucher state.
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingSourceVoucherStoreV1.Reversal.cs"] =
+                    new("41fd8c9dff2102f0dfff0376524bc5935dcc706f0d5587ff4a5aba5acc130a10",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. SqlClient import only in unique/deadlock filters; store owns Serializable EF
+                // sourcevoucher mutation.
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingSourceVoucherStoreV1.cs"] =
+                    new("b276f035c3fbdd281f5f34910727aecbcc67a4066a734b80e8a1fb5466154ed1",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. SqlClient import only SQL1205 DbUpdate/deadlock classification; owner period
+                // lifecycle wraps mutation in Accounting Serializable transaction. Finance carry is invoked through owner
+                // bridge/contract.
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingStore.PeriodLifecycle.cs"] =
+                    new("542d8dcaeca8e5b194aa662a1bf95373e9c2d47135aca7037e422c4d46f1c23f",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. SqlClient and System.Data.Common are typed exception catches for
+                // concurrency/source-unavailable handling; actual EF writes in own Accounting Serializable transaction.
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/InvoiceLineCogsCorrectionStoreV1.cs"] =
+                    new("48af3e2195439da53f7044f80acf37404d0a97a3e065216a3e1825955f654f0a",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["System.Data.Common"] = 2,
+                        }),
+                // Tren-1 W8; K3 review pending. SqlClient only unique constraint classification in SaveAsync; owner
+                // ManufacturingCostDifferenceStore uses Accounting Serializable transaction.
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/ManufacturingCostDifferenceStoreV1.cs"] =
+                    new("1e7e4532f4971658aa9809965bba46daffd586f7079d501388975ebf92b60fba",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. System.Data.Common provides DbTransaction type for open Serializable contract.
+                // Fresh DI scope resolves AuditDbContext, requires empty tracker/no transaction,
+                // SetDbConnection(contextOwnsConnection:false), UseTransaction; scope disposal leaves caller handles owned by
+                // caller.
+                ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Services/FounderRecoverySystemAuditV1.cs"] =
+                    new("7d6a18e9269f2e88ab82cb7f99f81c41829278a393eba230afd0190cf410b684",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Typed DbTransaction openSerializable check; fresh clean Audit scope borrows caller
+                // transaction/connection non-owning, appends owner Audit batch then disposes scope.
+                ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Services/LocalCredentialSelfServiceAuditWriterV1.cs"] =
+                    new("72e372f810213abd6fcec17b7442f4c64c0a3a20bd143724af1a7e6b1776a0b8",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Typed DbTransaction activeSerializable check; new clean Audit owner scope borrows
+                // non-owning SQL handles for AppendPlatformCredentialRecoveryAsync.
+                ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Services/LocalTwoFactorOperatorRecoveryAuditV1.cs"] =
+                    new("593de40b791dae2ba0a3f81fa3093d19b59bdb5d51b67ed1daf9581c2c62a797",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Three fully-qualified System.Data.Common mentions only DbException catch filters;
+                // no borrowed/raw connection. Documents owner EF Serializable transaction atomically stores
+                // draft/publication/command/audit.
+                ["src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Persistence/DocumentBrandingService.cs"] =
+                    new("6cf6ad2ad562945f1c3d69824e5df40e7276d121cbb7db90e6f26c606dc608c8",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 3,
+                        }),
+                // Tren-1 W8; K3 review pending. System.Data.Common imports DbException for typed read/transaction failure mapping
+                // and rollback catch. Own Finance EF Serializable transaction, atomic proposal/decision/command/audit.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/CashExchangeBookValueServiceV1.cs"] =
+                    new("8987e87fcdbdc99cd3b71e34e836f925bbd48175a7fdbcee4121e3f434ef9d2a",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Single SqlQueryRaw<byte[]> fixed literal SELECT MIN_ACTIVE_ROWVERSION() AS Value
+                // has no dynamic parameters or tenantdata. Then actual EF owner outbox query applies CompanyId==captured, after
+                // Position, before horizon, order/take.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCreditOutboxEventSourceV1.cs"] =
+                    new("e3bad193ea2b4c08abb1b5d907cf4719cd14ebe495915af2768f324e3a8c1b74",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["SqlQueryRaw"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. One new FinanceDbContext borrows open sameconnection Serializable transaction
+                // contextOwnsConnection:false/UseTransaction. Session owns/disposes only context, never commits/rolls back
+                // borrowed handles.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinancePeriodCarryForwardSession.cs"] =
+                    new("32a68cfa05ccdc2402199426c3eb31a36c4d9c2d1ae922893edd9374428d3069",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 3,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. SqlClient only typed failure catch. GetDbConnection reads configured
+                // DataSource/Database for interactive target confirmation, not raw SQL/secondarymutation. Two fresh Identity
+                // contexts: readconfirmation then Serializable owner reread; both awaited disposal.
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/LocalAccount/LocalTwoFactorOperatorRecoveryServiceV1.cs"] =
+                    new("268960c33752e59e78d78b6608993aa209dc883fb07e6491d9c74c0a6034b85c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["GetDbConnection"] = 1,
+                            ["Microsoft.Data.SqlClient"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. System.Data.Common imports DbException catch type; own injected Identity EF
+                // Serializable transaction updates actual TOTP/recoverycode use and rolls back denied state.
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/LocalAccount/SqlLocalTwoFactorLoginV1.cs"] =
+                    new("4038ad4fcbd9b0bb0f788958d028bf9eac9b4c6db2a29f572c604a2f3e8a8d53",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. System.Data.Common is DbException failure classification only.
+                // InventoryCostLineageReader reads actual label/transformation/movement/balance facts with explicit CompanyId
+                // predicates on every batch, validates all projected source facts; no SQL handle/raw query/write.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryCostLineageReader.cs"] =
+                    new("315ee82a22fe4d0a081150442efd55df53d31353bc578142c5c5d1ce6c15f49a",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Fresh InventoryDbContext bound to explicit/captured company, UseTransactionAsync
+                // on supplied exact open connection/transaction; own receipt/future-supply conversion reversal, immutable history,
+                // command/outbox. Disposes only session context, never commits caller transaction. Existing read/write source
+                // predicates and owner query filters retained.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryGoodsReceiptReversalParticipant.cs"] =
+                    new("98a24d19a271862839c54a26596d626e5b7267e69565eed05f50952c2cdbd249",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 3,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Fresh InventoryDbContext bound to explicit/captured company, UseTransactionAsync
+                // on supplied exact open connection/transaction; read-only historical future-allocation Sales demand links.
+                // Disposes only session context, never commits caller transaction. Existing read/write source predicates and owner
+                // query filters retained.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryHistoricalSalesLinksV1.cs"] =
+                    new("7153b61207fc98cebda5f539021ad5ee1261f05f39e295a253f73a35f39ff636",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 1,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. One Inventory context borrows the validated caller transaction. Local pool
+                // selectors carry explicit CompanyId and position/product/currency; only Inventory generations/effects/pools
+                // change.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryManufacturingCostGenerationParticipant.cs"] =
+                    new("91a5945632b609d265e14e654ab9c5b3afb95d0c75241faf4c04cfaebe2d8dbd",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            [".Local"] = 3,
+                            ["DbConnection"] = 3,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Fresh InventoryDbContext bound to explicit/captured company, UseTransactionAsync
+                // on supplied exact open connection/transaction; read-only actual manufacturing costs and first-entry rate
+                // evidence. Disposes only session context, never commits caller transaction. Existing read/write source predicates
+                // and owner query filters retained.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryManufacturingCostReadSession.cs"] =
+                    new("646bd9f7fbdbcc5aeabb323a2042635aa6be5357bbd7488d0aaa797eb6610a12",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 3,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. GetDbConnection binds small fresh InventoryDbContext with own immutable
+                // CompanyContext to existing owner transaction; UseSqlServer(contextOwnsConnection:false)/UseTransaction. Only
+                // company-keyed NegativeStockValidationGuards INSERT/UPDATE and SaveChanges, never caller pending physical/audit
+                // rows. Context disposal does not own outer commit/handles.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryNegativeStockValidationGuard.cs"] =
+                    new("5f5db67ae7b975437b16e5dd5d9c42fec6c24ac8d9ee4f25ce07e4c35b7f9322",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["GetDbConnection"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. One SqlQueryRaw<byte[]> fixed SELECT MIN_ACTIVE_ROWVERSION() AS Value reads only
+                // SQL metadata, no interpolated input. Typed20digit ulong cursor and8byte horizon; owner outbox EF query
+                // explicitly CompanyId==captured, Position>after && Position<horizon, ordered/taken; samecompany fence after
+                // metadata and rows. Read-only, no DML.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryOutboxEventSource.cs"] =
+                    new("daa1db1ef57c1f33180e043be0dc029b266ca14edc258c56dcd53b12df197d47",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["SqlQueryRaw"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Tracked Local rows are selected with explicit CompanyId and
+                // product/position/currency identity. Inventory alone changes its exact-cost pools; no query-filter bypass or
+                // foreign-schema write.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.ExactCostPools.cs"] =
+                    new("247f15b8e1494b19dc9743da5b7ec2a1eda3c3f3649cad486e569c84de2ff421",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            [".Local"] = 8,
+                        }),
+                // Tren-1 W8; K3 review pending. Tracked Local pool rows carry explicit CompanyId plus position/product/currency
+                // predicates. Inventory alone writes immutable movement stamps and exact pools under its existing owner
+                // transaction.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.MovementCosting.cs"] =
+                    new("ae2427be012009bb8f9d5cce74b85b04e9614b0046f9305fff176d85c7e1e823",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            [".Local"] = 3,
+                        }),
+                // Tren-1 W8; K3 review pending. Old .Find occurrence was typed InventoryNegativeStockAttemptEvidenceException
+                // traversal, not EF Find. Current source uses FindEvidence; do not add .Find allowance.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.NegativeStockAttempts.cs"] =
+                    new("11a503cf2dd546c3498a5f20d5c2809da1e252866d606d618e1ab1577dbf573d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Local movement cost stamp reads only already-staged immutable approval result
+                // status; predicate explicitly CompanyId+MovementId+LineNumber+TL currency, no price exposed or extra query.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.StockCounts.cs"] =
+                    new("44946d5b777c0fd70b16fb9f995b51b0996ee43263490097d5917aa5d3993007",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            [".Local"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Clean owner Inventory context and own Serializable transaction; GetDbConnection
+                // only binds typed Sales line serialization lock owner port. Allocation/label first loaded through owner query
+                // filter, ReloadAsync refreshes only those tracked composite-company-key rows, then fresh authority and explicit
+                // source/label CompanyId validation. SqlClient only duplicate/concurrency classification. No unscoped client
+                // entity reload.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventorySubcontractAllocationReleaseStoreV1.cs"] =
+                    new("f2914be6fff3ff2adc24c28d702db738d9969cdf0b968b4ae63d4b317a4a3a19",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            [".ReloadAsync"] = 2,
+                            ["GetDbConnection"] = 1,
+                            ["Microsoft.Data.SqlClient"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Fresh InventoryDbContext bound to explicit/captured company, UseTransactionAsync
+                // on supplied exact open connection/transaction; customer-owned subcontract reserve/ship, actual movement and
+                // owner outbox. Disposes only session context, never commits caller transaction. Existing read/write source
+                // predicates and owner query filters retained.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventorySubcontractDeliveryParticipant.cs"] =
+                    new("bc0906ec02de0242eb46b3fdb37631cf4dfd7867435556b676c3d9c5781e6a65",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 3,
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Microsoft.Data.SqlClient is used only to classify owner EF unique-key exceptions.
+                // Transfer document rows and immutable replay remain company-bound; no command creation, raw SQL or explicit
+                // DbContext construction.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryTransferReceiptDocuments.cs"] =
+                    new("7172f4012c6b1020f2d9267ca02f431be73af320687cd48dfd3707c3f4de0cf1",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Fresh LogisticsDbContext bound to explicit/captured company, UseTransactionAsync
+                // on supplied exact open connection/transaction; read-only actual subcontract delivery/weighing source. Disposes
+                // only session context, never commits caller transaction. Existing read/write source predicates and owner query
+                // filters retained.
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsSubcontractDeliveryReadSession.cs"] =
+                    new("03a184462a48ae27f15a0913b1d8fb5ccade8d61fe6588a4bc150136ac737d7c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 3,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. SqlClient is SqlException numeric classification only. Logistics departure owner
+                // has own Serializable transaction/attempt/event rows, envelope actor/company binding and fresh authority;
+                // official document read/cancel is typed ownerport, no new provider availability or direct foreign DML.
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsTransferDepartureOwner.cs"] =
+                    new("5f4b17b228d7cb9211c38fd4e1d99dfcd07afaae983f5c773ec6a6a55f698e4c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. SqlClient/Common used only typed SQL deadlock/timeout/DbException categories.
+                // Manufacturing manual queue uses own EF transactions; all WorkCenterQueue/Plan/Order/Priority queries explicitly
+                // CompanyId bound; no raw SQL.
+                ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.ManualQueues.cs"] =
+                    new("19ffbb9acb365f552719a23de495c382e08f453f906871efbab4c8aa563ca9ed",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Fresh ManufacturingDbContext bound to explicit/captured company,
+                // UseTransactionAsync on supplied exact open connection/transaction; read-only actual subcontract completion
+                // evidence. Disposes only session context, never commits caller transaction. Existing read/write source predicates
+                // and owner query filters retained.
+                ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingSubcontractCompletionReadSessionV2.cs"] =
+                    new("5243f5af033ba7afaf73f4926b3bc45b7fcc4ce05e423b807e8b6565fc341b22",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 3,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Global Product catalog operation validates GroupSharedMaster command actor,
+                // originating company and operation kind. The Product-owned participant borrows the Serializable transaction; it
+                // writes only Product classification records. This is not a tenant-filtered Product catalog.
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/ProductCogsClassificationParticipant.cs"] =
+                    new("da70ded30f493f67e35f20428c96319ea4ac794e25a5f5543596ef99f403b694",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 3,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. System.Data.Common.DbException only appears in rollback failure catch; Product
+                // paint memberships own EF Serializable transaction, explicit company/actor metadata/fresh permission fences,
+                // CompanyId owner rows; no raw SQL/foreign mutation.
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPaintMembershipService.cs"] =
+                    new("f92ce179bcb00200f361a6ff41ea5e1eb27840db9ff54f22966c8192d9b35355",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Application contract typed DbConnection/DbTransaction parameters document borrowed
+                // same-transaction owner factory, not executable SQL or connection creation.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/Contracts/PurchaseReceiptReversalBatchContractsV1.cs"] =
+                    new("ffd5dadef0a5f3b27bcd8e6cb8a819c483fbf2b317da3b3347473dcbc2a48f63",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 1,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Application contract typed DbConnection/DbTransaction parameters document same-
+                // transaction owner factory; no executable query/write/handle ownership.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/Contracts/PurchaseReceiptReversalContractsV1.cs"] =
+                    new("3eba4ed4e3adeccbd87ae03d2e633d7d0c8c1413d96d770ae418c652000e5004",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 1,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. FindAsync is IPurchaseInvoiceImportReservationStoreV1 typed contract, implemented
+                // by PurchasingStore.InvoiceImports using AsNoTracking.SingleOrDefaultAsync(Id) with Purchasing
+                // InvoiceImportReservations CompanyId query filter. Captured company/returned reservation company/id/version
+                // validated; not DbSet.FindAsync.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchaseInvoiceImport.cs"] =
+                    new("07e888aad2aaa1b82e29f19e42b9f5b578b3f3c0a1ad1c3fb49bb203a1a31b99",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            [".FindAsync"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. One SqlQueryRaw<byte[]> fixed SELECT MIN_ACTIVE_ROWVERSION() AS Value reads only
+                // SQL metadata, no interpolated input. Typed20digit ulong cursor and8byte horizon; owner outbox EF query
+                // explicitly CompanyId==captured, Position>after && Position<horizon, ordered/taken; samecompany fence after
+                // metadata and rows. Read-only, no DML.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Outbox/PurchasingOutboxEventSource.cs"] =
+                    new("e1f6b97b23e5e43bf13f5b7bc43f0f9064cecc9485e8e26a15839166abcef51b",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["SqlQueryRaw"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. SqlClient only typed duplicate/concurrency catch in Purchasing additional cost
+                // owner Serializable transaction. Company() captured, order/acceptance/service source CompanyId verified; own
+                // AdditionalCosts/Attempts only, Audit ownerport.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseAdditionalCostStoreV1.cs"] =
+                    new("5585809e7df76ec243b3e2365da393325516d585d3c51013dbf3a4b6fee03b3c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Partial Purchasing batch participant uses caller borrowed handle only for company-
+                // keyed PurchaseLineSerializationLock; EF writes own immutable receipt/acceptance/batch/attempt/outbox; all
+                // target/result company proof checked.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseReceiptAdjustmentParticipant.Batch.cs"] =
+                    new("ebe9dfdb74335f44f0ad871810632ced7b7107f94cb21e0f6930a98670a6ce2c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 1,
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Fresh PurchasingDbContext bound to explicit/captured company, UseTransactionAsync
+                // on supplied exact open connection/transaction; own receipt adjustment, replacement acceptance,
+                // attempt/audit/outbox. Disposes only session context, never commits caller transaction. Existing read/write
+                // source predicates and owner query filters retained.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseReceiptAdjustmentParticipant.cs"] =
+                    new("25ba794e0eac1a5583a040e560f012558b381b17bbcf1f37b3b43fa68b53112a",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 3,
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Fresh PurchasingDbContext bound to explicit/captured company, UseTransactionAsync
+                // on supplied exact open connection/transaction; read-only receipt/order/invoice/entry-rate exact cost proof.
+                // Disposes only session context, never commits caller transaction. Existing read/write source predicates and owner
+                // query filters retained.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseReceiptCostProof.cs"] =
+                    new("bd7cb9ceddf8a5d222b9b672e0004a6d1cfb57143a13aa530928cfb74b1dffb7",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 3,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. SqlClient only typed duplicate catch. Purchasing service order owner Serializable
+                // transaction; Company() and every snapshot/actual source company bound; Settings number reservation called
+                // through same transaction ownerport, no direct Settings write.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseServiceOrderStoreV1.cs"] =
+                    new("3c064ffbe5c35643eed1cbb5dba845fde2f7d7a8f3e3587b14609c0a9ed2685d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Purchasing incoming invoice finalization uses GetDbConnection only to bind
+                // company-keyed PurchaseLineSerializationLock within own Serializable transaction. Writes Purchasing
+                // invoice/bindings/finalized outbox; no Inventory directwrites.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.IncomingInvoices.cs"] =
+                    new("a99b3fcace66aca1921f198bde6ee99fbcb85059c51b18c33cc114bc4d599317",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["GetDbConnection"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. FindAsync is IPurchaseInvoiceImportReservationStoreV1 typed contract, implemented
+                // by PurchasingStore.InvoiceImports using AsNoTracking.SingleOrDefaultAsync(Id) with Purchasing
+                // InvoiceImportReservations CompanyId query filter. Captured company/returned reservation company/id/version
+                // validated; not DbSet.FindAsync.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.InvoiceImports.cs"] =
+                    new("087ef79936d91f86345379055410440d9d398fac469ee49452c11da0e5e24249",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            [".FindAsync"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. One SqlQueryRaw<byte[]> fixed SELECT MIN_ACTIVE_ROWVERSION() AS Value reads only
+                // SQL metadata, no interpolated input. Typed20digit ulong cursor and8byte horizon; owner outbox EF query
+                // explicitly CompanyId==captured, Position>after && Position<horizon, ordered/taken; samecompany fence after
+                // metadata and rows. Read-only, no DML.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Outbox/SalesOutboxEventSourceV1.cs"] =
+                    new("9bd8682328121e36e27bf7518b2935b348c291b8f70d77bba327fbe0d70dbfd1",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["SqlQueryRaw"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Infrastructure port exposes typed DbConnection/DbTransaction for owner read host;
+                // interface has no executable SQL/body or context construction.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/ISalesSubcontractWeighingCommitReadPortV1.cs"] =
+                    new("7e7ae71290968f8be7a763cf427e75be12975978387f9d4ccffdfbb68a7f6cf2",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 1,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. System.Data.Common imports DbException only for read-unavailable handling. Sales
+                // responsible reader joins header/line on CompanyId+Id, explicit capturedCompanyId predicate, before/after
+                // livecompany fence; no SQL handles or write.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesLineResponsibleReadPort.cs"] =
+                    new("3025efe8c79859a88227af913bb2a8c24d2fd0f321a7af72471344bf4e92aece",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Sales owns Serializable subcontract transaction; GetDbConnection passes handles to
+                // typed Logistics commit-read owner port and checks exact invoice company/weighing/source facts; no Logistics
+                // directwrite.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.SubcontractTransaction.cs"] =
+                    new("0a54c948c5900db9b48f7154f995c0f439b7a9659e97b3839f73329af6314ead",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["GetDbConnection"] = 1,
+                            ["Microsoft.Data.SqlClient"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Fresh SalesDbContext bound to explicit/captured company, UseTransactionAsync on
+                // supplied exact open connection/transaction; read-only subcontract invoice claim/frozen owner identity. Disposes
+                // only session context, never commits caller transaction. Existing read/write source predicates and owner query
+                // filters retained.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesSubcontractInvoiceClaimReadSession.cs"] =
+                    new("504a6249cab62739b03ac04cddf373651750bc037f48cd30252ddd7e745bae58",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 3,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Fresh SalesDbContext bound to explicit/captured company, UseTransactionAsync on
+                // supplied exact open connection/transaction; read-only subcontract service order/current revision. Disposes only
+                // session context, never commits caller transaction. Existing read/write source predicates and owner query filters
+                // retained.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesSubcontractServiceOrderReadSession.cs"] =
+                    new("1c13cd63fed4ac28ac3f67ea1d15016efffc327c59fb78758e532b523365022d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["DbConnection"] = 3,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Typed DbTransaction activeSerializable check; fresh clean SecurityEvents DI scope
+                // borrows non-owned SQL connection/transaction, validates typed signal and existing retention, then owner
+                // AppendAsync.
+                ["src/backend/Modules/SecurityEvents/GoymenERP.Modules.SecurityEvents.Infrastructure/Writing/LocalTwoFactorOperatorRecoverySecurityWriterV1.cs"] =
+                    new("e519633ac314e559838dbbb14203c91dd2d299d537901ffa25c5a3763c01c084",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. Common DbTransaction contract requires open Serializable; scoped clean
+                // SettingsDbContext borrows transaction connection non-owning/UseTransaction, disposed via scope; SqlClient import
+                // only duplicateclassification. Standalone format change owns separate Serializable transaction.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsDocumentNumberSeriesV1.cs"] =
+                    new("7f212b7fb4486ff113dc7c01cf62bfb31dea14eb33b91162cf9ade4a1746b21a",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. SqlClient used only duplicate key DbUpdate catch; standard Settings owner
+                // Serializable EF policy/command/audit transaction; no raw SQL/connection created.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsFinancePolicyAdministration.cs"] =
+                    new("cbe5222096497a8467019349826b174fbefdd94cfc88a8e16fb1ea47d3760919",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. SqlClient only duplicatekey classification in explicit baseline-transfer EF
+                // transaction; immutable one-time ownerhistory race protected by uniqueconstraint and companykind query.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsManufacturingProfileAdministration.Baselines.cs"] =
+                    new("5cf5c16cbe13969f29ad6b4d55098bebde55cb6cf86373075df39845f6ee9249",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. System.Data.Common imports DbException solely to map failed CompanyPolicyReads to
+                // provider-unavailable. No raw SQL/connection/context creation.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsNotificationRetentionAutomationV1.cs"] =
+                    new("1fdff1365097ee7b0dac52ab7b39c9e136b1b219b3b7cc920b962c1c3282415f",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. SqlClient only duplicatekey DbUpdate catch; Settings own Serializable
+                // policy/command/audit transaction.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsPurchaseInvoiceVariancePolicy.cs"] =
+                    new("79969f22738109d510f25fa822e18b38c85220deca41da4f8ff51c1ce88cb5f4",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                        }),
+                // Tren-1 W8; K3 review pending. SqlClient only duplicatekey DbUpdate catch; Settings own Serializable
+                // warehousepolicy/command/audit transaction.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsWarehouseTransferScalePolicy.cs"] =
+                    new("1b53d3ffa10b0c3d1e9c0bc6dee96818f39cc3c2014df145d1889cfd4625db13",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                        }),
             };
 
     private static readonly IReadOnlyDictionary<string, ReviewedContextFactory>
