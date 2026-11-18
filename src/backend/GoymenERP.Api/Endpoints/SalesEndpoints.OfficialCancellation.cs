@@ -97,15 +97,15 @@ internal static class SalesOfficialCancellationJsonV1
     internal static RecordSalesOfficialInvoiceCancellationV1 ReadRecord(string json)
     {
         using var document = Read(json, ["expectedVersion", "reason"]); var root = document.RootElement;
-        if (root.GetProperty("expectedVersion").ValueKind != JsonValueKind.String || root.GetProperty("reason").ValueKind != JsonValueKind.String) throw new JsonException();
-        return new(root.GetProperty("expectedVersion").GetString()!, root.GetProperty("reason").GetString()!);
+        if (RequiredJsonField(root, "expectedVersion").ValueKind != JsonValueKind.String || RequiredJsonField(root, "reason").ValueKind != JsonValueKind.String) throw new JsonException();
+        return new(RequiredJsonField(root, "expectedVersion").GetString()!, RequiredJsonField(root, "reason").GetString()!);
     }
     internal static RetrySalesOfficialInvoiceCancellationFinanceV1 ReadRetry(string json)
     {
         using var document = Read(json, ["expectedDeliveryVersion", "releaseActiveAllocations"]); var root = document.RootElement;
-        if (root.GetProperty("expectedDeliveryVersion").ValueKind != JsonValueKind.Number || !root.GetProperty("expectedDeliveryVersion").TryGetInt64(out var version)
-            || root.GetProperty("releaseActiveAllocations").ValueKind is not (JsonValueKind.True or JsonValueKind.False)) throw new JsonException();
-        return new(version, root.GetProperty("releaseActiveAllocations").GetBoolean());
+        if (RequiredJsonField(root, "expectedDeliveryVersion").ValueKind != JsonValueKind.Number || !RequiredJsonField(root, "expectedDeliveryVersion").TryGetInt64(out var version)
+            || RequiredJsonField(root, "releaseActiveAllocations").ValueKind is not (JsonValueKind.True or JsonValueKind.False)) throw new JsonException();
+        return new(version, RequiredJsonField(root, "releaseActiveAllocations").GetBoolean());
     }
     private static JsonDocument Read(string json, string[] names)
     {
@@ -119,4 +119,8 @@ internal static class SalesOfficialCancellationJsonV1
         }
         doc.Dispose(); throw new JsonException();
     }
+    // Required JSON lookup retains missing-key failure and never uses runtime reflection.
+    private static JsonElement RequiredJsonField(JsonElement value, string name) =>
+        value.TryGetProperty(name, out var field) ? field : throw new KeyNotFoundException();
+
 }

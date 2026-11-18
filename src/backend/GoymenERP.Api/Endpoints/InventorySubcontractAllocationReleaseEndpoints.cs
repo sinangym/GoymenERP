@@ -41,7 +41,7 @@ public static class InventorySubcontractAllocationReleaseEndpoints
                 if (properties.Length != 2 || properties.Select(x => x.Name).Distinct(StringComparer.Ordinal).Count() != 2
                     || properties.Any(x => x.Name is not ("expectedAllocationVersion" or "reason") || x.Value.ValueKind != JsonValueKind.String)) throw new JsonException();
                 var result = await service.ReleaseAsync(allocationId,
-                    new(root.GetProperty("expectedAllocationVersion").GetString()!, root.GetProperty("reason").GetString()!),
+                    new(RequiredJsonField(root, "expectedAllocationVersion").GetString()!, RequiredJsonField(root, "reason").GetString()!),
                     new("-", ErpPermissions.InventoryPhysicalAllocationWrite, [], correlation.CorrelationId, correlation.CausationId,
                         values[0]!, correlation.SourceChannel, http.Connection.RemoteIpAddress?.ToString(), http.Request.Headers.UserAgent.ToString()), ct);
                 if (result.IsReplay) Replay(http, result.OriginalCorrelationId);
@@ -71,4 +71,8 @@ public static class InventorySubcontractAllocationReleaseEndpoints
     private static void NoStore(HttpContext http) => http.Response.Headers.CacheControl = "private, no-store";
     private static void Replay(HttpContext http, string correlation)
     { http.Response.Headers["Idempotency-Replayed"] = "true"; http.Response.Headers["Idempotency-Original-Correlation-Id"] = correlation; }
+    // Required JSON lookup retains missing-key failure and never uses runtime reflection.
+    private static JsonElement RequiredJsonField(JsonElement value, string name) =>
+        value.TryGetProperty(name, out var field) ? field : throw new KeyNotFoundException();
+
 }

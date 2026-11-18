@@ -273,7 +273,7 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
         {
             var tracked = await db.Labels.SingleOrDefaultAsync(row => row.Id == label.LabelId, token)
                 ?? throw Error(503, "inventory_manufacturing_cost_physical_source_unreadable");
-            if (db.Entry(tracked).OriginalValues.GetValue<long>(nameof(LabelRow.Version)) != label.Version
+            if (db.Entry(tracked).Property(row => row.Version).OriginalValue != label.Version
                 || tracked.ProductId != lineage.ProductId || tracked.ProductVersion != label.ProductVersion)
                 throw Error(409, "inventory_manufacturing_cost_version_conflict");
             if (fencedLineage.Add(label.LabelId))

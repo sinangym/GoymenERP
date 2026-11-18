@@ -149,15 +149,15 @@ public static class ProductHistoryProjector
             "changedInCompanyId","updatedAtUtc","sourceVersion"],StringComparer.Ordinal);
         var fields=element.EnumerateObject().ToArray();
         if(fields.Length!=expected.Count || fields.Any(x=>!expected.Remove(x.Name)) || expected.Count!=0)throw Invalid();
-        if(!element.GetProperty("companyId").TryGetGuid(out var company)||company==Guid.Empty
-            || !element.GetProperty("productId").TryGetGuid(out var product)||product!=productId
-            || element.GetProperty("productVersion").ValueKind!=JsonValueKind.String
-            || element.GetProperty("productVersion").GetString()!=productVersion.ToString(CultureInfo.InvariantCulture)
-            || element.GetProperty("sourceVersion").GetString()!=ProductCogsClassificationContractsV1.SourceVersion)throw Invalid();
-        var versionText=element.GetProperty("classificationVersion");
+        if(!RequiredJsonField(element, "companyId").TryGetGuid(out var company)||company==Guid.Empty
+            || !RequiredJsonField(element, "productId").TryGetGuid(out var product)||product!=productId
+            || RequiredJsonField(element, "productVersion").ValueKind!=JsonValueKind.String
+            || RequiredJsonField(element, "productVersion").GetString()!=productVersion.ToString(CultureInfo.InvariantCulture)
+            || RequiredJsonField(element, "sourceVersion").GetString()!=ProductCogsClassificationContractsV1.SourceVersion)throw Invalid();
+        var versionText=RequiredJsonField(element, "classificationVersion");
         if(versionText.ValueKind!=JsonValueKind.String || !long.TryParse(versionText.GetString(),NumberStyles.None,CultureInfo.InvariantCulture,out var version)
             || version<0 || version.ToString(CultureInfo.InvariantCulture)!=versionText.GetString())throw Invalid();
-        var kind=element.GetProperty("classification");var origin=element.GetProperty("changedInCompanyId");var instant=element.GetProperty("updatedAtUtc");
+        var kind=RequiredJsonField(element, "classification");var origin=RequiredJsonField(element, "changedInCompanyId");var instant=RequiredJsonField(element, "updatedAtUtc");
         if(version==0)
         {
             if(kind.ValueKind!=JsonValueKind.Null || origin.ValueKind!=JsonValueKind.Null || instant.ValueKind!=JsonValueKind.Null)throw Invalid();
@@ -217,4 +217,8 @@ public static class ProductHistoryProjector
     }
 
     private static InvalidOperationException Invalid() => new("A Product history event failed its integrity checks.");
+    // Required JSON lookup retains missing-key failure and never uses runtime reflection.
+    private static JsonElement RequiredJsonField(JsonElement value, string name) =>
+        value.TryGetProperty(name, out var field) ? field : throw new KeyNotFoundException();
+
 }

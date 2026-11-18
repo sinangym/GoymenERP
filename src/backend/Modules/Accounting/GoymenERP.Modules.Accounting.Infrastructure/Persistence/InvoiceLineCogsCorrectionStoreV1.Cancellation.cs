@@ -58,15 +58,15 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
             var component = view.Component;
             using var document = JsonDocument.Parse(component.SourceProofJson);
             var root = document.RootElement;
-            var claim = root.GetProperty("claim");
-            var shipment = claim.GetProperty("shipmentId").GetGuid();
-            var dispatch = claim.GetProperty("dispatchNoteId").GetGuid();
+            var claim = RequiredJsonField(root, "claim");
+            var shipment = RequiredJsonField(claim, "shipmentId").GetGuid();
+            var dispatch = RequiredJsonField(claim, "dispatchNoteId").GetGuid();
             if (component.InvoiceLineId is not { } line || line == Guid.Empty || shipment == Guid.Empty || dispatch == Guid.Empty
-                || root.GetProperty("companyId").GetGuid() != view.CompanyId
-                || root.GetProperty("invoiceId").GetGuid() != view.InvoiceId || root.GetProperty("lineId").GetGuid() != line
-                || root.GetProperty("version").GetInt64() != view.InvoiceVersion
-                || root.GetProperty("admissionId").GetGuid() != view.AdmissionId
-                || claim.GetProperty("productId").GetGuid() != component.ProductId
+                || RequiredJsonField(root, "companyId").GetGuid() != view.CompanyId
+                || RequiredJsonField(root, "invoiceId").GetGuid() != view.InvoiceId || RequiredJsonField(root, "lineId").GetGuid() != line
+                || RequiredJsonField(root, "version").GetInt64() != view.InvoiceVersion
+                || RequiredJsonField(root, "admissionId").GetGuid() != view.AdmissionId
+                || RequiredJsonField(claim, "productId").GetGuid() != component.ProductId
                 || component.SalesPhysicalClaims is not { Count: > 0 } physical
                 || physical.Any(x => x.ShipmentId != shipment || x.ProductId != component.ProductId)
                 || component.SourceProofSha256 != AccountingInventoryCostSourceValidationV1.Sha256(component.SourceProofJson))
@@ -77,4 +77,8 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
         catch (Exception exception) when (exception is JsonException or InvalidOperationException or KeyNotFoundException or FormatException)
         { throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid); }
     }
+    // Required JSON lookup retains missing-key failure and never uses runtime reflection.
+    private static JsonElement RequiredJsonField(JsonElement value, string name) =>
+        value.TryGetProperty(name, out var field) ? field : throw new KeyNotFoundException();
+
 }

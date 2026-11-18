@@ -38,7 +38,7 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1
         foreach (var label in lineage.Labels.Where(x => x.RootShare.Sign > 0).OrderBy(x => x.LabelId))
         {
             var actual = await db.Labels.SingleAsync(x => x.Id == label.LabelId, token);
-            if (db.Entry(actual).OriginalValues.GetValue<long>(nameof(LabelRow.Version)) != label.Version
+            if (db.Entry(actual).Property(row => row.Version).OriginalValue != label.Version
                 || actual.ProductId != share.ProductId || actual.ProductVersion != label.ProductVersion)
                 throw Unavailable("purchase_invoice_cost_first_physical_source_changed");
             if (firstCostFencedLabels.Add(label.LabelId))
