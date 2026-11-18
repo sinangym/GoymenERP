@@ -187,7 +187,7 @@ public sealed partial class SalesDraftServiceTests
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseHeaderAsync(approved.Id,
             HeaderRevision("5", account: NewAccount), Metadata("k-future-release-revision")));
 
-        Assert.Equal((409, SalesDraftProblemCodesV1.RevisionBlocked), Status(refused));
+        Assert.Equal((409, SalesDraftProblemCodesV1.RevisionFutureAllocationPresent), Status(refused));
         Assert.Empty(release.Requests);
     }
 

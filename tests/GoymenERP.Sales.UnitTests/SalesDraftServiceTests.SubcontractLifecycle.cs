@@ -94,7 +94,7 @@ public sealed partial class SalesDraftServiceTests
             Invoice.Submit(1, "SENTETIK-submitter", World.Clock.GetUtcNow());
             Invoice.Approve(2, "SENTETIK-checker", World.Clock.GetUtcNow());
             Reader.Stored[Invoice.Id] = Invoice;
-            Official = new(new("SENTETIK-SFH-1", Guid.NewGuid().ToString("D"), Party, Currency, 30m, 1200m, 240m, 0m, Day.AddDays(3),
+            Official = new(new("SENTETIK-SFH-1", Guid.NewGuid().ToString("D"), Party, Currency, 30m, 1200m, 200m, 0m, Day.AddDays(3),
                 new(Company, Guid.NewGuid(), "approved-import", "1", World.Clock.GetUtcNow(), null, null, null, Guid.NewGuid(), new string('a', 64), false)));
             Lifecycle = new(Reader, World.Clock);
         }

@@ -475,7 +475,17 @@ public sealed partial class LogisticsInstructionService(
                 throw new LogisticsInstructionServiceException(404, "not_found");
             }
 
-            prepared = await prepare(scope, current);
+            try
+            {
+                prepared = await prepare(scope, current);
+            }
+            catch (LogisticsInstructionServiceException exception) when (exception.Status == 409
+                && exception.Code is LogisticsPlanExcessV1.ApprovalRequired or LogisticsPlanExcessV1.Conflict)
+            {
+                // Preparation can refuse the same approved-cap boundary as the atomic store.
+                return await TerminalAsync(scope, permission, envelope, requestHash, commandName,
+                    new(409, exception.Code, exception.Errors), cancellationToken);
+            }
         }
 
         await RequireStillAsync(scope, permission, cancellationToken);

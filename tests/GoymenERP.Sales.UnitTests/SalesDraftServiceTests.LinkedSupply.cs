@@ -188,7 +188,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal("sales.order-linked-supply.v1", SalesOrderLinkedSupplyContractV1.Name);
         Assert.Equal(["Production", "Purchasing"], SalesLinkedSupplyKindsV1.All);
         Assert.Equal(["CompanyId", "OrderId", "OrderLineIds"], Shape<SalesOrderLinkedSupplyQueryV1>());
-        Assert.Equal(["Status", "CompanyId", "OrderId", "SupplyKind", "OpenItems", "ReasonCode"], Shape<SalesOrderLinkedSupplyAnswerV1>());
+        Assert.Equal(["Status", "CompanyId", "OrderId", "SupplyKind", "OpenItems", "ReasonCode", "HistoricalItems"], Shape<SalesOrderLinkedSupplyAnswerV1>());
         Assert.Equal(["SupplyId", "SupplyLineId", "DocumentType", "DocumentNumber", "OrderLineId", "Status", "OpenQuantity",
                 "OpenQuantityUnitId", "PlannedKg", "ActualKg"],
             Shape<SalesOrderLinkedSupplyItemV1>());

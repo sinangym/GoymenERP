@@ -41,7 +41,7 @@ public sealed partial class SalesDraftServiceTests
         var original = new SalesMarginCostSnapshot(line.Id, draft.Revision, line.Product.ProductId,
             line.OrderUnit.UnitId, line.Quantity.Value, Currency, 0m, null,
             "{\"syntheticRestoredZeroCost\":true}", DateTimeOffset.UtcNow);
-        draft.PinMarginCosts([original]);
+        draft.RestoreMarginCost(original);
 
         var result = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Margin.Lines!);
 

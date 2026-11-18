@@ -83,8 +83,8 @@ public sealed class SalesSubcontractWeighingSplitTests
 
     [Theory]
     [InlineData(null)]
-    [InlineData(0)]
-    [InlineData(-1)]
+    [InlineData(0d)]
+    [InlineData(-1d)]
     [InlineData(1.2345)]
     public void A_shared_weighing_line_without_a_readable_positive_theoretical_kg_stops_the_split_and_names_the_line(double? kg)
     {

@@ -338,7 +338,7 @@ public sealed partial class SalesDraftServiceTests
         public void Seed(string key, string hash, SalesSubcontractServiceInvoice invoice)
         {
             Stored[invoice.Id] = invoice;
-            Attempts[key] = (hash, "synthetic-user", invoice.Id, "synthetic-correlation");
+            Attempts[key] = (hash, Actor, invoice.Id, "synthetic-correlation");
         }
 
         public Task<SalesSubcontractServiceInvoiceStoreResult> StoreSubcontractServiceInvoiceAsync(SalesDraftWriteEnvelope envelope,

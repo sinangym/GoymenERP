@@ -56,9 +56,16 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(decision.DecidedBy,invoice.Decision.DecidedBy); Assert.Equal(decision.DecidedAtUtc,invoice.Decision.DecidedAtUtc);
         Assert.Throws<SalesRuleException>(()=>invoice.RecordOfficialCancellation(5,Guid.NewGuid().ToString("D"),"SENTETIK",proof,time));
     }
+    // Adversarial company drift tests the service fence; the production context stays immutable.
+    private sealed class CancellationCompany : ICompanyContext
+    {
+        public bool IsResolved => CompanyId != Guid.Empty;
+        public Guid CompanyId { get; private set; }
+        public void Set(Guid id) => CompanyId = id;
+    }
     private sealed class CancellationWorld
     {
-        public World World {get;}=new(); public CompanyContext Company {get;}=new();
+        public World World {get;}=new(); public CancellationCompany Company {get;}=new();
         public Guid Id {get;}=Guid.NewGuid(); public CancellationStore Store {get;}=new(); public CancellationEvidence Evidence {get;}=new();
         public SalesOfficialInvoiceCancellationEvidenceV1 Proof {get;}
         public CancellationWorld(){Company.Set(SalesDraftServiceTests.Company);World.User.Id=Guid.NewGuid().ToString("D");

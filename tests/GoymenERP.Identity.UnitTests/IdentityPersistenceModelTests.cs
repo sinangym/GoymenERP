@@ -102,7 +102,7 @@ public sealed class IdentityPersistenceModelTests
         Assert.Equal(typeof(UserAccount), foreignKey.PrincipalEntityType.ClrType);
         Assert.Equal([nameof(IdentityBootstrapState.FounderUserId)], foreignKey.Properties.Select(property => property.Name).ToArray());
         Assert.Equal(DeleteBehavior.Restrict, foreignKey.DeleteBehavior);
-        Assert.Empty(entity.GetProperties().Where(property => property.IsNullable));
+        Assert.DoesNotContain(entity.GetProperties(), property => property.IsNullable);
     }
 
     [Fact]
