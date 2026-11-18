@@ -62,7 +62,7 @@ EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
 # alis_cari: supplier-return attempts; satis: subcontract-service-invoice attempts); every new
 # classification is K3 review pending (owning team) until an independent K3 review signs it.
 # W8 FIN-S11: the actual Finance outbox is inventoried below; classification remains K3 pending.
-EXPECTED_DURABLE_STORE_COUNT = 64
+EXPECTED_DURABLE_STORE_COUNT = 66
 # Recovery pin Faz 1 (docs/delivery/RECOVERY_PIN_CAKISMA_ONERISI_v1.md, Sinan Q1 = yes, Issue #66):
 # the former global byte pin over every src/backend byte is replaced by a NARROW risky-surface
 # pin.  The narrow set is a token/file-class SUPERSET (never an inheritance guess) of the inputs
@@ -255,22 +255,24 @@ EXPECTED_AUDIT_LIVE_SOURCE_FINGERPRINT = (
     "4616565dfe715d5cdd27d0675af49f0cbf110158cac9d143151ec51378f87b2a"
 )
 EXPECTED_MESSAGE_DELIVERY_TABLES = (
-    ("accounting", "Deliveries"),
-    ("counterparty", "OutboxMessages"),
-    ("finance", "OfficialInvoiceImportWorkDeliveries"),
-    ("finance", "OutboxMessages"),
-    ("identity", "CompanySetupInboxReceipts"),
-    ("identity", "OutboxMessages"),
-    ("inventory", "OutboxMessages"),
-    ("logistics", "OutboxMessages"),
-    ("organization", "CompanySetupInboxReceipts"),
-    ("organization", "CompanySetupOutboxMessages"),
-    ("purchasing", "OutboxMessages"),
-    ("sales", "OutboxMessages"),
-    ("work", "ObservationInbox"),
-    ("work", "OutboxDeliveries"),
-    ("work", "OutboxMessages"),
-    ("work", "OutboxSourceCursors"),
+    ('accounting', 'Deliveries'),
+    ('counterparty', 'OutboxMessages'),
+    ('finance', 'OfficialInvoiceImportWorkDeliveries'),
+    ('finance', 'OutboxMessages'),
+    ('identity', 'CompanySetupInboxReceipts'),
+    ('identity', 'OutboxMessages'),
+    ('inventory', 'OutboxMessages'),
+    ('logistics', 'OutboxMessages'),
+    ('organization', 'CompanySetupInboxReceipts'),
+    ('organization', 'CompanySetupOutboxMessages'),
+    ('purchasing', 'OutboxMessages'),
+    ('sales', 'OfficialInvoiceCancellationDeliveries'),
+    ('sales', 'OutboxMessages'),
+    ('work', 'NotificationInbox'),
+    ('work', 'ObservationInbox'),
+    ('work', 'OutboxDeliveries'),
+    ('work', 'OutboxMessages'),
+    ('work', 'OutboxSourceCursors'),
 )
 NON_MESSAGE_DELIVERY_TABLES = (
     # A3 API-30 (ALS-D33): append-only purchase order line delivery slices (business records; "Delivery" is in the name only).
@@ -443,6 +445,25 @@ WORK_CONTEXT = (
 
 
 DURABLE_STORE_SPECS = (
+    # W8 actual notification inbox and immutable official-cancellation delivery histories; K3 pending.
+    DurableStoreSpec(
+        'sales.official-invoice-cancellation-deliveries', 'Sales', 'delivery', 'SalesDbContext', 'OfficialInvoiceCancellationDeliveryRow', 'sales', 'OfficialInvoiceCancellationDeliveries', (),
+        (
+            _evidence('src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesDbContext.cs', 'Schema = "sales"'),
+            _evidence('src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesDbContext.OfficialCancellations.cs', 'Entity<OfficialInvoiceCancellationDeliveryRow>()', 'ToTable("OfficialInvoiceCancellationDeliveries", Schema', 'HasKey'),
+            _evidence('src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261117195343_AddSalesOfficialInvoiceCancellation.cs', 'name: "OfficialInvoiceCancellationDeliveries"'),
+            _evidence('src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.OfficialCancellations.cs', 'dbContext.OfficialInvoiceCancellationDeliveries.Add(new()', 'Sequence = view.DeliveryVersion', 'await SaveOfficialAudit', live_code=True),
+        ),
+    ),
+    DurableStoreSpec(
+        'work.notification-inbox', 'Work', 'inbox', 'WorkDbContext', 'WorkNotificationInboxRow', 'work', 'NotificationInbox', (),
+        (
+            _evidence('src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDbContext.cs', 'Schema = "work"'),
+            _evidence('src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDbContext.Notifications.cs', 'Entity<WorkNotificationInboxRow>()', 'ToTable("NotificationInbox", Schema', 'HasKey'),
+            _evidence('src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261116234150_AddPersonalNotifications.cs', 'name: "NotificationInbox"'),
+            _evidence('src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkNotificationStoreV1.cs', 'database.NotificationInbox.Add(new()', 'PayloadSha256 = fingerprint', 'await database.SaveChangesAsync(cancellationToken)', live_code=True),
+        ),
+    ),
     # W8 discovered replay stores: actual unique keys, owner DDL and operative writers; K3 pending.
     DurableStoreSpec(
         'documents.branding-attempts', 'Documents', 'idempotency', 'DocumentsDbContext', 'DocumentBrandingAttemptRow', 'documents', 'DocumentBrandingAttempts', (),
@@ -1101,6 +1122,8 @@ DURABLE_STORE_SPECS = (
 # binding is intentionally explicit: moving a write into an unused helper or a deferred
 # lambda must invalidate the inventory instead of silently preserving its source hash.
 WRITER_METHOD_SCOPES = {
+    ('sales.official-invoice-cancellation-deliveries', 'src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.OfficialCancellations.cs'): 'RecordDeliveryCoreAsync',
+    ('work.notification-inbox', 'src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkNotificationStoreV1.cs'): 'DeliverAsync',
     ('documents.branding-attempts', 'src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Persistence/DocumentBrandingService.cs'): 'ExecuteAsync',
     ('logistics.transfer-departure-attempts', 'src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsTransferDepartureOwner.cs'): 'OwnedAsync',
     ('organization.company-opening-executions', 'src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanyOpeningV1.cs'): 'OpenAsync',
@@ -1310,12 +1333,14 @@ WRITER_METHOD_SCOPES = {
 # These declaration-and-body fingerprints bind recovery evidence to the reviewed live
 # methods.  Any semantic or execution-shape change must be deliberately re-inventoried.
 REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
+    ('src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.OfficialCancellations.cs', 'RecordDeliveryCoreAsync'): '024cd86456d4718b6469d63f95bc264be03a889249e5ec008265d4f7f65b457c',
+    ('src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkNotificationStoreV1.cs', 'DeliverAsync'): '40355fece1b3aaf1c2e367771de93ef1f974c55be1f10e7bce3b4039eb1774bc',
     ('src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Persistence/DocumentBrandingService.cs', 'ExecuteAsync'): 'b15f0b5784d9b6c366e92460bb640db0fbe7457881753cd0dd86e7fbd1d4be27',
     ('src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsTransferDepartureOwner.cs', 'OwnedAsync'): '95e8b14fabff6f063de17c860df0a2a7a46fa068412ad149d47483a4cdcfb373',
     ('src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanyOpeningV1.cs', 'OpenAsync'): '7ebd7be8ec285f7927757b67fe5397128adae47f70c139055898d10e13567896',
     ('src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPaintMembershipService.cs', 'ExecuteAsync'): '5c471ccfa284e2a70d549b26d41cd3a67bd3d8b755ac8ab95cb55c3563f05720',
-    ('src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.IncomingInvoices.cs', 'AddInvoiceAttempt'): 'ba52840bddfa98f61de49688ddd38b147bb0487314d1523c7151571c9af39919',
-    ('src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.InvoiceImports.cs', 'ReserveAsync'): '8b1e24964bda3d55805a27c34a862025ebda9ff05ecdf9e0a2ea79270d662482',
+    ('src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.IncomingInvoices.cs', 'AddInvoiceAttempt'): 'f5e07813e86c291e195fa6b0aadd2e4b3777360c8108778227040ac0fe32c92e',
+    ('src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.InvoiceImports.cs', 'ReserveAsync'): '0370132f3b7aaf81c8cd5204b4f93f3a52265325c53619993010916807c11bba',
     ('src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.SubcontractLifecycle.cs', 'UpdateLifecycleCoreAsync'): '9bedc0f9e118c8e62453d6703b868c0c328d2b685cfe591d2f5e0d465bccd21e',
     # W8 actual Finance outbox append methods; technical inventory, K3 review pending.
     ('src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceFinancialMovementOutboxV1.cs', 'Add'): 'e35043ca26982c951966869d91767e06323933e59494ca0e0fc3a9525a44fb7e',
@@ -1577,12 +1602,14 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
 # The full blobs retain reachability evidence around the pinned methods (for example,
 # private writer call sites) and bind every emitted source record to reviewed bytes.
 REVIEWED_LIVE_SOURCE_SHA256 = {
+    'src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.OfficialCancellations.cs': '8dfbf6c7a82632a1a41fd33e1e03618379075c9c9013a64ee1c1292137b60262',
+    'src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkNotificationStoreV1.cs': '984f9acda1115ab03ee1d67b1c8898105f0b4c5940eea3fcb033643cd5d0fb19',
     'src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Persistence/DocumentBrandingService.cs': 'ea8e3ff5a26a6bf2daf5e1687b5ac67c3e1997246b49624172c76825f7709e19',
     'src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsTransferDepartureOwner.cs': '191ba0ee9857bd1e1adb235c855dc6afaa7e76964eb24314c375241ce2e445ba',
     'src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanyOpeningV1.cs': 'cbf0de71cc1c2645baa74d104250f3bf1f5e469aad41260b5016837e5c93d2fc',
     'src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPaintMembershipService.cs': 'f92ce179bcb00200f361a6ff41ea5e1eb27840db9ff54f22966c8192d9b35355',
-    'src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.IncomingInvoices.cs': '4b4b3e03120eb220b0e49a592401b68c8557b5ec1f5902949ceafde38aad19e7',
-    'src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.InvoiceImports.cs': 'b34d5cba67327366f823ffa8c5fd93ca0665ccebe9dbad024363056192770721',
+    'src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.IncomingInvoices.cs': 'a99b3fcace66aca1921f198bde6ee99fbcb85059c51b18c33cc114bc4d599317',
+    'src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.InvoiceImports.cs': '087ef79936d91f86345379055410440d9d398fac469ee49452c11da0e5e24249',
     'src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.SubcontractLifecycle.cs': 'e8963efeab8cd457656250f758c9d6c0cc12ceb07351a97471796d34253bcbd5',
     # W8 actual Finance outbox owner sources; technical inventory, K3 review pending.
     'src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceFinancialMovementOutboxV1.cs': 'd74d1b71d6c2c46c7bfacddedf973bd12422b5ebb0e4d921561def4f2248e2dd',

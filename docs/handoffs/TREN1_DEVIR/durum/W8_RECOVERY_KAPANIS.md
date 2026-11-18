@@ -84,3 +84,34 @@ Organization'ın mevcut CompanySetupOutboxMessages kaydı için W7'de bırakıla
 yapar. Mevcut spec'e bu writer ve exact hash bağı eklendi; eski gap testi gerçek
 writer'ın zorunlu olduğu kaynak assertion'ına hizalandı. Bu source doğrulaması
 production veya dispatcher aktivasyonu değildir; K3 pending durumu korunur.
+
+## Message discovery ve açık source-shape önkoşulları
+
+- Temiz `c3d1bac1a` gerçek generator native **exit 2**:
+  `Durable message/delivery source surface drifted.` Gerçek keşif yalnız iki ek
+  kayıt gösterdi: `sales.OfficialInvoiceCancellationDeliveries` ve `work.NotificationInbox`.
+- WorkNotificationStoreV1.DeliverAsync, gerçek recipient owner okuması ardından aynı
+  Serializable işlemde NotificationInbox ve kişisel bildirimleri kaydeder. PK
+  CompanyId/SourceName/EventId'dir; olay tipi/sürümü ve PayloadSha256 tekrar teslimde
+  değişemez. Gerçek Notifications model/DDL ve live writer/hash bağıyla inbox olarak
+  envantere alındı; bildirim retention politikası veya dispatcher değiştirilmedi.
+- Sales iptal teslim geçmişi business miktar kaydı değildir: gerçek Finance teslim
+  cevabının immutable ViewJson/Sequence geçmişidir. CompanyId/CancellationId/Sequence
+  key'i, önceki delivery version, command replay, aynı işlem audit ve fresh fence
+  korunarak delivery olarak sınıflandırıldı. Kaynak `RecordDeliveryAsync` callback
+  içinde yazdığı için mevcut generator deferred-callable koruması bunu doğru biçimde
+  operative anchor saymıyordu. Koruma gevşetilmedi.
+- Koordinatörün dar ek yetkisiyle `1e78622ad` ayrı source commit'i, aynı transaction
+  wrapper/argüman/await/fence/sıra/sonuçları koruyup yalnız lambda gövdesini gerçek
+  `RecordDeliveryCoreAsync` metoduna çıkardı. Envanter bu gerçek core'u bağlar.
+- Aynı kaynak kontrolünde iki Purchasing lexical önkoşulu bulundu. `4c77e73cd`
+  ayrı source commit'i AddInvoiceAttempt'ın aynı expression body’sini block body yaptı;
+  ReserveAsync'in nested Prior okuyucusunu aynı captured parametreleri açık alan private
+  metoda taşıdı. Key hesaplama, ilk replay, write, concurrency recovery ve son cevap
+  sırası değişmedi. Mevcut generator token/fingerprint fonksiyonları iki dönüşümü
+  dosya yazılmadan önce doğruladı. Yeni behavior, SQL, model veya migration yoktur.
+- Yeni iki message kaydıyla kayıtlı durable-store sayısı 66'dır. Üç runtime dosyasının
+  kaynak derlemesi **QUEUED**; .NET/Node lease alınmadı ve süreç başlatılmadı. Generator
+  validator ve metadata-only/non-message istisna kuralları genişletilmedi. Yeni source
+  şekliyle exact hash ve son risky surface yeniden ölçülecek; tam suite ancak gerçek
+  üretici geçtiğinde çalıştırılacaktır.
