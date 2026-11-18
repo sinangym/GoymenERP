@@ -49,9 +49,39 @@ public sealed partial class SalesInvoiceSqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public async Task Official_cancel_fact_header_shares_audit_event_and_original_replay_commit_together_without_rewriting_finalization()
     {
-        await using var run=await Run.StartAsync();var actor=Guid.NewGuid().ToString("D");
+        await using var run=await Run.StartAsync();var actor="aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
         var invoice=await FinalizedAsync(run,"official-cancel","SENTETIK-OC-1",Guid.NewGuid().ToString("D"),"SENTETIK-checker",actor);
         var original=await run.ScalarAsync<string>("SELECT PlanJson FROM sales.InvoiceFinalizations WHERE InvoiceId=@id",("@id",invoice.Id));
+        // The generated forward repair and its Down both reapply the corrected trigger with live finalization rows intact.
+        var repair = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.RepairSalesOfficialInvoiceCancellationActorCollation();
+        foreach (var operation in repair.UpOperations.Concat(repair.DownOperations))
+            await run.ExecuteAsync(Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(operation).Sql);
+        Assert.Equal(original, await run.ScalarAsync<string>("SELECT PlanJson FROM sales.InvoiceFinalizations WHERE InvoiceId=@id", ("@id", invoice.Id)));
+        // The exact actor must remain binary even when the legacy header uses the database collation.
+        // Real INSERT + UPDATE exercise the installed trigger; rollback leaves the positive workflow untouched.
+        var differentCaseActor = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync("""
+            BEGIN TRY
+                BEGIN TRANSACTION;
+                INSERT INTO sales.OfficialInvoiceCancellations
+                    (CompanyId, CancellationId, InvoiceId, Kind, NormalInvoiceId, SubcontractInvoiceId,
+                     FinalizedVersion, InvoiceVersion, AdmissionId, ActorId, RecordedAtUtc, CorrelationId, ViewJson, AdmissionJson)
+                VALUES (@company, @cancellation, @invoice, 1, @invoice, NULL,
+                        @version, @version + 1, @admission, @actor, @at, N'SENTETIK', N'{"reason":"SENTETIK"}', N'{}');
+                UPDATE sales.Invoices SET State=7, Version=Version+1, CancelledBy=@differentCaseActor,
+                    CancelledAtUtc=@at, CancellationReason=N'SENTETIK'
+                    WHERE CompanyId=@company AND Id=@invoice;
+                ROLLBACK TRANSACTION;
+            END TRY
+            BEGIN CATCH
+                IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+                THROW;
+            END CATCH;
+            """, ("@company", CompanyA), ("@cancellation", Guid.NewGuid()), ("@invoice", invoice.Id),
+            ("@version", invoice.Version), ("@admission", Guid.NewGuid()), ("@actor", actor),
+            ("@differentCaseActor", actor.ToUpperInvariant()), ("@at", DateTimeOffset.UtcNow)));
+        Assert.Equal(51223, differentCaseActor.Number);
+        Assert.Equal(6, await run.ScalarAsync<int>("SELECT State FROM sales.Invoices WHERE CompanyId=@company AND Id=@id", ("@company", CompanyA), ("@id", invoice.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.OfficialInvoiceCancellations WHERE CompanyId=@company AND InvoiceId=@id", ("@company", CompanyA), ("@id", invoice.Id)));
         var proof=OfficialProof(invoice);SalesOfficialInvoiceCancellationResultV1 first;
         await using(var scope=run.OfficialStore(CompanyA))
         {

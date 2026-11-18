@@ -16,6 +16,9 @@ public sealed partial class SalesPersistenceModelTests
         Assert.Contains(up, sql => sql.Contains("THROW 51918,", StringComparison.Ordinal));
         Assert.Contains(up, sql => sql.Contains("TR_InvoiceFinalizations_Guard", StringComparison.Ordinal)
             && sql.Contains("i.[State] = 6", StringComparison.Ordinal));
+        var invoiceGuard = Assert.Single(up, sql => sql.Contains("ALTER TRIGGER [sales].[TR_Invoices_Guard]", StringComparison.Ordinal));
+        Assert.Contains("c.[ActorId] COLLATE Latin1_General_100_BIN2 = i.[CancelledBy] COLLATE Latin1_General_100_BIN2", invoiceGuard, StringComparison.Ordinal);
+        Assert.DoesNotContain("c.[ActorId] = i.[CancelledBy]", invoiceGuard, StringComparison.Ordinal);
         var first = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
         Assert.Contains("THROW 51919,", first.Sql, StringComparison.Ordinal);
         Assert.True(first.Sql.IndexOf("THROW 51919,", StringComparison.Ordinal) < first.Sql.IndexOf("DROP TRIGGER", StringComparison.Ordinal));
@@ -24,6 +27,12 @@ public sealed partial class SalesPersistenceModelTests
         Assert.Contains("[OfficialInvoiceCancellationDeliveries]", first.Sql, StringComparison.Ordinal);
         Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
         Assert.Equal(3, migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>().Count());
+        var repair = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.RepairSalesOfficialInvoiceCancellationActorCollation();
+        var repairUp = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(Assert.Single(repair.UpOperations));
+        var repairDown = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(Assert.Single(repair.DownOperations));
+        Assert.Equal(invoiceGuard, repairUp.Sql);
+        Assert.Equal(invoiceGuard, repairDown.Sql); // Down retains the safe owner guard and never drops rows or schema.
+
     }
 
     [Fact]

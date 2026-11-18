@@ -5,6 +5,56 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations;
 // SAT-D96: migration-only SQL, fixed owner tables, no runtime SQL surface. K3 review pending.
 internal static class SalesOfficialInvoiceCancellationGuards
 {
+    internal const string InvoiceGuardSql = """
+                ALTER TRIGGER [sales].[TR_Invoices_Guard]
+                ON [sales].[Invoices]
+                AFTER UPDATE, DELETE
+                AS
+                BEGIN
+                    SET NOCOUNT ON;
+                    IF NOT EXISTS (SELECT 1 FROM inserted)
+                    BEGIN
+                        IF EXISTS (SELECT 1 FROM deleted)
+                            THROW 51223, 'Sales invoices are never deleted; cancel or reject them instead.', 1;
+                        RETURN;
+                    END;
+                    IF EXISTS (SELECT 1 FROM deleted WHERE [State] IN (4, 5, 7))
+                        THROW 51223, 'A rejected, cancelled or finalized sales invoice is immutable.', 1;
+                    -- API-36: the only move out of the approved state is the finalisation (3 -> 6): exactly one version up, the decision
+                    -- facts untouched, and the official match recorded before the invoice is final (SAT-D101 / S7).
+                    IF EXISTS (SELECT 1 FROM deleted d JOIN inserted i ON i.[CompanyId] = d.[CompanyId] AND i.[Id] = d.[Id]
+                               WHERE d.[State] = 3 AND (i.[State] <> 6 OR i.[Version] <> d.[Version] + 1
+                                  OR EXISTS (SELECT i.[SubmittedBy], i.[SubmittedAtUtc], i.[DecidedBy], i.[DecidedAtUtc]
+                                             EXCEPT SELECT d.[SubmittedBy], d.[SubmittedAtUtc], d.[DecidedBy], d.[DecidedAtUtc])))
+                        THROW 51223, 'An approved sales invoice only moves to finalized, one version up, with its decision untouched.', 1;
+                    IF EXISTS (SELECT 1 FROM deleted d JOIN inserted i ON i.[CompanyId] = d.[CompanyId] AND i.[Id] = d.[Id]
+                        WHERE d.[State] = 6 AND (i.[State] <> 7 OR i.[Version] <> d.[Version] + 1
+                            OR EXISTS (SELECT i.[SubmittedBy], i.[SubmittedAtUtc], i.[DecidedBy], i.[DecidedAtUtc], i.[DecisionReason]
+                                       EXCEPT SELECT d.[SubmittedBy], d.[SubmittedAtUtc], d.[DecidedBy], d.[DecidedAtUtc], d.[DecisionReason])
+                            OR NOT EXISTS (SELECT 1 FROM [sales].[OfficialInvoiceCancellations] c
+                                WHERE c.[CompanyId] = i.[CompanyId] AND c.[NormalInvoiceId] = i.[Id] AND c.[Kind] = 1
+                                  AND c.[FinalizedVersion] = d.[Version] AND c.[InvoiceVersion] = i.[Version]
+                                  AND c.[ActorId] COLLATE Latin1_General_100_BIN2 = i.[CancelledBy] COLLATE Latin1_General_100_BIN2 AND c.[RecordedAtUtc] = i.[CancelledAtUtc]
+                                  AND JSON_VALUE(c.[ViewJson], '$.reason') = i.[CancellationReason])))
+                        THROW 51223, 'A finalized invoice only moves to officially cancelled with its immutable exact cancellation fact.', 1;
+                    IF EXISTS (SELECT 1 FROM inserted i JOIN deleted d ON i.[CompanyId] = d.[CompanyId] AND i.[Id] = d.[Id]
+                        WHERE i.[State] = 7 AND d.[State] <> 6)
+                        THROW 51223, 'Official cancellation only follows finalization.', 1;
+                    IF EXISTS (SELECT 1 FROM inserted i WHERE i.[State] = 6
+                               AND NOT EXISTS (SELECT 1 FROM [sales].[InvoiceMatches] m WHERE m.[CompanyId] = i.[CompanyId] AND m.[InvoiceId] = i.[Id]))
+                        THROW 51223, 'A sales invoice is finalized only after its official match is recorded.', 1;
+                    IF EXISTS (SELECT [Id], [CompanyId], [DocumentNo], [BusinessDate], [PartyId], [CompanyAccountId], [CurrencyId], [MoneyProfileId], [MoneyProfileVersion], [AmountScale], [ExchangeRate], [RateDay], [RateBulletinDate], [FunctionalCurrencyId], [FunctionalScale], [InstalmentsJson], [CreatedBy], [CreatedAtUtc], [CorrelationId] FROM deleted EXCEPT SELECT [Id], [CompanyId], [DocumentNo], [BusinessDate], [PartyId], [CompanyAccountId], [CurrencyId], [MoneyProfileId], [MoneyProfileVersion], [AmountScale], [ExchangeRate], [RateDay], [RateBulletinDate], [FunctionalCurrencyId], [FunctionalScale], [InstalmentsJson], [CreatedBy], [CreatedAtUtc], [CorrelationId] FROM inserted)
+                        THROW 51223, 'The identity, amount and rate facts of a sales invoice are immutable.', 1;
+                    -- AT-055 / SAT-D94: a rejected or cancelled invoice releases its shares in the SAME statement that decides it. EF writes
+                    -- independent tables in table-name order (the lines before the header), so the release stamp is the header's, not the app's.
+                    IF EXISTS (SELECT 1 FROM inserted WHERE [State] IN (4, 5, 7))
+                        UPDATE l SET l.[ReleasedAtUtc] = COALESCE(i.[CancelledAtUtc], i.[DecidedAtUtc])
+                        FROM [sales].[InvoiceLines] l
+                        JOIN inserted i ON i.[CompanyId] = l.[CompanyId] AND i.[Id] = l.[InvoiceId]
+                        WHERE i.[State] IN (4, 5, 7) AND l.[ReleasedAtUtc] IS NULL;
+                END;
+                """;
+
     internal const string DownSql = """
         IF EXISTS (SELECT 1 FROM [sales].[OfficialInvoiceCancellations])
             OR EXISTS (SELECT 1 FROM [sales].[OfficialInvoiceCancellationAttempts])
@@ -151,55 +201,7 @@ internal static class SalesOfficialInvoiceCancellationGuards
                 THROW 51918, 'Official invoice cancellation history is append-only.', 1;
             END;
             """);
-        migrationBuilder.Sql("""
-                ALTER TRIGGER [sales].[TR_Invoices_Guard]
-                ON [sales].[Invoices]
-                AFTER UPDATE, DELETE
-                AS
-                BEGIN
-                    SET NOCOUNT ON;
-                    IF NOT EXISTS (SELECT 1 FROM inserted)
-                    BEGIN
-                        IF EXISTS (SELECT 1 FROM deleted)
-                            THROW 51223, 'Sales invoices are never deleted; cancel or reject them instead.', 1;
-                        RETURN;
-                    END;
-                    IF EXISTS (SELECT 1 FROM deleted WHERE [State] IN (4, 5, 7))
-                        THROW 51223, 'A rejected, cancelled or finalized sales invoice is immutable.', 1;
-                    -- API-36: the only move out of the approved state is the finalisation (3 -> 6): exactly one version up, the decision
-                    -- facts untouched, and the official match recorded before the invoice is final (SAT-D101 / S7).
-                    IF EXISTS (SELECT 1 FROM deleted d JOIN inserted i ON i.[CompanyId] = d.[CompanyId] AND i.[Id] = d.[Id]
-                               WHERE d.[State] = 3 AND (i.[State] <> 6 OR i.[Version] <> d.[Version] + 1
-                                  OR EXISTS (SELECT i.[SubmittedBy], i.[SubmittedAtUtc], i.[DecidedBy], i.[DecidedAtUtc]
-                                             EXCEPT SELECT d.[SubmittedBy], d.[SubmittedAtUtc], d.[DecidedBy], d.[DecidedAtUtc])))
-                        THROW 51223, 'An approved sales invoice only moves to finalized, one version up, with its decision untouched.', 1;
-                    IF EXISTS (SELECT 1 FROM deleted d JOIN inserted i ON i.[CompanyId] = d.[CompanyId] AND i.[Id] = d.[Id]
-                        WHERE d.[State] = 6 AND (i.[State] <> 7 OR i.[Version] <> d.[Version] + 1
-                            OR EXISTS (SELECT i.[SubmittedBy], i.[SubmittedAtUtc], i.[DecidedBy], i.[DecidedAtUtc], i.[DecisionReason]
-                                       EXCEPT SELECT d.[SubmittedBy], d.[SubmittedAtUtc], d.[DecidedBy], d.[DecidedAtUtc], d.[DecisionReason])
-                            OR NOT EXISTS (SELECT 1 FROM [sales].[OfficialInvoiceCancellations] c
-                                WHERE c.[CompanyId] = i.[CompanyId] AND c.[NormalInvoiceId] = i.[Id] AND c.[Kind] = 1
-                                  AND c.[FinalizedVersion] = d.[Version] AND c.[InvoiceVersion] = i.[Version]
-                                  AND c.[ActorId] = i.[CancelledBy] AND c.[RecordedAtUtc] = i.[CancelledAtUtc]
-                                  AND JSON_VALUE(c.[ViewJson], '$.reason') = i.[CancellationReason])))
-                        THROW 51223, 'A finalized invoice only moves to officially cancelled with its immutable exact cancellation fact.', 1;
-                    IF EXISTS (SELECT 1 FROM inserted i JOIN deleted d ON i.[CompanyId] = d.[CompanyId] AND i.[Id] = d.[Id]
-                        WHERE i.[State] = 7 AND d.[State] <> 6)
-                        THROW 51223, 'Official cancellation only follows finalization.', 1;
-                    IF EXISTS (SELECT 1 FROM inserted i WHERE i.[State] = 6
-                               AND NOT EXISTS (SELECT 1 FROM [sales].[InvoiceMatches] m WHERE m.[CompanyId] = i.[CompanyId] AND m.[InvoiceId] = i.[Id]))
-                        THROW 51223, 'A sales invoice is finalized only after its official match is recorded.', 1;
-                    IF EXISTS (SELECT [Id], [CompanyId], [DocumentNo], [BusinessDate], [PartyId], [CompanyAccountId], [CurrencyId], [MoneyProfileId], [MoneyProfileVersion], [AmountScale], [ExchangeRate], [RateDay], [RateBulletinDate], [FunctionalCurrencyId], [FunctionalScale], [InstalmentsJson], [CreatedBy], [CreatedAtUtc], [CorrelationId] FROM deleted EXCEPT SELECT [Id], [CompanyId], [DocumentNo], [BusinessDate], [PartyId], [CompanyAccountId], [CurrencyId], [MoneyProfileId], [MoneyProfileVersion], [AmountScale], [ExchangeRate], [RateDay], [RateBulletinDate], [FunctionalCurrencyId], [FunctionalScale], [InstalmentsJson], [CreatedBy], [CreatedAtUtc], [CorrelationId] FROM inserted)
-                        THROW 51223, 'The identity, amount and rate facts of a sales invoice are immutable.', 1;
-                    -- AT-055 / SAT-D94: a rejected or cancelled invoice releases its shares in the SAME statement that decides it. EF writes
-                    -- independent tables in table-name order (the lines before the header), so the release stamp is the header's, not the app's.
-                    IF EXISTS (SELECT 1 FROM inserted WHERE [State] IN (4, 5, 7))
-                        UPDATE l SET l.[ReleasedAtUtc] = COALESCE(i.[CancelledAtUtc], i.[DecidedAtUtc])
-                        FROM [sales].[InvoiceLines] l
-                        JOIN inserted i ON i.[CompanyId] = l.[CompanyId] AND i.[Id] = l.[InvoiceId]
-                        WHERE i.[State] IN (4, 5, 7) AND l.[ReleasedAtUtc] IS NULL;
-                END;
-                """);
+        migrationBuilder.Sql(InvoiceGuardSql);
         migrationBuilder.Sql("""
                 ALTER TRIGGER [sales].[TR_InvoiceLines_Guard]
                 ON [sales].[InvoiceLines]
