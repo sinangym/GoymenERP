@@ -524,8 +524,8 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Equal(("OutboxMessages", PurchasingDbContext.Schema), (outbox.GetTableName(), outbox.GetSchema()));
         Assert.Equal([nameof(PurchasingOutboxRow.Id)], outbox.FindPrimaryKey()!.Properties.Select(property => property.Name));
         var outboxChecks = outbox.GetCheckConstraints().ToDictionary(check => check.Name!, check => check.Sql);
-        Assert.Equal("[EventType] = '" + PurchasingOrderLineClosedEventV1.EventType + "'", outboxChecks["CK_OutboxMessages_EventType"]);
-        Assert.Equal("[EventType] = 'purchasing.order-line.closed.v1'", outboxChecks["CK_OutboxMessages_EventType"]);
+        Assert.Equal(PurchasingDbContext.OutboxEventTypeCheck, outboxChecks["CK_OutboxMessages_EventType"]);
+        Assert.Equal("[EventType] IN ('purchasing.order-line.closed.v1', 'purchasing.order-line.revived.v1')", outboxChecks["CK_OutboxMessages_EventType"]);
         Assert.Contains("ISJSON([PayloadJson]) = 1", outboxChecks["CK_OutboxMessages_Envelope"], StringComparison.Ordinal);
         Assert.Contains("[Sequence] >= 1", outboxChecks["CK_OutboxMessages_Envelope"], StringComparison.Ordinal);
         Assert.Contains("[AggregateId] <> '00000000-0000-0000-0000-000000000000'", outboxChecks["CK_OutboxMessages_Identity"], StringComparison.Ordinal);
@@ -776,7 +776,7 @@ public sealed class PurchasingPersistenceModelTests
             Assert.DoesNotContain("izinli alan", onlyFacts.Message, StringComparison.Ordinal);
             order.SupplierPartyId = Guid.NewGuid(); // not allowed: the supplier never moves
             var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
-            Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
+            Assert.Equal("Cari değişikliği revizyon geçmişi gerektirir.", refusal.Message);
         }
 
         await using (PurchasingDbContext context = Context(probeSave: true))
