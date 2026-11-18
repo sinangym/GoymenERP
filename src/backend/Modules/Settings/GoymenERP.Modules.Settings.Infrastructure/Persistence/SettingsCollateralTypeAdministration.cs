@@ -429,7 +429,7 @@ internal sealed class SettingsCollateralTypeAdministration(
                 if (businessConflict) await transaction.RollbackAsync(CancellationToken.None);
                 else await transaction.CommitAsync(cancellationToken);
             }
-            if (!businessConflict) return new(answer, false, metadata.CorrelationId);
+            if (!businessConflict) return new SettingsCollateralTypeCommandResultV1(answer, false, metadata.CorrelationId);
             database.ChangeTracker.Clear();
             var winner = await FindExecutionAsync(commandName, keyHash, cancellationToken);
             if (winner is not null)

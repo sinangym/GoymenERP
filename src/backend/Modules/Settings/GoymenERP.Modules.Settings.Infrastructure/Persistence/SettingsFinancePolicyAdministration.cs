@@ -24,7 +24,7 @@ public sealed partial class SettingsFinancePolicyAdministration(
     ISettingsBankInstitutionAdministrationV1, ISettingsBankInstitutionCatalogV1,
     ISettingsCollateralRateAdministrationV1, ISettingsCollateralRateProviderV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     private const string ApprovalEntity = "Settings.FinanceApprovalPolicy";
     private const string CashEntity = "Settings.CashCountDifferencePolicy";
 
@@ -44,7 +44,7 @@ public sealed partial class SettingsFinancePolicyAdministration(
         var cash = await ReadAsync(() => database.CashCountDifferencePolicies.AsNoTracking()
             .OrderBy(x => x.CashAccountId).ThenByDescending(x => x.Version).ToListAsync(cancellationToken));
         await RequireAsync(scope, [SettingsFinancePolicyPermissionsV1.Prepare], true, cancellationToken);
-        return new(scope.CompanyId, Today(), source,
+        return new SettingsFinancePoliciesWorkspaceV1(scope.CompanyId, Today(), source,
             approvals.Select(x => ApprovalView(x, rules.Where(rule => rule.PolicyId == x.PolicyId).ToArray())).ToArray(),
             cash.Select(CashView).ToArray());
     }
@@ -142,7 +142,7 @@ public sealed partial class SettingsFinancePolicyAdministration(
         if (!company.IsResolved || company.CompanyId == Guid.Empty || !user.IsAuthenticated
             || string.IsNullOrWhiteSpace(actor) || !user.CanAccessCompany(company.CompanyId))
             throw new SettingsPrerequisiteException(SettingsFinancePolicyCodesV1.AccessDenied);
-        return new(company.CompanyId, actor);
+        return new Scope(company.CompanyId, actor);
     }
 
     private void Same(Scope scope, CancellationToken cancellationToken)
@@ -223,7 +223,7 @@ public sealed partial class SettingsFinancePolicyAdministration(
         var answer = JsonSerializer.Deserialize<SettingsFinancePolicyCommandAnswerV1>(stored.ResponseJson, Json);
         if (answer is null || answer.StatusCode != stored.HttpStatusCode || (answer.Code ?? "Succeeded") != stored.Outcome
             || answer.StatusCode is not (204 or 409)) throw Unavailable();
-        return new(answer, true, stored.OriginalCorrelationId);
+        return new SettingsFinancePolicyCommandResultV1(answer, true, stored.OriginalCorrelationId);
     }
 
     private static async Task<T> ReadAsync<T>(Func<Task<T>> read)
@@ -235,23 +235,23 @@ public sealed partial class SettingsFinancePolicyAdministration(
 
     private static bool Reason(string? input, out string value)
     { value = input?.Trim() ?? string.Empty; return value.Length is > 0 and <= FinancePolicyRulesV1.ReasonMaximumLength; }
-    private static SettingsPrerequisiteException Unavailable() => new(SettingsFinancePolicyCodesV1.Unavailable);
-    private static SettingsFinancePolicyCommandResultV1 Result(SettingsFinancePolicyCommandAnswerV1 answer, SettingsCommandMetadataV1 metadata) => new(answer, false, metadata.CorrelationId);
+    private static SettingsPrerequisiteException Unavailable() => new SettingsPrerequisiteException(SettingsFinancePolicyCodesV1.Unavailable);
+    private static SettingsFinancePolicyCommandResultV1 Result(SettingsFinancePolicyCommandAnswerV1 answer, SettingsCommandMetadataV1 metadata) => new SettingsFinancePolicyCommandResultV1(answer, false, metadata.CorrelationId);
     private static SettingsFinancePolicyCommandAnswerV1 Invalid() => Problem(400, SettingsFinancePolicyCodesV1.Invalid, "Alanları ve kaynak sürümlerini kontrol edin.");
     private static SettingsFinancePolicyCommandAnswerV1 Conflict() => Problem(409, SettingsFinancePolicyCodesV1.VersionConflict, "Kayıt değişmiş; güncel sürümü okuyun.");
-    private static SettingsFinancePolicyCommandAnswerV1 Problem(int status, string code, string detail) => new(status, code, "Finans politikası kaydedilemedi.", detail);
-    private static SettingsFinancePolicyCommandAnswerV1 Saved(IFinancePolicyVersionRow row) => new(204, null, "Kaydedildi.", "Politika işlemi kaydedildi.", row.PolicyId, row.Version, row.StateVersion);
+    private static SettingsFinancePolicyCommandAnswerV1 Problem(int status, string code, string detail) => new SettingsFinancePolicyCommandAnswerV1(status, code, "Finans politikası kaydedilemedi.", detail);
+    private static SettingsFinancePolicyCommandAnswerV1 Saved(IFinancePolicyVersionRow row) => new SettingsFinancePolicyCommandAnswerV1(204, null, "Kaydedildi.", "Politika işlemi kaydedildi.", row.PolicyId, row.Version, row.StateVersion);
     private static SettingsFinancePolicyStateV1 State(IFinancePolicyVersionRow row) => Enum.TryParse<SettingsFinancePolicyStateV1>(row.State, out var state)
         && Enum.IsDefined(state) ? state : throw Unavailable();
 
     private static SettingsFinanceApprovalPolicyV1 ApprovalView(FinanceApprovalPolicyRow row, IReadOnlyList<FinanceApprovalPolicyRuleRow> rules) =>
-        new(row.CompanyId, row.PolicyId, row.Version, row.StateVersion, State(row), row.ValidFrom, row.ValidThrough,
+        new SettingsFinanceApprovalPolicyV1(row.CompanyId, row.PolicyId, row.Version, row.StateVersion, State(row), row.ValidFrom, row.ValidThrough,
             row.RetiredFrom, row.PreparedBy, row.PreparedAtUtc, row.PublishedBy, row.PublishedAtUtc, row.Reason,
             rules.OrderBy(x => x.OperationPermission, StringComparer.Ordinal).ThenBy(x => x.CurrencyId).ThenBy(x => x.ApprovalStep)
                 .Select(x => new SettingsFinanceApprovalRuleV1(x.RuleId, x.OperationPermission, x.CurrencyId,
                     x.ApproverRoleId, x.ApproverRoleCode, x.RoleSourceVersion, x.ApprovalStep, x.AmountThreshold)).ToArray());
     private static SettingsCashCountDifferencePolicyV1 CashView(CashCountDifferencePolicyRow row) =>
-        new(row.CompanyId, row.PolicyId, row.Version, row.StateVersion, State(row), row.ValidFrom, row.ValidThrough,
+        new SettingsCashCountDifferencePolicyV1(row.CompanyId, row.PolicyId, row.Version, row.StateVersion, State(row), row.ValidFrom, row.ValidThrough,
             row.RetiredFrom, row.PreparedBy, row.PreparedAtUtc, row.PublishedBy, row.PublishedAtUtc, row.Reason,
             row.CashAccountId, row.CashAccountVersion, row.CurrencyId, row.AmountThreshold);
 }

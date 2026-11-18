@@ -32,40 +32,40 @@ public sealed class CashExchangeBookValueServiceV1(FinanceDbContext db, ICompany
     public async Task<ReadResult<CashExchangeBookValueCandidatePageV1>> ListAsync(FinanceContext context,
         Guid? afterId, CancellationToken ct)
     {
-        if (!await Allowed(context, null, ct)) return new(ReadOutcome.Denied, null);
-        if (afterId == Guid.Empty) return new(ReadOutcome.NotFound, null);
+        if (!await Allowed(context, null, ct)) return new ReadResult<CashExchangeBookValueCandidatePageV1>(ReadOutcome.Denied, null);
+        if (afterId == Guid.Empty) return new ReadResult<CashExchangeBookValueCandidatePageV1>(ReadOutcome.NotFound, null);
         try
         {
             var query = db.CashTransfers.AsNoTracking().Where(x => x.Kind == CashTransferKinds.CurrencyExchange);
             if (afterId is { } cursor) query = query.Where(x => x.Id.CompareTo(cursor) > 0);
             var rows = await query.OrderBy(x => x.Id).Take(PageSize + 1).ToArrayAsync(ct);
-            if (!await Allowed(context, null, ct)) return new(ReadOutcome.Denied, null);
-            if (rows.Any(x => x.CompanyId != context.CompanyId)) return new(ReadOutcome.Unavailable, null);
+            if (!await Allowed(context, null, ct)) return new ReadResult<CashExchangeBookValueCandidatePageV1>(ReadOutcome.Denied, null);
+            if (rows.Any(x => x.CompanyId != context.CompanyId)) return new ReadResult<CashExchangeBookValueCandidatePageV1>(ReadOutcome.Unavailable, null);
             var views = rows.Take(PageSize).Select(CashTransferService.View).ToArray();
-            return new(ReadOutcome.Found, new(context.CompanyId, views, rows.Length > PageSize ? views[^1].Id : null));
+            return new ReadResult<CashExchangeBookValueCandidatePageV1>(ReadOutcome.Found, new CashExchangeBookValueCandidatePageV1(context.CompanyId, views, rows.Length > PageSize ? views[^1].Id : null));
         }
         catch (Exception ex) when (ex is DbException or JsonException or InvalidOperationException)
-        { return new(await Allowed(context, null, ct) ? ReadOutcome.Unavailable : ReadOutcome.Denied, null); }
+        { return new ReadResult<CashExchangeBookValueCandidatePageV1>(await Allowed(context, null, ct) ? ReadOutcome.Unavailable : ReadOutcome.Denied, null); }
     }
 
     public async Task<ReadResult<CashExchangeBookValueWorkspaceV1>> GetAsync(FinanceContext context, Guid transferId, CancellationToken ct)
     {
-        if (!await Allowed(context, null, ct)) return new(ReadOutcome.Denied, null);
+        if (!await Allowed(context, null, ct)) return new ReadResult<CashExchangeBookValueWorkspaceV1>(ReadOutcome.Denied, null);
         try
         {
             var transfer = await db.CashTransfers.AsNoTracking().SingleOrDefaultAsync(x => x.Id == transferId, ct);
-            if (!await Allowed(context, null, ct)) return new(ReadOutcome.Denied, null);
-            if (transfer is null || transfer.Kind != CashTransferKinds.CurrencyExchange) return new(ReadOutcome.NotFound, null);
+            if (!await Allowed(context, null, ct)) return new ReadResult<CashExchangeBookValueWorkspaceV1>(ReadOutcome.Denied, null);
+            if (transfer is null || transfer.Kind != CashTransferKinds.CurrencyExchange) return new ReadResult<CashExchangeBookValueWorkspaceV1>(ReadOutcome.NotFound, null);
             var proposals = await db.CashExchangeBookValueProposals.AsNoTracking().Where(x => x.TransferId == transferId)
                 .OrderByDescending(x => x.PreparedAtUtc).ThenBy(x => x.Id).ToArrayAsync(ct);
-            if (!await Allowed(context, null, ct)) return new(ReadOutcome.Denied, null);
+            if (!await Allowed(context, null, ct)) return new ReadResult<CashExchangeBookValueWorkspaceV1>(ReadOutcome.Denied, null);
             var decisions = await db.CashExchangeBookValueDecisions.AsNoTracking().Where(x => x.TransferId == transferId).ToArrayAsync(ct);
-            if (!await Allowed(context, null, ct)) return new(ReadOutcome.Denied, null);
-            return new(ReadOutcome.Found, new(context.CompanyId, CashTransferService.View(transfer),
+            if (!await Allowed(context, null, ct)) return new ReadResult<CashExchangeBookValueWorkspaceV1>(ReadOutcome.Denied, null);
+            return new ReadResult<CashExchangeBookValueWorkspaceV1>(ReadOutcome.Found, new CashExchangeBookValueWorkspaceV1(context.CompanyId, CashTransferService.View(transfer),
                 proposals.Select(x => View(x, decisions.SingleOrDefault(d => d.ProposalId == x.Id))).ToArray()));
         }
         catch (Exception ex) when (ex is DbException or JsonException or InvalidOperationException)
-        { return new(await Allowed(context, null, ct) ? ReadOutcome.Unavailable : ReadOutcome.Denied, null); }
+        { return new ReadResult<CashExchangeBookValueWorkspaceV1>(await Allowed(context, null, ct) ? ReadOutcome.Unavailable : ReadOutcome.Denied, null); }
     }
 
     public async Task<CashExchangeBookValueCommandResultV1> ProposeAsync(FinanceContext context, CommandMetadata metadata,
@@ -162,7 +162,7 @@ public sealed class CashExchangeBookValueServiceV1(FinanceDbContext db, ICompany
         CashExchangeBookValueViewV1? before)
     {
         var result = new CashExchangeBookValueCommandResultV1(CommandOutcome.Succeeded, value, false, context.CorrelationId, null);
-        db.CashExchangeBookValueCommands.Add(new() { CompanyId = context.CompanyId, Command = command,
+        db.CashExchangeBookValueCommands.Add(new CashExchangeBookValueCommandRow() { CompanyId = context.CompanyId, Command = command,
             KeyHash = FinanceCommandKeys.Hash(metadata.IdempotencyKey), ActorId = context.ActorId, PayloadHash = payloadHash,
             ResultJson = JsonSerializer.Serialize(result, Json) });
         if (!await Allowed(context, permission, ct)) return Failure(context, CommandOutcome.Denied);
@@ -262,7 +262,7 @@ public sealed class CashExchangeBookValueServiceV1(FinanceDbContext db, ICompany
         && (c.CausationId is null || Text(c.CausationId, 128));
     private static bool Text(string? value, int max) => !string.IsNullOrWhiteSpace(value) && value.Length <= max
         && value == value.Trim() && !value.Any(char.IsControl);
-    private static CashExchangeBookValueCommandResultV1 Failure(FinanceContext c, CommandOutcome outcome, string? code = null) => new(outcome, null, false, c.CorrelationId, code);
+    private static CashExchangeBookValueCommandResultV1 Failure(FinanceContext c, CommandOutcome outcome, string? code = null) => new CashExchangeBookValueCommandResultV1(outcome, null, false, c.CorrelationId, code);
     internal static CashExchangeBookValueViewV1 View(CashExchangeBookValueProposalRow p, CashExchangeBookValueDecisionRow? d)
     {
         var preparation = JsonSerializer.Deserialize<ProposeCashExchangeBookValueV1>(p.PreparationJson, Json) ?? throw new JsonException();
@@ -275,7 +275,7 @@ public sealed class CashExchangeBookValueServiceV1(FinanceDbContext db, ICompany
             || (d is not null && (d.CompanyId != p.CompanyId || d.ProposalId != p.Id || d.TransferId != p.TransferId
                 || d.PreparedBy != p.PreparedBy || !Text(d.DecidedBy, 128) || d.DecidedBy == p.PreparedBy || d.DecidedAtUtc < p.PreparedAtUtc
                 || d.DecidedAtUtc.Offset != TimeSpan.Zero || (d.Approved ? d.Reason is not null : !Text(d.Reason, 1000))))) throw new JsonException();
-        return new(p.Id, p.CompanyId, p.TransferId, source.Version, p.TransferSourceHash, preparation.SourceBookValueTl,
+        return new CashExchangeBookValueViewV1(p.Id, p.CompanyId, p.TransferId, source.Version, p.TransferSourceHash, preparation.SourceBookValueTl,
             preparation.Evidence, preparation.Reason, p.PreparedBy, p.PreparedAtUtc,
             d is null ? CashExchangeBookValueStatusV1.Pending : d.Approved ? CashExchangeBookValueStatusV1.Approved : CashExchangeBookValueStatusV1.Rejected,
             d is null ? "1" : "2", d?.DecidedBy, d?.DecidedAtUtc, d?.Reason, preparation.TargetFunctionalValueTl);

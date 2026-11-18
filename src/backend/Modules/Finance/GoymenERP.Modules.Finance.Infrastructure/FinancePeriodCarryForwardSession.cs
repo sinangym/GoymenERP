@@ -167,7 +167,7 @@ public sealed class FinancePeriodCarryForwardSession : IAsyncDisposable
                 if (parsed.IsZero) continue;
                 if (balance.Side is not (PartyLedgerBalanceSide.Debit or PartyLedgerBalanceSide.Credit))
                     throw new InvalidOperationException("A nonzero party balance must have its actual debit or credit side.");
-                lines.Add(new("Party", party.AccountId, party.PartyId, currency.CurrencyId,
+                lines.Add(new FinancePeriodCarryLineV1("Party", party.AccountId, party.PartyId, currency.CurrencyId,
                     balance.Side == PartyLedgerBalanceSide.Debit ? parsed.Text : "0",
                     balance.Side == PartyLedgerBalanceSide.Credit ? parsed.Text : "0"));
             }
@@ -181,7 +181,7 @@ public sealed class FinancePeriodCarryForwardSession : IAsyncDisposable
             if (balance is null) throw new InvalidOperationException("The dated treasury balance source is unavailable.");
             var comparison = balance.Incoming.CompareTo(balance.Outgoing);
             if (comparison == 0) return;
-            lines.Add(new(kind, id, null, currencyId,
+            lines.Add(new FinancePeriodCarryLineV1(kind, id, null, currencyId,
                 comparison > 0 ? balance.Incoming.Subtract(balance.Outgoing).Text : "0",
                 comparison < 0 ? balance.Outgoing.Subtract(balance.Incoming).Text : "0"));
         }

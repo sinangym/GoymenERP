@@ -16,7 +16,7 @@ public sealed partial class AccountingSourceVoucherStoreV1(AccountingDbContext d
     ICompanyContext company, IActiveAccountPlanReaderV1 accountPlans, ISettingsMoneyCandidateReader currencies,
     IAuditEventCollector audit, TimeProvider clock) : IAccountingSourceVoucherStoreV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<IReadOnlyList<AccountingSourceVoucherViewV1>> ListAsync(CancellationToken cancellationToken = default)
     {
@@ -101,9 +101,9 @@ public sealed partial class AccountingSourceVoucherStoreV1(AccountingDbContext d
             RequireCompany(companyId);
             var before = JsonSerializer.Serialize(View(row, lines, null), Json);
             var request = new PostingRequest("accounting.invoice-journal", row.Id.ToString("D"), row.Id,
-                new(companyId, row.SourceDocumentId, "invoice-source"),
+                new SourceReference(companyId, row.SourceDocumentId, "invoice-source"),
                 "invoice-mapping/" + row.MappingVersion.ToString(CultureInfo.InvariantCulture), currency[0].CurrencyId,
-                new(row.DocumentDate, row.DocumentDate, null, clock.GetUtcNow()),
+                new PostingDates(row.DocumentDate, row.DocumentDate, null, clock.GetUtcNow()),
                 lines.Select(line => new ProposedLine(line.MappingKey, new AccountRef(companyId, line.AccountId),
                     (PostingSide)line.Side, line.Amount)).ToArray());
             var outcome = await posting.ReceiveAsync(request, period.Id, metadata with { Completion = null }, cancellationToken);
@@ -156,7 +156,7 @@ public sealed partial class AccountingSourceVoucherStoreV1(AccountingDbContext d
     }
 
     internal static AccountingSourceVoucherViewV1 View(AccountingSourceDocumentVoucherDraftRow row,
-        IEnumerable<AccountingSourceDocumentVoucherDraftLineRow> lines, string? cancellationReason) => new(row.Id,
+        IEnumerable<AccountingSourceDocumentVoucherDraftLineRow> lines, string? cancellationReason) => new AccountingSourceVoucherViewV1(row.Id,
         row.CompanyId, row.DocumentKind, row.SourceDocumentId, row.InvoiceId, row.FinalizedVersion, row.SourceActorId,
         row.PartyId, row.CurrencyId, row.ExchangeRate, row.DocumentDate, row.DueDate,
         row.Status switch { 1 => row.PeriodId is null ? "PeriodWaiting" : "AwaitingApproval",
@@ -170,5 +170,5 @@ public sealed partial class AccountingSourceVoucherStoreV1(AccountingDbContext d
     private Guid Company() => company.IsResolved && company.CompanyId != Guid.Empty ? company.CompanyId
         : throw Refuse(AccountingStoreCodes.CompanyContextMismatch);
     private void RequireCompany(Guid captured) { if (Company() != captured) throw Refuse(AccountingStoreCodes.CompanyContextMismatch); }
-    private static AccountingStoreException Refuse(string code) => new(code, "Kaynak fatura fişi işlemi tamamlanamadı.");
+    private static AccountingStoreException Refuse(string code) => new AccountingStoreException(code, "Kaynak fatura fişi işlemi tamamlanamadı.");
 }

@@ -24,7 +24,7 @@ public sealed class ManufacturingCostDifferenceStoreV1(AccountingDbContext db,
     ManufacturingPostedCostAttributionStoreV1? attributions = null)
     : IManufacturingCostDifferenceStoreV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     private const string EntityType = "Accounting.ManufacturingCostDifference";
 
     public async Task AcceptAsync(WorkInboxEventV1 envelope, ManufacturingCostDifferenceEventV1 source,
@@ -108,11 +108,11 @@ public sealed class ManufacturingCostDifferenceStoreV1(AccountingDbContext db,
         row.CreditAccountId = request.CreditAccountId;
         row.AccountPlanVersion = plan.AccountPlanSourceVersion;
         row.AccountPlanSha256 = plan.AccountsSourceSha256;
-        var debit = plan.Package.Mirror.Lookup(new(companyId, request.DebitAccountId))!;
-        var credit = plan.Package.Mirror.Lookup(new(companyId, request.CreditAccountId))!;
+        var debit = plan.Package.Mirror.Lookup(new AccountRef(companyId, request.DebitAccountId))!;
+        var credit = plan.Package.Mirror.Lookup(new AccountRef(companyId, request.CreditAccountId))!;
         row.AccountPlanProofJson = JsonSerializer.Serialize(new ManufacturingCostDifferenceAccountPlanV1(plan.PackageId,
             plan.Version, plan.CatalogVersion, plan.AccountPlanSourceVersion, plan.AccountsSourceSha256,
-            new(debit.Account.AccountId, debit.Code, debit.Name), new(credit.Account.AccountId, credit.Code, credit.Name)), Json);
+            new ManufacturingCostDifferenceAccountV1(debit.Account.AccountId, debit.Code, debit.Name), new ManufacturingCostDifferenceAccountV1(credit.Account.AccountId, credit.Code, credit.Name)), Json);
         row.PreparedBy = actorId;
         row.PreparedAtUtc = clock.GetUtcNow();
         row.Reason = request.Reason;
@@ -152,11 +152,11 @@ public sealed class ManufacturingCostDifferenceStoreV1(AccountingDbContext db,
             // Accounts and sides were explicitly selected and are now approved by another person. They are not a
             // fabricated reusable posting-rule snapshot. The source's sign stays visible in the immutable proposal.
             var request = new PostingRequest(ManufacturingCostDifferenceInboxV1.ConsumerName,
-                row.Id.ToString("D"), Guid.NewGuid(), new(companyId, row.Id, ManufacturingCostDifferenceInboxV1.PostingPurpose),
+                row.Id.ToString("D"), Guid.NewGuid(), new SourceReference(companyId, row.Id, ManufacturingCostDifferenceInboxV1.PostingPurpose),
                 "human-proposal/" + row.Version.ToString(CultureInfo.InvariantCulture), row.CurrencyId!.Value,
-                new(row.TransactionDate!.Value, row.AccountingDate.Value, null, clock.GetUtcNow()),
-                [new("selected-debit", new AccountRef(companyId, row.DebitAccountId.Value), PostingSide.Debit, amount),
-                 new("selected-credit", new AccountRef(companyId, row.CreditAccountId.Value), PostingSide.Credit, amount)]);
+                new PostingDates(row.TransactionDate!.Value, row.AccountingDate.Value, null, clock.GetUtcNow()),
+                [new ProposedLine("selected-debit", new AccountRef(companyId, row.DebitAccountId.Value), PostingSide.Debit, amount),
+                 new ProposedLine("selected-credit", new AccountRef(companyId, row.CreditAccountId.Value), PostingSide.Credit, amount)]);
             var outcome = await posting.ReceiveAsync(request, row.PeriodId.Value, metadata with { Completion = null }, cancellationToken);
             if (outcome.Journal is null || outcome.Kind != PostingOutcomeKind.Posted) throw Refuse("cost_difference_posting_conflict");
             await freshAuthorityFence(cancellationToken);
@@ -246,7 +246,7 @@ public sealed class ManufacturingCostDifferenceStoreV1(AccountingDbContext db,
     {
         var source = JsonSerializer.Deserialize<ManufacturingCostDifferenceEventV1>(row.SourceJson, Json)
             ?? throw new InvalidOperationException("Maliyet farkı kaynak belgesi okunamadı.");
-        return new(row.Id, row.CompanyId, row.ManufacturingOrderId, row.GenerationId, row.GenerationVersion,
+        return new ManufacturingCostDifferenceViewV1(row.Id, row.CompanyId, row.ManufacturingOrderId, row.GenerationId, row.GenerationVersion,
             row.Status switch { 1 => "AwaitingPreparation", 2 => "Prepared", 3 => "Posted", 4 => "NoDifference", _ => throw new InvalidOperationException() },
             row.Version, row.SignedTlDifference, source.Outputs.Select(output => new ManufacturingCostDifferenceOutputViewV1(
                 output.OutputId, output.ReceiptMovementId, output.LabelId, Text(output.NetQuantityKg),
@@ -267,7 +267,7 @@ public sealed class ManufacturingCostDifferenceStoreV1(AccountingDbContext db,
             throw Refuse("cost_difference_approval_refused");
     }
     private static string Text(decimal value) => value.ToString("0.############################", CultureInfo.InvariantCulture);
-    private static AccountingStoreException Refuse(string code) => new(code, "Üretim maliyet farkı işlemi tamamlanamadı.");
+    private static AccountingStoreException Refuse(string code) => new AccountingStoreException(code, "Üretim maliyet farkı işlemi tamamlanamadı.");
 
     private async Task Save(CancellationToken cancellationToken)
     {

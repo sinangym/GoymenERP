@@ -22,7 +22,7 @@ internal sealed class SettingsDocumentNumberSeriesV1(SettingsDbContext database,
     : ISettingsDocumentNumberSeriesV1, ISettingsDocumentNumberSeriesAdministrationV1
 {
     private const string FormatCommand = "settings.document-number-format.record.v1";
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     public async Task<SettingsDocumentNumberFormatV1> GetPolicyAsync(Guid companyId, SettingsDocumentSeriesV1 series, CancellationToken cancellationToken = default)
         => await GetPolicyCoreAsync(companyId, series, Permission(series, cancel: false), cancellationToken);
 
@@ -34,7 +34,7 @@ internal sealed class SettingsDocumentNumberSeriesV1(SettingsDbContext database,
         var row = await database.DocumentNumberFormats.AsNoTracking().Where(row => row.Series == (int)series)
             .OrderByDescending(row => row.Version).FirstOrDefaultAsync(cancellationToken);
         await RequireAsync(companyId, actor, permission, cancellationToken);
-        return row is null ? throw Missing() : new(companyId, series, row.Prefix, row.SequenceDigits, Text(row.Version));
+        return row is null ? throw Missing() : new SettingsDocumentNumberFormatV1(companyId, series, row.Prefix, row.SequenceDigits, Text(row.Version));
     }
     public Task<SettingsDocumentNumberReservationV1> ReservePurchaseOrderNumberAsync(IDbTransaction transaction, Guid companyId,
         Guid documentId, DateOnly businessDate, string expectedFormatVersion, SettingsCommandMetadataV1 metadata,
@@ -114,7 +114,7 @@ internal sealed class SettingsDocumentNumberSeriesV1(SettingsDbContext database,
         var year = businessDate.Year;
         var counter = await owner.DocumentNumberCounters.SingleOrDefaultAsync(row => row.Series == (int)series && row.Year == year, cancellationToken);
         var next = checked((counter?.LastSequence ?? 0) + 1);
-        if (counter is null) owner.DocumentNumberCounters.Add(counter = new() { CompanyId = companyId, Series = (int)series, Year = year, LastSequence = next });
+        if (counter is null) owner.DocumentNumberCounters.Add(counter = new DocumentNumberCounterRow() { CompanyId = companyId, Series = (int)series, Year = year, LastSequence = next });
         else counter.LastSequence = next;
         var number = string.Create(CultureInfo.InvariantCulture, $"{format.Prefix}-{year:D4}-{next.ToString(CultureInfo.InvariantCulture).PadLeft(format.SequenceDigits, '0')}");
         var row = new DocumentNumberReservationRow { CompanyId = companyId, Series = (int)series, DocumentId = documentId,
@@ -155,7 +155,7 @@ internal sealed class SettingsDocumentNumberSeriesV1(SettingsDbContext database,
         }
         var reservation = await owner.DocumentNumberReservations.AsNoTracking().SingleOrDefaultAsync(row => row.Series == (int)series && row.DocumentId == documentId, cancellationToken);
         if (reservation is null) { await RequireAsync(companyId, metadata.ActorId, permission, cancellationToken); throw new SettingsPrerequisiteException(SettingsDocumentNumberSeriesProblemCodesV1.Unavailable); }
-        owner.DocumentNumberCancellations.Add(new() { CompanyId = companyId, Series = (int)series, DocumentId = documentId,
+        owner.DocumentNumberCancellations.Add(new DocumentNumberCancellationRow() { CompanyId = companyId, Series = (int)series, DocumentId = documentId,
             RecordedBy = metadata.ActorId, RecordedAtUtc = time.GetUtcNow(), Reason = reason, KeyHash = key, RequestHash = hash });
         var grant = await RequireAsync(companyId, metadata.ActorId, permission, cancellationToken);
         await owner.SaveChangesAsync(cancellationToken);
@@ -172,7 +172,7 @@ internal sealed class SettingsDocumentNumberSeriesV1(SettingsDbContext database,
         var rows = await database.DocumentNumberFormats.AsNoTracking().Where(row => row.Series == (int)series).OrderByDescending(row => row.Version)
             .Select(row => new SettingsDocumentNumberFormatVersionV1(Text(row.Version), row.Prefix, row.SequenceDigits, row.RecordedBy, row.RecordedAtUtc, row.Reason)).ToArrayAsync(cancellationToken);
         await RequireAsync(company, actor, SettingsDocumentNumberSeriesPermissionsV1.Manage, cancellationToken);
-        return new(company, series, rows);
+        return new SettingsDocumentNumberFormatViewV1(company, series, rows);
     }
     public async Task<IReadOnlyList<SettingsDocumentNumberGapV1>> GetGapsAsync(SettingsDocumentSeriesV1 series, int year, CancellationToken cancellationToken = default)
     {
@@ -212,7 +212,7 @@ internal sealed class SettingsDocumentNumberSeriesV1(SettingsDbContext database,
             var result = (current?.Version ?? 0) == expected ? Result(204, null, metadata) : Result(409, SettingsDocumentNumberSeriesProblemCodesV1.VersionConflict, metadata);
             if (result.Answer.StatusCode == 204)
             {
-                database.DocumentNumberFormats.Add(new() { CompanyId = metadata.CompanyId, Series = (int)request.Series, Version = checked(expected + 1),
+                database.DocumentNumberFormats.Add(new DocumentNumberFormatRow() { CompanyId = metadata.CompanyId, Series = (int)request.Series, Version = checked(expected + 1),
                     Prefix = prefix, SequenceDigits = request.SequenceDigits.Value, RecordedBy = metadata.ActorId, RecordedAtUtc = time.GetUtcNow(), Reason = request.Reason.Trim() });
             }
             database.CommandExecutions.Add(CommandExecution.Complete(new CommandExecutionData(Guid.NewGuid(), metadata.CompanyId,
@@ -288,15 +288,15 @@ internal sealed class SettingsDocumentNumberSeriesV1(SettingsDbContext database,
         _ => throw new ArgumentOutOfRangeException(nameof(series)),
     };
     private void Enqueue(string eventType, string operation, Guid document, string permission, PermissionScope grant, SettingsCommandMetadataV1 metadata,
-        object after, long? beforeVersion, long afterVersion, SettingsDocumentSeriesV1 series) => audit.Enqueue(new(
+        object after, long? beforeVersion, long afterVersion, SettingsDocumentSeriesV1 series) => audit.Enqueue(new AuditEventDraft(
         metadata.CompanyId, eventType, operation == "RecordFormat" ? "Settings.DocumentNumberSeries" : operation == "CancelNumber" ? "Settings.DocumentNumberCancellation" : "Settings.DocumentNumberReservation",
         document == Guid.Empty ? string.Create(CultureInfo.InvariantCulture, $"{metadata.CompanyId:D}:{(int)series}") : document.ToString("D"), operation,
         beforeVersion, afterVersion, AuditActorTypes.User, metadata.ActorId, permission, grant.RoleCodes, "{}", JsonSerializer.Serialize(after, Json),
         "Belge numara serisi işlemi kaydedildi", null, AuditAiInvolvement.None, null, metadata.SourceChannel,
         metadata.ClientIpAddress, metadata.UserAgent, metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey));
-    private static SettingsDocumentNumberReservationV1 View(DocumentNumberReservationRow row, bool replayed) => new(row.CompanyId, (SettingsDocumentSeriesV1)row.Series,
+    private static SettingsDocumentNumberReservationV1 View(DocumentNumberReservationRow row, bool replayed) => new SettingsDocumentNumberReservationV1(row.CompanyId, (SettingsDocumentSeriesV1)row.Series,
         row.DocumentId, row.BusinessDate, row.Number, Text(row.FormatVersion), row.Sequence, replayed);
-    private static SettingsPrerequisiteException Missing() => new(SettingsDocumentNumberSeriesProblemCodesV1.FormatMissing);
+    private static SettingsPrerequisiteException Missing() => new SettingsPrerequisiteException(SettingsDocumentNumberSeriesProblemCodesV1.FormatMissing);
     // A Sales create and a Purchasing create are distinct owner commands. Within one series the key cannot move to another document.
     private static string ReservationKey(SettingsDocumentSeriesV1 series, string key) =>
         IdempotencyHash.ComputeKey(string.Create(CultureInfo.InvariantCulture, $"{(int)series}:{key}"));
@@ -306,13 +306,13 @@ internal sealed class SettingsDocumentNumberSeriesV1(SettingsDbContext database,
         version = 0;
         return text is { Length: >= 1 and <= 19 } && text.All(char.IsAsciiDigit) && (text.Length == 1 || text[0] != '0') && long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out version);
     }
-    private static CompanyPolicyCommandResultV1 Result(int status, string? code, SettingsCommandMetadataV1 metadata) => new(new(status, code,
+    private static CompanyPolicyCommandResultV1 Result(int status, string? code, SettingsCommandMetadataV1 metadata) => new CompanyPolicyCommandResultV1(new CompanyPolicyCommandAnswerV1(status, code,
         status == 204 ? "Kaydedildi." : "İşlem tamamlanamadı.", status == 204 ? "Biçim sürümü kaydedildi." : "İstek veya biçim sürümü geçersiz."), false, metadata.CorrelationId);
     private static CompanyPolicyCommandResultV1 Replay(CommandExecution previous, string hash, SettingsCommandMetadataV1 metadata)
     {
         if (previous.ActorId != metadata.ActorId || previous.RequestHash != hash) return Result(409, SettingsDocumentNumberSeriesProblemCodesV1.IdempotencyConflict, metadata);
         var answer = JsonSerializer.Deserialize<CompanyPolicyCommandAnswerV1>(previous.ResponseJson, Json);
         if (answer is null || answer.StatusCode != previous.HttpStatusCode || answer.StatusCode is not (204 or 409)) throw new InvalidOperationException("Stored number-format result is invalid.");
-        return new(answer, true, previous.OriginalCorrelationId);
+        return new CompanyPolicyCommandResultV1(answer, true, previous.OriginalCorrelationId);
     }
 }

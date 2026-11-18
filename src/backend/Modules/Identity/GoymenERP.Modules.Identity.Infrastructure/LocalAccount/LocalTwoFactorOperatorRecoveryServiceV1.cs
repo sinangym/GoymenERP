@@ -56,7 +56,7 @@ internal sealed class LocalTwoFactorOperatorRecoveryServiceV1(DbContextOptions<I
                 ? new LocalTwoFactorRecoveryVersionAuditV1(target.Version, credential.Version, secret?.Version ?? 0, credential.TwoFactorEnabled)
                 : new LocalTwoFactorRecoveryVersionAuditV1(recorded.ConfirmedUserVersion, recorded.ConfirmedCredentialVersion, recorded.ConfirmedSecretVersion, recorded.ConfirmedTwoFactorEnabled);
             var connection = reader.Database.GetDbConnection();
-            if (!console.Confirm(new(target.Id, credential.UserName, target.IsActive, confirmed.UserVersion, confirmed.CredentialVersion,
+            if (!console.Confirm(new LocalTwoFactorOperatorRecoveryConfirmationV1(target.Id, credential.UserName, target.IsActive, confirmed.UserVersion, confirmed.CredentialVersion,
                     confirmed.SecretVersion, confirmed.TwoFactorEnabled, recorded is not null, key!, reason!, connection.DataSource, connection.Database, op)))
                 return await RefuseAsync(LocalTwoFactorOperatorRecoveryStatusV1.NotConfirmed, cancellationToken);
             // Confirmation is outside a transaction. Everything affecting the mutation is re-read under Serializable.
@@ -70,19 +70,19 @@ internal sealed class LocalTwoFactorOperatorRecoveryServiceV1(DbContextOptions<I
                 // The original answer is authoritative: do not inspect or disable a newly enrolled factor.
                 return Result(winner, replay: true);
             }
-            if (recorded is not null) return new(LocalTwoFactorOperatorRecoveryStatusV1.SourceUnavailable);
+            if (recorded is not null) return new LocalTwoFactorOperatorRecoveryResultV1(LocalTwoFactorOperatorRecoveryStatusV1.SourceUnavailable);
             var freshUser = await owner.Users.AsNoTracking().SingleOrDefaultAsync(row => row.Id == target.Id, cancellationToken);
             var freshCredential = await owner.LocalCredentials.SingleOrDefaultAsync(row => row.UserId == target.Id, cancellationToken);
             var freshSecret = await owner.LocalTwoFactorSecrets.SingleOrDefaultAsync(row => row.UserId == target.Id, cancellationToken);
             if (freshUser is null || freshCredential is null || freshCredential.TwoFactorEnabled != (freshSecret is { IsActive: true }))
-                return new(LocalTwoFactorOperatorRecoveryStatusV1.SourceUnavailable);
+                return new LocalTwoFactorOperatorRecoveryResultV1(LocalTwoFactorOperatorRecoveryStatusV1.SourceUnavailable);
             var before = new LocalTwoFactorRecoveryVersionAuditV1(freshUser.Version, freshCredential.Version, freshSecret?.Version ?? 0, freshCredential.TwoFactorEnabled);
             var outcome = before != confirmed ? LocalTwoFactorOperatorRecoveryOutcome.ConcurrentChange
                 : !before.TwoFactorEnabled ? LocalTwoFactorOperatorRecoveryOutcome.AlreadyDisabled : LocalTwoFactorOperatorRecoveryOutcome.Recovered;
             if (outcome == LocalTwoFactorOperatorRecoveryOutcome.Recovered)
             {
                 if (freshCredential.Version == long.MaxValue || freshSecret!.Version == long.MaxValue)
-                    return new(LocalTwoFactorOperatorRecoveryStatusV1.SourceUnavailable);
+                    return new LocalTwoFactorOperatorRecoveryResultV1(LocalTwoFactorOperatorRecoveryStatusV1.SourceUnavailable);
                 freshSecret.Deactivate();
                 freshCredential.ChangeTwoFactor(false, Guid.NewGuid());
             }
@@ -96,26 +96,26 @@ internal sealed class LocalTwoFactorOperatorRecoveryServiceV1(DbContextOptions<I
             await owner.SaveChangesAsync(cancellationToken);
             try
             {
-                await audit.AppendAsync(transaction.GetDbTransaction(), new(id, target.Id, new(op.OperatingSystemUser, op.MachineName),
+                await audit.AppendAsync(transaction.GetDbTransaction(), new LocalTwoFactorOperatorRecoveryAuditV1(id, target.Id, new LocalTwoFactorRecoveryOperatorAuditV1(op.OperatingSystemUser, op.MachineName),
                     confirmed, before, after, (LocalTwoFactorOperatorRecoveryAuditOutcomeV1)outcome, reason!, now,
                     correlation.CorrelationId, correlation.CausationId, keyHash), cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-            catch (Exception) { return new(LocalTwoFactorOperatorRecoveryStatusV1.AuditUnavailable); }
+            catch (Exception) { return new LocalTwoFactorOperatorRecoveryResultV1(LocalTwoFactorOperatorRecoveryStatusV1.AuditUnavailable); }
             try
             {
-                await security.AppendAsync(transaction.GetDbTransaction(), new(id, outcome == LocalTwoFactorOperatorRecoveryOutcome.Recovered,
+                await security.AppendAsync(transaction.GetDbTransaction(), new LocalTwoFactorOperatorRecoverySecurityV1(id, outcome == LocalTwoFactorOperatorRecoveryOutcome.Recovered,
                     now, correlation.CorrelationId, correlation.CausationId), cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-            catch (Exception) { return new(LocalTwoFactorOperatorRecoveryStatusV1.SecurityEventUnavailable); }
+            catch (Exception) { return new LocalTwoFactorOperatorRecoveryResultV1(LocalTwoFactorOperatorRecoveryStatusV1.SecurityEventUnavailable); }
             await transaction.CommitAsync(cancellationToken);
             return Result(attempt, replay: false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         // A lost/uncertain commit never reports success. The same key safely discovers its original result next run.
         catch (Exception error) when (error is SqlException or DbUpdateException or InvalidOperationException or ArgumentException or JsonException)
-        { return new(LocalTwoFactorOperatorRecoveryStatusV1.SourceUnavailable); }
+        { return new LocalTwoFactorOperatorRecoveryResultV1(LocalTwoFactorOperatorRecoveryStatusV1.SourceUnavailable); }
     }
 
     private async Task<LocalTwoFactorOperatorRecoveryResultV1> RefuseAsync(LocalTwoFactorOperatorRecoveryStatusV1 status, CancellationToken ct)
@@ -123,7 +123,7 @@ internal sealed class LocalTwoFactorOperatorRecoveryServiceV1(DbContextOptions<I
         if (correlation.IsResolved)
             _ = await refusalWriter.WriteAsync(new LocalTwoFactorOperatorRecoverySecurityV1(Guid.NewGuid(), false,
                 clock.GetUtcNow().ToUniversalTime(), correlation.CorrelationId, correlation.CausationId).ToEvent(), ct);
-        return new(status);
+        return new LocalTwoFactorOperatorRecoveryResultV1(status);
     }
     private static bool Canonical(string? value, int maximum) => !string.IsNullOrWhiteSpace(value) && value.Length <= maximum
         && value.Trim() == value && !value.Any(char.IsControl);
@@ -141,5 +141,5 @@ internal sealed class LocalTwoFactorOperatorRecoveryServiceV1(DbContextOptions<I
             && row.RequestHash == Fingerprint(row.TargetUserId, target, op, reason, original);
     }
     private static LocalTwoFactorOperatorRecoveryResultV1 Result(LocalTwoFactorOperatorRecoveryAttempt row, bool replay) =>
-        new((LocalTwoFactorOperatorRecoveryStatusV1)row.Outcome, row.TargetUserId, row.ResultCredentialVersion, replay, row.OriginalCorrelationId, row.Id);
+        new LocalTwoFactorOperatorRecoveryResultV1((LocalTwoFactorOperatorRecoveryStatusV1)row.Outcome, row.TargetUserId, row.ResultCredentialVersion, replay, row.OriginalCorrelationId, row.Id);
 }

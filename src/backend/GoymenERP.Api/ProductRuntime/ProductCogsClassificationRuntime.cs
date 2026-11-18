@@ -25,7 +25,7 @@ public sealed class ProductCogsClassificationRuntime(ProductRuntimeOptions optio
     IGroupSharedCommandReplayResolver replay, IServiceScopeFactory scopes, ICorrelationContext correlation,
     IProductCommandAttemptObserver observer) : IProductCogsClassificationServiceV1, IProductCogsClassificationReadPortV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     public async Task<ProductCogsClassificationViewV1> GetAsync(Guid productId, CancellationToken token = default)
     {
         RequireEnabled(); var identity = RequireIdentity();
@@ -42,14 +42,14 @@ public sealed class ProductCogsClassificationRuntime(ProductRuntimeOptions optio
     async Task<ProductCogsClassificationReadV1> IProductCogsClassificationReadPortV1.GetAsync(Guid productId, CancellationToken token)
     {
         var identity = RequireIdentity();
-        if (!options.IsEnabled) return new(ProductCogsClassificationReadOutcomeV1.Unavailable,identity.CompanyId,productId,null,
+        if (!options.IsEnabled) return new ProductCogsClassificationReadV1(ProductCogsClassificationReadOutcomeV1.Unavailable,identity.CompanyId,productId,null,
             ProductCogsClassificationContractsV1.SourceVersion);
         try
         {
             var result = await ReadAsync(productId,identity.CompanyId,token); RequireIdentity(identity);
-            return new(result is null ? ProductCogsClassificationReadOutcomeV1.NotFound
+            return new ProductCogsClassificationReadV1(result is null ? ProductCogsClassificationReadOutcomeV1.NotFound
                 : result.Classification is null ? ProductCogsClassificationReadOutcomeV1.NotSet : ProductCogsClassificationReadOutcomeV1.Available,
-                identity.CompanyId,productId,result is null ? null : new(result.ProductId,result.ProductVersion,result.ClassificationVersion,
+                identity.CompanyId,productId,result is null ? null : new ProductCogsClassificationSnapshotV1(result.ProductId,result.ProductVersion,result.ClassificationVersion,
                     result.Classification,result.ChangedInCompanyId,result.SourceVersion),ProductCogsClassificationContractsV1.SourceVersion);
         }
         catch (OperationCanceledException) { throw; }
@@ -57,7 +57,7 @@ public sealed class ProductCogsClassificationRuntime(ProductRuntimeOptions optio
         catch
         {
             RequireIdentity(identity);
-            return new(ProductCogsClassificationReadOutcomeV1.Unavailable,identity.CompanyId,productId,null,
+            return new ProductCogsClassificationReadV1(ProductCogsClassificationReadOutcomeV1.Unavailable,identity.CompanyId,productId,null,
                 ProductCogsClassificationContractsV1.SourceVersion);
         }
     }
@@ -207,7 +207,7 @@ public sealed class ProductCogsClassificationRuntime(ProductRuntimeOptions optio
     private static ProductCogsClassificationMutationV1 Answer(TerminalResponse result,bool isReplay,string originalCorrelation)
     {
         if (result.StatusCode != 200) throw new ProductCogsClassificationException(result.StatusCode,result.Code!,isReplay,originalCorrelation);
-        return new(result.View!,isReplay,originalCorrelation);
+        return new ProductCogsClassificationMutationV1(result.View!,isReplay,originalCorrelation);
     }
     private async Task<GroupSharedMasterCommandContext> CurrentAuthorityAsync(GroupSharedMasterCommandContext? expected,Identity identity,CancellationToken token)
     {
@@ -248,7 +248,7 @@ public sealed class ProductCogsClassificationRuntime(ProductRuntimeOptions optio
     private static bool Canonical(string? value,int maximum) => !string.IsNullOrWhiteSpace(value) && value.Length <= maximum
         && value == value.Trim() && !value.Any(char.IsControl);
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
-    private static ProductCogsClassificationException Unavailable() => new(503,ProductCogsClassificationCodesV1.Unavailable);
+    private static ProductCogsClassificationException Unavailable() => new ProductCogsClassificationException(503,ProductCogsClassificationCodesV1.Unavailable);
     private sealed record Identity(Guid CompanyId,Guid ActorId);
     [System.Text.Json.Serialization.JsonUnmappedMemberHandling(System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow)]
     private sealed record TerminalResponse(int StatusCode,string? Code,ProductCogsClassificationViewV1? View);

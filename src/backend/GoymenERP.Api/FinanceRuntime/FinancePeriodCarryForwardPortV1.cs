@@ -22,11 +22,11 @@ public sealed class FinancePeriodCarryForwardPortV1(AccountingDbContext accounti
             AccountingPermissionManifestV1.PeriodsClose, metadata, cancellationToken);
         try
         {
-            var result = await session.RecordAsync(Context(request.CompanyId, metadata), new(request.ClosureId, request.CompanyId,
+            var result = await session.RecordAsync(Context(request.CompanyId, metadata), new FinancePeriodCarrySourceV1(request.ClosureId, request.CompanyId,
                 request.SourcePeriodId, request.ClosedPeriodVersion, request.SourceStartsOn, request.SourceEndsOn, request.TargetPeriodId,
-                request.TargetStartsOn, request.TargetEndsOn, request.ActorId, request.RecordedAtUtc), new(metadata.IdempotencyKey),
+                request.TargetStartsOn, request.TargetEndsOn, request.ActorId, request.RecordedAtUtc), new CommandMetadata(metadata.IdempotencyKey),
                 Envelope(metadata), cancellationToken);
-            return new(request.ClosureId, result.CompanyId, result.Source.SourcePeriodId, result.Source.TargetPeriodId,
+            return new AccountingPeriodCarryReceiptV1(request.ClosureId, result.CompanyId, result.Source.SourcePeriodId, result.Source.TargetPeriodId,
                 result.Id, result.SourceHash, result.Lines.Count);
         }
         catch (InvalidOperationException exception)
@@ -42,9 +42,9 @@ public sealed class FinancePeriodCarryForwardPortV1(AccountingDbContext accounti
             AccountingPermissionManifestV1.PeriodsApprove, metadata, cancellationToken);
         try
         {
-            await session.ReverseAsync(Context(request.CompanyId, metadata), new(request.ReopeningId, request.CompanyId,
+            await session.ReverseAsync(Context(request.CompanyId, metadata), new FinancePeriodCarryReversalV1(request.ReopeningId, request.CompanyId,
                 request.ClosureId, request.VoucherId, request.ActorId, request.RecordedAtUtc, request.Reason),
-                new(metadata.IdempotencyKey), Envelope(metadata), cancellationToken);
+                new CommandMetadata(metadata.IdempotencyKey), Envelope(metadata), cancellationToken);
         }
         catch (InvalidOperationException exception)
         { throw new AccountingStoreException("accounting_period_carry_source_unavailable", "Finans ters devir kaynağı kullanılabilir değil.", exception); }
@@ -80,7 +80,7 @@ public sealed class FinancePeriodCarryForwardPortV1(AccountingDbContext accounti
         { throw new AccountingStoreException("accounting_period_carry_source_unavailable", "Finans devir işlemi kurulamadı.", exception); }
     }
     private static FinanceContext Context(Guid companyId, AccountingCommandMetadata metadata) =>
-        new(companyId, metadata.ActorId, metadata.CorrelationId, metadata.CausationId);
+        new FinanceContext(companyId, metadata.ActorId, metadata.CorrelationId, metadata.CausationId);
     private static FinanceAuditEnvelope Envelope(AccountingCommandMetadata metadata) =>
-        new(metadata.PermissionCode, metadata.RoleCodes, metadata.SourceChannel, metadata.ClientIpAddress, metadata.UserAgent);
+        new FinanceAuditEnvelope(metadata.PermissionCode, metadata.RoleCodes, metadata.SourceChannel, metadata.ClientIpAddress, metadata.UserAgent);
 }

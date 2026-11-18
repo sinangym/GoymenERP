@@ -399,7 +399,7 @@ internal sealed class FounderRecoveryService(
             {
                 var auditRows = auditCompanies.Select(company => new FounderRecoveryCompanyAuditV1(company, user.Id,
                     subcommand == FounderRecoverySubcommand.Reactivate ? FounderRecoverySystemAuditOperationV1.Reactivate : FounderRecoverySystemAuditOperationV1.ResetPassword,
-                    new(declaration.OperatingSystemUser, declaration.MachineName), precondition.CompanyIds.Order().ToArray(),
+                    new FounderRecoveryOperatorDeclarationV1(declaration.OperatingSystemUser, declaration.MachineName), precondition.CompanyIds.Order().ToArray(),
                     restored.Where(assignment => assignment.CompanyId == company).Select(assignment => assignment.AssignmentId).Order().ToArray(),
                     confirmed.UserVersion, user.Version, nowUtc, correlationContext.CorrelationId, correlationContext.CausationId, idempotencyKey)).ToArray();
                 await recoveryAudit.AppendAsync(auditRows, cancellationToken);

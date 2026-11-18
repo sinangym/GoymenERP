@@ -18,9 +18,9 @@ internal sealed class LocalTwoFactorOperatorRecoveryAuditWriterV1(IServiceScopeF
         if (transaction is not DbTransaction { Connection.State: ConnectionState.Open, IsolationLevel: IsolationLevel.Serializable } sql)
             throw new InvalidOperationException("Operator recovery requires the command's open Serializable transaction.");
         static LocalTwoFactorRecoveryVersionAudit Map(LocalTwoFactorRecoveryVersionAuditV1 value) =>
-            new(value.UserVersion, value.CredentialVersion, value.SecretVersion, value.TwoFactorEnabled);
-        var auditEvent = AuditEvent.CreateLocalTwoFactorOperatorRecovery(new(record.AttemptId, record.TargetUserId,
-            new(record.Operator.OperatingSystemUser, record.Operator.MachineName), Map(record.Confirmed), Map(record.Before), Map(record.After),
+            new LocalTwoFactorRecoveryVersionAudit(value.UserVersion, value.CredentialVersion, value.SecretVersion, value.TwoFactorEnabled);
+        var auditEvent = AuditEvent.CreateLocalTwoFactorOperatorRecovery(new LocalTwoFactorOperatorRecoveryAuditData(record.AttemptId, record.TargetUserId,
+            new LocalTwoFactorRecoveryOperatorAudit(record.Operator.OperatingSystemUser, record.Operator.MachineName), Map(record.Confirmed), Map(record.Before), Map(record.After),
             (LocalTwoFactorOperatorRecoveryAuditOutcome)record.Outcome, record.Reason, record.OccurredAtUtc,
             record.CorrelationId, record.CausationId, record.IdempotencyKeyHash));
         await using var scope = scopes.CreateAsyncScope();
