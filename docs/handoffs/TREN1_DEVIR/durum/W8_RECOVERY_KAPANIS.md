@@ -199,7 +199,7 @@ bir üretici veya test PASS kanıtı değildir.
 
 Yeni izole kaynak tabanı `99a874901645e82a1ccafd06ec00dc7a10f150cf`.
 Bu tabanın ilk gerçek üreticisi native **exit 2** verdi:
-`WorkNotificationStoreV1.cs:DeliverAsync` operative anchor drift. İlk JSON,
+`WorkNotificationStoreV1.cs:DeliverAsync` operative anchor drift. İlk stdout,
 stderr ve exit kanıtları `t1-w8-final-99a874901-generator.*` adlarıyla depo dışında
 korunur; bu hata üzerinde tam Python paketleri başlatılmadı.
 
@@ -225,3 +225,42 @@ Küme farkının gerçek JSON/native exit kanıtı
 Bu metadata checkpoint'i temiz commit sonrasında gerçek üreticiyle doğrulanacak;
 üretici native exit 0 vermeden recovery ve release paketleri çalıştırılmayacak.
 Önceki 36/36 sonucu eski bounded tabana aittir, bu son head'in kabulü değildir.
+
+## Tam recovery ve release sonucu
+
+İki tam paketin ve gerçek üreticinin temiz kaynak commit'i
+`3123ef92faf38f4296fed23bd92744e84c6f1208`'dir. Bu commit yalnız 99a874901
+kaynağındaki yedi eski literal anchor'ı, bir matching assertion'ı ve raporu
+hizalar; backend runtime kaynakları 99a874901 ile aynıdır.
+
+| Komut | Native çıkış | Gerçek sonuç |
+|---|---:|---|
+| `python -I -S -B tools/generate_recovery_surface_inventory.py` | 0 | 19 DbContext, 339 migration, 66 durable store; kaynak 3116 dosya. |
+| `python -I -S -B -m unittest discover -s tests/recovery_surface_inventory -p "test_*.py"` | 0 | 36/36 test, 2302.570 saniye, `OK`; skip yok. |
+| `python -I -S -B -m unittest discover -s tests/release_manifest -p "test_*.py"` | 0 | 16/16 test, 782.973 saniye, `OK`; skip yok. |
+
+Paketler aynı frozen commit üzerinde art arda çalıştı. İlk paketten önce boş
+fiziksel RAM 3,47 GiB, ikinci paketten önce 2,87 GiB ölçüldü. Her native çıkış
+sonraki işlemden önce ayrı exit dosyasına yazıldı. Gerçek üreticinin source digest'i
+`a8e9575ef3c55160037d7642e831af19de032151fce8f3aa6e94cb92eb694d11`,
+risky dosya sayısı 1459 ve risky fingerprint'i
+`2fee42e97166f55a39e9f580705edc8e8881e83d204918361f0e3a17d52c5a46`'dır.
+
+Depo dışı gerçek log adları `t1-w8-final-3123ef92f-generator.*`,
+`t1-w8-final-3123ef92f-inventory.json`,
+`t1-w8-final-3123ef92f-recovery-suite.*` ve
+`t1-w8-final-3123ef92f-release-suite.*` biçimindedir. İlk 99a874901 native exit 2
+ve risk kümesi farkının native exit 0 kanıtları da korunur. Kaynaklar paketler
+boyunca değiştirilmedi; koşumlar kesilmedi veya atlanmadı.
+
+Koordinatörün sonradan bildirdiği BarcodePdfDocumentWriter ve Product design-time
+factory düzeltmeleri bu frozen test kaynağına alınmadı. Koordinatörün ayrı
+`321201b2b` gerçek üretici sonucu bu iki tam paketin exact head'inden ayrıdır.
+Bu rapor 3123ef9 paket başarısını son root commit'inin exact-head CI veya K3 kabulü
+olarak sunmaz. Son root actual fingerprint ve gerçek üretici tazeliği koordinatör
+raporunda, son exact-head CI ise ayrıca değerlendirilir.
+
+Bu izole görevde .NET/Node, gerçek SQL/DB apply, HTTP runtime, Vitest/browser veya
+CI çalıştırılmadı. Yeni parser/validator/allowlist istisnası, iş kuralı, migration,
+grant/rol/Critical veya production aktivasyonu yoktur. Sonuç kayıtları mevcut
+K3 pending yüzeylerinin onayı değildir.
