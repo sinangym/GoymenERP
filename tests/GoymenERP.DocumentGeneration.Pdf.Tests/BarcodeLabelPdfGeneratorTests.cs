@@ -26,6 +26,58 @@ public sealed class BarcodeLabelPdfGeneratorTests
     }
 
     [Fact]
+    public void Changing_only_the_technical_identity_changes_only_its_two_XMP_and_two_trailer_values_without_moving_offsets()
+    {
+        var firstId = Guid.Parse("30303030-3030-3030-3030-303030303030");
+        var secondId = Guid.Parse("31313131-3131-3131-3131-313131313131");
+        var generator = new BarcodeLabelPdfGenerator();
+        var first = generator.Generate(Request() with { TechnicalId = firstId }).Content;
+        var second = generator.Generate(Request() with { TechnicalId = secondId }).Content;
+        Assert.Equal(first.Length, second.Length);
+        var firstRanges = IdentityRanges(first, firstId);
+        Assert.Equal(firstRanges, IdentityRanges(second, secondId));
+        for (var index = 0; index < first.Length; index++)
+            if (!firstRanges.Any(range => index >= range.Start && index < range.End))
+                Assert.Equal(first[index], second[index]);
+    }
+
+    private static List<(int Start, int End)> IdentityRanges(byte[] content, Guid identity)
+    {
+        using var pdf = PdfSharp.Pdf.IO.PdfReader.Open(new MemoryStream(content),
+            PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import);
+        Assert.Equal(identity, pdf.Internals.FirstDocumentGuid);
+        Assert.Equal(identity, pdf.Internals.SecondDocumentGuid);
+        var metadata = Assert.IsAssignableFrom<PdfSharp.Pdf.PdfDictionary>(
+            pdf.Internals.Catalog.Elements.GetDictionary("/Metadata"));
+        Assert.Equal("/Metadata", metadata.Elements.GetName("/Type"));
+        Assert.Equal("/XML", metadata.Elements.GetName("/Subtype"));
+        var xml = metadata.Stream.Value;
+        var streamStart = content.AsSpan().IndexOf(xml);
+        Assert.True(streamStart > 0);
+        var ranges = new List<(int Start, int End)>();
+        foreach (var name in new[] { "DocumentID", "InstanceID" })
+        {
+            var prefix = Encoding.ASCII.GetBytes($"<xmpMM:{name}>uuid:");
+            var start = xml.AsSpan().IndexOf(prefix) + prefix.Length;
+            Assert.True(start >= prefix.Length);
+            Assert.Equal(identity.ToString("D"), Encoding.ASCII.GetString(xml.AsSpan(start, 36)));
+            ranges.Add((streamStart + start, streamStart + start + 36));
+        }
+        var trailerId = Encoding.ASCII.GetBytes("<" + Convert.ToHexString(identity.ToByteArray()) + ">");
+        var offset = 0;
+        for (var count = 0; count < 2; count++)
+        {
+            var relative = content.AsSpan(offset).IndexOf(trailerId);
+            Assert.True(relative >= 0);
+            var start = offset + relative;
+            ranges.Add((start + 1, start + trailerId.Length - 1));
+            offset = start + trailerId.Length;
+        }
+        Assert.Equal(-1, content.AsSpan(offset).IndexOf(trailerId));
+        return ranges;
+    }
+
+    [Fact]
     public void The_stable_font_name_preserves_the_complete_vendored_font_and_linked_unicode_dictionaries()
     {
         var generator = new BarcodeLabelPdfGenerator();
