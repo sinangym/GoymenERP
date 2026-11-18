@@ -195,7 +195,8 @@ public sealed class LocalAccountPasswordChangeServiceTests
             .GetProperty(nameof(LocalCredential.TemporaryPasswordConsumedAtUtc))!
             .SetValue(harness.Credential, Now.AddHours(-1));
 
-        var result = await harness.ChangeAsync();
+        var result = await harness.ChangeAsync(sessionStamp: harness.Credential.SecurityStamp,
+            expectedVersion: harness.Credential.Version);
 
         // KIM-D23: after the one login the fenced session sets the founder's own password; the temporary fields go.
         Assert.Equal(LocalAccountPasswordChangeStatus.Changed, result.Status);

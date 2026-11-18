@@ -102,8 +102,7 @@ public sealed class IdentityPersistenceModelTests
         Assert.Equal(typeof(UserAccount), foreignKey.PrincipalEntityType.ClrType);
         Assert.Equal([nameof(IdentityBootstrapState.FounderUserId)], foreignKey.Properties.Select(property => property.Name).ToArray());
         Assert.Equal(DeleteBehavior.Restrict, foreignKey.DeleteBehavior);
-        Assert.Equal([nameof(LocalCredentialCommand.OriginalCorrelationId)], entity.GetProperties().Where(property => property.IsNullable).Select(property => property.Name));
-        Assert.Equal(128, entity.FindProperty(nameof(LocalCredentialCommand.OriginalCorrelationId))!.GetMaxLength());
+        Assert.Empty(entity.GetProperties().Where(property => property.IsNullable));
     }
 
     [Fact]
@@ -153,6 +152,8 @@ public sealed class IdentityPersistenceModelTests
         var entity = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(LocalCredentialCommand))!;
 
         Assert.Equal(("identity", "LocalCredentialCommands"), (entity.GetSchema(), entity.GetTableName()));
+        Assert.Equal([nameof(LocalCredentialCommand.OriginalCorrelationId)], entity.GetProperties().Where(property => property.IsNullable).Select(property => property.Name));
+        Assert.Equal(128, entity.FindProperty(nameof(LocalCredentialCommand.OriginalCorrelationId))!.GetMaxLength());
         var check = Assert.Single(entity.GetCheckConstraints());
         Assert.Equal(("CK_LocalCredentialCommands_Shape", IdentityDbContext.CredentialCommandCheck), (check.Name, check.Sql));
         var unique = Assert.Single(entity.GetIndexes(), index => index.IsUnique);

@@ -17,3 +17,9 @@ Düzeltilmiş Accounting koşusu QUEUED. Test silme, skip, karantina veya doğru
 - Counterparty ilk3 hata EF read-optimized modelde saklanmayan check-constraint metadata’sına erişimden gelir. Aynı model test dosyasındaki mevcut IDesignTimeModel örneği uygulanır; aynı üç testin bütün constraint/filter/index/append-only beklentileri korunur. DDL veya uygulama davranışı değişmez.
 - Documents ilk1 hata byte[] içeren tuple’ın referans eşitliğinden gelir. İndirilen PDF baytları ve SHA256 ayrı yapısal assertion ile karşılaştırılır; belge/scanner kuralı ve her iki beklenen değer aynen korunur.
 - Düzeltilmiş koşular QUEUED; ilk native hata kayıtları korunur.
+
+## Identity
+
+İlk4 hata: adversarial CompanyId değişimi için immutable gerçek context kullanılması; geçici parola verilişinde değişen security stamp/version’ın oturum fixture’ına taşınmaması; Identity Shell1.3’teki mevcut kullanıcı yönetimi rotasının eski1.2 beklentisinde olmaması; LocalCredentialCommand correlation metadata assertion’ının yanlışlıkla bootstrap entity’sinde bulunması.
+
+Fixture yalnız testte mutable ICompanyContext kullanır. Tüketilmiş geçici parola testi mevcut stamp/version ile gerçek servis yoluna ulaşır. Bootstrap alanlarının zorunluluğu ayrıca korunur; correlation nullable/128 assertion’ı gerçek command entity’sinde tutulur. Shell yeni kullanıcı yönetimi route/permission kaydıyla tek tek hizalanır. Yetki/şifre politikası, production context veya grant değişmez. Düzeltilmiş koşu QUEUED.

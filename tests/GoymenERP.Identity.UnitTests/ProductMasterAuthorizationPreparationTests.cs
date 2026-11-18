@@ -19,7 +19,7 @@ public sealed class ProductMasterAuthorizationPreparationTests
     {
         await using var database = new IdentityDbContext(new DbContextOptionsBuilder<IdentityDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
-        var company = new CompanyContext();
+        var company = new MutableCompany();
         company.Set(Guid.NewGuid());
         var authority = new SqlProductMasterAuthorizationService(database, new Actor(Guid.NewGuid(), company.CompanyId), company, null);
         Assert.False((await authority.GetSnapshotAsync(GroupSharedMasterKind.Product, GroupSharedMasterOperation.Read)).IsGranted);
@@ -171,6 +171,14 @@ public sealed class ProductMasterAuthorizationPreparationTests
         _ => throw new ArgumentOutOfRangeException(nameof(operation)),
     };
 
+    // Adversarial scope drift reaches the service fence; production CompanyContext remains immutable.
+    private sealed class MutableCompany : ICompanyContext
+    {
+        public bool IsResolved => CompanyId != Guid.Empty;
+        public Guid CompanyId { get; private set; }
+        public void Set(Guid value) => CompanyId = value;
+    }
+
     private sealed class Actor(Guid actorId, Guid origin) : ICurrentUser
     {
         public Guid ActorId { get; set; } = actorId;
@@ -205,11 +213,11 @@ public sealed class ProductMasterAuthorizationPreparationTests
         }
     }
 
-    private sealed class Fixture(AuthorityModel seed, IdentityDbContext reader, CompanyContext company,
+    private sealed class Fixture(AuthorityModel seed, IdentityDbContext reader, MutableCompany company,
         Actor current, ProductMasterAssignment grant, RoleDefinition systemRole, SqlProductMasterAuthorizationService authority) : IAsyncDisposable
     {
         public AuthorityModel Seed => seed;
-        public CompanyContext Company => company;
+        public MutableCompany Company => company;
         public Actor Current => current;
         public ProductMasterAssignment Grant => grant;
         public RoleDefinition SystemRole => systemRole;
@@ -220,7 +228,7 @@ public sealed class ProductMasterAuthorizationPreparationTests
             var name = Guid.NewGuid().ToString();
             var root = new InMemoryDatabaseRoot();
             var seed = new AuthorityModel(new DbContextOptionsBuilder<AuthorityModel>().UseInMemoryDatabase(name, root).Options);
-            var company = new CompanyContext();
+            var company = new MutableCompany();
             company.Set(Guid.NewGuid());
             var user = new UserAccount(Guid.NewGuid(), "Synthetic global actor", null);
             var issuer = new UserAccount(Guid.NewGuid(), "Synthetic decision identity, not Sinan", null);
