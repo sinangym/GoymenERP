@@ -567,3 +567,35 @@ test edilen birleşik ağaç `5fabb3397d4cc10f5dcf893d47b71f3579c80b96`.
   Mevcut CI işlerini otomatik iptal etmemek için yeni tren push'u işlerin bitmesini bekler.
   Yeni exact-head CI, geniş gerçek SQL/collation kanıtı ve iki bağımsız tam K3 review hâlâ gerekir.
   Yeni dalga/karar sorusu, grant/rol/production/OPEN/Finance STOP değişikliği yok.
+
+
+## Normal çalıştırıcı uyarısı sonrası tanı kapanışı — 18 Kasım
+
+Kaynak174/174 DONE (%100), W8 son paket; kabul açık. Önceki20bfbc750
+[CI44285710026](https://github.com/sinangym/GoymenERP/actions/runs/44285710026)
+tamamlandı: API2/API3 dahil bütün backend test grupları, build/OpenAPI/RCSI/recovery/release
+ve dört frontend shard PASS; C01/Cari/UI ayrı koşumları PASS. Geniş SQL A/B/C ve frontend audit FAIL.
+Test edilen merge609323a9a6192bb9d971da349be2d4af4adad128. Tam SQL proof yok.
+
+- SQL A7 PASS/1 FAIL, B15 PASS/1 FAIL, C15 PASS/1 FAIL; yalnız tamamlanmış batch sonuçları, skip0.
+  Counterparty audit migration-history fact'i bu kez PASS; C'nin sonraki hatası e-belge VKN değişimi
+  fact'idir. Üretim maliyet farkı eşzamanlı onay ve Finans POS başlangıç hataları sürer.
+  Bunların kesin kök nedeni henüz bilinmiyor; beklenti veya iş politikası tahminle değiştirilmedi.
+- Bütün shard'lar normal RunInfo uyarısını altyapı hatası sayan tanısal devam kontrolünde durdu.
+  Başarılı yerel TRX'lerde de Warning metaverisi bulundu. b4fd38b43 yalnız bu normal outcome'u
+  tanısal devamda kabul eder; Error/Aborted/unknown/eksik outcome, bozuk/eksik sonuç veya skip yine durdurur.
+  İlk native1 kalıcıdır ve hiçbir hata kabul proof'u üretemez; tek2400s sınırı değişmedi.
+  Tam Python paketi101/101 PASS/skip0.
+- 158c7dc83: kapalı exceptionKind ve aynı test sınıfının en yakın yardımcı frame satırı
+  (en çok8 geçerli benzersiz frame) eklendi. Ham mesaj/yol/yöntem adı yayımlanmaz;
+  sourceLine ve sourceFrameScope untrusted TRX metaverisidir, kaynakla doğrulanmış kök neden değildir.
+  Exact test frame önceliği ve taşma/belirsizlik kapıları korunur. Python96/96 PASS/skip0.
+- 4192f1531: Finans SQL fixture başlangıcında health/migrate/document_numbers kapalı fazları;
+  başarısız başlangıçta dispose denemesi ve asıl hatayı inner exception olarak koruyan tanı eklendi.
+  Integration fixture Release build0/0 hata/0 uyarı145.07s. Yerel gerçek SQL koşulmadı.
+- 158c7dc83 native mimari fixture build0/fresh discovery/strict TRX: ilgili guard1/1 PASS/skip0.
+  Ev üreticisi verifier fingerprint c5650132ff237c072a1f8c1c28ae33333dbb6125bceb8a232ad4d8e43afc0cb1.
+  Tam backend tekrar derlenmedi; üretim kaynak ağacı581d01e78 ile aynıdır.
+- Resmî Picomatch advisory patched=None, registry latest4.0.7 tekrar doğrulandı.
+  Audit-ignore/downgrade/vendor override yok. Yeni migration/THROW/izin/bypass/context/dalga/işletme politikası yok.
+  Yeni doğal exact-head CI, tam gerçek SQL ve iki bağımsız tam K3 review beklenir; production/grant/OPEN değişmedi.

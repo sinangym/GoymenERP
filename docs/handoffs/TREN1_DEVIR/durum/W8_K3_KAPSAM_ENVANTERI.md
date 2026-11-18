@@ -1,6 +1,6 @@
 # W8 tek taslak K3 kapsam envanteri
 
-**Son kapsam eki:** `e73727bc4d7c134b1238f08cfd890bd0ad47f8ff`. Aşağıdaki önceki
+**Son kapsam eki:** `158c7dc83b4035d1911c5a14d77da9c710bc3806`. Aşağıdaki önceki
 donuk envanter ve bütün listeleri korunur; bu head'e kadar gelen son delta ve ara
 koşum sınırları belgenin sonundaki ekte ayrılır. Daha sonraki exact PR head'i için
 kaynak/pin/test/inceleme kanıtı yeniden bağlanmalıdır.
@@ -846,3 +846,8 @@ Kalite aracı kaynak hashleri: SQL verifier `28a5a658704d0b63b3fd67a6b8f7d709b3b
 ## SQL tanısı sonrası son delta
 
 Kaynak e73727bc4: Counterparty owner migration kimlik eşliği, kapalı assertion türü/satır tanısı ve yalnız exact tamamlanmış Failed TRX için kalıcı kırmızı sonuçlu tanısal devam. Yeni migration/THROW/izin/bypass/context/inventory girdisi yok. Önceki K3 listeleri ve source/runtime ayrımı korunur. Güncel native kanıt ve başarısız SQL yöntemleri W8_RUNTIME_KAPANIS_DURUMU içindedir; iki yeni tam exact-head review ve gerçek SQL kabulü beklenir.
+
+
+Son delta158c7dc83: normal adapter Warning yalnız başarısız exact TRX tanısal devamında kabul edilir;
+nihai native hata/proof yasağı korunur. Kapalı exception/helper-frame/faz tanısı ve başarısız Finans
+fixture başlangıcının temizliği eklendi. Yeni migration/izin/bypass/context yok; tam K3 review bekler.
