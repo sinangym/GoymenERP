@@ -136,7 +136,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         await StoreReturnCostInvoiceAsync(run, receipt, 4m, 80m);
         foreach (var loss in new[] { "actor", "company", "membership" })
         {
-            var company = new CompanyContext(); company.Set(CompanyA);
+            var company = new ReturnCostConsumerCompany(CompanyA);
             var user = new ReturnCostUser(run.Actor, CompanyA);
             var changed = false;
             var fault = new ReturnCostAuthorityLossInterceptor(() =>
@@ -150,6 +150,8 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
                 ReadReturnInvoiceCostAsync(run, CompanyA, CompanyA, receipt.Match.AcceptanceId, company, user, fault));
             Assert.True(changed);
             Assert.Equal((403, "forbidden"), (denied.Status, denied.Code));
+            Assert.Equal(1, fault.FiredCalls);
+            if (loss == "company") Assert.Equal(CompanyB, company.CompanyId);
         }
 
         await using var scope = run.Factory.Services.CreateAsyncScope();
@@ -231,21 +233,23 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
     }
 
     private static async Task<PurchaseSupplierReturnInvoiceCostV1> ReadReturnInvoiceCostAsync(Run run, Guid contextCompany, Guid askedCompany,
-        Guid acceptanceId, CompanyContext? explicitCompany = null, ReturnCostUser? explicitUser = null, IInterceptor? interceptor = null)
+        Guid acceptanceId, ICompanyContext? explicitCompany = null, ReturnCostUser? explicitUser = null, IInterceptor? interceptor = null)
     {
         await using var scope = run.Factory.Services.CreateAsyncScope();
-        var company = explicitCompany ?? new CompanyContext(); if (explicitCompany is null) company.Set(contextCompany);
+        var databaseCompany = new CompanyContext(); databaseCompany.Set(contextCompany);
+        var company = explicitCompany ?? databaseCompany;
         var builder = new DbContextOptionsBuilder<PurchasingDbContext>().UseSqlServer(run.Factory.DatabaseConnectionString);
         if (interceptor is not null) builder.AddInterceptors(interceptor);
-        await using var database = new PurchasingDbContext(builder.Options, company);
+        await using var database = new PurchasingDbContext(builder.Options, databaseCompany);
         await using var inventory = new InventoryDbContext(new DbContextOptionsBuilder<InventoryDbContext>()
-            .UseSqlServer(run.Factory.DatabaseConnectionString).Options, company);
+            .UseSqlServer(run.Factory.DatabaseConnectionString).Options, databaseCompany);
         var physical = new PurchaseGoodsReceiptHost(database, scope.ServiceProvider.GetRequiredService<IOrganizationLocationCandidatesV1>(),
-            scope.ServiceProvider.GetRequiredService<IOrganizationLocationStatusReaderV1>(), new PurchaseAcceptanceSource(database, company),
-            new InventoryGoodsReceiptSourceService(inventory, company), scope.ServiceProvider, TimeProvider.System);
+            scope.ServiceProvider.GetRequiredService<IOrganizationLocationStatusReaderV1>(), new PurchaseAcceptanceSource(database, databaseCompany),
+            new InventoryGoodsReceiptSourceService(inventory, databaseCompany), scope.ServiceProvider, TimeProvider.System);
         var reader = new PurchaseSupplierReturnInvoiceCostReadPort(database, company,
             explicitUser ?? new ReturnCostUser(run.Actor, contextCompany), physical);
-        return await reader.ReadAsync(askedCompany, acceptanceId, default);
+        try { return await reader.ReadAsync(askedCompany, acceptanceId, default); }
+        finally { Assert.Equal(contextCompany, databaseCompany.CompanyId); }
     }
 
     private static async Task<(int InvoiceAttempts, int Audit, int Movements, long OrderVersions)> ReturnCostSourceCountsAsync(Run run) => (
@@ -255,6 +259,13 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         await run.ScalarAsync<long>("SELECT SUM(Version) FROM purchasing.PurchaseOrders"));
 
     private sealed record ReturnCostReceipt(PurchaseInvoiceReceiptMatch Match, InventoryGoodsReceiptRequestV1 Stock);
+    // Simulates consumer drift without changing either real DbContext's tenant filter.
+    private sealed class ReturnCostConsumerCompany(Guid companyId) : ICompanyContext
+    {
+        public bool IsResolved => CompanyId != Guid.Empty;
+        public Guid CompanyId { get; private set; } = companyId;
+        public void Set(Guid value) => CompanyId = value;
+    }
     private sealed class ReturnCostUser(string actor, Guid company) : ICurrentUser
     {
         public bool IsAuthenticated => true;
@@ -266,10 +277,11 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
     private sealed class ReturnCostAuthorityLossInterceptor(Action loseAuthority) : DbCommandInterceptor
     {
         private bool fired;
+        public int FiredCalls { get; private set; }
         public override ValueTask<DbDataReader> ReaderExecutedAsync(DbCommand command, CommandExecutedEventData eventData,
             DbDataReader result, CancellationToken cancellationToken = default)
         {
-            if (!fired) { fired = true; loseAuthority(); }
+            if (!fired) { fired = true; FiredCalls++; loseAuthority(); }
             return ValueTask.FromResult(result);
         }
     }

@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Messaging;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Accounting.Application;
@@ -90,15 +91,22 @@ public sealed partial class AccountingFinanceJournalSourceSqlServerRelationalAcc
         foreach (var change in new[] { "mapping", "amount", "target-amount", "denied", "company", "actor", "membership", "second-approved" })
         {
             await using var scope = run.Open(); var user = new ExchangeUser(); var owner = new ExchangeOwner(source, value);
+            var consumerCompany = new ExchangeConsumerCompany(source.CompanyId);
             if (change == "amount") owner.Value = owner.Value with { Proposals = [value with { SourceBookValueTl = "3200" }] };
             if (change == "target-amount") owner.Value = owner.Value with { Proposals = [value with { TargetFunctionalValueTl = "3330" }] };
             if (change == "second-approved") owner.Value = owner.Value with { Proposals = [value, value with { Id = Guid.NewGuid() }] };
             if (change == "denied") owner.Outcome = ReadOutcome.Denied;
-            if (change == "company") owner.DuringRead = () => scope.Company.Set(TestCompanyIds.CompanyB);
+            if (change == "company") owner.DuringRead = () => consumerCompany.Set(TestCompanyIds.CompanyB);
             if (change == "actor") owner.DuringRead = () => user.Actor = Guid.NewGuid();
             if (change == "membership") owner.DuringRead = () => user.Member = false;
-            var provider = ExchangeProvider(scope, user, owner, change == "mapping" ? null : ExchangeBinding(source, value));
+            var provider = ExchangeProvider(scope, user, owner, change == "mapping" ? null : ExchangeBinding(source, value), consumerCompany);
             Assert.Null(await provider.ResolveAsync(source.CompanyId, value.Id, default));
+            if (change == "company")
+            {
+                Assert.Equal(TestCompanyIds.CompanyB, consumerCompany.CompanyId);
+                Assert.Equal(source.CompanyId, scope.Company.CompanyId);
+                Assert.Equal(1, owner.ReadCalls);
+            }
         }
         Assert.Equal(0, await run.Count("accounting.Journals"));
     }
@@ -123,10 +131,10 @@ public sealed partial class AccountingFinanceJournalSourceSqlServerRelationalAcc
     }
 
     private static FinanceCashExchangeJournalSourceProviderV1 ExchangeProvider(Scope scope, ExchangeUser user, ExchangeOwner owner,
-        ApprovedNormalJournalSourceBindingV1? binding)
+        ApprovedNormalJournalSourceBindingV1? binding, ICompanyContext? consumerCompany = null)
     {
         var correlation = new CorrelationContext(); correlation.Set("SENTETIK-exchange", null, "API", null, null);
-        return new(scope.Db, scope.Company, user, correlation, owner, new ApprovedNormalJournalSourceBindingCatalogV1(binding is null ? [] : [binding]));
+        return new(scope.Db, consumerCompany ?? scope.Company, user, correlation, owner, new ApprovedNormalJournalSourceBindingCatalogV1(binding is null ? [] : [binding]));
     }
     private static AccountingCommandMetadata ExchangeMetadata(Guid actor) => new(actor.ToString("D"), "SENTETIK-accounting", [],
         "SENTETIK-exchange", null, Guid.NewGuid().ToString("D"), "API");
@@ -207,6 +215,13 @@ public sealed partial class AccountingFinanceJournalSourceSqlServerRelationalAcc
         return new(source.CompanyId, value.Id, NormalJournalSourceKindsV1.ApprovedCashExchangeBookValue, value.Version,
             source.Preparation.SourceProfile.ProfileId, source.Preparation.SourceProfile.Version, SettingsCurrencyIdentitiesV1.TurkishLira, rule);
     }
+    // The real SQL scope keeps its original company; only the provider's consumer context drifts.
+    private sealed class ExchangeConsumerCompany(Guid companyId) : ICompanyContext
+    {
+        public bool IsResolved => CompanyId != Guid.Empty;
+        public Guid CompanyId { get; private set; } = companyId;
+        public void Set(Guid value) => CompanyId = value;
+    }
     private sealed class ExchangeUser : ICurrentUser
     {
         public Guid Actor { get; set; } = Guid.NewGuid(); public bool Member { get; set; } = true;
@@ -220,8 +235,9 @@ public sealed partial class AccountingFinanceJournalSourceSqlServerRelationalAcc
     {
         public CashExchangeBookValueWorkspaceV1 Value { get; set; } = new(source.CompanyId, source, [value]);
         public ReadOutcome Outcome { get; set; } = ReadOutcome.Found; public Action? DuringRead { get; set; }
+        public int ReadCalls { get; private set; }
         public Task<ReadResult<CashExchangeBookValueWorkspaceV1>> GetAsync(FinanceContext context, Guid id, CancellationToken ct)
-        { DuringRead?.Invoke(); return Task.FromResult(new ReadResult<CashExchangeBookValueWorkspaceV1>(Outcome, Outcome == ReadOutcome.Found ? Value : null)); }
+        { ReadCalls++; DuringRead?.Invoke(); return Task.FromResult(new ReadResult<CashExchangeBookValueWorkspaceV1>(Outcome, Outcome == ReadOutcome.Found ? Value : null)); }
         public Task<ReadResult<CashExchangeBookValueCandidatePageV1>> ListAsync(FinanceContext context, Guid? cursor, CancellationToken ct) => throw new NotSupportedException();
         public Task<CashExchangeBookValueCommandResultV1> ProposeAsync(FinanceContext context, CommandMetadata metadata, ProposeCashExchangeBookValueV1 request, CancellationToken ct) => throw new NotSupportedException();
         public Task<CashExchangeBookValueCommandResultV1> DecideAsync(FinanceContext context, CommandMetadata metadata, DecideCashExchangeBookValueV1 request, CancellationToken ct) => throw new NotSupportedException();

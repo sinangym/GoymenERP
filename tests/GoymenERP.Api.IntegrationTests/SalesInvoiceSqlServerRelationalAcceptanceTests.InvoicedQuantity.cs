@@ -48,13 +48,21 @@ public sealed partial class SalesInvoiceSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         await using var scope = run.Factory.Services.CreateAsyncScope();
-        var company = scope.ServiceProvider.GetRequiredService<ICompanyContext>(); company.Set(CompanyA);
-        var reader = scope.ServiceProvider.GetRequiredService<ISalesOrderInvoicedQuantityReadPortV1>();
+        var ownerCompany = scope.ServiceProvider.GetRequiredService<ICompanyContext>(); ownerCompany.Set(CompanyA);
+        var company = new InvoiceQuantityConsumerCompany(CompanyA);
+        var reader = new SalesOrderInvoicedQuantityReadPortV1(scope.ServiceProvider.GetRequiredService<SalesDbContext>(),
+            company, scope.ServiceProvider.GetRequiredService<ISalesSubcontractServiceInvoiceStore>(),
+            scope.ServiceProvider.GetRequiredService<ISalesFinalizedShipmentClaimReadPortV1>());
+        var fenceCalls = 0;
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => reader.ReadAsync(CompanyA, Guid.NewGuid(), _ =>
         {
+            fenceCalls++;
             company.Set(CompanyB);
             return Task.CompletedTask;
         }));
+        Assert.Equal(1, fenceCalls);
+        Assert.Equal(CompanyB, company.CompanyId);
+        Assert.Equal(CompanyA, ownerCompany.CompanyId);
     }
 
     [SqlServerFact]
@@ -98,6 +106,13 @@ public sealed partial class SalesInvoiceSqlServerRelationalAcceptanceTests
         }
     }
 
+    // Only the consuming scope is adversarial; the real owner DbContext remains company-bound.
+    private sealed class InvoiceQuantityConsumerCompany(Guid companyId) : ICompanyContext
+    {
+        public bool IsResolved => CompanyId != Guid.Empty;
+        public Guid CompanyId { get; private set; } = companyId;
+        public void Set(Guid value) => CompanyId = value;
+    }
     private static async Task<SalesOrderInvoicedQuantityReadV1> ReadOrderInvoiceQuantityAsync(Run run, Guid companyId, Guid orderId)
     {
         await using var scope = run.Factory.Services.CreateAsyncScope();
