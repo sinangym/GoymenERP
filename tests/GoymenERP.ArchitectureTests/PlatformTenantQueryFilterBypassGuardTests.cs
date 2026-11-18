@@ -675,7 +675,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // AI-2a: + GoymenERP.SecurityEvents.UnitTests (75 solution / 22 TestSDK projects) (30b8186c… -> ac738bab…).
         // W8: Organization's same nine cases now have scalar SDK-discovered identities; remove only
         // its obsolete culture-dependent deferred exception. All verifier functions are unchanged.
-        "e77fe8cb74b7a0d87957147f0f628e391f136c506e1c6ad857c10b893356931e";
+        // W8 Windows: only an oversized argv uses whole-class filters after full-discovery equivalence.
+        // Class fixtures, partition, exact native IDs/theories, SQL-only skips and proof checks remain.
+        // House-producer fingerprint; independent exact-head K3 review is pending.
+        "4c43b0ab9dc3d052253937d67e59c8163d9344ef41349014e155f394412eaa04";
     private const string ReviewedBackendTestGroupVerifierTestsFingerprint =
         // Deferred metadata count 2 -> 1, with Organization explicitly excluded; negative gates retained.
         "353f459eef3fd9cc2b619d22c75eccdacf181aa3d310d6a0ae9fe6d1947753d8";
