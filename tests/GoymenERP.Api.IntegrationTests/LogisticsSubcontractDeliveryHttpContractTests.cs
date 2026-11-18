@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Logistics.Application.Contracts;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -37,7 +38,7 @@ public sealed class LogisticsSubcontractDeliveryHttpContractTests(GoymenErpApiFa
     [Fact]
     public async Task Missing_subcontract_composition_is_an_explicit_safe_503_and_never_a_fake_empty_list()
     {
-        using var host = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services => services.RemoveAll<ILogisticsSubcontractDeliveryHostV1>()));
+        using var host = Host(stub: null);
         using var client = Client(host); using var response = await client.GetAsync(LogisticsSubcontractDeliveryV1.Path);
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
@@ -55,6 +56,7 @@ public sealed class LogisticsSubcontractDeliveryHttpContractTests(GoymenErpApiFa
         using var response = await client.SendAsync(Post($"/{Guid.NewGuid():D}/weighing-corrections", JsonSerializer.Serialize(new
         { expectedVersion = "7", weighingId = Guid.NewGuid(), expectedWeighingRevision = 1, correctionId = Guid.NewGuid(), direction = "TareFirst", firstWeighingKg = "100", secondWeighingKg = "106", reason = "SENTETIK gerçek gerekçe" })));
         Assert.Equal(status, (int)response.StatusCode); var text = await response.Content.ReadAsStringAsync();
+        Assert.Equal(1, stub.Calls);
         Assert.Equal(status == 503 ? "service_unavailable" : code, JsonDocument.Parse(text).RootElement.GetProperty("code").GetString());
         if (status == 503) { Assert.DoesNotContain(code, text); Assert.False(response.Headers.Contains("Idempotency-Replayed")); }
         else { Assert.Equal("true", Assert.Single(response.Headers.GetValues("Idempotency-Replayed"))); Assert.Equal("SENTETIK-original", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id"))); }
@@ -71,6 +73,7 @@ public sealed class LogisticsSubcontractDeliveryHttpContractTests(GoymenErpApiFa
         using var host = Host(stub); using var client = Client(host);
         using var response = await client.SendAsync(Post($"/{Guid.NewGuid():D}/weighing-corrections", CorrectionBody()));
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(1, stub.Calls);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal(detail, body.RootElement.GetProperty("detail").GetString());
         Assert.Equal("inventory_physical_stock_insufficient", body.RootElement.GetProperty("code").GetString());
@@ -91,6 +94,7 @@ public sealed class LogisticsSubcontractDeliveryHttpContractTests(GoymenErpApiFa
         using var host = Host(stub); using var client = Client(host);
         using var response = await client.SendAsync(Post($"/{Guid.NewGuid():D}/weighing-corrections", CorrectionBody()));
         Assert.Equal(status, (int)response.StatusCode);
+        Assert.Equal(1, stub.Calls);
         var text = await response.Content.ReadAsStringAsync(); Assert.DoesNotContain(detail, text);
         using var body = JsonDocument.Parse(text); Assert.False(body.RootElement.TryGetProperty("stockShortfall", out _));
         Assert.False(response.Headers.Contains("Idempotency-Replayed"));
@@ -102,7 +106,50 @@ public sealed class LogisticsSubcontractDeliveryHttpContractTests(GoymenErpApiFa
         direction = "TareFirst", firstWeighingKg = "100", secondWeighingKg = "106", reason = "SENTETIK gerçek gerekçe"
     });
 
-    private WebApplicationFactory<Program> Host(SyntheticHost stub) => factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services => services.Replace(ServiceDescriptor.Scoped<ILogisticsSubcontractDeliveryHostV1>(_ => stub))));
+    [Theory]
+    [InlineData(LogisticsPermissionManifestV1.InstructionsRead)]
+    [InlineData(LogisticsPermissionManifestV1.InstructionsCreate)]
+    [InlineData(LogisticsPermissionManifestV1.WeighingsCorrect)]
+    public async Task A_missing_endpoint_permission_never_reaches_the_subcontract_owner(string deniedPermission)
+    {
+        var stub = new SyntheticHost(); using var host = Host(stub, deniedPermission); using var client = Client(host);
+        using var request = deniedPermission switch
+        {
+            LogisticsPermissionManifestV1.InstructionsRead => new HttpRequestMessage(HttpMethod.Get, LogisticsSubcontractDeliveryV1.Path),
+            LogisticsPermissionManifestV1.InstructionsCreate => Post("", "{}"),
+            _ => Post($"/{Guid.NewGuid():D}/weighing-corrections", CorrectionBody())
+        };
+        using var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, stub.Calls);
+    }
+
+    private WebApplicationFactory<Program> Host(SyntheticHost? stub, string? deniedPermission = null) =>
+        factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            // This named synthetic HTTP host does not rely on or create persisted role grants.
+            services.RemoveAll<IErpAuthorizationService>();
+            services.AddSingleton<IErpAuthorizationService>(new HttpAuthority(deniedPermission));
+            services.RemoveAll<ILogisticsSubcontractDeliveryHostV1>();
+            if (stub is not null) services.AddScoped<ILogisticsSubcontractDeliveryHostV1>(_ => stub);
+        }));
+
+    private sealed class HttpAuthority(string? deniedPermission) : IErpAuthorizationService
+    {
+        public Task<bool> HasPermissionAsync(string permission, Guid companyId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Scope(permission, companyId).IsGranted);
+        public Task<PermissionScope> GetPermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Scope(permission, companyId));
+        public Task<AuthorizationSnapshot> GetAuthorizationSnapshotAsync(Guid companyId, IReadOnlyCollection<string> permissions,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new AuthorizationSnapshot("SENTETIK-subcontract-delivery", new HashSet<Guid> { TestCompanyIds.CompanyA },
+                permissions.ToDictionary(permission => permission, permission => Scope(permission, companyId), StringComparer.Ordinal)));
+        private PermissionScope Scope(string permission, Guid companyId) =>
+            companyId == TestCompanyIds.CompanyA && permission != deniedPermission
+                && permission is LogisticsPermissionManifestV1.InstructionsRead or LogisticsPermissionManifestV1.InstructionsCreate or LogisticsPermissionManifestV1.WeighingsCorrect
+                ? new PermissionScope(true, true, new HashSet<string>(), new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>())
+                : PermissionScope.Denied;
+    }
     private static HttpClient Client(WebApplicationFactory<Program> host)
     {
         var client = host.CreateClient(); client.DefaultRequestHeaders.Add("X-Development-User", "company-a-user"); client.DefaultRequestHeaders.Add("X-Company-Id", TestCompanyIds.CompanyA.ToString("D")); return client;
