@@ -40,7 +40,7 @@ public sealed class InventoryCompanyWideAverageCostReadContractTests
     {
         Assert.Equal(
             [
-                "AverageCostPerKg", "CompanyId", "ContractVersion", "CostCurrencyBasis", "OnHandKg", "ProductId", "Sources",
+                "AverageCostPerKg", "CompanyId", "ContractVersion", "CostCurrencyBasis", "CostCurrencyId", "OnHandKg", "ProductId", "Sources",
                 "Status", "UnreadableCode", "UnreadableLocationId",
             ],
             typeof(InventoryCompanyWideAverageCostReadAnswerV1).GetProperties().Select(property => property.Name)

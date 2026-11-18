@@ -455,7 +455,7 @@ public sealed class InventoryStockCountTests
         Assert.Contains("[BookKg] >= 0", InventoryDbContext.StockCountStateCheck, StringComparison.Ordinal);
 
         var movements = model.FindEntityType(typeof(MovementRow))!;
-        Assert.Equal("[Kind] BETWEEN 1 AND 15",
+        Assert.Equal("[Kind] BETWEEN 1 AND 16",
             movements.GetCheckConstraints().Single(check => check.Name == "CK_Movements_Kind").Sql);
         Assert.Equal(6, (int)StockMovementKind.CountAdjustment);
     }

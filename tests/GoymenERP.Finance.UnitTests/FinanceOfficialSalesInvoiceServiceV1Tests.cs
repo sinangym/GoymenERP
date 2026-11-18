@@ -1,3 +1,4 @@
+using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
@@ -250,7 +251,10 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1Tests
 
         Assert.True(replay.IsReplay);
         Assert.Equal(CommandOutcome.Succeeded, replay.Outcome);
-        Assert.Equal(approved.Resource, replay.Resource);
+        Assert.NotNull(approved.Resource); Assert.NotNull(replay.Resource);
+        // A stored replay rebuilds lists: compare the entire nested wire value, not collection object identities.
+        Assert.Equal(JsonSerializer.Serialize(approved.Resource, FinanceJson.CreateOptions()),
+            JsonSerializer.Serialize(replay.Resource, FinanceJson.CreateOptions()));
         Assert.Equal(2, await fixture.Db.OfficialSalesInvoiceCommands.AsNoTracking().CountAsync());
     }
 
