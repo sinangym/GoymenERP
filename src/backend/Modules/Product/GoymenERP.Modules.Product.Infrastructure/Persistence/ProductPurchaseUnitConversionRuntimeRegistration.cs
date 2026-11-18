@@ -21,14 +21,16 @@ public static class ProductPurchaseUnitConversionRuntimeRegistration
             && provider.GetService<ISettingsPhysicalUnitSemanticsV1>() is not null
             && provider.GetService<ISettingsUnitConversionPolicyProviderV1>() is not null
             && provider.GetService<ISettingsPrerequisiteProvider>() is not null
-                ? new ProductPurchaseUnitConversionService(
-                    provider.GetRequiredService<ICompanyContext>(), provider.GetRequiredService<ICurrentUser>(),
-                    provider.GetRequiredService<IProductPurchaseRecordReader>(), provider.GetRequiredService<IProductDimensionReaderV1>(),
-                    provider.GetRequiredService<ISettingsPhysicalUnitSemanticsV1>(), provider.GetRequiredService<ProductUnitProfileAdapter>(),
-                    provider.GetRequiredService<ISettingsUnitConversionPolicyProviderV1>())
+                ? CreateConfiguredService(provider)
                 : new UnavailableProductPurchaseUnitConversion());
         return services;
     }
+
+    private static ProductPurchaseUnitConversionService CreateConfiguredService(IServiceProvider provider) =>
+        new(provider.GetRequiredService<ICompanyContext>(), provider.GetRequiredService<ICurrentUser>(),
+            provider.GetRequiredService<IProductPurchaseRecordReader>(), provider.GetRequiredService<IProductDimensionReaderV1>(),
+            provider.GetRequiredService<ISettingsPhysicalUnitSemanticsV1>(), provider.GetRequiredService<ProductUnitProfileAdapter>(),
+            provider.GetRequiredService<ISettingsUnitConversionPolicyProviderV1>());
 
     private sealed class UnavailableProductPurchaseUnitConversion : IProductPurchaseUnitConversionV1
     {
