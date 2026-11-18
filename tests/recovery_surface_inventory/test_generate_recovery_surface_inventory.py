@@ -550,7 +550,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
                 self.assertTrue(any(item.live_code for item in spec.evidence))
                 self.assertEqual("OpenAsync", generator.WRITER_METHOD_SCOPES[(spec.identifier,
                     "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanyOpeningV1.cs")])
-                self.assertIn("database.CompanySetupOutboxMessages.Add(new(", tokens)
+                self.assertIn("database.CompanySetupOutboxMessages.Add(new OrganizationCompanySetupOutboxMessage(", tokens)
                 self.assertIn("database.CompanySetupOutboxMessages.AsNoTracking()", tokens)
                 self.assertEqual(("organization", "CompanySetupOutboxMessages"), (record["schema"], record["table"]))
             else:

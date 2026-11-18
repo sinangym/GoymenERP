@@ -194,3 +194,34 @@ eklenmedi. Sonraki kaynak farkları explicit DTO constructor türleri, mevcut
 company çitleri ve raporlanmış runtime düzeltmeleridir. Tam gerçek üretici ile
 recovery/release paketlerinin birleşik kaynak sonucu ayrıca bekler; helper exit0
 bir üretici veya test PASS kanıtı değildir.
+
+## Son birleşik kaynak: explicit constructor metadata düzeltmesi
+
+Yeni izole kaynak tabanı `99a874901645e82a1ccafd06ec00dc7a10f150cf`.
+Bu tabanın ilk gerçek üreticisi native **exit 2** verdi:
+`WorkNotificationStoreV1.cs:DeliverAsync` operative anchor drift. İlk JSON,
+stderr ve exit kanıtları `t1-w8-final-99a874901-generator.*` adlarıyla depo dışında
+korunur; bu hata üzerinde tam Python paketleri başlatılmadı.
+
+Aynı değişmeyen operative/evidence/method/blob validator'larının tüm mevcut
+girdilere uygulanması 221 geçen, 7 eski literal anchor gösterdi. Bunlar mevcut
+explicit constructor source dönüşümündeki gerçek row tipleridir: Work inbox;
+Organization opening execution, inbox ve outbox; Finance credit outbox;
+Identity inbox ve outbox. Yalnız envanterdeki 7 exact token ve Organization
+producer assertion'ı gerçek `new Type(...)` yazımına hizalandı. Kaynak dosyalarına,
+parser'a, validator'a veya izin/istisna listesine müdahale edilmedi. Dosya
+ya da test yazılmadan önce önerilen token'larla 228/228 kanıt bağı doğrulandı.
+
+Gerçek risk selector'ının eski `359978104` ve yeni `99a874901` commit snapshotları
+arasındaki küme farkı tek dosyadır:
+`src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/PurchaseIncomingInvoiceDiagnostics.cs`.
+Çıkan dosya yoktur. Bu mevcut dosyanın safe-category kaynak düzeltmesi
+`Microsoft.EntityFrameworkCore` using'i taşıdığı için mevcut lexical risk token
+kuralına girer. Yeni generator selector'ı eski commit'e uygulandığında sayı yine
+1458'dir; yeni kaynakta 1459 olur. Risk kuralı genişletilmedi ve allowlist eklenmedi.
+Küme farkının gerçek JSON/native exit kanıtı
+`t1-w8-final-99a874901-risk-path-diff.*` adlarıyla depo dışında korunur.
+
+Bu metadata checkpoint'i temiz commit sonrasında gerçek üreticiyle doğrulanacak;
+üretici native exit 0 vermeden recovery ve release paketleri çalıştırılmayacak.
+Önceki 36/36 sonucu eski bounded tabana aittir, bu son head'in kabulü değildir.
