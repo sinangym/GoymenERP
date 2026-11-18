@@ -275,17 +275,21 @@ class SqlBatchTests(unittest.TestCase):
             self.assertEqual(3, len(list(root.glob("*.trx"))))
             self.assertFalse(list(root.glob("*.json")))
 
-    def test_error_aborted_and_unknown_run_info_stop_diagnostics_before_next_batch(self) -> None:
+    def test_complete_failed_trx_run_info_never_certifies_or_blocks_diagnostic_coverage(self) -> None:
         expected = {PREFIX + f"Case{i}": 1 for i in range(10)}
         for outcome in ("Error", "Aborted", "Unknown", "", None):
             calls = []
-            def corrupted(batch):
+            def with_run_info(batch):
                 attribute = "" if outcome is None else f' outcome="{outcome}"'
                 return trx(batch, outcome="Failed").replace('</ResultSummary>', '<RunInfos><RunInfo' + attribute + ' /></RunInfos></ResultSummary>')
-            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as directory, mock.patch.object(V, "run_bootstrap_preflight"), mock.patch.object(V, "run_checked", side_effect=self.diagnostic_runner(expected, calls, first_source=corrupted)):
-                with self.assertRaisesRegex(RuntimeError, "infrastructure run failure"):
-                    V.run_sql_batches(Path(directory), Path(directory) / "result.trx", expected)
-                self.assertEqual(1, len(calls))
+            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as directory, mock.patch.object(V, "run_bootstrap_preflight"), mock.patch.object(V, "run_checked", side_effect=self.diagnostic_runner(expected, calls, first_source=with_run_info)):
+                root = Path(directory)
+                with self.assertRaises(V.NativeTestFailure) as failure:
+                    V.run_sql_batches(root, root / "result.trx", expected)
+                self.assertEqual(1, failure.exception.exit_code)
+                self.assertEqual(len(V.plan_sql_batches(expected)), len(calls))
+                self.assertEqual(len(calls), len(list(root.glob("*.trx"))))
+                self.assertFalse(list(root.glob("*.json")))
 
     def test_failed_results_are_accepted_only_for_explicit_diagnostics(self) -> None:
         expected = {PREFIX + "Case": 2}
@@ -311,7 +315,6 @@ class SqlBatchTests(unittest.TestCase):
             lambda batch: trx(batch, outcome="Failed").replace('outcome="Failed"', 'outcome="Aborted"', 1),
             lambda batch: trx(batch, outcome="Failed").replace('outcome="Failed"', 'outcome="Inconclusive"', 1),
             lambda batch: trx(batch, outcome="Failed").replace('<ResultSummary outcome="Failed">', '<ResultSummary>'),
-            lambda batch: trx(batch, outcome="Failed").replace('</ResultSummary>', '<RunInfos><RunInfo outcome="Error" /></RunInfos></ResultSummary>'),
             lambda batch: trx(dict(list(batch.items())[:-1]), outcome="Failed"),
         )
         for index, corruption in enumerate(corruptions):

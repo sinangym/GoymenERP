@@ -230,8 +230,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // stays fatal and prevents proof. Infrastructure failures still stop; one global deadline remains.
     // W8: normal adapter Warning RunInfo metadata does not stop an otherwise exact failed batch;
     // Error/Aborted/unknown outcomes still stop, and the final native failure remains mandatory.
+    // W8 diagnostic collection: RunInfo is not a veto once an exact complete Failed TRX is proved.
+    // This branch always retains native failure and cannot write proof; passing acceptance is unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "c5650132ff237c072a1f8c1c28ae33333dbb6125bceb8a232ad4d8e43afc0cb1";
+        "2424570c84737c5d403479a2ecf1dc9bfcbc09cae3c20c8789783dec1508e76a";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";

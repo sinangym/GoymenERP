@@ -793,12 +793,10 @@ def verify_sql_batch_trx(
             raise RuntimeError("Diagnostic SQL TRX additional counters must be integer zero.") from exception
         if any(other_counters):
             raise RuntimeError("Diagnostic SQL TRX additional counters must be integer zero.")
-        # Adapter RunInfo warnings occur in normal completed runs. They do not change
-        # exact result/counter checks or the sticky native failure and cannot yield proof.
-        if any(element.tag.rsplit("}", 1)[-1] == "RunInfo"
-               and element.attrib.get("outcome") not in {"Passed", "Informational", "Warning"}
-               for element in root.iter()):
-            raise RuntimeError("Diagnostic SQL TRX contains an infrastructure run failure.")
+        # RunInfo metadata cannot certify a run, and does not veto diagnostic coverage
+        # once native 1 and every exact failed/passed result have been validated above.
+        # Even RunInfo errors leave the first native failure sticky: no acceptance proof
+        # can be produced after this branch. Malformed/incomplete results still fail fast.
     seen_execution_ids.update(batch_ids)
     return dict(executed)
 
