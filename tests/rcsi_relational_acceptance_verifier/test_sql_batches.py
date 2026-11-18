@@ -33,7 +33,7 @@ def trx(executions: dict[str, int], *, outcome: str = "Passed") -> str:
     failed = total if outcome == "Failed" else 0
     skipped = total if outcome == "NotExecuted" else 0
     return ('<TestRun><Results>' + ''.join(results) + '</Results><TestDefinitions>'
-            + ''.join(definitions) + '</TestDefinitions><ResultSummary><Counters '
+            + ''.join(definitions) + f'</TestDefinitions><ResultSummary outcome="{"Failed" if outcome == "Failed" else "Completed"}"><Counters '
             + f'total="{total}" executed="{total - skipped}" passed="{passed}" failed="{failed}" '
             + f'error="0" timeout="0" aborted="0" inconclusive="0" notExecuted="{skipped}" '
             + '/></ResultSummary></TestRun>')
@@ -228,6 +228,137 @@ class SqlBatchTests(unittest.TestCase):
                 V.run_sql_batches(root, root / "result.trx", {PREFIX + "Case": 1})
             run.assert_not_called()
             self.assertEqual("old evidence", stale.read_text(encoding="utf-8"))
+
+    def diagnostic_runner(self, expected, calls, *, first_source=None, exit_code=1, advance_clock=None):
+        def run(arguments, root, **kwargs):
+            calls.append((arguments, kwargs))
+            batch = {name.removeprefix("FullyQualifiedName="): expected[name.removeprefix("FullyQualifiedName=")]
+                     for name in arguments[arguments.index("--filter") + 1].split("|")}
+            logger = next(value for value in arguments if value.startswith("trx;LogFileName="))
+            path = Path(arguments[arguments.index("--results-directory") + 1]) / logger.split("=", 1)[1]
+            source = trx(batch, outcome="Failed") if len(calls) == 1 else trx(batch)
+            if first_source is not None and len(calls) == 1:
+                source = first_source(batch)
+            path.write_text(source, encoding="utf-8")
+            if len(calls) == 1:
+                if advance_clock is not None:
+                    advance_clock[0] = 2500
+                raise V.NativeTestFailure(exit_code)
+            return subprocess.CompletedProcess(arguments, 0, stdout="", stderr="")
+        return run
+
+    def test_complete_failed_batch_continues_once_but_final_verdict_stays_native_failure(self) -> None:
+        expected = {PREFIX + f"Case{i}": 1 for i in range(3)}
+        calls = []
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(V, "SQL_BATCH_MAX_METHODS", 1), mock.patch.object(V, "run_bootstrap_preflight"), mock.patch.object(V.time, "monotonic", return_value=100), mock.patch.object(V, "run_checked", side_effect=self.diagnostic_runner(expected, calls)):
+            root = Path(directory)
+            with self.assertRaises(V.NativeTestFailure) as failure:
+                V.run_sql_batches(root, root / "result.trx", expected)
+            self.assertEqual(1, failure.exception.exit_code)
+            self.assertEqual(3, len(calls))
+            self.assertEqual(3, len(list(root.glob("*.trx"))))
+            self.assertFalse(list(root.glob("*.json")))
+            self.assertEqual([2500, 2500, 2500], [kwargs["execution_deadline"] for _, kwargs in calls])
+            self.assertEqual(3, len({args[args.index("--filter") + 1] for args, _ in calls}))
+
+    def test_failed_results_are_accepted_only_for_explicit_diagnostics(self) -> None:
+        expected = {PREFIX + "Case": 2}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "result.trx"
+            source = trx(expected, outcome="Failed").replace('outcome="Failed"', 'outcome="Passed"', 1)
+            source = source.replace('passed="0" failed="2"', 'passed="1" failed="1"')
+            source = source.replace('<Counters ', '<Counters passedButRunAborted="0" futureOutcome="0" ')
+            path.write_text(source, encoding="utf-8")
+            with self.assertRaises(RuntimeError):
+                V.verify_sql_batch_trx(path, expected, set())
+            self.assertEqual(expected, V.verify_sql_batch_trx(path, expected, set(), diagnostic_only=True))
+
+    def test_native_one_without_complete_exact_failed_trx_stops_immediately(self) -> None:
+        expected = {PREFIX + f"Case{i}": 1 for i in range(10)}
+        corruptions = (
+            lambda batch: "<TestRun>",
+            lambda batch: trx(batch),
+            lambda batch: trx(batch, outcome="Failed").replace('failed="8"', 'failed="7"'),
+            lambda batch: trx(batch, outcome="Failed").replace('outcome="Failed"', 'outcome="Error"', 1),
+            lambda batch: trx(batch, outcome="Failed").replace('outcome="Failed"', 'outcome="Timeout"', 1),
+            lambda batch: trx(batch, outcome="Failed").replace('outcome="Failed"', 'outcome="NotExecuted"', 1),
+            lambda batch: trx(batch, outcome="Failed").replace('outcome="Failed"', 'outcome="Aborted"', 1),
+            lambda batch: trx(batch, outcome="Failed").replace('outcome="Failed"', 'outcome="Inconclusive"', 1),
+            lambda batch: trx(batch, outcome="Failed").replace('<ResultSummary outcome="Failed">', '<ResultSummary>'),
+            lambda batch: trx(batch, outcome="Failed").replace('</ResultSummary>', '<RunInfos><RunInfo outcome="Error" /></RunInfos></ResultSummary>'),
+            lambda batch: trx(dict(list(batch.items())[:-1]), outcome="Failed"),
+        )
+        for index, corruption in enumerate(corruptions):
+            calls = []
+            with self.subTest(index=index), tempfile.TemporaryDirectory() as directory, mock.patch.object(V, "run_bootstrap_preflight"), mock.patch.object(V, "run_checked", side_effect=self.diagnostic_runner(expected, calls, first_source=corruption)):
+                with self.assertRaises(RuntimeError):
+                    V.run_sql_batches(Path(directory), Path(directory) / "result.trx", expected)
+                self.assertEqual(1, len(calls))
+
+    def test_nonzero_or_noninteger_additional_counters_cannot_continue_diagnostics(self) -> None:
+        expected = {PREFIX + f"Case{i}": 1 for i in range(10)}
+        for attribute in ('passedButRunAborted="1"', 'unrecognizedFutureOutcome="1"', 'pending="unknown"'):
+            calls = []
+            def corrupted(batch):
+                return trx(batch, outcome="Failed").replace('<Counters ', '<Counters ' + attribute + ' ')
+            with self.subTest(attribute=attribute), tempfile.TemporaryDirectory() as directory, mock.patch.object(V, "run_bootstrap_preflight"), mock.patch.object(V, "run_checked", side_effect=self.diagnostic_runner(expected, calls, first_source=corrupted)):
+                with self.assertRaisesRegex(RuntimeError, "additional counters"):
+                    V.run_sql_batches(Path(directory), Path(directory) / "result.trx", expected)
+                self.assertEqual(1, len(calls))
+
+    def test_other_native_exit_cannot_use_failed_trx_to_continue(self) -> None:
+        expected = {PREFIX + f"Case{i}": 1 for i in range(10)}
+        calls = []
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(V, "run_bootstrap_preflight"), mock.patch.object(V, "run_checked", side_effect=self.diagnostic_runner(expected, calls, exit_code=2)):
+            with self.assertRaises(V.NativeTestFailure) as failure:
+                V.run_sql_batches(Path(directory), Path(directory) / "result.trx", expected)
+            self.assertEqual(2, failure.exception.exit_code)
+            self.assertEqual(1, len(calls))
+
+    def test_native_zero_with_failed_trx_cannot_continue(self) -> None:
+        expected = {PREFIX + f"Case{i}": 1 for i in range(10)}
+        calls = []
+        def run(arguments, root, **kwargs):
+            try:
+                return self.diagnostic_runner(expected, calls)(arguments, root, **kwargs)
+            except V.NativeTestFailure:
+                return subprocess.CompletedProcess(arguments, 0, stdout="", stderr="")
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(V, "run_bootstrap_preflight"), mock.patch.object(V, "run_checked", side_effect=run):
+            with self.assertRaises(RuntimeError):
+                V.run_sql_batches(Path(directory), Path(directory) / "result.trx", expected)
+            self.assertEqual(1, len(calls))
+
+    def test_diagnostic_continuation_does_not_reset_expired_global_deadline(self) -> None:
+        expected = {PREFIX + f"Case{i}": 1 for i in range(10)}
+        clock = [100.0]
+        calls = []
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(V, "run_bootstrap_preflight"), mock.patch.object(V.time, "monotonic", side_effect=lambda: clock[0]), mock.patch.object(V, "run_checked", side_effect=self.diagnostic_runner(expected, calls, advance_clock=clock)):
+            with self.assertRaisesRegex(RuntimeError, "global deadline"):
+                V.run_sql_batches(Path(directory), Path(directory) / "result.trx", expected)
+            self.assertEqual(1, len(calls))
+
+    def test_shard_with_diagnostic_failures_never_writes_acceptance_proof(self) -> None:
+        native_calls = []
+        selected = V.shard_executions("A")
+        fake = self.diagnostic_runner(selected, native_calls)
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+            root = Path(directory)
+            proof = root / "proof.json"
+            proof.write_text("stale proof", encoding="utf-8")
+            def run(arguments, repository_root, **kwargs):
+                if "--list-tests" in arguments:
+                    return subprocess.CompletedProcess(arguments, 0, stdout="\n".join(V.BROAD_EXPECTED_TESTS), stderr="")
+                if "--no-build" in arguments:
+                    return fake(arguments, repository_root, **kwargs)
+                return subprocess.CompletedProcess(arguments, 0, stdout="", stderr="")
+            with mock.patch.object(V, "run_checked", side_effect=run), mock.patch.dict(V.os.environ, {"GOYMEN_ERP_TEST_SQLSERVER_CONNECTION": "synthetic"}), mock.patch.object(sys, "argv", [
+                "verifier", "--shard", "A", "--trx-output", str(root / "result.trx"),
+                "--proof-output", str(proof), "--source-head", "a" * 40, "--tested-commit", "b" * 40,
+            ]), contextlib.redirect_stdout(io.StringIO()), self.assertRaises(V.NativeTestFailure):
+                V.main()
+            self.assertFalse(proof.exists())
+            self.assertEqual(len(V.plan_sql_batches(selected)), len(native_calls))
+            self.assertEqual(len(native_calls), len(list(root.glob("*.trx"))))
 
     def test_stale_extra_batch_outside_current_plan_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

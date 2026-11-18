@@ -226,8 +226,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // W8 failure diagnosis: whole-theory method batches retain one global 2400s deadline,
     // strict result/identity/union checks and skip0; only a complete passing union writes proof.
     // Process/static lifetime changes require independent K3 review; no workflow or runtime bypass added.
+    // W8: complete exact failed batches continue only for diagnostics; the first native failure
+    // stays fatal and prevents proof. Infrastructure failures still stop; one global deadline remains.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "8adf932dec0fee8f16e121d74392b863530b76c96cb375269bdf529a1aa297e9";
+        "8fbae0393b3510886508bb6b0af594b572a6bbd149b2f3df6f9494f6a35d8958";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";

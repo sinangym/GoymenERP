@@ -547,6 +547,14 @@ def stop_test_process(process: subprocess.Popen[bytes]) -> None:
     process.wait(timeout=10)
 
 
+class NativeTestFailure(RuntimeError):
+    """The actual test process failed; its exit code is never inferred from text."""
+
+    def __init__(self, exit_code: int) -> None:
+        self.exit_code = exit_code
+        super().__init__(f"RCSI acceptance command exited with native code {exit_code}.")
+
+
 def run_test_checked(
     arguments: list[str], repository_root: Path, *, execution_deadline: float | None = None,
 ) -> subprocess.CompletedProcess[str]:
@@ -583,7 +591,7 @@ def run_test_checked(
         if returncode != 0:
             # A failed runner may leave a descendant holding the pipe. Keep its native failure;
             # do not replace it with an output-drain timeout.
-            raise RuntimeError(f"RCSI acceptance command exited with native code {returncode}.")
+            raise NativeTestFailure(returncode)
         reader.join(timeout=max(0, deadline - time.monotonic()))
         if reader.is_alive():
             raise subprocess.TimeoutExpired(arguments, TEST_EXECUTION_TIMEOUT_SECONDS)
@@ -704,12 +712,18 @@ def plan_sql_batches(expected: dict[str, int]) -> tuple[dict[str, int], ...]:
 
 
 def verify_sql_batch_trx(
-    path: Path, expected: dict[str, int], seen_execution_ids: set[str],
+    path: Path, expected: dict[str, int], seen_execution_ids: set[str], *,
+    diagnostic_only: bool = False,
 ) -> dict[str, int]:
     if path.is_symlink() or not path.is_file():
         raise RuntimeError("SQL batch TRX must be a normal output file, not a symlink.")
-    verify_trx(path, sum(expected.values()))
-    root = ET.parse(path).getroot()
+    if not diagnostic_only:
+        verify_trx(path, sum(expected.values()))
+    try:
+        root = ET.parse(path).getroot()
+    except (ET.ParseError, OSError) as exception:
+        raise RuntimeError("SQL batch TRX could not be parsed.") from exception
+    failed_results = 0
     definitions: dict[str, str] = {}
     for element in root.iter():
         if element.tag.rsplit("}", 1)[-1] != "UnitTest":
@@ -742,8 +756,11 @@ def verify_sql_batch_trx(
             raise RuntimeError("SQL batch TRX execution identities must be canonical nonzero UUIDs.")
         if canonical_id in batch_ids or canonical_id in seen_execution_ids:
             raise RuntimeError("SQL batch TRX execution identities must be unique.")
-        if element.attrib.get("outcome") != "Passed":
-            raise RuntimeError("SQL batch TRX requires all passed results and skipped=0.")
+        outcome = element.attrib.get("outcome")
+        if diagnostic_only and outcome == "Failed":
+            failed_results += 1
+        elif outcome != "Passed":
+            raise RuntimeError("SQL batch TRX requires passed results or explicit diagnostic-only test failures; skipped=0.")
         batch_ids.add(canonical_id)
         used_test_ids.add(test_id)
         executed[definitions[test_id]] += 1
@@ -751,6 +768,35 @@ def verify_sql_batch_trx(
         raise RuntimeError("SQL batch TRX must use every selected test definition identity.")
     if dict(executed) != expected:
         raise RuntimeError("SQL batch TRX execution multiplicity must equal its exact selected inventory.")
+    if diagnostic_only:
+        # Native exit 1 alone proves neither complete test execution nor test-only failure.
+        # This branch can retain diagnostic coverage, but can never certify acceptance.
+        summaries = [element for element in root.iter() if element.tag.rsplit("}", 1)[-1] == "ResultSummary"]
+        counters = [element for element in root.iter() if element.tag.rsplit("}", 1)[-1] == "Counters"]
+        if (not failed_results or len(summaries) != 1
+                or summaries[0].attrib.get("outcome") != "Failed" or len(counters) != 1):
+            raise RuntimeError("Diagnostic SQL TRX requires one failed summary and complete failed test results.")
+        total = sum(expected.values())
+        required = {"total": total, "executed": total, "passed": total - failed_results,
+                    "failed": failed_results, "error": 0, "timeout": 0, "aborted": 0,
+                    "inconclusive": 0, "notExecuted": 0}
+        try:
+            actual = {name: int(counters[0].attrib.get(name, "")) for name in required}
+        except ValueError as exception:
+            raise RuntimeError("Diagnostic SQL TRX counters must be exact integers.") from exception
+        if actual != required:
+            raise RuntimeError("Diagnostic SQL TRX counters must equal its complete exact execution results.")
+        try:
+            other_counters = [int(value) for name, value in counters[0].attrib.items()
+                              if name not in required]
+        except ValueError as exception:
+            raise RuntimeError("Diagnostic SQL TRX additional counters must be integer zero.") from exception
+        if any(other_counters):
+            raise RuntimeError("Diagnostic SQL TRX additional counters must be integer zero.")
+        if any(element.tag.rsplit("}", 1)[-1] == "RunInfo"
+               and element.attrib.get("outcome") not in {"Passed", "Informational"}
+               for element in root.iter()):
+            raise RuntimeError("Diagnostic SQL TRX contains an infrastructure run failure.")
     seen_execution_ids.update(batch_ids)
     return dict(executed)
 
@@ -767,21 +813,32 @@ def run_sql_batches(
     deadline = time.monotonic() + TEST_EXECUTION_TIMEOUT_SECONDS
     executed: dict[str, int] = {}
     seen_execution_ids: set[str] = set()
+    first_test_failure: NativeTestFailure | None = None
     for batch, path in zip(batches, paths, strict=True):
         if time.monotonic() >= deadline:
             raise RuntimeError("SQL Server relational execution exhausted its global deadline.")
         run_bootstrap_preflight(repository_root, execution_deadline=deadline)
         # A failed native process still leaves its completed TRX for the always-running
         # privacy-safe summary step. Do not delete it or convert the failure into a proof.
-        run_checked([
-            "dotnet", "test", PROJECT, "-noAutoResponse", "--configuration", "Release",
-            "--no-build", "--no-restore", "--filter",
-            "|".join(f"FullyQualifiedName={name}" for name in batch),
-            "--results-directory", str(path.parent), "--logger", trx_logger(path),
-            "--logger", "console;verbosity=detailed", "--",
-            "xUnit.DiagnosticMessages=true", "xUnit.LongRunningTestSeconds=60",
-        ], repository_root, execution_deadline=deadline)
-        actual = verify_sql_batch_trx(path, batch, seen_execution_ids)
+        try:
+            run_checked([
+                "dotnet", "test", PROJECT, "-noAutoResponse", "--configuration", "Release",
+                "--no-build", "--no-restore", "--filter",
+                "|".join(f"FullyQualifiedName={name}" for name in batch),
+                "--results-directory", str(path.parent), "--logger", trx_logger(path),
+                "--logger", "console;verbosity=detailed", "--",
+                "xUnit.DiagnosticMessages=true", "xUnit.LongRunningTestSeconds=60",
+            ], repository_root, execution_deadline=deadline)
+        except NativeTestFailure as failure:
+            if failure.exit_code != 1:
+                raise
+            actual = verify_sql_batch_trx(path, batch, seen_execution_ids, diagnostic_only=True)
+            # Keep the first real failure sticky. Further batches run once, solely for
+            # diagnostics under the same deadline; no retry, exclusion or failure proof.
+            if first_test_failure is None:
+                first_test_failure = failure
+        else:
+            actual = verify_sql_batch_trx(path, batch, seen_execution_ids)
         if set(executed) & set(actual):
             raise RuntimeError("SQL batch methods must not overlap.")
         executed.update(actual)
@@ -789,6 +846,8 @@ def run_sql_batches(
             raise RuntimeError("SQL Server relational execution exhausted its global deadline.")
     if executed != expected:
         raise RuntimeError("SQL batches must retain the exact complete execution inventory.")
+    if first_test_failure is not None:
+        raise first_test_failure
     return executed
 
 
