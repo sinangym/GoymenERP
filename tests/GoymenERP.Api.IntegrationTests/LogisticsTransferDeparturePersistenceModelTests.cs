@@ -16,7 +16,7 @@ public sealed class LogisticsTransferDeparturePersistenceModelTests
         var company = new CompanyContext(); company.Set(Guid.NewGuid());
         using var database = Context(company);
         Assert.False(database.Database.HasPendingModelChanges());
-        Assert.EndsWith("_AddTransferDepartures", database.Database.GetMigrations().Last(), StringComparison.Ordinal);
+        Assert.Single(database.Database.GetMigrations(), name => name.EndsWith("_AddTransferDepartures", StringComparison.Ordinal));
         var migration = new AddTransferDepartures();
         Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation or InsertDataOperation or UpdateDataOperation or DeleteDataOperation);
         Assert.Equal(new[] { "TransferDepartureAttempts", "TransferDepartureEvents", "TransferDepartureStates" },
