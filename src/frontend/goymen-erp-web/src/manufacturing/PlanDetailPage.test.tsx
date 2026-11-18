@@ -47,7 +47,8 @@ afterEach(() => {
 
 /** The plan read itself; MFG-PLAN-EDIT's history read (`/plans/{id}/revisions`) is a separate request. */
 function planReadRequests(recorded: readonly RecordedRequest[]) {
-  return requestsFor(recorded, `/manufacturing/plans/${PLAN}`, 'GET').filter((request) => !request.url.endsWith('/revisions'))
+  return requestsFor(recorded, `/manufacturing/plans/${PLAN}`, 'GET').filter((request) =>
+    new URL(request.url, 'http://localhost').pathname === `/api/v1/manufacturing/plans/${PLAN}`)
 }
 
 describe('plan approval and order creation', () => {

@@ -199,6 +199,7 @@ function stub(
         commandIndex += 1
         return respond(init)
       }
+      if (new URL(url, 'http://localhost').pathname !== `/api/v1/manufacturing/orders/${ORDER}`) return undefined
       const respond = reads[Math.min(readIndex, reads.length - 1)]
       readIndex += 1
       return respond()
@@ -232,7 +233,8 @@ async function openOutputSelectors(
 
 const posts = (recorded: RecordedRequest[]) => requestsFor(recorded, '/manufacturing/orders/', 'POST')
 const reads = (recorded: RecordedRequest[]) =>
-  requestsFor(recorded, `/manufacturing/orders/${ORDER}`, 'GET').filter((request) => !request.url.endsWith('/mass-balance'))
+  requestsFor(recorded, `/manufacturing/orders/${ORDER}`, 'GET').filter((request) =>
+    new URL(request.url, 'http://localhost').pathname === `/api/v1/manufacturing/orders/${ORDER}`)
 const balanceReads = (recorded: RecordedRequest[]) => requestsFor(recorded, `/manufacturing/orders/${ORDER}/mass-balance`, 'GET')
 const labelReads = (recorded: RecordedRequest[]) => requestsFor(recorded, `/inventory/labels/${ROLL_1}/detail`, 'GET')
 const productReads = (recorded: RecordedRequest[]) =>

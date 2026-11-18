@@ -245,7 +245,8 @@ describe('plan create and reopen', () => {
     expect(await screen.findByRole('heading', { name: 'Plan yeniden açıldı' })).toBeTruthy()
     expect(screen.getByText('900.5')).toBeTruthy()
     // MFG-PLAN-EDIT: the reopened detail also reads the plan history; the plan read itself is once.
-    expect(requestsFor(recorded, '/manufacturing/plans/', 'GET').filter((request) => !request.url.endsWith('/revisions')))
+    expect(requestsFor(recorded, '/manufacturing/plans/', 'GET').filter((request) =>
+      new URL(request.url, 'http://localhost').pathname === `/api/v1/manufacturing/plans/${(save.body as { planId: string }).planId}`))
       .toHaveLength(1)
   })
 
@@ -265,7 +266,7 @@ describe('plan create and reopen', () => {
     expect(second.headers['Idempotency-Key']).toBe(first.headers['Idempotency-Key'])
   })
 
-  it('previews, saves and reopens the exact ordered slitting draft content while keeping revision unavailable', async () => {
+  it('previews, saves and reopens the exact ordered slitting draft content and offers draft revision', async () => {
     const user = userEvent.setup()
     const recorded = installPlanApi({
       preview: (body) => json(previewAnswer(body)),
@@ -312,8 +313,10 @@ describe('plan create and reopen', () => {
     expect(rows[1].textContent).toContain('150 mm')
     expect(rows[2].textContent).toContain('240.5 mm')
     expect(within(section).getByText('Sarım hedefi: 2000 kg')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Planı düzenle' })).toBeNull()
-    expect(screen.getByText(/Dilme ayrıntısı taşıyan plan düzenlenmez/)).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Planı düzenle' }))
+    expect(await screen.findByRole('button', { name: 'Değişikliği kaydet' })).toBeTruthy()
+    expect(requestsFor(recorded, `/manufacturing/plans/${(saved.body as { planId: string }).planId}/revision`, 'POST'))
+      .toHaveLength(0)
   })
 
   it('allows a new attempt with a new key after a definitive refusal', async () => {
