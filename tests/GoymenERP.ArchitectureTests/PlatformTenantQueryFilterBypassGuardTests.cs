@@ -11290,15 +11290,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             }
 
             // The existing company-context construction prohibition is unchanged.
-            // Only these exact, fingerprinted global design-time factories gain a
+            // Only these exact, fingerprinted design-time factories gain this additional
             // construction counter; this is not a runtime construction exemption.
-            if (ReviewedPlatformContextFactories.TryGetValue(normalizedPath, out var globalFactory)
-                && globalFactory.ContextTypeName is "GroupSharedCommandDbContext" or "ProductDbContext")
+            if (ReviewedPlatformContextFactories.TryGetValue(normalizedPath, out var additionalFactory)
+                && additionalFactory.ContextTypeName is "GroupSharedCommandDbContext" or "ProductDbContext" or "ProductPriceListDbContext")
             {
                 foreach (Match construction in Regex.Matches(searchableSource,
-                             @"\bnew\s+" + Regex.Escape(globalFactory.ContextTypeName) + @"\s*\(",
+                             @"\bnew\s+" + Regex.Escape(additionalFactory.ContextTypeName) + @"\s*\(",
                              RegexOptions.CultureInvariant))
-                    constructions.Add(new ReviewedContextConstruction(normalizedPath, globalFactory.ContextTypeName,
+                    constructions.Add(new ReviewedContextConstruction(normalizedPath, additionalFactory.ContextTypeName,
                         GetLineNumber(searchableSource, construction.Index)));
             }
 
@@ -11444,7 +11444,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     [Theory]
     [InlineData("src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Persistence/GroupSharedCommandDesignTimeDbContextFactory.cs", "GroupSharedCommandDbContext")]
     [InlineData("src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/ProductDesignTimeDbContextFactory.cs", "ProductDbContext")]
-    public void Global_design_time_factories_require_exact_constructors_and_do_not_authorize_other_paths(string path, string contextType)
+    [InlineData("src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPriceListDesignTimeDbContextFactory.cs", "ProductPriceListDbContext")]
+    public void Additional_design_time_factories_require_exact_constructors_and_do_not_authorize_other_paths(string path, string contextType)
     {
         var sources = ReadBackendSources(FindRepositoryRoot());
         var source = sources[path];
@@ -11455,6 +11456,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             error => error.Contains("Expected exactly one '" + contextType + "' construction", StringComparison.Ordinal));
         sources[path] = source;
         sources["src/backend/GoymenERP.Api/Unapproved" + contextType + "DesignTimeDbContextFactory.cs"] = source;
+        Assert.Contains(ValidateReviewedPlatformContextConstructions(sources),
+            error => error.Contains("Unauthorized design-time DbContext factory reference", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Price_list_design_time_factory_invocation_is_rejected_outside_its_exact_path()
+    {
+        var sources = ReadBackendSources(FindRepositoryRoot());
+        sources["src/backend/GoymenERP.Api/UnapprovedPriceListFactoryUse.cs"] =
+            "new ProductPriceListDesignTimeDbContextFactory().CreateDbContext([]);";
         Assert.Contains(ValidateReviewedPlatformContextConstructions(sources),
             error => error.Contains("Unauthorized design-time DbContext factory reference", StringComparison.Ordinal));
     }
@@ -12243,7 +12254,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + @"SalesDesignTimeDbContextFactory|"
         + @"LogisticsDesignTimeDbContextFactory|"
         + @"PurchasingDesignTimeDbContextFactory|"
-        + @"DocumentsDesignTimeDbContextFactory|WorkDesignTimeDbContextFactory|SettingsDesignTimeDbContextFactory|SecurityEventsDesignTimeDbContextFactory)(?![\p{L}\p{Nd}_])",
+        + @"DocumentsDesignTimeDbContextFactory|WorkDesignTimeDbContextFactory|SettingsDesignTimeDbContextFactory|SecurityEventsDesignTimeDbContextFactory|ProductPriceListDesignTimeDbContextFactory)(?![\p{L}\p{Nd}_])",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedDesignTimeFactoryIdentifierRegex();
 

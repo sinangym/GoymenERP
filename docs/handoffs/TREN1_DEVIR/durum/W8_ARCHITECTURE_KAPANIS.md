@@ -65,3 +65,20 @@ yordamları dokuz **farklı native SDK kimliğini** aynı çıktıda doğruladı
 kültürü zorlanmadı; hiçbir tarih/kimlik kontrolü gevşetilmedi. Tam20 modül ve403
 mimari tekrarları bu committed metadata üzerinde ayrıca koşulacaktır. Recovery'nin
 backend/build-control girdileri değişmedi.
+
+## Exact PriceList factory sayacı
+
+`e41360340` mevcut modül verifier'ı20 projede13.325/13.325 PASS,skip0,exit0 verdi.
+Aynı head'in tam mimari tekrarı401/403 PASS,2 FAIL,skip0: iki hata yine aynı factory
+sayımıydı. Açık kurucu tek başına yeterli değildi; ek sayaç yalnız mevcut global
+Product/GroupShared türlerini sayıyor, kayıtlı PriceList türünü dışarıda bırakıyordu.
+
+PriceList'in zaten fingerprint/path ile sınırlanmış factory kaydı aynı dar ek
+sayaca alındı. Mevcut şirket-context kurucu yasağı ve runtime sicili değişmedi;
+yeni runtime muafiyeti yoktur. Factory adı ayrıca unauthorized-reference regex'ine
+alındı: dışarıdan `CreateDbContext` çağrısı reddedilir. Mevcut negatif test PriceList
+satırıyla da yanlış kurucuyu ve başka yola kopyalamayı reddeder; ayrı yeni test
+runtime invocation'ı reddeder. Backend source/factory fingerprint'i değişmez.
+
+Gerçek Release build0 ve hedef6/6 PASS,skip0; iki yeni test vakasıyla tam mimari
+grup405 vakaya çıktı. Önceki403/2 failure kanıtı korundu; tam405 tekrarı QUEUED.
