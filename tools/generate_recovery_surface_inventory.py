@@ -1104,7 +1104,7 @@ DURABLE_STORE_SPECS = (
         "PurchaseSupplierReturnAttemptRow", "purchasing", "PurchaseSupplierReturnAttempts", PURCHASING_CONTEXT,
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261116113129_AddPurchaseSupplierReturns.cs",
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseSupplierReturnStore.cs",
-        ("dbContext.SupplierReturnAttempts.Add(Attempt(",), mapping_tokens=("IdempotencyKeyHash",),
+        ("dbContext.SupplierReturnAttempts.Add(creationAttempt)", "creationAttempt.ResultJson = JsonSerializer.Serialize(stored, Json)"), mapping_tokens=("IdempotencyKeyHash",),
     ),
     # tren-1 wave 5 integration (satis subcontract service invoices): K3 review pending (satis).
     _store(
@@ -1139,10 +1139,10 @@ WRITER_METHOD_SCOPES = {
     ("organization.company-setup-inbox", "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanySetupInboxConsumer.cs"): "HandleAsync",
     ("accounting.command-replay", ACCOUNTING_STORE): "AddCommand",
     ("accounting.delivery-inbox", ACCOUNTING_STORE): "AddDelivery",
-    ("accounting.source-document-admissions", ACCOUNTING_SOURCE_DOCUMENT_ADMISSION_STORE): "WriteAsync",
+    ("accounting.source-document-admissions", ACCOUNTING_SOURCE_DOCUMENT_ADMISSION_STORE): "WriteCoreAsync",
     ("counterparty.outbox", "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.Deactivation.cs"): "EnqueuePartyDeactivatedEvent",
     ("counterparty.outbox", "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.Merge.cs"): "EnqueuePartyMergedEvent",
-    ("documents.document-attempts", DOCUMENTS_STORE): "StoreUploadAsync",
+    ("documents.document-attempts", DOCUMENTS_STORE): "StoreUploadCoreAsync",
     ("finance.cash-transfer-commands", "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/CashTransferService.cs"): "AddCommand",
     ("finance.party-collateral-commands", "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinancePartyCollateralService.cs"): "AddCommand",
     ("identity.outbox", "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Bootstrap/FounderBootstrapService.cs"): "WriteAsync",
@@ -1221,11 +1221,11 @@ WRITER_METHOD_SCOPES = {
     (
         "logistics.loading-attempts",
         "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsStore.cs",
-    ): "StoreInstructionAsync",
+    ): "StoreInstructionCoreAsync",
     (
         "logistics.transfer-outgoing-document-attempts",
         "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsTransferOutgoingDocumentStore.cs",
-    ): "StoreDraftAsync",
+    ): "StoreDraftCoreAsync",
     (
         "manufacturing.command-replay",
         "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs",
@@ -1326,13 +1326,18 @@ WRITER_METHOD_SCOPES = {
     (
         "sales.subcontract-service-invoice-attempts",
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.SubcontractServiceInvoices.cs",
-    ): "StoreSubcontractServiceInvoiceAsync",
+    ): "StoreSubcontractServiceInvoiceCoreAsync",
 }
 
 
 # These declaration-and-body fingerprints bind recovery evidence to the reviewed live
 # methods.  Any semantic or execution-shape change must be deliberately re-inventoried.
 REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
+    ('src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingSourceDocumentAdmissionStoreV1.cs', 'WriteCoreAsync'): 'b4781a7fd74dd11073a13aa3ab346fffd1fbdb78c7fadee56704b295c48737ee',
+    ('src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Persistence/DocumentsStore.cs', 'StoreUploadCoreAsync'): '470d2d084382d6a1319d76b6cbe08398511d3b25ae05e4ddcce17c302fdb876a',
+    ('src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsStore.cs', 'StoreInstructionCoreAsync'): '66e35b6879cad00bf22e5404c6e1074a659a8899974e9b276ea084af5a71a74a',
+    ('src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsTransferOutgoingDocumentStore.cs', 'StoreDraftCoreAsync'): 'a8db4cc054473879421a7807da75d6b378316fe0add14da3f4983c3992f3cc04',
+    ('src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.SubcontractServiceInvoices.cs', 'StoreSubcontractServiceInvoiceCoreAsync'): 'b7b636bb56046042192d2b34272a4e447a91df79a94023cac639cd40bb77308c',
     ('src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.OfficialCancellations.cs', 'RecordDeliveryCoreAsync'): '024cd86456d4718b6469d63f95bc264be03a889249e5ec008265d4f7f65b457c',
     ('src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkNotificationStoreV1.cs', 'DeliverAsync'): '40355fece1b3aaf1c2e367771de93ef1f974c55be1f10e7bce3b4039eb1774bc',
     ('src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Persistence/DocumentBrandingService.cs', 'ExecuteAsync'): 'b15f0b5784d9b6c366e92460bb640db0fbe7457881753cd0dd86e7fbd1d4be27',

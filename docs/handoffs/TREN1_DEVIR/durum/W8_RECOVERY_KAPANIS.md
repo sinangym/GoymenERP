@@ -122,3 +122,23 @@ kontrolü geçti. Gerçek actuals helper native **exit 0**: risky count 1458 kal
 `1dda5bbe2bda2284b176dab393241b5598226551f36741a5941e21b8b60d0b98` oldu. DbContext19,
 migration339, Audit42 ve diğer method/blob pinlerinde drift yoktur. Bu bounded
 owner tabanının pinidir; coordinator'ın sonraki kaynak birleşimi ayrıca yeniden ölçülür.
+
+## Mevcut wrapper/core kanıtlarının hizalanması
+
+Temiz `ac471096e` gerçek üreticisi native **exit 2** ile mevcut Accounting
+WriteAsync ankrajının kaydığını bildirdi. Değişmeyen operative-token denetimiyle
+66 kaydın dar source tanısı, beş mevcut wrapper
+metodunun yazmayı artık gerçek private Core metoduna devrettiğini gösterdi:
+Accounting admission, Documents upload, Logistics loading ve transfer outgoing
+document, Sales subcontract invoice. Envanter bu gerçek Core metodunu ve exact
+hash'ini bağlar; wrapper method ve full-blob pinleri de korunur. Runtime kaynak
+bu düzeltmede değişmedi.
+
+Supplier return SaveNewAsync artık özgün immutable ResultJson'u creationAttempt'a
+yazıp onu ekler; eski inline Attempt token'ı bu iki gerçek işlemle hizalandı.
+Dosya yazılmadan önce altı hedefin aynı operative validator ile kanıtı alındı.
+Keşif testlerinin sabit sayıları gerçek kaynak kümesiyle hizalandı: 49 key tablosu,
+yalnız AuditEvents hariç 48 replay tablosu; altı business istisnası dahil 24 message
+adayı. Metadata-only ve non-message istisnaları değiştirilmedi. Bu source tanısı
+tam üretici veya test kabulü değildir; temiz commit sonrası gerçek üretici yeniden
+çalıştırılacaktır.

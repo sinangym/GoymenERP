@@ -586,14 +586,14 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
     def test_snapshot_discovery_is_exact_and_excludes_only_audit_metadata(self) -> None:
         discovered = generator._discover_idempotency_key_tables(self.snapshot)
         self.assertEqual(generator.EXPECTED_IDEMPOTENCY_KEY_TABLES, discovered)
-        self.assertEqual(42, len(discovered))
+        self.assertEqual(49, len(discovered))
         replay_tables = set(generator._discover_replay_enforcement_tables(self.snapshot))
         specified = {
             (spec.schema, spec.table)
             for spec in generator.DURABLE_STORE_SPECS
             if spec.kind == "idempotency"
         }
-        self.assertEqual(41, len(replay_tables))
+        self.assertEqual(48, len(replay_tables))
         self.assertEqual(specified, replay_tables)
         self.assertEqual((("audit", "AuditEvents"),), generator.METADATA_ONLY_IDEMPOTENCY_KEY_TABLES)
 
@@ -811,7 +811,8 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
         # A3 API-30: + purchasing.PurchaseOrderLineDeliverySlices, a business table whose name matches "deliver".
         # F-029 S4b: + settings.SalesDeliveryToleranceVersions, a business table whose name matches "deliver".
         # tren-1 W7: two setup inboxes and the physical Organization setup outbox are message surfaces.
-        self.assertEqual(21, len(discovered))
+        # W8: Finance outbox, official cancellation delivery history and Work notification inbox are actual message surfaces.
+        self.assertEqual(24, len(discovered))
         self.assertEqual(expected_message | expected_business, discovered)
 
         live_snippets = (
