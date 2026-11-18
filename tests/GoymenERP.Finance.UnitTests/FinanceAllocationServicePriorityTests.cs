@@ -84,7 +84,7 @@ public sealed class FinanceAllocationServicePriorityTests
         var command = Assert.Single(await db.Commands.AsNoTracking().ToListAsync());
         Assert.Equal(FinanceAllocationService.CreateCommandName, command.CommandName);
         Assert.Equal(actor.UserId, command.ActorId);
-        Assert.Equal(receipt.Id, command.SourceId);
+        Assert.Equal(receipt.Id, command.DraftId);
 
         db.ChangeTracker.Clear();
         var replay = await service.CreateAsync(context with { CorrelationId = "SENTETIK-second-allocation" }, metadata, request, default);
