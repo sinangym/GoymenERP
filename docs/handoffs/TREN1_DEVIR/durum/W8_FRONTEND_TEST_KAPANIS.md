@@ -50,3 +50,14 @@ Koordinatörün `edab5c3c9` birleşik kaynağındaki hedef koşusu: 70 dosyada 6
 Yeni number-input veya local-storage kaynağı yoktur; yorumlardaki storage adları denetim istisnası değildir ve koda dönüştürülmedi. Eski nested-main baseline girdileri değiştirilmedi. Üretimdeki `PaintSelectionEditor` tam HTTP durum kontrolü koordinatörün ayrı değişikliğidir. Buradaki aday taraması salt kaynak okumasıdır; gerçek TypeScript denetleyicisinin koşması yerine PASS iddia edilmez.
 
 Bu takipte yalnız kaynak düzenleme ve `git diff --check` (exit 0) yapıldı; .NET/Node/TSC/Vitest/SQL/tarayıcı/CI başlatılmadı. Hedef doğrulama listesi: CariAccountStatusWarning, AppShellLogin, listFormAudit, antiforgery ve altı Purchasing API test dosyası; ardından koordinatörün tam frontend koşusu. Yeni test sonucu `NOT_RUN`; yeni dalga, iş politikası, izin, grant veya baseline genişletmesi yoktur.
+
+## Birleşik tam tekrar
+
+`c6168c8e23afa323af003dc79fdab3c9fbc00872` frontend kaynağı: lint exit0,
+`npm run build` (TSC + Vite) exit0; tek işçi/sıralı Vitest **614/614 dosya,
+9.854/9.854 test PASS, 0 FAIL, 0 skip, native exit0**, 1942.652 saniye.
+Öncesindeki 11 dosya hedef grubu da143/143 PASS verdi. Tam koşum bütün Manufacturing
+testlerini ve yeni transport/accessibility regresyonlarını kapsar; baseline veya
+test atlama eklenmedi. İlk 64 dosya/242 FAIL ve bütün tekrar JSON/log/exit kayıtları
+korundu. Lint uyarıları ve Vite chunk-size uyarısı silinmedi. Bu DOM/birim kanıtı,
+gerçek tarayıcı, API, SQL, son CI veya bağımsız K3 incelemesi değildir.

@@ -2,7 +2,7 @@
  "meta": {
   "tarih": "2026-11-18",
   "tren_dali": "claude/tren-1",
-  "kod_head": "146f1ec79a30ca9a55d5fa78b119abc13e4bec75",
+  "kod_head": "c6168c8e23afa323af003dc79fdab3c9fbc00872",
   "durum_sozlugu": {
    "PARTIAL": "kapsamın bir kısmı kaynakta; kalan kısım son W<n> ekip raporunda",
    "PLANNED/READY": "başlanmadı",
@@ -282,7 +282,7 @@
    "STK-SC36-a"
   ],
   "published_train_done_at_last_checkpoint": 135,
-  "w8_status": "SOURCE_DONE: local integration174/174; final pins/light checks/train fast-forward/full runtime/CI/K3 remain pending. No W9 or new scope.",
+  "w8_status": "SOURCE_DONE:174/174 fixed slices. Full frontend PASS; recovery/release frozen suites PASS and final source producer0. Combined backend, architecture, train FF, CI and K3 remain pending. No W9 or new scope.",
   "w8_last_combined_source_build": {
    "head": "146f1ec79a30ca9a55d5fa78b119abc13e4bec75",
    "source_exit": 0,
@@ -314,6 +314,56 @@
    "application_source": "19ca53a178dc97e86cdc576ba775d9ee89543a4f",
    "runtime": "NOT_RUN",
    "K3": "PENDING"
+  },
+  "w8_runtime_checkpoint": {
+   "frontend": {
+    "head": "c6168c8e23afa323af003dc79fdab3c9fbc00872",
+    "files": 614,
+    "tests": 9854,
+    "passed": 9854,
+    "failed": 0,
+    "skipped": 0,
+    "lint_exit": 0,
+    "build_exit": 0,
+    "vitest_exit": 0,
+    "seconds": 1942.652,
+    "browser": "NOT_RUN"
+   },
+   "recovery_release": {
+    "head": "3123ef92faf38f4296fed23bd92744e84c6f1208",
+    "recovery_tests": 36,
+    "release_tests": 16,
+    "failed": 0,
+    "skipped": 0,
+    "native_exits": [
+     0,
+     0
+    ]
+   },
+   "final_recovery_producer": {
+    "head": "321201b2b07d603b72ca3cd4e2e9f3cf41591e91",
+    "native_exit": 0,
+    "db_contexts": 19,
+    "migrations": 339,
+    "durable_stores": 66,
+    "source_files": 3116,
+    "risky_source_files": 1459,
+    "risky_sha256": "e64d43adbbd335ce7c60db5f39fb1359b837d0f4c5e1c8237e7f619fc759cd19"
+   },
+   "architecture_first": {
+    "head": "380901177",
+    "tests": 403,
+    "passed": 398,
+    "failed": 5,
+    "skipped": 0,
+    "fix_head": "c6168c8e23afa323af003dc79fdab3c9fbc00872",
+    "retry": "QUEUED"
+   },
+   "combined_backend": "QUEUED",
+   "real_sql": "NOT_CONFIGURED",
+   "ci": "QUEUED",
+   "independent_K3": "QUEUED",
+   "report": "durum/W8_RUNTIME_KAPANIS_DURUMU.md"
   }
  },
  "teams": [

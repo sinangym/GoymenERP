@@ -25,3 +25,27 @@ ve kapanış düzeltmeleri entegrasyon dalındadır.
 yazılır. Test atlama, silme, karantina veya SQL yokluğunu başarı sayma uygulanmaz.
 Sıradaki sıra: mevcut hataları düzeltme ve tekrar → final üreticiler/pinler → birleşik
 kapanış kanıtı → normal tren fast-forward → tek taslak K3 PR. Yazar merge etmez.
+
+## Son kapanış checkpoint'i
+
+- Frontend `c6168c8e2`: lint0, üretim build0 (TSC + Vite), **614/614 dosya ve
+  9.854/9.854 test PASS, 0 FAIL, 0 skip**, native Vitest exit0; 1942.652 saniye.
+  İlk 242 FAIL ve sonraki hedefli tekrarların native kanıtları korundu. Bu tam
+  koşum sonradan yapılan yalnız docs/pin commitleriyle değişmeyen frontend kaynağına
+  aittir. Lint/build uyarıları loglarda kalır; tarayıcı kabulü değildir.
+- Recovery/release donuk `3123ef92f`: gerçek üretici0, recovery36/36 ve release16/16
+  PASS, skip0. Son birleşik backend `321201b2b` için gerçek üretici ayrıca exit0:
+  19 context,339 migration,66 durable store;3116 kaynak ve1459 risky kaynak.
+  Risk fingerprint `e64d43adbbd335ce7c60db5f39fb1359b837d0f4c5e1c8237e7f619fc759cd19`.
+  Tam eski paket sonucu ile son kaynak üretimi ayrı kanıttır.
+- `b5465825a` hafif tekrarları: iki validator0, delivery64/skip0,
+  bootstrap56/Windows koşullu9skip, backend grup28/skip0,
+  ilişkisel verifier48/skip0, OpenAPI drift16/koşullu2skip; hepsi native exit0.
+- İlk tam mimari `380901177`:398/403 PASS,5 FAIL,skip0. Dört kaynak nedeni ve
+  `c6168c8e2` düzeltmesi [mimari raporda](W8_ARCHITECTURE_KAPANIS.md); birleşik
+  tekrar henüz QUEUED. Son 20 modül grubunun birleşik tekrarları da QUEUED.
+- Toplu base diff kontrolü eski W6 raporunda bir fazla EOF boş satırı buldu;
+  yalnız bu boş satır düzeltildi. Uygulama veya karar metni değişmedi.
+
+Kaynak174/174 korunur. Tren henüz ilerletilmedi; SQL, son CI, tarayıcı ve bağımsız
+K3 kapıları bu checkpoint ile kapanmaz.

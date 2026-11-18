@@ -94,4 +94,3 @@ W6 kaynak head'i değişmesin diye W7 ekip dalları aynı 7529fe1e8 kaynağında
 recovery kontrolü tamamlanırken ayrı çalışma alanlarında başlatıldı. Tüm yedi
 W6 ekibinin sabit sıradaki no-ff entegrasyonu tamamlanmıştı; W7 kodu bu rapora
 ve W6 kaynak/test doğrulama sonucuna dahil değildir.
-

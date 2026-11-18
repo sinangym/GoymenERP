@@ -35,3 +35,8 @@ parmakizi e64d43adbbd335ce7c60db5f39fb1359b837d0f4c5e1c8237e7f619fc759cd19.
 19 context,339 migration ve42 Audit kaynak sayısı/parmakizi değişmedi; reviewed
 method/blob drift'i bulunmadı. Yalnız ölçülen risk hash'i güncellendi; seçim/parser
 kuralları değişmedi. Tam gerçek üretici tekrarı henüz QUEUED.
+
+Ölçülen pin normal commit olduktan sonra `321201b2b` gerçek üreticisi native exit0
+verdi.339 migration,19 context,66 durable store; backend source digest
+`86dbfb29e792e9a5a328d8bb842fe97710ca9491dff71bc5f3c94eddc61c51c2`.
+Bu üretim,403 mimari testin düzeltme sonrası tekrarının yerine geçmez.
