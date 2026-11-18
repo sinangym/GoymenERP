@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,7 +16,7 @@ public sealed partial class PurchasingHttpAcceptanceTests
     {
         var owner = new SyntheticImportMappingHttpOwner();
         using var host = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
-        { services.RemoveAll<IPurchaseInvoiceImportMappingV1>(); services.AddScoped<IPurchaseInvoiceImportMappingV1>(_ => owner); }));
+        { AddInvoiceImportHttpAuthority(services); services.RemoveAll<IPurchaseInvoiceImportMappingV1>(); services.AddScoped<IPurchaseInvoiceImportMappingV1>(_ => owner); }));
         using var client = CreateClient(host);
         var source = new PurchaseInvoiceImportPreviewRequestV1("1", Guid.NewGuid(), 2, new string('a', 64), new(PurchaseInvoiceFileFormatV1.Csv));
         using var response = await client.SendAsync(Post($"/api/v1/purchasing/invoice-imports/{owner.Id:D}/mapping-references", "SENTETIK-read",
@@ -41,12 +42,13 @@ public sealed partial class PurchasingHttpAcceptanceTests
     {
         var owner = new SyntheticImportMappingHttpOwner { Failure = status };
         using var host = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
-        { services.RemoveAll<IPurchaseInvoiceImportMappingV1>(); services.AddScoped<IPurchaseInvoiceImportMappingV1>(_ => owner); }));
+        { AddInvoiceImportHttpAuthority(services); services.RemoveAll<IPurchaseInvoiceImportMappingV1>(); services.AddScoped<IPurchaseInvoiceImportMappingV1>(_ => owner); }));
         using var client = CreateClient(host);
         var source = new PurchaseInvoiceImportPreviewRequestV1("1", Guid.NewGuid(), 1, new string('a', 64), new(PurchaseInvoiceFileFormatV1.Csv));
         using var response = await client.SendAsync(Post($"/api/v1/purchasing/invoice-imports/{owner.Id:D}/supplier-resolution", "SENTETIK-source",
             JsonSerializer.Serialize(new PurchaseInvoiceImportSupplierRequestV1(source, Guid.NewGuid(), Guid.NewGuid()), new JsonSerializerOptions(JsonSerializerDefaults.Web))));
         Assert.Equal((HttpStatusCode)status, response.StatusCode); AssertPrivateNoStore(response);
+        Assert.Equal(1, owner.Reads);
         var body = await response.Content.ReadAsStringAsync(); Assert.DoesNotContain("partyVersion", body); Assert.DoesNotContain("accountVersion", body);
     }
 
@@ -55,7 +57,7 @@ public sealed partial class PurchasingHttpAcceptanceTests
     {
         var admission = new SyntheticImportRecordRefusal();
         using var host = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
-        { services.RemoveAll<IPurchaseInvoiceImportAdmissionV1>(); services.AddScoped<IPurchaseInvoiceImportAdmissionV1>(_ => admission); }));
+        { AddInvoiceImportHttpAuthority(services); services.RemoveAll<IPurchaseInvoiceImportAdmissionV1>(); services.AddScoped<IPurchaseInvoiceImportAdmissionV1>(_ => admission); }));
         using var client = CreateClient(host);
         var request = new PurchaseInvoiceImportAdmissionRequestV1(new("1", Guid.NewGuid(), 1, new string('a', 64), new(PurchaseInvoiceFileFormatV1.Csv)),
             "0", Guid.NewGuid(), Guid.NewGuid(), "1", "1", Guid.NewGuid(), [], []);
@@ -67,6 +69,59 @@ public sealed partial class PurchasingHttpAcceptanceTests
         Assert.Equal("SENTETIK-record-key", admission.Metadata!.IdempotencyKey);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("lines[0].expectedProductVersion", body.GetProperty("errors")[0].GetProperty("field").GetString());
+    }
+
+    [Fact]
+    public async Task Invoice_import_permission_denial_never_calls_mapping_or_admission_owners()
+    {
+        var mapping = new SyntheticImportMappingHttpOwner();
+        var admission = new SyntheticImportRecordRefusal();
+        using var host = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            AddInvoiceImportHttpAuthority(services, allowed: false);
+            services.RemoveAll<IPurchaseInvoiceImportMappingV1>(); services.AddScoped<IPurchaseInvoiceImportMappingV1>(_ => mapping);
+            services.RemoveAll<IPurchaseInvoiceImportAdmissionV1>(); services.AddScoped<IPurchaseInvoiceImportAdmissionV1>(_ => admission);
+        }));
+        using var client = CreateClient(host);
+        var source = new PurchaseInvoiceImportPreviewRequestV1("1", Guid.NewGuid(), 1, new string('a', 64), new(PurchaseInvoiceFileFormatV1.Csv));
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var requests = new (string Route, object Body)[]
+        {
+            ("mapping-references", source),
+            ("supplier-resolution", new PurchaseInvoiceImportSupplierRequestV1(source, Guid.NewGuid(), Guid.NewGuid())),
+            ("records", new PurchaseInvoiceImportAdmissionRequestV1(source, "0", Guid.NewGuid(), Guid.NewGuid(), "1", "1", Guid.NewGuid(), [], [])),
+        };
+        foreach (var request in requests)
+        {
+            using var response = await client.SendAsync(Post($"/api/v1/purchasing/invoice-imports/{mapping.Id:D}/{request.Route}",
+                "SENTETIK-denied", JsonSerializer.Serialize(request.Body, options)));
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        }
+        Assert.Equal(0, mapping.Reads);
+        Assert.Null(mapping.Source);
+        Assert.Null(admission.Metadata);
+    }
+
+    private static void AddInvoiceImportHttpAuthority(IServiceCollection services, bool allowed = true)
+    {
+        services.RemoveAll<IErpAuthorizationService>();
+        services.AddSingleton<IErpAuthorizationService>(new InvoiceImportHttpAuthority(allowed));
+    }
+
+    private sealed class InvoiceImportHttpAuthority(bool allowed) : IErpAuthorizationService
+    {
+        public Task<bool> HasPermissionAsync(string permission, Guid companyId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Scope(permission, companyId).IsGranted);
+        public Task<PermissionScope> GetPermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Scope(permission, companyId));
+        public Task<AuthorizationSnapshot> GetAuthorizationSnapshotAsync(Guid companyId, IReadOnlyCollection<string> permissions,
+            CancellationToken cancellationToken = default) => Task.FromResult(new AuthorizationSnapshot("SENTETIK-invoice-import-http",
+                new HashSet<Guid> { CompanyA }, permissions.ToDictionary(permission => permission,
+                    permission => Scope(permission, companyId), StringComparer.Ordinal)));
+        private PermissionScope Scope(string permission, Guid companyId) =>
+            allowed && companyId == CompanyA && permission == PurchaseIncomingInvoicePermissionNamesV1.Import
+                ? new PermissionScope(true, true, new HashSet<string>(), new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>())
+                : PermissionScope.Denied;
     }
 
     // Named synthetic wire owners only. Real service + file reader + SQL write sources are in InvoiceImportAdmission SQL acceptance.
@@ -85,7 +140,10 @@ public sealed partial class PurchasingHttpAcceptanceTests
         { Source = source; Reads++; return Task.FromResult(new PurchaseInvoiceImportReferencesV1(CompanyA, id, source.DocumentId, source.DocumentVersion,
             source.DocumentSha256, new(2026, 11, 17), [], [], "120", null, null, [])); }
         public Task<PurchaseInvoiceImportSupplierV1> SupplierAsync(Guid id, PurchaseInvoiceImportSupplierRequestV1 request, CancellationToken token = default)
-            => throw new PurchasingServiceException(Failure ?? 503, Failure == 409 ? PurchasingProblemCodesV1.VersionConflict : "service_unavailable");
+        {
+            Reads++;
+            throw new PurchasingServiceException(Failure ?? 503, Failure == 409 ? PurchasingProblemCodesV1.VersionConflict : "service_unavailable");
+        }
         public Task<PurchaseInvoiceImportProductsV1> ProductsAsync(Guid id, PurchaseInvoiceImportProductsRequestV1 request, CancellationToken token = default) => throw new NotSupportedException();
     }
 }

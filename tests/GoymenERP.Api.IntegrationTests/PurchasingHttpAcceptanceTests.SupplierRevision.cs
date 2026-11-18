@@ -23,8 +23,9 @@ public sealed partial class PurchasingHttpAcceptanceTests
         using var response = await client.SendAsync(Post($"{PurchasingApiV1.OrdersPath}/{PurchaseOrderId:D}/supplier-revisions", "SENTETIK-key", SupplierRevisionBody()));
         Assert.Equal((HttpStatusCode)status, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.False(body.TryGetProperty("detail", out _));
-        if (status == 503) Assert.Equal("service_unavailable", body.GetProperty("code").GetString());
+        Assert.NotNull(owner.Revision);
+        Assert.Equal(PurchaseOrderId, owner.Order);
+        AssertSafePurchasingOwnerFailure(body, status);
         AssertPrivateNoStore(response);
     }
 
