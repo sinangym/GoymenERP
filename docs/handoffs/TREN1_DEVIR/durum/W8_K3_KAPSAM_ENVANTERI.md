@@ -1,5 +1,10 @@
 # W8 tek taslak K3 kapsam envanteri
 
+**Son kapsam eki:** `c6168c8e23afa323af003dc79fdab3c9fbc00872`. Aşağıdaki önceki
+donuk envanter ve bütün listeleri korunur; bu head'e kadar gelen son delta ve ara
+koşum sınırları belgenin sonundaki ekte ayrılır. Daha sonraki exact PR head'i için
+kaynak/pin/test/inceleme kanıtı yeniden bağlanmalıdır.
+
 Karşılaştırma: main `3c1b47878447570210b933b83d874646f9c52e4b` → donuk kapsam girdisi `99a874901645e82a1ccafd06ec00dc7a10f150cf`. Önceki envanter kaynağı `031728b6f7fec8b77d56516f408d23112e103f2e` idi; yeni kaynak farkı aşağıda ayrıca belirtilir. Bu belge PR gövdesi için yazar kapsam girdisidir; bağımsız inceleme, SQL veya runtime kabulü değildir. Son PR head değişirse kanıt ve fingerprint kontrolleri yeniden bağlanır.
 
 ## Sabit kaynak kapsamı
@@ -713,3 +718,69 @@ Somut owner sözleşmesi ve host transaction sınırı K3 kapsamındadır; başk
 İnsan kapıları: grant/rol/production ve açık politika aktivasyonu, OPEN-* kapatma ve Finance STOP bu çalışma ile değişmez. Kredi taslağı/harici resmi belge sağlayıcısı eksikliği kaynak %100 ile kullanılabilir kabul edilmez. Son PR taslak kalır; yazar merge etmez.
 
 Doğrulama: salt git blob farkı/Python sayımı; yeni .NET/Node/DB/browser/CI çalıştırılmadı. Rapor tek dosyalık kapanış girdisidir; mevcut backend, test, guard veya plan değiştirilmedi.
+
+## c6168c8e kapsam eki — önceki listeleri kapatmaz
+
+Main `3c1b47878447570210b933b83d874646f9c52e4b` ile bu donuk head'in git blob
+sayımı yeniden alındı: migration **163→339 (+176)**, farklı literal backend THROW
+numarası **114→313 (+199)**, yeni `ErpPermissions` public const adı **118**.
+Önceki migration/THROW/permission satırları değişmedi. W5'in 12 runtime+5 legacy
+context kaydı ve W8'in 82 runtime+16 gerçek context kaydı aynen korunur; bu ek bir
+K3 onayı, grant veya yeni policy değildir.
+
+- **PDF font + catalog XMP:** ilk font adları düzeltmesi ve `e83c0cf62` catalog
+  kimlik bağlaması birleşik kaynaktadır. Kendi typed catalog metadata nesnesinin
+  exact iki UUID değeri TechnicalId ile aynı uzunlukta bağlanır; PDF geneline regex
+  uygulanmaz. Font, ithal form/içerik, tarih, trailer ve xref sınırları korunur.
+  Exact-byte eşitliği ve yalnız teknik kimlik aralıklarının değiştiğini ölçen
+  regresyonlar sürer. İzole PDF kaynağında **82/82 PASS, skip0, build0** vardır;
+  bu sonuç son birleşik exact-head veya başka modül kabulü değildir.
+  [PDF kanıt/sınır raporu](W8_PDF_DETERMINIZM_KAPANIS.md).
+- **ExpensePayment bildirimi:** komut alt bileşeni durum değişimiyle kaldırılınca
+  kesin sonuç bildiriminin kaybolması giderildi; bildirim ödeme detayında tutulur.
+  Yeni komut, belirsiz sonuç ve şirket/aktör/oturum/sayfa girişi değişimi eski
+  başarıyı temizler. Mevcut sunucu yetkisi, tutarı, key ve gövde sınırları değişmez.
+- **Exact HTTP ve erişilebilir tablolar:** giriş/çıkışta yalnız sözleşmedeki HTTP204
+  antiforgery token yenilemesine yol açar; yanlış 2xx veya ret token yenilemez.
+  Purchasing/Paint okuyucuları kendi exact200/201 sözleşmelerini ölçer; bozuk veya
+  beklenmedik başarı kodu kullanılabilir cevaba çevrilmez. Tablo adları, sütun/satır
+  `scope` değerleri, açık button türleri ve shell landmark sahipliği tamamlandı.
+  Statik audit baseline'ı büyütülmedi; form ve negatif sözleşme testleri korunur.
+  JSDOM gerçek Storage bağlaması yalnız test düzeneğidir, production storage veya
+  runtime ayarı değişmez. [Frontend raporu](W8_FRONTEND_TEST_KAPANIS.md),
+  [Manufacturing hedef raporu](W8_MANUFACTURING_WEB_TEST_KAPANIS.md).
+- **Product design-time factory:** `c6168c8e2` aynı owner oluşturmayı açık
+  `new ProductPriceListDbContext(...)` türüne çevirdi. Unresolved company, tek
+  model-only context ve bağlantı açmama/migration uygulamama sınırları korunur.
+  Eski fingerprint yukarıda tarihsel kaydıyla bırakılır; yeni kaynak fingerprint'i
+  `a8185f7a8636444dbad19ac6743cfc2bc2fd5afb42ed1c49e908bc4f6c577d60`.
+  Ayrı design-time sicilindeki kayıt **bağımsız K3 pending** kalır; 82/16 runtime
+  sayılarına eklenmez.
+- **İki ek exact owner/creation-site kaydı:** SecurityEvents içindeki
+  `LocalTwoFactorOperatorRecoverySecurityWriterV1.cs`, açık Serializable işlemi
+  ödünç alan typed platform-event writer olarak exact owner listesine alınır.
+  Append guard'ı standalone store ve bu owner yolunu ayrı adlandırır; başka
+  modüle persistence türü çıkmaz, normal Save yasağı korunur. Identity içindeki
+  `IdentityAccessAssignmentService.Users.cs`, F001/F002 `/access/users` kapsamındaki
+  yetkili, politika denetimli/hash'li ve `MustChangePassword=true` oluşturma yeri
+  olarak exact credential listesine eklenir. Default password/config/seed yasağı,
+  bilinmeyen creation-site negatifleri, audit/idempotency ve gerçek kullanıcıya
+  otomatik rol/grant vermeme korunur. **Her iki kayıt bağımsız K3 pending**;
+  runtime/context registry sayısını değiştiren yeni iki bypass diye sayılmaz.
+  [Mimari kaynak raporu](W8_ARCHITECTURE_KAPANIS.md).
+
+### Bu ekte devralınan ara gerçek sonuçlar
+
+| Kanıt | Sonuç ve kapsam sınırı |
+|---|---|
+| İlk tam mimari koşusu, `380901177` | 403 test: 398 PASS, 5 FAIL, 0 skip; build0/test1. İlk native kanıt korunur. `c6168c8e2` kaynak düzeltmelerinin mimari tekrarı **NOT_RUN**; hatalar kapanmış sayılmaz. |
+| Manufacturing iki hedef frontend dosyası | TSC0, 28/28 Vitest PASS, skip0. Bütün Manufacturing veya tam frontend sonucu değildir. |
+| Son frontend hedef tekrar grubu | 143/143 PASS, skip0. Tam frontend yerine geçmez; ilk tam 64 dosya/242 test hata kanıtı korunur. |
+| Frontend lint / build | Son ara sonuçlar native exit0; bağımsız tarayıcı veya uçtan uca kabul değildir. |
+| `c6168c8e2` tam Vitest | **RUNNING**. Bu rapor tamamlanma veya PASS sonucu türetmez. |
+| Gerçek SQL / RCSI | **NOT_CONFIGURED**; yeni DB/container/service kurulmadı. SQL fact keşfi veya izinli API skip'i gerçek SQL kabulü değildir. |
+| Tarayıcı, final exact-head CI ve iki bağımsız K3 | **QUEUED**. Önceki test/pin veya bu kapsam raporu bunların yerine geçmez. |
+
+Bu docs-only ekte kaynak/generator/guard değişmedi; .NET, Node, DB veya ağır Python
+paketi başlatılmadı. Salt git sayımı ve mevcut raporlar kullanıldı. Son üretici,
+test ve inceleme kanıtlarını entegrasyon sahibi gerçek final head'e bağlayacaktır.
