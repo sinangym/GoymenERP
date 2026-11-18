@@ -2,6 +2,7 @@ using System.Data.Common;
 using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.PurchasingRuntime;
 using GoymenERP.BuildingBlocks.Concurrency;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Inventory.Application;
@@ -172,8 +173,12 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using (var changed = new PurchasingDbContext(new DbContextOptionsBuilder<PurchasingDbContext>()
             .UseSqlServer(run.Factory.DatabaseConnectionString).AddInterceptors(new AuditSaveChangesInterceptor(audit, company)).Options, company))
         {
-            var store = new PurchasingStore(changed, company, audit, TimeProvider.System);
-            await store.MutateOrderAsync(GoodsReceiptPurchaseEnvelope(run, "SENTETIK-after-receipt-cancel", "SENTETIK-after-receipt-cancel"),
+            var actor = new FixedCurrentUser(run.Actor, CompanyA);
+            var authority = new GoodsReceiptPurchaseNumberAuthority();
+            await using var numbers = new PurchaseDocumentNumberSqlTestOwner(run.Factory.Services, CompanyA, actor, authority);
+            var store = new PurchasingStore(changed, company, audit, TimeProvider.System, numbers.Numbers, actor, authority);
+            await store.MutateOrderAsync(GoodsReceiptPurchaseEnvelope(run, "SENTETIK-after-receipt-cancel", "SENTETIK-after-receipt-cancel")
+                    with { PermissionCode = ErpPermissions.PurchasingOrdersCancel },
                 GoodsReceiptHash("SENTETIK-after-receipt-cancel"), PurchasingCommands.OrderCancelV1, seed.OrderId,
                 (order, now) => order.Cancel(order.Version, run.Actor.ToString("D"), "SENTETIK kalan iptal", now),
                 new PurchasingMutationAudit("purchasing.purchase-order.cancelled.v1", "Cancel", "SENTETIK"));

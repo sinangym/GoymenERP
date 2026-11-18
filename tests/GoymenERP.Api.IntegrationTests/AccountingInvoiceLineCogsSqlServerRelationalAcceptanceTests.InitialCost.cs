@@ -51,7 +51,7 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
             Assert.Equal(100.01m, lines[0].Debit); Assert.Equal(100.01m, lines[1].Credit);
             var correction = await scope.Store.PrepareAsync(run.Source.Facts, Request(run.Source.Facts, period), Maker, Fence, Metadata(Maker));
             Assert.Equal(posted.JournalId, correction.PostedEvidence!.JournalId);
-            var approved = await scope.Store.ApproveAsync(run.Source.Facts, correction.ProposalId, 1, Checker, Fence, Metadata(Checker));
+            var approved = await scope.Store.ApproveAsync(run.Source.Facts, correction.ProposalId, 1, Checker, Fence, Metadata(Checker, true));
             Assert.NotNull(approved.ReplacementCorrectionJournalId);
         }
         Assert.Equal(1, await run.Count("accounting.InventoryCostSources"));
@@ -68,7 +68,7 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
         var received = Assert.Single(await store.ListAsync(AccountingInventoryCostKindV1.SalesInvoicedShipment));
         await store.PrepareAsync(received.ProposalId, received.Kind, CostPreparation(period), Maker, Fence, Metadata(Maker));
         var correction = await scope.Store.PrepareAsync(run.Source.Facts, Request(run.Source.Facts, period), Maker, Fence, Metadata(Maker));
-        await scope.Store.ApproveAsync(run.Source.Facts, correction.ProposalId, 1, Checker, Fence, Metadata(Checker));
+        await scope.Store.ApproveAsync(run.Source.Facts, correction.ProposalId, 1, Checker, Fence, Metadata(Checker, true));
         var stale = await Assert.ThrowsAsync<AccountingStoreException>(() => store.ApproveAsync(received.ProposalId, received.Kind, 2, Checker, Fence, Metadata(Checker)));
         Assert.Equal("inventory_cost_preparation_stale", stale.Code);
         var reprepare = await store.PrepareAsync(received.ProposalId, received.Kind, CostPreparation(period) with { ExpectedVersion = 2 }, Maker, Fence, Metadata(Maker));
@@ -122,7 +122,7 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
         await store.PrepareAsync(received.ProposalId, received.Kind, CostPreparation(period), Maker, Fence, Metadata(Maker));
         var posted = await store.ApproveAsync(received.ProposalId, received.Kind, 2, Checker, Fence, Metadata(Checker));
         var correction = await scope.Store.PrepareAsync(run.Source.Facts, Request(run.Source.Facts, period), Maker, Fence, Metadata(Maker));
-        var corrected = await scope.Store.ApproveAsync(run.Source.Facts, correction.ProposalId, 1, Checker, Fence, Metadata(Checker));
+        var corrected = await scope.Store.ApproveAsync(run.Source.Facts, correction.ProposalId, 1, Checker, Fence, Metadata(Checker, true));
         var cancel = new AccountingSourceInvoiceCancellationStoreV1(scope.Db, scope.CompanyContext, scope.Audit, TimeProvider.System);
         var request = new AccountingSourceInvoiceCancellationV1(Company, Maker.ToString("D"), "SENTETIK-cancellation", null,
             Guid.NewGuid(), AccountingSourceDocumentKindsV1.SalesInvoice, run.Source.Facts.FinalizationAdmissionId,
