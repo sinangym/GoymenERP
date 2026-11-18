@@ -599,3 +599,13 @@ Test edilen merge609323a9a6192bb9d971da349be2d4af4adad128. Tam SQL proof yok.
 - Resmî Picomatch advisory patched=None, registry latest4.0.7 tekrar doğrulandı.
   Audit-ignore/downgrade/vendor override yok. Yeni migration/THROW/izin/bypass/context/dalga/işletme politikası yok.
   Yeni doğal exact-head CI, tam gerçek SQL ve iki bağımsız tam K3 review beklenir; production/grant/OPEN değişmedi.
+
+
+## W8 son SQL teşhis eki — kaynak 9bd94c2187c0
+
+- Önceki yayımlanmış kaynak `c00c4726e210c89d2362257f8832bd912574064a`, CI `44299253899`, test edilen merge `81df7e173784a72056305539a6a83fc0b20edada`: tamamlandı, FAIL. API-1/2/3, modüller, mimari, OpenAPI, RCSI, recovery/release ve dört frontend test parçası PASS; geniş SQL A/B/C ve frontend güvenlik kapısı FAIL. C-01 browser, Cari ve UI catalog ayrı koşuları PASS. Toplu kabul yok.
+- Tamamlanan SQL batch kayıtları: A 7 PASS/1 FAIL, B 15 PASS/1 FAIL, C 15 PASS/1 FAIL; skip 0. Bunlar tam shard sayıları değildir. A: `argument_out_of_range`; B: `finance_command_startup_document_numbers` aşamasında `invalid_operation` sarmalayıcısı; C: `Equal`. Gerçek kaynak satırı henüz bilinmiyor; iş kuralı veya test beklentisi tahminle değiştirilmedi. Counterparty audit migration-history fact'i PASS.
+- `d12a853aa`: yalnız eksiksiz, exact kimlikli Failed TRX + native exit 1 teşhis yolunda RunInfo veto edilmez. İlk hata korunur, son exit başarısızdır ve kabul proof'u yazılmaz. Başarılı kabul yolu ve yapısal/kimlik/çokluk/sayaç/skip/timeout kontrolleri değişmez; global süre sınırı korunur. Önceki RunInfo veto açıklamalarının bu teşhis yolu için yerini bu kural alır. K3 incelemesi bekler.
+- `9bd94c2187c041ca5e800f1a775b88e67060ab34`: hata özeti, sınırlı ve doğrulanmış Git'te izlenen C# dosyasının depo göreli yolunu/satırını gösterebilir. Özel yol öneki, yöntem ve ham mesaj yayımlanmaz. İç exception kaynak frame'i önceliklidir; bu konum TRX metadatasıdır, kök neden veya kabul kanıtı değildir.
+- Gerçek yerel kanıt: safe summary 103/103 PASS, SQL verifier 101/101 PASS, skip 0. Mimari fixture build/discovery exit 0, strict TRX guard 1/1 PASS, skip 0. Tam backend yeniden derlenmedi; production kaynak değişmedi. İki hafif doğrulayıcı exit 0; backlog 64/64 PASS, bootstrap 56 test exit 0 (mevcut Windows koşullu 9 skip, SQL skip0 kanıtı değildir). Yerel SQL NOT_RUN.
+- 174/174 kaynak DONE (%100), W8 son paket. Yeni dalga/dilim, migration, izin, grant, OPEN/production/Finance STOP değişikliği yok. Tam SQL kabulü, frontend güvenlik kapısı ve iki yeni exact-head tam bağımsız K3 review hâlâ bekler.
