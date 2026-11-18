@@ -44,4 +44,4 @@ Logistics’te gerçek bir terminal-record sınır hatası bulundu: plan üstü 
 
 ## İlk tam koşumun kesin sayısı
 
-18 UnitTests projesi:13.168 test,13.091 başarılı,77 başarısız,0 skip.18 derlemenin tamamı exit0.6 proje ilk koşuda yeşil,12 proje başarısızdı; eski W5 hata sayısı güncel kabul olarak kullanılmaz. Son düzeltmelerin her biri ayrı native log/TRX/exit ile tekrar doğrulanır. Bu ilk koşunun kaynak tabanı a8f4440ec88da785ee08ff5d2fa4500e72bfb4e8; test kaynaklarındaki sonraki kapanış düzeltmeleri final kanıt değildir.
+18 UnitTests projesi:13.168 test,13.091 başarılı,77 başarısız,0 skip.18 derlemenin tamamı exit0.5 proje ilk koşuda yeşil,13 proje başarısızdı; eski W5 hata sayısı güncel kabul olarak kullanılmaz. Son düzeltmelerin her biri ayrı native log/TRX/exit ile tekrar doğrulanır. Bu ilk koşunun kaynak tabanı a8f4440ec88da785ee08ff5d2fa4500e72bfb4e8; test kaynaklarındaki sonraki kapanış düzeltmeleri final kanıt değildir.
