@@ -176,7 +176,7 @@ public sealed class FinanceOfficialInvoiceImportApprovalSqlServerRelationalAccep
         var applied = (await context.Database.GetAppliedMigrationsAsync()).OrderBy(id => id, StringComparer.Ordinal).ToArray();
         var expected = context.Database.GetMigrations().OrderBy(id => id, StringComparer.Ordinal).ToArray();
         Assert.Equal(expected, applied);
-        Assert.Single(applied.Where(id => id.EndsWith("_AddPartyCollaterals", StringComparison.Ordinal)));
+        Assert.Single(applied, id => id.EndsWith("_AddPartyCollaterals", StringComparison.Ordinal));
     }
 
     private static FinanceOfficialInvoiceImportPreviewRequestV1 Request(Guid? company = null)

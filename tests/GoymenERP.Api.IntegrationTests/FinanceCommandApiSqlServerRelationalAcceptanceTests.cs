@@ -886,7 +886,7 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             var expected = context.Database.GetMigrations().OrderBy(id => id, StringComparer.Ordinal).ToArray();
             Assert.Equal(expected, applied);
             // Preserve all 22 historical relative-order assertions even as later owner migrations are added.
-            var collateral = Assert.Single(applied.Where(id => id.EndsWith("_AddPartyCollaterals", StringComparison.Ordinal)));
+            var collateral = Assert.Single(applied, id => id.EndsWith("_AddPartyCollaterals", StringComparison.Ordinal));
             var historical = applied.Take(Array.IndexOf(applied, collateral) + 1).ToArray();
             Assert.True(historical.Length >= 22);
             Assert.EndsWith("_AddPartyCollaterals", historical[^1], StringComparison.Ordinal);
