@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+from collections import Counter, deque
 import hashlib
 import json
 import math
@@ -17,6 +18,7 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 import xml.etree.ElementTree as ET
 
 
@@ -545,10 +547,16 @@ def stop_test_process(process: subprocess.Popen[bytes]) -> None:
     process.wait(timeout=10)
 
 
-def run_test_checked(arguments: list[str], repository_root: Path) -> subprocess.CompletedProcess[str]:
+def run_test_checked(
+    arguments: list[str], repository_root: Path, *, execution_deadline: float | None = None,
+) -> subprocess.CompletedProcess[str]:
     # One deadline covers the whole shard, including pipe completion. Progress never renews it.
     started = time.monotonic()
     deadline = started + TEST_EXECUTION_TIMEOUT_SECONDS
+    if execution_deadline is not None:
+        deadline = min(deadline, execution_deadline)
+        if deadline <= started:
+            raise RuntimeError("SQL Server relational execution exhausted its global deadline.")
     progress = TestProgress()
     reader_errors: list[type[BaseException]] = []
     print("SQL-DIAGNOSTIC phase=test-execution outcome=started duration_seconds=0.000", flush=True)
@@ -607,9 +615,16 @@ def run_test_checked(arguments: list[str], repository_root: Path) -> subprocess.
     return subprocess.CompletedProcess(arguments, returncode, stdout="", stderr="")
 
 
-def run_checked(arguments: list[str], repository_root: Path) -> subprocess.CompletedProcess[str]:
+def run_checked(
+    arguments: list[str], repository_root: Path, *, execution_deadline: float | None = None,
+) -> subprocess.CompletedProcess[str]:
     if "--no-build" in arguments and "--results-directory" in arguments:
-        return run_test_checked(arguments, repository_root)
+        if execution_deadline is None:
+            return run_test_checked(arguments, repository_root)
+        return run_test_checked(arguments, repository_root, execution_deadline=execution_deadline)
+    remaining = 2400 if execution_deadline is None else execution_deadline - time.monotonic()
+    if remaining <= 0:
+        raise RuntimeError("SQL Server relational execution exhausted its global deadline.")
     result = subprocess.run(
         arguments,
         cwd=repository_root,
@@ -621,7 +636,7 @@ def run_checked(arguments: list[str], repository_root: Path) -> subprocess.Compl
         # The broad suite grew past 20 minutes (17m22s at #512, 19m19s at #513, a timeout at #514). Only the
         # wall-clock limit changes; every listed test and the 0-skip / exact-inventory rules stay (user decision
         # 2026-09-29).
-        timeout=2400,
+        timeout=min(2400, remaining),
     )
     if result.returncode != 0:
         sys.stdout.write(result.stdout)
@@ -632,7 +647,7 @@ def run_checked(arguments: list[str], repository_root: Path) -> subprocess.Compl
     return result
 
 
-def run_bootstrap_preflight(repository_root: Path) -> None:
+def run_bootstrap_preflight(repository_root: Path, *, execution_deadline: float | None = None) -> None:
     run_checked(
         [
             sys.executable,
@@ -642,7 +657,139 @@ def run_bootstrap_preflight(repository_root: Path) -> None:
             "tools/validate_dotnet_bootstrap_integrity.py",
         ],
         repository_root,
+        **({"execution_deadline": execution_deadline} if execution_deadline is not None else {}),
     )
+
+
+# Keep every theory's executions in one process. Splitting methods changes process/static
+# lifetime: this diagnostic-oriented runner change remains subject to independent K3 review.
+# Round-robin class queues retain xUnit's opportunity to run independent classes together.
+# The goal is earlier completed TRX diagnostics, not a promise of a green or faster SQL run.
+SQL_BATCH_MAX_METHODS = 8
+SQL_BATCH_MAX_EXECUTIONS = 16
+
+
+def plan_sql_batches(expected: dict[str, int]) -> tuple[dict[str, int], ...]:
+    if not expected or any(
+        not INVENTORY_TEST_NAME.fullmatch(name)
+        or type(count) is not int or count <= 0
+        for name, count in expected.items()
+    ):
+        raise RuntimeError("SQL batches require a nonempty canonical relational execution inventory.")
+    queues: dict[str, deque[tuple[str, int]]] = {}
+    for name, count in sorted(expected.items()):
+        queues.setdefault(name.rsplit(".", 1)[0], deque()).append((name, count))
+    ordered: list[tuple[str, int]] = []
+    while queues:
+        # Each pass selects at most one method from every remaining class. Never start
+        # concurrent runner processes or split a theory to create this opportunity.
+        for class_name in sorted(queues):
+            ordered.append(queues[class_name].popleft())
+            if not queues[class_name]:
+                del queues[class_name]
+    batches: list[dict[str, int]] = []
+    current: dict[str, int] = {}
+    for name, count in ordered:
+        if current and (len(current) >= SQL_BATCH_MAX_METHODS
+                        or sum(current.values()) + count > SQL_BATCH_MAX_EXECUTIONS):
+            batches.append(current)
+            current = {}
+        current[name] = count
+    if current:
+        batches.append(current)
+    union = {name: count for batch in batches for name, count in batch.items()}
+    if union != expected or sum(len(batch) for batch in batches) != len(expected):
+        raise RuntimeError("SQL batch plan must partition the exact execution inventory.")
+    return tuple(batches)
+
+
+def verify_sql_batch_trx(
+    path: Path, expected: dict[str, int], seen_execution_ids: set[str],
+) -> dict[str, int]:
+    if path.is_symlink() or not path.is_file():
+        raise RuntimeError("SQL batch TRX must be a normal output file, not a symlink.")
+    verify_trx(path, sum(expected.values()))
+    root = ET.parse(path).getroot()
+    definitions: dict[str, str] = {}
+    for element in root.iter():
+        if element.tag.rsplit("}", 1)[-1] != "UnitTest":
+            continue
+        test_id = element.attrib.get("id", "")
+        methods = [node for node in element.iter() if node.tag.rsplit("}", 1)[-1] == "TestMethod"]
+        if not test_id or len(test_id) > 128 or test_id in definitions or len(methods) != 1:
+            raise RuntimeError("SQL batch TRX must contain unique mapped test definitions.")
+        method = methods[0]
+        name = method.attrib.get("className", "") + "." + method.attrib.get("name", "")
+        if name not in expected:
+            raise RuntimeError("SQL batch TRX definition is outside its exact selected methods.")
+        definitions[test_id] = name
+    executed: Counter[str] = Counter()
+    batch_ids: set[str] = set()
+    used_test_ids: set[str] = set()
+    for element in root.iter():
+        if element.tag.rsplit("}", 1)[-1] != "UnitTestResult":
+            continue
+        test_id = element.attrib.get("testId", "")
+        execution_id = element.attrib.get("executionId", "")
+        if test_id not in definitions:
+            raise RuntimeError("SQL batch TRX result lacks an exact test definition identity.")
+        try:
+            identity = uuid.UUID(execution_id)
+        except (ValueError, AttributeError) as exception:
+            raise RuntimeError("SQL batch TRX execution identities must be canonical nonzero UUIDs.") from exception
+        canonical_id = str(identity)
+        if not identity.int or execution_id.lower() != canonical_id:
+            raise RuntimeError("SQL batch TRX execution identities must be canonical nonzero UUIDs.")
+        if canonical_id in batch_ids or canonical_id in seen_execution_ids:
+            raise RuntimeError("SQL batch TRX execution identities must be unique.")
+        if element.attrib.get("outcome") != "Passed":
+            raise RuntimeError("SQL batch TRX requires all passed results and skipped=0.")
+        batch_ids.add(canonical_id)
+        used_test_ids.add(test_id)
+        executed[definitions[test_id]] += 1
+    if used_test_ids != set(definitions):
+        raise RuntimeError("SQL batch TRX must use every selected test definition identity.")
+    if dict(executed) != expected:
+        raise RuntimeError("SQL batch TRX execution multiplicity must equal its exact selected inventory.")
+    seen_execution_ids.update(batch_ids)
+    return dict(executed)
+
+
+def run_sql_batches(
+    repository_root: Path, trx_path: Path, expected: dict[str, int],
+) -> dict[str, int]:
+    batches = plan_sql_batches(expected)
+    paths = tuple(trx_path.with_name(f"{trx_path.stem}.batch-{index:04d}.trx")
+                  for index in range(1, len(batches) + 1))
+    if (any(path.exists() or path.is_symlink() for path in paths)
+            or any(trx_path.parent.glob(f"{trx_path.stem}.batch-*.trx"))):
+        raise RuntimeError("SQL batch TRX outputs must be fresh; existing evidence cannot be reused.")
+    deadline = time.monotonic() + TEST_EXECUTION_TIMEOUT_SECONDS
+    executed: dict[str, int] = {}
+    seen_execution_ids: set[str] = set()
+    for batch, path in zip(batches, paths, strict=True):
+        if time.monotonic() >= deadline:
+            raise RuntimeError("SQL Server relational execution exhausted its global deadline.")
+        run_bootstrap_preflight(repository_root, execution_deadline=deadline)
+        # A failed native process still leaves its completed TRX for the always-running
+        # privacy-safe summary step. Do not delete it or convert the failure into a proof.
+        run_checked([
+            "dotnet", "test", PROJECT, "-noAutoResponse", "--configuration", "Release",
+            "--no-build", "--no-restore", "--filter",
+            "|".join(f"FullyQualifiedName={name}" for name in batch),
+            "--results-directory", str(path.parent), "--logger", trx_logger(path),
+            "--logger", "console;verbosity=detailed", "--",
+            "xUnit.DiagnosticMessages=true", "xUnit.LongRunningTestSeconds=60",
+        ], repository_root, execution_deadline=deadline)
+        actual = verify_sql_batch_trx(path, batch, seen_execution_ids)
+        if set(executed) & set(actual):
+            raise RuntimeError("SQL batch methods must not overlap.")
+        executed.update(actual)
+        if time.monotonic() >= deadline:
+            raise RuntimeError("SQL Server relational execution exhausted its global deadline.")
+    if executed != expected:
+        raise RuntimeError("SQL batches must retain the exact complete execution inventory.")
+    return executed
 
 
 def main() -> int:
@@ -759,48 +906,56 @@ def main() -> int:
             results_directory = trx_path.parent
             results_directory.mkdir(parents=True, exist_ok=True)
             trx_path.unlink(missing_ok=True)
-        run_bootstrap_preflight(repository_root)
-        run_result = run_checked(
-            [
-                "dotnet",
-                "test",
-                PROJECT,
-                "-noAutoResponse",
-                "--configuration",
-                "Release",
-                "--no-build",
-                "--no-restore",
-                "--filter",
-                filter_value,
-                "--results-directory",
-                str(results_directory),
-                "--logger",
-                trx_logger(trx_path),
-                "--logger",
-                "console;verbosity=detailed",
-                "--",
-                "xUnit.DiagnosticMessages=true",
-                "xUnit.LongRunningTestSeconds=60",
-            ],
-            repository_root,
-        )
-        sys.stdout.write(run_result.stdout)
-        sys.stderr.write(run_result.stderr)
-        verify_trx(trx_path, expected_total)
-        if filter_value == BROAD_FILTER:
-            report = verify_broad_trx_results(trx_path, discovered)
-        elif args.shard:
-            verify_shard_trx_results(trx_path, args.shard)
-            assert proof_path is not None
-            proof = expected_shard_proof(args.shard, args.source_head, args.tested_commit)
-            temporary_proof = proof_path.with_suffix(".tmp")
-            temporary_proof.write_text(
-                json.dumps(proof, sort_keys=True, separators=(",", ":")) + "\n",
-                encoding="utf-8",
+        if args.rcsi:
+            run_bootstrap_preflight(repository_root)
+            run_result = run_checked(
+                [
+                    "dotnet",
+                    "test",
+                    PROJECT,
+                    "-noAutoResponse",
+                    "--configuration",
+                    "Release",
+                    "--no-build",
+                    "--no-restore",
+                    "--filter",
+                    filter_value,
+                    "--results-directory",
+                    str(results_directory),
+                    "--logger",
+                    trx_logger(trx_path),
+                    "--logger",
+                    "console;verbosity=detailed",
+                    "--",
+                    "xUnit.DiagnosticMessages=true",
+                    "xUnit.LongRunningTestSeconds=60",
+                ],
+                repository_root,
             )
-            temporary_proof.replace(proof_path)
-        else:
+            sys.stdout.write(run_result.stdout)
+            sys.stderr.write(run_result.stderr)
             verify_rcsi_trx_results(trx_path)
+        else:
+            expected = BROAD_EXECUTIONS if args.broad else shard_executions(args.shard)
+            executed = run_sql_batches(repository_root, trx_path, expected)
+            if args.broad:
+                for module in INVENTORY_MODULES:
+                    tests = BROAD_INVENTORY[module]
+                    report.append(
+                        f"SQLSERVER_RELATIONAL_ACCEPTANCE module={module} tests={len(tests)} "
+                        f"discovered={sum(1 for name in discovered if module_of(name) == module)} "
+                        f"executions={sum(tests.values())} "
+                        f"executed={sum(executed.get(name, 0) for name in tests)}"
+                    )
+            else:
+                assert proof_path is not None
+                proof = expected_shard_proof(args.shard, args.source_head, args.tested_commit)
+                temporary_proof = proof_path.with_suffix(".tmp")
+                temporary_proof.write_text(
+                    json.dumps(proof, sort_keys=True, separators=(",", ":")) + "\n",
+                    encoding="utf-8",
+                )
+                temporary_proof.replace(proof_path)
 
     for line in report:
         print(line)

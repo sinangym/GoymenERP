@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import uuid
 from unittest import mock
 
 
@@ -23,15 +24,21 @@ SPEC.loader.exec_module(VERIFIER)
 def broad_trx(executions: dict[str, int], outcome: str = "Passed") -> str:
     """A TRX with one result per execution (theory rows carry their arguments) and exact counters."""
     results = []
+    definitions = []
     for name, count in executions.items():
+        test_id = str(uuid.uuid5(uuid.NAMESPACE_URL, name))
+        class_name, method_name = name.rsplit(".", 1)
+        definitions.append(f'<UnitTest id="{test_id}"><TestMethod className="{class_name}" name="{method_name}" /></UnitTest>')
         for row in range(count):
             display = name if count == 1 else f'{name}(row: {row})'
-            results.append(f'<UnitTestResult testName="{display}" outcome="{outcome}" />')
+            execution_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{name}/{row}"))
+            results.append(f'<UnitTestResult testId="{test_id}" executionId="{execution_id}" testName="{display}" outcome="{outcome}" />')
     total = sum(executions.values())
     return (
         '<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><Results>'
         + "".join(results)
-        + f'</Results><ResultSummary><Counters total="{total}" executed="{total}" '
+        + '</Results><TestDefinitions>' + ''.join(definitions) + '</TestDefinitions>'
+        + f'<ResultSummary><Counters total="{total}" executed="{total}" '
         f'passed="{total}" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" '
         'notExecuted="0" /></ResultSummary></TestRun>'
     )
@@ -503,7 +510,7 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
         calls: list[tuple[str, ...]] = []
 
         def fake_run_checked(
-            arguments: list[str], repository_root: Path
+            arguments: list[str], repository_root: Path, **_kwargs: object
         ) -> subprocess.CompletedProcess[str]:
             del repository_root
             calls.append(tuple(arguments))
@@ -518,8 +525,11 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
                 argument.startswith("trx;") for argument in arguments
             ):
                 results_directory = Path(arguments[arguments.index("--results-directory") + 1])
-                (results_directory / "rcsi.trx").write_text(
-                    broad_trx(VERIFIER.BROAD_EXECUTIONS), encoding="utf-8"
+                logger = next(argument for argument in arguments if argument.startswith("trx;LogFileName="))
+                selected = {name.removeprefix("FullyQualifiedName="): VERIFIER.BROAD_EXECUTIONS[name.removeprefix("FullyQualifiedName=")]
+                            for name in arguments[arguments.index("--filter") + 1].split("|")}
+                (results_directory / logger.split("=", 1)[1]).write_text(
+                    broad_trx(selected), encoding="utf-8"
                 )
             return subprocess.CompletedProcess(arguments, 0, stdout="", stderr="")
 
@@ -552,7 +562,7 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             f"passed={VERIFIER.BROAD_EXECUTION_COUNT} failed=0 skipped=0",
             lines[-1],
         )
-        self.assertEqual(4, len(calls))
+        self.assertEqual(2 + 2 * len(VERIFIER.plan_sql_batches(VERIFIER.BROAD_EXECUTIONS)), len(calls))
         self.assertIn("tools/validate_dotnet_bootstrap_integrity.py", calls[0])
         self.assertIn("--list-tests", calls[1])
         self.assertIn("tools/validate_dotnet_bootstrap_integrity.py", calls[2])
@@ -826,7 +836,7 @@ class ShardedRelationalProofTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             proof_path = Path(directory) / "proof-A.json"
 
-            def fake_run(arguments: list[str], repository_root: Path) -> subprocess.CompletedProcess[str]:
+            def fake_run(arguments: list[str], repository_root: Path, **_kwargs: object) -> subprocess.CompletedProcess[str]:
                 del repository_root
                 calls.append(tuple(arguments))
                 if "--list-tests" in arguments:
@@ -835,7 +845,10 @@ class ShardedRelationalProofTests(unittest.TestCase):
                     )
                 if "--results-directory" in arguments:
                     results = Path(arguments[arguments.index("--results-directory") + 1])
-                    (results / "rcsi.trx").write_text(broad_trx(selected), encoding="utf-8")
+                    logger = next(argument for argument in arguments if argument.startswith("trx;LogFileName="))
+                    batch = {name.removeprefix("FullyQualifiedName="): selected[name.removeprefix("FullyQualifiedName=")]
+                             for name in arguments[arguments.index("--filter") + 1].split("|")}
+                    (results / logger.split("=", 1)[1]).write_text(broad_trx(batch), encoding="utf-8")
                 return subprocess.CompletedProcess(arguments, 0, stdout="", stderr="")
 
             with (
@@ -849,10 +862,10 @@ class ShardedRelationalProofTests(unittest.TestCase):
                 contextlib.redirect_stdout(io.StringIO()),
             ):
                 self.assertEqual(0, VERIFIER.main())
-            self.assertEqual(4, len(calls))
+            self.assertEqual(2 + 2 * len(VERIFIER.plan_sql_batches(selected)), len(calls))
             self.assertEqual(VERIFIER.BROAD_FILTER, calls[1][calls[1].index("--filter") + 1])
             self.assertEqual(
-                "|".join(f"FullyQualifiedName={name}" for name in sorted(selected)),
+                "|".join(f"FullyQualifiedName={name}" for name in VERIFIER.plan_sql_batches(selected)[0]),
                 calls[3][calls[3].index("--filter") + 1],
             )
             self.assertEqual(

@@ -325,7 +325,7 @@ class LiveProgressTests(unittest.TestCase):
     def test_main_adds_diagnostics_but_never_proves_acceptance_without_trx(self) -> None:
         calls: list[list[str]] = []
 
-        def run(arguments: list[str], root: Path) -> subprocess.CompletedProcess[str]:
+        def run(arguments: list[str], root: Path, **_kwargs: object) -> subprocess.CompletedProcess[str]:
             calls.append(arguments)
             return subprocess.CompletedProcess(
                 arguments, 0,
@@ -346,7 +346,7 @@ class LiveProgressTests(unittest.TestCase):
                 ]),
                 contextlib.redirect_stdout(io.StringIO()),
             ):
-                with self.assertRaisesRegex(RuntimeError, "TRX could not be parsed"):
+                with self.assertRaisesRegex(RuntimeError, "normal output file"):
                     VERIFIER.main()
             self.assertFalse(proof.exists())
             self.assertFalse(trx.exists())
@@ -355,7 +355,7 @@ class LiveProgressTests(unittest.TestCase):
         self.assertEqual(["xUnit.DiagnosticMessages=true", "xUnit.LongRunningTestSeconds=60"], execution[-2:])
         self.assertEqual("--", execution[-3])
         self.assertEqual(
-            "|".join(f"FullyQualifiedName={name}" for name in sorted(VERIFIER.shard_executions("A"))),
+            "|".join(f"FullyQualifiedName={name}" for name in VERIFIER.plan_sql_batches(VERIFIER.shard_executions("A"))[0]),
             execution[execution.index("--filter") + 1],
         )
 

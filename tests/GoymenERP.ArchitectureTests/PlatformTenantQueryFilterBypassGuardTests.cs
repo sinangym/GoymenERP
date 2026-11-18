@@ -223,8 +223,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // W8 SQL diagnostics: bounded allowlisted FQN/outcome/duration progress survives execution timeout.
     // The single 2400-second deadline, exact discovery/theory multiplicity, skip0 and TRX/proof gates remain.
     // Re-fingerprinted from the house producer; independent exact-head K3 review is still pending.
+    // W8 failure diagnosis: whole-theory method batches retain one global 2400s deadline,
+    // strict result/identity/union checks and skip0; only a complete passing union writes proof.
+    // Process/static lifetime changes require independent K3 review; no workflow or runtime bypass added.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "28a5a658704d0b63b3fd67a6b8f7d709b3ba7b105e806b64f894c3843f48a347";
+        "8adf932dec0fee8f16e121d74392b863530b76c96cb375269bdf529a1aa297e9";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
@@ -239,8 +242,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for tren-1 wave 1: the mandatory Work set also pins the inbox dedup fact already in work.txt.
     // W8: the exact-set test also requires all four real notification SQL facts (586176b32);
     // verifier discovery, inventory loading, TRX and skip rules are unchanged. Python suite: 48/48.
+    // W8: synthetic broad/shard fixtures now emit numbered, identity-bound batch TRX files;
+    // negative coverage retains native failure, missing/duplicate/skip rejection and no partial proof.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "7fcdca61d1addf255b275473cb91d26ac914fb2312fafc35b0bc1536afd6b299";
+        "f81256442c584997842457d45f57e383ee6af10c13dbd4a22c7e23c4bf8d4162";
     // The broad relational inventory, one file per module (see RelationalInventoryDirectory). Each
     // pin is its own paragraph so that two modules re-pinning their own files change lines that are
     // not adjacent and combine cleanly; a file's owner is its module, the pin line is central.
