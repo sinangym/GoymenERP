@@ -7,6 +7,7 @@ import importlib.util
 import io
 import json
 import os
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -17,6 +18,7 @@ MODULE_PATH = REPOSITORY_ROOT / "tools" / "verify_backup_restore.py"
 SPEC = importlib.util.spec_from_file_location("verify_backup_restore", MODULE_PATH)
 assert SPEC is not None and SPEC.loader is not None
 VERIFIER = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = VERIFIER
 SPEC.loader.exec_module(VERIFIER)
 
 POLICY_PATH = REPOSITORY_ROOT / "infra" / "backup" / "backup-restore-policy.v1.json"

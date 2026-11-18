@@ -46,7 +46,7 @@ public sealed partial class DefaultCredentialGuardTests
             ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Bootstrap/FounderBootstrapService.cs",
                 "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityAccessAssignmentService.Users.cs"],
             ReviewedLocalCredentialCreationSites);
-        Assert.False(IsDocumentationException("docs/operations/example.json"));
+        Assert.False(IsDocumentationException("docs/fixtures/example.json"));
         Assert.False(IsDocumentationException("src/backend/README.md"));
         Assert.True(IsDocumentationException("docs/features/example.md"));
     }
@@ -115,7 +115,7 @@ public sealed partial class DefaultCredentialGuardTests
     [InlineData("src/backend/GoymenERP.Api/Seed/identity-seed.json", """{ "Users": [ { "UserName": "kurucu", "PasswordHash": "AQAAAAIAAYagAAAAE" } ] }""")]
     [InlineData("src/backend/GoymenERP.Api/Seed/identity-seed.json", """{ "LocalCredentials": [] }""")]
     [InlineData("tests/e2e-fixtures/example.json", """{ "login": { "user": "admin", "secret": "admin" } }""")]
-    [InlineData("docs/operations/example.yaml", "admin_password: admin123")]
+    [InlineData("docs/fixtures/example.yaml", "admin_password: admin123")]
     public void A_credential_value_or_row_in_configuration_is_found(string file, string content)
     {
         Assert.NotEmpty(ConfigurationFindings(file, content));

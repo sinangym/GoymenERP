@@ -282,7 +282,7 @@
    "STK-SC36-a"
   ],
   "published_train_done_at_last_checkpoint": 135,
-  "w8_status": "SOURCE_DONE_LOCAL_VALIDATION_PASS_TRAIN_PUBLICATION_PENDING_CI_K3_PENDING",
+  "w8_status": "SOURCE_DONE_LOCAL_SUITE_PASS_CI_PREFLIGHT_FIX_SECURITY_UPSTREAM_BLOCKER_K3_PENDING",
   "w8_last_combined_source_build": {
    "head": "146f1ec79a30ca9a55d5fa78b119abc13e4bec75",
    "source_exit": 0,
@@ -370,7 +370,13 @@
     "proof": "artifacts/local-final-e41360340/proofs/modules.json"
    },
    "real_sql": "NOT_CONFIGURED",
-   "ci": "QUEUED",
+   "ci": {
+    "pr": 1201,
+    "first_head": "e838ca9079eda6c52d0d31cd909e8541f121f976",
+    "run": 44237822849,
+    "status": "FIRST_PREFLIGHT_FAILED_FIX_PENDING",
+    "security": "UPSTREAM_BLOCKER_GHSA-fc5q-39xc-vjpf_PATCHED_NONE"
+   },
    "independent_K3": "QUEUED",
    "report": "durum/W8_RUNTIME_KAPANIS_DURUMU.md",
    "architecture_final": {

@@ -85,3 +85,28 @@ Sabit kapsam **174/174 DONE (%100 kaynak)**; W8 son pakettir, yeni dalga yoktur.
 `artifacts/local-final-e41360340/proofs/modules.json` ve
 `artifacts/local-final-25b7477b0/proofs/architecture.json` yerel native grup kanıtlarıdır;
 bunlar GitHub CI artifact'ı olarak sunulmaz. Grant/rol, production, OPEN veya Finance STOP değişmedi.
+
+## İlk final CI kapısı ve dar ön kontrol düzeltmesi
+
+Yayın `e838ca9079eda6c52d0d31cd909e8541f121f976`, tek taslak K3 PR #1201.
+CI `44237822849` ilk ön kontrolde üç açıklama/sanal fixture yolunu gerçek
+okunan prose girdisi sandı. İki sanal JSON/YAML dosya adı `docs/fixtures/`
+altına taşındı (test gerçek dosya okumaz, aynı Markdown dışlama ve credential
+reddini sınar). Backup verifier insan runbook atfı Python yorumuna taşındı;
+çalıştırılabilir bütün AST düğümleri birebir aynı. Filtre/scanner/workflow
+ve test assertları değiştirilmedi. Backup test yükleyicisi, dataclass için
+modülü exec öncesinde standart `sys.modules` kaydına alır.
+
+Yerel credential guard 24/24 PASS, skip0; backup verifier 50 testte 49 PASS ve
+mevcut sembolik bağlantı erişimi koşullu 1 skip. CI safe-summary paketi 64 testte
+63 PASS, 1 FAIL: Windows Bash ortamında Faz0 geçici git fixture komut sonucu;
+bu kalan hata atlanmadı. Linux ilk CI koşumunda Faz0 testi zaten PASS idi;
+CI'nin kaynak prose testi düzeltme sonrası yeniden doğrulanmalıdır.
+
+Ayrı güvenlik engeli: `GHSA-fc5q-39xc-vjpf`, Picomatch <=4.0.7 yüksek önem.
+18 Kasım canlı npm registry latest4.0.7; advisory patched=None. Upstream
+#267/#259 birleştirilmemiştir. Vite/Vitest zorla düşürülmedi, override veya
+audit-ignore eklenmedi, audit kapısı gevşetilmedi. Güvenli upstream düzeltmesi
+olmadan bu CI güvenlik kapısı PASS sayılamaz.
+Kaynak: https://github.com/advisories/GHSA-fc5q-39xc-vjpf ve
+https://registry.npmjs.org/picomatch . Kaynak %100 bu engeli kapatmaz.

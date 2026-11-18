@@ -18,8 +18,9 @@ schedules anything. It only reads files the operator exported:
 Measurements are exact: there is no tolerance. Exit codes: 0 passed, 1 a check failed,
 2 the input could not be read or is malformed.
 
-Runbook: docs/operations/YEDEK_GERI_YUKLEME_RUNBOOK_v1.md
 """
+
+# Human runbook (not an executable input): docs/operations/YEDEK_GERI_YUKLEME_RUNBOOK_v1.md
 
 from __future__ import annotations
 
