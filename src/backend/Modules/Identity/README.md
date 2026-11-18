@@ -67,3 +67,19 @@ EF generated `20261117160905_AddOperatorTwoFactorRecoveryAttempts`; Down first r
 history exists. The reviewed UPDATE/DELETE trigger refuses with **51925**, in addition to the tracker guard.
 It has no INSERT trigger: SQL Server's [OUTPUT restriction applies to the corresponding DML action](https://learn.microsoft.com/sql/t-sql/queries/output-clause-transact-sql?view=sql-server-ver17#triggers).
 No database application, command execution or runtime acceptance is implied by source/EF compilation.
+
+
+### W8 access grant approval-mode SQL NULL repair
+
+EF-generated `20261118211933_RejectNullAccessGrantApprovalModes` replaces only the two existing
+`AccessGrantRequests` approval-mode/second-approval CHECK constraints. An Approved row must carry a
+non-NULL existing approval mode; SQL UNKNOWN cannot admit a missing mode. The accepted mode names,
+second-person rules and existing founder/company setup exceptions do not change. Up performs DDL
+only: it creates no request, assignment, role, grant or default and does not rewrite historical rows.
+
+Down first refuses with **THROW 51798** while any Approved request exists, preserving the repaired
+history contract; otherwise it restores the two previous predicates. The existing real-SQL constraint
+fact also executes that exact first Down guard with no approved history and with a valid synthetic
+approval inside a rolled-back transaction. This is guard evidence, not full downgrade/reapply evidence.
+Migration-operation unit assertions, actual SQL execution and final K3 acceptance remain distinct;
+new test sources alone do not imply that the SQL verification has run.

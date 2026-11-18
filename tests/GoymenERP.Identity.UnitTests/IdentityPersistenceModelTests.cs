@@ -28,8 +28,8 @@ public sealed class IdentityPersistenceModelTests
         Assert.Equal(
             ["20261114164716_AddLocalCredentials", "20261115144305_AddIdentityBootstrapState", "20261115170730_AddAccessGrantRequestWorkflow",
                 "20261116164010_RemoveIdentityAuditTableMapping", "20261116185533_AddCompanySetupInboxAndOutboxPosition", "20261116205256_AddExplicitCompanySetupAuthority",
-                "20261117004612_AddLocalTwoFactorSecrets", "20261117082918_AddProductCogsClassificationAuthority", "20261117160905_AddOperatorTwoFactorRecoveryAttempts"],
-            context.Database.GetMigrations().TakeLast(9));
+                "20261117004612_AddLocalTwoFactorSecrets", "20261117082918_AddProductCogsClassificationAuthority", "20261117160905_AddOperatorTwoFactorRecoveryAttempts", "20261118211933_RejectNullAccessGrantApprovalModes"],
+            context.Database.GetMigrations().TakeLast(10));
         Assert.False(context.Database.HasPendingModelChanges());
         Assert.Null(context.Model.FindEntityType("GoymenERP.Modules.Audit.Domain.Events.AuditEvent"));
         // Audit was excluded from Identity migrations already. The generated ownership
@@ -37,6 +37,28 @@ public sealed class IdentityPersistenceModelTests
         var ownership = new RemoveIdentityAuditTableMapping();
         Assert.Empty(ownership.UpOperations);
         Assert.Empty(ownership.DownOperations);
+
+        var nullModes = new RejectNullAccessGrantApprovalModes();
+        Assert.Equal(4, nullModes.UpOperations.Count);
+        Assert.Equal(["CK_AccessGrantRequests_ApprovalMode", "CK_AccessGrantRequests_SecondApproval"],
+            nullModes.UpOperations.Take(2).Select(operation => Assert.IsType<DropCheckConstraintOperation>(operation).Name));
+        var repaired = nullModes.UpOperations.OfType<AddCheckConstraintOperation>().ToArray();
+        Assert.Equal(2, repaired.Length);
+        Assert.Equal(IdentityDbContext.AccessGrantApprovalModeCheck, repaired[0].Sql);
+        Assert.Equal(IdentityDbContext.AccessGrantSecondApprovalCheck, repaired[1].Sql);
+        Assert.All(repaired, check => Assert.Contains("[ApprovalMode] IS NOT NULL", check.Sql, StringComparison.Ordinal));
+        Assert.DoesNotContain(nullModes.UpOperations, operation => operation is SqlOperation);
+        Assert.Equal(5, nullModes.DownOperations.Count);
+        var nullModeGuard = Assert.IsType<SqlOperation>(nullModes.DownOperations[0]);
+        Assert.Contains("WHERE [Status] = N'Approved'", nullModeGuard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51798", nullModeGuard.Sql, StringComparison.Ordinal);
+        Assert.Equal(repaired.Select(check => check.Name), nullModes.DownOperations.Skip(1).Take(2)
+            .Select(operation => Assert.IsType<DropCheckConstraintOperation>(operation).Name));
+        var previous = nullModes.DownOperations.OfType<AddCheckConstraintOperation>().ToArray();
+        Assert.Equal(repaired.Select(check => check.Name), previous.Select(check => check.Name));
+        Assert.All(previous, check => Assert.DoesNotContain("[ApprovalMode] IS NOT NULL", check.Sql, StringComparison.Ordinal));
+        Assert.All(nullModes.UpOperations.Concat(nullModes.DownOperations).OfType<ITableMigrationOperation>(),
+            operation => Assert.Equal(("identity", "AccessGrantRequests"), (operation.Schema, operation.Table)));
     }
 
     [Fact]

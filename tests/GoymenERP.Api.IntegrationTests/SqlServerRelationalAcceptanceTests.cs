@@ -9,6 +9,7 @@ using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
+using GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Organization.Domain.Sites;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
@@ -18,6 +19,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -232,6 +234,14 @@ public sealed class SqlServerRelationalAcceptanceTests
             Assert.Equal(547, (await Assert.ThrowsAsync<SqlException>(
                 () => selfApprovalInsert.ExecuteNonQueryAsync())).Number);
         }
+        var beforeGrantRows = await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM identity.AccessGrantRequests");
+        Assert.Equal(0, await ScalarAsync<int>(connection,
+            "SELECT COUNT(*) FROM identity.AccessGrantRequests WHERE Status = N'Approved'"));
+        await using var nullModeDownGuard = connection.CreateCommand();
+        nullModeDownGuard.CommandText = Assert.IsType<SqlOperation>(
+            new RejectNullAccessGrantApprovalModes().DownOperations[0]).Sql;
+        await nullModeDownGuard.ExecuteNonQueryAsync();
+
         selfApprovalInsert.Parameters["@ApprovalMode"].Value = "SecondApproval";
         foreach (var decider in new[]
                  {
@@ -243,6 +253,28 @@ public sealed class SqlServerRelationalAcceptanceTests
             Assert.Equal(547, (await Assert.ThrowsAsync<SqlException>(
                 () => selfApprovalInsert.ExecuteNonQueryAsync())).Number);
         }
+
+        // A valid, different-person historical approval makes the same real migration guard refuse.
+        // This rolls back the synthetic request; it does not create a RoleAssignment or apply a downgrade.
+        await using (var transaction = (SqlTransaction)await connection.BeginTransactionAsync())
+        {
+            selfApprovalInsert.Transaction = transaction;
+            nullModeDownGuard.Transaction = transaction;
+            selfApprovalInsert.Parameters["@DeciderId"].Value = Guid.Parse("20000000-0000-0000-0000-000000000002");
+            try
+            {
+                Assert.Equal(1, await selfApprovalInsert.ExecuteNonQueryAsync());
+                Assert.Equal(51798, (await Assert.ThrowsAsync<SqlException>(
+                    () => nullModeDownGuard.ExecuteNonQueryAsync())).Number);
+            }
+            finally
+            {
+                await transaction.RollbackAsync();
+                selfApprovalInsert.Transaction = null;
+                nullModeDownGuard.Transaction = null;
+            }
+        }
+        Assert.Equal(beforeGrantRows, await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM identity.AccessGrantRequests"));
     }
 
     private static async Task AssertTenantWriteGuardAsync(

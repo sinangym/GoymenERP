@@ -744,7 +744,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // existing company query filters and tenant write guard are unchanged (31367b8f… -> 4cf3e94b…).
                 // Re-fingerprinted for tren-1 W6: PLT audit ownership: Identity no longer maps the Audit table; reviewed API counts unchanged (d2c26ac3... -> 1eb7ccd3...).
                 // Re-fingerprinted for tren-1 W7: owner append-only schema changes; company filters retained; K3 review pending.
-                "6f4681e7b82dff86eafc06f08c3c1d445f7954443d3566eedcf7e15a36027567",
+                // W8: nullable approval mode cannot pass Approved checks through SQL UNKNOWN; tenant filters unchanged. K3 review pending.
+                "cf04e11942803d47dbccfacd52140be75ceaaa2e87a49205d16847e76f134136",
             // Re-fingerprinted for tren-1 wave 2 (trial integration): the team slices combined; token counts checked by the guard (208f9114… -> 6881862d…).
             ["src/backend/Modules/Organization/"
              + "GoymenERP.Modules.Organization.Infrastructure/Persistence/"
@@ -2270,7 +2271,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/FinanceAllocationService.cs"] =
                     new(
-                        "a1f058d2ea9d4ca6aa59d4dfe376bcdc7d7d7f4fa8cbffcbafb14bfd6a1e2384",
+                        // W8: pure receipt allocation policy preserves error priority before both capacity fences; same single SqlClient race classification. K3 review pending.
+                        "38a75b25f2435bd7fefa4fa45225f656205f7662bec7904f5d080c578bdcbb52",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2283,7 +2285,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for API-23: a reversed payment is refused with its own code
                         // (finance_source_already_reversed) through one tracked read; token counts unchanged.
                         // W8: pure allocation error priority precedes availability fences; same single SqlClient race classification. K3 pending.
-                        "d2aaf08c47463649bd1cf41cc4c05b816c3c29ee7b5c7fb362f987c98de5bbe1",
+                        // W8 DEC-FIN-006: require the tenant-filtered original outgoing payment fact; no new bypass or SqlClient occurrence. K3 review pending.
+                        "7d6cbf203442603600642948c83f671ae9ea230a5aa4df1ee31a289dfd8af348",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -3905,6 +3908,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedMigrationMutationSources =
             new Dictionary<string, ReviewedMigrationMutationSource>(StringComparer.Ordinal)
             {
+                // W8 approval-mode null guard: Down refuses (51798) while approved access-grant history exists.
+                // One deployment-time SQL forward-fix guard, no runtime tenant bypass or new grant; K3 review pending.
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/"
+                 + "20261118211933_RejectNullAccessGrantApprovalModes.cs"] =
+                    new("041d8273b784b14ea76b6717c3ada8e7dc538ae72d5957829a4e228c0bb04212",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 // W8 Unicode history check repair: Down refuses before restoring the broken old check while tax history exists.
                 // Group-level history guard only; no data rewrite or runtime bypass. K3 review pending; THROW 51799 is unique.
                 [ReviewedCounterpartyIdentityRevisionRepairMigrationPath] =
