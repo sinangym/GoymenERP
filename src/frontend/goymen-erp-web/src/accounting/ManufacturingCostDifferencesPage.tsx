@@ -63,19 +63,19 @@ function Page({ namespace, mode }: { readonly namespace: string | null; readonly
     {!single ? <StateBlock state={{ kind: 'no-authorized-company' }} subject={T.subject} />
       : state.kind !== 'ready' ? <StateBlock state={state} subject={T.subject} onRetry={() => void query.refetch()} />
         : <>
-          <button disabled={frozen} onClick={() => void query.refetch()}>{T.refresh}</button>
-          {state.data.length === 0 ? <p>{T.empty}</p> : <div className={styles.tableWrap}><table className={styles.table}>
-            <thead><tr><th>{T.source}</th><th>{T.amount}</th><th>{T.status}</th><th>{T.select}</th></tr></thead>
+          <button type="button" disabled={frozen} onClick={() => void query.refetch()}>{T.refresh}</button>
+          {state.data.length === 0 ? <p>{T.empty}</p> : <div className={styles.tableWrap}><table aria-labelledby="manufacturing-cost-title" className={styles.table}>
+            <thead><tr><th scope="col">{T.source}</th><th scope="col">{T.amount}</th><th scope="col">{T.status}</th><th scope="col">{T.select}</th></tr></thead>
             <tbody>{state.data.map(item => <tr key={item.proposalId}>
               <td className={styles.mono}>{item.manufacturingOrderId}</td><td>{item.signedTlDifference} TL</td><td>{T.statuses[item.status]}</td>
-              <td><button disabled={frozen} onClick={() => { setSelected(item.proposalId); setOutcome(null); setAttempt(null) }}>{T.select}</button></td>
+              <td><button type="button" disabled={frozen} onClick={() => { setSelected(item.proposalId); setOutcome(null); setAttempt(null) }}>{T.select}</button></td>
             </tr>)}</tbody></table></div>}
           {selected !== null && row === undefined ? <StateBlock state={{ kind: 'not-found' }} subject={T.subject} /> : null}
           {row !== undefined ? <>
             <h2>{T.statuses[row.status]}</h2>
             <p className={styles.mono}>{row.proposalId}</p><p>{T.amount}: {row.signedTlDifference} TL</p>
             {row.signedTlDifference.startsWith('-') ? <p role="note">{T.warning}</p> : null}
-            <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>{T.output}</th><th>{T.kg}</th><th>{T.original}</th><th>{T.amount}</th></tr></thead>
+            <div className={styles.tableWrap}><table aria-label={T.output} className={styles.table}><thead><tr><th scope="col">{T.output}</th><th scope="col">{T.kg}</th><th scope="col">{T.original}</th><th scope="col">{T.amount}</th></tr></thead>
               <tbody>{row.outputs.map(output => <tr key={output.outputId}><td className={styles.mono}>{output.labelId}</td>
                 <td>{output.netQuantityKg} / {output.remainingQuantityKg} / {output.consumedQuantityKg}</td><td>{output.originalTlAmount}</td><td>{output.consumedTlDifference}</td></tr>)}</tbody></table></div>
             {row.periodId ? <dl><dt>{T.date}</dt><dd>{row.accountingDate}</dd><dt>{T.transactionDate}</dt><dd>{row.transactionDate}</dd>
@@ -85,11 +85,11 @@ function Page({ namespace, mode }: { readonly namespace: string | null; readonly
             {mode === 'prepare' && ['AwaitingPreparation', 'Prepared'].includes(row.status)
               ? <Preparation key={`${row.proposalId}:${row.version}`} row={row} company={company} namespace={namespace!} frozen={frozen} send={next => void send(next)} /> : null}
             {mode === 'approve' && row.status === 'Prepared' ? row.preparedBy?.toLowerCase() === actor.toLowerCase()
-              ? <p>{T.own}</p> : <button disabled={frozen} onClick={() => void send({ operation: 'approve', id: row.proposalId,
+              ? <p>{T.own}</p> : <button type="button" disabled={frozen} onClick={() => void send({ operation: 'approve', id: row.proposalId,
                 key: crypto.randomUUID(), request: { expectedVersion: row.version } })}>{T.approve}</button> : null}
           </> : null}
         </>}
-    {outcome?.type === 'unknown' ? <div role="alert"><p>{T.unknown}</p><button disabled={sending || attempt === null}
+    {outcome?.type === 'unknown' ? <div role="alert"><p>{T.unknown}</p><button type="button" disabled={sending || attempt === null}
       onClick={() => attempt !== null && void send(attempt, true)}>{T.resend}</button></div> : null}
     {outcome?.type === 'refused' ? <p role="alert">{T.refused} ({outcome.status}{outcome.code ? ` · ${outcome.code}` : ''})</p> : null}
     {outcome?.type === 'applied' ? <p role="status">{T.done}</p> : null}

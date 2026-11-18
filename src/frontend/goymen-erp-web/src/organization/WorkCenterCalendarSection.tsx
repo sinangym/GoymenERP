@@ -141,7 +141,7 @@ function CalendarView({ calendar }: { readonly calendar: WorkCenterCalendar }) {
       <p className={styles.meta}>
         {WORK_CENTER_CALENDAR_TEXT.timeZone}: <span>{calendar.timeZoneId}</span>
       </p>
-      <table className={styles.table}>
+      <table aria-label={WORK_CENTER_CALENDAR_TEXT.heading} className={styles.table}>
         <thead>
           <tr>
             <th scope="col">{WORK_CENTER_CALENDAR_TEXT.day}</th>

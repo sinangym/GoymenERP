@@ -13,7 +13,7 @@ vi.mock('../settings/SalesPolicyParts', async (original) => ({ ...await original
 }))
 vi.mock('./twoFactorApi', () => ({ readTwoFactor: vi.fn(), prepareTwoFactor: fakes.prepare, changeTwoFactor: fakes.change }))
 
-beforeEach(() => { vi.clearAllMocks() })
+beforeEach(() => { vi.clearAllMocks(); fakes.change.mockReset(); fakes.prepare.mockReset() })
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('LocalTwoFactorPage optional self service', () => {
@@ -27,8 +27,8 @@ describe('LocalTwoFactorPage optional self service', () => {
     await actor.type(screen.getByLabelText(T.code), '123456')
     await actor.click(screen.getByRole('button', { name: T.regenerate }))
     expect(await screen.findByText(T.unknown)).toBeTruthy()
-    expect((screen.getByLabelText(T.password) as HTMLInputElement).disabled).toBe(true)
-    expect((screen.getByLabelText(T.code) as HTMLInputElement).disabled).toBe(true)
+    expect(screen.getByLabelText(T.password).matches(':disabled')).toBe(true)
+    expect(screen.getByLabelText(T.code).matches(':disabled')).toBe(true)
     await actor.click(screen.getByRole('button', { name: T.retry }))
     await waitFor(() => expect(fakes.change).toHaveBeenCalledTimes(2))
     expect(fakes.change.mock.calls[1]).toEqual(fakes.change.mock.calls[0])

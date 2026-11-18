@@ -48,6 +48,7 @@ describe('source backed credit account workflow', () => {
   it('never offers self approval and discloses no approver identity', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => json({ companyId: Company, items: [fixture({ isOwnProposal: true })] })))
     mount(); fireEvent.click(await screen.findByRole('button', { name: 'İncele' }))
+    expect(screen.getByRole('table', { name: 'Kredi hesapları' })).toBeTruthy()
     expect(screen.getByText('Kendi önerinizi onaylayamaz veya reddedemezsiniz.')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Onayla' })).toBeNull()
   })

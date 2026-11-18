@@ -65,7 +65,8 @@ describe('KIM-D31 antiforgery fetch', () => {
     const writes = calls.filter((call) => call.url !== TOKEN_URL)
     expect(writes).toHaveLength(3)
     expect(writes.every((call) => call.token === 'SENTETIK-token-1')).toBe(true)
-    expect(writes.map((call) => call.body)).toEqual(['{"a":1}', '{"b":2}', null])
+    // Concurrent streams can finish in any order; each method must retain its own body.
+    expect(Object.fromEntries(writes.map((call) => [call.method, call.body]))).toEqual({ POST: '{"a":1}', PUT: '{"b":2}', DELETE: null })
   })
 
   it('leaves reads, Bearer requests and other origins untouched', async () => {

@@ -34,7 +34,7 @@ describe('shell ↔ Inventory opening-stock contract', () => {
     expect(CAPABILITY_ROUTE[CAPABILITY.inventoryStockPositionsList]).toBe(INVENTORY_STOCK_POSITIONS_ROUTE)
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.inventoryStockPositionsList]).toBe('Stok / Malzeme Pozisyonu')
     expect(NAV_CAPABILITIES.filter((item) => item === INVENTORY_STOCK_POSITIONS_CAPABILITY)).toHaveLength(1)
-    expect(inventoryRoutes).toHaveLength(15)
+    expect(inventoryRoutes).toHaveLength(16)
     const futurePath = inventoryFutureAllocationPath('order-1', 'line-2')
     expect(matchRoutes(inventoryRoutes, futurePath)?.at(-1)?.route.path)
       .toBe(INVENTORY_FUTURE_ALLOCATION_ROUTE.slice(1))

@@ -71,15 +71,15 @@ function Workspace({ namespace }: { readonly namespace: string | null }) {
     key: crypto.randomUUID(), operation, invoiceId: row.invoiceId, expectedVersion: row.version, ...(operation === 'rejection' ? { reason: reason.trim() } : {}) } }) }
   return <section className={styles.page} aria-labelledby="official-invoices-title"><h1 id="official-invoices-title">{T.title}</h1><p>{T.intro}</p>
     {!single ? <StateBlock state={{ kind: 'no-authorized-company' }} subject={T.title} /> : <>
-      {hasCapability(shell, 'finance.official-sales-invoices.record') ? <button disabled={frozen} onClick={() => setCreating(x => !x)}>{creating ? T.cancel : T.create}</button> : null}
+      {hasCapability(shell, 'finance.official-sales-invoices.record') ? <button type="button" disabled={frozen} onClick={() => setCreating(x => !x)}>{creating ? T.cancel : T.create}</button> : null}
       {creating ? <OfficialSalesInvoiceForm company={company} actor={actor} namespace={namespace!} frozen={frozen} send={value => void send({ kind: 'create', value })} /> : <>
         <label><input type="checkbox" disabled={frozen} checked={pendingOnly} onChange={e => { setPendingOnly(e.target.checked); setCursor(null); setSelected(null) }} />{T.pendingOnly}</label>
         {state.kind !== 'ready' ? <StateBlock state={state} subject={T.title} onRetry={() => void query.refetch()} /> : <>
-          {state.data.items.length === 0 ? <p>{T.noRows}</p> : <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>{T.officialNo}</th><th>{T.date}</th><th>{T.status}</th><th>{T.select}</th></tr></thead><tbody>
-            {state.data.items.map(item => <tr key={item.invoiceId}><td>{item.officialNo}</td><td>{item.invoiceDate ?? T.sourceDateMissing}</td><td>{T.statuses[item.status]}</td><td><button disabled={frozen} onClick={() => { setSelected(item.invoiceId); setReason('') }}>{T.select}</button></td></tr>)}
+          {state.data.items.length === 0 ? <p>{T.noRows}</p> : <div className={styles.tableWrap}><table aria-labelledby="official-invoices-title" className={styles.table}><thead><tr><th scope="col">{T.officialNo}</th><th scope="col">{T.date}</th><th scope="col">{T.status}</th><th scope="col">{T.select}</th></tr></thead><tbody>
+            {state.data.items.map(item => <tr key={item.invoiceId}><td>{item.officialNo}</td><td>{item.invoiceDate ?? T.sourceDateMissing}</td><td>{T.statuses[item.status]}</td><td><button type="button" disabled={frozen} onClick={() => { setSelected(item.invoiceId); setReason('') }}>{T.select}</button></td></tr>)}
           </tbody></table></div>}
-          <button disabled={frozen || cursor === null} onClick={() => { setCursor(null); setSelected(null) }}>{T.first}</button>
-          <button disabled={frozen || state.data.nextCursor === null} onClick={() => { setCursor(state.data.nextCursor); setSelected(null) }}>{T.next}</button>
+          <button type="button" disabled={frozen || cursor === null} onClick={() => { setCursor(null); setSelected(null) }}>{T.first}</button>
+          <button type="button" disabled={frozen || state.data.nextCursor === null} onClick={() => { setCursor(state.data.nextCursor); setSelected(null) }}>{T.next}</button>
         </>}
         {selected !== null && state.kind === 'ready' && row === undefined ? <StateBlock state={{ kind: 'not-found' }} subject={T.title} /> : null}
         {row ? <section className={styles.detail} aria-label={row.officialNo}><h2>{row.officialNo} · {T.statuses[row.status]}</h2><dl>
@@ -95,17 +95,17 @@ function Workspace({ namespace }: { readonly namespace: string | null }) {
           <DocumentsPanel ownerKind={OFFICIAL_INVOICE_OWNER} ownerId={row.invoiceId} companyId={company} namespace={namespace!} entryGeneration={shell.routeEntryGeneration} heading={T.pdf} />
           {row.status === 'PendingApproval' ? <div className={styles.actions}>
             {hasCapability(shell, 'finance.official-sales-invoices.approve') ? row.recordedBy === actor ? <p>{T.own}</p> : <>
-              <button disabled={frozen || !sourceIdentityReady} onClick={() => decide('approval')}>{T.approve}</button>
+              <button type="button" disabled={frozen || !sourceIdentityReady} onClick={() => decide('approval')}>{T.approve}</button>
               <label>{T.reason}<input maxLength={1000} disabled={frozen} value={reason} onChange={e => setReason(e.target.value)} /></label>
-              <button disabled={frozen || reason.trim() === ''} onClick={() => decide('rejection')}>{T.reject}</button>
+              <button type="button" disabled={frozen || reason.trim() === ''} onClick={() => decide('rejection')}>{T.reject}</button>
             </> : null}
-            {hasCapability(shell, 'finance.official-sales-invoices.withdraw') && row.recordedBy === actor ? <button disabled={frozen} onClick={() => decide('withdrawal')}>{T.withdraw}</button> : null}
+            {hasCapability(shell, 'finance.official-sales-invoices.withdraw') && row.recordedBy === actor ? <button type="button" disabled={frozen} onClick={() => decide('withdrawal')}>{T.withdraw}</button> : null}
           </div> : null}
         </section> : null}
       </>}
       {outcome?.type === 'applied' ? <p role="status">{T.done}</p> : null}
       {outcome?.type === 'unknown' || outcome?.type === 'waiting-scan' ? <div role="alert"><p>{outcome.type === 'unknown' ? T.unknown : T.waitingScan}</p>
-        <button disabled={sending || attempt === null} onClick={() => attempt && void send(attempt, true)}>{outcome.type === 'unknown' ? T.retry : T.scanRetry}</button></div> : null}
+        <button type="button" disabled={sending || attempt === null} onClick={() => attempt && void send(attempt, true)}>{outcome.type === 'unknown' ? T.retry : T.scanRetry}</button></div> : null}
       {outcome?.type === 'refused' ? <div role="alert"><p>{T.refused}</p>{outcome.existingOfficialNo ? <p>{T.duplicatePdf} {outcome.existingOfficialNo}</p> : null}</div> : null}
     </>}
   </section>

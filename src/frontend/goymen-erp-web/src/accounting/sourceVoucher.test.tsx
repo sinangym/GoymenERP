@@ -35,6 +35,8 @@ describe('invoice source voucher approval', () => {
     state.actor = maker
     const fetch = vi.fn(async () => json({ companyId: state.company, items: [fixture()] })); vi.stubGlobal('fetch', fetch)
     mount(); fireEvent.click(await screen.findByRole('button', { name: 'Fişi aç' }))
+    expect(screen.getByRole('table', { name: 'Fatura fişleri' })).toBeTruthy()
+    expect(screen.getByRole('table', { name: 'Fatura fişleri · SENTETIK-INV' })).toBeTruthy()
     expect(await screen.findByText('Kesinleştirdiğiniz faturanın fişini başka bir muhasebe yetkilisi onaylamalı.')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Onayla ve yevmiyeye geçir' })).toBeNull()
     expect(fetch.mock.calls).toHaveLength(1)

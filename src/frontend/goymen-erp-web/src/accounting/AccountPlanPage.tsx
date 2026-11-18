@@ -119,7 +119,7 @@ function AccountPlanResult({ view }: { readonly view: AccountPlanView }) {
           <>
             <p className={styles.help} aria-live="polite">{ACCOUNT_PLAN_SHOWING(shown.length, view.accounts.length)}</p>
             <div className={styles.tableWrap}>
-              <table className={styles.table}>
+              <table aria-labelledby="accounting-account-plan-title" className={styles.table}>
                 <thead><tr><th scope="col">{ACCOUNT_PLAN_CODE}</th><th scope="col">{ACCOUNT_PLAN_NAME}</th></tr></thead>
                 <tbody>{shown.map((account) => (
                   <tr key={account.accountId}>

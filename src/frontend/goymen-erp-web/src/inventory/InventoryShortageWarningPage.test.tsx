@@ -126,6 +126,7 @@ describe('InventoryShortageWarningPage', () => {
     expect(within(card).getByText(/kilogram cinsinden değil/)).not.toBeNull()
     expect(within(card).queryByRole('row', { name: /SENTETIK-SO/ })).toBeNull()
     const similar = within(card).getByRole('region', { name: /Benzer ürün stoku/ })
+    expect(within(similar).getByRole('table', { name: /Benzer ürün stoku/ })).not.toBeNull()
     expect(within(similar).getByText('SENTETIK-P3 · Benzer ürün')).not.toBeNull()
     expect(within(similar).getByText('40 kg')).not.toBeNull()
   })

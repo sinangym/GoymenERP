@@ -41,7 +41,7 @@ function Page({ namespace, canPrepare, canActivate }: { readonly namespace: stri
   return <section className={styles.page} aria-labelledby="cogs-mapping-title"><h1 id="cogs-mapping-title">{T.title}</h1><p>{T.intro}</p>
     {!single ? <StateBlock state={{ kind: 'no-authorized-company' }} subject={T.subject} />
       : state.kind !== 'ready' ? <StateBlock state={state} subject={T.subject} onRetry={() => void query.refetch()} />
-        : <><button disabled={frozen} onClick={() => void query.refetch()}>{T.refresh}</button>
+        : <><button type="button" disabled={frozen} onClick={() => void query.refetch()}>{T.refresh}</button>
           {state.data.accountPlanState === 'Unavailable' ? <p role="alert">{T.unavailable}</p> : null}
           <h2>{T.active}</h2>{state.data.active === null ? <p>{T.noActive}</p> : <Mapping record={state.data.active} />}
           {canPrepare ? <Prepare key={`${state.data.latestMappingVersion}:${state.data.accountPlanSourceSha256}`} workspace={state.data}
@@ -49,11 +49,11 @@ function Page({ namespace, canPrepare, canActivate }: { readonly namespace: stri
           <h2>{T.prepared}</h2>{state.data.prepared.length === 0 ? <p>{T.noPrepared}</p>
             : state.data.prepared.map(record => <article key={record.mappingVersion}><Mapping record={record} />
               {canActivate ? record.preparedByUserId.toLowerCase() === actor.toLowerCase() ? <p>{T.self}</p>
-                : <button disabled={frozen || state.data.accountPlanState !== 'Available'} onClick={() => void send({ kind: 'activate',
+                : <button type="button" disabled={frozen || state.data.accountPlanState !== 'Available'} onClick={() => void send({ kind: 'activate',
                   key: crypto.randomUUID(), mappingVersion: record.mappingVersion, request: { expectedVersion: record.version,
                     expectedActiveMappingVersion: state.data.active?.mappingVersion ?? 0 } })}>{T.activate}</button> : null}
             </article>)}</>}
-    {outcome?.type === 'unknown' ? <div role="alert"><p>{T.unknown}</p><button disabled={sending || attempt === null}
+    {outcome?.type === 'unknown' ? <div role="alert"><p>{T.unknown}</p><button type="button" disabled={sending || attempt === null}
       onClick={() => attempt !== null && void send(attempt, true)}>{T.retry}</button></div> : null}
     {outcome?.type === 'refused' ? <p role="alert">{T.refused} ({outcome.status})</p> : null}
     {outcome?.type === 'applied' ? <p role="status">{T.done}</p> : null}
@@ -61,7 +61,7 @@ function Page({ namespace, canPrepare, canActivate }: { readonly namespace: stri
 }
 function Mapping({ record }: { readonly record: PostingMapping }) {
   return <><p>{T.version}: {record.mappingVersion} · {T.date}: {record.effectiveFrom}</p>
-    <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>{T.purpose}</th><th>{T.key}</th><th>{T.account}</th></tr></thead>
+    <div className={styles.tableWrap}><table aria-label={T.title} className={styles.table}><thead><tr><th scope="col">{T.purpose}</th><th scope="col">{T.key}</th><th scope="col">{T.account}</th></tr></thead>
       <tbody>{record.rows.map((row, index) => <tr key={index}><td>{T.purposes[row.purpose]}</td>
         <td>{T.keys[row.mappingKey]}</td><td>{row.accountCode}</td></tr>)}</tbody></table></div></>
 }
