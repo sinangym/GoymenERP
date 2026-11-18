@@ -17,7 +17,7 @@ public sealed class PurchaseNotificationRecipientsTests
     [Fact]
     public async Task Unresolved_or_changed_company_is_denied_before_any_database_connection()
     {
-        var company = new CompanyContext();
+        var company = new AdversarialCompanyContext();
         await using var database = new PurchasingDbContext(new DbContextOptionsBuilder<PurchasingDbContext>()
             .UseSqlServer("Server=127.0.0.1,1;Database=SENTETIK;Integrated Security=True;Connect Timeout=1").Options, company);
         var port = new PurchaseNotificationRecipients(database, company);
@@ -77,4 +77,12 @@ public sealed class PurchaseNotificationRecipientsTests
         PurchaseNotificationRecipients.Compose(companyId, orderId, lineId, facts);
     private PurchaseNotificationRecipientFacts Facts() => new(companyId, orderId, lineId, 7,
         (int)PurchaseOrderStatus.Approved, preparer.ToString("D"), approver.ToString("D"), DateTimeOffset.UtcNow);
+    // SENTETIK drift-only source: the real CompanyContext prohibits changing a resolved company.
+    private sealed class AdversarialCompanyContext : ICompanyContext
+    {
+        public bool IsResolved { get; private set; }
+        public Guid CompanyId { get; private set; }
+        public void Set(Guid companyId) { CompanyId = companyId; IsResolved = true; }
+    }
+
 }

@@ -117,7 +117,7 @@ public sealed class PurchaseFutureSupplyReadPortTests
         Assert.Equal(
             ["CompanyId", "OrderId", "LineId", "LineNo", "SupplierPartyId", "CompanyAccountId", "ProductId", "ProductVersion", "UnitId",
                 "Kind", "CommittedText", "AcceptedText", "CancelledText", "ClosedText", "AllocatableText", "SalesSourceOrderId", "SalesSourceOrderLineId",
-                "ObservedOrderVersion"],
+                "ObservedOrderVersion", "DefinitiveReturnedText"],
             names);
         string[] barred = ["price", "amount", "discount", "currency", "payment", "money", "tax", "cost"];
         Assert.DoesNotContain(names, name => barred.Any(word => name.Contains(word, StringComparison.OrdinalIgnoreCase)));
