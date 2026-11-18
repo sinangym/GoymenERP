@@ -17,14 +17,43 @@ public sealed partial class LocalAccountSessionApiTests
     {
         await using var factory = new LocalAccountApiFactory();
         using var client = factory.CreateClient();
+        // KIM-D31: pass the real antiforgery boundary before testing the separate session requirement.
         using var response = path.EndsWith("/two-factor", StringComparison.Ordinal)
             ? await client.GetAsync(path)
-            : await client.PostAsJsonAsync(path, new LocalTwoFactorProofV1("1", "SYNTHETIC", "123456", null));
+            : await PostWithTokenAsync(client, path, await TokenAsync(client),
+                JsonContent.Create(new LocalTwoFactorProofV1("1", "SYNTHETIC", "123456", null)));
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         var text = await response.Content.ReadAsStringAsync();
         Assert.DoesNotContain("secretKey", text, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("recoveryCodes", text, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(SetCookies(response));
+    }
+
+    [Theory]
+    [InlineData("/api/v1/identity/session/two-factor/enrollment")]
+    [InlineData("/api/v1/identity/session/two-factor/enable")]
+    [InlineData("/api/v1/identity/session/two-factor/disable")]
+    [InlineData("/api/v1/identity/session/two-factor/recovery-codes")]
+    public async Task Anonymous_two_factor_writes_reject_missing_or_forged_antiforgery_before_disclosing_material(string path)
+    {
+        await using var factory = new LocalAccountApiFactory();
+        using var client = factory.CreateClient();
+        var proof = new LocalTwoFactorProofV1("1", "SYNTHETIC", "123456", null);
+        using var missing = await client.PostAsJsonAsync(path, proof);
+        await AssertAntiforgeryRefusalAsync(missing);
+
+        // A real anonymous antiforgery cookie is present; a fabricated request token still cannot pass.
+        await TokenAsync(client);
+        using var forged = await PostWithTokenAsync(client, path, "SENTETIK-forged-token", JsonContent.Create(proof));
+        await AssertAntiforgeryRefusalAsync(forged);
+        foreach (var response in new[] { missing, forged })
+        {
+            var text = await response.Content.ReadAsStringAsync();
+            Assert.DoesNotContain("secretKey", text, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("recoveryCodes", text, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(proof.CurrentPassword, text, StringComparison.Ordinal);
+            Assert.Empty(SetCookies(response));
+        }
     }
 
     [Fact]
