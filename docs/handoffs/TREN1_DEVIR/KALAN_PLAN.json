@@ -2,7 +2,7 @@
  "meta": {
   "tarih": "2026-11-18",
   "tren_dali": "claude/tren-1",
-  "kod_head": "c6168c8e23afa323af003dc79fdab3c9fbc00872",
+  "kod_head": "25b7477b0e93de39ac8d5de08f508a69fb2eb996",
   "durum_sozlugu": {
    "PARTIAL": "kapsamın bir kısmı kaynakta; kalan kısım son W<n> ekip raporunda",
    "PLANNED/READY": "başlanmadı",
@@ -49,7 +49,7 @@
   "partial": 0,
   "remaining_not_started": 0,
   "last_wave": 8,
-  "progress_meaning": "DONE yalnız kaynak kapsamıdır. 18 UnitTests projesinin her biri kendi son koşusunda yeşil; aynı final head tam koşumu değildir. İlk tam frontend 9813 test/242FAIL, düzeltmeler sürer; PDF/RCSI/recovery kapanışı W8_RUNTIME_KAPANIS_DURUMU.md içindedir. Gerçek SQL/browser/CI ve K3 kabulü ayrıdır; production değildir.",
+  "progress_meaning": "174/174 kaynak DONE (%100), W8 son paket. Yerel modül grubu 13325/13325, mimari 405/405, frontend 9854/9854 ve OpenAPI 10/10 PASS; gerçek SQL, browser, final CI ve bağımsız K3 kabulü ayrıdır. Production değildir.",
   "w6_source_done_ids": [
    "KIM-S13",
    "KIM-S18",
@@ -282,7 +282,7 @@
    "STK-SC36-a"
   ],
   "published_train_done_at_last_checkpoint": 135,
-  "w8_status": "SOURCE_DONE:174/174 fixed slices. Full frontend PASS; recovery/release frozen suites PASS and final source producer0. Combined backend, architecture, train FF, CI and K3 remain pending. No W9 or new scope.",
+  "w8_status": "SOURCE_DONE_LOCAL_VALIDATION_PASS_TRAIN_PUBLICATION_PENDING_CI_K3_PENDING",
   "w8_last_combined_source_build": {
    "head": "146f1ec79a30ca9a55d5fa78b119abc13e4bec75",
    "source_exit": 0,
@@ -357,13 +357,43 @@
     "failed": 5,
     "skipped": 0,
     "fix_head": "c6168c8e23afa323af003dc79fdab3c9fbc00872",
-    "retry": "QUEUED"
+    "retry": "PASS_405_AT_25b7477b0"
    },
-   "combined_backend": "QUEUED",
+   "combined_backend": {
+    "head": "e41360340dc3be1bca13a66c48ade37aaa537bda",
+    "projects": 20,
+    "tests": 13325,
+    "passed": 13325,
+    "failed": 0,
+    "skipped": 0,
+    "native_exit": 0,
+    "proof": "artifacts/local-final-e41360340/proofs/modules.json"
+   },
    "real_sql": "NOT_CONFIGURED",
    "ci": "QUEUED",
    "independent_K3": "QUEUED",
-   "report": "durum/W8_RUNTIME_KAPANIS_DURUMU.md"
+   "report": "durum/W8_RUNTIME_KAPANIS_DURUMU.md",
+   "architecture_final": {
+    "head": "25b7477b0e93de39ac8d5de08f508a69fb2eb996",
+    "tests": 405,
+    "passed": 405,
+    "failed": 0,
+    "skipped": 0,
+    "native_exit": 0,
+    "proof": "artifacts/local-final-25b7477b0/proofs/architecture.json"
+   },
+   "openapi_final": {
+    "head": "25b7477b0e93de39ac8d5de08f508a69fb2eb996",
+    "build_exit": 0,
+    "drift_exit": 0,
+    "tests": 10,
+    "passed": 10,
+    "failed": 0,
+    "skipped": 0,
+    "native_exit": 0,
+    "sha256": "432c013a9dd5b992d91536c89aca1ab8805563524dc1b9cb5238a84bbb71056a",
+    "bytes": 9746060
+   }
   }
  },
  "teams": [

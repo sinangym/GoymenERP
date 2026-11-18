@@ -1,8 +1,8 @@
-# TREN-1 W8 — devam eden son kaynak paketi
+# TREN-1 W8 — sabit kapsam kaynak ve yerel doğrulama kapanışı
 
-W8 sürüyor; yeni dalga açılmadı. Son yayımlanmış ana plan **135/174 DONE (%77,6)**,
-39 açık dilimdir. Aşağıdaki birleşimler kaynak checkpoint'idir; eksik gerçek owner
-bağlantısı veya dilim kapsamı yalnız derleme geçtiği için DONE yapılmaz.
+174/174 dilim kaynakta tamamlandı (%100). W8 son pakettir; yeni dalga açılmaz.
+Aşağıdaki ekip checkpoint kayıtları tarihçedir. Final yerel sonuçlar son bölümde,
+gerçek SQL/CI/browser/K3 kabulü ayrı belirtilir.
 
 ## Birleştirilen ekip kaynakları
 
@@ -446,3 +446,22 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
 Plan üstü sevk `ad3e0caeb` ve sayım maliyeti `49bd8c9ea` no-ff/çakışmasız entegrasyonla donuk `146f1ec79a30ca9a55d5fa78b119abc13e4bec75` içinde. API,22 test projesi ve TSC kaynak derlemeleri exit0/0 uyarı-hata. Eski Manufacturing.Unit restore grafiği hatası korundu; sabit sürümlü restore sonrası aynı kaynakta düzeldi, test/kod silinmedi. Güncel main3c1b ancestor exit0. KALAN_PLAN174 DONE/0PARTIAL/0başlanmamış, W8de39/39 kaynak kapanışı; W9 yok.
 
 Ayrıntı `W8_KAYNAK_TAMAMLANDI.md`. Son pin/envanter/hafif kontroller, tren fast-forward, runtime/SQL/browser/CI ve K3 kapıları ayrıca bekler. Yerel kaynak yüzdesi production veya kullanılabilirlik değildir. Yeni iş kapsamı açılmaz.
+
+## Son yerel kapanış sonucu
+
+Sabit kapsam **174/174 DONE (%100 kaynak)**; W8 son pakettir, yeni dalga yoktur.
+
+| Doğrulama | Kaynak ve gerçek sonuç |
+|---|---|
+| Tam modül grubu | `e41360340dc3be1bca13a66c48ade37aaa537bda`: mevcut grup doğrulayıcısı, 20 proje, **13.325/13.325 PASS, 0 FAIL, 0 skip**, exit0. 18 UnitTests toplamı 13.171; PDF 82 ve RCSI CLI 72 bu toplamın içindedir. |
+| Tam mimari grup | `25b7477b0e93de39ac8d5de08f508a69fb2eb996`: **405/405 PASS, 0 FAIL, 0 skip**, exit0. |
+| Tam frontend | `c6168c8e23afa323af003dc79fdab3c9fbc00872`: **614 dosya, 9.854/9.854 PASS, 0 FAIL, 0 skip**; lint/build exit0. Sonraki değişiklikler frontend kaynağını değiştirmedi. |
+| OpenAPI / Integration | `25b7477b0e93de39ac8d5de08f508a69fb2eb996`: Release build exit0, 0 hata/uyarı; gerçek üretim ve byte drift exit0; **10/10 PASS, 0 skip**. 9.746.060 byte, SHA256 `432c013a9dd5b992d91536c89aca1ab8805563524dc1b9cb5238a84bbb71056a`. |
+| Recovery / release | Donuk `3123ef92f`: 36/36 ve 16/16 PASS, skip0. Son gerçek üretici `321201b2b` exit0; 19 context, 339 migration, 66 durable store. Sonraki değişiklikler backend/build-control girdisini değiştirmedi; bu ayrım final CI exact-head kanıtının yerine geçmez. |
+| Hafif kontroller | Backlog 64/64; bootstrap 56 testte mevcut 9 Windows koşullu skip; backend-group 28/28; RCSI envanter 48/48; OpenAPI drift 16 testte mevcut 2 koşullu skip. Native exit0; skip sayıları gizlenmez. |
+| Bekleyen kabul | Yerel gerçek SQL NOT_CONFIGURED; tam API/gerçek SQL mevcut final CI'da koşacak. Tarayıcı/E2E, iki bağımsız exact-head K3 review ve genel analiz ayrı kapılardır. |
+
+İlk başarısız koşumların log/exit/TRX kayıtları ve önceki tarihsel bölümler korunur.
+`artifacts/local-final-e41360340/proofs/modules.json` ve
+`artifacts/local-final-25b7477b0/proofs/architecture.json` yerel native grup kanıtlarıdır;
+bunlar GitHub CI artifact'ı olarak sunulmaz. Grant/rol, production, OPEN veya Finance STOP değişmedi.

@@ -793,3 +793,14 @@ Dokuz vaka ve bütün giriş/assertion'lar korunur; artık gereksiz tek deferred
 metadata istisnası kaldırılır (2→1).29 verifier fonksiyonu aynı; keşif/TRX/skip
 kuralları değişmez. Gerçek9/9 hedef kimliği ve28/28 Python testi geçti; tam grup
 tekrarı ayrı alınır. [Mekanik karşılaştırma ve sınırlar](W8_ARCHITECTURE_KAPANIS.md).
+
+## Son mimari sayım düzeltmesi ve yerel kapanış
+
+`25b7477b0` yalnız mimari testteki ek tasarım factory sayımını, zaten exact-path
+kayıtlı ProductPriceList factory ile hizalar. Dışarıdan yetkisiz factory çağırma
+guard'ına aynı sınıf eklendi; yanlış constructor/kopya path ve dış çağrı negatif
+kanıtları korunur/güçlenir. Hedefli 6/6 ve tam mimari 405/405 PASS, skip0.
+Tam modül 13.325/13.325, frontend 9.854/9.854, OpenAPI 10/10 PASS;
+kaynak SHA ve sınırlar W8_RUNTIME_KAPANIS_DURUMU.md son bölümündedir.
+Eski 12 bypass + 5 context ve yeni gerekçeli girdiler bağımsız K3 review bekler;
+yerel guard başarısı bağımsız onay değildir.
