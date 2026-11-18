@@ -22,7 +22,7 @@ public sealed class InventoryTransferReceiptDocuments(InventoryDbContext databas
     IAuditTransactionWriterV1 auditWriter, InventoryKilogramScale scale, TimeProvider clock,
     IInventoryTransferReceiptDocumentCursorV1? cursors = null) : IInventoryTransferReceiptDocumentsV1
 {
-    internal const string CreateCommand = "inventory.transfer.receipt-document.create.v1";
+    internal const string CreateDocumentCommand = "inventory.transfer.receipt-document.create.v1";
     internal const string FinalizeCommand = "inventory.transfer.receipt-document.finalize.v1";
     internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, RespectRequiredConstructorParameters = true };
@@ -68,7 +68,7 @@ public sealed class InventoryTransferReceiptDocuments(InventoryDbContext databas
         InventoryCommandMetadata metadata, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return Write(CreateCommand, request.DocumentId, request, metadata, async scope =>
+        return Write(CreateDocumentCommand, request.DocumentId, request, metadata, async scope =>
         {
             if (request.DocumentId == Guid.Empty || request.TransferId == Guid.Empty || !Version(request.ExpectedTransferVersion, out var expected)
                 || request.ReceivedAtUtc == default || request.ReceivedAtUtc.Offset != TimeSpan.Zero || request.Lines is null
@@ -168,7 +168,7 @@ public sealed class InventoryTransferReceiptDocuments(InventoryDbContext databas
                 ActorId = scope.ActorId, PayloadHash = hash, TargetId = documentId, ResultJson = JsonSerializer.Serialize(result, Json),
                 CorrelationId = metadata.CorrelationId, RecordedAtUtc = clock.GetUtcNow() });
             audit.Enqueue(new AuditEventDraft(scope.CompanyId, command, "Inventory.TransferReceiptDocument", documentId.ToString("D"),
-                command == CreateCommand ? "Create" : "Finalize", command == CreateCommand ? null : 1, command == CreateCommand ? 1 : 2,
+                command == CreateDocumentCommand ? "Create" : "Finalize", command == CreateDocumentCommand ? null : 1, command == CreateDocumentCommand ? 1 : 2,
                 AuditActorTypes.User, scope.ActorId, InventoryPermissionManifestV1.StockTransferWrite, grant.RoleCodes,
                 staged.Before is null ? "{}" : JsonSerializer.Serialize(staged.Before, Json), JsonSerializer.Serialize(result, Json), "Transfer hedef kabul belgesi sürümü kaydedildi", null,
                 AuditAiInvolvement.None, null, metadata.SourceChannel, metadata.ClientIpAddress, metadata.UserAgent,

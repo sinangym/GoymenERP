@@ -44,3 +44,12 @@ Bu çalışma yazara teknik destektir; bağımsız exact-head inceleme veya K3 o
 - Guard/allowlist, WorkDbContext, migration/model, HTTP sözleşmesi, grant/rol/Critical,
   production ve Finance STOP değiştirilmedi. Entegrasyon sahibi değişen backend
   fingerprint/recovery pinlerini gerçek üreticilerle yeniden üretmelidir.
+
+## Komut adı tanımlayıcısı düzeltmesi
+
+`InventoryTransferReceiptDocuments.CreateCommand` SQL API çağrısı değildir; mevcut
+`inventory.transfer.receipt-document.create.v1` iş komutu adının sabitidir. Sabit ve aynı
+kaynak dosyadaki dört kullanım `CreateDocumentCommand` olarak açıkça adlandırıldı.
+Kaynak/test ağaçlarında sınıf üzerinden dış referans bulunmadı. Komut metni, çağrı sırası,
+idempotency, audit ve HTTP sözleşmesi değişmedi; SQL allowlist izni eklenmedi.
+`git diff --check` exit 0; .NET/Node/runtime/SQL NOT_RUN, entegrasyon doğrulaması bekliyor.
