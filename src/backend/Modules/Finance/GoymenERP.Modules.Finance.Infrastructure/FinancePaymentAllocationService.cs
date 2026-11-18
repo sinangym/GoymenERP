@@ -88,10 +88,12 @@ public sealed class FinancePaymentAllocationService(
                 openItem.OutstandingAmountText, true, cancellationToken);
             var sourceOwner = sourcePositions.Select(request.AllocationPartyId, request.AllocationAccountId);
             var itemOwner = itemPositions.Select(request.AllocationPartyId, request.AllocationAccountId);
-            FinanceAllocationPositions.RequireAvailable(sourceOwner, normalizedRequest.Amount);
-            FinanceAllocationPositions.RequireAvailable(itemOwner, normalizedRequest.Amount);
+            // Preserve the source/open-item refusal contract before checking narrower beneficiary capacity.
+            // This policy is pure; both owner positions are still checked before any balance is spent.
             mutation = FinanceAllocationPolicy.CreatePayment(payment, openItem, paymentState, normalizedRequest,
                 sourceOwner.CompanyAccountId, itemOwner.CompanyAccountId);
+            FinanceAllocationPositions.RequireAvailable(sourceOwner, normalizedRequest.Amount);
+            FinanceAllocationPositions.RequireAvailable(itemOwner, normalizedRequest.Amount);
             sourcePositions.Spend(sourceOwner, normalizedRequest.Amount);
             itemPositions.Spend(itemOwner, normalizedRequest.Amount);
         }
