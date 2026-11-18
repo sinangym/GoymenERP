@@ -616,7 +616,7 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_PartyIdentityRevisions_Sequence", "[Sequence] >= 1");
 
-                            t.HasCheckConstraint("CK_PartyIdentityRevisions_Value", "LEN([Value]) > 0 AND ([Attribute] <> 1 OR (LEN([Value]) IN (10, 11) AND DATALENGTH([Value]) = LEN([Value]) AND [Value] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9]%'))");
+                            t.HasCheckConstraint("CK_PartyIdentityRevisions_Value", "LEN([Value]) > 0 AND ([Attribute] <> 1 OR (LEN([Value]) IN (10, 11) AND DATALENGTH([Value]) = 2 * LEN([Value]) AND [Value] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9]%'))");
                         });
                 });
 
