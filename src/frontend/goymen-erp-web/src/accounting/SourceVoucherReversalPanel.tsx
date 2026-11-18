@@ -56,7 +56,7 @@ export function SourceVoucherReversalPanel({ row, namespace, onFrozenChange, onC
   const proposal = row.reversalProposal ?? (outcome?.type === 'applied' ? outcome.value.reversalProposal : null)
   return <section aria-labelledby="source-reversal-title"><h3 id="source-reversal-title">{T.reversalTitle}</h3>
     <p>{T.reversal}</p>
-    {outcome?.type === 'unknown' ? <div role="alert"><p>{T.unknown}</p><button disabled={sending || attempt === null || !canPropose}
+    {outcome?.type === 'unknown' ? <div role="alert"><p>{T.unknown}</p><button type="button" disabled={sending || attempt === null || !canPropose}
       onClick={() => attempt !== null && void send(attempt, true)}>{T.resend}</button></div> : null}
     {outcome?.type === 'refused' ? <p role="alert">{outcome.code === 'source_voucher_reversal_period_not_open' ? T.reversalPeriodRefused : T.refused} ({outcome.status})</p> : null}
     {outcome?.type === 'applied' ? <p role="status">{T.reversalDone}</p> : null}

@@ -172,8 +172,8 @@ function ServiceDetail({ scope, id }: { readonly scope: Scope; readonly id: stri
     {value !== null && <><p>{T.status[value.status]} · {value.isOpen ? T.open : value.status === 'Approved' ? T.complete : ''}</p>
       {hasCapability(shell, ADDITIONAL_COST_CAPABILITY.read) && <Link to={additionalCostPath('ServiceOrder', value.orderId)}>{ADDITIONAL_COST_TEXT.title}</Link>}
       {value.kind === 'OwnMaterialSubcontract' && <p>{T.physical}</p>}
-      <table><caption>{T.service}</caption><thead><tr><th>{T.serviceType}</th><th>{T.quantity}</th><th>{T.accepted}</th><th>{T.amount}</th><th>{T.tax}</th></tr></thead>
-        <tbody>{value.lines.map(line => <tr key={line.lineId}><th>{line.serviceName}</th><td>{line.quantity} {line.unitCode}</td><td>{line.acceptedQuantity}</td>
+      <table><caption>{T.service}</caption><thead><tr><th scope="col">{T.serviceType}</th><th scope="col">{T.quantity}</th><th scope="col">{T.accepted}</th><th scope="col">{T.amount}</th><th scope="col">{T.tax}</th></tr></thead>
+        <tbody>{value.lines.map(line => <tr key={line.lineId}><th scope="row">{line.serviceName}</th><td>{line.quantity} {line.unitCode}</td><td>{line.acceptedQuantity}</td>
           <td>{value.priceDisclosure === 'Withheld' ? T.withheld : line.amount === null ? T.noPrice : `${line.amount} ${value.currencyCode}`}</td>
           <td>{line.tax === undefined ? T.taxInInvoice : <>{T.vat}: {line.tax.vatPercent ?? line.tax.exemptionCode} · {T.withholding}: {line.tax.withholdingPercent ?? T.noWithholding} {line.tax.withholdingCode}</>}</td></tr>)}</tbody></table>
       {value.status === 'Draft' && hasCapability(shell, C.approve) && <ServiceAction scope={scope} order={value} kind="approve" changed={changed} />}

@@ -121,8 +121,8 @@ function Workspace({ onPlanned, shell, namespace, companyId, actorId }: Props & 
       ? <StateBlock subject={T.labels} state={classifyOutcome(labels.data ?? { type: 'malformed' })} onRetry={frozen ? undefined : refresh} />
       : sourceRows.items.length === 0 ? <p role="status">{T.noLabels}</p> : <>
         {sourceRows.searchWindowFull ? <p role="status">{T.windowFull}</p> : null}
-        <div className={styles.tableWrap}><table><caption>{T.labels}</caption><thead><tr><th>{T.select}</th><th>{T.label}</th><th>{T.physical}</th>
-          <th>{T.blocked}</th><th>{T.allocated}</th><th>{T.version}</th><th>{T.source}</th></tr></thead><tbody>{sourceRows.items.map((row) => <tr key={row.labelId}>
+        <div className={styles.tableWrap}><table><caption>{T.labels}</caption><thead><tr><th scope="col">{T.select}</th><th scope="col">{T.label}</th><th scope="col">{T.physical}</th>
+          <th scope="col">{T.blocked}</th><th scope="col">{T.allocated}</th><th scope="col">{T.version}</th><th scope="col">{T.source}</th></tr></thead><tbody>{sourceRows.items.map((row) => <tr key={row.labelId}>
             <td><input type="checkbox" aria-label={`${T.select}: ${row.labelCode}`} checked={selected.some((current) => current.labelId === row.labelId)}
               disabled={frozen || !positiveTransferPlanKg(row.physicalKg)} onChange={(event) => select(row, event.currentTarget.checked)} /></td>
             <td>{row.labelCode}<br />{row.documentStatus === 'Complete' ? T.complete : T.documentsPending}</td><td>{row.physicalKg}</td><td>{row.blockedPhysicalKg}</td>

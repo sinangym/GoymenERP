@@ -14,13 +14,13 @@ export async function post<T>(company: string, path: string, payload: unknown, k
     let body: unknown = null
     try { body = await response.json() } catch { /* A successful malformed answer stays unresolved. */ }
     if (response.status >= 500) return { type: 'unknown', reason: 'service-unavailable', status: response.status }
-    if (!response.ok) {
+    if (response.status !== expectedStatus) {
+      if (response.status >= 200 && response.status < 300) return { type: 'unknown', reason: 'malformed' }
       const detail = physicalStockRefusalDetail(body, response.status)
       return { type: 'failed', status: response.status, isReplay: response.headers.get('Idempotency-Replayed') === 'true',
         code: typeof body === 'object' && body !== null && 'code' in body && typeof body.code === 'string' ? body.code : null,
         ...(detail === null ? {} : { detail }) }
     }
-    if (response.status !== expectedStatus) return { type: 'unknown', reason: 'malformed' }
     const decoded = decode(body, response.headers.get('Idempotency-Replayed') === 'true')
     return decoded === null ? { type: 'unknown', reason: 'malformed' } : { type: 'applied', response: decoded }
   } catch { return { type: 'unknown', reason: navigator.onLine ? 'network-error' : 'offline' } }

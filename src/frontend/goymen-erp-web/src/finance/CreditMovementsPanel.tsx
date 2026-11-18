@@ -43,7 +43,7 @@ export function CreditMovementsPanel({ account, namespace }: { readonly account:
   const state = (query.isPending ? { kind: 'initial-loading' } : classifyOutcome(query.data ?? { type: 'malformed' })) as RemoteViewState<readonly CreditMovement[]>
   return <section aria-labelledby={`credit-actual-${account.id}`}><h3 id={`credit-actual-${account.id}`}>{T.title}</h3><p>{T.intro}</p>
     <CreditLimitsPanel account={account} namespace={namespace} refreshVersion={query.dataUpdatedAt} />
-    {hasCapability(shell, 'finance.credits.propose') ? <button disabled={frozen} onClick={() => { setEditing(value => !value); setOriginal(null) }}>{editing ? T.cancel : T.add}</button> : null}
+    {hasCapability(shell, 'finance.credits.propose') ? <button type="button" disabled={frozen} onClick={() => { setEditing(value => !value); setOriginal(null) }}>{editing ? T.cancel : T.add}</button> : null}
     {editing ? <MovementForm key={original?.id ?? 'new'} account={account} namespace={namespace} original={original} frozen={frozen} submit={request => void send({ key: crypto.randomUUID(), operation: 'propose', request })} /> : null}
     {state.kind !== 'ready' ? <StateBlock state={state} subject={T.title} onRetry={() => void query.refetch()} /> : state.data.length === 0 ? <p>{T.empty}</p> : state.data.map(row => <article key={row.id}>
       <h4>{T.kinds[row.source.kind]} · {row.source.sourceDocument.reference} · {T.statuses[row.status]}</h4>
@@ -52,14 +52,14 @@ export function CreditMovementsPanel({ account, namespace }: { readonly account:
       {row.source.bankEffect ? <p>{T.bankAmount}: {row.source.bankEffect.amount} · {row.source.bankEffect.sourceReference}</p> : null}
       {row.reversedByMovementId ? <p>{T.reversal}</p> : null}
       {row.status === 'Approved' && row.source.kind === 'OpeningBalance' && row.reversedByMovementId === null && hasCapability(shell, 'finance.credits.propose')
-        ? <button disabled={frozen} onClick={() => { setOriginal(row); setEditing(true) }}>{T.correction}</button> : null}
+        ? <button type="button" disabled={frozen} onClick={() => { setOriginal(row); setEditing(true) }}>{T.correction}</button> : null}
       {row.status === 'Proposed' && hasCapability(shell, 'finance.credits.approve') ? row.isOwnProposal ? <p>{T.own}</p> : <fieldset disabled={frozen}>
-        <button onClick={() => void send({ key: crypto.randomUUID(), operation: 'decide', id: row.id, request: { expectedVersion: row.version, approve: true, reason: null } })}>{T.approve}</button>
+        <button type="button" onClick={() => void send({ key: crypto.randomUUID(), operation: 'decide', id: row.id, request: { expectedVersion: row.version, approve: true, reason: null } })}>{T.approve}</button>
         <label>{T.reason}<input value={rejectReason} maxLength={1000} onChange={event => setRejectReason(event.target.value)} /></label>
-        <button disabled={rejectReason.trim() === ''} onClick={() => void send({ key: crypto.randomUUID(), operation: 'decide', id: row.id, request: { expectedVersion: row.version, approve: false, reason: rejectReason.trim() } })}>{T.reject}</button>
+        <button type="button" disabled={rejectReason.trim() === ''} onClick={() => void send({ key: crypto.randomUUID(), operation: 'decide', id: row.id, request: { expectedVersion: row.version, approve: false, reason: rejectReason.trim() } })}>{T.reject}</button>
       </fieldset> : null}
     </article>)}
-    {outcome?.type === 'unknown' ? <div role="alert"><p>{T.unknown}</p><button disabled={sending || attempt === null} onClick={() => attempt && void send(attempt, true)}>{T.retry}</button></div> : null}
+    {outcome?.type === 'unknown' ? <div role="alert"><p>{T.unknown}</p><button type="button" disabled={sending || attempt === null} onClick={() => attempt && void send(attempt, true)}>{T.retry}</button></div> : null}
     {outcome?.type === 'refused' ? <p role="alert">{T.refused} ({outcome.status})</p> : null}
     {outcome?.type === 'applied' ? <p role="status">{T.done}</p> : null}
     <CreditAccountingProposalsPanel company={company} accountId={account.id} namespace={namespace} />

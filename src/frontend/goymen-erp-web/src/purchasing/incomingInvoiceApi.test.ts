@@ -34,4 +34,9 @@ describe('Incoming invoice transport (synthetic, NOT_ENV)', () => {
     expect(fetch.mock.calls[0][0]).toContain('officialNumber=A%26B')
     expect(fetch.mock.calls[0][1].cache).toBe('no-store')
   })
+  it.each([201, 202, 204])('does not accept a source invoice under unexpected HTTP %s', async status => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(status === 204 ? null : JSON.stringify(incomingInvoiceFixture()), { status })))
+    expect(await fetchIncomingInvoice(id(2), id(1), new AbortController().signal)).toEqual({ type: 'malformed' })
+  })
+
 })

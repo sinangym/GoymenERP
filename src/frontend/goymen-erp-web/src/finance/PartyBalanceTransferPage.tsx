@@ -145,7 +145,7 @@ function TransferScreen({ bound, entry }: { readonly bound: NonNullable<ReturnTy
     {selection === null ? null : <ReadStatus outcome={preview.data} loading={preview.isFetching} />}
     {snapshot === null ? null : <>
       <p>{snapshot.ownerProof.predecessorCode} — {snapshot.ownerProof.predecessorName} → {snapshot.ownerProof.successorCode} — {snapshot.ownerProof.successorName}</p>
-      <WithCurrencyCodes>{(codes) => <table><caption>{T.balance}</caption><thead><tr><th>{T.currency}</th><th>{T.balance}</th><th>{T.receivable}</th><th>{T.payable}</th></tr></thead>
+      <WithCurrencyCodes>{(codes) => <table><caption>{T.balance}</caption><thead><tr><th scope="col">{T.currency}</th><th scope="col">{T.balance}</th><th scope="col">{T.receivable}</th><th scope="col">{T.payable}</th></tr></thead>
         <tbody>{snapshot.currencies.map((item) => <tr key={item.currencyId}><td>{currencyShown(item.currencyId, codes)}</td>
           <td>{T.sides[item.side]} {formatDecimalTextTr(item.amount)}</td><td>{formatDecimalTextTr(item.openReceivable)}</td><td>{formatDecimalTextTr(item.openPayable)}</td></tr>)}</tbody></table>}</WithCurrencyCodes>
       {!snapshot.canRecord ? <p>{T.empty}</p> : null}

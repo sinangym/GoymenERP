@@ -35,3 +35,18 @@ Ortak test kurulumu `localStorage` ve `sessionStorage` adlarını Vitest'in zate
 - Etiket PDF fixture'ı mevcut yerel Node Blob uygulamasından gerçek sentetik bayt üretir; JSDOM'un eksik `Blob.text()` desteği başarı kanıtı yerine geçmez. Başarılı gerçek bayt, bozuk PDF'nin `malformed-response` olması ve 503 ayrımı korunur. Global Blob veya üretim kodu değiştirilmedi.
 
 Bu eklerin kaynak kontrolleri `git diff --check` exit 0; TSC, Vitest ve tarayıcı henüz `NOT_RUN`. İlk koşunun 64 dosya/242 test başarısızlığı, yeni kaynak doğrulanmadan kapanmış sayılmaz.
+
+## Hedef tekrar sonrası üç dar kapanış
+
+Koordinatörün `edab5c3c9` birleşik kaynağındaki hedef koşusu: 70 dosyada 66 PASS / 4 FAIL; 1185 testte 1181 PASS / 4 FAIL. TSC exit 0, RCSI 72/72 PASS. Bu sonuç önceki düzeltmeleri kapsar; aşağıdaki yeni kaynağın henüz çalışma kanıtı değildir. Native ilk hata ve tekrar logları korunur. Dördüncü hata olan üretim planı fixture'ı ayrı yazarın kapsamındadır.
+
+- Cari uyarısındaki aynı metin hem hata özeti hem checkbox'a bağlı alan hatasıdır. Test artık exact `role=alert` metnini, checkbox'ın `aria-invalid` durumunu ve `aria-describedby` ile bağlı exact alan metnini ayrı doğrular; onay kutusu işaretlenmeden sıfır istek ve sonraki exact gövde kontrolleri değişmez.
+- Oturum testinin ilk `role=status` sorgusu `StateBlock` yükleme düğümünü erken yakalıyordu. `useShellOrchestrator` içindeki gerçek `hadSession` ve `LoginPage` notice davranışı değişmedi; test önce exact süresi dolmuş oturum başlığını, sonra onun status/expired niteliğini bekler. Yeniden girişle toparlanma ve giriş sayısı korunur. Bu hata bir depolama bayrağının tüketilmesi değildi.
+- `th-scope` native diff'indeki 14 yeni dosyanın 122 başlığı kaynak bağlamıyla tamamlandı: 120 sütun başlığı, ek masraf/hizmet satır adları için iki satır başlığı. `listFormAudit` kodu, bütün kural testleri ve baseline aynı kaldı.
+- Aynı statik sözleşmenin sonraki kuralları kaynak üzerinden birlikte incelendi. Beş Accounting/Finance panelindeki 14 komut düğmesine `type=button` eklendi; gerçek submit düğmeleri korunur. Beş Inventory/Organization sayfasındaki sekiz iç `main` alanı section oldu; ana sayfa landmark'ının sahibi yine shell'dir.
+- Altı Purchasing HTTP okuyucusundaki genel başarı bayrağı yerine mevcut exact 200 veya 201 sözleşmesi açık kontrol edilir. Önceden var olan beklenmedik 2xx/malformed, 4xx ret, 409 yarış ve 5xx belirsiz işlem ayrımları korunur. Geçerli gövde olsa bile yanlış 201/202/204 yanıtını başarı saymayan kaynak testleri eklendi; shared receipt transportta 200/201 birbirinin yerine kabul edilmez.
+- `IdentityEndpoints` giriş ve çıkışta yalnız 204 NoContent tanımlar. Antiforgery token yenileme çiti bu exact durumla hizalandı; iki uç için gerçek 204 sonrası yeni token, 200/201/202/401 sonrası aynı token ve yanıtın değişmeden iletilmesi kaynak testleri eklendi. Mevcut antiforgery tek tekrar, gövde ve yetki davranışları değişmedi.
+
+Yeni number-input veya local-storage kaynağı yoktur; yorumlardaki storage adları denetim istisnası değildir ve koda dönüştürülmedi. Eski nested-main baseline girdileri değiştirilmedi. Üretimdeki `PaintSelectionEditor` tam HTTP durum kontrolü koordinatörün ayrı değişikliğidir. Buradaki aday taraması salt kaynak okumasıdır; gerçek TypeScript denetleyicisinin koşması yerine PASS iddia edilmez.
+
+Bu takipte yalnız kaynak düzenleme ve `git diff --check` (exit 0) yapıldı; .NET/Node/TSC/Vitest/SQL/tarayıcı/CI başlatılmadı. Hedef doğrulama listesi: CariAccountStatusWarning, AppShellLogin, listFormAudit, antiforgery ve altı Purchasing API test dosyası; ardından koordinatörün tam frontend koşusu. Yeni test sonucu `NOT_RUN`; yeni dalga, iş politikası, izin, grant veya baseline genişletmesi yoktur.

@@ -92,10 +92,10 @@ function InventoryShortageWarningView({ companyId }: { readonly companyId: strin
   }
 
   if (companyId === null) {
-    return <main className={styles.page}><p role="alert">{TEXT.noCompany}</p></main>
+    return <section className={styles.page}><p role="alert">{TEXT.noCompany}</p></section>
   }
 
-  return <main className={styles.page} data-screen="KLN-D42">
+  return <section className={styles.page} data-screen="KLN-D42">
     <header className={styles.header}>
       <div><p className={styles.eyebrow}>{TEXT.eyebrow}</p><h1>{TEXT.title}</h1></div>
     </header>
@@ -127,7 +127,7 @@ function InventoryShortageWarningView({ companyId }: { readonly companyId: strin
       />
       : null}
     {state.type === 'ready' ? <Warnings data={state.data} onlyWarnings={onlyWarnings} /> : null}
-  </main>
+  </section>
 }
 
 function Warnings({ data, onlyWarnings }: { readonly data: ShortageWarnings; readonly onlyWarnings: boolean }) {

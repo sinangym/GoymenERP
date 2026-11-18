@@ -7,8 +7,8 @@ const base = `${API_BASE}/purchasing/service-orders`
 async function read<T>(company: string, path: string, signal: AbortSignal, decode: (v: unknown) => T | null): Promise<ViewOutcome<T>> {
   try {
     const response = await fetch(path, { headers: purchasingHeaders(company), signal, cache: 'no-store' })
-    if (!response.ok) return { type: 'http', status: response.status }
-    if (response.status !== 200) return { type: 'malformed' }
+    if (response.status !== 200) return response.status >= 200 && response.status < 300
+      ? { type: 'malformed' } : { type: 'http', status: response.status }
     let body: unknown; try { body = await response.json() } catch { return { type: 'malformed' } }
     const value = decode(body); return value === null ? { type: 'malformed' } : { type: 'ok-single', data: value }
   } catch { return signal.aborted ? { type: 'fence-stale' } : { type: navigator.onLine ? 'network-error' : 'offline' } }
@@ -23,7 +23,7 @@ export async function submitServiceOrder(company: string, id: string, action: 'c
     const response = await fetch(path, { method: 'POST', headers: { ...purchasingHeaders(company), 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(payload) })
     let body: unknown = null; try { body = await response.json() } catch { /* Unknown outcomes keep the same request. */ }
     if (response.status >= 500) return { type: 'unknown', reason: 'service-unavailable', status: response.status }
-    if (!response.ok && [400, 401, 403, 404, 409, 415, 422].includes(response.status)) return { type: 'failed', status: response.status,
+    if ([400, 401, 403, 404, 409, 415, 422].includes(response.status)) return { type: 'failed', status: response.status,
       isReplay: response.headers.get('Idempotency-Replayed') === 'true', code: typeof body === 'object' && body !== null && 'code' in body && typeof body.code === 'string' ? body.code : null }
     if (response.status !== 200) return { type: 'unknown', reason: 'malformed' }
     const replay = response.headers.get('Idempotency-Replayed') === 'true', value = decodeServiceReceipt(body, company, id, replay)

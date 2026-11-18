@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSupplierReturn, decideSupplierReturn, reverseReceipt } from './receiptAdjustmentApi'
+import { createSupplierReturn, decideSupplierReturn, reverseReceipt, post } from './receiptAdjustmentApi'
 import type { ReceiptReversalRequest } from './receiptAdjustmentContract'
 
 const id = (n: number) => `${n.toString().padStart(8, '0')}-1111-4111-8111-111111111111`
@@ -77,4 +77,13 @@ describe('Receipt adjustment HTTP consumer, synthetic NOT_ENV', () => {
     expect(await reverseReceipt(id(1), id(2), id(3), request, 'SENTETIK-key'))
       .toEqual({ type: 'failed', status: 409, code: 'SENTETIK-terminal', isReplay: true })
   })
+  it.each([{ expected: 200, actual: 201 }, { expected: 201, actual: 200 }, { expected: 200, actual: 204 }])
+  ('keeps HTTP $actual unresolved when the receipt contract declares $expected', async ({ expected, actual }) => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(actual === 204 ? null : '{}', { status: actual })))
+    const decode = vi.fn(() => ({ accepted: true }))
+    expect(await post(id(1), '/api/v1/purchasing/SENTETIK', {}, 'same-key', expected, decode))
+      .toEqual({ type: 'unknown', reason: 'malformed' })
+    expect(decode).not.toHaveBeenCalled()
+  })
+
 })

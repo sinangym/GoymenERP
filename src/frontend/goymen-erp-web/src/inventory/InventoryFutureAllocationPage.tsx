@@ -124,13 +124,13 @@ function FutureAllocationView({ company, actor, namespace, order, line, routeEnt
         purchaseOrderId: choice.purchaseOrderId, purchaseOrderLineId: choice.purchaseOrderLineId, unitId: choice.unitId, quantityText: parsed.value, reason } })
     }
   }
-  return <main className={styles.page}>
+  return <section className={styles.page}>
     <nav><Link to={salesDetailPath(order)}>{T.back}</Link></nav><h1>{T.title}</h1><p>{T.explanation}</p>
     {listState.kind !== 'ready' ? <StateBlock state={listState} subject={T.subject} onRetry={() => void list.refetch()} /> : <>
       <p>{T.evaluatedOn}: {listState.data.evaluatedOn}</p>
       {listState.data.windowFull ? <p role="status">{T.window}</p> : null}
       {listState.data.items.length === 0 ? <StateBlock state={{ kind: 'empty-no-data' }} subject={T.subject} /> : <div className={styles.tableWrap}>
-        <table><caption>{T.title}</caption><thead><tr><th>{T.allocation}</th><th>{T.allocated}</th><th>{T.remaining}</th><th>{T.consumed}</th><th>{T.released}</th><th>{T.unit}</th><th>{T.status}</th><th>{T.delivery}</th><th>{T.release}</th></tr></thead>
+        <table><caption>{T.title}</caption><thead><tr><th scope="col">{T.allocation}</th><th scope="col">{T.allocated}</th><th scope="col">{T.remaining}</th><th scope="col">{T.consumed}</th><th scope="col">{T.released}</th><th scope="col">{T.unit}</th><th scope="col">{T.status}</th><th scope="col">{T.delivery}</th><th scope="col">{T.release}</th></tr></thead>
           <tbody>{listState.data.items.map((item, index) => <tr key={item.allocationId}><td>{index + 1}</td><td>{item.allocatedQuantity}</td><td>{item.remainingQuantity}</td>
             <td>{item.consumedQuantity}</td><td>{item.releasedQuantity}</td><td>{listState.data.unitCodes[item.unitId]}</td><td>{T.statuses[item.status]}</td>
             <td>{listState.data.schedules[item.allocationId].status === 'Scheduled'
@@ -164,5 +164,5 @@ function FutureAllocationView({ company, actor, namespace, order, line, routeEnt
     </section>}
     {commandState === null ? null : <StateBlock state={commandState} subject={T.subject} />}
     {message === null ? null : <p role="status">{message}</p>}
-  </main>
+  </section>
 }

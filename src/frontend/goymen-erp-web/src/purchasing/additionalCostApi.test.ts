@@ -31,4 +31,11 @@ describe('expense transport boundary', () => {
     expect(fetcher.mock.calls[0][1].body).toBe(JSON.stringify(request))
     expect(fetcher.mock.calls[0][1].headers['Idempotency-Key']).toBe('SENTETIK-key')
   })
+  it.each([201, 202, 204])('does not accept HTTP %s for the exact 200 source or recording contract', async status => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(status === 204 ? null : JSON.stringify(expenseSource()), { status })))
+    expect(await fetchAdditionalCostSource(id(1), 'GoodsOrder', id(2), new AbortController().signal)).toEqual({ type: 'malformed' })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(status === 204 ? null : JSON.stringify({ cost: expenseFact(), isReplay: false, originalCorrelationId: 'SENTETIK' }), { status })))
+    expect(await recordAdditionalCost(id(1), 'GoodsOrder', request, 'SENTETIK-key')).toEqual({ type: 'unknown', reason: 'malformed' })
+  })
+
 })

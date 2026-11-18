@@ -18,4 +18,12 @@ describe('source invoice admission transport', () => {
       headers: { 'Idempotency-Replayed': 'true', 'Idempotency-Original-Correlation-Id': 'SENTETIK' } })))
     expect((await recordInvoiceImport(id(2), id(1), admissionSnapshot(), 'SENTETIK-key')).type).toBe('applied')
   })
+  it.each([201, 202, 204])('keeps unexpected admission HTTP %s unresolved with the original request', async status => {
+    const snapshot = admissionSnapshot()
+    const fetcher = vi.fn(async () => new Response(status === 204 ? null : JSON.stringify({ ...admissionResult(), originalCorrelationId: 'purchase-import-SENTETIK-key' }), { status }))
+    vi.stubGlobal('fetch', fetcher)
+    expect(await recordInvoiceImport(id(2), id(1), snapshot, 'SENTETIK-key')).toEqual({ type: 'unknown', reason: 'malformed' })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
 })

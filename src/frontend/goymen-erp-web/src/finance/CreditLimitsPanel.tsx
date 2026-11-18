@@ -47,9 +47,9 @@ export function CreditLimitsPanel({ account, namespace, refreshVersion }: { read
       {state.data.items.length === 0 ? <p>{T.empty}</p> : state.data.items.map(row => <article key={row.id}><p>{T.statuses[row.status]} · {row.source.amount} · {row.source.sourceDocument.reference} · {row.source.sourceDocument.revision}</p>
         {row.supersededById ? <p>{T.superseded}</p> : null}
         {row.status === 'Proposed' && hasCapability(shell, 'finance.credits.approve') ? row.isOwnProposal ? <p>{T.own}</p> : <fieldset disabled={frozen}>
-          <button onClick={() => void send({ key: crypto.randomUUID(), operation: 'decide', id: row.id, request: { expectedVersion: row.version, approve: true, reason: null } })}>{T.approve}</button>
+          <button type="button" onClick={() => void send({ key: crypto.randomUUID(), operation: 'decide', id: row.id, request: { expectedVersion: row.version, approve: true, reason: null } })}>{T.approve}</button>
           <label>{T.reason}<input value={rejectReason} maxLength={1000} onChange={event => setRejectReason(event.target.value)} /></label>
-          <button disabled={rejectReason.trim() === ''} onClick={() => void send({ key: crypto.randomUUID(), operation: 'decide', id: row.id, request: { expectedVersion: row.version, approve: false, reason: rejectReason.trim() } })}>{T.reject}</button>
+          <button type="button" disabled={rejectReason.trim() === ''} onClick={() => void send({ key: crypto.randomUUID(), operation: 'decide', id: row.id, request: { expectedVersion: row.version, approve: false, reason: rejectReason.trim() } })}>{T.reject}</button>
         </fieldset> : null}</article>)}
       {hasPending ? <p>{T.pending}</p> : hasCapability(shell, 'finance.credits.propose') ? <form className={styles.form} onSubmit={event => { event.preventDefault(); if (frozen) return
         void send({ key: crypto.randomUUID(), operation: 'propose', request: { creditAccountId: account.id, expectedCreditVersion: account.version, expectedCurrentLimitId: current?.id ?? null,
@@ -62,9 +62,9 @@ export function CreditLimitsPanel({ account, namespace, refreshVersion }: { read
         <label>{T.reason}<textarea required maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} /></label>
         <button type="submit">{T.propose}</button>
       </fieldset></form> : null}
-      <button onClick={() => void query.refetch()} disabled={sending}>{T.refresh}</button>
+      <button type="button" onClick={() => void query.refetch()} disabled={sending}>{T.refresh}</button>
     </>}
-    {outcome?.type === 'unknown' ? <div role="alert"><p>{T.unknown}</p><button disabled={sending || attempt === null} onClick={() => attempt && void send(attempt, true)}>{T.retry}</button></div> : null}
+    {outcome?.type === 'unknown' ? <div role="alert"><p>{T.unknown}</p><button type="button" disabled={sending || attempt === null} onClick={() => attempt && void send(attempt, true)}>{T.retry}</button></div> : null}
     {outcome?.type === 'refused' ? <p role="alert">{T.refused} ({outcome.status})</p> : null}
     {outcome?.type === 'applied' ? <p role="status">{T.done}</p> : null}
   </section>

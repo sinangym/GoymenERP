@@ -151,9 +151,11 @@ describe('AppShell in local-account mode — ID-1F', () => {
     const server: Server = { session: BINDING_1, capabilityStatus: 401, logins: 1, logouts: 0 }
     installServer(server)
     renderShell()
-    const status = await screen.findByRole('status')
-    expect(status.getAttribute('data-notice')).toBe('expired')
-    expect(status.textContent).toContain(LOGIN_TEXT.expiredTitle)
+    // The initial session read also renders a status. Wait for the actual expired-session notice.
+    const expiredTitle = await screen.findByText(LOGIN_TEXT.expiredTitle)
+    const status = expiredTitle.closest('[role="status"]')
+    expect(status?.getAttribute('data-notice')).toBe('expired')
+    expect(status?.textContent).toContain(LOGIN_TEXT.expiredTitle)
 
     server.capabilityStatus = 200
     await signIn()

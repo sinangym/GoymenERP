@@ -7,8 +7,8 @@ const base = `${API_BASE}/purchasing/invoices`
 async function read<T>(company: string, path: string, signal: AbortSignal, decode: (body: unknown) => T | null): Promise<ViewOutcome<T>> {
   try {
     const response = await fetch(path, { headers: purchasingHeaders(company), signal, cache: 'no-store' })
-    if (!response.ok) return { type: 'http', status: response.status }
-    if (response.status !== 200) return { type: 'malformed' }
+    if (response.status !== 200) return response.status >= 200 && response.status < 300
+      ? { type: 'malformed' } : { type: 'http', status: response.status }
     let body: unknown
     try { body = await response.json() } catch { return { type: 'malformed' } }
     const data = decode(body)

@@ -35,10 +35,10 @@ export function NegativeStockAttemptPage() {
   const [search, setSearch] = useSearchParams()
   const companyId = context !== null && shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   if (companyId === null || !isNegativeStockAttemptId(companyId) || shell.sessionInvalid) {
-    return <main className={styles.page}><StateBlock subject={T.subject} state={{ kind: 'no-authorized-company' }} /></main>
+    return <section className={styles.page}><StateBlock subject={T.subject} state={{ kind: 'no-authorized-company' }} /></section>
   }
   if (!hasCapability(shell, INVENTORY_STOCK_POSITIONS_CAPABILITY)) {
-    return <main className={styles.page}><StateBlock subject={T.subject} state={{ kind: 'forbidden' }} /></main>
+    return <section className={styles.page}><StateBlock subject={T.subject} state={{ kind: 'forbidden' }} /></section>
   }
   const namespace = contextKeyString(context!)
   return <AttemptView key={JSON.stringify([namespace, shell.sessionEpoch, shell.routeEntryGeneration, shell.requestFenceGeneration, search.toString()])}
@@ -88,7 +88,7 @@ function AttemptView({ companyId, search, applySearch }: { readonly companyId: s
     else applySearch(next)
   }
   const reload = () => { setState({ type: 'loading' }); void read() }
-  return <main className={styles.page} data-screen="STK-S21">
+  return <section className={styles.page} data-screen="STK-S21">
     <header className={styles.header}><div><p className={styles.eyebrow}>{T.eyebrow}</p><h1>{T.title}</h1></div>
       <Link to={INVENTORY_STOCK_POSITIONS_ROUTE}>{T.back}</Link></header>
     <div className={report.notes}><p>{T.scope}</p><p>{T.retention}</p><p>{T.actorNote}</p></div>
@@ -113,7 +113,7 @@ function AttemptView({ companyId, search, applySearch }: { readonly companyId: s
         {state.data.windowFull ? <p role="note">{T.windowFull}</p> : null}
       </> : null}
     </>}
-  </main>
+  </section>
 }
 function AttemptTable({ items }: { readonly items: readonly NegativeStockAttempt[] }) {
   const columns: readonly DataTableColumn<NegativeStockAttempt>[] = [
