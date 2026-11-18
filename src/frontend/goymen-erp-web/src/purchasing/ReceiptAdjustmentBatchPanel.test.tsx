@@ -34,7 +34,7 @@ describe('Batch correction journey, synthetic NOT_ENV', () => {
     const first = mount(); await userEvent.click(screen.getByLabelText(T.choose))
     await userEvent.type(screen.getByLabelText(T.quantity), '2'); await userEvent.type(screen.getByLabelText(T.kg), '1,9')
     await userEvent.type(screen.getByLabelText(T.reason), 'SENTETIK same correction'); await userEvent.click(screen.getByRole('button', { name: T.save }))
-    await screen.findByText(T.unknown); expect((screen.getByLabelText(T.quantity) as HTMLInputElement).disabled).toBe(true)
+    await screen.findByText(T.unknown); expect(screen.getByLabelText(T.quantity).matches(':disabled')).toBe(true)
     first.unmount(); mount('read-2'); await userEvent.click(await screen.findByRole('button', { name: T.retry }))
     await waitFor(() => expect(reverseReceiptBatch).toHaveBeenCalledTimes(2))
     expect(vi.mocked(reverseReceiptBatch).mock.calls[1]).toEqual(vi.mocked(reverseReceiptBatch).mock.calls[0])

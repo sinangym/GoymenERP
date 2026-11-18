@@ -221,7 +221,7 @@ function SimilarStock({ similar }: { readonly similar: ShortageSimilarStock }) {
       ? <p className={shortage.secondary}>{TEXT.similarNone}</p>
       : null}
     {similar.status === 'Answered' && similar.items.length > 0
-      ? <table>
+      ? <table aria-label={TEXT.similarTitle}>
         <thead><tr>
           <th scope="col">{TEXT.similarHeaders.product}</th>
           <th scope="col">{TEXT.similarHeaders.freeStock}</th>

@@ -56,12 +56,12 @@ function Page({ kind, canPrepare, canApprove, canProposeReversal, canApproveCanc
   return <section className={styles.page} aria-labelledby="inventory-cost-title">
     <h1 id="inventory-cost-title">{kind === 1 ? T.salesTitle : T.differenceTitle}</h1><p>{T.intro}</p>
     {state.kind !== 'ready' ? <StateBlock state={state} subject={T.subject} onRetry={() => void query.refetch()} /> : <>
-      <button disabled={frozen} onClick={() => void query.refetch()}>{T.refresh}</button>
-      {state.data.length === 0 ? <p>{T.empty}</p> : <div className={styles.tableWrap}><table className={styles.table}>
-        <thead><tr><th>{T.invoice}</th><th>{T.line}</th><th>{T.amount}</th><th>{T.status}</th><th>{T.choose}</th></tr></thead>
+      <button type="button" disabled={frozen} onClick={() => void query.refetch()}>{T.refresh}</button>
+      {state.data.length === 0 ? <p>{T.empty}</p> : <div className={styles.tableWrap}><table aria-labelledby="inventory-cost-title" className={styles.table}>
+        <thead><tr><th scope="col">{T.invoice}</th><th scope="col">{T.line}</th><th scope="col">{T.amount}</th><th scope="col">{T.status}</th><th scope="col">{T.choose}</th></tr></thead>
         <tbody>{state.data.map(value => <tr key={value.proposalId}>
           <td>{value.officialInvoiceNumber ?? T.sourceNumberMissing}<br />{value.invoiceDate}</td><td>{value.component.invoiceLineNumber ?? '—'}</td>
-          <td>{value.exactTlAmount}</td><td>{T.statuses[value.status]}</td><td><button disabled={frozen}
+          <td>{value.exactTlAmount}</td><td>{T.statuses[value.status]}</td><td><button type="button" disabled={frozen}
             onClick={() => { setSelected(value.proposalId); setOutcome(null); setAttempt(null) }}>{T.choose}</button></td>
         </tr>)}</tbody></table></div>}
       {selected !== null && row === undefined ? <StateBlock state={{ kind: 'not-found' }} subject={T.subject} /> : null}
@@ -93,7 +93,7 @@ function Page({ kind, canPrepare, canApprove, canProposeReversal, canApproveCanc
         {canPrepare && ['AwaitingPreparation', 'Prepared'].includes(row.status) ? <Preparation key={`${row.proposalId}:${row.version}:prepare`}
           row={row} company={company} namespace={namespace!} actor={actor} frozen={frozen} reverse={false} send={next => void send(next)} /> : null}
         {canApprove && row.status === 'Prepared' ? row.preparation?.preparedBy.toLowerCase() === actor.toLowerCase() ? <p>{T.own}</p>
-          : <button disabled={frozen} onClick={() => void send({ id: row.proposalId, kind, actor, operation: 'approve', key: crypto.randomUUID(), request: { expectedVersion: row.version } })}>{T.approve}</button> : null}
+          : <button type="button" disabled={frozen} onClick={() => void send({ id: row.proposalId, kind, actor, operation: 'approve', key: crypto.randomUUID(), request: { expectedVersion: row.version } })}>{T.approve}</button> : null}
         {row.status === 'CancellationReversalPending' ? <><p>{T.cancellation}</p>
           {row.reversalProposal !== null && row.reversalProposal.status !== 'Rejected' ? <>
             <p>{T.existingReversal}</p><Link to={journalReversalApprovalPath(row.reversalProposal.proposalId)}>{T.reversalApproval}</Link>
@@ -111,12 +111,12 @@ function Page({ kind, canPrepare, canApprove, canProposeReversal, canApproveCanc
             namespace={namespace!} actor={actor} frozen={frozen} reverse send={next => void send(next)} /> : null}
           {canApproveCancellation && row.status === 'ComponentCancellationPrepared' && row.componentCancellation ?
             row.componentCancellation.preparedBy.toLowerCase() === actor.toLowerCase() ? <p>{T.own}</p>
-              : <button disabled={frozen} onClick={() => void send({ id: row.proposalId, kind, actor, operation: 'approve-cancellation', key: crypto.randomUUID(),
+              : <button type="button" disabled={frozen} onClick={() => void send({ id: row.proposalId, kind, actor, operation: 'approve-cancellation', key: crypto.randomUUID(),
                 request: { expectedVersion: row.version, expectedCancellationVersion: row.componentCancellation!.version } })}>{T.componentApprove}</button> : null}
         </> : null}
       </> : null}
     </>}
-    {outcome?.type === 'unknown' ? <div role="alert"><p>{T.unknown}</p><button disabled={sending || attempt === null || !maySend(attempt.operation)}
+    {outcome?.type === 'unknown' ? <div role="alert"><p>{T.unknown}</p><button type="button" disabled={sending || attempt === null || !maySend(attempt.operation)}
       onClick={() => attempt !== null && void send(attempt, true)}>{T.resend}</button></div> : null}
     {outcome?.type === 'refused' ? <p role="alert">{outcome.code !== null && T.codes[outcome.code] || T.refused} ({outcome.status})</p> : null}
     {outcome?.type === 'applied' ? <p role="status">{T.done}</p> : null}

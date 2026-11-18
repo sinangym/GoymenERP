@@ -44,7 +44,7 @@ describe('KIM-S15 manufacturing profile single flow', () => {
   it('shows the prepared profile without drawing writes for a read-only capability', async () => {
     const calls = installFetch({ capabilities: [SETTINGS_CAPABILITY.manufacturingParameters], respond: (url) => url.endsWith(read) ? json(manufacturingProfileFixture()) : undefined })
     renderAt(path)
-    expect(await screen.findByText('Taslak')).toBeTruthy()
+    expect(await screen.findByText(`${T.status}: Taslak · ${T.scope}: ${T.allLines}`)).toBeTruthy()
     expect(screen.queryByRole('button', { name: T.publish })).toBeNull()
     expect(screen.queryByRole('button', { name: T.prepare })).toBeNull()
     expect(calls.filter((call) => call.url.endsWith('/organization/work-centers'))).toEqual([])

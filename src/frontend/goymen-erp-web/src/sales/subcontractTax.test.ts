@@ -17,6 +17,14 @@ describe('Sales subcontract tax strict source contract', () => {
     expect(decodeSubcontractTaxOptions({ ...source(), businessDate: '2026-01-01' }, detail)).toBeNull()
     expect(decodeSubcontractTaxOptions({ ...source(), companyId: 'foreign' }, detail)).toBeNull()
   })
+  it.each(['0', '99.9999', '100', '100.0000'])('retains the exact owner percentage %s', percent => {
+    const raw = source(); raw.options.vatRates[0].percent = percent
+    expect(decodeSubcontractTaxOptions(raw, detail)?.options.vatRates[0].percent).toBe(percent)
+  })
+  it.each(['100.0001', '101', '0.00001', '-1', '1e2'])('rejects a percentage outside the owner wire contract: %s', percent => {
+    const raw = source(); raw.options.vatRates[0].percent = percent
+    expect(decodeSubcontractTaxOptions(raw, detail)).toBeNull()
+  })
   it('does not turn corrupt list success into a usable tax source', () => {
     expect(decodeSubcontractTaxOptions({ ...source(), options: { ...source().options, vatRates: [{ code: '10', name: 'SENTETIK', percent: '101', taxCode: null }] } }, detail)).toBeNull()
   })

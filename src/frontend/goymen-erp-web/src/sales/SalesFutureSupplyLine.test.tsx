@@ -50,25 +50,25 @@ describe('F17-5 actual future supply view', () => {
     mocks.read.mockResolvedValue({ type: 'http', status })
     mount(); fireEvent.click(screen.getByText(T.show))
     await waitFor(() => expect(mocks.report).toHaveBeenCalledWith(status, 'SENTETIK-scope'))
-    expect(await screen.findByText(title)).toBeTruthy()
-    expect(screen.queryByText('Kayıt yok')).toBeNull()
+    expect(await screen.findByText(`${title} — ${F.subject}`)).toBeTruthy()
+    expect(screen.queryByText(`Kayıt yok — ${F.subject}`)).toBeNull()
     expect(screen.queryByText(/60 kg/)).toBeNull()
   })
 
   it.each([['offline', 'Bağlantı yok'], ['network-error', 'Sunucuya ulaşılamadı'], ['malformed', 'Beklenmeyen yanıt']] as const)('shows %s without substituting zero supply', async (type, title) => {
     mocks.read.mockResolvedValue({ type })
     mount(); fireEvent.click(screen.getByText(T.show))
-    expect(await screen.findByText(title)).toBeTruthy()
-    expect(screen.queryByText('Kayıt yok')).toBeNull()
+    expect(await screen.findByText(`${title} — ${F.subject}`)).toBeTruthy()
+    expect(screen.queryByText(`Kayıt yok — ${F.subject}`)).toBeNull()
   })
 
   it('shows loading and then an actual empty owner result separately', async () => {
     let finish!: (value: unknown) => void
     mocks.read.mockReturnValue(new Promise(resolve => { finish = resolve }))
     mount(); fireEvent.click(screen.getByText(T.show))
-    expect(screen.getByText('Yükleniyor')).toBeTruthy()
+    expect(screen.getByText(`Yükleniyor — ${F.subject}`)).toBeTruthy()
     finish({ type: 'ok-single', data: { ...list, items: [], schedules: {}, unitCodes: {} } })
-    expect(await screen.findByText('Kayıt yok')).toBeTruthy()
+    expect(await screen.findByText(`Kayıt yok — ${F.subject}`)).toBeTruthy()
   })
 
   it('never treats an unavailable schedule as a current date or an automatic release', async () => {

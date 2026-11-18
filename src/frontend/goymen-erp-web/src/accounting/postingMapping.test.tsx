@@ -41,6 +41,8 @@ describe('COGS mapping workspace', () => {
   it('only fills server-proven defaults after the operator asks', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => json(workspace())))
     mount(); const tradeInput = await screen.findByLabelText(T.trade) as HTMLSelectElement
+    expect(screen.getByRole('table', { name: T.title })).toBeTruthy()
+    expect(screen.getAllByRole('columnheader').every(cell => cell.getAttribute('scope') === 'col')).toBe(true)
     expect(tradeInput.value).toBe('')
     fireEvent.click(screen.getByRole('button', { name: T.defaults }))
     expect(tradeInput.value).toBe(trade); expect((screen.getByLabelText(T.manufactured) as HTMLSelectElement).value).toBe(manufactured)

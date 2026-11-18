@@ -59,6 +59,7 @@ describe('inventory cost human approval flow', () => {
       return json({ companyId: state.company, items: [value] })
     }))
     mount(false, false, false, true); fireEvent.click(await screen.findByRole('button', { name: T.choose }))
+    expect(screen.getByRole('table', { name: T.salesTitle })).toBeTruthy()
     expect(screen.queryByRole('button', { name: T.approve })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: T.componentApprove })); await screen.findByText(T.done)
     expect(JSON.parse(String(sent?.body))).toEqual({ expectedVersion: 3, expectedCancellationVersion: 1 })

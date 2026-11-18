@@ -38,6 +38,8 @@ describe('manufacturing consumed cost accounting suggestion', () => {
       respond: url => url.endsWith('/manufacturing-cost-differences') ? json({ companyId: COMPANY_A, items: [fixture()] }) : undefined })
     renderAt('/muhasebe/uretim-maliyet-farki-onay')
     fireEvent.click(await screen.findByRole('button', { name: 'Öneriyi aç' }))
+    expect(screen.getByRole('table', { name: 'Üretim maliyet farkları' })).toBeTruthy()
+    expect(screen.getByRole('table', { name: 'Çıktı' })).toBeTruthy()
     expect(await screen.findByText('Hazırladığınız öneriyi başka bir muhasebe yetkilisi onaylamalı.')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Onayla ve fişi oluştur' })).toBeNull()
     expect(requests.filter(request => request.method === 'POST')).toHaveLength(0)
