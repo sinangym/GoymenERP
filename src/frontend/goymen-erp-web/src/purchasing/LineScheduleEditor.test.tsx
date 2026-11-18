@@ -66,7 +66,7 @@ function valueOf(element: HTMLElement): string {
 }
 
 function disabledOf(element: HTMLElement): boolean {
-  return (element as HTMLInputElement | HTMLButtonElement).disabled
+  return element.matches(':disabled')
 }
 
 function storeKey() {

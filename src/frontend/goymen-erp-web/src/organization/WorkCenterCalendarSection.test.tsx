@@ -356,7 +356,6 @@ describe('B-15 calendar edit', () => {
 
   it.each([
     [400, 'validation'],
-    [403, 'forbidden'],
     [404, 'not-found'],
   ])('closes the attempt on a definite %s refusal', async (status, kind) => {
     const recorded = stub({ command: [() => problem(status)] })
@@ -373,6 +372,20 @@ describe('B-15 calendar edit', () => {
     expect(calendarWrites(recorded)).toHaveLength(1)
     // Not frozen: the user may correct and try again.
     expect((screen.getByLabelText('Gerekçe') as HTMLTextAreaElement).readOnly).toBe(false)
+  })
+
+  it('closes the write surface through the shared boundary on a definite 403 refusal', async () => {
+    const recorded = stub({ command: [() => problem(403)] })
+    renderAt(workCenterDetailPath(WC_PAINT))
+    await openForm()
+    await typeReason()
+    await userEvent.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    expect(await screen.findByText('Bulunamadı — sayfa')).toBeTruthy()
+    expect(calendarWrites(recorded)).toHaveLength(1)
+    expect(screen.queryByLabelText('Gerekçe')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Kaydet' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Aynı işlem anahtarıyla tekrar gönder' })).toBeNull()
   })
 })
 

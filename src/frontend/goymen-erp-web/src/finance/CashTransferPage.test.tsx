@@ -192,33 +192,33 @@ describe('CashTransferPage reads', () => {
     shell.state = { activeContext: null, routeEntryGeneration: 0, sessionEpoch: 0 }
     serve(() => undefined)
     show()
-    expect(screen.getByText('Yetkili şirket yok')).toBeTruthy()
+    expect(screen.getByText(`Yetkili şirket yok — ${T.subject}`)).toBeTruthy()
   })
 
   it('shows loading until the list answers', () => {
     serve(() => new Promise<Response>(() => {}))
     show()
-    expect(screen.getAllByText('Yükleniyor').length).toBeGreaterThan(0)
+    expect(screen.getByText(`Yükleniyor — ${T.subject}`)).toBeTruthy()
   })
 
   it('shows the empty state for an empty first page, scoped to the company', async () => {
     const calls = reads(() => json(page([])))
     show()
-    expect(await screen.findByText('Kayıt yok')).toBeTruthy()
+    expect(await screen.findByText(`Kayıt yok — ${T.subject}`)).toBeTruthy()
     expect(calls.every((call) => call.company === COMPANY)).toBe(true)
   })
 
   it('reports a 401 to the shell and draws the session-ended state', async () => {
     reads(() => json({}, 401))
     show()
-    expect(await screen.findByText('Oturum sonlandı')).toBeTruthy()
+    expect(await screen.findByText(`Oturum sonlandı — ${T.subject}`)).toBeTruthy()
     expect(boundary.report).toHaveBeenCalledWith(401, { token: 1 })
   })
 
   it('reports a 403 and draws the non-disclosing forbidden state', async () => {
     reads(() => json({}, 403))
     show()
-    expect(await screen.findByText('Yetkiniz yok')).toBeTruthy()
+    expect(await screen.findByText(`Yetkiniz yok — ${T.subject}`)).toBeTruthy()
     expect(boundary.report).toHaveBeenCalledWith(403, { token: 1 })
   })
 
@@ -226,7 +226,7 @@ describe('CashTransferPage reads', () => {
     let answers = 0
     reads(() => (answers++ === 0 ? json({}, 503) : json(page([transfer()]))))
     show()
-    expect(await screen.findByText('Servis geçici olarak kullanılamıyor')).toBeTruthy()
+    expect(await screen.findByText(`Servis geçici olarak kullanılamıyor — ${T.subject}`)).toBeTruthy()
     await userEvent.setup().click(screen.getByRole('button', { name: 'Tekrar dene' }))
     expect(await screen.findByText('SENTETIK Merkez Kasa')).toBeTruthy()
     expect(screen.getByText('SENTETIK Şube Kasa')).toBeTruthy()
@@ -236,7 +236,7 @@ describe('CashTransferPage reads', () => {
   it('treats a page for another company as malformed', async () => {
     reads(() => json(page([], null, OTHER_COMPANY)))
     show()
-    expect(await screen.findByText('Beklenmeyen yanıt')).toBeTruthy()
+    expect(await screen.findByText(`Beklenmeyen yanıt — ${T.subject}`)).toBeTruthy()
   })
 
   it('opens the detail of a stored exchange with its rate', async () => {
@@ -258,7 +258,7 @@ describe('CashTransferPage reads', () => {
   it('does not offer a new transfer without the commit capability', async () => {
     reads(() => json(page([])))
     show({ canCommit: false })
-    expect(await screen.findByText('Kayıt yok')).toBeTruthy()
+    expect(await screen.findByText(`Kayıt yok — ${T.subject}`)).toBeTruthy()
     expect(screen.queryByRole('button', { name: T.newTransfer })).toBeNull()
   })
 })

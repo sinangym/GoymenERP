@@ -326,7 +326,8 @@ type AttemptState =
  * One command's attempt. The key is remembered BEFORE the request leaves and forgotten only on a decided answer; an
  * unknown answer keeps it, and the next send resends that exact attempt rather than the new body.
  */
-function useExpenseCommand(companyId: string, storeKey: string, onApplied: (resource: ExpensePaymentView) => void) {
+function useExpenseCommand(companyId: string, storeKey: string,
+  onApplied: (resource: ExpensePaymentView, replayed: boolean) => void, onStarted?: () => void) {
   const boundary = useAuthBoundary()
   const [state, setState] = useState<AttemptState>(() => {
     const pending = recallPendingExpenseAttempt(storeKey)
@@ -337,6 +338,7 @@ function useExpenseCommand(companyId: string, storeKey: string, onApplied: (reso
   const send = useCallback(async (command: ExpensePaymentCommand) => {
     if (busy.current) return
     busy.current = true
+    onStarted?.()
     const attempt = recallPendingExpenseAttempt(storeKey) ?? { key: generateExpenseAttemptKey(), command }
     rememberPendingExpenseAttempt(storeKey, attempt)
     setState({ phase: 'sending' })
@@ -350,12 +352,12 @@ function useExpenseCommand(companyId: string, storeKey: string, onApplied: (reso
     forgetPendingExpenseAttempt(storeKey)
     if (outcome.kind === 'applied') {
       setState({ phase: 'applied', resource: outcome.resource, replayed: outcome.replayed })
-      onApplied(outcome.resource)
+      onApplied(outcome.resource, outcome.replayed)
       return
     }
     if (outcome.status === 401 || outcome.status === 403) boundary.report(outcome.status, snapshot)
     setState({ phase: 'failed', failure: outcome })
-  }, [boundary, companyId, onApplied, storeKey])
+  }, [boundary, companyId, onApplied, onStarted, storeKey])
 
   const retry = useCallback(() => {
     if (state.phase === 'unknown') void send(state.attempt.command)
@@ -381,14 +383,15 @@ function failureText(failure: FailedOutcome): string {
 }
 
 /** The server's answer to the last attempt; the issue codes are shown as the server gave them, in Turkish. */
-function AttemptPanel({ state, onRetry, onReload }: {
+function AttemptPanel({ state, onRetry, onReload, showApplied = true }: {
   readonly state: AttemptState
   readonly onRetry: () => void
   readonly onReload?: () => void
+  readonly showApplied?: boolean
 }) {
   if (state.phase === 'idle' || state.phase === 'sending') return null
   if (state.phase === 'applied') {
-    return <p className={styles.notice} role="status">{state.replayed ? T.appliedReplay : T.applied}</p>
+    return showApplied ? <p className={styles.notice} role="status">{state.replayed ? T.appliedReplay : T.applied}</p> : null
   }
   if (state.phase === 'unknown') {
     return <div className={styles.attempt} role="alert">
@@ -434,10 +437,15 @@ function PaymentDetail(props: DetailProps) {
     queryFn: ({ signal }) => boundRead(() => fetchExpensePayment(companyId, paymentId, signal)),
   })
   const payment = read.data?.type === 'ok-single' ? read.data.data : null
+  // The command child changes with the payment status. Keep its decided notice in this detail, which is
+  // itself discarded on payment/company/actor/session/route-entry changes by the enclosing workspace keys.
+  const [settled, setSettled] = useState<{ readonly replayed: boolean } | null>(null)
+  const started = useCallback(() => setSettled(null), [])
 
   const { onChanged } = props
   /** The decided command's answer replaces the detail whole; the list is read again. */
-  const applied = useCallback((resource: ExpensePaymentView) => {
+  const applied = useCallback((resource: ExpensePaymentView, replayed: boolean) => {
+    setSettled({ replayed })
     client.setQueryData(detailKey, { type: 'ok-single', data: resource } satisfies ViewOutcome<ExpensePaymentView>)
     onChanged()
   }, [client, detailKey, onChanged])
@@ -448,7 +456,8 @@ function PaymentDetail(props: DetailProps) {
       ? <StateBlock state={stateOf(read.data)} subject={T.detailSubject} onRetry={() => void read.refetch()} />
       : <>
           <PaymentFacts payment={payment} codes={props.codes} itemCodes={props.itemCodes} />
-          <PaymentCommands {...props} payment={payment} onApplied={applied} onReload={() => void read.refetch()} />
+          {settled === null ? null : <p className={styles.notice} role="status">{settled.replayed ? T.appliedReplay : T.applied}</p>}
+          <PaymentCommands {...props} payment={payment} onApplied={applied} onStarted={started} onReload={() => void read.refetch()} />
         </>}
     <div className={styles.actions}>
       <Button type="button" variant="ghost" onClick={props.onClose}>{T.close}</Button>
@@ -484,7 +493,8 @@ function PaymentFacts({ payment, codes, itemCodes }: {
 
 interface CommandsProps extends DetailProps {
   readonly payment: ExpensePaymentView
-  onApplied(resource: ExpensePaymentView): void
+  onApplied(resource: ExpensePaymentView, replayed: boolean): void
+  onStarted(): void
   onReload(): void
 }
 
@@ -495,9 +505,9 @@ function PaymentCommands(props: CommandsProps) {
   return null
 }
 
-function ApproveCommand({ companyId, actorId, binding, payment, onApplied, onReload }: CommandsProps) {
+function ApproveCommand({ companyId, actorId, binding, payment, onApplied, onStarted, onReload }: CommandsProps) {
   const storeKey = pendingExpenseAttemptKey('approve', binding.sessionEpoch, actorId, companyId, payment.id)
-  const command = useExpenseCommand(companyId, storeKey, onApplied)
+  const command = useExpenseCommand(companyId, storeKey, onApplied, onStarted)
   // Maker ≠ checker is the server's rule; the screen only does not offer the button to the maker.
   const own = payment.preparedBy === actorId
   return <div className={styles.command}>
@@ -509,13 +519,13 @@ function ApproveCommand({ companyId, actorId, binding, payment, onApplied, onRel
             {command.state.phase === 'sending' ? T.approving : T.approve}
           </Button>
         : null}
-    <AttemptPanel state={command.state} onRetry={command.retry} onReload={onReload} />
+    <AttemptPanel state={command.state} onRetry={command.retry} onReload={onReload} showApplied={false} />
   </div>
 }
 
-function RecordCommand({ companyId, actorId, binding, payment, onApplied, onReload }: CommandsProps) {
+function RecordCommand({ companyId, actorId, binding, payment, onApplied, onStarted, onReload }: CommandsProps) {
   const storeKey = pendingExpenseAttemptKey('record', binding.sessionEpoch, actorId, companyId, payment.id)
-  const command = useExpenseCommand(companyId, storeKey, onApplied)
+  const command = useExpenseCommand(companyId, storeKey, onApplied, onStarted)
   const [confirmed, setConfirmed] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const submit = () => {
@@ -542,7 +552,7 @@ function RecordCommand({ companyId, actorId, binding, payment, onApplied, onRelo
         {command.state.phase === 'sending' ? T.recording : T.record}
       </Button>
     </> : null}
-    <AttemptPanel state={command.state} onRetry={command.retry} onReload={onReload} />
+    <AttemptPanel state={command.state} onRetry={command.retry} onReload={onReload} showApplied={false} />
   </div>
 }
 

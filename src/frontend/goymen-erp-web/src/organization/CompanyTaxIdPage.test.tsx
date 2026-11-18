@@ -119,7 +119,7 @@ describe('CompanyTaxIdPage', () => {
     })
     renderAt(PATH)
 
-    expect(await screen.findByText('Yetkiniz yok')).toBeTruthy()
+    expect(await screen.findByText(`Yetkiniz yok — ${COMPANY_TAX_ID_TEXT.subject}`)).toBeTruthy()
     expect(screen.queryByText('1234567890')).toBeNull()
   })
 
@@ -131,7 +131,7 @@ describe('CompanyTaxIdPage', () => {
     })
     renderAt(PATH)
 
-    expect(await screen.findByText('Beklenmeyen yanıt')).toBeTruthy()
+    expect(await screen.findByText(`Beklenmeyen yanıt — ${COMPANY_TAX_ID_TEXT.subject}`)).toBeTruthy()
   })
 
   it('does not read without the capability', async () => {
@@ -462,6 +462,6 @@ describe('CompanyTaxIdPage', () => {
     renderAt(PATH)
 
     expect(await screen.findByText('1234567890')).toBeTruthy()
-    expect(await screen.findByText('Beklenmeyen yanıt')).toBeTruthy()
+    expect(await screen.findByText(`Beklenmeyen yanıt — ${COMPANY_TAX_ID_TEXT.correctionsSubject}`)).toBeTruthy()
   })
 })

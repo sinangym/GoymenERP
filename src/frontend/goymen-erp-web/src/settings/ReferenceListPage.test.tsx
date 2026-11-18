@@ -87,7 +87,7 @@ describe('Reference lists — reads', () => {
   it('says an empty list is empty and suggests no entry', async () => {
     installPurchasing((url, init) => (isListRead(url, 'expense-types', init) ? json(emptyView('ExpenseType')) : undefined))
     renderAt(PURCHASING_PATH)
-    expect(await screen.findAllByText(T.empty)).toHaveLength(2)
+    await waitFor(() => expect(screen.getAllByText(T.empty)).toHaveLength(2))
     expect(screen.queryByRole('table')).toBeNull()
   })
 
@@ -147,7 +147,7 @@ describe('Reference lists — reads', () => {
     })
     renderAt(PRODUCTION_PATH)
     expect(await screen.findByRole('heading', { name: REFERENCE_LIST_LABEL.paintColor })).toBeTruthy()
-    expect(await screen.findAllByText(T.empty)).toHaveLength(2)
+    await waitFor(() => expect(screen.getAllByText(T.empty)).toHaveLength(2))
     const reads = recorded.filter((request) => request.url.includes('/settings/reference-lists/'))
     expect(reads.map((request) => request.url.split('/settings/reference-lists/')[1]).sort()).toEqual([
       'paint-colors',

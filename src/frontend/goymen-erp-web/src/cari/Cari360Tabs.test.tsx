@@ -240,7 +240,8 @@ describe('Cari 360 Finans tab', () => {
     ['Redacted', 'cari-360-finance-redacted', T.finance.redacted],
     ['Unavailable', 'cari-360-finance-withheld', T.finance.withheld],
   ] as const)('gives withheld (%s) amounts their own sentence, never a zero', async (disclosure, testId, text) => {
-    reply(account(disclosure, [openItem]))
+    // A withheld response contains no open-item amounts; populated hidden rows are a malformed response.
+    reply(account(disclosure, []))
     mount({ canViewFinance: true })
     open(T.tab.finance)
     expect((await screen.findByTestId(testId)).textContent).toBe(text)

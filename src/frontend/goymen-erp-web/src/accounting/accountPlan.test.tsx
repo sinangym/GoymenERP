@@ -176,14 +176,19 @@ describe('M-05 account plan screen', () => {
   })
 
   it.each([
-    [403, 'forbidden'],
+    [403, 'not-found'],
     [503, 'service-unavailable'],
   ] as const)('renders a %i as the %s state with no list', async (status, kind) => {
-    installFetch({ capabilities: PLAN_CAPABILITIES, respond: responder(() => problem(status, { code: 'x' })) })
+    const recorded = installFetch({ capabilities: PLAN_CAPABILITIES, respond: responder(() => problem(status, { code: 'x' })) })
     renderAt(ACCOUNTING_ROUTE.accountPlan)
 
     await waitFor(() => expect(document.querySelector(`[data-state="${kind}"]`)).not.toBeNull())
     expect(screen.queryByRole('table')).toBeNull()
+    if (status === 403) {
+      // The real auth boundary closes CapabilityRoute; no old read or retry control survives that generation.
+      expect(requestsFor(recorded, '/accounting/account-plan', 'GET')).toHaveLength(1)
+      expect(screen.queryByRole('button', { name: 'Tekrar dene' })).toBeNull()
+    }
   })
 
   it('renders a malformed 200 as the malformed state, never a partial list', async () => {
