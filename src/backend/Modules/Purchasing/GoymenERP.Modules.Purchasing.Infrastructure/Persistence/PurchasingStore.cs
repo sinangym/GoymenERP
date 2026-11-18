@@ -457,7 +457,8 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         // KLN-D105: a schedule change can reorder the latest-delivery-first reduction choices. It uses these same locks,
         // so the owner schedule read remains stable until the Sales/Inventory transaction releases its purchase locks.
         await using var lockTransaction = TakesOrderLineLocks(commandName)
-            ? await LockOrderGeneralLinesAsync(companyId, orderId, cancellationToken)
+            ? await LockOrderGeneralLinesAsync(companyId, orderId, cancellationToken,
+                PurchasingCommands.IsOrderCancellation(commandName) ? IsolationLevel.Serializable : null)
             : null;
 
         // The header and the lines are tracked (the header's version is this write's concurrency token).
@@ -763,10 +764,15 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
     /// (the outer owner commits). A lock that is not granted in time refuses the write with <see cref="PurchasingStoreCodes.LineBusy"/>
     /// and nothing is written. An order without lines (or not in this company) takes no lock; the caller's own read answers it.
     /// </summary>
-    private async Task<IDbContextTransaction?> LockOrderGeneralLinesAsync(Guid companyId, Guid orderId, CancellationToken cancellationToken)
+    private async Task<IDbContextTransaction?> LockOrderGeneralLinesAsync(Guid companyId, Guid orderId, CancellationToken cancellationToken,
+        IsolationLevel? isolationLevel = null)
     {
+        // KIM-D53/D55: cancelling a numbered order records its gap through Settings in this same
+        // Serializable owner transaction. Borrowed transactions remain entirely the caller's responsibility.
         var owned = dbContext.Database.CurrentTransaction is null
-            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            ? isolationLevel is { } requiredIsolation
+                ? await dbContext.Database.BeginTransactionAsync(requiredIsolation, cancellationToken)
+                : await dbContext.Database.BeginTransactionAsync(cancellationToken)
             : null;
         try
         {

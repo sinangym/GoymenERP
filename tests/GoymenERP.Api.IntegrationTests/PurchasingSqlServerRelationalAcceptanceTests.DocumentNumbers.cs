@@ -1,3 +1,6 @@
+using System.Data;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations;
@@ -14,11 +17,28 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         var (orderId, _, _) = await ApprovedAcceptanceOrderAsync(run, 10m);
+        // The borrowed path must not commit the host's cancellation, number gap or either audit.
+        // Retrying the same key after rollback must perform the real cancellation below.
+        await using (var scope = run.Store(CompanyA))
+        {
+            await using var hostTransaction = await scope.Context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+            var staged = await scope.Store.MutateOrderAsync(run.Envelope("number-cancel"), Hash("number-cancel"),
+                PurchasingCommands.OrderCancelV1, orderId,
+                (order, now) => order.Cancel(order.Version, run.Actor, "SENTETIK numara boÅŸluÄŸu", now), OrderRemainderCancelled);
+            Assert.Equal("ALI-2026-000001", staged!.Order.DocumentNumber);
+            Assert.Same(hostTransaction, scope.Context.Database.CurrentTransaction);
+            Assert.NotNull(hostTransaction.GetDbTransaction().Connection);
+            await hostTransaction.RollbackAsync();
+        }
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[DocumentNumberCancellations]"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [purchasing].[PurchaseOrders] WHERE [DocumentNumberCancelledAtUtc] IS NOT NULL"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [purchasing].[PurchaseAttempts] WHERE [CommandName] = N'" + PurchasingCommands.OrderCancelV1 + "'"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] IN (N'settings.document-number.cancelled.v1', N'purchasing.purchase-order.remainder-cancelled.v1')"));
         await using (var scope = run.Store(CompanyA))
         {
             var cancelled = await scope.Store.MutateOrderAsync(run.Envelope("number-cancel"), Hash("number-cancel"),
                 PurchasingCommands.OrderCancelV1, orderId,
-                (order, now) => order.Cancel(order.Version, run.Actor, "SENTETIK numara boşluğu", now), OrderRemainderCancelled);
+                (order, now) => order.Cancel(order.Version, run.Actor, "SENTETIK numara boÅŸluÄŸu", now), OrderRemainderCancelled);
             Assert.Equal("ALI-2026-000001", cancelled!.Order.DocumentNumber);
             var replay = await scope.Store.MutateOrderAsync(run.Envelope("number-cancel"), Hash("number-cancel"),
                 PurchasingCommands.OrderCancelV1, orderId, (_, _) => throw new InvalidOperationException("Cancel replay must not mutate."), OrderRemainderCancelled);
@@ -26,6 +46,8 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         }
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[DocumentNumberCancellations]"));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [purchasing].[PurchaseOrders] WHERE [DocumentNumberCancelledAtUtc] IS NOT NULL"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [purchasing].[PurchaseAttempts] WHERE [CommandName] = N'" + PurchasingCommands.OrderCancelV1 + "'"));
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] IN (N'settings.document-number.cancelled.v1', N'purchasing.purchase-order.remainder-cancelled.v1')"));
         await using var nextScope = run.Store(CompanyA);
         var owners = Owners.For(CompanyA);
         var next = Order(owners, null, null, 1m);
