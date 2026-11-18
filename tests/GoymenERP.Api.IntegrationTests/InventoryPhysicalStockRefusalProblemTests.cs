@@ -17,7 +17,7 @@ public sealed class InventoryPhysicalStockRefusalProblemTests
     private static readonly Guid Label = Guid.Parse("82300000-0000-4000-8000-000000000003");
     private static readonly Guid Product = Guid.Parse("82300000-0000-4000-8000-000000000004");
     private static readonly Guid Location = Guid.Parse("82300000-0000-4000-8000-000000000005");
-    private const string GoldenDetail = "Sistemde -0.125 kg var, 2.5 kg istendi.";
+    private const string GoldenDetail = "Sistemde 0.125 kg var, 2.5 kg istendi.";
 
     [Fact]
     public void A_nested_owner_proof_preserves_the_original_code_and_correlation_and_exposes_only_stock_facts()
@@ -36,9 +36,9 @@ public sealed class InventoryPhysicalStockRefusalProblemTests
         Assert.Equal(Label, stock.GetProperty("labelId").GetGuid());
         Assert.Equal(Product, stock.GetProperty("productId").GetGuid());
         Assert.Equal(Location, stock.GetProperty("locationId").GetGuid());
-        Assert.Equal("-0.125", stock.GetProperty("availableKg").GetString());
+        Assert.Equal("0.125", stock.GetProperty("availableKg").GetString());
         Assert.Equal("2.5", stock.GetProperty("requestedKg").GetString());
-        Assert.Equal("2.625", stock.GetProperty("missingKg").GetString());
+        Assert.Equal("2.375", stock.GetProperty("missingKg").GetString());
         Assert.DoesNotContain("synthetic-private-marker", stock.GetRawText(), StringComparison.Ordinal);
         Assert.DoesNotContain("synthetic-private-marker", detail!, StringComparison.Ordinal);
     }
@@ -60,6 +60,25 @@ public sealed class InventoryPhysicalStockRefusalProblemTests
         var extensions = Extensions();
         Assert.Null(InventoryPhysicalStockRefusalProblem.Apply(409, new Exception(GoldenDetail), extensions));
         Assert.False(extensions.ContainsKey("stockShortfall"));
+    }
+
+    [Theory]
+    [InlineData(409, true)]
+    [InlineData(400, false)]
+    [InlineData(401, false)]
+    [InlineData(403, false)]
+    [InlineData(404, false)]
+    [InlineData(422, false)]
+    [InlineData(503, false)]
+    public void A_legacy_signed_recorded_detail_replays_only_for_conflict_without_fabricating_a_typed_proof(int status, bool disclosed)
+    {
+        const string recorded = "Sistemde -0.125 kg var, 2.5 kg istendi.";
+        var extensions = Extensions();
+        Assert.Equal(disclosed ? recorded : null,
+            InventoryPhysicalStockRefusalProblem.Apply(status, new Exception("synthetic-replay"), extensions, recorded));
+        Assert.Equal(2, extensions.Count);
+        Assert.False(extensions.ContainsKey("stockShortfall"));
+        Assert.Null(InventoryPhysicalStockRefusalProblem.Apply(status, new Exception(recorded), Extensions()));
     }
 
     [Theory]
@@ -111,7 +130,7 @@ public sealed class InventoryPhysicalStockRefusalProblemTests
         var position = new StockPosition(Company, new(StockPartyKind.Company, Company),
             new(StockPartyKind.Company, Company), Location, label, BlockState.Free);
         var shortfall = new StockShortfall(StockMovementKind.Issue, new("synthetic-physical-exit", Movement),
-            position, Kilograms.Of(2.5m), Kilograms.Of(-0.125m), lineNumber);
+            position, Kilograms.Of(2.5m), Kilograms.Of(0.125m), lineNumber);
         var metadata = new InventoryCommandMetadata("synthetic-private-marker", "synthetic-permission", [],
             "synthetic-private-correlation", null, "synthetic-private-key", "synthetic-test");
         return new Exception("synthetic-host-wrapper", new InventoryNegativeStockAttemptEvidenceException(
