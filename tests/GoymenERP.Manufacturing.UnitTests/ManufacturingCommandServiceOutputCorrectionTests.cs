@@ -85,7 +85,7 @@ public sealed partial class ManufacturingCommandServiceTests
     }
 
     [Fact]
-    public async Task Output_correction_keeps_the_inventory_refusal_code_and_replays_it_for_the_same_key()
+    public async Task Output_correction_keeps_a_shipped_refusal_retryable_then_replays_only_the_recorded_success()
     {
         var fixture = new Fixture();
         var (order, outputId) = CorrectableOrder(fixture);
@@ -100,12 +100,34 @@ public sealed partial class ManufacturingCommandServiceTests
         Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingOutputCorrectionCodesV1.Shipped),
             (result.Status, result.Code));
         Assert.Empty(order.OutputReversals);
+        Assert.Empty(fixture.Store.Commands);
+        Assert.Equal(request.ExpectedVersion, order.Version);
+
+        // ADR-011 section 7 does not make a reversible Inventory business-rule refusal terminal.
+        var refusedAgain = await fixture.Service.CorrectOutputAsync(order.Id, outputId, request,
+            "correct-output-shipped", ErpPermissions.ManufacturingFactsCorrect, CancellationToken.None);
+        Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingOutputCorrectionCodesV1.Shipped, false),
+            (refusedAgain.Status, refusedAgain.Code, refusedAgain.IsReplay));
+        Assert.Equal(2, fixture.OutputCorrections.Commands.Count);
+        Assert.Empty(fixture.Store.Commands);
+        Assert.Empty(order.OutputReversals);
+
+        // URT-D31: Inventory can subsequently confirm that the shipment lock has been removed.
+        fixture.OutputCorrections.Exception = null;
+        var corrected = await fixture.Service.CorrectOutputAsync(order.Id, outputId, request,
+            "correct-output-shipped", ErpPermissions.ManufacturingFactsCorrect, CancellationToken.None);
+        Assert.Equal((ManufacturingApiStatus.Ok, false), (corrected.Status, corrected.IsReplay));
+        Assert.Equal(3, fixture.OutputCorrections.Commands.Count);
+        Assert.Single(fixture.Store.Commands);
+        Assert.Single(order.OutputReversals);
 
         var replay = await fixture.Service.CorrectOutputAsync(order.Id, outputId, request,
             "correct-output-shipped", ErpPermissions.ManufacturingFactsCorrect, CancellationToken.None);
-        Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingOutputCorrectionCodesV1.Shipped, true),
-            (replay.Status, replay.Code, replay.IsReplay));
-        Assert.Single(fixture.OutputCorrections.Commands);
+        Assert.Equal((ManufacturingApiStatus.Ok, true), (replay.Status, replay.IsReplay));
+        Assert.Equal(System.Text.Json.JsonSerializer.Serialize(corrected.Resource),
+            System.Text.Json.JsonSerializer.Serialize(replay.Resource));
+        Assert.Equal(3, fixture.OutputCorrections.Commands.Count);
+        Assert.Single(order.OutputReversals);
     }
 
     [Fact]

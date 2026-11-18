@@ -120,7 +120,8 @@ public sealed partial class ManufacturingCommandServiceTests
         var capacity = new SuggestionCapacityPort { CapacityKgPerHour = 250m, Version = 4 };
         var (fixture, service) = SuggestionCase(calendar, capacity);
         var plan = SuggestionPlan(fixture);
-        plan.WithDueDate().Approve(plan.Version, Actor, At, null, CapturedProfile());
+        plan.WithDueDate().Approve(plan.Version, Actor, At, null,
+            CapturedProfile(new PlanParameterValueV1("densityKgPerCubicMetre", "kg/m3", 7850m, null)));
 
         var view = (await service.GetPlanDueDateSuggestionAsync(plan.Id, CancellationToken.None)).Resource!;
 

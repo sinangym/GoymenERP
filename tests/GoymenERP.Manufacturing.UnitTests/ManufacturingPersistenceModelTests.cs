@@ -370,12 +370,12 @@ public sealed class ManufacturingPersistenceModelTests
     [Fact]
     public void The_plan_input_allocation_is_keyed_by_plan_and_roll_and_its_rollback_refuses_while_one_exists()
     {
-        // Üretim U3-a (URT-D21, B-01): one append-only row per (company, plan, parent roll); the allocation identity is
-        // unique per company. Up is pure DDL; Down refuses (THROW 51191) while any row exists, because Inventory still
+        // URT-D21 / URT-D33: one append-only row per (company, plan, approval generation, parent roll); the allocation
+        // identity stays unique per company. The original Up is pure DDL; its Down refuses (THROW 51191) while any row exists, because Inventory still
         // holds the allocation the row names (forward fix).
         using var context = Context();
         var allocation = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PlanInputAllocationRow))!;
-        Assert.Equal(["CompanyId", "PlanId", "ParentRollId"],
+        Assert.Equal(["CompanyId", "PlanId", "PlanVersion", "ParentRollId"],
             allocation.FindPrimaryKey()!.Properties.Select(property => property.Name));
         Assert.Contains(allocation.GetIndexes(), index => index.IsUnique
             && index.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "AllocationId"]));
@@ -710,16 +710,15 @@ public sealed class ManufacturingPersistenceModelTests
         {
             var entity = model.GetEntityTypes().Single(type => type.GetTableName() == table);
             var constraint = entity.GetCheckConstraints().Single(check => check.Name == $"CK_{table}_Enums");
-            // Üretim U2-a: a plan may be Cancelled (3); an order keeps Open / Closed.
-            Assert.Equal(table == "Plans"
-                ? "[Process] IN (1, 2, 3, 4, 5) AND [Status] IN (1, 2, 3)"
-                : "[Process] IN (1, 2, 3, 4, 5) AND [Status] IN (1, 2)", constraint.Sql);
+            // URT-D28 / URT-D33: cancellation is retained for both plans and orders; the five processes are unchanged.
+            Assert.Equal("[Process] IN (1, 2, 3, 4, 5) AND [Status] IN (1, 2, 3)", constraint.Sql);
         }
 
-        // URT-D1: one order per plan is a unique (company, plan) index.
+        // URT-D33 supersedes URT-D1: one active order per plan; cancelled generations remain as immutable history.
         var orders = model.GetEntityTypes().Single(type => type.GetTableName() == "Orders");
-        Assert.Contains(orders.GetIndexes(), index => index.IsUnique
+        var activeOrder = Assert.Single(orders.GetIndexes(), index => index.IsUnique
             && index.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "PlanId"]));
+        Assert.Equal("[Status] <> 3", activeOrder.GetFilter());
     }
 
     [Theory]

@@ -95,7 +95,8 @@ public sealed class ProductionCostTraceBuilderTests
         var order = Order();
         order.Issue(FirstRoll, Kg(900m));
         order.Declare(FirstRoll, OutputClass.Scrap, Kg(20m));
-        var good = order.Declare(FirstRoll, OutputClass.GoodProduct, Kg(600m));
+        var good = order.DeclareOutput(order.Version, Guid.NewGuid(), FirstRoll, OutputClass.GoodProduct, Kg(600m),
+            OrderSteps.Next(), PlanOutputLineReference.ClassLine);
         order.Declare(FirstRoll, OutputClass.GoodProduct, Kg(200m));
         order.ReverseOutput(order.Version, Guid.NewGuid(), good.OutputId, Kg(15.5m), Reason, OrderSteps.Next());
 
@@ -115,7 +116,8 @@ public sealed class ProductionCostTraceBuilderTests
         var order = Order();
         var issue = order.Issue(FirstRoll, Kg(300m));
         order.MeasureWip(FirstRoll, Kg(10m));
-        var declared = order.Declare(FirstRoll, OutputClass.GoodProduct, Kg(100m));
+        var declared = order.DeclareOutput(order.Version, Guid.NewGuid(), FirstRoll, OutputClass.GoodProduct, Kg(100m),
+            OrderSteps.Next(), PlanOutputLineReference.ClassLine);
         var reversal = order.ReverseOutput(order.Version, Guid.NewGuid(), declared.OutputId, Kg(5m), Reason,
             OrderSteps.Next());
 
