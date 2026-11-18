@@ -82,8 +82,10 @@ internal static class ShellCapabilityRegistryAuthorities
     // Tren-1 wave 2 trial integration: Finance 1.11, Manufacturing 1.8, Purchasing 1.8, Accounting 1.4, Settings 1.3
     // and Organization 1.5 provider bumps combined; rows re-derived in place by
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
+    // W8 SAT-D419/D422: Counterparty 1.5 + Organization 1.5 + Product 1.3 (COGS control); the missed reduced-host row
+    // is re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision's real provider test. No grant or flag changes.
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13AndProductV12 =
-        "sha256:pD1JoyecWreHwKmqDm0WiQwnOrMBACEzRp6Q41SBpLA";
+        "sha256:pTSIaODoh7NURxieNmmuzSy5Zal6xRKy0dgPcML2PvE";
 
     // Counterparty 1.5 + Organization 1.0 + Product 1.0 + Sales 1.0 (#321): the normal host while Sales'
     // draft screens were staged. Superseded by the published set below (#328); no host serves it now.
