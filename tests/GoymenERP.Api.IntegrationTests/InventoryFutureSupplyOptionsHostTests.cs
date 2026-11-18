@@ -46,6 +46,7 @@ public sealed class InventoryFutureSupplyOptionsHostTests(GoymenErpApiFactory fa
             services.RemoveAll<ICounterpartyPurchasingRecordPartyDisplaySourceV1>(); services.AddSingleton<ICounterpartyPurchasingRecordPartyDisplaySourceV1>(world);
             services.RemoveAll<ISettingsUnitIdentityCatalogV1>(); services.AddSingleton<ISettingsUnitIdentityCatalogV1>(world);
             services.RemoveAll<IErpAuthorizationService>(); services.AddSingleton<IErpAuthorizationService>(new HttpAuthority());
+            services.RemoveAll<IErpAuthorityRevalidationService>(); services.AddSingleton<IErpAuthorityRevalidationService>(world);
         }));
         using var client = host.CreateClient();
         client.DefaultRequestHeaders.Add("X-Development-User", TestUsers.GroupAdmin);

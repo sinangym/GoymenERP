@@ -179,7 +179,12 @@ public sealed class StatusJourneyEvidenceTests
                 ["replayed"] = primary && i == 1 ? "true" : null,
                 ["contractAck"] = i == 0 ? null : SourceBinding.ClientContractVersion,
                 ["problemCode"] = !primary && i == 0 ? "version_conflict" : null,
-                ["requestBody"] = JsonSerializer.SerializeToNode(requests[i].Command, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+                ["requestBody"] = new JsonObject
+                {
+                    ["isActive"] = requests[i].Command.IsActive,
+                    ["expectedVersion"] = requests[i].Command.ExpectedVersion.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["reason"] = requests[i].Command.Reason,
+                },
             });
             return result;
         }
