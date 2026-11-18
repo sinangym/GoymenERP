@@ -373,26 +373,31 @@
     "native_exit": 0,
     "proof": "artifacts/local-final-e41360340/proofs/modules.json"
    },
-   "real_sql": "NOT_CONFIGURED",
+   "real_sql": {
+    "local": "NOT_CONFIGURED",
+    "published_ci_rcsi": "PASS_14_SKIP0",
+    "published_ci_broad": "FAIL_TIMEOUT_WITH_OBSERVED_FAILURES_NOT_FINAL_COUNTS"
+   },
    "ci": {
     "pr": 1201,
     "first_head": "e838ca9079eda6c52d0d31cd909e8541f121f976",
-    "run": 44244586757,
-    "status": "FAIL_PREVIOUS_PUBLISHED_HEAD_FINAL_CANDIDATE_CI_PENDING",
+    "run": 44267292714,
+    "status": "FAIL_API3_DEFERRED_CASE_SQL_TIMEOUT_WITH_OBSERVED_FAILURES_AND_SECURITY",
     "security": "UPSTREAM_BLOCKER_GHSA-fc5q-39xc-vjpf_PATCHED_NONE",
-    "last_published_head": "8eb2668d0bc866816c5ab1698e0eb704231ffc73",
+    "last_published_head": "4d2a620972d1cdb55a317c76531d80cdc12bfa9a",
     "recovery_inventory": "PASS",
     "release_manifest": "PASS",
     "modules": "PASS",
     "architecture": "PASS",
     "frontend_shards": "4_OF_4_PASS",
-    "tested_merge_sha": "44a2749f8fb28061e24cefdb3a6e7e6e8ca69763",
+    "tested_merge_sha": "c645a6e84d116dfb111587e49ad7f8e3a0f7e417",
     "api_1": "PASS",
-    "api_2": "FAIL_FIXTURE_CORRECTIONS_LOCALLY_VERIFIED",
-    "api_3": "FAIL_FIXTURE_CORRECTIONS_LOCALLY_VERIFIED",
+    "api_2": "PASS_2488_TOTAL_1687_PASSED_801_ALLOWED_SQL_SKIPS",
+    "api_3": "FAIL_BATCH11_SDK1_TRX12_RECORD_THEORY_FIXED_IN_C552E70E1",
     "real_rcsi": "14_PASS_0_SKIP",
-    "sql_a_b_c": "2400_SECONDS_TIMEOUT_COMPLETED_COUNT_UNKNOWN",
-    "c014": "BROWSER_10_PASS_NETWORK_EVIDENCE_FAIL_ACTIVATION_SKIPPED_LOCAL_EVIDENCE_FIX_PENDING_NEW_CI"
+    "sql_a_b_c": "2400_SECONDS_TIMEOUT_NO_FINAL_TRX_OR_PROOF; OBSERVED_EVENTS_ONLY_750_PASSED_215_FAILED",
+    "c014": "PASS_FRESH_BROWSER_AND_NETWORK_EVIDENCE",
+    "next_candidate_ci": "PENDING_NATURAL_PUSH"
    },
    "independent_K3": "PENDING_EXTERNAL_EXACT_HEAD_REVIEWS",
    "report": "durum/W8_RUNTIME_KAPANIS_DURUMU.md",
@@ -484,9 +489,50 @@
     "full_backend_rebuild_at_fixture_head": false,
     "sql_progress_python_tests": 68,
     "windows_filter_python_tests": 38
+   },
+   "k3_reviews": {
+    "head": "4d2a620972d1cdb55a317c76531d80cdc12bfa9a",
+    "A": "REQUEST-CHANGES",
+    "A_review": 5953258185,
+    "B": "REQUEST-CHANGES",
+    "B_review": 5953265437,
+    "event": "COMMENT",
+    "scope": "Partial red-CI preflight, not complete K3 reading; full new-head reviews remain required."
+   },
+   "review_fix_checkpoint": {
+    "head": "5064a06ddbb3409a24a36170af76d5e3785f0f7b",
+    "api_theory_target_head": "eb279bf6230357de77cc6d7f7564dc687b0b62aa",
+    "api_theory_target_passed": 24,
+    "api_theory_target_skipped": 0,
+    "api_theory_target_strict_trx": "PASS",
+    "api3_optional_diagnostic": "AUTHOR_CANCELLED_19_OF_55_BATCHES;595_PASSED_220_ALLOWED_SQL_SKIPS;NO_FULL_GROUP_PROOF",
+    "inventory_sql_fixture_build_head": "e24388892",
+    "inventory_sql_fixture_build_exit": 0,
+    "inventory_sql_execution": "NOT_RUN_LOCAL",
+    "guard_passed": 1,
+    "guard_skipped": 0,
+    "guard_strict_trx": "PASS",
+    "full_backend_rebuild": false,
+    "rcsi_verifier_python_passed": 91,
+    "safe_summary_python_passed": 76,
+    "python_skipped": 0,
+    "production_source_unchanged_from": "581d01e7807bdb4dcbfcf7b9a5965ddb664b3924",
+    "tool_test_alignment_head": "135c5ddf49537bd445c87c28c73c1409533c871f",
+    "final_light_checks": {
+     "validators_native_exit": 0,
+     "backlog_tests": 64,
+     "backlog_skipped": 0,
+     "backend_group_tests": 38,
+     "backend_group_skipped": 0,
+     "bootstrap_tests": 56,
+     "bootstrap_skipped_existing_windows_conditional": 9,
+     "bootstrap_initial_failure": "Two exact template counts expected2 before new third command; fixed to exact3, both flags retained.",
+     "bootstrap_repeat_native_exit": 0,
+     "diff_check_exit": 0
+    }
    }
   },
-  "published_train_head_at_last_checkpoint": "8eb2668d0bc866816c5ab1698e0eb704231ffc73"
+  "published_train_head_at_last_checkpoint": "4d2a620972d1cdb55a317c76531d80cdc12bfa9a"
  },
  "teams": [
   {

@@ -1,6 +1,6 @@
 # W8 tek taslak K3 kapsam envanteri
 
-**Son kapsam eki:** `c6168c8e23afa323af003dc79fdab3c9fbc00872`. Aşağıdaki önceki
+**Son kapsam eki:** `5064a06ddbb3409a24a36170af76d5e3785f0f7b`. Aşağıdaki önceki
 donuk envanter ve bütün listeleri korunur; bu head'e kadar gelen son delta ve ara
 koşum sınırları belgenin sonundaki ekte ayrılır. Daha sonraki exact PR head'i için
 kaynak/pin/test/inceleme kanıtı yeniden bağlanmalıdır.
@@ -837,3 +837,7 @@ Sabit kapsam 174/174 kaynak DONE; toplam340/yenimain177 migration, toplam313/yen
 InventoryFutureAllocationContractsV1 mevcut System.Data.Common1/DbConnection1 girdisi, kanonik pozitif Int64 sürüm kontrolü için gerçek guard üreticisiyle `b1e1473c5d9d7799928263ab9f32c96106514a76d81ed9c1b553e361fce0c195` olarak yeniden üretildi. Yeni bypass girdisi/ham SQL API/tenant istisnası eklenmedi; K3 review bekler. Recovery riskli kaynak1461/f83a4a44766f40bb6666735273a586720fb90fc9762b9dfb790e6d25873ba93d gerçek üretici çıktısıdır.
 
 Kalite aracı kaynak hashleri: SQL verifier `28a5a658704d0b63b3fd67a6b8f7d709b3ba7b105e806b64f894c3843f48a347`; backend group verifier `4c43b0ab9dc3d052253937d67e59c8163d9344ef41349014e155f394412eaa04`. Son kaynak ve native kanıt sınırları W8_RUNTIME_KAPANIS_DURUMU son ekindedir. Önceki CI FAIL; son exact-head CI ve iki bağımsız tam K3 review halen gereklidir.
+
+## K3 ön inceleme sonrası kalite deltası — 5064a06dd
+
+174 kaynak dilim,340/177 migration,313/199 THROW ve118 yeni izin kayıt sayıları değişmedi. Yeni runtime bypass/context/izin girişi veya production/grant yok. SQL verifier yöntem-grupları ve global2400s/exact UUID+TRX+union/skip0 kapıları, gözlenen-only özet ve kapalı provider tanısı bağımsız K3 review bekler. Gerçek ev üretimi verifier hash8adf932dec0fee8f16e121d74392b863530b76c96cb375269bdf529a1aa297e9, verifier-test hashf81256442c584997842457d45f57e383ee6af10c13dbd4a22c7e23c4bf8d4162; yeni tenant bypass allowlist girdisi yok. İki SQL fact güçlendirildi, FQN/ilişkisel envanter aynı; yerel SQL NOT_CONFIGURED. Ayrıntı ve kısmi/iptal edilmiş tanı sınırları W8_RUNTIME_KAPANIS_DURUMU son ekindedir. Önceki4d2 CI FAIL ve A/B REQUEST-CHANGES korunur; tam yeni-head K3 review henüz yoktur.
