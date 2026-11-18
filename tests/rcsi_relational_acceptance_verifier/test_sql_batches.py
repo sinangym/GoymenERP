@@ -261,6 +261,32 @@ class SqlBatchTests(unittest.TestCase):
             self.assertEqual([2500, 2500, 2500], [kwargs["execution_deadline"] for _, kwargs in calls])
             self.assertEqual(3, len({args[args.index("--filter") + 1] for args, _ in calls}))
 
+    def test_adapter_warning_allows_diagnostic_continuation_but_retains_native_failure(self) -> None:
+        expected = {PREFIX + f"Case{i}": 1 for i in range(3)}
+        calls = []
+        def warned(batch):
+            return trx(batch, outcome="Failed").replace('</ResultSummary>', '<RunInfos><RunInfo outcome="Warning"><Text>private adapter detail</Text></RunInfo></RunInfos></ResultSummary>')
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(V, "SQL_BATCH_MAX_METHODS", 1), mock.patch.object(V, "run_bootstrap_preflight"), mock.patch.object(V, "run_checked", side_effect=self.diagnostic_runner(expected, calls, first_source=warned)):
+            root = Path(directory)
+            with self.assertRaises(V.NativeTestFailure) as failure:
+                V.run_sql_batches(root, root / "result.trx", expected)
+            self.assertEqual(1, failure.exception.exit_code)
+            self.assertEqual(3, len(calls))
+            self.assertEqual(3, len(list(root.glob("*.trx"))))
+            self.assertFalse(list(root.glob("*.json")))
+
+    def test_error_aborted_and_unknown_run_info_stop_diagnostics_before_next_batch(self) -> None:
+        expected = {PREFIX + f"Case{i}": 1 for i in range(10)}
+        for outcome in ("Error", "Aborted", "Unknown", "", None):
+            calls = []
+            def corrupted(batch):
+                attribute = "" if outcome is None else f' outcome="{outcome}"'
+                return trx(batch, outcome="Failed").replace('</ResultSummary>', '<RunInfos><RunInfo' + attribute + ' /></RunInfos></ResultSummary>')
+            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as directory, mock.patch.object(V, "run_bootstrap_preflight"), mock.patch.object(V, "run_checked", side_effect=self.diagnostic_runner(expected, calls, first_source=corrupted)):
+                with self.assertRaisesRegex(RuntimeError, "infrastructure run failure"):
+                    V.run_sql_batches(Path(directory), Path(directory) / "result.trx", expected)
+                self.assertEqual(1, len(calls))
+
     def test_failed_results_are_accepted_only_for_explicit_diagnostics(self) -> None:
         expected = {PREFIX + "Case": 2}
         with tempfile.TemporaryDirectory() as directory:

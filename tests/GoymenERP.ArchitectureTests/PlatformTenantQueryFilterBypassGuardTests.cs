@@ -228,8 +228,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Process/static lifetime changes require independent K3 review; no workflow or runtime bypass added.
     // W8: complete exact failed batches continue only for diagnostics; the first native failure
     // stays fatal and prevents proof. Infrastructure failures still stop; one global deadline remains.
+    // W8: normal adapter Warning RunInfo metadata does not stop an otherwise exact failed batch;
+    // Error/Aborted/unknown outcomes still stop, and the final native failure remains mandatory.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "8fbae0393b3510886508bb6b0af594b572a6bbd149b2f3df6f9494f6a35d8958";
+        "c5650132ff237c072a1f8c1c28ae33333dbb6125bceb8a232ad4d8e43afc0cb1";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";

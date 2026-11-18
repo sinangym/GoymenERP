@@ -793,8 +793,10 @@ def verify_sql_batch_trx(
             raise RuntimeError("Diagnostic SQL TRX additional counters must be integer zero.") from exception
         if any(other_counters):
             raise RuntimeError("Diagnostic SQL TRX additional counters must be integer zero.")
+        # Adapter RunInfo warnings occur in normal completed runs. They do not change
+        # exact result/counter checks or the sticky native failure and cannot yield proof.
         if any(element.tag.rsplit("}", 1)[-1] == "RunInfo"
-               and element.attrib.get("outcome") not in {"Passed", "Informational"}
+               and element.attrib.get("outcome") not in {"Passed", "Informational", "Warning"}
                for element in root.iter()):
             raise RuntimeError("Diagnostic SQL TRX contains an infrastructure run failure.")
     seen_execution_ids.update(batch_ids)
