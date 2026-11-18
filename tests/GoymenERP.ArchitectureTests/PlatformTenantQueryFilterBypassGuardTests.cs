@@ -7716,7 +7716,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     [Fact]
     public void Repository_build_security_pin_is_exact_and_fail_closed()
     {
-        const string canonical = """
+        var canonical = """
             <Project>
               <PropertyGroup>
                 <Deterministic>true</Deterministic>
@@ -7727,7 +7727,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
               </ItemGroup>
             </Project>
-            """;
+            """.ReplaceLineEndings("\n");
         var canonicalErrors = new List<string>();
         ValidateReviewedDirectoryBuildProps(
             XDocument.Parse(canonical),
@@ -7760,6 +7760,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
         foreach (var mutant in mutants)
         {
+            Assert.NotEqual(canonical, mutant);
             var errors = new List<string>();
             ValidateReviewedDirectoryBuildProps(
                 XDocument.Parse(mutant),
