@@ -163,7 +163,10 @@ public sealed class SecurityEventsPersistenceModelTests
         using (var context = Context())
         {
             var modelCheck = DesignEntity(context).GetCheckConstraints().Single(c => c.Name == "CK_SecurityEvents_EventType");
-            Assert.Equal(modelCheck.Sql, widened.Sql);
+            // The historical migration predates the later two-factor event extension.
+            Assert.Equal("[EventType] IN ('auth.login.succeeded', 'auth.login.failed', 'authz.denied', 'ai.authz.denied', 'identity.permission.changed', 'settings.policy.published', 'export.performed', 'retention.purge.requested', 'ai.tool.called', 'ai.request.refused', 'security.events.read', 'auth.login.rate_limited', 'identity.founder.recovered', 'identity.founder.password_reset', 'identity.founder.recovery_refused')", widened.Sql);
+            Assert.All(SecurityEventTypesV1.FounderRecoveryTypes,
+                type => Assert.Contains($"'{type}'", modelCheck.Sql, StringComparison.Ordinal));
         }
 
         Assert.All(SecurityEventTypesV1.FounderRecoveryTypes, type => Assert.Contains($"'{type}'", widened.Sql, StringComparison.Ordinal));

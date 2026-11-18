@@ -527,7 +527,7 @@ public sealed class ProductStockDisplayReferenceTests
         Assert.Equal(key, ProductStockDisplayReferenceService.SimilarityKey(family, template, References("DX51D", "none")));
         Assert.NotEqual(key, ProductStockDisplayReferenceService.SimilarityKey(family, template, References("DX52D", "none")));
         Assert.NotEqual(key, ProductStockDisplayReferenceService.SimilarityKey(family, template, References("DX51D", "z")));
-        Assert.EndsWith("6:coating4:none7:quality5:DX51D", key, StringComparison.Ordinal);
+        Assert.EndsWith("7:coating4:none7:quality5:DX51D", key, StringComparison.Ordinal);
     }
 
     [Fact]

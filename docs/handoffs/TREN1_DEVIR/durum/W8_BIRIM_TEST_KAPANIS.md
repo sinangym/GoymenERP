@@ -27,3 +27,9 @@ Fixture yalnız testte mutable ICompanyContext kullanır. Tüketilmiş geçici p
 ## Organization ve Logistics
 
 Organization takvim append-only negatif testi aynı guardın genişleyen hata metniyle hizalandı; modified/delete reddi aynen sınanır. Logistics SAT-D417 yeni plan üstü onay gerekliliği eski genel miktar aşımı kodundan ayrılır; terminal kayıt/replay/sürüm assertion’ları korunur. Shell1.6’daki iki yeni staged false amaç ve ayrı onay izni açık beklentilere eklendi; bütün eski route/control/permission ve availability beklentileri korunur. Düzeltilmiş koşular QUEUED.
+
+## Product ve SecurityEvents
+
+- Product SAT-D391/KIM-D45: kg/m şirket tablosundan gelir; profilde bulunmayabilir ve sac için de kayıtlı olabilir. Eski iki negatif varsayım yerine bu iki izinli kaynak sınırı ayrı pozitif örnekle korunur; negatif teori aynı sayıda gerçek sıfır wall/thickness ihlaliyle devam eder. Ağırlık uydurulmaz ve birim dönüşümü açılmaz. Similarity-key length prefix’inde coating yedi karakterdir; yanlış6 beklentisi7 oldu, değişen kontrollü değer assertion’ları aynen korundu.
+- SecurityEvents tarihsel founder migration’ı sonraki iki-aşamalı kurtarma event genişletmesinden önceki kesin15 olay listesini taşır. Tarihsel Up tam listeyle, güncel model de founder olaylarını koruma şartıyla sınanır; Down/THROW ve diğer güncel model assertion’ları değişmez.
+- Derleme/koşum QUEUED; ilk3+1 hata saklandı.

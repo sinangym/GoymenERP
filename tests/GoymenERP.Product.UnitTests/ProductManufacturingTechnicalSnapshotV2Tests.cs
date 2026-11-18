@@ -289,8 +289,8 @@ public sealed class ProductManufacturingTechnicalSnapshotV2Tests
     }
 
     [Theory]
-    [InlineData("profile-without-kg")]
-    [InlineData("sheet-with-kg")]
+    [InlineData("profile-with-invalid-wall")]
+    [InlineData("sheet-with-invalid-thickness")]
     [InlineData("missing-version")]
     [InlineData("zero-version")]
     [InlineData("unknown-kind")]
@@ -299,8 +299,8 @@ public sealed class ProductManufacturingTechnicalSnapshotV2Tests
     {
         var row = fault switch
         {
-            "profile-without-kg" => ProfileRow(version: 1) with { KgPerMetre = null },
-            "sheet-with-kg" => SheetRow(version: 1) with { KgPerMetre = 1m },
+            "profile-with-invalid-wall" => ProfileRow(version: 1) with { WallThicknessMm = 0m },
+            "sheet-with-invalid-thickness" => SheetRow(version: 1) with { ThicknessMm = 0m },
             "missing-version" => ProfileRow(version: 1) with { Version = null },
             "zero-version" => ProfileRow(version: 1) with { Version = 0 },
             "unknown-kind" => ProfileRow(version: 1) with { SectionKind = "Angle" },
@@ -309,6 +309,23 @@ public sealed class ProductManufacturingTechnicalSnapshotV2Tests
         var world = new World { Row = row };
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => world.Service().ReadAsync(Selection, default));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Imported_unit_weight_is_optional_for_a_profile_and_can_be_supplied_for_a_sheet(bool sheet)
+    {
+        // SAT-D391 / KIM-D45: an approved company table supplies kg/m; missing weight is not guessed.
+        var row = sheet ? SheetRow(version: 1) with { KgPerMetre = 1m }
+            : ProfileRow(version: 1) with { KgPerMetre = null };
+        var world = new World { Row = row };
+        var answer = await world.Service().ReadAsync(Selection, default);
+        Assert.Empty(answer.Errors);
+        var snapshot = Assert.IsType<ProductManufacturingTechnicalSnapshotV2>(answer.Snapshot);
+        Assert.Equal(row.KgPerMetre, snapshot.UnitWeight.KgPerMetre);
+        Assert.Equal(sheet ? ProductManufacturingUnitWeightSourceV2.ProductMaster : ProductManufacturingUnitWeightSourceV2.None,
+            snapshot.UnitWeight.Source);
     }
 
     [Fact]
