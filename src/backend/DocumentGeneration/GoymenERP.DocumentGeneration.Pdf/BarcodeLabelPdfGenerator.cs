@@ -72,9 +72,35 @@ public sealed class BarcodeLabelPdfGenerator
             graphics.DrawString(request.BarcodeText, font, XBrushes.Black,
                 new XPoint(Margin, top + BarcodeHeight + LineHeight));
         }
+        UseCompleteFontName(page);
         using var output = new MemoryStream();
         document.Save(output, closeStream: false);
         return new(request.TechnicalId, PdfVisibleFileName.Normalize(request.VisibleFileName),
             TechnicalPdfGenerator.PdfMediaType, output.ToArray());
+    }
+
+    private static void UseCompleteFontName(PdfPage page)
+    {
+        // PDFsharp 6.2.4 assigns a random subset tag even to EmbedCompleteFontFile fonts. This renderer uses
+        // one complete, hash-locked Noto Sans font. Keep its actual name in the three linked font dictionaries.
+        // Only this page's own font is touched: imported branding form resources and their subsets are unchanged.
+        var fonts = page.Resources.Elements.GetDictionary("/Font");
+        if (fonts is null || fonts.Elements.Count != 1)
+            throw new InvalidOperationException("The label PDF must contain its one complete Unicode font.");
+        var font = fonts.Elements.GetDictionary(fonts.Elements.Keys.Single());
+        var descendants = font?.Elements.GetArray("/DescendantFonts");
+        var cid = descendants is { Elements.Count: 1 } ? descendants.Elements.GetDictionary(0) : null;
+        var descriptor = cid?.Elements.GetDictionary("/FontDescriptor");
+        var taggedName = font?.Elements.GetName("/BaseFont");
+        if (font is null || cid is null || descriptor is null || font.Elements.GetName("/Subtype") != "/Type0"
+            || cid.Elements.GetName("/Subtype") != "/CIDFontType2"
+            || taggedName is not { Length: > 8 } || taggedName[0] != '/' || taggedName[7] != '+'
+            || !taggedName.Skip(1).Take(6).All(character => character is >= 'A' and <= 'Z')
+            || cid.Elements.GetName("/BaseFont") != taggedName || descriptor.Elements.GetName("/FontName") != taggedName)
+            throw new InvalidOperationException("The label PDF complete font dictionaries are inconsistent.");
+        var completeName = "/" + taggedName[8..];
+        font.Elements.SetName("/BaseFont", completeName);
+        cid.Elements.SetName("/BaseFont", completeName);
+        descriptor.Elements.SetName("/FontName", completeName);
     }
 }

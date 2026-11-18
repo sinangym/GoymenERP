@@ -25,6 +25,34 @@ public sealed class BarcodeLabelPdfGeneratorTests
         Assert.Equal(generator.Generate(Request()).Content, generator.Generate(Request()).Content);
     }
 
+    [Fact]
+    public void The_stable_font_name_preserves_the_complete_vendored_font_and_linked_unicode_dictionaries()
+    {
+        var generator = new BarcodeLabelPdfGenerator();
+        var first = generator.Generate(Request());
+        _ = generator.Generate(Request() with { Title = "Başka belge ı ş ğ", BarcodeText = "OTHER-002" });
+        Assert.Equal(first.Content, generator.Generate(Request()).Content);
+
+        using var pdf = PdfSharp.Pdf.IO.PdfReader.Open(new MemoryStream(first.Content),
+            PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import);
+        var fonts = Assert.IsType<PdfSharp.Pdf.PdfDictionary>(pdf.Pages[0].Resources.Elements.GetDictionary("/Font"));
+        var font = Assert.IsType<PdfSharp.Pdf.PdfDictionary>(fonts.Elements.GetDictionary(Assert.Single(fonts.Elements.Keys)));
+        Assert.Equal("/Type0", font.Elements.GetName("/Subtype"));
+        Assert.Equal("/Identity-H", font.Elements.GetName("/Encoding"));
+        Assert.NotNull(font.Elements.GetDictionary("/ToUnicode"));
+        var descendants = Assert.IsType<PdfSharp.Pdf.PdfArray>(font.Elements.GetArray("/DescendantFonts"));
+        Assert.Single(descendants.Elements);
+        var cid = Assert.IsType<PdfSharp.Pdf.PdfDictionary>(descendants.Elements.GetDictionary(0));
+        var descriptor = Assert.IsType<PdfSharp.Pdf.PdfDictionary>(cid.Elements.GetDictionary("/FontDescriptor"));
+        var name = font.Elements.GetName("/BaseFont");
+        Assert.Equal("/Noto Sans Regular", name);
+        Assert.Equal(name, cid.Elements.GetName("/BaseFont"));
+        Assert.Equal(name, descriptor.Elements.GetName("/FontName"));
+        var embedded = Assert.IsType<PdfSharp.Pdf.PdfDictionary>(descriptor.Elements.GetDictionary("/FontFile2"));
+        Assert.Equal(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Assets", "Fonts", "NotoSans-Regular.ttf")),
+            embedded.Stream.UnfilteredValue);
+    }
+
     [Theory]
     [InlineData("SENTETIK-001", true)]
     [InlineData("SENTETIK/01 + 2", true)]
