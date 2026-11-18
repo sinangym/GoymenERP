@@ -23,3 +23,7 @@ Düzeltilmiş Accounting koşusu QUEUED. Test silme, skip, karantina veya doğru
 İlk4 hata: adversarial CompanyId değişimi için immutable gerçek context kullanılması; geçici parola verilişinde değişen security stamp/version’ın oturum fixture’ına taşınmaması; Identity Shell1.3’teki mevcut kullanıcı yönetimi rotasının eski1.2 beklentisinde olmaması; LocalCredentialCommand correlation metadata assertion’ının yanlışlıkla bootstrap entity’sinde bulunması.
 
 Fixture yalnız testte mutable ICompanyContext kullanır. Tüketilmiş geçici parola testi mevcut stamp/version ile gerçek servis yoluna ulaşır. Bootstrap alanlarının zorunluluğu ayrıca korunur; correlation nullable/128 assertion’ı gerçek command entity’sinde tutulur. Shell yeni kullanıcı yönetimi route/permission kaydıyla tek tek hizalanır. Yetki/şifre politikası, production context veya grant değişmez. Düzeltilmiş koşu QUEUED.
+
+## Organization ve Logistics
+
+Organization takvim append-only negatif testi aynı guardın genişleyen hata metniyle hizalandı; modified/delete reddi aynen sınanır. Logistics SAT-D417 yeni plan üstü onay gerekliliği eski genel miktar aşımı kodundan ayrılır; terminal kayıt/replay/sürüm assertion’ları korunur. Shell1.6’daki iki yeni staged false amaç ve ayrı onay izni açık beklentilere eklendi; bütün eski route/control/permission ve availability beklentileri korunur. Düzeltilmiş koşular QUEUED.

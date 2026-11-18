@@ -230,10 +230,10 @@ public sealed partial class LogisticsInstructionServiceTests
         // §13: the loaded share is capped by the instructed remainder — terminal for this key (§7), replayed on retry.
         var over = new RecordLoadRequest("4", Guid.NewGuid(), "1.501", "AllocatedFromVehicleWeight");
         var refusal = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().RecordLoadAsync(id, lineId, over, Metadata("k-load-2")));
-        Assert.Equal((409, LogisticsProblemCodesV1.LoadExceedsInstructed, false), (refusal.Status, refusal.Code, refusal.IsReplay));
+        Assert.Equal((409, LogisticsPlanExcessV1.ApprovalRequired, false), (refusal.Status, refusal.Code, refusal.IsReplay));
         Assert.Single(world.Store.Refusals);
         var again = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().RecordLoadAsync(id, lineId, over, Metadata("k-load-2", correlation: "retry")));
-        Assert.Equal((409, LogisticsProblemCodesV1.LoadExceedsInstructed, true, "synthetic-correlation"), (again.Status, again.Code, again.IsReplay, again.OriginalCorrelationId));
+        Assert.Equal((409, LogisticsPlanExcessV1.ApprovalRequired, true, "synthetic-correlation"), (again.Status, again.Code, again.IsReplay, again.OriginalCorrelationId));
 
         // A stale version is terminal too; a Draft cannot take a load (state); both leave the instruction as it was.
         var stale = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>

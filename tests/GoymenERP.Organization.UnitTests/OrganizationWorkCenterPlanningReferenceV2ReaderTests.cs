@@ -197,14 +197,14 @@ public sealed class OrganizationWorkCenterPlanningReferenceV2ReaderTests
             var row = await context.WorkCenterCalendarShifts.FirstAsync();
             context.Entry(row).State = EntityState.Modified;
             var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
-            Assert.Equal("İş merkezi takvimi kayıtları silinemez; takvim satırları değiştirilemez.", exception.Message);
+            Assert.Equal("İş merkezi takvimi kayıtları, VKN değişiklik talepleri ve VKN düzeltmeleri silinemez; takvim satırları değiştirilemez.", exception.Message);
         }
 
         await using (var context = Context(database, Resolved(CompanyA)))
         {
             context.WorkCenterCalendars.Remove(await context.WorkCenterCalendars.SingleAsync());
             var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
-            Assert.Equal("İş merkezi takvimi kayıtları silinemez; takvim satırları değiştirilemez.", exception.Message);
+            Assert.Equal("İş merkezi takvimi kayıtları, VKN değişiklik talepleri ve VKN düzeltmeleri silinemez; takvim satırları değiştirilemez.", exception.Message);
         }
     }
 

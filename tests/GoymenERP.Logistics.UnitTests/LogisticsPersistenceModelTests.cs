@@ -845,9 +845,14 @@ public sealed class LogisticsPersistenceModelTests
         var provider = new LogisticsShellCapabilityProvider();
         var declarations = provider.GetDeclarations().Where(item =>
             !item.CapabilityId.StartsWith("logistics.subcontract-deliveries.", StringComparison.Ordinal)).ToList();
-        Assert.Equal("1.5", provider.ContractVersion);
-        Assert.Equal(12, declarations.Count);
-        Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
+        Assert.Equal("1.6", provider.ContractVersion);
+        Assert.Equal(14, declarations.Count);
+        Assert.All(declarations, declaration => Assert.Equal(
+            declaration.CapabilityId is not (LogisticsShellCapabilityProvider.PlanExcessPrepareCapabilityId
+                or LogisticsShellCapabilityProvider.PlanExcessApproveCapabilityId), declaration.ImplementationAvailable));
+        var excessPrepare = Assert.Single(declarations, item => item.CapabilityId == LogisticsShellCapabilityProvider.PlanExcessPrepareCapabilityId);
+        Assert.Equal(LogisticsShellCapabilityProvider.DetailCapabilityId, excessPrepare.ParentCapabilityId);
+        Assert.Equal([LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.LoadsRecord], excessPrepare.RequiredPermissions);
         Assert.Equal(
             [
                 ("logistics.instructions.create", "/lojistik/yukleme-talimatlari/yeni", LogisticsPermissionManifestV1.InstructionsCreate),
@@ -856,15 +861,16 @@ public sealed class LogisticsPersistenceModelTests
                 // AT-025: the operations work list's two separate sections, each behind its own read name.
                 ("logistics.operations-work.purchase", "/lojistik/operasyon-isleri/satinalma", LogisticsPermissionManifestV1.OperationsPurchaseWorkRead),
                 ("logistics.operations-work.sales", "/lojistik/operasyon-isleri/satis", LogisticsPermissionManifestV1.OperationsSalesWorkRead),
+                ("logistics.shipments.plan-excess.approve", "/lojistik/plan-ustu-sevk-onay", LogisticsPermissionManifestV1.ShipmentPlanExcessApprove),
                 ("logistics.transfer-departures.record", "/lojistik/transfer-cikislari", LogisticsPermissionManifestV1.TransferDeparturesRecord),
             ],
             declarations.Where(declaration => declaration.ParentCapabilityId is null)
                 .Select(declaration => (declaration.CapabilityId, declaration.RoutePath, declaration.RequiredPermissions.Single()))
                 .OrderBy(item => item.CapabilityId, StringComparer.Ordinal).ToArray());
-        Assert.Equal(21, LogisticsPermissionManifestV1.Names.Count);
+        Assert.Equal(22, LogisticsPermissionManifestV1.Names.Count);
         Assert.Equal("logistics.shipments.record", LogisticsPermissionManifestV1.ShipmentsRecord);
         Assert.Equal("logistics.deliveries.record", LogisticsPermissionManifestV1.DeliveriesRecord);
-        Assert.Equal(21, LogisticsPermissionManifestV1.Names.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(22, LogisticsPermissionManifestV1.Names.Distinct(StringComparer.Ordinal).Count());
         // AT-055: the dispatch note's three names (prepare, approve, cancel), each its own and, like the weighbridge record, with no
         // shell declaration (server-measured commands on the detail).
         Assert.Equal("logistics.dispatch-notes.create", LogisticsPermissionManifestV1.DispatchNotesCreate);
@@ -892,6 +898,8 @@ public sealed class LogisticsPersistenceModelTests
                 ("logistics.instructions.list", "L-02"),
                 ("logistics.operations-work.purchase", "L-09"),
                 ("logistics.operations-work.sales", "L-01"),
+                ("logistics.shipments.plan-excess.approve", "L-PLAN-EXCESS-APPROVE"),
+                ("logistics.shipments.plan-excess.prepare", "L-02-DETAIL"),
                 ("logistics.shipments.record", "L-02-DETAIL"),
                 ("logistics.transfer-departures.record", "STK-S8-DEPARTURE"),
             ],
