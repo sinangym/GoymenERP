@@ -25,3 +25,28 @@ ilişkisel envanter, backend kaynakları ve K3 onay durumunu değiştirmez.
 Yeni bypass/SQL/context izni, skip, grant/rol, provider veya production aktivasyonu
 yoktur. Mevcut K3 pending açıklamaları korunur; pin yenilemek review veya gerçek SQL
 kabulü değildir. .NET/Node, SQL, browser, Vitest, CI veya DB apply çalıştırılmaz.
+
+## İlk gerçek üretici sonucu ve dar Finance outbox sınıflandırması
+
+- Temiz `9701a7dd0` üzerinde gerçek generator native **exit 2**:
+  `Durable outbox contract surface drifted.` İlk stdout/stderr ve exit kaydı korunur.
+  İlgili Python suite'leri bu önkoşul bilinirken çalıştırılmadı; test atlanmadı.
+- Keşifte beklenen altı `*OutboxV1.cs` dosyasına karşı yedi gerçek dosya vardır.
+  Tek eksik kayıt mevcut `FinanceFinancialMovementOutboxV1.cs` owner yazıcısıdır.
+  FIN-S11/FIN-S14 kaynağı, ayrı mali olay veya yeni provider değildir.
+- `FinanceDbContext.Credits.cs` gerçek `finance.OutboxMessages` tablosunu composite
+  CompanyId/Id anahtarı, server-company filtresi, rowversion cursor ve şirket/olay/
+  kaynak/sürüm unique indeksiyle eşler. Gerçek DDL
+  `20261117005509_AddCreditActualMovements` içindedir. İki gerçek append metodu
+  `FinanceFinancialMovementOutboxV1.Add` ve `FinanceCreditMovementServiceV1.AddEvent`
+  exact blob/method hash'leriyle bağlanmıştır; yeni inventory kaydı **K3 pending** kalır.
+- Expense/transfer/book-value ve credit komutları gerçek owner source ve sürümü doğrular;
+  özgün command replay çıkışı writer'dan öncedir ve outbox aynı owner save/transaction'a
+  eklenir. Sürümlü payload CompanyId/EventId/source kimliklerini taşır. Gerçek Work
+  source kaydı `TrainCompletionHostComposition` içindedir; Finance reader şirketli
+  committed rowversion aralığını okur. Accounting kabulü envelope/source kimliği ve
+  payload hash'iyle tekrar teslimi doğrular; inventory bir dispatcher aktivasyonu değildir.
+- Bu somut physical outbox eklenince kayıtlı store sayısı 57 olur. Diğer henüz
+  keşfedilmemiş W8 tabloları bu sayıdan çıkarımla sınıflandırılmaz. Yeni required
+  evidence ve registry girdisi dışında validator semantiği gevşetilmedi. Yeni evidence
+  yolunun risky-surface kapsamına etkisi temiz commit'te gerçek yardımcıyla ölçülecektir.

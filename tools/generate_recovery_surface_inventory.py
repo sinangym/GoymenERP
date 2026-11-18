@@ -61,7 +61,8 @@ EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
 # commands; stok_lojistik: logistics.outbox, weighing-difference and package-standard attempts;
 # alis_cari: supplier-return attempts; satis: subcontract-service-invoice attempts); every new
 # classification is K3 review pending (owning team) until an independent K3 review signs it.
-EXPECTED_DURABLE_STORE_COUNT = 56
+# W8 FIN-S11: the actual Finance outbox is inventoried below; classification remains K3 pending.
+EXPECTED_DURABLE_STORE_COUNT = 57
 # Recovery pin Faz 1 (docs/delivery/RECOVERY_PIN_CAKISMA_ONERISI_v1.md, Sinan Q1 = yes, Issue #66):
 # the former global byte pin over every src/backend byte is replaced by a NARROW risky-surface
 # pin.  The narrow set is a token/file-class SUPERSET (never an inheritance guess) of the inputs
@@ -189,6 +190,7 @@ MESSAGE_MODEL_ANCHORS = (
 EXPECTED_OUTBOX_CONTRACT_PATHS = (
     "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Application/Contracts/CounterpartyPartyDeactivatedOutboxV1.cs",
     "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Application/Contracts/CounterpartyPartyMergedOutboxV1.cs",
+    "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceFinancialMovementOutboxV1.cs",
     "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Application/InventoryCustomerReturnOutboxV1.cs",
     "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Application/InventoryDefiniteShipmentOutboxV1.cs",
     "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Application/InventorySupplierReturnExitOutboxV1.cs",
@@ -249,6 +251,7 @@ EXPECTED_MESSAGE_DELIVERY_TABLES = (
     ("accounting", "Deliveries"),
     ("counterparty", "OutboxMessages"),
     ("finance", "OfficialInvoiceImportWorkDeliveries"),
+    ("finance", "OutboxMessages"),
     ("identity", "CompanySetupInboxReceipts"),
     ("identity", "OutboxMessages"),
     ("inventory", "OutboxMessages"),
@@ -433,6 +436,34 @@ WORK_CONTEXT = (
 
 
 DURABLE_STORE_SPECS = (
+    # W8 FIN-S11/FIN-S14: an existing physical Finance owner outbox, not a new provider or activation.
+    # Both actual append sites share the owner save and durable command replay. K3 review remains pending.
+    DurableStoreSpec(
+        "finance.outbox", "Finance", "outbox", "FinanceDbContext", "FinanceOutboxRow",
+        "finance", "OutboxMessages", ("FinanceFinancialMovementEventsV1", "FinanceCreditMovementEventsV1"),
+        (
+            _evidence(FINANCE_CONTEXT, 'Schema = "finance"'),
+            _evidence("src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/FinanceDbContext.Credits.cs",
+                      "model.Entity<FinanceOutboxRow>()", 'outbox.ToTable("OutboxMessages", Schema',
+                      "outbox.HasKey(x => new { x.CompanyId, x.Id })",
+                      "outbox.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId)",
+                      "outbox.Property(x => x.Position).IsRowVersion()",
+                      "outbox.HasIndex(x => new { x.CompanyId, x.EventType, x.AggregateId, x.AggregateVersion }).IsUnique()"),
+            _evidence("src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261117005509_AddCreditActualMovements.cs",
+                      'name: "OutboxMessages"', 'schema: "finance"'),
+            _evidence("src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceFinancialMovementOutboxV1.cs",
+                      "database.OutboxMessages.Add(new FinanceOutboxRow", "CompanyId = companyId",
+                      "SchemaVersion = FinanceFinancialMovementEventsV1.SchemaVersion", live_code=True),
+            _evidence("src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCreditMovementServiceV1.cs",
+                      "db.OutboxMessages.Add(new()", "CompanyId = context.CompanyId",
+                      "EventType = FinanceCreditMovementEventsV1.Recorded", live_code=True),
+            _evidence("src/backend/Modules/Finance/GoymenERP.Modules.Finance.Contracts/FinanceFinancialMovementEventsV1.cs",
+                      'SourceName = "finance.outbox.v1"', "SchemaVersion = 1",
+                      "public sealed record FinanceExpensePaymentRecordedV1", "public sealed record FinanceCashTransferRecordedV1"),
+            _evidence("src/backend/Modules/Finance/GoymenERP.Modules.Finance.Contracts/CreditMovementV1.cs",
+                      "public static class FinanceCreditMovementEventsV1", "public sealed record FinanceCreditMovementRecordedV1"),
+        ),
+    ),
     _store(
         "accounting.command-replay", "Accounting", "idempotency", "AccountingDbContext",
         "AccountingCommandRow", "accounting", "Commands", ACCOUNTING_CONTEXT,
@@ -999,6 +1030,8 @@ DURABLE_STORE_SPECS = (
 # binding is intentionally explicit: moving a write into an unused helper or a deferred
 # lambda must invalidate the inventory instead of silently preserving its source hash.
 WRITER_METHOD_SCOPES = {
+    ("finance.outbox", "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceFinancialMovementOutboxV1.cs"): "Add",
+    ("finance.outbox", "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCreditMovementServiceV1.cs"): "AddEvent",
     ("identity.company-setup-inbox", "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityCompanySetupService.cs"): "HandleAsync",
     ("identity.outbox", "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityCompanySetupService.cs"): "StageAssignmentAsync",
     ("organization.company-setup-inbox", "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanySetupInboxConsumer.cs"): "HandleAsync",
@@ -1198,6 +1231,9 @@ WRITER_METHOD_SCOPES = {
 # These declaration-and-body fingerprints bind recovery evidence to the reviewed live
 # methods.  Any semantic or execution-shape change must be deliberately re-inventoried.
 REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
+    # W8 actual Finance outbox append methods; technical inventory, K3 review pending.
+    ('src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceFinancialMovementOutboxV1.cs', 'Add'): 'e35043ca26982c951966869d91767e06323933e59494ca0e0fc3a9525a44fb7e',
+    ('src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCreditMovementServiceV1.cs', 'AddEvent'): 'b97917d70304e002c00f8be043189e10abdfe5dd84fe199b07f091baef4740c6',
     ("src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityCompanySetupService.cs", "HandleAsync"): "84b5c328c589fc7d91df4e610ccbe3c7e4ab591fa830a7d779561d21c6951b14",
     ("src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityCompanySetupService.cs", "StageAssignmentAsync"): "18ca686ed95cf81ce7875e99358d144250b4cf882689c26722338e93a2383d7f",
     ("src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanySetupInboxConsumer.cs", "HandleAsync"): "9033105dbdda4d313a516f7672590e3638712855b926b3d59c4a6ceec83a4f33",
@@ -1455,6 +1491,9 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
 # The full blobs retain reachability evidence around the pinned methods (for example,
 # private writer call sites) and bind every emitted source record to reviewed bytes.
 REVIEWED_LIVE_SOURCE_SHA256 = {
+    # W8 actual Finance outbox owner sources; technical inventory, K3 review pending.
+    'src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceFinancialMovementOutboxV1.cs': 'd74d1b71d6c2c46c7bfacddedf973bd12422b5ebb0e4d921561def4f2248e2dd',
+    'src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCreditMovementServiceV1.cs': '37d7b354f2a60df1f8fece63c5423e45488caf88787da8f3013a1ed7af3b5cc5',
     "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityCompanySetupService.cs": "de108188dcdc2ad3e41347ec044b0faca1299d227bbd22d8a7352366b49a4fdf",
     "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanySetupInboxConsumer.cs": "4b9bd27ceef08f89312fabed3e02f19ae60edc6ac5ac3f961d6d49080a8eb730",
     "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.Deactivation.cs": "6f44d4f0d467bf3f80f95e84f4d63eb662cbec25a18282fbbf050d211314d827",

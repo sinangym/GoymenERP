@@ -37,6 +37,7 @@ MODULE_SPEC.loader.exec_module(generator)
 
 
 EXPECTED_STORES = {
+    ("finance", "OutboxMessages"): ("FinanceOutboxRow", "outbox", "FinanceDbContext"),
     ("accounting", "Commands"): ("AccountingCommandRow", "idempotency", "AccountingDbContext"),
     ("accounting", "SourceDocumentAdmissions"): (
         "AccountingSourceDocumentAdmissionRow", "idempotency", "AccountingDbContext"),
@@ -493,7 +494,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
 
     def test_current_source_inventory_is_exact_and_schema_valid(self) -> None:
         self.assertEqual(
-            {"dbContexts": 19, "migrations": 339, "durableStores": 56},
+            {"dbContexts": 19, "migrations": 339, "durableStores": 57},
             self.inventory["counts"],
         )
         actual = {
@@ -503,13 +504,13 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
             for store in self.inventory["durableStores"]
         }
         self.assertEqual(EXPECTED_STORES, actual)
-        self.assertEqual(56, len(actual))
+        self.assertEqual(57, len(actual))
         self.assertEqual(self.inventory, generator.build_inventory(REPOSITORY_ROOT, SOURCE_COMMIT))
         generator.validate_inventory(REPOSITORY_ROOT, self.inventory)
 
     def test_store_evidence_preserves_the_explicit_company_setup_producer_gap(self) -> None:
         specs_by_id = {spec.identifier: spec for spec in generator.DURABLE_STORE_SPECS}
-        self.assertEqual(56, len(specs_by_id))
+        self.assertEqual(57, len(specs_by_id))
         # The physical table must survive recovery inventory even before its command exists.
         # This exact source gap is not a writer, an activation, or general permission to omit writers.
         self.assertEqual(

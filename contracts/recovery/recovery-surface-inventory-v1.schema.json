@@ -44,7 +44,7 @@
           "const": 339
         },
         "durableStores": {
-          "const": 56
+          "const": 57
         }
       }
     },
@@ -220,8 +220,8 @@
     },
     "durableStores": {
       "type": "array",
-      "minItems": 56,
-      "maxItems": 56,
+      "minItems": 57,
+      "maxItems": 57,
       "uniqueItems": true,
       "items": {
         "type": "object",
