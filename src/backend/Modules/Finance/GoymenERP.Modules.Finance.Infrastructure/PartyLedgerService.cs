@@ -563,11 +563,30 @@ public sealed partial class PartyLedgerService(
         dbContext.OpeningBalanceMovements.AsNoTracking()
             .Where(row => row.TargetKind == FinanceOpeningBalanceService.PartyAccountKind
                 && row.PartyId == partyId && row.TargetId == accountId)
-            .Select(row => new OpeningFact(row.Id, row.OpeningBalanceId, row.Kind, row.Direction, row.CurrencyId,
-                row.AmountText, row.OccurredOn, row.RecordedAtUtc));
+            .Select(row => new OpeningFact
+            {
+                Id = row.Id,
+                OpeningBalanceId = row.OpeningBalanceId,
+                Kind = row.Kind,
+                Direction = row.Direction,
+                CurrencyId = row.CurrencyId,
+                AmountText = row.AmountText,
+                OccurredOn = row.OccurredOn,
+                RecordedAtUtc = row.RecordedAtUtc,
+            });
 
-    private sealed record OpeningFact(Guid Id, Guid OpeningBalanceId, int Kind, int? Direction, Guid CurrencyId,
-        string AmountText, DateOnly OccurredOn, DateTimeOffset RecordedAtUtc);
+    // Member bindings keep the later date predicate, ordering and cap translatable to SQL.
+    private sealed class OpeningFact
+    {
+        public Guid Id { get; init; }
+        public Guid OpeningBalanceId { get; init; }
+        public int Kind { get; init; }
+        public int? Direction { get; init; }
+        public Guid CurrencyId { get; init; }
+        public string AmountText { get; init; } = string.Empty;
+        public DateOnly OccurredOn { get; init; }
+        public DateTimeOffset RecordedAtUtc { get; init; }
+    }
 
     private static PartyLedgerFact? OpeningFactOf(OpeningFact row)
     {
