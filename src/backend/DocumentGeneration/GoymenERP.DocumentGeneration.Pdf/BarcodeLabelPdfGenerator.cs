@@ -75,8 +75,57 @@ public sealed class BarcodeLabelPdfGenerator
         UseCompleteFontName(page);
         using var output = new MemoryStream();
         document.Save(output, closeStream: false);
+        var content = output.ToArray();
+        UseTechnicalMetadataIds(document, content, request.TechnicalId);
         return new(request.TechnicalId, PdfVisibleFileName.Normalize(request.VisibleFileName),
-            TechnicalPdfGenerator.PdfMediaType, output.ToArray());
+            TechnicalPdfGenerator.PdfMediaType, content);
+    }
+
+    private static void UseTechnicalMetadataIds(PdfDocument document, byte[] content, Guid technicalId)
+    {
+        // PDFsharp 6.2.4 creates XMP with two fresh UUIDs inside Save, after public customization ends.
+        // Bind only the generated catalog stream's UUID values. Equal-length writes preserve all PDF offsets.
+        var metadata = document.Internals.Catalog.Elements.GetDictionary("/Metadata");
+        if (metadata is null || metadata.Elements.GetName("/Type") != "/Metadata"
+            || metadata.Elements.GetName("/Subtype") != "/XML" || metadata.Stream is null
+            || metadata.Elements.ContainsKey("/Filter"))
+            throw new InvalidOperationException("The label PDF catalog metadata is not the expected plain XML stream.");
+        var objectId = PdfSharp.Pdf.Advanced.PdfInternals.GetObjectID(metadata);
+        if (objectId.IsEmpty)
+            throw new InvalidOperationException("The label PDF catalog metadata must be an indirect object.");
+        var source = metadata.Stream.Value;
+        var start = content.AsSpan().IndexOf(source);
+        var objectHeader = Encoding.ASCII.GetBytes($"\n{objectId.ObjectNumber} {objectId.GenerationNumber} obj\n");
+        var objectStart = content.AsSpan().IndexOf(objectHeader);
+        if (source.Length == 0 || start < 0 || content.AsSpan(start + source.Length).IndexOf(source) >= 0
+            || objectStart < 0 || content.AsSpan(objectStart + objectHeader.Length).IndexOf(objectHeader) >= 0
+            || start <= objectStart + objectHeader.Length || start - objectStart > 1024
+            || !content.AsSpan(start - 7, 7).SequenceEqual("stream\n"u8)
+            || !content.AsSpan(start + source.Length).StartsWith("\nendstream\nendobj\n"u8)
+            || metadata.Elements.GetInteger("/Length") != source.Length)
+            throw new InvalidOperationException("The label PDF catalog metadata object boundaries are inconsistent.");
+        var section = "<rdf:Description rdf:about=\"\" xmlns:xmpMM=\"http://ns.adobe.com/xap/1.0/mm/\">"u8;
+        var sectionStart = source.AsSpan().IndexOf(section);
+        if (sectionStart < 0 || source.AsSpan(sectionStart + section.Length).IndexOf(section) >= 0)
+            throw new InvalidOperationException("The label PDF catalog XMP identity section is ambiguous.");
+        var sectionEndOffset = source.AsSpan(sectionStart).IndexOf("</rdf:Description>"u8);
+        if (sectionEndOffset < 0)
+            throw new InvalidOperationException("The label PDF catalog XMP identity section is incomplete.");
+        var identities = source.AsSpan(sectionStart, sectionEndOffset);
+        var stable = Encoding.ASCII.GetBytes(technicalId.ToString("D"));
+        foreach (var name in new[] { "DocumentID", "InstanceID" })
+        {
+            var prefix = Encoding.ASCII.GetBytes($"<xmpMM:{name}>uuid:");
+            var suffix = Encoding.ASCII.GetBytes($"</xmpMM:{name}>");
+            var field = identities.IndexOf(prefix);
+            var value = field + prefix.Length;
+            if (field < 0 || identities[(field + prefix.Length)..].IndexOf(prefix) >= 0
+                || identities.Length - value < stable.Length + suffix.Length
+                || !identities.Slice(value + stable.Length, suffix.Length).SequenceEqual(suffix)
+                || !Guid.TryParseExact(Encoding.ASCII.GetString(identities.Slice(value, stable.Length)), "D", out _))
+                throw new InvalidOperationException("The label PDF catalog XMP identity is not one UUID value.");
+            stable.CopyTo(content.AsSpan(start + sectionStart + value, stable.Length));
+        }
     }
 
     private static void UseCompleteFontName(PdfPage page)
