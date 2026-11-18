@@ -1,6 +1,6 @@
 # W8 tek taslak K3 kapsam envanteri
 
-Karşılaştırma: main `3c1b47878447570210b933b83d874646f9c52e4b` → birleşik kaynak `031728b6f7fec8b77d56516f408d23112e103f2e`. Bu belge PR gövdesi için yazar kapsam girdisidir; bağımsız inceleme, SQL veya runtime kabulü değildir. Son PR head değişirse kanıt ve fingerprint kontrolleri yeniden bağlanır.
+Karşılaştırma: main `3c1b47878447570210b933b83d874646f9c52e4b` → donuk kapsam girdisi `99a874901645e82a1ccafd06ec00dc7a10f150cf`. Önceki envanter kaynağı `031728b6f7fec8b77d56516f408d23112e103f2e` idi; yeni kaynak farkı aşağıda ayrıca belirtilir. Bu belge PR gövdesi için yazar kapsam girdisidir; bağımsız inceleme, SQL veya runtime kabulü değildir. Son PR head değişirse kanıt ve fingerprint kontrolleri yeniden bağlanır.
 
 ## Sabit kaynak kapsamı
 
@@ -642,6 +642,49 @@ Korunan beş legacy context kaydı: PurchaseSupplierReturnHost **1**, FinanceCre
 Owner gerekçeleri: typed owner port üzerinden borrowed açık connection/transaction; aynı CompanyId ve beklenen sürüm; borrowed session connection/transaction’ı sahiplenmez; yalnız kendi şemasına yazma; consumer inbox/dedup. Sabit MIN_ACTIVE_ROWVERSION outbox ufku tenant satırı SQL’i değildir; satırlar ayrıca CompanyId/cursor/horizon ile EF üzerinden okunur. Global Product sınıflaması ve açık hedefli operator kurtarması tenant operasyonu gibi sunulmaz. Custom FindAsync/FindEvidence DbSet.Find değildir. Local pool seçimleri açık CompanyId predicate ile bağlanmıştır: [yerel filtre düzeltmesi](W8_LOCAL_SIRKET_FILTRESI.md).
 
 Bu açıklamalar toplu bypass izni değildir. Her registry girdisinin kendi kaynak/hash/API sayısı ve owner sınırı son head’de bağımsız K3 incelemesine tabidir. [Guard kaynak düzeltmeleri](W8_GUARD_KAYNAK_DUZELTME.md), [context tür ayrımı](W8_CONTEXT_SHAPE_KAPANIS.md).
+
+Ek, bağımsız **K3 pending** kayıt: `ProductPriceListDesignTimeDbContextFactory.cs`,
+`203d0536b0a02532c2d771d855ba6baeaeff9187` ile design-time factory siciline eklendi.
+Tek `ProductPriceListDbContext` oluşturur; şirket çözümlenmemiştir (`IsResolved=false`,
+`CompanyId=Guid.Empty`); `Set` reddedilir. Kaynakta connection açma, migration uygulama
+ve Save çağrısı yoktur. Bu model üretimi kaydı runtime host kaydı veya yetki değildir.
+Kaynak fingerprint'i `53d31a9757675a13c2d562ce2aefb90f22483f7e0ec66db06496dc1e2b729b6f`;
+bağımsız exact-head incelemesi bekler. Ayrı design-time sözlüğündeki bu kayıt yeni82
+runtime veya yeni16 context kaydı sayısına eklenmez. `031728b6..99a874901` guard farkı
+yalnız bu eklemedir; W5 12+5 ve W8 82+16 kayıtları silinmedi veya onaylanmış sayılmadı.
+
+## Son kapsam girdisinde korunan düzeltmeler
+
+- `031728b6..99a874901` kaynak farkı barkod PDF üreticisini, Purchasing invoice import
+  ve Sales official cancellation kaynak biçimi düzeltmelerini; ilgili Unit/PDF/RCSI
+  test fixture'larını ve recovery üreticisi/schema/test kayıtlarını içerir. Bu fark yeni
+  iş dilimi veya yeni migration/izin politikası değildir. Son kaynağın bounded git
+  sayımı main163→tren339 migration (+176), yeni199 THROW ve yeni118 permission adı
+  sonuçlarını değiştirmedi; yukarıdaki envanter satırları korundu.
+- **PDF determinizmi — DEC-DOC-004/DEC-DOC-010:** tam gömülü tek Noto Sans fontunun
+  PDFsharp6.2.4 tarafından rastgele üretilen üç descriptor adı, gerçek font adıyla
+  kaydetmeden önce bağlanır. Glyph/ToUnicode, font programı, ithal logo/antet formu ve
+  barkod içeriği değişmez; byte dizisinde regex dönüşümü yapılmaz. İlk iki başarısız
+  exact-byte testi ve araya farklı üretim giren/fontlu antetli regresyonlar korunur.
+  [PDF kaynak raporu](W8_PDF_DETERMINIZM_KAPANIS.md) bu dar değişikliği açıklar;
+  bu envanter son test sonucu veya kurumsal asset kabulü vermez.
+- **Finance erken kimlik reddi:** `FinanceCashAccountService` iki state-change girişinde
+  mevcut `IdentityRefusal`, transaction açılmadan önce de uygulanır. Girişteki yetki
+  sırası ve transaction içindeki fresh yetki/kimlik çiti korunur; geçersiz hedefi
+  bağlantı hatasıyla Unavailable yapma regresyonu giderilir. Sekiz özgün negatif test
+  beklentisi gevşetilmedi. Bu tüm tren/main kapsamındaki korunmuş backend düzeltmesidir;
+  `031728b6` sonrasında eklenmiş yeni delta olduğu iddia edilmez.
+  [Finance/Inventory raporu](W8_FINANCE_INVENTORY_TEST_KAPANIS.md).
+- **Logistics terminal sonuç kaydı:** plan üstü onay eksikliği/çatışması prepare yolunda
+  oluştuğunda da aynı iki409 kodu mevcut `TerminalAsync` yolunda saklanır. Fresh yetki
+  çiti, payload/key uyuşmazlığı, correlation ve yükleme payının yazılmaması korunur;
+  iş hatası başarıya çevrilmez. Bu da tüm tren/main kapsamındadır; bağımsız inceleme
+  ve son exact-head kanıtı bekler. [İlk birim koşusu kapanışı](W8_BIRIM_TEST_KAPANIS.md).
+- Recovery kaynak fingerprint'leri son birleşik kaynak üzerinden tekrar üretilmiştir;
+  [recovery raporu](W8_RECOVERY_KAPANIS.md) üretim ve eski hata kanıtını ayırır.
+  Parmakizi güncellemesi gerçek SQL, tarayıcı veya CI kabulü değildir. Devam eden
+  frontend ilk koşusu ve başka sahip dallarındaki birleştirilmemiş test düzeltmeleri
+  bu `99a874901` kapsam girdisine kabul edilmiş gibi eklenmez.
 
 ## Typed modül köprüleri
 
