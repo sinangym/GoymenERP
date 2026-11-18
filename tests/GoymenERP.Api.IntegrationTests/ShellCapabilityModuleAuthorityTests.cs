@@ -24,9 +24,11 @@ public sealed class ShellCapabilityModuleAuthorityTests
         IShellCapabilityProvider[] providers =
             [new CounterpartyShellCapabilityProvider(), new OrganizationShellCapabilityProvider(), new ProductShellCapabilityProvider()];
 
-        // On failure xUnit prints the actual revision: the constant is never guessed.
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13AndProductV12,
-            ShellCapabilityRegistry.ComputeCandidateRevision(providers));
+        // Keep the exact accepted revision; print the full producer value without xUnit string truncation.
+        var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
+        Assert.True(
+            ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13AndProductV12 == actual,
+            $"Product normal-host authority drifted. Actual: {actual}");
     }
 
     [Theory]
