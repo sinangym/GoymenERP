@@ -190,7 +190,7 @@ public sealed class ManufacturingCostDifferenceSqlServerRelationalAcceptanceTest
     private static PrepareManufacturingCostDifferenceV1 Preparation(Guid id, Guid period) => new(id, 1, period,
         new(2026, 11, 17), new(2026, 11, 16), Debit, Credit, "SENTETIK consumed cost accounting");
     private static AccountingCommandMetadata Metadata(Guid actor) => new(actor.ToString("D"),
-        AccountingJournalReversalPermissionNamesV1.Propose, [], "SENTETIK-cost-difference", null, Guid.NewGuid().ToString("N"), "UnitTest");
+        AccountingJournalReversalPermissionNamesV1.Propose, [], "SENTETIK-cost-difference", null, Guid.NewGuid().ToString("N"), SourceChannels.Web);
 
     private sealed class Run(string baseline, SqlServerRelationalApiFactory factory) : IAsyncDisposable
     {
@@ -292,7 +292,7 @@ public sealed class ManufacturingCostDifferenceSqlServerRelationalAcceptanceTest
         public bool IsResolved => true;
         public string CorrelationId => "SENTETIK-cost-difference";
         public string? CausationId => null;
-        public string SourceChannel => "UnitTest";
+        public string SourceChannel => SourceChannels.Web;
         public string? ClientIpAddress => null;
         public string? UserAgent => null;
         public void Set(string a, string? b, string c, string? d, string? e) => throw new NotSupportedException();

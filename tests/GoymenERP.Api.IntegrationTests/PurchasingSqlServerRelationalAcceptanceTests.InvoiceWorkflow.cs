@@ -60,7 +60,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         IPurchaseIncomingInvoiceMatchSourceV1? matching = null)
     {
         var company = new CompanyContext(); company.Set(CompanyA);
-        var correlation = new CorrelationContext(); correlation.Set(run.Correlation, null, "Test", null, null);
+        var correlation = new CorrelationContext(); correlation.Set(run.Correlation, null, SourceChannels.Web, null, null);
         return new(company, new NumberTestUser { UserId = run.Actor }, new NumberTestAuthority(), correlation,
             (IPurchasingIncomingInvoiceStoreV1)scope.Store, TimeProvider.System, finance, matching: matching);
     }

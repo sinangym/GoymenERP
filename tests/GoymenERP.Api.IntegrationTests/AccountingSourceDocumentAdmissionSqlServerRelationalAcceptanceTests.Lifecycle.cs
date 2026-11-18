@@ -1,3 +1,4 @@
+using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using System.Net;
@@ -162,7 +163,7 @@ public sealed partial class AccountingSourceDocumentAdmissionSqlServerRelational
     }
 
     private static AccountingCommandMetadata VoucherMetadata(Guid actor) => new(actor.ToString("D"),
-        NormalJournalPermissionNamesV1.DraftApprove, ["SENTETIK"], "SENTETIK-source-voucher", null, Key("voucher"), "UnitTest");
+        NormalJournalPermissionNamesV1.DraftApprove, ["SENTETIK"], "SENTETIK-source-voucher", null, Key("voucher"), SourceChannels.Web);
     private static AccountingSourceInvoiceCancellationV1 Cancellation() => new(CompanyA, "SENTETIK-source", "SENTETIK-cancel", null,
         Guid.NewGuid(), AccountingSourceDocumentKindsV1.SalesInvoice, SourceDocument, Invoice, 1, VoucherChecker,
         DateTimeOffset.Parse("2026-11-17T12:00:00Z"), "SENTETIK resmî iptal");

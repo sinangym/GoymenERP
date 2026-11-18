@@ -114,7 +114,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         public IReadOnlySet<Guid> AllowedCompanyIds => new HashSet<Guid> { companyId }; public bool CanAccessCompany(Guid id) => id == companyId;
         public Task<PermissionScope> RevalidatePermissionScopeAsync(string permissionCode, Guid id, CancellationToken token = default)
             => Task.FromResult(new PermissionScope(id == companyId, true, new HashSet<string>(), new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()));
-        public string CorrelationId => "SENTETIK-import-source"; public string? CausationId => null; public string SourceChannel => "Test";
+        public string CorrelationId => "SENTETIK-import-source"; public string? CausationId => null; public string SourceChannel => SourceChannels.Web;
         public string? ClientIpAddress => null; public string? UserAgent => null;
         public void Set(string id, string? cause, string channel, string? ip, string? agent) => throw new NotSupportedException();
         public Task<PurchasingPartyAccountAnswerV2> GetAuthorizedAsync(Guid party, Guid account, CancellationToken token = default)

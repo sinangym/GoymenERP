@@ -1,3 +1,4 @@
+using GoymenERP.BuildingBlocks.Observability;
 using System.Security.Cryptography;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
@@ -498,7 +499,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
                 {
                     await using var numberScope = new PurchaseDocumentNumberSqlTestOwner(factory.Services, company, numberUser, new NumberTestAuthority());
                     var admin = numberScope.Administration;
-                    var metadata = new SettingsCommandMetadataV1(company, run.Actor, "SENTETIK-number-format", null, "Test", null, null, "SENTETIK-number-format");
+                    var metadata = new SettingsCommandMetadataV1(company, run.Actor, "SENTETIK-number-format", null, SourceChannels.Web, null, null, "SENTETIK-number-format");
                     Assert.Equal(204, (await admin.RecordFormatAsync(new(SettingsDocumentSeriesV1.PurchaseOrder, "0", "ALI", 6, "SENTETIK biçim"), metadata)).Answer.StatusCode);
                 }
             return run;

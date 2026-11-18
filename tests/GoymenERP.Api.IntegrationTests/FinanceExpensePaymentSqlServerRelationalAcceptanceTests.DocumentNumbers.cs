@@ -1,3 +1,4 @@
+using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
@@ -118,7 +119,7 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
         Assert.Equal(CommandOutcome.Succeeded, result.Outcome); return result.Resource!;
     }
     private static SettingsCommandMetadataV1 NumberAdminMetadata(string key) =>
-        new(CompanyA, Recorder, "SENTETIK-number-admin", null, "Test", null, null, key);
+        new(CompanyA, Recorder, "SENTETIK-number-admin", null, SourceChannels.Web, null, null, key);
 
     private static async Task<PurchaseDocumentNumberSqlTestOwner> FinanceNumbersAsync(Run run)
     {

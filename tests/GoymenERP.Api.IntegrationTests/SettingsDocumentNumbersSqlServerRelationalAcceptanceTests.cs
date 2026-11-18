@@ -1,3 +1,4 @@
+using GoymenERP.BuildingBlocks.Observability;
 using System.Data;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
@@ -97,7 +98,7 @@ public sealed partial class SettingsCompanyPolicySqlServerRelationalAcceptanceTe
         Assert.Equal(0, await run.CountAsync("SELECT COUNT(*) FROM [settings].[DocumentNumberReservations]"));
         Assert.Equal(0, await run.CountAsync("SELECT COUNT(*) FROM [settings].[DocumentNumberCounters]"));
     }
-    private static SettingsCommandMetadataV1 NumberMetadata(string key) => new(CompanyA, "SENTETIK-reference-reader", "SENTETIK-number-" + key, null, "Test", null, null, key);
+    private static SettingsCommandMetadataV1 NumberMetadata(string key) => new(CompanyA, "SENTETIK-reference-reader", "SENTETIK-number-" + key, null, SourceChannels.Web, null, null, key);
     private sealed class NumberAuthority : IErpAuthorityRevalidationService
     {
         public int Measurements { get; private set; }

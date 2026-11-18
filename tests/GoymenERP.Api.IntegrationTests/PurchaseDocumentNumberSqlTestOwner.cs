@@ -1,3 +1,4 @@
+using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
@@ -33,7 +34,7 @@ internal sealed class PurchaseDocumentNumberSqlTestOwner : IAsyncDisposable
         var existing = await Administration.GetFormatHistoryAsync(SettingsDocumentSeriesV1.PurchaseOrder);
         if (existing.Versions.Count != 0) return;
         var answer = await Administration.RecordFormatAsync(new(SettingsDocumentSeriesV1.PurchaseOrder, "0", "ALI", 6, "SENTETIK numara biçimi"),
-            new SettingsCommandMetadataV1(company, actor, "SENTETIK-number-format", null, "Test", null, null, "SENTETIK-number-format"));
+            new SettingsCommandMetadataV1(company, actor, "SENTETIK-number-format", null, SourceChannels.Web, null, null, "SENTETIK-number-format"));
         Assert.Equal(204, answer.Answer.StatusCode);
     }
 

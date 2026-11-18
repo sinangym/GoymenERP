@@ -1,3 +1,4 @@
+using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -17,7 +18,7 @@ internal static class FinanceDocumentNumbersSqlFixture
             {
                 if ((await owner.Administration.GetFormatHistoryAsync(series)).Versions.Count != 0) continue;
                 var answer = await owner.Administration.RecordFormatAsync(new(series, "0", prefix, 6, "SENTETIK açık test biçimi"),
-                    new(company, actor, "SENTETIK-format-setup", null, "Test", null, null, "SENTETIK-format-" + prefix));
+                    new(company, actor, "SENTETIK-format-setup", null, SourceChannels.Web, null, null, "SENTETIK-format-" + prefix));
                 Assert.Equal(204, answer.Answer.StatusCode);
             }
         }
