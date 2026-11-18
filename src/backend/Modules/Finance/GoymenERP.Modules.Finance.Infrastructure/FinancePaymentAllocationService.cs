@@ -80,6 +80,13 @@ public sealed class FinancePaymentAllocationService(
             {
                 throw new FinanceAllocationPolicyException("paymentId", "finance_source_already_reversed");
             }
+            // DEC-FIN-006: allocation uses its recorded payment's existing financial fact;
+            // a recorded status or another payment's event cannot stand in for that source.
+            if (!await dbContext.OutgoingMoneyEvents.AsNoTracking()
+                    .AnyAsync(row => row.PaymentId == payment.Id, cancellationToken))
+            {
+                throw new FinanceAllocationPolicyException("paymentId", "finance_allocation_reference_invalid");
+            }
             var sourcePositions = await FinancePartyBalanceAssignment.ReadAsync(dbContext, FinanceBalanceAssignmentKinds.Payment,
                 payment.Id, payment.PartyId, payment.CompanyAccountId, payment.CurrencyId,
                 paymentState?.UnallocatedAmountText ?? payment.AmountText, true, cancellationToken);
