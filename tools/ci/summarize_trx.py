@@ -110,7 +110,39 @@ SQL_ERROR_NUMBERS = frozenset({"468", "207", "208", "547", "2601", "2627", "2714
 SQL_ERROR_RECORD = re.compile(
     r"(?m)^Error Number:(-?(?:0|[1-9][0-9]{0,9})),State:(0|[1-9][0-9]{0,2}),Class:(0|[1-9][0-9]{0,2})[ \t]*\r?$"
 )
-FailureKey = tuple[str | None, str, str | None, str | None]
+ASSERTION_KINDS = frozenset({
+    "Equal", "NotEqual", "Single", "Empty", "NotEmpty", "Contains", "DoesNotContain",
+    "Throws", "ThrowsAny", "True", "False", "Null", "NotNull", "Same", "NotSame",
+    "IsType", "IsNotType", "IsAssignableFrom", "Collection", "All", "InRange",
+    "NotInRange", "Equivalent", "Fail", "Multiple", "StartsWith", "EndsWith",
+    "Matches", "DoesNotMatch", "StrictEqual", "NotStrictEqual",
+})
+ASSERTION_HEADER = re.compile(r"(?m)^Assert\.([A-Za-z]+)\(\) Failure(?=:|$)")
+FailureKey = tuple[str | None, str, str | None, str | None, str | None, int | None]
+
+
+def closed_assertion_kind(message: str) -> str | None:
+    if not re.search(r"(?m)^Assert\.", message):
+        return None
+    candidates = ASSERTION_HEADER.findall(message)
+    if len(candidates) != 1 or candidates[0] not in ASSERTION_KINDS:
+        return "unknown"
+    return candidates[0]
+
+
+def matching_source_line(stack: str, test_fqn: str | None) -> int | None:
+    """Keep only a canonical line from a unique exact test method frame."""
+    if test_fqn is None:
+        return None
+    frame = re.compile(
+        r"(?m)^[ \t]*at " + re.escape(test_fqn)
+        + r"\([^()\r\n]*\) in [^\r\n]+:line ([1-9][0-9]{0,5})[ \t]*\r?$"
+    )
+    matching_frames = re.findall(r"(?m)^[ \t]*at " + re.escape(test_fqn) + r"\(", stack)
+    if len(matching_frames) != 1:
+        return None
+    candidates = frame.findall(stack)
+    return int(candidates[0]) if len(candidates) == 1 else None
 
 
 def closed_sql_error_code(message: str) -> str | None:
@@ -314,6 +346,13 @@ class ResultCollector:
         self.stdout_chars = 0
         self.stdout_overflow = False
         self.stdout_has_unexpected_child = False
+        self.assertion_kind: str | None = None
+        self.stack_depth: int | None = None
+        self.stack_parts: list[str] = []
+        self.stack_chars = 0
+        self.stack_rejected = False
+        self.source_line: int | None = None
+        self.stack_count = 0
         self.sql_error_code: str | None = None
         self.diagnostic_code: str | None = None
         self.diagnostic_ambiguous = False
@@ -340,9 +379,18 @@ class ResultCollector:
             self.stdout_chars = 0
             self.stdout_overflow = False
             self.stdout_has_unexpected_child = False
+            self.assertion_kind = None
+            self.stack_depth = None
+            self.stack_parts = []
+            self.stack_chars = 0
+            self.stack_rejected = False
+            self.source_line = None
+            self.stack_count = 0
             self.sql_error_code = None
             self.diagnostic_code = None
             self.diagnostic_ambiguous = False
+        elif self.stack_depth is not None and _depth > self.stack_depth:
+            self.stack_rejected = True
         elif self.message_depth is not None and _depth > self.message_depth:
             self.message_has_unexpected_child = True
         elif self.stdout_depth is not None and _depth > self.stdout_depth:
@@ -372,6 +420,17 @@ class ResultCollector:
         elif (
             self.failure_identity is not None
             and self.error_info_depth is not None
+            and name == "StackTrace"
+            and _depth == self.error_info_depth + 1
+        ):
+            self.stack_depth = _depth
+            self.stack_parts = []
+            self.stack_chars = 0
+            self.stack_rejected = False
+            self.stack_count += 1
+        elif (
+            self.failure_identity is not None
+            and self.error_info_depth is not None
             and name == "Message"
             and _depth == self.error_info_depth + 1
         ):
@@ -383,7 +442,14 @@ class ResultCollector:
             self.message_overflow = False
 
     def end(self, name: str, depth: int) -> None:
-        if name == "StdOut" and depth == self.stdout_depth:
+        if name == "StackTrace" and depth == self.stack_depth:
+            self.source_line = None
+            if not self.stack_rejected and self.stack_count == 1 and self.failure_identity is not None:
+                self.source_line = matching_source_line("".join(self.stack_parts), self.failure_identity[0])
+            self.stack_depth = None
+            self.stack_parts = []
+            self.stack_chars = 0
+        elif name == "StdOut" and depth == self.stdout_depth:
             code = None
             if (
                 not self.stdout_overflow
@@ -423,6 +489,11 @@ class ResultCollector:
                 self._reject_diagnostic()
             else:
                 self._accept_diagnostic(code)
+            kind = None
+            if not self.message_overflow and not self.message_has_unexpected_child:
+                kind = closed_assertion_kind("".join(self.message_parts))
+            if kind is not None:
+                self.assertion_kind = kind if self.assertion_kind is None else "unknown"
             if not self.message_overflow and not self.message_has_unexpected_child:
                 sql_code = closed_sql_error_code("".join(self.message_parts))
                 if sql_code is not None:
@@ -446,7 +517,7 @@ class ResultCollector:
                     and test_fqn != FINANCE_WORK_LEGACY_TEST_FQN
                 ):
                     diagnostic = None
-                self.failures[(test_fqn, category, diagnostic, self.sql_error_code)] += 1
+                self.failures[(test_fqn, category, diagnostic, self.sql_error_code, self.assertion_kind, self.source_line)] += 1
             self.result_depth = None
             self.failure_identity = None
             self.output_depth = None
@@ -464,6 +535,18 @@ class ResultCollector:
             self.diagnostic_ambiguous = False
 
     def data(self, text: str) -> None:
+        if self.stack_depth is not None:
+            remaining = MAX_DIAGNOSTIC_SCAN_CHARS - self.stack_chars
+            if remaining <= 0:
+                if text:
+                    self.stack_rejected = True
+                return
+            if remaining < len(text):
+                self.stack_rejected = True
+            if text:
+                self.stack_parts.append(text[:remaining])
+            self.stack_chars += min(len(text), remaining)
+            return
         if self.stdout_scanner is not None:
             remaining = MAX_DIAGNOSTIC_SCAN_CHARS - self.stdout_chars
             if remaining <= 0:
@@ -588,7 +671,7 @@ def build_summary(
         failures.update(file_failures)
 
     unresolved_failure_count = sum(
-        count for (test_fqn, _, _, _), count in failures.items() if test_fqn is None
+        count for (test_fqn, _, _, _, _, _), count in failures.items() if test_fqn is None
     )
     safe_groups = sorted(
         (
@@ -596,12 +679,14 @@ def build_summary(
                 **{"testFqn": test_fqn, "category": category, "count": count},
                 **({"diagnosticCode": diagnostic_code} if diagnostic_code is not None else {}),
                 **({"sqlErrorCode": sql_error_code} if sql_error_code is not None else {}),
+                **({"assertionKind": assertion_kind} if assertion_kind is not None else {}),
+                **({"sourceLine": source_line} if source_line is not None else {}),
             }
-            for (test_fqn, category, diagnostic_code, sql_error_code), count in failures.items()
+            for (test_fqn, category, diagnostic_code, sql_error_code, assertion_kind, source_line), count in failures.items()
             if test_fqn is not None
         ),
         key=lambda item: (
-            str(item["testFqn"]), str(item["category"]), str(item.get("diagnosticCode", "")), str(item.get("sqlErrorCode", ""))
+            str(item["testFqn"]), str(item["category"]), str(item.get("diagnosticCode", "")), str(item.get("sqlErrorCode", "")), str(item.get("assertionKind", "")), int(item.get("sourceLine", 0))
         ),
     )
     reported_groups = safe_groups[:failure_group_limit]
