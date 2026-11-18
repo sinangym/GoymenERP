@@ -528,9 +528,14 @@ public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
 
         await EnterAsync(maker, party, Vkn);
         var before = (await ReadAsync(maker, PathFor(party))).GetRawText();
-        var down = await Assert.ThrowsAsync<SqlException>(() =>
-            migrator.MigrateAsync("20260912003000_AddCompanyAccountContactInformation"));
+        var original = new GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations.AddPartyTaxIdentity();
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(original.DownOperations[0]).Sql;
+        var down = await Assert.ThrowsAsync<SqlException>(() => test.ExecuteAsync(guard, party));
         Assert.Equal(51059, down.Number);
+        // A full traversal stops first at the newer tax-history forward-fix barrier.
+        var newerFence = await Assert.ThrowsAsync<SqlException>(() =>
+            migrator.MigrateAsync("20260912003000_AddCompanyAccountContactInformation"));
+        Assert.Equal(51799, newerFence.Number);
         Assert.Equal(before, (await ReadAsync(maker, PathFor(party))).GetRawText());
     }
 

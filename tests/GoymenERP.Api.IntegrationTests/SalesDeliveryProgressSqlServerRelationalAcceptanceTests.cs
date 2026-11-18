@@ -172,7 +172,8 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
         await using (var a = run.SalesStore(CompanyA))
         await using (var logistics = run.LogisticsContext(CompanyA))
         {
-            var service = run.SalesService(a.Store, CompanyA, new LogisticsSalesOrderDeliveryReadPort(logistics.Context, logistics.Company));
+            var service = run.SalesService(a.Store, CompanyA, new LogisticsSalesOrderDeliveryReadPort(logistics.Context, logistics.Company),
+                new LogisticsSalesOrderCustomerReturnReadPort(logistics.Context, logistics.Company));
             var progress = await service.GetDraftDeliveryProgressAsync(draft.Id);
             var line = Assert.Single(progress.Lines);
             Assert.Equal((orderLine.Id, 1, KgUnit, "6", "0", "0", "6", "0"), (line.LineId, line.LineNo, line.OrderUnitId, line.Ordered,
@@ -516,20 +517,22 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
         {
             await using var sales = SalesStore(company);
             await using var logistics = LogisticsContext(company);
-            var progress = await SalesService(sales.Store, company, new LogisticsSalesOrderDeliveryReadPort(logistics.Context, logistics.Company))
+            var progress = await SalesService(sales.Store, company, new LogisticsSalesOrderDeliveryReadPort(logistics.Context, logistics.Company),
+                    new LogisticsSalesOrderCustomerReturnReadPort(logistics.Context, logistics.Company))
                 .GetDraftDeliveryProgressAsync(draftId);
             return Assert.Single(progress.Lines).ShippedBy;
         }
 
         /// <summary>The REAL draft service over a real store and the given delivery owner, the draft read granted and nothing else.</summary>
-        public SalesDraftService SalesService(ISalesOrderDraftStore store, Guid company, ISalesOrderDeliveryReadPortV1 deliveries)
+        public SalesDraftService SalesService(ISalesOrderDraftStore store, Guid company, ISalesOrderDeliveryReadPortV1 deliveries,
+            ISalesOrderCustomerReturnReadPortV1 customerReturns)
         {
             var companyContext = new CompanyContext();
             companyContext.Set(company);
             var owners = new NoOwners();
             return new SalesDraftService(companyContext, new FixedUser("SENTETIK-reader", company), new ReadAuthority(), new NoActiveRoles(),
                 new FixedCorrelation(Correlation), owners, owners, null, store, new SalesDraftServiceBindings(), TimeProvider.System,
-                deliveries: deliveries);
+                deliveries: deliveries, customerReturns: customerReturns);
         }
 
         public SalesScope SalesStore(Guid company)

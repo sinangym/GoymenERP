@@ -206,6 +206,7 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
     public async Task The_customer_return_migrations_Down_passes_with_no_return_and_refuses_51257_while_one_exists()
     {
         await using var run = await Run.StartAsync();
+        await AssertEmptyMigrationRollbackAsync(run, "_AddCustomerReturns");
         var (invoice, shipment) = await run.FinalizedInvoiceAsync("m");
         var guard = Assert.IsType<SqlOperation>(new AddCustomerReturns().DownOperations[0]).Sql;
         await run.ScalarAsync<int>(guard + " SELECT 1");
@@ -223,10 +224,12 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
         var index = Array.FindIndex(applied, id => id.EndsWith("_AddCustomerReturns", StringComparison.Ordinal));
         Assert.True(index > 0);
         var migrator = context.GetService<IMigrator>();
-        await migrator.MigrateAsync(applied[index]);
         var rollback = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[index - 1]));
-        Assert.Equal(51257, rollback.Number);
-        Assert.Equal(applied[..(index + 1)], await context.Database.GetAppliedMigrationsAsync());
+        // The finalized invoice also owns newer official-source evidence; that barrier is reached first.
+        Assert.Equal(51982, rollback.Number);
+        var sourceProof = Array.FindIndex(applied, id => id.EndsWith("_AddSalesInvoiceOfficialSourceProof", StringComparison.Ordinal));
+        Assert.True(sourceProof > index);
+        Assert.Equal(applied[..(sourceProof + 1)], await context.Database.GetAppliedMigrationsAsync());
         await context.Database.MigrateAsync();
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[CustomerReturns]"));
@@ -305,6 +308,7 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
     public async Task The_rejection_migrations_Down_passes_with_no_rejected_or_cancelled_return_and_refuses_51259_once_one_exists()
     {
         await using var run = await Run.StartAsync();
+        await AssertEmptyMigrationRollbackAsync(run, "_AddCustomerReturnRejectionAndCancellation");
         var (invoice, shipment) = await run.FinalizedInvoiceAsync("n");
         var guard = Assert.IsType<SqlOperation>(new AddCustomerReturnRejectionAndCancellation().DownOperations[0]).Sql;
         Guid id;
@@ -330,13 +334,28 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
         var index = Array.FindIndex(applied, migration => migration.EndsWith("_AddCustomerReturnRejectionAndCancellation", StringComparison.Ordinal));
         Assert.True(index > 0);
         var migrator = context.GetService<IMigrator>();
-        await migrator.MigrateAsync(applied[index]);
         var rollback = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[index - 1]));
-        Assert.Equal(51259, rollback.Number);
-        Assert.Equal(applied[..(index + 1)], await context.Database.GetAppliedMigrationsAsync());
+        // The finalized invoice also owns newer official-source evidence; that barrier is reached first.
+        Assert.Equal(51982, rollback.Number);
+        var sourceProof = Array.FindIndex(applied, id => id.EndsWith("_AddSalesInvoiceOfficialSourceProof", StringComparison.Ordinal));
+        Assert.True(sourceProof > index);
+        Assert.Equal(applied[..(sourceProof + 1)], await context.Database.GetAppliedMigrationsAsync());
         await context.Database.MigrateAsync();
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(6, await run.ScalarAsync<int>("SELECT [State] FROM [sales].[CustomerReturns] WHERE [Id] = @id", ("@id", id)));
+    }
+
+    private static async Task AssertEmptyMigrationRollbackAsync(Run run, string suffix)
+    {
+        // Full historical DDL is exercised before unrelated newer invoice evidence is created.
+        await using var context = run.SalesContext(CompanyA);
+        var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+        var index = Array.FindIndex(applied, id => id.EndsWith(suffix, StringComparison.Ordinal));
+        Assert.True(index > 0);
+        await context.GetService<IMigrator>().MigrateAsync(applied[index - 1]);
+        Assert.Equal(applied[..index], await context.Database.GetAppliedMigrationsAsync());
+        await context.Database.MigrateAsync();
+        Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
     }
 
     /// <summary>A raw copy of the stored draft return under another id with the given customer document (no attempt references it).</summary>

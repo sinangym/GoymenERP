@@ -350,9 +350,9 @@ public sealed class CounterpartyLegalNameSqlServerRelationalAcceptanceTests
 
         var requestId = await ProposeAsync(maker, party, version, "B Görmemeli");
 
-        // The legal-name permissions do not reach the trade name.
-        NewKey(maker);
-        using (var tradeNameDenied = await maker.PutAsync($"/api/v1/counterparties/{party}/trade-name",
+        // The legal-name checker has no separate basic-edit grant for the trade name.
+        NewKey(checker);
+        using (var tradeNameDenied = await checker.PutAsync($"/api/v1/counterparties/{party}/trade-name",
                    new StringContent(Body(new { expectedVersion = version, tradeName = "Ticari Ad" }), Encoding.UTF8, "application/json")))
         {
             Assert.Equal(HttpStatusCode.Forbidden, tradeNameDenied.StatusCode);

@@ -18,8 +18,10 @@ public sealed partial class SalesSubcontractServiceInvoiceSqlServerRelationalAcc
         var saved = await run.StoreAsync("claim-index-rollback", Weighing);
         await using var context = run.SalesContext(CompanyA);
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-        Assert.EndsWith("_AddSubcontractInvoiceClaimRange", applied[^1], StringComparison.Ordinal);
-        await context.GetService<IMigrator>().MigrateAsync(applied[^2]);
+        var index = Array.FindIndex(applied, id => id.EndsWith("_AddSubcontractInvoiceClaimRange", StringComparison.Ordinal));
+        Assert.True(index > 0);
+        await context.GetService<IMigrator>().MigrateAsync(applied[index - 1]);
+        Assert.Equal(applied[..index], await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sys.indexes WHERE object_id=OBJECT_ID(N'sales.SubcontractServiceInvoices') AND name=N'IX_SubcontractServiceInvoices_ClaimRange'"));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.SubcontractServiceInvoices WHERE Id=@id", ("@id", saved.Invoice.Id)));
         await context.Database.MigrateAsync();

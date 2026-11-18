@@ -22,7 +22,7 @@ public sealed partial class DocumentVaultSqlServerRelationalAcceptanceTests
         var label = Guid.Parse("58000000-0000-4000-8000-000000000040"); var inventory = new InventoryOwnerFixture(label);
         var filePolicy = new ConfigurationBuilder().AddInMemoryCollection().Build();
         await using var run = await Run.StartAsync(inventory, services => services.AddSingleton(new DocumentBrandingFilePolicy(filePolicy)));
-        const string makerSubject = "SENTETIK-branding-maker", publisherSubject = "SENTETIK-branding-publisher";
+        const string makerSubject = TestUsers.NoAssignment, publisherSubject = TestUsers.Unprovisioned;
         var actor = await run.GrantAsync(makerSubject, CompanyA, DocumentBrandingPermissionsV1.Manage,
             DocumentBrandingPermissionsV1.InventoryPrepare, DocumentBrandingPermissionsV1.InventoryPublish,
             DocumentsPermissionManifestV1.FilesUpload, ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead);
@@ -118,7 +118,7 @@ public sealed partial class DocumentVaultSqlServerRelationalAcceptanceTests
     {
         var policy = new ConfigurationBuilder().AddInMemoryCollection().Build();
         await using var run = await Run.StartAsync(configure: services => services.AddSingleton(new DocumentBrandingFilePolicy(policy)));
-        const string subject = "SENTETIK-branding-replay-admission";
+        const string subject = TestUsers.NoAssignment;
         await run.GrantAsync(subject, CompanyA, DocumentBrandingPermissionsV1.Manage, DocumentsPermissionManifestV1.FilesUpload);
         using var client = run.Client(subject, CompanyA);
         Guid id;
@@ -167,7 +167,7 @@ public sealed partial class DocumentVaultSqlServerRelationalAcceptanceTests
                 registration.ImplementationFactory is { } factory ? (IAuditTransactionWriterV1)factory(provider)
                     : (IAuditTransactionWriterV1)ActivatorUtilities.CreateInstance(provider, registration.ImplementationType!), fault));
         });
-        const string subject = "SENTETIK-branding-atomic"; await run.GrantAsync(subject, CompanyA, DocumentBrandingPermissionsV1.Manage);
+        const string subject = TestUsers.NoAssignment; await run.GrantAsync(subject, CompanyA, DocumentBrandingPermissionsV1.Manage);
         using var editor = run.Client(subject, CompanyA); var command = new SetCompanyDocumentBrandingV1("0", null, null, "SENTETIK atomic");
         var auditBefore = await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType=N'DocumentBranding'");
         fault.Armed = true;

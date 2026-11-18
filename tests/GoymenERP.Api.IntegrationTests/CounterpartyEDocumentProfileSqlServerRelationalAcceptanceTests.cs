@@ -685,22 +685,27 @@ public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTes
     public async Task Rollback_is_refused_while_a_profile_exists_and_allowed_on_an_empty_table()
     {
         await using var test = new EDocumentTest();
-        using var admin = test.Client();
-        var party = await CreateCustomerAsync(admin, "Geri Alma", SharedVkn);
-        await RecordAsync(admin, party, "EArchive");
-
-        var error = await Assert.ThrowsAnyAsync<SqlException>(
-            () => test.MigrateCounterpartyToAsync("20261027202534_AddCounterpartyCustomerGroups"));
-        Assert.Equal(51122, error.Number);
-        Assert.Equal(1, await test.ScalarAsync<int>("SELECT COUNT(*) FROM [counterparty].[CustomerEDocumentProfiles];"));
-
-        await test.ExecuteAsync("DELETE FROM [counterparty].[CustomerEDocumentProfiles];");
+        // Exercise the full historical rollback while every later history surface is empty.
         await test.MigrateCounterpartyToAsync("20261027202534_AddCounterpartyCustomerGroups");
         Assert.Equal(0, await test.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.tables WHERE [name]=N'CustomerEDocumentProfiles' AND SCHEMA_NAME([schema_id])=N'counterparty';"));
         await test.MigrateCounterpartyToAsync(null);
         Assert.Equal(1, await test.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.tables WHERE [name]=N'CustomerEDocumentProfiles' AND SCHEMA_NAME([schema_id])=N'counterparty';"));
+
+        using var admin = test.Client();
+        var party = await CreateCustomerAsync(admin, "Geri Alma", SharedVkn);
+        await RecordAsync(admin, party, "EArchive");
+        var original = new GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations.AddCustomerEDocumentProfiles();
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(original.DownOperations[0]).Sql;
+        // The profile migration's own fence is tested directly, without traversing newer tax/history fences.
+        var error = await Assert.ThrowsAnyAsync<SqlException>(() => test.ExecuteAsync(guard));
+        Assert.Equal(51122, error.Number);
+        var newerFence = await Assert.ThrowsAnyAsync<SqlException>(
+            () => test.MigrateCounterpartyToAsync("20261027202534_AddCounterpartyCustomerGroups"));
+        Assert.Equal(51799, newerFence.Number);
+        Assert.Equal(1, await test.ScalarAsync<int>("SELECT COUNT(*) FROM [counterparty].[CustomerEDocumentProfiles];"));
+        Assert.Equal(1, await test.ScalarAsync<int>("SELECT COUNT(*) FROM [counterparty].[CustomerEDocumentStatusRevisions];"));
     }
 
     private static void AssertEffective(JsonElement view, string outcome, string source, string? code, string reason)

@@ -26,7 +26,10 @@ public sealed partial class SalesInvoiceSqlServerRelationalAcceptanceTests
             var reader = new SalesFinalizedShipmentClaimReadPortV1(scope.Context, company);
             var result = await reader.ReadAsync(CompanyA, [.. ids, unknown], _ => { reads++; return Task.CompletedTask; });
             Assert.Equal(SalesShipmentClaimReadOutcomeV1.Available, result.Outcome);
-            Assert.Equal(3, result.Items.Count); Assert.Equal(18, reads);
+            Assert.Equal(3, result.Items.Count);
+            // Six real proof queries (including official cancellations and their outbox)
+            // each fenced before/after, twice, plus the outer entry/exit fence.
+            Assert.Equal(26, reads);
             foreach (var line in invoice.Lines)
             {
                 var item = Assert.Single(result.Items, x => x.ShipmentId == line.Share.ShipmentId);

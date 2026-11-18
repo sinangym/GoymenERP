@@ -55,8 +55,11 @@ public sealed partial class SalesSubcontractServiceInvoiceSqlServerRelationalAcc
             var index = Array.FindIndex(applied, id => id.EndsWith("_AddSubcontractInvoiceLifecycle", StringComparison.Ordinal));
             var refusal = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[index - 1]));
             Assert.Equal(51994, refusal.Number);
-            Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+            // Later empty migrations have already stepped down before this guarded migration refuses.
+            Assert.Equal(applied[..(index + 1)], await context.Database.GetAppliedMigrationsAsync());
             Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.SubcontractInvoiceLifecycles WHERE InvoiceId=@id", ("@id", invoice.Id)));
+            await context.Database.MigrateAsync();
+            Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         }
     }
 

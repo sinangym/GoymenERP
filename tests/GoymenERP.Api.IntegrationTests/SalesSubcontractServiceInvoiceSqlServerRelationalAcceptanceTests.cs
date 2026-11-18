@@ -110,7 +110,9 @@ public sealed partial class SalesSubcontractServiceInvoiceSqlServerRelationalAcc
         // SC34 history is forward-fix as well; rolling through it cannot discard the newer lifecycle evidence.
         var rollback = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[index - 1]));
         Assert.Equal(51994, rollback.Number);
-        Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+        var lifecycle = Array.FindIndex(applied, id => id.EndsWith("_AddSubcontractInvoiceLifecycle", StringComparison.Ordinal));
+        Assert.True(lifecycle > index);
+        Assert.Equal(applied[..(lifecycle + 1)], await context.Database.GetAppliedMigrationsAsync());
         await context.Database.MigrateAsync();
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[SubcontractServiceInvoices]"));
