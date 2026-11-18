@@ -40,3 +40,28 @@ kuralları değişmedi. Tam gerçek üretici tekrarı henüz QUEUED.
 verdi.339 migration,19 context,66 durable store; backend source digest
 `86dbfb29e792e9a5a328d8bb842fe97710ca9491dff71bc5f3c94eddc61c51c2`.
 Bu üretim,403 mimari testin düzeltme sonrası tekrarının yerine geçmez.
+
+## Native modül keşfi — kültürden bağımsız dokuz kimlik
+
+`914bf9938` tam modül doğrulamasında20 Release prebuild exit0 verdi. İlk13 projenin
+8.020 native testi PASS/skip0 olduğu halde doğrulayıcı Organization'ın dokuz
+deferred satır adında durdu: kayıtta `10/06/2026`, Türkçe Windows'ta `6.10.2026`.
+İlk native TRX ve verifier exit1 korundu; tam grup PASS sayılmadı.
+
+Aynı test metodu ve dokuz olumsuz giriş, sabit scalar `InlineData` fault adlarıyla
+keşfedilir; gerçek interval değerleri aynı factory switch'inde oluşturulur.
+17 interval kurucusunun bütün argümanları ve sırası mekanik olarak aynı çıktı.
+Bilinmeyen fault, SUT assertion'ından önce hata verir; yanlış bir vaka ret testi
+gibi geçemez. Parola/kültür/iş politikası veya production kodu değişmez.
+
+Yalnız bu artık gereksiz deferred metadata istisnası kaldırıldı (2→1); bilinmeyen
+deferred veri hâlâ reddedilir.29 verifier fonksiyonunun AST'si aynı, mevcut tüm
+negatif kapılar korunur. Python testinde metadata sayısı1 ve Organization'ın bu
+listede olmadığı açıkça doğrulanır; paket28/28 PASS,skip0. Üretici kaynak hash'leri
+verifier `e77fe8cb…`, testler `353f459e…` olarak mimari pinlere alındı.
+
+Gerçek Release build0, targeted9/9 PASS/skip0; mevcut structured-discovery ve TRX
+yordamları dokuz **farklı native SDK kimliğini** aynı çıktıda doğruladı. Windows
+kültürü zorlanmadı; hiçbir tarih/kimlik kontrolü gevşetilmedi. Tam20 modül ve403
+mimari tekrarları bu committed metadata üzerinde ayrıca koşulacaktır. Recovery'nin
+backend/build-control girdileri değişmedi.

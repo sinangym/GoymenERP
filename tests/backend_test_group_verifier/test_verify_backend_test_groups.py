@@ -992,7 +992,12 @@ class BackendGroupVerifierTests(unittest.TestCase):
                                             expected_case_ids={name: [identity]})
 
     def test_reviewed_deferred_case_identities_and_source_are_exact_at_both_gates(self) -> None:
-        self.assertEqual(len(VERIFIER.DEFERRED_THEORIES), 2)
+        self.assertEqual(len(VERIFIER.DEFERRED_THEORIES), 1)
+        self.assertNotIn(
+            "GoymenERP.Organization.UnitTests.WorkCenterWorkingTimeAvailabilityContractTests."
+            "Intervals_must_be_utc_positive_bounded_ordered_and_nonoverlapping",
+            VERIFIER.DEFERRED_THEORIES,
+        )
         for number, (name, (relative, _, cases)) in enumerate(VERIFIER.DEFERRED_THEORIES.items()):
             project = next(path for path in VERIFIER.GROUP_PROJECTS["modules"]
                            if name.startswith(Path(path).stem + "."))

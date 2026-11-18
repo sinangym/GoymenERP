@@ -203,10 +203,20 @@ public sealed class WorkCenterWorkingTimeAvailabilityContractTests
     }
 
     [Theory]
-    [MemberData(nameof(InvalidIntervals))]
+    [InlineData("starts-offset")]
+    [InlineData("ends-offset")]
+    [InlineData("empty")]
+    [InlineData("reversed")]
+    [InlineData("starts-before-query")]
+    [InlineData("ends-after-query")]
+    [InlineData("duplicate")]
+    [InlineData("overlap")]
+    [InlineData("unordered")]
     public void Intervals_must_be_utc_positive_bounded_ordered_and_nonoverlapping(
-        IReadOnlyList<WorkCenterWorkingTimeIntervalV1> intervals)
+        string fault)
     {
+        // Scalar case identities are serialized at discovery, independent of date display culture.
+        var intervals = InvalidIntervals(fault);
         Assert.Throws<ArgumentException>(() => Snapshot(Query(), intervals));
     }
 
@@ -236,29 +246,30 @@ public sealed class WorkCenterWorkingTimeAvailabilityContractTests
         Assert.Equal(2, parameters.Length);
     }
 
-    public static TheoryData<IReadOnlyList<WorkCenterWorkingTimeIntervalV1>> InvalidIntervals => new()
+    private static IReadOnlyList<WorkCenterWorkingTimeIntervalV1> InvalidIntervals(string fault) => fault switch
     {
-        new[] { new WorkCenterWorkingTimeIntervalV1(From.ToOffset(TimeSpan.FromHours(3)), From.AddHours(1)) },
-        new[] { new WorkCenterWorkingTimeIntervalV1(From, Through.ToOffset(TimeSpan.FromHours(3))) },
-        new[] { new WorkCenterWorkingTimeIntervalV1(From.AddHours(2), From.AddHours(2)) },
-        new[] { new WorkCenterWorkingTimeIntervalV1(From.AddHours(3), From.AddHours(2)) },
-        new[] { new WorkCenterWorkingTimeIntervalV1(From.AddTicks(-1), From.AddHours(1)) },
-        new[] { new WorkCenterWorkingTimeIntervalV1(From.AddHours(1), Through.AddTicks(1)) },
-        new[]
+        "starts-offset" => new[] { new WorkCenterWorkingTimeIntervalV1(From.ToOffset(TimeSpan.FromHours(3)), From.AddHours(1)) },
+        "ends-offset" => new[] { new WorkCenterWorkingTimeIntervalV1(From, Through.ToOffset(TimeSpan.FromHours(3))) },
+        "empty" => new[] { new WorkCenterWorkingTimeIntervalV1(From.AddHours(2), From.AddHours(2)) },
+        "reversed" => new[] { new WorkCenterWorkingTimeIntervalV1(From.AddHours(3), From.AddHours(2)) },
+        "starts-before-query" => new[] { new WorkCenterWorkingTimeIntervalV1(From.AddTicks(-1), From.AddHours(1)) },
+        "ends-after-query" => new[] { new WorkCenterWorkingTimeIntervalV1(From.AddHours(1), Through.AddTicks(1)) },
+        "duplicate" => new[]
         {
             new WorkCenterWorkingTimeIntervalV1(From.AddHours(6), From.AddHours(10)),
             new WorkCenterWorkingTimeIntervalV1(From.AddHours(6), From.AddHours(10)),
         },
-        new[]
+        "overlap" => new[]
         {
             new WorkCenterWorkingTimeIntervalV1(From.AddHours(6), From.AddHours(10)),
             new WorkCenterWorkingTimeIntervalV1(From.AddHours(9), From.AddHours(12)),
         },
-        new[]
+        "unordered" => new[]
         {
             new WorkCenterWorkingTimeIntervalV1(From.AddHours(12), From.AddHours(14)),
             new WorkCenterWorkingTimeIntervalV1(From.AddHours(6), From.AddHours(10)),
         },
+        _ => throw new ArgumentOutOfRangeException(nameof(fault)),
     };
 
     private static OrganizationWorkCenterWorkingTimeAvailabilityQueryV1 Query() =>

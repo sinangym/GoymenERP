@@ -784,3 +784,12 @@ K3 onayı, grant veya yeni policy değildir.
 Bu docs-only ekte kaynak/generator/guard değişmedi; .NET, Node, DB veya ağır Python
 paketi başlatılmadı. Salt git sayımı ve mevcut raporlar kullanıldı. Son üretici,
 test ve inceleme kanıtlarını entegrasyon sahibi gerçek final head'e bağlayacaktır.
+
+### Son yerel keşif taşınabilirliği düzeltmesi
+
+Organization'ın aynı dokuz interval ret vakası, tarih-kültürüne bağlı deferred
+nesne adları yerine native SDK'nin keşfedebildiği sabit scalar kimliklere taşındı.
+Dokuz vaka ve bütün giriş/assertion'lar korunur; artık gereksiz tek deferred
+metadata istisnası kaldırılır (2→1).29 verifier fonksiyonu aynı; keşif/TRX/skip
+kuralları değişmez. Gerçek9/9 hedef kimliği ve28/28 Python testi geçti; tam grup
+tekrarı ayrı alınır. [Mekanik karşılaştırma ve sınırlar](W8_ARCHITECTURE_KAPANIS.md).
