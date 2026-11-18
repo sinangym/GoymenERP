@@ -247094,6 +247094,98 @@
           }
         }
       },
+      "AccountPlanAccountViewV1": {
+        "required": [
+          "accountId",
+          "code",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "AccountPlanSourceViewV1": {
+        "required": [
+          "packageId",
+          "catalogVersion",
+          "accountPlanSourceVersion",
+          "accountsSourceSha256",
+          "activatedAtUtc",
+          "accountCount"
+        ],
+        "type": "object",
+        "properties": {
+          "packageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "catalogVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "accountPlanSourceVersion": {
+            "type": "string"
+          },
+          "accountsSourceSha256": {
+            "type": "string"
+          },
+          "activatedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "accountCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "AccountPlanViewV1": {
+        "required": [
+          "source",
+          "accounts"
+        ],
+        "type": "object",
+        "properties": {
+          "source": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AccountPlanSourceViewV1"
+              }
+            ]
+          },
+          "accounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccountPlanAccountViewV1"
+            }
+          }
+        }
+      },
       "AccountingCogsMappingDefaultV1": {
         "required": [
           "mappingKey",
@@ -248539,98 +248631,6 @@
           }
         }
       },
-      "AccountPlanAccountViewV1": {
-        "required": [
-          "accountId",
-          "code",
-          "name"
-        ],
-        "type": "object",
-        "properties": {
-          "accountId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "code": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          }
-        }
-      },
-      "AccountPlanSourceViewV1": {
-        "required": [
-          "packageId",
-          "catalogVersion",
-          "accountPlanSourceVersion",
-          "accountsSourceSha256",
-          "activatedAtUtc",
-          "accountCount"
-        ],
-        "type": "object",
-        "properties": {
-          "packageId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "catalogVersion": {
-            "pattern": "^-?(?:0|[1-9]\\d*)$",
-            "type": [
-              "null",
-              "integer",
-              "string"
-            ],
-            "format": "int64"
-          },
-          "accountPlanSourceVersion": {
-            "type": "string"
-          },
-          "accountsSourceSha256": {
-            "type": "string"
-          },
-          "activatedAtUtc": {
-            "type": [
-              "null",
-              "string"
-            ],
-            "format": "date-time"
-          },
-          "accountCount": {
-            "pattern": "^-?(?:0|[1-9]\\d*)$",
-            "type": [
-              "integer",
-              "string"
-            ],
-            "format": "int32"
-          }
-        }
-      },
-      "AccountPlanViewV1": {
-        "required": [
-          "source",
-          "accounts"
-        ],
-        "type": "object",
-        "properties": {
-          "source": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/AccountPlanSourceViewV1"
-              }
-            ]
-          },
-          "accounts": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AccountPlanAccountViewV1"
-            }
-          }
-        }
-      },
       "ActivateAccountingPostingAccountMappingRequestV1": {
         "required": [
           "expectedVersion",
@@ -249116,221 +249116,6 @@
           }
         }
       },
-      "ApprovedAccountingSourceCatalogViewV1": {
-        "required": [
-          "packageId",
-          "companyId",
-          "status",
-          "version",
-          "catalogVersion",
-          "templateVersion",
-          "accountPlanSourceVersion",
-          "accountsSourceSha256",
-          "postingMappingsSourceSha256",
-          "preparedByUserId",
-          "preparedAtUtc",
-          "activatedByUserId",
-          "activatedAtUtc",
-          "accountCount",
-          "bindingCount"
-        ],
-        "type": "object",
-        "properties": {
-          "packageId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "companyId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "status": {
-            "type": "string"
-          },
-          "version": {
-            "pattern": "^-?(?:0|[1-9]\\d*)$",
-            "type": [
-              "integer",
-              "string"
-            ],
-            "format": "int64"
-          },
-          "catalogVersion": {
-            "pattern": "^-?(?:0|[1-9]\\d*)$",
-            "type": [
-              "null",
-              "integer",
-              "string"
-            ],
-            "format": "int64"
-          },
-          "templateVersion": {
-            "type": "string"
-          },
-          "accountPlanSourceVersion": {
-            "type": "string"
-          },
-          "accountsSourceSha256": {
-            "type": "string"
-          },
-          "postingMappingsSourceSha256": {
-            "type": "string"
-          },
-          "preparedByUserId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "preparedAtUtc": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "activatedByUserId": {
-            "type": [
-              "null",
-              "string"
-            ],
-            "format": "uuid"
-          },
-          "activatedAtUtc": {
-            "type": [
-              "null",
-              "string"
-            ],
-            "format": "date-time"
-          },
-          "accountCount": {
-            "pattern": "^-?(?:0|[1-9]\\d*)$",
-            "type": [
-              "integer",
-              "string"
-            ],
-            "format": "int32"
-          },
-          "bindingCount": {
-            "pattern": "^-?(?:0|[1-9]\\d*)$",
-            "type": [
-              "integer",
-              "string"
-            ],
-            "format": "int32"
-          }
-        }
-      },
-      "ApprovedFinanceOpenItemSourceBatch": {
-        "required": [
-          "batchId",
-          "companyId",
-          "batchVersion",
-          "batchChecksum",
-          "rows"
-        ],
-        "type": "object",
-        "properties": {
-          "batchId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "companyId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "batchVersion": {
-            "type": "string"
-          },
-          "batchChecksum": {
-            "type": "string"
-          },
-          "rows": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ApprovedFinanceOpenItemSourceRow"
-            }
-          }
-        }
-      },
-      "ApprovedFinanceOpenItemSourcePage": {
-        "required": [
-          "companyId",
-          "items",
-          "nextCursor"
-        ],
-        "type": "object",
-        "properties": {
-          "companyId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ApprovedFinanceOpenItemSourceBatch"
-            }
-          },
-          "nextCursor": {
-            "type": [
-              "null",
-              "string"
-            ]
-          }
-        }
-      },
-      "ApprovedFinanceOpenItemSourceRow": {
-        "required": [
-          "openItemId",
-          "sourceDocumentId",
-          "sourceInstallmentId",
-          "sourceVersion",
-          "documentKind",
-          "partyId",
-          "companyAccountId",
-          "currencyId",
-          "amount",
-          "dueOn"
-        ],
-        "type": "object",
-        "properties": {
-          "openItemId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "sourceDocumentId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "sourceInstallmentId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "sourceVersion": {
-            "type": "string"
-          },
-          "documentKind": {
-            "type": "string"
-          },
-          "partyId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "companyAccountId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "currencyId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "amount": {
-            "type": "string"
-          },
-          "dueOn": {
-            "type": [
-              "null",
-              "string"
-            ],
-            "format": "date"
-          }
-        }
-      },
       "ApproveDispatchNoteRequest": {
         "required": [
           "expectedVersion"
@@ -249587,6 +249372,221 @@
               "string"
             ],
             "format": "int32"
+          }
+        }
+      },
+      "ApprovedAccountingSourceCatalogViewV1": {
+        "required": [
+          "packageId",
+          "companyId",
+          "status",
+          "version",
+          "catalogVersion",
+          "templateVersion",
+          "accountPlanSourceVersion",
+          "accountsSourceSha256",
+          "postingMappingsSourceSha256",
+          "preparedByUserId",
+          "preparedAtUtc",
+          "activatedByUserId",
+          "activatedAtUtc",
+          "accountCount",
+          "bindingCount"
+        ],
+        "type": "object",
+        "properties": {
+          "packageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "catalogVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "templateVersion": {
+            "type": "string"
+          },
+          "accountPlanSourceVersion": {
+            "type": "string"
+          },
+          "accountsSourceSha256": {
+            "type": "string"
+          },
+          "postingMappingsSourceSha256": {
+            "type": "string"
+          },
+          "preparedByUserId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "preparedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "activatedByUserId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "activatedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "accountCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "bindingCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "ApprovedFinanceOpenItemSourceBatch": {
+        "required": [
+          "batchId",
+          "companyId",
+          "batchVersion",
+          "batchChecksum",
+          "rows"
+        ],
+        "type": "object",
+        "properties": {
+          "batchId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "batchVersion": {
+            "type": "string"
+          },
+          "batchChecksum": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApprovedFinanceOpenItemSourceRow"
+            }
+          }
+        }
+      },
+      "ApprovedFinanceOpenItemSourcePage": {
+        "required": [
+          "companyId",
+          "items",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApprovedFinanceOpenItemSourceBatch"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ApprovedFinanceOpenItemSourceRow": {
+        "required": [
+          "openItemId",
+          "sourceDocumentId",
+          "sourceInstallmentId",
+          "sourceVersion",
+          "documentKind",
+          "partyId",
+          "companyAccountId",
+          "currencyId",
+          "amount",
+          "dueOn"
+        ],
+        "type": "object",
+        "properties": {
+          "openItemId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceDocumentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceInstallmentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceVersion": {
+            "type": "string"
+          },
+          "documentKind": {
+            "type": "string"
+          },
+          "partyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "currencyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "dueOn": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date"
           }
         }
       },
@@ -250222,25 +250222,6 @@
           }
         }
       },
-      "BankCsvMappingsViewV1": {
-        "required": [
-          "companyId",
-          "banks"
-        ],
-        "type": "object",
-        "properties": {
-          "companyId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "banks": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/BankCsvMappingBankViewV1"
-            }
-          }
-        }
-      },
       "BankCsvMappingVersionViewV1": {
         "required": [
           "profileId",
@@ -250403,6 +250384,25 @@
           },
           "reason": {
             "type": "string"
+          }
+        }
+      },
+      "BankCsvMappingsViewV1": {
+        "required": [
+          "companyId",
+          "banks"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "banks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BankCsvMappingBankViewV1"
+            }
           }
         }
       },
@@ -252285,38 +252285,6 @@
           }
         }
       },
-      "CompanyTaxIdCorrectionsView": {
-        "required": [
-          "companyId",
-          "companyVersion",
-          "canApply",
-          "items"
-        ],
-        "type": "object",
-        "properties": {
-          "companyId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "companyVersion": {
-            "pattern": "^-?(?:0|[1-9]\\d*)$",
-            "type": [
-              "integer",
-              "string"
-            ],
-            "format": "int64"
-          },
-          "canApply": {
-            "type": "boolean"
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/CompanyTaxIdCorrectionView"
-            }
-          }
-        }
-      },
       "CompanyTaxIdCorrectionView": {
         "required": [
           "id",
@@ -252373,6 +252341,38 @@
           },
           "isCurrent": {
             "type": "boolean"
+          }
+        }
+      },
+      "CompanyTaxIdCorrectionsView": {
+        "required": [
+          "companyId",
+          "companyVersion",
+          "canApply",
+          "items"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "canApply": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CompanyTaxIdCorrectionView"
+            }
           }
         }
       },
@@ -260114,33 +260114,6 @@
           }
         }
       },
-      "DocumentLinkCandidatesResponse": {
-        "required": [
-          "ownerKind",
-          "ownerId",
-          "sha256",
-          "items"
-        ],
-        "type": "object",
-        "properties": {
-          "ownerKind": {
-            "type": "string"
-          },
-          "ownerId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "sha256": {
-            "type": "string"
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/DocumentLinkCandidateView"
-            }
-          }
-        }
-      },
       "DocumentLinkCandidateView": {
         "required": [
           "documentId",
@@ -260190,6 +260163,33 @@
           "sourceOwnerId": {
             "type": "string",
             "format": "uuid"
+          }
+        }
+      },
+      "DocumentLinkCandidatesResponse": {
+        "required": [
+          "ownerKind",
+          "ownerId",
+          "sha256",
+          "items"
+        ],
+        "type": "object",
+        "properties": {
+          "ownerKind": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DocumentLinkCandidateView"
+            }
           }
         }
       },
@@ -260837,30 +260837,6 @@
           }
         }
       },
-      "EditProductDraftRequest": {
-        "required": [
-          "expectedVersion",
-          "changes",
-          "reason"
-        ],
-        "type": "object",
-        "properties": {
-          "expectedVersion": {
-            "maxLength": 19,
-            "minLength": 1,
-            "pattern": "^[1-9][0-9]*$",
-            "type": "string",
-            "description": "Required lossless positive Int64 decimal string, at most 9223372036854775807. JSON numbers are rejected."
-          },
-          "changes": {
-            "$ref": "#/components/schemas/ProductDraftChanges"
-          },
-          "reason": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false
-      },
       "EInvoiceScenarioCodeListVersionViewV1": {
         "required": [
           "profileId",
@@ -261046,6 +261022,30 @@
             }
           }
         }
+      },
+      "EditProductDraftRequest": {
+        "required": [
+          "expectedVersion",
+          "changes",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "maxLength": 19,
+            "minLength": 1,
+            "pattern": "^[1-9][0-9]*$",
+            "type": "string",
+            "description": "Required lossless positive Int64 decimal string, at most 9223372036854775807. JSON numbers are rejected."
+          },
+          "changes": {
+            "$ref": "#/components/schemas/ProductDraftChanges"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       },
       "EngineAnswerViewV1": {
         "required": [
@@ -261828,6 +261828,63 @@
           }
         }
       },
+      "FinalizeInventoryTransferReceiptDocumentV1": {
+        "required": [
+          "expectedDocumentVersion",
+          "expectedTransferVersion",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedDocumentVersion": {
+            "type": "string"
+          },
+          "expectedTransferVersion": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinalizeSalesCustomerReturnRequest": {
+        "required": [
+          "expectedVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string"
+          },
+          "allocations": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SalesCustomerReturnAllocationRequest"
+            }
+          }
+        }
+      },
+      "FinalizeTransferOutgoingDocumentV1": {
+        "required": [
+          "expectedVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
       "FinalizedInvoiceCogsSelectionV1": {
         "required": [
           "companyId",
@@ -261947,63 +262004,6 @@
             "type": "string"
           }
         }
-      },
-      "FinalizeInventoryTransferReceiptDocumentV1": {
-        "required": [
-          "expectedDocumentVersion",
-          "expectedTransferVersion",
-          "reason"
-        ],
-        "type": "object",
-        "properties": {
-          "expectedDocumentVersion": {
-            "type": "string"
-          },
-          "expectedTransferVersion": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinalizeSalesCustomerReturnRequest": {
-        "required": [
-          "expectedVersion"
-        ],
-        "type": "object",
-        "properties": {
-          "expectedVersion": {
-            "type": "string"
-          },
-          "allocations": {
-            "type": [
-              "null",
-              "array"
-            ],
-            "items": {
-              "$ref": "#/components/schemas/SalesCustomerReturnAllocationRequest"
-            }
-          }
-        }
-      },
-      "FinalizeTransferOutgoingDocumentV1": {
-        "required": [
-          "expectedVersion"
-        ],
-        "type": "object",
-        "properties": {
-          "expectedVersion": {
-            "pattern": "^-?(?:0|[1-9]\\d*)$",
-            "type": [
-              "integer",
-              "string"
-            ],
-            "format": "int32"
-          }
-        },
-        "additionalProperties": false
       },
       "FinanceAllocationCommandResult": {
         "required": [
@@ -262631,67 +262631,6 @@
           }
         }
       },
-      "FinanceOfficialInvoiceImportedDocumentViewV1": {
-        "required": [
-          "sourceDocumentId",
-          "officialNo",
-          "ettn",
-          "invoiceDate",
-          "payableFunctionalAmount",
-          "hasPendingManual",
-          "approvedManualInvoiceId",
-          "effectivePayableFunctionalAmount",
-          "differentFields"
-        ],
-        "type": "object",
-        "properties": {
-          "sourceDocumentId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "officialNo": {
-            "type": "string"
-          },
-          "ettn": {
-            "type": "string"
-          },
-          "invoiceDate": {
-            "type": [
-              "null",
-              "string"
-            ],
-            "format": "date"
-          },
-          "payableFunctionalAmount": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "hasPendingManual": {
-            "type": "boolean"
-          },
-          "approvedManualInvoiceId": {
-            "type": [
-              "null",
-              "string"
-            ],
-            "format": "uuid"
-          },
-          "effectivePayableFunctionalAmount": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "differentFields": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      },
       "FinanceOfficialInvoiceImportIssueV1": {
         "required": [
           "rowNumber",
@@ -262810,6 +262749,67 @@
           },
           "isValid": {
             "type": "boolean"
+          }
+        }
+      },
+      "FinanceOfficialInvoiceImportedDocumentViewV1": {
+        "required": [
+          "sourceDocumentId",
+          "officialNo",
+          "ettn",
+          "invoiceDate",
+          "payableFunctionalAmount",
+          "hasPendingManual",
+          "approvedManualInvoiceId",
+          "effectivePayableFunctionalAmount",
+          "differentFields"
+        ],
+        "type": "object",
+        "properties": {
+          "sourceDocumentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "officialNo": {
+            "type": "string"
+          },
+          "ettn": {
+            "type": "string"
+          },
+          "invoiceDate": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date"
+          },
+          "payableFunctionalAmount": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "hasPendingManual": {
+            "type": "boolean"
+          },
+          "approvedManualInvoiceId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "effectivePayableFunctionalAmount": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "differentFields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -264439,6 +264439,10 @@
           }
         }
       },
+      "IFormFile": {
+        "type": "string",
+        "format": "binary"
+      },
       "IdentityAccessAssignment": {
         "required": [
           "assignmentId",
@@ -265003,10 +265007,6 @@
           }
         }
       },
-      "IFormFile": {
-        "type": "string",
-        "format": "binary"
-      },
       "ImportExchangeRatesRequestV1": {
         "required": [
           "from",
@@ -265114,63 +265114,6 @@
           }
         }
       },
-      "InventoryAllocationSuggestionsV1": {
-        "required": [
-          "companyId",
-          "salesOrderId",
-          "salesOrderLineId",
-          "productId",
-          "productVersion",
-          "similarProductMode",
-          "aiSuggestions",
-          "truncated",
-          "items",
-          "requestedKg"
-        ],
-        "type": "object",
-        "properties": {
-          "companyId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "salesOrderId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "salesOrderLineId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "productId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "productVersion": {
-            "type": "string"
-          },
-          "similarProductMode": {
-            "type": "string"
-          },
-          "aiSuggestions": {
-            "type": "string"
-          },
-          "truncated": {
-            "type": "boolean"
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/InventoryAllocationSuggestionV1"
-            }
-          },
-          "requestedKg": {
-            "type": [
-              "null",
-              "string"
-            ]
-          }
-        }
-      },
       "InventoryAllocationSuggestionV1": {
         "required": [
           "labelId",
@@ -265229,6 +265172,63 @@
             "type": "string"
           },
           "maximumDeviationPercent": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "InventoryAllocationSuggestionsV1": {
+        "required": [
+          "companyId",
+          "salesOrderId",
+          "salesOrderLineId",
+          "productId",
+          "productVersion",
+          "similarProductMode",
+          "aiSuggestions",
+          "truncated",
+          "items",
+          "requestedKg"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "salesOrderId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "salesOrderLineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productVersion": {
+            "type": "string"
+          },
+          "similarProductMode": {
+            "type": "string"
+          },
+          "aiSuggestions": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InventoryAllocationSuggestionV1"
+            }
+          },
+          "requestedKg": {
             "type": [
               "null",
               "string"
@@ -265774,6 +265774,61 @@
           }
         }
       },
+      "InventoryFutureSupplyOptionV1": {
+        "required": [
+          "purchaseOrderId",
+          "purchaseOrderLineId",
+          "lineNo",
+          "supplierCode",
+          "supplierName",
+          "unitId",
+          "unitCode",
+          "allocatableQuantity",
+          "reservedQuantity",
+          "availableQuantity"
+        ],
+        "type": "object",
+        "properties": {
+          "purchaseOrderId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "purchaseOrderLineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lineNo": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "supplierCode": {
+            "type": "string"
+          },
+          "supplierName": {
+            "type": "string"
+          },
+          "unitId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "unitCode": {
+            "type": "string"
+          },
+          "allocatableQuantity": {
+            "type": "string"
+          },
+          "reservedQuantity": {
+            "type": "string"
+          },
+          "availableQuantity": {
+            "type": "string"
+          }
+        }
+      },
       "InventoryFutureSupplyOptionsV1": {
         "required": [
           "companyId",
@@ -265829,61 +265884,6 @@
               "null",
               "string"
             ]
-          }
-        }
-      },
-      "InventoryFutureSupplyOptionV1": {
-        "required": [
-          "purchaseOrderId",
-          "purchaseOrderLineId",
-          "lineNo",
-          "supplierCode",
-          "supplierName",
-          "unitId",
-          "unitCode",
-          "allocatableQuantity",
-          "reservedQuantity",
-          "availableQuantity"
-        ],
-        "type": "object",
-        "properties": {
-          "purchaseOrderId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "purchaseOrderLineId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "lineNo": {
-            "pattern": "^-?(?:0|[1-9]\\d*)$",
-            "type": [
-              "integer",
-              "string"
-            ],
-            "format": "int32"
-          },
-          "supplierCode": {
-            "type": "string"
-          },
-          "supplierName": {
-            "type": "string"
-          },
-          "unitId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "unitCode": {
-            "type": "string"
-          },
-          "allocatableQuantity": {
-            "type": "string"
-          },
-          "reservedQuantity": {
-            "type": "string"
-          },
-          "availableQuantity": {
-            "type": "string"
           }
         }
       },
@@ -266235,33 +266235,6 @@
           }
         }
       },
-      "InventoryLabelPhysicalAllocationsV1": {
-        "required": [
-          "labelId",
-          "labelVersion",
-          "items",
-          "windowFull"
-        ],
-        "type": "object",
-        "properties": {
-          "labelId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "labelVersion": {
-            "type": "string"
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/InventoryLabelPhysicalAllocationV1"
-            }
-          },
-          "windowFull": {
-            "type": "boolean"
-          }
-        }
-      },
       "InventoryLabelPhysicalAllocationV1": {
         "required": [
           "allocation",
@@ -266292,6 +266265,33 @@
             "items": {
               "$ref": "#/components/schemas/InventoryPhysicalAllocationChangeEntryV1"
             }
+          }
+        }
+      },
+      "InventoryLabelPhysicalAllocationsV1": {
+        "required": [
+          "labelId",
+          "labelVersion",
+          "items",
+          "windowFull"
+        ],
+        "type": "object",
+        "properties": {
+          "labelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "labelVersion": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InventoryLabelPhysicalAllocationV1"
+            }
+          },
+          "windowFull": {
+            "type": "boolean"
           }
         }
       },
@@ -268722,27 +268722,6 @@
           }
         }
       },
-      "InventorySubcontractAllocationReleaseCandidatesV1": {
-        "required": [
-          "items",
-          "nextCursor"
-        ],
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/InventorySubcontractAllocationReleaseCandidateV1"
-            }
-          },
-          "nextCursor": {
-            "type": [
-              "null",
-              "string"
-            ]
-          }
-        }
-      },
       "InventorySubcontractAllocationReleaseCandidateV1": {
         "required": [
           "allocation",
@@ -268779,6 +268758,27 @@
           "outputFactId": {
             "type": "string",
             "format": "uuid"
+          }
+        }
+      },
+      "InventorySubcontractAllocationReleaseCandidatesV1": {
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InventorySubcontractAllocationReleaseCandidateV1"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -269126,45 +269126,6 @@
           }
         }
       },
-      "InventoryTransferPlanCandidatesV1": {
-        "required": [
-          "companyId",
-          "query",
-          "limit",
-          "items",
-          "searchWindowFull"
-        ],
-        "type": "object",
-        "properties": {
-          "companyId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "query": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "limit": {
-            "pattern": "^-?(?:0|[1-9]\\d*)$",
-            "type": [
-              "integer",
-              "string"
-            ],
-            "format": "int32"
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/InventoryTransferPlanCandidateV1"
-            }
-          },
-          "searchWindowFull": {
-            "type": "boolean"
-          }
-        }
-      },
       "InventoryTransferPlanCandidateV1": {
         "required": [
           "labelId",
@@ -269227,7 +269188,7 @@
           }
         }
       },
-      "InventoryTransferPlanDestinationsV1": {
+      "InventoryTransferPlanCandidatesV1": {
         "required": [
           "companyId",
           "query",
@@ -269258,7 +269219,7 @@
           "items": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/InventoryTransferPlanDestinationV1"
+              "$ref": "#/components/schemas/InventoryTransferPlanCandidateV1"
             }
           },
           "searchWindowFull": {
@@ -269314,6 +269275,45 @@
           "custodianId": {
             "type": "string",
             "format": "uuid"
+          }
+        }
+      },
+      "InventoryTransferPlanDestinationsV1": {
+        "required": [
+          "companyId",
+          "query",
+          "limit",
+          "items",
+          "searchWindowFull"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "query": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "limit": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InventoryTransferPlanDestinationV1"
+            }
+          },
+          "searchWindowFull": {
+            "type": "boolean"
           }
         }
       },
@@ -269401,40 +269401,6 @@
           }
         }
       },
-      "InventoryTransferReceiptDocumentsV1": {
-        "required": [
-          "companyId",
-          "transferId",
-          "items",
-          "searchWindowFull"
-        ],
-        "type": "object",
-        "properties": {
-          "companyId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "transferId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/InventoryTransferReceiptDocumentViewV1"
-            }
-          },
-          "searchWindowFull": {
-            "type": "boolean"
-          },
-          "nextCursor": {
-            "type": [
-              "null",
-              "string"
-            ]
-          }
-        }
-      },
       "InventoryTransferReceiptDocumentViewV1": {
         "required": [
           "companyId",
@@ -269513,6 +269479,40 @@
           },
           "sourceVersion": {
             "type": "string"
+          }
+        }
+      },
+      "InventoryTransferReceiptDocumentsV1": {
+        "required": [
+          "companyId",
+          "transferId",
+          "items",
+          "searchWindowFull"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "transferId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InventoryTransferReceiptDocumentViewV1"
+            }
+          },
+          "searchWindowFull": {
+            "type": "boolean"
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -269663,6 +269663,40 @@
           }
         }
       },
+      "InventoryTransferReceiptWorkDisplayCandidateV1": {
+        "required": [
+          "transfer",
+          "labelCodes",
+          "sourceLocationCode",
+          "sourceLocationName",
+          "destinationLocationCode",
+          "destinationLocationName"
+        ],
+        "type": "object",
+        "properties": {
+          "transfer": {
+            "$ref": "#/components/schemas/InventoryTransferListItemV1"
+          },
+          "labelCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sourceLocationCode": {
+            "type": "string"
+          },
+          "sourceLocationName": {
+            "type": "string"
+          },
+          "destinationLocationCode": {
+            "type": "string"
+          },
+          "destinationLocationName": {
+            "type": "string"
+          }
+        }
+      },
       "InventoryTransferReceiptWorkDisplayCandidatesV1": {
         "required": [
           "companyId",
@@ -269710,40 +269744,6 @@
               "null",
               "string"
             ]
-          }
-        }
-      },
-      "InventoryTransferReceiptWorkDisplayCandidateV1": {
-        "required": [
-          "transfer",
-          "labelCodes",
-          "sourceLocationCode",
-          "sourceLocationName",
-          "destinationLocationCode",
-          "destinationLocationName"
-        ],
-        "type": "object",
-        "properties": {
-          "transfer": {
-            "$ref": "#/components/schemas/InventoryTransferListItemV1"
-          },
-          "labelCodes": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "sourceLocationCode": {
-            "type": "string"
-          },
-          "sourceLocationName": {
-            "type": "string"
-          },
-          "destinationLocationCode": {
-            "type": "string"
-          },
-          "destinationLocationName": {
-            "type": "string"
           }
         }
       },
@@ -269855,21 +269855,6 @@
           }
         }
       },
-      "InventoryTransferReversedByViewV1": {
-        "required": [
-          "reversal",
-          "reverseTransferStatus"
-        ],
-        "type": "object",
-        "properties": {
-          "reversal": {
-            "$ref": "#/components/schemas/InventoryTransferReversalLinkViewV1"
-          },
-          "reverseTransferStatus": {
-            "type": "string"
-          }
-        }
-      },
       "InventoryTransferReverseResponseV1": {
         "required": [
           "transfer",
@@ -269882,6 +269867,21 @@
           },
           "reversal": {
             "$ref": "#/components/schemas/InventoryTransferReversalLinkViewV1"
+          }
+        }
+      },
+      "InventoryTransferReversedByViewV1": {
+        "required": [
+          "reversal",
+          "reverseTransferStatus"
+        ],
+        "type": "object",
+        "properties": {
+          "reversal": {
+            "$ref": "#/components/schemas/InventoryTransferReversalLinkViewV1"
+          },
+          "reverseTransferStatus": {
+            "type": "string"
           }
         }
       },
@@ -272238,38 +272238,6 @@
           }
         }
       },
-      "LogisticsSubcontractCandidatesV1": {
-        "required": [
-          "companyId",
-          "items",
-          "pageIndex",
-          "hasNext"
-        ],
-        "type": "object",
-        "properties": {
-          "companyId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/LogisticsSubcontractCandidateV1"
-            }
-          },
-          "pageIndex": {
-            "pattern": "^-?(?:0|[1-9]\\d*)$",
-            "type": [
-              "integer",
-              "string"
-            ],
-            "format": "int32"
-          },
-          "hasNext": {
-            "type": "boolean"
-          }
-        }
-      },
       "LogisticsSubcontractCandidateV1": {
         "required": [
           "salesOrderId",
@@ -272382,6 +272350,38 @@
             "type": "string"
           },
           "isReleasable": {
+            "type": "boolean"
+          }
+        }
+      },
+      "LogisticsSubcontractCandidatesV1": {
+        "required": [
+          "companyId",
+          "items",
+          "pageIndex",
+          "hasNext"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogisticsSubcontractCandidateV1"
+            }
+          },
+          "pageIndex": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "hasNext": {
             "type": "boolean"
           }
         }
@@ -272653,32 +272653,6 @@
           }
         }
       },
-      "LogisticsSubcontractSalesLinesV1": {
-        "required": [
-          "companyId",
-          "items",
-          "nextCursor"
-        ],
-        "type": "object",
-        "properties": {
-          "companyId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/LogisticsSubcontractSalesLineV1"
-            }
-          },
-          "nextCursor": {
-            "type": [
-              "null",
-              "string"
-            ]
-          }
-        }
-      },
       "LogisticsSubcontractSalesLineV1": {
         "required": [
           "salesOrderId",
@@ -272705,6 +272679,32 @@
           },
           "serviceName": {
             "type": "string"
+          }
+        }
+      },
+      "LogisticsSubcontractSalesLinesV1": {
+        "required": [
+          "companyId",
+          "items",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogisticsSubcontractSalesLineV1"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -272888,29 +272888,6 @@
           }
         }
       },
-      "LogisticsTransferDepartureCandidatesV1": {
-        "required": [
-          "companyId",
-          "items",
-          "windowFull"
-        ],
-        "type": "object",
-        "properties": {
-          "companyId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/LogisticsTransferDepartureCandidateV1"
-            }
-          },
-          "windowFull": {
-            "type": "boolean"
-          }
-        }
-      },
       "LogisticsTransferDepartureCandidateV1": {
         "required": [
           "transferId",
@@ -272959,6 +272936,29 @@
           "dispatchedAtUtc": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "LogisticsTransferDepartureCandidatesV1": {
+        "required": [
+          "companyId",
+          "items",
+          "windowFull"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogisticsTransferDepartureCandidateV1"
+            }
+          },
+          "windowFull": {
+            "type": "boolean"
           }
         }
       },
@@ -274317,24 +274317,6 @@
           }
         }
       },
-      "ManufacturingOutputLocationCandidatesV1": {
-        "required": [
-          "items",
-          "searchWindowFull"
-        ],
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ManufacturingOutputLocationCandidateV1"
-            }
-          },
-          "searchWindowFull": {
-            "type": "boolean"
-          }
-        }
-      },
       "ManufacturingOutputLocationCandidateV1": {
         "required": [
           "locationId",
@@ -274368,7 +274350,7 @@
           }
         }
       },
-      "ManufacturingOutputProductCandidatesV1": {
+      "ManufacturingOutputLocationCandidatesV1": {
         "required": [
           "items",
           "searchWindowFull"
@@ -274378,7 +274360,7 @@
           "items": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ManufacturingOutputProductCandidateV1"
+              "$ref": "#/components/schemas/ManufacturingOutputLocationCandidateV1"
             }
           },
           "searchWindowFull": {
@@ -274411,6 +274393,24 @@
           },
           "stockUnitCode": {
             "type": "string"
+          }
+        }
+      },
+      "ManufacturingOutputProductCandidatesV1": {
+        "required": [
+          "items",
+          "searchWindowFull"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManufacturingOutputProductCandidateV1"
+            }
+          },
+          "searchWindowFull": {
+            "type": "boolean"
           }
         }
       },
@@ -276253,6 +276253,41 @@
           }
         }
       },
+      "NormalJournalDraftAccountV1": {
+        "required": [
+          "lineNumber",
+          "accountId",
+          "accountCode",
+          "accountName"
+        ],
+        "type": "object",
+        "properties": {
+          "lineNumber": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "accountCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "accountName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "NormalJournalDraftAccountsViewV1": {
         "required": [
           "draftId",
@@ -276286,41 +276321,6 @@
             "items": {
               "$ref": "#/components/schemas/NormalJournalDraftAccountV1"
             }
-          }
-        }
-      },
-      "NormalJournalDraftAccountV1": {
-        "required": [
-          "lineNumber",
-          "accountId",
-          "accountCode",
-          "accountName"
-        ],
-        "type": "object",
-        "properties": {
-          "lineNumber": {
-            "pattern": "^-?(?:0|[1-9]\\d*)$",
-            "type": [
-              "integer",
-              "string"
-            ],
-            "format": "int32"
-          },
-          "accountId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "accountCode": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "accountName": {
-            "type": [
-              "null",
-              "string"
-            ]
           }
         }
       },
@@ -277831,24 +277831,6 @@
           }
         }
       },
-      "OrganizationLocationCandidatesV1": {
-        "required": [
-          "items",
-          "searchWindowFull"
-        ],
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/OrganizationLocationCandidateV1"
-            }
-          },
-          "searchWindowFull": {
-            "type": "boolean"
-          }
-        }
-      },
       "OrganizationLocationCandidateV1": {
         "required": [
           "locationId",
@@ -277879,6 +277861,24 @@
           },
           "siteName": {
             "type": "string"
+          }
+        }
+      },
+      "OrganizationLocationCandidatesV1": {
+        "required": [
+          "items",
+          "searchWindowFull"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrganizationLocationCandidateV1"
+            }
+          },
+          "searchWindowFull": {
+            "type": "boolean"
           }
         }
       },
@@ -280428,75 +280428,6 @@
           }
         }
       },
-      "PlannedInputRequestV1": {
-        "required": [
-          "parentRollId",
-          "plannedKg",
-          "expectedLabelVersion"
-        ],
-        "type": "object",
-        "properties": {
-          "parentRollId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "plannedKg": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "expectedLabelVersion": {
-            "type": "string"
-          },
-          "commercialContext": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/PlanCommercialContextRequestV1"
-              }
-            ]
-          }
-        }
-      },
-      "PlannedInputViewV1": {
-        "required": [
-          "parentRollId",
-          "plannedKg"
-        ],
-        "type": "object",
-        "properties": {
-          "parentRollId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "plannedKg": {
-            "type": "string"
-          },
-          "technicalSnapshot": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/CapturedPlanTechnicalSnapshotViewV1"
-              }
-            ]
-          },
-          "commercialContext": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/CapturedPlanCommercialContextViewV1"
-              }
-            ]
-          }
-        }
-      },
       "PlanPaintSelectionV1": {
         "required": [
           "productId",
@@ -281732,6 +281663,75 @@
           }
         }
       },
+      "PlannedInputRequestV1": {
+        "required": [
+          "parentRollId",
+          "plannedKg",
+          "expectedLabelVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "parentRollId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "plannedKg": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "expectedLabelVersion": {
+            "type": "string"
+          },
+          "commercialContext": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlanCommercialContextRequestV1"
+              }
+            ]
+          }
+        }
+      },
+      "PlannedInputViewV1": {
+        "required": [
+          "parentRollId",
+          "plannedKg"
+        ],
+        "type": "object",
+        "properties": {
+          "parentRollId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "plannedKg": {
+            "type": "string"
+          },
+          "technicalSnapshot": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CapturedPlanTechnicalSnapshotViewV1"
+              }
+            ]
+          },
+          "commercialContext": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CapturedPlanCommercialContextViewV1"
+              }
+            ]
+          }
+        }
+      },
       "PosCollectionInput": {
         "required": [
           "commissionAmount",
@@ -282849,24 +282849,6 @@
           }
         }
       },
-      "PriceListProductOptionsV1": {
-        "required": [
-          "items",
-          "hasMore"
-        ],
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PriceListProductOptionV1"
-            }
-          },
-          "hasMore": {
-            "type": "boolean"
-          }
-        }
-      },
       "PriceListProductOptionV1": {
         "required": [
           "productId",
@@ -282891,6 +282873,24 @@
             "items": {
               "$ref": "#/components/schemas/PriceListProductUnitOptionV1"
             }
+          }
+        }
+      },
+      "PriceListProductOptionsV1": {
+        "required": [
+          "items",
+          "hasMore"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PriceListProductOptionV1"
+            }
+          },
+          "hasMore": {
+            "type": "boolean"
           }
         }
       },
@@ -284096,302 +284096,6 @@
           }
         }
       },
-      "ProductionCostCurrencyLineViewV1": {
-        "required": [
-          "issueMovementId",
-          "currencyId",
-          "foreignUnitCostPerKg",
-          "exchangeRate",
-          "tlUnitCostPerKg",
-          "keptKilograms",
-          "foreignAmount"
-        ],
-        "type": "object",
-        "properties": {
-          "issueMovementId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "currencyId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "foreignUnitCostPerKg": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "exchangeRate": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "tlUnitCostPerKg": {
-            "type": "string"
-          },
-          "keptKilograms": {
-            "type": "string"
-          },
-          "foreignAmount": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "foreignUnitCostRatio": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/ProductionExactRatioV1"
-              }
-            ]
-          },
-          "foreignAmountRatio": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/ProductionExactRatioV1"
-              }
-            ]
-          },
-          "exchangeRateRatio": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/ProductionExactRatioV1"
-              }
-            ]
-          }
-        }
-      },
-      "ProductionCostIssueReasonViewV1": {
-        "required": [
-          "issueMovementId",
-          "reasonCode"
-        ],
-        "type": "object",
-        "properties": {
-          "issueMovementId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "reasonCode": {
-            "type": "string"
-          }
-        }
-      },
-      "ProductionCostLineViewV1": {
-        "required": [
-          "outputLabelId",
-          "outputClass",
-          "kilograms",
-          "unitCostPerKgTl",
-          "amountTl",
-          "separateScrapExpenseTl",
-          "remainderTl",
-          "allocationBasis",
-          "notAllocatedCode"
-        ],
-        "type": "object",
-        "properties": {
-          "outputLabelId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "outputClass": {
-            "type": "string"
-          },
-          "kilograms": {
-            "type": "string"
-          },
-          "unitCostPerKgTl": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "amountTl": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "separateScrapExpenseTl": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "remainderTl": {
-            "type": "string"
-          },
-          "allocationBasis": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "notAllocatedCode": {
-            "type": [
-              "null",
-              "string"
-            ]
-          }
-        }
-      },
-      "ProductionCostViewV1": {
-        "required": [
-          "contractVersion",
-          "orderId",
-          "orderStatus",
-          "orderVersion",
-          "status",
-          "costBasis",
-          "costPerKgTl",
-          "rawMaterialCostPerKgTl",
-          "inputTotalTl",
-          "weighedScrapExpenseTl",
-          "distributedTotalTl",
-          "remainderTl",
-          "remainderLabelId",
-          "lines",
-          "currencyLines",
-          "issueReasons",
-          "noteCodes",
-          "reasonCode"
-        ],
-        "type": "object",
-        "properties": {
-          "contractVersion": {
-            "pattern": "^-?(?:0|[1-9]\\d*)$",
-            "type": [
-              "integer",
-              "string"
-            ],
-            "format": "int32"
-          },
-          "orderId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "orderStatus": {
-            "type": "string"
-          },
-          "orderVersion": {
-            "pattern": "^-?(?:0|[1-9]\\d*)$",
-            "type": [
-              "integer",
-              "string"
-            ],
-            "format": "int64"
-          },
-          "status": {
-            "type": "string"
-          },
-          "costBasis": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "costPerKgTl": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "rawMaterialCostPerKgTl": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "inputTotalTl": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "weighedScrapExpenseTl": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "distributedTotalTl": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "remainderTl": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "remainderLabelId": {
-            "type": [
-              "null",
-              "string"
-            ],
-            "format": "uuid"
-          },
-          "lines": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ProductionCostLineViewV1"
-            }
-          },
-          "currencyLines": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ProductionCostCurrencyLineViewV1"
-            }
-          },
-          "issueReasons": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ProductionCostIssueReasonViewV1"
-            }
-          },
-          "noteCodes": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "reasonCode": {
-            "type": [
-              "null",
-              "string"
-            ]
-          }
-        }
-      },
-      "ProductionExactRatioV1": {
-        "required": [
-          "numerator",
-          "denominator"
-        ],
-        "type": "object",
-        "properties": {
-          "numerator": {
-            "type": "string"
-          },
-          "denominator": {
-            "type": "string"
-          }
-        }
-      },
       "ProductManufacturingFamilyRevisionV1": {
         "required": [
           "familyId",
@@ -285022,6 +284726,38 @@
           }
         }
       },
+      "ProductPaintMembershipCandidateV1": {
+        "required": [
+          "productId",
+          "productVersion",
+          "membershipVersion",
+          "productCode",
+          "productName",
+          "alreadyMember"
+        ],
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productVersion": {
+            "type": "string"
+          },
+          "membershipVersion": {
+            "type": "string"
+          },
+          "productCode": {
+            "type": "string"
+          },
+          "productName": {
+            "type": "string"
+          },
+          "alreadyMember": {
+            "type": "boolean"
+          }
+        }
+      },
       "ProductPaintMembershipCandidatesV1": {
         "required": [
           "outcome",
@@ -285070,38 +284806,6 @@
           },
           "sourceVersion": {
             "type": "string"
-          }
-        }
-      },
-      "ProductPaintMembershipCandidateV1": {
-        "required": [
-          "productId",
-          "productVersion",
-          "membershipVersion",
-          "productCode",
-          "productName",
-          "alreadyMember"
-        ],
-        "type": "object",
-        "properties": {
-          "productId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "productVersion": {
-            "type": "string"
-          },
-          "membershipVersion": {
-            "type": "string"
-          },
-          "productCode": {
-            "type": "string"
-          },
-          "productName": {
-            "type": "string"
-          },
-          "alreadyMember": {
-            "type": "boolean"
           }
         }
       },
@@ -285475,24 +285179,6 @@
           }
         }
       },
-      "ProductPurchaseCandidatesV1": {
-        "required": [
-          "items",
-          "searchWindowFull"
-        ],
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ProductPurchaseCandidateV1"
-            }
-          },
-          "searchWindowFull": {
-            "type": "boolean"
-          }
-        }
-      },
       "ProductPurchaseCandidateV1": {
         "required": [
           "productId",
@@ -285532,6 +285218,24 @@
           },
           "profileVersion": {
             "type": "string"
+          }
+        }
+      },
+      "ProductPurchaseCandidatesV1": {
+        "required": [
+          "items",
+          "searchWindowFull"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductPurchaseCandidateV1"
+            }
+          },
+          "searchWindowFull": {
+            "type": "boolean"
           }
         }
       },
@@ -285866,6 +285570,24 @@
         },
         "additionalProperties": false
       },
+      "ProductRoleView": {
+        "required": [
+          "value",
+          "provenance"
+        ],
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "provenance": {
+            "type": "string"
+          }
+        }
+      },
       "ProductRolesView": {
         "required": [
           "purchasable",
@@ -285886,24 +285608,6 @@
           },
           "productionOutput": {
             "$ref": "#/components/schemas/ProductRoleView"
-          }
-        }
-      },
-      "ProductRoleView": {
-        "required": [
-          "value",
-          "provenance"
-        ],
-        "type": "object",
-        "properties": {
-          "value": {
-            "type": [
-              "null",
-              "boolean"
-            ]
-          },
-          "provenance": {
-            "type": "string"
           }
         }
       },
@@ -285988,24 +285692,6 @@
         },
         "description": "Actual Product problem body. Type/title/status are present; code/detail/correlationId/errors and lossless string version fields are conditional. A handler 403 can omit code. No problem response establishes success or current authority."
       },
-      "ProductSalesCandidatesV1": {
-        "required": [
-          "items",
-          "searchWindowFull"
-        ],
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ProductSalesCandidateV1"
-            }
-          },
-          "searchWindowFull": {
-            "type": "boolean"
-          }
-        }
-      },
       "ProductSalesCandidateUnitV1": {
         "required": [
           "unitId",
@@ -286062,7 +285748,7 @@
           }
         }
       },
-      "ProductStockCandidatesV1": {
+      "ProductSalesCandidatesV1": {
         "required": [
           "items",
           "searchWindowFull"
@@ -286072,7 +285758,7 @@
           "items": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ProductStockCandidateV1"
+              "$ref": "#/components/schemas/ProductSalesCandidateV1"
             }
           },
           "searchWindowFull": {
@@ -286119,6 +285805,24 @@
           },
           "profileVersion": {
             "type": "string"
+          }
+        }
+      },
+      "ProductStockCandidatesV1": {
+        "required": [
+          "items",
+          "searchWindowFull"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductStockCandidateV1"
+            }
+          },
+          "searchWindowFull": {
+            "type": "boolean"
           }
         }
       },
@@ -286236,20 +285940,6 @@
           }
         }
       },
-      "ProductStockFamilyOptionsV1": {
-        "required": [
-          "items"
-        ],
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ProductStockFamilyOptionV1"
-            }
-          }
-        }
-      },
       "ProductStockFamilyOptionV1": {
         "required": [
           "familyId",
@@ -286267,6 +285957,20 @@
           },
           "displayName": {
             "type": "string"
+          }
+        }
+      },
+      "ProductStockFamilyOptionsV1": {
+        "required": [
+          "items"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductStockFamilyOptionV1"
+            }
           }
         }
       },
@@ -286528,6 +286232,302 @@
           }
         },
         "additionalProperties": false
+      },
+      "ProductionCostCurrencyLineViewV1": {
+        "required": [
+          "issueMovementId",
+          "currencyId",
+          "foreignUnitCostPerKg",
+          "exchangeRate",
+          "tlUnitCostPerKg",
+          "keptKilograms",
+          "foreignAmount"
+        ],
+        "type": "object",
+        "properties": {
+          "issueMovementId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "currencyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "foreignUnitCostPerKg": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "exchangeRate": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "tlUnitCostPerKg": {
+            "type": "string"
+          },
+          "keptKilograms": {
+            "type": "string"
+          },
+          "foreignAmount": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "foreignUnitCostRatio": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProductionExactRatioV1"
+              }
+            ]
+          },
+          "foreignAmountRatio": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProductionExactRatioV1"
+              }
+            ]
+          },
+          "exchangeRateRatio": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProductionExactRatioV1"
+              }
+            ]
+          }
+        }
+      },
+      "ProductionCostIssueReasonViewV1": {
+        "required": [
+          "issueMovementId",
+          "reasonCode"
+        ],
+        "type": "object",
+        "properties": {
+          "issueMovementId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reasonCode": {
+            "type": "string"
+          }
+        }
+      },
+      "ProductionCostLineViewV1": {
+        "required": [
+          "outputLabelId",
+          "outputClass",
+          "kilograms",
+          "unitCostPerKgTl",
+          "amountTl",
+          "separateScrapExpenseTl",
+          "remainderTl",
+          "allocationBasis",
+          "notAllocatedCode"
+        ],
+        "type": "object",
+        "properties": {
+          "outputLabelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "outputClass": {
+            "type": "string"
+          },
+          "kilograms": {
+            "type": "string"
+          },
+          "unitCostPerKgTl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "amountTl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "separateScrapExpenseTl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "remainderTl": {
+            "type": "string"
+          },
+          "allocationBasis": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "notAllocatedCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ProductionCostViewV1": {
+        "required": [
+          "contractVersion",
+          "orderId",
+          "orderStatus",
+          "orderVersion",
+          "status",
+          "costBasis",
+          "costPerKgTl",
+          "rawMaterialCostPerKgTl",
+          "inputTotalTl",
+          "weighedScrapExpenseTl",
+          "distributedTotalTl",
+          "remainderTl",
+          "remainderLabelId",
+          "lines",
+          "currencyLines",
+          "issueReasons",
+          "noteCodes",
+          "reasonCode"
+        ],
+        "type": "object",
+        "properties": {
+          "contractVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "orderId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orderStatus": {
+            "type": "string"
+          },
+          "orderVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "status": {
+            "type": "string"
+          },
+          "costBasis": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "costPerKgTl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "rawMaterialCostPerKgTl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "inputTotalTl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "weighedScrapExpenseTl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "distributedTotalTl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "remainderTl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "remainderLabelId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductionCostLineViewV1"
+            }
+          },
+          "currencyLines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductionCostCurrencyLineViewV1"
+            }
+          },
+          "issueReasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductionCostIssueReasonViewV1"
+            }
+          },
+          "noteCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reasonCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ProductionExactRatioV1": {
+        "required": [
+          "numerator",
+          "denominator"
+        ],
+        "type": "object",
+        "properties": {
+          "numerator": {
+            "type": "string"
+          },
+          "denominator": {
+            "type": "string"
+          }
+        }
       },
       "ProfileReference": {
         "required": [
@@ -289492,52 +289492,6 @@
           }
         }
       },
-      "PurchaseInvoiceImportProductsRequestV1": {
-        "required": [
-          "source",
-          "q"
-        ],
-        "type": "object",
-        "properties": {
-          "source": {
-            "$ref": "#/components/schemas/PurchaseInvoiceImportPreviewRequestV1"
-          },
-          "q": {
-            "type": [
-              "null",
-              "string"
-            ]
-          }
-        }
-      },
-      "PurchaseInvoiceImportProductsV1": {
-        "required": [
-          "companyId",
-          "importId",
-          "items",
-          "searchWindowFull"
-        ],
-        "type": "object",
-        "properties": {
-          "companyId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "importId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PurchaseInvoiceImportProductV1"
-            }
-          },
-          "searchWindowFull": {
-            "type": "boolean"
-          }
-        }
-      },
       "PurchaseInvoiceImportProductV1": {
         "required": [
           "productId",
@@ -289584,6 +289538,76 @@
             "type": "string"
           },
           "itemTypeVersion": {
+            "type": "string"
+          }
+        }
+      },
+      "PurchaseInvoiceImportProductsRequestV1": {
+        "required": [
+          "source",
+          "q"
+        ],
+        "type": "object",
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/PurchaseInvoiceImportPreviewRequestV1"
+          },
+          "q": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "PurchaseInvoiceImportProductsV1": {
+        "required": [
+          "companyId",
+          "importId",
+          "items",
+          "searchWindowFull"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "importId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PurchaseInvoiceImportProductV1"
+            }
+          },
+          "searchWindowFull": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PurchaseInvoiceImportReferenceV1": {
+        "required": [
+          "id",
+          "version",
+          "code",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
             "type": "string"
           }
         }
@@ -289670,30 +289694,6 @@
             "items": {
               "$ref": "#/components/schemas/PurchaseInvoiceImportReferenceV1"
             }
-          }
-        }
-      },
-      "PurchaseInvoiceImportReferenceV1": {
-        "required": [
-          "id",
-          "version",
-          "code",
-          "name"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "version": {
-            "type": "string"
-          },
-          "code": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
           }
         }
       },
@@ -290567,29 +290567,6 @@
           }
         }
       },
-      "PurchaseOrderFutureAllocationLinksView": {
-        "required": [
-          "orderId",
-          "orderVersion",
-          "links"
-        ],
-        "type": "object",
-        "properties": {
-          "orderId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "orderVersion": {
-            "type": "string"
-          },
-          "links": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PurchaseOrderFutureAllocationLinkView"
-            }
-          }
-        }
-      },
       "PurchaseOrderFutureAllocationLinkView": {
         "required": [
           "allocationId",
@@ -290636,6 +290613,29 @@
           "createdAtUtc": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "PurchaseOrderFutureAllocationLinksView": {
+        "required": [
+          "orderId",
+          "orderVersion",
+          "links"
+        ],
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orderVersion": {
+            "type": "string"
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PurchaseOrderFutureAllocationLinkView"
+            }
           }
         }
       },
@@ -292859,20 +292859,6 @@
           }
         }
       },
-      "PurchasingCurrencyCandidatesResponseV1": {
-        "required": [
-          "items"
-        ],
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PurchasingCurrencyCandidateViewV1"
-            }
-          }
-        }
-      },
       "PurchasingCurrencyCandidateViewV1": {
         "required": [
           "currencyId",
@@ -292890,6 +292876,20 @@
           },
           "displayLabel": {
             "type": "string"
+          }
+        }
+      },
+      "PurchasingCurrencyCandidatesResponseV1": {
+        "required": [
+          "items"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PurchasingCurrencyCandidateViewV1"
+            }
           }
         }
       },
@@ -296115,38 +296115,6 @@
           }
         }
       },
-      "ReversePurchaseReceiptsV1": {
-        "required": [
-          "batchId",
-          "expectedPurchaseOrderVersion",
-          "reason",
-          "occurredAtUtc",
-          "lines"
-        ],
-        "type": "object",
-        "properties": {
-          "batchId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "expectedPurchaseOrderVersion": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "occurredAtUtc": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "lines": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ReversePurchaseReceiptBatchLineV1"
-            }
-          }
-        }
-      },
       "ReversePurchaseReceiptV1": {
         "required": [
           "expectedPurchaseOrderVersion",
@@ -296201,6 +296169,38 @@
                 "$ref": "#/components/schemas/RecordPurchaseGoodsReceiptV1"
               }
             ]
+          }
+        }
+      },
+      "ReversePurchaseReceiptsV1": {
+        "required": [
+          "batchId",
+          "expectedPurchaseOrderVersion",
+          "reason",
+          "occurredAtUtc",
+          "lines"
+        ],
+        "type": "object",
+        "properties": {
+          "batchId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedPurchaseOrderVersion": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "occurredAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReversePurchaseReceiptBatchLineV1"
+            }
           }
         }
       },
@@ -296512,32 +296512,6 @@
           }
         }
       },
-      "SalesAccountOptionsV1": {
-        "required": [
-          "companyId",
-          "accounts",
-          "nextCursor"
-        ],
-        "type": "object",
-        "properties": {
-          "companyId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "accounts": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SalesAccountOptionV1"
-            }
-          },
-          "nextCursor": {
-            "type": [
-              "null",
-              "string"
-            ]
-          }
-        }
-      },
       "SalesAccountOptionV1": {
         "required": [
           "partyId",
@@ -296564,6 +296538,32 @@
           },
           "accountVersion": {
             "type": "string"
+          }
+        }
+      },
+      "SalesAccountOptionsV1": {
+        "required": [
+          "companyId",
+          "accounts",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "accounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SalesAccountOptionV1"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -296650,34 +296650,6 @@
           }
         }
       },
-      "SalesApprovalThresholdsViewV1": {
-        "required": [
-          "companyId",
-          "today",
-          "isBaselineTransferred",
-          "currencies"
-        ],
-        "type": "object",
-        "properties": {
-          "companyId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "today": {
-            "type": "string",
-            "format": "date"
-          },
-          "isBaselineTransferred": {
-            "type": "boolean"
-          },
-          "currencies": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SalesApprovalThresholdCurrencyViewV1"
-            }
-          }
-        }
-      },
       "SalesApprovalThresholdVersionViewV1": {
         "required": [
           "profileId",
@@ -296756,6 +296728,34 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "SalesApprovalThresholdsViewV1": {
+        "required": [
+          "companyId",
+          "today",
+          "isBaselineTransferred",
+          "currencies"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "today": {
+            "type": "string",
+            "format": "date"
+          },
+          "isBaselineTransferred": {
+            "type": "boolean"
+          },
+          "currencies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SalesApprovalThresholdCurrencyViewV1"
+            }
           }
         }
       },
@@ -297424,6 +297424,35 @@
           }
         }
       },
+      "SalesCustomerReturnInstallmentView": {
+        "required": [
+          "openItemId",
+          "dueOn",
+          "originalAmount",
+          "outstandingAmount",
+          "prefillAmount"
+        ],
+        "type": "object",
+        "properties": {
+          "openItemId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "dueOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "originalAmount": {
+            "type": "string"
+          },
+          "outstandingAmount": {
+            "type": "string"
+          },
+          "prefillAmount": {
+            "type": "string"
+          }
+        }
+      },
       "SalesCustomerReturnInstallmentsResponse": {
         "required": [
           "customerReturnId",
@@ -297460,35 +297489,6 @@
             "items": {
               "$ref": "#/components/schemas/SalesCustomerReturnInstallmentView"
             }
-          }
-        }
-      },
-      "SalesCustomerReturnInstallmentView": {
-        "required": [
-          "openItemId",
-          "dueOn",
-          "originalAmount",
-          "outstandingAmount",
-          "prefillAmount"
-        ],
-        "type": "object",
-        "properties": {
-          "openItemId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "dueOn": {
-            "type": "string",
-            "format": "date"
-          },
-          "originalAmount": {
-            "type": "string"
-          },
-          "outstandingAmount": {
-            "type": "string"
-          },
-          "prefillAmount": {
-            "type": "string"
           }
         }
       },
@@ -298720,6 +298720,25 @@
           }
         }
       },
+      "SalesDraftCancelRequest": {
+        "required": [
+          "expectedVersion",
+          "reason",
+          "impactToken"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "impactToken": {
+            "type": "string"
+          }
+        }
+      },
       "SalesDraftCancellationImpactLineV1": {
         "required": [
           "lineId",
@@ -298862,25 +298881,6 @@
             "items": {
               "$ref": "#/components/schemas/SalesDraftCancellationImpactSourceV1"
             }
-          }
-        }
-      },
-      "SalesDraftCancelRequest": {
-        "required": [
-          "expectedVersion",
-          "reason",
-          "impactToken"
-        ],
-        "type": "object",
-        "properties": {
-          "expectedVersion": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "impactToken": {
-            "type": "string"
           }
         }
       },
@@ -302540,11 +302540,6 @@
           }
         }
       },
-      "SalesInvoicedStateView": {
-        "enum": [
-          "NoSource"
-        ]
-      },
       "SalesInvoiceFinalInstalmentView": {
         "required": [
           "sequenceNo",
@@ -303229,6 +303224,11 @@
           }
         }
       },
+      "SalesInvoicedStateView": {
+        "enum": [
+          "NoSource"
+        ]
+      },
       "SalesLostAmountView": {
         "required": [
           "state",
@@ -303438,27 +303438,6 @@
           "Withheld"
         ]
       },
-      "SalesOfficialCancellationCandidatesV1": {
-        "required": [
-          "items",
-          "nextCursor"
-        ],
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SalesOfficialCancellationCandidateV1"
-            }
-          },
-          "nextCursor": {
-            "type": [
-              "null",
-              "string"
-            ]
-          }
-        }
-      },
       "SalesOfficialCancellationCandidateV1": {
         "required": [
           "invoiceId",
@@ -303492,6 +303471,27 @@
           },
           "ettn": {
             "type": "string"
+          }
+        }
+      },
+      "SalesOfficialCancellationCandidatesV1": {
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SalesOfficialCancellationCandidateV1"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -303998,29 +303998,6 @@
           }
         }
       },
-      "SalesOrderDispatchNotesView": {
-        "required": [
-          "salesOrderId",
-          "items",
-          "hasMore"
-        ],
-        "type": "object",
-        "properties": {
-          "salesOrderId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SalesOrderDispatchNoteView"
-            }
-          },
-          "hasMore": {
-            "type": "boolean"
-          }
-        }
-      },
       "SalesOrderDispatchNoteView": {
         "required": [
           "dispatchNoteId",
@@ -304065,6 +304042,29 @@
             "items": {
               "$ref": "#/components/schemas/SalesOrderDispatchNoteLineView"
             }
+          }
+        }
+      },
+      "SalesOrderDispatchNotesView": {
+        "required": [
+          "salesOrderId",
+          "items",
+          "hasMore"
+        ],
+        "type": "object",
+        "properties": {
+          "salesOrderId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SalesOrderDispatchNoteView"
+            }
+          },
+          "hasMore": {
+            "type": "boolean"
           }
         }
       },
@@ -305175,24 +305175,6 @@
           }
         }
       },
-      "SalesOrderDraftRiskWarningsResponse": {
-        "required": [
-          "warnings",
-          "truncated"
-        ],
-        "type": "object",
-        "properties": {
-          "warnings": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SalesOrderDraftRiskWarningV1"
-            }
-          },
-          "truncated": {
-            "type": "boolean"
-          }
-        }
-      },
       "SalesOrderDraftRiskWarningV1": {
         "required": [
           "revision",
@@ -305240,6 +305222,24 @@
           },
           "riskSourceContract": {
             "type": "string"
+          }
+        }
+      },
+      "SalesOrderDraftRiskWarningsResponse": {
+        "required": [
+          "warnings",
+          "truncated"
+        ],
+        "type": "object",
+        "properties": {
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SalesOrderDraftRiskWarningV1"
+            }
+          },
+          "truncated": {
+            "type": "boolean"
           }
         }
       },
@@ -305523,6 +305523,22 @@
           }
         }
       },
+      "SalesOwnerOptionV1": {
+        "required": [
+          "userId",
+          "displayName"
+        ],
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string"
+          }
+        }
+      },
       "SalesOwnerOptionsV1": {
         "required": [
           "companyId",
@@ -305543,22 +305559,6 @@
           },
           "hasMore": {
             "type": "boolean"
-          }
-        }
-      },
-      "SalesOwnerOptionV1": {
-        "required": [
-          "userId",
-          "displayName"
-        ],
-        "type": "object",
-        "properties": {
-          "userId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "displayName": {
-            "type": "string"
           }
         }
       },
@@ -306402,6 +306402,34 @@
           }
         }
       },
+      "SalesQuoteLossReasonViewV1": {
+        "required": [
+          "reasonId",
+          "code",
+          "label",
+          "requiresExplanation",
+          "isActive"
+        ],
+        "type": "object",
+        "properties": {
+          "reasonId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "requiresExplanation": {
+            "type": "boolean"
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        }
+      },
       "SalesQuoteLossReasonsViewV1": {
         "required": [
           "businessDay",
@@ -306437,34 +306465,6 @@
             "items": {
               "$ref": "#/components/schemas/SalesQuoteLossReasonOptionV1"
             }
-          }
-        }
-      },
-      "SalesQuoteLossReasonViewV1": {
-        "required": [
-          "reasonId",
-          "code",
-          "label",
-          "requiresExplanation",
-          "isActive"
-        ],
-        "type": "object",
-        "properties": {
-          "reasonId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "code": {
-            "type": "string"
-          },
-          "label": {
-            "type": "string"
-          },
-          "requiresExplanation": {
-            "type": "boolean"
-          },
-          "isActive": {
-            "type": "boolean"
           }
         }
       },
@@ -308691,6 +308691,46 @@
           }
         }
       },
+      "SetWorkCenterCalendar": {
+        "required": [
+          "shifts",
+          "closedDates",
+          "expectedVersion",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "shifts": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/WorkCenterCalendarShiftV1"
+            }
+          },
+          "closedDates": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "expectedVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
       "SettingsBankInstitutionCatalogV1": {
         "required": [
           "outcome",
@@ -309288,25 +309328,6 @@
           }
         }
       },
-      "SettingsCollateralTypesViewV1": {
-        "required": [
-          "companyId",
-          "entries"
-        ],
-        "type": "object",
-        "properties": {
-          "companyId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "entries": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SettingsCollateralTypeViewV1"
-            }
-          }
-        }
-      },
       "SettingsCollateralTypeViewV1": {
         "required": [
           "id",
@@ -309349,6 +309370,25 @@
           "recordedAtUtc": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "SettingsCollateralTypesViewV1": {
+        "required": [
+          "companyId",
+          "entries"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SettingsCollateralTypeViewV1"
+            }
           }
         }
       },
@@ -309957,46 +309997,6 @@
       },
       "SettingsWarehouseTransferScaleStatusV1": {
         "type": "integer"
-      },
-      "SetWorkCenterCalendar": {
-        "required": [
-          "shifts",
-          "closedDates",
-          "expectedVersion",
-          "reason"
-        ],
-        "type": "object",
-        "properties": {
-          "shifts": {
-            "type": [
-              "null",
-              "array"
-            ],
-            "items": {
-              "$ref": "#/components/schemas/WorkCenterCalendarShiftV1"
-            }
-          },
-          "closedDates": {
-            "type": [
-              "null",
-              "array"
-            ],
-            "items": {
-              "type": "string"
-            }
-          },
-          "expectedVersion": {
-            "pattern": "^-?(?:0|[1-9]\\d*)$",
-            "type": [
-              "integer",
-              "string"
-            ],
-            "format": "int64"
-          },
-          "reason": {
-            "type": "string"
-          }
-        }
       },
       "ShellCapabilitySnapshot": {
         "required": [
@@ -311336,30 +311336,6 @@
           }
         }
       },
-      "TaxRateListsViewV1": {
-        "required": [
-          "companyId",
-          "businessDate",
-          "lists"
-        ],
-        "type": "object",
-        "properties": {
-          "companyId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "businessDate": {
-            "type": "string",
-            "format": "date"
-          },
-          "lists": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TaxRateListViewV1"
-            }
-          }
-        }
-      },
       "TaxRateListVersionViewV1": {
         "required": [
           "listVersion",
@@ -311425,6 +311401,30 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TaxRateListVersionViewV1"
+            }
+          }
+        }
+      },
+      "TaxRateListsViewV1": {
+        "required": [
+          "companyId",
+          "businessDate",
+          "lists"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "businessDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "lists": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaxRateListViewV1"
             }
           }
         }

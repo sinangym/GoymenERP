@@ -79,7 +79,8 @@ public static partial class ErpOpenApiContract
                 document.Info.Title = "Göymen ERP API";
                 document.Info.Version = "v1";
                 document.Servers = [];
-                var components = document.Components ??= new OpenApiComponents();
+                var components = new ErpCanonicalOpenApiComponents(document.Components);
+                document.Components = components;
                 components.SecuritySchemes ??=
                     new Dictionary<string, IOpenApiSecurityScheme>(StringComparer.Ordinal);
                 components.SecuritySchemes[BearerSecuritySchemeName] =
