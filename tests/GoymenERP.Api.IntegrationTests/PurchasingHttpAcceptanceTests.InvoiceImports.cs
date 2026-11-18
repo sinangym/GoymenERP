@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using GoymenERP.Api.Errors;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -78,7 +79,25 @@ public sealed partial class PurchasingHttpAcceptanceTests
         using var response = await client.GetAsync($"/api/v1/purchasing/invoice-imports/{owner.Id:D}");
         Assert.Equal((HttpStatusCode)status, response.StatusCode); AssertPrivateNoStore(response);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.False(body.TryGetProperty("reservedBy", out _)); Assert.False(body.TryGetProperty("detail", out _));
+        Assert.Equal(1, owner.Reads);
+        Assert.False(body.TryGetProperty("reservedBy", out _));
+        AssertSafePurchasingOwnerFailure(body, status);
+    }
+
+    private static void AssertSafePurchasingOwnerFailure(JsonElement body, int status)
+    {
+        Assert.DoesNotContain("SENTETIK-internal", body.GetRawText(), StringComparison.Ordinal);
+        if (status == 403)
+        {
+            Assert.Equal(ErpProblemCodes.Forbidden, body.GetProperty("code").GetString());
+            Assert.Equal("Bu işlem için gerekli yetkiye sahip değilsiniz.", body.GetProperty("detail").GetString());
+        }
+        else if (status == 503)
+        {
+            Assert.Equal(ErpProblemCodes.ServiceUnavailable, body.GetProperty("code").GetString());
+            Assert.Equal("Lütfen daha sonra yeniden deneyin.", body.GetProperty("detail").GetString());
+        }
+        else Assert.False(body.TryGetProperty("detail", out _));
     }
 
     private WebApplicationFactory<Program> InvoiceImportHost(InvoiceImportHttpOwner owner) => factory.WithWebHostBuilder(builder =>
@@ -92,14 +111,19 @@ public sealed partial class PurchasingHttpAcceptanceTests
         public PurchasingCommandMetadata? Metadata { get; private set; }
         public PurchaseInvoiceImportPreviewRequestV1? Preview { get; private set; }
         public int Reservations { get; private set; }
+        public int Reads { get; private set; }
         private PurchaseInvoiceImportReservationV1 Reservation => new(Id, CompanyA, "1", "SENTETIK", DateTimeOffset.Parse("2026-11-17T10:00:00Z"));
         public Task<PurchaseInvoiceImportReservationPageV1> ListAsync(int pageIndex, CancellationToken token = default) => FailureStatus is { } status
             ? throw new PurchasingServiceException(status, "SENTETIK-internal")
             : Task.FromResult(new PurchaseInvoiceImportReservationPageV1(CompanyA, pageIndex, false, [Reservation]));
         public Task<PurchaseInvoiceImportReservationResultV1> ReserveAsync(PurchasingCommandMetadata metadata, CancellationToken token = default)
         { Metadata = metadata; Reservations++; return Task.FromResult(new PurchaseInvoiceImportReservationResultV1(Reservation, true, "SENTETIK-original")); }
-        public Task<PurchaseInvoiceImportReservationV1> ReadAsync(Guid importId, CancellationToken token = default) => FailureStatus is { } status
-            ? throw new PurchasingServiceException(status, "SENTETIK-internal") : Task.FromResult(Reservation);
+        public Task<PurchaseInvoiceImportReservationV1> ReadAsync(Guid importId, CancellationToken token = default)
+        {
+            Reads++;
+            return FailureStatus is { } status
+                ? throw new PurchasingServiceException(status, "SENTETIK-internal") : Task.FromResult(Reservation);
+        }
         public Task<PurchaseInvoiceImportPreviewV1> PreviewAsync(Guid importId, PurchaseInvoiceImportPreviewRequestV1 request, CancellationToken token = default)
         { Preview = request; return Task.FromResult(new PurchaseInvoiceImportPreviewV1(Id, CompanyA, "1", request.DocumentId,
             request.DocumentVersion, request.DocumentSha256, null, [new("Number", "column_missing")])); }

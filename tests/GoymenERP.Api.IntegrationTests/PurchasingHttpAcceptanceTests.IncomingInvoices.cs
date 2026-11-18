@@ -25,8 +25,9 @@ public sealed partial class PurchasingHttpAcceptanceTests
         Assert.Equal((HttpStatusCode)status, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
         Assert.False(body.TryGetProperty("invoice", out _));
-        Assert.False(body.TryGetProperty("detail", out _));
-        if (status == 503) Assert.Equal("service_unavailable", body.GetProperty("code").GetString());
+        Assert.Equal("2", owner.Version);
+        Assert.NotNull(owner.Metadata);
+        AssertSafePurchasingOwnerFailure(body, status);
         AssertPrivateNoStore(response);
     }
 
