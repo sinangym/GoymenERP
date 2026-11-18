@@ -39,6 +39,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -432,25 +433,34 @@ public sealed partial class ProductGlobalRuntimeSqlServerRelationalAcceptanceTes
             await AssertOwnerHistoryAsync(factory, first.Card.Product.Id);
             await AssertDatabaseConstraintsAsync(factory.DatabaseConnectionString);
             await using var migrationScope = factory.Services.CreateAsyncScope();
-            await AssertRollbackRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<AuditDbContext>(), 51041);
-            await AssertRollbackRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<IdentityDbContext>(), 51042);
-            await AssertRollbackRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<GroupSharedCommandDbContext>(), 51043);
+            await AssertOwnerRollbackGuardRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<AuditDbContext>(),
+                new GoymenERP.Modules.Audit.Infrastructure.Persistence.Migrations.AddGlobalProductAuditSubject(), 51041,
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE SubjectKind = N'GroupSharedProduct'");
+            await AssertOwnerRollbackGuardRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<IdentityDbContext>(),
+                new GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations.AllowProductLifecycleAssignments(), 51042,
+                "SELECT COUNT(*) FROM identity.ProductMasterAssignments");
+            await AssertOwnerRollbackGuardRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<GroupSharedCommandDbContext>(),
+                new GoymenERP.Modules.Idempotency.Infrastructure.Persistence.Migrations.AllowProductLifecycleTerminals(), 51043,
+                "SELECT COUNT(*) FROM idempotency.GroupSharedCommandTerminals WHERE Subject = N'Product'");
             var product = migrationScope.ServiceProvider.GetRequiredService<ProductDbContext>();
             var productMigrations = (await product.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.Equal(ProductCutSheetTechnicalDefinitionMigration, productMigrations[^1]);
+            // Later unrelated schema additions must not change which legacy release/guard this case exercises.
+            await product.GetService<IMigrator>().MigrateAsync(ProductCutSheetTechnicalDefinitionMigration);
+            var releaseMigrations = (await product.Database.GetAppliedMigrationsAsync()).ToArray();
+            Assert.Equal(ProductCutSheetTechnicalDefinitionMigration, releaseMigrations[^1]);
 
             // EF Core 10 commits each migration in its own transaction. First remove the unreferenced
             // cut-sheet release, then the code-group and technical-definition releases, before exercising
             // the schema guard as a single rollback step. Reapply all releases afterwards so this
             // acceptance case leaves the Product runtime at its entry schema.
             await product.GetService<IMigrator>().MigrateAsync(ProductCodeGroupMigration);
-            Assert.Equal(productMigrations[..^1], await product.Database.GetAppliedMigrationsAsync());
+            Assert.Equal(releaseMigrations[..^1], await product.Database.GetAppliedMigrationsAsync());
             await product.GetService<IMigrator>().MigrateAsync(ProductTechnicalDefinitionMigration);
-            Assert.Equal(productMigrations[..^2], await product.Database.GetAppliedMigrationsAsync());
+            Assert.Equal(releaseMigrations[..^2], await product.Database.GetAppliedMigrationsAsync());
             await product.GetService<IMigrator>().MigrateAsync(ProductFamilyRegistryMigration);
-            Assert.Equal(productMigrations[..^3], await product.Database.GetAppliedMigrationsAsync());
+            Assert.Equal(releaseMigrations[..^3], await product.Database.GetAppliedMigrationsAsync());
             await AssertRollbackRefusedAsync(product, 51044, ProductPreFamilyRegistryMigration);
-            await product.GetService<IMigrator>().MigrateAsync(ProductCutSheetTechnicalDefinitionMigration);
+            await product.GetService<IMigrator>().MigrateAsync(productMigrations[^1]);
             Assert.Equal(productMigrations, await product.Database.GetAppliedMigrationsAsync());
             Assert.Equal(afterEdit, await SnapshotAsync(factory.DatabaseConnectionString));
         });
@@ -1615,13 +1625,30 @@ public sealed partial class ProductGlobalRuntimeSqlServerRelationalAcceptanceTes
         }
     }
 
-    private static async Task AssertRollbackRefusedAsync(DbContext database, int errorNumber,
-        string? targetMigration = null)
+    // These are the named historical owner guards, not a claim that every later migration was downgraded.
+    private static async Task AssertOwnerRollbackGuardRefusedAsync(DbContext database, Migration migration,
+        int errorNumber, string protectedRowCountSql)
     {
         var applied = (await database.Database.GetAppliedMigrationsAsync()).ToArray();
         Assert.NotEmpty(applied);
-        var target = targetMigration ?? (applied.Length == 1 ? Migration.InitialDatabase : applied[^2]);
-        var error = await Assert.ThrowsAsync<SqlException>(() => database.GetService<IMigrator>().MigrateAsync(target));
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql;
+        await database.Database.OpenConnectionAsync();
+        await using var count = database.Database.GetDbConnection().CreateCommand();
+        count.CommandText = protectedRowCountSql;
+        var before = Assert.IsType<int>(await count.ExecuteScalarAsync());
+        Assert.True(before > 0);
+        var error = await Assert.ThrowsAsync<SqlException>(() => database.Database.ExecuteSqlRawAsync(guard));
+        Assert.Equal(errorNumber, error.Number);
+        Assert.Equal(before, Assert.IsType<int>(await count.ExecuteScalarAsync()));
+        Assert.Equal(applied, await database.Database.GetAppliedMigrationsAsync());
+    }
+
+    private static async Task AssertRollbackRefusedAsync(DbContext database, int errorNumber,
+        string targetMigration)
+    {
+        var applied = (await database.Database.GetAppliedMigrationsAsync()).ToArray();
+        Assert.NotEmpty(applied);
+        var error = await Assert.ThrowsAsync<SqlException>(() => database.GetService<IMigrator>().MigrateAsync(targetMigration));
         Assert.Equal(errorNumber, error.Number);
         Assert.Equal(applied, await database.Database.GetAppliedMigrationsAsync());
     }

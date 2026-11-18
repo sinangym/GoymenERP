@@ -98,9 +98,9 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
             await connection.OpenAsync();
 
             AssertApprovedCompanyRows(await ReadCompanyRowsAsync(connection));
-            // KIM-D41/KIM-D48: the stand-in is staged once as a pending clear for the placeholder company only.
+            // Fresh GIN is seeded after migrations with no VKN; there is no legacy stand-in to stage.
             Assert.Equal(
-                1,
+                0,
                 await ScalarAsync<int>(
                     connection,
                     """
@@ -113,7 +113,7 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
                       AND [t].[CorrectedVkn] IS NULL;
                     """));
             Assert.Equal(
-                1,
+                0,
                 await ScalarAsync<int>(
                     connection,
                     "SELECT COUNT(*) FROM [organization].[CompanyTaxIdCorrections];"));
@@ -886,7 +886,7 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
                 TestCompanyIds.CompanyC,
                 "GIN",
                 GinLegalName,
-                vkn: GinPlaceholderVkn,
+                vkn: null,
                 isPlaceholder: true,
                 invoiceCapable: false),
             company => AssertCompany(

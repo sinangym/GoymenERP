@@ -5,6 +5,8 @@ using GoymenERP.Modules.Organization.Domain.Companies;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -167,6 +169,21 @@ public sealed class OrganizationCompanyTaxIdStatusSqlServerRelationalAcceptanceT
         var connection = Environment.GetEnvironmentVariable(SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
         var databaseName = $"GoymenERP_Organization_TaxIdStatus_{Guid.NewGuid():N}";
         await using var factory = new SqlServerRelationalApiFactory(connection, databaseName: databaseName);
+        // Fresh startup now seeds GIN without a VKN. Arrange the genuine pre-staging legacy state
+        // before the host runs its migrations, so these facts exercise the migration's pending clear.
+        var options = new DbContextOptionsBuilder<OrganizationDbContext>()
+            .UseSqlServer(factory.DatabaseConnectionString,
+                sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", "organization")).Options;
+        await using (var legacy = new OrganizationDbContext(options, new CompanyContext(), new OrganizationBootstrapWriteScope()))
+        {
+            await legacy.GetService<IMigrator>().MigrateAsync("20261115200655_ClearPlaceholderCompanyVkn");
+            await legacy.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO organization.Companies
+                    (Id, Code, LegalName, Vkn, IsPlaceholder, InvoiceCapable, IsActive, Version, CreatedAtUtc, UpdatedAtUtc)
+                VALUES ({TestCompanyIds.CompanyC}, N'GIN', N'SENTETIK legacy placeholder', N'1111111111',
+                    1, 0, 1, 1, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET())
+                """);
+        }
         await using var cleanupScope = factory.Services.CreateAsyncScope();
         var cleanupDb = cleanupScope.ServiceProvider.GetRequiredService<OrganizationDbContext>();
         Assert.Equal(databaseName, cleanupDb.Database.GetDbConnection().Database);
