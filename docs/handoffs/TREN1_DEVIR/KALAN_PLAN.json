@@ -1,2271 +1,2271 @@
 {
- "meta": {
-  "tarih": "2026-11-18",
-  "tren_dali": "claude/tren-1",
-  "kod_head": "2d7d7c700",
-  "durum_sozlugu": {
-   "PARTIAL": "kapsamın bir kısmı kaynakta; kalan kısım son W<n> ekip raporunda",
-   "PLANNED/READY": "başlanmadı",
-   "BLOCKED_PORT": "önce stok_lojistik IInventoryFutureAllocationReleasePortV1",
-   "DOGRULA": "kodda var mı doğrula; yoksa yap",
-   "IN_PROGRESS": "W5 raporuna bak",
-   "DONE": "kaynak kapsamı tamam; koşum/kabul kanıtı raporda ayrıca belirtilir",
-   "BLOCKED_SOURCE": "karar tahmin edilmez; gerçek owner veri/semantik kaynağı henüz eksik"
-  },
-  "kurallar": [
-   "READY = iş kuralları kilitli; BLOCKED = NEEDS-SINAN veya insan kapısı",
-   "wave 1 = takımlar arası bitmemiş bağımlılığı olmayan READY dilimler; wave 0 = BLOCKED",
-   "'#NNNN (uçuşta)' ve '(karar dokümanı)' bağımlılıkları dış iştir; merge olunca dilim bir dalga öne alınabilir",
-   "Aynı DbContext'e migration ekleyen iki dilim aynı anda koşmaz (model snapshot çakışması)",
-   "Üretilmiş/pinli dosyalar (OpenAPI, recovery, ErpPermissions, ShellCapabilityRegistryAuthorities) elle merge edilmez; main-merge-resync",
-   "Kullanıcı kararı (#66 6880798669): önce tüm kod; testler yazılır, koşum ve CI sonra",
-   "SINAN-CEVAP 14 (#66 6882315732): NS-01..13,15,16 cevaplandı; NS-14 araştırma; NS-07/08 etiket izlenebilirliğiyle birleştirilecek. OPEN-* kapanmadı."
-  ],
-  "w6_oneri": [
-   "KIM-S3",
-   "KIM-S5",
-   "KIM-S6",
-   "KIM-S8",
-   "KIM-S9",
-   "KIM-S13",
-   "PLT-S13",
-   "ALC-S7",
-   "ALC-S8",
-   "ALC-S14",
-   "STK-S8",
-   "STK-S11",
-   "STK-S13",
-   "STK-S17",
-   "STK-S21",
-   "STK-S26",
-   "STK-S29",
-   "FIN-S17",
-   "FIN-SC47-KREDI ekran+fiş önerisi (W5 iskeletten kalan)",
-   "STK-S17 (ALC-S3+SAT-S8 sonrası)",
-   "STK-S13 + ALC-S7/S8 (KIM-S18 sonrası)"
-  ],
-  "toplam": 174,
-  "done": 174,
-  "partial": 0,
-  "remaining_not_started": 0,
-  "last_wave": 8,
-  "progress_meaning": "174/174 kaynak DONE (%100), W8 son paket; yeni dalga yok. Son SQL kaynak duzeltmeleri ve hedefli kanitlar W8_RUNTIME_KAPANIS_DURUMU raporundadir. Yeni exact-head CI, tam gercek SQL, frontend guvenlik kapisi ve iki bagimsiz tam K3 kabulu bekler; production degildir.",
-  "w6_source_done_ids": [
-   "KIM-S13",
-   "KIM-S18",
-   "KIM-S3",
-   "PLT-S13",
-   "SAT-S8",
-   "SAT-SC32",
-   "STK-S1",
-   "STK-S26",
-   "URT-S18",
-   "URT-S6",
-   "URT-S7"
-  ],
-  "w7_oneri": [
-   "KIM-SC32-a",
-   "KIM-SC32-b",
-   "ALC-S7",
-   "ALC-S8",
-   "ALC-S14",
-   "URT-S4/URT-S5 kalan kullanıcı akışı",
-   "STK-S19 + ALC-S6",
-   "SAT-S9",
-   "FIN-SC36 gerçek iç defter sağlayıcısı",
-   "W6 raporlarında kalan tüm PARTIAL/PLANNED/READY dilimler"
-  ],
-  "new_decision_followups": [
-   {
-    "work": "EK24 iç defter banka bakiyesi",
-    "slice": "FIN-SC36",
-    "status": "SOURCE_DONE_RUNTIME_NOT_RUN"
-   },
-   {
-    "work": "EK24 purchasing.invoice.finalized ve alış yevmiyesi",
-    "slice": "FIN-S13",
-    "status": "SOURCE_DONE_RUNTIME_NOT_RUN"
-   },
-   {
-    "work": "EK24 plan üstü sevk uyarısı",
-    "slice": "STK-S3",
-    "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
-    "note": "Direct answer #1189/6963301286; actual approved separate exception/reservation/usage sourcead3e0caeb, combined146f source builds exit0. No grant/Critical or production change."
-   },
-   {
-    "work": "EK24 satır bazlı iskonto",
-    "slice": "STK-SC36-a",
-    "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
-    "note": "Actual Purchasing discounted line price via PurchaseOrderLineCostReadPort; SAT-D414 excludes document-total discount allocator."
-   },
-   {
-    "work": "EK24 N-12 önek/yıl/sıra ve yıllık sıfırlama",
-    "slice": "KIM-S19",
-    "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
-    "note": "Actual Settings number provider/counters/reservations/gaps, Purchasing and Finance consumers; combined15a source compile exit0. No reuse/backfill."
-   },
-   {
-    "work": "EK24 geç fatura farkının satılan malın maliyetine aktarımı",
-    "slice": "STK-SC36-a",
-    "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
-    "note": "Actual cost/cancellation/succession connected through62e65d6a6; actual count costing49bd8c9ea also closes enclosing source scope. Combined146f source builds exit0; runtime/CI/K3 separate."
-   },
-   {
-    "work": "EK24 mal kabul otomatik kuru ve birleşen etikette kg ağırlıklı kur",
-    "slice": "STK-SC36-b",
-    "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
-    "note": "Actual receipt rate stamp/source, exact kg-weighted calculator and Manufacturing consumer;4bd80d9dc."
-   },
-   {
-    "work": "FNS-D106 kredi grubu alan taslağı",
-    "slice": "FIN-SC47-KREDI",
-    "status": "DRAFT_READY",
-    "note": "Draft updated under17Nov implementation instructions;69096b33e/5485ec8e5 source scopes separately registered. Group activation, grants and production are not implied."
-   },
-   {
-    "work": "KLN-D114 bildirim deposu/90 gün sonra pasif",
-    "slice": "PLATFORM_FOLLOWUP",
-    "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
-    "note": "adee18054 actual Work inbox/notification/passivation + Settings configurable duration + mounted personal UI. Dispatcher activation separate."
-   },
-   {
-    "work": "URT-D109 boya emir toplamı",
-    "slice": "URT-SC36",
-    "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
-    "note": "This decision concerns RETURN LIMIT, not cost: ProductionOrder aggregate paint balance + ReturnLimitFormulaGoldenTests;f0efbaebb."
-   },
-   {
-    "work": "FNS-D108 / W5-5 kredi kapalı dönem düzeltmesi",
-    "slice": "FIN-SC47-KREDI",
-    "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
-    "note": "Actual FinanceCreditMovementService reversal+new immutable movement, selected open period, different checker and CreditMovementsPanel source."
-   },
-   {
-    "work": "ALS-D116 / W5-5 fazla teslim onayı ayrı izin",
-    "slice": "ALC-S5",
-    "status": "REGISTERED_ONLY",
-    "note": "Critical değil; grant/rol yok. İş akışı ayrı kaynak kabulü ister."
-   },
-   {
-    "work": "SAT-D419 / W5-5 Finans maliyet hesabı eşlemesi ve audit",
-    "slice": "STK-SC36-a",
-    "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
-    "note": "c51d83d86/e13015a66 actual Product class, account resolver/mapping workspace/audit. Separate SAT-D422 historical correction/cancellation remains STK-SC36-a."
-   },
-   {
-    "work": "FNS-D109 kredi approve Critical / propose değil",
-    "slice": "FIN-SC47-KREDI",
-    "status": "REGISTERED_ONLY",
-    "note": "Kaynak kayıt düzeltildi; grant/rol/production yok."
-   }
-  ],
-  "w6_verification_head": "7529fe1e8c2a40d2b050d9e97082b79fc716affd",
-  "w7_source_done_ids": [
-   "KIM-SC32-a",
-   "KIM-SC32-b",
-   "STK-S17",
-   "STK-S18"
-  ],
-  "w8_oneri": [
-   "KIM-S5 yeni açık ilk yönetici seçimi/global yetki",
-   "URT-S5 AT-044 fiziksel toplam",
-   "URT-SC33 kalıcı elle sıra ve yeni iş anchor",
-   "STK-S19 + ALC-S6 tüketim tersleme/kısmi reopen",
-   "Ürün açık ticari mal/mamul sınıfı ve fatura satırı muhasebe düzeltmesi",
-   "Kalan READY/PARTIAL dilimler; karar mevcutken eksik owner uygulamasını karar engeli sayma"
-  ],
-  "w7_decision_sources": [
-   "#1189/6926090415",
-   "#1189/6926238225",
-   "#1189/6926298700",
-   "#1189/6926992238",
-   "#1189/6927182217",
-   "#1189/6927195150"
-  ],
-  "scope_frozen": {
-   "date": "2026-11-17",
-   "total_slices": 174,
-   "final_work_package": 8,
-   "new_waves_allowed": false,
-   "baseline_train_head": "df1b7055f9397cd5206b57df439986d1e8344b4e",
-   "baseline_open_ids": [
-    "KIM-S5",
-    "KIM-S6",
-    "KIM-S7",
-    "KIM-S8",
-    "KIM-S9",
-    "KIM-S15",
-    "KIM-S19",
-    "SAT-S9",
-    "SAT-S12",
-    "SAT-S13",
-    "SAT-SC34",
-    "ALC-S5",
-    "ALC-S6",
-    "ALC-S7",
-    "ALC-S8",
-    "ALC-S14",
-    "ALC-SC47",
-    "STK-S3",
-    "STK-S8",
-    "STK-S11",
-    "STK-S13",
-    "STK-S19",
-    "STK-S21",
-    "STK-S29",
-    "STK-SC36-a",
-    "STK-SC36-b",
-    "STK-SC36-c",
-    "URT-S4",
-    "URT-S5",
-    "URT-S8",
-    "URT-SC32",
-    "URT-SC33",
-    "URT-SC36",
-    "FIN-S13",
-    "FIN-S14",
-    "FIN-S17",
-    "FNS-SC32",
-    "FIN-SC36",
-    "FIN-SC47-KREDI"
-   ],
-   "plan": "W8_TAMAMLAMA_PLANI.md",
-   "new_scope_allowed": false,
-   "source_progress_separate_from_acceptance": true
-  },
-  "dispatch_rounding_followup": {
-   "decision": "SAT-D424",
-   "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
-   "source": "#1189/6929718990",
-   "decision_pr": 1198,
-   "note": "Actual Documents proof/per-line dispatch distribution and exact invoice-source carry implemented under SAT-D424/D425; W8_satis report. Genuine finalized external source is authoritative; no invoice redistribution or money policy derived. Combined146f source builds exit0."
-  },
-  "w8_source_done_ids": [
-   "URT-S4",
-   "URT-S5",
-   "URT-S8",
-   "URT-SC32",
-   "URT-SC33",
-   "URT-SC36",
-   "STK-S11",
-   "STK-S13",
-   "STK-S19",
-   "STK-S21",
-   "STK-S29",
-   "STK-SC36-b",
-   "STK-SC36-c",
-   "FIN-S17",
-   "FNS-SC32",
-   "FIN-SC36",
-   "KIM-S5",
-   "KIM-S6",
-   "KIM-S7",
-   "KIM-S8",
-   "KIM-S9",
-   "KIM-S15",
-   "ALC-S5",
-   "ALC-S6",
-   "ALC-S7",
-   "ALC-S8",
-   "ALC-S14",
-   "ALC-SC47",
-   "SAT-S9",
-   "SAT-S13",
-   "FIN-S13",
-   "SAT-S12",
-   "STK-S8",
-   "FIN-S14",
-   "FIN-SC47-KREDI",
-   "KIM-S19",
-   "SAT-SC34",
-   "STK-S3",
-   "STK-SC36-a"
-  ],
-  "published_train_done_at_last_checkpoint": 174,
-  "w8_status": "SOURCE_DONE_174_CI_REPAIRS_LOCAL_VALIDATED_FINAL_CI_K3_PENDING_SECURITY_UPSTREAM_BLOCKER",
-  "w8_last_combined_source_build": {
-   "head": "146f1ec79a30ca9a55d5fa78b119abc13e4bec75",
-   "source_exit": 0,
-   "projects": [
-    "Api",
-    "Api.IntegrationTests",
-    "ArchitectureTests",
-    "18 UnitTests",
-    "DocumentGeneration.Pdf.Tests",
-    "SqlServerRcsiReadiness.Tests",
-    "tsc -b"
-   ],
-   "dotnet_project_count": 23,
-   "runtime": "NOT_RUN",
-   "warnings": 0,
-   "errors": 0,
-   "note": "Full frozen23-project chain after locked restore and TSC exit0. Original stale Manufacturing.Unit restore-graph failure preserved; no source/test deletion or package/version/config change."
-  },
-  "w8_last_sales_source_build": "19ca53a178dc97e86cdc576ba775d9ee89543a4f",
-  "w8_last_mounted_source_build": "6ff5e4f63",
-  "sat_s12_golden_main": {
-   "pr": 1200,
-   "head": "dfab7e934fd6e7fc3b0dd5ca40bd9a3643d3ee4f",
-   "merge_sha": "3c1b47878447570210b933b83d874646f9c52e4b",
-   "reviews": [
-    5946943155,
-    5946958064
-   ],
-   "application_source": "19ca53a178dc97e86cdc576ba775d9ee89543a4f",
-   "runtime": "NOT_RUN",
-   "K3": "PENDING"
-  },
-  "w8_runtime_checkpoint": {
-   "frontend": {
-    "head": "c6168c8e23afa323af003dc79fdab3c9fbc00872",
-    "files": 614,
-    "tests": 9854,
-    "passed": 9854,
-    "failed": 0,
-    "skipped": 0,
-    "lint_exit": 0,
-    "build_exit": 0,
-    "vitest_exit": 0,
-    "seconds": 1942.652,
-    "browser": "NOT_RUN"
-   },
-   "recovery_release": {
-    "head": "8eb2668d0bc866816c5ab1698e0eb704231ffc73",
-    "recovery_tests": 36,
-    "release_tests": 16,
-    "failed": 0,
-    "skipped": 0,
-    "native_exits": [
-     0,
-     0
+  "meta": {
+    "tarih": "2026-11-19",
+    "tren_dali": "claude/tren-1",
+    "kod_head": "d395b5eae55e",
+    "durum_sozlugu": {
+      "PARTIAL": "kapsamın bir kısmı kaynakta; kalan kısım son W<n> ekip raporunda",
+      "PLANNED/READY": "başlanmadı",
+      "BLOCKED_PORT": "önce stok_lojistik IInventoryFutureAllocationReleasePortV1",
+      "DOGRULA": "kodda var mı doğrula; yoksa yap",
+      "IN_PROGRESS": "W5 raporuna bak",
+      "DONE": "kaynak kapsamı tamam; koşum/kabul kanıtı raporda ayrıca belirtilir",
+      "BLOCKED_SOURCE": "karar tahmin edilmez; gerçek owner veri/semantik kaynağı henüz eksik"
+    },
+    "kurallar": [
+      "READY = iş kuralları kilitli; BLOCKED = NEEDS-SINAN veya insan kapısı",
+      "wave 1 = takımlar arası bitmemiş bağımlılığı olmayan READY dilimler; wave 0 = BLOCKED",
+      "'#NNNN (uçuşta)' ve '(karar dokümanı)' bağımlılıkları dış iştir; merge olunca dilim bir dalga öne alınabilir",
+      "Aynı DbContext'e migration ekleyen iki dilim aynı anda koşmaz (model snapshot çakışması)",
+      "Üretilmiş/pinli dosyalar (OpenAPI, recovery, ErpPermissions, ShellCapabilityRegistryAuthorities) elle merge edilmez; main-merge-resync",
+      "Kullanıcı kararı (#66 6880798669): önce tüm kod; testler yazılır, koşum ve CI sonra",
+      "SINAN-CEVAP 14 (#66 6882315732): NS-01..13,15,16 cevaplandı; NS-14 araştırma; NS-07/08 etiket izlenebilirliğiyle birleştirilecek. OPEN-* kapanmadı."
     ],
-    "note": "Historical exact-head full packages; not final candidate proof."
-   },
-   "final_recovery_producer": {
-    "head": "6f9ca88db4cb71e46d098ee44cae2972ef840f49",
-    "native_exit": 0,
-    "db_contexts": 19,
-    "migrations": 340,
-    "durable_stores": 66,
-    "source_files": 3119,
-    "risky_source_files": 1461,
-    "risky_sha256": "f83a4a44766f40bb6666735273a586720fb90fc9762b9dfb790e6d25873ba93d",
-    "backend_source_sha256": "3e481305b77de7a12cdd6315b30fc91c2e5404ca63c7406adf171db395d9206e",
-    "release_manifest_native_exit": 0,
-    "mode": "SOURCE_ONLY"
-   },
-   "architecture_first": {
-    "head": "380901177",
-    "tests": 403,
-    "passed": 398,
-    "failed": 5,
-    "skipped": 0,
-    "fix_head": "c6168c8e23afa323af003dc79fdab3c9fbc00872",
-    "retry": "PASS_405_AT_25b7477b0"
-   },
-   "combined_backend": {
-    "head": "e41360340dc3be1bca13a66c48ade37aaa537bda",
-    "projects": 20,
-    "tests": 13325,
-    "passed": 13325,
-    "failed": 0,
-    "skipped": 0,
-    "native_exit": 0,
-    "proof": "artifacts/local-final-e41360340/proofs/modules.json"
-   },
-   "real_sql": {
-    "local": "NOT_CONFIGURED",
-    "published_ci_rcsi": "PASS_14_SKIP0",
-    "published_ci_broad": "FAIL_2400_SECOND_TIMEOUT_COMPLETED_BATCHES_ONLY_582_PASS_137_FAIL_0_SKIP"
-   },
-   "ci": {
-    "pr": 1201,
-    "run": 44317154064,
-    "source_head": "4ffd8cd3976df1dfa34d10fdb5173aa2918c24bc",
-    "tested_merge_sha": "ca4fe7eec935d195d3d201c4a8978aed971d55bd",
-    "status": "COMPLETED_FAIL_SQL_AND_FRONTEND_SECURITY",
-    "backend_build": "PASS",
-    "modules": "PASS",
-    "architecture": "PASS",
-    "api_1": "PASS",
-    "api_2": "PASS",
-    "api_3": "PASS",
-    "openapi": "PASS",
-    "real_rcsi": "PASS",
-    "release_manifest": "PASS",
-    "recovery_inventory": "PASS",
-    "frontend_shards": "4_OF_4_PASS",
-    "c01_browser": "PASS",
-    "cari_c006": "PASS",
-    "ui_catalog": "PASS",
-    "frontend_audit": "FAIL_GHSA-fc5q-39xc-vjpf_PATCHED_NONE",
-    "sql_a": "FAIL_23_COMPLETED_BATCHES_119_PASS_65_FAIL_0_SKIP",
-    "sql_b": "FAIL_37_COMPLETED_BATCHES_245_PASS_51_FAIL_0_SKIP",
-    "sql_c": "FAIL_29_COMPLETED_BATCHES_218_PASS_21_FAIL_0_SKIP",
-    "sql_evidence_scope": "COMPLETED_BATCHES_ONLY_719_RESULTS_582_PASS_137_FAIL_NO_FULL_SHARD_PROOF",
-    "sql_continuation_stop": "GLOBAL_2400_SECOND_DEADLINE",
-    "counterparty_audit_history_fact": "PASSED_IN_FIRST_SQL_C_BATCH",
-    "next_candidate_ci": "PENDING_NATURAL_PUSH"
-   },
-   "independent_K3": "PENDING_EXTERNAL_EXACT_HEAD_REVIEWS",
-   "report": "durum/W8_RUNTIME_KAPANIS_DURUMU.md",
-   "architecture_final": {
-    "head": "fce8792f515bf8263e753dc2fb6b20b96d057288",
-    "tests": 405,
-    "passed": 405,
-    "failed": 0,
-    "skipped": 0,
-    "native_exit": 0,
-    "proof": "artifacts/local-final-fce8792f5/proofs/architecture.json"
-   },
-   "openapi_final": {
-    "head": "edf25498d0d39915ab1ffcb5b3c68ec1e1468697",
-    "build_exit": 0,
-    "drift_exit": 0,
-    "tests": 11,
-    "passed": 11,
-    "failed": 0,
-    "skipped": 0,
-    "native_exit": 0,
-    "sha256": "091cc64a9e71f90ddc12b7c2ab9784b3f22fd8e181234f7f7b50603dc30dec04",
-    "bytes": 9746060,
-    "note": "Included in native 69-target root run; production V3/V31 ordinal serialization and culture regression test."
-   },
-   "closing_targets": {
-    "head": "edf25498d0d39915ab1ffcb5b3c68ec1e1468697",
-    "build_exit": 0,
-    "warnings": 0,
-    "errors": 0,
-    "tests": 69,
-    "passed": 69,
-    "failed": 0,
-    "skipped": 0,
-    "native_exit": 0
-   },
-   "cari_c006": {
-    "head": "54bec41070da4f8c2e42c5e40c64d847094df8e4",
-    "restore_exit": 0,
-    "tests": 378,
-    "passed": 378,
-    "failed": 0,
-    "skipped": 0,
-    "native_exit": 0,
-    "note": "Windows native full test suite; real browser acceptance separate."
-   },
-   "sales_repair_persistence": {
-    "head": "c8566503a8e031be073d18d5813b7ac2a72e3bbd",
-    "tests": 128,
-    "passed": 128,
-    "failed": 0,
-    "skipped": 0,
-    "native_exit": 0,
-    "real_sql": "NOT_RUN_LOCAL"
-   },
-   "review_prompt": "K3_BAGIMSIZ_INCELEME_ISTEMI.md",
-   "architecture_latest_first": {
-    "head": "c07255c4970ea3cbdae8f0a2f8b334b0b57f431f",
-    "tests": 405,
-    "passed": 404,
-    "failed": 1,
-    "skipped": 0,
-    "native_exit": 1,
-    "cause": "Windows CRLF raw-string fixture left the missing-package mutant unchanged; fixed with newline normalization and Assert.NotEqual guard."
-   },
-   "last_sql_fixture_build": {
-    "head": "e35cd8cb4ecf502b0cb77cf81a334dd92077adff",
-    "native_exit": 0,
-    "warnings": 0,
-    "errors": 0,
-    "seconds": 365.88,
-    "real_sql": "NOT_CONFIGURED_LOCAL_PENDING_CI"
-   },
-   "finite_validation_closure": {
-    "production_source_head": "581d01e7807bdb4dcbfcf7b9a5965ddb664b3924",
-    "fixture_head": "6f9ca88db4cb71e46d098ee44cae2972ef840f49",
-    "full_release_integration_build_exit": 0,
-    "shell_cases_passed": 10,
-    "api_target_cases": 138,
-    "api_initial_passed": 137,
-    "api_initial_failed": 1,
-    "api_failure_retained": true,
-    "authentication_followup_passed": 15,
-    "canonical_unit_passed": 45,
-    "runtime_guard_followup_passed": 3,
-    "rcsi_discovery_guard_passed": 1,
-    "skipped": 0,
-    "official_full_api_group_proof": false,
-    "full_backend_rebuild_at_fixture_head": false,
-    "sql_progress_python_tests": 68,
-    "windows_filter_python_tests": 38
-   },
-   "k3_reviews": {
-    "head": "4d2a620972d1cdb55a317c76531d80cdc12bfa9a",
-    "A": "REQUEST-CHANGES",
-    "A_review": 5953258185,
-    "B": "REQUEST-CHANGES",
-    "B_review": 5953265437,
-    "event": "COMMENT",
-    "scope": "Partial red-CI preflight, not complete K3 reading; full new-head reviews remain required."
-   },
-   "review_fix_checkpoint": {
-    "head": "5064a06ddbb3409a24a36170af76d5e3785f0f7b",
-    "api_theory_target_head": "eb279bf6230357de77cc6d7f7564dc687b0b62aa",
-    "api_theory_target_passed": 24,
-    "api_theory_target_skipped": 0,
-    "api_theory_target_strict_trx": "PASS",
-    "api3_optional_diagnostic": "AUTHOR_CANCELLED_19_OF_55_BATCHES;595_PASSED_220_ALLOWED_SQL_SKIPS;NO_FULL_GROUP_PROOF",
-    "inventory_sql_fixture_build_head": "e24388892",
-    "inventory_sql_fixture_build_exit": 0,
-    "inventory_sql_execution": "NOT_RUN_LOCAL",
-    "guard_passed": 1,
-    "guard_skipped": 0,
-    "guard_strict_trx": "PASS",
-    "full_backend_rebuild": false,
-    "rcsi_verifier_python_passed": 91,
-    "safe_summary_python_passed": 76,
-    "python_skipped": 0,
-    "production_source_unchanged_from": "581d01e7807bdb4dcbfcf7b9a5965ddb664b3924",
-    "tool_test_alignment_head": "135c5ddf49537bd445c87c28c73c1409533c871f",
-    "final_light_checks": {
-     "validators_native_exit": 0,
-     "backlog_tests": 64,
-     "backlog_skipped": 0,
-     "backend_group_tests": 38,
-     "backend_group_skipped": 0,
-     "bootstrap_tests": 56,
-     "bootstrap_skipped_existing_windows_conditional": 9,
-     "bootstrap_initial_failure": "Two exact template counts expected2 before new third command; fixed to exact3, both flags retained.",
-     "bootstrap_repeat_native_exit": 0,
-     "diff_check_exit": 0
-    }
-   },
-   "ci_previous_4d2": {
-    "pr": 1201,
-    "first_head": "e838ca9079eda6c52d0d31cd909e8541f121f976",
-    "run": 44267292714,
-    "status": "FAIL_API3_DEFERRED_CASE_SQL_TIMEOUT_WITH_OBSERVED_FAILURES_AND_SECURITY",
-    "security": "UPSTREAM_BLOCKER_GHSA-fc5q-39xc-vjpf_PATCHED_NONE",
-    "last_published_head": "4d2a620972d1cdb55a317c76531d80cdc12bfa9a",
-    "recovery_inventory": "PASS",
-    "release_manifest": "PASS",
-    "modules": "PASS",
-    "architecture": "PASS",
-    "frontend_shards": "4_OF_4_PASS",
-    "tested_merge_sha": "c645a6e84d116dfb111587e49ad7f8e3a0f7e417",
-    "api_1": "PASS",
-    "api_2": "PASS_2488_TOTAL_1687_PASSED_801_ALLOWED_SQL_SKIPS",
-    "api_3": "FAIL_BATCH11_SDK1_TRX12_RECORD_THEORY_FIXED_IN_C552E70E1",
-    "real_rcsi": "14_PASS_0_SKIP",
-    "sql_a_b_c": "2400_SECONDS_TIMEOUT_NO_FINAL_TRX_OR_PROOF; OBSERVED_EVENTS_ONLY_750_PASSED_215_FAILED",
-    "c014": "PASS_FRESH_BROWSER_AND_NETWORK_EVIDENCE",
-    "next_candidate_ci": "PENDING_NATURAL_PUSH"
-   },
-   "sql_review_followup": {
-    "source_head": "e73727bc4d7c134b1238f08cfd890bd0ad47f8ff",
-    "counterparty_fixture_head": "1eeac20ba980dc9ac5e0ed6a083e5cb8ea4f3236",
-    "counterparty_fixture_build_exit": 0,
-    "counterparty_fixture_build_errors": 0,
-    "counterparty_fixture_build_warnings": 0,
-    "counterparty_real_sql": "NOT_RUN_LOCAL",
-    "safe_assertion_projection_head": "66a97595785b9b08cd23d750b19e89023d0b4796",
-    "safe_summary_python_passed": 86,
-    "safe_summary_python_skipped": 0,
-    "sql_diagnostic_continuation_python_passed": 99,
-    "sql_diagnostic_continuation_python_skipped": 0,
-    "guard_fixture_build_exit": 0,
-    "guard_passed": 1,
-    "guard_skipped": 0,
-    "guard_strict_trx": "PASS",
-    "full_backend_rebuild": false,
-    "reviewed_verifier_fingerprint": "8fbae0393b3510886508bb6b0af594b572a6bbd149b2f3df6f9494f6a35d8958",
-    "business_or_production_policy_changed": false,
-    "remaining_sql_assertion_root_causes": "UNKNOWN_MANUFACTURING_APPROVAL_AND_FINANCE_POS; NO_GUESSED_EXPECTATIONS",
-    "final_light_checks": {
-     "validators_exit": 0,
-     "backlog_passed": 64,
-     "bootstrap_tests": 56,
-     "bootstrap_existing_windows_conditional_skips": 9,
-     "bootstrap_exit": 0,
-     "diff_exit": 0
-    }
-   },
-   "ci_previous_9dd": {
-    "pr": 1201,
-    "run": 44276883719,
-    "source_head": "9ddaa2e5cb7d249e2a7771c1912cadcd5befda48",
-    "tested_merge_sha": "5fabb3397d4cc10f5dcf893d47b71f3579c80b96",
-    "status": "IN_PROGRESS_WITH_CONFIRMED_SQL_AND_SECURITY_FAILURES",
-    "backend_build": "PASS",
-    "modules": "PASS",
-    "architecture": "PASS",
-    "api_1": "PASS",
-    "api_2": "IN_PROGRESS",
-    "api_3": "IN_PROGRESS",
-    "openapi": "PASS",
-    "real_rcsi": "PASS",
-    "release_manifest": "PASS",
-    "recovery_inventory": "IN_PROGRESS",
-    "frontend_shards": "4_OF_4_PASS",
-    "c01_browser": "PASS",
-    "cari_c006": "PASS",
-    "ui_catalog": "PASS",
-    "frontend_audit": "FAIL_GHSA-fc5q-39xc-vjpf_PATCHED_NONE",
-    "sql_a": "FAIL_FIRST_BATCH_7_PASSED_1_FAILED_0_SKIP",
-    "sql_b": "FAIL_TWO_BATCHES_15_PASSED_1_FAILED_0_SKIP",
-    "sql_c": "FAIL_FIRST_BATCH_7_PASSED_1_FAILED_0_SKIP",
-    "sql_evidence_scope": "COMPLETED_BATCH_TRX_ONLY_NO_FULL_SHARD_PROOF",
-    "next_candidate_ci": "NOT_PUBLISHED_WHILE_CURRENT_JOBS_RUNNING"
-   },
-   "sql_warning_followup": {
-    "source_head": "158c7dc83b4035d1911c5a14d77da9c710bc3806",
-    "finance_startup_fixture_head": "4192f1531",
-    "finance_startup_fixture_build_exit": 0,
-    "finance_startup_fixture_errors": 0,
-    "finance_startup_fixture_warnings": 0,
-    "safe_summary_python_passed": 96,
-    "sql_verifier_python_passed": 101,
-    "python_skipped": 0,
-    "architecture_guard_build_exit": 0,
-    "architecture_guard_passed": 1,
-    "architecture_guard_skipped": 0,
-    "architecture_strict_trx": "PASS",
-    "full_backend_rebuild": false,
-    "verifier_house_fingerprint": "c5650132ff237c072a1f8c1c28ae33333dbb6125bceb8a232ad4d8e43afc0cb1",
-    "real_sql_local": "NOT_CONFIGURED_NOT_RUN",
-    "business_policy_changed": false
-   },
-   "ci_previous_20bf": {
-    "pr": 1201,
-    "run": 44285710026,
-    "source_head": "20bfbc7505e03a1a58b66b4b8853ebf5d769a7d4",
-    "tested_merge_sha": "609323a9a6192bb9d971da349be2d4af4adad128",
-    "status": "COMPLETED_FAIL_SQL_AND_FRONTEND_SECURITY",
-    "backend_build": "PASS",
-    "modules": "PASS",
-    "architecture": "PASS",
-    "api_1": "PASS",
-    "api_2": "PASS",
-    "api_3": "PASS",
-    "openapi": "PASS",
-    "real_rcsi": "PASS",
-    "release_manifest": "PASS",
-    "recovery_inventory": "PASS",
-    "frontend_shards": "4_OF_4_PASS",
-    "c01_browser": "PASS",
-    "cari_c006": "PASS",
-    "ui_catalog": "PASS",
-    "frontend_audit": "FAIL_GHSA-fc5q-39xc-vjpf_PATCHED_NONE",
-    "sql_a": "FAIL_FIRST_BATCH_7_PASS_1_FAIL_0_SKIP",
-    "sql_b": "FAIL_TWO_BATCHES_15_PASS_1_FAIL_0_SKIP",
-    "sql_c": "FAIL_TWO_BATCHES_15_PASS_1_FAIL_0_SKIP",
-    "sql_evidence_scope": "COMPLETED_BATCHES_ONLY_NO_FULL_SHARD_PROOF",
-    "sql_continuation_stop": "NORMAL_RUNINFO_WARNING_WAS_REJECTED_FIXED_IN_B4FD38B43",
-    "counterparty_audit_history_fact": "PASSED_IN_FIRST_SQL_C_BATCH",
-    "next_candidate_ci": "PENDING_NATURAL_PUSH"
-   },
-   "sql_public_source_followup": {
-    "source_head": "9bd94c2187c041ca5e800f1a775b88e67060ab34",
-    "collector_head": "d12a853aa9398bde21685cdd374c7faf09d5c51e",
-    "safe_summary_python_passed": 103,
-    "sql_verifier_python_passed": 101,
-    "python_skipped": 0,
-    "architecture_guard_build_exit": 0,
-    "architecture_guard_passed": 1,
-    "architecture_guard_skipped": 0,
-    "architecture_strict_trx": "PASS",
-    "full_backend_rebuild": false,
-    "real_sql_local": "NOT_CONFIGURED_NOT_RUN",
-    "business_policy_changed": false,
-    "diagnostics_are_acceptance": false,
-    "observed_sql_a": "argument_out_of_range; exact source unknown",
-    "observed_sql_b": "finance_command_startup_document_numbers; invalid_operation wrapper",
-    "observed_sql_c": "Equal assertion; exact source unknown",
-    "final_light_checks": {
-     "validators_exit": 0,
-     "backlog_tests": 64,
-     "backlog_skipped": 0,
-     "bootstrap_tests": 56,
-     "bootstrap_existing_windows_conditional_skips": 9,
-     "bootstrap_exit": 0
-    }
-   },
-   "ci_previous_c00": {
-    "pr": 1201,
-    "run": 44299253899,
-    "source_head": "c00c4726e210c89d2362257f8832bd912574064a",
-    "tested_merge_sha": "81df7e173784a72056305539a6a83fc0b20edada",
-    "status": "COMPLETED_FAIL_SQL_AND_FRONTEND_SECURITY",
-    "backend_build": "PASS",
-    "modules": "PASS",
-    "architecture": "PASS",
-    "api_1": "PASS",
-    "api_2": "PASS",
-    "api_3": "PASS",
-    "openapi": "PASS",
-    "real_rcsi": "PASS",
-    "release_manifest": "PASS",
-    "recovery_inventory": "PASS",
-    "frontend_shards": "4_OF_4_PASS",
-    "c01_browser": "PASS",
-    "cari_c006": "PASS",
-    "ui_catalog": "PASS",
-    "frontend_audit": "FAIL_GHSA-fc5q-39xc-vjpf_PATCHED_NONE",
-    "sql_a": "FAIL_FIRST_BATCH_7_PASS_1_FAIL_0_SKIP",
-    "sql_b": "FAIL_TWO_BATCHES_15_PASS_1_FAIL_0_SKIP",
-    "sql_c": "FAIL_TWO_BATCHES_15_PASS_1_FAIL_0_SKIP",
-    "sql_evidence_scope": "COMPLETED_BATCHES_ONLY_NO_FULL_SHARD_PROOF",
-    "sql_continuation_stop": "RUNINFO_VETO_AFTER_COMPLETE_FAILED_TRX_FIXED_DIAGNOSTIC_ONLY_IN_D12A853AA",
-    "counterparty_audit_history_fact": "PASSED_IN_FIRST_SQL_C_BATCH",
-    "next_candidate_ci": "PENDING_NATURAL_PUSH"
-   },
-   "fixture_audit_channel_followup": {
-    "source_head": "383b125f5",
-    "files": 9,
-    "invalid_test_channel_values_corrected": 10,
-    "actual_audit_allowed_channels_changed": false,
-    "integration_fixture_build_exit": 0,
-    "integration_fixture_build_errors": 0,
-    "integration_fixture_build_warnings": 0,
-    "organization_migration_identity_assertion_head": "c248c6fae",
-    "counterparty_migration_identity_assertion_head": "c13e3d5b8",
-    "real_sql_local": "NOT_RUN",
-    "production_policy_changed": false,
-    "final_fixture_build_head": "853f1ea010953e331601f6c2bd20d2ca3533056b",
-    "final_fixture_build_exit": 0,
-    "final_fixture_build_errors": 0,
-    "final_fixture_build_warnings": 0
-   },
-   "party_ledger_translation_followup": {
-    "regression_head": "6f64099a2",
-    "regression_initial_build": "NETSDK1004_MISSING_ASSETS",
-    "locked_restore_exit": 0,
-    "restored_build_exit": 0,
-    "regression_initial_test_exit": 1,
-    "confirmed_exception": "InvalidOperationException_SQL_translation",
-    "production_fix_head": "3a7f4caa8",
-    "fixed_build_exit": 0,
-    "fixed_regression_test_exit": 0,
-    "ledger_targets_passed": 39,
-    "ledger_targets_failed": 0,
-    "ledger_targets_skipped": 0,
-    "ledger_targets_exit": 0,
-    "real_sql_connection_opened": false,
-    "full_backend_rebuild": false,
-    "filters_formulas_or_money_policy_changed": false
-   },
-   "recovery_after_party_ledger_projection": {
-    "head": "853f1ea010953e331601f6c2bd20d2ca3533056b",
-    "inventory_native_exit": 0,
-    "release_native_exit": 0,
-    "db_contexts": 19,
-    "migrations": 340,
-    "durable_stores": 66,
-    "source_files": 3119,
-    "risky_source_files": 1461,
-    "risky_sha256": "a0912a048e044efd925d4d75cb3d8d7fc650ea28534f871b2df5ec6e64651a8a",
-    "backend_source_sha256": "0528dbd291847ffd91fb5c637f1957a0444d7ab8f631697dcfba420b37025f2a",
-    "mode": "SOURCE_ONLY"
-   }
-  },
-  "published_train_head_at_last_checkpoint": "20bfbc7505e03a1a58b66b4b8853ebf5d769a7d4"
- },
- "teams": [
-  {
-   "key": "kimlik",
-   "modules": [
-    "Identity",
-    "Organization",
-    "Settings"
-   ],
-   "toplam": 28,
-   "done": 28,
-   "partial": 0,
-   "kalan": [
-    {
-     "id": "KIM-S3",
-     "finding": "F-002",
-     "title": "ID-2F zorunlu parola değişikliği ekranı",
-     "level": "K2",
-     "refs": [
-      "docs/features/IDENTITY_LOCAL_ACCOUNT_AND_ROLE_ASSIGNMENT_F001_F002_SPEC_v1.md §ID-2F",
-      "docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md KIM-D12"
-     ],
-     "depends_on": [
-      "KIM-S2"
-     ],
-     "files_hint": [
-      "src/frontend/goymen-erp-web/src/identity/ChangePassword*.tsx",
-      "src/frontend/goymen-erp-web/src/identity/passwordContract.ts"
-     ],
-     "contracts": [
-      "tüketir: ID-2 uçları (kimlik)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 6,
-     "w6_report": "durum/W6_kimlik.md"
-    },
-    {
-     "id": "KIM-S5",
-     "finding": "F-001",
-     "title": "ID-3b şirket SetupPending: organization.company.opened.v1 → Identity inbox → ilk Admin; identity.company.first_admin_assigned.v1 → Organization; ICompanyLifecycleReadPortV1",
-     "level": "K3",
-     "refs": [
-      "docs/features/IDENTITY_LOCAL_ACCOUNT_AND_ROLE_ASSIGNMENT_F001_F002_SPEC_v1.md §ID-3b",
-      "docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md KIM-D18/D20/D21"
-     ],
-     "depends_on": [
-      "KIM-S4",
-      "PLT-S6"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Organization/**/CompanyLifecycle*",
-      "src/backend/Modules/Organization/**/Migrations/*SetupPending*",
-      "src/backend/Modules/Identity/**/Inbox/*",
-      "src/backend/GoymenERP.Api/Endpoints/OrganizationEndpoints.cs",
-      "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [
-      "sağlar: organization.company.opened.v1, identity.company.first_admin_assigned.v1, ICompanyLifecycleReadPortV1 (kimlik)",
-      "tüketir: outbox/inbox kayıt sözleşmesi (platform PLT-S6)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 8,
-     "w6_report": "durum/W6_kimlik.md",
-     "w7_result": "SetupPending/inbox/outbox/lifecycle guard kaynağı var. Son kullanıcı cevabı açana otomatik Admin yerine yetkili yönetim/genel müdürün açık ilk yönetici seçimini gerektirir (#1189/6926238225); mevcut otomatik yol değiştirilmeden DONE değildir. Açma/kurulum ekranı ve gerçek global yetki kaynağı eksik; dispatcher kapalı.",
-     "w7_report": "durum/W7_kimlik.md",
-     "w8_source_commit": "3b6586e3c325b9ebd75a2775bbcd78d486c56628",
-     "w8_report": "durum/W8_kimlik.md",
-     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
-    },
-    {
-     "id": "KIM-S6",
-     "finding": "F-001",
-     "title": "ID-4 Kullanıcılar ve yetkiler ekranı (atama, Critical talep/onay kuyruğu, son Admin koruması mesajı)",
-     "level": "K2",
-     "refs": [
-      "docs/features/IDENTITY_LOCAL_ACCOUNT_AND_ROLE_ASSIGNMENT_F001_F002_SPEC_v1.md §ID-4",
-      "docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md KIM-D15/D17"
-     ],
-     "depends_on": [
-      "KIM-S4"
-     ],
-     "files_hint": [
-      "src/frontend/goymen-erp-web/src/identity/Users*.tsx",
-      "src/frontend/goymen-erp-web/src/identity/accessGrant*.ts"
-     ],
-     "contracts": [
-      "tüketir: ID-3 uçları (kimlik)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 8,
-     "w6_report": "durum/W6_kimlik.md",
-     "w8_source_commit": "1e0f0c498e4478efc6225128c270692871fe04fc",
-     "w8_report": "durum/W8_kimlik.md",
-     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
-    },
-    {
-     "id": "KIM-S7",
-     "finding": "F-002",
-     "title": "ID-2r recover-founder: reactivate / reset-password kurtarma komutu (KIM-D22/D23 karar verilen kısım)",
-     "level": "K3",
-     "refs": [
-      "docs/features/IDENTITY_LOCAL_ACCOUNT_AND_ROLE_ASSIGNMENT_F001_F002_SPEC_v1.md §ID-2r",
-      "docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md KIM-D16/D22/D23"
-     ],
-     "depends_on": [
-      "KIM-S4",
-      "PLT-S2"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Identity/**/Recovery*",
-      "tools/** recovery CLI (varsa)",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [
-      "tüketir: security-event authz/recovery yazıcısı (platform PLT-S2)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 8,
-     "w5_raporu": "durum/W5_kimlik.md",
-     "w6_report": "durum/W6_kimlik.md",
-     "w8_source_commit": "b769d5d3a2e76c3d2a92add23b8b9dbac15a170c",
-     "w8_report": "durum/W8_kimlik.md",
-     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
-    },
-    {
-     "id": "KIM-S8",
-     "finding": "F-002",
-     "title": "ID-5 isteğe bağlı TOTP 2FA (kayıt, doğrulama, kapatma)",
-     "level": "K3",
-     "refs": [
-      "docs/features/IDENTITY_LOCAL_ACCOUNT_AND_ROLE_ASSIGNMENT_F001_F002_SPEC_v1.md §ID-5",
-      "docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md KIM-D3"
-     ],
-     "depends_on": [
-      "KIM-S2"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Identity/**/Totp*",
-      "src/backend/Modules/Identity/**/Migrations/*Totp*",
-      "src/frontend/goymen-erp-web/src/identity/TwoFactor*.tsx",
-      "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 8,
-     "w6_report": "durum/W6_kimlik.md",
-     "w8_report": "durum/W8_kimlik.md",
-     "w8_result": "Gerçek TOTP/kurtarma kodları ve Audit owner bağlantısı merkezde kaynak/derleme tamam. Merkezi pinler, son tren FF ve ayrı runtime kabulü bekler.",
-     "w8_source_commit": "bb82ad491af33544b69a0a6115b6a169cc2ad0f2",
-     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
-    },
-    {
-     "id": "KIM-S9",
-     "finding": "F-002",
-     "title": "2FA cihazını kaybetmiş kurucu / başka yetkili olmayan toplam kilitlenme kurtarma yolu",
-     "level": "K3",
-     "refs": [
-      "docs/features/IDENTITY_LOCAL_ACCOUNT_AND_ROLE_ASSIGNMENT_F001_F002_SPEC_v1.md açık noktalar",
-      "docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md KIM-D23",
-      "Issue #66 yorum 6882315732 (SINAN-CEVAP 14)"
-     ],
-     "depends_on": [
+    "w6_oneri": [
+      "KIM-S3",
+      "KIM-S5",
+      "KIM-S6",
       "KIM-S8",
-      "KIM-S7"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Identity/**/Recovery*"
-     ],
-     "contracts": [],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 8,
-     "decision_note": "NS-04 (Issue #66 yorum 6882315732 (SINAN-CEVAP 14)): Tek seferlik kurtarma kodları (kurulumda) + ikinci yönetici önerisi; hepsi kaybolursa denetim kaydı bırakan sunucu CLI kurtarma aracı.",
-     "w6_report": "durum/W6_kimlik.md",
-     "w8_source_commit": "40ee5c4abc64ac7ac772e54da4209187b1b322e9",
-     "w8_report": "durum/W8_kimlik.md",
-     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
+      "KIM-S9",
+      "KIM-S13",
+      "PLT-S13",
+      "ALC-S7",
+      "ALC-S8",
+      "ALC-S14",
+      "STK-S8",
+      "STK-S11",
+      "STK-S13",
+      "STK-S17",
+      "STK-S21",
+      "STK-S26",
+      "STK-S29",
+      "FIN-S17",
+      "FIN-SC47-KREDI ekran+fiş önerisi (W5 iskeletten kalan)",
+      "STK-S17 (ALC-S3+SAT-S8 sonrası)",
+      "STK-S13 + ALC-S7/S8 (KIM-S18 sonrası)"
+    ],
+    "toplam": 174,
+    "done": 174,
+    "partial": 0,
+    "remaining_not_started": 0,
+    "last_wave": 8,
+    "progress_meaning": "174/174 kaynak DONE (%100), W8 son paket; yeni dalga yok. Son CI SQL A/B/C FAIL; frontend audit dahil diger kapilar PASS. Finans1556 unit ve Identity/guard yerel kaniti raporda; yeni exact-head genis SQL ve iki bagimsiz tam K3 kabulu bekler; production degildir.",
+    "w6_source_done_ids": [
+      "KIM-S13",
+      "KIM-S18",
+      "KIM-S3",
+      "PLT-S13",
+      "SAT-S8",
+      "SAT-SC32",
+      "STK-S1",
+      "STK-S26",
+      "URT-S18",
+      "URT-S6",
+      "URT-S7"
+    ],
+    "w7_oneri": [
+      "KIM-SC32-a",
+      "KIM-SC32-b",
+      "ALC-S7",
+      "ALC-S8",
+      "ALC-S14",
+      "URT-S4/URT-S5 kalan kullanıcı akışı",
+      "STK-S19 + ALC-S6",
+      "SAT-S9",
+      "FIN-SC36 gerçek iç defter sağlayıcısı",
+      "W6 raporlarında kalan tüm PARTIAL/PLANNED/READY dilimler"
+    ],
+    "new_decision_followups": [
+      {
+        "work": "EK24 iç defter banka bakiyesi",
+        "slice": "FIN-SC36",
+        "status": "SOURCE_DONE_RUNTIME_NOT_RUN"
+      },
+      {
+        "work": "EK24 purchasing.invoice.finalized ve alış yevmiyesi",
+        "slice": "FIN-S13",
+        "status": "SOURCE_DONE_RUNTIME_NOT_RUN"
+      },
+      {
+        "work": "EK24 plan üstü sevk uyarısı",
+        "slice": "STK-S3",
+        "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
+        "note": "Direct answer #1189/6963301286; actual approved separate exception/reservation/usage sourcead3e0caeb, combined146f source builds exit0. No grant/Critical or production change."
+      },
+      {
+        "work": "EK24 satır bazlı iskonto",
+        "slice": "STK-SC36-a",
+        "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
+        "note": "Actual Purchasing discounted line price via PurchaseOrderLineCostReadPort; SAT-D414 excludes document-total discount allocator."
+      },
+      {
+        "work": "EK24 N-12 önek/yıl/sıra ve yıllık sıfırlama",
+        "slice": "KIM-S19",
+        "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
+        "note": "Actual Settings number provider/counters/reservations/gaps, Purchasing and Finance consumers; combined15a source compile exit0. No reuse/backfill."
+      },
+      {
+        "work": "EK24 geç fatura farkının satılan malın maliyetine aktarımı",
+        "slice": "STK-SC36-a",
+        "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
+        "note": "Actual cost/cancellation/succession connected through62e65d6a6; actual count costing49bd8c9ea also closes enclosing source scope. Combined146f source builds exit0; runtime/CI/K3 separate."
+      },
+      {
+        "work": "EK24 mal kabul otomatik kuru ve birleşen etikette kg ağırlıklı kur",
+        "slice": "STK-SC36-b",
+        "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
+        "note": "Actual receipt rate stamp/source, exact kg-weighted calculator and Manufacturing consumer;4bd80d9dc."
+      },
+      {
+        "work": "FNS-D106 kredi grubu alan taslağı",
+        "slice": "FIN-SC47-KREDI",
+        "status": "DRAFT_READY",
+        "note": "Draft updated under17Nov implementation instructions;69096b33e/5485ec8e5 source scopes separately registered. Group activation, grants and production are not implied."
+      },
+      {
+        "work": "KLN-D114 bildirim deposu/90 gün sonra pasif",
+        "slice": "PLATFORM_FOLLOWUP",
+        "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
+        "note": "adee18054 actual Work inbox/notification/passivation + Settings configurable duration + mounted personal UI. Dispatcher activation separate."
+      },
+      {
+        "work": "URT-D109 boya emir toplamı",
+        "slice": "URT-SC36",
+        "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
+        "note": "This decision concerns RETURN LIMIT, not cost: ProductionOrder aggregate paint balance + ReturnLimitFormulaGoldenTests;f0efbaebb."
+      },
+      {
+        "work": "FNS-D108 / W5-5 kredi kapalı dönem düzeltmesi",
+        "slice": "FIN-SC47-KREDI",
+        "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
+        "note": "Actual FinanceCreditMovementService reversal+new immutable movement, selected open period, different checker and CreditMovementsPanel source."
+      },
+      {
+        "work": "ALS-D116 / W5-5 fazla teslim onayı ayrı izin",
+        "slice": "ALC-S5",
+        "status": "REGISTERED_ONLY",
+        "note": "Critical değil; grant/rol yok. İş akışı ayrı kaynak kabulü ister."
+      },
+      {
+        "work": "SAT-D419 / W5-5 Finans maliyet hesabı eşlemesi ve audit",
+        "slice": "STK-SC36-a",
+        "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
+        "note": "c51d83d86/e13015a66 actual Product class, account resolver/mapping workspace/audit. Separate SAT-D422 historical correction/cancellation remains STK-SC36-a."
+      },
+      {
+        "work": "FNS-D109 kredi approve Critical / propose değil",
+        "slice": "FIN-SC47-KREDI",
+        "status": "REGISTERED_ONLY",
+        "note": "Kaynak kayıt düzeltildi; grant/rol/production yok."
+      }
+    ],
+    "w6_verification_head": "7529fe1e8c2a40d2b050d9e97082b79fc716affd",
+    "w7_source_done_ids": [
+      "KIM-SC32-a",
+      "KIM-SC32-b",
+      "STK-S17",
+      "STK-S18"
+    ],
+    "w8_oneri": [
+      "KIM-S5 yeni açık ilk yönetici seçimi/global yetki",
+      "URT-S5 AT-044 fiziksel toplam",
+      "URT-SC33 kalıcı elle sıra ve yeni iş anchor",
+      "STK-S19 + ALC-S6 tüketim tersleme/kısmi reopen",
+      "Ürün açık ticari mal/mamul sınıfı ve fatura satırı muhasebe düzeltmesi",
+      "Kalan READY/PARTIAL dilimler; karar mevcutken eksik owner uygulamasını karar engeli sayma"
+    ],
+    "w7_decision_sources": [
+      "#1189/6926090415",
+      "#1189/6926238225",
+      "#1189/6926298700",
+      "#1189/6926992238",
+      "#1189/6927182217",
+      "#1189/6927195150"
+    ],
+    "scope_frozen": {
+      "date": "2026-11-17",
+      "total_slices": 174,
+      "final_work_package": 8,
+      "new_waves_allowed": false,
+      "baseline_train_head": "df1b7055f9397cd5206b57df439986d1e8344b4e",
+      "baseline_open_ids": [
+        "KIM-S5",
+        "KIM-S6",
+        "KIM-S7",
+        "KIM-S8",
+        "KIM-S9",
+        "KIM-S15",
+        "KIM-S19",
+        "SAT-S9",
+        "SAT-S12",
+        "SAT-S13",
+        "SAT-SC34",
+        "ALC-S5",
+        "ALC-S6",
+        "ALC-S7",
+        "ALC-S8",
+        "ALC-S14",
+        "ALC-SC47",
+        "STK-S3",
+        "STK-S8",
+        "STK-S11",
+        "STK-S13",
+        "STK-S19",
+        "STK-S21",
+        "STK-S29",
+        "STK-SC36-a",
+        "STK-SC36-b",
+        "STK-SC36-c",
+        "URT-S4",
+        "URT-S5",
+        "URT-S8",
+        "URT-SC32",
+        "URT-SC33",
+        "URT-SC36",
+        "FIN-S13",
+        "FIN-S14",
+        "FIN-S17",
+        "FNS-SC32",
+        "FIN-SC36",
+        "FIN-SC47-KREDI"
+      ],
+      "plan": "W8_TAMAMLAMA_PLANI.md",
+      "new_scope_allowed": false,
+      "source_progress_separate_from_acceptance": true
     },
-    {
-     "id": "KIM-S13",
-     "finding": "F-029",
-     "title": "F029-S3 para profili (birim fiyat ölçeği) kalıcı tablo",
-     "level": "K3",
-     "refs": [
-      "docs/delivery/URUN_F029_POLITIKA_KATALOGLARI_ENVANTER_VE_SPEC_v1.md §5.4(3)",
-      "docs/decisions/SINAN_KARARLARI_2026-11-12_URUN.md URN-D2..D5"
-     ],
-     "depends_on": [
-      "KIM-S12"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Settings/**/MoneyProfile*",
-      "src/backend/Modules/Settings/**/Migrations/*",
-      "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [
-      "sağlar: ISettingsPrerequisiteProvider para profili (kimlik; tüketen satis, alis_cari, finans)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 6,
-     "w6_report": "durum/W6_kimlik.md"
+    "dispatch_rounding_followup": {
+      "decision": "SAT-D424",
+      "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
+      "source": "#1189/6929718990",
+      "decision_pr": 1198,
+      "note": "Actual Documents proof/per-line dispatch distribution and exact invoice-source carry implemented under SAT-D424/D425; W8_satis report. Genuine finalized external source is authoritative; no invoice redistribution or money policy derived. Combined146f source builds exit0."
     },
-    {
-     "id": "KIM-S15",
-     "finding": "F-029",
-     "title": "F029-C kısıt migration'ı (forward-fix) + sürüm 0 aktarımı + üretim profilinde hazırla→yayımla tek akış (URN-D5/D6)",
-     "level": "K3",
-     "refs": [
-      "docs/delivery/URUN_F029_POLITIKA_KATALOGLARI_ENVANTER_VE_SPEC_v1.md §5.4(5)",
-      "docs/decisions/SINAN_KARARLARI_2026-11-12_URUN.md URN-D4/D5/D6"
-     ],
-     "depends_on": [
-      "KIM-S14"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Settings/**/ManufacturingProfile*",
-      "src/backend/Modules/Settings/**/Migrations/*",
-      "src/backend/Modules/Settings/README.md",
-      "src/frontend/goymen-erp-web/src/settings/ManufacturingProfile*",
-      "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [
-      "değişir: manufacturing profile published.v1 → gerekirse published.v2 (v1 korunur; tüketen uretim)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 8,
-     "w5_raporu": "durum/W5_kimlik.md",
-     "w6_report": "durum/W6_kimlik.md",
-     "w8_source_commit": "ed7d8296aee800218e8fc71592269e6b97ca8ef2",
-     "w8_report": "durum/W8_kimlik.md",
-     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
-    },
-    {
-     "id": "KIM-S18",
-     "finding": "F-027",
-     "title": "API-98 Ayarlar listeleri (masraf tipi, hizmet tipi, işlem türü) + B-14 boya rengi/hurda türü listeleri",
-     "level": "K3",
-     "refs": [
-      "docs/decisions/SINAN_KARARLARI_2026-11-11_ALIS_EK15.md ALS-D79",
-      "docs/delivery/KALAN_MODULLER_HAZIRLIK_PLANI_v1.md B-14",
-      "docs/decisions/SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md BS-10"
-     ],
-     "depends_on": [
-      "KIM-S17"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Settings/**/ReferenceList*",
-      "src/backend/Modules/Settings/**/Migrations/*ReferenceList*",
-      "src/frontend/goymen-erp-web/src/settings/ReferenceList*",
-      "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [
-      "sağlar: ISettingsReferenceListReaderV1 (ad taslak; kimlik; tüketen alis_cari, stok_lojistik, uretim, finans)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 5,
-     "w5_raporu": "durum/W5_kimlik.md",
-     "w6_report": "durum/W6_kimlik.md"
-    },
-    {
-     "id": "KIM-S19",
-     "finding": "F-014",
-     "title": "B-13 Finans politika anahtarları + numara serileri (ADR-SET-002) + açılış dönemi ayarı okuma portu",
-     "level": "K3",
-     "refs": [
-      "docs/delivery/KALAN_MODULLER_HAZIRLIK_PLANI_v1.md B-13",
-      "docs/decisions/SINAN_KARARLARI_2026-11-11_FINANS_F005.md FNS-D23"
-     ],
-     "depends_on": [
-      "KIM-S17"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Settings/**/FinancePolicy*",
-      "src/backend/Modules/Settings/**/NumberSeries*",
-      "src/backend/Modules/Settings/**/Migrations/*",
-      "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [
-      "sağlar: ISettingsFinancePolicyProviderV1 + numara serisi portu (ad taslak; kimlik; tüketen finans)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 5,
-     "w5_raporu": "durum/W5_kimlik.md",
-     "w6_report": "durum/W6_kimlik.md",
-     "w8_report": "durum/W8_KIM_S19_MERKEZ.md",
-     "w8_source_note": "Typed policy families, actual bank catalog/K6/numbering/opening sources mounted. e7029e6bc final replay authority fence plus regression sources; combined15a634290 API/Settings/Finance/Sales/Inventory/Accounting/Integration/TSC source compiles exit0. No default threshold/grant/activation; runtime NOT_RUN."
-    },
-    {
-     "id": "KIM-SC32-a",
-     "title": "Settings teminat türü kataloğu + Finans okuma adapter'ı (FNS-D70)",
-     "status": "DONE",
-     "w6_report": "durum/W6_kimlik.md",
-     "w6_note": "DOGRULA: gerçek Settings teminat türü kataloğu ve Finance adapter kaydı yok; Unavailable provider başarı sayılmadı.",
-     "w7_result": "Settings teminat kataloğu/version HTTP+UI, tam exact oran, Audit owner ve beş replay-race fence kaynağı; gerçek SQL/Vitest koşumu NOT_RUN.",
-     "wave": 7,
-     "w7_report": "durum/W7_kimlik.md",
-     "blocked_reason": ""
-    },
-    {
-     "id": "KIM-SC32-b",
-     "title": "Settings sözleşme iskonto sınırı değeri (SAT-D364)",
-     "status": "DONE",
-     "w6_report": "durum/W6_kimlik.md",
-     "w6_note": "DOGRULA: ayrı sözleşme iskonto sınırı Settings değeri ve Sales adapter kaydı yok; genel iskonto sınırı bunun yerine geçmez.",
-     "w7_result": "Ayrı sözleşme iskonto limiti missing/zero ayrımı, gerçek Settings sahibi+Sales adapter+HTTP/UI; test koşumu NOT_RUN.",
-     "wave": 7,
-     "w7_report": "durum/W7_kimlik.md",
-     "blocked_reason": ""
-    }
-   ],
-   "remaining_not_started": 0
-  },
-  {
-   "key": "platform",
-   "modules": [
-    "Audit",
-    "Idempotency",
-    "Documents",
-    "Work",
-    "AI",
-    "Outbox/dispatcher",
-    "Observability"
-   ],
-   "toplam": 16,
-   "done": 16,
-   "partial": 0,
-   "kalan": [
-    {
-     "id": "PLT-S13",
-     "finding": "F-031",
-     "title": "Belge/durum kayması: ACCEPTANCE_MATRIX, README'ler, backlog durum senkronu (karar/OPEN durumu değiştirmeden)",
-     "level": "K1",
-     "refs": [
-      "docs/delivery/FABLE_5_2_ANALIZLERI/01_MEVCUT_DURUM_VE_YOL_HARITASI_2026-11-10.md F-031"
-     ],
-     "depends_on": [],
-     "files_hint": [
-      "docs/**/ACCEPTANCE_MATRIX*",
-      "src/backend/Modules/*/README.md",
-      "docs/backlog/** (validator kanıtıyla)"
-     ],
-     "contracts": [],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 6,
-     "w6_report": "durum/W6_platform.md"
-    }
-   ],
-   "remaining_not_started": 0
-  },
-  {
-   "key": "satis",
-   "modules": [
-    "Sales"
-   ],
-   "toplam": 17,
-   "done": 17,
-   "partial": 0,
-   "kalan": [
-    {
-     "id": "SAT-S8",
-     "finding": "F-017",
-     "title": "X1 satış satırı iptal/azaltmada gelecek tedarik ayırmasının aynı işlemde bırakılması (KLN-D28..D32)",
-     "level": "K3",
-     "refs": [
-      "docs/delivery/SATIS_RISK_SEVK_KAPISI_VE_FASON_FATURA_PLANI_v1.md §X1",
-      "docs/decisions/SINAN_KARARLARI_2026-11-12_STOK_F017_EK.md KLN-D28..D32"
-     ],
-     "depends_on": [
-      "STK-S16"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Sales/**/OrderLine*Cancel*",
-      "src/backend/Modules/Sales/**/OrderLine*Reduce*"
-     ],
-     "contracts": [
-      "tüketir: IInventoryFutureAllocationReleasePortV1 (stok_lojistik)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 5,
-     "w5_raporu": "durum/W5_satis.md",
-     "w6_report": "durum/W6_satis.md",
-     "w6_note": "Gerçek Sales/Inventory aynı-transaction host bağlantısı, sabit kilit sırası, Purchasing termin yazma kilidi ve HTTP/replay metadata tamamlandı. Test kaynakları yazıldı; gerçek SQL koşumu NOT_RUN."
-    },
-    {
-     "id": "SAT-S9",
-     "finding": "F-017",
-     "title": "F17-5 satış kaynak planında 'alıştan' seçimi, uyarı/neden kodları ve termin geçti gösterimi",
-     "level": "K2",
-     "refs": [
-      "docs/delivery/ALIS_F017_GELECEK_TEDARIK_AYIRMA_v1.md §4 F17-5",
-      "docs/delivery/STOK_F017_GELECEK_TEDARIK_AYIRMA_SPEC_v1.md §10 F017-d"
-     ],
-     "depends_on": [
-      "STK-S17"
-     ],
-     "files_hint": [
-      "src/frontend/goymen-erp-web/src/sales/SourcePlan*.tsx",
-      "src/frontend/goymen-erp-web/src/sales/sourcePlan*.ts"
-     ],
-     "contracts": [
-      "tüketir: F017-b2 uçları (stok_lojistik)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 8,
-     "w6_report": "durum/W6_satis.md",
-     "w8_source_commit": "e20f0ad14a44ecfe927060dbe0a2ff7e3eda9c8c",
-     "w8_report": "durum/W8_satis.md",
-     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
-    },
-    {
-     "id": "SAT-S12",
-     "finding": "F-011",
-     "title": "UI-50 S-05 marj maliyetinin Stok ortalama maliyet portundan okunması (kalan kısım; önce main'de kalanı doğrula)",
-     "level": "K3",
-     "refs": [
-      "docs/delivery/SATIS_HAZIRLIK_PLANI_v1.md §9.3 UI-50",
-      "docs/decisions/*EK51/EK52 SAT-D256..D267",
-      "docs/decisions/SINAN_KARARLARI_2026-11-14_TREN_DALGA1.md"
-     ],
-     "depends_on": [
-      "STK-S35"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Sales/**/Margin*",
-      "src/frontend/goymen-erp-web/src/sales/Margin*"
-     ],
-     "contracts": [
-      "tüketir: Stok ortalama maliyet okuma portu (stok_lojistik, mevcut #1044)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 3,
-     "decision_note": "SAT-D347 okunamazsa marj yok. Marj formülü etkinleştirmesi golden gelene kadar kapalı (SAT-D265/5); kod + snapshot yazılır.",
-     "w6_report": "durum/W6_satis.md",
-     "w8_report": "durum/W8_SAT_S12_GOLDEN_DUZELTME.md",
-     "w8_source_note": "Golden PR1200 dfab7e934fd6e7fc3b0dd5ca40bd9a3643d3ee4f iki bagimsiz DOCS imzasi ile main3c1b47878447570210b933b83d874646f9c52e4b oldu; main no-ff trende. Ayri uygulama19ca53a17 gercek TL bagini ve sifir maliyet unavailable korur; golden kabul kosulu source true. Sales.Unit kaynak derleme0/0warn/error42.95s. Runtime ve son K3 iki exact-head inceleme NOT_RUN; production aktivasyonu degildir.",
-     "w8_source_commit": "19ca53a178dc97e86cdc576ba775d9ee89543a4f"
-    },
-    {
-     "id": "SAT-S13",
-     "finding": "F-020",
-     "title": "Satış irsaliyesinde kantar farkı toplamının gösterimi ve faturaya kg aktarımı (SAT-D343)",
-     "level": "K3",
-     "refs": [
-      "docs/decisions/SINAN_KARARLARI_2026-11-13_EK1.md SAT-D343",
-      "docs/decisions/SINAN_KARARLARI_2026-11-13_URETIM_MALIYETI_VE_EKSI_STOK.md SAT-D319/D320"
-     ],
-     "depends_on": [
-      "STK-S24"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Sales/**/Dispatch*",
-      "src/backend/GoymenERP.Api/Endpoints/SalesEndpoints.Dispatches.cs"
-     ],
-     "contracts": [
-      "tüketir: kantar farkı kayıt okuma portu (stok_lojistik)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 8,
-     "w5_raporu": "durum/W5_satis.md",
-     "w6_report": "durum/W6_satis.md",
-     "w8_source_commit": "e20f0ad14a44ecfe927060dbe0a2ff7e3eda9c8c",
-     "w8_report": "durum/W8_satis.md",
-     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
-    },
-    {
-     "id": "SAT-SC32",
-     "title": "Sipariş PDF (SAT-D365) + SAT-D363 iskonto gizleme",
-     "status": "DONE",
-     "blocked_reason": "",
-     "w6_report": "durum/W6_satis.md",
-     "w6_note": "PDF mevcut kaynakta doğrulandı; SAT-D363 sözleşme oranı/sınır redaksiyonu sunucu+strict decoder+Gizli UI ve test kaynaklarında düzeltildi. Koşum NOT_RUN."
-    },
-    {
-     "id": "SAT-SC34",
-     "finding": "SC34",
-     "title": "Fason fatura bölüştürme paydası net kg (KLN-D89), açık miktar = sipariş − teslim (KLN-D100), ileri tahsis varken başlık revizyonu reddi (SAT-D373)",
-     "level": "K3",
-     "refs": [
-      "SINAN-CEVAP 34"
-     ],
-     "depends_on": [
-      "STK-S16"
-     ],
-     "files_hint": [],
-     "contracts": [],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 5,
-     "w5_raporu": "durum/W5_satis.md",
-     "w6_report": "durum/W6_satis.md",
-     "w8_report": "durum/W8_stok_lojistik.md",
-     "w8_source_note": "Original weigh-derived subcontract invoice, future-allocation revision guard, actual returned and finalized-invoiced quantities connected. dfc1f3195 and4e0d582e1 integrated; combined15a634290 source compiles exit0 includingSales/Integration/TSC. Official provider remains unconfigured, not usable-runtime acceptance."
-    }
-   ],
-   "remaining_not_started": 0
-  },
-  {
-   "key": "alis_cari",
-   "modules": [
-    "Purchasing",
-    "Counterparty"
-   ],
-   "toplam": 20,
-   "done": 20,
-   "partial": 0,
-   "kalan": [
-    {
-     "id": "ALC-S5",
-     "finding": "F-027",
-     "title": "API-44/API-60 kabul geri alma ve tedarikçiye iade (B-19), asıl alış satırı maliyetiyle çıkış (SAT-D306)",
-     "level": "K3",
-     "refs": [
-      "docs/delivery/ALIS_HAZIRLIK_PLANI_v1.md §5.7",
-      "docs/delivery/KALAN_MODULLER_HAZIRLIK_PLANI_v1.md B-19",
-      "docs/decisions/SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md SAT-D306",
-      "docs/decisions/SINAN_KARARLARI_2026-11-12_ALIS_EK17.md ALS-D86/D91"
-     ],
-     "depends_on": [
-      "STK-S25"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Purchasing/**/SupplierReturn*",
-      "src/backend/Modules/Purchasing/**/ReceiptReversal*",
-      "src/backend/GoymenERP.Api/Endpoints/PurchasingEndpoints.cs",
-      "src/frontend/goymen-erp-web/src/purchasing/SupplierReturn*",
-      "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [
-      "tüketir: Stok tedarikçi iadesi çıkış portu (stok_lojistik)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 8,
-     "w5_raporu": "durum/W5_alis_cari.md",
-     "w6_report": "durum/W6_alis_cari.md",
-     "w8_source_commit": "c67daf71f9afa0cb1e5bce97ae94103fd11576b9",
-     "w8_report": "durum/W8_alis_cari.md",
-     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
-    },
-    {
-     "id": "ALC-S6",
-     "finding": "F-017",
-     "title": "F17-6 kabul geri alma/iade F-017 kuralları; canlanma (ALS-D86/D91/D92/D93)",
-     "level": "K3",
-     "refs": [
-      "docs/delivery/ALIS_F017_GELECEK_TEDARIK_AYIRMA_v1.md §3.7/§3.8",
-      "docs/decisions/SINAN_KARARLARI_2026-11-12_ALIS_EK17.md ALS-D91..D93"
-     ],
-     "depends_on": [
-      "ALC-S5",
-      "STK-S19"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Purchasing/**/ReceiptReversal*",
-      "src/backend/Modules/Purchasing/**/Revive*"
-     ],
-     "contracts": [],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 8,
-     "w6_report": "durum/W6_alis_cari.md",
-     "w7_result": "7B ile kısmi yeniden açma kararı var; Inventory ters-tüketim/özgün conversion ledger ve Purchasing kabul geri alma owner zinciri teknik bağımlılıktır, yeni karar engeli değildir.",
-     "w7_report": "durum/W7_alis_cari.md",
-     "w8_source_commit": "02a05b64f51a5799c7ea4495326cdf1cce405461",
-     "w8_report": "durum/W8_alis_cari.md",
-     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
-    },
-    {
-     "id": "ALC-S7",
-     "finding": "F-027",
-     "title": "A-1 fason hizmet alış siparişi (kendi malımız fasoncuya; ALS-D29)",
-     "level": "K3",
-     "refs": [
-      "docs/delivery/ALIS_HAZIRLIK_PLANI_v1.md §5.8",
-      "docs/decisions/*ALIS* ALS-D26/ALS-D29",
-      "docs/decisions/SINAN_KARARLARI_2026-11-11_ALIS_EK15.md ALS-D79"
-     ],
-     "depends_on": [
-      "KIM-S18"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Purchasing/**/SubcontractService*",
-      "src/backend/Modules/Purchasing/**/Migrations/*Subcontract*",
-      "src/frontend/goymen-erp-web/src/purchasing/Subcontract*",
-      "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [
-      "tüketir: ISettingsReferenceListReaderV1 (kimlik)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 8,
-     "w6_report": "durum/W6_alis_cari.md",
-     "w8_report": "durum/W8_alis_cari.md",
-     "w8_result": "Gerçek fason hizmet siparişi/vergi kaynağı ve son mevcut iki onay yetkisi cevabı e67f53fc7 ile entegre. API/ilgili projeler/TSC derleme 0; runtime ve merkezi pin/son tren FF bekler. DONE değildir.",
-     "w8_source_commit": "e67f53fc75358fb9397dc754e36fe4c538621ed6",
-     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
-    },
-    {
-     "id": "ALC-S8",
-     "finding": "F-027",
-     "title": "Ek alış masrafı kaydı (nakliye/gümrük); ortalama maliyet dışında (ALS-D80, SAT-D302)",
-     "level": "K3",
-     "refs": [
-      "docs/decisions/SINAN_KARARLARI_2026-11-11_ALIS_EK15.md ALS-D80",
-      "docs/decisions/SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md SAT-D302"
-     ],
-     "depends_on": [
-      "KIM-S18"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Purchasing/**/AdditionalCost*",
-      "src/frontend/goymen-erp-web/src/purchasing/AdditionalCost*",
-      "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 8,
-     "w6_report": "durum/W6_alis_cari.md",
-     "w8_report": "durum/W8_alis_cari.md",
-     "w8_result": "Gerçek ek masraf kaydı ve parçalı fatura eşleştirmesi 60a2e3110 / 555503e1b ile entegre. OrdersRevise kullanılır, stok maliyeti değişmez. Derleme 0; runtime ve merkezi pin/son tren FF bekler. DONE değildir.",
-     "w8_source_commit": "555503e1bc7279f7f76bd8a841a146a0e8c2646b",
-     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
-    },
-    {
-     "id": "ALC-S14",
-     "finding": "F-027",
-     "title": "B-16 IPurchasingPartyAccountPortV1 v2",
-     "level": "K3",
-     "refs": [
-      "docs/delivery/KALAN_MODULLER_HAZIRLIK_PLANI_v1.md B-16/B-17"
-     ],
-     "depends_on": [
-      "FIN-S12"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Purchasing/**/PartyAccount*"
-     ],
-     "contracts": [
-      "sağlar: IPurchasingPartyAccountPortV1 v2 (alis_cari; tüketen finans)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 8,
-     "w6_report": "durum/W6_alis_cari.md",
-     "w8_source_commit": "6d5e5e0e2b07b55a6dbbe6c7d5f35b07297d5d6a",
-     "w8_report": "durum/W8_alis_cari.md",
-     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
-    },
-    {
-     "id": "ALC-SC47",
-     "title": "Cari resmi unvan değişikliği maker-checker + alış siparişi cari değişikliği yeniden onayı (ALS-D111/D112/D113)",
-     "level": "K3",
-     "refs": [
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK19.md",
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK20.md",
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK21.md",
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK22.md"
-     ],
-     "depends_on": [],
-     "files_hint": [
-      "src/backend/Modules/Counterparties/**/LegalName*",
-      "src/backend/Modules/Purchasing/**/PurchaseOrder*",
-      "src/frontend/goymen-erp-web/src/counterparties/**",
-      "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [],
-     "finding": "SC36-SC47 kararları",
-     "status": "DONE",
-     "wave": 8,
-     "w5_raporu": "durum/W5_alis_cari.md",
-     "w6_report": "durum/W6_alis_cari.md",
-     "blocked_reason": "",
-     "w8_source_commit": "82d31f3000fed9d17fd808b80f2ca0bdd6e86f6b",
-     "w8_report": "durum/W8_alis_cari.md",
-     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
-    }
-   ],
-   "remaining_not_started": 0
-  },
-  {
-   "key": "stok_lojistik",
-   "modules": [
-    "Inventory",
-    "Logistics",
-    "Product"
-   ],
-   "toplam": 45,
-   "done": 45,
-   "partial": 0,
-   "kalan": [
-    {
-     "id": "STK-S1",
-     "finding": "F-006",
-     "title": "F-006 ShippedBy: LoadingShareRow.RecordedBy + migration; LogisticsSalesOrderDeliveryReadPort ShippedBy doldurur (B-33)",
-     "level": "K3",
-     "refs": [
-      "docs/delivery/FABLE_5_2_ANALIZLERI/02_* paket 2",
-      "docs/delivery/KALAN_MODULLER_HAZIRLIK_PLANI_v1.md B-33"
-     ],
-     "depends_on": [
-      "claude/lojistik-okuma-deadlock (uçuşta; aynı dosyalara dokunma)"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Logistics/**/LoadingShare*",
-      "src/backend/Modules/Logistics/**/Migrations/*RecordedBy*",
-      "src/backend/Modules/Logistics/**/SalesOrderDeliveryRead*",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [
-      "sağlar: LogisticsSalesOrderDeliveryReadPort ShippedBy alanı (stok_lojistik; tüketen satis)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 1,
-     "w6_report": "durum/W6_stok_lojistik.md",
-     "w6_note": "Mevcut RecordedBy migration/owner projection/test kaynaklarında doğrulandı; mükerrer uygulama yazılmadı."
-    },
-    {
-     "id": "STK-S3",
-     "finding": "F-012",
-     "title": "Fason teslim sevk türü (LOJ-D1..D5), net kg paylaşımı (LOJ-D12), çıkış sonrası tartı düzeltmesi (LOJ-D13), risk kapısı (LOJ-D14)",
-     "level": "K3",
-     "refs": [
-      "docs/decisions/SINAN_KARARLARI_2026-11-12_LOJISTIK_F012_F020.md LOJ-D1..D5",
-      "docs/decisions/SINAN_KARARLARI_2026-11-12_LOJISTIK_EK3.md LOJ-D12/D13",
-      "docs/decisions/SINAN_KARARLARI_2026-11-12_LOJISTIK_EK4.md LOJ-D14"
-     ],
-     "depends_on": [
-      "STK-S2",
-      "STK-S27"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Logistics/**/SubcontractDelivery*",
-      "src/backend/Modules/Inventory/**/DefiniteShipment*",
-      "src/backend/Modules/Logistics/**/Migrations/*Subcontract*",
-      "src/backend/GoymenERP.Api/Endpoints/LogisticsEndpoints.cs",
-      "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [
-      "tüketir: ISalesShipmentRiskGateReadPortV1 (satis)",
-      "tüketir: Üretim fason emri okuma (uretim)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 5,
-     "w5_raporu": "durum/W5_stok_lojistik.md",
-     "w6_report": "durum/W6_stok_lojistik.md",
-     "w8_report": "durum/W8_KAYNAK_TAMAMLANDI.md",
-     "w8_source_note": "SOURCE_DONE: actual plan-excess exception/approval, explicit extra physical reservation and immutable load/ship usage integrated fromad3e0caeb at96487201f. Instruction plan remains unchanged; narrow registered-only approver, real physical and other owner gates preserved. Final combined146f API/all22 test-project builds/TSC exit0; runtime/CI/K3 NOT_RUN."
-    },
-    {
-     "id": "STK-S8",
-     "finding": "F-013",
-     "title": "Transfer ekranları (plan, sevk, iptal, teslim alma, fazla/eksik onayı)",
-     "level": "K2",
-     "refs": [
-      "docs/decisions/SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md KLN-D20..D24"
-     ],
-     "depends_on": [
-      "#1099 (uçuşta)",
-      "STK-S5"
-     ],
-     "files_hint": [
-      "src/frontend/goymen-erp-web/src/inventory/Transfer*.tsx",
-      "src/frontend/goymen-erp-web/src/inventory/transfer*.ts"
-     ],
-     "contracts": [],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 7,
-     "w6_report": "durum/W6_stok_lojistik.md",
-     "w6_note": "Transfer listesi ve detay okuma var; plan/sevk/iptal/teslim/fazla-kayıp onayı mutation ekranları eksik.",
-     "w7_result": "Sevk iptal ekranı ve aynı anahtar/payload belirsiz tekrar kaynağı var. Gerçek çıkış/GİB iptal gate ve kaynak kantar ayarı sahibi yok; capability false, kullanılabilir iş akışı değildir.",
-     "w7_report": "durum/W7_stok_lojistik.md",
-     "w8_report": "durum/W8_DORT_DILIM_KAYNAK_KAPANISI.md",
-     "w8_source_note": "Actual plan/dispatch/cancel/receive/difference panels and owner sources mounted;1127e5993 and combined34624009d source compiles exit0. Optional GIB provider absent, linked-document path unavailable503 preserved; no fake official status or activation."
-    },
-    {
-     "id": "STK-S11",
-     "finding": "F-004",
-     "title": "B-07 IProductPurchaseUnitConversionV1 (kg↔adet, katsayı 3 ondalık, kg→adet floor, %1 `<=`, teorik kg tabanı)",
-     "level": "K3",
-     "refs": [
-      "docs/delivery/KALAN_MODULLER_HAZIRLIK_PLANI_v1.md B-07",
-      "docs/decisions/SINAN_KARARLARI_2026-11-11_SATIS_EK59_ORTALAMA_MALIYET.md SAT-D299",
-      "docs/decisions/SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md BS-9/13/16/17",
-      "docs/decisions/SINAN_KARARLARI_2026-11-12_URUN_EK1.md URN-D7/D8/D9"
-     ],
-     "depends_on": [
-      "STK-S10",
-      "KIM-S20"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Product/**/UnitConversion*",
-      "src/backend/GoymenERP.Api/**/ProductUnitConversionHost*"
-     ],
-     "contracts": [
-      "sağlar: IProductPurchaseUnitConversionV1 (stok_lojistik; tüketen alis_cari, satis, stok)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 8,
-     "w6_report": "durum/W6_stok_lojistik.md",
-     "w6_note": "Settings birim kaynağında kg dışı typed ton/metre/adet semantiği ve dönüşüm faktörü yok; koddan tahmin edilmedi.",
-     "w8_source_commit": "667822a10851041c20759088f536735f26387ce1",
-     "w8_report": "durum/W8_stok_lojistik.md",
-     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
-    },
-    {
-     "id": "STK-S13",
-     "finding": "F-004",
-     "title": "Boya sınıfı Excel içe aktarımı (BS-10) Settings boya rengi listesiyle",
-     "level": "K3",
-     "refs": [
-      "docs/decisions/SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md BS-10",
-      "docs/delivery/KALAN_MODULLER_HAZIRLIK_PLANI_v1.md B-14"
-     ],
-     "depends_on": [
-      "STK-S12",
-      "KIM-S18"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Product/**/PaintClass*",
-      "src/frontend/goymen-erp-web/src/product/PaintImport*",
-      "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [
-      "tüketir: ISettingsReferenceListReaderV1 (kimlik)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 8,
-     "w6_report": "durum/W6_stok_lojistik.md",
-     "w8_source_commit": "b6ba56727e54910511d00db5fb0c4cb96c4bd36c",
-     "w8_report": "durum/W8_stok_lojistik.md",
-     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
-    },
-    {
-     "id": "STK-S17",
-     "finding": "F-017",
-     "title": "F017-b2 ayırma oluşturma/bırakma uçları, OpenAPI, izin adı yalnız kayıt",
-     "level": "K3",
-     "refs": [
-      "docs/delivery/STOK_F017_GELECEK_TEDARIK_AYIRMA_SPEC_v1.md §10 F017-b2 kapı kuralı"
-     ],
-     "depends_on": [
-      "STK-S15",
-      "STK-S16",
-      "ALC-S3",
-      "SAT-S8"
-     ],
-     "files_hint": [
-      "src/backend/GoymenERP.Api/Endpoints/InventoryEndpoints.cs",
-      "src/backend/Modules/Inventory/**/FutureSupply*Endpoint*",
-      "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 7,
-     "w6_report": "durum/W6_stok_lojistik.md",
-     "w6_note": "Uçlar ve gerçek SAT-S8 host bağı kaynakta; receipt future-to-physical çevriminin başka purchase satırında yeni ayırmayla toplam sınırını aşma yarışı bulundu. W7 ilk teknik işi ortak Sales-then-purchase prelock protokolü; test/SQL koşumu NOT_RUN.",
-     "w7_result": "Kabulde Sales↑→Purchase kilit sırası ve taze altküme çiti, bounded yalnız-yazma-öncesi retry; callback tek kez. Gerçek SQL fact kaynakları eklendi, koşum NOT_RUN.",
-     "w7_report": "durum/W7_stok_lojistik.md"
-    },
-    {
-     "id": "STK-S18",
-     "finding": "F-017",
-     "title": "F017-d Stok ekranları: ayırma listesi/bırakma, kabul ekranında ayırma bilgisi",
-     "level": "K2",
-     "refs": [
-      "docs/delivery/STOK_F017_GELECEK_TEDARIK_AYIRMA_SPEC_v1.md §10 F017-d"
-     ],
-     "depends_on": [
-      "STK-S17"
-     ],
-     "files_hint": [
-      "src/frontend/goymen-erp-web/src/inventory/FutureAllocation*.tsx"
-     ],
-     "contracts": [],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 7,
-     "w6_report": "durum/W6_stok_lojistik.md",
-     "w6_note": "Ayırma paneli ve Sales satır bağlantısı hazır; mal kabul ekranında çevrim/ayırma bilgisi eksik.",
-     "w7_result": "F017-d kabul ekranında gerçek owner gelecek ayırma bilgisi, None/Unavailable ayrımı ve strict decoder; geçmiş çevrim defteri/tüm batch ekranı bu kapsamda değildir. Koşum NOT_RUN.",
-     "w7_report": "durum/W7_stok_lojistik.md"
-    },
-    {
-     "id": "STK-S19",
-     "finding": "F-017",
-     "title": "F017-e kabul geri alma/iade Stok tarafı (tahsis/etiket geri alma, ters sıra)",
-     "level": "K3",
-     "refs": [
-      "docs/delivery/STOK_F017_GELECEK_TEDARIK_AYIRMA_SPEC_v1.md §3.7",
-      "docs/decisions/SINAN_KARARLARI_2026-11-12_ALIS_EK17.md ALS-D86/D91/D92"
-     ],
-     "depends_on": [
-      "STK-S15",
-      "ALC-S5"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Inventory/**/ReceiptReversal*"
-     ],
-     "contracts": [],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 8,
-     "w6_report": "durum/W6_stok_lojistik.md",
-     "w7_result": "7B yanıtlandı: yalnız talep sınırına sığan tüketilmiş miktar yeniden açılır, kalan Released; eski Released geri gelmez (#1189/6926090415). Owner ters tüketim/ledger+ALC-S6 aynı transaction uygulaması henüz yok.",
-     "w7_report": "durum/W7_stok_lojistik.md",
-     "w8_source_commit": "67fad5246354daf3cc4f0c484c90a3412f00bdbd",
-     "w8_report": "durum/W8_stok_lojistik.md",
-     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
-    },
-    {
-     "id": "STK-S21",
-     "finding": "F-011",
-     "title": "Eksiye düşürecek işlemin deneme kaydı, mesajda eldeki kg, görünürlük ve saklama (SAT-D328/D336..D339)",
-     "level": "K3",
-     "refs": [
-      "docs/decisions/SINAN_KARARLARI_2026-11-13_EK1.md SAT-D328/D336/D337/D338/D339"
-     ],
-     "depends_on": [
-      "#1155 (uçuşta)",
-      "STK-S20"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Inventory/**/NegativeStockAttempt*",
-      "src/backend/Modules/Inventory/**/Migrations/*NegativeStockAttempt*",
-      "src/frontend/goymen-erp-web/src/inventory/NegativeStockAttempt*",
-      "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 8,
-     "w6_report": "durum/W6_stok_lojistik.md",
-     "w8_source_commit": "dfef53c6a40ab8acd3d9cd3f654c0470f2e842f0",
-     "w8_report": "durum/W8_stok_lojistik.md",
-     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
-    },
-    {
-     "id": "STK-S26",
-     "finding": "F-026",
-     "title": "F-026a etiket/barkod PDF çıktısı (mevcut etiket verisi, Noto Sans fallback, logosuz; barkod sembolojisi ASSUMPTION)",
-     "level": "K2",
-     "refs": [
-      "docs/delivery/FABLE_5_2_ANALIZLERI/01_MEVCUT_DURUM_VE_YOL_HARITASI_2026-11-10.md F-026",
-      "docs/decisions/ACIK_KARARLAR.md OPEN-019 (fallback kısmı)"
-     ],
-     "depends_on": [
-      "PLT-S9"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Inventory/**/LabelPrint*",
-      "src/frontend/goymen-erp-web/src/inventory/LabelPrint*"
-     ],
-     "contracts": [
-      "tüketir: IGeneratedDocumentStorePortV1 (platform)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 6,
-     "w6_report": "durum/W6_stok_lojistik.md"
-    },
-    {
-     "id": "STK-S29",
-     "finding": "F-026",
-     "title": "F-026b şirket logosu/antet ve şablon yayımlama onayı",
-     "level": "K2",
-     "refs": [
-      "docs/decisions/ACIK_KARARLAR.md OPEN-019",
-      "Issue #66 yorum 6882315732 (SINAN-CEVAP 14)"
-     ],
-     "depends_on": [
-      "STK-S26"
-     ],
-     "files_hint": [],
-     "contracts": [],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 8,
-     "decision_note": "NS-05 (Issue #66 yorum 6882315732 (SINAN-CEVAP 14)): Logo/antet şirket ayarından yüklenir; şablon yayımlama ayrı izin (yeni izin adı kaydedilebilir, grant yok); hazırlayan kendi şablonunu yayımlayamaz.",
-     "w6_report": "durum/W6_stok_lojistik.md",
-     "w8_report": "durum/W8_stok_lojistik.md",
-     "w8_result": "Documents marka/şablon owner kaydı ve üretilmiş migration kaynakları merkezde; gerçek PDF renderer/producer ve yönetim ekranı bağlantısı halen uygulanıyor.",
-     "w8_source_commit": "c820c37d6ea846e0dbd7bfe56b5534bc6feeae0b",
-     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
-    },
-    {
-     "id": "STK-SC36-a",
-     "title": "Stok maliyet/sayım kararları (SAT-D384..D407, FNS-D92)",
-     "level": "K3",
-     "refs": [
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK18.md",
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK19.md",
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK20.md",
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK22.md"
-     ],
-     "depends_on": [],
-     "files_hint": [
-      "src/backend/Modules/Inventory/**/Costing*",
-      "src/backend/Modules/Inventory/**/StockCount*",
-      "src/backend/Modules/Inventory/**/Valuation*",
-      "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [],
-     "finding": "SC36-SC47 kararları",
-     "status": "DONE",
-     "wave": 5,
-     "w5_raporu": "durum/W5_stok_lojistik.md",
-     "w6_report": "durum/W6_stok_lojistik.md",
-     "w8_report": "durum/W8_KAYNAK_TAMAMLANDI.md",
-     "w8_source_note": "SOURCE_DONE: actual first/late purchase cost, SAT-D422, cancellation/reinvoice immutable claim succession62e65d6a6 and actual SAT-D331/D334 count costing49bd8c9ea integrated in146f. Shared calculator, frozen price-free status and TL unreadable shortage rollback connected. Final API/all22 test-project builds/TSC exit0; runtime/CI/K3 NOT_RUN.",
-     "blocked_reason": ""
-    },
-    {
-     "id": "STK-SC36-b",
-     "title": "İlk mal kabul kuru portu (FNS-D77/D78) + KLN-D107/D108 yeniden talep/geri çekme",
-     "level": "K3",
-     "refs": [
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK17.md",
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK18.md",
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK19.md"
-     ],
-     "depends_on": [],
-     "files_hint": [
-      "src/backend/Modules/Inventory/**/FirstReceipt*",
-      "src/backend/Modules/Inventory/**/FutureAllocation*",
-      "src/backend/Modules/Logistics/**",
-      "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [],
-     "finding": "SC36-SC47 kararları",
-     "status": "DONE",
-     "wave": 8,
-     "w5_raporu": "durum/W5_stok_lojistik.md",
-     "w6_report": "durum/W6_stok_lojistik.md",
-     "blocked_reason": "",
-     "w8_source_commit": "4bd80d9dc153f3692ecc1db8341e5146737f559f",
-     "w8_report": "durum/W8_stok_lojistik.md",
-     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
-    },
-    {
-     "id": "STK-SC36-c",
-     "title": "Ambalaj ezmesi ve dosya saklama (SAT-D382/D383/D397/D401)",
-     "level": "K2",
-     "refs": [
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK18.md",
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK19.md",
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK20.md"
-     ],
-     "depends_on": [],
-     "files_hint": [
-      "src/backend/Modules/Logistics/**/Packaging*",
-      "src/frontend/goymen-erp-web/src/logistics/**",
-      "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [],
-     "finding": "SC36-SC47 kararları",
-     "status": "DONE",
-     "wave": 8,
-     "w5_raporu": "durum/W5_stok_lojistik.md",
-     "w6_report": "durum/W6_stok_lojistik.md",
-     "blocked_reason": "",
-     "w8_source_commit": "c86f24b46f771de3e1cdccd59efc862619968db9",
-     "w8_report": "durum/W8_stok_lojistik.md",
-     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
-    }
-   ],
-   "remaining_not_started": 0
-  },
-  {
-   "key": "uretim",
-   "modules": [
-    "Manufacturing"
-   ],
-   "toplam": 27,
-   "done": 27,
-   "partial": 0,
-   "kalan": [
-    {
-     "id": "URT-S4",
-     "finding": "F-009",
-     "title": "F-009 D5 OrderStatus.Cancelled + iptal komutu + ayırma serbest bırakma + Onaylı→Onaylı minimal yeniden onay (URT-D33/D34/D35/D39)",
-     "level": "K3",
-     "refs": [
-      "docs/delivery/URETIM_EMRI_DUZELTME_ANALIZ_v1.md §5 D5",
-      "docs/decisions/SINAN_KARARLARI_2026-11-12_URETIM_EMRI_DUZELTME.md URT-D33/D34/D35/D39"
-     ],
-     "depends_on": [
-      "URT-S3",
-      "STK-S20"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Manufacturing/**/CancelOrder*",
-      "src/backend/Modules/Manufacturing/**/Migrations/*Cancelled*",
-      "src/backend/GoymenERP.Api/Endpoints/ManufacturingEndpoints.cs",
-      "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [
-      "tüketir: Stok Free kg okuma portu, OrderCancelled=3 (stok_lojistik)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 8,
-     "w5_raporu": "durum/W5_uretim.md",
-     "w6_report": "durum/W6_uretim.md",
-     "w7_result": "Gerçek Inventory advisory + successful-rollback sonrası company/plan fenced kanonik requested/available/missing kg HTTP/UI shortfall var; replay ayrıntıyı taşımaz. Diğer plan kullanıcı akışı tamamlanmadı.",
-     "w7_report": "durum/W7_uretim.md",
-     "w8_source_commit": "4d9b8bfca52560ea539ae936412b42184f61fcb9",
-     "w8_report": "durum/W8_uretim.md",
-     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
-    },
-    {
-     "id": "URT-S5",
-     "finding": "F-009",
-     "title": "F-009 D5b farklı etikette planın yeniden hesabı ve onayı (URT-D37/D38)",
-     "level": "K3",
-     "refs": [
-      "docs/delivery/URETIM_EMRI_DUZELTME_ANALIZ_v1.md §5 D5b",
-      "docs/decisions/SINAN_KARARLARI_2026-11-12_URETIM_EMRI_DUZELTME.md URT-D37/D38"
-     ],
-     "depends_on": [
-      "URT-S4"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Manufacturing/**/Replan*"
-     ],
-     "contracts": [],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 8,
-     "w6_report": "durum/W6_uretim.md",
-     "w7_result": "8A fiziksel toplam draft/revizyon üst sınırı yanıtlandı; AT-044 uygulaması sonraki dalga. Onayda Free/tek pozisyon sürer.",
-     "w7_report": "durum/W7_uretim.md",
-     "w8_source_commit": "2120b758e7f41fb5aeb7c75bcf1d2327e72b3937",
-     "w8_report": "durum/W8_uretim.md",
-     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
-    },
-    {
-     "id": "URT-S6",
-     "finding": "F-009",
-     "title": "F-009 D6 ekranlar: UI-14 düzeltme formu, iptal düğmesi, ret metinleri",
-     "level": "K2",
-     "refs": [
-      "docs/delivery/URETIM_EMRI_DUZELTME_ANALIZ_v1.md §5 D6"
-     ],
-     "depends_on": [
-      "URT-S2"
-     ],
-     "files_hint": [
-      "src/frontend/goymen-erp-web/src/manufacturing/OutputCorrection*.tsx",
-      "src/frontend/goymen-erp-web/src/manufacturing/manufacturingText.ts"
-     ],
-     "contracts": [],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 5,
-     "w5_raporu": "durum/W5_uretim.md",
-     "w6_report": "durum/W6_uretim.md"
-    },
-    {
-     "id": "URT-S7",
-     "finding": "F-009",
-     "title": "F-009 D7 iptal edilen emrin satış bağı okumasında görünmesi (MOD-03)",
-     "level": "K2",
-     "refs": [
-      "docs/delivery/URETIM_EMRI_DUZELTME_ANALIZ_v1.md §5 D7"
-     ],
-     "depends_on": [
-      "URT-S4"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Manufacturing/**/SalesBindingRead*"
-     ],
-     "contracts": [
-      "değişir: Üretim satış bağı okuma portu durum alanı (uretim; tüketen satis)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 6,
-     "w6_report": "durum/W6_uretim.md"
-    },
-    {
-     "id": "URT-S8",
-     "finding": "F-009",
-     "title": "F-009 D8 ReopenOrder (gerekçe, denetim, dönem kapalıysa ret) + yeniden açılan emrin maliyeti (URT-D32/D36/D56)",
-     "level": "K3",
-     "refs": [
-      "docs/delivery/URETIM_EMRI_DUZELTME_ANALIZ_v1.md §5 D8",
-      "docs/decisions/SINAN_KARARLARI_2026-11-12_URETIM_EMRI_DUZELTME.md URT-D32/D36",
-      "URETIM_EK4 (PR #1157, origin/claude/karar-gov-d7) URT-D56"
-     ],
-     "depends_on": [
+    "w8_source_done_ids": [
       "URT-S4",
-      "#1157 (karar dokümanı)"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Manufacturing/**/ReopenOrder*",
-      "src/backend/GoymenERP.Api/Endpoints/ManufacturingEndpoints.cs",
-      "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [
-      "tüketir: Muhasebe dönem durumu okuma portu (finans, mevcut)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 8,
-     "w6_report": "durum/W6_uretim.md",
-     "w8_source_commit": "cd584d806e0c7e1e97b9e933d5cf25da13280a85",
-     "w8_report": "durum/W8_uretim.md",
-     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
+      "URT-S5",
+      "URT-S8",
+      "URT-SC32",
+      "URT-SC33",
+      "URT-SC36",
+      "STK-S11",
+      "STK-S13",
+      "STK-S19",
+      "STK-S21",
+      "STK-S29",
+      "STK-SC36-b",
+      "STK-SC36-c",
+      "FIN-S17",
+      "FNS-SC32",
+      "FIN-SC36",
+      "KIM-S5",
+      "KIM-S6",
+      "KIM-S7",
+      "KIM-S8",
+      "KIM-S9",
+      "KIM-S15",
+      "ALC-S5",
+      "ALC-S6",
+      "ALC-S7",
+      "ALC-S8",
+      "ALC-S14",
+      "ALC-SC47",
+      "SAT-S9",
+      "SAT-S13",
+      "FIN-S13",
+      "SAT-S12",
+      "STK-S8",
+      "FIN-S14",
+      "FIN-SC47-KREDI",
+      "KIM-S19",
+      "SAT-SC34",
+      "STK-S3",
+      "STK-SC36-a"
+    ],
+    "published_train_done_at_last_checkpoint": 174,
+    "w8_status": "SOURCE_DONE_174_CI_REPAIRS_LOCAL_VALIDATED_FINAL_CI_K3_PENDING_SECURITY_UPSTREAM_BLOCKER",
+    "w8_last_combined_source_build": {
+      "head": "146f1ec79a30ca9a55d5fa78b119abc13e4bec75",
+      "source_exit": 0,
+      "projects": [
+        "Api",
+        "Api.IntegrationTests",
+        "ArchitectureTests",
+        "18 UnitTests",
+        "DocumentGeneration.Pdf.Tests",
+        "SqlServerRcsiReadiness.Tests",
+        "tsc -b"
+      ],
+      "dotnet_project_count": 23,
+      "runtime": "NOT_RUN",
+      "warnings": 0,
+      "errors": 0,
+      "note": "Full frozen23-project chain after locked restore and TSC exit0. Original stale Manufacturing.Unit restore-graph failure preserved; no source/test deletion or package/version/config change."
     },
-    {
-     "id": "URT-S18",
-     "finding": "F-012",
-     "title": "Fason emir tamamlanınca Lojistik fason teslimine okuma devri (URT-D15..D17, LOJ-D3)",
-     "level": "K3",
-     "refs": [
-      "docs/delivery/URETIM_HAZIRLIK_PLANI_v1.md §5.4a",
-      "docs/decisions/SINAN_KARARLARI_2026-11-12_LOJISTIK_F012_F020.md LOJ-D3"
-     ],
-     "depends_on": [
-      "STK-S3"
-     ],
-     "files_hint": [
-      "src/backend/GoymenERP.Api/Endpoints/ManufacturingSubcontractOrderHostPorts.cs",
-      "src/backend/Modules/Manufacturing/**/SubcontractCompletion*"
-     ],
-     "contracts": [
-      "sağlar: Üretim fason emri tamamlanma okuması (uretim; tüketen stok_lojistik)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 6,
-     "w6_report": "durum/W6_uretim.md"
+    "w8_last_sales_source_build": "19ca53a178dc97e86cdc576ba775d9ee89543a4f",
+    "w8_last_mounted_source_build": "6ff5e4f63",
+    "sat_s12_golden_main": {
+      "pr": 1200,
+      "head": "dfab7e934fd6e7fc3b0dd5ca40bd9a3643d3ee4f",
+      "merge_sha": "3c1b47878447570210b933b83d874646f9c52e4b",
+      "reviews": [
+        5946943155,
+        5946958064
+      ],
+      "application_source": "19ca53a178dc97e86cdc576ba775d9ee89543a4f",
+      "runtime": "NOT_RUN",
+      "K3": "PENDING"
     },
-    {
-     "id": "URT-SC32",
-     "title": "USD değerleme hareketli ortalaması (URT-D82), URT-D83/D85",
-     "status": "DONE",
-     "w6_report": "durum/W6_uretim.md",
-     "w6_note": "DOGRULA: calculator parçaları var; gerçek USD hareketli ortalama/maliyet runtime provider ve ekran bağı eksik.",
-     "wave": 8,
-     "blocked_reason": "",
-     "w8_source_commit": "4be7e2b4aee8ddd18ba8923ad57a9ce66697e817",
-     "w8_report": "durum/W8_uretim.md",
-     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
+    "w8_runtime_checkpoint": {
+      "frontend": {
+        "head": "c6168c8e23afa323af003dc79fdab3c9fbc00872",
+        "files": 614,
+        "tests": 9854,
+        "passed": 9854,
+        "failed": 0,
+        "skipped": 0,
+        "lint_exit": 0,
+        "build_exit": 0,
+        "vitest_exit": 0,
+        "seconds": 1942.652,
+        "browser": "NOT_RUN"
+      },
+      "recovery_release": {
+        "head": "8eb2668d0bc866816c5ab1698e0eb704231ffc73",
+        "recovery_tests": 36,
+        "release_tests": 16,
+        "failed": 0,
+        "skipped": 0,
+        "native_exits": [
+          0,
+          0
+        ],
+        "note": "Historical exact-head full packages; not final candidate proof."
+      },
+      "final_recovery_producer": {
+        "head": "6f9ca88db4cb71e46d098ee44cae2972ef840f49",
+        "native_exit": 0,
+        "db_contexts": 19,
+        "migrations": 340,
+        "durable_stores": 66,
+        "source_files": 3119,
+        "risky_source_files": 1461,
+        "risky_sha256": "f83a4a44766f40bb6666735273a586720fb90fc9762b9dfb790e6d25873ba93d",
+        "backend_source_sha256": "3e481305b77de7a12cdd6315b30fc91c2e5404ca63c7406adf171db395d9206e",
+        "release_manifest_native_exit": 0,
+        "mode": "SOURCE_ONLY"
+      },
+      "architecture_first": {
+        "head": "380901177",
+        "tests": 403,
+        "passed": 398,
+        "failed": 5,
+        "skipped": 0,
+        "fix_head": "c6168c8e23afa323af003dc79fdab3c9fbc00872",
+        "retry": "PASS_405_AT_25b7477b0"
+      },
+      "combined_backend": {
+        "head": "e41360340dc3be1bca13a66c48ade37aaa537bda",
+        "projects": 20,
+        "tests": 13325,
+        "passed": 13325,
+        "failed": 0,
+        "skipped": 0,
+        "native_exit": 0,
+        "proof": "artifacts/local-final-e41360340/proofs/modules.json"
+      },
+      "real_sql": {
+        "local": "NOT_CONFIGURED",
+        "published_ci_rcsi": "PASS_14_SKIP0",
+        "published_ci_broad": "FAIL_2400_SECOND_TIMEOUT_COMPLETED_BATCHES_ONLY_582_PASS_137_FAIL_0_SKIP"
+      },
+      "ci": {
+        "pr": 1201,
+        "run": 44317154064,
+        "source_head": "4ffd8cd3976df1dfa34d10fdb5173aa2918c24bc",
+        "tested_merge_sha": "ca4fe7eec935d195d3d201c4a8978aed971d55bd",
+        "status": "COMPLETED_FAIL_SQL_AND_FRONTEND_SECURITY",
+        "backend_build": "PASS",
+        "modules": "PASS",
+        "architecture": "PASS",
+        "api_1": "PASS",
+        "api_2": "PASS",
+        "api_3": "PASS",
+        "openapi": "PASS",
+        "real_rcsi": "PASS",
+        "release_manifest": "PASS",
+        "recovery_inventory": "PASS",
+        "frontend_shards": "4_OF_4_PASS",
+        "c01_browser": "PASS",
+        "cari_c006": "PASS",
+        "ui_catalog": "PASS",
+        "frontend_audit": "FAIL_GHSA-fc5q-39xc-vjpf_PATCHED_NONE",
+        "sql_a": "FAIL_23_COMPLETED_BATCHES_119_PASS_65_FAIL_0_SKIP",
+        "sql_b": "FAIL_37_COMPLETED_BATCHES_245_PASS_51_FAIL_0_SKIP",
+        "sql_c": "FAIL_29_COMPLETED_BATCHES_218_PASS_21_FAIL_0_SKIP",
+        "sql_evidence_scope": "COMPLETED_BATCHES_ONLY_719_RESULTS_582_PASS_137_FAIL_NO_FULL_SHARD_PROOF",
+        "sql_continuation_stop": "GLOBAL_2400_SECOND_DEADLINE",
+        "counterparty_audit_history_fact": "PASSED_IN_FIRST_SQL_C_BATCH",
+        "next_candidate_ci": "PENDING_NATURAL_PUSH"
+      },
+      "independent_K3": "PENDING_EXTERNAL_EXACT_HEAD_REVIEWS",
+      "report": "durum/W8_RUNTIME_KAPANIS_DURUMU.md",
+      "architecture_final": {
+        "head": "fce8792f515bf8263e753dc2fb6b20b96d057288",
+        "tests": 405,
+        "passed": 405,
+        "failed": 0,
+        "skipped": 0,
+        "native_exit": 0,
+        "proof": "artifacts/local-final-fce8792f5/proofs/architecture.json"
+      },
+      "openapi_final": {
+        "head": "edf25498d0d39915ab1ffcb5b3c68ec1e1468697",
+        "build_exit": 0,
+        "drift_exit": 0,
+        "tests": 11,
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0,
+        "native_exit": 0,
+        "sha256": "091cc64a9e71f90ddc12b7c2ab9784b3f22fd8e181234f7f7b50603dc30dec04",
+        "bytes": 9746060,
+        "note": "Included in native 69-target root run; production V3/V31 ordinal serialization and culture regression test."
+      },
+      "closing_targets": {
+        "head": "edf25498d0d39915ab1ffcb5b3c68ec1e1468697",
+        "build_exit": 0,
+        "warnings": 0,
+        "errors": 0,
+        "tests": 69,
+        "passed": 69,
+        "failed": 0,
+        "skipped": 0,
+        "native_exit": 0
+      },
+      "cari_c006": {
+        "head": "54bec41070da4f8c2e42c5e40c64d847094df8e4",
+        "restore_exit": 0,
+        "tests": 378,
+        "passed": 378,
+        "failed": 0,
+        "skipped": 0,
+        "native_exit": 0,
+        "note": "Windows native full test suite; real browser acceptance separate."
+      },
+      "sales_repair_persistence": {
+        "head": "c8566503a8e031be073d18d5813b7ac2a72e3bbd",
+        "tests": 128,
+        "passed": 128,
+        "failed": 0,
+        "skipped": 0,
+        "native_exit": 0,
+        "real_sql": "NOT_RUN_LOCAL"
+      },
+      "review_prompt": "K3_BAGIMSIZ_INCELEME_ISTEMI.md",
+      "architecture_latest_first": {
+        "head": "c07255c4970ea3cbdae8f0a2f8b334b0b57f431f",
+        "tests": 405,
+        "passed": 404,
+        "failed": 1,
+        "skipped": 0,
+        "native_exit": 1,
+        "cause": "Windows CRLF raw-string fixture left the missing-package mutant unchanged; fixed with newline normalization and Assert.NotEqual guard."
+      },
+      "last_sql_fixture_build": {
+        "head": "e35cd8cb4ecf502b0cb77cf81a334dd92077adff",
+        "native_exit": 0,
+        "warnings": 0,
+        "errors": 0,
+        "seconds": 365.88,
+        "real_sql": "NOT_CONFIGURED_LOCAL_PENDING_CI"
+      },
+      "finite_validation_closure": {
+        "production_source_head": "581d01e7807bdb4dcbfcf7b9a5965ddb664b3924",
+        "fixture_head": "6f9ca88db4cb71e46d098ee44cae2972ef840f49",
+        "full_release_integration_build_exit": 0,
+        "shell_cases_passed": 10,
+        "api_target_cases": 138,
+        "api_initial_passed": 137,
+        "api_initial_failed": 1,
+        "api_failure_retained": true,
+        "authentication_followup_passed": 15,
+        "canonical_unit_passed": 45,
+        "runtime_guard_followup_passed": 3,
+        "rcsi_discovery_guard_passed": 1,
+        "skipped": 0,
+        "official_full_api_group_proof": false,
+        "full_backend_rebuild_at_fixture_head": false,
+        "sql_progress_python_tests": 68,
+        "windows_filter_python_tests": 38
+      },
+      "k3_reviews": {
+        "head": "4d2a620972d1cdb55a317c76531d80cdc12bfa9a",
+        "A": "REQUEST-CHANGES",
+        "A_review": 5953258185,
+        "B": "REQUEST-CHANGES",
+        "B_review": 5953265437,
+        "event": "COMMENT",
+        "scope": "Partial red-CI preflight, not complete K3 reading; full new-head reviews remain required."
+      },
+      "review_fix_checkpoint": {
+        "head": "5064a06ddbb3409a24a36170af76d5e3785f0f7b",
+        "api_theory_target_head": "eb279bf6230357de77cc6d7f7564dc687b0b62aa",
+        "api_theory_target_passed": 24,
+        "api_theory_target_skipped": 0,
+        "api_theory_target_strict_trx": "PASS",
+        "api3_optional_diagnostic": "AUTHOR_CANCELLED_19_OF_55_BATCHES;595_PASSED_220_ALLOWED_SQL_SKIPS;NO_FULL_GROUP_PROOF",
+        "inventory_sql_fixture_build_head": "e24388892",
+        "inventory_sql_fixture_build_exit": 0,
+        "inventory_sql_execution": "NOT_RUN_LOCAL",
+        "guard_passed": 1,
+        "guard_skipped": 0,
+        "guard_strict_trx": "PASS",
+        "full_backend_rebuild": false,
+        "rcsi_verifier_python_passed": 91,
+        "safe_summary_python_passed": 76,
+        "python_skipped": 0,
+        "production_source_unchanged_from": "581d01e7807bdb4dcbfcf7b9a5965ddb664b3924",
+        "tool_test_alignment_head": "135c5ddf49537bd445c87c28c73c1409533c871f",
+        "final_light_checks": {
+          "validators_native_exit": 0,
+          "backlog_tests": 64,
+          "backlog_skipped": 0,
+          "backend_group_tests": 38,
+          "backend_group_skipped": 0,
+          "bootstrap_tests": 56,
+          "bootstrap_skipped_existing_windows_conditional": 9,
+          "bootstrap_initial_failure": "Two exact template counts expected2 before new third command; fixed to exact3, both flags retained.",
+          "bootstrap_repeat_native_exit": 0,
+          "diff_check_exit": 0
+        }
+      },
+      "ci_previous_4d2": {
+        "pr": 1201,
+        "first_head": "e838ca9079eda6c52d0d31cd909e8541f121f976",
+        "run": 44267292714,
+        "status": "FAIL_API3_DEFERRED_CASE_SQL_TIMEOUT_WITH_OBSERVED_FAILURES_AND_SECURITY",
+        "security": "UPSTREAM_BLOCKER_GHSA-fc5q-39xc-vjpf_PATCHED_NONE",
+        "last_published_head": "4d2a620972d1cdb55a317c76531d80cdc12bfa9a",
+        "recovery_inventory": "PASS",
+        "release_manifest": "PASS",
+        "modules": "PASS",
+        "architecture": "PASS",
+        "frontend_shards": "4_OF_4_PASS",
+        "tested_merge_sha": "c645a6e84d116dfb111587e49ad7f8e3a0f7e417",
+        "api_1": "PASS",
+        "api_2": "PASS_2488_TOTAL_1687_PASSED_801_ALLOWED_SQL_SKIPS",
+        "api_3": "FAIL_BATCH11_SDK1_TRX12_RECORD_THEORY_FIXED_IN_C552E70E1",
+        "real_rcsi": "14_PASS_0_SKIP",
+        "sql_a_b_c": "2400_SECONDS_TIMEOUT_NO_FINAL_TRX_OR_PROOF; OBSERVED_EVENTS_ONLY_750_PASSED_215_FAILED",
+        "c014": "PASS_FRESH_BROWSER_AND_NETWORK_EVIDENCE",
+        "next_candidate_ci": "PENDING_NATURAL_PUSH"
+      },
+      "sql_review_followup": {
+        "source_head": "e73727bc4d7c134b1238f08cfd890bd0ad47f8ff",
+        "counterparty_fixture_head": "1eeac20ba980dc9ac5e0ed6a083e5cb8ea4f3236",
+        "counterparty_fixture_build_exit": 0,
+        "counterparty_fixture_build_errors": 0,
+        "counterparty_fixture_build_warnings": 0,
+        "counterparty_real_sql": "NOT_RUN_LOCAL",
+        "safe_assertion_projection_head": "66a97595785b9b08cd23d750b19e89023d0b4796",
+        "safe_summary_python_passed": 86,
+        "safe_summary_python_skipped": 0,
+        "sql_diagnostic_continuation_python_passed": 99,
+        "sql_diagnostic_continuation_python_skipped": 0,
+        "guard_fixture_build_exit": 0,
+        "guard_passed": 1,
+        "guard_skipped": 0,
+        "guard_strict_trx": "PASS",
+        "full_backend_rebuild": false,
+        "reviewed_verifier_fingerprint": "8fbae0393b3510886508bb6b0af594b572a6bbd149b2f3df6f9494f6a35d8958",
+        "business_or_production_policy_changed": false,
+        "remaining_sql_assertion_root_causes": "UNKNOWN_MANUFACTURING_APPROVAL_AND_FINANCE_POS; NO_GUESSED_EXPECTATIONS",
+        "final_light_checks": {
+          "validators_exit": 0,
+          "backlog_passed": 64,
+          "bootstrap_tests": 56,
+          "bootstrap_existing_windows_conditional_skips": 9,
+          "bootstrap_exit": 0,
+          "diff_exit": 0
+        }
+      },
+      "ci_previous_9dd": {
+        "pr": 1201,
+        "run": 44276883719,
+        "source_head": "9ddaa2e5cb7d249e2a7771c1912cadcd5befda48",
+        "tested_merge_sha": "5fabb3397d4cc10f5dcf893d47b71f3579c80b96",
+        "status": "IN_PROGRESS_WITH_CONFIRMED_SQL_AND_SECURITY_FAILURES",
+        "backend_build": "PASS",
+        "modules": "PASS",
+        "architecture": "PASS",
+        "api_1": "PASS",
+        "api_2": "IN_PROGRESS",
+        "api_3": "IN_PROGRESS",
+        "openapi": "PASS",
+        "real_rcsi": "PASS",
+        "release_manifest": "PASS",
+        "recovery_inventory": "IN_PROGRESS",
+        "frontend_shards": "4_OF_4_PASS",
+        "c01_browser": "PASS",
+        "cari_c006": "PASS",
+        "ui_catalog": "PASS",
+        "frontend_audit": "FAIL_GHSA-fc5q-39xc-vjpf_PATCHED_NONE",
+        "sql_a": "FAIL_FIRST_BATCH_7_PASSED_1_FAILED_0_SKIP",
+        "sql_b": "FAIL_TWO_BATCHES_15_PASSED_1_FAILED_0_SKIP",
+        "sql_c": "FAIL_FIRST_BATCH_7_PASSED_1_FAILED_0_SKIP",
+        "sql_evidence_scope": "COMPLETED_BATCH_TRX_ONLY_NO_FULL_SHARD_PROOF",
+        "next_candidate_ci": "NOT_PUBLISHED_WHILE_CURRENT_JOBS_RUNNING"
+      },
+      "sql_warning_followup": {
+        "source_head": "158c7dc83b4035d1911c5a14d77da9c710bc3806",
+        "finance_startup_fixture_head": "4192f1531",
+        "finance_startup_fixture_build_exit": 0,
+        "finance_startup_fixture_errors": 0,
+        "finance_startup_fixture_warnings": 0,
+        "safe_summary_python_passed": 96,
+        "sql_verifier_python_passed": 101,
+        "python_skipped": 0,
+        "architecture_guard_build_exit": 0,
+        "architecture_guard_passed": 1,
+        "architecture_guard_skipped": 0,
+        "architecture_strict_trx": "PASS",
+        "full_backend_rebuild": false,
+        "verifier_house_fingerprint": "c5650132ff237c072a1f8c1c28ae33333dbb6125bceb8a232ad4d8e43afc0cb1",
+        "real_sql_local": "NOT_CONFIGURED_NOT_RUN",
+        "business_policy_changed": false
+      },
+      "ci_previous_20bf": {
+        "pr": 1201,
+        "run": 44285710026,
+        "source_head": "20bfbc7505e03a1a58b66b4b8853ebf5d769a7d4",
+        "tested_merge_sha": "609323a9a6192bb9d971da349be2d4af4adad128",
+        "status": "COMPLETED_FAIL_SQL_AND_FRONTEND_SECURITY",
+        "backend_build": "PASS",
+        "modules": "PASS",
+        "architecture": "PASS",
+        "api_1": "PASS",
+        "api_2": "PASS",
+        "api_3": "PASS",
+        "openapi": "PASS",
+        "real_rcsi": "PASS",
+        "release_manifest": "PASS",
+        "recovery_inventory": "PASS",
+        "frontend_shards": "4_OF_4_PASS",
+        "c01_browser": "PASS",
+        "cari_c006": "PASS",
+        "ui_catalog": "PASS",
+        "frontend_audit": "FAIL_GHSA-fc5q-39xc-vjpf_PATCHED_NONE",
+        "sql_a": "FAIL_FIRST_BATCH_7_PASS_1_FAIL_0_SKIP",
+        "sql_b": "FAIL_TWO_BATCHES_15_PASS_1_FAIL_0_SKIP",
+        "sql_c": "FAIL_TWO_BATCHES_15_PASS_1_FAIL_0_SKIP",
+        "sql_evidence_scope": "COMPLETED_BATCHES_ONLY_NO_FULL_SHARD_PROOF",
+        "sql_continuation_stop": "NORMAL_RUNINFO_WARNING_WAS_REJECTED_FIXED_IN_B4FD38B43",
+        "counterparty_audit_history_fact": "PASSED_IN_FIRST_SQL_C_BATCH",
+        "next_candidate_ci": "PENDING_NATURAL_PUSH"
+      },
+      "sql_public_source_followup": {
+        "source_head": "9bd94c2187c041ca5e800f1a775b88e67060ab34",
+        "collector_head": "d12a853aa9398bde21685cdd374c7faf09d5c51e",
+        "safe_summary_python_passed": 103,
+        "sql_verifier_python_passed": 101,
+        "python_skipped": 0,
+        "architecture_guard_build_exit": 0,
+        "architecture_guard_passed": 1,
+        "architecture_guard_skipped": 0,
+        "architecture_strict_trx": "PASS",
+        "full_backend_rebuild": false,
+        "real_sql_local": "NOT_CONFIGURED_NOT_RUN",
+        "business_policy_changed": false,
+        "diagnostics_are_acceptance": false,
+        "observed_sql_a": "argument_out_of_range; exact source unknown",
+        "observed_sql_b": "finance_command_startup_document_numbers; invalid_operation wrapper",
+        "observed_sql_c": "Equal assertion; exact source unknown",
+        "final_light_checks": {
+          "validators_exit": 0,
+          "backlog_tests": 64,
+          "backlog_skipped": 0,
+          "bootstrap_tests": 56,
+          "bootstrap_existing_windows_conditional_skips": 9,
+          "bootstrap_exit": 0
+        }
+      },
+      "ci_previous_c00": {
+        "pr": 1201,
+        "run": 44299253899,
+        "source_head": "c00c4726e210c89d2362257f8832bd912574064a",
+        "tested_merge_sha": "81df7e173784a72056305539a6a83fc0b20edada",
+        "status": "COMPLETED_FAIL_SQL_AND_FRONTEND_SECURITY",
+        "backend_build": "PASS",
+        "modules": "PASS",
+        "architecture": "PASS",
+        "api_1": "PASS",
+        "api_2": "PASS",
+        "api_3": "PASS",
+        "openapi": "PASS",
+        "real_rcsi": "PASS",
+        "release_manifest": "PASS",
+        "recovery_inventory": "PASS",
+        "frontend_shards": "4_OF_4_PASS",
+        "c01_browser": "PASS",
+        "cari_c006": "PASS",
+        "ui_catalog": "PASS",
+        "frontend_audit": "FAIL_GHSA-fc5q-39xc-vjpf_PATCHED_NONE",
+        "sql_a": "FAIL_FIRST_BATCH_7_PASS_1_FAIL_0_SKIP",
+        "sql_b": "FAIL_TWO_BATCHES_15_PASS_1_FAIL_0_SKIP",
+        "sql_c": "FAIL_TWO_BATCHES_15_PASS_1_FAIL_0_SKIP",
+        "sql_evidence_scope": "COMPLETED_BATCHES_ONLY_NO_FULL_SHARD_PROOF",
+        "sql_continuation_stop": "RUNINFO_VETO_AFTER_COMPLETE_FAILED_TRX_FIXED_DIAGNOSTIC_ONLY_IN_D12A853AA",
+        "counterparty_audit_history_fact": "PASSED_IN_FIRST_SQL_C_BATCH",
+        "next_candidate_ci": "PENDING_NATURAL_PUSH"
+      },
+      "fixture_audit_channel_followup": {
+        "source_head": "383b125f5",
+        "files": 9,
+        "invalid_test_channel_values_corrected": 10,
+        "actual_audit_allowed_channels_changed": false,
+        "integration_fixture_build_exit": 0,
+        "integration_fixture_build_errors": 0,
+        "integration_fixture_build_warnings": 0,
+        "organization_migration_identity_assertion_head": "c248c6fae",
+        "counterparty_migration_identity_assertion_head": "c13e3d5b8",
+        "real_sql_local": "NOT_RUN",
+        "production_policy_changed": false,
+        "final_fixture_build_head": "853f1ea010953e331601f6c2bd20d2ca3533056b",
+        "final_fixture_build_exit": 0,
+        "final_fixture_build_errors": 0,
+        "final_fixture_build_warnings": 0
+      },
+      "party_ledger_translation_followup": {
+        "regression_head": "6f64099a2",
+        "regression_initial_build": "NETSDK1004_MISSING_ASSETS",
+        "locked_restore_exit": 0,
+        "restored_build_exit": 0,
+        "regression_initial_test_exit": 1,
+        "confirmed_exception": "InvalidOperationException_SQL_translation",
+        "production_fix_head": "3a7f4caa8",
+        "fixed_build_exit": 0,
+        "fixed_regression_test_exit": 0,
+        "ledger_targets_passed": 39,
+        "ledger_targets_failed": 0,
+        "ledger_targets_skipped": 0,
+        "ledger_targets_exit": 0,
+        "real_sql_connection_opened": false,
+        "full_backend_rebuild": false,
+        "filters_formulas_or_money_policy_changed": false
+      },
+      "recovery_after_party_ledger_projection": {
+        "head": "853f1ea010953e331601f6c2bd20d2ca3533056b",
+        "inventory_native_exit": 0,
+        "release_native_exit": 0,
+        "db_contexts": 19,
+        "migrations": 340,
+        "durable_stores": 66,
+        "source_files": 3119,
+        "risky_source_files": 1461,
+        "risky_sha256": "a0912a048e044efd925d4d75cb3d8d7fc650ea28534f871b2df5ec6e64651a8a",
+        "backend_source_sha256": "0528dbd291847ffd91fb5c637f1957a0444d7ab8f631697dcfba420b37025f2a",
+        "mode": "SOURCE_ONLY"
+      }
     },
-    {
-     "id": "URT-SC33",
-     "finding": "SC33",
-     "title": "Termin önerisi: kuyruk dahil (URT-D86), giriş kg/saat (URT-D87), vardiya başladığı güne (URT-D88), kapasite yoksa hesaplanamadı + güvenlik payı (URT-D89); döviz değerlemesi sipariş kuru (FNS-D73)",
-     "level": "K3",
-     "refs": [
-      "SINAN-CEVAP 33"
-     ],
-     "depends_on": [
-      "URT-S10",
-      "KIM-SC33-b"
-     ],
-     "files_hint": [],
-     "contracts": [],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 8,
-     "w5_raporu": "durum/W5_uretim.md",
-     "w6_report": "durum/W6_uretim.md",
-     "w7_result": "Gerçek Settings tamponu, append-only expected priority revision, kuyruk HTTP/UI var. 6 elle sıra kalıcı + yeni C15→B20→A10 anchor yanıtlandı (#1189/6926992238); manual sıra deposu/komutu henüz yazılmadı.",
-     "w7_report": "durum/W7_uretim.md",
-     "w8_source_commit": "59f30eb7ec53022f47289d71ac0a8a9abece0769",
-     "w8_report": "durum/W8_uretim.md",
-     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
-    },
-    {
-     "id": "URT-SC36",
-     "title": "Üretim maliyet kur önceliği + iade sınırı (FNS-D78/D83, URT-D95..D105)",
-     "level": "K3",
-     "refs": [
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK16.md",
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK17.md",
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK18.md",
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK19.md",
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK20.md"
-     ],
-     "depends_on": [],
-     "files_hint": [
-      "src/backend/Modules/Manufacturing/**/Cost*",
-      "src/backend/Modules/Manufacturing/**/Return*",
-      "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [],
-     "finding": "SC36-SC47 kararları",
-     "status": "DONE",
-     "wave": 8,
-     "w5_raporu": "durum/W5_uretim.md",
-     "w6_report": "durum/W6_uretim.md",
-     "blocked_reason": "",
-     "w8_source_commit": "87b44d2625742631e3e886800b4fcd0e44008d33",
-     "w8_report": "durum/W8_uretim.md",
-     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
-    }
-   ],
-   "remaining_not_started": 0
+    "published_train_head_at_last_checkpoint": "20bfbc7505e03a1a58b66b4b8853ebf5d769a7d4"
   },
-  {
-   "key": "finans",
-   "modules": [
-    "Finance",
-    "Accounting",
-    "FX ekranı (Settings uçları)"
-   ],
-   "toplam": 21,
-   "done": 21,
-   "partial": 0,
-   "kalan": [
+  "teams": [
     {
-     "id": "FIN-S13",
-     "finding": "F-028",
-     "title": "Fatura → 120/320 yevmiye host adaptörü; sales/purchasing.invoice.finalized.v1 tüketicileri (B-04)",
-     "level": "K3",
-     "refs": [
-      "docs/delivery/KALAN_MODULLER_HAZIRLIK_PLANI_v1.md B-04",
-      "docs/decisions/SINAN_KARARLARI_2026-11-07_MUHASEBE_FISI_VE_RECOVERY.md KLN-D6..D19"
-     ],
-     "depends_on": [
-      "PLT-S6",
-      "SAT-S1"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Accounting/**/Inbox/*InvoiceFinalized*",
-      "src/backend/GoymenERP.Api/**/AccountingInvoiceJournalHost*"
-     ],
-     "contracts": [
-      "tüketir: sales.invoice.finalized.v1 (satis), purchasing.invoice.finalized.v1 (alis_cari)"
-     ],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 5,
-     "w5_raporu": "durum/W5_finans.md",
-     "w6_report": "durum/W6_finans.md",
-     "w8_source_commit": "118adcab2fd5d4a22418093dd7dbf970fce51b70",
-     "w8_report": "durum/W8_FIN13_KAYNAK_KAPANISI.md",
-     "w8_validation": "Actual source ancestry, Program/DI/inbox/consumer, journal approval and frontend mount verified. Combined source build 65618ac1e exit0; runtime/SQL/browser/CI NOT_RUN."
+      "key": "kimlik",
+      "modules": [
+        "Identity",
+        "Organization",
+        "Settings"
+      ],
+      "toplam": 28,
+      "done": 28,
+      "partial": 0,
+      "kalan": [
+        {
+          "id": "KIM-S3",
+          "finding": "F-002",
+          "title": "ID-2F zorunlu parola değişikliği ekranı",
+          "level": "K2",
+          "refs": [
+            "docs/features/IDENTITY_LOCAL_ACCOUNT_AND_ROLE_ASSIGNMENT_F001_F002_SPEC_v1.md §ID-2F",
+            "docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md KIM-D12"
+          ],
+          "depends_on": [
+            "KIM-S2"
+          ],
+          "files_hint": [
+            "src/frontend/goymen-erp-web/src/identity/ChangePassword*.tsx",
+            "src/frontend/goymen-erp-web/src/identity/passwordContract.ts"
+          ],
+          "contracts": [
+            "tüketir: ID-2 uçları (kimlik)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 6,
+          "w6_report": "durum/W6_kimlik.md"
+        },
+        {
+          "id": "KIM-S5",
+          "finding": "F-001",
+          "title": "ID-3b şirket SetupPending: organization.company.opened.v1 → Identity inbox → ilk Admin; identity.company.first_admin_assigned.v1 → Organization; ICompanyLifecycleReadPortV1",
+          "level": "K3",
+          "refs": [
+            "docs/features/IDENTITY_LOCAL_ACCOUNT_AND_ROLE_ASSIGNMENT_F001_F002_SPEC_v1.md §ID-3b",
+            "docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md KIM-D18/D20/D21"
+          ],
+          "depends_on": [
+            "KIM-S4",
+            "PLT-S6"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Organization/**/CompanyLifecycle*",
+            "src/backend/Modules/Organization/**/Migrations/*SetupPending*",
+            "src/backend/Modules/Identity/**/Inbox/*",
+            "src/backend/GoymenERP.Api/Endpoints/OrganizationEndpoints.cs",
+            "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [
+            "sağlar: organization.company.opened.v1, identity.company.first_admin_assigned.v1, ICompanyLifecycleReadPortV1 (kimlik)",
+            "tüketir: outbox/inbox kayıt sözleşmesi (platform PLT-S6)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 8,
+          "w6_report": "durum/W6_kimlik.md",
+          "w7_result": "SetupPending/inbox/outbox/lifecycle guard kaynağı var. Son kullanıcı cevabı açana otomatik Admin yerine yetkili yönetim/genel müdürün açık ilk yönetici seçimini gerektirir (#1189/6926238225); mevcut otomatik yol değiştirilmeden DONE değildir. Açma/kurulum ekranı ve gerçek global yetki kaynağı eksik; dispatcher kapalı.",
+          "w7_report": "durum/W7_kimlik.md",
+          "w8_source_commit": "3b6586e3c325b9ebd75a2775bbcd78d486c56628",
+          "w8_report": "durum/W8_kimlik.md",
+          "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "KIM-S6",
+          "finding": "F-001",
+          "title": "ID-4 Kullanıcılar ve yetkiler ekranı (atama, Critical talep/onay kuyruğu, son Admin koruması mesajı)",
+          "level": "K2",
+          "refs": [
+            "docs/features/IDENTITY_LOCAL_ACCOUNT_AND_ROLE_ASSIGNMENT_F001_F002_SPEC_v1.md §ID-4",
+            "docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md KIM-D15/D17"
+          ],
+          "depends_on": [
+            "KIM-S4"
+          ],
+          "files_hint": [
+            "src/frontend/goymen-erp-web/src/identity/Users*.tsx",
+            "src/frontend/goymen-erp-web/src/identity/accessGrant*.ts"
+          ],
+          "contracts": [
+            "tüketir: ID-3 uçları (kimlik)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 8,
+          "w6_report": "durum/W6_kimlik.md",
+          "w8_source_commit": "1e0f0c498e4478efc6225128c270692871fe04fc",
+          "w8_report": "durum/W8_kimlik.md",
+          "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "KIM-S7",
+          "finding": "F-002",
+          "title": "ID-2r recover-founder: reactivate / reset-password kurtarma komutu (KIM-D22/D23 karar verilen kısım)",
+          "level": "K3",
+          "refs": [
+            "docs/features/IDENTITY_LOCAL_ACCOUNT_AND_ROLE_ASSIGNMENT_F001_F002_SPEC_v1.md §ID-2r",
+            "docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md KIM-D16/D22/D23"
+          ],
+          "depends_on": [
+            "KIM-S4",
+            "PLT-S2"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Identity/**/Recovery*",
+            "tools/** recovery CLI (varsa)",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [
+            "tüketir: security-event authz/recovery yazıcısı (platform PLT-S2)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 8,
+          "w5_raporu": "durum/W5_kimlik.md",
+          "w6_report": "durum/W6_kimlik.md",
+          "w8_source_commit": "b769d5d3a2e76c3d2a92add23b8b9dbac15a170c",
+          "w8_report": "durum/W8_kimlik.md",
+          "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "KIM-S8",
+          "finding": "F-002",
+          "title": "ID-5 isteğe bağlı TOTP 2FA (kayıt, doğrulama, kapatma)",
+          "level": "K3",
+          "refs": [
+            "docs/features/IDENTITY_LOCAL_ACCOUNT_AND_ROLE_ASSIGNMENT_F001_F002_SPEC_v1.md §ID-5",
+            "docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md KIM-D3"
+          ],
+          "depends_on": [
+            "KIM-S2"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Identity/**/Totp*",
+            "src/backend/Modules/Identity/**/Migrations/*Totp*",
+            "src/frontend/goymen-erp-web/src/identity/TwoFactor*.tsx",
+            "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 8,
+          "w6_report": "durum/W6_kimlik.md",
+          "w8_report": "durum/W8_kimlik.md",
+          "w8_result": "Gerçek TOTP/kurtarma kodları ve Audit owner bağlantısı merkezde kaynak/derleme tamam. Merkezi pinler, son tren FF ve ayrı runtime kabulü bekler.",
+          "w8_source_commit": "bb82ad491af33544b69a0a6115b6a169cc2ad0f2",
+          "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "KIM-S9",
+          "finding": "F-002",
+          "title": "2FA cihazını kaybetmiş kurucu / başka yetkili olmayan toplam kilitlenme kurtarma yolu",
+          "level": "K3",
+          "refs": [
+            "docs/features/IDENTITY_LOCAL_ACCOUNT_AND_ROLE_ASSIGNMENT_F001_F002_SPEC_v1.md açık noktalar",
+            "docs/decisions/SINAN_KARARLARI_2026-11-12_KIMLIK_VE_DENETIM.md KIM-D23",
+            "Issue #66 yorum 6882315732 (SINAN-CEVAP 14)"
+          ],
+          "depends_on": [
+            "KIM-S8",
+            "KIM-S7"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Identity/**/Recovery*"
+          ],
+          "contracts": [],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 8,
+          "decision_note": "NS-04 (Issue #66 yorum 6882315732 (SINAN-CEVAP 14)): Tek seferlik kurtarma kodları (kurulumda) + ikinci yönetici önerisi; hepsi kaybolursa denetim kaydı bırakan sunucu CLI kurtarma aracı.",
+          "w6_report": "durum/W6_kimlik.md",
+          "w8_source_commit": "40ee5c4abc64ac7ac772e54da4209187b1b322e9",
+          "w8_report": "durum/W8_kimlik.md",
+          "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "KIM-S13",
+          "finding": "F-029",
+          "title": "F029-S3 para profili (birim fiyat ölçeği) kalıcı tablo",
+          "level": "K3",
+          "refs": [
+            "docs/delivery/URUN_F029_POLITIKA_KATALOGLARI_ENVANTER_VE_SPEC_v1.md §5.4(3)",
+            "docs/decisions/SINAN_KARARLARI_2026-11-12_URUN.md URN-D2..D5"
+          ],
+          "depends_on": [
+            "KIM-S12"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Settings/**/MoneyProfile*",
+            "src/backend/Modules/Settings/**/Migrations/*",
+            "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [
+            "sağlar: ISettingsPrerequisiteProvider para profili (kimlik; tüketen satis, alis_cari, finans)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 6,
+          "w6_report": "durum/W6_kimlik.md"
+        },
+        {
+          "id": "KIM-S15",
+          "finding": "F-029",
+          "title": "F029-C kısıt migration'ı (forward-fix) + sürüm 0 aktarımı + üretim profilinde hazırla→yayımla tek akış (URN-D5/D6)",
+          "level": "K3",
+          "refs": [
+            "docs/delivery/URUN_F029_POLITIKA_KATALOGLARI_ENVANTER_VE_SPEC_v1.md §5.4(5)",
+            "docs/decisions/SINAN_KARARLARI_2026-11-12_URUN.md URN-D4/D5/D6"
+          ],
+          "depends_on": [
+            "KIM-S14"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Settings/**/ManufacturingProfile*",
+            "src/backend/Modules/Settings/**/Migrations/*",
+            "src/backend/Modules/Settings/README.md",
+            "src/frontend/goymen-erp-web/src/settings/ManufacturingProfile*",
+            "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [
+            "değişir: manufacturing profile published.v1 → gerekirse published.v2 (v1 korunur; tüketen uretim)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 8,
+          "w5_raporu": "durum/W5_kimlik.md",
+          "w6_report": "durum/W6_kimlik.md",
+          "w8_source_commit": "ed7d8296aee800218e8fc71592269e6b97ca8ef2",
+          "w8_report": "durum/W8_kimlik.md",
+          "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "KIM-S18",
+          "finding": "F-027",
+          "title": "API-98 Ayarlar listeleri (masraf tipi, hizmet tipi, işlem türü) + B-14 boya rengi/hurda türü listeleri",
+          "level": "K3",
+          "refs": [
+            "docs/decisions/SINAN_KARARLARI_2026-11-11_ALIS_EK15.md ALS-D79",
+            "docs/delivery/KALAN_MODULLER_HAZIRLIK_PLANI_v1.md B-14",
+            "docs/decisions/SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md BS-10"
+          ],
+          "depends_on": [
+            "KIM-S17"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Settings/**/ReferenceList*",
+            "src/backend/Modules/Settings/**/Migrations/*ReferenceList*",
+            "src/frontend/goymen-erp-web/src/settings/ReferenceList*",
+            "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [
+            "sağlar: ISettingsReferenceListReaderV1 (ad taslak; kimlik; tüketen alis_cari, stok_lojistik, uretim, finans)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 5,
+          "w5_raporu": "durum/W5_kimlik.md",
+          "w6_report": "durum/W6_kimlik.md"
+        },
+        {
+          "id": "KIM-S19",
+          "finding": "F-014",
+          "title": "B-13 Finans politika anahtarları + numara serileri (ADR-SET-002) + açılış dönemi ayarı okuma portu",
+          "level": "K3",
+          "refs": [
+            "docs/delivery/KALAN_MODULLER_HAZIRLIK_PLANI_v1.md B-13",
+            "docs/decisions/SINAN_KARARLARI_2026-11-11_FINANS_F005.md FNS-D23"
+          ],
+          "depends_on": [
+            "KIM-S17"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Settings/**/FinancePolicy*",
+            "src/backend/Modules/Settings/**/NumberSeries*",
+            "src/backend/Modules/Settings/**/Migrations/*",
+            "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [
+            "sağlar: ISettingsFinancePolicyProviderV1 + numara serisi portu (ad taslak; kimlik; tüketen finans)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 5,
+          "w5_raporu": "durum/W5_kimlik.md",
+          "w6_report": "durum/W6_kimlik.md",
+          "w8_report": "durum/W8_KIM_S19_MERKEZ.md",
+          "w8_source_note": "Typed policy families, actual bank catalog/K6/numbering/opening sources mounted. e7029e6bc final replay authority fence plus regression sources; combined15a634290 API/Settings/Finance/Sales/Inventory/Accounting/Integration/TSC source compiles exit0. No default threshold/grant/activation; runtime NOT_RUN."
+        },
+        {
+          "id": "KIM-SC32-a",
+          "title": "Settings teminat türü kataloğu + Finans okuma adapter'ı (FNS-D70)",
+          "status": "DONE",
+          "w6_report": "durum/W6_kimlik.md",
+          "w6_note": "DOGRULA: gerçek Settings teminat türü kataloğu ve Finance adapter kaydı yok; Unavailable provider başarı sayılmadı.",
+          "w7_result": "Settings teminat kataloğu/version HTTP+UI, tam exact oran, Audit owner ve beş replay-race fence kaynağı; gerçek SQL/Vitest koşumu NOT_RUN.",
+          "wave": 7,
+          "w7_report": "durum/W7_kimlik.md",
+          "blocked_reason": ""
+        },
+        {
+          "id": "KIM-SC32-b",
+          "title": "Settings sözleşme iskonto sınırı değeri (SAT-D364)",
+          "status": "DONE",
+          "w6_report": "durum/W6_kimlik.md",
+          "w6_note": "DOGRULA: ayrı sözleşme iskonto sınırı Settings değeri ve Sales adapter kaydı yok; genel iskonto sınırı bunun yerine geçmez.",
+          "w7_result": "Ayrı sözleşme iskonto limiti missing/zero ayrımı, gerçek Settings sahibi+Sales adapter+HTTP/UI; test koşumu NOT_RUN.",
+          "wave": 7,
+          "w7_report": "durum/W7_kimlik.md",
+          "blocked_reason": ""
+        }
+      ],
+      "remaining_not_started": 0
     },
     {
-     "id": "FIN-S14",
-     "finding": "F-028",
-     "title": "B-28 kasa/banka hareketlerinin yevmiye kaynakları",
-     "level": "K3",
-     "refs": [
-      "docs/delivery/KALAN_MODULLER_HAZIRLIK_PLANI_v1.md B-28"
-     ],
-     "depends_on": [
-      "FIN-S13"
-     ],
-     "files_hint": [
-      "src/backend/Modules/Accounting/**/Sources/*Cash*"
-     ],
-     "contracts": [],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 6,
-     "w6_report": "durum/W6_finans.md",
-     "w8_report": "durum/W8_DORT_DILIM_KAYNAK_KAPANISI.md",
-     "w8_source_note": "Actual Finance source book value + separately evidenced target foreign-currency TL value, different checker, approved mapping and Accounting journal source mounted; a937a1c8f and combined34624009d source compiles exit0. TCMB reference remains separate. Runtime acceptance NOT_RUN."
+      "key": "platform",
+      "modules": [
+        "Audit",
+        "Idempotency",
+        "Documents",
+        "Work",
+        "AI",
+        "Outbox/dispatcher",
+        "Observability"
+      ],
+      "toplam": 16,
+      "done": 16,
+      "partial": 0,
+      "kalan": [
+        {
+          "id": "PLT-S13",
+          "finding": "F-031",
+          "title": "Belge/durum kayması: ACCEPTANCE_MATRIX, README'ler, backlog durum senkronu (karar/OPEN durumu değiştirmeden)",
+          "level": "K1",
+          "refs": [
+            "docs/delivery/FABLE_5_2_ANALIZLERI/01_MEVCUT_DURUM_VE_YOL_HARITASI_2026-11-10.md F-031"
+          ],
+          "depends_on": [],
+          "files_hint": [
+            "docs/**/ACCEPTANCE_MATRIX*",
+            "src/backend/Modules/*/README.md",
+            "docs/backlog/** (validator kanıtıyla)"
+          ],
+          "contracts": [],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 6,
+          "w6_report": "durum/W6_platform.md"
+        }
+      ],
+      "remaining_not_started": 0
     },
     {
-     "id": "FIN-S17",
-     "finding": "F-014",
-     "title": "Açılış bakiyesinin dönemler arası devri ve FNS-D23 yorumunun kalanı",
-     "level": "K3",
-     "refs": [
-      "docs/decisions/SINAN_KARARLARI_2026-11-11_FINANS_F005.md FNS-D23 Sınırlar",
-      "docs/decisions/ACIK_KARARLAR.md OPEN-018",
-      "Issue #66 yorum 6882315732 (SINAN-CEVAP 14)"
-     ],
-     "depends_on": [
-      "FIN-S9"
-     ],
-     "files_hint": [],
-     "contracts": [],
-     "status": "DONE",
-     "blocked_reason": "",
-     "wave": 8,
-     "decision_note": "NS-15 (Issue #66 yorum 6882315732 (SINAN-CEVAP 14)): Dönem kapanışı onaylanınca yeni dönem açılış/devir fişi üretilir; kapanış geri alınırsa ters kayıtla iptal. Finance STOP sınırları geçerli.",
-     "w6_report": "durum/W6_finans.md",
-     "w8_source_commit": "5edcd80b09aa6a1b11fac33e558ba6d658c978a1",
-     "w8_report": "durum/W8_finans.md",
-     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
+      "key": "satis",
+      "modules": [
+        "Sales"
+      ],
+      "toplam": 17,
+      "done": 17,
+      "partial": 0,
+      "kalan": [
+        {
+          "id": "SAT-S8",
+          "finding": "F-017",
+          "title": "X1 satış satırı iptal/azaltmada gelecek tedarik ayırmasının aynı işlemde bırakılması (KLN-D28..D32)",
+          "level": "K3",
+          "refs": [
+            "docs/delivery/SATIS_RISK_SEVK_KAPISI_VE_FASON_FATURA_PLANI_v1.md §X1",
+            "docs/decisions/SINAN_KARARLARI_2026-11-12_STOK_F017_EK.md KLN-D28..D32"
+          ],
+          "depends_on": [
+            "STK-S16"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Sales/**/OrderLine*Cancel*",
+            "src/backend/Modules/Sales/**/OrderLine*Reduce*"
+          ],
+          "contracts": [
+            "tüketir: IInventoryFutureAllocationReleasePortV1 (stok_lojistik)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 5,
+          "w5_raporu": "durum/W5_satis.md",
+          "w6_report": "durum/W6_satis.md",
+          "w6_note": "Gerçek Sales/Inventory aynı-transaction host bağlantısı, sabit kilit sırası, Purchasing termin yazma kilidi ve HTTP/replay metadata tamamlandı. Test kaynakları yazıldı; gerçek SQL koşumu NOT_RUN."
+        },
+        {
+          "id": "SAT-S9",
+          "finding": "F-017",
+          "title": "F17-5 satış kaynak planında 'alıştan' seçimi, uyarı/neden kodları ve termin geçti gösterimi",
+          "level": "K2",
+          "refs": [
+            "docs/delivery/ALIS_F017_GELECEK_TEDARIK_AYIRMA_v1.md §4 F17-5",
+            "docs/delivery/STOK_F017_GELECEK_TEDARIK_AYIRMA_SPEC_v1.md §10 F017-d"
+          ],
+          "depends_on": [
+            "STK-S17"
+          ],
+          "files_hint": [
+            "src/frontend/goymen-erp-web/src/sales/SourcePlan*.tsx",
+            "src/frontend/goymen-erp-web/src/sales/sourcePlan*.ts"
+          ],
+          "contracts": [
+            "tüketir: F017-b2 uçları (stok_lojistik)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 8,
+          "w6_report": "durum/W6_satis.md",
+          "w8_source_commit": "e20f0ad14a44ecfe927060dbe0a2ff7e3eda9c8c",
+          "w8_report": "durum/W8_satis.md",
+          "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "SAT-S12",
+          "finding": "F-011",
+          "title": "UI-50 S-05 marj maliyetinin Stok ortalama maliyet portundan okunması (kalan kısım; önce main'de kalanı doğrula)",
+          "level": "K3",
+          "refs": [
+            "docs/delivery/SATIS_HAZIRLIK_PLANI_v1.md §9.3 UI-50",
+            "docs/decisions/*EK51/EK52 SAT-D256..D267",
+            "docs/decisions/SINAN_KARARLARI_2026-11-14_TREN_DALGA1.md"
+          ],
+          "depends_on": [
+            "STK-S35"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Sales/**/Margin*",
+            "src/frontend/goymen-erp-web/src/sales/Margin*"
+          ],
+          "contracts": [
+            "tüketir: Stok ortalama maliyet okuma portu (stok_lojistik, mevcut #1044)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 3,
+          "decision_note": "SAT-D347 okunamazsa marj yok. Marj formülü etkinleştirmesi golden gelene kadar kapalı (SAT-D265/5); kod + snapshot yazılır.",
+          "w6_report": "durum/W6_satis.md",
+          "w8_report": "durum/W8_SAT_S12_GOLDEN_DUZELTME.md",
+          "w8_source_note": "Golden PR1200 dfab7e934fd6e7fc3b0dd5ca40bd9a3643d3ee4f iki bagimsiz DOCS imzasi ile main3c1b47878447570210b933b83d874646f9c52e4b oldu; main no-ff trende. Ayri uygulama19ca53a17 gercek TL bagini ve sifir maliyet unavailable korur; golden kabul kosulu source true. Sales.Unit kaynak derleme0/0warn/error42.95s. Runtime ve son K3 iki exact-head inceleme NOT_RUN; production aktivasyonu degildir.",
+          "w8_source_commit": "19ca53a178dc97e86cdc576ba775d9ee89543a4f"
+        },
+        {
+          "id": "SAT-S13",
+          "finding": "F-020",
+          "title": "Satış irsaliyesinde kantar farkı toplamının gösterimi ve faturaya kg aktarımı (SAT-D343)",
+          "level": "K3",
+          "refs": [
+            "docs/decisions/SINAN_KARARLARI_2026-11-13_EK1.md SAT-D343",
+            "docs/decisions/SINAN_KARARLARI_2026-11-13_URETIM_MALIYETI_VE_EKSI_STOK.md SAT-D319/D320"
+          ],
+          "depends_on": [
+            "STK-S24"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Sales/**/Dispatch*",
+            "src/backend/GoymenERP.Api/Endpoints/SalesEndpoints.Dispatches.cs"
+          ],
+          "contracts": [
+            "tüketir: kantar farkı kayıt okuma portu (stok_lojistik)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 8,
+          "w5_raporu": "durum/W5_satis.md",
+          "w6_report": "durum/W6_satis.md",
+          "w8_source_commit": "e20f0ad14a44ecfe927060dbe0a2ff7e3eda9c8c",
+          "w8_report": "durum/W8_satis.md",
+          "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "SAT-SC32",
+          "title": "Sipariş PDF (SAT-D365) + SAT-D363 iskonto gizleme",
+          "status": "DONE",
+          "blocked_reason": "",
+          "w6_report": "durum/W6_satis.md",
+          "w6_note": "PDF mevcut kaynakta doğrulandı; SAT-D363 sözleşme oranı/sınır redaksiyonu sunucu+strict decoder+Gizli UI ve test kaynaklarında düzeltildi. Koşum NOT_RUN."
+        },
+        {
+          "id": "SAT-SC34",
+          "finding": "SC34",
+          "title": "Fason fatura bölüştürme paydası net kg (KLN-D89), açık miktar = sipariş − teslim (KLN-D100), ileri tahsis varken başlık revizyonu reddi (SAT-D373)",
+          "level": "K3",
+          "refs": [
+            "SINAN-CEVAP 34"
+          ],
+          "depends_on": [
+            "STK-S16"
+          ],
+          "files_hint": [],
+          "contracts": [],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 5,
+          "w5_raporu": "durum/W5_satis.md",
+          "w6_report": "durum/W6_satis.md",
+          "w8_report": "durum/W8_stok_lojistik.md",
+          "w8_source_note": "Original weigh-derived subcontract invoice, future-allocation revision guard, actual returned and finalized-invoiced quantities connected. dfc1f3195 and4e0d582e1 integrated; combined15a634290 source compiles exit0 includingSales/Integration/TSC. Official provider remains unconfigured, not usable-runtime acceptance."
+        }
+      ],
+      "remaining_not_started": 0
     },
     {
-     "id": "FNS-SC32",
-     "title": "Bakiye devir fişi portu (KLN-D76/D77), teminat as-of iş günü (FNS-D71), izinler (FNS-D72)",
-     "status": "DONE",
-     "w6_report": "durum/W6_finans.md",
-     "w6_note": "DOGRULA: Türkiye iş günü ve teminat izin kayıtları kaynakta var; gerçek Settings teminat kataloğu ve bakiye devir fişinin port/komut/ekranı eksik.",
-     "wave": 8,
-     "blocked_reason": "",
-     "w8_source_commit": "5ee3b2d05768150805f20d343fad144c0afd2dcc",
-     "w8_report": "durum/W8_finans.md",
-     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
+      "key": "alis_cari",
+      "modules": [
+        "Purchasing",
+        "Counterparty"
+      ],
+      "toplam": 20,
+      "done": 20,
+      "partial": 0,
+      "kalan": [
+        {
+          "id": "ALC-S5",
+          "finding": "F-027",
+          "title": "API-44/API-60 kabul geri alma ve tedarikçiye iade (B-19), asıl alış satırı maliyetiyle çıkış (SAT-D306)",
+          "level": "K3",
+          "refs": [
+            "docs/delivery/ALIS_HAZIRLIK_PLANI_v1.md §5.7",
+            "docs/delivery/KALAN_MODULLER_HAZIRLIK_PLANI_v1.md B-19",
+            "docs/decisions/SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md SAT-D306",
+            "docs/decisions/SINAN_KARARLARI_2026-11-12_ALIS_EK17.md ALS-D86/D91"
+          ],
+          "depends_on": [
+            "STK-S25"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Purchasing/**/SupplierReturn*",
+            "src/backend/Modules/Purchasing/**/ReceiptReversal*",
+            "src/backend/GoymenERP.Api/Endpoints/PurchasingEndpoints.cs",
+            "src/frontend/goymen-erp-web/src/purchasing/SupplierReturn*",
+            "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [
+            "tüketir: Stok tedarikçi iadesi çıkış portu (stok_lojistik)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 8,
+          "w5_raporu": "durum/W5_alis_cari.md",
+          "w6_report": "durum/W6_alis_cari.md",
+          "w8_source_commit": "c67daf71f9afa0cb1e5bce97ae94103fd11576b9",
+          "w8_report": "durum/W8_alis_cari.md",
+          "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "ALC-S6",
+          "finding": "F-017",
+          "title": "F17-6 kabul geri alma/iade F-017 kuralları; canlanma (ALS-D86/D91/D92/D93)",
+          "level": "K3",
+          "refs": [
+            "docs/delivery/ALIS_F017_GELECEK_TEDARIK_AYIRMA_v1.md §3.7/§3.8",
+            "docs/decisions/SINAN_KARARLARI_2026-11-12_ALIS_EK17.md ALS-D91..D93"
+          ],
+          "depends_on": [
+            "ALC-S5",
+            "STK-S19"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Purchasing/**/ReceiptReversal*",
+            "src/backend/Modules/Purchasing/**/Revive*"
+          ],
+          "contracts": [],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 8,
+          "w6_report": "durum/W6_alis_cari.md",
+          "w7_result": "7B ile kısmi yeniden açma kararı var; Inventory ters-tüketim/özgün conversion ledger ve Purchasing kabul geri alma owner zinciri teknik bağımlılıktır, yeni karar engeli değildir.",
+          "w7_report": "durum/W7_alis_cari.md",
+          "w8_source_commit": "02a05b64f51a5799c7ea4495326cdf1cce405461",
+          "w8_report": "durum/W8_alis_cari.md",
+          "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "ALC-S7",
+          "finding": "F-027",
+          "title": "A-1 fason hizmet alış siparişi (kendi malımız fasoncuya; ALS-D29)",
+          "level": "K3",
+          "refs": [
+            "docs/delivery/ALIS_HAZIRLIK_PLANI_v1.md §5.8",
+            "docs/decisions/*ALIS* ALS-D26/ALS-D29",
+            "docs/decisions/SINAN_KARARLARI_2026-11-11_ALIS_EK15.md ALS-D79"
+          ],
+          "depends_on": [
+            "KIM-S18"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Purchasing/**/SubcontractService*",
+            "src/backend/Modules/Purchasing/**/Migrations/*Subcontract*",
+            "src/frontend/goymen-erp-web/src/purchasing/Subcontract*",
+            "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [
+            "tüketir: ISettingsReferenceListReaderV1 (kimlik)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 8,
+          "w6_report": "durum/W6_alis_cari.md",
+          "w8_report": "durum/W8_alis_cari.md",
+          "w8_result": "Gerçek fason hizmet siparişi/vergi kaynağı ve son mevcut iki onay yetkisi cevabı e67f53fc7 ile entegre. API/ilgili projeler/TSC derleme 0; runtime ve merkezi pin/son tren FF bekler. DONE değildir.",
+          "w8_source_commit": "e67f53fc75358fb9397dc754e36fe4c538621ed6",
+          "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "ALC-S8",
+          "finding": "F-027",
+          "title": "Ek alış masrafı kaydı (nakliye/gümrük); ortalama maliyet dışında (ALS-D80, SAT-D302)",
+          "level": "K3",
+          "refs": [
+            "docs/decisions/SINAN_KARARLARI_2026-11-11_ALIS_EK15.md ALS-D80",
+            "docs/decisions/SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md SAT-D302"
+          ],
+          "depends_on": [
+            "KIM-S18"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Purchasing/**/AdditionalCost*",
+            "src/frontend/goymen-erp-web/src/purchasing/AdditionalCost*",
+            "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 8,
+          "w6_report": "durum/W6_alis_cari.md",
+          "w8_report": "durum/W8_alis_cari.md",
+          "w8_result": "Gerçek ek masraf kaydı ve parçalı fatura eşleştirmesi 60a2e3110 / 555503e1b ile entegre. OrdersRevise kullanılır, stok maliyeti değişmez. Derleme 0; runtime ve merkezi pin/son tren FF bekler. DONE değildir.",
+          "w8_source_commit": "555503e1bc7279f7f76bd8a841a146a0e8c2646b",
+          "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "ALC-S14",
+          "finding": "F-027",
+          "title": "B-16 IPurchasingPartyAccountPortV1 v2",
+          "level": "K3",
+          "refs": [
+            "docs/delivery/KALAN_MODULLER_HAZIRLIK_PLANI_v1.md B-16/B-17"
+          ],
+          "depends_on": [
+            "FIN-S12"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Purchasing/**/PartyAccount*"
+          ],
+          "contracts": [
+            "sağlar: IPurchasingPartyAccountPortV1 v2 (alis_cari; tüketen finans)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 8,
+          "w6_report": "durum/W6_alis_cari.md",
+          "w8_source_commit": "6d5e5e0e2b07b55a6dbbe6c7d5f35b07297d5d6a",
+          "w8_report": "durum/W8_alis_cari.md",
+          "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "ALC-SC47",
+          "title": "Cari resmi unvan değişikliği maker-checker + alış siparişi cari değişikliği yeniden onayı (ALS-D111/D112/D113)",
+          "level": "K3",
+          "refs": [
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK19.md",
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK20.md",
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK21.md",
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK22.md"
+          ],
+          "depends_on": [],
+          "files_hint": [
+            "src/backend/Modules/Counterparties/**/LegalName*",
+            "src/backend/Modules/Purchasing/**/PurchaseOrder*",
+            "src/frontend/goymen-erp-web/src/counterparties/**",
+            "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [],
+          "finding": "SC36-SC47 kararları",
+          "status": "DONE",
+          "wave": 8,
+          "w5_raporu": "durum/W5_alis_cari.md",
+          "w6_report": "durum/W6_alis_cari.md",
+          "blocked_reason": "",
+          "w8_source_commit": "82d31f3000fed9d17fd808b80f2ca0bdd6e86f6b",
+          "w8_report": "durum/W8_alis_cari.md",
+          "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
+        }
+      ],
+      "remaining_not_started": 0
     },
     {
-     "id": "FIN-SC36",
-     "title": "Finans karar paketi (FNS-D81/D82/D87/D89/D90, KLN-D102/D104)",
-     "level": "K3",
-     "refs": [
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK18.md",
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK19.md",
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK20.md",
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK21.md"
-     ],
-     "depends_on": [],
-     "files_hint": [
-      "src/backend/Modules/Finance/**",
-      "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [],
-     "finding": "SC36-SC47 kararları",
-     "status": "DONE",
-     "wave": 8,
-     "w5_raporu": "durum/W5_finans.md",
-     "w6_report": "durum/W6_finans.md",
-     "w7_result": "FNS-D102 gerçek iç defter ve Serializable aynı işlem bakiye koruması, MARS/borrowed transaction/audit rollback kaynakları yazıldı. Paketin kalan FNS-D89/D90 ve KLN-D102/D104 bağları bu işte tamamlanmadı; tüm test koşumları NOT_RUN.",
-     "w7_report": "durum/W7_finans.md",
-     "blocked_reason": "",
-     "w8_source_commit": "a4a747383111efa48060937637cf887e9022d1ff",
-     "w8_report": "durum/W8_finans.md",
-     "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
+      "key": "stok_lojistik",
+      "modules": [
+        "Inventory",
+        "Logistics",
+        "Product"
+      ],
+      "toplam": 45,
+      "done": 45,
+      "partial": 0,
+      "kalan": [
+        {
+          "id": "STK-S1",
+          "finding": "F-006",
+          "title": "F-006 ShippedBy: LoadingShareRow.RecordedBy + migration; LogisticsSalesOrderDeliveryReadPort ShippedBy doldurur (B-33)",
+          "level": "K3",
+          "refs": [
+            "docs/delivery/FABLE_5_2_ANALIZLERI/02_* paket 2",
+            "docs/delivery/KALAN_MODULLER_HAZIRLIK_PLANI_v1.md B-33"
+          ],
+          "depends_on": [
+            "claude/lojistik-okuma-deadlock (uçuşta; aynı dosyalara dokunma)"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Logistics/**/LoadingShare*",
+            "src/backend/Modules/Logistics/**/Migrations/*RecordedBy*",
+            "src/backend/Modules/Logistics/**/SalesOrderDeliveryRead*",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [
+            "sağlar: LogisticsSalesOrderDeliveryReadPort ShippedBy alanı (stok_lojistik; tüketen satis)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 1,
+          "w6_report": "durum/W6_stok_lojistik.md",
+          "w6_note": "Mevcut RecordedBy migration/owner projection/test kaynaklarında doğrulandı; mükerrer uygulama yazılmadı."
+        },
+        {
+          "id": "STK-S3",
+          "finding": "F-012",
+          "title": "Fason teslim sevk türü (LOJ-D1..D5), net kg paylaşımı (LOJ-D12), çıkış sonrası tartı düzeltmesi (LOJ-D13), risk kapısı (LOJ-D14)",
+          "level": "K3",
+          "refs": [
+            "docs/decisions/SINAN_KARARLARI_2026-11-12_LOJISTIK_F012_F020.md LOJ-D1..D5",
+            "docs/decisions/SINAN_KARARLARI_2026-11-12_LOJISTIK_EK3.md LOJ-D12/D13",
+            "docs/decisions/SINAN_KARARLARI_2026-11-12_LOJISTIK_EK4.md LOJ-D14"
+          ],
+          "depends_on": [
+            "STK-S2",
+            "STK-S27"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Logistics/**/SubcontractDelivery*",
+            "src/backend/Modules/Inventory/**/DefiniteShipment*",
+            "src/backend/Modules/Logistics/**/Migrations/*Subcontract*",
+            "src/backend/GoymenERP.Api/Endpoints/LogisticsEndpoints.cs",
+            "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [
+            "tüketir: ISalesShipmentRiskGateReadPortV1 (satis)",
+            "tüketir: Üretim fason emri okuma (uretim)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 5,
+          "w5_raporu": "durum/W5_stok_lojistik.md",
+          "w6_report": "durum/W6_stok_lojistik.md",
+          "w8_report": "durum/W8_KAYNAK_TAMAMLANDI.md",
+          "w8_source_note": "SOURCE_DONE: actual plan-excess exception/approval, explicit extra physical reservation and immutable load/ship usage integrated fromad3e0caeb at96487201f. Instruction plan remains unchanged; narrow registered-only approver, real physical and other owner gates preserved. Final combined146f API/all22 test-project builds/TSC exit0; runtime/CI/K3 NOT_RUN."
+        },
+        {
+          "id": "STK-S8",
+          "finding": "F-013",
+          "title": "Transfer ekranları (plan, sevk, iptal, teslim alma, fazla/eksik onayı)",
+          "level": "K2",
+          "refs": [
+            "docs/decisions/SINAN_KARARLARI_2026-11-11_STOK_MALIYET_VE_TRANSFER.md KLN-D20..D24"
+          ],
+          "depends_on": [
+            "#1099 (uçuşta)",
+            "STK-S5"
+          ],
+          "files_hint": [
+            "src/frontend/goymen-erp-web/src/inventory/Transfer*.tsx",
+            "src/frontend/goymen-erp-web/src/inventory/transfer*.ts"
+          ],
+          "contracts": [],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 7,
+          "w6_report": "durum/W6_stok_lojistik.md",
+          "w6_note": "Transfer listesi ve detay okuma var; plan/sevk/iptal/teslim/fazla-kayıp onayı mutation ekranları eksik.",
+          "w7_result": "Sevk iptal ekranı ve aynı anahtar/payload belirsiz tekrar kaynağı var. Gerçek çıkış/GİB iptal gate ve kaynak kantar ayarı sahibi yok; capability false, kullanılabilir iş akışı değildir.",
+          "w7_report": "durum/W7_stok_lojistik.md",
+          "w8_report": "durum/W8_DORT_DILIM_KAYNAK_KAPANISI.md",
+          "w8_source_note": "Actual plan/dispatch/cancel/receive/difference panels and owner sources mounted;1127e5993 and combined34624009d source compiles exit0. Optional GIB provider absent, linked-document path unavailable503 preserved; no fake official status or activation."
+        },
+        {
+          "id": "STK-S11",
+          "finding": "F-004",
+          "title": "B-07 IProductPurchaseUnitConversionV1 (kg↔adet, katsayı 3 ondalık, kg→adet floor, %1 `<=`, teorik kg tabanı)",
+          "level": "K3",
+          "refs": [
+            "docs/delivery/KALAN_MODULLER_HAZIRLIK_PLANI_v1.md B-07",
+            "docs/decisions/SINAN_KARARLARI_2026-11-11_SATIS_EK59_ORTALAMA_MALIYET.md SAT-D299",
+            "docs/decisions/SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md BS-9/13/16/17",
+            "docs/decisions/SINAN_KARARLARI_2026-11-12_URUN_EK1.md URN-D7/D8/D9"
+          ],
+          "depends_on": [
+            "STK-S10",
+            "KIM-S20"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Product/**/UnitConversion*",
+            "src/backend/GoymenERP.Api/**/ProductUnitConversionHost*"
+          ],
+          "contracts": [
+            "sağlar: IProductPurchaseUnitConversionV1 (stok_lojistik; tüketen alis_cari, satis, stok)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 8,
+          "w6_report": "durum/W6_stok_lojistik.md",
+          "w6_note": "Settings birim kaynağında kg dışı typed ton/metre/adet semantiği ve dönüşüm faktörü yok; koddan tahmin edilmedi.",
+          "w8_source_commit": "667822a10851041c20759088f536735f26387ce1",
+          "w8_report": "durum/W8_stok_lojistik.md",
+          "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "STK-S13",
+          "finding": "F-004",
+          "title": "Boya sınıfı Excel içe aktarımı (BS-10) Settings boya rengi listesiyle",
+          "level": "K3",
+          "refs": [
+            "docs/decisions/SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md BS-10",
+            "docs/delivery/KALAN_MODULLER_HAZIRLIK_PLANI_v1.md B-14"
+          ],
+          "depends_on": [
+            "STK-S12",
+            "KIM-S18"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Product/**/PaintClass*",
+            "src/frontend/goymen-erp-web/src/product/PaintImport*",
+            "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [
+            "tüketir: ISettingsReferenceListReaderV1 (kimlik)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 8,
+          "w6_report": "durum/W6_stok_lojistik.md",
+          "w8_source_commit": "b6ba56727e54910511d00db5fb0c4cb96c4bd36c",
+          "w8_report": "durum/W8_stok_lojistik.md",
+          "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "STK-S17",
+          "finding": "F-017",
+          "title": "F017-b2 ayırma oluşturma/bırakma uçları, OpenAPI, izin adı yalnız kayıt",
+          "level": "K3",
+          "refs": [
+            "docs/delivery/STOK_F017_GELECEK_TEDARIK_AYIRMA_SPEC_v1.md §10 F017-b2 kapı kuralı"
+          ],
+          "depends_on": [
+            "STK-S15",
+            "STK-S16",
+            "ALC-S3",
+            "SAT-S8"
+          ],
+          "files_hint": [
+            "src/backend/GoymenERP.Api/Endpoints/InventoryEndpoints.cs",
+            "src/backend/Modules/Inventory/**/FutureSupply*Endpoint*",
+            "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 7,
+          "w6_report": "durum/W6_stok_lojistik.md",
+          "w6_note": "Uçlar ve gerçek SAT-S8 host bağı kaynakta; receipt future-to-physical çevriminin başka purchase satırında yeni ayırmayla toplam sınırını aşma yarışı bulundu. W7 ilk teknik işi ortak Sales-then-purchase prelock protokolü; test/SQL koşumu NOT_RUN.",
+          "w7_result": "Kabulde Sales↑→Purchase kilit sırası ve taze altküme çiti, bounded yalnız-yazma-öncesi retry; callback tek kez. Gerçek SQL fact kaynakları eklendi, koşum NOT_RUN.",
+          "w7_report": "durum/W7_stok_lojistik.md"
+        },
+        {
+          "id": "STK-S18",
+          "finding": "F-017",
+          "title": "F017-d Stok ekranları: ayırma listesi/bırakma, kabul ekranında ayırma bilgisi",
+          "level": "K2",
+          "refs": [
+            "docs/delivery/STOK_F017_GELECEK_TEDARIK_AYIRMA_SPEC_v1.md §10 F017-d"
+          ],
+          "depends_on": [
+            "STK-S17"
+          ],
+          "files_hint": [
+            "src/frontend/goymen-erp-web/src/inventory/FutureAllocation*.tsx"
+          ],
+          "contracts": [],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 7,
+          "w6_report": "durum/W6_stok_lojistik.md",
+          "w6_note": "Ayırma paneli ve Sales satır bağlantısı hazır; mal kabul ekranında çevrim/ayırma bilgisi eksik.",
+          "w7_result": "F017-d kabul ekranında gerçek owner gelecek ayırma bilgisi, None/Unavailable ayrımı ve strict decoder; geçmiş çevrim defteri/tüm batch ekranı bu kapsamda değildir. Koşum NOT_RUN.",
+          "w7_report": "durum/W7_stok_lojistik.md"
+        },
+        {
+          "id": "STK-S19",
+          "finding": "F-017",
+          "title": "F017-e kabul geri alma/iade Stok tarafı (tahsis/etiket geri alma, ters sıra)",
+          "level": "K3",
+          "refs": [
+            "docs/delivery/STOK_F017_GELECEK_TEDARIK_AYIRMA_SPEC_v1.md §3.7",
+            "docs/decisions/SINAN_KARARLARI_2026-11-12_ALIS_EK17.md ALS-D86/D91/D92"
+          ],
+          "depends_on": [
+            "STK-S15",
+            "ALC-S5"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Inventory/**/ReceiptReversal*"
+          ],
+          "contracts": [],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 8,
+          "w6_report": "durum/W6_stok_lojistik.md",
+          "w7_result": "7B yanıtlandı: yalnız talep sınırına sığan tüketilmiş miktar yeniden açılır, kalan Released; eski Released geri gelmez (#1189/6926090415). Owner ters tüketim/ledger+ALC-S6 aynı transaction uygulaması henüz yok.",
+          "w7_report": "durum/W7_stok_lojistik.md",
+          "w8_source_commit": "67fad5246354daf3cc4f0c484c90a3412f00bdbd",
+          "w8_report": "durum/W8_stok_lojistik.md",
+          "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "STK-S21",
+          "finding": "F-011",
+          "title": "Eksiye düşürecek işlemin deneme kaydı, mesajda eldeki kg, görünürlük ve saklama (SAT-D328/D336..D339)",
+          "level": "K3",
+          "refs": [
+            "docs/decisions/SINAN_KARARLARI_2026-11-13_EK1.md SAT-D328/D336/D337/D338/D339"
+          ],
+          "depends_on": [
+            "#1155 (uçuşta)",
+            "STK-S20"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Inventory/**/NegativeStockAttempt*",
+            "src/backend/Modules/Inventory/**/Migrations/*NegativeStockAttempt*",
+            "src/frontend/goymen-erp-web/src/inventory/NegativeStockAttempt*",
+            "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 8,
+          "w6_report": "durum/W6_stok_lojistik.md",
+          "w8_source_commit": "dfef53c6a40ab8acd3d9cd3f654c0470f2e842f0",
+          "w8_report": "durum/W8_stok_lojistik.md",
+          "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "STK-S26",
+          "finding": "F-026",
+          "title": "F-026a etiket/barkod PDF çıktısı (mevcut etiket verisi, Noto Sans fallback, logosuz; barkod sembolojisi ASSUMPTION)",
+          "level": "K2",
+          "refs": [
+            "docs/delivery/FABLE_5_2_ANALIZLERI/01_MEVCUT_DURUM_VE_YOL_HARITASI_2026-11-10.md F-026",
+            "docs/decisions/ACIK_KARARLAR.md OPEN-019 (fallback kısmı)"
+          ],
+          "depends_on": [
+            "PLT-S9"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Inventory/**/LabelPrint*",
+            "src/frontend/goymen-erp-web/src/inventory/LabelPrint*"
+          ],
+          "contracts": [
+            "tüketir: IGeneratedDocumentStorePortV1 (platform)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 6,
+          "w6_report": "durum/W6_stok_lojistik.md"
+        },
+        {
+          "id": "STK-S29",
+          "finding": "F-026",
+          "title": "F-026b şirket logosu/antet ve şablon yayımlama onayı",
+          "level": "K2",
+          "refs": [
+            "docs/decisions/ACIK_KARARLAR.md OPEN-019",
+            "Issue #66 yorum 6882315732 (SINAN-CEVAP 14)"
+          ],
+          "depends_on": [
+            "STK-S26"
+          ],
+          "files_hint": [],
+          "contracts": [],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 8,
+          "decision_note": "NS-05 (Issue #66 yorum 6882315732 (SINAN-CEVAP 14)): Logo/antet şirket ayarından yüklenir; şablon yayımlama ayrı izin (yeni izin adı kaydedilebilir, grant yok); hazırlayan kendi şablonunu yayımlayamaz.",
+          "w6_report": "durum/W6_stok_lojistik.md",
+          "w8_report": "durum/W8_stok_lojistik.md",
+          "w8_result": "Documents marka/şablon owner kaydı ve üretilmiş migration kaynakları merkezde; gerçek PDF renderer/producer ve yönetim ekranı bağlantısı halen uygulanıyor.",
+          "w8_source_commit": "c820c37d6ea846e0dbd7bfe56b5534bc6feeae0b",
+          "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "STK-SC36-a",
+          "title": "Stok maliyet/sayım kararları (SAT-D384..D407, FNS-D92)",
+          "level": "K3",
+          "refs": [
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK18.md",
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK19.md",
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK20.md",
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK22.md"
+          ],
+          "depends_on": [],
+          "files_hint": [
+            "src/backend/Modules/Inventory/**/Costing*",
+            "src/backend/Modules/Inventory/**/StockCount*",
+            "src/backend/Modules/Inventory/**/Valuation*",
+            "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [],
+          "finding": "SC36-SC47 kararları",
+          "status": "DONE",
+          "wave": 5,
+          "w5_raporu": "durum/W5_stok_lojistik.md",
+          "w6_report": "durum/W6_stok_lojistik.md",
+          "w8_report": "durum/W8_KAYNAK_TAMAMLANDI.md",
+          "w8_source_note": "SOURCE_DONE: actual first/late purchase cost, SAT-D422, cancellation/reinvoice immutable claim succession62e65d6a6 and actual SAT-D331/D334 count costing49bd8c9ea integrated in146f. Shared calculator, frozen price-free status and TL unreadable shortage rollback connected. Final API/all22 test-project builds/TSC exit0; runtime/CI/K3 NOT_RUN.",
+          "blocked_reason": ""
+        },
+        {
+          "id": "STK-SC36-b",
+          "title": "İlk mal kabul kuru portu (FNS-D77/D78) + KLN-D107/D108 yeniden talep/geri çekme",
+          "level": "K3",
+          "refs": [
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK17.md",
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK18.md",
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK19.md"
+          ],
+          "depends_on": [],
+          "files_hint": [
+            "src/backend/Modules/Inventory/**/FirstReceipt*",
+            "src/backend/Modules/Inventory/**/FutureAllocation*",
+            "src/backend/Modules/Logistics/**",
+            "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [],
+          "finding": "SC36-SC47 kararları",
+          "status": "DONE",
+          "wave": 8,
+          "w5_raporu": "durum/W5_stok_lojistik.md",
+          "w6_report": "durum/W6_stok_lojistik.md",
+          "blocked_reason": "",
+          "w8_source_commit": "4bd80d9dc153f3692ecc1db8341e5146737f559f",
+          "w8_report": "durum/W8_stok_lojistik.md",
+          "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "STK-SC36-c",
+          "title": "Ambalaj ezmesi ve dosya saklama (SAT-D382/D383/D397/D401)",
+          "level": "K2",
+          "refs": [
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK18.md",
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK19.md",
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK20.md"
+          ],
+          "depends_on": [],
+          "files_hint": [
+            "src/backend/Modules/Logistics/**/Packaging*",
+            "src/frontend/goymen-erp-web/src/logistics/**",
+            "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [],
+          "finding": "SC36-SC47 kararları",
+          "status": "DONE",
+          "wave": 8,
+          "w5_raporu": "durum/W5_stok_lojistik.md",
+          "w6_report": "durum/W6_stok_lojistik.md",
+          "blocked_reason": "",
+          "w8_source_commit": "c86f24b46f771de3e1cdccd59efc862619968db9",
+          "w8_report": "durum/W8_stok_lojistik.md",
+          "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
+        }
+      ],
+      "remaining_not_started": 0
     },
     {
-     "id": "FIN-SC47-KREDI",
-     "title": "Finans kredi alt alanı iskeleti (kredi hesabı, plan içe aktarma+doğrulama, limit uyarısı, maker-checker, fiş önerisi)",
-     "level": "K3",
-     "refs": [
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK21.md",
-      "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK22.md"
-     ],
-     "depends_on": [],
-     "files_hint": [
-      "src/backend/Modules/Finance/**/Credit*",
-      "src/backend/Modules/Finance/**/Migrations/*Credit*",
-      "src/backend/GoymenERP.Api/Endpoints/FinanceEndpoints*.cs",
-      "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
-      "recovery/release pin (recovery-inventory-repin)"
-     ],
-     "contracts": [],
-     "finding": "SC36-SC47 kararları",
-     "status": "DONE",
-     "wave": 5,
-     "w5_raporu": "durum/W5_finans.md",
-     "w6_report": "durum/W6_finans.md",
-     "blocked_reason": "",
-     "w8_report": "durum/W8_DORT_DILIM_KAYNAK_KAPANISI.md",
-     "w8_source_note": "5485ec8e5 actual approved credit component mapping/source selection + credit-specific different Accounting checker.34624009d narrows fixture nullable proof; combined API/Accounting/Integration/TSC compiles exit0. No interest/tax/FX calculation or grant/activation; runtime acceptance NOT_RUN."
+      "key": "uretim",
+      "modules": [
+        "Manufacturing"
+      ],
+      "toplam": 27,
+      "done": 27,
+      "partial": 0,
+      "kalan": [
+        {
+          "id": "URT-S4",
+          "finding": "F-009",
+          "title": "F-009 D5 OrderStatus.Cancelled + iptal komutu + ayırma serbest bırakma + Onaylı→Onaylı minimal yeniden onay (URT-D33/D34/D35/D39)",
+          "level": "K3",
+          "refs": [
+            "docs/delivery/URETIM_EMRI_DUZELTME_ANALIZ_v1.md §5 D5",
+            "docs/decisions/SINAN_KARARLARI_2026-11-12_URETIM_EMRI_DUZELTME.md URT-D33/D34/D35/D39"
+          ],
+          "depends_on": [
+            "URT-S3",
+            "STK-S20"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Manufacturing/**/CancelOrder*",
+            "src/backend/Modules/Manufacturing/**/Migrations/*Cancelled*",
+            "src/backend/GoymenERP.Api/Endpoints/ManufacturingEndpoints.cs",
+            "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [
+            "tüketir: Stok Free kg okuma portu, OrderCancelled=3 (stok_lojistik)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 8,
+          "w5_raporu": "durum/W5_uretim.md",
+          "w6_report": "durum/W6_uretim.md",
+          "w7_result": "Gerçek Inventory advisory + successful-rollback sonrası company/plan fenced kanonik requested/available/missing kg HTTP/UI shortfall var; replay ayrıntıyı taşımaz. Diğer plan kullanıcı akışı tamamlanmadı.",
+          "w7_report": "durum/W7_uretim.md",
+          "w8_source_commit": "4d9b8bfca52560ea539ae936412b42184f61fcb9",
+          "w8_report": "durum/W8_uretim.md",
+          "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "URT-S5",
+          "finding": "F-009",
+          "title": "F-009 D5b farklı etikette planın yeniden hesabı ve onayı (URT-D37/D38)",
+          "level": "K3",
+          "refs": [
+            "docs/delivery/URETIM_EMRI_DUZELTME_ANALIZ_v1.md §5 D5b",
+            "docs/decisions/SINAN_KARARLARI_2026-11-12_URETIM_EMRI_DUZELTME.md URT-D37/D38"
+          ],
+          "depends_on": [
+            "URT-S4"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Manufacturing/**/Replan*"
+          ],
+          "contracts": [],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 8,
+          "w6_report": "durum/W6_uretim.md",
+          "w7_result": "8A fiziksel toplam draft/revizyon üst sınırı yanıtlandı; AT-044 uygulaması sonraki dalga. Onayda Free/tek pozisyon sürer.",
+          "w7_report": "durum/W7_uretim.md",
+          "w8_source_commit": "2120b758e7f41fb5aeb7c75bcf1d2327e72b3937",
+          "w8_report": "durum/W8_uretim.md",
+          "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "URT-S6",
+          "finding": "F-009",
+          "title": "F-009 D6 ekranlar: UI-14 düzeltme formu, iptal düğmesi, ret metinleri",
+          "level": "K2",
+          "refs": [
+            "docs/delivery/URETIM_EMRI_DUZELTME_ANALIZ_v1.md §5 D6"
+          ],
+          "depends_on": [
+            "URT-S2"
+          ],
+          "files_hint": [
+            "src/frontend/goymen-erp-web/src/manufacturing/OutputCorrection*.tsx",
+            "src/frontend/goymen-erp-web/src/manufacturing/manufacturingText.ts"
+          ],
+          "contracts": [],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 5,
+          "w5_raporu": "durum/W5_uretim.md",
+          "w6_report": "durum/W6_uretim.md"
+        },
+        {
+          "id": "URT-S7",
+          "finding": "F-009",
+          "title": "F-009 D7 iptal edilen emrin satış bağı okumasında görünmesi (MOD-03)",
+          "level": "K2",
+          "refs": [
+            "docs/delivery/URETIM_EMRI_DUZELTME_ANALIZ_v1.md §5 D7"
+          ],
+          "depends_on": [
+            "URT-S4"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Manufacturing/**/SalesBindingRead*"
+          ],
+          "contracts": [
+            "değişir: Üretim satış bağı okuma portu durum alanı (uretim; tüketen satis)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 6,
+          "w6_report": "durum/W6_uretim.md"
+        },
+        {
+          "id": "URT-S8",
+          "finding": "F-009",
+          "title": "F-009 D8 ReopenOrder (gerekçe, denetim, dönem kapalıysa ret) + yeniden açılan emrin maliyeti (URT-D32/D36/D56)",
+          "level": "K3",
+          "refs": [
+            "docs/delivery/URETIM_EMRI_DUZELTME_ANALIZ_v1.md §5 D8",
+            "docs/decisions/SINAN_KARARLARI_2026-11-12_URETIM_EMRI_DUZELTME.md URT-D32/D36",
+            "URETIM_EK4 (PR #1157, origin/claude/karar-gov-d7) URT-D56"
+          ],
+          "depends_on": [
+            "URT-S4",
+            "#1157 (karar dokümanı)"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Manufacturing/**/ReopenOrder*",
+            "src/backend/GoymenERP.Api/Endpoints/ManufacturingEndpoints.cs",
+            "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [
+            "tüketir: Muhasebe dönem durumu okuma portu (finans, mevcut)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 8,
+          "w6_report": "durum/W6_uretim.md",
+          "w8_source_commit": "cd584d806e0c7e1e97b9e933d5cf25da13280a85",
+          "w8_report": "durum/W8_uretim.md",
+          "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "URT-S18",
+          "finding": "F-012",
+          "title": "Fason emir tamamlanınca Lojistik fason teslimine okuma devri (URT-D15..D17, LOJ-D3)",
+          "level": "K3",
+          "refs": [
+            "docs/delivery/URETIM_HAZIRLIK_PLANI_v1.md §5.4a",
+            "docs/decisions/SINAN_KARARLARI_2026-11-12_LOJISTIK_F012_F020.md LOJ-D3"
+          ],
+          "depends_on": [
+            "STK-S3"
+          ],
+          "files_hint": [
+            "src/backend/GoymenERP.Api/Endpoints/ManufacturingSubcontractOrderHostPorts.cs",
+            "src/backend/Modules/Manufacturing/**/SubcontractCompletion*"
+          ],
+          "contracts": [
+            "sağlar: Üretim fason emri tamamlanma okuması (uretim; tüketen stok_lojistik)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 6,
+          "w6_report": "durum/W6_uretim.md"
+        },
+        {
+          "id": "URT-SC32",
+          "title": "USD değerleme hareketli ortalaması (URT-D82), URT-D83/D85",
+          "status": "DONE",
+          "w6_report": "durum/W6_uretim.md",
+          "w6_note": "DOGRULA: calculator parçaları var; gerçek USD hareketli ortalama/maliyet runtime provider ve ekran bağı eksik.",
+          "wave": 8,
+          "blocked_reason": "",
+          "w8_source_commit": "4be7e2b4aee8ddd18ba8923ad57a9ce66697e817",
+          "w8_report": "durum/W8_uretim.md",
+          "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "URT-SC33",
+          "finding": "SC33",
+          "title": "Termin önerisi: kuyruk dahil (URT-D86), giriş kg/saat (URT-D87), vardiya başladığı güne (URT-D88), kapasite yoksa hesaplanamadı + güvenlik payı (URT-D89); döviz değerlemesi sipariş kuru (FNS-D73)",
+          "level": "K3",
+          "refs": [
+            "SINAN-CEVAP 33"
+          ],
+          "depends_on": [
+            "URT-S10",
+            "KIM-SC33-b"
+          ],
+          "files_hint": [],
+          "contracts": [],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 8,
+          "w5_raporu": "durum/W5_uretim.md",
+          "w6_report": "durum/W6_uretim.md",
+          "w7_result": "Gerçek Settings tamponu, append-only expected priority revision, kuyruk HTTP/UI var. 6 elle sıra kalıcı + yeni C15→B20→A10 anchor yanıtlandı (#1189/6926992238); manual sıra deposu/komutu henüz yazılmadı.",
+          "w7_report": "durum/W7_uretim.md",
+          "w8_source_commit": "59f30eb7ec53022f47289d71ac0a8a9abece0769",
+          "w8_report": "durum/W8_uretim.md",
+          "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "URT-SC36",
+          "title": "Üretim maliyet kur önceliği + iade sınırı (FNS-D78/D83, URT-D95..D105)",
+          "level": "K3",
+          "refs": [
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK16.md",
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK17.md",
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK18.md",
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK19.md",
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK20.md"
+          ],
+          "depends_on": [],
+          "files_hint": [
+            "src/backend/Modules/Manufacturing/**/Cost*",
+            "src/backend/Modules/Manufacturing/**/Return*",
+            "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [],
+          "finding": "SC36-SC47 kararları",
+          "status": "DONE",
+          "wave": 8,
+          "w5_raporu": "durum/W5_uretim.md",
+          "w6_report": "durum/W6_uretim.md",
+          "blocked_reason": "",
+          "w8_source_commit": "87b44d2625742631e3e886800b4fcd0e44008d33",
+          "w8_report": "durum/W8_uretim.md",
+          "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
+        }
+      ],
+      "remaining_not_started": 0
+    },
+    {
+      "key": "finans",
+      "modules": [
+        "Finance",
+        "Accounting",
+        "FX ekranı (Settings uçları)"
+      ],
+      "toplam": 21,
+      "done": 21,
+      "partial": 0,
+      "kalan": [
+        {
+          "id": "FIN-S13",
+          "finding": "F-028",
+          "title": "Fatura → 120/320 yevmiye host adaptörü; sales/purchasing.invoice.finalized.v1 tüketicileri (B-04)",
+          "level": "K3",
+          "refs": [
+            "docs/delivery/KALAN_MODULLER_HAZIRLIK_PLANI_v1.md B-04",
+            "docs/decisions/SINAN_KARARLARI_2026-11-07_MUHASEBE_FISI_VE_RECOVERY.md KLN-D6..D19"
+          ],
+          "depends_on": [
+            "PLT-S6",
+            "SAT-S1"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Accounting/**/Inbox/*InvoiceFinalized*",
+            "src/backend/GoymenERP.Api/**/AccountingInvoiceJournalHost*"
+          ],
+          "contracts": [
+            "tüketir: sales.invoice.finalized.v1 (satis), purchasing.invoice.finalized.v1 (alis_cari)"
+          ],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 5,
+          "w5_raporu": "durum/W5_finans.md",
+          "w6_report": "durum/W6_finans.md",
+          "w8_source_commit": "118adcab2fd5d4a22418093dd7dbf970fce51b70",
+          "w8_report": "durum/W8_FIN13_KAYNAK_KAPANISI.md",
+          "w8_validation": "Actual source ancestry, Program/DI/inbox/consumer, journal approval and frontend mount verified. Combined source build 65618ac1e exit0; runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "FIN-S14",
+          "finding": "F-028",
+          "title": "B-28 kasa/banka hareketlerinin yevmiye kaynakları",
+          "level": "K3",
+          "refs": [
+            "docs/delivery/KALAN_MODULLER_HAZIRLIK_PLANI_v1.md B-28"
+          ],
+          "depends_on": [
+            "FIN-S13"
+          ],
+          "files_hint": [
+            "src/backend/Modules/Accounting/**/Sources/*Cash*"
+          ],
+          "contracts": [],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 6,
+          "w6_report": "durum/W6_finans.md",
+          "w8_report": "durum/W8_DORT_DILIM_KAYNAK_KAPANISI.md",
+          "w8_source_note": "Actual Finance source book value + separately evidenced target foreign-currency TL value, different checker, approved mapping and Accounting journal source mounted; a937a1c8f and combined34624009d source compiles exit0. TCMB reference remains separate. Runtime acceptance NOT_RUN."
+        },
+        {
+          "id": "FIN-S17",
+          "finding": "F-014",
+          "title": "Açılış bakiyesinin dönemler arası devri ve FNS-D23 yorumunun kalanı",
+          "level": "K3",
+          "refs": [
+            "docs/decisions/SINAN_KARARLARI_2026-11-11_FINANS_F005.md FNS-D23 Sınırlar",
+            "docs/decisions/ACIK_KARARLAR.md OPEN-018",
+            "Issue #66 yorum 6882315732 (SINAN-CEVAP 14)"
+          ],
+          "depends_on": [
+            "FIN-S9"
+          ],
+          "files_hint": [],
+          "contracts": [],
+          "status": "DONE",
+          "blocked_reason": "",
+          "wave": 8,
+          "decision_note": "NS-15 (Issue #66 yorum 6882315732 (SINAN-CEVAP 14)): Dönem kapanışı onaylanınca yeni dönem açılış/devir fişi üretilir; kapanış geri alınırsa ters kayıtla iptal. Finance STOP sınırları geçerli.",
+          "w6_report": "durum/W6_finans.md",
+          "w8_source_commit": "5edcd80b09aa6a1b11fac33e558ba6d658c978a1",
+          "w8_report": "durum/W8_finans.md",
+          "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "FNS-SC32",
+          "title": "Bakiye devir fişi portu (KLN-D76/D77), teminat as-of iş günü (FNS-D71), izinler (FNS-D72)",
+          "status": "DONE",
+          "w6_report": "durum/W6_finans.md",
+          "w6_note": "DOGRULA: Türkiye iş günü ve teminat izin kayıtları kaynakta var; gerçek Settings teminat kataloğu ve bakiye devir fişinin port/komut/ekranı eksik.",
+          "wave": 8,
+          "blocked_reason": "",
+          "w8_source_commit": "5ee3b2d05768150805f20d343fad144c0afd2dcc",
+          "w8_report": "durum/W8_finans.md",
+          "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "FIN-SC36",
+          "title": "Finans karar paketi (FNS-D81/D82/D87/D89/D90, KLN-D102/D104)",
+          "level": "K3",
+          "refs": [
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK18.md",
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK19.md",
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK20.md",
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK21.md"
+          ],
+          "depends_on": [],
+          "files_hint": [
+            "src/backend/Modules/Finance/**",
+            "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [],
+          "finding": "SC36-SC47 kararları",
+          "status": "DONE",
+          "wave": 8,
+          "w5_raporu": "durum/W5_finans.md",
+          "w6_report": "durum/W6_finans.md",
+          "w7_result": "FNS-D102 gerçek iç defter ve Serializable aynı işlem bakiye koruması, MARS/borrowed transaction/audit rollback kaynakları yazıldı. Paketin kalan FNS-D89/D90 ve KLN-D102/D104 bağları bu işte tamamlanmadı; tüm test koşumları NOT_RUN.",
+          "w7_report": "durum/W7_finans.md",
+          "blocked_reason": "",
+          "w8_source_commit": "a4a747383111efa48060937637cf887e9022d1ff",
+          "w8_report": "durum/W8_finans.md",
+          "w8_validation": "Owner source builds exit 0; final combined wave build pending. Runtime/SQL/browser/CI NOT_RUN."
+        },
+        {
+          "id": "FIN-SC47-KREDI",
+          "title": "Finans kredi alt alanı iskeleti (kredi hesabı, plan içe aktarma+doğrulama, limit uyarısı, maker-checker, fiş önerisi)",
+          "level": "K3",
+          "refs": [
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK21.md",
+            "<calisma-alani>/koordinasyon/hazirlik/w5karar/EK22.md"
+          ],
+          "depends_on": [],
+          "files_hint": [
+            "src/backend/Modules/Finance/**/Credit*",
+            "src/backend/Modules/Finance/**/Migrations/*Credit*",
+            "src/backend/GoymenERP.Api/Endpoints/FinanceEndpoints*.cs",
+            "contracts/openapi/goymen-erp-v1.json (openapi-regenerate)",
+            "recovery/release pin (recovery-inventory-repin)"
+          ],
+          "contracts": [],
+          "finding": "SC36-SC47 kararları",
+          "status": "DONE",
+          "wave": 5,
+          "w5_raporu": "durum/W5_finans.md",
+          "w6_report": "durum/W6_finans.md",
+          "blocked_reason": "",
+          "w8_report": "durum/W8_DORT_DILIM_KAYNAK_KAPANISI.md",
+          "w8_source_note": "5485ec8e5 actual approved credit component mapping/source selection + credit-specific different Accounting checker.34624009d narrows fixture nullable proof; combined API/Accounting/Integration/TSC compiles exit0. No interest/tax/FX calculation or grant/activation; runtime acceptance NOT_RUN."
+        }
+      ],
+      "remaining_not_started": 0
     }
-   ],
-   "remaining_not_started": 0
-  }
- ]
+  ]
 }
