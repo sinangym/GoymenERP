@@ -2,7 +2,7 @@
  "meta": {
   "tarih": "2026-11-18",
   "tren_dali": "claude/tren-1",
-  "kod_head": "25b7477b0e93de39ac8d5de08f508a69fb2eb996",
+  "kod_head": "54bec41070da4f8c2e42c5e40c64d847094df8e4",
   "durum_sozlugu": {
    "PARTIAL": "kapsamın bir kısmı kaynakta; kalan kısım son W<n> ekip raporunda",
    "PLANNED/READY": "başlanmadı",
@@ -49,7 +49,7 @@
   "partial": 0,
   "remaining_not_started": 0,
   "last_wave": 8,
-  "progress_meaning": "174/174 kaynak DONE (%100), W8 son paket. Yerel modül grubu 13325/13325, mimari 405/405, frontend 9854/9854 ve OpenAPI 10/10 PASS; gerçek SQL, browser, final CI ve bağımsız K3 kabulü ayrıdır. Production değildir.",
+  "progress_meaning": "174/174 kaynak DONE (%100), W8 son paket. Yerel tam modül 13325/13325, tam frontend 9854/9854, önceki tam mimari 405/405; son hedef 69/69 ve Cari 378/378 PASS. Güncel gerçek SQL/browser/final CI ve bağımsız K3 kabulü ayrıdır. Production değildir.",
   "w6_source_done_ids": [
    "KIM-S13",
    "KIM-S18",
@@ -281,8 +281,8 @@
    "STK-S3",
    "STK-SC36-a"
   ],
-  "published_train_done_at_last_checkpoint": 135,
-  "w8_status": "SOURCE_DONE_LOCAL_SUITE_PASS_CI_PREFLIGHT_FIX_SECURITY_UPSTREAM_BLOCKER_K3_PENDING",
+  "published_train_done_at_last_checkpoint": 174,
+  "w8_status": "SOURCE_DONE_174_CI_REPAIRS_LOCAL_VALIDATED_FINAL_CI_K3_PENDING_SECURITY_UPSTREAM_BLOCKER",
   "w8_last_combined_source_build": {
    "head": "146f1ec79a30ca9a55d5fa78b119abc13e4bec75",
    "source_exit": 0,
@@ -341,14 +341,15 @@
     ]
    },
    "final_recovery_producer": {
-    "head": "321201b2b07d603b72ca3cd4e2e9f3cf41591e91",
+    "head": "54bec41070da4f8c2e42c5e40c64d847094df8e4",
     "native_exit": 0,
     "db_contexts": 19,
-    "migrations": 339,
+    "migrations": 340,
     "durable_stores": 66,
-    "source_files": 3116,
-    "risky_source_files": 1459,
-    "risky_sha256": "e64d43adbbd335ce7c60db5f39fb1359b837d0f4c5e1c8237e7f619fc759cd19"
+    "source_files": 3119,
+    "risky_source_files": 1461,
+    "risky_sha256": "9af854faccd37fccca382a68dd8d6316d4d00824fbd438ec91b3784243ac9854",
+    "backend_source_sha256": "289924152475593651da46416b55619b1de7480c472a580cd63d0a7800ef86b5"
    },
    "architecture_first": {
     "head": "380901177",
@@ -373,11 +374,17 @@
    "ci": {
     "pr": 1201,
     "first_head": "e838ca9079eda6c52d0d31cd909e8541f121f976",
-    "run": 44237822849,
-    "status": "FIRST_PREFLIGHT_FAILED_FIX_PENDING",
-    "security": "UPSTREAM_BLOCKER_GHSA-fc5q-39xc-vjpf_PATCHED_NONE"
+    "run": 44238350645,
+    "status": "FAILED_API_FIXTURES_OPENAPI_ORDER_SQL_STARTUP_REPAIRED_LOCALLY_NEW_CI_PENDING",
+    "security": "UPSTREAM_BLOCKER_GHSA-fc5q-39xc-vjpf_PATCHED_NONE",
+    "last_published_head": "94e0e88e98ca3374cb3149d943a9d4e9db5d6bd7",
+    "recovery_inventory": "PASS",
+    "release_manifest": "PASS",
+    "modules": "PASS",
+    "architecture": "PASS",
+    "frontend_shards": "4_OF_4_PASS"
    },
-   "independent_K3": "QUEUED",
+   "independent_K3": "PENDING_EXTERNAL_EXACT_HEAD_REVIEWS",
    "report": "durum/W8_RUNTIME_KAPANIS_DURUMU.md",
    "architecture_final": {
     "head": "25b7477b0e93de39ac8d5de08f508a69fb2eb996",
@@ -389,18 +396,51 @@
     "proof": "artifacts/local-final-25b7477b0/proofs/architecture.json"
    },
    "openapi_final": {
-    "head": "25b7477b0e93de39ac8d5de08f508a69fb2eb996",
+    "head": "edf25498d0d39915ab1ffcb5b3c68ec1e1468697",
     "build_exit": 0,
     "drift_exit": 0,
-    "tests": 10,
-    "passed": 10,
+    "tests": 11,
+    "passed": 11,
     "failed": 0,
     "skipped": 0,
     "native_exit": 0,
-    "sha256": "432c013a9dd5b992d91536c89aca1ab8805563524dc1b9cb5238a84bbb71056a",
-    "bytes": 9746060
-   }
-  }
+    "sha256": "091cc64a9e71f90ddc12b7c2ab9784b3f22fd8e181234f7f7b50603dc30dec04",
+    "bytes": 9746060,
+    "note": "Included in native 69-target root run; production V3/V31 ordinal serialization and culture regression test."
+   },
+   "closing_targets": {
+    "head": "edf25498d0d39915ab1ffcb5b3c68ec1e1468697",
+    "build_exit": 0,
+    "warnings": 0,
+    "errors": 0,
+    "tests": 69,
+    "passed": 69,
+    "failed": 0,
+    "skipped": 0,
+    "native_exit": 0
+   },
+   "cari_c006": {
+    "head": "54bec41070da4f8c2e42c5e40c64d847094df8e4",
+    "restore_exit": 0,
+    "tests": 378,
+    "passed": 378,
+    "failed": 0,
+    "skipped": 0,
+    "native_exit": 0,
+    "note": "Windows native full test suite; real browser acceptance separate."
+   },
+   "sales_repair_persistence": {
+    "head": "c8566503a8e031be073d18d5813b7ac2a72e3bbd",
+    "tests": 128,
+    "passed": 128,
+    "failed": 0,
+    "skipped": 0,
+    "native_exit": 0,
+    "real_sql": "NOT_RUN_LOCAL"
+   },
+   "review_prompt": "K3_BAGIMSIZ_INCELEME_ISTEMI.md"
+  },
+  "published_train_head_at_last_checkpoint": "94e0e88e98ca3374cb3149d943a9d4e9db5d6bd7"
  },
  "teams": [
   {

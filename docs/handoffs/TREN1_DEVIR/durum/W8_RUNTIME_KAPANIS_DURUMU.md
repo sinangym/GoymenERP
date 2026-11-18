@@ -146,3 +146,18 @@ SQL468 collation hatası görüldü: ActorId BIN2, CancelledBy DB-default.
 İki operandı aynı açık binary collation ile karşılaştıran bootstrap repair ve
 uygulanmış geliştirme DB'leri için forward migration hazırlanır. Yeni politika
 seçilmez; CompanyId/sürüm/tarih ve exact actor kimliği şartları korunur.
+
+## İlk CI düzeltmelerinin yerel kapanışı
+
+Kaynak `54bec41070da4f8c2e42c5e40c64d847094df8e4`; sabit 174/174 kaynak DONE (%100), W8 son paket. Önceki başarısız koşumlar korunur.
+
+- Birleşik Integration Release build `edf25498d`: 0 hata/0 uyarı, exit0. OpenAPI, Accounting lineage, future-supply HTTP, Counterparty ve Manufacturing değişen fixture hedefleri **69/69 PASS, 0 FAIL, 0 skip**, native exit0. Gerçek scoped DbContext şirket filtresi korunur; mutable double yalnız drift enjeksiyonundadır.
+- Tam Cari C006 Windows native koşumu `54bec4107`: restore0; **378/378 PASS, 0 FAIL, 0 skip**, test exit0. Bu test paketi gerçek tarayıcı kabulünün yerine geçmez.
+- Sales repair persistence agent koşumu: **128/128 PASS, 0 FAIL, 0 skip**, Release build0. Gerçek SQL yerelde NOT_CONFIGURED/NOT_RUN; yeni CI sonucu gereklidir.
+- OpenAPI 11/11 PASS bu 69 hedef içindedir. Gerçek belge 9.746.060 byte, 826 operasyon/1721 schema; SHA256 `091cc64a9e71f90ddc12b7c2ab9784b3f22fd8e181234f7f7b50603dc30dec04`. Schema serialization V3/V31 için ordinal ve kültür bağımsızdır; JSON iş değerleri değişmez. Önceki agent birleşik 12 koşumunda Accounting fixture hatasıyla exit1 korunur; root69 tekrarı bu fixture'ı ayrıca doğrular.
+- Sales actor karşılaştırmasının iki tarafı açık BIN2 olur. EF üretimli `20261118050006_RepairSalesOfficialInvoiceCancellationActorCollation` Up/Down güvenli ALTER trigger'ı tekrar uygular; veri/model/snapshot değişimi ve yeni THROW yoktur. K3 review bekler. Toplam340 migration, main'e göre177 yeni migration; 313 toplam/199 yeni THROW ve118 yeni izin kaydı değişmedi.
+- Gerçek recovery üreticisi `54bec4107`: exit0,19 context/340 migration/66 durable store; kaynak3119, riskli1461, riskli SHA `9af854faccd37fccca382a68dd8d6316d4d00824fbd438ec91b3784243ac9854`. İlk CRLF dosya-byte ve ardından index-stat nedeniyle temiz-worktree kontrolü exit2 tekrarları korunur. Çalışan üretici committed blob ile byte eşitlenip aynı içerik Git index'i yenilendikten sonra yeni boş kanıt dizininde gerçek exit0 alındı; filtre/üretici kapısı gevşetilmedi.
+- Güncel hafif kontroller: iki validator0; backlog64/64; bootstrap56 test/9 mevcut Windows koşullu skip; backend-group28/28; RCSI48/48; OpenAPI-drift16 test/2 mevcut koşullu skip; hepsi native0. Windows Faz0 safe-summary64/64,skip0. Tam recovery36/release16 önceki donuk kaynağa aittir; güncel340 exact-source CI kanıtı ayrıca beklenir.
+- Yayındaki `94e0e88e` CI `44238350645` artık tamamlandı: recovery exact-source ve release manifest PASS; modül/mimari/API-1/dört frontend shard PASS. Diğer API/SQL/OpenAPI ve güvenlik hataları önceki bölümdeki gibi FAIL'dir. Yerel düzeltmeler henüz bu CI head'inde yoktur; yeni normal FF yayını yeni koşumu başlatacaktır.
+
+İki bağımsız tam exact-head K3 incelemesi için tek istem: [K3 bağımsız inceleme istemi](../K3_BAGIMSIZ_INCELEME_ISTEMI.md). Review/CI/SQL/browser açıkken genel kabul veya production tamamlandı denmez. Upstream Picomatch güvenlik engeli korunur; audit kapısı gevşetilmez.
