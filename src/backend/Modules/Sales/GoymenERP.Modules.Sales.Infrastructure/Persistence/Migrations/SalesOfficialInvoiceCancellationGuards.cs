@@ -180,7 +180,7 @@ internal static class SalesOfficialInvoiceCancellationGuards
                             OR NOT EXISTS (SELECT 1 FROM [sales].[OfficialInvoiceCancellations] c
                                 WHERE c.[CompanyId] = i.[CompanyId] AND c.[NormalInvoiceId] = i.[Id] AND c.[Kind] = 1
                                   AND c.[FinalizedVersion] = d.[Version] AND c.[InvoiceVersion] = i.[Version]
-                                  AND c.[ActorId] = i.[CancelledBy] AND c.[RecordedAtUtc] = i.[CancelledAtUtc]
+                                  AND c.[ActorId] COLLATE Latin1_General_100_BIN2 = i.[CancelledBy] COLLATE Latin1_General_100_BIN2 AND c.[RecordedAtUtc] = i.[CancelledAtUtc]
                                   AND JSON_VALUE(c.[ViewJson], '$.reason') = i.[CancellationReason])))
                         THROW 51223, 'A finalized invoice only moves to officially cancelled with its immutable exact cancellation fact.', 1;
                     IF EXISTS (SELECT 1 FROM inserted i JOIN deleted d ON i.[CompanyId] = d.[CompanyId] AND i.[Id] = d.[Id]
