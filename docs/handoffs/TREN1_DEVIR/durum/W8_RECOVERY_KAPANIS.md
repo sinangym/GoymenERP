@@ -56,3 +56,31 @@ contract evidence dosyaları risky kümeye katıldığı için gerçek count **1
 `50213dd8efedb28fa55eac6425dcce8e3cd2c384e09ee28731ed5773038a1b6f` oldu. Diğer
 declaration/Audit/method/live-blob pinlerinde drift yoktur. Bu değer sonraki temiz
 producer denemesi için hizalandı; helper sonucu durable discovery'nin geçtiği anlamına gelmez.
+
+## Gerçek key discovery devamı
+
+- Temiz `8ce76bd90` gerçek generator native **exit 2**:
+  `Durable idempotency-key table surface drifted.` İlk hata kaydı korunur.
+- Aynı gerçek discovery fonksiyonu 42 kayıtlı key tablosuna karşı 49 gerçek tablo
+  buldu. Yedi ek tablo da gerçek PK veya unique indekste `IdempotencyKeyHash` taşır;
+  hiçbiri metadata-only dışlamasına alınmadı. İncelenen source zinciri:
+
+| Fiziksel tablo | Gerçek operative writer / replay kanıtı |
+|---|---|
+| documents.DocumentBrandingAttempts | DocumentBrandingService.ExecuteAsync; ayrı terminal kaydı da aynı full-blob pinindedir. Company/actor/request hash ve özgün ResultJson replay'i. |
+| logistics.TransferDepartureAttempts | LogisticsTransferDepartureOwner.OwnedAsync; şirket/transfer/actor/hash, özgün cevap ve aynı Serializable owner transaction. |
+| organization.CompanyOpeningExecutions | OrganizationCompanyOpeningV1.OpenAsync; açık group-operation authority, hedef company+actor+request hash ve immutable ResponseJson. Global key genel company bypass'ı değildir. |
+| product.PaintMembershipAttempts | ProductPaintMembershipService.ExecuteAsync; actor/company/request hash, özgün başarı/ret cevabı ve Audit ile aynı işlem. |
+| purchasing.IncomingInvoiceAttempts | PurchasingStore.AddInvoiceAttempt; FindIncomingInvoiceAttemptAsync actor/company/request hash ile özgün snapshot/refusal'ı çözer. |
+| purchasing.InvoiceImportReservations | PurchasingStore.ReserveAsync; gerçek unique company/key, özgün actor ve ayrılmış kimlik replay'i. Payload'sız kimlik ayırma olması metadata-only olduğu anlamına gelmez. |
+| sales.SubcontractInvoiceCommandAttempts | SalesStore.UpdateLifecycleCoreAsync; özgün lifecycle sequence üzerinden exact cevap, actor/company/hash ve immutable terminal ret kaydı. |
+
+Her kayıt gerçek owner mapping, migration, operative write token ve exact method/blob
+hash'iyle bağlanır; validator kuralları değişmedi. Kayıtlı durable-store sayısı bu dar
+devamda 64'tür; tam discovery geçmeden nihai gerçek toplam diye sunulmaz.
+
+Organization'ın mevcut CompanySetupOutboxMessages kaydı için W7'de bırakılan
+“producer yok” notu artık kaynağa uymuyordu: OpenAsync aynı işlemde gerçek enqueue
+yapar. Mevcut spec'e bu writer ve exact hash bağı eklendi; eski gap testi gerçek
+writer'ın zorunlu olduğu kaynak assertion'ına hizalandı. Bu source doğrulaması
+production veya dispatcher aktivasyonu değildir; K3 pending durumu korunur.

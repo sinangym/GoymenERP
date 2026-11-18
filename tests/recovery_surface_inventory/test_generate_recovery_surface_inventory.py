@@ -37,6 +37,13 @@ MODULE_SPEC.loader.exec_module(generator)
 
 
 EXPECTED_STORES = {
+    ('documents', 'DocumentBrandingAttempts'): ('DocumentBrandingAttemptRow', 'idempotency', 'DocumentsDbContext'),
+    ('logistics', 'TransferDepartureAttempts'): ('TransferDepartureAttemptRow', 'idempotency', 'LogisticsDbContext'),
+    ('organization', 'CompanyOpeningExecutions'): ('CompanyOpeningExecution', 'idempotency', 'OrganizationDbContext'),
+    ('product', 'PaintMembershipAttempts'): ('ProductPaintMembershipAttemptRow', 'idempotency', 'ProductPriceListDbContext'),
+    ('purchasing', 'IncomingInvoiceAttempts'): ('PurchaseIncomingInvoiceAttemptRow', 'idempotency', 'PurchasingDbContext'),
+    ('purchasing', 'InvoiceImportReservations'): ('PurchaseInvoiceImportReservationRow', 'idempotency', 'PurchasingDbContext'),
+    ('sales', 'SubcontractInvoiceCommandAttempts'): ('SubcontractInvoiceCommandAttemptRow', 'idempotency', 'SalesDbContext'),
     ("finance", "OutboxMessages"): ("FinanceOutboxRow", "outbox", "FinanceDbContext"),
     ("accounting", "Commands"): ("AccountingCommandRow", "idempotency", "AccountingDbContext"),
     ("accounting", "SourceDocumentAdmissions"): (
@@ -494,7 +501,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
 
     def test_current_source_inventory_is_exact_and_schema_valid(self) -> None:
         self.assertEqual(
-            {"dbContexts": 19, "migrations": 339, "durableStores": 57},
+            {"dbContexts": 19, "migrations": 339, "durableStores": 64},
             self.inventory["counts"],
         )
         actual = {
@@ -504,17 +511,17 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
             for store in self.inventory["durableStores"]
         }
         self.assertEqual(EXPECTED_STORES, actual)
-        self.assertEqual(57, len(actual))
+        self.assertEqual(64, len(actual))
         self.assertEqual(self.inventory, generator.build_inventory(REPOSITORY_ROOT, SOURCE_COMMIT))
         generator.validate_inventory(REPOSITORY_ROOT, self.inventory)
 
-    def test_store_evidence_preserves_the_explicit_company_setup_producer_gap(self) -> None:
+    def test_store_evidence_binds_the_actual_company_setup_producers(self) -> None:
         specs_by_id = {spec.identifier: spec for spec in generator.DURABLE_STORE_SPECS}
-        self.assertEqual(57, len(specs_by_id))
-        # The physical table must survive recovery inventory even before its command exists.
-        # This exact source gap is not a writer, an activation, or general permission to omit writers.
+        self.assertEqual(64, len(specs_by_id))
+        # W8 OpenAsync now actually enqueues the existing company-opened outbox in its owner transaction.
+        # Every inventoried durable store must retain real operative writer evidence; none is inferred.
         self.assertEqual(
-            {"organization.company-setup-outbox"},
+            set(),
             {spec.identifier for spec in specs_by_id.values() if not any(item.live_code for item in spec.evidence)},
         )
         for record in self.inventory["durableStores"]:
@@ -538,8 +545,10 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
                 record["id"],
             )
             if record["id"] == "organization.company-setup-outbox":
-                self.assertFalse(any(item.live_code for item in spec.evidence))
-                self.assertFalse(any(identifier == spec.identifier for identifier, _ in generator.WRITER_METHOD_SCOPES))
+                self.assertTrue(any(item.live_code for item in spec.evidence))
+                self.assertEqual("OpenAsync", generator.WRITER_METHOD_SCOPES[(spec.identifier,
+                    "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanyOpeningV1.cs")])
+                self.assertIn("database.CompanySetupOutboxMessages.Add(new(", tokens)
                 self.assertIn("database.CompanySetupOutboxMessages.AsNoTracking()", tokens)
                 self.assertEqual(("organization", "CompanySetupOutboxMessages"), (record["schema"], record["table"]))
             else:
