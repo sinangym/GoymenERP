@@ -25,3 +25,11 @@ Yeni dilim, dalga veya işletme politikası açılmadı.
 entegrasyon sahibinin ağır işlem sırası bekleniyor. İşletme tutarı/izin/grant/rol,
 migration/model, production, OPEN durumu ve Finance STOP değiştirilmedi.
 Bu rapor yazar desteğidir; bağımsız exact-head/K3 incelemesi değildir.
+
+## Transfer kabul belgesi constructor açıklığı
+
+`InventoryTransferReceiptDocuments` içindeki altı target-typed constructor, mevcut SDK
+ve metod/alan semantik türleri açık yazılarak korunur: `JsonSerializerOptions`, liste
+DTO'su, iki sonuç DTO'su, `Scope` ve `InventoryTransferException`. Argümanlar, koşullar,
+çağrı sırası ve hata davranışı değişmedi. Bunlar DbContext kuruluşu değildir; yanlış
+constructor izin listesi eklenmedi. Derleme/test yine NOT_RUN; `git diff --check` exit 0.
