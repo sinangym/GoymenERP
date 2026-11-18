@@ -477,8 +477,11 @@ public sealed class CounterpartyDbContext(
             table.HasCheckConstraint("CK_PartyIdentityRevisions_Sequence", "[Sequence] >= 1");
             table.HasCheckConstraint(
                 "CK_PartyIdentityRevisions_Value",
-                "LEN([Value]) > 0 AND ([Attribute] <> 1 OR ("
-                + TaxIdentityNumberFormatSql("Value", nullable: false) + "))");
+                // Value also holds Turkish legal names, so it stays nvarchar. ASCII digits
+                // occupy two bytes here; the ordinary party number columns remain varchar.
+                "LEN([Value]) > 0 AND ([Attribute] <> 1 OR (LEN([Value]) IN (10, 11)"
+                + " AND DATALENGTH([Value]) = 2 * LEN([Value])"
+                + " AND [Value] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9]%'))");
             // A baseline or a first entry stands for "since always"; a correction or a dated change carries its date.
             table.HasCheckConstraint(
                 "CK_PartyIdentityRevisions_EffectiveFrom",

@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
+using GoymenERP.Modules.Counterparty.Domain.Parties;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Seeding;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
@@ -83,6 +84,21 @@ public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
             Assert.Equal("2", view.GetProperty("version").GetString());
             Assert.Empty(view.GetProperty("duplicates").EnumerateArray());
         }
+
+        // The history Value column stays nvarchar for legal names: valid VKN digits
+        // occupy 20 bytes, not 10. The old varchar byte-length check rejected this save.
+        Assert.Equal(20, await test.ScalarAsync<int>(
+            "SELECT DATALENGTH([Value]) FROM [counterparty].[PartyIdentityRevisions] WHERE [PartyId]=@Party AND [Attribute]=1;", first));
+        Assert.Equal(10, await test.ScalarAsync<int>(
+            "SELECT LEN([Value]) FROM [counterparty].[PartyIdentityRevisions] WHERE [PartyId]=@Party AND [Attribute]=1;", first));
+        foreach (var invalidHistoryValue in new[] { "123456789", "123456789012", "1234567890 ", " 1234567890", "12345 7890", "１２３４５６７８９０", "١٢٣٤٥٦٧٨٩٠" })
+        {
+            var invalid = await Assert.ThrowsAsync<SqlException>(() =>
+                test.InsertTaxIdentityRevisionAsync(first, invalidHistoryValue));
+            Assert.Equal(547, invalid.Number);
+        }
+        Assert.Equal(1, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [counterparty].[PartyIdentityRevisions] WHERE [PartyId]=@Party AND [Attribute]=1;", first));
 
         // The warning before saving the same number on the second card…
         var check = await CheckDuplicatesAsync(maker, second, Vkn);
@@ -608,6 +624,25 @@ public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
             await connection.OpenAsync();
             await using var command = CreateCommand(connection, sql, party, eventType, commandName);
             return Assert.IsType<T>(await command.ExecuteScalarAsync());
+        }
+
+        public async Task InsertTaxIdentityRevisionAsync(Guid party, string value)
+        {
+            await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO [counterparty].[PartyIdentityRevisions]
+                    ([Id], [PartyId], [Attribute], [Sequence], [Value], [EffectiveFrom], [Kind], [Reason],
+                     [SourceChangeRequestId], [RecordedByUserId], [RecordedInCompanyId], [RecordedAtUtc])
+                VALUES
+                    (NEWID(), @Party, 1, 6000, @Value, NULL, 2, NULL,
+                     NULL, N'sql-identity-value-regression', @Company, SYSDATETIMEOFFSET());
+                """;
+            command.Parameters.AddWithValue("@Party", party);
+            command.Parameters.AddWithValue("@Company", TestCompanyIds.CompanyA);
+            command.Parameters.Add(new SqlParameter("@Value", System.Data.SqlDbType.NVarChar, PartyIdentityRevision.ValueMaximumLength) { Value = value });
+            await command.ExecuteNonQueryAsync();
         }
 
         public async Task ExecuteAsync(string sql, Guid party)

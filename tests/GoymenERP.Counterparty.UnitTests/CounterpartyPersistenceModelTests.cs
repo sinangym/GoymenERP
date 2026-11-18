@@ -839,8 +839,16 @@ public sealed class CounterpartyPersistenceModelTests
         var correction = Assert.Single(revision.GetCheckConstraints(), check => check.Name == "CK_PartyIdentityRevisions_Correction");
         Assert.Contains("[Kind] = 3 AND [Attribute] = 1 AND [SourceChangeRequestId] IS NOT NULL", correction.Sql, StringComparison.Ordinal);
         Assert.Contains("[Kind] <> 3 AND [SourceChangeRequestId] IS NULL", correction.Sql, StringComparison.Ordinal);
+        var valueProperty = revision.FindProperty(nameof(PartyIdentityRevision.Value))!;
+        Assert.Equal($"nvarchar({PartyIdentityRevision.ValueMaximumLength})", valueProperty.GetColumnType());
         var value = Assert.Single(revision.GetCheckConstraints(), check => check.Name == "CK_PartyIdentityRevisions_Value");
-        Assert.Contains("NOT LIKE '%[^0-9]%'", value.Sql, StringComparison.Ordinal);
+        Assert.Contains("[Attribute] <> 1 OR (LEN([Value]) IN (10, 11)", value.Sql, StringComparison.Ordinal);
+        Assert.Contains("DATALENGTH([Value]) = 2 * LEN([Value])", value.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("DATALENGTH([Value]) = LEN([Value])", value.Sql, StringComparison.Ordinal);
+        Assert.Contains("[Value] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9]%'", value.Sql, StringComparison.Ordinal);
+        var partyValue = Assert.Single(model.FindEntityType(typeof(Party))!.GetCheckConstraints(),
+            check => check.Name == "CK_Parties_TaxIdentityNumber");
+        Assert.Contains("DATALENGTH([TaxIdentityNumber]) = LEN([TaxIdentityNumber])", partyValue.Sql, StringComparison.Ordinal);
         Assert.All(revision.GetForeignKeys(), foreignKey => Assert.Equal(DeleteBehavior.Restrict, foreignKey.DeleteBehavior));
         Assert.Contains(revision.GetForeignKeys(),
             foreignKey => foreignKey.PrincipalEntityType.ClrType == typeof(PartyTaxIdentityChangeRequest));
