@@ -219,8 +219,8 @@ public sealed partial class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesContracts", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddShipmentRiskExceptionUsages", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSubcontractServiceInvoices", StringComparison.Ordinal));
-        Assert.Equal(new[] { "AddSalesOutboxCommittedCursor", "AddSalesMarginCostSnapshots", "AddSubcontractInvoiceLifecycle", "AddSubcontractInvoiceClaimRange", "AddSubcontractInvoiceReplaySequence", "AddSalesOfficialInvoiceCancellation" },
-            context.Database.GetMigrations().TakeLast(6).Select(name => name[(name.IndexOf('_') + 1)..]));
+        Assert.Equal(new[] { "AddSalesOutboxCommittedCursor", "AddSalesMarginCostSnapshots", "AddSubcontractInvoiceLifecycle", "AddSubcontractInvoiceClaimRange", "AddSubcontractInvoiceReplaySequence", "AddSalesOfficialInvoiceCancellation", "RepairSalesOfficialInvoiceCancellationActorCollation" },
+            context.Database.GetMigrations().TakeLast(7).Select(name => name[(name.IndexOf('_') + 1)..]));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

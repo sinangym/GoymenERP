@@ -52,6 +52,11 @@ public sealed partial class SalesInvoiceSqlServerRelationalAcceptanceTests
         await using var run=await Run.StartAsync();var actor="aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
         var invoice=await FinalizedAsync(run,"official-cancel","SENTETIK-OC-1",Guid.NewGuid().ToString("D"),"SENTETIK-checker",actor);
         var original=await run.ScalarAsync<string>("SELECT PlanJson FROM sales.InvoiceFinalizations WHERE InvoiceId=@id",("@id",invoice.Id));
+        // The generated forward repair and its Down both reapply the corrected trigger with live finalization rows intact.
+        var repair = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.RepairSalesOfficialInvoiceCancellationActorCollation();
+        foreach (var operation in repair.UpOperations.Concat(repair.DownOperations))
+            await run.ExecuteAsync(Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(operation).Sql);
+        Assert.Equal(original, await run.ScalarAsync<string>("SELECT PlanJson FROM sales.InvoiceFinalizations WHERE InvoiceId=@id", ("@id", invoice.Id)));
         // The exact actor must remain binary even when the legacy header uses the database collation.
         // Real INSERT + UPDATE exercise the installed trigger; rollback leaves the positive workflow untouched.
         var differentCaseActor = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync("""

@@ -27,6 +27,12 @@ public sealed partial class SalesPersistenceModelTests
         Assert.Contains("[OfficialInvoiceCancellationDeliveries]", first.Sql, StringComparison.Ordinal);
         Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
         Assert.Equal(3, migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>().Count());
+        var repair = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.RepairSalesOfficialInvoiceCancellationActorCollation();
+        var repairUp = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(Assert.Single(repair.UpOperations));
+        var repairDown = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(Assert.Single(repair.DownOperations));
+        Assert.Equal(invoiceGuard, repairUp.Sql);
+        Assert.Equal(invoiceGuard, repairDown.Sql); // Down retains the safe owner guard and never drops rows or schema.
+
     }
 
     [Fact]
