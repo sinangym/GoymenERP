@@ -85,13 +85,25 @@ public sealed class InventoryFutureAllocationContractTests
 
     [Theory]
     [InlineData("1", true)]
+    [InlineData("10", true)]
+    [InlineData("30", true)]
     [InlineData("9223372036854775807", true)]
     [InlineData("0", false)]
+    [InlineData("03", false)]
+    [InlineData("01", false)]
+    [InlineData("0001", false)]
     [InlineData("-1", false)]
     [InlineData("+1", false)]
     [InlineData("01a", false)]
+    [InlineData("\u0661", false)]
+    [InlineData("\uFF11", false)]
+    [InlineData(" 1", false)]
+    [InlineData("1 ", false)]
+    [InlineData("1\t", false)]
     [InlineData("9223372036854775808", false)]
-    public void An_expected_version_is_a_canonical_positive_int64(string text, bool accepted)
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void An_expected_version_is_a_canonical_positive_int64(string? text, bool accepted)
     {
         Assert.Equal(accepted, InventoryFutureAllocationTextV1.TryVersion(text, out _));
     }

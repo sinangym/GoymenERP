@@ -482,7 +482,7 @@ public static class InventoryFutureAllocationTextV1
     public static bool TryVersion(string? value, out long version)
     {
         version = 0;
-        return !string.IsNullOrEmpty(value) && value.All(char.IsAsciiDigit)
+        return !string.IsNullOrEmpty(value) && value[0] != '0' && value.All(char.IsAsciiDigit)
             && long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out version) && version > 0;
     }
 
