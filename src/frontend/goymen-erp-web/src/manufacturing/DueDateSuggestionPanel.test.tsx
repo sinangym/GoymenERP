@@ -126,7 +126,7 @@ describe('F-010b termin suggestion (URT-S10)', () => {
     await openTerminForm(user)
     await user.click(screen.getByRole('button', { name: DUE_DATE_SUGGESTION_TEXT.request }))
 
-    expect(await screen.findByText('Beklenmeyen yanıt')).toBeTruthy()
+    expect(await screen.findByText(`Beklenmeyen yanıt — ${DUE_DATE_SUGGESTION_TEXT.subject}`)).toBeTruthy()
     expect(screen.queryByRole('button', { name: DUE_DATE_SUGGESTION_TEXT.use })).toBeNull()
   })
 
@@ -145,7 +145,7 @@ describe('F-010b termin suggestion (URT-S10)', () => {
     await openTerminForm(user)
     await user.click(screen.getByRole('button', { name: DUE_DATE_SUGGESTION_TEXT.request }))
 
-    expect(await screen.findByText('Servis geçici olarak kullanılamıyor')).toBeTruthy()
+    expect(await screen.findByText(`Servis geçici olarak kullanılamıyor — ${DUE_DATE_SUGGESTION_TEXT.subject}`)).toBeTruthy()
     await user.click(screen.getByRole('button', { name: /tekrar dene/i }))
 
     expect((await screen.findByTestId('due-date-suggestion-day')).textContent).toContain('2026-09-22')
@@ -163,6 +163,6 @@ describe('F-010b termin suggestion (URT-S10)', () => {
     await openTerminForm(user)
     await user.click(screen.getByRole('button', { name: DUE_DATE_SUGGESTION_TEXT.request }))
 
-    expect(await screen.findByText('Bulunamadı')).toBeTruthy()
+    expect(await screen.findByText(`Bulunamadı — ${DUE_DATE_SUGGESTION_TEXT.subject}`)).toBeTruthy()
   })
 })

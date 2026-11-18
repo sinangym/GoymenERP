@@ -125,7 +125,10 @@ describe('order lineage', () => {
     expect(within(intoTwo).getByTestId('lineage-share').textContent).toBe('1')
     expect(inputA.querySelector(`[data-lineage-output="${OUTPUT_1}"]`)).not.toBeNull()
     expect(within(forward).getByTestId('order-lineage-downstream').textContent).toContain(DOWNSTREAM_ORDER)
-    expect(within(panel).getByRole('tabpanel', { name: 'Geri iz', hidden: true }).hidden).toBe(true)
+    // A hidden panel has no accessible name; follow the named tab's actual controls association.
+    const backwardPanel = document.getElementById(backwardTab.getAttribute('aria-controls')!)
+    expect(backwardPanel?.getAttribute('role')).toBe('tabpanel')
+    expect(backwardPanel?.hidden).toBe(true)
   })
 
   it('shows the reason and no share while the shares are not calculated, and says when the list was cut', async () => {
