@@ -2,7 +2,7 @@
  "meta": {
   "tarih": "2026-11-18",
   "tren_dali": "claude/tren-1",
-  "kod_head": "54bec41070da4f8c2e42c5e40c64d847094df8e4",
+  "kod_head": "e35cd8cb4ecf502b0cb77cf81a334dd92077adff",
   "durum_sozlugu": {
    "PARTIAL": "kapsamın bir kısmı kaynakta; kalan kısım son W<n> ekip raporunda",
    "PLANNED/READY": "başlanmadı",
@@ -387,13 +387,13 @@
    "independent_K3": "PENDING_EXTERNAL_EXACT_HEAD_REVIEWS",
    "report": "durum/W8_RUNTIME_KAPANIS_DURUMU.md",
    "architecture_final": {
-    "head": "25b7477b0e93de39ac8d5de08f508a69fb2eb996",
+    "head": "fce8792f515bf8263e753dc2fb6b20b96d057288",
     "tests": 405,
     "passed": 405,
     "failed": 0,
     "skipped": 0,
     "native_exit": 0,
-    "proof": "artifacts/local-final-25b7477b0/proofs/architecture.json"
+    "proof": "artifacts/local-final-fce8792f5/proofs/architecture.json"
    },
    "openapi_final": {
     "head": "edf25498d0d39915ab1ffcb5b3c68ec1e1468697",
@@ -438,7 +438,24 @@
     "native_exit": 0,
     "real_sql": "NOT_RUN_LOCAL"
    },
-   "review_prompt": "K3_BAGIMSIZ_INCELEME_ISTEMI.md"
+   "review_prompt": "K3_BAGIMSIZ_INCELEME_ISTEMI.md",
+   "architecture_latest_first": {
+    "head": "c07255c4970ea3cbdae8f0a2f8b334b0b57f431f",
+    "tests": 405,
+    "passed": 404,
+    "failed": 1,
+    "skipped": 0,
+    "native_exit": 1,
+    "cause": "Windows CRLF raw-string fixture left the missing-package mutant unchanged; fixed with newline normalization and Assert.NotEqual guard."
+   },
+   "last_sql_fixture_build": {
+    "head": "e35cd8cb4ecf502b0cb77cf81a334dd92077adff",
+    "native_exit": 0,
+    "warnings": 0,
+    "errors": 0,
+    "seconds": 365.88,
+    "real_sql": "NOT_CONFIGURED_LOCAL_PENDING_CI"
+   }
   },
   "published_train_head_at_last_checkpoint": "94e0e88e98ca3374cb3149d943a9d4e9db5d6bd7"
  },

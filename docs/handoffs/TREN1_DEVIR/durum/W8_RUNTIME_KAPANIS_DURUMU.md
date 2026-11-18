@@ -161,3 +161,14 @@ Kaynak `54bec41070da4f8c2e42c5e40c64d847094df8e4`; sabit 174/174 kaynak DONE (%1
 - Yayındaki `94e0e88e` CI `44238350645` artık tamamlandı: recovery exact-source ve release manifest PASS; modül/mimari/API-1/dört frontend shard PASS. Diğer API/SQL/OpenAPI ve güvenlik hataları önceki bölümdeki gibi FAIL'dir. Yerel düzeltmeler henüz bu CI head'inde yoktur; yeni normal FF yayını yeni koşumu başlatacaktır.
 
 İki bağımsız tam exact-head K3 incelemesi için tek istem: [K3 bağımsız inceleme istemi](../K3_BAGIMSIZ_INCELEME_ISTEMI.md). Review/CI/SQL/browser açıkken genel kabul veya production tamamlandı denmez. Upstream Picomatch güvenlik engeli korunur; audit kapısı gevşetilmez.
+
+### Güncel tam mimari ve SQL fixture kapanışı
+
+- `c07255c4970ea3cbdae8f0a2f8b334b0b57f431f`: tam mimari405 testte404 PASS/1 FAIL/skip0, native1. Build-security negatif testinde CRLF raw-string nedeniyle paket silme mutantı unchanged kalıyordu. LF normalizasyonu ve her mutantın canonical'dan farklı olduğunu açıkça doğrulayan ek assert sorunu çözer; guard gevşetilmez. İlk TRX korunur.
+- `fce8792f515bf8263e753dc2fb6b20b96d057288`: mevcut tam grup doğrulayıcısı **405/405 PASS, 0 FAIL, 0 skip**, native0; proof `artifacts/local-final-fce8792f5/proofs/architecture.json`.
+- `e994d1df21207db654ee16a8a37395e0bfd1d032`: Organization SQL fixture eski Version13 yerine KIM-D48 staging gereği12 bekler; onay gelmeden gerçek şirket değeri/sürümü ilerlemez. İki eski history count4 yerine11 tam migration kimliği ve sıra doğrulanır. Counterparty Down testi ilk SQL'den önce mevcut client ile lazy host'u başlatır; bütün Down/rollback/constraint assertları korunur.
+- `47429c2a576bfa3d1c2c07291083ca5244cbc680`: iki mevcut SQL Run.StartAsync, initializer hata verdiğinde caller'a geçemeyen disposable factory'yi temizler; asıl exception ve stack yeniden fırlatılır. Önceki üç SQL shard'ında1377 doğrudan inotify IOException görüldü; dar cleanup'ın tamamını çözdüğü henüz kanıtlanmadı. Bu SQL fixture değişiklikleri yerelde SQL PASS sayılmaz; gerçek CI tekrarı gereklidir.
+
+Birleşik kaynak `e35cd8cb4ecf502b0cb77cf81a334dd92077adff`; yeni kaynak/migration/işletme politikası eklenmez, yalnız sabit W8 kabul hataları kapatılır. Eski başarısız kanıtlar korunur.
+
+Son birleşik SQL-fixture kaynağı `e35cd8cb4ecf502b0cb77cf81a334dd92077adff`: Integration Release build **exit0, 0 hata/0 uyarı**,365.88 saniye. Gerçek OpenAPI yeniden üretimi aynı `091cc64a9e71f90ddc12b7c2ab9784b3f22fd8e181234f7f7b50603dc30dec04` byte SHA değerini verdi. Bu derleme gerçek SQL koşumu değildir.

@@ -101,3 +101,12 @@ Sabit kapsam **174/174 DONE (%100 kaynak)**; W8 son pakettir, yeni dalga yoktur.
 `artifacts/local-final-e41360340/proofs/modules.json` ve
 `artifacts/local-final-25b7477b0/proofs/architecture.json` yerel native grup kanıtlarıdır;
 bunlar GitHub CI artifact'ı olarak sunulmaz. Grant/rol, production, OPEN veya Finance STOP değişmedi.
+
+### Güncel tam mimari ve SQL fixture kapanışı
+
+- `c07255c4970ea3cbdae8f0a2f8b334b0b57f431f`: tam mimari405 testte404 PASS/1 FAIL/skip0, native1. Build-security negatif testinde CRLF raw-string nedeniyle paket silme mutantı unchanged kalıyordu. LF normalizasyonu ve her mutantın canonical'dan farklı olduğunu açıkça doğrulayan ek assert sorunu çözer; guard gevşetilmez. İlk TRX korunur.
+- `fce8792f515bf8263e753dc2fb6b20b96d057288`: mevcut tam grup doğrulayıcısı **405/405 PASS, 0 FAIL, 0 skip**, native0; proof `artifacts/local-final-fce8792f5/proofs/architecture.json`.
+- `e994d1df21207db654ee16a8a37395e0bfd1d032`: Organization SQL fixture eski Version13 yerine KIM-D48 staging gereği12 bekler; onay gelmeden gerçek şirket değeri/sürümü ilerlemez. İki eski history count4 yerine11 tam migration kimliği ve sıra doğrulanır. Counterparty Down testi ilk SQL'den önce mevcut client ile lazy host'u başlatır; bütün Down/rollback/constraint assertları korunur.
+- `47429c2a576bfa3d1c2c07291083ca5244cbc680`: iki mevcut SQL Run.StartAsync, initializer hata verdiğinde caller'a geçemeyen disposable factory'yi temizler; asıl exception ve stack yeniden fırlatılır. Önceki üç SQL shard'ında1377 doğrudan inotify IOException görüldü; dar cleanup'ın tamamını çözdüğü henüz kanıtlanmadı. Bu SQL fixture değişiklikleri yerelde SQL PASS sayılmaz; gerçek CI tekrarı gereklidir.
+
+Birleşik kaynak `e35cd8cb4ecf502b0cb77cf81a334dd92077adff`; yeni kaynak/migration/işletme politikası eklenmez, yalnız sabit W8 kabul hataları kapatılır. Eski başarısız kanıtlar korunur.
