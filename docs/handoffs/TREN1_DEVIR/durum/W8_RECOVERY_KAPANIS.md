@@ -179,3 +179,18 @@ Gerçek SQL, HTTP runtime, Vitest, browser ve CI **NOT_RUN**.
 Yeni guard bypass/SQL/context izni veya semantik validator gevşetmesi yoktur.
 Mevcut K3 pending yüzeyleri korunur; bu dalın Python sonucu son birleşik head
 kabulü, bağımsız K3 imzası veya production aktivasyonu değildir.
+
+## Birleşik kaynakta gerçek pin ölçümü
+
+`39849ebb0faf8d3d1b7f0e5eb97675172d8c60b1` temiz birleşik kaynak üzerinde ev
+prosedürünün `print_recovery_actuals.py` yardımcısı exit0 verdi. Ölçüm 1459 risky
+dosya / `2fee42e97166f55a39e9f580705edc8e8881e83d204918361f0e3a17d52c5a46`,
+42 Audit dosyası / `5c2a38e67872cae375351d148756ad7b233fef3fbe805c20f9db18d1e3416a4e`
+üretti; 19 DbContext ve 339 migration declaration pinleri zaten aynıydı.
+
+Yalnız bu gerçek çıktıda drift bildirilen mevcut 9 operative method ve 22 canlı
+blob hash'i güncellendi. Yeni izin listesi, kapsam istisnası veya doğrulayıcı semantiği
+eklenmedi. Sonraki kaynak farkları explicit DTO constructor türleri, mevcut
+company çitleri ve raporlanmış runtime düzeltmeleridir. Tam gerçek üretici ile
+recovery/release paketlerinin birleşik kaynak sonucu ayrıca bekler; helper exit0
+bir üretici veya test PASS kanıtı değildir.
