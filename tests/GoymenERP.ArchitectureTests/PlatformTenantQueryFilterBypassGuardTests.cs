@@ -234,8 +234,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // canonical admission/snapshot SQL cases already present in work.txt; verifier behavior is unchanged.
     // Re-fingerprinted for B-24: the mandatory Work set now also pins the three outbox dispatch facts.
     // Re-fingerprinted for tren-1 wave 1: the mandatory Work set also pins the inbox dedup fact already in work.txt.
+    // W8: the exact-set test also requires all four real notification SQL facts (586176b32);
+    // verifier discovery, inventory loading, TRX and skip rules are unchanged. Python suite: 48/48.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "1495551809bc91335b9588b4650dccaa46d3e14b96fa99cb38fee3080ad00ae3";
+        "7fcdca61d1addf255b275473cb91d26ac914fb2312fafc35b0bc1536afd6b299";
     // The broad relational inventory, one file per module (see RelationalInventoryDirectory). Each
     // pin is its own paragraph so that two modules re-pinning their own files change lines that are
     // not adjacent and combine cleanly; a file's owner is its module, the pin line is central.
@@ -3774,8 +3776,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("GroupSharedCommandDbContext", "cb3032c17681f28ce368afd1b0e13ace3c515a92bf5a23b11f41f8336bb3b37a"),
                 // W8 Product price-list model generation only: unresolved company, no Open/Migrate/Save calls,
                 // one owner context; not host registration or runtime authority. Pending independent K3 review.
+                // Explicit constructor type exposes that same single context to the existing scanner.
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPriceListDesignTimeDbContextFactory.cs"] =
-                    new("ProductPriceListDbContext", "53d31a9757675a13c2d562ce2aefb90f22483f7e0ec66db06496dc1e2b729b6f"),
+                    new("ProductPriceListDbContext", "a8185f7a8636444dbad19ac6743cfc2bc2fd5afb42ed1c49e908bc4f6c577d60"),
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/ProductDesignTimeDbContextFactory.cs"] =
                     new("ProductDbContext", "14980801f97830d0887a538d88a4f9ccb68f9ddfbb696fb9b3c4e2d8d45f7374"),
                 ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/"

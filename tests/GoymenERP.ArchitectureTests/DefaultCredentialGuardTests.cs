@@ -17,13 +17,14 @@ public sealed partial class DefaultCredentialGuardTests
     private const string DocumentationExceptionGlob = "docs/**/*.md";
 
     /// <summary>
-    /// Source files allowed to construct a <c>LocalCredential</c>. None in ID-1; ID-2 adds the one-time
-    /// <c>bootstrap-founder</c> command, whose password is typed by the operator and always marked
-    /// <c>MustChangePassword</c>.
+    /// Exact credential owners: founder bootstrap and F001/F002's authorized /access/users command.
+    /// Both hash an operator-supplied policy-checked password and require its change; no default or seed.
+    /// The W8 user-management site remains pending independent K3 review.
     /// </summary>
     private static readonly string[] ReviewedLocalCredentialCreationSites =
     [
         "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Bootstrap/FounderBootstrapService.cs",
+        "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityAccessAssignmentService.Users.cs",
     ];
 
     /// <summary>Well-known default passwords that are never a configuration value or a backend string literal.</summary>
@@ -42,7 +43,8 @@ public sealed partial class DefaultCredentialGuardTests
     {
         Assert.Equal("docs/**/*.md", DocumentationExceptionGlob);
         Assert.Equal(
-            ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Bootstrap/FounderBootstrapService.cs"],
+            ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Bootstrap/FounderBootstrapService.cs",
+                "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityAccessAssignmentService.Users.cs"],
             ReviewedLocalCredentialCreationSites);
         Assert.False(IsDocumentationException("docs/operations/example.json"));
         Assert.False(IsDocumentationException("src/backend/README.md"));

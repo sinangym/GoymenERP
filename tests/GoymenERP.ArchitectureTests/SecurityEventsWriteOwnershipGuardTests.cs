@@ -1,9 +1,9 @@
 namespace GoymenERP.ArchitectureTests;
 
 /// <summary>
-/// security.SecurityEvents is append-only and written by exactly one path: SecurityEventWriter ->
-/// ISecurityEventStore -> SecurityEventsDbContext.AppendAsync. These facts pin that path so a new
-/// caller (another module, an endpoint, a second store) cannot write the table without review.
+/// security.SecurityEvents is append-only. The standalone writer/store and the typed operator-recovery
+/// participant are its two explicit owner paths. The latter joins the caller's Serializable transaction
+/// (KIM-D27 and the explicit-target recovery decision) and remains pending independent K3 review.
 /// </summary>
 public sealed class SecurityEventsWriteOwnershipGuardTests
 {
@@ -19,24 +19,29 @@ public sealed class SecurityEventsWriteOwnershipGuardTests
     private const string ModuleExtensionsPath = InfrastructureRoot + "SecurityEventsModuleExtensions.cs";
     private const string StorePath = InfrastructureRoot + "Writing/SecurityEventStore.cs";
     private const string WriterPath = InfrastructureRoot + "Writing/SecurityEventWriter.cs";
+    private const string OperatorRecoveryWriterPath =
+        InfrastructureRoot + "Writing/LocalTwoFactorOperatorRecoverySecurityWriterV1.cs";
     private const string QueryServicePath = InfrastructureRoot + "Reading/SecurityEventQueryService.cs";
 
     [Fact]
     public void SecurityEventsDbContext_IsReferencedOnlyByReviewedModuleFiles()
     {
         Assert.Equal(
-            new[] { DbContextPath, DesignTimeFactoryPath, StorePath, ModuleExtensionsPath, QueryServicePath }
+            new[] { DbContextPath, DesignTimeFactoryPath, StorePath, ModuleExtensionsPath, QueryServicePath, OperatorRecoveryWriterPath }
                 .Order(StringComparer.Ordinal),
             FindProductionSourcesContaining("SecurityEventsDbContext")
                 .Where(path => !path.StartsWith(MigrationsRoot, StringComparison.Ordinal)));
     }
 
     [Fact]
-    public void SecurityEventsDbContext_AppendIsCalledOnlyByTheStore()
+    public void SecurityEventsDbContext_AppendUsesTheTwoExplicitOwnerPaths()
     {
         Assert.Equal(
             new[] { StorePath },
             FindProductionSourcesContaining(".AppendAsync(securityEvent"));
+        Assert.Equal(
+            new[] { OperatorRecoveryWriterPath },
+            FindProductionSourcesContaining("owner.AppendAsync(row"));
         Assert.Equal(
             new[] { DbContextPath },
             FindProductionSourcesContaining("SecurityEvents.Add("));
