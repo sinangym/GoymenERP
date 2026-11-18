@@ -66,7 +66,7 @@ public sealed class SettingsHostWiringTests
 
         var provider = scope.ServiceProvider.GetRequiredService<ISettingsPrerequisiteProvider>();
 
-        Assert.IsType<ApprovedSettingsPrerequisiteProvider>(provider);
+        Assert.IsType<SettingsMoneyProfilePrerequisiteProvider>(provider);
         // One registration, not a second one shadowing the first.
         Assert.Single(scope.ServiceProvider.GetServices<ISettingsPrerequisiteProvider>());
     }
@@ -415,7 +415,7 @@ public sealed class SettingsHostWiringTests
 
         Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
             () => legacy.GetMoneyCurrencyCandidatesAsync())).Code);
-        Assert.Equal(new MoneyCurrencyCandidateV1(SettingsCurrencyIdentitiesV1.TurkishLira, "TRY", "TRY"),
+        Assert.Equal(new MoneyCurrencyCandidateV1(SettingsCurrencyIdentitiesV1.TurkishLira, "TRY", "Türk lirası"),
             Assert.Single(await byOperation.GetMoneyCurrencyCandidatesAsync(SalesMoneyOperations.OrderDraftV1)));
         Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
             () => byOperation.GetMoneyCurrencyCandidatesAsync(FinanceMoneyOperations.ManualBankReceiptV1))).Code);
@@ -427,7 +427,7 @@ public sealed class SettingsHostWiringTests
         using var factory = Host(Gdc);
         using var scope = factory.Services.CreateScope();
 
-        Assert.IsType<ApprovedSettingsPrerequisiteProvider>(
+        Assert.IsType<SettingsMoneyCandidateReaderV2>(
             scope.ServiceProvider.GetRequiredService<ISettingsMoneyCandidateReaderV2>());
         Assert.Single(scope.ServiceProvider.GetServices<ISettingsMoneyCandidateReaderV2>());
     }
