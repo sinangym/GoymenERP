@@ -117,12 +117,14 @@ public sealed partial class SalesDraftServiceTests
         var first = await PricedApprovedAsync(world, "p1");
         var second = await PricedApprovedAsync(world, "p2");
         plan.Batches.Clear();
+        plan.Answered.Clear();
         // The owner answers one order per page and says more follows: the next read asks only the orders still unanswered.
         plan.Answer = asked => asked.Count > 1 ? Planned([asked.First()]) with { HasMore = true } : Planned(asked);
         var check = await world.Service().GetDraftRiskCheckAsync(unapproved.Id);
 
         Assert.Equal(("Available", ""), (check.Components[RemainderIndex].State, AmountsOf(check.Components[RemainderIndex])));
         Assert.Equal(2, plan.Batches.Count);
+        Assert.Equal(2, plan.Answered.Count);
         Assert.Equal(new[] { first.Draft.Id, second.Draft.Id }.Order(), plan.Batches[0].Order());
         Assert.DoesNotContain(Assert.Single(plan.Batches[1]), plan.Answered[0]);
     }

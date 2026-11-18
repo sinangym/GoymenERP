@@ -49,3 +49,20 @@ kapanış kanıtı → normal tren fast-forward → tek taslak K3 PR. Yazar merg
 
 Kaynak174/174 korunur. Tren henüz ilerletilmedi; SQL, son CI, tarayıcı ve bağımsız
 K3 kapıları bu checkpoint ile kapanmaz.
+
+## Tam modül protokolü tekrarları
+
+- `914bf9938`:20 Release prebuild exit0;13 projenin8.020 testi PASS/skip0.
+  Organization'ın kültüre bağlı dokuz deferred kimliği yüzünden verifier exit1;
+  [dokuz native scalar kimlik düzeltmesi](W8_ARCHITECTURE_KAPANIS.md) bunu ele alır.
+- `33fee7571`:20 prebuild exit0; Organization dahil16 proje koşuldu.12.192 PASS,
+  1 FAIL,skip0; verifier exit1. Hata Satış SAT-D406 sayfalama fixture'ındaydı:
+  önceki onay okumalarının `Answered` kayıtları dururken yalnız `Batches` temizlenmiş.
+  Rastgele sipariş kimliğine göre eski yanıtla yanlış karşılaştırma oluşabiliyordu.
+- Aynı fixture artık kontrollü sayfalama okumasından önce iki listeyi birlikte
+  sıfırlar; iki istek ve iki yanıt sayısını, gerçek ikinci sayfanın ilk yanıtta
+  bulunmamasını aynen doğrular. Üretim kodu/iş kuralı değişmedi. Gerçek Release
+  build0 ve hedef1/1 PASS/skip0; tam20 proje tekrar alınacaktır.
+
+İki ilk native TRX/verifier çıkışı korunur. Eksik kalan proje çalışmaları PASS
+sayılmaz; sonraki tam grup mevcut verifier ile yeni/boş kanıt dizininde başlar.
