@@ -41,3 +41,7 @@ Sales’te mevcut13 ilk hata için test fixture’ları: adversarial şirket de�
 İkinci sıralı denemede Finance, Counterparty, Documents, Organization testleri geçti. Accounting kalan1 COGS mapping route beklentisiyle hizalandı. Identity xUnit2029 assertion biçimi düzeltildi. Inventory’de InMemory bağımlılığı bu Unit projesinde yoktu; aynı dört Local izolasyon örneği zaten bu bağımlılığı taşıyan IntegrationTests projesine taşındı, yeni paket eklenmedi. Bunlar SQL kabulü değildir. İlk derleme hataları korunur.
 
 Logistics’te gerçek bir terminal-record sınır hatası bulundu: plan üstü onay eksikliği prepare aşamasında atıldığından mutation içindeki mevcut terminal catch’e ulaşmıyordu. Aynı iki onay/çatışma409 kodu prepare yolunda da mevcut TerminalAsync üzerinden kayıt edilir; fresh authority fence ve payload-key kontrolü korunur. Mevcut negatif test ret, replay, correlation, sürüm ve yazılmayan load payını birlikte sınamaya devam eder. Bu backend delta recovery/fingerprint yenilemesi gerektirir. Son doğrulama QUEUED.
+
+## İlk tam koşumun kesin sayısı
+
+18 UnitTests projesi:13.168 test,13.091 başarılı,77 başarısız,0 skip.18 derlemenin tamamı exit0.6 proje ilk koşuda yeşil,12 proje başarısızdı; eski W5 hata sayısı güncel kabul olarak kullanılmaz. Son düzeltmelerin her biri ayrı native log/TRX/exit ile tekrar doğrulanır. Bu ilk koşunun kaynak tabanı a8f4440ec88da785ee08ff5d2fa4500e72bfb4e8; test kaynaklarındaki sonraki kapanış düzeltmeleri final kanıt değildir.

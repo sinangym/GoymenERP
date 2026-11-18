@@ -49,7 +49,7 @@
   "partial": 0,
   "remaining_not_started": 0,
   "last_wave": 8,
-  "progress_meaning": "DONE yalnız kaynak kapsamıdır. Tam birim/mimari/gerçek SQL/Vitest/browser/CI koşumları NOT_RUN; K3 kabulü ve production değildir.",
+  "progress_meaning": "DONE yalnız kaynak kapsamıdır. Kapanış koşumları başladı; ilk18 UnitTests build0/13.168 test/77FAIL/skip0, düzeltmeler ve tekrarlar W8_BIRIM_TEST_KAPANIS.md raporundadır. Gerçek SQL/browser/CI ve K3 kabulü ayrıdır; production değildir.",
   "w6_source_done_ids": [
    "KIM-S13",
    "KIM-S18",
