@@ -38,3 +38,9 @@ Kaynak kapsamı174/174 (%100), W8 son pakettir. `W8_KAYNAK_TAMAMLANDI.md` içind
 Shell son doğrulama → gerçek OpenAPI JSON ve sözleşme beklentileri → committed kaynak recovery/release pinleri → gerekçeli mimari guard ve gerçek ilişkisel keşif/envanter → hafif kontroller → tam birim/mimari/API/Vitest ve mevcut yetkili SQL/CI kanıtı → train fast-forward → tek taslak K3 PR.
 
 Yerel SQL yapılandırılmamış; yeni DB/container/servis açılmaz. Gerçek SQL/RCSI/browser/CI ve tam test kabulü henüz tamamlanmış sayılmaz. Mevcut12 bypass/5 context construction girdisinin K3 pending durumu korunur; hash yenilemek bağımsız onay değildir. Grant/rol/Critical politikası, OPEN kapatma, Finance STOP ve production değişmez.
+
+## Runtime guard son kaynak kontrolleri
+
+031728b6 birleşimindeki dar340 guard testi338 başarılı/2 başarısız/0 skip oldu. İki runtime fingerprint farkı, recovery sahibinin henüz birleştirilmemiş gerçek Purchasing writer refactor kaynaklarına aittir; hash geri çevrilmez, ilgili commitler alınacak. Diğer hata gerçek ProductPriceList design-time factory’nin ayrı envanterde olmamasıdır.
+
+Product factory kaynakta tek ProductPriceListDbContext kurar; company unresolved ve Guid.Empty döner, Set reddeder. Yalnız sabit design-time model options/history schema üretir; bağlantı açma, Save/Migrate veya host DI kaydı yoktur. Bu kaynak gerekçesi ve gerçek fingerprint ile ReviewedPlatformContextFactories kaydı eklendi, K3 pending açık tutuldu. Runtime context veya grant verilmez; guard algoritması değişmez. Son birleşik tekrar bekler.

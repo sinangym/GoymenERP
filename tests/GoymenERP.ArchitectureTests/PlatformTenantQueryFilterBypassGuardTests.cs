@@ -3772,6 +3772,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             {
                 ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Persistence/GroupSharedCommandDesignTimeDbContextFactory.cs"] =
                     new("GroupSharedCommandDbContext", "cb3032c17681f28ce368afd1b0e13ace3c515a92bf5a23b11f41f8336bb3b37a"),
+                // W8 Product price-list model generation only: unresolved company, no Open/Migrate/Save calls,
+                // one owner context; not host registration or runtime authority. Pending independent K3 review.
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPriceListDesignTimeDbContextFactory.cs"] =
+                    new("ProductPriceListDbContext", "53d31a9757675a13c2d562ce2aefb90f22483f7e0ec66db06496dc1e2b729b6f"),
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/ProductDesignTimeDbContextFactory.cs"] =
                     new("ProductDbContext", "14980801f97830d0887a538d88a4f9ccb68f9ddfbb696fb9b3c4e2d8d45f7374"),
                 ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/"
