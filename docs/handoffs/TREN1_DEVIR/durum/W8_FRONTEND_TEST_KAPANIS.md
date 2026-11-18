@@ -19,3 +19,9 @@ Kaynak tabanı: `203d0536b0a02532c2d771d855ba6baeaeff9187`. Kapsam, bu kaynağı
 Bu dalda .NET, Node, Vitest, TSC, SQL, tarayıcı veya CI başlatılmadı. Kaynak düzenlemeleri `NOT_RUN`; birleşik hedef ve tam koşuyu koordinatör yapacaktır. İlk tam koşunun logu tamamlanmadan toplam sonuç veya PASS iddia edilmez. Şu anki ortak tarayıcı depolama hatalarının son stack doğrulaması beklenmektedir; yerel gerçek Node sürümü `v26.7.0`, CI kaynak yapılandırması Node 24'tür. Ortam sürümü ve çalışma bayrakları değiştirilmedi.
 
 Test atlama, silme, karantina, yeni para/formül/izin/grant, production veya Finance STOP değişikliği yoktur. Bu kaynak kapanışı bağımsız exact-head K3 incelemesi değildir.
+
+## Tam ilk koşu sonrası ortak depolama düzeltmesi
+
+İlk tam Vitest koşusu aynı `203d0536b` kaynağında 614 dosyanın 64'ünde ve 9813 testin 242'sinde başarısız oldu. Cari bağlantı düzeneğinin `setItem` erişiminde depolama nesnesinin `undefined` olması tam stack ile doğrulandı. Kurulu Vitest, JSDOM ortamı kurarken mevcut Node global özelliğini koruyordu; gerçek Node 26.7.0 depolama getter'ı tarayıcı depolaması yerine kalıyordu.
+
+Ortak test kurulumu `localStorage` ve `sessionStorage` adlarını Vitest'in zaten oluşturduğu gerçek, izole JSDOM penceresinin Storage nesnelerine bağlar. Getter yapılandırılabilir kalır; depolama reddi/yazma hatası testlerinin mevcut stub ve spy davranışı korunur. Sahte depolama, dosya, runtime bayrağı veya paket değişikliği yoktur. Bu takip kaynağında da TSC/Vitest `NOT_RUN`; ilk başarısız koşunun sonuçları korunur.

@@ -1,6 +1,17 @@
 import { afterEach } from 'vitest'
 import { cleanup, configure } from '@testing-library/react'
 
+// Vitest preserves existing Node globals when installing JSDOM. Newer Node versions expose a native
+// localStorage getter which is undefined without a storage file; browser tests must use their isolated
+// JSDOM window's real Storage instead. Keep configurable getters so denied-storage tests can still stub
+// or spy on access and restore the browser implementation afterward. No Node storage file or fake map.
+const browserWindow = (globalThis as typeof globalThis & { jsdom?: { window: Window } }).jsdom?.window
+if (browserWindow !== undefined) {
+  for (const name of ['localStorage', 'sessionStorage'] as const) {
+    Object.defineProperty(globalThis, name, { configurable: true, enumerable: true, get: () => browserWindow[name] })
+  }
+}
+
 /**
  * Async waits get 3 seconds instead of testing-library's 1.
  *
