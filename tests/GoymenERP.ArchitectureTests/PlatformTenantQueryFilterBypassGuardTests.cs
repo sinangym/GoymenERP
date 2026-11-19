@@ -1598,7 +1598,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // tren-1 W5 (integration, uretim): a third GetDbConnection (guard count 2 -> 3, URT order cancellation/output
                         // correction on the same borrowed boundary). Exact source count; pending the owning team's K3 review.
                         // Re-fingerprinted for tren-1 W6: URT-S2: forward the explicit output-line reference to Inventory; reviewed API counts unchanged (656d12ae... -> 80abcca8...).
-                        "9a5ad51a3cde5e6ef6cb2157ee33fa4aba15a465e4af3ba621d2fe2f4ee1c2b7",
+                        // W8 K3 review pending: bound correction fact key; same borrowed transaction/context/API counts.
+                        "6231bb2c96ecb47d92cc34fabf1304e850a78a6d1d13c81e6693a085c11ca560",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
@@ -3557,7 +3558,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Manufacturing manual queue uses own EF transactions; all WorkCenterQueue/Plan/Order/Priority queries explicitly
                 // CompanyId bound; no raw SQL.
                 ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.ManualQueues.cs"] =
-                    new("19ffbb9acb365f552719a23de495c382e08f453f906871efbab4c8aa563ca9ed",
+                    // W8 K3 review pending: exact EF-wrapped 1205 mapped only after existing owner rollback/clear.
+                    new("33ec1e93312be596ac090bd7cdeadbed9b4f21a71d6103e25d4865c74e2a379b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
