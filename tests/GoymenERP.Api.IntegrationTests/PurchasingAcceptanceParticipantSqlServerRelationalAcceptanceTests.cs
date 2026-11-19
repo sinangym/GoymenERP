@@ -115,36 +115,51 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         var beforeRefusedDown = await AcceptanceDatabaseStateAsync(run, seeded.OrderId);
         await using (var migrationContext = MigrationContext(run, CompanyA))
         {
-            var migrator = migrationContext.GetService<IMigrator>();
-            // A2a-5a: the newer approval migration's Down refuses first while the order's approver is recorded.
-            var approvalRefusal = await Assert.ThrowsAsync<SqlException>(() =>
-                migrator.MigrateAsync(InitialPurchasingMigration));
+            var appliedBefore = (await migrationContext.Database.GetAppliedMigrationsAsync()).ToArray();
+            Assert.Equal(migrationContext.Database.GetMigrations().ToArray(), appliedBefore);
+            string[] proofQueries =
+            [
+                "SELECT * FROM purchasing.PurchaseOrders ORDER BY Id FOR JSON PATH",
+                "SELECT * FROM purchasing.PurchaseOrderLines ORDER BY CompanyId, OrderId, LineNo FOR JSON PATH",
+                "SELECT * FROM purchasing.PurchaseAcceptanceShares ORDER BY AcceptanceId FOR JSON PATH",
+                "SELECT * FROM purchasing.PurchaseAttempts ORDER BY CompanyId, CommandName, IdempotencyKeyHash FOR JSON PATH",
+                "SELECT * FROM settings.DocumentNumberFormats ORDER BY CompanyId, Series, Version FOR JSON PATH",
+                "SELECT * FROM settings.DocumentNumberCounters ORDER BY CompanyId, Series, Year FOR JSON PATH",
+                "SELECT * FROM settings.DocumentNumberReservations ORDER BY CompanyId, Series, DocumentId FOR JSON PATH",
+                "SELECT * FROM settings.DocumentNumberCancellations ORDER BY CompanyId, Series, DocumentId FOR JSON PATH",
+                "SELECT * FROM audit.AuditEvents ORDER BY Id FOR JSON PATH",
+                "SELECT name, definition, is_disabled, is_not_trusted FROM sys.check_constraints WHERE schema_id = SCHEMA_ID(N'purchasing') ORDER BY name FOR JSON PATH",
+            ];
+            var proofBefore = await Task.WhenAll(proofQueries.Select(query => run.ScalarAsync<string>(query)));
+            // Each historical guard is tested directly: preserve the actual approver and newer number history.
+            var approvalGuard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(
+                new GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations.AddPurchaseOrderApproval().DownOperations[0]).Sql;
+            var approvalRefusal = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(approvalGuard));
             Assert.Equal(51172, approvalRefusal.Number);
-        }
+            Assert.Equal(appliedBefore, (await migrationContext.Database.GetAppliedMigrationsAsync()).ToArray());
+            Assert.Equal(proofBefore, await Task.WhenAll(proofQueries.Select(query => run.ScalarAsync<string>(query))));
+            Assert.Equal(beforeRefusedDown, await AcceptanceDatabaseStateAsync(run, seeded.OrderId));
 
-        Assert.Equal(beforeRefusedDown, await AcceptanceDatabaseStateAsync(run, seeded.OrderId));
-
-        // With the approver cleared (the legacy, pre-A2a-5a shape the approval check allows), the acceptance guard refuses.
-        await run.ExecuteAsync("UPDATE purchasing.PurchaseOrders SET ApprovedBy = NULL, ApprovedAtUtc = NULL WHERE Id = @id",
-            ("@id", seeded.OrderId));
-        await using (var migrationContext = MigrationContext(run, CompanyA))
-        {
-            var migrator = migrationContext.GetService<IMigrator>();
-            var refusal = await Assert.ThrowsAsync<SqlException>(() =>
-                migrator.MigrateAsync(InitialPurchasingMigration));
+            var acceptanceGuard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(
+                new GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations.AddPurchaseAcceptanceParticipant().DownOperations[0]).Sql;
+            var refusal = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(acceptanceGuard));
             Assert.Equal(51042, refusal.Number);
+            Assert.Equal(appliedBefore, (await migrationContext.Database.GetAppliedMigrationsAsync()).ToArray());
+            Assert.Equal(proofBefore, await Task.WhenAll(proofQueries.Select(query => run.ScalarAsync<string>(query))));
+            Assert.Equal(beforeRefusedDown, await AcceptanceDatabaseStateAsync(run, seeded.OrderId));
         }
-
-        Assert.Equal(beforeRefusedDown, await AcceptanceDatabaseStateAsync(run, seeded.OrderId));
 
         await using var emptyRun = await Run.StartAsync();
         Assert.Equal((1, 1), await AcceptanceSchemaStateAsync(emptyRun));
         await using (var migrationContext = MigrationContext(emptyRun, CompanyA))
         {
+            var appliedBefore = (await migrationContext.Database.GetAppliedMigrationsAsync()).ToArray();
+            Assert.Equal(migrationContext.Database.GetMigrations().ToArray(), appliedBefore);
             var migrator = migrationContext.GetService<IMigrator>();
             await migrator.MigrateAsync(InitialPurchasingMigration);
             Assert.Equal((0, 0), await AcceptanceSchemaStateAsync(emptyRun));
             await migrator.MigrateAsync();
+            Assert.Equal(appliedBefore, (await migrationContext.Database.GetAppliedMigrationsAsync()).ToArray());
         }
 
         Assert.Equal((1, 1), await AcceptanceSchemaStateAsync(emptyRun));
