@@ -7,6 +7,7 @@ using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
+using GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Domain.Users;
@@ -17,6 +18,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -1082,11 +1084,13 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
 
         await using (var context = run.Context(CompanyA))
         {
-            var error = await Assert.ThrowsAsync<SqlException>(() =>
-                context.GetService<IMigrator>().MigrateAsync(beforeManualBankPayments));
+            // The empty full Down/up is proved above. A real recorded payment also retains its newer
+            // document-number proof, whose own guard must not be erased to reach this historical guard.
+            var appliedBefore = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            var guard = Assert.IsType<SqlOperation>(new AddManualBankPayments().DownOperations[0]).Sql;
+            var error = await Assert.ThrowsAsync<SqlException>(() => context.Database.ExecuteSqlRawAsync(guard));
             Assert.Equal(51053, error.Number);
-            Assert.EndsWith("_AddManualBankPayments",
-                (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
+            Assert.Equal(appliedBefore, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
         }
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.ManualBankPayments"));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OutgoingMoneyEvents"));
