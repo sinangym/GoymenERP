@@ -799,7 +799,7 @@ public sealed partial class ProductPriceListSqlServerRelationalAcceptanceTests
                 throw new InvalidOperationException("Refusing cleanup outside this test database.");
             }
 
-            var builder = new SqlConnectionStringBuilder(factory.DatabaseConnectionString) { InitialCatalog = "master" };
+            var builder = new SqlConnectionStringBuilder(factory.DatabaseConnectionString) { InitialCatalog = "master", AttachDBFilename = string.Empty };
             await using var connection = new SqlConnection(builder.ConnectionString);
             await connection.OpenAsync();
             await using var command = connection.CreateCommand();
