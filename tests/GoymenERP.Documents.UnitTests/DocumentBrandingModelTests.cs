@@ -28,6 +28,10 @@ public sealed class DocumentBrandingModelTests
         services.AddAuditModule(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["DB_CONNECTION_STRING"] = "Server=SENTETIK.invalid;Database=SENTETIK;Connect Timeout=1;",
+            ["Audit:RefusedAttempts:Retention:Period"] = "P2Y",
+            ["Audit:RefusedAttempts:Retention:PolicyRef"] = "policy-ref-1",
+            ["Audit:RefusedAttempts:Retention:AutoDisposalEnabled"] = "false",
+            ["Audit:RefusedAttempts:StandaloneWrite:Timeout"] = "00:00:05",
         }).Build());
         services.AddSingleton<IAuditEventCollector>(collector);
         using var provider = services.BuildServiceProvider();
