@@ -266,8 +266,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // (2865c0fb… -> 327c5913…).
             // Re-fingerprinted for B-04a review P2-1: +1 cross-company mapping SQL fact (327c5913… -> 077b19a0…).
             // Re-fingerprinted for B-04b: +4 source document admission SQL facts (077b19a0… -> af80f704…).
+            // W8 source repairs: producer-recomputed fingerprint; existing review scope retained.
             ["tools/relational_inventory/accounting.txt"] =
-                "40d6d292a4aaac6cfeac68ae3cbf933c9c0bf5b868514c18d204d776d86693be",
+                "745e89915c98d71e2b5f45c70f76fcb2b41e80d8d9f2e90d8d68eb1990f8c4ad",
 
             // counterparty
             // AT-009: +2 real-SQL fresh-authority interleavings (duplicate read and same-key winner replay).
@@ -349,10 +350,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // SAT-D27 (1): +1 sales-owner picker holder-filter SQL fact, ordinal-sorted (b2ba31aa… -> 12e280b9…).
             // ID-1: +5 IdentityLocalCredentialSqlServerRelationalAcceptanceTests facts, ordinal-sorted (12e280b9… -> aa5edfd7…).
             // Re-fingerprinted for tren-1 wave 2 (trial integration): +6 facts, ordinal-sorted (aa5edfd7… -> cb7cf51d…).
+            // W8 source repairs: added SQL regressions, ordinal sorted; producer-recomputed fingerprint.
             ["tools/relational_inventory/identity.txt"] =
                 // Tren-1 W6: +3 source facts, ordinal-sorted; SQL execution NOT_RUN.
                 // Re-fingerprinted for tren-1 W7: source facts kept ordinal-sorted; SQL execution NOT_RUN.
-                "fc9ef7ef249cd79b2556f96ce6f95f30f1019c18ad995273a1753f909d6fb986",
+                "29a9f0abcd6a3d39da915bbcd88f5e060337f06d9744bc9a61a51b9d2395e65b",
 
             // inventory
             // AT-037: +3 stock-count SQL facts (d709faf1… -> 4e783c62…).
@@ -411,6 +413,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Settings Manufacturing tolerance registry: +1 company/constraint/provider SQL fact.
             // Settings tolerance serialization: +3 valid/invalid predecessor and empty round-trip SQL facts.
             // M01.2: +1 real-SQL lossless cut-line preview/save/replay/revise/reopen fact.
+            // W8 source repairs: added SQL regressions, ordinal sorted; producer-recomputed fingerprint.
             ["tools/relational_inventory/manufacturing.txt"] =
                 // Üretim U1-b: +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact (parameter snapshot at approval and
                 // catalog tolerance at close) (e03d7c7b… -> 7f38855d…).
@@ -449,7 +452,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 W5 (integration): token change since the wave-4 merge (stale pin), same fact count; value from guard_fingerprint.py (bb328fa5… -> 884e8c98…).
                 // Tren-1 W6: +7 source facts, ordinal-sorted; SQL execution NOT_RUN.
                 // Re-fingerprinted for tren-1 W7: source facts kept ordinal-sorted; SQL execution NOT_RUN.
-                "3d94c4988bb02aba1ed11b6d50fb09e755bc8815766ec1ebfa9c9fdc028545f1",
+                "958218df323c09fef781ab125b5a53d931e29ae0b19c91310abc40d72f0ad4da",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -476,6 +479,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // DEC-FIN-010 / SAT-D54/D55/D169…D172: +2 Settings exchange-rate SQL facts (record lifecycle; disabled sources and
             // empty-store rollback) (534be0f1… -> a90275a7…).
             // W8 source audit: +2 reference-list race and +2 Audit rollback facts; all prior facts retained.
+            // W8 source repairs: added SQL regressions, ordinal sorted; producer-recomputed fingerprint.
             ["tools/relational_inventory/platform.txt"] =
                 // Üretim U1-a: +3 Settings manufacturing profile SQL facts (parameter lifecycle; tolerance publication; migration
                 // round trip) (534be0f1… -> 026f3c54…).
@@ -498,7 +502,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 W7: source facts kept ordinal-sorted; SQL execution NOT_RUN.
                 // W8 local test database lifecycle: +1 real-SQL Fact; runtime proof pending.
                 // W8 reference-list provider failure: +1 SQL lock-timeout Fact; runtime proof pending.
-                "3e88788130cb6bd560ae543233f38694662afa9d2ee2c65019248ba6765856f3",
+                "9b3e64602f8b608075ba78685dfb92fde4aa8d0fb4f27af59ec3f79ac08c03a4",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -1269,6 +1273,66 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedRuntimeDatabaseBypassSources =
             new Dictionary<string, ReviewedRuntimeDatabaseBypassSource>(StringComparer.Ordinal)
             {
+                // W8 provider-error repair; K3 review pending. SqlClient classifies provider errors only;
+                // no connection creation, raw command, filter bypass or tenant-scope change.
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingPostingAccountMappingStoreV1.cs"] =
+                    new("5e92f16119665916e5fec6971db3a5e6e101304582a561c77f51c6df3253a97b",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["Microsoft.Data.SqlClient"] = 1 }),
+                // W8 provider-error repair; K3 review pending. SqlClient classifies provider errors only;
+                // no connection creation, raw command, filter bypass or tenant-scope change.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsBankCsvMappingAdministration.cs"] =
+                    new("f7f36c1af5e0c1887405e3e24f2489826d1e92c05ed9d04070efbb0a1dbc5c15",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["Microsoft.Data.SqlClient"] = 1 }),
+                // W8 provider-error repair; K3 review pending. SqlClient classifies provider errors only;
+                // no connection creation, raw command, filter bypass or tenant-scope change.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsExchangeRateAdministration.cs"] =
+                    new("97cf6ecc74fa79187268e604c127eae9234d535b6395f4fa3943191e30a5c91c",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["Microsoft.Data.SqlClient"] = 1 }),
+                // W8 provider-error repair; K3 review pending. SqlClient classifies provider errors only;
+                // no connection creation, raw command, filter bypass or tenant-scope change.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsLoginRateLimitAdministration.cs"] =
+                    new("d9d9c653c21a111f1cc9d67c7dc9f7a58c7710083b36a8d7506b4af0281290bb",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["Microsoft.Data.SqlClient"] = 1 }),
+                // W8 provider-error repair; K3 review pending. SqlClient classifies provider errors only;
+                // no connection creation, raw command, filter bypass or tenant-scope change.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsManufacturingProfileAdministration.cs"] =
+                    new("fbc074d73aa6aa640b5ac3e2739ff3fee8be26153a85993d4bc7fc36346a059b",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["Microsoft.Data.SqlClient"] = 1 }),
+                // W8 provider-error repair; K3 review pending. SqlClient classifies provider errors only;
+                // no connection creation, raw command, filter bypass or tenant-scope change.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsMoneyProfileAdministration.cs"] =
+                    new("ceac9f82ca41dc8ce7fe48071c586a66260f3446ef6789e44be5e50465fddb51",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["Microsoft.Data.SqlClient"] = 1 }),
+                // W8 provider-error repair; K3 review pending. SqlClient classifies provider errors only;
+                // no connection creation, raw command, filter bypass or tenant-scope change.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsSalesDiscountLimitAdministration.cs"] =
+                    new("b5a9d7274e67e489914be1876d3e5e17fa6f48e59e8df4a214c3f99f5263ce99",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["Microsoft.Data.SqlClient"] = 1 }),
+                // W8 provider-error repair; K3 review pending. SqlClient classifies provider errors only;
+                // no connection creation, raw command, filter bypass or tenant-scope change.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsSalesPolicyAdministration.cs"] =
+                    new("08eaf761cd5955ba2f308a8e83cbe4545426efaee46be0b831c52cf553637f48",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["Microsoft.Data.SqlClient"] = 1 }),
+                // W8 provider-error repair; K3 review pending. SqlClient classifies provider errors only;
+                // no connection creation, raw command, filter bypass or tenant-scope change.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsSegregationOfDutiesPolicyAdministration.cs"] =
+                    new("ac32ef943841fd2d20ed8c1ffc99156b86e8e5efc7baaf59a2a45b15d5776124",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["Microsoft.Data.SqlClient"] = 1 }),
+                // W8 provider-error repair; K3 review pending. SqlClient classifies provider errors only;
+                // no connection creation, raw command, filter bypass or tenant-scope change.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsTaxMasterAdministration.cs"] =
+                    new("cac1290d059a9f3f388b6fa3ee805d2987df29f2b1cc20d24a2bbbaa48d32e6d",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["Microsoft.Data.SqlClient"] = 1 }),
+                // W8 provider-error repair; K3 review pending. SqlClient classifies provider errors only;
+                // no connection creation, raw command, filter bypass or tenant-scope change.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsUnitConversionPolicyAdministration.cs"] =
+                    new("47e98a4b239483f1f660ff6eb617ae5acde09b04384b22817fb58f306c5a7334",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["Microsoft.Data.SqlClient"] = 1 }),
+                // W8 provider-error repair; K3 review pending. SqlClient classifies provider errors only;
+                // no connection creation, raw command, filter bypass or tenant-scope change.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsUnitProfileAdministration.cs"] =
+                    new("7079f28b144932ce2f96ddd6dc45fefd2e621ca7499b9e46175fc67cd56e56d8",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["Microsoft.Data.SqlClient"] = 1 }),
                 // KIM-D56 SQL repair; K3 review pending. Typed 1205 classification only, joining the existing
                 // committed-winner replay path after rollback; no raw SQL, new connection or query-filter bypass.
                 ["src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanyOpeningV1.cs"] =
@@ -1284,8 +1348,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("175c0ed8c182090bea46dbcf78548d75c6b5e30d1c5659fd0e67f9a8c8fa3f1d",
                         new Dictionary<string, int>(StringComparer.Ordinal) { [".FindAsync"] = 1, ["Microsoft.Data.SqlClient"] = 1 }),
                 // Tren-1 W7; K3 review pending. SAT-D364: namespace only to recognize SQL unique-key 2601/2627 after owner SaveChanges; no connection, SQL command or filter bypass.
+                // W8 source repairs: producer-recomputed fingerprint; existing review scope retained.
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsCompanyPolicyAdministration.cs"] =
-                    new("df502050059278a5cec35f1e854c8dcfc9980a3f27f383de1e84888e69cfa2ba",
+                    new("4c96ccce16463dbb6efcca2243f128fcc37698be2a9e5c0af241af73bedb55f8",
                         new Dictionary<string, int>(StringComparer.Ordinal) { ["Microsoft.Data.SqlClient"] = 1 }),
                 // Tren-1 W7; K3 review pending. KIM-D20/D21: one fixed parameterless MIN_ACTIVE_ROWVERSION visibility horizon prevents cursor loss; event rows remain explicitly ambient-company filtered and read-only.
                 ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/IdentityCompanySetupOutboxSource.cs"] =
@@ -1706,12 +1771,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
                 // ACC source-catalog store uses the tenant-filtered AccountingDbContext directly.
-                // It has no raw SQL, connection or filter-bypass API; the exact source and its three
+                // W8 provider classification adds SqlClient only; K3 review pending. No raw SQL, connection or filter-bypass API; its three
                 // reviewed context construction sites are pinned together.
+                // W8 source repairs: producer-recomputed fingerprint; existing review scope retained.
                 [ReviewedApprovedAccountingSourceCatalogStorePath] =
                     new(
-                        "59878830636538c33306793dea8074d7d4fe2e7507e2ed8b37af0585f80177e8",
-                        new Dictionary<string, int>(StringComparer.Ordinal)),
+                        "be1ec9523a016da2ad0777bf15ad797b1296b9191fa964be303f0f07441fa728",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["Microsoft.Data.SqlClient"] = 1 }),
                 // FIN-T04a (#305): the Finance initializer's one provider branch, as Organization.
                 // Re-fingerprinted for DEC-FIN-016: the customer-instrument service registration; the provider
                 // branch and its token counts are unchanged. Re-fingerprinted for the party ledger: one read-service
@@ -2226,7 +2292,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // W8: SqlClient is used ONLY to distinguish 2601/2627 from unavailable writes; no SQL or filter bypass added. K3 review pending.
                 // tren-1 W5 fix (reference lists): .FindAsync is ReferenceListReads.FindAsync over the company-filtered Settings context,
-                // not an EF DbSet.Find. Pending the owning team's K3 review.
+                // not an EF DbSet.Find. W8 adds SqlClient solely for provider classification; K3 review pending.
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
                  + "Persistence/SettingsReferenceListAdministration.cs"] =
                     new(
@@ -2237,7 +2303,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         ["Microsoft.Data.SqlClient"] = 1
                         }),
                 // tren-1 W5 fix (reference lists): .FindAsync is ReferenceListReads.FindAsync over the company-filtered Settings context,
-                // not an EF DbSet.Find. Pending the owning team's K3 review.
+                // not an EF DbSet.Find. W8 adds SqlClient solely for provider classification; K3 review pending.
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
                  + "Persistence/SettingsReferenceListReaderV1.cs"] =
                     new(
@@ -2247,14 +2313,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         [".FindAsync"] = 1
                         }),
                 // tren-1 W5 fix (work-center capacity): .FindAsync is the work-center reference port lookup (companyId, workCenterId),
-                // not an EF DbSet.Find. Pending the owning team's K3 review.
+                // not an EF DbSet.Find. W8 adds SqlClient solely for provider classification; K3 review pending.
+                // W8 source repairs: producer-recomputed fingerprint; existing review scope retained.
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
                  + "Persistence/SettingsWorkCenterCapacityAdministration.cs"] =
                     new(
-                        "0e9dbcffcbf5539e459b77c5042e1aa050106313a181c7acb8feb9a5c6b9fa74",
+                        "e19070c08e300c02ae37a2e3cba5ca05e18d01b2dee6c9d1989e5c02e348d07f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
-                        [".FindAsync"] = 1
+                            [".FindAsync"] = 1,
+                            ["Microsoft.Data.SqlClient"] = 1
                         }),
                 // tren-1 wave 3 integration: construction-only surfaces (target-typed sites); no provider token. Pending K3 review.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
@@ -3096,8 +3164,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // creates Inventory owner session for cost stage/reversal. Inventory/Manufacturing own persistence and Audit
                 // participate atomically; fresh authority/context validation around command/commit; typed SqlException
                 // classification only.
+                // W8 source repairs: producer-recomputed fingerprint; existing review scope retained.
                 ["src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingCostGenerationHost.cs"] =
-                    new("83f3d81bb57e1591b610739b76a1fac220173164222da4d13082926a0de105d2",
+                    new("0bad98ce451d6c52e2a9045b37caf25a8047ae2c6eef4911bebb3b9c7261bb79",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["DbConnection"] = 1,
@@ -3429,8 +3498,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Tren-1 W8; K3 review pending. One Inventory context borrows the validated caller transaction. Local pool
                 // selectors carry explicit CompanyId and position/product/currency; only Inventory generations/effects/pools
                 // change.
+                // W8 source repairs: producer-recomputed fingerprint; existing review scope retained.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryManufacturingCostGenerationParticipant.cs"] =
-                    new("91a5945632b609d265e14e654ab9c5b3afb95d0c75241faf4c04cfaebe2d8dbd",
+                    new("13040a9d9f00382bf486df9a26692f84d7aa5ec38fd3b1d8801e0107a0d899aa",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             [".Local"] = 3,
