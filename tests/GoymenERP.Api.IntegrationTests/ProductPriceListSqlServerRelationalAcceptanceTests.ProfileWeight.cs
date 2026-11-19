@@ -100,14 +100,14 @@ public sealed partial class ProductPriceListSqlServerRelationalAcceptanceTests
         {
             var solid = await Assert.ThrowsAsync<SqlException>(() => scope.Context.Database.ExecuteSqlInterpolatedAsync(
                 $"""
-                INSERT INTO product.ProductProfileWeightLines (CompanyId, ImportVersion, LineNo, SectionKind, WidthMm, HeightMm,
+                INSERT INTO product.ProductProfileWeightLines (CompanyId, ImportVersion, [LineNo], SectionKind, WidthMm, HeightMm,
                     OuterDiameterMm, WallThicknessMm, KgPerMetre)
                 VALUES ({TestCompanyIds.CompanyA}, 1, 3, 'Profile', 40.0, 3.0, NULL, 2.0, 1.0)
                 """));
             Assert.Equal(CheckConstraintViolation, solid.Number);
             var twice = await Assert.ThrowsAsync<SqlException>(() => scope.Context.Database.ExecuteSqlInterpolatedAsync(
                 $"""
-                INSERT INTO product.ProductProfileWeightLines (CompanyId, ImportVersion, LineNo, SectionKind, WidthMm, HeightMm,
+                INSERT INTO product.ProductProfileWeightLines (CompanyId, ImportVersion, [LineNo], SectionKind, WidthMm, HeightMm,
                     OuterDiameterMm, WallThicknessMm, KgPerMetre)
                 VALUES ({TestCompanyIds.CompanyA}, 1, 3, 'RoundTube', NULL, NULL, 48.3, 2.6, 3.0)
                 """));
