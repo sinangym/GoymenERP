@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CashExchangeBookValuePage } from './CashExchangeBookValuePage'
 import { decodeBookValue, decodeBookValueWorkspace, sendBookValueAttempt, type BookValueAttempt } from './cashExchangeBookValue'
 import { BOOK_VALUE_TEXT as T } from './cashExchangeBookValueText'
+import { bookValueAttemptBinding, clearBookValueAttempts, recallBookValueAttempt } from './cashExchangeBookValueAttempt'
 
 // SENTETIK consumer fixtures; not SQL, grants, Documents acceptance or browser evidence.
 const C = '11111111-1111-4111-8111-111111111111'; const ID = '22222222-2222-4222-8222-222222222222'
@@ -29,13 +30,20 @@ const value = { id: PROPOSAL, companyId: C, transferId: ID, transferVersion: '1'
 const attempt: BookValueAttempt = { key: 'SENTETIK-fixed-key', decision: false, body: { transferId: ID, expectedTransferVersion: '1', sourceBookValueTl: value.sourceBookValueTl, evidence, reason: value.reason, targetFunctionalValueTl: '3300.00' } }
 const json = (x: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(x), { status, headers: { 'Content-Type': 'application/json', ...headers } })
 const boundary = vi.hoisted(() => ({ capture: vi.fn(() => ({ token: 1 })), report: vi.fn() }))
+const shell = vi.hoisted(() => ({ sessionEpoch: 1, entry: 0, active: true, actor: 'SENTETIK-maker', company: '11111111-1111-4111-8111-111111111111', revision: '0' }))
 vi.mock('../shell/useAuthBoundary', () => ({ useAuthBoundary: () => boundary }))
-vi.mock('../shell/shellContext', () => ({ useShellState: () => ({ routeEntryGeneration: 0, sessionEpoch: 1 }) }))
-vi.mock('../shell/shellState', async original => ({ ...await original<typeof import('../shell/shellState')>(), contextKey: () => ['SENTETIK', 'single', C, 'g', '0'] }))
+vi.mock('../shell/shellContext', () => ({ useShellState: () => ({ routeEntryGeneration: shell.entry, sessionEpoch: shell.sessionEpoch }) }))
+vi.mock('../shell/shellState', async original => ({ ...await original<typeof import('../shell/shellState')>(), contextKey: () => shell.active ? [shell.actor, 'single', shell.company, 'g', shell.revision] : null }))
 vi.mock('../documents/DocumentsPanel', () => ({ DocumentsPanel: () => <p>SENTETIK vault consumer</p> }))
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals() })
-beforeEach(() => { boundary.report.mockClear() })
+afterEach(() => { cleanup(); clearBookValueAttempts(); vi.unstubAllGlobals() })
+beforeEach(() => { boundary.report.mockClear(); clearBookValueAttempts(); Object.assign(shell, { sessionEpoch: 1, entry: 0, active: true, actor, company: C, revision: '0' }) })
+
+function mountPage(currentActor = actor) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
+  return render(<QueryClientProvider client={client}><MemoryRouter><CashExchangeBookValuePage companyId={shell.company} actorId={currentActor} canPrepare canApprove /></MemoryRouter></QueryClientProvider>)
+}
+const pendingBinding = () => bookValueAttemptBinding(JSON.stringify([shell.actor, 'single', shell.company, 'g', shell.revision]), shell.sessionEpoch, shell.actor, shell.company)
 
 describe('FIN14 typed book-value proof', () => {
   it('keeps actual book value separate from the benchmark and rejects foreign, self-approved or malformed proof', () => {
@@ -66,6 +74,7 @@ describe('FIN14 typed book-value proof', () => {
 })
 
 function show(proposals: unknown[] = [], canPrepare = true, canApprove = true, currentActor = actor, pinnedHash = evidence.sha256) {
+  shell.actor = currentActor
   const posts: RequestInit[] = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
     if (init.method === 'POST') { posts.push(init); return posts.length === 1 ? json({}, 503)
@@ -84,6 +93,102 @@ function show(proposals: unknown[] = [], canPrepare = true, canApprove = true, c
 }
 
 describe('FIN14 book-value workflow consumer', () => {
+  async function prepareUnknown() {
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: /SENTETIK FX belge/ }))
+    await user.type(await screen.findByLabelText(T.amount), '3500,00')
+    await user.type(screen.getByLabelText(T.targetAmount), '3300,00')
+    await user.selectOptions(screen.getByLabelText(T.document), DOC)
+    await user.type(screen.getByLabelText(T.reason), value.reason)
+    await user.click(screen.getByRole('button', { name: T.prepare }))
+    await screen.findByText(T.unknown)
+    return user
+  }
+
+  it('keeps the unknown key and frozen form after an early 400 and replays it after route remount', async () => {
+    const posts = show(); const user = await prepareUnknown()
+    const transport = vi.mocked(fetch).getMockImplementation()!
+    vi.mocked(fetch).mockImplementation(async (url, init) => init?.method === 'POST' ? json({}, 400) : transport(url, init))
+    await user.click(screen.getByRole('button', { name: T.retry }))
+    expect(await screen.findByText(T.unknown)).toBeTruthy()
+    expect(screen.queryByText(T.refused)).toBeNull()
+    expect((screen.getByLabelText(T.amount) as HTMLInputElement).closest('fieldset')?.disabled).toBe(true)
+    expect(recallBookValueAttempt(pendingBinding())?.attempt.key).toBe(new Headers(posts[0].headers).get('Idempotency-Key'))
+    cleanup(); shell.entry++; vi.mocked(fetch).mockImplementation(transport); mountPage()
+    await screen.findByText(T.unknown)
+    await user.click(screen.getByRole('button', { name: T.retry }))
+    expect(await screen.findByText(T.replay)).toBeTruthy()
+    expect(posts[1].body).toBe(posts[0].body)
+    expect(new Headers(posts[1].headers).get('Idempotency-Key')).toBe(new Headers(posts[0].headers).get('Idempotency-Key'))
+    expect(recallBookValueAttempt(pendingBinding())).toBeNull()
+  })
+
+  it('reports an early 403 without settling the unknown owner receipt and restores it on authorized re-entry', async () => {
+    const posts = show(); const user = await prepareUnknown()
+    const transport = vi.mocked(fetch).getMockImplementation()!
+    vi.mocked(fetch).mockImplementation(async (url, init) => init?.method === 'POST' ? json({}, 403) : transport(url, init))
+    await user.click(screen.getByRole('button', { name: T.retry }))
+    await waitFor(() => expect(boundary.report).toHaveBeenCalledWith(403, expect.anything()))
+    expect(recallBookValueAttempt(pendingBinding())?.attempt.key).toBe(new Headers(posts[0].headers).get('Idempotency-Key'))
+    cleanup(); shell.entry++; vi.mocked(fetch).mockImplementation(transport); mountPage()
+    await screen.findByText(T.unknown)
+    await user.click(screen.getByRole('button', { name: T.retry }))
+    expect(await screen.findByText(T.replay)).toBeTruthy()
+    expect(new Headers(posts[1].headers).get('Idempotency-Key')).toBe(new Headers(posts[0].headers).get('Idempotency-Key'))
+    expect(recallBookValueAttempt(pendingBinding())).toBeNull()
+  })
+
+  it('does not restore another company or actor and prunes the former actor on the next mount', async () => {
+    show(); await prepareUnknown(); const old = pendingBinding()
+    expect(recallBookValueAttempt(old)).not.toBeNull()
+    cleanup(); shell.company = OTHER; shell.revision = '1'; mountPage()
+    expect(screen.queryByText(T.unknown)).toBeNull()
+    expect(screen.queryByRole('button', { name: T.retry })).toBeNull()
+    cleanup(); shell.actor = 'SENTETIK-other'; mountPage(shell.actor)
+    expect(recallBookValueAttempt(old)).toBeNull()
+    expect(screen.queryByRole('button', { name: T.retry })).toBeNull()
+  })
+
+  it('clears an existing pending attempt on observed logout and never restores it in the next session', async () => {
+    show(); await prepareUnknown(); const old = pendingBinding()
+    expect(recallBookValueAttempt(old)).not.toBeNull()
+    cleanup(); shell.active = false; shell.sessionEpoch++; mountPage()
+    expect(recallBookValueAttempt(old)).toBeNull()
+    cleanup(); shell.active = true; mountPage()
+    expect(screen.queryByText(T.unknown)).toBeNull()
+    expect(screen.queryByRole('button', { name: T.retry })).toBeNull()
+  })
+
+  it('drops a late completion from the departed context without releasing or replaying its attempt in another context', async () => {
+    const posts = show(); const user = await prepareUnknown(); const old = pendingBinding()
+    let finish!: (response: Response) => void
+    const transport = vi.mocked(fetch).getMockImplementation()!
+    vi.mocked(fetch).mockImplementation((url, init) => init?.method === 'POST' ? new Promise(resolve => { finish = resolve }) : transport(url, init))
+    await user.click(screen.getByRole('button', { name: T.retry }))
+    cleanup(); shell.company = OTHER; shell.revision = '1'; mountPage()
+    await act(async () => finish(json({ outcome: 'Succeeded', resource: value, isReplay: true, originalCorrelationId: 'SENTETIK-corr', code: null }, 200, { 'Idempotency-Replayed': 'true' })))
+    await waitFor(() => expect(screen.queryByText(T.replay)).toBeNull())
+    expect(recallBookValueAttempt(old)).not.toBeNull()
+    expect(posts).toHaveLength(1)
+  })
+
+  it('releases a first confirmed success so route re-entry does not offer an already settled command', async () => {
+    show(); const transport = vi.mocked(fetch).getMockImplementation()!
+    vi.mocked(fetch).mockImplementation(async (url, init) => init?.method === 'POST'
+      ? json({ outcome: 'Succeeded', resource: value, isReplay: false, originalCorrelationId: 'SENTETIK-corr', code: null }) : transport(url, init))
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: /SENTETIK FX belge/ }))
+    await user.type(await screen.findByLabelText(T.amount), '3500,00')
+    await user.type(screen.getByLabelText(T.targetAmount), '3300,00')
+    await user.selectOptions(screen.getByLabelText(T.document), DOC)
+    await user.type(screen.getByLabelText(T.reason), value.reason)
+    await user.click(screen.getByRole('button', { name: T.prepare }))
+    expect(await screen.findByText(T.completed)).toBeTruthy()
+    expect(recallBookValueAttempt(pendingBinding())).toBeNull()
+    cleanup(); shell.entry++; mountPage()
+    expect(screen.queryByRole('button', { name: T.retry })).toBeNull()
+  })
+
   it('uses the real listed document version and freezes the exact proposal/key through an unknown retry', async () => {
     const posts = show(); const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: /SENTETIK FX belge/ }))
