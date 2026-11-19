@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -952,7 +952,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 wave 3 (integration): the team slices combined; token counts checked by the guard (74bc9c39… -> 77a98ea3…).
                 // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (77a98ea3… -> 848771df…).
                 // Re-fingerprinted for tren-1 W7: owner append-only schema changes; company filters retained; K3 review pending.
-                "838d7ffc31be1e8cc1736ccdf63a322a4c1f0a2722ed16573a4ccf38cd9d7380",
+                // URT-D33/D34: permit only the first Open-to-Cancelled facts; cancelled history remains immutable.
+                // No query filter or tenant bypass changed; measured by the house generator; K3 review pending.
+                "aee92d72ed7571c1ba4e2e5a2c8b51948608615e5e74de2829f625cb89cb90dc",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for DEC-FIN-014: nullable POS fact columns on ReceiptDrafts and MoneyEvents; no new table,
