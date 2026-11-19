@@ -5865,9 +5865,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Platform credential recovery audit exists; AddPlatformCredentialRecoveryAudit requires a forward fix. 1 lexical Sql call(s).
                 ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Persistence/Migrations/20261117160915_AddPlatformCredentialRecoveryAudit.cs"] =
                     new("a0c09cc3546cb4025ecdda1b2ada6709dd7d58c2b0c8d6501d2fdef0612cb925", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-                // W8 ERP-000D; K3 review pending: Down refuses history loss (51900) and installs a table-only INSERT barrier (51901) across EF10 migration commits; Up removes only that barrier. No business DML or tenant bypass; two Sql calls.
+                // W8 ERP-000D; K3 review pending: Down refuses history loss (51900), blocks appends (51901), and allows only zero-row UPDATE/DELETE during empty rollback. Up restores unconditional 51000 before dropping the barrier. No business DML or tenant bypass; two Sql calls.
                 ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Persistence/Migrations/20261119131410_ProtectAuditHistoryRollback.cs"] =
-                    new("44838dc3362a8a1edb2b308b96672432d52c27cc813a7a0913fa2cada29cb95f", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 2 }),
+                    new("e0ea26011e07ba8be1c25f7ebaed00b37086616411d9c8445c7ce7c0e6b5c19e", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 2 }),
                 // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; UBL invoice source exists; AddPurchaseInvoiceXmlContentKind is not rolled back (forward fix). 1 lexical Sql call(s).
                 ["src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Persistence/Migrations/20261117112418_AddPurchaseInvoiceXmlContentKind.cs"] =
                     new("a79686204a833c18e35c9fccdd55be81e789dd17412ec00e1f870ba7ecae987d", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),

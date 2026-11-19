@@ -75,8 +75,12 @@ EF Core 10 commits each migration separately. An empty-store Down therefore
 installs an owner-only INSTEAD OF INSERT barrier in the same transaction as the
 empty check. **51901** refuses new appends between migration commits. It survives
 an interrupted rollback or a rollback stopped at the previous schema; that older
-schema intentionally refuses appends until this migration is reapplied. Up drops
-only this temporary barrier. A complete Down-to-zero drops the owner table and its
+schema intentionally refuses appends until this migration is reapplied. While that
+barrier is active, the existing update/delete trigger permits only statements whose
+inserted/deleted tables are both empty; every actual row mutation still throws 51000.
+This allows the historical PermissionCode nullable-to-required Down's generated
+zero-row UPDATE. Up restores the original unconditional 51000 trigger before dropping
+the temporary append barrier. A complete Down-to-zero drops the owner table and its
 barrier together. No business row, retention choice, permission or activation is
 changed. The constant trigger DDL and its two Sql calls require K3 review.
 
@@ -85,6 +89,8 @@ previously distributed binaries or SQL scripts. Isolated Audit-only SQL tests
 cover a canonical legacy record, both nonempty rollback refusals with unchanged
 payload/hash/history, an empty zero/latest cycle, a committed previous-schema
 barrier refusing an append, latest reapply, and a separate SQL session blocked
-while the guard transaction is open. Build and real-SQL acceptance are NOT_RUN.
+while the guard transaction is open. The reapply also checks that real UPDATE/DELETE
+still refuse with 51000 and preserve the exact payload and migration history.
+The corrected candidate's build and real-SQL acceptance are NOT_RUN.
 
 Transaction scope reference: [Microsoft EF migration transaction behavior](https://learn.microsoft.com/en-us/ef/core/what-is-new/ef-core-9.0/breaking-changes#all-pending-migrations-are-applied-in-a-single-transaction).

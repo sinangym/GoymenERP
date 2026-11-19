@@ -66,6 +66,12 @@ public sealed class AuditRollbackSqlServerRelationalAcceptanceTests
         // the successful Down commit, rather than relying on that transaction's table lock.
         await run.MigrateAsync(expectedHistory[^2]);
         Assert.Equal(expectedHistory[..^1], await run.HistoryAsync());
+        await using (var empty = await run.OpenAsync())
+        await using (var noRows = empty.CreateCommand())
+        {
+            noRows.CommandText = "UPDATE [audit].[AuditEvents] SET [Reason]=[Reason]; DELETE FROM [audit].[AuditEvents];";
+            await noRows.ExecuteNonQueryAsync();
+        }
         await using (var betweenMigrations = await run.OpenAsync())
         await using (var append = InsertCommand(betweenMigrations, LegacyEnvelope(run.CompanyId), latestSchema: true))
         {
@@ -112,6 +118,21 @@ public sealed class AuditRollbackSqlServerRelationalAcceptanceTests
         await using var read = run.Context();
         Assert.Single(await read.AuditEvents.AsNoTracking().ToArrayAsync());
         Assert.Equal(expectedHistory, await run.HistoryAsync());
+        var payload = await run.PayloadAsync();
+        foreach (var sql in new[]
+        {
+            "UPDATE [audit].[AuditEvents] SET [Reason]=N'synthetic-forbidden';",
+            "DELETE FROM [audit].[AuditEvents];",
+        })
+        {
+            await using var connection = await run.OpenAsync();
+            await using var mutate = connection.CreateCommand();
+            mutate.CommandText = sql;
+            var refused = await Assert.ThrowsAsync<SqlException>(() => mutate.ExecuteNonQueryAsync());
+            Assert.Equal(51000, refused.Number);
+            Assert.Equal(payload, await run.PayloadAsync());
+            Assert.Equal(expectedHistory, await run.HistoryAsync());
+        }
     }
 
     private static AuditEventEnvelope LegacyEnvelope(Guid companyId) => new(

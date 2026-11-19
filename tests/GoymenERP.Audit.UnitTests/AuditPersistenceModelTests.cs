@@ -76,7 +76,10 @@ public sealed class AuditPersistenceModelTests
     {
         var migration = new ProtectAuditHistoryRollback();
         var resume = Assert.IsType<SqlOperation>(Assert.Single(migration.UpOperations));
-        Assert.Equal("DROP TRIGGER IF EXISTS [audit].[TR_AuditEvents_BlockAppendDuringRollback];", resume.Sql);
+        Assert.Contains("DROP TRIGGER IF EXISTS [audit].[TR_AuditEvents_BlockAppendDuringRollback];", resume.Sql, StringComparison.Ordinal);
+        Assert.Contains("INSTEAD OF UPDATE, DELETE", resume.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51000", resume.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("IF EXISTS (SELECT 1 FROM inserted)", resume.Sql, StringComparison.Ordinal);
         Assert.False(resume.SuppressTransaction);
         var guard = Assert.IsType<SqlOperation>(Assert.Single(migration.DownOperations));
         Assert.Contains("[audit].[AuditEvents]", guard.Sql, StringComparison.Ordinal);
@@ -85,6 +88,11 @@ public sealed class AuditPersistenceModelTests
         Assert.Contains("THROW 51900", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("THROW 51901", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("INSTEAD OF INSERT", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("INSTEAD OF UPDATE, DELETE", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("IF EXISTS (SELECT 1 FROM inserted) OR EXISTS (SELECT 1 FROM deleted)", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51000", guard.Sql, StringComparison.Ordinal);
+        Assert.True(guard.Sql.IndexOf("THROW 51900", StringComparison.Ordinal)
+            < guard.Sql.IndexOf("CREATE OR ALTER TRIGGER", StringComparison.Ordinal));
         Assert.False(guard.SuppressTransaction);
         Assert.DoesNotContain("DELETE FROM", guard.Sql, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("DROP TABLE", guard.Sql, StringComparison.OrdinalIgnoreCase);

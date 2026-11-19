@@ -113,3 +113,29 @@ başarısız komutun anahtar/audit tüketmemesi, yeniden deneme ve replay beklen
 
 Guard fingerprint'leri mevcut ev üreticisiyle yenilenir; yeni bypass girdisi veya SQL
 yüzeyi yoktur, K3 review bekler. Bu ek yazılırken düzeltilmiş adayın SQL sonucu **NOT_RUN**.
+
+## Boş Audit geri alma zincirinde sıfır satırlı UPDATE
+
+`7e97c36d9` adayında kaynak ön kontrolleri, derlemeler, seçilmiş backend/ekran testleri
+ve ilk sekiz SQL hedefi geçti. Önceki Ayarlar 1222 regresyonları dahil bu sekiz sonuç
+skip0'dır. Dokuzuncu SQL hedefinde boş Audit latest→zero geri alma zinciri 51000 ile
+durdu; diğer 37 SQL hedefi ve sona alınan beş Python doğrulayıcı paketi çalışmadı.
+
+Aynı eski ikiliden EF CLI ile üretilen geri alma SQL'i, `AddTypedFounderRecoverySystemAudit`
+Down'ında `PermissionCode` için sıfır satır etkileyen UPDATE olduğunu gösterdi.
+SQL Server UPDATE tetikleyicisini etkilenen satır olmasa da çalıştırır; ilk Audit
+trigger'ı koşulsuz 51000 veriyordu. Kaynaklar:
+[EF Core 10.0.8 migration SQL üreticisi](https://github.com/dotnet/efcore/blob/v10.0.8/src/EFCore.SqlServer/Migrations/SqlServerMigrationsSqlGenerator.cs),
+[SQL Server DML trigger açıklaması](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-trigger-transact-sql?view=sql-server-ver16).
+
+W8'de EF ile üretilmiş `ProtectAuditHistoryRollback` onarıldı; önceki tarihsel migration'lar
+ve snapshot değişmedi. Down önce bütün tabloyu kilitleyerek dolu geçmişi 51900 ile reddeder,
+sonra 51901 INSERT bariyerini kurar. Mevcut UPDATE/DELETE koruması yalnız inserted/deleted
+boşken devam eder; gerçek satır mutasyonu yine 51000'dır. Up, bariyeri kaldırmadan önce
+eski koşulsuz korumayı geri kurar. Yeni THROW numarası, veri silme veya saklama kararı yoktur.
+
+Mevcut gerçek SQL testi boş UPDATE/DELETE'yi ve reapply sonrasında gerçek UPDATE/DELETE'nin
+51000 ile reddini, payload ve migration geçmişinin aynen korunmasını da kontrol eder.
+Önceki dolu tablo reddi, migration'lar arası append bariyeri ve eşzamanlı 1222 kontrolleri
+korunur. Ev üreticisi fingerprint'i yenilendi; K3 inceleme kapısı sürer.
+Bu ek yazılırken yeni adayın yürütme kanıtı **NOT_RUN**.
