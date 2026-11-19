@@ -383,12 +383,19 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using var run = await Run.StartAsync();
         await using (var context = run.Context(CompanyA))
         {
+            var initialHistory = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
             await context.GetService<IMigrator>().MigrateAsync(previousMigration);
             Assert.Equal(0, await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'inventory') AND name LIKE N'StockCount%'"));
             await context.GetService<IMigrator>().MigrateAsync(currentMigration);
             await context.Database.MigrateAsync();
+            Assert.Equal(initialHistory, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
         }
+
+        // Exercise this historical guard without rolling back newer protected physical-validation facts.
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(
+            new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryStockCounts().DownOperations[0]).Sql;
+        await ExecuteAsync(run, guard);
 
         var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-COUNT-DOWN", 10m);
         await using (var scope = run.Store(CompanyA))
@@ -396,15 +403,27 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await scope.Store.RecordStockCountAsync(Count(source.LabelId, source.LabelVersion, "9"), Metadata(run), static _ => Task.CompletedTask);
         }
 
-        await RemoveSyntheticProductVersionsForHistoricalMigrationAsync(
-            run, "SYN-COUNT-DOWN", expectedLabels: 1);
-
         await using (var context = run.Context(CompanyA))
         {
-            var rejected = await Assert.ThrowsAsync<SqlException>(
-                () => context.GetService<IMigrator>().MigrateAsync(previousMigration));
+            var appliedBefore = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            string[] proofQueries =
+            [
+                "SELECT * FROM inventory.NegativeStockValidationGuards ORDER BY CompanyId FOR JSON PATH",
+                "SELECT * FROM inventory.Labels ORDER BY Id FOR JSON PATH",
+                "SELECT * FROM inventory.Balances ORDER BY Id FOR JSON PATH",
+                "SELECT * FROM inventory.Movements ORDER BY Id FOR JSON PATH",
+                "SELECT * FROM inventory.Commands ORDER BY CompanyId, CommandName, IdempotencyKeyHash FOR JSON PATH",
+                "SELECT * FROM inventory.OutboxMessages ORDER BY Id FOR JSON PATH",
+                "SELECT * FROM audit.AuditEvents ORDER BY Id FOR JSON PATH",
+                "SELECT * FROM inventory.StockCounts ORDER BY Id FOR JSON PATH",
+                "SELECT * FROM inventory.StockCountDecisions ORDER BY CompanyId, CountId FOR JSON PATH",
+            ];
+            var proofBefore = await Task.WhenAll(proofQueries.Select(query => run.ScalarAsync<string>(query)));
+            Assert.True(await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.NegativeStockValidationGuards") > 0);
+            var rejected = await Assert.ThrowsAsync<SqlException>(() => ExecuteAsync(run, guard));
             Assert.Equal(51053, rejected.Number);
-            Assert.Equal(currentMigration, (await context.Database.GetAppliedMigrationsAsync()).Last());
+            Assert.Equal(appliedBefore, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
+            Assert.Equal(proofBefore, await Task.WhenAll(proofQueries.Select(query => run.ScalarAsync<string>(query))));
         }
 
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.StockCounts"));

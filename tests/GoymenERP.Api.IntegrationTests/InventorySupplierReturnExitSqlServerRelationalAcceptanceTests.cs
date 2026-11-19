@@ -209,20 +209,41 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using var run = await Run.StartAsync();
         await using (var context = run.Context(CompanyA))
         {
+            var initialHistory = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
             await context.GetService<IMigrator>().MigrateAsync(previousMigration);
             Assert.DoesNotContain(currentMigration, await context.Database.GetAppliedMigrationsAsync());
             await context.GetService<IMigrator>().MigrateAsync(currentMigration);
+            await context.Database.MigrateAsync();
+            Assert.Equal(initialHistory, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
         }
+
+        // Exercise this historical guard without rolling back newer protected physical-validation facts.
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(
+            new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventorySupplierReturnExit().DownOperations[0]).Sql;
+        await ExecuteAsync(run, guard);
 
         var receipt = await ReceiveForSupplierReturnAsync(run, BlockState.Free);
         await StageSupplierReturnAsync(run, SupplierReturnRequest(receipt, BlockState.Free, "1", null));
 
         await using (var context = run.Context(CompanyA))
         {
-            var rejected = await Assert.ThrowsAsync<SqlException>(
-                () => context.GetService<IMigrator>().MigrateAsync(previousMigration));
+            var appliedBefore = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            string[] proofQueries =
+            [
+                "SELECT * FROM inventory.NegativeStockValidationGuards ORDER BY CompanyId FOR JSON PATH",
+                "SELECT * FROM inventory.Labels ORDER BY Id FOR JSON PATH",
+                "SELECT * FROM inventory.Balances ORDER BY Id FOR JSON PATH",
+                "SELECT * FROM inventory.Movements ORDER BY Id FOR JSON PATH",
+                "SELECT * FROM inventory.Commands ORDER BY CompanyId, CommandName, IdempotencyKeyHash FOR JSON PATH",
+                "SELECT * FROM inventory.OutboxMessages ORDER BY Id FOR JSON PATH",
+                "SELECT * FROM audit.AuditEvents ORDER BY Id FOR JSON PATH",
+            ];
+            var proofBefore = await Task.WhenAll(proofQueries.Select(query => run.ScalarAsync<string>(query)));
+            Assert.True(await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.NegativeStockValidationGuards") > 0);
+            var rejected = await Assert.ThrowsAsync<SqlException>(() => ExecuteAsync(run, guard));
             Assert.Equal(51654, rejected.Number);
-            Assert.Equal(currentMigration, (await context.Database.GetAppliedMigrationsAsync()).Last());
+            Assert.Equal(appliedBefore, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
+            Assert.Equal(proofBefore, await Task.WhenAll(proofQueries.Select(query => run.ScalarAsync<string>(query))));
         }
 
         Assert.Equal(1, await run.ScalarAsync<int>(
