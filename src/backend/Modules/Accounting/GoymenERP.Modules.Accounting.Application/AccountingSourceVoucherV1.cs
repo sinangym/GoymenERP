@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.Modules.Accounting.Application;
 
 /// <summary>B-04/KLN-D8..D17: source amounts and accounts are frozen; approval only posts that exact voucher.</summary>
@@ -15,6 +17,7 @@ public sealed record AccountingSourceVoucherViewV1(Guid Id, Guid CompanyId, stri
 public sealed record AccountingSourceVoucherLineViewV1(int LineNumber, string MappingKey, int Side,
     Guid AccountId, string FunctionalAmount, int? SourceLineNumber, string? VatRateCode, string? AccountCode = null, string? AccountName = null);
 public sealed record AccountingSourceVoucherListV1(Guid CompanyId, IReadOnlyList<AccountingSourceVoucherViewV1> Items);
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ApproveAccountingSourceVoucherV1(long ExpectedVersion);
 public sealed record ProposeAccountingSourceVoucherReversalV1(long ExpectedVersion, Guid ProposalId,
     Guid PeriodId, DateOnly TransactionDate, DateOnly AccountingDate, DateOnly? ValueDate, string Reason);
