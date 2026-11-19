@@ -48,6 +48,8 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using (var context = run.Context(CompanyA))
         {
             var migrator = context.GetService<IMigrator>();
+            var latestHistory = context.Database.GetMigrations().ToArray();
+            Assert.Equal(latestHistory, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
             await run.ForgetTerminsBeforeRollbackAsync();
             await migrator.MigrateAsync(BeforeTechnicalSnapshots);
             Assert.Equal(BeforeTechnicalSnapshots, (await context.Database.GetAppliedMigrationsAsync()).Last());
@@ -58,24 +60,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 
             await context.Database.MigrateAsync();
             var reapplied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.Equal(OutputLabelCodes, reapplied[^1]);
-            Assert.Equal(OutputLineageEdges, reapplied[^2]);
-            Assert.Equal(MonthlyScrapPriceVersions, reapplied[^3]);
-            Assert.Equal(OrderDueDate, reapplied[^4]);
-            Assert.Equal(MonthlyScrapPrices, reapplied[^5]);
-            Assert.Equal(OutputReversals, reapplied[^6]);
-            Assert.Equal(PlanDueDate, reapplied[^7]);
-            Assert.Equal(PlanSalesOrderLinks, reapplied[^8]);
-            Assert.Equal(PlanInputAllocations, reapplied[^9]);
-            Assert.Equal(PlanPreparer, reapplied[^10]);
-            Assert.Equal(PlanProcessSpecs, reapplied[^11]);
-            Assert.Equal(PlanLifecycle, reapplied[^12]);
-            Assert.Equal(PlanParameterSnapshots, reapplied[^13]);
-            Assert.Equal(TechnicalLengthSnapshots, reapplied[^14]);
-            Assert.Equal(PlanCutLines, reapplied[^15]);
-            Assert.Equal(CommercialContexts, reapplied[^16]);
-            Assert.Equal(TechnicalSnapshots, reapplied[^17]);
-            Assert.Equal(BeforeTechnicalSnapshots, reapplied[^18]);
+            Assert.Equal(latestHistory, reapplied);
         }
 
         Assert.Equal(2, await run.ScalarAsync<int>(
