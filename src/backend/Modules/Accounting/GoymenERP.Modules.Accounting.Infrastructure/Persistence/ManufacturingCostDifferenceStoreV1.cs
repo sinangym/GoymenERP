@@ -183,10 +183,15 @@ public sealed class ManufacturingCostDifferenceStoreV1(AccountingDbContext db,
             await transaction.CommitAsync(cancellationToken);
             return result;
         }
-        catch
+        catch (Exception exception)
         {
             await transaction.RollbackAsync(CancellationToken.None);
             db.ChangeTracker.Clear();
+            // SQL Server already selected this posting transaction as the deadlock victim. EF's SQL Server
+            // execution strategy wraps that precise save failure; no other InvalidOperationException is a conflict.
+            if (exception is InvalidOperationException
+                { InnerException: DbUpdateException { InnerException: SqlException { Number: 1205 } } })
+                throw Refuse(AccountingStoreCodes.ConcurrentChange, exception);
             throw;
         }
     }
@@ -267,7 +272,8 @@ public sealed class ManufacturingCostDifferenceStoreV1(AccountingDbContext db,
             throw Refuse("cost_difference_approval_refused");
     }
     private static string Text(decimal value) => value.ToString("0.############################", CultureInfo.InvariantCulture);
-    private static AccountingStoreException Refuse(string code) => new AccountingStoreException(code, "Üretim maliyet farkı işlemi tamamlanamadı.");
+    private static AccountingStoreException Refuse(string code, Exception? inner = null) =>
+        new AccountingStoreException(code, "Üretim maliyet farkı işlemi tamamlanamadı.", inner);
 
     private async Task Save(CancellationToken cancellationToken)
     {

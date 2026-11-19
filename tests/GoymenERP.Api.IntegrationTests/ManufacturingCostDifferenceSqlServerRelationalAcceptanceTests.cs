@@ -47,7 +47,10 @@ public sealed class ManufacturingCostDifferenceSqlServerRelationalAcceptanceTest
             await scope.Store.PrepareAsync(Preparation(id, period), Maker, _ => Task.CompletedTask, Metadata(Maker));
             await scope.Store.ApproveAsync(id, 2, Checker, _ => Task.CompletedTask, Metadata(Checker));
         }
-        Assert.Equal(33.34m, await run.Scalar<decimal>("SELECT Amount FROM accounting.JournalLines WHERE Side = 1"));
+        Assert.Equal(2, await run.Count("accounting.JournalLines"));
+        Assert.Equal(33.34m, await run.Scalar<decimal>("SELECT Debit FROM accounting.JournalLines WHERE Debit > 0 AND Credit = 0"));
+        Assert.Equal(33.34m, await run.Scalar<decimal>("SELECT Credit FROM accounting.JournalLines WHERE Credit > 0 AND Debit = 0"));
+        Assert.Equal(0m, await run.Scalar<decimal>("SELECT SUM(Debit - Credit) FROM accounting.JournalLines"));
         var migration = new GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations.AddManufacturingCostDifferenceProposals();
         var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
         var refused = await Assert.ThrowsAsync<SqlException>(() => run.Scalar<int>(guard.Sql + "\nSELECT 1;"));
@@ -104,8 +107,9 @@ public sealed class ManufacturingCostDifferenceSqlServerRelationalAcceptanceTest
         Assert.Equal(1, await run.Count("accounting.Journals"));
         Assert.Equal(2, await run.Count("accounting.JournalLines"));
         Assert.Equal(1, await run.Count("accounting.Deliveries"));
-        Assert.Equal(600m, await run.Scalar<decimal>("SELECT Amount FROM accounting.JournalLines WHERE Side = 1"));
-        Assert.Equal(0m, await run.Scalar<decimal>("SELECT SUM(CASE WHEN Side = 1 THEN Amount ELSE -Amount END) FROM accounting.JournalLines"));
+        Assert.Equal(600m, await run.Scalar<decimal>("SELECT Debit FROM accounting.JournalLines WHERE Debit > 0 AND Credit = 0"));
+        Assert.Equal(600m, await run.Scalar<decimal>("SELECT Credit FROM accounting.JournalLines WHERE Credit > 0 AND Debit = 0"));
+        Assert.Equal(0m, await run.Scalar<decimal>("SELECT SUM(Debit - Credit) FROM accounting.JournalLines"));
         Assert.Equal(3, await run.Scalar<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Accounting.ManufacturingCostDifference'"));
         var invalidState = await Assert.ThrowsAsync<SqlException>(() => run.Scalar<int>(
             "UPDATE accounting.ManufacturingCostDifferences SET ApprovedBy = PreparedBy; SELECT 1;"));
