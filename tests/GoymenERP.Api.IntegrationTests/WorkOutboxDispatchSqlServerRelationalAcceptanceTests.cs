@@ -191,6 +191,19 @@ public sealed partial class WorkOutboxDispatchSqlServerRelationalAcceptanceTests
 
         try
         {
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var lifecycle = Assert.IsType<OrganizationCompanyLifecycleReader>(
+                    scope.ServiceProvider.GetRequiredService<ICompanyLifecycleReadPortV1>());
+                foreach (var companyId in new[] { TestCompanyIds.CompanyA, TestCompanyIds.CompanyB })
+                {
+                    var company = Assert.IsType<CompanyLifecycleViewV1>(await lifecycle.ReadAsync(companyId));
+                    Assert.Equal(companyId, company.CompanyId);
+                    Assert.Equal(CompanyLifecycleStateV1.Active, company.State);
+                    Assert.True(company.IsActive);
+                    Assert.True(company.Version >= 1);
+                }
+            }
             await using var migrate = Db(connectionString, TestCompanyIds.CompanyA);
             await migrate.Database.MigrateAsync();
             await test(connectionString);
@@ -215,6 +228,10 @@ public sealed partial class WorkOutboxDispatchSqlServerRelationalAcceptanceTests
             services.AddScoped<ICompanyContext>(_ => new Tracking(new CompanyContext(), id => active = id));
             services.AddDbContext<WorkDbContext>(o => o.UseSqlServer(
                 connectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", WorkDbContext.Schema)));
+            services.AddDbContext<OrganizationDbContext>(o => o.UseSqlServer(
+                connectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", "organization")));
+            services.AddScoped<OrganizationBootstrapWriteScope>();
+            services.AddScoped<ICompanyLifecycleReadPortV1, OrganizationCompanyLifecycleReader>();
             services.AddSingleton<IOutboxSourceV1>(new Src(this));
             services.AddSingleton<IOutboxConsumerV1>(new Consumer(this));
             services.AddSingleton<IOutboxCompanyDirectoryV1>(new Dir());
