@@ -268,8 +268,7 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
                 command.MovementId,
                 Quantity(command.Quantity),
                 command.OccurredAtUtc);
-            var inventoryMetadata = InventoryMetadata(metadata, companyId, command.OrderId, command.ReversalId,
-                "manufacturing-output-correction");
+            var inventoryMetadata = OutputCorrectionInventoryMetadata(metadata, companyId, command.OrderId, command.ReversalId);
             var connection = manufacturing.Database.GetDbConnection();
             var databaseTransaction = transaction.GetDbTransaction();
             await using var inventory = await InventoryManufacturingRealizationParticipant.EnlistAsync(
@@ -801,6 +800,11 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
 
         return inputs;
     }
+
+    // Three full Guid:N identities plus this disjoint prefix fit Inventory's 128-character key contract.
+    internal static InventoryCommandMetadata OutputCorrectionInventoryMetadata(
+        ManufacturingCommandMetadata metadata, Guid companyId, Guid orderId, Guid reversalId) =>
+        InventoryMetadata(metadata, companyId, orderId, reversalId, "mfg-output-correction");
 
     private static InventoryCommandMetadata InventoryMetadata(
         ManufacturingCommandMetadata metadata,
