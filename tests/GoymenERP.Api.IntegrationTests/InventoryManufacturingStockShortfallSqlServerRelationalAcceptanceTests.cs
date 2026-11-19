@@ -56,14 +56,18 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             reservedKg: null);
         await AssertNothingIssuedAsync(run, overBlocked, blockedVersion);
 
-        // A label already issued to zero holds no stock anywhere, so the refusal names no place.
+        // SAT-D328/D339: the zero balance retains its exact recorded place for refusal/count evidence;
+        // naming that place does not claim any available physical kilograms.
         var emptied = await SeedManufacturingParentAsync(run, "SYN-MFG-SHORTFALL-EMPTY", 10m);
         var emptyingIssue = IssueRequest(Guid.NewGuid(), emptied.Label.Id, "2", "10");
         Assert.Equal("3", (await CommitIssueAsync(run, emptyingIssue,
             ManufacturingMetadata(run, "shortfall-emptying"))).ParentLabelVersion);
+        Assert.Equal(0m, await run.ScalarAsync<decimal>(
+            "SELECT SUM(QuantityKg) FROM inventory.Balances WHERE LabelId = @label AND LocationId = @location",
+            ("@label", emptied.Label.Id), ("@location", emptied.LocationId)));
         var overEmpty = IssueRequest(Guid.NewGuid(), emptied.Label.Id, "3", "0.001");
         AssertInputIssueShortfall(await IssueShortfallRefusalAsync(run, overEmpty, "shortfall-empty"),
-            overEmpty, emptied.Label, locationId: null, availableKg: 0m, freePhysicalKg: 0m,
+            overEmpty, emptied.Label, locationId: emptied.LocationId, availableKg: 0m, freePhysicalKg: 0m,
             reservedKg: null);
         await AssertNothingIssuedAsync(run, overEmpty, labelVersion: 3L);
     }
