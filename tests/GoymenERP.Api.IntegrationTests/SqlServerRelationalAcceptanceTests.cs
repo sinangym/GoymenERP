@@ -1208,7 +1208,8 @@ internal sealed class SqlServerRelationalApiFactory : WebApplicationFactory<Prog
         // Never change the SQL instance defaults or attach an existing application database.
         if (connection.DataSource is not ("localhost" or "." or "127.0.0.1" or "(local)")
             || !Path.IsPathFullyQualified(localDataDirectory) || !Directory.Exists(localDataDirectory)
-            || !databaseName.StartsWith("goymen_", StringComparison.Ordinal)
+            || !(databaseName.StartsWith("goymen_", StringComparison.Ordinal)
+                || databaseName.StartsWith("GoymenERP_", StringComparison.Ordinal))
             || databaseName.Length > 128
             || databaseName.Any(character => !char.IsAsciiLetterOrDigit(character) && character != '_')
             || databaseName.Length < 33

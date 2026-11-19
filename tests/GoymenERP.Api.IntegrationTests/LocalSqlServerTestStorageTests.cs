@@ -27,6 +27,12 @@ public sealed class LocalSqlServerTestStorageTests
         Assert.False(File.Exists(result.AttachDBFilename));
         Assert.Equal(SqlConnectionEncryptOption.Mandatory, result.Encrypt);
         Assert.False(result.TrustServerCertificate);
+        var legacyName = "GoymenERP_Identity_UserDirectory_" + Guid.NewGuid().ToString("N");
+        var legacy = new SqlConnectionStringBuilder(SqlServerRelationalApiFactory.BuildDatabaseConnectionString(
+            "Server=localhost;Database=master;Integrated Security=True;Encrypt=True", legacyName, root));
+        Assert.Equal(legacyName, legacy.InitialCatalog);
+        Assert.Equal(Path.Combine(root, legacyName + ".mdf"), legacy.AttachDBFilename);
+        Assert.False(File.Exists(legacy.AttachDBFilename));
     }
 
     [Fact]
