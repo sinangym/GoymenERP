@@ -100,7 +100,7 @@ EXPECTED_DURABLE_STORE_COUNT = 66
 EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 1465
 # W8 approval-mode repair: exact producer measurement, 1465 risky inputs; K3 pending.
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    '1095737f09bc9700fa105767e62c0f9871d9498aa4e4392ce6dab487e83dcaf8'
+    'c300c2199320ffd10b43b519961f96f1cab0e2b55b4a23e7e15440b4330c5313'
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -1610,7 +1610,7 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
 REVIEWED_LIVE_SOURCE_SHA256 = {
     'src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.OfficialCancellations.cs': '8dfbf6c7a82632a1a41fd33e1e03618379075c9c9013a64ee1c1292137b60262',
     'src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkNotificationStoreV1.cs': '4f5a41d4ba313431a301ec32d4c9c8ce7f6630f1f6ef09259ad8919eb26cdb6d',
-    'src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Persistence/DocumentBrandingService.cs': '6cf6ad2ad562945f1c3d69824e5df40e7276d121cbb7db90e6f26c606dc608c8',
+    'src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Persistence/DocumentBrandingService.cs': 'f1f98dac6ef80c409ab8b165a65066c229f5264e7ab28c23180dfb759fc75e4e',
     'src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsTransferDepartureOwner.cs': '5f4b17b228d7cb9211c38fd4e1d99dfcd07afaae983f5c773ec6a6a55f698e4c',
     'src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanyOpeningV1.cs': 'ce21d76a89b36a20e2c27ca0df61a6b39b4c0ecd0aa511800e6cd6ad9797f742',
     'src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPaintMembershipService.cs': 'f92ce179bcb00200f361a6ff41ea5e1eb27840db9ff54f22966c8192d9b35355',

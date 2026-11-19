@@ -3313,8 +3313,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Tren-1 W8; K3 review pending. Three fully-qualified System.Data.Common mentions only DbException catch filters;
                 // no borrowed/raw connection. Documents owner EF Serializable transaction atomically stores
                 // draft/publication/command/audit.
+                // W8 SQL repair: closed refusal operation mapping only; same three exception-type mentions, K3 review pending.
                 ["src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Persistence/DocumentBrandingService.cs"] =
-                    new("6cf6ad2ad562945f1c3d69824e5df40e7276d121cbb7db90e6f26c606dc608c8",
+                    new("f1f98dac6ef80c409ab8b165a65066c229f5264e7ab28c23180dfb759fc75e4e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 3,
@@ -3705,8 +3706,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Tren-1 W8; K3 review pending. Sales owns Serializable subcontract transaction; GetDbConnection passes handles to
                 // typed Logistics commit-read owner port and checks exact invoice company/weighing/source facts; no Logistics
                 // directwrite.
+                // W8 SQL repair: translate the exact EF-wrapped deadlock refusal; same raw API counts, K3 review pending.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.SubcontractTransaction.cs"] =
-                    new("0a54c948c5900db9b48f7154f995c0f439b7a9659e97b3839f73329af6314ead",
+                    new("ee0cbf1683b66b9013820342d037751dd858cb45d4a2e8f7898d87808761c4cf",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["GetDbConnection"] = 1,
@@ -3716,8 +3718,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // supplied exact open connection/transaction; read-only subcontract invoice claim/frozen owner identity. Disposes
                 // only session context, never commits caller transaction. Existing read/write source predicates and owner query
                 // filters retained.
+                // W8 SQL repair: retain the defined officially-cancelled history state, never an active claim; same API counts.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesSubcontractInvoiceClaimReadSession.cs"] =
-                    new("504a6249cab62739b03ac04cddf373651750bc037f48cd30252ddd7e745bae58",
+                    new("a5cd63bfb54bcbd975ed88c3d78f292ae84d393aff91171ecc7d9addf169c87f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["DbConnection"] = 3,
