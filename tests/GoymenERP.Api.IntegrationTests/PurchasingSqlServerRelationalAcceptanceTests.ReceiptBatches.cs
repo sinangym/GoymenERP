@@ -128,9 +128,49 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         await using var database = new PurchasingDbContext(new DbContextOptionsBuilder<PurchasingDbContext>()
             .UseSqlServer(run.Factory.DatabaseConnectionString,
                 sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", PurchasingDbContext.Schema)).Options, company);
-        var refusal = await Assert.ThrowsAsync<SqlException>(() => database.GetService<IMigrator>()
-            .MigrateAsync("20261116215806_AddPurchaseSupplierReturnResponseSnapshots"));
+        var appliedBefore = (await database.Database.GetAppliedMigrationsAsync()).ToArray();
+        Assert.Equal(database.Database.GetMigrations().ToArray(), appliedBefore);
+        Assert.Contains("20261116222957_AddPurchaseReceiptAdjustmentBatches", appliedBefore);
+        string[] proofQueries =
+        [
+            "SELECT (SELECT * FROM purchasing.PurchaseOrders ORDER BY Id FOR JSON PATH)",
+            "SELECT (SELECT * FROM purchasing.PurchaseOrderLines ORDER BY CompanyId, OrderId, [LineNo] FOR JSON PATH)",
+            "SELECT (SELECT * FROM purchasing.PurchaseAcceptanceShares ORDER BY AcceptanceId FOR JSON PATH)",
+            "SELECT (SELECT * FROM purchasing.PurchaseReceiptAdjustmentBatches ORDER BY CompanyId, BatchId FOR JSON PATH)",
+            "SELECT (SELECT * FROM purchasing.PurchaseReceiptAdjustments ORDER BY CompanyId, AdjustmentId FOR JSON PATH)",
+            "SELECT (SELECT * FROM purchasing.PurchaseAttempts ORDER BY CompanyId, CommandName, IdempotencyKeyHash FOR JSON PATH)",
+            "SELECT (SELECT * FROM purchasing.OutboxMessages ORDER BY Position, Id FOR JSON PATH)",
+            "SELECT (SELECT * FROM settings.DocumentNumberFormats ORDER BY CompanyId, Series, Version FOR JSON PATH)",
+            "SELECT (SELECT * FROM settings.DocumentNumberCounters ORDER BY CompanyId, Series, Year FOR JSON PATH)",
+            "SELECT (SELECT * FROM settings.DocumentNumberReservations ORDER BY CompanyId, Series, DocumentId FOR JSON PATH)",
+            "SELECT (SELECT * FROM settings.DocumentNumberCancellations ORDER BY CompanyId, Series, DocumentId FOR JSON PATH)",
+            "SELECT (SELECT * FROM audit.AuditEvents ORDER BY Id FOR JSON PATH)",
+            "SELECT (SELECT name, definition, is_disabled, is_not_trusted FROM sys.check_constraints WHERE schema_id = SCHEMA_ID(N'purchasing') ORDER BY name FOR JSON PATH)",
+        ];
+        var proofBefore = await Task.WhenAll(proofQueries.Select(query => run.ScalarAsync<string>(query)));
+        // Target the batch/history guard itself; retain newer number reservations and cancellation evidence.
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(
+            new GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations.AddPurchaseReceiptAdjustmentBatches().DownOperations[0]).Sql;
+        var refusal = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
         Assert.Equal(51956, refusal.Number);
+        Assert.Equal(appliedBefore, (await database.Database.GetAppliedMigrationsAsync()).ToArray());
+        Assert.Equal(proofBefore, await Task.WhenAll(proofQueries.Select(query => run.ScalarAsync<string>(query))));
+
+        // A genuinely empty store still exercises all real Down/Up operations through IMigrator.
+        await using var emptyRun = await Run.StartAsync();
+        await using var emptyDatabase = new PurchasingDbContext(new DbContextOptionsBuilder<PurchasingDbContext>()
+            .UseSqlServer(emptyRun.Factory.DatabaseConnectionString,
+                sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", PurchasingDbContext.Schema)).Options, company);
+        var emptyApplied = (await emptyDatabase.Database.GetAppliedMigrationsAsync()).ToArray();
+        Assert.Equal(emptyDatabase.Database.GetMigrations().ToArray(), emptyApplied);
+        var migrator = emptyDatabase.GetService<IMigrator>();
+        await migrator.MigrateAsync("20261116215806_AddPurchaseSupplierReturnResponseSnapshots");
+        Assert.Equal(0, await emptyRun.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'purchasing') AND name = N'PurchaseReceiptAdjustmentBatches'"));
+        await migrator.MigrateAsync();
+        Assert.Equal(1, await emptyRun.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'purchasing') AND name = N'PurchaseReceiptAdjustmentBatches'"));
+        Assert.Equal(emptyApplied, (await emptyDatabase.Database.GetAppliedMigrationsAsync()).ToArray());
     }
 
     private static async Task<IReadOnlyList<GoymenERP.BuildingBlocks.Messaging.WorkOutboxEventV1>> ReadPurchasingOutboxAsync(
