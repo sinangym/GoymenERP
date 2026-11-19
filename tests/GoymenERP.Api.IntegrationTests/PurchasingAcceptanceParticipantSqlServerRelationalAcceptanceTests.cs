@@ -119,16 +119,16 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             Assert.Equal(migrationContext.Database.GetMigrations().ToArray(), appliedBefore);
             string[] proofQueries =
             [
-                "SELECT * FROM purchasing.PurchaseOrders ORDER BY Id FOR JSON PATH",
-                "SELECT * FROM purchasing.PurchaseOrderLines ORDER BY CompanyId, OrderId, LineNo FOR JSON PATH",
-                "SELECT * FROM purchasing.PurchaseAcceptanceShares ORDER BY AcceptanceId FOR JSON PATH",
-                "SELECT * FROM purchasing.PurchaseAttempts ORDER BY CompanyId, CommandName, IdempotencyKeyHash FOR JSON PATH",
-                "SELECT * FROM settings.DocumentNumberFormats ORDER BY CompanyId, Series, Version FOR JSON PATH",
-                "SELECT * FROM settings.DocumentNumberCounters ORDER BY CompanyId, Series, Year FOR JSON PATH",
-                "SELECT * FROM settings.DocumentNumberReservations ORDER BY CompanyId, Series, DocumentId FOR JSON PATH",
-                "SELECT * FROM settings.DocumentNumberCancellations ORDER BY CompanyId, Series, DocumentId FOR JSON PATH",
-                "SELECT * FROM audit.AuditEvents ORDER BY Id FOR JSON PATH",
-                "SELECT name, definition, is_disabled, is_not_trusted FROM sys.check_constraints WHERE schema_id = SCHEMA_ID(N'purchasing') ORDER BY name FOR JSON PATH",
+                "SELECT (SELECT * FROM purchasing.PurchaseOrders ORDER BY Id FOR JSON PATH)",
+                "SELECT (SELECT * FROM purchasing.PurchaseOrderLines ORDER BY CompanyId, OrderId, [LineNo] FOR JSON PATH)",
+                "SELECT (SELECT * FROM purchasing.PurchaseAcceptanceShares ORDER BY AcceptanceId FOR JSON PATH)",
+                "SELECT (SELECT * FROM purchasing.PurchaseAttempts ORDER BY CompanyId, CommandName, IdempotencyKeyHash FOR JSON PATH)",
+                "SELECT (SELECT * FROM settings.DocumentNumberFormats ORDER BY CompanyId, Series, Version FOR JSON PATH)",
+                "SELECT (SELECT * FROM settings.DocumentNumberCounters ORDER BY CompanyId, Series, Year FOR JSON PATH)",
+                "SELECT (SELECT * FROM settings.DocumentNumberReservations ORDER BY CompanyId, Series, DocumentId FOR JSON PATH)",
+                "SELECT (SELECT * FROM settings.DocumentNumberCancellations ORDER BY CompanyId, Series, DocumentId FOR JSON PATH)",
+                "SELECT (SELECT * FROM audit.AuditEvents ORDER BY Id FOR JSON PATH)",
+                "SELECT (SELECT name, definition, is_disabled, is_not_trusted FROM sys.check_constraints WHERE schema_id = SCHEMA_ID(N'purchasing') ORDER BY name FOR JSON PATH)",
             ];
             var proofBefore = await Task.WhenAll(proofQueries.Select(query => run.ScalarAsync<string>(query)));
             // Each historical guard is tested directly: preserve the actual approver and newer number history.
