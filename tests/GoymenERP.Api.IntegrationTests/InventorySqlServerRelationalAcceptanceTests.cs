@@ -211,12 +211,14 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     {
         // #293 ORG P3-1: a whole and a line movement of one source and kind would count the same
         // quantity twice. The store refuses it with its own code; SQL refuses it without the store.
+        // Source-kind comparison follows the database collation. Keep a genuine case variant
+        // without Turkish i/I so this grain/duplicate proof does not select a culture policy.
         await using var run = await Run.StartAsync();
         var location = await run.LocationOfAsync(CompanyA);
         var labels = Enumerable.Range(1, 5).Select(number => NewLabel(CompanyA, $"SYN-GRAIN-{number}")).ToArray();
-        var whole = new StockSourceReference("purchase.receipt", Guid.NewGuid());
+        var whole = new StockSourceReference("source.test", Guid.NewGuid());
         var lined = Guid.NewGuid();
-        var firstLine = new StockSourceReference("purchase.receipt", lined, Guid.NewGuid());
+        var firstLine = new StockSourceReference("source.test", lined, Guid.NewGuid());
         StockMovement Receive(StockSourceReference source, int label) =>
             Movement(CompanyA, StockMovementKind.Receipt, source, In(Position(CompanyA, location, labels[label], BlockState.Free), 10m));
 
@@ -229,17 +231,17 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
             Assert.Equal(InventoryWriteOutcome.Recorded, await a.Movements.RecordMovementAsync(Receive(whole, 0), Metadata(run)));
             Assert.Equal(InventoryStoreCodes.SourceGrainMismatch, (await Assert.ThrowsAsync<InventoryStoreException>(
-                () => a.Movements.RecordMovementAsync(Receive(new StockSourceReference("purchase.receipt", whole.Id, Guid.NewGuid()), 1),
+                () => a.Movements.RecordMovementAsync(Receive(new StockSourceReference("source.test", whole.Id, Guid.NewGuid()), 1),
                     Metadata(run)))).Code);
 
             Assert.Equal(InventoryWriteOutcome.Recorded, await a.Movements.RecordMovementAsync(Receive(firstLine, 1), Metadata(run)));
             Assert.Equal(InventoryWriteOutcome.Recorded, await a.Movements.RecordMovementAsync(
-                Receive(new StockSourceReference("purchase.receipt", lined, Guid.NewGuid()), 2), Metadata(run)));
+                Receive(new StockSourceReference("source.test", lined, Guid.NewGuid()), 2), Metadata(run)));
             // The same line again (the line index's path), and the whole source after its lines.
             Assert.Equal(InventoryStoreCodes.DuplicateSource, (await Assert.ThrowsAsync<InventoryStoreException>(
                 () => a.Movements.RecordMovementAsync(Receive(firstLine, 3), Metadata(run)))).Code);
             Assert.Equal(InventoryStoreCodes.SourceGrainMismatch, (await Assert.ThrowsAsync<InventoryStoreException>(
-                () => a.Movements.RecordMovementAsync(Receive(new StockSourceReference("PURCHASE.RECEIPT", lined), 3),
+                () => a.Movements.RecordMovementAsync(Receive(new StockSourceReference("SOURCE.TEST", lined), 3),
                     Metadata(run)))).Code);
         }
 
@@ -247,15 +249,15 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var rawCases = new (StockSourceReference Source, int Grain, string Constraint, int Number)[]
         {
             // A line movement of the source answered whole: its grain row says whole.
-            (new StockSourceReference("purchase.receipt", whole.Id, Guid.NewGuid()), 2,
+            (new StockSourceReference("source.test", whole.Id, Guid.NewGuid()), 2,
                 "FK_Movements_SourceGrains_CompanyId_Kind_SourceKind_SourceId_SourceGrain", 547),
             // A whole movement of the source answered by lines.
-            (new StockSourceReference("purchase.receipt", lined), 1,
+            (new StockSourceReference("source.test", lined), 1,
                 "FK_Movements_SourceGrains_CompanyId_Kind_SourceKind_SourceId_SourceGrain", 547),
             // The same source line twice.
             (firstLine, 2, "UX_Movements_SourceLine", 2601),
             // A grain that contradicts the movement's own line (the grain row exists, only the check fails).
-            (new StockSourceReference("purchase.receipt", whole.Id, Guid.NewGuid()), 1, "CK_Movements_SourceGrain", 547),
+            (new StockSourceReference("source.test", whole.Id, Guid.NewGuid()), 1, "CK_Movements_SourceGrain", 547),
         };
         foreach (var (source, grain, constraint, number) in rawCases)
         {
@@ -274,7 +276,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             {
                 CompanyId = CompanyA,
                 Kind = (int)StockMovementKind.Receipt,
-                SourceKind = "Purchase.Receipt",
+                SourceKind = "Source.Test",
                 SourceId = whole.Id,
                 Grain = (int)StockSourceGrain.Line,
             });
