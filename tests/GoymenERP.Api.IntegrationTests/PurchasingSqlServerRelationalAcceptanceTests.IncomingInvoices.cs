@@ -1,15 +1,17 @@
-using GoymenERP.BuildingBlocks.Multitenancy;
-using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
-using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Accounting.Application.Inbox;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Domain.Invoices;
 using GoymenERP.Modules.Purchasing.Domain.Orders;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations;
-using GoymenERP.Modules.Accounting.Application.Inbox;
+using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
