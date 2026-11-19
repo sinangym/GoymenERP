@@ -34,7 +34,7 @@ public sealed partial class IdentityAccessAssignmentSqlServerRelationalAcceptanc
             await AssignDirectlyAsync(factory, target, role, TestCompanyIds.CompanyA);
             await AssignDirectlyAsync(factory, target, role, TestCompanyIds.CompanyB);
             using (var missingCompany = await PostAsync(client, resetRoute, reset, NewKey(), NewKey()))
-                await AssertCodeLessAsync(missingCompany, HttpStatusCode.Forbidden);
+                await AssertProblemAsync(missingCompany, HttpStatusCode.Forbidden, GoymenERP.Api.Errors.ErpProblemCodes.Forbidden);
             await AssignDirectlyAsync(factory, actor, role, TestCompanyIds.CompanyB);
             var key = NewKey();
             using (var applied = await PostAsync(client, resetRoute, reset, key, NewKey()))
