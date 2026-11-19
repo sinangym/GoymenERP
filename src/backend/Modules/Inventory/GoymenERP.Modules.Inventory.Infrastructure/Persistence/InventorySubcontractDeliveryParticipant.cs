@@ -99,7 +99,7 @@ public sealed partial class InventorySubcontractDeliveryParticipant : IInventory
             return replay.Result with { IsReplay = true, OriginalCorrelationId = replay.Correlation };
         await LockDemandAsync(request.Lines.Select(x => x.Source.SalesOrderLineId), cancellationToken);
         await beforeWrite(cancellationToken);
-        await store.LockPhysicalValidationAsync(cancellationToken);
+        await AcquirePhysicalValidationAsync(store.LockPhysicalValidationAsync, cancellationToken);
         var labels = new Dictionary<Guid, LabelRow>(); var reserved = new Dictionary<Guid, decimal>();
         var results = new List<InventoryPhysicalAllocationViewV1>();
         foreach (var line in request.Lines)
@@ -173,7 +173,7 @@ public sealed partial class InventorySubcontractDeliveryParticipant : IInventory
             return replay.Result with { IsReplay = true, OriginalCorrelationId = replay.Correlation };
         await LockDemandAsync(request.Lines.Select(x => x.Source.SalesOrderLineId), cancellationToken);
         await beforeWrite(cancellationToken);
-        await store.LockPhysicalValidationAsync(cancellationToken);
+        await AcquirePhysicalValidationAsync(store.LockPhysicalValidationAsync, cancellationToken);
         // Validate every source and initial version before the first stock write; one label can legitimately serve two orders.
         var prepared = new List<(InventorySubcontractShipmentLineV1 Input, AllocationRow Row, LabelRow Label, StockAllocation Allocation,
             IReadOnlyList<(AllocationRow Row, StockAllocation Allocation)> Extras)>();
@@ -367,6 +367,15 @@ public sealed partial class InventorySubcontractDeliveryParticipant : IInventory
             operation, previous, version, AuditActorTypes.User, metadata.ActorId, metadata.PermissionCode, metadata.RoleCodes, before, after, reason,
             null, AuditAiInvolvement.None, null, metadata.SourceChannel, metadata.ClientIpAddress, metadata.UserAgent,
             metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey));
+    internal static async Task AcquirePhysicalValidationAsync(Func<CancellationToken, Task> acquire, CancellationToken token)
+    {
+        try { await acquire(token); }
+        catch (InventoryStoreException exception) when (exception.Code == InventoryStoreCodes.ConcurrentChange)
+        {
+            throw Refused(409, InventoryDefiniteShipmentCodesV1.ConcurrentChange, exception);
+        }
+    }
+
     private async Task FlushAsync(CancellationToken token)
     {
         try { await context.SaveChangesAsync(token); await auditWriter.WritePendingAsync(transaction, token); }

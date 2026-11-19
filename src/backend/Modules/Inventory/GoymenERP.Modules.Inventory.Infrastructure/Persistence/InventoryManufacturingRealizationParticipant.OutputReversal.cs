@@ -35,7 +35,7 @@ public sealed partial class InventoryManufacturingRealizationParticipant : IInve
             return replay with { IsReplay = true, OriginalCorrelationId = existing.CorrelationId };
         }
 
-        await store.LockPhysicalValidationAsync(cancellationToken);
+        await AcquirePhysicalValidationAsync(store.LockPhysicalValidationAsync, cancellationToken);
         // The label version fence serializes this read with every other writer of the label (each bumps it).
         var parent = await LoadParentAsync(request.LabelId, request.ExpectedLabelVersion, requireReleasable: false,
             cancellationToken);

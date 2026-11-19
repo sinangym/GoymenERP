@@ -37,7 +37,7 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant
         if (lines.Count == 0 || lines.Any(line => line is null)
             || lines.Select(line => line.Request.AcceptanceId).Distinct().Count() != lines.Count)
             throw Error(400, Codes.InvalidRequest);
-        await store.LockPhysicalValidationAsync(cancellationToken);
+        await AcquirePhysicalValidationAsync(store.LockPhysicalValidationAsync, cancellationToken);
         var targets = new List<BatchRead>();
         var demandsByLine = new Dictionary<Guid, BatchDemand>();
         var supplyByLine = new Dictionary<Guid, BatchSupply>();

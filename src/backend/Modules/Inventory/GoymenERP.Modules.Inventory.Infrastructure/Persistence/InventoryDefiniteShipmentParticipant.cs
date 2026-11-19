@@ -122,7 +122,7 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
             return replay with { IsReplay = true, OriginalCorrelationId = existing.CorrelationId };
         }
 
-        await store.LockPhysicalValidationAsync(cancellationToken);
+        await AcquirePhysicalValidationAsync(store.LockPhysicalValidationAsync, cancellationToken);
         var allocationRow = await context.Allocations.SingleOrDefaultAsync(row => row.Id == request.AllocationId,
             cancellationToken) ?? throw Refused(404, InventoryDefiniteShipmentCodesV1.InvalidReference);
         // B-01: a definite shipment consumes only a Sales order line's allocation (or a legacy row without demand); a
@@ -347,6 +347,15 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
 
     private static string Hash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToUpperInvariant();
+
+    internal static async Task AcquirePhysicalValidationAsync(Func<CancellationToken, Task> acquire, CancellationToken token)
+    {
+        try { await acquire(token); }
+        catch (InventoryStoreException exception) when (exception.Code == InventoryStoreCodes.ConcurrentChange)
+        {
+            throw Refused(409, InventoryDefiniteShipmentCodesV1.ConcurrentChange, exception);
+        }
+    }
 
     private static InventoryDefiniteShipmentException Refused(int status, string code, Exception? inner = null) =>
         InventoryDefiniteShipmentException.Refused(status, code, inner);

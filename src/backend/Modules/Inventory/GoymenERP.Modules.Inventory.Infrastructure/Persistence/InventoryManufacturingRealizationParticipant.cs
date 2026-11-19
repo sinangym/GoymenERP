@@ -124,7 +124,7 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             };
         }
 
-        await store.LockPhysicalValidationAsync(cancellationToken);
+        await AcquirePhysicalValidationAsync(store.LockPhysicalValidationAsync, cancellationToken);
         var parent = await LoadParentAsync(request.ParentLabelId, request.ExpectedParentLabelVersion,
             requireReleasable: true, cancellationToken);
         // One source for the movement and for any refusal that names it (SAT-D318).
@@ -167,7 +167,7 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             return replay with { IsReplay = true, OriginalCorrelationId = existing.CorrelationId };
         }
 
-        await store.LockPhysicalValidationAsync(cancellationToken);
+        await AcquirePhysicalValidationAsync(store.LockPhysicalValidationAsync, cancellationToken);
         var parent = await LoadParentAsync(request.ParentLabelId, request.ExpectedParentLabelVersion,
             requireReleasable: false, cancellationToken);
         var trace = await InputTraceAsync(request.ManufacturingOrderId, parent.Label,
@@ -303,7 +303,7 @@ public sealed partial class InventoryManufacturingRealizationParticipant
         InventoryLabelProductionStatusV1? productionStatus, InventoryCommandMetadata metadata,
         CancellationToken cancellationToken)
     {
-        await store.LockPhysicalValidationAsync(cancellationToken);
+        await AcquirePhysicalValidationAsync(store.LockPhysicalValidationAsync, cancellationToken);
         var parent = await LoadParentAsync(request.ParentLabelId, request.ExpectedParentLabelVersion,
             requireReleasable: false, cancellationToken);
         // Manufacturing itself permits an output only for an issued planned roll. Inventory keeps
@@ -973,6 +973,16 @@ public sealed partial class InventoryManufacturingRealizationParticipant
 
     private static string Hash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToUpperInvariant();
+
+    internal static async Task AcquirePhysicalValidationAsync(Func<CancellationToken, Task> acquire, CancellationToken token)
+    {
+        try { await acquire(token); }
+        catch (InventoryStoreException exception) when (exception.Code == InventoryStoreCodes.ConcurrentChange)
+        {
+            throw InventoryManufacturingRealizationException.Refused(409,
+                InventoryManufacturingRealizationCodesV1.ConcurrentChange, exception);
+        }
+    }
 
     private static InventoryManufacturingRealizationException Refused(int status, string code) =>
         InventoryManufacturingRealizationException.Refused(status, code);

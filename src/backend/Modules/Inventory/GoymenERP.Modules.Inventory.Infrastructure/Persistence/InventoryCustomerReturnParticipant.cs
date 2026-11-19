@@ -131,7 +131,7 @@ public sealed class InventoryCustomerReturnParticipant : IInventoryCustomerRetur
             return replay with { IsReplay = true, OriginalCorrelationId = existing.CorrelationId };
         }
 
-        await store.LockPhysicalValidationAsync(cancellationToken);
+        await AcquirePhysicalValidationAsync(store.LockPhysicalValidationAsync, cancellationToken);
         var trace = await OriginalShipmentTraceAsync(request.SourceShipmentId,
             request.LoadingInstructionLineId, cancellationToken);
         var returned = await ReturnedQuantityAsync(trace, cancellationToken);
@@ -461,6 +461,15 @@ public sealed class InventoryCustomerReturnParticipant : IInventoryCustomerRetur
 
     private static string Hash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
+
+    internal static async Task AcquirePhysicalValidationAsync(Func<CancellationToken, Task> acquire, CancellationToken token)
+    {
+        try { await acquire(token); }
+        catch (InventoryStoreException exception) when (exception.Code == InventoryStoreCodes.ConcurrentChange)
+        {
+            throw InventoryCustomerReturnException.Refused(409, InventoryCustomerReturnCodesV1.ConcurrentChange, exception);
+        }
+    }
 
     private static InventoryCustomerReturnException Refused(int status, string code) =>
         InventoryCustomerReturnException.Refused(status, code);

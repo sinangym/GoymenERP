@@ -455,6 +455,15 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
         ? quantity.Value : throw Error(503, Codes.Unavailable);
     private static string Text(decimal value) => value.ToString("0.###", CultureInfo.InvariantCulture);
     private static string Text(long value) => value.ToString(CultureInfo.InvariantCulture);
+    internal static async Task AcquirePhysicalValidationAsync(Func<CancellationToken, Task> acquire, CancellationToken token)
+    {
+        try { await acquire(token); }
+        catch (InventoryStoreException exception) when (exception.Code == InventoryStoreCodes.ConcurrentChange)
+        {
+            throw Error(409, Codes.ConcurrentChange, exception);
+        }
+    }
+
     private static InventoryGoodsReceiptReversalException Error(int status, string code, Exception? inner = null) => new InventoryGoodsReceiptReversalException(status, code, inner);
     internal static InventoryGoodsReceiptReversalException StoreRefusal(string code, Exception? inner = null) => code switch
     {

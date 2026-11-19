@@ -138,7 +138,7 @@ public sealed class InventorySupplierReturnExitParticipant : IInventorySupplierR
             return replay with { IsReplay = true, OriginalCorrelationId = existing.CorrelationId };
         }
 
-        await store.LockPhysicalValidationAsync(cancellationToken);
+        await AcquirePhysicalValidationAsync(store.LockPhysicalValidationAsync, cancellationToken);
         var receipt = await OriginalReceiptTraceAsync(request.GoodsAcceptanceId, cancellationToken);
         var returned = await ReturnedQuantityAsync(receipt, cancellationToken);
         if (returned + input.Quantity.Value > receipt.QuantityKg)
@@ -617,6 +617,15 @@ public sealed class InventorySupplierReturnExitParticipant : IInventorySupplierR
 
     private static string Hash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
+
+    internal static async Task AcquirePhysicalValidationAsync(Func<CancellationToken, Task> acquire, CancellationToken token)
+    {
+        try { await acquire(token); }
+        catch (InventoryStoreException exception) when (exception.Code == InventoryStoreCodes.ConcurrentChange)
+        {
+            throw Refused(409, InventorySupplierReturnExitCodesV1.ConcurrentChange, exception);
+        }
+    }
 
     private static InventorySupplierReturnExitException Refused(int status, string code, Exception? inner = null) =>
         InventorySupplierReturnExitException.Refused(status, code, inner);

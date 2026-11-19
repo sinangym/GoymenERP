@@ -140,6 +140,7 @@ public sealed class InventorySubcontractAllocationReleaseStoreV1(InventoryDbCont
             try { await tx.RollbackAsync(CancellationToken.None); }
             catch { throw Error(503, InventorySubcontractAllocationReleaseV1.Unavailable); }
             finally { db.ChangeTracker.Clear(); }
+            if (PhysicalValidationConflict(error) is { } physicalConflict) throw physicalConflict;
             if (error is SalesOrderLineBusyException busy) throw Error(409, busy.Code);
             if (error is DbUpdateConcurrencyException || error is DbUpdateException { InnerException: SqlException { Number: 2601 or 2627 } }
                 || error is SqlException { Number: 1205 }) throw Error(409, InventoryAllocationCodesV1.ConcurrentChange);
@@ -230,5 +231,10 @@ public sealed class InventorySubcontractAllocationReleaseStoreV1(InventoryDbCont
     private static string TextVersion(long value) => value.ToString(CultureInfo.InvariantCulture);
     private static string Hash<T>(T value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value, Json))));
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
+    internal static InventoryAllocationException? PhysicalValidationConflict(Exception error) =>
+        error is InventoryStoreException { Code: InventoryStoreCodes.ConcurrentChange }
+            ? new InventoryAllocationException(409, InventoryAllocationCodesV1.ConcurrentChange, innerException: error)
+            : null;
+
     private static InventoryAllocationException Error(int status, string code) => new InventoryAllocationException(status, code);
 }
