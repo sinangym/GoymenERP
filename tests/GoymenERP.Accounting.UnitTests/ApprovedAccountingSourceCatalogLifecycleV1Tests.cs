@@ -38,6 +38,46 @@ public sealed class ApprovedAccountingSourceCatalogLifecycleV1Tests
     }
 
     [Fact]
+    public async Task Provider_failure_during_prepare_or_activate_is_unavailable_without_consuming_the_key()
+    {
+        var store = new MemoryStore { FailNextWrite = true };
+        var service = Service(store, new FixedAuthority(Granted()));
+        var failed = await service.PrepareAsync(Request(), "provider-prepare");
+        Assert.Equal(AccountingApiStatus.Unavailable, failed.Status);
+        Assert.Null(failed.Resource);
+        Assert.Equal(0, store.CommandCount);
+        Assert.Null(store.Record);
+
+        Assert.Equal(AccountingApiStatus.Created, (await service.PrepareAsync(Request(), "provider-prepare")).Status);
+        Assert.True((await service.PrepareAsync(Request(), "provider-prepare")).IsReplay);
+        Assert.Equal(1, store.CommandCount);
+
+        store.FailNextWrite = true;
+        var activation = new ActivateApprovedAccountingSourceCatalogRequestV1(1, 0);
+        Assert.Equal(AccountingApiStatus.Unavailable, (await service.ActivateAsync(Package, activation, "provider-activate")).Status);
+        Assert.Equal(ApprovedAccountingSourceCatalogStatusV1.Prepared, store.Record!.Status);
+        Assert.Equal(1, store.CommandCount);
+        Assert.Equal(AccountingApiStatus.Ok, (await service.ActivateAsync(Package, activation, "provider-activate")).Status);
+        Assert.True((await service.ActivateAsync(Package, activation, "provider-activate")).IsReplay);
+        Assert.Equal(2, store.CommandCount);
+    }
+
+    [Fact]
+    public async Task A_provider_failure_does_not_override_authority_revoked_before_its_answer()
+    {
+        var store = new MemoryStore { FailNextWrite = true };
+        var service = Service(store, new SequencedAuthority(
+            Granted(), Granted(), Granted(), Granted(), PermissionScope.Denied));
+
+        var result = await service.PrepareAsync(Request(), "provider-revoked");
+
+        Assert.Equal(AccountingApiStatus.Denied, result.Status);
+        Assert.Null(result.Resource);
+        Assert.Equal(0, store.CommandCount);
+        Assert.Null(store.Record);
+    }
+
+    [Fact]
     public async Task Permission_revoked_at_the_final_fence_refuses_activation_before_the_store_effect()
     {
         var store = new MemoryStore(await Preview());
@@ -256,6 +296,8 @@ public sealed class ApprovedAccountingSourceCatalogLifecycleV1Tests
         public Action? AfterRead { get; init; }
         public Action? AfterRecord { get; init; }
         public bool ThrowConcurrentWinner { get; init; }
+        public bool FailNextWrite { get; set; }
+        public int CommandCount => commands.Count;
         private int findCalls;
 
         public Task<ApprovedAccountingSourceCatalogRecordV1?> ReadAsync(
@@ -276,6 +318,7 @@ public sealed class ApprovedAccountingSourceCatalogLifecycleV1Tests
             CancellationToken cancellationToken = default)
         {
             await freshAuthorityFence(cancellationToken);
+            RefuseProviderOnce();
             Prepares++;
             Record = CatalogRecord(preview, ApprovedAccountingSourceCatalogStatusV1.Prepared, 1, null, null, null);
             Complete(metadata, Record);
@@ -299,6 +342,7 @@ public sealed class ApprovedAccountingSourceCatalogLifecycleV1Tests
             await freshAuthorityFence(cancellationToken);
             await Task.Yield();
             await freshAuthorityFence(cancellationToken);
+            RefuseProviderOnce();
             Activations++;
             Record = (Record ?? throw new InvalidOperationException()) with
             {
@@ -322,6 +366,13 @@ public sealed class ApprovedAccountingSourceCatalogLifecycleV1Tests
             Guid currencyId,
             CancellationToken cancellationToken = default) =>
             Task.FromResult<NormalJournalPostingRuleV1?>(null);
+
+        private void RefuseProviderOnce()
+        {
+            if (!FailNextWrite) return;
+            FailNextWrite = false;
+            throw new AccountingStoreException(AccountingStoreCodes.ProviderUnavailable, "SENTETIK provider failure.");
+        }
 
         public Task<AccountingCommandRecord?> FindCommandAsync(
             string commandName,

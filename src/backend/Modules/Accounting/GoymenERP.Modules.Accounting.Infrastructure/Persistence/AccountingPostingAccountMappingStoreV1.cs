@@ -5,6 +5,7 @@ using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Accounting.Application.Contracts;
 using GoymenERP.Modules.Accounting.Domain.Journals;
 using GoymenERP.Modules.Audit.Application.Contracts;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
@@ -408,11 +409,16 @@ public sealed partial class AccountingPostingAccountMappingStoreV1(
             throw new AccountingStoreException(AccountingStoreCodes.ConcurrentChange,
                 "Another mapping write changed the same version first; nothing was stored.", exception);
         }
-        catch (DbUpdateException exception)
+        catch (DbUpdateException exception) when (exception.GetBaseException() is SqlException { Number: 2601 or 2627 or 1205 })
         {
             throw new AccountingStoreException(AccountingStoreCodes.ConcurrentChange,
                 "A mapping version or the single active version was won by another write; nothing was stored.",
                 exception);
+        }
+        catch (DbUpdateException exception)
+        {
+            throw new AccountingStoreException(AccountingStoreCodes.ProviderUnavailable,
+                "The mapping write provider failed; no terminal command answer was stored.", exception);
         }
     }
 

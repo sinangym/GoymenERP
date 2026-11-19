@@ -38,7 +38,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// endpoints. Until the central API/DI/permission packet is carried, this file is integration-pending
 /// source and must not be described as executed acceptance or real Mikro/UAT evidence.
 /// </summary>
-public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptanceTests(ITestOutputHelper output)
+public sealed partial class AccountingApprovedSourceCatalogSqlServerRelationalAcceptanceTests(ITestOutputHelper output)
 {
     private const string StartupBankSeedPhase = "CI_SAFE_DIAGNOSTIC:acc_nj_sql_startup_bankseed";
     private const string ReceiptPreparePhase = "CI_SAFE_DIAGNOSTIC:acc_nj_sql_receipt_prepare";
