@@ -133,7 +133,7 @@ public sealed class IdentityUserDirectorySqlServerRelationalAcceptanceTests
 
                 // The fragment narrows within the holders (the Y holder and the site holder also match "Satisci").
                 var narrowed = await port.SearchActiveAsync(new UserDirectorySearchRequestV1(
-                    companyX, Actor(seeded.Caller), "iki", 10, SalesPermissionManifestV1.DraftsCreate));
+                    companyX, Actor(seeded.Caller), "Iki", 10, SalesPermissionManifestV1.DraftsCreate));
                 Assert.Equal([seeded.SecondHolder], narrowed.Items.Select(item => item.UserId));
 
                 // An unregistered name is refused, never "everyone".
