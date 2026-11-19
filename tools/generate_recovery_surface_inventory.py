@@ -100,7 +100,7 @@ EXPECTED_DURABLE_STORE_COUNT = 66
 EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 1467
 # W8 invoice outbox forward fix: measured 1467 risky inputs and 343 migrations; K3 pending.
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    'a8d6614097b593389e75bc53896d751c9a5f1fd4226128a43011cb0b2fb4535b'
+    'deccd55c0b78eafc960214203fdd7f3dd5d18af77aa9479033c1bfc7d34059dc'
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -1343,7 +1343,7 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
     ('src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkNotificationStoreV1.cs', 'DeliverAsync'): 'b0f10bdc40d55343e0525796bedddab7d76648652897338ea54cfc4e1297d7fc',
     ('src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Persistence/DocumentBrandingService.cs', 'ExecuteAsync'): 'ee292cd2d23aa6a77986894d07c85db975806cbeb3f2b88ed10c4da473a166ff',
     ('src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsTransferDepartureOwner.cs', 'OwnedAsync'): 'b92e422368b12054d1fd377dd7c8be7c7f0457cb355eaa845bf783f0b6dcc660',
-    ('src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanyOpeningV1.cs', 'OpenAsync'): '6e2034b554c897d14aef45967119dbe74ff48caa3fdd1fbb41efce8bbaad5922',
+    ('src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanyOpeningV1.cs', 'OpenAsync'): '2b4527a0cac43e4954487a14a064769ccb1cf12680833c408ebc4d522dd0ae6f',
     ('src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPaintMembershipService.cs', 'ExecuteAsync'): '5c471ccfa284e2a70d549b26d41cd3a67bd3d8b755ac8ab95cb55c3563f05720',
     ('src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.IncomingInvoices.cs', 'AddInvoiceAttempt'): 'f5e07813e86c291e195fa6b0aadd2e4b3777360c8108778227040ac0fe32c92e',
     ('src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.InvoiceImports.cs', 'ReserveAsync'): '0370132f3b7aaf81c8cd5204b4f93f3a52265325c53619993010916807c11bba',
@@ -1612,7 +1612,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     'src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkNotificationStoreV1.cs': '4f5a41d4ba313431a301ec32d4c9c8ce7f6630f1f6ef09259ad8919eb26cdb6d',
     'src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Persistence/DocumentBrandingService.cs': 'f1f98dac6ef80c409ab8b165a65066c229f5264e7ab28c23180dfb759fc75e4e',
     'src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsTransferDepartureOwner.cs': '5f4b17b228d7cb9211c38fd4e1d99dfcd07afaae983f5c773ec6a6a55f698e4c',
-    'src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanyOpeningV1.cs': 'ce21d76a89b36a20e2c27ca0df61a6b39b4c0ecd0aa511800e6cd6ad9797f742',
+    'src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanyOpeningV1.cs': '8285a3f8f15c725640f5fb8ae1cd83def595dc1880f30529c36428d0a1b8abe1',
     'src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPaintMembershipService.cs': 'f92ce179bcb00200f361a6ff41ea5e1eb27840db9ff54f22966c8192d9b35355',
     'src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.IncomingInvoices.cs': 'a99b3fcace66aca1921f198bde6ee99fbcb85059c51b18c33cc114bc4d599317',
     'src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.InvoiceImports.cs': '087ef79936d91f86345379055410440d9d398fac469ee49452c11da0e5e24249',
