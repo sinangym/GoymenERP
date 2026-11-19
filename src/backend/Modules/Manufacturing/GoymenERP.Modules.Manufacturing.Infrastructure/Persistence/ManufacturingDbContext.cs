@@ -1060,11 +1060,11 @@ public sealed partial class ManufacturingDbContext(DbContextOptions<Manufacturin
                 // URT-D33/D34: cancellation facts may be written once, only on the initial Open → Cancelled transition.
                 var initialOrderCancellation = entry.Entity is OrderRow order
                     && order.Status == (int)OrderStatus.Cancelled
-                    && entry.OriginalValues.GetValue<int>(nameof(OrderRow.Status)) == (int)OrderStatus.Open
-                    && entry.OriginalValues.GetValue<Guid?>(nameof(OrderRow.CancelledByUserId)) is null
-                    && entry.OriginalValues.GetValue<DateTimeOffset?>(nameof(OrderRow.CancelledAtUtc)) is null
-                    && entry.OriginalValues.GetValue<string?>(nameof(OrderRow.CancellationReason)) is null
-                    && entry.OriginalValues.GetValue<long?>(nameof(OrderRow.PlanVersionAfterCancel)) is null;
+                    && entry.Property<int>(nameof(OrderRow.Status)).OriginalValue == (int)OrderStatus.Open
+                    && entry.Property<Guid?>(nameof(OrderRow.CancelledByUserId)).OriginalValue is null
+                    && entry.Property<DateTimeOffset?>(nameof(OrderRow.CancelledAtUtc)).OriginalValue is null
+                    && entry.Property<string?>(nameof(OrderRow.CancellationReason)).OriginalValue is null
+                    && entry.Property<long?>(nameof(OrderRow.PlanVersionAfterCancel)).OriginalValue is null;
                 string[] allowed = entry.Entity switch
                 {
                     // U2-a: the cancellation moves the status and sets its three columns; the content never changes.

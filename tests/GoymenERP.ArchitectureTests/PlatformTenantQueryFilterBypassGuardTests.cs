@@ -958,7 +958,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 W7: owner append-only schema changes; company filters retained; K3 review pending.
                 // URT-D33/D34: permit only the first Open-to-Cancelled facts; cancelled history remains immutable.
                 // No query filter or tenant bypass changed; measured by the house generator; K3 review pending.
-                "aee92d72ed7571c1ba4e2e5a2c8b51948608615e5e74de2829f625cb89cb90dc",
+                "9ae9060aecdc83e521ee6e370d194e3f6c9fd77317fbfffe0cdd2c138306bf77",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for DEC-FIN-014: nullable POS fact columns on ReceiptDrafts and MoneyEvents; no new table,
@@ -2886,7 +2886,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // DI-only registrations; reviewed tokens unchanged (146d4145... -> bf9e0937...).
                         // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): STK-S16: the optional allocation read port V2 passed to the cancellation impact read; reviewed tokens unchanged (bf9e0937… -> dbb50d2c…).
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (dbb50d2c… -> 1944e0bd…).
-                        "19f1733835eaf252ef28bac5b52810fe5787e4f387a818dfed9cd39a25ee6ffc",
+                        "aad4eb901a044364e7550a7e905cedcd773e42cbd327fe9af88d998fe397f59f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -3213,7 +3213,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // DbSet.FindAsync. Two fully-qualified System.Data.Common DbException catches map source errors to unavailable; no
                 // connection/raw SQL.
                 ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/InvoiceLineCogsCorrectionServiceV1.cs"] =
-                    new("aad4eb901a044364e7550a7e905cedcd773e42cbd327fe9af88d998fe397f59f",
+                    new("694dd8b69d3f1e21d9df83918d7a72449ae66521537eb8b29165c77b5a1773fa",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             [".FindAsync"] = 1,
