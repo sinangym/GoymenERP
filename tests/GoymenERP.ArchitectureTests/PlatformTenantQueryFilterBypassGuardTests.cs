@@ -3466,9 +3466,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // Tren-1 W8; K3 review pending. Tracked Local pool rows carry explicit CompanyId plus position/product/currency
                 // predicates. Inventory alone writes immutable movement stamps and exact pools under its existing owner
-                // transaction.
+                // transaction. Known exact fractional projections retain the existing ledger-mismatch reason; real return failure unchanged.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.MovementCosting.cs"] =
-                    new("ae2427be012009bb8f9d5cce74b85b04e9614b0046f9305fff176d85c7e1e823",
+                    new("a701537b41e0b8ed2b06b56f8073dff6a6b5877691185cf63894d962f6b3975e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             [".Local"] = 3,
