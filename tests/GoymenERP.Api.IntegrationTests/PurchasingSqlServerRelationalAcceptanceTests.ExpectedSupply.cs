@@ -30,7 +30,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
                 AcceptanceTime);
             string createKey = $"expected-supply-create-{orderId:N}";
             StoredPurchaseOrder stored = (await scope.Store.StoreOrderAsync(
-                Envelope(createKey, $"correlation-{createKey}"),
+                run.Envelope(createKey, $"correlation-{createKey}"),
                 AcceptanceHash(createKey),
                 AcceptanceAccount,
                 DateOnly.FromDateTime(AcceptanceTime.UtcDateTime),
@@ -38,7 +38,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
                 new Dictionary<Guid, string> { [lineId] = "product-v1" })).Order;
             string approveKey = $"expected-supply-approve-{orderId:N}";
             PurchasingOrderStoreResult? approved = await scope.Store.MutateOrderAsync(
-                Envelope(approveKey, $"correlation-{approveKey}"),
+                run.Envelope(approveKey, $"correlation-{approveKey}"),
                 AcceptanceHash(approveKey),
                 PurchasingCommands.OrderApproveV1,
                 orderId,

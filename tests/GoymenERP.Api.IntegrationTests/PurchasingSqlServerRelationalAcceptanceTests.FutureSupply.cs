@@ -93,19 +93,42 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
 
         var draft = await ReadFutureSupplyLineAsync(run, CompanyA, draftOrder, draftLine);
         Assert.Equal((PurchaseFutureSupplyOutcomeV1.NotAllocatable, "Draft", (Guid?)null), (draft.Outcome, draft.Status, draft.ParentLineId));
-        Assert.Null(draft.Line);
+        // Same-company general-line proof remains readable for correction; it never grants an allocatable share.
+        var draftProof = Assert.IsType<PurchaseFutureSupplyLineV1>(draft.Line);
+        Assert.Equal((CompanyA, draftOrder, draftLine, AcceptanceProduct, "product-v1", AcceptanceUnit, "General"),
+            (draftProof.CompanyId, draftProof.OrderId, draftProof.LineId, draftProof.ProductId,
+                draftProof.ProductVersion, draftProof.UnitId, draftProof.Kind));
+        Assert.Equal(("5", "0", "0", "0", "0", "0"),
+            (draftProof.CommittedText, draftProof.AcceptedText, draftProof.CancelledText,
+                draftProof.ClosedText, draftProof.DefinitiveReturnedText, draftProof.AllocatableText));
+        Assert.Equal(await run.ScalarAsync<long>(
+            "SELECT Version FROM purchasing.PurchaseOrders WHERE CompanyId = @company AND Id = @order",
+            ("@company", CompanyA), ("@order", draftOrder)), draftProof.ObservedOrderVersion);
         var cancelled = await ReadFutureSupplyLineAsync(run, CompanyA, cancelledOrder, cancelledLine);
         Assert.Equal((PurchaseFutureSupplyOutcomeV1.NotAllocatable, "Cancelled", (Guid?)null),
             (cancelled.Outcome, cancelled.Status, cancelled.ParentLineId));
-        Assert.Null(cancelled.Line);
+        var cancelledProof = Assert.IsType<PurchaseFutureSupplyLineV1>(cancelled.Line);
+        Assert.Equal((CompanyA, cancelledOrder, cancelledLine, AcceptanceProduct, "product-v1", AcceptanceUnit, "General"),
+            (cancelledProof.CompanyId, cancelledProof.OrderId, cancelledProof.LineId, cancelledProof.ProductId,
+                cancelledProof.ProductVersion, cancelledProof.UnitId, cancelledProof.Kind));
+        Assert.Equal(("5", "0", "5", "0", "0", "0"),
+            (cancelledProof.CommittedText, cancelledProof.AcceptedText, cancelledProof.CancelledText,
+                cancelledProof.ClosedText, cancelledProof.DefinitiveReturnedText, cancelledProof.AllocatableText));
+        Assert.Equal(await run.ScalarAsync<long>(
+            "SELECT Version FROM purchasing.PurchaseOrders WHERE CompanyId = @company AND Id = @order",
+            ("@company", CompanyA), ("@order", cancelledOrder)), cancelledProof.ObservedOrderVersion);
 
         // Only the approved line is listed; the draft and the cancelled lines are not choices.
         var listed = await ReadFutureSupplyPageAsync(run, CompanyA, AcceptanceProduct, 10, null);
         Assert.Equal(approvedLine, Assert.Single(listed.Items).LineId);
 
         // Company B sees none of company A's lines: NotFound, an empty list, never 403.
-        Assert.Equal(PurchaseFutureSupplyOutcomeV1.NotFound, (await ReadFutureSupplyLineAsync(run, CompanyB, approvedOrder, approvedLine)).Outcome);
-        Assert.Equal(PurchaseFutureSupplyOutcomeV1.NotFound, (await ReadFutureSupplyLineAsync(run, CompanyB, draftOrder, draftLine)).Outcome);
+        var foreignApproved = await ReadFutureSupplyLineAsync(run, CompanyB, approvedOrder, approvedLine);
+        Assert.Equal(PurchaseFutureSupplyOutcomeV1.NotFound, foreignApproved.Outcome);
+        Assert.Null(foreignApproved.Line);
+        var foreignDraft = await ReadFutureSupplyLineAsync(run, CompanyB, draftOrder, draftLine);
+        Assert.Equal(PurchaseFutureSupplyOutcomeV1.NotFound, foreignDraft.Outcome);
+        Assert.Null(foreignDraft.Line);
         Assert.Empty((await ReadFutureSupplyPageAsync(run, CompanyB, AcceptanceProduct, 10, null)).Items);
 
         // An unknown line, or a line asked under another order, is NotFound.
