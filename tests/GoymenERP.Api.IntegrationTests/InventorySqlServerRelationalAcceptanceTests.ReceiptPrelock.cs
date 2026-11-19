@@ -73,7 +73,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Assert.Equal(0, Volatile.Read(ref callbackCount));
             pause.Resume.TrySetResult();
             var refused = await Assert.ThrowsAsync<InventoryAllocationException>(() => creator);
-            Assert.Equal((409, InventoryFutureAllocationCodesV1.ExceedsDemandOpenQuantity), (refused.Status, refused.Code));
+            Assert.Equal((409, physical ? InventoryAllocationCodesV1.ExceedsDemandOpenQuantity
+                : InventoryFutureAllocationCodesV1.ExceedsDemandOpenQuantity), (refused.Status, refused.Code));
             var posted = await posting.WaitAsync(TimeSpan.FromSeconds(20));
             Assert.False(posted.IsReplay);
             Assert.Equal(1, callbackCount);
