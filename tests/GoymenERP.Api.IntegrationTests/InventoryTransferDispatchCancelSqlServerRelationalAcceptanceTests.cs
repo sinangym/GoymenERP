@@ -51,10 +51,27 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
         await using (var context = run.Context(CompanyA))
         {
-            var rejected = await Assert.ThrowsAsync<SqlException>(
-                () => context.GetService<IMigrator>().MigrateAsync(previousMigration));
+            var appliedBefore = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            var proofQueries = new[]
+            {
+                "SELECT CompanyId, Version FROM inventory.NegativeStockValidationGuards ORDER BY CompanyId FOR JSON PATH",
+                "SELECT * FROM inventory.Transfers ORDER BY Id FOR JSON PATH",
+                "SELECT * FROM inventory.TransferDispatches ORDER BY TransferId FOR JSON PATH",
+                "SELECT * FROM inventory.TransferDispatchCancellations ORDER BY TransferId FOR JSON PATH",
+                "SELECT * FROM inventory.Movements ORDER BY Id FOR JSON PATH",
+                "SELECT * FROM inventory.Labels ORDER BY Id FOR JSON PATH",
+            };
+            var proofs = new List<string>();
+            foreach (var query in proofQueries) proofs.Add(await run.ScalarAsync<string>(query));
+            Assert.True(await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.NegativeStockValidationGuards") > 0);
+            var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(
+                new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryTransferDispatchCancellation().DownOperations[0]).Sql;
+            // The empty full roundtrip above is separate; newer physical proof stays intact here.
+            var rejected = await Assert.ThrowsAsync<SqlException>(() => ExecuteAsync(run, guard));
             Assert.Equal(51823, rejected.Number);
-            Assert.Equal(currentMigration, (await context.Database.GetAppliedMigrationsAsync()).Last());
+            Assert.Equal(appliedBefore, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
+            for (var index = 0; index < proofQueries.Length; index++)
+                Assert.Equal(proofs[index], await run.ScalarAsync<string>(proofQueries[index]));
         }
 
         Assert.Equal((1, 1, (int)InventoryTransferStatus.DispatchCancelled), (
