@@ -1,7 +1,10 @@
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Transfers;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations;
+using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -100,9 +103,45 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 At.AddHours(5), LossRenewalReason, RequestNumber: 2),
             maker with { IdempotencyKey = Guid.NewGuid().ToString("N") }));
 
-        var approved = await LossDecisionAsync(run, transferId, lineId, new DecideInventoryTransferLossV1("2",
-            InventoryTransferDecisionKindV1.Approve, At.AddHours(5), LossRenewalReason, RequestNumber: 2),
-            LossChecker(run));
+        var approvalRequest = new DecideInventoryTransferLossV1("2",
+            InventoryTransferDecisionKindV1.Approve, At.AddHours(5), LossRenewalReason, RequestNumber: 2);
+        var approvalMetadata = LossChecker(run);
+        const string durableSql = "SELECT (SELECT (SELECT * FROM inventory.Transfers ORDER BY Id FOR JSON PATH) AS transfers, "
+            + "(SELECT * FROM inventory.TransferLossDecisions ORDER BY CompanyId, TransferId, LineId, RequestNumber FOR JSON PATH) AS decisions, "
+            + "(SELECT * FROM inventory.Movements ORDER BY Id FOR JSON PATH) AS movements, "
+            + "(SELECT * FROM inventory.Balances ORDER BY Id FOR JSON PATH) AS balances, "
+            + "(SELECT * FROM inventory.Labels ORDER BY Id FOR JSON PATH) AS labels, "
+            + "(SELECT * FROM inventory.Commands ORDER BY CompanyId, CommandName, IdempotencyKeyHash FOR JSON PATH) AS commands, "
+            + "(SELECT * FROM inventory.NegativeStockValidationGuards ORDER BY CompanyId FOR JSON PATH) AS validation, "
+            + "(SELECT * FROM audit.AuditEvents ORDER BY Id FOR JSON PATH) AS audit FOR JSON PATH)";
+        var beforeApproval = await run.ScalarAsync<string>(durableSql);
+        var fault = new LossApprovalAfterSaveFault(transferId);
+        await using (var failed = run.Store(CompanyA, fault))
+            await Assert.ThrowsAsync<InvalidOperationException>(() => failed.Store.DecideLossAsync(transferId, lineId,
+                approvalRequest, approvalMetadata, Authorized));
+        Assert.Equal(1, fault.Failures);
+        Assert.Equal(beforeApproval, await run.ScalarAsync<string>(durableSql));
+
+        // A borrowed transaction can see the complete staged decision, but only its host may commit it.
+        await using (var borrowed = run.Store(CompanyA))
+        await using (var transaction = await borrowed.DbContext.Database.BeginTransactionAsync())
+        {
+            var pending = await borrowed.Store.DecideLossAsync(transferId, lineId, approvalRequest, approvalMetadata, Authorized);
+            Assert.False(pending.IsReplay);
+            Assert.Equal("3", pending.Transfer.Version);
+            Assert.Same(transaction, borrowed.DbContext.Database.CurrentTransaction);
+            Assert.Equal(1, await borrowed.DbContext.TransferLossDecisions.CountAsync(row => row.TransferId == transferId && row.Decision == 1));
+            await transaction.RollbackAsync();
+        }
+        Assert.Equal(beforeApproval, await run.ScalarAsync<string>(durableSql));
+        var approved = await LossDecisionAsync(run, transferId, lineId, approvalRequest, approvalMetadata);
+        Assert.False(approved.IsReplay);
+        var afterApproval = await run.ScalarAsync<string>(durableSql);
+        var replayed = await LossDecisionAsync(run, transferId, lineId, approvalRequest, approvalMetadata);
+        Assert.True(replayed.IsReplay);
+        Assert.Equal(System.Text.Json.JsonSerializer.Serialize(approved),
+            System.Text.Json.JsonSerializer.Serialize(replayed with { IsReplay = false }));
+        Assert.Equal(afterApproval, await run.ScalarAsync<string>(durableSql));
         Assert.Equal([(1, "Rejected"), (2, "Approved")],
             approved.Facts.Losses.Select(loss => (loss.RequestNumber, loss.Status)));
         Assert.Equal("3", approved.Transfer.Version);
@@ -131,6 +170,22 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM inventory.TransferLossDecisions WHERE TransferId = @id AND Decision = 1",
             ("@id", transferId)));
+    }
+
+    private sealed class LossApprovalAfterSaveFault(Guid transferId) : SaveChangesInterceptor
+    {
+        public int Failures { get; private set; }
+        public override ValueTask<int> SavedChangesAsync(SaveChangesCompletedEventData eventData, int result,
+            CancellationToken cancellationToken = default)
+        {
+            if (eventData.Context is InventoryDbContext db && db.ChangeTracker.Entries<InventoryTransferLossDecisionRow>()
+                .Any(entry => entry.Entity.TransferId == transferId && entry.Entity.RequestNumber == 2 && entry.Entity.Decision == 1))
+            {
+                Failures++;
+                throw new InvalidOperationException("Synthetic loss approval failure after SQL save.");
+            }
+            return ValueTask.FromResult(result);
+        }
     }
 
     private static async Task<(PlanInventoryTransferV1 Plan, Guid LineId)> DispatchedLossTransferAsync(
