@@ -85,7 +85,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 LossRenewalSecondExplanation), Metadata(run)));
 
         var renewed = await LossRequestAsync(run, transferId, lineId,
-            new RequestInventoryTransferLossV1("2", At.AddHours(4), LossRenewalSecondExplanation), maker);
+            new RequestInventoryTransferLossV1("2", At.AddHours(4), LossRenewalSecondExplanation),
+            maker with { IdempotencyKey = Guid.NewGuid().ToString("N") });
         Assert.Equal([(1, "Rejected"), (2, "Pending")],
             renewed.Facts.Losses.Select(loss => (loss.RequestNumber, loss.Status)));
 
