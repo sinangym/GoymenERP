@@ -133,11 +133,11 @@ public sealed partial class AccountingFinanceJournalSourceSqlServerRelationalAcc
     private static FinanceCashExchangeJournalSourceProviderV1 ExchangeProvider(Scope scope, ExchangeUser user, ExchangeOwner owner,
         ApprovedNormalJournalSourceBindingV1? binding, ICompanyContext? consumerCompany = null)
     {
-        var correlation = new CorrelationContext(); correlation.Set("SENTETIK-exchange", null, "API", null, null);
+        var correlation = new CorrelationContext(); correlation.Set("SENTETIK-exchange", null, SourceChannels.Integration, null, null);
         return new(scope.Db, consumerCompany ?? scope.Company, user, correlation, owner, new ApprovedNormalJournalSourceBindingCatalogV1(binding is null ? [] : [binding]));
     }
     private static AccountingCommandMetadata ExchangeMetadata(Guid actor) => new(actor.ToString("D"), "SENTETIK-accounting", [],
-        "SENTETIK-exchange", null, Guid.NewGuid().ToString("D"), "API");
+        "SENTETIK-exchange", null, Guid.NewGuid().ToString("D"), SourceChannels.Integration);
     [SqlServerFact]
     public async Task Foreign_target_uses_both_documented_tl_values_and_preserves_legacy_missing_target_as_unavailable()
     {

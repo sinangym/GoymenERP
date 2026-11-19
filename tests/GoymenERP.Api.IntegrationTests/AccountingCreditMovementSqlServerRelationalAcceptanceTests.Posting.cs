@@ -90,11 +90,11 @@ public sealed partial class AccountingCreditMovementSqlServerRelationalAcceptanc
     }
     private static readonly DateTimeOffset At = new(2026, 11, 18, 9, 0, 0, TimeSpan.Zero);
     private static FinanceCreditMovementRecordedV1 PostedSource() => Source() with { Components = [new("principal", "100", null), new("fee", "1.50", null)] };
-    private static AccountingCommandMetadata CreditMetadata(Guid actor) => new(actor.ToString("D"), "SENTETIK-accounting", [], "SENTETIK-credit", null, Guid.NewGuid().ToString("D"), "API");
+    private static AccountingCommandMetadata CreditMetadata(Guid actor) => new(actor.ToString("D"), "SENTETIK-accounting", [], "SENTETIK-credit", null, Guid.NewGuid().ToString("D"), SourceChannels.Integration);
     private static CreditMovementNormalJournalSourceProviderV1 CreditProvider(Scope scope, CreditUser user, CreditOwner owner,
         ApprovedNormalJournalSourceBindingV1? binding, CreditPermission permission, ICompanyContext? consumerCompany = null)
     {
-        var correlation = new CorrelationContext(); correlation.Set("SENTETIK-credit", null, "API", null, null);
+        var correlation = new CorrelationContext(); correlation.Set("SENTETIK-credit", null, SourceChannels.Integration, null, null);
         return new(scope.Db, consumerCompany ?? scope.Company, user, correlation, owner,
             new ApprovedNormalJournalSourceBindingCatalogV1(binding is null ? [] : [binding]), permission);
     }
