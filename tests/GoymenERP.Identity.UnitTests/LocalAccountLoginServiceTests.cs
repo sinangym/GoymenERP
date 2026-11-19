@@ -344,6 +344,32 @@ public sealed class LocalAccountLoginServiceTests
     }
 
     [Fact]
+    public async Task A_parallel_lock_refuses_the_verified_password_without_rehash_or_temporary_consumption()
+    {
+        foreach (var temporary in new[] { false, true })
+        {
+            var harness = temporary ? Harness.WithTemporaryPassword(Now.AddHours(1))
+                : Harness.WithUser(storedHash: FakePasswordHasher.HashWithCost(Password, FakePasswordHasher.OlderCost));
+            var hash = harness.Credential.PasswordHash;
+            var stamp = harness.Credential.SecurityStamp;
+            harness.Store.BeforeWrite = credential => credential.ApplyFailedAccess(
+                new LocalCredentialFailureTransition(0, Now + LockoutDuration, LockedNow: true));
+
+            var result = await harness.LoginAsync(UserName, Password);
+
+            Assert.False(result.Succeeded);
+            Assert.Null(result.UserId);
+            Assert.Equal((0, (DateTimeOffset?)(Now + LockoutDuration), 1L),
+                (harness.Credential.FailedAccessCount, harness.Credential.LockoutEndUtc, harness.Credential.Version));
+            Assert.Equal(hash, harness.Credential.PasswordHash);
+            Assert.Equal(stamp, harness.Credential.SecurityStamp);
+            Assert.Null(harness.Credential.TemporaryPasswordConsumedAtUtc);
+            Assert.Equal((0, 0), (harness.Store.Writes, harness.Store.Consumptions));
+            AssertSingleFailure(harness, SecurityEventReasonCodesV1.CredentialsInvalid);
+        }
+    }
+
+    [Fact]
     public async Task A_lock_set_by_a_parallel_attempt_is_not_overwritten_by_a_late_failure()
     {
         var harness = Harness.WithUser();
@@ -617,7 +643,7 @@ internal sealed class InMemoryLocalCredentialStore(LocalCredential credential, b
         CancellationToken cancellationToken)
     {
         RunBeforeWrite();
-        if (!Unchanged(read))
+        if (!Unchanged(read) || credential.LockoutEndUtc != read.LockoutEndUtc)
         {
             return Task.FromResult(false);
         }
@@ -635,7 +661,8 @@ internal sealed class InMemoryLocalCredentialStore(LocalCredential credential, b
         CancellationToken cancellationToken)
     {
         RunBeforeWrite();
-        if (!Unchanged(read) || credential.TemporaryPasswordConsumedAtUtc is not null)
+        if (!Unchanged(read) || credential.TemporaryPasswordConsumedAtUtc is not null
+            || credential.LockoutEndUtc != read.LockoutEndUtc)
         {
             return Task.FromResult(false);
         }

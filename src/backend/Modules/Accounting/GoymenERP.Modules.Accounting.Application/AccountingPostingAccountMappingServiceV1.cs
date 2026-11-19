@@ -322,6 +322,11 @@ public sealed partial class AccountingPostingAccountMappingServiceV1(
         {
             return Denied();
         }
+        catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ProviderUnavailable)
+        {
+            if (!await AuthorizeCapturedAsync(permission, company, actor, cancellationToken)) return Denied();
+            return Unavailable();
+        }
         catch (AccountingStoreException)
         {
             // An unknown store answer is not a business refusal: nothing is recorded and the caller may retry.

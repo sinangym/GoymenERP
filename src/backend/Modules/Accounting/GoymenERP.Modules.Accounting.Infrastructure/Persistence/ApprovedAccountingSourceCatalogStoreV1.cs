@@ -5,6 +5,7 @@ using GoymenERP.Modules.Accounting.Domain;
 using GoymenERP.Modules.Accounting.Domain.Journals;
 using GoymenERP.Modules.Accounting.Domain.Posting;
 using GoymenERP.Modules.Audit.Application.Contracts;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
@@ -306,10 +307,15 @@ public sealed class ApprovedAccountingSourceCatalogStoreV1(
             throw Refused(AccountingStoreCodes.ConcurrentChange,
                 "Another catalog write changed the same version first; nothing was stored.", exception);
         }
-        catch (DbUpdateException exception)
+        catch (DbUpdateException exception) when (exception.GetBaseException() is SqlException { Number: 2601 or 2627 or 1205 })
         {
             throw Refused(AccountingStoreCodes.ConcurrentChange,
                 "A durable catalog identity was won by another write; nothing was stored.", exception);
+        }
+        catch (DbUpdateException exception)
+        {
+            throw Refused(AccountingStoreCodes.ProviderUnavailable,
+                "The catalog write provider failed; no terminal command answer was stored.", exception);
         }
     }
 

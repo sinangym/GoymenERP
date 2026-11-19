@@ -108,6 +108,9 @@ public static class AccountingStoreCodes
     /// </summary>
     public const string ConcurrentChange = "accounting_concurrent_change";
 
+    /// <summary>A provider write failed without a proven concurrency conflict; no terminal command answer is stored.</summary>
+    public const string ProviderUnavailable = "accounting_provider_unavailable";
+
     /// <summary>A text or amount does not fit its stored column; it is refused, never cut or rounded.</summary>
     public const string ValueDoesNotFit = "accounting_value_does_not_fit";
 
