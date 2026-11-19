@@ -250,7 +250,7 @@ public sealed class DocumentBrandingService(DbContextOptions<DocumentsDbContext>
             await FenceAsync(frame, ct);
             await db.SaveChangesAsync(ct);
             await FenceAsync(frame, ct);
-            refusals.Record(new RefusedAttemptV1 { CompanyId = frame.CompanyId, CommandName = command, Operation = command,
+            refusals.Record(new RefusedAttemptV1 { CompanyId = frame.CompanyId, CommandName = command, Operation = RefusalOperation(command),
                 TargetType = "DocumentBranding", TargetId = frame.CompanyId.ToString("D"), ActorType = AuditActorTypes.User,
                 ActorId = frame.ActorId, PermissionCode = frame.Permission, RoleCodes = frame.Roles, HttpStatus = 409,
                 ProblemCode = code, RefusalClass = code == "document_branding_version_conflict" ? RefusedAttemptClassesV1.Concurrency : RefusedAttemptClassesV1.BusinessRule,
@@ -407,6 +407,13 @@ public sealed class DocumentBrandingService(DbContextOptions<DocumentsDbContext>
         || proof.CompanyId == companyId && proof.DocumentId != Guid.Empty && proof.VersionNo > 0 && proof.SizeBytes > 0
         && DocumentContentHash.IsWellFormed(proof.Sha256) && proof.ScannerId is { Length: > 0 and <= 64 }
         && proof.UploadedBy is { Length: > 0 and <= 128 } && proof.ContentType is "image/png" or "image/jpeg" or "application/pdf";
+    internal static string RefusalOperation(string command) => command switch
+    {
+        DocumentBrandingCommandsV1.Set => "SetBranding",
+        DocumentBrandingCommandsV1.Prepare => "PrepareTemplate",
+        DocumentBrandingCommandsV1.Publish => "PublishTemplate",
+        _ => throw Unavailable(),
+    };
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
     private static DocumentBrandingServiceException Invalid() => new DocumentBrandingServiceException(400, "validation_failed");
     private static DocumentBrandingServiceException Conflict() => new DocumentBrandingServiceException(409, "document_branding_version_conflict");

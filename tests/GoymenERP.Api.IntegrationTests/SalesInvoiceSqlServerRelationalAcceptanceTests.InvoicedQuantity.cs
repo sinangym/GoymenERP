@@ -40,7 +40,7 @@ public sealed partial class SalesInvoiceSqlServerRelationalAcceptanceTests
         Assert.NotEqual(read.SourceVersion, released.SourceVersion);
         // The cancellation releases the original share, not its immutable finalization or physical quantity.
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceFinalizations WHERE InvoiceId=@id", ("@id", invoice.Id)));
-        Assert.Equal(line.Share.QuantityText, await run.ScalarAsync<string>("SELECT QuantityText FROM sales.InvoiceLines WHERE InvoiceId=@id AND LineNo=1", ("@id", invoice.Id)));
+        Assert.Equal(line.Share.QuantityText, await run.ScalarAsync<string>("SELECT QuantityText FROM sales.InvoiceLines WHERE InvoiceId=@id AND [LineNo]=1", ("@id", invoice.Id)));
     }
 
     [SqlServerFact]

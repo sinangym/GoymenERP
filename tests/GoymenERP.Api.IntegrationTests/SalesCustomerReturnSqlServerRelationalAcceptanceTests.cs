@@ -225,11 +225,11 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
         Assert.True(index > 0);
         var migrator = context.GetService<IMigrator>();
         var rollback = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[index - 1]));
-        // The finalized invoice also owns newer official-source evidence; that barrier is reached first.
-        Assert.Equal(51982, rollback.Number);
-        var sourceProof = Array.FindIndex(applied, id => id.EndsWith("_AddSalesInvoiceOfficialSourceProof", StringComparison.Ordinal));
-        Assert.True(sourceProof > index);
-        Assert.Equal(applied[..(sourceProof + 1)], await context.Database.GetAppliedMigrationsAsync());
+        // The finalized invoice appends an outbox event. Its later cursor-retention barrier is reached first.
+        Assert.Equal(51983, rollback.Number);
+        var cursor = Array.FindIndex(applied, id => id.EndsWith("_AddSalesOutboxCommittedCursor", StringComparison.Ordinal));
+        Assert.True(cursor > index);
+        Assert.Equal(applied[..(cursor + 1)], await context.Database.GetAppliedMigrationsAsync());
         await context.Database.MigrateAsync();
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[CustomerReturns]"));
@@ -335,11 +335,11 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
         Assert.True(index > 0);
         var migrator = context.GetService<IMigrator>();
         var rollback = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[index - 1]));
-        // The finalized invoice also owns newer official-source evidence; that barrier is reached first.
-        Assert.Equal(51982, rollback.Number);
-        var sourceProof = Array.FindIndex(applied, id => id.EndsWith("_AddSalesInvoiceOfficialSourceProof", StringComparison.Ordinal));
-        Assert.True(sourceProof > index);
-        Assert.Equal(applied[..(sourceProof + 1)], await context.Database.GetAppliedMigrationsAsync());
+        // The finalized invoice appends an outbox event. Its later cursor-retention barrier is reached first.
+        Assert.Equal(51983, rollback.Number);
+        var cursor = Array.FindIndex(applied, id => id.EndsWith("_AddSalesOutboxCommittedCursor", StringComparison.Ordinal));
+        Assert.True(cursor > index);
+        Assert.Equal(applied[..(cursor + 1)], await context.Database.GetAppliedMigrationsAsync());
         await context.Database.MigrateAsync();
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(6, await run.ScalarAsync<int>("SELECT [State] FROM [sales].[CustomerReturns] WHERE [Id] = @id", ("@id", id)));

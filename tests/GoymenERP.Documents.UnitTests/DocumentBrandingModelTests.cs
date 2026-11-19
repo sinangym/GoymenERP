@@ -1,15 +1,62 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Observability;
+using GoymenERP.Modules.Audit.Application.Contracts;
+using GoymenERP.Modules.Audit.Infrastructure;
 using GoymenERP.Modules.Documents.Application.Contracts;
 using GoymenERP.Modules.Documents.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Documents.UnitTests;
 
 /// <summary>SQL Server model and fail-before-connection guards. No SQL behaviour is simulated here.</summary>
 public sealed class DocumentBrandingModelTests
 {
+    [Theory]
+    [InlineData(DocumentBrandingCommandsV1.Set, "SetBranding")]
+    [InlineData(DocumentBrandingCommandsV1.Prepare, "PrepareTemplate")]
+    [InlineData(DocumentBrandingCommandsV1.Publish, "PublishTemplate")]
+    public void Branding_refusal_operations_pass_the_real_closed_Audit_mapper_and_keep_the_versioned_command(string command, string operation)
+    {
+        var company = new CompanyContext(); company.Set(Harness.CompanyA);
+        var collector = new CapturedBrandingAudit();
+        var services = new ServiceCollection();
+        services.AddSingleton<ICompanyContext>(company);
+        services.AddAuditModule(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["DB_CONNECTION_STRING"] = "Server=SENTETIK.invalid;Database=SENTETIK;Connect Timeout=1;",
+        }).Build());
+        services.AddSingleton<IAuditEventCollector>(collector);
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var recorder = scope.ServiceProvider.GetRequiredService<IRefusedAttemptRecorderV1>();
+        var attempt = new RefusedAttemptV1
+        {
+            CompanyId = Harness.CompanyA, CommandName = command, Operation = DocumentBrandingService.RefusalOperation(command),
+            TargetType = "DocumentBranding", TargetId = Harness.CompanyA.ToString("D"),
+            ActorType = AuditActorTypes.User, ActorId = "SENTETIK-maker", PermissionCode = DocumentBrandingPermissionsV1.Manage,
+            RoleCodes = ["SENTETIK"], HttpStatus = 409, ProblemCode = "document_template_maker_cannot_publish",
+            RefusalClass = RefusedAttemptClassesV1.BusinessRule, CorrelationId = "SENTETIK-branding-refusal",
+            SourceChannel = SourceChannels.Web, IdempotencyKey = "SENTETIK-branding-refusal",
+        };
+        // Record invokes the actual Audit owner's closed mapper; no database or standalone write is requested.
+        recorder.Record(attempt);
+        var draft = Assert.Single(collector.Drafts);
+        Assert.Equal((command, operation, "DocumentBranding", Harness.CompanyA),
+            (draft.EventType, draft.Operation, draft.EntityType, draft.CompanyId));
+        Assert.Throws<ArgumentException>(() => recorder.Record(attempt with { Operation = command }));
+        Assert.Single(collector.Drafts);
+    }
+
+    private sealed class CapturedBrandingAudit : IAuditEventCollector
+    {
+        internal List<AuditEventDraft> Drafts { get; } = [];
+        public void Enqueue(AuditEventDraft draft) => Drafts.Add(draft);
+    }
+
     [Fact]
     public void Branding_migration_is_ddl_and_guards_every_dropped_source_with_51936_before_any_drop()
     {

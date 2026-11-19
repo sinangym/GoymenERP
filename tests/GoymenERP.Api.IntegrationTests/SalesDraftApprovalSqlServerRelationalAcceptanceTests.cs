@@ -806,10 +806,16 @@ public sealed partial class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftRevisions] WHERE [CompanyId] = @c", ("@c", CompanyA)),
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftRevisionLines] WHERE [CompanyId] = @c", ("@c", CompanyA)));
         Task<int> AttemptsAsync() => run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CompanyId] = @c", ("@c", CompanyA));
-        Task<int> EventsAsync(Guid id) => run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Sales.OrderDraft' AND EntityId = @id", ("@id", id.ToString()));
+        Task<int> EventsAsync(Guid id) => run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Sales.OrderDraft' AND EntityId = @id AND EventType <> @risk",
+            ("@id", id.ToString()), ("@risk", SalesOrderRiskWarnings.RecordedEventType));
+        Task<int> RiskEventsAsync(Guid id) => run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Sales.OrderDraft' AND EntityId = @id AND EventType = @risk",
+            ("@id", id.ToString()), ("@risk", SalesOrderRiskWarnings.RecordedEventType));
         var quiet = await QuietCountsAsync();
         var attempts = await AttemptsAsync();
         var events = (await EventsAsync(priced.Id), await EventsAsync(unpriced.Id));
+        var riskEvents = (await RiskEventsAsync(priced.Id), await RiskEventsAsync(unpriced.Id));
 
         // (1) The preparer, holding the approve name too (a Satış Destek that WAS granted it): the own decision is refused at the
         //     service — approve on the priced, reject on the unpriced — with nothing recorded and the columns untouched.
@@ -847,6 +853,11 @@ public sealed partial class SalesDraftApprovalSqlServerRelationalAcceptanceTests
 
         Assert.Equal((attempts + 2, (events.Item1 + 1, events.Item2 + 1), quiet),
             (await AttemptsAsync(), (await EventsAsync(priced.Id), await EventsAsync(unpriced.Id)), await QuietCountsAsync()));
+        Assert.Equal((riskEvents.Item1 + 1, riskEvents.Item2),
+            (await RiskEventsAsync(priced.Id), await RiskEventsAsync(unpriced.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id AND EventType = N'sales.order-draft.approved.v1'",
+            ("@id", priced.Id.ToString("D"))));
         attempts += 2;
 
         // (3) Withdrawal. Someone else holding the create name: 403, nothing recorded. The creator: the rejected draft goes

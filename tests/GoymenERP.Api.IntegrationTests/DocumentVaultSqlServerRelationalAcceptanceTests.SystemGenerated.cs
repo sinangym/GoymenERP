@@ -64,11 +64,11 @@ public sealed partial class DocumentVaultSqlServerRelationalAcceptanceTests
         }
 
         Assert.Equal($"3||{sha}", await run.ScalarAsync<string>(
-            "SELECT CONCAT(ScanState, N'|', ScannerId, N'|', Sha256) FROM documents.DocumentVersions WHERE CompanyId = @c AND DocumentId = @d",
+            "SELECT CONCAT(ScanState, N'|', ScannerId COLLATE Latin1_General_100_BIN2, N'|', Sha256 COLLATE Latin1_General_100_BIN2) FROM documents.DocumentVersions WHERE CompanyId = @c AND DocumentId = @d",
             ("@c", CompanyA), ("@d", documentId)));
         Assert.Equal($"{SentetikProducerCommand}|{SentetikProducerPermission}|true|{run.Actor}", await run.ScalarAsync<string>(
-            "SELECT CONCAT(JSON_VALUE(AfterJson, '$.producerCommand'), N'|', JSON_VALUE(AfterJson, '$.producerPermission'), N'|', "
-            + "JSON_VALUE(AfterJson, '$.systemGenerated'), N'|', ActorId) FROM audit.AuditEvents "
+            "SELECT CONCAT(JSON_VALUE(AfterJson, '$.producerCommand') COLLATE Latin1_General_100_BIN2, N'|', JSON_VALUE(AfterJson, '$.producerPermission') COLLATE Latin1_General_100_BIN2, N'|', "
+            + "JSON_VALUE(AfterJson, '$.systemGenerated') COLLATE Latin1_General_100_BIN2, N'|', ActorId COLLATE Latin1_General_100_BIN2) FROM audit.AuditEvents "
             + "WHERE CompanyId = @c AND EntityId = @id AND EventType = N'documents.document.generated.v1'",
             ("@c", CompanyA), ("@id", documentId.ToString("D"))));
 

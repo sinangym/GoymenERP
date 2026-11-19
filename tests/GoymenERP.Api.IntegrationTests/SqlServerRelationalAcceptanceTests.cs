@@ -234,9 +234,9 @@ public sealed class SqlServerRelationalAcceptanceTests
             Assert.Equal(547, (await Assert.ThrowsAsync<SqlException>(
                 () => selfApprovalInsert.ExecuteNonQueryAsync())).Number);
         }
-        var beforeGrantRows = await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM identity.AccessGrantRequests");
+        var beforeGrantRows = await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [identity].[AccessGrantRequests]");
         Assert.Equal(0, await ScalarAsync<int>(connection,
-            "SELECT COUNT(*) FROM identity.AccessGrantRequests WHERE Status = N'Approved'"));
+            "SELECT COUNT(*) FROM [identity].[AccessGrantRequests] WHERE Status = N'Approved'"));
         await using var nullModeDownGuard = connection.CreateCommand();
         nullModeDownGuard.CommandText = Assert.IsType<SqlOperation>(
             new RejectNullAccessGrantApprovalModes().DownOperations[0]).Sql;
@@ -274,7 +274,7 @@ public sealed class SqlServerRelationalAcceptanceTests
                 nullModeDownGuard.Transaction = null;
             }
         }
-        Assert.Equal(beforeGrantRows, await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM identity.AccessGrantRequests"));
+        Assert.Equal(beforeGrantRows, await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [identity].[AccessGrantRequests]"));
     }
 
     private static async Task AssertTenantWriteGuardAsync(

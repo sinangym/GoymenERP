@@ -179,7 +179,7 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             // not a CompanyWide-only or controlled authorization substitute.
             using (var scopedReader = factory.CreateClientFor(TestUsers.CompanyAViewer, TestCompanyIds.CompanyA))
             {
-                AssertExactOrganizationSnapshot(await ReadSnapshotAsync(scopedReader), includeStatus: false);
+                AssertExactOrganizationSnapshot(await ReadSnapshotAsync(scopedReader), includeStatus: false, includeCompanyTaxId: false);
                 using var scopedList = await scopedReader.GetAsync("/api/v1/organization/locations?page=1&pageSize=25");
                 Assert.Equal(HttpStatusCode.OK, scopedList.StatusCode);
                 var scopedPage = await scopedList.Content.ReadFromJsonAsync<JsonElement>();
@@ -861,7 +861,7 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
     }
 
     private static void AssertExactOrganizationSnapshot(
-        CapabilitySnapshotProbe snapshot, bool includeSites = true, bool includeStatus = true)
+        CapabilitySnapshotProbe snapshot, bool includeSites = true, bool includeStatus = true, bool includeCompanyTaxId = true)
     {
         AssertSnapshotEnvelope(snapshot);
         var expected = new List<string>
@@ -888,7 +888,7 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
         expected.Add(OrganizationShellCapabilityProvider.WorkCenterDetailCapabilityId);
         // ORG-05 requires only the existing company-wide context-read grant held by these seeded actors.
         // Tax-id values still require their separate read authority at the endpoint.
-        expected.Add(OrganizationShellCapabilityProvider.CompanyTaxIdCapabilityId);
+        if (includeCompanyTaxId) expected.Add(OrganizationShellCapabilityProvider.CompanyTaxIdCapabilityId);
         Assert.Equal(expected.Order(StringComparer.Ordinal), snapshot.Capabilities);
     }
 
