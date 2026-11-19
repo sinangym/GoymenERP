@@ -78,7 +78,9 @@ internal sealed class SqlLocalCredentialStore(IdentityDbContext dbContext) : ILo
             throw new ArgumentException("Yeniden özet ve biçim sürümü birlikte verilmelidir.");
         }
 
-        var unchanged = Unchanged(read);
+        // KS-8: a failure may lock the account while this password verification is in flight.
+        // Only the lock state observed by this attempt may be cleared; never erase a newer lock.
+        var unchanged = Unchanged(read).Where(credential => credential.LockoutEndUtc == read.LockoutEndUtc);
         var affected = rehashedPasswordHash is null
             ? await unchanged.ExecuteUpdateAsync(
                 setters => setters
@@ -116,7 +118,8 @@ internal sealed class SqlLocalCredentialStore(IdentityDbContext dbContext) : ILo
         // KIM-D23: the single use is decided by SQL Server. Two parallel logins with the same temporary password both
         // read ConsumedAt = NULL; only the first UPDATE matches "ConsumedAt IS NULL", the second affects no row.
         var unconsumed = Unchanged(read)
-            .Where(credential => credential.TemporaryPasswordConsumedAtUtc == null);
+            .Where(credential => credential.TemporaryPasswordConsumedAtUtc == null
+                && credential.LockoutEndUtc == read.LockoutEndUtc);
         var affected = rehashedPasswordHash is null
             ? await unconsumed.ExecuteUpdateAsync(
                 setters => setters
