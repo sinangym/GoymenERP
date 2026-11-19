@@ -46,9 +46,9 @@ public sealed class IdentityUserDirectorySqlServerRelationalAcceptanceTests
                     },
                     resolved.Items.ToDictionary(item => item.UserId, item => (item.DisplayName, item.IsActiveInCompany)));
 
-                // The display-name fragment is matched by the database (case-insensitive under its collation).
+                // Database collation matches this exact fragment; the mixed-case Bora query below tests case folding without Turkish I.
                 var search = await port.SearchActiveAsync(
-                    new UserDirectorySearchRequestV1(companyX, Actor(seeded.Caller), "sentetik", 10));
+                    new UserDirectorySearchRequestV1(companyX, Actor(seeded.Caller), "SENTETIK", 10));
                 Assert.Equal(UserDirectoryOutcomeV1.Found, search.Outcome);
                 Assert.False(search.HasMore);
                 Assert.Equal(["SENTETIK Alice", "SENTETIK Arayan", "SENTETIK Bora"],
