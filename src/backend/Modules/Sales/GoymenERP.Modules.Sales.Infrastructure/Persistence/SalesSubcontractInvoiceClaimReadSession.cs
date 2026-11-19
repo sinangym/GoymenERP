@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Domain.Invoices;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -67,7 +68,9 @@ public sealed class SalesSubcontractInvoiceClaimReadSession : IAsyncDisposable
         var rows = await db.SubcontractServiceInvoices.AsNoTracking()
             .Where(row => row.CompanyId == companyId && row.LoadingInstructionId == instructionId && row.WeighingId == weighingId)
             .Select(row => new { row.Id, row.State, row.Version }).ToListAsync(cancellationToken);
-        if (rows.Any(row => row.Id == Guid.Empty || row.Version < 1 || row.State is < 1 or > 6))
+        // Officially cancelled invoices remain immutable claim history, but never an active claim.
+        if (rows.Any(row => row.Id == Guid.Empty || row.Version < 1
+            || !Enum.IsDefined((SalesSubcontractServiceInvoiceState)row.State)))
             throw new InvalidOperationException("The Sales invoice claim source is invalid.");
         var ordered = rows.OrderBy(row => row.Id).ToArray();
         var proof = new StringBuilder().Append(companyId.ToString("D")).Append('|')

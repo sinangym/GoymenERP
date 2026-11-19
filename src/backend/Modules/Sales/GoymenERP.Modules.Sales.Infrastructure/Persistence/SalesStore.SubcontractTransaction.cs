@@ -25,9 +25,12 @@ public sealed partial class SalesStore
             return result;
         }
         catch (Exception exception) when (exception is SqlException { Number: 1205 }
-            || exception is DbUpdateException { InnerException: SqlException { Number: 1205 } })
+            || exception is DbUpdateException { InnerException: SqlException { Number: 1205 } }
+            || exception is InvalidOperationException
+                { InnerException: DbUpdateException { InnerException: SqlException { Number: 1205 } } })
         {
             // SQL Server has already rolled back a deadlock victim. A second rollback can mask the refusal.
+            // EF can wrap that exact update failure in InvalidOperationException; it remains a refused race, not a retry.
             dbContext.ChangeTracker.Clear();
             throw Refused(SalesDraftStoreCodes.ConcurrentChange, "Fatura veya tartı başka bir işlemle değişti; yeniden okuyun.", exception);
         }
