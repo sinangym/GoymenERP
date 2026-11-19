@@ -237,7 +237,7 @@ public sealed partial class InventoryStore
                         catch (Exception exception) when (exception is OverflowException or InvalidOperationException)
                         { stamp.Reason = "movement_cost_reversal_unreadable"; }
                         afterVersion = await WriteCostPoolAsync(dbContext, companyContext, timeProvider, position.LocationId,
-                            position.ProductId, currency, pool, after, token, AverageCostUnreadableReason.Return);
+                            position.ProductId, currency, pool, after, token, after is null ? AverageCostUnreadableReason.Return : null);
                         afterPosition = after; costedDelta = ExactCostRatio.Of(0m).Subtract(pricedKg);
                         if (after is not null)
                         {
