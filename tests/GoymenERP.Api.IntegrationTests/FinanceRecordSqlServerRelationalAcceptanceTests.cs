@@ -146,16 +146,49 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
             return await scope.Service.RecordAsync(scope.Context, Key(key), new RecordRequest(draft.Id, draft.Version), CancellationToken.None);
         }
 
-        var results = await Task.WhenAll(
-            Task.Run(() => RecordAsync("race-a", "SENTETIK-operator-a")),
-            Task.Run(() => RecordAsync("race-b", "SENTETIK-operator-b")));
+        (string Key, string Actor)[] attempts =
+            [("race-a", "SENTETIK-operator-a"), ("race-b", "SENTETIK-operator-b")];
+        var results = await Task.WhenAll(attempts.Select(attempt =>
+            Task.Run(() => RecordAsync(attempt.Key, attempt.Actor))));
 
         Assert.Single(results, result => result.Outcome == CommandOutcome.Succeeded && !result.IsReplay);
-        Assert.Single(results, result => result.Outcome is CommandOutcome.VersionConflict or CommandOutcome.ValidationFailed);
-        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents WHERE SourceId = @s", ("@s", draft.Id)));
-        Assert.Equal(2L, await run.ScalarAsync<long>("SELECT Version FROM finance.ReceiptDrafts"));
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.manual-receipt.recorded.v1'"));
+        var loser = Assert.Single(results, result => result.Outcome != CommandOutcome.Succeeded);
+        Assert.Contains(loser.Outcome,
+            new[] { CommandOutcome.VersionConflict, CommandOutcome.ValidationFailed, CommandOutcome.Unavailable });
+        async Task AssertSingleEconomicOutcomeAsync()
+        {
+            Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents WHERE SourceId = @s", ("@s", draft.Id)));
+            Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.ReceiptDrafts"));
+            Assert.Equal(2L, await run.ScalarAsync<long>("SELECT Version FROM finance.ReceiptDrafts"));
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.manual-receipt.recorded.v1'"));
+        }
+        await AssertSingleEconomicOutcomeAsync();
+        if (loser.Outcome == CommandOutcome.Unavailable)
+        {
+            // A treasury rollback leaves no terminal key or partial money/audit record. This is
+            // an explicit same-actor/key request in a fresh scope, never an automatic retry.
+            var attempt = attempts[Array.IndexOf(results, loser)];
+            var loserKeyHash = FinanceCommandKeys.Hash(attempt.Key);
+            Assert.Null(loser.Resource);
+            Assert.False(loser.IsReplay);
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.Commands WHERE CompanyId=@company AND CommandName=@command AND IdempotencyKeyHash=@hash",
+                ("@company", CompanyA), ("@command", ReceiptDraftService.RecordCommand), ("@hash", loserKeyHash)));
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.Commands WHERE CommandName=@command", ("@command", ReceiptDraftService.RecordCommand)));
+            var reissued = await RecordAsync(attempt.Key, attempt.Actor);
+            Assert.Equal(CommandOutcome.VersionConflict, reissued.Outcome);
+            Assert.Null(reissued.Resource);
+            Assert.False(reissued.IsReplay);
+            Assert.Contains(reissued.Issues, issue => issue.Field == "expectedVersion" && issue.Code == "version_conflict");
+            await AssertSingleEconomicOutcomeAsync();
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.Commands WHERE CompanyId=@company AND CommandName=@command AND IdempotencyKeyHash=@hash",
+                ("@company", CompanyA), ("@command", ReceiptDraftService.RecordCommand), ("@hash", loserKeyHash)));
+            Assert.Equal(2, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.Commands WHERE CommandName=@command", ("@command", ReceiptDraftService.RecordCommand)));
+        }
     }
 
     [SqlServerFact]
@@ -959,6 +992,7 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         var owners = Owners.For(CompanyA);
+        await run.SeedApprovedBankAccountAsync(owners);
         var draft = await run.SaveDraftAsync(owners, "1250.50");
         CommandResult recorded;
         await using (var recording = run.Service(CompanyA, owners))
@@ -1046,6 +1080,7 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         var owners = Owners.For(CompanyA);
+        await run.SeedApprovedBankAccountAsync(owners);
         var installment = new ApprovedFinanceOpenItemSourceRow(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "invoice-v1",
             FinanceOpenItemSourceKinds.OfficialInvoiceInstallmentDocument, owners.Party, owners.Account, Currency, "1000.00",
             new DateOnly(2026, 10, 31));
