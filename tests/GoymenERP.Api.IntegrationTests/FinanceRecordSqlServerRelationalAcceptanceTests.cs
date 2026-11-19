@@ -346,8 +346,9 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
 
         // A CLOSED period over the transaction date, and an OPEN one over "today" — the shape the decision
         // names: a back-dated event recorded today must NOT move into today's period.
-        var closed = await run.PeriodAsync(CompanyA, new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31), close: true);
+        // Closing requires an already OPEN target period; prepare this exact September period before closing August.
         var open = await run.PeriodAsync(CompanyA, new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30), close: false);
+        var closed = await run.PeriodAsync(CompanyA, new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31), close: true);
         Assert.NotEqual(closed, open);
 
         // (1) occurredOn in the CLOSED period, recorded today: refused, and it is the period's refusal —
