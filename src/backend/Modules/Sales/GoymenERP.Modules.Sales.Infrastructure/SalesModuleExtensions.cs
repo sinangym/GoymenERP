@@ -327,6 +327,8 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISalesOrderPlannedQuantityReadPortV1>(),
         // SAT-D268..274 / URT-D67: the Inventory owner's currency-proven company-wide cost read.
         // Missing evidence remains an unavailable margin snapshot; it never becomes zero cost.
+        // SAT-S8 / KLN-D105: the accepted reduced revision uses the host's participant in the Sales transaction.
+        futureDemandReduction: serviceProvider.GetService<ISalesOrderFutureDemandReductionParticipantV1>(),
         marginCosts: serviceProvider.GetService<ISalesMarginCostReadPortV1>(),
         invoicedQuantities: serviceProvider.GetService<ISalesOrderInvoicedQuantityReadPortV1>());
 
