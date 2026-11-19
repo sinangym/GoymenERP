@@ -1,7 +1,9 @@
 using System.Data.Common;
+using System.Security.Claims;
 using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.PurchasingRuntime;
 using GoymenERP.BuildingBlocks.Concurrency;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
@@ -9,9 +11,11 @@ using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Application.Contracts;
+using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -253,7 +257,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             receipt.OccurredAtUtc) { InitialBlock = "Free" }, envelope, token);
     }
     private sealed class ReceiptPrelockHarness(PurchasingDbContext context, ServiceProvider services,
-        ReceiptPrelockLocations locations) : IAsyncDisposable
+        ReceiptPrelockLocations locations, AsyncServiceScope ownerScope, IHttpContextAccessor http,
+        HttpContext? previousHttpContext) : IAsyncDisposable
     {
         public PurchaseGoodsReceiptBatchHost Batch { get; } = new(context, locations, services, TimeProvider.System);
         // The optional read-only screen adapters are not used by ExecuteAsync in these transaction facts.
@@ -261,20 +266,60 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         public static ReceiptPrelockHarness Create(Run run, FutureSupplyIds supply,
             ISalesOrderLineSerializationLockBinderV1? sales = null, IInventoryFutureAllocationReleasePortV1? releasePort = null)
         {
-            var company = Company(CompanyA);
-            var purchase = new PurchaseLineSerializationLockHostBinder(company);
-            var services = new ServiceCollection()
-                .AddSingleton<ISettingsPrerequisiteProvider>(GoodsReceiptSettings(run))
-                .AddSingleton<ISalesOrderLineSerializationLockBinderV1>(sales ?? new SalesOrderLineSerializationLockHostBinder(company))
-                .AddSingleton<IPurchaseLineSerializationLockBinderV1>(purchase)
-                .AddSingleton<IInventoryFutureAllocationReleasePortV1>(releasePort ?? new InventoryFutureAllocationReleasePort(company, purchase, TimeProvider.System))
-                .AddSingleton<IInventoryGoodsReceiptFutureSupplyPortV1>(new InventoryGoodsReceiptFutureSupplyPort(company, purchase,
-                    new ReceiptPrelockDemand(supply), new ReceiptPrelockKilograms(), TimeProvider.System)).BuildServiceProvider();
-            var context = new PurchasingDbContext(new DbContextOptionsBuilder<PurchasingDbContext>()
-                .UseSqlServer(run.Factory.DatabaseConnectionString).Options, company);
-            return new(context, services, new ReceiptPrelockLocations());
+            var ownerScope = run.Factory.Services.CreateAsyncScope();
+            var owners = ownerScope.ServiceProvider;
+            var http = owners.GetRequiredService<IHttpContextAccessor>();
+            var previousHttpContext = http.HttpContext;
+            try
+            {
+                http.HttpContext = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(new ClaimsIdentity([
+                        new Claim(GoymenClaimTypes.UserId, run.Actor.ToString("D")),
+                        new Claim(GoymenClaimTypes.CompanyAccess, CompanyA.ToString("D"))], "SyntheticReceiptPrelock")),
+                };
+                var company = owners.GetRequiredService<ICompanyContext>();
+                company.Set(CompanyA);
+                var actor = owners.GetRequiredService<ICurrentUser>();
+                Assert.True(actor.IsAuthenticated && actor.CanAccessCompany(CompanyA));
+                Assert.Equal(run.Actor.ToString("D"), actor.UserId);
+                var purchase = new PurchaseLineSerializationLockHostBinder(company);
+                // Registered owners keep their real runtime gates; no conversion, price or rate success is supplied here.
+                var services = new ServiceCollection()
+                    .AddSingleton<ICompanyContext>(company)
+                    .AddSingleton<ICurrentUser>(actor)
+                    .AddSingleton<IProductPurchaseUnitConversionV1>(owners.GetRequiredService<IProductPurchaseUnitConversionV1>())
+                    .AddSingleton<ISettingsExchangeRateResolverV1>(owners.GetRequiredService<ISettingsExchangeRateResolverV1>())
+                    .AddSingleton<ISettingsPrerequisiteProvider>(GoodsReceiptSettings(run))
+                    .AddSingleton<ISalesOrderLineSerializationLockBinderV1>(sales ?? new SalesOrderLineSerializationLockHostBinder(company))
+                    .AddSingleton<IPurchaseLineSerializationLockBinderV1>(purchase)
+                    .AddSingleton<IInventoryFutureAllocationReleasePortV1>(releasePort ?? new InventoryFutureAllocationReleasePort(company, purchase, TimeProvider.System))
+                    .AddSingleton<IInventoryGoodsReceiptFutureSupplyPortV1>(new InventoryGoodsReceiptFutureSupplyPort(company, purchase,
+                        new ReceiptPrelockDemand(supply), new ReceiptPrelockKilograms(), TimeProvider.System)).BuildServiceProvider();
+                var context = new PurchasingDbContext(new DbContextOptionsBuilder<PurchasingDbContext>()
+                    .UseSqlServer(run.Factory.DatabaseConnectionString).Options, company);
+                return new(context, services, new ReceiptPrelockLocations(), ownerScope, http, previousHttpContext);
+            }
+            catch
+            {
+                http.HttpContext = previousHttpContext;
+                ownerScope.Dispose();
+                throw;
+            }
         }
-        public async ValueTask DisposeAsync() { await context.DisposeAsync(); await services.DisposeAsync(); }
+        public async ValueTask DisposeAsync()
+        {
+            try { await context.DisposeAsync(); }
+            finally
+            {
+                try { await services.DisposeAsync(); }
+                finally
+                {
+                    http.HttpContext = previousHttpContext;
+                    await ownerScope.DisposeAsync();
+                }
+            }
+        }
     }
     private sealed class ReceiptPrelockLocations : IOrganizationLocationStatusReaderV1
     {
