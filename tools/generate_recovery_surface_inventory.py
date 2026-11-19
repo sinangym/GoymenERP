@@ -1475,16 +1475,16 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
     (
         "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryCustomerReturnParticipant.cs",
         "StageAsync",
-    ): "e3db8a5240e2dc6e605fd3b265c963ff095e530d0714740228d0ff7b883f4509",
+    ): "f5ebc49ca17b1d934e0deb2ce5dea1d39dddc5caf96852094097b40bd547d5ff",
     (
         "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryDefiniteShipmentParticipant.cs",
         "StageAsync",
-    ): "daa240ca2ecdcede3fb3abd11f66d13a67e80f53b459369e0bf568207f0144a4",
+    ): "162eec3f1c3f5a624e20210b851dde63f61e839a2033d0f463bce7c3f6bd6fbe",
     # tren-1 wave 3 (stok_lojistik): K3 review pending (stok).
     (
         "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventorySupplierReturnExitParticipant.cs",
         "StageAsync",
-    ): "036e503a1ff5ef671f6ee978854810b40ceec42554560edf043094faae1f3ac7",
+    ): "7e1f2178533cd9d425385d77b9f708ed89d6ea9a83db7decc960ef4f7e471f5a",
     (
         "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductProfileWeightTableService.cs",
         "AddAttempt",
@@ -1646,8 +1646,8 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs": '60f18042fcef1d300340fdfdc6c4bd34c689cbb5a11f8eec14a046ae9e62f7ff',
     "src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Executions/SqlGroupSharedCommandTerminalStore.cs": "5ecf927a5505ff79b5d2f3d79e436dc674d1b98aa05db28c8ae6e6669ac9b301",
     "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/InventoryOpeningCommandService.cs": "fd384d4cdc34ec642db71049b1dbd0180f2d317f38acfd3a6758d943d571bebb",
-    "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryCustomerReturnParticipant.cs": "1652ab5f2d4ed5317948e93bca102230ff2c6bd46af392eea745c2535d49e43b",
-    "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryDefiniteShipmentParticipant.cs": '5c6f5106974dcf98dd6da309256d867bad49db9184cc9256358645106a84c93a',
+    "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryCustomerReturnParticipant.cs": "f46571193991fdf2d7e4b26b5608998293ca55384b7568189418aef283f2b443",
+    "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryDefiniteShipmentParticipant.cs": 'a06242b10b55ddac408e4e1daca2ba35b1b41e8fe47527614ba1e62fd00de544',
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsCustomerReturnStore.cs": "06808d6fe56293d16cf04d41fdff20505dcc0ed1862471ceae600e48a30c91df",
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsStore.cs": "20c61595c4c05a84097373db7cf44ba8078514f430df459fb98ad75ea0bca290",
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsTransferOutgoingDocumentStore.cs": '9cad954953c033049b2b879ba47a16a6c9cde69fd0449673e1f6b4228ea2b918',
@@ -1671,7 +1671,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductDimensionService.cs": "917f76d56262c646943d23540c306f9eecbf035fe77fbeae18c7ef309cb2e115",
     # tren-1 wave 3 (stok_lojistik): new live writers; K3 review pending (stok).
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductProfileWeightTableService.cs": "23fbd437a6ce008fba062e652a547692f2fe70f07ddad6525225736f2568f625",
-    "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventorySupplierReturnExitParticipant.cs": "a1c12b96cb7e9091bc04ae375040ed8b4fc04457001bcf180102e18e0d0263e6",
+    "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventorySupplierReturnExitParticipant.cs": "ffdc1fc88be6f8ad880992d48ac6fd36bd5588401255a97f4a1f3ce91242c150",
     # tren-1 wave 5 integration: values from print_recovery_actuals.py; K3 review pending.
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCreditAccountService.cs": '8c3cd1d3609ee51f45ce933e387e199e5e27a10da084b8982a3ef3864b072d21',
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOpeningBalanceService.cs": "b264220af4b1147e09e305d325aa3ae1fc3d62fca63d580b4c585664a4c0801c",
