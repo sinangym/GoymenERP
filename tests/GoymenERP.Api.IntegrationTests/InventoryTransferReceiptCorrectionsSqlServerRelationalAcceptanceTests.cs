@@ -127,15 +127,37 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             transferId, lineId, new RenewInventoryTransferOverageV1(approved.Transfer.Version, At.AddHours(6), "1",
                 OverageRenewalReason), Metadata(run)));
 
-        // The schema keeps a line's excess approved at most once (filtered unique index on the approvals).
-        var duplicate = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+        const string decisionsSql = "SELECT * FROM inventory.TransferOverageDecisions WHERE TransferId = @id ORDER BY RequestNumber FOR JSON PATH";
+        var decisionsBefore = await run.ScalarAsync<string>(decisionsSql, ("@id", transferId));
+        // An approval without its movement first violates the independent decision/movement check.
+        var missingMovement = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
             """
             UPDATE inventory.TransferOverageDecisions
             SET Decision = 1
             WHERE TransferId = @id AND RequestNumber = 1
             """,
             ("@id", transferId)));
+        Assert.Equal(547, missingMovement.Number);
+        Assert.Contains("CK_TransferOverageDecisions_Decision", missingMovement.Message, StringComparison.Ordinal);
+        Assert.Equal(decisionsBefore, await run.ScalarAsync<string>(decisionsSql, ("@id", transferId)));
+        // Supply an existing, unused company movement to isolate the one-approval-per-line unique index.
+        var otherMovement = await run.ScalarAsync<Guid>(
+            """
+            SELECT TOP (1) m.Id FROM inventory.Movements m
+            WHERE m.CompanyId = @company
+              AND NOT EXISTS (SELECT 1 FROM inventory.TransferOverageDecisions d
+                              WHERE d.CompanyId = m.CompanyId AND d.MovementId = m.Id)
+            ORDER BY m.Id
+            """, ("@company", CompanyA));
+        Assert.NotEqual(Guid.Empty, otherMovement);
+        var duplicate = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            """
+            UPDATE inventory.TransferOverageDecisions
+            SET Decision = 1, MovementId = @movement
+            WHERE TransferId = @id AND RequestNumber = 1
+            """, ("@id", transferId), ("@movement", otherMovement)));
         Assert.Equal(2601, duplicate.Number);
+        Assert.Equal(decisionsBefore, await run.ScalarAsync<string>(decisionsSql, ("@id", transferId)));
         Assert.Equal((2, 1), (
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.TransferOverageDecisions WHERE TransferId = @id",
                 ("@id", transferId)),
