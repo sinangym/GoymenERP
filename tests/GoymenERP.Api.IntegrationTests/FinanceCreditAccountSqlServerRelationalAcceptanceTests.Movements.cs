@@ -157,6 +157,7 @@ public sealed partial class FinanceCreditAccountSqlServerRelationalAcceptanceTes
         var page = await source.ReadAfterAsync(null, 10, default);
         Assert.Equal(new[] { first.Id, second.Id }, page.Select(x => x.EventId));
         Assert.Empty(await source.ReadAfterAsync(page[^1].Position, 10, default));
+        await OutboxReadIsolationAssertions.VerifyAsync(reader.Database, source, "Finance");
         await using var foreign = run.OpenMovement(Checker, companyId: CompanyB);
         Assert.Empty(await new FinanceCreditOutboxEventSourceV1(foreign.Database, foreign.Company).ReadAfterAsync(null, 10, default));
 

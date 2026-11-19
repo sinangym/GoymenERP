@@ -71,6 +71,7 @@ public sealed partial class SalesInvoiceSqlServerRelationalAcceptanceTests
         Assert.Equal(second.Id, secondPage.EventId);
         Assert.True(string.CompareOrdinal(firstPage.Position, secondPage.Position) < 0);
         Assert.Empty(await source.ReadAfterAsync(secondPage.Position, 10, default));
+        await OutboxReadIsolationAssertions.VerifyAsync(reader.Context, source, "Sales");
         await using (var foreign = run.Store(CompanyB))
         {
             var foreignCompany = new CompanyContext(); foreignCompany.Set(CompanyB);

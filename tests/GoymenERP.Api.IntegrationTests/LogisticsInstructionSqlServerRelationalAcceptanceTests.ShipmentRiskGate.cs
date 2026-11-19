@@ -1,10 +1,14 @@
 using System.Net;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Logistics.Application.Contracts;
 using GoymenERP.Modules.Logistics.Application.Outbox;
 using GoymenERP.Modules.Logistics.Domain.Loading;
 using GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations;
+using GoymenERP.Modules.Logistics.Infrastructure.Persistence;
+using GoymenERP.Modules.Logistics.Infrastructure.Outbox;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -71,6 +75,11 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
 
         Assert.Single(gate.Requests);
         Assert.Equal(1, await run.ScalarAsync<int>(OutboxCount));
+        var company = new CompanyContext(); company.Set(CompanyA);
+        await using var outboxDatabase = new LogisticsDbContext(new DbContextOptionsBuilder<LogisticsDbContext>()
+            .UseSqlServer(run.Factory.DatabaseConnectionString).Options, company);
+        await OutboxReadIsolationAssertions.VerifyAsync(outboxDatabase,
+            new LogisticsDefiniteShipmentOutboxEventSource(outboxDatabase, company), "Logistics");
     }
 
     [SqlServerFact]

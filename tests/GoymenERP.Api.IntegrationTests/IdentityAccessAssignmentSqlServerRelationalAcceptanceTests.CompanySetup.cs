@@ -459,6 +459,7 @@ public sealed partial class IdentityAccessAssignmentSqlServerRelationalAcceptanc
             await db.SaveChangesAsync();
         }
         var source = new OrganizationCompanySetupOutboxSource(db, scope.ServiceProvider.GetRequiredService<ICompanyContext>());
+        await OutboxReadIsolationAssertions.VerifyAsync(db, source, "Organization");
         var record = Assert.Single(await source.ReadAfterAsync(null, 10, default));
         return new(OrganizationCompanyOpenedV1.SourceName, record.EventId, id, record.EventType, record.Version,
             record.PayloadJson, record.OccurredAtUtc, record.CorrelationId, record.CausationId);
@@ -521,6 +522,7 @@ public sealed partial class IdentityAccessAssignmentSqlServerRelationalAcceptanc
         await using var scope = factory.Services.CreateAsyncScope();
         scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(companyId);
         var source = ActivatorUtilities.CreateInstance<IdentityCompanySetupOutboxSource>(scope.ServiceProvider);
+        await OutboxReadIsolationAssertions.VerifyAsync(scope.ServiceProvider.GetRequiredService<IdentityDbContext>(), source, "Identity");
         var record = Assert.Single(await source.ReadAfterAsync(null, 10, default));
         Assert.Equal(IdentityCompanyFirstAdminAssignedV1.EventId(companyId), record.EventId);
         return new(IdentityCompanyFirstAdminAssignedV1.SourceName, record.EventId, companyId, record.EventType, record.Version,

@@ -34,6 +34,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal(second, Assert.Single(next).EventId);
         Assert.All(page.Concat(next), row => Assert.Equal(CompanyA, row.CompanyId));
         Assert.Empty(await source.ReadAfterAsync(next[0].Position, 10, CancellationToken.None));
+        await OutboxReadIsolationAssertions.VerifyAsync(context, source, "Inventory");
         await using var otherContext = run.Context(CompanyB);
         Assert.Equal(other, Assert.Single(await new InventoryOutboxEventSource(otherContext, Company(CompanyB))
             .ReadAfterAsync(null, 10, CancellationToken.None)).EventId);

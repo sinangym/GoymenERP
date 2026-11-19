@@ -1,9 +1,11 @@
 using System.Buffers.Binary;
+using System.Data;
 using System.Globalization;
 using GoymenERP.BuildingBlocks.Messaging;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace GoymenERP.Modules.Sales.Infrastructure.Outbox;
 
@@ -37,6 +39,13 @@ public sealed class SalesOutboxEventSourceV1(SalesDbContext database, ICompanyCo
         var after = afterPosition is null ? 0UL : afterPosition.Length == 20
             && ulong.TryParse(afterPosition, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed)
             ? parsed : throw new InvalidOperationException("Satış outbox imleci geçersiz.");
+        if (System.Transactions.Transaction.Current is not null)
+            throw new InvalidOperationException("Sales outbox reads cannot borrow an ambient transaction.");
+        var borrowed = database.Database.CurrentTransaction;
+        if (borrowed is not null && borrowed.GetDbTransaction().IsolationLevel != IsolationLevel.ReadCommitted)
+            throw new InvalidOperationException("Sales outbox reads require a READ COMMITTED transaction.");
+        await using var owned = borrowed is null
+            ? await database.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken) : null;
         var values = await database.Database.SqlQueryRaw<byte[]>("SELECT MIN_ACTIVE_ROWVERSION() AS [Value]")
             .ToListAsync(cancellationToken);
         var horizon = values.Count == 1 && values[0] is { Length: sizeof(ulong) } bytes
@@ -47,9 +56,11 @@ public sealed class SalesOutboxEventSourceV1(SalesDbContext database, ICompanyCo
             .Where(row => row.CompanyId == companyId && row.Position > after && row.Position < horizon)
             .OrderBy(row => row.Position).Take(maxCount).ToListAsync(cancellationToken);
         Fence();
-        return rows.Select(row => new WorkOutboxEventV1(row.Id, row.CompanyId, row.EventType, row.SchemaVersion,
+        var result = rows.Select(row => new WorkOutboxEventV1(row.Id, row.CompanyId, row.EventType, row.SchemaVersion,
             row.PayloadJson, row.OccurredAtUtc, row.CorrelationId, row.CausationId,
             row.Position.ToString("D20", CultureInfo.InvariantCulture))).ToArray();
+        if (owned is not null) await owned.CommitAsync(cancellationToken);
+        return result;
 
         void Fence()
         {
