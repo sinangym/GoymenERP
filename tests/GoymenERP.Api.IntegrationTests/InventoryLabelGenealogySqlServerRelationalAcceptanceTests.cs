@@ -292,15 +292,20 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 Metadata(run));
         }
 
-        await RemoveSyntheticProductVersionsForHistoricalMigrationAsync(
-            run, "SYN-GENEALOGY-DOWN", expectedLabels: 3);
+        const string negativeProofSql = "SELECT CompanyId, Version FROM inventory.NegativeStockValidationGuards ORDER BY CompanyId FOR JSON PATH";
+        var negativeProof = await run.ScalarAsync<string>(negativeProofSql);
+        Assert.True(await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.NegativeStockValidationGuards") > 0);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(
+            new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryLabelGenealogy().DownOperations[0]).Sql;
 
         await using (var context = run.Context(CompanyA))
         {
-            var rejected = await Assert.ThrowsAsync<SqlException>(
-                () => context.GetService<IMigrator>().MigrateAsync(previousMigration));
+            var appliedBefore = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            // The empty full Down/Up path above remains; actual transformation proofs now retain newer guards too.
+            var rejected = await Assert.ThrowsAsync<SqlException>(() => ExecuteAsync(run, guard));
             Assert.Equal(51053, rejected.Number);
-            Assert.Equal(currentMigration, (await context.Database.GetAppliedMigrationsAsync()).Last());
+            Assert.Equal(appliedBefore, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
+            Assert.Equal(negativeProof, await run.ScalarAsync<string>(negativeProofSql));
         }
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.LabelTransformations"));
         Assert.Equal(3, await run.ScalarAsync<int>(

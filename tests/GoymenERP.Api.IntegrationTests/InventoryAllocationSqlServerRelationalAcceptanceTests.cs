@@ -362,8 +362,6 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public async Task Every_physical_lifecycle_fact_blocks_down_before_schema_mutation()
     {
-        const string previousMigration = "20260924001222_AddInventoryDefiniteShipmentRuntime";
-        const string currentMigration = "20260924013338_AddInventoryPhysicalAllocationLifecycle";
         await using var run = await Run.StartAsync();
         var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-ALLOC-DOWN-GUARD", 50m);
         var allocationId = Guid.NewGuid();
@@ -374,8 +372,10 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 CK_Allocations_Demand, CK_Allocations_Quantity, CK_Allocations_Release;
             """);
 
-        await RemoveSyntheticProductVersionsForHistoricalMigrationAsync(
-            run, "SYN-ALLOC-DOWN-GUARD", expectedLabels: 1);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(
+            new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryPhysicalAllocationLifecycle().DownOperations[0]).Sql;
+        await using var historyContext = run.Context(CompanyA);
+        var appliedBefore = (await historyContext.Database.GetAppliedMigrationsAsync()).ToArray();
 
         var lifecycleFacts = new[]
         {
@@ -402,11 +402,14 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 UPDATE inventory.Allocations SET {lifecycleFact} WHERE Id = @id;
                 """, ("@id", allocationId));
 
-            await using var context = run.Context(CompanyA);
-            var rejected = await Assert.ThrowsAsync<SqlException>(
-                () => context.GetService<IMigrator>().MigrateAsync(previousMigration));
+            var rowBefore = await run.ScalarAsync<string>(
+                "SELECT * FROM inventory.Allocations WHERE Id = @id FOR JSON PATH", ("@id", allocationId));
+            // Test this historical guard directly: newer constraints must not be rolled back to reach it.
+            var rejected = await Assert.ThrowsAsync<SqlException>(() => ExecuteAsync(run, guard));
             Assert.Equal(51052, rejected.Number);
-            Assert.Equal(currentMigration, (await context.Database.GetAppliedMigrationsAsync()).Last());
+            Assert.Equal(appliedBefore, (await historyContext.Database.GetAppliedMigrationsAsync()).ToArray());
+            Assert.Equal(rowBefore, await run.ScalarAsync<string>(
+                "SELECT * FROM inventory.Allocations WHERE Id = @id FOR JSON PATH", ("@id", allocationId)));
             Assert.Equal(9, await run.ScalarAsync<int>(
                 """
                 SELECT COUNT(*)
