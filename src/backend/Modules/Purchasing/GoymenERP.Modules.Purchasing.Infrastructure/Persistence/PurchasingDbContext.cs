@@ -120,7 +120,8 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
 
     /// <summary>The outbox's message types (the store writes nothing else).</summary>
     internal static readonly string OutboxEventTypeCheck =
-        "[EventType] IN ('" + PurchasingOrderLineClosedEventV1.EventType + "', '" + PurchasingOrderLineRevivedEventV1.EventType + "')";
+        "[EventType] IN ('" + PurchasingOrderLineClosedEventV1.EventType + "', '" + PurchasingOrderLineRevivedEventV1.EventType
+        + "', '" + PurchaseInvoiceFinalizedEventV1.EventType + "')";
 
     /// <summary>
     /// A2a-1 (TEK-01): the order's money snapshot is all five facts or none — a non-empty currency and profile, a non-blank code, a

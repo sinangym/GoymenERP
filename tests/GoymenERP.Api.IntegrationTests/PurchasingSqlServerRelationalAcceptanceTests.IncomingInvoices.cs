@@ -161,6 +161,44 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         Assert.Equal(51980, exception.Number);
     }
 
+    [SqlServerFact]
+    public async Task Incoming_invoice_outbox_Down_passes_with_only_old_event_types_and_refuses_while_a_finalized_event_exists()
+    {
+        await using var run = await Run.StartAsync();
+        var guard = Assert.IsType<SqlOperation>(new AllowPurchaseIncomingInvoiceFinalizedOutboxEvents().DownOperations[0]).Sql;
+        const string historySql = "SELECT STRING_AGG(CAST(MigrationId AS nvarchar(max)), N'|') WITHIN GROUP (ORDER BY MigrationId) FROM purchasing.__EFMigrationsHistory";
+        var history = await run.ScalarAsync<string>(historySql);
+        await run.ExecuteAsync(guard);
+
+        // These two event types were already legal before this forward correction.
+        await InsertAsync(PurchasingOrderLineClosedEventV1.EventType);
+        await InsertAsync(PurchasingOrderLineRevivedEventV1.EventType);
+        await run.ExecuteAsync(guard);
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.OutboxMessages"));
+
+        // The check remains closed: widening for the already contracted invoice event permits no arbitrary name.
+        var unknown = await Assert.ThrowsAsync<SqlException>(() => InsertAsync("purchasing.unknown.v1"));
+        Assert.Equal(547, unknown.Number);
+        await InsertAsync(PurchaseInvoiceFinalizedEventV1.EventType);
+        var protectedRows = await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.OutboxMessages");
+        Assert.Equal(3, protectedRows);
+        var refusal = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
+        Assert.Equal(51815, refusal.Number);
+        Assert.Equal(protectedRows, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.OutboxMessages"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.OutboxMessages WHERE EventType = @type",
+            ("@type", PurchaseInvoiceFinalizedEventV1.EventType)));
+        Assert.Equal(history, await run.ScalarAsync<string>(historySql));
+
+        // Execute only the generated migration's first guard; this is not a full Down/reapply claim.
+        Task InsertAsync(string eventType) => run.ExecuteAsync(
+            "INSERT INTO purchasing.OutboxMessages "
+            + "(Id, CompanyId, EventType, SchemaVersion, SourceOperation, AggregateType, AggregateId, AggregateVersion, Sequence, "
+            + "PayloadJson, OccurredAtUtc, CorrelationId, RecordedAtUtc) "
+            + "VALUES (@id, @company, @type, 1, 'SENTETIK-outbox-guard', 'SENTETIK.Outbox', @aggregate, 1, 1, '{}', @now, 'SENTETIK-outbox-guard', @now)",
+            ("@id", Guid.NewGuid()), ("@company", CompanyA), ("@type", eventType), ("@aggregate", Guid.NewGuid()),
+            ("@now", DateTimeOffset.UtcNow));
+    }
+
     private static PurchaseIncomingInvoice IncomingInvoice(Run run) => PurchaseIncomingInvoice.Record(Guid.NewGuid(), CompanyA,
         AcceptanceSupplier, AcceptanceAccount, InvoiceCostRateCurrency, InvoiceCostRateCurrency, 2, 2, null,
         new(Guid.NewGuid(), 1, new string('a', 64), "SENTETIK-" + Guid.NewGuid().ToString("N"), Guid.NewGuid(), Day), new(40m, 8m, 0m), null,

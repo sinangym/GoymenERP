@@ -131,7 +131,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
     {
         Guid technicalLineId = Guid.NewGuid();
         await run.ExecuteAsync(
-            "INSERT INTO purchasing.PurchaseOrderLines (CompanyId, OrderId, LineNo, LineId, Kind, ParentLineId, SourceRequestLineId, ProductId, "
+            "INSERT INTO purchasing.PurchaseOrderLines (CompanyId, OrderId, [LineNo], LineId, Kind, ParentLineId, SourceRequestLineId, ProductId, "
             + "ProductVersion, UnitId, UnitIsKilogram, Ordered, Technical, Accepted, Cancelled) "
             + "VALUES (@company, @order, @lineNo, @line, 2, @parent, NULL, @product, N'product-v1', @unit, 1, @slice, 0, 0, 0); "
             + "UPDATE purchasing.PurchaseOrderLines SET Technical = @slice WHERE CompanyId = @company AND OrderId = @order AND LineId = @parent;",

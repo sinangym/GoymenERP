@@ -525,7 +525,22 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Equal([nameof(PurchasingOutboxRow.Id)], outbox.FindPrimaryKey()!.Properties.Select(property => property.Name));
         var outboxChecks = outbox.GetCheckConstraints().ToDictionary(check => check.Name!, check => check.Sql);
         Assert.Equal(PurchasingDbContext.OutboxEventTypeCheck, outboxChecks["CK_OutboxMessages_EventType"]);
-        Assert.Equal("[EventType] IN ('purchasing.order-line.closed.v1', 'purchasing.order-line.revived.v1')", outboxChecks["CK_OutboxMessages_EventType"]);
+        Assert.Equal("[EventType] IN ('purchasing.order-line.closed.v1', 'purchasing.order-line.revived.v1', 'purchasing.invoice.finalized.v1')", outboxChecks["CK_OutboxMessages_EventType"]);
+        var invoiceOutboxMigration = new GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations.AllowPurchaseIncomingInvoiceFinalizedOutboxEvents();
+        var upEventCheck = Assert.Single(invoiceOutboxMigration.UpOperations
+            .OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>());
+        Assert.Equal(("purchasing", "OutboxMessages", "CK_OutboxMessages_EventType", PurchasingDbContext.OutboxEventTypeCheck),
+            (upEventCheck.Schema, upEventCheck.Table, upEventCheck.Name, upEventCheck.Sql));
+        Assert.Empty(invoiceOutboxMigration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var invoiceOutboxGuard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(invoiceOutboxMigration.DownOperations[0]);
+        Assert.Contains("THROW 51815", invoiceOutboxGuard.Sql, StringComparison.Ordinal);
+        Assert.Contains(PurchaseInvoiceFinalizedEventV1.EventType, invoiceOutboxGuard.Sql, StringComparison.Ordinal);
+        Assert.Single(invoiceOutboxMigration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var restoredEventCheck = Assert.Single(invoiceOutboxMigration.DownOperations
+            .OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>());
+        Assert.Equal(("purchasing", "OutboxMessages", "CK_OutboxMessages_EventType",
+                "[EventType] IN ('purchasing.order-line.closed.v1', 'purchasing.order-line.revived.v1')"),
+            (restoredEventCheck.Schema, restoredEventCheck.Table, restoredEventCheck.Name, restoredEventCheck.Sql));
         Assert.Contains("ISJSON([PayloadJson]) = 1", outboxChecks["CK_OutboxMessages_Envelope"], StringComparison.Ordinal);
         Assert.Contains("[Sequence] >= 1", outboxChecks["CK_OutboxMessages_Envelope"], StringComparison.Ordinal);
         Assert.Contains("[AggregateId] <> '00000000-0000-0000-0000-000000000000'", outboxChecks["CK_OutboxMessages_Identity"], StringComparison.Ordinal);
