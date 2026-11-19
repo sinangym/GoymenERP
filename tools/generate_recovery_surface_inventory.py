@@ -100,7 +100,7 @@ EXPECTED_DURABLE_STORE_COUNT = 66
 EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 1465
 # W8 approval-mode repair: exact producer measurement, 1465 risky inputs; K3 pending.
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    '9057ae4fa8fdfc0ceab94fcd33f5da3e7a12bbe8adc8335200b94de49dc04826'
+    '370dc55a2e67ec32f77703ecddc910a15a51aa9cedc371d5fff55640b2fa028c'
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
