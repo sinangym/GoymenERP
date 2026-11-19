@@ -396,7 +396,8 @@ internal sealed class SettingsReferenceListAdministration(
 
             return Replay(winner, requestHash, metadata);
         }
-        catch (Exception exception) when (exception is DbUpdateException or SqlException)
+        catch (Exception exception) when (exception is DbUpdateException or SqlException
+            or InvalidOperationException { InnerException: DbUpdateException or SqlException })
         {
             // Infrastructure failures do not decide a business conflict or consume the command key.
             database.ChangeTracker.Clear();
@@ -431,7 +432,8 @@ internal sealed class SettingsReferenceListAdministration(
             return await StoreRefusalAsync(commandName, onConflict, keyHash, requestHash, metadata,
                 permission, companyId, cancellationToken);
         }
-        catch (Exception exception) when (exception is DbUpdateException or SqlException)
+        catch (Exception exception) when (exception is DbUpdateException or SqlException
+            or InvalidOperationException { InnerException: DbUpdateException or SqlException })
         {
             // Infrastructure failures do not decide a business conflict or consume the command key.
             database.ChangeTracker.Clear();

@@ -91,3 +91,25 @@ pooling veya katalog adı değişikliği reddedilir. Sadece sentetik bağlantıl
 birim testleri veritabanına bağlanmaz. Mevcut gerçek SQL oluşturma/yeniden açma/çakışma/temizleme
 testi 46 hedef içinde korunur. Üretim bağlantıları, sunucu ayarları veya migration değişmedi.
 Bu ek yazılırken yeni regresyonlar henüz çalıştırılmadı; sonuçlar yeni aday SHA'sına kaydedilecek.
+
+## Gerçek SQL'de bulunan geçici hata sarmalayıcısı
+
+`691b65ccc` adayında derlemeler, seçilmiş 6108 backend testi, 13 ekran testi ve beş Python
+doğrulayıcı paketi geçti. 46 hedeflik yerel SQL kuyruğunda ilk hedef geçti; ikinci hedef
+`Reference_list_SQL_lock_timeout_is_unavailable_without_consuming_the_key_or_leaking_audit`
+başarısız oldu ve kuyruk durdu. Kalan 44 hedef bu adayda çalışmadı.
+
+SQL 1222, EF Core 10.0.8'in varsayılan yürütme stratejisinde
+`InvalidOperationException -> DbUpdateException -> SqlException` olarak geliyor.
+Yalnız doğrudan SQL/EF hatasını yakalayan provider filtresi bu biçimi kaçırıyordu.
+Kaynak: [EF Core 10.0.8 SQL Server yürütme stratejisi](https://github.com/dotnet/efcore/blob/v10.0.8/src/EFCore.SqlServer/Storage/Internal/SqlServerExecutionStrategy.cs).
+
+Aynı kalıbı kullanan 14 Ayarlar yönetim servisinin 28 save/refusal filtresi, doğrudan
+SQL/EF hatasına ek olarak yalnız iç hatası SQL/EF olan bu sarmalayıcıyı tanır. Genel
+InvalidOperationException veya iptal hatası provider arızası sayılmaz. Unique/concurrency
+yarışı, yeniden yetki ölçümü, rollback, anahtar ve audit kuralları değiştirilmedi.
+Referans listesi ve para profili gerçek kilit testleri sarmalayıcı tipini de doğrular;
+başarısız komutun anahtar/audit tüketmemesi, yeniden deneme ve replay beklentileri korunur.
+
+Guard fingerprint'leri mevcut ev üreticisiyle yenilenir; yeni bypass girdisi veya SQL
+yüzeyi yoktur, K3 review bekler. Bu ek yazılırken düzeltilmiş adayın SQL sonucu **NOT_RUN**.

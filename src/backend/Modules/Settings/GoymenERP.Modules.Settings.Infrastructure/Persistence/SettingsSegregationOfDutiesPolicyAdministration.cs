@@ -397,7 +397,8 @@ internal sealed class SettingsSegregationOfDutiesPolicyAdministration(
 
             return Replay(winner, requestHash, metadata);
         }
-        catch (Exception exception) when (exception is DbUpdateException or SqlException)
+        catch (Exception exception) when (exception is DbUpdateException or SqlException
+            or InvalidOperationException { InnerException: DbUpdateException or SqlException })
         {
             // A provider failure is not a terminal business refusal and never consumes the retry key.
             database.ChangeTracker.Clear();
@@ -432,7 +433,8 @@ internal sealed class SettingsSegregationOfDutiesPolicyAdministration(
 
             return await StoreRefusalAsync(onConflict, keyHash, requestHash, metadata, cancellationToken);
         }
-        catch (Exception exception) when (exception is DbUpdateException or SqlException)
+        catch (Exception exception) when (exception is DbUpdateException or SqlException
+            or InvalidOperationException { InnerException: DbUpdateException or SqlException })
         {
             // A provider failure is not a terminal business refusal and never consumes the retry key.
             database.ChangeTracker.Clear();

@@ -37,6 +37,7 @@ public sealed partial class SettingsReplayRaceSqlServerRelationalAcceptanceTests
             }
             Assert.Equal(1, fault.SaveAttempts);
             Assert.Equal(1222, fault.SqlErrorNumber);
+            Assert.IsType<DbUpdateException>(Assert.IsType<InvalidOperationException>(fault.SaveFailure).InnerException);
             Assert.Equal(0, await run.CountAsync("SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [OriginalCorrelationId]=@correlation", failedCorrelation));
             Assert.Equal(0, await run.CountAsync("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [CorrelationId]=@correlation", failedCorrelation));
             Assert.Equal(refusal ? 2 : 1, await run.CountAsync("SELECT COUNT(*) FROM [settings].[ReferenceListEntries] WHERE [CompanyId]=@company", failedCorrelation));
@@ -81,6 +82,7 @@ public sealed partial class SettingsReplayRaceSqlServerRelationalAcceptanceTests
             }
             Assert.Equal(1, fault.SaveAttempts);
             Assert.Equal(1222, fault.SqlErrorNumber);
+            Assert.IsType<DbUpdateException>(Assert.IsType<InvalidOperationException>(fault.SaveFailure).InnerException);
             Assert.Equal(refusal ? 2 : 0, await run.CountAsync("SELECT COUNT(*) FROM [settings].[MoneyProfileVersions] WHERE [CompanyId]=@company", failedCorrelation));
             Assert.Equal(0, await run.CountAsync("SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [OriginalCorrelationId]=@correlation", failedCorrelation));
             Assert.Equal(0, await run.CountAsync("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [CorrelationId]=@correlation", failedCorrelation));
@@ -110,6 +112,7 @@ public sealed partial class SettingsReplayRaceSqlServerRelationalAcceptanceTests
         private SqlTransaction? transaction;
         public int SaveAttempts { get; private set; }
         public int? SqlErrorNumber { get; private set; }
+        public Exception? SaveFailure { get; private set; }
 
         public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
             InterceptionResult<int> result, CancellationToken cancellationToken = default)
@@ -130,6 +133,7 @@ public sealed partial class SettingsReplayRaceSqlServerRelationalAcceptanceTests
         public override async Task SaveChangesFailedAsync(DbContextErrorEventData eventData,
             CancellationToken cancellationToken = default)
         {
+            SaveFailure = eventData.Exception;
             SqlErrorNumber = (eventData.Exception.GetBaseException() as SqlException)?.Number;
             await ReleaseAsync();
             var context = eventData.Context!;

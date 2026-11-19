@@ -765,7 +765,8 @@ internal sealed class SettingsExchangeRateAdministration(
             return winner is null ? throw new SettingsPrerequisiteException(ExchangeRateProblemCodesV1.ProviderUnavailable)
                 : Replay(winner, requestHash, metadata);
         }
-        catch (Exception exception) when (exception is DbUpdateException or SqlException)
+        catch (Exception exception) when (exception is DbUpdateException or SqlException
+            or InvalidOperationException { InnerException: DbUpdateException or SqlException })
         {
             // A provider failure is not a terminal business refusal and never consumes the retry key.
             database.ChangeTracker.Clear();
@@ -795,7 +796,8 @@ internal sealed class SettingsExchangeRateAdministration(
 
             return await StoreRefusalAsync(commandName, VersionConflict(), keyHash, requestHash, metadata, cancellationToken);
         }
-        catch (Exception exception) when (exception is DbUpdateException or SqlException)
+        catch (Exception exception) when (exception is DbUpdateException or SqlException
+            or InvalidOperationException { InnerException: DbUpdateException or SqlException })
         {
             // A provider failure is not a terminal business refusal and never consumes the retry key.
             database.ChangeTracker.Clear();
