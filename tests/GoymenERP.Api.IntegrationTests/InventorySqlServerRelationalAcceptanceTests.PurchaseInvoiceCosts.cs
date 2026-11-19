@@ -173,15 +173,16 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     {
         var seed = await SeedGoodsReceiptPurchaseOrderAsync(run);
         var receipt = Receipt(seed, Guid.NewGuid(), "4", await run.LocationOfAsync(CompanyA)) with { InitialBlock = BlockState.Free };
+        var receiptKey = $"SENTETIK-cost-receipt-{receipt.AcceptanceId:N}";
         await using var connection = new SqlConnection(run.Factory.DatabaseConnectionString); await connection.OpenAsync();
         await using var transaction = (DbTransaction)await connection.BeginTransactionAsync();
         await using var purchase = await PurchaseAcceptanceParticipant.EnlistAsync(connection, transaction, CompanyA);
         await using var inventory = await InventoryGoodsReceiptParticipant.EnlistAsync(connection, transaction, CompanyA,
             GoodsReceiptSettings(run), costSource: new SyntheticInvoiceReceiptCost(tl));
         var accepted = await purchase.StageAsync(GoodsReceiptPurchaseRequest(seed, receipt.AcceptanceId, "4"),
-            GoodsReceiptPurchaseEnvelope(run, "SENTETIK-cost-receipt", run.Correlation));
+            GoodsReceiptPurchaseEnvelope(run, receiptKey, run.Correlation));
         receipt = receipt with { PurchaseOrderVersionAfter = accepted.PurchaseOrderVersion };
-        await inventory.StageAsync(receipt, ReceiptMetadata(run, "SENTETIK-cost-receipt", run.Correlation));
+        await inventory.StageAsync(receipt, ReceiptMetadata(run, receiptKey, run.Correlation));
         await transaction.CommitAsync(); return receipt;
     }
 
