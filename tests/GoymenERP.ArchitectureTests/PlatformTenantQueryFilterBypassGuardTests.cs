@@ -2410,7 +2410,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Finance.Infrastructure/FinanceCashAccountService.cs"] =
                     new(
                         // Re-fingerprinted for tren-1 W7: owner transaction or response changes; existing API counts retained; K3 review pending.
-                        "88673cddf3d04e897a9232759fcc3bb95de70f32c103bcb7b376570f15c13244",
+                        // W8 cash rejection shares the existing treasury rollback owner; same SqlClient count; K3 review pending.
+                        "5fbfbf8b72c881fa3751dcc1b055da81052cb3dcf787d82e3f9cce164d276334",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
