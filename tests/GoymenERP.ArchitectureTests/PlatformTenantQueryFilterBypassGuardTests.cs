@@ -545,7 +545,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 wave 3 (integration): +1 fact, ordinal-sorted (710ae3f8… -> f808203c…).
                 // Re-fingerprinted for tren-1 W5 (integration): +2 fact(s) from the W5 team merges; value from guard_fingerprint.py (f808203c… -> 188008c1…).
                 // Tren-1 W6: +4 source facts, ordinal-sorted; SQL execution NOT_RUN.
-                "4bea914120f5fab93f972c72306d28e0fb279a50ddf75589955a96abd2b2a399",
+                // W8 EK24 FNS-D105: +1 finalized outbox Down-guard fact, kept ordinal-sorted (4bea9141… -> 982791b3…).
+                "982791b33dfc8b38c1bde154f3e5e8256f231fe180ae0be6c6b7fc6798345c4b",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
@@ -690,10 +691,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // W8 Windows: only an oversized argv uses whole-class filters after full-discovery equivalence.
         // Class fixtures, partition, exact native IDs/theories, SQL-only skips and proof checks remain.
         // House-producer fingerprint; independent exact-head K3 review is pending.
-        "4c43b0ab9dc3d052253937d67e59c8163d9344ef41349014e155f394412eaa04";
+        // W8: Manufacturing's four primitive InlineData identities are discovered exactly; no production deferred exception remains.
+        "1cc19d0b6ba103fbf4e4bdacd545de31be45902c04f080dd1940ffe4f3fc2612";
     private const string ReviewedBackendTestGroupVerifierTestsFingerprint =
         // Deferred metadata count 2 -> 1, with Organization explicitly excluded; negative gates retained.
-        "353f459eef3fd9cc2b619d22c75eccdacf181aa3d310d6a0ae9fe6d1947753d8";
+        // W8: production deferred cases are empty; explicit synthetic source/identity negative gates remain.
+        "211465ba0b5738fc1abbfe4934bd3216e6e189d40d5a7b51415eb22f1ef02ee5";
     // Re-reviewed with the existing recovery proof intact and the release-manifest proof bound to the exact head:
     // both jobs are artifact-free, fail closed and do not deploy; ci_safe_trx_summary guards them separately.
     // Re-fingerprinted for CIH-D5: only the trigger path filter under `on:` changed (prose no job reads does not
@@ -918,7 +921,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
              + "Persistence/PurchasingDbContext.cs"] =
                 // Re-fingerprinted for tren-1 wave 3 (integration): the team slices combined; token counts checked by the guard (c8164526… -> fb48d6ed…).
                 // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (fb48d6ed… -> e4ca95ad…).
-                "c4aca269c49a6192464458ed024c7a7ba1d9acfb44ea3ee1848c35795340ab5b",
+                // W8 EK24 FNS-D105: finalized invoice outbox event joins the existing typed check; tenant filters unchanged.
+                "a0539ef259a0441471c8066dde39dcb000ffdf0cde4be01867a14ef69728fef4",
             // ERP-000G / AT-065: company-scoped like Organization; every tenant row (blobs, documents, versions, links,
             // attempts) and AuditEvent carries the CompanyId filter, and the write guard refuses any update or delete.
             // A standard entry, not an exception.
@@ -3918,6 +3922,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedMigrationMutationSources =
             new Dictionary<string, ReviewedMigrationMutationSource>(StringComparer.Ordinal)
             {
+                // W8 EK24 FNS-D105: Down first refuses (51815) while finalized purchase-invoice outbox history exists.
+                // One deployment-time SQL guard preserves immutable history; no runtime SQL/tenant bypass. K3 review pending.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/"
+                 + "20261119012425_AllowPurchaseIncomingInvoiceFinalizedOutboxEvents.cs"] =
+                    new("e2c8f201f7328c1a7dd6cfc9e16977ba94a74c841ebba7bc8fb8e59e6db49967",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 // W8 approval-mode null guard: Down refuses (51798) while approved access-grant history exists.
                 // One deployment-time SQL forward-fix guard, no runtime tenant bypass or new grant; K3 review pending.
                 ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/"
