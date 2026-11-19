@@ -3177,7 +3177,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // classification only.
                 // W8 source repairs: producer-recomputed fingerprint; existing review scope retained.
                 ["src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingCostGenerationHost.cs"] =
-                    new("a55df84ee8249c9c9cae65944af759ede6a8518aae68ce365341c04448895297",
+                    new("c1b7002c8291f8532492ca6a2422046eca98cfa8782551716432bc62c177fe10",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["DbConnection"] = 1,

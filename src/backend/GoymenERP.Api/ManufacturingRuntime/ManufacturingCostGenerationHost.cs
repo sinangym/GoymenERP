@@ -59,7 +59,7 @@ internal sealed class ManufacturingCostGenerationHost(ManufacturingDbContext db,
                     metadata with { Completion = null }, pending, token, forcePendingConsumptionProof: true, proposedGenerationId: proposedGenerationId);
             }
             catch (InventoryManufacturingCostGenerationException fallback) { throw Map(fallback); }
-            catch (Exception fault) when (fault is DbException || IsCostGenerationSqlConcurrencyFailure(fault)) { throw Unavailable(); }
+            catch (Exception providerFailure) when (providerFailure is DbException || IsCostGenerationSqlConcurrencyFailure(providerFailure)) { throw Unavailable(); }
         }
         catch (InventoryManufacturingCostGenerationException fault) { throw Map(fault); }
         catch (Exception fault) when (fault is DbException || IsCostGenerationSqlConcurrencyFailure(fault)) { throw Unavailable(); }
