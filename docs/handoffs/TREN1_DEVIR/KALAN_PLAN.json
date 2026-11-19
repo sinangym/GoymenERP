@@ -1190,12 +1190,24 @@
     ]
    },
    "unpublished_followup": {
-    "source": "b0b9f07b6",
-    "state": "SOURCE_PREPARED_NATIVE_NOT_RUN",
+    "source": "4e8124799f6dc25ee7fd24cc61fc759f49c98d81",
+    "state": "SOURCE_FIXED_SELF_REVIEWED_BUILD_AND_TEST_NOT_RUN",
     "local_grain_failure": "Turkish_CI_AS i/I comparison in synthetic token; neutral mixed-case source token preserves whole/line checks, no runtime/schema change.",
     "cash_repair": "Rejection uses existing Treasury owner transaction; real deadlock regression forces each actor victim once, no retry or partial loser writes.",
     "transfer_failure": "Source-backed direct physical-guard ConcurrentChange escaped transfer mapping before staging; dispatch/accept now map ONLY this store code to existing Transfer409. CI failing substep still requires exact SQL confirmation.",
-    "native_queue": "Three exact SDK/TRX targets after existing full local SQL queue releases its single native lease; no push before relevant validation."
+    "native_queue": "HELD_BY_USER: fixes and author source review precede any new native execution. Existing baseline full run unchanged. No automatic target restart.",
+    "cleanup_repair": "ProductPurchaseSelection master cleanup clears AttachDBFilename; regex database bound and authentication/TLS preserved.",
+    "timeout_diagnostics": "Reports effective global/process budget; constants2400/10800 unchanged; Python regression written NOT_RUN.",
+    "self_review": "Manual transaction/error/connection/culture/API/pin review + Python AST parsing + Git diff whitespace check only; no compile, SQL, unittest, CI or independent K3 approval.",
+    "pins": {
+     "source_measured_at": "9077fdf4f",
+     "riskCount": 1467,
+     "riskFingerprint": "de4f1012ba88aa29b39db812e116fee1598aa6e3be8dc80b46f54c5366d68bc5",
+     "cashFingerprint": "5fbfbf8b72c881fa3751dcc1b055da81052cb3dcf787d82e3f9cce164d276334",
+     "dbContexts": 19,
+     "migrations": 343,
+     "fullConsumer": "NOT_RUN"
+    }
    }
   }
  },
