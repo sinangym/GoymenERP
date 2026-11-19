@@ -507,3 +507,14 @@ denetlenen ve idempotent rezervasyon belge sahibini oluşturur; kayıtlar deği�
 Down, kaynak kimliği varken önce `THROW 51996` ile durur. Birim, HTTP sözleşme,
 kalıcılık modeli ve gerçek SQL test kaynakları vardır. Cari/ürün/birim/vergi ve
 ödeme planı eşlemesiyle kayıt akışı tamamlanana kadar FIN-S13 PARTIAL kalır.
+
+
+### EK24 FNS-D105 - finalized invoice outbox constraint forward fix
+
+`20261119012425_AllowPurchaseIncomingInvoiceFinalizedOutboxEvents` was generated with the pinned EF tool.
+It adds only the already contracted `purchasing.invoice.finalized.v1` event to `CK_OutboxMessages_EventType`;
+the two existing order-line events remain valid and arbitrary event names remain refused.
+Down first refuses with `THROW 51815` while finalized invoice outbox history exists, before restoring the prior check.
+The migration does not dispatch an event, post a journal, grant access or activate production.
+Persistence-model and real SQL guard tests accompany the existing invoice finalization acceptance facts;
+final CI and independent K3 acceptance remain required.
