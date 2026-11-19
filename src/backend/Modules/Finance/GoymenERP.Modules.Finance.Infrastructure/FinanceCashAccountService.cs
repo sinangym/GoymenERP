@@ -436,6 +436,25 @@ public sealed class FinanceCashAccountService(
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(metadata);
         ArgumentNullException.ThrowIfNull(request);
+        var kind = KindOf(change);
+        if (await StartAsync(context, metadata, kind.Approve, request.AccountId, cancellationToken)
+            is { } denied) return denied;
+        if (IdentityRefusal(context, request.AccountId, request.ExpectedVersion) is { } malformed) return malformed;
+        // Approval holds the account's treasury read locks. Rejection must share its owner boundary:
+        // either decision may be the deadlock victim, whose command and audit must roll back together.
+        return await FinanceTreasuryTransaction.ExecuteAsync(dbContext,
+            () => RejectStateChangeTreasuryCoreAsync(context, metadata, change, request, cancellationToken),
+            async () => await FenceAsync(context, kind.Approve, request.AccountId, cancellationToken)
+                ?? Refused(context, CommandOutcome.Unavailable, Issue("balance", TreasuryBalanceAnswer.UnavailableCode)),
+            auditOwner, cancellationToken);
+    }
+
+    private async Task<CashAccountCommandResult> RejectStateChangeTreasuryCoreAsync(FinanceContext context, CommandMetadata metadata,
+        CashAccountStateChange change, CashAccountStateChangeRejectRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
         var kind = KindOf(change);
         if (await StartAsync(context, metadata, kind.Approve, request.AccountId, cancellationToken) is { } refused)

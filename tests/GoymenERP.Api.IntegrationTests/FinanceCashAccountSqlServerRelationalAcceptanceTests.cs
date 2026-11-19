@@ -1,3 +1,5 @@
+using System.Data.Common;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
@@ -11,6 +13,7 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -1151,40 +1154,50 @@ public sealed class FinanceCashAccountSqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public async Task Two_racing_decisions_on_one_passivation_store_one()
     {
-        await using var run = await Run.StartAsync();
-        var account = await ApprovedAsync(run, "SENTETIK kasa");
-        await using (var a = run.Open(CompanyA, Proposer))
+        // Exercise BOTH possible victims. Priorities affect only these synthetic connections;
+        // the barrier proves both decisions read version3 before either saves. No automatic retry.
+        foreach (var approvalLoses in new[] { false, true })
         {
-            Assert.Equal(CommandOutcome.Succeeded, (await a.Accounts.ProposeStateChangeAsync(a.Context, Key("pp-1"),
-                CashAccountStateChange.Passivation, new CashAccountStateChangeRequest(account.Id, "2"), CancellationToken.None)).Outcome);
+            await using var run = await Run.StartAsync();
+            var account = await ApprovedAsync(run, "SENTETIK kasa");
+            await using (var a = run.Open(CompanyA, Proposer))
+            {
+                Assert.Equal(CommandOutcome.Succeeded, (await a.Accounts.ProposeStateChangeAsync(a.Context, Key("pp-1"),
+                    CashAccountStateChange.Passivation, new CashAccountStateChangeRequest(account.Id, "2"), CancellationToken.None)).Outcome);
+            }
+
+            using var barrier = new Barrier(2);
+            var deadlocks = new DecisionDeadlockObserver();
+            async Task<CashAccountCommandResult> DecideAsync(string decider, bool approve)
+            {
+                await using var scope = run.OpenWith(CompanyA, decider, new SyntheticCandidates(),
+                    new DecisionRendezvousInterceptor(barrier), deadlocks,
+                    new DecisionDeadlockPriorityInterceptor(approve == approvalLoses ? -10 : 10));
+                return approve
+                    ? await scope.Accounts.ApproveStateChangeAsync(scope.Context, Key("pa-" + decider), CashAccountStateChange.Passivation,
+                        new CashAccountStateChangeRequest(account.Id, "3"), CancellationToken.None)
+                    : await scope.Accounts.RejectStateChangeAsync(scope.Context, Key("pr-" + decider), CashAccountStateChange.Passivation,
+                        new CashAccountStateChangeRejectRequest(account.Id, "3", "SENTETIK gerekçe"), CancellationToken.None);
+            }
+
+            var results = await Task.WhenAll(Task.Run(() => DecideAsync(Approver, approve: true)),
+                Task.Run(() => DecideAsync("SENTETIK-approver-2", approve: false)));
+            var won = Assert.Single(results, result => result.Outcome == CommandOutcome.Succeeded);
+            var lost = Assert.Single(results, result => result.Outcome == CommandOutcome.Unavailable);
+            Assert.Same(results[approvalLoses ? 0 : 1], lost);
+            Assert.Equal("finance_treasury_balance_unavailable", Assert.Single(lost.Issues).Code);
+            Assert.Null(lost.Resource);
+            Assert.Equal(1, deadlocks.Victims);
+            Assert.Equal("4", won.Resource!.Version);
+            Assert.Equal(approvalLoses ? CashAccountStatus.Approved : CashAccountStatus.Passive, won.Resource.Status);
+
+            Assert.Equal(4L, await run.ScalarAsync<long>("SELECT Version FROM finance.CashAccounts WHERE Id = @id", ("@id", account.Id)));
+            // Opening two, proposal and ONE decision: no loser attempt, audit, or automatic retry.
+            Assert.Equal(4, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CashAccountCommands"));
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType IN (N'finance.cash-account.passivation-approved.v1', "
+                + "N'finance.cash-account.passivation-rejected.v1')"));
         }
-
-        // An approval and a rejection by two deciders read the same pending change, then wait for each other at the save.
-        var barrier = new Barrier(2);
-        async Task<CashAccountCommandResult> DecideAsync(string decider, bool approve)
-        {
-            await using var scope = run.OpenWith(CompanyA, decider, new SyntheticCandidates(), new BarrierInterceptor(barrier));
-            return approve
-                ? await scope.Accounts.ApproveStateChangeAsync(scope.Context, Key("pa-" + decider), CashAccountStateChange.Passivation,
-                    new CashAccountStateChangeRequest(account.Id, "3"), CancellationToken.None)
-                : await scope.Accounts.RejectStateChangeAsync(scope.Context, Key("pr-" + decider), CashAccountStateChange.Passivation,
-                    new CashAccountStateChangeRejectRequest(account.Id, "3", "SENTETIK gerekçe"), CancellationToken.None);
-        }
-
-        var results = await Task.WhenAll(Task.Run(() => DecideAsync(Approver, approve: true)),
-            Task.Run(() => DecideAsync("SENTETIK-approver-2", approve: false)));
-        var won = Assert.Single(results, result => result.Outcome == CommandOutcome.Succeeded);
-        var lost = Assert.Single(results, result => result.Outcome == CommandOutcome.VersionConflict);
-        Assert.Equal("4", won.Resource!.Version);
-        Assert.Equal("concurrent_change", Assert.Single(lost.Issues).Code);
-        Assert.Null(lost.Resource);
-
-        Assert.Equal(4L, await run.ScalarAsync<long>("SELECT Version FROM finance.CashAccounts WHERE Id = @id", ("@id", account.Id)));
-        // Opening two, the proposal and the winning decision; the loser's attempt and audit event rolled back.
-        Assert.Equal(4, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CashAccountCommands"));
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType IN (N'finance.cash-account.passivation-approved.v1', "
-            + "N'finance.cash-account.passivation-rejected.v1')"));
     }
 
     [SqlServerFact]
@@ -1322,8 +1335,13 @@ public sealed class FinanceCashAccountSqlServerRelationalAcceptanceTests
                 new AuditSaveChangesInterceptor(collector, companyContext),
             };
             interceptors.AddRange(extra);
+            // DEADLOCK_PRIORITY is a session setting: these two deliberate victims never enter
+            // the shared pool used by later acceptance tests.
+            var connectionString = extra.Any(interceptor => interceptor is DecisionDeadlockPriorityInterceptor)
+                ? new SqlConnectionStringBuilder(Factory.DatabaseConnectionString) { Pooling = false }.ConnectionString
+                : Factory.DatabaseConnectionString;
             var options = new DbContextOptionsBuilder<FinanceDbContext>()
-                .UseSqlServer(Factory.DatabaseConnectionString,
+                .UseSqlServer(connectionString,
                     sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", FinanceDbContext.Schema))
                 .AddInterceptors(interceptors)
                 .Options;
@@ -1470,6 +1488,43 @@ public sealed class FinanceCashAccountSqlServerRelationalAcceptanceTests
         {
             Seen.Add((companyId, cashAccountId));
             return Task.FromResult(state);
+        }
+    }
+
+    private sealed class DecisionRendezvousInterceptor(Barrier barrier) : SaveChangesInterceptor
+    {
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
+            InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            Assert.NotNull(eventData.Context!.Database.CurrentTransaction);
+            Assert.Equal(System.Data.IsolationLevel.Serializable,
+                eventData.Context.Database.CurrentTransaction.GetDbTransaction().IsolationLevel);
+            if (!barrier.SignalAndWait(TimeSpan.FromSeconds(30), cancellationToken))
+                throw new TimeoutException("Both cash-account decision saves must reach the rendezvous.");
+            return ValueTask.FromResult(result);
+        }
+    }
+
+    private sealed class DecisionDeadlockPriorityInterceptor(int priority) : DbConnectionInterceptor
+    {
+        public override async Task ConnectionOpenedAsync(DbConnection connection, ConnectionEndEventData eventData,
+            CancellationToken cancellationToken = default)
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = priority < 0 ? "SET DEADLOCK_PRIORITY -10" : "SET DEADLOCK_PRIORITY 10";
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
+    private sealed class DecisionDeadlockObserver : DbCommandInterceptor
+    {
+        private int victims;
+        public int Victims => Volatile.Read(ref victims);
+        public override Task CommandFailedAsync(DbCommand command, CommandErrorEventData eventData,
+            CancellationToken cancellationToken = default)
+        {
+            if (eventData.Exception is SqlException { Number: 1205 }) Interlocked.Increment(ref victims);
+            return Task.CompletedTask;
         }
     }
 
