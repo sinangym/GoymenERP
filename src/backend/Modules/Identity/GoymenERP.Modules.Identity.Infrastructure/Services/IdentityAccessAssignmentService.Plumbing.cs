@@ -218,7 +218,14 @@ internal sealed partial class IdentityAccessAssignmentService
             metadata,
             managedUserId);
 
-        var execution = await FindExecutionAsync(command, cancellationToken);
+        CommandExecution? execution;
+        try { execution = await FindExecutionAsync(command, cancellationToken); }
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested && IsRetryablePrimarySqlFailure(exception))
+        {
+            // Only this read is covered: ReplayAsync can write a standalone refused-attempt audit.
+            await RequireCommandStillAsync(command, cancellationToken);
+            return new Prepared(null, Unstored(Answers.Unavailable(), metadata));
+        }
         if (execution is null)
         {
             return new Prepared(command, null);
@@ -241,7 +248,31 @@ internal sealed partial class IdentityAccessAssignmentService
     {
         try
         {
-            return await RunLockedCoreAsync(command, body, cancellationToken);
+            var attempt = await RunLockedCoreAsync(command, body, cancellationToken);
+            // The primary transaction has been disposed before any replay/standalone audit can run.
+            database.ChangeTracker.Clear();
+            auditWriter.DiscardPending();
+            if (attempt.ProviderUnavailable)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await RequireCommandStillAsync(command, cancellationToken);
+                return Done(command, Unstored(Answers.Unavailable(), command.Metadata));
+            }
+            if (attempt.Winner is { } raced)
+            {
+                await RequireCommandStillAsync(command, cancellationToken);
+                return Done(command, await ReplayAsync(raced, command, cancellationToken));
+            }
+            if (attempt.Conflict is not null || attempt.RequiredWinnerFailure is not null)
+            {
+                var winner = await FindExecutionAsync(command, cancellationToken);
+                await RequireCommandStillAsync(command, cancellationToken);
+                if (winner is not null) return Done(command, await ReplayAsync(winner, command, cancellationToken));
+                if (attempt.RequiredWinnerFailure is { } failure)
+                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
+                return Done(command, await StoreStandaloneRefusalAsync(command, attempt.Conflict!, cancellationToken));
+            }
+            return Done(command, attempt.Result ?? throw new InvalidOperationException("Kimlik komutu birincil sonuç üretmedi."));
         }
         finally
         {
@@ -249,7 +280,19 @@ internal sealed partial class IdentityAccessAssignmentService
         }
     }
 
-    private async Task<IdentityAccessCommandResultV1> RunLockedCoreAsync(
+    private sealed record PrimaryAttempt(IdentityAccessCommandResultV1? Result = null, CommandExecution? Winner = null,
+        IdentityAccessCommandAnswerV1? Conflict = null, Exception? RequiredWinnerFailure = null,
+        bool ProviderUnavailable = false);
+
+    // These are the measured provider aborts only. Cancellation, unique/version conflicts and arbitrary
+    // InvalidOperationException failures retain their existing paths, as do post-commit/standalone failures.
+    internal static bool IsRetryablePrimarySqlFailure(Exception exception) => exception is
+        SqlException { Number: 1205 or 1222 }
+        or DbUpdateException { InnerException: SqlException { Number: 1205 or 1222 } }
+        or InvalidOperationException { InnerException: SqlException { Number: 1205 or 1222 } }
+        or InvalidOperationException { InnerException: DbUpdateException { InnerException: SqlException { Number: 1205 or 1222 } } };
+
+    private async Task<PrimaryAttempt> RunLockedCoreAsync(
         Command command,
         Func<DateTimeOffset, Task<Step>> body,
         CancellationToken cancellationToken)
@@ -257,116 +300,104 @@ internal sealed partial class IdentityAccessAssignmentService
         await using var transaction = await database.Database.BeginTransactionAsync(
             command.ManagedUserId is null ? IsolationLevel.ReadCommitted : IsolationLevel.Serializable,
             cancellationToken);
-        var lockCompanies = command.ManagedUserId is { } managed
-            ? (await new IdentityUserManagementEvaluator(database).GetMembershipCompanyIdsAsync(
-                managed, timeProvider.GetUtcNow(), cancellationToken)).Append(command.CompanyId).Distinct().Order().ToArray()
-            : [command.CompanyId];
-        foreach (var lockCompany in lockCompanies)
+        var commitStarted = false;
+        try
         {
-            if (!await IdentityAdminLock.TryAcquireAsync(database, lockCompany, cancellationToken))
+            var lockCompanies = command.ManagedUserId is { } managed
+                ? (await new IdentityUserManagementEvaluator(database).GetMembershipCompanyIdsAsync(
+                    managed, timeProvider.GetUtcNow(), cancellationToken)).Append(command.CompanyId).Distinct().Order().ToArray()
+                : [command.CompanyId];
+            foreach (var lockCompany in lockCompanies)
             {
-                await transaction.RollbackAsync(cancellationToken);
-                return Done(command, Unstored(Answers.Unavailable(), command.Metadata));
+                if (!await IdentityAdminLock.TryAcquireAsync(database, lockCompany, cancellationToken))
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return new PrimaryAttempt(Result: Unstored(Answers.Unavailable(), command.Metadata));
+                }
             }
-        }
 
-        await RequireCommandStillAsync(command, cancellationToken);
-
-        var raced = await FindExecutionAsync(command, cancellationToken);
-        if (raced is not null)
-        {
-            await transaction.RollbackAsync(cancellationToken);
             await RequireCommandStillAsync(command, cancellationToken);
-            return Done(command, await ReplayAsync(raced, command, cancellationToken));
-        }
 
-        var now = timeProvider.GetUtcNow().ToUniversalTime();
-        var step = await body(now);
-        if (step.Refusal is { } refusal)
-        {
-            if (refusal.StatusCode >= 500 || refusal.StatusCode == 400)
+            var raced = await FindExecutionAsync(command, cancellationToken);
+            if (raced is not null)
             {
                 await transaction.RollbackAsync(cancellationToken);
+                return new PrimaryAttempt(Winner: raced);
+            }
+
+            var now = timeProvider.GetUtcNow().ToUniversalTime();
+            var step = await body(now);
+            if (step.Refusal is { } refusal)
+            {
+                if (refusal.StatusCode >= 500 || refusal.StatusCode == 400)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    database.ChangeTracker.Clear();
+                    return new PrimaryAttempt(Result: Unstored(refusal, command.Metadata));
+                }
                 database.ChangeTracker.Clear();
-                return Done(command, Unstored(refusal, command.Metadata));
-            }
-            return Done(command, await StoreRefusalAsync(command, refusal, transaction, cancellationToken));
-        }
-
-        var change = step.Change ?? throw new InvalidOperationException("Kimlik yetki komutu sonuç üretmedi.");
-        await RequireCommandStillAsync(command, cancellationToken);
-        foreach (var audit in change.Audits)
-        {
-            auditEvents.Enqueue(audit);
-        }
-
-        AddExecution(command, change.Answer, now);
-        try
-        {
-            await database.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException || IsUniqueViolation(exception))
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            database.ChangeTracker.Clear();
-            var winner = await FindExecutionAsync(command, cancellationToken);
-            if (winner is not null)
-            {
-                return Done(command, await ReplayAsync(winner, command, cancellationToken));
+                await RequireCommandStillAsync(command, cancellationToken);
+                RecordTerminal(command, refusal);
+                AddExecution(command, refusal, timeProvider.GetUtcNow().ToUniversalTime());
+                try { await database.SaveChangesAsync(cancellationToken); }
+                catch (DbUpdateException exception) when (IsUniqueViolation(exception))
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return new PrimaryAttempt(RequiredWinnerFailure: exception);
+                }
+                await auditWriter.WritePendingAsync(transaction.GetDbTransaction(), cancellationToken);
+                commitStarted = true;
+                await transaction.CommitAsync(cancellationToken);
+                return new PrimaryAttempt(Result: new IdentityAccessCommandResultV1(refusal, false, command.Metadata.CorrelationId));
             }
 
-            return Done(command, await StoreStandaloneRefusalAsync(command, change.OnConflict, cancellationToken));
-        }
-
-        await auditWriter.WritePendingAsync(transaction.GetDbTransaction(), cancellationToken);
-
-        if (change.SecurityEvent is { } securityEvent)
-        {
-            var written = await securityEvents.WriteAsync(securityEvent, cancellationToken);
-            if (!written.CallerMayContinue)
+            var change = step.Change ?? throw new InvalidOperationException("Kimlik yetki komutu sonuç üretmedi.");
+            await RequireCommandStillAsync(command, cancellationToken);
+            foreach (var audit in change.Audits)
             {
-                // identity.permission.changed is fail-closed: no grant or revocation stands without its security event.
+                auditEvents.Enqueue(audit);
+            }
+
+            AddExecution(command, change.Answer, now);
+            try
+            {
+                await database.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException || IsUniqueViolation(exception))
+            {
                 await transaction.RollbackAsync(cancellationToken);
-                database.ChangeTracker.Clear();
-                return Done(command, Unstored(Answers.Unavailable(), command.Metadata));
+                return new PrimaryAttempt(Conflict: change.OnConflict);
             }
-        }
 
-        await transaction.CommitAsync(cancellationToken);
-        return Done(command, new IdentityAccessCommandResultV1(change.Answer, false, command.Metadata.CorrelationId));
-    }
+            await auditWriter.WritePendingAsync(transaction.GetDbTransaction(), cancellationToken);
 
-    /// <summary>A business refusal under the lock: the key's answer and its owner-written audit, one transaction.</summary>
-    private async Task<IdentityAccessCommandResultV1> StoreRefusalAsync(
-        Command command,
-        IdentityAccessCommandAnswerV1 refusal,
-        IDbContextTransaction transaction,
-        CancellationToken cancellationToken)
-    {
-        database.ChangeTracker.Clear();
-        await RequireCommandStillAsync(command, cancellationToken);
-        RecordTerminal(command, refusal);
-        AddExecution(command, refusal, timeProvider.GetUtcNow().ToUniversalTime());
-        try
-        {
-            await database.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException exception) when (IsUniqueViolation(exception))
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            database.ChangeTracker.Clear();
-            var winner = await FindExecutionAsync(command, cancellationToken);
-            if (winner is null)
+            if (change.SecurityEvent is { } securityEvent)
             {
-                throw;
+                var written = await securityEvents.WriteAsync(securityEvent, cancellationToken);
+                if (!written.CallerMayContinue)
+                {
+                    // identity.permission.changed is fail-closed: no grant or revocation stands without its security event.
+                    await transaction.RollbackAsync(cancellationToken);
+                    database.ChangeTracker.Clear();
+                    return new PrimaryAttempt(Result: Unstored(Answers.Unavailable(), command.Metadata));
+                }
             }
 
-            return await ReplayAsync(winner, command, cancellationToken);
+            commitStarted = true;
+            await transaction.CommitAsync(cancellationToken);
+            return new PrimaryAttempt(Result: new IdentityAccessCommandResultV1(change.Answer, false, command.Metadata.CorrelationId));
         }
-
-        await auditWriter.WritePendingAsync(transaction.GetDbTransaction(), cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-        return new IdentityAccessCommandResultV1(refusal, false, command.Metadata.CorrelationId);
+        catch (Exception exception) when (!commitStarted && !cancellationToken.IsCancellationRequested
+            && IsRetryablePrimarySqlFailure(exception))
+        {
+            // SQL1205 may already have rolled back the transaction. A cleanup failure is not swallowed:
+            // only a verified rollback plus successful scope disposal can yield an unstored 503.
+            if (transaction.GetDbTransaction().Connection is not null)
+                await transaction.RollbackAsync(CancellationToken.None);
+            database.ChangeTracker.Clear();
+            auditWriter.DiscardPending();
+            return new PrimaryAttempt(ProviderUnavailable: true);
+        }
     }
 
     /// <summary>
