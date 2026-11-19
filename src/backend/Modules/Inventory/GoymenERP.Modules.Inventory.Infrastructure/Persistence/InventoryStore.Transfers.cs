@@ -267,7 +267,7 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
             return new(priorView, true, prior.CorrelationId);
         }
 
-        await LockPhysicalValidationAsync(cancellationToken);
+        await LockTransferPhysicalValidationAsync(cancellationToken);
         var row = await dbContext.Transfers.SingleOrDefaultAsync(candidate => candidate.Id == transferId, cancellationToken);
         if (row is null)
         {
@@ -468,7 +468,7 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
             return new(priorView, true, prior.CorrelationId);
         }
 
-        await LockPhysicalValidationAsync(cancellationToken);
+        await LockTransferPhysicalValidationAsync(cancellationToken);
         var row = await dbContext.Transfers.SingleOrDefaultAsync(candidate => candidate.Id == transferId, cancellationToken);
         if (row is null)
         {
@@ -782,6 +782,21 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
         }
 
         throw TransferError(503, InventoryTransferCodesV1.Unavailable);
+    }
+
+    private async Task LockTransferPhysicalValidationAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await LockPhysicalValidationAsync(cancellationToken);
+        }
+        catch (InventoryStoreException exception) when (exception.Code == InventoryStoreCodes.ConcurrentChange)
+        {
+            // The guard is acquired before movement staging, so its technical loser must use
+            // the same transfer refusal as staging. The owning transaction still rolls back.
+            // Other store failures and SQL timeout/deadlock errors are deliberately not mapped here.
+            throw TransferError(409, InventoryTransferCodesV1.ConcurrentChange, exception);
+        }
     }
 
     private async Task<InventoryTransferResultV1> SaveTransferAsync(
