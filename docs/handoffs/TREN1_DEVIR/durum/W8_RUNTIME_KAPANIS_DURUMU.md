@@ -355,3 +355,14 @@ Yayımlama öncesi mimari checkpoint: temiz6f7268cf7 fixture build0/discovery0, 
 - Mevcut kaynak yuzeylerinin hashleri ev aracindan olculdu; 3a399af25f62 pin checkpoint'i K3 review bekler. Yeni migration/izin/grant/rol, instance policy, OPEN, production veya Finance STOP degisikligi yok.
 - Hafif kontroller: iki validator0; backlog64/64PASS; bootstrap56/native0 ve9Windows kosullu skip; backend verifier38/38PASS; RCSI verifier103/103PASS; OpenAPI validator16/native0 ve2Windows kosullu skip. Bunlar SQLskip0 kanitindan ayridir.
 - Siradaki kapi: yerel tani ve kaynak duzeltmeleri bitirilecek, pinler son kaynakta yeniden dogrulanacak, sonra normal FF push ile yeni dogal tam CI. Taslak#1201 ready/merge yapilmaz; iki yeni bagimsiz tam exact-head K3 review gerekir. Yazara yardimci ajanlar bagimsiz reviewer sayilmaz.
+
+
+### 2026-11-19 - yerel SQL hedeflerinin ikinci checkpoint'i
+
+- 9fa1588031c770a4ac40700ea90d8e7eb789725c turu tamamlandi:20 hedef12PASS8FAILskip0; bunun A6+B12 altkumesi18=10PASS8FAIL, iki revizyon2PASS. Onceki RUNNING satiri bu tamamlanmis kayitla guncellenir; genis CI kaniti degildir.
+- a1ac08d7abb60229ea436d2d207ad59807a4d066: tam Integration+backend derlemesi0hata0uyari (401.281s); depolama3/3PASSskip0; yedi SQL hedef5PASS2FAILskip0. Transfer iptali, batch revival, iki kabulde tek ilk-fatura kurusu, order-cancellation Down ve Work dispatch gercek SQL'de PASS. Paint eksiksecim ve Identity Sales403 kaldi; ilk hatalar saklandi.
+- Paint HTTP422'nin kapali kodu manufacturing_paint_selection_required: test gercek Product Excel uyeligi ve gercek Cari tedarikci surumleriyle tamamlandi. Identity port/adapter gecerken Sales403, yalniz Identity'de bulunan sentetik sirketin Organization'da olmamasiydi; gercek owner bootstrap'a yalitilmis sirketler eklendi. Uygulama yetki/uygunluk citlari gevsetilmedi.
+- Manufacturing unit1428/1428 nativePASSskip0 fakat SDK1425 vaka: custom-object MemberData kesifte1, kosumda4gorunuyordu. Dort ayni vaka primitive InlineData olarak korundu (972f75493); onceki exactproof NOT_PASS, yeniden kosum gerekir.
+- Manufacturing iptal write-guard fingerprint'i ev ureticisinden olculdu; recovery1465kaynak pin'i yeniden olculup3b0f53244'te gercek source-only consumer exit0 alindi:19context342migration66store. Yeni migration/izin veya tenantbypass eklenmedi. OpenAPI byte drift0.
+- cc53a6363'te16 mevcut SQL hedefi ve tam Manufacturing unit kosumu baslatildi: RUNNING, PASS sayilmaz. Yalniz fixture/test/pin degisikligi oldugu git diff ile dogrulandi; hedefli derleme a1'de derlenmis degismemis backend bagimliliklarini kullanir. Son tam taze CI ayri kapidir.
+- Kaynak174/174 (%100); W8 son paket. Yayinli71e8dd2c tam SQL CI halen FAIL152 ve taslakK3#1201 kabul bekler. Yerel SQL17 kaniti CI16, iki tam bagimsiz exact-head K3 ve insan kapilarinin yerine gecmez.
