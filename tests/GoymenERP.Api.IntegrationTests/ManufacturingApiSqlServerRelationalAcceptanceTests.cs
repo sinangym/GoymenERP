@@ -120,6 +120,33 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             ("@c", CompanyA), ("@ids", JsonSerializer.Serialize(locationIds))));
     }
 
+    private static async Task<string> SafeProcessApprovalProblemCodeAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            await using var body = await response.Content.ReadAsStreamAsync();
+            var buffer = new byte[16 * 1024 + 1];
+            var count = await body.ReadAtLeastAsync(buffer, buffer.Length, throwOnEndOfStream: false);
+            if (count > 16 * 1024) return "unknown";
+            using var document = JsonDocument.Parse(buffer.AsMemory(0, count));
+            if (document.RootElement.ValueKind != JsonValueKind.Object
+                || !document.RootElement.TryGetProperty("code", out var code)
+                || code.ValueKind != JsonValueKind.String) return "unknown";
+            return code.GetString() switch
+            {
+                ManufacturingPaintCodesV1.Required => ManufacturingPaintCodesV1.Required,
+                ManufacturingPaintCodesV1.Ineligible => ManufacturingPaintCodesV1.Ineligible,
+                ManufacturingPaintCodesV1.VersionConflict => ManufacturingPaintCodesV1.VersionConflict,
+                ManufacturingPaintCodesV1.Unavailable => ManufacturingPaintCodesV1.Unavailable,
+                ManufacturingRuleCodes.PlanSelfApproval => ManufacturingRuleCodes.PlanSelfApproval,
+                ManufacturingRuleCodes.DueDateInPast => ManufacturingRuleCodes.DueDateInPast,
+                ManufacturingRuleCodes.PlanDueDateRequired => ManufacturingRuleCodes.PlanDueDateRequired,
+                _ => "unknown",
+            };
+        }
+        catch (JsonException) { return "unknown"; }
+    }
+
     [SqlServerFact]
     public async Task Each_locked_organization_process_persists_reopens_and_snapshots_into_its_order()
     {
@@ -157,7 +184,10 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             await run.EnterTerminAsync(created.PlanId);
             var approval = await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{created.PlanId:D}/approval",
                 new ApprovePlanRequestV1(created.Version));
-            Assert.Equal(HttpStatusCode.OK, approval.StatusCode);
+            var approvalProblemCode = approval.StatusCode == HttpStatusCode.OK
+                ? "not_applicable" : await SafeProcessApprovalProblemCodeAsync(approval);
+            Assert.True(approval.StatusCode == HttpStatusCode.OK,
+                $"Expected HTTP 200; actual HTTP {(int)approval.StatusCode}; process={process}; public problem code={approvalProblemCode}.");
             var orderId = Guid.NewGuid();
             var orderResponse = await client.PostWithKeyAsync($"{Base}/orders",
                 new CreateOrderRequestV1(orderId, created.PlanId));
