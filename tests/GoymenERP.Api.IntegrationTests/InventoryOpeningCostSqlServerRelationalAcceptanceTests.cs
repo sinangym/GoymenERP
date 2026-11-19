@@ -144,8 +144,10 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 request with { OpeningCostId = Guid.NewGuid(), UnitCostPerKg = "0" }, Metadata(run), OpeningCostFence),
                 400, InventoryOpeningCostCodesV1.ValidationFailed);
 
+            // A different decision command needs its own key; the rejected decision's key correctly wins before lookup.
+            var missingTargetChecker = checker with { IdempotencyKey = Guid.NewGuid().ToString("N") };
             await AssertOpeningCostRefused(scope.Store.DecideOpeningCostAsync(Guid.NewGuid(),
-                new DecideInventoryOpeningCostV1(InventoryOpeningCostDecisionKindV1.Approve, "SENTETIK"), checker,
+                new DecideInventoryOpeningCostV1(InventoryOpeningCostDecisionKindV1.Approve, "SENTETIK"), missingTargetChecker,
                 OpeningCostFence), 404, InventoryOpeningCostCodesV1.NotFound);
         }
 
