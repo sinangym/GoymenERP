@@ -65,7 +65,7 @@ public sealed class ErpAuthorityRevalidationServiceTests
 
         Assert.True(await service.HasPermissionAsync(Permission, company));
         var user = await dbContext.Users.SingleAsync(x => x.Id == actor);
-        user.Deactivate();
+        user.Deactivate(DateTimeOffset.UtcNow);
         await dbContext.SaveChangesAsync();
         Assert.Single(await dbContext.RoleAssignments.ToListAsync());
         Assert.True(await service.HasPermissionAsync(Permission, company));

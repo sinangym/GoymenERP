@@ -138,7 +138,7 @@ public sealed class CentralAuthorityRevalidationSqlServerRelationalAcceptanceTes
             {
                 var identity = deactivate.ServiceProvider.GetRequiredService<IdentityDbContext>();
                 var user = await identity.Users.SingleAsync(x => x.Id == actor);
-                user.Deactivate();
+                user.Deactivate(DateTimeOffset.UtcNow);
                 await identity.SaveChangesAsync();
                 Assert.True(await identity.RoleAssignments.AnyAsync(x => x.UserId == actor));
             }

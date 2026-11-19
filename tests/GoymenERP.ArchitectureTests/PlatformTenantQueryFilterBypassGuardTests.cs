@@ -475,6 +475,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // card) (9c53f777… -> 534be0f1…).
             // DEC-FIN-010 / SAT-D54/D55/D169…D172: +2 Settings exchange-rate SQL facts (record lifecycle; disabled sources and
             // empty-store rollback) (534be0f1… -> a90275a7…).
+            // W8 source audit: +2 reference-list race and +2 Audit rollback facts; all prior facts retained.
             ["tools/relational_inventory/platform.txt"] =
                 // Üretim U1-a: +3 Settings manufacturing profile SQL facts (parameter lifecycle; tolerance publication; migration
                 // round trip) (534be0f1… -> 026f3c54…).
@@ -495,7 +496,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 W5 (integration): +2 fact(s) from the W5 team merges; value from guard_fingerprint.py (71017138… -> 19a6d7c9…).
                 // Tren-1 W6: +4 source facts, ordinal-sorted; SQL execution NOT_RUN.
                 // Re-fingerprinted for tren-1 W7: source facts kept ordinal-sorted; SQL execution NOT_RUN.
-                "7bab7a6470dab14afe1ba73fe66449786dc1266ee23b37550e4a94e7c580b09c",
+                "383291fae2b638c4a64d3c417ae886808ff5e1d5088baa193cb1ac1d5346e5e4",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -1286,11 +1287,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal) { ["Microsoft.Data.SqlClient"] = 1 }),
                 // Tren-1 W7; K3 review pending. KIM-D20/D21: one fixed parameterless MIN_ACTIVE_ROWVERSION visibility horizon prevents cursor loss; event rows remain explicitly ambient-company filtered and read-only.
                 ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/IdentityCompanySetupOutboxSource.cs"] =
-                    new("15b1eec9c864f68a69026e1c7054c25d116fce74162179608eee5f870bef9441",
+                    new("1db8cdfab0a6f6aa8881dd0c9c64e2508ffe1222b9e9b521997212d9291bbf4e",
                         new Dictionary<string, int>(StringComparer.Ordinal) { ["SqlQueryRaw"] = 1 }),
                 // Tren-1 W7; K3 review pending. KIM-D20/D21: one fixed parameterless MIN_ACTIVE_ROWVERSION visibility horizon prevents cursor loss; event rows remain explicitly ambient-company filtered and read-only.
                 ["src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanySetupOutboxSource.cs"] =
-                    new("318f3ca2622f6d3b21aed9afe6ffddc4a5165416ce79496edb45a1b466e30662",
+                    new("fd3324571dc7a51119ad20e58fb0f3f2409922df0b5080922f4eb6a160a1a5ff",
                         new Dictionary<string, int>(StringComparer.Ordinal) { ["SqlQueryRaw"] = 1 }),
                 // Tren-1 W6 Audit ownership repair. K3 review pending: this namespace is used only for the borrowed
                 // DbTransaction type. A fresh Audit-owned EF context validates every event's CompanyId and appends
@@ -2185,7 +2186,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
                  + "Outbox/LogisticsDefiniteShipmentOutboxEventSource.cs"] =
                     new(
-                        "fa7de0eb89420961c0b62289989c263a844ddffd45a0c580a8ba40c5dd827170",
+                        "9983d6f633aae312d39b2490ec4ae869329a08eab1d4576bd632c4becd7c252d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         ["SqlQueryRaw"] = 1
@@ -2226,7 +2227,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
                  + "Persistence/SettingsReferenceListAdministration.cs"] =
                     new(
-                        "645792d26be3431d04d263c09db02d9f54135b1b5346745dcff63fb170034577",
+                        "49a67eb113e8a6b34dc78b13ba7528c0cffcf2def8af4d39d2b35237b0ef292d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         [".FindAsync"] = 1
@@ -3356,7 +3357,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // has no dynamic parameters or tenantdata. Then actual EF owner outbox query applies CompanyId==captured, after
                 // Position, before horizon, order/take.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCreditOutboxEventSourceV1.cs"] =
-                    new("e3bad193ea2b4c08abb1b5d907cf4719cd14ebe495915af2768f324e3a8c1b74",
+                    new("5b3318968ef3a80c7abf4a4f9ec3f3dd7ac1a60973c0c278c2f20ba648ee6b8f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["SqlQueryRaw"] = 1,
@@ -3461,7 +3462,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // explicitly CompanyId==captured, Position>after && Position<horizon, ordered/taken; samecompany fence after
                 // metadata and rows. Read-only, no DML.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryOutboxEventSource.cs"] =
-                    new("daa1db1ef57c1f33180e043be0dc029b266ca14edc258c56dcd53b12df197d47",
+                    new("00d52c844dd5cb06abe3294e3f652be88a4d11fb25b5b72baf780c5d8f94c927",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["SqlQueryRaw"] = 1,
@@ -3712,7 +3713,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // explicitly CompanyId==captured, Position>after && Position<horizon, ordered/taken; samecompany fence after
                 // metadata and rows. Read-only, no DML.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Outbox/SalesOutboxEventSourceV1.cs"] =
-                    new("9bd8682328121e36e27bf7518b2935b348c291b8f70d77bba327fbe0d70dbfd1",
+                    new("2b8b1bd8169197348f7dbfaa444f40e8cfec1b52963cb5951643b383c1e4de68",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["SqlQueryRaw"] = 1,
@@ -5785,6 +5786,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Platform credential recovery audit exists; AddPlatformCredentialRecoveryAudit requires a forward fix. 1 lexical Sql call(s).
                 ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Persistence/Migrations/20261117160915_AddPlatformCredentialRecoveryAudit.cs"] =
                     new("a0c09cc3546cb4025ecdda1b2ada6709dd7d58c2b0c8d6501d2fdef0612cb925", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // W8 ERP-000D; K3 review pending: Down locks AuditEvents and refuses all historical Audit loss (51900); empty Up, no tenant bypass or data mutation.
+                ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Persistence/Migrations/20261119131410_ProtectAuditHistoryRollback.cs"] =
+                    new("22d1b20ed5c8c9efcb32c34a6ea7505f00fab698e340efc690ff45c4f0da0622", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; UBL invoice source exists; AddPurchaseInvoiceXmlContentKind is not rolled back (forward fix). 1 lexical Sql call(s).
                 ["src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Persistence/Migrations/20261117112418_AddPurchaseInvoiceXmlContentKind.cs"] =
                     new("a79686204a833c18e35c9fccdd55be81e789dd17412ec00e1f870ba7ecae987d", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
