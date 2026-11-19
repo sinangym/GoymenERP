@@ -3439,11 +3439,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // CompanyContext to existing owner transaction; UseSqlServer(contextOwnsConnection:false)/UseTransaction. Only
                 // company-keyed NegativeStockValidationGuards INSERT/UPDATE and SaveChanges, never caller pending physical/audit
                 // rows. Context disposal does not own outer commit/handles.
+                // W8 SQL closure; K3 review pending. Typed SqlException classifies only guard PK 2627;
+                // optimistic guard updates map to existing ConcurrentChange. Same borrowed TX, no SQL/retry/commit added.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryNegativeStockValidationGuard.cs"] =
-                    new("5f5db67ae7b975437b16e5dd5d9c42fec6c24ac8d9ee4f25ce07e4c35b7f9322",
+                    new("d377be67da71fbc0ed8a992ce0b2b5c9357515df0048f2fa1007c5d57248f870",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["GetDbConnection"] = 1,
+                            ["Microsoft.Data.SqlClient"] = 1,
                         }),
                 // Tren-1 W8; K3 review pending. One SqlQueryRaw<byte[]> fixed SELECT MIN_ACTIVE_ROWVERSION() AS Value reads only
                 // SQL metadata, no interpolated input. Typed20digit ulong cursor and8byte horizon; owner outbox EF query

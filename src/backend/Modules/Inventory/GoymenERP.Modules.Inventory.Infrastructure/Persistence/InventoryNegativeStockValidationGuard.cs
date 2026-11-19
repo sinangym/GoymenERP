@@ -1,4 +1,6 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Inventory.Application;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -10,7 +12,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// resource avoids reversed acquisition in multi-product commands. Its lifetime is exactly the caller's TX.
 /// The small borrowed context writes ONLY the technical guard: it must not flush the caller's staged
 /// movements, allocation changes or pending audit. No connection, transaction or outer commit is owned here.
-/// An absent-row insertion race is a technical failure/retry, never successful physical validation.
+/// A guard insertion/update race is reported as the existing concurrent-change refusal; validation never succeeds on it.
 /// </summary>
 internal static class InventoryNegativeStockValidationGuard
 {
@@ -30,6 +32,22 @@ internal static class InventoryNegativeStockValidationGuard
         else row.Version = checked(row.Version + 1);
         // A real UPDATE/INSERT holds the SQL write lock until the borrowed transaction ends, including RCSI.
         // Version is optimistic concurrency proof: a competing reader never overwrites a newer guard.
-        await guard.SaveChangesAsync(token);
+        try
+        {
+            await guard.SaveChangesAsync(token);
+        }
+        catch (DbUpdateConcurrencyException exception)
+        {
+            throw new InventoryStoreException(InventoryStoreCodes.ConcurrentChange,
+                "Fiziksel stok doğrulaması başka bir işlemle değişti; hiçbir şey kaydedilmedi.", exception);
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2627 } sql
+            && sql.Message.Contains("'PK_NegativeStockValidationGuards'", StringComparison.Ordinal))
+        {
+            // Only this company guard's first-insert collision is a concurrent change. The caller still
+            // owns rollback; no retry, timeout/deadlock mapping, or independent business write occurs here.
+            throw new InventoryStoreException(InventoryStoreCodes.ConcurrentChange,
+                "Fiziksel stok doğrulaması başka bir işlemle değişti; hiçbir şey kaydedilmedi.", exception);
+        }
     }
 }
