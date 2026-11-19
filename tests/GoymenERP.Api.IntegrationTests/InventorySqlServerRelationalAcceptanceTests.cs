@@ -1,3 +1,4 @@
+using System.Data.Common;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
@@ -305,13 +306,14 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             In(Position(CompanyA, location, first, BlockState.Free), 10m));
         var line = Movement(CompanyA, StockMovementKind.Receipt, new StockSourceReference("purchase.receipt", sourceId, Guid.NewGuid()),
             In(Position(CompanyA, location, second, BlockState.Free), 10m));
-        var barrier = new Barrier(2);
+        using var callers = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var rendezvous = new SourceGrainReadRendezvous(sourceId);
         async Task<object> WriteAsync(StockMovement movement)
         {
-            await using var writer = run.Store(CompanyA, new BarrierInterceptor(barrier));
+            await using var writer = run.Store(CompanyA, rendezvous);
             try
             {
-                return await writer.Movements.RecordMovementAsync(movement, Metadata(run));
+                return await writer.Movements.RecordMovementAsync(movement, Metadata(run), callers.Token);
             }
             catch (InventoryStoreException exception)
             {
@@ -319,7 +321,17 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             }
         }
 
-        var results = await Task.WhenAll(Task.Run(() => WriteAsync(whole)), Task.Run(() => WriteAsync(line)));
+        object[] results;
+        try
+        {
+            results = await Task.WhenAll(Task.Run(() => WriteAsync(whole)), Task.Run(() => WriteAsync(line)));
+        }
+        finally
+        {
+            rendezvous.Release();
+            callers.Cancel();
+        }
+        Assert.Equal(2, rendezvous.CompletedReads);
 
         Assert.Single(results, result => result is InventoryWriteOutcome.Recorded);
         Assert.Single(results, result => result is string code && code == InventoryStoreCodes.ConcurrentChange);
@@ -1253,6 +1265,31 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         public InventoryStore Store => store;
 
         public ValueTask DisposeAsync() => dbContext.DisposeAsync();
+    }
+
+    /// <summary>Both source-grain SQL reads finish before either caller takes the physical-validation mutex.</summary>
+    private sealed class SourceGrainReadRendezvous(Guid sourceId) : DbCommandInterceptor
+    {
+        private readonly TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int completedReads;
+        public int CompletedReads => Volatile.Read(ref completedReads);
+        public void Release() => ready.TrySetResult();
+
+        public override async ValueTask<DbDataReader> ReaderExecutedAsync(DbCommand command, CommandExecutedEventData eventData,
+            DbDataReader result, CancellationToken cancellationToken = default)
+        {
+            if (!command.CommandText.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)
+                || !command.CommandText.Contains("[inventory].[SourceGrains]", StringComparison.Ordinal)
+                || !command.Parameters.Cast<DbParameter>().Any(parameter => parameter.Value is Guid id && id == sourceId))
+                return result;
+            var arrivals = Interlocked.Increment(ref completedReads);
+            if (arrivals <= 2)
+            {
+                if (arrivals == 2) Release();
+                await ready.Task.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
+            }
+            return result;
+        }
     }
 
     /// <summary>Holds each save until both writers have reached it, so both read the same stock first.</summary>
