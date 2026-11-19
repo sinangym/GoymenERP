@@ -6,6 +6,23 @@ namespace GoymenERP.Api.IntegrationTests;
 
 public sealed class ManufacturingCostGenerationHostContractTests
 {
+    [Fact]
+    public void Unchanged_financial_input_keeps_historical_first_keys_but_separates_pending_recognition_transitions_and_stable_retries()
+    {
+        var fingerprint = new string('a', 64);
+        var first = ManufacturingCostGenerationHost.RecognitionOperation(fingerprint, null, ManufacturingCostGenerationStateV1.Pending);
+        Assert.Equal("recognize:" + fingerprint, first);
+        Assert.Equal(first, ManufacturingCostGenerationHost.RecognitionOperation(fingerprint, null, ManufacturingCostGenerationStateV1.Recognized));
+        var recognized = ManufacturingCostGenerationHost.RecognitionOperation(fingerprint, "1", ManufacturingCostGenerationStateV1.Recognized);
+        var pending = ManufacturingCostGenerationHost.RecognitionOperation(fingerprint, "1", ManufacturingCostGenerationStateV1.Pending);
+        var next = ManufacturingCostGenerationHost.RecognitionOperation(fingerprint, "2", ManufacturingCostGenerationStateV1.Recognized);
+        Assert.Equal(4, new[] { first, recognized, pending, next }.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(recognized, ManufacturingCostGenerationHost.RecognitionOperation(fingerprint, "1", ManufacturingCostGenerationStateV1.Recognized));
+        Assert.NotEqual(recognized, ManufacturingCostGenerationHost.RecognitionOperation(new string('b', 64), "1", ManufacturingCostGenerationStateV1.Recognized));
+        Assert.All(new[] { first, recognized, pending, next }, operation =>
+            Assert.InRange($"manufacturing-cost:{Guid.NewGuid():N}:{operation}".Length, 1, 128));
+    }
+
     [Theory]
     [InlineData(409, "inventory_manufacturing_cost_transfer_reversal_required", ManufacturingApiStatus.Conflict, "manufacturing_cost_transfer_reversal_required")]
     [InlineData(409, "inventory_manufacturing_cost_version_conflict", ManufacturingApiStatus.Conflict, "manufacturing_concurrent_change")]

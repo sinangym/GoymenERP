@@ -214,7 +214,7 @@ internal sealed class ManufacturingCostGenerationHost(ManufacturingDbContext db,
         if (fresh is null || fresh.Version != order.Version || fresh.Status != OrderStatus.Closed) throw Concurrent();
         var staged = await owner.StageAsync(new InventoryManufacturingCostGenerationCommandV1(companyId, orderId, generationId, previous?.InventoryVersion ?? "0", Text(order.Version),
             (InventoryManufacturingCostGenerationStateV1)state, fingerprint, CalculatorVersion, evidence, outputLines, reason,
-            clock.GetUtcNow()), InventoryMetadata(metadata, generationId, "recognize:" + fingerprint), token);
+            clock.GetUtcNow()), InventoryMetadata(metadata, generationId, RecognitionOperation(fingerprint, previous?.InventoryVersion, state)), token);
         RequireResult(staged, companyId, orderId, generationId, order.Version, state, fingerprint, outputLines.Select(item =>
             new InventoryManufacturingCostGenerationOutputResultV1(item.OutputId, item.ReceiptMovementId, item.LabelId, item.NetQuantityKg,
                 0, 0, item.TlUnitCostPerKg, null, null, item.UsdUnitCostPerKg, [], item.TlAmount)).ToArray());
@@ -301,6 +301,16 @@ internal sealed class ManufacturingCostGenerationHost(ManufacturingDbContext db,
         if (!scope.IsGranted || !scope.IsCompanyWide || Company(metadata) != companyId)
             throw new ManufacturingInventoryRealizationPortException(ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied);
     }
+    // URT-D67: a pending physical-close observation and its later recognition are different transitions,
+    // even when the authoritative financial input fingerprint is unchanged. Keep the historical first
+    // observation key; digest later transition identity so the complete Inventory key stays within 128 chars.
+    internal static string RecognitionOperation(string fingerprint, string? expectedInventoryVersion,
+        ManufacturingCostGenerationStateV1 state) => "recognize:" + (expectedInventoryVersion is null ? fingerprint
+        : Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            keyVersion = 2, expectedInventoryVersion, state = (int)state, inputFingerprint = fingerprint,
+        }, Json))).ToLowerInvariant());
+
     private static InventoryCommandMetadata InventoryMetadata(ManufacturingCommandMetadata value, Guid id, string operation) => new InventoryCommandMetadata(value.ActorId,
         value.PermissionCode, value.RoleCodes, value.CorrelationId, value.CausationId, $"manufacturing-cost:{id:N}:{operation}",
         value.SourceChannel, value.ClientIpAddress, value.UserAgent);

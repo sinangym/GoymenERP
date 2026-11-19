@@ -43,6 +43,9 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     public async Task A_real_unreadable_inventory_generation_reverses_with_reopen_and_a_second_close_creates_a_new_generation()
     {
         await using var run = await StartManufacturingInventoryRunAsync(); var seed = await SeedGenerationOutputAsync(run, "SYN-COST-HOST-REOPEN");
+        var physicalVersions = await run.ScalarAsync<string>(
+            "SELECT Id, Version, UpdatedAtUtc FROM inventory.Labels WHERE CompanyId=@company ORDER BY Id FOR JSON PATH, INCLUDE_NULL_VALUES",
+            ("@company", CompanyA));
         Guid firstId; long closedVersion;
         await using (var scope = GenerationHostScope.Create(run))
         {
@@ -67,6 +70,10 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         Assert.Equal(firstId, history[1].GenerationId); Assert.NotEqual(firstId, history[2].GenerationId);
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.ManufacturingCostGenerations"));
         Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.ManufacturingCostGenerationHistory"));
+        // Neither an unreadable close nor its reversal is a physical or monetary label mutation.
+        Assert.Equal(physicalVersions, await run.ScalarAsync<string>(
+            "SELECT Id, Version, UpdatedAtUtc FROM inventory.Labels WHERE CompanyId=@company ORDER BY Id FOR JSON PATH, INCLUDE_NULL_VALUES",
+            ("@company", CompanyA)));
     }
 
     private static async Task<(Guid OrderId, long Version)> SeedGenerationOutputAsync(Run run, string code)
@@ -78,7 +85,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         return (seed.OrderId, output.OrderVersion);
     }
 
-    /// <summary>Real SQL stores/Inventory factory and audit owner; only the explicit cost-source outage and authority are synthetic.</summary>
+    /// <summary>Real SQL stores/Inventory factory and audit owner; authority and the selected outage/scrap policy are synthetic.</summary>
     private sealed class GenerationHostScope(AsyncServiceScope services, ManufacturingDbContext context, ManufacturingStore store,
         ManufacturingCostGenerationHost host, ManufacturingCommandMetadata metadata) : IAsyncDisposable
     {
@@ -86,7 +93,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         public ManufacturingStore Store => store;
         public ManufacturingCostGenerationHost Host => host;
         public ManufacturingCommandMetadata Metadata => metadata;
-        public static GenerationHostScope Create(Run run)
+        public static GenerationHostScope Create(Run run, bool availableCost = false)
         {
             var services = run.Factory.Services.CreateAsyncScope(); var provider = services.ServiceProvider;
             var company = provider.GetRequiredService<ICompanyContext>(); company.Set(CompanyA);
@@ -98,7 +105,9 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             var movements = new ManufacturingInventoryCostMovementReader(company, new ManufacturingHostCurrentUser(run.Actor, CompanyA),
                 provider.GetRequiredService<IInventoryManufacturingCostReadPortV1>());
             var host = new ManufacturingCostGenerationHost(context, store, company, new ManufacturingHostCurrentUser(run.Actor, CompanyA),
-                new GenerationHostAuthority(), new ExplicitCostSourceOutage(), movements, collector, writer, TimeProvider.System,
+                new GenerationHostAuthority(), availableCost
+                    ? new ManufacturingCostCompositionSourceV1(company, store, movements, new GenerationScrapPolicy(), store, nonKgInputs: store)
+                    : new ExplicitCostSourceOutage(), movements, collector, writer, TimeProvider.System,
                 provider.GetRequiredService<ManufacturingInventoryCostGenerationFactoryV1>());
             return new(services, context, store, host, ManufacturingHostMetadata(run, "cost-generation") with { PermissionCode = ErpPermissions.ManufacturingOrdersClose });
         }
@@ -109,6 +118,13 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default)
         { Assert.Equal(CompanyA, companyId); return Task.FromResult(GrantedManufacturingScope()); }
     }
+    // Fixed synthetic policy only; order facts, receipt/issue stamps and movement provenance remain real SQL owners.
+    private sealed class GenerationScrapPolicy : IManufacturingScrapCostPolicyReadPortV1
+    {
+        public Task<ManufacturingScrapCostPolicySnapshotV1?> ReadAsync(Guid companyId, CancellationToken cancellationToken) =>
+            Task.FromResult<ManufacturingScrapCostPolicySnapshotV1?>(new(companyId, false, "synthetic-scrap-off-v1"));
+    }
+
     private sealed class ExplicitCostSourceOutage : IManufacturingScrapCostDistributionSourceV1
     {
         public Task<ManufacturingScrapCostDistributionSourceReadV1> ReadAsync(Guid companyId, Guid orderId, CancellationToken cancellationToken) =>

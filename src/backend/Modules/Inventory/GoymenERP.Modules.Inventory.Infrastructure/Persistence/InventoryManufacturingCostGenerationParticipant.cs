@@ -184,7 +184,7 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
         var lineage = await InventoryCostLineageReader.ReadAsync(db, company.CompanyId, root.ProductId, output.LabelId, token);
         if (lineage.Outcome != InventoryCostLineageOutcome.Value || lineage.RemainingKg is null || lineage.NetShippedKg is null)
             throw Error(503, "inventory_manufacturing_cost_physical_source_unreadable");
-        await FenceLineageAsync(lineage, token);
+        await FenceLineageAsync(lineage, changeVersion: recognized, token);
         var hasMoney = output.TlAmount is not null || output.UsdUnitCostPerKg is > 0m;
         if (recognized && reverse && hasMoney)
             await InventoryManufacturingTransferReversalProof.RequireReversibleAsync(db, lineage, output, generationId,
@@ -267,7 +267,10 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
     }
 
     private readonly HashSet<Guid> fencedLineage = [];
-    private async Task FenceLineageAsync(InventoryCostLineageSnapshot lineage, CancellationToken token)
+    // Every read and version/product check remains under this participant's required Serializable
+    // owner transaction. Pending/unreadable observations carry no money and must not invalidate an
+    // in-transit dispatch's immutable label version. Recognized monetary effects retain the write fence.
+    private async Task FenceLineageAsync(InventoryCostLineageSnapshot lineage, bool changeVersion, CancellationToken token)
     {
         foreach (var label in lineage.Labels.Where(label => label.RootShare.Sign > 0).OrderBy(label => label.LabelId))
         {
@@ -276,7 +279,7 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
             if (db.Entry(tracked).Property(row => row.Version).OriginalValue != label.Version
                 || tracked.ProductId != lineage.ProductId || tracked.ProductVersion != label.ProductVersion)
                 throw Error(409, "inventory_manufacturing_cost_version_conflict");
-            if (fencedLineage.Add(label.LabelId))
+            if (changeVersion && fencedLineage.Add(label.LabelId))
             { tracked.Version = checked(tracked.Version + 1); tracked.UpdatedAtUtc = clock.GetUtcNow(); }
         }
     }
