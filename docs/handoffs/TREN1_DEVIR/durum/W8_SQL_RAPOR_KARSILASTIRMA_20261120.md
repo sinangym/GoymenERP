@@ -52,16 +52,29 @@ kanıtı ile gerçek kullanıcı iş akışı kabulü ayrı tutulur.
 - Kapanmış: Product test temizliğinde master/AttachDBFilename ayrımı, RCSI boş
   secret kontrolü, gözlenen sonuçla grup kabulünü ayıran özet ve gerçek süre
   bütçesini yazan timeout mesajı.
-- Açık: Identity atama akışında SQL1205/1222'nin güvenli nonterminal çevirisi.
-  Kör dış catch güvenli değildir: standalone refusal receipt commit edildikten
-  sonra audit yazımı hata verebilir. Bu aşama anahtar tüketilmedi diye sunulamaz.
-- Açık: Counterparty `IsDatedHistoryRace`, varlık tipine göre bütün DbUpdateException
-  hatalarını yarış sayıyor. Yalnız ilgili unique ihlallere daraltma gerekir.
-- Açık: 17 çıplak süreli SignalAndWait ifadesi ve bir Task dönüşümü sonucu yok
-  sayıyor. Başarısız bariyer, yarış kurulmuş gibi kabul edilmemelidir.
-- Açık inceleme: Lojistik teknik guard çakışmasını kalıcı ret olarak kaydediyor;
-  aynı kod gerçek stale-state için de kullanılıyor. Teknik alt ayrım ve mevcut
-  idempotency sözleşmesi doğrulanmadan bütün kod terminal listeden çıkarılmamalı.
+- Kaynak düzeltildi, SQL bekliyor: Identity atamasında ilk receipt okuması ve
+  pre-commit SQL1205/1222 ayrı ele alınır. Başarılı rollback/dispose ve taze yetki
+  kontrolünden sonra mevcut nonterminal 503 kullanılır. Commit başladıktan sonra,
+  replay veya standalone receipt aşamasında bu çeviri yapılmaz. Üç yeni SQL fact;
+  query/save 1222, aynı anahtarla retry/replay, yetki kaybı ve commit sınırını sınar.
+  Recorder'ın normal provider-hata sözleşmesi hata yutmaktır; replay audit'inin
+  hata fırlatması negatif test dekoratörüdür, kanıtlanmış üretim hatası değildir.
+  Managed-user Serializable yolu bu yeni SQL fault fixture'ının kapsamı değildir.
+- Kaynak düzeltildi, SQL bekliyor: Counterparty `IsDatedHistoryRace` yalnız üç
+  tarihçe unique index'inin gerçek 2601/2627 hatasını ve eşleşen entity tipini yarış
+  sayar. İlgisiz PK, CHECK ve uzunluk hataları artık kalıcı conflict değildir.
+  Provider hatasının HTTP 500 olarak kaçması ayrı açık sınırdır; bu patch bunu
+  kapatmış sayılmaz. Bir yeni SQL fact gerçek index/constraint hatalarını sınar.
+- Kaynak düzeltildi, SQL bekliyor: 17 çıplak süreli SignalAndWait ve bir Task
+  dönüşümü false sonucunda açık TimeoutException verir; süre, katılımcı sayısı ve
+  yarış konumu korunur. Etkilenen 41 mevcut SQL fact tanı kuyruğuna alınır.
+- Kaynak düzeltildi, SQL bekliyor: Lojistik yalnız Inventory physical guard'ın
+  bilinen inner-exception kökenini mevcut nonterminal concurrency yoluna taşır.
+  Rollback doğrulanamazsa 503 kalır. Aynı kodun gerçek stale-state kullanımları
+  terminal kalır; Subcontract zaten nonterminal olduğundan değiştirilmez.
+  Bir yeni SQL fact kontrollü gerçek sıfır-satır UPDATE, rollback, iki modülün
+  outbox/stock/audit etkileri ve aynı anahtarla retry/replay sınar; ayrıca mevcut
+  terminal-ret SQL regresyonu korunur. Bu fact iki thread yarış kanıtı değildir.
 - Dış raporun diğer R maddeleri tam doğrulanmış sayılmadı. Özellikle tüm sistemin
   tek kök nedenle bozulduğu veya yerel süre farkının yalnız donanımdan olduğu
   sonucu eldeki kanıtla kurulamaz.
@@ -69,11 +82,16 @@ kanıtı ile gerçek kullanıcı iş akışı kabulü ayrı tutulur.
 ## Sonraki doğrulama
 
 Kaynak dondurulup recovery pinleri üretildikten sonra derleme ve hedef testler
-çalıştırılır. Önceki 46 SQL hedefi korunur; iki stok guard fact'i ve mevcut alış
-faturası yarış testiyle 49 hedef olur. Bağımsız tamamlanmış test hataları toplanır;
+çalıştırılır. Önceki 46 SQL hedefi korunur; yeni owner regresyonları, mevcut alış
+faturası yarışı, Lojistik terminal-ret testi ve bariyerlerden etkilenen mevcut
+testlerle tekilleştirilmiş 95 hedef olur. Tamamlanmış test hataları toplanır;
 bir hata varken bütün sonuç FAIL kalır. SDK/TRX kimliği, skip0, tek native süreç,
 40 dakika süreç ve 180 dakika toplam SQL bütçesi korunur. Timeout veya kaynak
 değişikliği güvenlik sınırında kuyruk durur. Bu yerel tanı kuyruğu resmi tam SQL
 shard kanıtının yerine geçmez; GitHub ve exact-head K3 kapıları ayrıca bekler.
 
 Bu belge yazılırken yeni kaynak setinde build/test/SQL henüz NOT_RUN.
+
+Kaynak commitleri: ilk eşleme ve wrapper düzeltmeleri `abcdbe263`; Cari
+`3acca9a75`; Kimlik `4423522ad`; bariyerler `627a7b132`. Bunlar yerel kaynak
+kanıtıdır; GitHub'a yayımlanma veya tam K3 kabulü anlamına gelmez.

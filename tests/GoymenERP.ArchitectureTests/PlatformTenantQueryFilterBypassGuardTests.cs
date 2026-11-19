@@ -293,7 +293,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 wave 1: +4 facts, ordinal-sorted (53063d1f… -> e31d1c5b…).
                 // Re-fingerprinted for tren-1 wave 3 (integration): +13 facts, ordinal-sorted (01f5d3ee… -> 02d8add9…).
                 // Re-fingerprinted for tren-1 W5 (integration): +1 fact(s) from the W5 team merges; value from guard_fingerprint.py (02d8add9… -> 0f10d031…).
-                "4332c931905c65c91d596623854c40ded037433ab9e75e6250cb15a64f26cee7",
+                "d4974bbf7b9a40e3016105021b30c4cb2aa0f54296aca08376b745f9ee361153",
 
             // finance
             // DEC-FIN-014: +3 POS collection SQL facts (b18c13d9… -> 7af8ecf1…).
@@ -357,7 +357,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["tools/relational_inventory/identity.txt"] =
                 // Tren-1 W6: +3 source facts, ordinal-sorted; SQL execution NOT_RUN.
                 // Re-fingerprinted for tren-1 W7: source facts kept ordinal-sorted; SQL execution NOT_RUN.
-                "29a9f0abcd6a3d39da915bbcd88f5e060337f06d9744bc9a61a51b9d2395e65b",
+                "aca404f73854194cbae34d7a4e997928df675bf4c981c5618ce1ca1df4573c4d",
 
             // inventory
             // AT-037: +3 stock-count SQL facts (d709faf1… -> 4e783c62…).
@@ -406,7 +406,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["tools/relational_inventory/logistics.txt"] =
                 // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): +5 facts, ordinal-sorted (82e1c19f… -> 3d8ec0f2…).
                 // Re-fingerprinted for tren-1 W5 (integration): token change since the wave-4 merge (stale pin), same fact count; value from guard_fingerprint.py (3d8ec0f2… -> 2b3edb43…).
-                "9d500d95b5d17d665e504053a94284763957018144eb75ee950fbd74f8035451",
+                "17b267a5ad5394ab3c3561c9a158d019c2d6327121d8f883bf1cc35ae1762316",
 
             // manufacturing
             // MFG close: owner-added closure/tolerance SQL facts extend the exact Manufacturing discovery inventory.
@@ -1275,7 +1275,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private static readonly IReadOnlyDictionary<string, ReviewedRuntimeDatabaseBypassSource>
         // W8 EF transient-wrapper repair; K3 review pending. Existing Settings error classifiers only;
         // all API occurrence counts, raw SQL and tenant boundaries remain unchanged.
-        // W8 report correction; K3 review pending: existing transaction wrapper policies and typed guard refusals;
+        // W8 follow-up; K3 review pending: Identity pre-commit boundary, proven Logistics guard provenance;
+    // existing API occurrences unchanged; five additional SQL regression facts in owner inventories.
+    // W8 report correction; K3 review pending: existing transaction wrapper policies and typed guard refusals;
     // no new bypass source, SQL statement or API occurrence; Inventory inventory adds two controlled SQL facts.
     // W8 query-wrapper correction; K3 review pending: 13 existing Settings receipt reads,
         // same provider refusal, no new SQL/tenant surface or API occurrences.
@@ -1980,7 +1982,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityAccessAssignmentService.Plumbing.cs"] =
                     new(
                         // Re-fingerprinted for tren-1 W6: PLT audit ownership: flush and discard the Audit owner batch in the existing transaction; reviewed API counts unchanged (da39ce74... -> 418f2f40...).
-                        "bbb6d1a13710800065c8f8274e1b32b9461b93533d25dc49fad45fd666d95916",
+                        "82eb36758d680c273a84a0fd68e8f4b02f3353d42008e38c2d138adb83130d5b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2644,7 +2646,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/GoymenERP.Api/LogisticsRuntime/"
                  + "LogisticsRealizationTransactionRunner.cs"] =
                     new(
-                        "b902db0d9c232f51c603b539b2995c2d1d6d0d4494fd205bf3354ec86d8f8252",
+                        "ffc6f04ceccd37eaec729f0654dcd70d786abd7467ca87a831fedd7a9628c3f4",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,

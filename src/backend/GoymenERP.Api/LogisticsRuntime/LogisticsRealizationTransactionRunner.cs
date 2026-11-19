@@ -82,6 +82,7 @@ internal sealed class LogisticsRealizationTransactionRunner(
         {
             var rolledBack = await RollBackAsync(transaction, CancellationToken.None);
             logistics.ChangeTracker.Clear();
+            RequirePhysicalGuardRollback(rolledBack, exception);
             var cause = stock.PhysicalRefusal ?? exception;
             if (InventoryNegativeStockAttemptEvidenceException.FindEvidence(cause) is not null)
             {
@@ -91,6 +92,24 @@ internal sealed class LogisticsRealizationTransactionRunner(
             }
             throw;
         }
+    }
+
+    private static bool IsPhysicalGuardConflict(InventoryDefiniteShipmentException error) => error.Status == 409
+        && error.Code == InventoryDefiniteShipmentCodesV1.ConcurrentChange
+        && error.InnerException is InventoryStoreException { Code: InventoryStoreCodes.ConcurrentChange };
+
+    internal static Exception MapShipmentRefusal(InventoryDefiniteShipmentException error) => IsPhysicalGuardConflict(error)
+        ? new LogisticsStoreException(LogisticsStoreCodes.ConcurrentChange,
+            "Fiziksel stok doğrulaması eşzamanlı değişti; sevk işlemi geri alınmalıdır.", error)
+        : new LogisticsInstructionServiceException(error.Status, error.Code, innerException: error,
+            detail: InventoryPhysicalStockRefusalProblem.Apply(error.Status, error, new Dictionary<string, object?>()));
+
+    internal static void RequirePhysicalGuardRollback(bool rolledBack, Exception error)
+    {
+        if (!rolledBack && error is LogisticsStoreException
+                { Code: LogisticsStoreCodes.ConcurrentChange, InnerException: InventoryDefiniteShipmentException physical }
+            && IsPhysicalGuardConflict(physical))
+            throw new LogisticsInstructionServiceException(503, LogisticsRealizationCodesV1.Unavailable);
     }
 
     private static void Require(Guid companyId, Delegate operation, Func<CancellationToken, Task> beforeCommit)
@@ -242,8 +261,7 @@ internal sealed class LogisticsRealizationTransactionRunner(
             catch (InventoryDefiniteShipmentException exception)
             {
                 PhysicalRefusal = exception;
-                throw new LogisticsInstructionServiceException(exception.Status, exception.Code, innerException: exception,
-                    detail: InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, new Dictionary<string, object?>()));
+                throw MapShipmentRefusal(exception);
             }
         }
 
