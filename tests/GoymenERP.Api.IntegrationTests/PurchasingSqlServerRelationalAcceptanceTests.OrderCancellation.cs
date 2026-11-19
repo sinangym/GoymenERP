@@ -112,27 +112,37 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseAcceptanceShares WHERE OrderId = @id", ("@id", orderId)));
 
         // The checks refuse what the domain refuses, on a direct write too (547): a cancelled share over the commitment, a cancelled
-        // order without its canceller, a blank reason, and cancellation facts on a non-cancelled order.
-        foreach (var (sql, check) in new[]
+        // order without its canceller, a blank reason, and cancellation facts on a Draft order.
+        // ALS-D92 permits Approved revival with historical cancellation facts; overlapping checks have no execution order.
+        const string ordersSql = "SELECT * FROM purchasing.PurchaseOrders ORDER BY Id FOR JSON PATH";
+        const string linesSql = "SELECT * FROM purchasing.PurchaseOrderLines ORDER BY CompanyId, OrderId, [LineNo] FOR JSON PATH";
+        var ordersBeforeInvalidWrites = await run.ScalarAsync<string>(ordersSql);
+        var linesBeforeInvalidWrites = await run.ScalarAsync<string>(linesSql);
+        foreach (var (sql, checks) in new[]
                  {
-                     ("UPDATE purchasing.PurchaseOrderLines SET Cancelled = 61 WHERE OrderId = @id", "CK_PurchaseOrderLines_Shares"),
-                     ("UPDATE purchasing.PurchaseOrderLines SET Cancelled = -1 WHERE OrderId = @id", "CK_PurchaseOrderLines_Shares"),
-                     ("UPDATE purchasing.PurchaseOrders SET CancelledBy = NULL WHERE Id = @id", "CK_PurchaseOrders_Cancellation"),
-                     ("UPDATE purchasing.PurchaseOrders SET CancellationReason = N'   ' WHERE Id = @id", "CK_PurchaseOrders_Cancellation"),
-                     ("UPDATE purchasing.PurchaseOrders SET Status = 2 WHERE Id = @id", "CK_PurchaseOrders_Cancellation"),
+                     ("UPDATE purchasing.PurchaseOrderLines SET Cancelled = 61 WHERE OrderId = @id", new[] { "CK_PurchaseOrderLines_Shares" }),
+                     ("UPDATE purchasing.PurchaseOrderLines SET Cancelled = -1 WHERE OrderId = @id", new[] { "CK_PurchaseOrderLines_Shares", "CK_PurchaseOrderLines_ClosedOrCancelled" }),
+                     ("UPDATE purchasing.PurchaseOrders SET CancelledBy = NULL WHERE Id = @id", new[] { "CK_PurchaseOrders_Cancellation" }),
+                     ("UPDATE purchasing.PurchaseOrders SET CancellationReason = N'   ' WHERE Id = @id", new[] { "CK_PurchaseOrders_Cancellation" }),
+                     ("UPDATE purchasing.PurchaseOrders SET Status = 1, ApprovedBy = NULL, ApprovedAtUtc = NULL WHERE Id = @id", new[] { "CK_PurchaseOrders_Cancellation" }),
                  })
         {
             var refused = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(sql, ("@id", orderId)));
             Assert.Equal(547, refused.Number);
-            Assert.Contains(check, refused.Message, StringComparison.Ordinal);
+            Assert.Contains(checks, check => refused.Message.Contains(check, StringComparison.Ordinal));
+            Assert.Equal(ordersBeforeInvalidWrites, await run.ScalarAsync<string>(ordersSql));
+            Assert.Equal(linesBeforeInvalidWrites, await run.ScalarAsync<string>(linesSql));
         }
 
         var facts = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
             "UPDATE purchasing.PurchaseOrders SET CancelledBy = N'SENTETIK' WHERE Id = @id", ("@id", otherOrderId)));
         Assert.Contains("CK_PurchaseOrders_Cancellation", facts.Message, StringComparison.Ordinal);
         var unknown = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
-            "UPDATE purchasing.PurchaseOrders SET Status = 4 WHERE Id = @id", ("@id", otherOrderId)));
+            "UPDATE purchasing.PurchaseOrders SET Status = 4, ApprovedBy = NULL, ApprovedAtUtc = NULL WHERE Id = @id", ("@id", otherOrderId)));
         Assert.Contains("CK_PurchaseOrders_Status", unknown.Message, StringComparison.Ordinal);
+        Assert.Equal(547, facts.Number); Assert.Equal(547, unknown.Number);
+        Assert.Equal(ordersBeforeInvalidWrites, await run.ScalarAsync<string>(ordersSql));
+        Assert.Equal(linesBeforeInvalidWrites, await run.ScalarAsync<string>(linesSql));
         Assert.Equal(5L, await run.ScalarAsync<long>("SELECT Version FROM purchasing.PurchaseOrders WHERE Id = @id", ("@id", orderId)));
     }
 
