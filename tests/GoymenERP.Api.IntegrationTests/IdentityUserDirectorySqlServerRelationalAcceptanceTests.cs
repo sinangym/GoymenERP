@@ -6,6 +6,7 @@ using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
+using GoymenERP.Modules.Organization.Infrastructure.Seeding;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -24,10 +25,8 @@ public sealed class IdentityUserDirectorySqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public async Task The_directory_names_and_lists_only_the_people_of_the_context_company_on_real_SQL()
     {
-        await WithDatabaseAsync(async factory =>
+        await WithDatabaseAsync(async (factory, companyX, companyY) =>
         {
-            var companyX = Guid.NewGuid();
-            var companyY = Guid.NewGuid();
             var seeded = await SeedAsync(factory, companyX, companyY);
             var baseline = await CountsAsync(factory);
 
@@ -115,10 +114,8 @@ public sealed class IdentityUserDirectorySqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public async Task The_sales_owner_picker_lists_only_the_order_create_holders_of_the_context_company_on_real_SQL()
     {
-        await WithDatabaseAsync(async factory =>
+        await WithDatabaseAsync(async (factory, companyX, companyY) =>
         {
-            var companyX = Guid.NewGuid();
-            var companyY = Guid.NewGuid();
             var seeded = await SeedHoldersAsync(factory, companyX, companyY);
             var baseline = await CountsAsync(factory);
 
@@ -311,11 +308,28 @@ public sealed class IdentityUserDirectorySqlServerRelationalAcceptanceTests
 
     private static string Actor(Guid userId) => userId.ToString("D");
 
-    private static async Task WithDatabaseAsync(Func<SqlServerRelationalApiFactory, Task> test)
+    private static async Task WithDatabaseAsync(Func<SqlServerRelationalApiFactory, Guid, Guid, Task> test)
     {
         var connection = Environment.GetEnvironmentVariable(SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
         var databaseName = $"GoymenERP_Identity_UserDirectory_{Guid.NewGuid():N}";
+        var companyX = Guid.NewGuid();
+        var companyY = Guid.NewGuid();
         await using var factory = new SqlServerRelationalApiFactory(connection,
+            configureServices: services => services.PostConfigure<OrganizationSeedOptions>(options =>
+            {
+                // The real Sales authorization gate also reads Organization's active-company directory.
+                // Seed these two isolated roots through its owner bootstrap, without invoice capability or topology.
+                foreach (var (id, code) in new[] { (companyX, "SENTETIK-DIRECTORY-X"), (companyY, "SENTETIK-DIRECTORY-Y") })
+                    options.Companies.Add(new SeedCompany
+                    {
+                        Id = id,
+                        Code = code,
+                        LegalName = code,
+                        IsPlaceholder = true,
+                        InvoiceCapable = false,
+                        ApplyTopologyTemplates = false,
+                    });
+            }),
             applyTestCompanyBTopologyTemplates: false, databaseName: databaseName);
         await using var cleanupScope = factory.Services.CreateAsyncScope();
         var cleanupDb = cleanupScope.ServiceProvider.GetRequiredService<IdentityDbContext>();
@@ -323,7 +337,7 @@ public sealed class IdentityUserDirectorySqlServerRelationalAcceptanceTests
         Assert.Equal(databaseName, cleanupDb.Database.GetDbConnection().Database);
         try
         {
-            await test(factory);
+            await test(factory, companyX, companyY);
         }
         finally
         {
