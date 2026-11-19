@@ -1,8 +1,13 @@
+using System.Data;
 using System.Data.Common;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
+using GoymenERP.Modules.Purchasing.Infrastructure.Outbox;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -64,4 +69,88 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         Assert.Empty(await ReadPurchasingOutboxAsync(run, CompanyA, published[1].Position));
         Assert.Empty(await ReadPurchasingOutboxAsync(run, CompanyB));
     }
+    private static async Task<IReadOnlyList<GoymenERP.BuildingBlocks.Messaging.WorkOutboxEventV1>> VerifyOutboxReadIsolationAsync(
+        PurchasingDbContext database, ICompanyContext company, string? after, OutboxReadIsolationObserver observer)
+    {
+        Assert.Null(System.Transactions.Transaction.Current);
+        Assert.Null(database.Database.CurrentTransaction);
+        await database.Database.OpenConnectionAsync();
+        await using (var rcsi = database.Database.GetDbConnection().CreateCommand())
+        {
+            rcsi.CommandText = "SELECT CONVERT(int, is_read_committed_snapshot_on) FROM sys.databases WHERE database_id = DB_ID()";
+            Assert.True(Convert.ToInt32(await rcsi.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture) == 1,
+                "The outbox cursor probe requires READ_COMMITTED_SNAPSHOT ON in its actual database.");
+        }
+        // Test setup only: reproduce isolation retained from an earlier producer on this pinned session.
+        await database.Database.ExecuteSqlRawAsync("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE");
+        await using (var isolation = database.Database.GetDbConnection().CreateCommand())
+        {
+            isolation.CommandText = "SELECT CONVERT(int, transaction_isolation_level) FROM sys.dm_exec_sessions WHERE session_id = @@SPID";
+            Assert.Equal(4, Convert.ToInt32(await isolation.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture));
+        }
+        var source = new PurchasingOutboxEventSource(database, company);
+        var result = await source.ReadAfterAsync(after, 100, default);
+        Assert.Empty(result);
+        observer.AssertObserved();
+        Assert.Null(database.Database.CurrentTransaction);
+
+        // A caller-owned compatible transaction stays usable until the caller rolls it back.
+        await using (var host = await database.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted))
+        {
+            Assert.Empty(await source.ReadAfterAsync(after, 100, default));
+            Assert.Same(host, database.Database.CurrentTransaction);
+            Assert.NotNull(host.GetDbTransaction().Connection);
+            await host.RollbackAsync();
+        }
+        // Reject incompatible ownership before querying or changing the host's transaction.
+        await using (var host = await database.Database.BeginTransactionAsync(IsolationLevel.Serializable))
+        {
+            var observed = observer.ObservedCount;
+            await Assert.ThrowsAsync<InvalidOperationException>(() => source.ReadAfterAsync(after, 100, default));
+            Assert.Equal(observed, observer.ObservedCount);
+            Assert.Same(host, database.Database.CurrentTransaction);
+            Assert.Equal(IsolationLevel.Serializable, host.GetDbTransaction().IsolationLevel);
+            Assert.NotNull(host.GetDbTransaction().Connection);
+            await host.RollbackAsync();
+        }
+        using (var ambient = new System.Transactions.TransactionScope(System.Transactions.TransactionScopeAsyncFlowOption.Enabled))
+        {
+            var observed = observer.ObservedCount;
+            await Assert.ThrowsAsync<InvalidOperationException>(() => source.ReadAfterAsync(after, 100, default));
+            Assert.Equal(observed, observer.ObservedCount);
+            Assert.Null(database.Database.CurrentTransaction);
+            Assert.NotNull(System.Transactions.Transaction.Current);
+        }
+        observer.AssertObserved();
+        return result;
+    }
+
+    private sealed class OutboxReadIsolationObserver : DbCommandInterceptor
+    {
+        private int horizonCount;
+        private int outboxCount;
+        public int ObservedCount => horizonCount + outboxCount;
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command,
+            CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            var horizon = command.CommandText.Contains("MIN_ACTIVE_ROWVERSION()", StringComparison.Ordinal);
+            var outbox = command.CommandText.Contains("[purchasing].[OutboxMessages]", StringComparison.Ordinal);
+            if (horizon || outbox)
+            {
+                Assert.NotNull(command.Transaction);
+                Assert.Equal(IsolationLevel.ReadCommitted, command.Transaction.IsolationLevel);
+                if (horizon) horizonCount++;
+                if (outbox) outboxCount++;
+            }
+            return ValueTask.FromResult(result);
+        }
+
+        public void AssertObserved()
+        {
+            Assert.True(horizonCount > 0, "The actual outbox horizon command must be observed in READ COMMITTED.");
+            Assert.True(outboxCount > 0, "The actual outbox row command must be observed in READ COMMITTED.");
+        }
+    }
+
 }

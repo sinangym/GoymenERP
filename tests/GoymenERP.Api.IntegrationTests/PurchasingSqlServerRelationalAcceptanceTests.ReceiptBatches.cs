@@ -177,25 +177,12 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         Run run, Guid companyId, string? after = null, bool verifyReadIsolation = false)
     {
         var company = new CompanyContext(); company.Set(companyId);
-        await using var database = new PurchasingDbContext(new DbContextOptionsBuilder<PurchasingDbContext>()
-            .UseSqlServer(run.Factory.DatabaseConnectionString).Options, company);
-        if (verifyReadIsolation)
-        {
-            Assert.True(System.Transactions.Transaction.Current is null,
-                "The outbox cursor probe requires no ambient transaction.");
-            Assert.True(database.Database.CurrentTransaction is null,
-                "The outbox cursor probe requires no EF transaction.");
-            // Keep this exact session open for the source read; diagnose, never reset its isolation.
-            await database.Database.OpenConnectionAsync();
-            await using var rcsi = database.Database.GetDbConnection().CreateCommand();
-            rcsi.CommandText = "SELECT CONVERT(int, is_read_committed_snapshot_on) FROM sys.databases WHERE database_id = DB_ID()";
-            Assert.True(Convert.ToInt32(await rcsi.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture) == 1,
-                "The outbox cursor probe requires READ_COMMITTED_SNAPSHOT ON in its actual database.");
-            await using var isolation = database.Database.GetDbConnection().CreateCommand();
-            isolation.CommandText = "SELECT CONVERT(int, transaction_isolation_level) FROM sys.dm_exec_sessions WHERE session_id = @@SPID";
-            Assert.True(Convert.ToInt32(await isolation.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture) == 2,
-                "The outbox cursor probe requires READ COMMITTED on the actual reader session.");
-        }
-        return await new PurchasingOutboxEventSource(database, company).ReadAfterAsync(after, 100, default);
+        var observer = verifyReadIsolation ? new OutboxReadIsolationObserver() : null;
+        var options = new DbContextOptionsBuilder<PurchasingDbContext>().UseSqlServer(run.Factory.DatabaseConnectionString);
+        if (observer is not null) options.AddInterceptors(observer);
+        await using var database = new PurchasingDbContext(options.Options, company);
+        return observer is null
+            ? await new PurchasingOutboxEventSource(database, company).ReadAfterAsync(after, 100, default)
+            : await VerifyOutboxReadIsolationAsync(database, company, after, observer);
     }
 }
