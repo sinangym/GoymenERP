@@ -3459,7 +3459,6 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // SQL metadata, no interpolated input. Typed20digit ulong cursor and8byte horizon; owner outbox EF query
                 // explicitly CompanyId==captured, Position>after && Position<horizon, ordered/taken; samecompany fence after
                 // metadata and rows. Read-only, no DML.
-                // W8 pooled-isolation fix: owned READ COMMITTED or compatible host boundary; same one SQL call; K3 pending.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryOutboxEventSource.cs"] =
                     new("daa1db1ef57c1f33180e043be0dc029b266ca14edc258c56dcd53b12df197d47",
                         new Dictionary<string, int>(StringComparer.Ordinal)
@@ -3711,7 +3710,6 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // SQL metadata, no interpolated input. Typed20digit ulong cursor and8byte horizon; owner outbox EF query
                 // explicitly CompanyId==captured, Position>after && Position<horizon, ordered/taken; samecompany fence after
                 // metadata and rows. Read-only, no DML.
-                // W8 pooled-isolation fix: owned READ COMMITTED or compatible host boundary; same one SQL call; K3 pending.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Outbox/SalesOutboxEventSourceV1.cs"] =
                     new("9bd8682328121e36e27bf7518b2935b348c291b8f70d77bba327fbe0d70dbfd1",
                         new Dictionary<string, int>(StringComparer.Ordinal)
