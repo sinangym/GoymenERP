@@ -127,11 +127,11 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         return new(output, party, account, service, order, line);
     }
 
-    private sealed class SubcontractHostScope(AsyncServiceScope services, LogisticsDbContext context, LogisticsStore store, LogisticsSubcontractDeliveryHost host, S3Risk risk, Guid actor) : IAsyncDisposable
+    private sealed class SubcontractHostScope(AsyncServiceScope services, LogisticsDbContext context, LogisticsStore store, LogisticsSubcontractDeliveryHost host, S3Risk risk, Guid actor, ICompanyContext company) : IAsyncDisposable
     {
         public LogisticsDbContext Context => context;
         public LogisticsSubcontractDeliveryHost Host => host; public LogisticsStore Store => store; public S3Risk Risk => risk;
-        public ICompanyContext Company => services.ServiceProvider.GetRequiredService<ICompanyContext>();
+        public ICompanyContext Company => company;
         public LogisticsWriteEnvelope Envelope(string key) => new(actor.ToString("D"), LogisticsPermissionManifestV1.InstructionsCreate, ["SYNTHETIC-MANUFACTURING"], key, null, key, "Integration");
         public async Task<CreateSubcontractDeliveryV1> CommandAsync(SubcontractHostSeed seed)
         {
@@ -143,9 +143,13 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         }
         public static SubcontractHostScope Create(Run run, Guid party, Guid account, IInterceptor? failure = null,
             ICurrentUser? currentUser = null, IErpAuthorityRevalidationService? authority = null,
-            Func<IInventoryNegativeStockAttemptRecorderV1, IInventoryNegativeStockAttemptRecorderV1>? recorder = null)
+            Func<IInventoryNegativeStockAttemptRecorderV1, IInventoryNegativeStockAttemptRecorderV1>? recorder = null,
+            ICompanyContext? companyContext = null)
         {
-            var services = run.Factory.Services.CreateAsyncScope(); var provider = services.ServiceProvider; var company = provider.GetRequiredService<ICompanyContext>(); company.Set(CompanyA);
+            var services = run.Factory.Services.CreateAsyncScope(); var provider = services.ServiceProvider;
+            var scopedCompany = provider.GetRequiredService<ICompanyContext>(); scopedCompany.Set(CompanyA);
+            // Opt-in test context for an actual post-rollback drift; the default remains the real immutable context.
+            var company = companyContext ?? scopedCompany; company.Set(CompanyA);
             var collector = provider.GetRequiredService<AuditEventCollector>(); var writer = provider.GetRequiredService<IAuditTransactionWriterV1>();
             var options = new DbContextOptionsBuilder<LogisticsDbContext>().UseSqlServer(run.Factory.DatabaseConnectionString).AddInterceptors(new AuditSaveChangesInterceptor(collector, company));
             if (failure is not null) options.AddInterceptors(failure);
@@ -159,7 +163,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             var host = new LogisticsSubcontractDeliveryHost(db, store, company, user, permissions, collector, writer,
                 ManufacturingSettings(run), provider.GetRequiredService<ISalesOrderLineSerializationLockBinderV1>(), provider.GetRequiredService<ISalesOrderLineReferencePortV1>(),
                 new S3Customer(party, account), risk, TimeProvider.System, refusalServices);
-            return new(services, db, store, host, risk, run.Actor);
+            return new(services, db, store, host, risk, run.Actor, company);
         }
         public async ValueTask DisposeAsync() { await context.DisposeAsync(); await services.DisposeAsync(); }
     }

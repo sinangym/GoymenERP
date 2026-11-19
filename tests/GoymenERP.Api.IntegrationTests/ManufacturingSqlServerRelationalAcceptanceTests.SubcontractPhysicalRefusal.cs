@@ -1,5 +1,6 @@
 using System.Data.Common;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Logistics.Application.Contracts;
 using GoymenERP.Modules.Logistics.Domain.Loading;
@@ -91,7 +92,9 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             var seed = await SeedSubcontractDeliveryHostAsync(run, "SYN-S3-FENCE-" + fault);
             var user = new S3RefusalCurrentUser(run.Actor); var authority = new S3RefusalAuthority();
             var probe = new S3RefusalRecorderProbe(); var rollback = new S3RefusalRollbackInterceptor();
-            await using var scope = SubcontractHostScope.Create(run, seed.Party, seed.Account, rollback, user, authority, probe.Bind);
+            var driftCompany = fault == "company" ? new S3RefusalCompanyContext() : null;
+            await using var scope = SubcontractHostScope.Create(run, seed.Party, seed.Account, rollback, user, authority, probe.Bind,
+                companyContext: driftCompany);
             var prepared = await PrepareS3ShipmentAsync(run, scope, seed);
             await ReduceS3PhysicalBalanceForFaultAsync(run, seed.Output.LabelId);
             rollback.AfterRollback = () =>
@@ -103,6 +106,13 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             var refused = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
                 scope.Host.ShipAsync(prepared.InstructionId, prepared.Request, prepared.Metadata));
             Assert.Equal(403, refused.Status); Assert.Null(refused.Detail);
+            if (fault == "company")
+            {
+                Assert.Same(driftCompany, scope.Company);
+                Assert.Equal(CompanyB, scope.Company.CompanyId);
+            }
+            else if (fault == "actor") Assert.NotEqual(run.Actor.ToString("D"), user.ActorId);
+            else Assert.Equal(LogisticsPermissionManifestV1.ShipmentsRecord, authority.DeniedPermission);
             Assert.Equal(1, rollback.RollbackAttempts); Assert.Equal(0, probe.Calls);
             Assert.Equal(0, await S3NegativeAttemptsAsync(run, prepared.MovementId));
             Assert.Equal(0, await S3TerminalAttemptsAsync(run, prepared.Metadata.IdempotencyKey));
@@ -189,6 +199,19 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         public override Task TransactionRolledBackAsync(DbTransaction transaction, TransactionEndEventData eventData, CancellationToken token = default)
         { AfterRollback?.Invoke(); return Task.CompletedTask; }
     }
+    /// <summary>Fault injection only: a real request CompanyContext refuses this change instead of drifting.</summary>
+    private sealed class S3RefusalCompanyContext : ICompanyContext
+    {
+        public bool IsResolved { get; private set; }
+        public Guid CompanyId { get; private set; }
+        public void Set(Guid companyId)
+        {
+            if (companyId == Guid.Empty) throw new ArgumentException("Synthetic company cannot be empty.", nameof(companyId));
+            CompanyId = companyId;
+            IsResolved = true;
+        }
+    }
+
     private sealed class S3RefusalCurrentUser(Guid actor) : ICurrentUser
     {
         public string ActorId { get; set; } = actor.ToString("D"); public bool IsAuthenticated => true; public string? UserId => ActorId;
