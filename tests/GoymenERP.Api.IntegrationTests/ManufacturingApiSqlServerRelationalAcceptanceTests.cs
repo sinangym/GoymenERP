@@ -1,3 +1,5 @@
+using System.IO.Compression;
+using System.Text;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -7,6 +9,9 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
+using GoymenERP.Modules.Counterparty.Domain.Accounts;
+using GoymenERP.Modules.Counterparty.Domain.Parties;
+using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Domain.Users;
@@ -152,9 +157,13 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA,
-            [.. AllWrites, ErpPermissions.ManufacturingPlansRead]);
+            [.. AllWrites, ErpPermissions.ManufacturingPlansRead, ErpPermissions.CounterpartyPartiesRead,
+                ProductPaintMembershipPermissionsV1.Manage]);
         using var client = run.ClientFor(user, CompanyA);
         var roll = await run.StockedLabelAsync("SYN-MFG-WORK-CENTER-PLAN");
+        var paint = await run.PaintSelectionAsync(client);
+        var approver = await run.ApproverAsync(CompanyA);
+        await run.GrantAsync(TestUsers.SiteAuditReader, CompanyA, [ErpPermissions.CounterpartyPartiesRead]);
 
         foreach (var process in new[]
         {
@@ -169,7 +178,8 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             var workCenter = await run.WorkCenterOfKindAsync(CompanyA, kind);
             // U3-a: each approval allocates 100 kg of the roll and moves its label version; each plan names the current one.
             var request = new SavePlanRequestV1(Guid.NewGuid(), workCenter,
-                [new PlannedInputRequestV1(roll.Id, "100", await run.CurrentLabelVersionAsync(roll.Id))], null);
+                [new PlannedInputRequestV1(roll.Id, "100", await run.CurrentLabelVersionAsync(roll.Id))], null,
+                ProcessSpec: process == ManufacturingProcess.Paint ? new PlanProcessSpecRequestV1(PaintSelection: paint) : null);
             var response = await client.PostWithKeyAsync($"{Base}/plans", request);
             Assert.Equal(HttpStatusCode.Created, response.StatusCode);
             var created = (await response.Content.ReadFromJsonAsync<PlanViewV1>())!;
@@ -182,7 +192,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
                 (reopened.PlanId, reopened.WorkCenterId, reopened.Process));
 
             await run.EnterTerminAsync(created.PlanId);
-            var approval = await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{created.PlanId:D}/approval",
+            var approval = await approver.PostWithKeyAsync($"{Base}/plans/{created.PlanId:D}/approval",
                 new ApprovePlanRequestV1(created.Version));
             var approvalProblemCode = approval.StatusCode == HttpStatusCode.OK
                 ? "not_applicable" : await SafeProcessApprovalProblemCodeAsync(approval);
@@ -1700,6 +1710,62 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             context.ChangeTracker.Clear();
             ProductFixture = await scope.ServiceProvider.GetRequiredService<IProductStockCandidateFixtureStore>()
                 .EnsureAsync(CancellationToken.None);
+        }
+
+        /// <summary>Real Product Excel membership and real Cari supplier records; no replacement paint source.</summary>
+        public async Task<PlanPaintSelectionV1> PaintSelectionAsync(HttpClient client)
+        {
+            var content = Convert.ToBase64String(PaintMembershipWorkbook(ProductFixture.Code));
+            const string memberships = "/api/v1/product-paint-memberships";
+            using var validated = await client.PostWithKeyAsync(memberships + "/imports/validate",
+                new ValidateProductPaintMembershipImportV1("synthetic-paint.xlsx", content, null));
+            Assert.Equal(HttpStatusCode.OK, validated.StatusCode);
+            var preview = (await validated.Content.ReadFromJsonAsync<ProductPaintMembershipImportPreviewV1>())!;
+            Assert.True(preview.Ready);
+            Assert.Equal(ProductFixture.ProductId, Assert.Single(preview.Rows).ProductId);
+            using var imported = await client.PostWithKeyAsync(memberships + "/imports",
+                new ApplyProductPaintMembershipImportV1(preview.Version, "synthetic-paint.xlsx", content,
+                    preview.ProductCodeColumn, preview.FileSha256, preview.PreviewToken, "Synthetic paint source", "Synthetic explicit membership"));
+            Assert.Equal(HttpStatusCode.OK, imported.StatusCode);
+            var member = Assert.Single((await imported.Content.ReadFromJsonAsync<ProductPaintMembershipMutationV1>())!.ChangedEntries);
+            Assert.Equal(ProductFixture.ProductId, member.ProductId);
+
+            // Seed the disposable fixture through the Cari owner's own domain/model, then let the REAL supplier reader validate it.
+            await using var scope = Factory.Services.CreateAsyncScope();
+            scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
+            var counterparties = scope.ServiceProvider.GetRequiredService<CounterpartyDbContext>();
+            var supplier = new Party(Guid.NewGuid(), PartyCode.FromSequence(900001), PartyKind.LegalEntity, "Synthetic paint supplier");
+            var account = new CompanyPartyAccount(Guid.NewGuid(), CompanyA, supplier.Id, PartyRole.Supplier);
+            counterparties.Parties.Add(supplier);
+            counterparties.CompanyPartyAccounts.Add(account);
+            await counterparties.SaveChangesAsync();
+            return new PlanPaintSelectionV1(member.ProductId, member.ProductVersion, member.MembershipVersion,
+                member.SourceVersion, supplier.Id, account.Id,
+                supplier.Version.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                account.Version.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        private static byte[] PaintMembershipWorkbook(string productCode)
+        {
+            using var stream = new MemoryStream();
+            using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+            {
+                void Entry(string path, string xml)
+                {
+                    var entry = archive.CreateEntry(path);
+                    entry.LastWriteTime = new DateTimeOffset(1980, 1, 1, 0, 0, 0, TimeSpan.Zero);
+                    using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(false));
+                    writer.Write(xml);
+                }
+                Entry("[Content_Types].xml", "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"xml\" ContentType=\"application/xml\"/></Types>");
+                Entry("xl/workbook.xml", "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><sheets><sheet name=\"Paint\" sheetId=\"1\" r:id=\"rId1\"/></sheets></workbook>");
+                Entry("xl/_rels/workbook.xml.rels", "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/></Relationships>");
+                Entry("xl/worksheets/sheet1.xml", "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>"
+                    + "<row r=\"1\"><c r=\"A1\" t=\"inlineStr\"><is><t>" + ProductPaintMembershipLimitsV1.DefaultProductCodeColumn + "</t></is></c></row>"
+                    + "<row r=\"2\"><c r=\"A2\" t=\"inlineStr\"><is><t>" + System.Security.SecurityElement.Escape(productCode)
+                    + "</t></is></c></row></sheetData></worksheet>");
+            }
+            return stream.ToArray();
         }
 
         public ProductStockCandidateFixtureOutput ProductFixture { get; private set; } = null!;
