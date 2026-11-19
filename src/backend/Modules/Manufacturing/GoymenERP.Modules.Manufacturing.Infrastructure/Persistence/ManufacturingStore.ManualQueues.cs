@@ -51,10 +51,14 @@ public sealed partial class ManufacturingStore : IManufacturingWorkCenterQueueOr
             dbContext.ChangeTracker.Clear();
             throw Refused(ManufacturingStoreCodes.ConcurrentChange, "Kuyruk eşzamanlı değişti; güncel sırayı yeniden okuyun.", exception);
         }
-        catch
+        catch (Exception exception)
         {
             await RollBackQueueTransactionAsync(transaction);
             dbContext.ChangeTracker.Clear();
+            if (exception is InvalidOperationException
+                { InnerException: DbUpdateException { InnerException: SqlException { Number: 1205 } } })
+                throw Refused(ManufacturingStoreCodes.ConcurrentChange,
+                    "Kuyruk eşzamanlı değişti; güncel sırayı yeniden okuyun.", exception);
             throw;
         }
     }
@@ -163,10 +167,14 @@ public sealed partial class ManufacturingStore : IManufacturingWorkCenterQueueOr
             dbContext.ChangeTracker.Clear();
             throw Refused(ManufacturingStoreCodes.ConcurrentChange, "Kuyruk eşzamanlı değişti; işlem kaydedilmedi.", exception);
         }
-        catch
+        catch (Exception exception)
         {
             await RollBackQueueTransactionAsync(transaction);
             dbContext.ChangeTracker.Clear();
+            if (exception is InvalidOperationException
+                { InnerException: DbUpdateException { InnerException: SqlException { Number: 1205 } } })
+                throw Refused(ManufacturingStoreCodes.ConcurrentChange,
+                    "Kuyruk eşzamanlı değişti; işlem kaydedilmedi.", exception);
             throw;
         }
         finally { queueMutationMetadata = null; }
