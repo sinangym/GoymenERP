@@ -237,7 +237,8 @@ public sealed class SalesOrderQuantityRevisionSqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public async Task A_rejected_decrease_resubmitted_after_loading_up_to_the_restored_cap_is_refused_and_passes_once_it_respects_the_loaded_total_on_real_sql()
     {
-        await using var run = await Run.StartAsync();
+        var diagnostic = new SalesFutureDemandReductionSqlDiagnostic();
+        await using var run = await Run.StartAsync(diagnostic.Register);
         var draft = await run.ApprovedDraftAsync(CompanyA, "k", "6");
         var orderLine = Assert.Single(draft.Lines);
         var subject = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.DraftsCreate,
@@ -315,7 +316,7 @@ public sealed class SalesOrderQuantityRevisionSqlServerRelationalAcceptanceTests
                 catch (JsonException) { } // Malformed diagnostic input remains unknown; success is still required.
             }
             Assert.True(approved.StatusCode == HttpStatusCode.OK,
-                $"Expected HTTP 200; actual HTTP {(int)approved.StatusCode}; public problem code: {problemCode}.");
+                $"Expected HTTP 200; actual HTTP {(int)approved.StatusCode}; public problem code: {problemCode}. participant: {diagnostic.Summary}.");
         }
 
         var answer = await run.LineAsync(CompanyA, draft.Id, orderLine.Id);
@@ -551,10 +552,10 @@ public sealed class SalesOrderQuantityRevisionSqlServerRelationalAcceptanceTests
         public string Actor { get; } = "SENTETIK-preparer-" + Guid.NewGuid().ToString("N");
         public string Correlation { get; } = $"sales-dec-sal-002-{Guid.NewGuid():N}";
 
-        public static async Task<Run> StartAsync()
+        public static async Task<Run> StartAsync(Action<IServiceCollection>? configureServices = null)
         {
             var baseConnectionString = Environment.GetEnvironmentVariable(SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
-            var factory = new SqlServerRelationalApiFactory(baseConnectionString);
+            var factory = new SqlServerRelationalApiFactory(baseConnectionString, configureServices);
             var run = new Run(baseConnectionString, factory);
             using var client = factory.CreateClient();
             using var health = await client.GetAsync("/health/live");
