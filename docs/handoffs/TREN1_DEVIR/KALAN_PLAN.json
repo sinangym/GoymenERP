@@ -2,7 +2,7 @@
  "meta": {
   "tarih": "2026-11-19",
   "tren_dali": "claude/tren-1",
-  "kod_head": "cc53a6363",
+  "kod_head": "4878fcafc90955cf186451e58b66b35945d09e2b",
   "durum_sozlugu": {
    "PARTIAL": "kapsamın bir kısmı kaynakta; kalan kısım son W<n> ekip raporunda",
    "PLANNED/READY": "başlanmadı",
@@ -856,10 +856,45 @@
    "next_targeted_cohort": {
     "source_head": "cc53a6363",
     "sql_targets": 16,
-    "status": "RUNNING_NOT_ACCEPTANCE",
-    "full_manufacturing_units": "RUNNING_NOT_ACCEPTANCE",
-    "fixture_only_build_reuses_unchanged_backend_from": "a1ac08d7abb60229ea436d2d207ad59807a4d066"
+    "status": "COMPLETED_DIAGNOSTIC_NOT_ACCEPTANCE",
+    "full_manufacturing_units": {
+     "passed": 1428,
+     "failed": 0,
+     "skipped": 0,
+     "exact_sdk_trx": "PASS"
+    },
+    "fixture_only_build_reuses_unchanged_backend_from": "a1ac08d7abb60229ea436d2d207ad59807a4d066",
+    "passed": 4,
+    "failed": 12,
+    "skipped": 0
    }
+  },
+  "local_sql_outbox_checkpoint": {
+   "source_head": "4358d76ef5cc391837815a73aa157105afe51f6e",
+   "sql_targets": 17,
+   "passed": 13,
+   "failed": 4,
+   "skipped": 0,
+   "full_purchasing_units": {
+    "passed": 884,
+    "failed": 0,
+    "skipped": 0,
+    "exact_sdk_trx": "PASS"
+   },
+   "targeted_build_exit": 0,
+   "new_migration": "20261119012425_AllowPurchaseIncomingInvoiceFinalizedOutboxEvents",
+   "decision": "EK24 FNS-D105",
+   "down_guard": 51815,
+   "migration_generation": "PINNED_DOTNET_EF_10_0_8",
+   "recovery_counts": {
+    "dbContexts": 19,
+    "migrations": 343,
+    "durableStores": 66
+   },
+   "recovery_consumer_source": "4878fcafc90955cf186451e58b66b35945d09e2b",
+   "recovery_consumer_exit": 0,
+   "next_five_sql_and_full_architecture": "RUNNING_NOT_ACCEPTANCE",
+   "runtime_release_acceptance": "NOT_COMPLETE"
   }
  },
  "teams": [
