@@ -1190,11 +1190,11 @@
     ]
    },
    "unpublished_followup": {
-    "source": "ada1252459ed28517494027ba794388d40df9785",
+    "source": "b0b9f07b6",
     "state": "SOURCE_PREPARED_NATIVE_NOT_RUN",
     "local_grain_failure": "Turkish_CI_AS i/I comparison in synthetic token; neutral mixed-case source token preserves whole/line checks, no runtime/schema change.",
     "cash_repair": "Rejection uses existing Treasury owner transaction; real deadlock regression forces each actor victim once, no retry or partial loser writes.",
-    "transfer_failure": "ROOT_CAUSE_NOT_YET_CONFIRMED; exact test queued, no speculative fix.",
+    "transfer_failure": "Source-backed direct physical-guard ConcurrentChange escaped transfer mapping before staging; dispatch/accept now map ONLY this store code to existing Transfer409. CI failing substep still requires exact SQL confirmation.",
     "native_queue": "Three exact SDK/TRX targets after existing full local SQL queue releases its single native lease; no push before relevant validation."
    }
   }
