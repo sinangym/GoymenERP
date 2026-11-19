@@ -36,13 +36,13 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         var (a, aOrder) = await run.ApprovedOrderAsync(CompanyA); var (b, bOrder) = await run.ApprovedOrderAsync(CompanyA);
         await using (var scope = run.Store(CompanyA))
         {
-            await scope.OrderDueDates.ChangeOrderDueDateAsync(aOrder, 1, new(2027, 1, 10), TerminToday, Metadata(run));
-            await scope.OrderDueDates.ChangeOrderDueDateAsync(bOrder, 1, new(2027, 1, 20), TerminToday, Metadata(run));
+            await scope.OrderDueDates.ChangeOrderDueDateAsync(aOrder, 0, new(2027, 1, 10), TerminToday, Metadata(run));
+            await scope.OrderDueDates.ChangeOrderDueDateAsync(bOrder, 0, new(2027, 1, 20), TerminToday, Metadata(run));
             var moved = await scope.Corrections.MoveQueuePlanAsync(a.Id, a.Version, 0, b.Id, a.Id, "Synthetic manual override",
                 Metadata(run), _ => Task.FromResult<ManufacturingApiResult<object>?>(null));
             Assert.Equal([b.Id, a.Id], moved.Items.Where(item => item.IsQueued).Select(item => item.PlanId));
             Assert.Equal(1L, moved.QueueRevision); Assert.True(moved.HasManualOrder);
-            await scope.OrderDueDates.ChangeOrderDueDateAsync(bOrder, 2, new(2027, 1, 25), TerminToday, Metadata(run));
+            await scope.OrderDueDates.ChangeOrderDueDateAsync(bOrder, 1, new(2027, 1, 25), TerminToday, Metadata(run));
             await ((IManufacturingPlanPriorityStore)scope.Corrections).ChangePlanPriorityAsync(a.Id, a.Version, 0, 100,
                 "Synthetic score change", Metadata(run));
         }

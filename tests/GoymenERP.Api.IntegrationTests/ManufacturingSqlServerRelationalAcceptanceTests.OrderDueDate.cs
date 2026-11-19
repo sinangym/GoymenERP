@@ -1,14 +1,15 @@
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
 /// Üretim F-007 (URT-D66 (3)/(4)) at the store on a REAL SQL Server: the order opens with the plan's termin as its own
-/// termin (revision 1); a change moves the order's termin and termin revision with one audit event while the order version
-/// and the plan's termin stay; a stale termin revision and a day before the Istanbul business day are refused with nothing
+/// termin (revision 0 before any order-only change); a change moves the order's termin and termin revision with one audit
+/// event while the order version and the plan's termin stay; a stale termin revision and a day before the Istanbul business day are refused with nothing
 /// written; and the order termin migration's Down passes while no order holds a termin and refuses (51466) once one does.
 /// </summary>
 public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
@@ -24,20 +25,20 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using (var store = run.Store(CompanyA))
         {
             var opened = (await store.Orders.FindOrderAsync(orderId))!;
-            Assert.Equal((TerminDay, 1L, TerminDay, false),
+            Assert.Equal((TerminDay, 0L, TerminDay, false),
                 (opened.DueDate, opened.DueDateRevision, opened.PlanDueDate, opened.DueDateDiffersFromPlan));
             var versionBefore = opened.Version;
 
-            var changed = await store.OrderDueDates.ChangeOrderDueDateAsync(orderId, 1, OtherOrderTermin, TerminToday,
+            var changed = await store.OrderDueDates.ChangeOrderDueDateAsync(orderId, 0, OtherOrderTermin, TerminToday,
                 Metadata(run));
-            Assert.Equal((OtherOrderTermin, 2L, TerminDay, true, versionBefore),
+            Assert.Equal((OtherOrderTermin, 1L, TerminDay, true, versionBefore),
                 (changed.DueDate, changed.DueDateRevision, changed.PlanDueDate, changed.DueDateDiffersFromPlan,
                     changed.Version));
         }
 
         Assert.Equal("2027-02-01", await run.ScalarAsync<string>(
             "SELECT CONVERT(nvarchar(10), [DueDate], 23) FROM manufacturing.Orders WHERE Id = @p", ("@p", orderId)));
-        Assert.Equal(2L, await run.ScalarAsync<long>(
+        Assert.Equal(1L, await run.ScalarAsync<long>(
             "SELECT [DueDateRevision] FROM manufacturing.Orders WHERE Id = @p", ("@p", orderId)));
         // URT-D66 (4): the plan's termin never follows the order's.
         Assert.Equal("2026-12-31", await run.ScalarAsync<string>(
@@ -54,10 +55,17 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using var run = await Run.StartAsync();
         var (_, orderId) = await run.ApprovedOrderAsync(CompanyA);
 
+        // Revision 0 is the inherited termin. Make one real change before reusing the older revision below.
+        await using (var store = run.Store(CompanyA))
+            await store.OrderDueDates.ChangeOrderDueDateAsync(orderId, 0, OtherOrderTermin, TerminToday, Metadata(run));
+        var auditBeforeRefusals = await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.order.due-date-changed.v1'");
+        Assert.Equal(1, auditBeforeRefusals);
+
         await using (var store = run.Store(CompanyA))
         {
             Assert.Equal(ManufacturingRuleCodes.OrderDueDateChanged, (await Assert.ThrowsAsync<ManufacturingRuleException>(
-                () => store.OrderDueDates.ChangeOrderDueDateAsync(orderId, 0, OtherOrderTermin, TerminToday,
+                () => store.OrderDueDates.ChangeOrderDueDateAsync(orderId, 0, OtherOrderTermin.AddDays(1), TerminToday,
                     Metadata(run)))).Code);
         }
 
@@ -68,11 +76,11 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
                     Metadata(run)))).Code);
         }
 
-        Assert.Equal("2026-12-31", await run.ScalarAsync<string>(
+        Assert.Equal("2027-02-01", await run.ScalarAsync<string>(
             "SELECT CONVERT(nvarchar(10), [DueDate], 23) FROM manufacturing.Orders WHERE Id = @p", ("@p", orderId)));
         Assert.Equal(1L, await run.ScalarAsync<long>(
             "SELECT [DueDateRevision] FROM manufacturing.Orders WHERE Id = @p", ("@p", orderId)));
-        Assert.Equal(0, await run.ScalarAsync<int>(
+        Assert.Equal(auditBeforeRefusals, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.order.due-date-changed.v1'"));
     }
 
@@ -84,10 +92,15 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await run.ScalarAsync<int>(guard + "; SELECT 1");
 
         var (_, orderId) = await run.ApprovedOrderAsync(CompanyA);
+        await using var context = run.Context(CompanyA);
+        var historyBefore = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
 
         var refused = await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(guard + "; SELECT 1"));
         Assert.Equal(51466, refused.Number);
-        Assert.Equal(1L, await run.ScalarAsync<long>(
+        Assert.Equal(historyBefore, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
+        Assert.Equal("2026-12-31", await run.ScalarAsync<string>(
+            "SELECT CONVERT(nvarchar(10), [DueDate], 23) FROM manufacturing.Orders WHERE Id = @p", ("@p", orderId)));
+        Assert.Equal(0L, await run.ScalarAsync<long>(
             "SELECT [DueDateRevision] FROM manufacturing.Orders WHERE Id = @p", ("@p", orderId)));
     }
 }

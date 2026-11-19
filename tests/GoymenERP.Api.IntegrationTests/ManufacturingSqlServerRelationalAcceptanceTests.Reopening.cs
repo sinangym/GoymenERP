@@ -69,22 +69,27 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         {
             await scope.Orders.IssueInputAsync(orderId, 1, Guid.NewGuid(), RollA, Kg(100m), At, Metadata(run));
             await scope.Orders.DeclareOutputAsync(orderId, 2, Guid.NewGuid(), RollA, OutputClass.GoodProduct, Kg(100m), At, Metadata(run));
-            await scope.Orders.CloseOrderWithPolicyAsync(orderId, 3, run.Actor, At.AddMinutes(1), policy, null, authority, Metadata(run));
+            // Both planned rolls need their actual balanced facts; an unissued RollB has no BAL-004 denominator.
+            await scope.Orders.IssueInputAsync(orderId, 3, Guid.NewGuid(), RollB, Kg(100m), At, Metadata(run));
+            await scope.Orders.DeclareOutputAsync(orderId, 4, Guid.NewGuid(), RollB, OutputClass.GoodProduct, Kg(100m), At, Metadata(run));
+            await scope.Orders.CloseOrderWithPolicyAsync(orderId, 5, run.Actor, At.AddMinutes(1), policy, null, authority, Metadata(run));
         }
         await using (var scope = run.Store(CompanyA))
         {
             await using var transaction = await scope.Context.Database.BeginTransactionAsync();
-            await scope.Corrections.ReopenOrderAsync(orderId, 4, run.Actor, At.AddMinutes(2), "Synthetic generation correction", Metadata(run),
+            await scope.Corrections.ReopenOrderAsync(orderId, 6, run.Actor, At.AddMinutes(2), "Synthetic generation correction", Metadata(run),
                 (_, _) => Task.FromResult<ManufacturingApiResult<object>?>(null));
             await transaction.CommitAsync();
         }
         await using (var scope = run.Store(CompanyA))
-            await scope.Orders.CloseOrderWithPolicyAsync(orderId, 5, run.Actor, At.AddMinutes(3), policy, null, authority, Metadata(run));
+            await scope.Orders.CloseOrderWithPolicyAsync(orderId, 7, run.Actor, At.AddMinutes(3), policy, null, authority, Metadata(run));
         await using var fresh = run.Store(CompanyA); var order = (await fresh.Orders.FindOrderAsync(orderId))!;
-        Assert.Equal((OrderStatus.Closed, 6L), (order.Status, order.Version));
-        Assert.Equal((4L, 5L, At.AddMinutes(1)), (order.Reopenings[0].ClosedOrderVersion, order.Reopenings[0].ReopenedOrderVersion, order.Reopenings[0].ClosedAtUtc));
+        Assert.Equal((OrderStatus.Closed, 8L), (order.Status, order.Version));
+        Assert.Equal((6L, 7L, At.AddMinutes(1)), (order.Reopenings[0].ClosedOrderVersion, order.Reopenings[0].ReopenedOrderVersion, order.Reopenings[0].ClosedAtUtc));
         var decisions = await fresh.Context.OrderClosureDecisions.OrderBy(row => row.OrderVersion).ToListAsync();
-        Assert.Equal([3L, 5L], decisions.Select(row => row.OrderVersion));
-        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType=N'manufacturing.order.closed.v1'"));
+        Assert.Equal([5L, 7L], decisions.Select(row => row.OrderVersion));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType=N'manufacturing.order.closed.v2' AND CompanyId=@company AND EntityId=@order",
+            ("@company", CompanyA), ("@order", orderId.ToString("D"))));
     }
 }
