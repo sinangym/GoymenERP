@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
@@ -262,7 +263,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         await run.EnterTerminAsync(shortId);
         using (var refused = await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{shortId}/approval", new ApprovePlanRequestV1(1)))
         {
-            Assert.Equal((HttpStatusCode.UnprocessableEntity, ManufacturingRuleCodes.PlanLabelNotUsable),
+            Assert.Equal((HttpStatusCode.Conflict, InventoryManufacturingRealizationCodesV1.AllocationInsufficientFreeStock),
                 (refused.StatusCode, (await Problem(refused)).Code));
         }
 
