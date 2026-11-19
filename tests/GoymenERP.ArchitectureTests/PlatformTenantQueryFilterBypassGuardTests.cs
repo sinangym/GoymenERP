@@ -3251,8 +3251,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // Tren-1 W8; K3 review pending. SqlClient import only in unique/deadlock filters; owner Accounting cancellation
                 // receipt recorded under Serializable, replay hash proof preserved.
+                // Measured SQL repair: exact EF-wrapped1205 joins the existing ConcurrentChange refusal; no retry.
                 ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingSourceInvoiceCancellationStoreV1.cs"] =
-                    new("f2ad1124ffec9b674a9199f02bab9c79329bffe152af76dafb7cfc13628fd79d",
+                    new("07b90f2bd03185e5c76a448a43b47187a30db62f47d19a55bbc75108958c954d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
