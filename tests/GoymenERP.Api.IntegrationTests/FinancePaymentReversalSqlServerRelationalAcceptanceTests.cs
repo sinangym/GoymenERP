@@ -221,16 +221,48 @@ public sealed class FinancePaymentReversalSqlServerRelationalAcceptanceTests
         CommandOutcome[] outcomes = [first.Result.Outcome, second.Result.Outcome];
 
         Assert.Single(outcomes, outcome => outcome == CommandOutcome.Succeeded);
-        Assert.Single(outcomes, outcome => outcome == CommandOutcome.VersionConflict);
         var loser = first.Result.Outcome == CommandOutcome.Succeeded ? second.Result : first.Result;
-        Assert.Equal("concurrent_change", Assert.Single(loser.Issues).Code);
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM finance.OutgoingMoneyEventReversals WHERE PaymentId = @id", ("@id", payment)));
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM finance.PaymentReversalProposals WHERE Id = @id AND Status = 1", ("@id", proposalId)));
+        Assert.Contains(loser.Outcome, new[] { CommandOutcome.VersionConflict, CommandOutcome.Unavailable });
+        if (loser.Outcome == CommandOutcome.VersionConflict)
+            Assert.Equal("concurrent_change", Assert.Single(loser.Issues).Code);
+
+        async Task AssertSingleEconomicOutcomeAsync()
+        {
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.OutgoingMoneyEventReversals WHERE PaymentId = @id", ("@id", payment)));
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.PaymentReversalProposals WHERE Id = @id AND Status = 1", ("@id", proposalId)));
+        }
+        await AssertSingleEconomicOutcomeAsync();
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @name",
             ("@name", PaymentReversalProposalService.ApproveCommand)));
+        if (loser.Outcome == CommandOutcome.Unavailable)
+        {
+            // A rolled-back treasury attempt is nonterminal. Explicitly reissue in a fresh scope;
+            // production does not retry the counter-event or retain the aborted command key.
+            var loserActor = first.Result.Outcome == CommandOutcome.Succeeded ? SecondChecker : Checker;
+            var loserKey = first.Result.Outcome == CommandOutcome.Succeeded ? "double-approve-2" : "double-approve-1";
+            var loserKeyHash = FinanceCommandKeys.Hash($"api23-{loserKey}");
+            Assert.Null(loser.Resource);
+            Assert.False(loser.IsReplay);
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.Commands WHERE CompanyId=@company AND CommandName=@command AND IdempotencyKeyHash=@hash",
+                ("@company", CompanyA), ("@command", PaymentReversalProposalService.ApproveCommand), ("@hash", loserKeyHash)));
+            var reissued = await run.ApproveAsync(loserActor, loserKey, proposalId);
+            Assert.Equal(CommandOutcome.VersionConflict, reissued.Outcome);
+            Assert.Null(reissued.Resource);
+            Assert.False(reissued.IsReplay);
+            Assert.Contains(reissued.Issues, issue => issue.Field == "expectedVersion" && issue.Code == "version_conflict");
+            await AssertSingleEconomicOutcomeAsync();
+            // Only the stale refusal is now terminal; the second counter-event still does not exist.
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.Commands WHERE CompanyId=@company AND CommandName=@command AND IdempotencyKeyHash=@hash",
+                ("@company", CompanyA), ("@command", PaymentReversalProposalService.ApproveCommand), ("@hash", loserKeyHash)));
+            Assert.Equal(2, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @name",
+                ("@name", PaymentReversalProposalService.ApproveCommand)));
+        }
     }
 
     /// <summary>
