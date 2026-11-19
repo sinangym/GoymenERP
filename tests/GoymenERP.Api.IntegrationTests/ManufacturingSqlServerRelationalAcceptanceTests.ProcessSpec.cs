@@ -1,4 +1,6 @@
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
+using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -23,13 +25,11 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using (var context = run.Context(CompanyA))
         {
             var migrator = context.GetService<IMigrator>();
-            await run.ForgetTerminsBeforeRollbackAsync();
-            await run.ForgetPlanPreparersBeforeRollbackAsync();
+            var latestHistory = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
             await migrator.MigrateAsync(BeforePlanProcessSpecs);
             Assert.Equal(BeforePlanProcessSpecs, (await context.Database.GetAppliedMigrationsAsync()).Last());
             await context.Database.MigrateAsync();
-            Assert.EndsWith("_AddManufacturingOutputLabelCodes", (await context.Database.GetAppliedMigrationsAsync()).Last(),
-                StringComparison.Ordinal);
+            Assert.Equal(latestHistory, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
         }
 
         // A Tube / Profile plan with its entered values is content the previous schema cannot hold.
@@ -49,13 +49,13 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 
         await using (var context = run.Context(CompanyA))
         {
-            await run.ForgetPlanPreparersBeforeRollbackAsync();
-            await run.ForgetTerminsBeforeRollbackAsync();
-            var error = await Assert.ThrowsAsync<SqlException>(
-                () => context.GetService<IMigrator>().MigrateAsync(BeforePlanProcessSpecs));
+            var history = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            var proof = await run.ScalarAsync<string>("SELECT * FROM manufacturing.Plans WHERE Id=@p FOR JSON PATH", ("@p", plan.Id));
+            var guard = Assert.IsType<SqlOperation>(new AddManufacturingPlanProcessSpecs().DownOperations[0]);
+            var error = await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(guard.Sql + "; SELECT 1"));
             Assert.Equal(51189, error.Number);
-            Assert.EndsWith("_AddManufacturingPlanProcessSpecs", (await context.Database.GetAppliedMigrationsAsync()).Last(),
-                StringComparison.Ordinal);
+            Assert.Equal(history, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
+            Assert.Equal(proof, await run.ScalarAsync<string>("SELECT * FROM manufacturing.Plans WHERE Id=@p FOR JSON PATH", ("@p", plan.Id)));
         }
 
         Assert.Equal(7.2345m, await run.ScalarAsync<decimal>(
