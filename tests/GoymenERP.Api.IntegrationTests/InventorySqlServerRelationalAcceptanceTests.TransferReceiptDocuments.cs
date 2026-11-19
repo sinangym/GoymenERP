@@ -121,12 +121,34 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var plan = await SeedDepartureTransferAsync(run, "SYN-INCOMING-DOWN");
         _ = await RecordIncomingReceiptDocumentAsync(run, plan.TransferId, plan.Lines[0].LineId, "5", null);
         await using var database = run.Context(CompanyA);
+        const string documentMigration = "20261117122205_AddInventoryTransferReceiptDocuments";
         var migrations = database.Database.GetMigrations().ToArray();
-        Assert.EndsWith("_AddInventoryTransferReceiptDocuments", migrations[^1], StringComparison.Ordinal);
-        var error = await Assert.ThrowsAsync<SqlException>(() => database.GetService<IMigrator>().MigrateAsync(migrations[^2]));
+        var appliedBefore = (await database.Database.GetAppliedMigrationsAsync()).ToArray();
+        Assert.Contains(documentMigration, migrations);
+        Assert.Equal(migrations, appliedBefore);
+        string[] proofQueries =
+        [
+            "SELECT * FROM inventory.TransferReceiptDocumentVersions ORDER BY CompanyId, DocumentId, Version FOR JSON PATH",
+            "SELECT * FROM inventory.Transfers ORDER BY Id FOR JSON PATH",
+            "SELECT * FROM inventory.TransferLines ORDER BY CompanyId, TransferId, LineId FOR JSON PATH",
+            "SELECT * FROM inventory.Labels ORDER BY Id FOR JSON PATH",
+            "SELECT * FROM inventory.Balances ORDER BY Id FOR JSON PATH",
+            "SELECT * FROM inventory.Movements ORDER BY Id FOR JSON PATH",
+            "SELECT * FROM inventory.Commands ORDER BY CompanyId, CommandName, IdempotencyKeyHash FOR JSON PATH",
+            "SELECT * FROM inventory.OutboxMessages ORDER BY Id FOR JSON PATH",
+            "SELECT * FROM inventory.NegativeStockValidationGuards ORDER BY CompanyId FOR JSON PATH",
+            "SELECT * FROM audit.AuditEvents ORDER BY Id FOR JSON PATH",
+        ];
+        var proofBefore = await Task.WhenAll(proofQueries.Select(query => run.ScalarAsync<string>(query)));
+        Assert.True(await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.NegativeStockValidationGuards") > 0);
+        Assert.Equal(2, await database.TransferReceiptDocumentVersions.CountAsync());
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(
+            new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryTransferReceiptDocuments().DownOperations[0]).Sql;
+        var error = await Assert.ThrowsAsync<SqlException>(() => ExecuteAsync(run, guard));
         Assert.Equal(51999, error.Number);
         Assert.Equal(2, await database.TransferReceiptDocumentVersions.CountAsync());
-        Assert.Equal(migrations[^1], (await database.Database.GetAppliedMigrationsAsync()).Last());
+        Assert.Equal(appliedBefore, (await database.Database.GetAppliedMigrationsAsync()).ToArray());
+        Assert.Equal(proofBefore, await Task.WhenAll(proofQueries.Select(query => run.ScalarAsync<string>(query))));
     }
 
     [SqlServerFact]
