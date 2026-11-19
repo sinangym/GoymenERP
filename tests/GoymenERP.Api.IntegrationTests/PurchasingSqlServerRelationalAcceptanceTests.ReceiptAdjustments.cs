@@ -5,10 +5,10 @@ using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Domain.Orders;
 using GoymenERP.Modules.Purchasing.Domain.Returns;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
+using GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -70,7 +70,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             var changed = (await stored.Store.FindOrderAsync(seed.OrderId))!.Order;
             Assert.Equal(5, changed.Version);
             Assert.Equal((4m, 2m), (Assert.Single(changed.Acceptances).Quantity.Value, Assert.Single(changed.Lines).AcceptedQuantity.Value));
-            await stored.Store.MutateOrderAsync(Envelope("after-adjustment-cancel", "cancel-correlation"), AcceptanceHash("after-adjustment-cancel"),
+            await stored.Store.MutateOrderAsync(run.Envelope("after-adjustment-cancel", "cancel-correlation"), AcceptanceHash("after-adjustment-cancel"),
                 PurchasingCommands.OrderCancelV1, seed.OrderId,
                 (order, now) => order.Cancel(order.Version, "canceller", "Later cancellation", now),
                 new PurchasingMutationAudit("purchasing.purchase-order.cancelled.v1", "Cancel", "Later cancellation"));
@@ -126,7 +126,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         await using var run = await Run.StartAsync();
         var seed = await SeedApprovedAcceptanceOrderAsync(run);
         await using (var stored = run.Store(CompanyA))
-            await stored.Store.MutateOrderAsync(Envelope("guard-cancel", "guard-correlation"), AcceptanceHash("guard-cancel"),
+            await stored.Store.MutateOrderAsync(run.Envelope("guard-cancel", "guard-correlation"), AcceptanceHash("guard-cancel"),
                 PurchasingCommands.OrderCancelV1, seed.OrderId,
                 (order, now) => order.Cancel(order.Version, "canceller", "History must remain", now),
                 new PurchasingMutationAudit("purchasing.purchase-order.cancelled.v1", "Cancel", "History must remain"));
@@ -137,9 +137,20 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         var migrations = database.Database.GetMigrations().ToArray();
         var index = Array.IndexOf(migrations, "20261116213347_AddPurchaseReceiptAdjustments");
         Assert.True(index > 0);
-        var refusal = await Assert.ThrowsAsync<SqlException>(() => database.GetService<IMigrator>().MigrateAsync(migrations[index - 1]));
+        var historyBefore = (await database.Database.GetAppliedMigrationsAsync()).ToArray();
+        const string orderSnapshot = "SELECT * FROM purchasing.PurchaseOrders WHERE CompanyId=@company AND Id=@order FOR JSON PATH";
+        const string cancellationSnapshot = "SELECT * FROM purchasing.PurchaseOrderCancellationHistory WHERE CompanyId=@company AND OrderId=@order ORDER BY OrderVersionAfter FOR JSON PATH";
+        var orderBefore = await run.ScalarAsync<string>(orderSnapshot, ("@company", CompanyA), ("@order", seed.OrderId));
+        var cancellationBefore = await run.ScalarAsync<string>(cancellationSnapshot, ("@company", CompanyA), ("@order", seed.OrderId));
+        // A full historical downgrade first meets the newer recorded-number guard (51957).
+        // Execute this migration's own first guard without discarding that independent history.
+        var targetGuard = Assert.IsType<SqlOperation>(new AddPurchaseReceiptAdjustments().DownOperations[0]);
+        var refusal = await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(targetGuard.Sql + "\nSELECT 1;"));
         Assert.Equal(51949, refusal.Number);
-        Assert.Contains("20261116213347_AddPurchaseReceiptAdjustments", await database.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(historyBefore, (await database.Database.GetAppliedMigrationsAsync()).ToArray());
+        Assert.Contains("20261116213347_AddPurchaseReceiptAdjustments", historyBefore);
+        Assert.Equal(orderBefore, await run.ScalarAsync<string>(orderSnapshot, ("@company", CompanyA), ("@order", seed.OrderId)));
+        Assert.Equal(cancellationBefore, await run.ScalarAsync<string>(cancellationSnapshot, ("@company", CompanyA), ("@order", seed.OrderId)));
         await using var storedAfter = run.Store(CompanyA);
         Assert.Single((await storedAfter.Store.FindOrderAsync(seed.OrderId))!.Order.CancellationHistory);
     }
@@ -219,10 +230,19 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         await using var database = new PurchasingDbContext(new DbContextOptionsBuilder<PurchasingDbContext>()
             .UseSqlServer(run.Factory.DatabaseConnectionString,
                 sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", PurchasingDbContext.Schema)).Options, company);
-        var guard = await Assert.ThrowsAsync<SqlException>(() => database.GetService<IMigrator>()
-            .MigrateAsync("20261116213347_AddPurchaseReceiptAdjustments"));
-        Assert.Equal(51953, guard.Number);
-        Assert.Contains("20261116215806_AddPurchaseSupplierReturnResponseSnapshots", await database.Database.GetAppliedMigrationsAsync());
+        var historyBefore = (await database.Database.GetAppliedMigrationsAsync()).ToArray();
+        const string returnSnapshot = "SELECT * FROM purchasing.PurchaseSupplierReturns WHERE CompanyId=@company AND ReturnId=@return FOR JSON PATH";
+        const string attemptsSnapshot = "SELECT * FROM purchasing.PurchaseSupplierReturnAttempts WHERE CompanyId=@company AND ReturnId=@return ORDER BY CommandName, IdempotencyKeyHash FOR JSON PATH";
+        var returnBefore = await run.ScalarAsync<string>(returnSnapshot, ("@company", CompanyA), ("@return", returnId));
+        var attemptsBefore = await run.ScalarAsync<string>(attemptsSnapshot, ("@company", CompanyA), ("@return", returnId));
+        // Newer numbered-order history independently prevents a full downgrade before this guard is reached.
+        var targetGuard = Assert.IsType<SqlOperation>(new AddPurchaseSupplierReturnResponseSnapshots().DownOperations[0]);
+        var refusal = await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(targetGuard.Sql + "\nSELECT 1;"));
+        Assert.Equal(51953, refusal.Number);
+        Assert.Equal(historyBefore, (await database.Database.GetAppliedMigrationsAsync()).ToArray());
+        Assert.Contains("20261116215806_AddPurchaseSupplierReturnResponseSnapshots", historyBefore);
+        Assert.Equal(returnBefore, await run.ScalarAsync<string>(returnSnapshot, ("@company", CompanyA), ("@return", returnId)));
+        Assert.Equal(attemptsBefore, await run.ScalarAsync<string>(attemptsSnapshot, ("@company", CompanyA), ("@return", returnId)));
     }
 
     private static async Task<int> ReceiptAdjustmentAuditCountAsync(Run run, Guid orderId)
