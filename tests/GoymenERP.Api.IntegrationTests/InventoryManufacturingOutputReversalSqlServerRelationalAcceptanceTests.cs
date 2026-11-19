@@ -4,6 +4,7 @@ using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
@@ -181,9 +182,23 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             ManufacturingMetadata(run, "reversal-rollback"));
 
         await using var context = run.Context(CompanyA);
-        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>()
-            .MigrateAsync("20261114193604_AddInventoryLabelProductionStatus"));
+        var appliedBefore = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+        const string guardProofSql = "SELECT CompanyId, Version FROM inventory.NegativeStockValidationGuards ORDER BY CompanyId FOR JSON PATH";
+        const string movementProofSql = "SELECT * FROM inventory.Movements ORDER BY Id FOR JSON PATH";
+        const string labelProofSql = "SELECT * FROM inventory.Labels ORDER BY Id FOR JSON PATH";
+        var guardProof = await run.ScalarAsync<string>(guardProofSql);
+        var movementProof = await run.ScalarAsync<string>(movementProofSql);
+        var labelProof = await run.ScalarAsync<string>(labelProofSql);
+        Assert.True(await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.NegativeStockValidationGuards") > 0);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(
+            new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryManufacturingOutputReversal().DownOperations[0]).Sql;
+        // Test this historical guard directly; retain the newer immutable physical-validation proof.
+        var error = await Assert.ThrowsAsync<SqlException>(() => ExecuteAsync(run, guard));
         Assert.Equal(51420, error.Number);
+        Assert.Equal(appliedBefore, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
+        Assert.Equal(guardProof, await run.ScalarAsync<string>(guardProofSql));
+        Assert.Equal(movementProof, await run.ScalarAsync<string>(movementProofSql));
+        Assert.Equal(labelProof, await run.ScalarAsync<string>(labelProofSql));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM inventory.__EFMigrationsHistory "
             + "WHERE MigrationId = N'20261115123925_AddInventoryManufacturingOutputReversal'"));
