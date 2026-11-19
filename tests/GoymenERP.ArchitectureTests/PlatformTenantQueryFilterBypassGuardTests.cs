@@ -1265,6 +1265,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedRuntimeDatabaseBypassSources =
             new Dictionary<string, ReviewedRuntimeDatabaseBypassSource>(StringComparer.Ordinal)
             {
+                // KIM-D56 SQL repair; K3 review pending. Typed 1205 classification only, joining the existing
+                // committed-winner replay path after rollback; no raw SQL, new connection or query-filter bypass.
+                ["src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanyOpeningV1.cs"] =
+                    new("8285a3f8f15c725640f5fb8ae1cd83def595dc1880f30529c36428d0a1b8abe1",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["Microsoft.Data.SqlClient"] = 1 }),
                 // Tren-1 W7; K3 review pending. FNS-D102: namespace only for DbException and borrowed SERIALIZABLE isolation/rollback; no connection creation, command text or filter bypass.
                 // W8 measured SQL repair: SqlClient only classifies the exact EF-wrapped 1205 refusal; no new SQL access.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceTreasuryTransaction.cs"] =

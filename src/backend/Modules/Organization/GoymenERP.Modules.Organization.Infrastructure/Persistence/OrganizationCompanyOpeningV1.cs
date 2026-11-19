@@ -9,6 +9,7 @@ using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Organization.Domain.Companies;
 using GoymenERP.Modules.Organization.Domain.CompanySetup;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -121,8 +122,13 @@ public sealed class OrganizationCompanyOpeningV1(OrganizationDbContext database,
             await transaction.CommitAsync(cancellationToken);
             return new CompanyOpeningResultV1(answer, false, metadata.CorrelationId);
         }
-        catch (DbUpdateException)
+        catch (Exception exception) when (exception is DbUpdateException
+            || exception is SqlException { Number: 1205 }
+            || exception is InvalidOperationException { InnerException: SqlException { Number: 1205 } }
+            || exception is InvalidOperationException
+                { InnerException: DbUpdateException { InnerException: SqlException { Number: 1205 } } })
         {
+            // Recover only an already committed winner; no company-opening callback is retried.
             // The await-using transaction is disposed/rolled back before a winner can be disclosed.
             database.ChangeTracker.Clear();
             auditWriter.DiscardPending();
