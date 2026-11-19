@@ -925,11 +925,11 @@
     "Inventory",
     "Accounting"
    ],
-   "current_status": "KNOWN_CI71_FAILURES_LOCALLY_MEASURED_FRESH_FULL_CI_PENDING",
+   "current_status": "SQL_DISCOVERY_ALIGNED_FRESH_FULL_CI_PENDING",
    "guard_capability_or_skip_widened": false,
    "business_policy_invented": false,
    "new_wave_added": false,
-   "fresh_full_ci": "AWAITING_NORMAL_TRAIN_PUSH",
+   "fresh_full_ci": "AWAITING_NORMAL_TRAIN_PUSH_AFTER_DISCOVERY_FIX",
    "full_independent_exact_head_k3_reviews": "REQUIRED_AFTER_CI",
    "first_repaired_attempt": {
     "source_head": "31b90670b",
@@ -1143,6 +1143,31 @@
     "different_proof_heads": true,
     "same_head_full_ci": "NOT_RUN",
     "safe_matrix": "durum/W8_CI71_YEREL_HATA_KAPSAMI.json"
+   },
+   "ci87_result": {
+    "source": "87c12ac994eae9a51612972b29b97b2c938dc553",
+    "run": 44463834664,
+    "status": "FAILURE",
+    "non_broad_sql_jobs": "SUCCESS",
+    "broad_sql": "NOT_RUN_DISCOVERY_REFUSED",
+    "expected": 1756,
+    "actual": 1757,
+    "missing": 0,
+    "extra": "ManufacturingSqlServerRelationalAcceptanceTests.Output_correction_inventory_keys_are_bounded_stable_and_separate_each_owner_fact"
+   },
+   "sql_discovery_alignment": {
+    "source": "43bfd3c3d9d35fe2d587c0700133e8fd0b599f2a",
+    "fixture_build_exit": 0,
+    "exact_broad_methods": 1756,
+    "missing": 0,
+    "unexpected": 0,
+    "metadata_fact_passed": 1,
+    "metadata_fact_skipped": 0,
+    "exact_sdk_trx": "PASS",
+    "backend_test_group_verifier_exit": 0,
+    "rcsi_relational_acceptance_verifier_exit": 0,
+    "backend_build_control_equal_to": "e728607c921ad51ef96fdc71ea576ff40cd35a9f",
+    "change": "Move complete ordinary Fact unchanged to non-SQL class; no SQL Fact, inventory or gate removed/changed."
    }
   }
  },
