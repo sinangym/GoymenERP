@@ -322,6 +322,7 @@ internal sealed class ErpAuthorizationService(
                 && assignment.Status == RoleAssignmentStatus.Active
                 && assignment.ValidFromUtc <= now
                 && (!assignment.ValidUntilUtc.HasValue || assignment.ValidUntilUtc > now)
+                && dbContext.Users.Any(user => user.Id == userId && user.IsActive)
                 && dbContext.RolePermissions.Any(rolePermission =>
                     rolePermission.RoleId == assignment.RoleId
                     && rolePermission.PermissionCode == permission))
