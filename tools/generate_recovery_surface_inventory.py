@@ -98,9 +98,9 @@ EXPECTED_DURABLE_STORE_COUNT = 66
 # inventory (and copied into the release manifest).  The manifest sourceSurface is post-hoc
 # evidence, not a merge block: it is never compared with a pinned constant.
 EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 1469
-# W8 SQL report corrections: producer measured at f035f9c93; 1469 inputs, 344 migrations; K3 pending.
+# W8 SQL report corrections: producer measured at 0fade9409; 1469 inputs, 344 migrations; K3 pending.
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    '5b214563ddde918b98e11d0a8d8ef22eb3b8815722136268fff0511ec623f494'
+    'c7b10664d5b2e4d050563f1da4cbc59306069fc18a1220eb9eca5ca1793237f6'
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
