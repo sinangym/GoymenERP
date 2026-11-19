@@ -1,9 +1,9 @@
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Labels;
+using GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -12,7 +12,6 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public async Task Label_classification_is_versioned_replayable_company_scoped_and_has_no_stock_effect()
     {
-        const string previousMigration = "20261001160000_AddInventoryLabelProductVersion";
         const string currentMigration = "20261002110000_AddInventoryLabelClassification";
         await using var run = await Run.StartAsync();
         var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-LABEL-CLASSIFICATION", 100m);
@@ -108,20 +107,6 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Assert.Equal((404, InventoryLabelClassificationCodesV1.LabelNotFound), (hidden.Status, hidden.Code));
         }
 
-        Assert.Equal(100m, await run.ScalarAsync<decimal>(
-            "SELECT SUM(QuantityKg) FROM inventory.Balances WHERE LabelId = @id", ("@id", source.LabelId)));
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM inventory.Movements WHERE Id IN (SELECT MovementId FROM inventory.MovementLines WHERE LabelId = @id)",
-            ("@id", source.LabelId)));
-        Assert.Equal((int)LabelClassification.SecondQuality, await run.ScalarAsync<int>(
-            "SELECT Classification FROM inventory.Labels WHERE Id = @id", ("@id", source.LabelId)));
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM inventory.Commands WHERE CommandName = N'inventory.label-classification.classify.v1' AND TargetId = @id",
-            ("@id", source.LabelId)));
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'inventory.label.classified.v1' AND EntityId = @id",
-            ("@id", source.LabelId.ToString("D"))));
-
         // Classification is the only newly mutable label fact. The same guard must still reject
         // an unrelated identity change after the approved classification has persisted.
         await using (var context = run.Context(CompanyA))
@@ -136,10 +121,33 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
         await using (var context = run.Context(CompanyA))
         {
+            var appliedBefore = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            Assert.Contains(currentMigration, appliedBefore);
+            const string readNegativeProof = "SELECT * FROM inventory.NegativeStockValidationGuards WHERE CompanyId = @company FOR JSON PATH";
+            var negativeProofBefore = await run.ScalarAsync<string>(readNegativeProof, ("@company", CompanyA));
+            Assert.NotEqual("[]", negativeProofBefore);
+            // The real physical fixture also has newer retained validation proof. Exercise this migration's own
+            // populated-data guard, not an older target reached by discarding unrelated newer history first.
+            var guard = Assert.IsType<SqlOperation>(new AddInventoryLabelClassification().DownOperations[0]).Sql;
             var refused = await Assert.ThrowsAsync<SqlException>(
-                () => context.GetService<IMigrator>().MigrateAsync(previousMigration));
+                () => run.ExecuteAsync(guard));
             Assert.Equal(51055, refused.Number);
-            Assert.Equal(currentMigration, (await context.Database.GetAppliedMigrationsAsync()).Last());
+            Assert.Equal(appliedBefore, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
+            Assert.Equal(negativeProofBefore, await run.ScalarAsync<string>(readNegativeProof, ("@company", CompanyA)));
         }
+
+        Assert.Equal(100m, await run.ScalarAsync<decimal>(
+            "SELECT SUM(QuantityKg) FROM inventory.Balances WHERE LabelId = @id", ("@id", source.LabelId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Movements WHERE Id IN (SELECT MovementId FROM inventory.MovementLines WHERE LabelId = @id)",
+            ("@id", source.LabelId)));
+        Assert.Equal((int)LabelClassification.SecondQuality, await run.ScalarAsync<int>(
+            "SELECT Classification FROM inventory.Labels WHERE Id = @id", ("@id", source.LabelId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Commands WHERE CommandName = N'inventory.label-classification.classify.v1' AND TargetId = @id",
+            ("@id", source.LabelId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'inventory.label.classified.v1' AND EntityId = @id",
+            ("@id", source.LabelId.ToString("D"))));
     }
 }
