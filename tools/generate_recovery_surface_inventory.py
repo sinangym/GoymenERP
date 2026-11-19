@@ -100,7 +100,7 @@ EXPECTED_DURABLE_STORE_COUNT = 66
 EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 1465
 # W8 approval-mode repair: exact producer measurement, 1465 risky inputs; K3 pending.
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    'c300c2199320ffd10b43b519961f96f1cab0e2b55b4a23e7e15440b4330c5313'
+    '9057ae4fa8fdfc0ceab94fcd33f5da3e7a12bbe8adc8335200b94de49dc04826'
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -1397,7 +1397,7 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
         "FinalizeInvoiceAsync",
     ): "2eaf24a1922b322c203825a80973b4140f737c66cf9e7e41588537329ba0f522",
     (ACCOUNTING_STORE, "AddCommand"): "db718449f8e13e277eb0aa197b20d7210130ab1c0d2091dd6011e43e781e47a1",
-    (ACCOUNTING_SOURCE_DOCUMENT_ADMISSION_STORE, "WriteAsync"): "ed65d9615d044a6ddb5190c0ea5c2cae15b4ad68085582b4bae0d1593789f97b",
+    (ACCOUNTING_SOURCE_DOCUMENT_ADMISSION_STORE, "WriteAsync"): "ea967eede118d2aa92c19ab27dc04e838446f9197c91195812c452d86a02e42d",
     (ACCOUNTING_STORE, "AddDelivery"): "b24889ce6551605bb62723f3bce1a2baa59c3680894167c71b3fd51ce0be1cb0",
     (DOCUMENT_MODULE_PATH, "AddDocumentsModule"): "954a4d8f7f4526be680e0c22202ced238b864ca992fe8b6a12a3e7a2933dea3d",
     (DOCUMENT_MODULE_PATH, "RegisterProductionStorageAndScanner"): "bfea0db0f27c66dcdab7d411b5e5e6d2b986a25d157d0693fc70cbd3d5d0b19b",
@@ -1631,7 +1631,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseGoodsReceiptBatchStore.cs": "d8f149c014a8c0323888478cecc57a91e2b9a9caceef61670355995da6020c08",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Contracts.cs": "f4014c66f561b649148f36f594c4076dfa02f26a4831c41d0401ea0573e79e2d",
     "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs": "298f6a269c2eab1827bc5bf6afdea08e2dda08d7f02a06234c4ad1e44b18aec5",
-    ACCOUNTING_SOURCE_DOCUMENT_ADMISSION_STORE: "da331a72251cd610f4dcd1f755c88a174b426a12158f164bbe65e9ced98c3dc5",
+    ACCOUNTING_SOURCE_DOCUMENT_ADMISSION_STORE: "8ca65bf50efebdeb14e2b4f53cb21e2bbed63fda725d5eaf80818cafe0da4076",
     ACCOUNTING_STORE: '9753a303d40da5210fe67cb2f542edf6c293ebe318ddfaeed8e579d4b8df3368',
     DOCUMENT_MODULE_PATH: "daf96c1173fd67e0374d6c2b33a15df758aaae54fd9ee527e13e2849b0d5c8a6",
     DOCUMENTS_STORE: "5650ad7c0588f9b054964b578ab26fdc7d6d10a8a6ba646e9ecf4c5ff4714217",
