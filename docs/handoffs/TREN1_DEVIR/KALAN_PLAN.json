@@ -940,6 +940,26 @@
     "generated_sha256": "c60b3f5c4ea5c5f14b1bb37b0e62b9a5107997b1cbafa9636293e18f16bfdf98",
     "new_baseline_source": "ACTUAL_API_BUILD_OUTPUT",
     "restart_requires_backend_source_equality": true
+   },
+   "twenty_result": {
+    "head": "de140ea9aa19c72adad3ad3279bbdd90f37741f7",
+    "sql": {
+     "total": 20,
+     "passed": 17,
+     "failed": 3,
+     "skipped": 0
+    },
+    "full_units": {
+     "Manufacturing": 1428,
+     "Inventory": 1967,
+     "Accounting": 679,
+     "skipped": 0,
+     "exactSdkTrx": "PASS"
+    },
+    "openapi_byte_exit": 0,
+    "openapi_generation_fact_pass": 1,
+    "next": "THREE_SQL_AND_FULL_INVENTORY_ARCHITECTURE_PENDING",
+    "runtime_acceptance": "NOT_COMPLETE"
    }
   }
  },
