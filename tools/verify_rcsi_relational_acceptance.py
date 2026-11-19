@@ -567,6 +567,11 @@ def run_test_checked(
         deadline = min(deadline, execution_deadline)
         if deadline <= started:
             raise RuntimeError("SQL Server relational execution exhausted its global deadline.")
+    deadline_kind = (
+        "global" if execution_deadline is not None and execution_deadline <= started + TEST_EXECUTION_TIMEOUT_SECONDS
+        else "process"
+    )
+    effective_budget_seconds = deadline - started
     progress = TestProgress()
     reader_errors: list[type[BaseException]] = []
     print("SQL-DIAGNOSTIC phase=test-execution outcome=started duration_seconds=0.000", flush=True)
@@ -596,7 +601,7 @@ def run_test_checked(
             raise NativeTestFailure(returncode)
         reader.join(timeout=max(0, deadline - time.monotonic()))
         if reader.is_alive():
-            raise subprocess.TimeoutExpired(arguments, TEST_EXECUTION_TIMEOUT_SECONDS)
+            raise subprocess.TimeoutExpired(arguments, effective_budget_seconds)
         if reader_errors:
             raise RuntimeError("RCSI acceptance test output could not be read.")
     except BaseException as exception:
@@ -609,9 +614,11 @@ def run_test_checked(
             reader.join(timeout=10)
         if isinstance(exception, subprocess.TimeoutExpired):
             print(f"SQL-DIAGNOSTIC phase=test-execution outcome=timeout "
-                  f"duration_seconds={time.monotonic() - started:.3f}", flush=True)
+                  f"duration_seconds={time.monotonic() - started:.3f} "
+                  f"deadline={deadline_kind} effective_budget_seconds={effective_budget_seconds:.3f}", flush=True)
             raise RuntimeError(
-                f"RCSI acceptance test execution timed out after {TEST_EXECUTION_TIMEOUT_SECONDS} seconds."
+                f"SQL Server relational test execution timed out: deadline={deadline_kind} "
+                f"effective_budget_seconds={effective_budget_seconds:.3f}."
             ) from exception
         print(f"SQL-DIAGNOSTIC phase=test-execution outcome=failed "
               f"duration_seconds={time.monotonic() - started:.3f}", flush=True)

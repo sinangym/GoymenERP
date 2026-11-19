@@ -340,6 +340,29 @@ class LiveProgressTests(unittest.TestCase):
             VERIFIER.run_test_checked(["synthetic"], ROOT, execution_deadline=10900)
         process.wait.assert_called_once_with(timeout=2400)
 
+    def test_timeout_reports_the_effective_global_or_process_budget_without_exposing_arguments(self) -> None:
+        for deadline, kind, budget in ((130, "global", 30), (10900, "process", 2400), (None, "process", 2400)):
+            with self.subTest(deadline=deadline):
+                process = mock.Mock(pid=123, stdout=io.BytesIO())
+                process.wait.side_effect = subprocess.TimeoutExpired([SECRET], budget)
+                reader = mock.Mock()
+                reader.is_alive.return_value = False
+                with (
+                    mock.patch.object(VERIFIER.subprocess, "Popen", return_value=process),
+                    mock.patch.object(VERIFIER.threading, "Thread", return_value=reader),
+                    mock.patch.object(VERIFIER.time, "monotonic", return_value=100),
+                    mock.patch.object(VERIFIER, "stop_test_process") as stop,
+                    contextlib.redirect_stdout(io.StringIO()) as output,
+                ):
+                    with self.assertRaisesRegex(RuntimeError, "timed out") as failure:
+                        VERIFIER.run_test_checked([SECRET], ROOT, execution_deadline=deadline)
+                process.wait.assert_called_once_with(timeout=budget)
+                stop.assert_called_once_with(process)
+                expected = f"deadline={kind} effective_budget_seconds={budget:.3f}"
+                self.assertIn(expected, str(failure.exception))
+                self.assertIn(expected, output.getvalue())
+                self.assertNotIn(SECRET, str(failure.exception) + output.getvalue())
+
     def test_only_execution_boundary_uses_live_projection(self) -> None:
         arguments = ["dotnet", "test", "--no-build", "--results-directory", "synthetic"]
         with mock.patch.object(VERIFIER, "run_test_checked") as execution:
