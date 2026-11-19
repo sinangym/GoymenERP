@@ -463,15 +463,29 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await a.Labels.SaveLabelAsync(label, Metadata(run));
         }
 
-        // Both writers read the label and its (empty) stock, then wait for each other at the save.
-        var barrier = new Barrier(2);
-        async Task<object> WriteAsync(decimal kilograms)
+        // Two stale caller units of work, rather than two fresh serialized receipts: each has real pending label work.
+        // The physical mutex refreshes only Unchanged entries and must preserve a caller's Modified snapshot.
+        await using var firstWriter = run.Store(CompanyA);
+        await using var secondWriter = run.Store(CompanyA);
+        var firstSnapshot = await firstWriter.DbContext.Labels.SingleAsync(row => row.Id == label.Id);
+        var secondSnapshot = await secondWriter.DbContext.Labels.SingleAsync(row => row.Id == label.Id);
+        var originalVersion = firstSnapshot.Version;
+        Assert.Equal(originalVersion, secondSnapshot.Version);
+        firstSnapshot.UpdatedAtUtc = firstSnapshot.UpdatedAtUtc.AddTicks(1);
+        secondSnapshot.UpdatedAtUtc = secondSnapshot.UpdatedAtUtc.AddTicks(2);
+        firstWriter.DbContext.ChangeTracker.DetectChanges();
+        secondWriter.DbContext.ChangeTracker.DetectChanges();
+        Assert.Equal(EntityState.Modified, firstWriter.DbContext.Entry(firstSnapshot).State);
+        Assert.Equal(EntityState.Modified, secondWriter.DbContext.Entry(secondSnapshot).State);
+        Assert.Equal(originalVersion, firstWriter.DbContext.Entry(firstSnapshot).Property(row => row.Version).OriginalValue);
+        Assert.Equal(originalVersion, secondWriter.DbContext.Entry(secondSnapshot).Property(row => row.Version).OriginalValue);
+        using var callers = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        async Task<object> WriteAsync(StoreScope writer, decimal kilograms)
         {
-            await using var writer = run.Store(CompanyA, new BarrierInterceptor(barrier));
             try
             {
                 return await writer.Movements.RecordMovementAsync(Movement(CompanyA, StockMovementKind.Receipt,
-                    In(Position(CompanyA, location, label, BlockState.Free), kilograms)), Metadata(run));
+                    In(Position(CompanyA, location, label, BlockState.Free), kilograms)), Metadata(run), callers.Token);
             }
             catch (InventoryStoreException exception)
             {
@@ -479,7 +493,13 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             }
         }
 
-        var results = await Task.WhenAll(Task.Run(() => WriteAsync(10m)), Task.Run(() => WriteAsync(20m)));
+        object[] results;
+        try
+        {
+            results = await Task.WhenAll(Task.Run(() => WriteAsync(firstWriter, 10m)),
+                Task.Run(() => WriteAsync(secondWriter, 20m)));
+        }
+        finally { callers.Cancel(); }
 
         Assert.Single(results, result => result is InventoryWriteOutcome.Recorded);
         Assert.Single(results, result => result is string code && code == InventoryStoreCodes.ConcurrentChange);
@@ -488,6 +508,11 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM inventory.Balances WHERE LabelId = @id", ("@id", label.Id)));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Inventory.StockMovement'"));
+        Assert.Equal(checked(originalVersion + 1), await run.ScalarAsync<long>(
+            "SELECT Version FROM inventory.Labels WHERE Id = @id", ("@id", label.Id)));
+        var winningKg = results[0] is InventoryWriteOutcome.Recorded ? 10m : 20m;
+        Assert.Equal(winningKg, await run.ScalarAsync<decimal>(
+            "SELECT SUM(QuantityKg) FROM inventory.Balances WHERE LabelId = @id", ("@id", label.Id)));
         await using (var a = run.Store(CompanyA))
         {
             var stored = await a.Movements.ReadMovementsAsync(label.Id);
