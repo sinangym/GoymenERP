@@ -1,3 +1,6 @@
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
+using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Domain.Invoices;
@@ -165,6 +168,19 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
     public async Task Incoming_invoice_outbox_Down_passes_with_only_old_event_types_and_refuses_while_a_finalized_event_exists()
     {
         await using var run = await Run.StartAsync();
+        // Prove the complete generated Down/Up on the empty latest module before protecting real event history.
+        await using (var scope = run.Factory.Services.CreateAsyncScope())
+        {
+            scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
+            var context = scope.ServiceProvider.GetRequiredService<PurchasingDbContext>();
+            var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            Assert.EndsWith("_AllowPurchaseIncomingInvoiceFinalizedOutboxEvents", applied[^1], StringComparison.Ordinal);
+            await context.GetService<IMigrator>().MigrateAsync(applied[^2]);
+            Assert.Equal(applied[..^1], (await context.Database.GetAppliedMigrationsAsync()).ToArray());
+            await context.Database.MigrateAsync();
+            Assert.Equal(applied, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
+        }
+
         var guard = Assert.IsType<SqlOperation>(new AllowPurchaseIncomingInvoiceFinalizedOutboxEvents().DownOperations[0]).Sql;
         const string historySql = "SELECT STRING_AGG(CAST(MigrationId AS nvarchar(max)), N'|') WITHIN GROUP (ORDER BY MigrationId) FROM purchasing.__EFMigrationsHistory";
         var history = await run.ScalarAsync<string>(historySql);
@@ -189,7 +205,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             ("@type", PurchaseInvoiceFinalizedEventV1.EventType)));
         Assert.Equal(history, await run.ScalarAsync<string>(historySql));
 
-        // Execute only the generated migration's first guard; this is not a full Down/reapply claim.
+        // With protected rows, execute only the first guard; the empty full Down/Up was proven above.
         Task InsertAsync(string eventType) => run.ExecuteAsync(
             "INSERT INTO purchasing.OutboxMessages "
             + "(Id, CompanyId, EventType, SchemaVersion, SourceOperation, AggregateType, AggregateId, AggregateVersion, Sequence, "
