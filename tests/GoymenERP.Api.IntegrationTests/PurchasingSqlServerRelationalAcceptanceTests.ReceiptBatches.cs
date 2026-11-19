@@ -133,19 +133,19 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         Assert.Contains("20261116222957_AddPurchaseReceiptAdjustmentBatches", appliedBefore);
         string[] proofQueries =
         [
-            "SELECT (SELECT * FROM purchasing.PurchaseOrders ORDER BY Id FOR JSON PATH)",
-            "SELECT (SELECT * FROM purchasing.PurchaseOrderLines ORDER BY CompanyId, OrderId, [LineNo] FOR JSON PATH)",
-            "SELECT (SELECT * FROM purchasing.PurchaseAcceptanceShares ORDER BY AcceptanceId FOR JSON PATH)",
-            "SELECT (SELECT * FROM purchasing.PurchaseReceiptAdjustmentBatches ORDER BY CompanyId, BatchId FOR JSON PATH)",
-            "SELECT (SELECT * FROM purchasing.PurchaseReceiptAdjustments ORDER BY CompanyId, AdjustmentId FOR JSON PATH)",
-            "SELECT (SELECT * FROM purchasing.PurchaseAttempts ORDER BY CompanyId, CommandName, IdempotencyKeyHash FOR JSON PATH)",
-            "SELECT (SELECT * FROM purchasing.OutboxMessages ORDER BY Position, Id FOR JSON PATH)",
-            "SELECT (SELECT * FROM settings.DocumentNumberFormats ORDER BY CompanyId, Series, Version FOR JSON PATH)",
-            "SELECT (SELECT * FROM settings.DocumentNumberCounters ORDER BY CompanyId, Series, Year FOR JSON PATH)",
-            "SELECT (SELECT * FROM settings.DocumentNumberReservations ORDER BY CompanyId, Series, DocumentId FOR JSON PATH)",
-            "SELECT (SELECT * FROM settings.DocumentNumberCancellations ORDER BY CompanyId, Series, DocumentId FOR JSON PATH)",
-            "SELECT (SELECT * FROM audit.AuditEvents ORDER BY Id FOR JSON PATH)",
-            "SELECT (SELECT name, definition, is_disabled, is_not_trusted FROM sys.check_constraints WHERE schema_id = SCHEMA_ID(N'purchasing') ORDER BY name FOR JSON PATH)",
+            "SELECT COALESCE((SELECT * FROM purchasing.PurchaseOrders ORDER BY Id FOR JSON PATH), N'[]')",
+            "SELECT COALESCE((SELECT * FROM purchasing.PurchaseOrderLines ORDER BY CompanyId, OrderId, [LineNo] FOR JSON PATH), N'[]')",
+            "SELECT COALESCE((SELECT * FROM purchasing.PurchaseAcceptanceShares ORDER BY AcceptanceId FOR JSON PATH), N'[]')",
+            "SELECT COALESCE((SELECT * FROM purchasing.PurchaseReceiptAdjustmentBatches ORDER BY CompanyId, BatchId FOR JSON PATH), N'[]')",
+            "SELECT COALESCE((SELECT * FROM purchasing.PurchaseReceiptAdjustments ORDER BY CompanyId, AdjustmentId FOR JSON PATH), N'[]')",
+            "SELECT COALESCE((SELECT * FROM purchasing.PurchaseAttempts ORDER BY CompanyId, CommandName, IdempotencyKeyHash FOR JSON PATH), N'[]')",
+            "SELECT COALESCE((SELECT * FROM purchasing.OutboxMessages ORDER BY Position, Id FOR JSON PATH), N'[]')",
+            "SELECT COALESCE((SELECT * FROM settings.DocumentNumberFormats ORDER BY CompanyId, Series, Version FOR JSON PATH), N'[]')",
+            "SELECT COALESCE((SELECT * FROM settings.DocumentNumberCounters ORDER BY CompanyId, Series, Year FOR JSON PATH), N'[]')",
+            "SELECT COALESCE((SELECT * FROM settings.DocumentNumberReservations ORDER BY CompanyId, Series, DocumentId FOR JSON PATH), N'[]')",
+            "SELECT COALESCE((SELECT * FROM settings.DocumentNumberCancellations ORDER BY CompanyId, Series, DocumentId FOR JSON PATH), N'[]')",
+            "SELECT COALESCE((SELECT * FROM audit.AuditEvents ORDER BY Id FOR JSON PATH), N'[]')",
+            "SELECT COALESCE((SELECT name, definition, is_disabled, is_not_trusted FROM sys.check_constraints WHERE schema_id = SCHEMA_ID(N'purchasing') ORDER BY name FOR JSON PATH), N'[]')",
         ];
         var proofBefore = await Task.WhenAll(proofQueries.Select(query => run.ScalarAsync<string>(query)));
         // Target the batch/history guard itself; retain newer number reservations and cancellation evidence.
