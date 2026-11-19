@@ -28,7 +28,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var overFree = IssueRequest(Guid.NewGuid(), small.Label.Id, "2", "10.001");
         AssertInputIssueShortfall(await IssueShortfallRefusalAsync(run, overFree, "shortfall-free"),
             overFree, small.Label, small.LocationId, availableKg: 10m, freePhysicalKg: 10m,
-            reservedKg: 0m);
+            reservedKg: null);
         await AssertNothingIssuedAsync(run, overFree, labelVersion: 2L);
 
         // A Sales reservation of 15 kg leaves 5 kg of a 20 kg Free label to the issue; every figure is reported.
