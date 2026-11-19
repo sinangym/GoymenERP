@@ -1517,14 +1517,18 @@ public sealed class FinanceCashAccountSqlServerRelationalAcceptanceTests
         }
     }
 
-    private sealed class DecisionDeadlockObserver : DbCommandInterceptor
+    private sealed class DecisionDeadlockObserver : SaveChangesInterceptor
     {
         private int victims;
         public int Victims => Volatile.Read(ref victims);
-        public override Task CommandFailedAsync(DbCommand command, CommandErrorEventData eventData,
+        public override Task SaveChangesFailedAsync(DbContextErrorEventData eventData,
             CancellationToken cancellationToken = default)
         {
-            if (eventData.Exception is SqlException { Number: 1205 }) Interlocked.Increment(ref victims);
+            // SQL can report the victim while EF consumes a save batch's result reader, after
+            // ExecuteReaderAsync has succeeded. Observe the whole save once, including EF's
+            // DbUpdateException/execution-strategy wrappers; a timeout is not a deadlock victim.
+            if (eventData.Exception.GetBaseException() is SqlException { Number: 1205 })
+                Interlocked.Increment(ref victims);
             return Task.CompletedTask;
         }
     }

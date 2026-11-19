@@ -139,3 +139,24 @@ Mevcut gerçek SQL testi boş UPDATE/DELETE'yi ve reapply sonrasında gerçek UP
 Önceki dolu tablo reddi, migration'lar arası append bariyeri ve eşzamanlı 1222 kontrolleri
 korunur. Ev üreticisi fingerprint'i yenilendi; K3 inceleme kapısı sürer.
 Bu ek yazılırken yeni adayın yürütme kanıtı **NOT_RUN**.
+
+### Kasa eşzamanlı karar testinin SQL hata gözlemi — 20 Kasım
+
+`cefb622b1152836e374edfc2f250d3a2bcb514ea` adayında dokuz derleme, 6108 backend
+kontrolü, frontend tür kontrolü ve 13 hedef Vitest geçti. İlk 16 gerçek SQL hedefi
+skip0 geçti; bunlar boş/dolu Audit geri alma ve Ayarlar kilit hatası regresyonlarını
+da kapsar. 17. hedef `Two_racing_decisions_on_one_passivation_store_one`, beklenen
+bir başarılı karar ve bir Unavailable sonucu gördükten sonra deadlock sayacında
+beklenen 1 yerine 0 ile durdu. Kalan 29 SQL hedefi ve sonraki beş Python paketi
+**NOT_RUN**; bu sonuç tam SQL kabulü değildir.
+
+Test gözlemcisi yalnız komutun yürütme hatasını dinliyordu. SQL hata cevabı EF'nin
+save batch sonuçlarını okuduğu aşamada da gelebilir. Gözlemci mevcut ev örneğindeki
+`SaveChangesFailedAsync` sınırına taşındı; iç istisnanın gerçek SQL 1205 numarasını
+sayarak EF sarmalayıcılarını kapsar. Timeout veya başka hata deadlock sayılmaz.
+[EF SaveChanges hata gözlemi](https://learn.microsoft.com/en-us/ef/core/logging-events-diagnostics/interceptors#savechanges-interception).
+
+İki ayrı deadlock kurbanını zorlayan tur, tek başarılı karar, yetkili hata sonucu,
+sürüm, tek komut ve tek audit beklentilerinin tamamı korunur. Uygulama kodu,
+transaction sınırı, otomatik retry ve test kimlikleri değişmedi. Yeni adayın
+gerçek SQL sonucu bu ek yazılırken **NOT_RUN**; önce bu hedef doğrulanacaktır.
