@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString } from '../shell/shellState'
@@ -12,26 +12,34 @@ import { OWNER_KIND } from '../documents/contract'
 import { formatDecimalTextTr, parseAmountInput } from './decimalText'
 import { BOOK_VALUE_TEXT as T } from './cashExchangeBookValueText'
 import { fetchBookValueCandidates, fetchBookValueWorkspace, sendBookValueAttempt, type BookValueAttempt, type BookValueEvidence } from './cashExchangeBookValue'
+import { bookValueAttemptBinding, recallBookValueAttempt, rememberBookValueAttempt, forgetBookValueAttempt, synchronizeBookValueAttemptSession } from './cashExchangeBookValueAttempt'
 
 export interface CashExchangeBookValuePageProps { readonly companyId: string; readonly actorId: string; readonly canPrepare: boolean; readonly canApprove: boolean }
 export function CashExchangeBookValuePage(props: CashExchangeBookValuePageProps) {
   const shell = useShellState(); const key = contextKey(shell)
+  const sessionActor = key === null ? null : props.actorId
+  useLayoutEffect(() => {
+    synchronizeBookValueAttemptSession(shell.sessionEpoch, sessionActor)
+  }, [shell.sessionEpoch, sessionActor])
   if (key === null) return <StateBlock state={{ kind: 'no-authorized-company' }} subject={T.subject} />
   const namespace = contextKeyString(key)
+  const attemptBinding = bookValueAttemptBinding(namespace, shell.sessionEpoch, props.actorId, props.companyId)
   return <section><h1>{T.heading}</h1><p>{T.boundary}</p><Workspace {...props} namespace={namespace} generation={shell.routeEntryGeneration}
-    key={`${namespace}|${shell.sessionEpoch}|${shell.routeEntryGeneration}|${props.companyId}|${props.actorId}`} /></section>
+    attemptBinding={attemptBinding} key={`${attemptBinding}|${shell.routeEntryGeneration}`} /></section>
 }
 
 function ReadState<T>({ outcome }: { readonly outcome: ViewOutcome<T> | undefined }) {
   return <StateBlock state={outcome === undefined ? { kind: 'initial-loading' } : classifyOutcome(outcome)} subject={T.subject} />
 }
-function Workspace({ companyId, actorId, canPrepare, canApprove, namespace, generation }: CashExchangeBookValuePageProps & { readonly namespace: string; readonly generation: number }) {
+function Workspace({ companyId, actorId, canPrepare, canApprove, namespace, generation, attemptBinding }: CashExchangeBookValuePageProps & { readonly namespace: string; readonly generation: number; readonly attemptBinding: string }) {
   const client = useQueryClient(); const boundary = useAuthBoundary(); const live = useRef(true)
-  useEffect(() => { live.current = true; return () => { live.current = false } }, [])
-  const [cursor, setCursor] = useState<string | null>(null); const [selected, setSelected] = useState<string | null>(null)
+  useLayoutEffect(() => { live.current = true; return () => { live.current = false } }, [])
+  const [restored] = useState(() => recallBookValueAttempt(attemptBinding))
+  const [cursor, setCursor] = useState<string | null>(null); const [selected, setSelected] = useState<string | null>(() => restored?.transferId ?? null)
   const [amount, setAmount] = useState(''); const [targetAmount, setTargetAmount] = useState(''); const [reason, setReason] = useState(''); const [documentId, setDocumentId] = useState('')
-  const [rejectReason, setRejectReason] = useState(''); const [attempt, setAttempt] = useState<BookValueAttempt | null>(null)
-  const [sending, setSending] = useState(false); const [message, setMessage] = useState<string | null>(null)
+  const [rejectReason, setRejectReason] = useState(''); const [attempt, setAttempt] = useState<BookValueAttempt | null>(() => restored?.attempt ?? null)
+  const pendingAttempt = useRef(attempt); const busy = useRef(false)
+  const [sending, setSending] = useState(false); const [message, setMessage] = useState<string | null>(() => restored === null ? null : T.unknown)
   const [authorityStatus, setAuthorityStatus] = useState<401 | 403 | null>(null)
   async function bound<T>(read: () => Promise<ViewOutcome<T>>) {
     const captured = boundary.capture(); const value = await read()
@@ -43,11 +51,22 @@ function Workspace({ companyId, actorId, canPrepare, canApprove, namespace, gene
   const docs = useQuery({ queryKey: documentsQueryKey(namespace, generation, OWNER_KIND.financeCashExchange, selected ?? ''),
     queryFn: ({ signal }) => bound(() => fetchDocuments(OWNER_KIND.financeCashExchange, selected!, companyId, signal)), enabled: selected !== null && canPrepare })
   async function send(frozen: BookValueAttempt) {
+    if (busy.current || selected === null || pendingAttempt.current !== null && pendingAttempt.current.key !== frozen.key) return
+    const retryingUnknown = pendingAttempt.current !== null
+    busy.current = true; pendingAttempt.current = frozen
+    rememberBookValueAttempt(attemptBinding, { transferId: selected, attempt: frozen })
     setAttempt(frozen); setSending(true); setMessage(null); const captured = boundary.capture()
     const answer = await sendBookValueAttempt(companyId, actorId, frozen)
     if (!live.current) return
-    setSending(false)
+    busy.current = false; setSending(false)
     if (answer.kind === 'unknown') { setMessage(T.unknown); return }
+    if (answer.kind === 'refused' && retryingUnknown) {
+      // A refusal before the owner reads its receipt does not settle the first send.
+      setMessage(T.unknown)
+      if (answer.status === 401 || answer.status === 403) { boundary.report(answer.status, captured); setAuthorityStatus(answer.status) }
+      return
+    }
+    forgetBookValueAttempt(attemptBinding, frozen.key); pendingAttempt.current = null
     setAttempt(null)
     if (answer.kind === 'refused') {
       if (answer.status === 401 || answer.status === 403) { boundary.report(answer.status, captured); setAuthorityStatus(answer.status); return }
