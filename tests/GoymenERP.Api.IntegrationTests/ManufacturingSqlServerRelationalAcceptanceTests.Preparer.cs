@@ -136,6 +136,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using (var context = run.Context(CompanyA))
         {
             var migrator = context.GetService<IMigrator>();
+            var latestHistory = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
             await run.ForgetTerminsBeforeRollbackAsync();
             await migrator.MigrateAsync(BeforePlanPreparer);
             Assert.Equal(BeforePlanPreparer, (await context.Database.GetAppliedMigrationsAsync()).Last());
@@ -143,8 +144,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
                 "SELECT COUNT(*) FROM sys.columns WHERE [name] = N'CreatedBy' "
                 + "AND [object_id] = OBJECT_ID(N'[manufacturing].[Plans]')"));
             await context.Database.MigrateAsync();
-            Assert.EndsWith("_AddManufacturingOutputLabelCodes", (await context.Database.GetAppliedMigrationsAsync()).Last(),
-                StringComparison.Ordinal);
+            Assert.Equal(latestHistory, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
         }
 
         Assert.Equal(2, await run.ScalarAsync<int>(
