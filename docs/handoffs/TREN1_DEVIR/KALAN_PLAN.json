@@ -960,6 +960,25 @@
     "openapi_generation_fact_pass": 1,
     "next": "THREE_SQL_AND_FULL_INVENTORY_ARCHITECTURE_PENDING",
     "runtime_acceptance": "NOT_COMPLETE"
+   },
+   "final_three_result": {
+    "head": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+    "sql": {
+     "total": 3,
+     "passed": 3,
+     "failed": 0,
+     "skipped": 0
+    },
+    "full_inventory": 1967,
+    "full_architecture": 405,
+    "exactSdkTrx": "PASS",
+    "skip": 0,
+    "recovery_consumer_exit": 0,
+    "uncovered_A_diagnostic": {
+     "methods": 81,
+     "status": "RUNNING"
+    },
+    "runtime_acceptance": "NOT_COMPLETE"
    }
   }
  },
