@@ -26,8 +26,9 @@ public sealed class AuditPersistenceModelTests
         Assert.Equal(
             ["20260827160529_InitialAudit", "20260912173914_AddGlobalProductAuditSubject",
                 "20261115121446_AddAuditOutcomeQueryIndex", "20261116220434_AddTypedFounderRecoverySystemAudit",
-                "20261117003912_AddLocalCredentialSelfServiceAudit", "20261117160915_AddPlatformCredentialRecoveryAudit"],
-            context.Database.GetMigrations().TakeLast(6));
+                "20261117003912_AddLocalCredentialSelfServiceAudit", "20261117160915_AddPlatformCredentialRecoveryAudit",
+                "20261119131410_ProtectAuditHistoryRollback"],
+            context.Database.GetMigrations().TakeLast(7));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -68,6 +69,22 @@ public sealed class AuditPersistenceModelTests
         Assert.Equal("AuditEvents", drop.Table);
         Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
         Assert.DoesNotContain(migration.DownOperations, operation => operation is SqlOperation);
+    }
+
+    [Fact]
+    public void The_history_rollback_boundary_changes_no_model_and_refuses_before_any_destructive_operation()
+    {
+        var migration = new ProtectAuditHistoryRollback();
+        Assert.Empty(migration.UpOperations);
+        var guard = Assert.IsType<SqlOperation>(Assert.Single(migration.DownOperations));
+        Assert.Contains("[audit].[AuditEvents]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("TABLOCKX", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("HOLDLOCK", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51900", guard.Sql, StringComparison.Ordinal);
+        Assert.False(guard.SuppressTransaction);
+        Assert.DoesNotContain("DELETE FROM", guard.Sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("DROP TABLE", guard.Sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("WHERE", guard.Sql, StringComparison.OrdinalIgnoreCase);
     }
 
     private static AuditDbContext Context() =>

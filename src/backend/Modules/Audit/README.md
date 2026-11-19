@@ -62,3 +62,23 @@ EF generated `20261117160915_AddPlatformCredentialRecoveryAudit`. Up only widens
 closed subject/permission checks; Down first refuses with **51923** while the new
 subject exists. This subject and borrowed owner writer require K3 review; no guard
 allowlist was silently expanded. SQL and CLI runtime acceptance remain **NOT_RUN**.
+
+
+## W8 historical Audit rollback boundary
+
+EF CLI generated `20261119131410_ProtectAuditHistoryRollback` as an append-only boundary with an empty
+Up: no model, business data, retention, permission or historical migration changes.
+Its first and only Down operation checks the entire AuditEvents table with
+`TABLOCKX, HOLDLOCK` and refuses with **51900** while any history exists, including
+legacy Company/schema-1 permission-bearing events. The transaction retains the
+empty-table lock through rollback processing; a concurrent append must not slip
+between the empty check and a historical drop. Empty isolated stores retain
+full Down-to-zero and reapply support.
+
+The protection applies after this migration has been applied; it does not amend
+previously distributed binaries or SQL scripts. The rollback tests create their
+own synthetic Audit-only database and never delete host audit records. Tests cover
+legacy-record payload/hash and migration-history preservation for latest-to-previous
+and latest-to-zero refusals, an empty zero/latest cycle, and a real concurrent append
+blocked until the guard transaction ends. These new tests are **NOT_RUN**;
+build, real-SQL proof and two exact-head K3 reviews remain required.
