@@ -925,7 +925,7 @@
     "Inventory",
     "Accounting"
    ],
-   "current_status": "REPAIRED_A_COMPLETED_FOLLOWUP_PENDING_NOT_ACCEPTANCE",
+   "current_status": "TWO_SQL_FOLLOWUP_PENDING_NOT_ACCEPTANCE",
    "guard_capability_or_skip_widened": false,
    "business_policy_invented": false,
    "new_wave_added": false,
@@ -1085,6 +1085,35 @@
      "risky_source_fingerprint": "f67f2a589d7df947280c2cf491a08beb2e0413a838d65ad539bbab0fabe666ca"
     },
     "runtime_acceptance": "NOT_COMPLETE"
+   },
+   "followup_seven_result": {
+    "head": "94479216856fe83563e3fc7ba8afe0e5046636a3",
+    "total": 7,
+    "passed": 5,
+    "failed": 2,
+    "skipped": 0,
+    "full_inventory": 1987,
+    "full_architecture": 405,
+    "exact_sdk_trx": "PASS_FOR_SUCCESSFUL_CASES",
+    "api_full_reference_build_exit": 0,
+    "fixture_build_exit": 0,
+    "openapi_byte_exit": 0,
+    "openapi_generation_fact_pass": 1,
+    "outbox_measured_precondition": "RCSI_ON_NO_AMBIENT_OR_EF_TRANSACTION_BUT_READER_SESSION_NOT_READ_COMMITTED",
+    "remaining": [
+     "Purchasing_outbox_cursor_never_passes_an_earlier_uncommitted_revival",
+     "Acceptance_participant_leaves_commit_and_rollback_to_host_and_restores_durable_share"
+    ],
+    "runtime_acceptance": "NOT_COMPLETE"
+   },
+   "two_sql_candidate": {
+    "source_fix_head": "111f1ebfe47cb791a5bc224151bb59f09083b2e7",
+    "sql_targets": 2,
+    "full_unit_owner": "Purchasing",
+    "build_sql_architecture": "QUEUED_NOT_RUN",
+    "outbox_owned_or_borrowed_read_committed": "SOURCE_ONLY_K3_PENDING",
+    "empty_json_evidence": "EXPLICIT_COALESCE_ARRAY",
+    "new_policy_or_activation": false
    }
   }
  },
