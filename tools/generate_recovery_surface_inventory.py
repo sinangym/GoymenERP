@@ -100,7 +100,7 @@ EXPECTED_DURABLE_STORE_COUNT = 66
 EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 1467
 # W8 invoice outbox forward fix: measured 1467 risky inputs and 343 migrations; K3 pending.
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    'deccd55c0b78eafc960214203fdd7f3dd5d18af77aa9479033c1bfc7d34059dc'
+    'ecd43c120a0cfeee8be66bf9c5fc25efed186159a925154cbc70f17baa512c2c'
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
