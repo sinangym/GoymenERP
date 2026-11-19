@@ -175,14 +175,26 @@ public sealed partial class InventoryStore
         return null;
     }
 
-    public async Task<InventoryTransferResultV1> CancelDispatchAsync(
+    public Task<InventoryTransferResultV1> CancelDispatchAsync(
         Guid transferId,
         CancelInventoryTransferDispatchV1 request,
         long? logisticsNoExitConfirmationVersion,
         long? eDispatchCancelConfirmationVersion,
         InventoryCommandMetadata metadata,
         Func<CancellationToken, Task> freshAuthorityFence,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        WithinPhysicalValidationTransactionAsync(() => CancelDispatchCoreAsync(transferId, request,
+            logisticsNoExitConfirmationVersion, eDispatchCancelConfirmationVersion, metadata, freshAuthorityFence,
+            cancellationToken), cancellationToken);
+
+    private async Task<InventoryTransferResultV1> CancelDispatchCoreAsync(
+        Guid transferId,
+        CancelInventoryTransferDispatchV1 request,
+        long? logisticsNoExitConfirmationVersion,
+        long? eDispatchCancelConfirmationVersion,
+        InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(freshAuthorityFence);
