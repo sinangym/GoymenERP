@@ -16,9 +16,11 @@ using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Organization.Domain.Companies;
 using GoymenERP.Modules.Organization.Domain.CompanySetup;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -289,6 +291,7 @@ public sealed partial class IdentityAccessAssignmentSqlServerRelationalAcceptanc
     [SqlServerFact]
     public async Task Concurrent_group_opening_with_one_global_key_commits_one_company_outbox_and_terminal()
     {
+        var diagnostic = new OpeningFailureDiagnostic();
         await WithDatabaseAsync(SyntheticCode("SETUP-ADMIN"), async factory =>
         {
             var actor = await EnsureUserAsync(factory, TestUsers.NoAssignment);
@@ -304,7 +307,8 @@ public sealed partial class IdentityAccessAssignmentSqlServerRelationalAcceptanc
             var second = PostAsync(b, "/api/v1/organization/companies", body, key, NewKey());
             await Task.WhenAll(first, second);
             using var one = await first; using var two = await second;
-            Assert.Equal(HttpStatusCode.Created, one.StatusCode); Assert.Equal(HttpStatusCode.Created, two.StatusCode);
+            Assert.True(one.StatusCode == HttpStatusCode.Created, $"First opening expected201; status={(int)one.StatusCode}; {diagnostic.Summary}");
+            Assert.True(two.StatusCode == HttpStatusCode.Created, $"Second opening expected201; status={(int)two.StatusCode}; {diagnostic.Summary}");
             Assert.Single(new[] { one, two }, response => response.Headers.Contains("Idempotency-Replayed"));
             await using var check = factory.Services.CreateAsyncScope();
             check.ServiceProvider.GetRequiredService<ICompanyContext>().Set(id);
@@ -314,7 +318,8 @@ public sealed partial class IdentityAccessAssignmentSqlServerRelationalAcceptanc
             Assert.Single(await organization.CompanyOpeningExecutions.Where(row => row.CompanyId == id).ToListAsync());
             Assert.Single(await check.ServiceProvider.GetRequiredService<AuditDbContext>().AuditEvents
                 .Where(row => row.CompanyId == id && row.EventType == "organization.company.opened.v1").ToListAsync());
-        });
+        }, services => services.Replace(ServiceDescriptor.Scoped<IOrganizationCompanyOpeningV1>(provider =>
+            new ObservedCompanyOpening(ActivatorUtilities.CreateInstance<OrganizationCompanyOpeningV1>(provider), diagnostic))));
     }
 
     [SqlServerFact]
@@ -458,6 +463,44 @@ public sealed partial class IdentityAccessAssignmentSqlServerRelationalAcceptanc
         return new(OrganizationCompanyOpenedV1.SourceName, record.EventId, id, record.EventType, record.Version,
             record.PayloadJson, record.OccurredAtUtc, record.CorrelationId, record.CausationId);
     }
+    // Observe the real owner before the HTTP boundary hides exceptions; never log raw messages or request data.
+    private sealed class OpeningFailureDiagnostic
+    {
+        private string summary = "opening_failure=not_observed";
+        public string Summary => Volatile.Read(ref summary);
+        public void Capture(Exception exception)
+        {
+            var kind = "unknown";
+            for (var depth = 0; exception is not null && depth < 8; depth++, exception = exception.InnerException!)
+                kind = exception switch
+                {
+                    SqlException error => error.Number switch
+                    {
+                        1205 => "sql_deadlock", -2 => "sql_timeout", 547 => "sql_constraint",
+                        2601 or 2627 => "sql_unique", 468 => "sql_collation", _ => "sql_other",
+                    },
+                    DbUpdateException => "db_update", UnauthorizedAccessException => "denied",
+                    ArgumentException => "argument", InvalidOperationException => "invalid_operation", _ => kind,
+                };
+            Volatile.Write(ref summary, "opening_failure=" + kind);
+        }
+    }
+
+    private sealed class ObservedCompanyOpening(OrganizationCompanyOpeningV1 inner, OpeningFailureDiagnostic diagnostic)
+        : IOrganizationCompanyOpeningV1
+    {
+        public Task<CompanySetupCapabilitiesV1> ReadCapabilitiesAsync(CancellationToken cancellationToken = default) =>
+            inner.ReadCapabilitiesAsync(cancellationToken);
+        public Task<IReadOnlyList<CompanySetupCompanyV1>> ReadPendingAsync(CancellationToken cancellationToken = default) =>
+            inner.ReadPendingAsync(cancellationToken);
+        public async Task<CompanyOpeningResultV1> OpenAsync(OpenCompanyV1 request, CompanyOpeningMetadataV1 metadata,
+            CancellationToken cancellationToken = default)
+        {
+            try { return await inner.OpenAsync(request, metadata, cancellationToken); }
+            catch (Exception exception) { diagnostic.Capture(exception); throw; }
+        }
+    }
+
     private static async Task GrantSetupAuthorityFixtureAsync(SqlServerRelationalApiFactory factory, Guid user,
         CompanySetupGroupOperationV1 operation)
     {
