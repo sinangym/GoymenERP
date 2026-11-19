@@ -98,9 +98,9 @@ EXPECTED_DURABLE_STORE_COUNT = 66
 # inventory (and copied into the release manifest).  The manifest sourceSurface is post-hoc
 # evidence, not a merge block: it is never compared with a pinned constant.
 EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 1469
-# W8 empty Audit rollback repair: producer measured at 17ca1448f; 1469 inputs, 344 migrations; K3 pending.
+# W8 SQL report corrections: producer measured at f035f9c93; 1469 inputs, 344 migrations; K3 pending.
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    '230f4fea0ab327cee1d9e5994cd2e2074ce311ff581d71ea1a245a44bf588a6c'
+    '5b214563ddde918b98e11d0a8d8ef22eb3b8815722136268fff0511ec623f494'
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -1627,7 +1627,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/CashTransferService.cs": "e17c8b935548619c0094588563bd471a9c33b338f1a57a1caf60e48a9ee00ae8",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinancePartyCollateralService.cs": 'ff97f2ec411a72cc3ae7ca57038d0e94447db856da2423dbd09cee8de08629bb',
     "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Bootstrap/FounderBootstrapService.cs": "9dd6232849741c9f396415761baab66dd62c1441649fc25bd63f3c4c5f19d0aa",
-    "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityAccessAssignmentService.Plumbing.cs": "bbb6d1a13710800065c8f8274e1b32b9461b93533d25dc49fad45fd666d95916",
+    "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityAccessAssignmentService.Plumbing.cs": "82eb36758d680c273a84a0fd68e8f4b02f3353d42008e38c2d138adb83130d5b",
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseGoodsReceiptBatchStore.cs": "d8f149c014a8c0323888478cecc57a91e2b9a9caceef61670355995da6020c08",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Contracts.cs": "f4014c66f561b649148f36f594c4076dfa02f26a4831c41d0401ea0573e79e2d",
     "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs": "298f6a269c2eab1827bc5bf6afdea08e2dda08d7f02a06234c4ad1e44b18aec5",
