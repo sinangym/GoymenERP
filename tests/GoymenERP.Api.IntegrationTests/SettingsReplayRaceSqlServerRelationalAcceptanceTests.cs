@@ -244,12 +244,13 @@ public sealed partial class SettingsReplayRaceSqlServerRelationalAcceptanceTests
         public SettingsCollateralTypeAdministration Collateral { get; }
         public SettingsCompanyPolicyAdministration Policy { get; }
         public SettingsReferenceListAdministration ReferenceLists { get; }
-        public Request(Run run, Control control, Race? race)
+        public Request(Run run, Control control, Race? race, SaveChangesInterceptor? saveFault = null)
         {
             var audit = new AuditEventCollector();
             var options = new DbContextOptionsBuilder<SettingsDbContext>().UseSqlServer(run.Connection)
                 .AddInterceptors(new AuditSaveChangesInterceptor(audit, control.Company));
             if (race is not null) options.AddInterceptors(race, race.Reader);
+            if (saveFault is not null) options.AddInterceptors(saveFault);
             database = new SettingsDbContext(options.Options, control.Company);
             owner = (IAuditTransactionWriterV1)ActivatorUtilities.CreateInstance(run.Services, run.AuditWriterType, audit, control.Company);
             Collateral = new(database, control.Company, control.User, control, control, audit, owner, TimeProvider.System,
@@ -267,7 +268,8 @@ public sealed partial class SettingsReplayRaceSqlServerRelationalAcceptanceTests
         public string Connection => factory.DatabaseConnectionString;
         public IServiceProvider Services => factory.Services;
         public Type AuditWriterType { get; } = auditWriterType;
-        public Request Request(Control? control = null, Race? race = null) => new(this, control ?? new Control(), race);
+        public Request Request(Control? control = null, Race? race = null, SaveChangesInterceptor? saveFault = null) =>
+            new(this, control ?? new Control(), race, saveFault);
         public static async Task<Run> StartAsync()
         {
             var connection = Environment.GetEnvironmentVariable(SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;

@@ -497,7 +497,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Tren-1 W6: +4 source facts, ordinal-sorted; SQL execution NOT_RUN.
                 // Re-fingerprinted for tren-1 W7: source facts kept ordinal-sorted; SQL execution NOT_RUN.
                 // W8 local test database lifecycle: +1 real-SQL Fact; runtime proof pending.
-                "34d8d34fdbea2408ee349a3f5cbca69e3e09b13456dda58771f76fa28b51e7b3",
+                // W8 reference-list provider failure: +1 SQL lock-timeout Fact; runtime proof pending.
+                "3e88788130cb6bd560ae543233f38694662afa9d2ee2c65019248ba6765856f3",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -2223,15 +2224,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                         ["Microsoft.Data.SqlClient"] = 1
                         }),
+                // W8: SqlClient is used ONLY to distinguish 2601/2627 from unavailable writes; no SQL or filter bypass added. K3 review pending.
                 // tren-1 W5 fix (reference lists): .FindAsync is ReferenceListReads.FindAsync over the company-filtered Settings context,
                 // not an EF DbSet.Find. Pending the owning team's K3 review.
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
                  + "Persistence/SettingsReferenceListAdministration.cs"] =
                     new(
-                        "49a67eb113e8a6b34dc78b13ba7528c0cffcf2def8af4d39d2b35237b0ef292d",
+                        "d0c130e9eeabf59f648c97b8431548c756fb060b4b796c93f24499810577bebb",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
-                        [".FindAsync"] = 1
+                        [".FindAsync"] = 1,
+                        ["Microsoft.Data.SqlClient"] = 1
                         }),
                 // tren-1 W5 fix (reference lists): .FindAsync is ReferenceListReads.FindAsync over the company-filtered Settings context,
                 // not an EF DbSet.Find. Pending the owning team's K3 review.

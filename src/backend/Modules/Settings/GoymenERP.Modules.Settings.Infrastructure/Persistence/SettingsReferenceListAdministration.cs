@@ -6,6 +6,7 @@ using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -328,9 +329,9 @@ internal sealed class SettingsReferenceListAdministration(
 
     private Task<CommandExecution?> FindExecutionAsync(string commandName, string keyHash,
         CancellationToken cancellationToken) =>
-        database.CommandExecutions.AsNoTracking()
+        ReadAsync(() => database.CommandExecutions.AsNoTracking()
             .SingleOrDefaultAsync(execution => execution.CommandName == commandName && execution.IdempotencyKeyHash == keyHash,
-                cancellationToken);
+                cancellationToken));
 
     private static SettingsReferenceListCommandResultV1 Replay(CommandExecution execution, string requestHash,
         SettingsCommandMetadataV1 metadata)
@@ -383,17 +384,23 @@ internal sealed class SettingsReferenceListAdministration(
             await database.SaveChangesAsync(cancellationToken);
             return new SettingsReferenceListCommandResultV1(answer, false, metadata.CorrelationId);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException exception) when (exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
         {
             database.ChangeTracker.Clear();
             var winner = await FindExecutionAsync(commandName, keyHash, cancellationToken);
             await RequireStillAsync(permission, companyId, metadata, cancellationToken);
             if (winner is null)
             {
-                throw;
+                throw new SettingsPrerequisiteException(SettingsReferenceListProblemCodesV1.ProviderUnavailable);
             }
 
             return Replay(winner, requestHash, metadata);
+        }
+        catch (Exception exception) when (exception is DbUpdateException or SqlException)
+        {
+            // Infrastructure failures do not decide a business conflict or consume the command key.
+            database.ChangeTracker.Clear();
+            throw new SettingsPrerequisiteException(SettingsReferenceListProblemCodesV1.ProviderUnavailable);
         }
     }
 
@@ -411,7 +418,7 @@ internal sealed class SettingsReferenceListAdministration(
             await database.SaveChangesAsync(cancellationToken);
             return new SettingsReferenceListCommandResultV1(answer, false, metadata.CorrelationId);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException exception) when (exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
         {
             database.ChangeTracker.Clear();
             var winner = await FindExecutionAsync(commandName, keyHash, cancellationToken);
@@ -423,6 +430,12 @@ internal sealed class SettingsReferenceListAdministration(
 
             return await StoreRefusalAsync(commandName, onConflict, keyHash, requestHash, metadata,
                 permission, companyId, cancellationToken);
+        }
+        catch (Exception exception) when (exception is DbUpdateException or SqlException)
+        {
+            // Infrastructure failures do not decide a business conflict or consume the command key.
+            database.ChangeTracker.Clear();
+            throw new SettingsPrerequisiteException(SettingsReferenceListProblemCodesV1.ProviderUnavailable);
         }
     }
 
