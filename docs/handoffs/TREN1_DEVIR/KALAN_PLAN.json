@@ -2,7 +2,7 @@
  "meta": {
   "tarih": "2026-11-19",
   "tren_dali": "claude/tren-1",
-  "kod_head": "d395b5eae55e",
+  "kod_head": "9fa1588031c7",
   "durum_sozlugu": {
    "PARTIAL": "kapsamın bir kısmı kaynakta; kalan kısım son W<n> ekip raporunda",
    "PLANNED/READY": "başlanmadı",
@@ -49,7 +49,7 @@
   "partial": 0,
   "remaining_not_started": 0,
   "last_wave": 8,
-  "progress_meaning": "174/174 kaynak DONE (%100), W8 son paket; yeni dalga yok. Son CI SQL A/B/C FAIL; frontend audit dahil diger kapilar PASS. Finans1556 unit ve Identity/guard yerel kaniti raporda; yeni exact-head genis SQL ve iki bagimsiz tam K3 kabulu bekler; production degildir.",
+  "progress_meaning": "174/174 kaynak DONE (%100), W8 son paket; yeni dalga yok. CI71: gozlenen1762 SQL sonucunda1610PASS152FAILskip0. Yerel gercek SQL hedefleri ve263Documents unit kaniti ayri; genis yeni-head CI ve iki bagimsiz tam K3 kabulu bekler; production degildir.",
   "w6_source_done_ids": [
    "KIM-S13",
    "KIM-S18",
@@ -282,7 +282,7 @@
    "STK-SC36-a"
   ],
   "published_train_done_at_last_checkpoint": 174,
-  "w8_status": "SOURCE_DONE_174_CI_REPAIRS_LOCAL_VALIDATED_FINAL_CI_K3_PENDING_SECURITY_UPSTREAM_BLOCKER",
+  "w8_status": "SOURCE_DONE_174_LOCAL_SQL_VALIDATION_CI_REPAIRS_FULL_K3_PENDING",
   "w8_last_combined_source_build": {
    "head": "146f1ec79a30ca9a55d5fa78b119abc13e4bec75",
    "source_exit": 0,
@@ -767,7 +767,58 @@
     "mode": "SOURCE_ONLY"
    }
   },
-  "published_train_head_at_last_checkpoint": "20bfbc7505e03a1a58b66b4b8853ebf5d769a7d4"
+  "published_train_head_at_last_checkpoint": "71e8dd2cd5b477e06830ff3c49a9137189b8d5eb",
+  "local_sql_desktop_checkpoint": {
+   "source_head": "9fa1588031c770a4ac40700ea90d8e7eb789725c",
+   "measured_pin_head": "3a399af25f624824a64e51853989ddd88fdd3dd9",
+   "existing_local_sql_configured": true,
+   "local_sql_major_version": 17,
+   "ci_sql_major_version": 16,
+   "local_evidence_replaces_final_ci": false,
+   "scope": "ISOLATED_SYNTHETIC_DATABASES_ONLY_PROCESS_LOCAL_SETTINGS_NO_INSTANCE_DEFAULT_CHANGE",
+   "full_integration_dependency_build_exit": 0,
+   "full_integration_dependency_build_warnings": 0,
+   "documents_units": {
+    "passed": 263,
+    "failed": 0,
+    "skipped": 0,
+    "exact_sdk_trx": "PASS"
+   },
+   "local_storage_guards": {
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0,
+    "exact_sdk_trx": "PASS"
+   },
+   "initial_c_target_head": "0279d4b47f7189adae5cfefcd1bcf01d07345382",
+   "initial_c_target_result": {
+    "passed": 9,
+    "failed": 2,
+    "skipped": 0
+   },
+   "revision_repeat_current_head": {
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0,
+    "exact_sdk_trx": "PASS"
+   },
+   "a_six_and_b_twelve_targets": "RUNNING_NOT_ACCEPTANCE",
+   "ci_run_id": 44404510203,
+   "ci_source_head": "71e8dd2cd5b477e06830ff3c49a9137189b8d5eb",
+   "ci_observed_sql": {
+    "total": 1762,
+    "passed": 1610,
+    "failed": 152,
+    "skipped": 0
+   },
+   "ci_a_failure_names_recovered": 107,
+   "ci_a_summary_truncated_failure_details": 57,
+   "openapi_byte_comparison_exit": 0,
+   "openapi_sha256": "091cc64a9e71f90ddc12b7c2ab9784b3f22fd8e181234f7f7b50603dc30dec04",
+   "new_migration_permission_grant_role_or_production_activation": false,
+   "automatic_transaction_retry_added": false,
+   "required_next_gate": "FINISH_LOCAL_DIAGNOSTICS_THEN_FRESH_FULL_CI_AND_TWO_INDEPENDENT_FULL_EXACT_HEAD_K3_REVIEWS"
+  }
  },
  "teams": [
   {
