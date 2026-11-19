@@ -269,7 +269,15 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
                 Guid? movementId = null;
                 if (decisionCode == DecisionApproved)
                 {
-                    await LockPhysicalValidationAsync(cancellationToken);
+                    try
+                    {
+                        await LockPhysicalValidationAsync(cancellationToken);
+                    }
+                    catch (InventoryStoreException exception) when (exception.Code == InventoryStoreCodes.ConcurrentChange)
+                    {
+                        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+                        throw StockCountError(409, InventoryStockCountCodesV1.ConcurrentChange, exception);
+                    }
                     await ObservePhysicalCountBoundaryAsync(countRow.ProductId, countRow.LocationId, cancellationToken);
                     var label = await dbContext.Labels
                         .SingleOrDefaultAsync(row => row.Id == countRow.LabelId, cancellationToken);

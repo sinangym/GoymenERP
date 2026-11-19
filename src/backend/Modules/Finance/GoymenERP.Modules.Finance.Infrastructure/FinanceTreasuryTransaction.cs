@@ -89,9 +89,7 @@ internal static class FinanceTreasuryTransaction
             completed = true;
             return result;
         }
-        catch (Exception exception) when (exception is DbException or DbUpdateException
-            || exception is InvalidOperationException
-                { InnerException: DbUpdateException { InnerException: SqlException { Number: 1205 } } })
+        catch (Exception exception) when (IsTreasuryDatabaseFailure(exception))
         {
             await RollbackAsync();
             if (operationStarted)
@@ -127,4 +125,9 @@ internal static class FinanceTreasuryTransaction
             { /* A deadlock victim can already have been rolled back by SQL Server. */ }
         }
     }
+    internal static bool IsTreasuryDatabaseFailure(Exception error) => error is DbException or DbUpdateException
+        || error is InvalidOperationException { InnerException: SqlException { Number: 1205 or 1222 } }
+        || error is InvalidOperationException
+            { InnerException: DbUpdateException { InnerException: SqlException { Number: 1205 or 1222 } } };
+
 }

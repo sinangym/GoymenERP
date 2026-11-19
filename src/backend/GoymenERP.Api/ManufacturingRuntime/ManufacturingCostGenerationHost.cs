@@ -59,10 +59,10 @@ internal sealed class ManufacturingCostGenerationHost(ManufacturingDbContext db,
                     metadata with { Completion = null }, pending, token, forcePendingConsumptionProof: true, proposedGenerationId: proposedGenerationId);
             }
             catch (InventoryManufacturingCostGenerationException fallback) { throw Map(fallback); }
-            catch (DbException) { throw Unavailable(); }
+            catch (Exception fault) when (fault is DbException || IsCostGenerationSqlConcurrencyFailure(fault)) { throw Unavailable(); }
         }
         catch (InventoryManufacturingCostGenerationException fault) { throw Map(fault); }
-        catch (DbException) { throw Unavailable(); }
+        catch (Exception fault) when (fault is DbException || IsCostGenerationSqlConcurrencyFailure(fault)) { throw Unavailable(); }
     }
 
     internal static bool MayDeferInitialRecognition(InventoryManufacturingCostGenerationException fault) =>
@@ -87,7 +87,7 @@ internal sealed class ManufacturingCostGenerationHost(ManufacturingDbContext db,
         {
             await RollbackAsync(transaction); throw Map(fault);
         }
-        catch (SqlException fault) when (fault.Number is 1205 or 1222) { await RollbackAsync(transaction); throw Concurrent(); }
+        catch (Exception fault) when (IsCostGenerationSqlConcurrencyFailure(fault)) { await RollbackAsync(transaction); throw Concurrent(); }
         catch (DbException) { await RollbackAsync(transaction); throw Unavailable(); }
         catch { await RollbackAsync(transaction); throw; }
         finally { auditWriter.DiscardPending(); db.ChangeTracker.Clear(); }
@@ -135,7 +135,7 @@ internal sealed class ManufacturingCostGenerationHost(ManufacturingDbContext db,
             return reopened;
         }
         catch (InventoryManufacturingCostGenerationException fault) { await RollbackAsync(transaction); throw Map(fault); }
-        catch (SqlException fault) when (fault.Number is 1205 or 1222) { await RollbackAsync(transaction); throw Concurrent(); }
+        catch (Exception fault) when (IsCostGenerationSqlConcurrencyFailure(fault)) { await RollbackAsync(transaction); throw Concurrent(); }
         catch (DbException) { await RollbackAsync(transaction); throw Unavailable(); }
         catch { await RollbackAsync(transaction); throw; }
         finally { auditWriter.DiscardPending(); db.ChangeTracker.Clear(); }
@@ -324,6 +324,12 @@ internal sealed class ManufacturingCostGenerationHost(ManufacturingDbContext db,
             fault.Status == 409 && fault.Code == "inventory_manufacturing_cost_transfer_reversal_required"
                 ? ManufacturingStoreCodes.CostTransferReversalRequired
                 : fault.Status == 409 ? ManufacturingStoreCodes.ConcurrentChange : "cost_source_unavailable");
+    internal static bool IsCostGenerationSqlConcurrencyFailure(Exception error) => error is SqlException { Number: 1205 or 1222 }
+        || error is DbUpdateException { InnerException: SqlException { Number: 1205 or 1222 } }
+        || error is InvalidOperationException { InnerException: SqlException { Number: 1205 or 1222 } }
+        || error is InvalidOperationException
+            { InnerException: DbUpdateException { InnerException: SqlException { Number: 1205 or 1222 } } };
+
     private static ManufacturingInventoryRealizationPortException Unavailable() => new ManufacturingInventoryRealizationPortException(ManufacturingApiStatus.Unavailable, "cost_source_unavailable");
     private static ManufacturingInventoryRealizationPortException Concurrent() => new ManufacturingInventoryRealizationPortException(ManufacturingApiStatus.Conflict, ManufacturingStoreCodes.ConcurrentChange);
     private static string Text(long value) => value.ToString(CultureInfo.InvariantCulture);

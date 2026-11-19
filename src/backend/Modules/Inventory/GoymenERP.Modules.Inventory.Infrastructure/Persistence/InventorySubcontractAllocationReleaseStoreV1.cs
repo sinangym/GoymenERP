@@ -143,11 +143,17 @@ public sealed class InventorySubcontractAllocationReleaseStoreV1(InventoryDbCont
             if (PhysicalValidationConflict(error) is { } physicalConflict) throw physicalConflict;
             if (error is SalesOrderLineBusyException busy) throw Error(409, busy.Code);
             if (error is DbUpdateConcurrencyException || error is DbUpdateException { InnerException: SqlException { Number: 2601 or 2627 } }
-                || error is SqlException { Number: 1205 }) throw Error(409, InventoryAllocationCodesV1.ConcurrentChange);
+                || IsSubcontractReleaseDeadlock(error)) throw Error(409, InventoryAllocationCodesV1.ConcurrentChange);
             throw;
         }
         return Answer(outcome, metadata.CorrelationId, false);
     }
+
+    internal static bool IsSubcontractReleaseDeadlock(Exception error) => error is SqlException { Number: 1205 }
+        || error is DbUpdateException { InnerException: SqlException { Number: 1205 } }
+        || error is InvalidOperationException { InnerException: SqlException { Number: 1205 } }
+        || error is InvalidOperationException
+            { InnerException: DbUpdateException { InnerException: SqlException { Number: 1205 } } };
 
     private async Task<InventorySubcontractAllocationReleaseResultV1?> ReplayAsync(Guid id, string key, string payload,
         InventoryCommandMetadata metadata, Func<CancellationToken, Task> fence, CancellationToken token)

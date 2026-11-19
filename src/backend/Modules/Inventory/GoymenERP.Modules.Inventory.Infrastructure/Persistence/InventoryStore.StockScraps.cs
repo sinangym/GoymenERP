@@ -266,7 +266,15 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
                 Guid? movementId = null;
                 if (decisionCode == DecisionApproved)
                 {
-                    await LockPhysicalValidationAsync(cancellationToken);
+                    try
+                    {
+                        await LockPhysicalValidationAsync(cancellationToken);
+                    }
+                    catch (InventoryStoreException exception) when (exception.Code == InventoryStoreCodes.ConcurrentChange)
+                    {
+                        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+                        throw StockScrapError(409, InventoryStockScrapCodesV1.ConcurrentChange, exception);
+                    }
                     var label = await dbContext.Labels
                         .SingleOrDefaultAsync(row => row.Id == scrapRow.LabelId, cancellationToken);
                     await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);

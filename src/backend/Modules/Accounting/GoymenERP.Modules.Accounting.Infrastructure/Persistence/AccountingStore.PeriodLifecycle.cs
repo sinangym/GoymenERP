@@ -167,8 +167,7 @@ public sealed partial class AccountingStore
             await transaction.CommitAsync(cancellationToken);
             return result;
         }
-        catch (Exception exception) when (exception is SqlException { Number: 1205 }
-            || exception is DbUpdateException { InnerException: SqlException { Number: 1205 } })
+        catch (Exception exception) when (IsPeriodTransactionDeadlock(exception))
         {
             dbContext.ChangeTracker.Clear();
             throw Refused(AccountingStoreCodes.ConcurrentChange, "Dönem veya devir kaynağı eşzamanlı değişti.");
@@ -180,6 +179,12 @@ public sealed partial class AccountingStore
             throw;
         }
     }
+
+    internal static bool IsPeriodTransactionDeadlock(Exception error) => error is SqlException { Number: 1205 }
+        || error is DbUpdateException { InnerException: SqlException { Number: 1205 } }
+        || error is InvalidOperationException { InnerException: SqlException { Number: 1205 } }
+        || error is InvalidOperationException
+            { InnerException: DbUpdateException { InnerException: SqlException { Number: 1205 } } };
 
     private static AccountingPeriodClosureViewV1 ClosureView(AccountingPeriodClosureRow row) => new(row.Id, row.CompanyId,
         row.PeriodId, row.ClosedPeriodVersion, row.TargetPeriodId, row.CarryVoucherId, row.SourceHash, row.LineCount,

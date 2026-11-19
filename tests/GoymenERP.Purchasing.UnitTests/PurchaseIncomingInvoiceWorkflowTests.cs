@@ -38,6 +38,51 @@ public sealed class PurchaseIncomingInvoiceWorkflowTests
         Assert.Empty(world.Store.Committed);
     }
 
+    [Fact]
+    public async Task A_busy_order_line_returns_retryable_conflict_and_the_same_key_can_match_then_replay()
+    {
+        var world = new World(recorded: true);
+        var source = new MatchSource(world.Store); world.Matching = source;
+        var request = new PurchaseIncomingInvoiceMatchRequestV1("1",
+            [new(world.Store.Current.Lines[0].Id, Guid.NewGuid(), Guid.NewGuid(), "10")]);
+        var metadata = Metadata("busy-line");
+        world.Store.BeforeMutation = () => throw new PurchasingStoreException(PurchasingStoreCodes.LineBusy, "SENTETIK-busy");
+
+        var busy = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service().MatchAsync(world.Id, request, metadata));
+        Assert.Equal((409, PurchasingProblemCodesV1.LineBusy), (busy.Status, busy.Code));
+        Assert.False(busy.IsReplay);
+        Assert.Equal(1, world.Store.Current.Version);
+        Assert.Equal(0, source.Calls);
+        Assert.Empty(world.Store.Committed);
+        Assert.Empty(world.Finance.Offers);
+
+        world.Store.BeforeMutation = null;
+        var matched = await world.Service().MatchAsync(world.Id, request, metadata);
+        Assert.False(matched.IsReplay);
+        Assert.Equal(PurchaseIncomingInvoiceStatus.Matched, matched.Invoice.Status);
+        Assert.True((await world.Service().MatchAsync(world.Id, request, metadata)).IsReplay);
+        Assert.Single(world.Store.Committed);
+        Assert.Equal(1, source.Calls);
+    }
+
+    [Fact]
+    public async Task Authority_revoked_while_waiting_for_an_invoice_order_lock_hides_the_busy_response()
+    {
+        var world = new World(recorded: true); world.Matching = new MatchSource(world.Store);
+        var request = new PurchaseIncomingInvoiceMatchRequestV1("1",
+            [new(world.Store.Current.Lines[0].Id, Guid.NewGuid(), Guid.NewGuid(), "10")]);
+        world.Store.BeforeMutation = () =>
+        {
+            world.Authority.Denied = PurchaseIncomingInvoicePermissionNamesV1.Match;
+            throw new PurchasingStoreException(PurchasingStoreCodes.LineBusy, "SENTETIK-busy");
+        };
+        var denied = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            world.Service().MatchAsync(world.Id, request, Metadata("busy-revoked")));
+        Assert.Equal(403, denied.Status);
+        Assert.Equal(1, world.Store.Current.Version);
+        Assert.Empty(world.Store.Committed);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -284,6 +329,7 @@ public sealed class PurchaseIncomingInvoiceWorkflowTests
         public int Reads { get; private set; }
         public bool InMutation { get; private set; }
         public Action? AfterRead { get; set; }
+        public Action? BeforeMutation { get; set; }
         public Exception? ReadFailure { get; set; }
         public PurchaseIncomingInvoiceSnapshot? ReadAnswer { get; set; }
         public IReadOnlyList<Guid> LastOrdersToLock { get; private set; } = [];
@@ -310,6 +356,7 @@ public sealed class PurchaseIncomingInvoiceWorkflowTests
         {
             await requireStillAuthorized(cancellationToken);
             LastOrdersToLock = orderIdsToLock;
+            BeforeMutation?.Invoke();
             if (invoiceId != Current.Id) return null;
             InMutation = true;
             try

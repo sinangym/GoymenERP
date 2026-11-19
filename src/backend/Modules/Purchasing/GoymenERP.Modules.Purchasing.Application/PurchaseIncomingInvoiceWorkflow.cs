@@ -174,7 +174,7 @@ public sealed class PurchaseIncomingInvoiceWorkflow(ICompanyContext company, ICu
         catch (PurchasingRuleException exception)
         { return await RefuseAsync(scope, invoiceId, command, request, metadata, exception.Code, token); }
         catch (ArgumentException) { throw new PurchasingServiceException(400, "validation_failed"); }
-        catch (PurchasingStoreException exception) { throw Map(exception); }
+        catch (PurchasingStoreException exception) { await FenceAsync(scope, token); throw Map(exception); }
     }
 
     private async Task<PurchaseIncomingInvoiceOperationResultV1?> ReplayAsync(Scope scope, Guid invoiceId, string command,
@@ -265,6 +265,7 @@ public sealed class PurchaseIncomingInvoiceWorkflow(ICompanyContext company, ICu
     {
         PurchasingStoreCodes.SameKeyPayloadMismatch => new(409, PurchasingProblemCodesV1.SameKeyPayloadMismatch),
         PurchasingStoreCodes.ConcurrentChange => new(409, PurchasingProblemCodesV1.ConcurrentChange),
+        PurchasingStoreCodes.LineBusy => new(409, PurchasingProblemCodesV1.LineBusy),
         PurchasingStoreCodes.CompanyContextMismatch => new(403, "forbidden"),
         _ => new(503, "service_unavailable"),
     };

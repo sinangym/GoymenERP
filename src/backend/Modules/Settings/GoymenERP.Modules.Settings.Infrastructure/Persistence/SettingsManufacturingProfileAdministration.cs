@@ -115,9 +115,10 @@ internal sealed partial class SettingsManufacturingProfileAdministration(
                 .SingleOrDefaultAsync(execution => execution.CommandName == commandName && execution.IdempotencyKeyHash == keyHash,
                 cancellationToken));
         }
-        catch (SqlException)
+        catch (Exception exception) when (exception is SqlException
+            or InvalidOperationException { InnerException: SqlException })
         {
-            // Covers both the initial lookup and reads inside a save-race catch.
+            // Covers direct and EF-wrapped receipt reads, including reads inside a save-race catch.
             throw new SettingsPrerequisiteException(ManufacturingProfileProblemCodesV1.ProviderUnavailable);
         }
     }
