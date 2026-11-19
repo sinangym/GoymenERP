@@ -1260,9 +1260,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             new Dictionary<string, ReviewedRuntimeDatabaseBypassSource>(StringComparer.Ordinal)
             {
                 // Tren-1 W7; K3 review pending. FNS-D102: namespace only for DbException and borrowed SERIALIZABLE isolation/rollback; no connection creation, command text or filter bypass.
+                // W8 measured SQL repair: SqlClient only classifies the exact EF-wrapped 1205 refusal; no new SQL access.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceTreasuryTransaction.cs"] =
-                    new("3ed558771ea2389bf0bab682850f172b330ff9f53be1e5a07c6739dd22cc85c5",
-                        new Dictionary<string, int>(StringComparer.Ordinal) { ["System.Data.Common"] = 1 }),
+                    new("584ec666fcf65e5e04a8bf7d8bb352c02de474ff0a8ad8df833454f0cccd09bf",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["System.Data.Common"] = 1, ["Microsoft.Data.SqlClient"] = 1 }),
                 // Tren-1 W8; K3 review pending. FNS-D70: SqlClient only classifies duplicate keys; CollateralTypeReads.FindAsync is an owner-filtered AsNoTracking helper, not DbSet.Find. Fresh company/permission checks remain.
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsCollateralTypeAdministration.cs"] =
                     new("175c0ed8c182090bea46dbcf78548d75c6b5e30d1c5659fd0e67f9a8c8fa3f1d",
@@ -2808,6 +2809,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // SALES-P2 (#315): the Sales initializer's one provider branch, as Organization.
                 // Re-fingerprinted for AT-024: the draft service also receives the optional delivery read port; the
                 // provider branch and its token counts are unchanged.
+                // W8 SAT-S8 / KLN-D105: pass the already registered reduction participant to Sales; DI-only, same API counts.
                 ["src/backend/Modules/Sales/"
                  + "GoymenERP.Modules.Sales.Infrastructure/"
                  + "SalesModuleExtensions.cs"] =
@@ -3200,7 +3202,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // DbSet.FindAsync. Two fully-qualified System.Data.Common DbException catches map source errors to unavailable; no
                 // connection/raw SQL.
                 ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/InvoiceLineCogsCorrectionServiceV1.cs"] =
-                    new("694dd8b69d3f1e21d9df83918d7a72449ae66521537eb8b29165c77b5a1773fa",
+                    new("aad4eb901a044364e7550a7e905cedcd773e42cbd327fe9af88d998fe397f59f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             [".FindAsync"] = 1,
@@ -3209,8 +3211,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Tren-1 W8; K3 review pending. SqlClient import is used only for unique/deadlock typed catches;
                 // System.Data.Common.DbException catch maps source failure. Store uses owner injected AccountingDbContext with
                 // query filters and own Serializable transaction.
+                // W8 measured SQL repair: classify only the known EF-wrapped deadlock; same API counts.
                 ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingInventoryCostStoreV1.cs"] =
-                    new("ee54a5173e6e5bf8647efaf3f2943bd3cdc5f839754308cb07b2a8d9873b7df3",
+                    new("40a2737173a6f41889a6cf5872ea299e41a13fbc67a24fa918a64d65896490f9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
@@ -3228,8 +3231,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // Tren-1 W8; K3 review pending. SqlClient import only for typed SQL1205/DbUpdate deadlock classification; standard
                 // EF owner Serializable admission transaction and command/audit commit.
+                // W8 measured SQL repair: preserve concurrent-change refusal for exact EF-wrapped 1205; same API counts.
                 ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingSourceDocumentAdmissionStoreV1.cs"] =
-                    new("da331a72251cd610f4dcd1f755c88a174b426a12158f164bbe65e9ced98c3dc5",
+                    new("8ca65bf50efebdeb14e2b4f53cb21e2bbed63fda725d5eaf80818cafe0da4076",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
@@ -3244,8 +3248,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // Tren-1 W8; K3 review pending. SqlClient import only in unique/deadlock filters; partial reversal store owns
                 // Accounting transaction/command and own sourcevoucher state.
+                // W8 measured SQL repair: preserve concurrent-change refusal for exact EF-wrapped 1205; same API counts.
                 ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingSourceVoucherStoreV1.Reversal.cs"] =
-                    new("41fd8c9dff2102f0dfff0376524bc5935dcc706f0d5587ff4a5aba5acc130a10",
+                    new("d937e05e076a3d807a5249e344b9caef5b3f2b8234e5d8f230ffaa99eb1c1b5a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
