@@ -1057,6 +1057,14 @@ public sealed partial class ManufacturingDbContext(DbContextOptions<Manufacturin
 
             if (entry.State == EntityState.Modified)
             {
+                // URT-D33/D34: cancellation facts may be written once, only on the initial Open → Cancelled transition.
+                var initialOrderCancellation = entry.Entity is OrderRow order
+                    && order.Status == (int)OrderStatus.Cancelled
+                    && entry.OriginalValues.GetValue<int>(nameof(OrderRow.Status)) == (int)OrderStatus.Open
+                    && entry.OriginalValues.GetValue<Guid?>(nameof(OrderRow.CancelledByUserId)) is null
+                    && entry.OriginalValues.GetValue<DateTimeOffset?>(nameof(OrderRow.CancelledAtUtc)) is null
+                    && entry.OriginalValues.GetValue<string?>(nameof(OrderRow.CancellationReason)) is null
+                    && entry.OriginalValues.GetValue<long?>(nameof(OrderRow.PlanVersionAfterCancel)) is null;
                 string[] allowed = entry.Entity switch
                 {
                     // U2-a: the cancellation moves the status and sets its three columns; the content never changes.
@@ -1071,6 +1079,10 @@ public sealed partial class ManufacturingDbContext(DbContextOptions<Manufacturin
                         nameof(PlanRow.SalesOrderLinkRevision),
                         // F-010a (URT-D29): the hand-entered termin and its own revision move together.
                         nameof(PlanRow.RequestedDueDate), nameof(PlanRow.DueDateRevision)],
+                    OrderRow when initialOrderCancellation => [nameof(OrderRow.Status), nameof(OrderRow.ClosedByUserId), nameof(OrderRow.ClosedAtUtc),
+                        nameof(OrderRow.Version), nameof(OrderRow.UpdatedAtUtc), nameof(OrderRow.DueDate), nameof(OrderRow.DueDateRevision),
+                        nameof(OrderRow.CancelledByUserId), nameof(OrderRow.CancelledAtUtc),
+                        nameof(OrderRow.CancellationReason), nameof(OrderRow.PlanVersionAfterCancel)],
                     OrderRow => [nameof(OrderRow.Status), nameof(OrderRow.ClosedByUserId), nameof(OrderRow.ClosedAtUtc),
                         nameof(OrderRow.Version), nameof(OrderRow.UpdatedAtUtc),
                         // URT-D66 (3): the order's termin and its own revision move together.

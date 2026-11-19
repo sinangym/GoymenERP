@@ -1,5 +1,6 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
+using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations;
@@ -21,6 +22,32 @@ public sealed class ManufacturingPersistenceModelTests
     private static readonly Guid CompanyA = Guid.Parse("a0000000-0000-0000-0000-00000000000a");
     private static readonly Guid CompanyB = Guid.Parse("b0000000-0000-0000-0000-00000000000b");
     private static readonly DateTimeOffset At = new(2026, 9, 18, 8, 0, 0, TimeSpan.Zero);
+
+    [Theory]
+    [InlineData(nameof(OrderRow.CancelledByUserId))]
+    [InlineData(nameof(OrderRow.CancelledAtUtc))]
+    [InlineData(nameof(OrderRow.CancellationReason))]
+    [InlineData(nameof(OrderRow.PlanVersionAfterCancel))]
+    public async Task An_existing_order_cancellation_fact_cannot_be_rewritten_before_a_connection_is_opened(string property)
+    {
+        await using var context = Context();
+        var row = new OrderRow
+        {
+            CompanyId = CompanyA, Id = Guid.NewGuid(), Status = (int)OrderStatus.Cancelled,
+            CancelledByUserId = Guid.NewGuid(), CancelledAtUtc = At,
+            CancellationReason = "Recorded cancellation", PlanVersionAfterCancel = 3, Version = 2,
+        };
+        context.Orders.Attach(row);
+        switch (property)
+        {
+            case nameof(OrderRow.CancelledByUserId): row.CancelledByUserId = Guid.NewGuid(); break;
+            case nameof(OrderRow.CancelledAtUtc): row.CancelledAtUtc = At.AddMinutes(1); break;
+            case nameof(OrderRow.CancellationReason): row.CancellationReason = "Changed cancellation"; break;
+            case nameof(OrderRow.PlanVersionAfterCancel): row.PlanVersionAfterCancel = 4; break;
+            default: throw new ArgumentOutOfRangeException(nameof(property));
+        }
+        await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+    }
 
     private static readonly Type[] TenantRows =
         [typeof(PlanRow), typeof(PlanInputRow), typeof(PlanSlitLineRow), typeof(PlanCutLineRow),
