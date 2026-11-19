@@ -369,6 +369,11 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             services.AddSingleton<ISalesOrderLineReferencePortV1>(line);
             services.RemoveAll<ISalesOrderDeliveryReadPortV1>();
             services.AddSingleton<ISalesOrderDeliveryReadPortV1>(new NoRecordedSalesDeliveries(CompanyA));
+            // This SQL owner/HTTP fixture supplies its Sales and delivery boundaries above. Its kg-only demand
+            // uses the real Settings unit identity; it does not activate or claim Product conversion acceptance.
+            services.RemoveAll<IInventoryFutureUnitConverterV1>();
+            services.AddScoped<IInventoryFutureUnitConverterV1>(provider =>
+                new InventorySettingsFutureUnitConverterV1(provider.GetRequiredService<ISettingsUnitIdentityCatalogV1>()));
         }));
 
         using var client = ClientFor(host, actor, CompanyA);
