@@ -895,6 +895,42 @@
    "recovery_consumer_exit": 0,
    "next_five_sql_and_full_architecture": "RUNNING_NOT_ACCEPTANCE",
    "runtime_release_acceptance": "NOT_COMPLETE"
+  },
+  "local_guard_sql_closure": {
+   "source_head": "31b90670b",
+   "preceding_five_sql": {
+    "source_head": "4878fcafc90955cf186451e58b66b35945d09e2b",
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0,
+    "exact_sdk_trx": "PASS"
+   },
+   "preceding_full_architecture": {
+    "source_head": "4878fcafc90955cf186451e58b66b35945d09e2b",
+    "passed": 403,
+    "failed": 2,
+    "skipped": 0,
+    "status": "NOT_PASS_SOURCE_AND_HASH_GUARD_REPAIR_REQUIRED"
+   },
+   "uncovered_twenty_six": {
+    "source_head": "118aa796dfcec1dfd628539ba0aa09226b82c4fc",
+    "passed": 8,
+    "failed": 18,
+    "skipped": 0,
+    "status": "COMPLETED_DIAGNOSTIC_NOT_ACCEPTANCE"
+   },
+   "current_repaired_sql_targets": 20,
+   "current_full_unit_owners": [
+    "Manufacturing",
+    "Inventory",
+    "Accounting"
+   ],
+   "current_status": "RUNNING_NOT_ACCEPTANCE",
+   "guard_capability_or_skip_widened": false,
+   "business_policy_invented": false,
+   "new_wave_added": false,
+   "fresh_full_ci": "NOT_RUN",
+   "full_independent_exact_head_k3_reviews": "REQUIRED_AFTER_CI"
   }
  },
  "teams": [
