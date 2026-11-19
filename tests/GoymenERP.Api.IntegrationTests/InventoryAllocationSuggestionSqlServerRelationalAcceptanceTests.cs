@@ -42,6 +42,11 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 Metadata(run) with { IdempotencyKey = $"sug-{Guid.NewGuid():N}" });
         }
 
+        var partialVersionAfterAllocation = await run.ScalarAsync<long>(
+            "SELECT Version FROM inventory.Labels WHERE Id = @label", ("@label", partial.LabelId));
+        Assert.Equal(checked(partial.LabelVersion + 1), partialVersionAfterAllocation);
+        const string labelsSql = "SELECT * FROM inventory.Labels ORDER BY Id FOR JSON PATH";
+        var labelsBeforeReads = await run.ScalarAsync<string>(labelsSql);
         var allocations = await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Allocations");
         var movements = await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements");
         var orderId = Guid.NewGuid();
@@ -80,7 +85,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal((InventorySimilarProductModesV1.SameProductOnly, InventoryAllocationAiSuggestionStatesV1.Disabled, false),
             (answer.SimilarProductMode, answer.AiSuggestions, answer.Truncated));
         var item = Assert.Single(answer.Items);
-        Assert.Equal((partial.LabelId, partial.LabelVersion.ToString(), "SYN-SUG-A", partial.ProductId, "40"),
+        Assert.Equal((partial.LabelId, partialVersionAfterAllocation.ToString(), "SYN-SUG-A", partial.ProductId, "40"),
             (item.LabelId, item.LabelVersion, item.LabelCode, item.ProductId, item.UnreservedKg));
         Assert.Equal((InventoryAllocationSuggestionKindsV1.SameProduct, false, (string?)null),
             (item.Kind, item.IsSubstitute, item.MaximumDeviationPercent));
@@ -88,6 +93,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
         Assert.Equal(allocations, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Allocations"));
         Assert.Equal(movements, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements"));
+        Assert.Equal(labelsBeforeReads, await run.ScalarAsync<string>(labelsSql));
     }
 
     [SqlServerFact]
@@ -165,33 +171,59 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 "10", "1", "NULL", "NULL") + " UPDATE inventory.Allocations SET IsSubstitute = 1 WHERE Id = @id;",
             ("@id", salesId), ("@label", source.LabelId));
 
-        await using (var context = run.Context(CompanyA))
-        {
-            var refused = await Assert.ThrowsAsync<SqlException>(
-                () => context.GetService<IMigrator>().MigrateAsync(BeforeSubstituteFlagMigration));
-            Assert.Equal(51653, refused.Number);
-            Assert.Equal(SubstituteFlagMigration, (await context.Database.GetAppliedMigrationsAsync()).Last());
-        }
-
+        await using var context = run.Context(CompanyA);
+        var appliedBefore = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+        var migration = new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryAllocationSubstituteFlag();
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]).Sql;
+        const string guardProofSql = "SELECT CompanyId, Version FROM inventory.NegativeStockValidationGuards ORDER BY CompanyId FOR JSON PATH";
+        const string labelProofSql = "SELECT * FROM inventory.Labels ORDER BY Id FOR JSON PATH";
+        const string legacyAllocationSql = "SELECT JSON_MODIFY((SELECT * FROM inventory.Allocations WHERE Id = @id FOR JSON PATH, WITHOUT_ARRAY_WRAPPER), '$.IsSubstitute', NULL)";
+        var guardProof = await run.ScalarAsync<string>(guardProofSql);
+        var labelProof = await run.ScalarAsync<string>(labelProofSql);
+        var allocationProof = await run.ScalarAsync<string>(legacyAllocationSql, ("@id", salesId));
+        Assert.True(await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.NegativeStockValidationGuards") > 0);
+        var refused = await Assert.ThrowsAsync<SqlException>(() => ExecuteAsync(run, guard));
+        Assert.Equal(51653, refused.Number);
+        Assert.Equal(appliedBefore, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'inventory.Allocations') AND [name] = N'IsSubstitute'"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Allocations WHERE Id = @id AND IsSubstitute = 1", ("@id", salesId)));
 
         await ExecuteAsync(run, "UPDATE inventory.Allocations SET IsSubstitute = 0 WHERE Id = @id", ("@id", salesId));
-        await using (var context = run.Context(CompanyA))
-        {
-            await context.GetService<IMigrator>().MigrateAsync(BeforeSubstituteFlagMigration);
-            Assert.Equal(BeforeSubstituteFlagMigration, (await context.Database.GetAppliedMigrationsAsync()).Last());
-        }
-
+        // Exercise the target's full DDL against a harmless legacy allocation without walking across newer proofs.
+        // This deliberately does not alter EF's history; the separate empty-store test below covers IMigrator.
+        var generator = context.GetService<IMigrationsSqlGenerator>();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        foreach (var command in generator.Generate(migration.DownOperations, model))
+            await context.Database.ExecuteSqlRawAsync(command.CommandText);
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'inventory.Allocations') AND [name] = N'IsSubstitute'"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Allocations WHERE Id = @id", ("@id", salesId)));
+        Assert.Equal(allocationProof, await run.ScalarAsync<string>(legacyAllocationSql, ("@id", salesId)));
+        Assert.Equal(appliedBefore, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
+        Assert.Equal(guardProof, await run.ScalarAsync<string>(guardProofSql));
+        Assert.Equal(labelProof, await run.ScalarAsync<string>(labelProofSql));
+        foreach (var command in generator.Generate(migration.UpOperations, model))
+            await context.Database.ExecuteSqlRawAsync(command.CommandText);
         Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM inventory.Allocations WHERE Id = @id", ("@id", salesId)));
+            "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'inventory.Allocations') AND [name] = N'IsSubstitute'"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Allocations WHERE Id = @id AND IsSubstitute = 0", ("@id", salesId)));
+        Assert.Equal(allocationProof, await run.ScalarAsync<string>(legacyAllocationSql, ("@id", salesId)));
+        Assert.Equal(appliedBefore, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
+        Assert.Equal(guardProof, await run.ScalarAsync<string>(guardProofSql));
+        Assert.Equal(labelProof, await run.ScalarAsync<string>(labelProofSql));
 
-        await using (var context = run.Context(CompanyA))
-        {
-            await context.Database.MigrateAsync();
-            Assert.Equal(SubstituteFlagMigration, (await context.Database.GetAppliedMigrationsAsync()).Last());
-        }
+        await using var empty = await Run.StartAsync();
+        await using var emptyContext = empty.Context(CompanyA);
+        var emptyAppliedBefore = (await emptyContext.Database.GetAppliedMigrationsAsync()).ToArray();
+        Assert.Contains(SubstituteFlagMigration, emptyAppliedBefore);
+        await emptyContext.GetService<IMigrator>().MigrateAsync(BeforeSubstituteFlagMigration);
+        Assert.Equal(BeforeSubstituteFlagMigration, (await emptyContext.Database.GetAppliedMigrationsAsync()).Last());
+        Assert.Equal(0, await empty.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'inventory.Allocations') AND [name] = N'IsSubstitute'"));
+        await emptyContext.Database.MigrateAsync();
+        Assert.Equal(emptyAppliedBefore, (await emptyContext.Database.GetAppliedMigrationsAsync()).ToArray());
+        Assert.Equal(1, await empty.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'inventory.Allocations') AND [name] = N'IsSubstitute'"));
     }
 }
