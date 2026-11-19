@@ -341,6 +341,21 @@ public sealed partial class FinancePartyLedgerSqlServerRelationalAcceptanceTests
             health.EnsureSuccessStatusCode();
             await using var context = run.Context(CompanyA, null);
             await context.Database.MigrateAsync();
+            // The receipt port below is synthetic, but reversal reads the real treasury owner.
+            // Seed the actual account/currency identities; the recorded receipt facts supply its balance.
+            foreach (var (bank, currency) in new[] { (LiraBank, Lira), (DollarBank, Dollar) })
+            {
+                context.BankAccounts.Add(new BankAccountRow
+                {
+                    Id = bank, CompanyId = CompanyA, CurrencyId = currency,
+                    DisplayName = "SENTETIK ekstre bankası", BankName = "SENTETIK", AccountType = "Vadesiz",
+                    Iban = "TR330006100519786457841326", MoneyMovementEligible = true, Status = 2, Version = 2,
+                    ProposedBy = "SENTETIK-bank-maker", ProposedAtUtc = DateTimeOffset.UtcNow,
+                    ApprovedBy = "SENTETIK-bank-checker", ApprovedAtUtc = DateTimeOffset.UtcNow,
+                    UpdatedAtUtc = DateTimeOffset.UtcNow,
+                });
+            }
+            await context.SaveChangesAsync();
             return run;
         }
 

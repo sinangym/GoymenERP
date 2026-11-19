@@ -438,7 +438,7 @@ public sealed partial class ProductGlobalRuntimeSqlServerRelationalAcceptanceTes
                 "SELECT COUNT(*) FROM audit.AuditEvents WHERE SubjectKind = N'GroupSharedProduct'");
             await AssertOwnerRollbackGuardRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<IdentityDbContext>(),
                 new GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations.AllowProductLifecycleAssignments(), 51042,
-                "SELECT COUNT(*) FROM identity.ProductMasterAssignments");
+                "SELECT COUNT(*) FROM [identity].[ProductMasterAssignments]");
             await AssertOwnerRollbackGuardRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<GroupSharedCommandDbContext>(),
                 new GoymenERP.Modules.Idempotency.Infrastructure.Persistence.Migrations.AllowProductLifecycleTerminals(), 51043,
                 "SELECT COUNT(*) FROM idempotency.GroupSharedCommandTerminals WHERE Subject = N'Product'");

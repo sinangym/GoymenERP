@@ -43,8 +43,8 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         Assert.Equal(1, await run.ScalarAsync<int>(OutboxCount));
         Assert.Equal(
             $"{LogisticsDefiniteShipmentOutboxV1.RecordedEventType}|{LogisticsDefiniteShipmentOutboxV1.Version}|{request.ShipmentId:D}|{CompanyA:D}|{request.CorrelationId}",
-            await run.ScalarAsync<string>("SELECT CONCAT(EventType, N'|', SchemaVersion, N'|', CONVERT(nvarchar(36), SubjectId), N'|', "
-                + "CONVERT(nvarchar(36), CompanyId), N'|', CorrelationId) FROM logistics.OutboxMessages"),
+            await run.ScalarAsync<string>("SELECT CONCAT(EventType COLLATE Latin1_General_100_BIN2, N'|', SchemaVersion, N'|', CONVERT(nvarchar(36), SubjectId), N'|', "
+                + "CONVERT(nvarchar(36), CompanyId), N'|', CorrelationId COLLATE Latin1_General_100_BIN2) FROM logistics.OutboxMessages"),
             ignoreCase: true);
         var payload = await run.ScalarAsync<string>("SELECT PayloadJson FROM logistics.OutboxMessages");
         Assert.Contains($"\"shipmentId\":\"{request.ShipmentId:D}\"", payload, StringComparison.OrdinalIgnoreCase);
