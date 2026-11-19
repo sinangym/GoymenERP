@@ -225,7 +225,7 @@ public sealed class FinanceCreditLimitSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.PartyCreditLimits"));
         Assert.Equal(won.Resource!.Id, await run.ScalarAsync<Guid>(
             "SELECT Id FROM finance.PartyCreditLimits WHERE CompanyAccountId = @a AND Status = 2", ("@a", Account)));
-        Assert.Equal(2, await run.ScalarAsync<int>(
+        Assert.Equal(2L, await run.ScalarAsync<long>(
             "SELECT Version FROM finance.PartyCreditLimits WHERE Id = @id", ("@id", proposal.Id)));
         // The proposal and the winner's approval only; the loser's attempt and audit event rolled back with its save.
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.PartyCreditLimitCommands"));
