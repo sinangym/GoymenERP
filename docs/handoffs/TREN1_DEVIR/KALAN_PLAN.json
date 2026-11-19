@@ -930,7 +930,17 @@
    "business_policy_invented": false,
    "new_wave_added": false,
    "fresh_full_ci": "NOT_RUN",
-   "full_independent_exact_head_k3_reviews": "REQUIRED_AFTER_CI"
+   "full_independent_exact_head_k3_reviews": "REQUIRED_AFTER_CI",
+   "first_repaired_attempt": {
+    "source_head": "31b90670b",
+    "targeted_backend_and_api_build_exit": 0,
+    "openapi_byte_comparison_exit": 2,
+    "remaining_stages": "NOT_RUN_AFTER_CONTRACT_DRIFT",
+    "contract_difference": "ApproveAccountingSourceVoucherV1.additionalProperties=false",
+    "generated_sha256": "c60b3f5c4ea5c5f14b1bb37b0e62b9a5107997b1cbafa9636293e18f16bfdf98",
+    "new_baseline_source": "ACTUAL_API_BUILD_OUTPUT",
+    "restart_requires_backend_source_equality": true
+   }
   }
  },
  "teams": [
