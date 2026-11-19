@@ -277,13 +277,38 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         Assert.Equal(("GoodOutputMass", "900", "900", "0"), (detail.RemainingTarget.Basis, detail.RemainingTarget.TargetKg,
             detail.RemainingTarget.AchievedKg, detail.RemainingTarget.RemainingKg));
 
-        // One plan, one order, three facts; five audit events under the caller's correlation (no replay event) and the
-        // approval under the approver's.
+        // One plan, one order and three facts. Output also records its independent label code and lineage;
+        // every caller event appears exactly once, with approval under the other user's correlation.
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Plans"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Orders"));
         Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Facts"));
-        Assert.Equal(5, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType LIKE N'Manufacturing.%' AND CorrelationId = @c",
-            ("@c", correlation)));
+        Assert.Equal(new[]
+        {
+            "manufacturing.input.issued.v1",
+            "manufacturing.order.created.v1",
+            "manufacturing.output.declared.v1",
+            "manufacturing.output.label-code.recorded.v1",
+            "manufacturing.output.lineage.recorded.v1",
+            "manufacturing.plan.created.v1",
+            "manufacturing.wip.measured.v1",
+        }, (await run.ScalarAsync<string>(
+            """
+            SELECT COALESCE(STRING_AGG(CONVERT(nvarchar(max), EventType), N'|')
+                WITHIN GROUP (ORDER BY EventType COLLATE Latin1_General_100_BIN2), N'')
+            FROM audit.AuditEvents
+            WHERE CompanyId = @company AND CorrelationId = @c AND EntityType LIKE N'Manufacturing.%';
+            """, ("@company", CompanyA), ("@c", correlation))).Split('|'));
+        Assert.NotNull(plan.PreparedBy);
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            """
+            SELECT COUNT(*) FROM audit.AuditEvents
+            WHERE CompanyId = @company AND CorrelationId = @c AND EntityType LIKE N'Manufacturing.%'
+              AND (ActorId <> @actor
+                OR EntityType <> CASE WHEN EventType = N'manufacturing.plan.created.v1'
+                    THEN N'Manufacturing.ProductionPlan' ELSE N'Manufacturing.ProductionOrder' END
+                OR EntityId <> CASE WHEN EventType = N'manufacturing.plan.created.v1' THEN @plan ELSE @order END);
+            """, ("@company", CompanyA), ("@c", correlation), ("@actor", plan.PreparedBy!),
+            ("@plan", plan.PlanId.ToString("D")), ("@order", orderId.ToString("D"))));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.plan.approved.v1' AND CorrelationId = @c",
             ("@c", approverCorrelation)));
