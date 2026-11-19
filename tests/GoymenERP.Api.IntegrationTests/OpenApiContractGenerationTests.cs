@@ -20973,6 +20973,9 @@ public sealed partial class OpenApiContractGenerationTests
             AssertPositiveIntegerStringVersion(schemas, name);
         }
 
+        // KLN-D17: approval binds only its expected version, never client-supplied company or period fields.
+        Assert.False(schemas.GetProperty("ApproveAccountingSourceVoucherV1").GetProperty("additionalProperties").GetBoolean());
+
         var contactCommand = schemas.GetProperty("UpdateCounterpartyContactInformation");
         Assert.False(contactCommand.GetProperty("additionalProperties").GetBoolean());
         var contactVersion = contactCommand.GetProperty("properties").GetProperty("expectedVersion");

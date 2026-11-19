@@ -249067,7 +249067,8 @@
             ],
             "format": "int64"
           }
-        }
+        },
+        "additionalProperties": false
       },
       "ApproveCounterpartyPartyMerge": {
         "required": [
