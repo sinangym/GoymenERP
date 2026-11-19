@@ -33,10 +33,6 @@ def make_repository(root: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source_root / relative, destination)
     shutil.copytree(source_root / "tools/relational_inventory", root / "tools/relational_inventory")
-    for relative, _, _ in VERIFIER.DEFERRED_THEORIES.values():
-        destination = root / relative
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source_root / relative, destination)
     projects = [path for group in VERIFIER.GROUP_PROJECTS.values() for path in group]
     projects += [f"src/backend/Other{i:02d}/Other{i:02d}.csproj" for i in range(53)]
     solution = ["<Solution>", '  <Folder Name="/tests/">']
@@ -992,16 +988,34 @@ class BackendGroupVerifierTests(unittest.TestCase):
                                             expected_case_ids={name: [identity]})
 
     def test_reviewed_deferred_case_identities_and_source_are_exact_at_both_gates(self) -> None:
-        self.assertEqual(len(VERIFIER.DEFERRED_THEORIES), 1)
-        self.assertNotIn(
-            "GoymenERP.Organization.UnitTests.WorkCenterWorkingTimeAvailabilityContractTests."
-            "Intervals_must_be_utc_positive_bounded_ordered_and_nonoverlapping",
-            VERIFIER.DEFERRED_THEORIES,
+        self.assertEqual(VERIFIER.DEFERRED_THEORIES, {})
+        project = next(path for path in VERIFIER.GROUP_PROJECTS["modules"]
+                       if Path(path).stem == "GoymenERP.Manufacturing.UnitTests")
+        name = Path(project).stem + ".DeferredFixtureTests.Four_reviewed_cases"
+        relative = (Path(project).parent / "DeferredFixtureTests.cs").as_posix()
+        source = self.root / relative
+        source.write_bytes(b"""using Xunit;
+namespace GoymenERP.Manufacturing.UnitTests;
+public sealed class DeferredFixtureTests
+{
+    public static object[][] Cases =>
+        [[new DeferredValue(1)], [new DeferredValue(2)], [new DeferredValue(3)], [new DeferredValue(4)]];
+    [Theory]
+    [MemberData(nameof(Cases))]
+    public void Four_reviewed_cases(DeferredValue value) => Assert.InRange(value.Number, 1, 4);
+    public sealed record DeferredValue(int Number);
+}
+""")
+        fingerprint = hashlib.sha256(source.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+        cases = (
+            name + "(value: DeferredValue { Number = 1 })",
+            name + "(value: DeferredValue { Number = 2 })",
+            name + "(value: DeferredValue { Number = 3 })",
+            name + "(value: DeferredValue { Number = 4 })",
         )
-        for number, (name, (relative, _, cases)) in enumerate(VERIFIER.DEFERRED_THEORIES.items()):
-            project = next(path for path in VERIFIER.GROUP_PROJECTS["modules"]
-                           if name.startswith(Path(path).stem + "."))
-            expected = list(cases)
+        expected = list(cases)
+        # Only this synthetic fixture needs the deferred path; production has no exception.
+        with mock.patch.object(VERIFIER, "DEFERRED_THEORIES", {name: (relative, fingerprint, cases)}):
             mutations = {
                 "missing": expected[:-1], "surplus": expected + [expected[0]],
                 "duplicate": expected[:-1] + [expected[0]],
@@ -1009,9 +1023,9 @@ class BackendGroupVerifierTests(unittest.TestCase):
             }
             for label, rows in mutations.items():
                 with self.subTest(theory=name, producer=label), self.assertRaises(RuntimeError):
-                    self.produce_group("modules", self.root / f"deferred-{number}-{label}",
+                    self.produce_group("modules", self.root / f"deferred-{label}",
                                        project, [name], rows)
-            directory = self.proof_directory(f"deferred-{number}")
+            directory = self.proof_directory("deferred")
             path = directory / "ci-backend-test-group-proof-modules" / "proof-modules.json"
             path.unlink()
             path = self.produce_group("modules", directory, project, [name], expected)
@@ -1028,14 +1042,21 @@ class BackendGroupVerifierTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, "multiplicity or identity"):
                         self.aggregate(directory)
             path.write_text(original, encoding="utf-8")
-            source = self.root / relative
             original_source = source.read_bytes()
             try:
                 source.write_bytes(original_source + b"\n// unreviewed test data change\n")
                 with self.assertRaisesRegex(RuntimeError, "Deferred theory source differs"):
+                    self.produce_group("modules", self.root / "deferred-source-change",
+                                       project, [name], expected)
+                with self.assertRaisesRegex(RuntimeError, "Deferred theory source differs"):
                     self.aggregate(directory)
             finally:
                 source.write_bytes(original_source)
+        self.assertEqual(VERIFIER.DEFERRED_THEORIES, {})
+        with self.assertRaises(RuntimeError):
+            self.produce_group("modules", self.root / "unreviewed-deferred", project, [name], expected)
+        with self.assertRaisesRegex(RuntimeError, "multiplicity or identity"):
+            self.aggregate(directory)
 
     def test_group_refuses_real_sql_connection_before_dispatch(self) -> None:
         with mock.patch.dict(

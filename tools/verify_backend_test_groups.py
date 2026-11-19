@@ -69,75 +69,10 @@ EXECUTION_ID_PATTERN = re.compile(
     r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\Z"
 )
 
-# Only this reviewed nonserializable MemberData method defers its rows
-# until execution. Exact display identities and source bytes are reviewed together.
+# No production theories currently defer their rows until execution.
+# Any future exception must bind exact display identities to reviewed source bytes.
 # An unknown deferred theory must fail closed, rather than permit a lower bound.
-DEFERRED_THEORIES: dict[str, tuple[str, str, tuple[str, ...]]] = {'GoymenERP.Manufacturing.UnitTests.ManufacturingCommercialContextSnapshotTests.One_plan_refuses_a_different_identity_or_version': ('tests/GoymenERP.Manufacturing.UnitTests/ManufacturingCommercialContextSnapshotTests.cs',
-                                                                                                                                    'd0a327ac6a0daadccf2a421d80354acc461a1806b2bda57677b18ec836bec450',
-                                                                                                                                    ('GoymenERP.Manufacturing.UnitTests.ManufacturingCommercialContextSnapshotTests.One_plan_refuses_a_different_identity_or_version(differentContext: '
-                                                                                                                                     'PlanCommercialContextSnapshotV1 '
-                                                                                                                                     '{ '
-                                                                                                                                     'PartyId '
-                                                                                                                                     '= '
-                                                                                                                                     '30000000-0000-0000-0000-000000000003, '
-                                                                                                                                     'CompanyPartyAccountId '
-                                                                                                                                     '= '
-                                                                                                                                     '40000000-0000-0000-0000-000000000004, '
-                                                                                                                                     'PartyVersion '
-                                                                                                                                     '= '
-                                                                                                                                     'party-v1, '
-                                                                                                                                     'AccountVersion '
-                                                                                                                                     '= '
-                                                                                                                                     'account-v2 '
-                                                                                                                                     '})',
-                                                                                                                                     'GoymenERP.Manufacturing.UnitTests.ManufacturingCommercialContextSnapshotTests.One_plan_refuses_a_different_identity_or_version(differentContext: '
-                                                                                                                                     'PlanCommercialContextSnapshotV1 '
-                                                                                                                                     '{ '
-                                                                                                                                     'PartyId '
-                                                                                                                                     '= '
-                                                                                                                                     '30000000-0000-0000-0000-000000000003, '
-                                                                                                                                     'CompanyPartyAccountId '
-                                                                                                                                     '= '
-                                                                                                                                     '40000000-0000-0000-0000-000000000004, '
-                                                                                                                                     'PartyVersion '
-                                                                                                                                     '= '
-                                                                                                                                     'party-v2, '
-                                                                                                                                     'AccountVersion '
-                                                                                                                                     '= '
-                                                                                                                                     'account-v1 '
-                                                                                                                                     '})',
-                                                                                                                                     'GoymenERP.Manufacturing.UnitTests.ManufacturingCommercialContextSnapshotTests.One_plan_refuses_a_different_identity_or_version(differentContext: '
-                                                                                                                                     'PlanCommercialContextSnapshotV1 '
-                                                                                                                                     '{ '
-                                                                                                                                     'PartyId '
-                                                                                                                                     '= '
-                                                                                                                                     '30000000-0000-0000-0000-000000000003, '
-                                                                                                                                     'CompanyPartyAccountId '
-                                                                                                                                     '= '
-                                                                                                                                     '40000000-0000-0000-0000-000000000099, '
-                                                                                                                                     'PartyVersion '
-                                                                                                                                     '= '
-                                                                                                                                     'party-v1, '
-                                                                                                                                     'AccountVersion '
-                                                                                                                                     '= '
-                                                                                                                                     'account-v1 '
-                                                                                                                                     '})',
-                                                                                                                                     'GoymenERP.Manufacturing.UnitTests.ManufacturingCommercialContextSnapshotTests.One_plan_refuses_a_different_identity_or_version(differentContext: '
-                                                                                                                                     'PlanCommercialContextSnapshotV1 '
-                                                                                                                                     '{ '
-                                                                                                                                     'PartyId '
-                                                                                                                                     '= '
-                                                                                                                                     '30000000-0000-0000-0000-000000000099, '
-                                                                                                                                     'CompanyPartyAccountId '
-                                                                                                                                     '= '
-                                                                                                                                     '40000000-0000-0000-0000-000000000004, '
-                                                                                                                                     'PartyVersion '
-                                                                                                                                     '= '
-                                                                                                                                     'party-v1, '
-                                                                                                                                     'AccountVersion '
-                                                                                                                                     '= '
-                                                                                                                                     'account-v1 '
-                                                                                                                                     '})'))}
+DEFERRED_THEORIES: dict[str, tuple[str, str, tuple[str, ...]]] = {}
 
 
 def relational_verifier(root: Path) -> ModuleType:
