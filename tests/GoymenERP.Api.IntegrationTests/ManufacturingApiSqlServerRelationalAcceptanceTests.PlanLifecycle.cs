@@ -252,12 +252,13 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             "SELECT NetUsableWidthMm FROM manufacturing.Plans WHERE CompanyId = @c AND Id = @p",
             ("@c", CompanyA), ("@p", planId)));
 
-        // A roll whose free stock does not cover the planned kg is not usable: the approval is refused, nothing changes.
-        // U3-a: the approval above allocated the roll and moved its label version; the next plan names the current one.
+        // The first approval reserves 1000 kg of the physical 1000.125 kg. A new 1 kg draft is within
+        // the decided physical-total draft cap but exceeds the remaining 0.125 kg: approval must refuse it.
+        // U3-a: the next plan names the label's actual version after the first allocation.
         rollVersion = await run.CurrentLabelVersionAsync(roll.Id);
         var shortId = Guid.NewGuid();
         await PlanAsync(client, HttpStatusCode.Created, $"{Base}/plans",
-            new SavePlanRequestV1(shortId, slitting, Inputs("1500"), null, Spec("980"), null, "50"));
+            new SavePlanRequestV1(shortId, slitting, Inputs("1"), null, Spec("980"), null, "50"));
         await run.EnterTerminAsync(shortId);
         using (var refused = await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{shortId}/approval", new ApprovePlanRequestV1(1)))
         {

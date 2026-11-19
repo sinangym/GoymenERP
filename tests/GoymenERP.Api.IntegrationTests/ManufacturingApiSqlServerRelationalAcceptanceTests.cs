@@ -29,6 +29,7 @@ using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
+using GoymenERP.Modules.Organization.Infrastructure.Seeding;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
@@ -503,7 +504,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public async Task Another_companys_order_is_not_found_and_the_company_comes_only_from_the_context()
     {
-        await using var run = await Run.StartAsync();
+        await using var run = await Run.StartAsync(seedUnservedCompany: true);
         var userA = await run.GrantAsync(TestUsers.CompanyA, CompanyA, AllWrites);
         var userB = await run.GrantAsync(TestUsers.CompanyB, CompanyB, AllWrites);
         var (orderId, roll) = await run.OpenOrderAsync(userA);
@@ -1300,7 +1301,8 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         public SqlServerRelationalApiFactory Factory { get; }
         public DateOnly UtcToday => DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
 
-        public static async Task<Run> StartAsync(bool useSqlSettings = false, DateTimeOffset? clockAt = null)
+        public static async Task<Run> StartAsync(bool useSqlSettings = false, DateTimeOffset? clockAt = null,
+            bool seedUnservedCompany = false)
         {
             var baseConnectionString = Environment.GetEnvironmentVariable(
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
@@ -1314,6 +1316,17 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             TimeProvider clock = useSqlSettings ? new FixedTimeProvider(clockAt ?? At) : TimeProvider.System;
             var factory = new SqlServerRelationalApiFactory(baseConnectionString, services =>
             {
+                if (seedUnservedCompany)
+                {
+                    // A real active Organization root is required before the Settings-unavailable boundary.
+                    // This disposable company has no kg source, invoice capability or topology templates.
+                    services.PostConfigure<OrganizationSeedOptions>(options => options.Companies.Add(new SeedCompany
+                    {
+                        Id = NoSettingsSourceCompany, Code = "SENTETIK-MFG-NO-SETTINGS",
+                        LegalName = "SENTETIK manufacturing Settings boundary", IsPlaceholder = true,
+                        InvoiceCapable = false, ApplyTopologyTemplates = false,
+                    }));
+                }
                 services.RemoveAll<ProductRuntimeOptions>();
                 services.AddSingleton(new ProductRuntimeOptions(databaseConnectionString,
                     new ProductPilotIssuerBinding(Guid.NewGuid(), Guid.NewGuid()), new byte[32]));

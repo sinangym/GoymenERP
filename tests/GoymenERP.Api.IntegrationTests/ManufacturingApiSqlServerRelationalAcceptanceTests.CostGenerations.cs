@@ -83,7 +83,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
                 ApprovedByUserId = Guid.NewGuid(), ApprovedAtUtc = now, Version = 1, CreatedAtUtc = now, UpdatedAtUtc = now });
             await accounting.SaveChangesAsync();
         }
-        var reopened = await run.OkAsync(client, $"{Base}/orders/{orderId}/reopen",
+        var reopened = await run.OkAsync(client, $"{Base}/orders/{orderId}/reopening",
             new ReopenManufacturingOrderRequestV1(closed.Version, "Synthetic actual reopening"));
         Assert.Equal("Open", reopened.Status);
         var history = (await client.GetFromJsonAsync<ManufacturingCostGenerationHistoryV1>(path))!.Generations;

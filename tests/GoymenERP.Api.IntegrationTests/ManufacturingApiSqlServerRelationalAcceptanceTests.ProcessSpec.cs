@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Manufacturing.Application;
+using GoymenERP.Modules.Product.Application.Contracts;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -17,19 +18,21 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
     public async Task Plan_process_spec_is_saved_revised_and_captured_on_real_sql()
     {
         await using var run = await Run.StartAsync(useSqlSettings: true, clockAt: CatalogDay);
-        var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA, LifecycleGrants);
+        var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA,
+            [.. LifecycleGrants, ErpPermissions.CounterpartyPartiesRead, ProductPaintMembershipPermissionsV1.Manage]);
         using var client = run.ClientFor(user, CompanyA);
+        var paintSelection = await run.PaintSelectionAsync(client);
         var paint = await run.WorkCenterOfKindAsync(CompanyA, "Paint");
         var roll = await run.StockedLabelAsync($"SYN-MFG-U2B1-{Guid.NewGuid():N}");
         var inputs = new[] { new PlannedInputRequestV1(roll.Id, "1000", roll.Version) };
         var spec = new PlanProcessSpecRequestV1(PackageCount: 10, PiecesPerPackage: 25, PieceLengthMm: "6000.000",
-            PerimeterMm: "160.5", PaintDescription: "  Polyester toz / Akzo  ", PaintColorCode: "RAL 9016");
+            PerimeterMm: "160.5", PaintDescription: "  Polyester toz / Akzo  ", PaintColorCode: "RAL 9016", PaintSelection: paintSelection);
 
         // A Tube / Profile value on a Paint plan, and a Paint spec without its paint, are the caller's error.
         foreach (var wrong in new[]
                  {
                      spec with { UnitKg = "12.5" },
-                     spec with { PaintDescription = null },
+                     spec with { PaintDescription = null, PaintSelection = null },
                      spec with { PackageCount = 0 },
                      spec with { PieceLengthMm = "6000.0001" },
                  })
@@ -42,7 +45,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         var planId = Guid.NewGuid();
         var created = await PlanAsync(client, HttpStatusCode.Created, $"{Base}/plans",
             new SavePlanRequestV1(planId, paint, inputs, null, ProcessSpec: spec));
-        Assert.Equal(new PlanProcessSpecViewV1(10, 25, "6000", null, "160.5", null, "Polyester toz / Akzo", "RAL 9016"),
+        Assert.Equal(new PlanProcessSpecViewV1(10, 25, "6000", null, "160.5", null, "Polyester toz / Akzo", "RAL 9016", paintSelection),
             created.ProcessSpec);
         Assert.Equal(160.5m, await run.ScalarAsync<decimal>(
             "SELECT PerimeterMm FROM manufacturing.Plans WHERE CompanyId = @c AND Id = @p", ("@c", CompanyA), ("@p", planId)));
@@ -74,7 +77,9 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
 
         // Approval captures every entered number with source Plan beside the Paint profile's own values.
         await run.EnterTerminAsync(planId);
-        var approved = await PlanAsync(await run.ApproverAsync(CompanyA), HttpStatusCode.OK, $"{Base}/plans/{planId}/approval",
+        var approver = await run.ApproverAsync(CompanyA);
+        await run.GrantAsync(TestUsers.SiteAuditReader, CompanyA, ErpPermissions.CounterpartyPartiesRead);
+        var approved = await PlanAsync(approver, HttpStatusCode.OK, $"{Base}/plans/{planId}/approval",
             new ApprovePlanRequestV1(2));
         var planValues = approved.ParameterSnapshot!.Values
             .Where(value => value.Source == "Plan")
@@ -103,13 +108,15 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
     public async Task Plan_process_spec_previews_refuses_oversized_values_and_fences_its_key_on_real_sql()
     {
         await using var run = await Run.StartAsync(useSqlSettings: true, clockAt: CatalogDay);
-        var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA, LifecycleGrants);
+        var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA,
+            [.. LifecycleGrants, ErpPermissions.CounterpartyPartiesRead, ProductPaintMembershipPermissionsV1.Manage]);
         using var client = run.ClientFor(user, CompanyA);
+        var paintSelection = await run.PaintSelectionAsync(client);
         var paint = await run.WorkCenterOfKindAsync(CompanyA, "Paint");
         var roll = await run.StockedLabelAsync($"SYN-MFG-U2B1R-{Guid.NewGuid():N}");
         var inputs = new[] { new PlannedInputRequestV1(roll.Id, "1000", roll.Version) };
         var spec = new PlanProcessSpecRequestV1(PackageCount: 10, PiecesPerPackage: 25, PieceLengthMm: "6000",
-            PerimeterMm: "160.5", PaintDescription: "Polyester toz");
+            PerimeterMm: "160.5", PaintDescription: "Polyester toz", PaintSelection: paintSelection);
 
         using (var previewResponse = await client.PostAsJsonAsync($"{Base}/plans/preview",
                    new PlanPreviewRequestV1(paint, inputs, null, ProcessSpec: spec)))
