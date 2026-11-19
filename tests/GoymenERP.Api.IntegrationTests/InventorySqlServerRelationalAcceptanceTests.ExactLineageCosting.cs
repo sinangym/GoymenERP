@@ -192,7 +192,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             var request = new TransformInventoryLabelsV1(Guid.NewGuid(), InventoryLabelTransformationKindV1.Merge,
                 [new(foreignRoot.Id, versions[foreignRoot.Id].ToString(CultureInfo.InvariantCulture)),
                     new(foreignOther.Id, versions[foreignOther.Id].ToString(CultureInfo.InvariantCulture))],
-                [new(foreignMixedId, mixedCode, "1800")], At,
+                [new(foreignMixedId, mixedCode, "1800")], ExactLineageForeignAt,
                 "Sentetik diger sirket lineage bileseni.");
             await using var owner = run.Store(CompanyB);
             await owner.Store.TransformAsync(request, Metadata(run));
@@ -460,14 +460,17 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         return result;
     }
 
+    // Company B's approved Settings kilogram profile starts on this day; Company A's older fact date is unchanged.
+    private static readonly DateTimeOffset ExactLineageForeignAt = new(2026, 10, 26, 9, 0, 0, TimeSpan.Zero);
+
     private static async Task<MaterialLabel> ExactLineageForeignCostedLabelAsync(Run run, Guid id, Guid location, decimal kg, string? code = null)
     {
         var label = new MaterialLabel(id, CompanyB, code ?? $"SYN-EXACT-FOREIGN-{Guid.NewGuid():N}", Product, LotB, "product-v1");
         await using var owner = run.Store(CompanyB);
         await owner.Labels.SaveLabelAsync(label, Metadata(run));
-        var receipt = Movement(CompanyB, StockMovementKind.Receipt,
+        var receipt = new StockMovement(Guid.NewGuid(), CompanyB, StockMovementKind.Receipt, ExactLineageForeignAt,
             new StockSourceReference(InventoryGoodsReceiptContractV1.SourceKind, Guid.NewGuid()),
-            In(Position(CompanyB, location, label, BlockState.Free), kg));
+            [In(Position(CompanyB, location, label, BlockState.Free), kg)]);
         owner.Store.UseReceiptCost(receipt.Id, new(CompanyB, receipt.Source.Id, Guid.NewGuid(), Guid.NewGuid(), null, null, 99m, 9m,
             new(InventoryIssueCostCurrencyStatusV1.FunctionalCurrency, null, null, null, "SENTETIK-foreign-entry-v1", null),
             "SENTETIK-foreign-price-proof", "{}", null, null));
