@@ -8,12 +8,14 @@ using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
+using GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -170,8 +172,11 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
             await context.Database.MigrateAsync();
         }
 
+        var guard = Assert.IsType<SqlOperation>(new AddMoneyEvents().DownOperations[0]).Sql;
+        Assert.Equal(1, await run.ScalarAsync<int>(guard + "; SELECT 1"));
         var owners = Owners.For(CompanyA);
         var draft = await run.SaveDraftAsync(owners, "10");
+        Assert.Equal(1, await run.ScalarAsync<int>(guard + "; SELECT 1"));
         await using (var a = run.Service(CompanyA, owners))
         {
             Assert.Equal(CommandOutcome.Succeeded, (await a.Service.RecordAsync(a.Context, Key("r-1"),
@@ -180,12 +185,15 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
 
         await using (var context = run.Context(CompanyA))
         {
-            var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(beforeMoneyEvents));
+            // Newer numbering evidence has its own guard; test this money-fact guard without walking unrelated migrations.
+            var appliedBefore = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            var error = await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(guard + "; SELECT 1"));
             Assert.Equal(51051, error.Number);
-            Assert.EndsWith("_AddMoneyEvents", (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
+            Assert.Equal(appliedBefore, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
         }
 
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents WHERE SourceId=@source", ("@source", draft.Id)));
     }
 
     /// <summary>
