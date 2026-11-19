@@ -1,0 +1,935 @@
+{
+ "schemaVersion": 1,
+ "ciSourceHead": "71e8dd2cd5b477e06830ff3c49a9137189b8d5eb",
+ "ciTestedMerge": "2d4ff838ac6577ecfe0a541657d3e0cfbc70a233",
+ "ciRun": "https://github.com/sinangym/GoymenERP/actions/runs/44404510203",
+ "scope": "LATEST_RETAINED_LOCAL_EXACT_SQL_PROOFS_AT_DIFFERENT_SOURCE_HEADS_NOT_FRESH_FULL_CI",
+ "finalTwoProofSourceHead": "e728607c921ad51ef96fdc71ea576ff40cd35a9f",
+ "summary": {
+  "ci71_failed_methods": 152,
+  "ci71_failed_cases": 152,
+  "latest_local_pass_methods": 152,
+  "latest_local_not_pass_methods": 0,
+  "unmeasured_methods": 0,
+  "local_subsets_are_not_fresh_ci": true
+ },
+ "testRename": {
+  "old": "Two_schedules_of_one_line_saved_concurrently_yield_one_revision_and_the_loser_is_a_concurrent_change",
+  "current": "Two_schedules_of_one_line_with_the_owner_lock_held_yield_one_revision_and_the_loser_is_line_busy",
+  "decision": "ALS-D85 / KLN-D105; actual owner lock held, existing LineBusy contract"
+ },
+ "methods": [
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.AccountingCreditMovementSqlServerRelationalAcceptanceTests.Approved_credit_components_create_one_normal_journal_only_after_a_different_accounting_actor_approves",
+   "latestLocalProofSourceHead": "9fa1588031c770a4ac40700ea90d8e7eb789725c",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.AccountingFinanceJournalSourceSqlServerRelationalAcceptanceTests.Approved_exchange_uses_actual_owner_carrying_and_settlement_with_exact_mapping_before_one_normal_journal_posts",
+   "latestLocalProofSourceHead": "4358d76ef5cc391837815a73aa157105afe51f6e",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.AccountingFinanceJournalSourceSqlServerRelationalAcceptanceTests.Foreign_target_uses_both_documented_tl_values_and_preserves_legacy_missing_target_as_unavailable",
+   "latestLocalProofSourceHead": "4358d76ef5cc391837815a73aa157105afe51f6e",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.AccountingInvoiceLineCogsSqlServerRelationalAcceptanceTests.Concurrent_component_cancellation_approvals_write_one_actual_share_and_company_scoped_claim",
+   "latestLocalProofSourceHead": "9fa1588031c770a4ac40700ea90d8e7eb789725c",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.AccountingInvoiceLineCogsSqlServerRelationalAcceptanceTests.Concurrent_reinvoices_have_one_successor_and_replay_does_not_replace_the_original_claim_or_create_a_journal",
+   "latestLocalProofSourceHead": "118aa796dfcec1dfd628539ba0aa09226b82c4fc",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.AccountingSourceDocumentAdmissionSqlServerRelationalAcceptanceTests.Concurrent_source_voucher_approval_and_cancellation_serialize_without_a_late_post_or_duplicate_journal",
+   "latestLocalProofSourceHead": "de140ea9aa19c72adad3ad3279bbdd90f37741f7",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.AccountingSourceDocumentAdmissionSqlServerRelationalAcceptanceTests.Racing_source_reversal_proposals_cannot_create_two_pending_proposals_or_a_journal",
+   "latestLocalProofSourceHead": "9fa1588031c770a4ac40700ea90d8e7eb789725c",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.AccountingSourceDocumentAdmissionSqlServerRelationalAcceptanceTests.Source_voucher_http_reads_are_company_scoped_and_the_source_maker_cannot_approve_or_send_extra_fields",
+   "latestLocalProofSourceHead": "de140ea9aa19c72adad3ad3279bbdd90f37741f7",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.AccountingSourceDocumentAdmissionSqlServerRelationalAcceptanceTests.Two_racing_admissions_of_one_key_leave_one_voucher_and_the_database_holds_the_checks",
+   "latestLocalProofSourceHead": "9fa1588031c770a4ac40700ea90d8e7eb789725c",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.DocumentVaultSqlServerRelationalAcceptanceTests.A_system_generated_pdf_is_kept_without_a_scanner_and_the_scan_state_migrations_Down_refuses_with_51592",
+   "latestLocalProofSourceHead": "0279d4b47f7189adae5cfefcd1bcf01d07345382",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.DocumentVaultSqlServerRelationalAcceptanceTests.Branding_actual_clean_upload_maker_checker_fixed_publication_and_generated_label_replay_keep_the_original_SQL_snapshot",
+   "latestLocalProofSourceHead": "0279d4b47f7189adae5cfefcd1bcf01d07345382",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.FinanceCommandApiSqlServerRelationalAcceptanceTests.Manual_bank_payment_is_company_scoped_replayable_and_fails_closed_for_an_unowned_document",
+   "latestLocalProofSourceHead": "de140ea9aa19c72adad3ad3279bbdd90f37741f7",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.FinanceCreditAccountSqlServerRelationalAcceptanceTests.Bank_period_carry_uses_approved_actual_credit_transaction_dates_without_reposting_the_accounting_event",
+   "latestLocalProofSourceHead": "4358d76ef5cc391837815a73aa157105afe51f6e",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.FinanceCreditAccountSqlServerRelationalAcceptanceTests.Concurrent_bank_group_limit_proposals_keep_one_pending_source_slot",
+   "latestLocalProofSourceHead": "cc53a6363fe941c8dfcb2f51a9f68df2f6dafab4",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.FinanceCreditLimitSqlServerRelationalAcceptanceTests.Two_approvers_racing_on_one_proposal_decide_it_once_and_the_loser_gets_a_concurrent_change",
+   "latestLocalProofSourceHead": "de140ea9aa19c72adad3ad3279bbdd90f37741f7",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.FinanceCustomerInstrumentApiSqlServerRelationalAcceptanceTests.A_customer_cheque_is_received_reopened_and_collected_once_over_HTTP",
+   "latestLocalProofSourceHead": "9fa1588031c770a4ac40700ea90d8e7eb789725c",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.FinanceCustomerInstrumentSqlServerRelationalAcceptanceTests.Two_collections_of_one_instrument_at_once_make_one_money_event",
+   "latestLocalProofSourceHead": "cc53a6363fe941c8dfcb2f51a9f68df2f6dafab4",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.FinanceExpensePaymentSqlServerRelationalAcceptanceTests.Internal_ledger_serializes_two_outgoing_records_and_same_key_retry_never_overdraws_the_approved_opening",
+   "latestLocalProofSourceHead": "9fa1588031c770a4ac40700ea90d8e7eb789725c",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.FinancePartyBalanceTransferSqlServerRelationalAcceptanceTests.Concurrent_full_balance_transfers_cannot_move_the_same_source_twice",
+   "latestLocalProofSourceHead": "9fa1588031c770a4ac40700ea90d8e7eb789725c",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.FinancePartyLedgerSqlServerRelationalAcceptanceTests.Over_HTTP_the_ledger_answers_only_with_fresh_ledger_grants_and_redacts_without_the_amount_grant",
+   "latestLocalProofSourceHead": "4358d76ef5cc391837815a73aa157105afe51f6e",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.FinancePartyLedgerSqlServerRelationalAcceptanceTests.Over_HTTP_the_party_accounts_sum_only_open_items_per_currency_and_need_the_ledger_and_amount_grants",
+   "latestLocalProofSourceHead": "4358d76ef5cc391837815a73aa157105afe51f6e",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.FinancePartyLedgerSqlServerRelationalAcceptanceTests.The_ledger_reads_each_recorded_fact_once_per_currency_from_zero_fenced_to_the_company_and_redacted",
+   "latestLocalProofSourceHead": "9fa1588031c770a4ac40700ea90d8e7eb789725c",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.FinancePaymentReversalSqlServerRelationalAcceptanceTests.Two_concurrent_payment_reversal_approvals_append_exactly_one_counter_event",
+   "latestLocalProofSourceHead": "de140ea9aa19c72adad3ad3279bbdd90f37741f7",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.FinanceRecordSqlServerRelationalAcceptanceTests.Concurrent_allocation_create_and_reversal_approval_commit_exactly_one_complete_outcome",
+   "latestLocalProofSourceHead": "de140ea9aa19c72adad3ad3279bbdd90f37741f7",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.FinanceRecordSqlServerRelationalAcceptanceTests.Reversal_requires_another_checker_and_keeps_the_original_with_two_way_history",
+   "latestLocalProofSourceHead": "4878fcafc90955cf186451e58b66b35945d09e2b",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.FinanceRecordSqlServerRelationalAcceptanceTests.The_money_event_migration_rolls_back_only_while_no_money_fact_is_stored",
+   "latestLocalProofSourceHead": "4358d76ef5cc391837815a73aa157105afe51f6e",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.FinanceRecordSqlServerRelationalAcceptanceTests.The_period_follows_occurredOn_and_a_closed_period_records_nothing",
+   "latestLocalProofSourceHead": "118aa796dfcec1dfd628539ba0aa09226b82c4fc",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.FinanceRecordSqlServerRelationalAcceptanceTests.The_sales_risk_port_deducts_unallocated_recorded_payments_and_never_a_reversed_one_on_real_sql",
+   "latestLocalProofSourceHead": "de140ea9aa19c72adad3ad3279bbdd90f37741f7",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.FinanceRecordSqlServerRelationalAcceptanceTests.Two_records_of_one_source_at_once_make_one_money_event",
+   "latestLocalProofSourceHead": "de140ea9aa19c72adad3ad3279bbdd90f37741f7",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.IdentityAccessAssignmentSqlServerRelationalAcceptanceTests.Concurrent_group_opening_with_one_global_key_commits_one_company_outbox_and_terminal",
+   "latestLocalProofSourceHead": "4878fcafc90955cf186451e58b66b35945d09e2b",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.IdentityAccessAssignmentSqlServerRelationalAcceptanceTests.User_management_requires_every_membership_company_and_replays_without_applying_a_second_password",
+   "latestLocalProofSourceHead": "118aa796dfcec1dfd628539ba0aa09226b82c4fc",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.IdentityUserDirectorySqlServerRelationalAcceptanceTests.The_sales_owner_picker_lists_only_the_order_create_holders_of_the_context_company_on_real_SQL",
+   "latestLocalProofSourceHead": "cc53a6363fe941c8dfcb2f51a9f68df2f6dafab4",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.A_real_batch_revival_freezes_its_historical_sales_recipients_in_the_event_transaction_and_replay_does_not_enrich_them",
+   "latestLocalProofSourceHead": "a1ac08d7abb60229ea436d2d207ad59807a4d066",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.A_recognized_generation_waits_for_real_dispatch_cancellation_before_its_cost_can_reverse",
+   "latestLocalProofSourceHead": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.A_whole_and_a_line_movement_racing_for_one_source_cannot_both_commit",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Allocation_change_HTTP_is_fenced_by_the_approved_sales_line_and_audited_as_web",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Allocation_change_migration_rolls_back_when_empty_and_blocks_after_a_change",
+   "latestLocalProofSourceHead": "4358d76ef5cc391837815a73aa157105afe51f6e",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Average_cost_port_answers_no_source_without_a_row_and_reads_only_its_own_company",
+   "latestLocalProofSourceHead": "4358d76ef5cc391837815a73aa157105afe51f6e",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Concurrent_customer_returns_leave_only_one_bounded_effect",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Every_physical_lifecycle_fact_blocks_down_before_schema_mutation",
+   "latestLocalProofSourceHead": "de140ea9aa19c72adad3ad3279bbdd90f37741f7",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Exact_lineage_reader_and_private_pool_ignore_another_company_same_product_merge_component",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Exact_lineage_recognition_and_reverse_preserve_the_fractional_private_pool_and_original_unavailable_exit",
+   "latestLocalProofSourceHead": "de140ea9aa19c72adad3ad3279bbdd90f37741f7",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Exact_lineage_recognition_flushes_descendant_fences_on_the_host_transaction_and_rollback_removes_every_effect",
+   "latestLocalProofSourceHead": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Genealogy_migration_rolls_back_when_empty_and_blocks_data_loss_after_a_transformation",
+   "latestLocalProofSourceHead": "de140ea9aa19c72adad3ad3279bbdd90f37741f7",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Label_classification_is_versioned_replayable_company_scoped_and_has_no_stock_effect",
+   "latestLocalProofSourceHead": "de140ea9aa19c72adad3ad3279bbdd90f37741f7",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Manufacturing_input_issue_shortfall_names_the_issue_label_place_and_checked_kg_and_writes_nothing",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Manufacturing_output_reversal_migration_down_refuses_while_a_reversal_exists",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Manufacturing_return_migration_down_refuses_while_a_durable_return_exists",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.One_first_invoice_line_spanning_two_shipped_receipts_records_one_cent_not_two",
+   "latestLocalProofSourceHead": "a1ac08d7abb60229ea436d2d207ad59807a4d066",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Opening_cost_rejection_changes_nothing_and_tracked_or_stockless_positions_are_refused",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Pending_stock_count_appears_once_and_approved_or_foreign_counts_do_not_leak_or_create_read_effects",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Physical_allocation_HTTP_create_replay_and_release_use_one_company_scoped_SQL_lifecycle",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Physical_allocation_substitute_flag_migration_Down_refuses_while_a_substitute_exists",
+   "latestLocalProofSourceHead": "94479216856fe83563e3fc7ba8afe0e5046636a3",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Physical_allocation_suggestions_list_only_unreserved_company_labels_of_the_line_product",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Receipt_business_failure_is_not_retried_and_rolls_back_conversion_then_the_same_key_can_succeed_and_replay",
+   "latestLocalProofSourceHead": "118aa796dfcec1dfd628539ba0aa09226b82c4fc",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Receipt_waits_for_the_same_sales_lock_as_a_cross_purchase_creator_paused_between_the_two_cap_reads",
+   "latestLocalProofSourceHead": "118aa796dfcec1dfd628539ba0aa09226b82c4fc",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Receipt_waits_for_the_same_sales_lock_as_a_physical_creator_paused_between_the_two_cap_reads",
+   "latestLocalProofSourceHead": "4878fcafc90955cf186451e58b66b35945d09e2b",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Rolling_back_the_plan_input_migration_is_refused_while_a_plan_input_exists",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Stock_count_migration_rolls_back_when_empty_and_blocks_after_a_count",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Stock_scrap_migration_rolls_back_when_empty_and_blocks_after_a_scrap",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Supplier_return_exit_migration_rolls_back_when_empty_and_blocks_after_an_exit",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Transfer_dispatch_cancel_returns_the_stock_to_its_source_without_writing_the_average_cost_ledger",
+   "latestLocalProofSourceHead": "a1ac08d7abb60229ea436d2d207ad59807a4d066",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Transfer_dispatch_cancellation_migration_rolls_back_when_empty_and_refuses_with_51823_after_a_cancelled_dispatch",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Transfer_dispatch_document_version_migration_rolls_back_when_unproved_and_blocks_after_a_proved_dispatch",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Transfer_logistics_fence_survives_later_inventory_rollback_and_same_intent_retries_once",
+   "latestLocalProofSourceHead": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Transfer_loss_renewal_follows_only_a_rejection_keeps_the_maker_off_its_decision_and_writes_the_line_off_once",
+   "latestLocalProofSourceHead": "94479216856fe83563e3fc7ba8afe0e5046636a3",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Transfer_loss_withdrawal_ends_an_undecided_request_refuses_its_decision_and_frees_the_dispatch_cancel",
+   "latestLocalProofSourceHead": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Transfer_migration_rolls_back_when_empty_and_blocks_after_a_plan",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Transfer_overage_action_candidates_use_actual_undecided_receipt_evidence_without_report_or_write_grants",
+   "latestLocalProofSourceHead": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Transfer_overage_renewal_follows_only_a_rejection_stays_within_the_declared_excess_and_keeps_receiver_and_renewer_off_its_decision",
+   "latestLocalProofSourceHead": "94479216856fe83563e3fc7ba8afe0e5046636a3",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Transfer_receipt_document_history_forward_Down_refuses_before_losing_actual_immutable_versions",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Transfer_receipt_requires_its_own_actual_effective_document_and_preserves_immutable_draft_replay",
+   "latestLocalProofSourceHead": "de140ea9aa19c72adad3ad3279bbdd90f37741f7",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Transfer_reverse_plans_a_linked_return_transfer_that_moves_the_label_back_only_through_dispatch_and_acceptance",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Transfer_reverse_refuses_a_line_whose_receipt_excess_still_waits_for_its_decision",
+   "latestLocalProofSourceHead": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Transfer_reverse_refuses_an_unaccepted_original_a_wrong_line_a_missing_reason_and_a_line_already_brought_back",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Two_writers_that_read_the_same_piece_cannot_both_commit",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.LogisticsInstructionSqlServerRelationalAcceptanceTests.A_hosted_shipment_within_the_risk_limit_ships_with_one_outbox_event_in_the_same_save_and_its_replay_writes_nothing_more",
+   "latestLocalProofSourceHead": "9fa1588031c770a4ac40700ea90d8e7eb789725c",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.An_authorized_user_plans_approves_orders_records_facts_and_reads_the_roll_balance",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.Another_companys_order_is_not_found_and_the_company_comes_only_from_the_context",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.Each_locked_organization_process_persists_reopens_and_snapshots_into_its_order",
+   "latestLocalProofSourceHead": "cc53a6363fe941c8dfcb2f51a9f68df2f6dafab4",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.Plan_process_spec_is_saved_revised_and_captured_on_real_sql",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.Plan_process_spec_previews_refuses_oversized_values_and_fences_its_key_on_real_sql",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.Slitting_approval_reads_the_plans_net_width_and_line_speed_and_the_current_label",
+   "latestLocalProofSourceHead": "94479216856fe83563e3fc7ba8afe0e5046636a3",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.The_actual_host_closes_with_non_kg_facts_and_unknown_prices_then_reopens_both_owners_and_closes_a_new_generation",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.Two_reapproval_attempts_of_one_cancelled_order_create_exactly_one_new_allocation_generation",
+   "latestLocalProofSourceHead": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingCostDifferenceSqlServerRelationalAcceptanceTests.Concurrent_approvals_leave_one_journal_and_one_proposal_decision",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingCostDifferenceSqlServerRelationalAcceptanceTests.Cost_difference_is_received_once_prepared_in_an_open_period_and_posted_once_by_another_actor",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingCostDifferenceSqlServerRelationalAcceptanceTests.Inventory_rounded_share_posts_exactly_and_Down_refuses_the_immutable_source",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.A_cancelled_linked_order_is_retained_in_history_but_is_not_open_supply",
+   "latestLocalProofSourceHead": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.A_cancelled_orders_plan_revision_roundtrips_new_labels_without_rewriting_the_cancelled_order_or_first_approval",
+   "latestLocalProofSourceHead": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.A_legacy_cancelled_plan_without_allocation_provenance_cannot_start_a_new_allocation_generation",
+   "latestLocalProofSourceHead": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.A_second_policy_close_appends_another_decision_and_fresh_reads_keep_the_first_close_and_reasoned_reopening",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.A_stale_or_past_order_termin_is_refused_at_the_store_and_nothing_is_written",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.A_subcontract_rollback_company_actor_or_command_permission_loss_prevents_the_physical_refusal_append",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.An_order_opens_with_the_plan_termin_and_its_change_moves_only_the_order_termin_with_one_audit",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.An_output_correction_commits_both_owners_once_and_replays_the_original_fact_and_movement",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.An_output_correction_failure_after_inventory_staging_rolls_back_both_facts_audits_and_versions",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.Completion_V2_net_positive_candidates_follow_actual_output_reversals_and_process_loss_has_no_label",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.Manual_queue_preserves_existing_order_across_key_changes_and_inserts_a_new_member_before_the_first_later_key",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.Paint_owner_references_survive_immutable_revisions_and_down_refuses_to_discard_their_proof",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.The_order_cancellation_Down_passes_with_open_orders_and_refuses_without_losing_a_cancelled_order",
+   "latestLocalProofSourceHead": "a1ac08d7abb60229ea436d2d207ad59807a4d066",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.The_order_termin_migrations_Down_passes_without_a_termin_and_refuses_while_an_order_holds_one",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.The_preparer_rollback_refuses_while_an_unrevised_draft_records_it_and_a_legacy_plan_is_decided_as_before",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.The_process_constraint_migration_refuses_down_before_mutation_for_each_non_slitting_table",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.The_process_constraint_migration_rolls_back_and_reapplies_while_only_slitting_is_stored",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.The_process_spec_migration_rolls_back_only_without_process_values",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.The_technical_snapshot_migration_round_trips_while_only_legacy_inputs_exist",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.The_work_center_queue_reads_remaining_mass_and_ignores_cancelled_order_history_in_the_resolved_company",
+   "latestLocalProofSourceHead": "118aa796dfcec1dfd628539ba0aa09226b82c4fc",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.Two_manual_moves_of_one_queue_revision_commit_one_snapshot_and_the_loser_records_no_business_write",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ProductGlobalRuntimeSqlServerRelationalAcceptanceTests.ProductGlobalRuntime_ReadCreateEditReplayAndCompanyIsolation_AreDurable",
+   "latestLocalProofSourceHead": "9fa1588031c770a4ac40700ea90d8e7eb789725c",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ProductPriceListSqlServerRelationalAcceptanceTests.The_kg_per_metre_table_is_imported_only_through_the_vault_and_a_profile_card_takes_its_weight_from_it",
+   "latestLocalProofSourceHead": "4878fcafc90955cf186451e58b66b35945d09e2b",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.A_definitive_supplier_return_does_not_reappear_in_open_or_allocatable_purchase_choices",
+   "latestLocalProofSourceHead": "de140ea9aa19c72adad3ad3279bbdd90f37741f7",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Acceptance_participant_leaves_commit_and_rollback_to_host_and_restores_durable_share",
+   "latestLocalProofSourceHead": "e728607c921ad51ef96fdc71ea576ff40cd35a9f",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Acceptance_participant_replays_exact_content_and_refuses_stale_over_remaining_or_cross_company_without_partial_write",
+   "latestLocalProofSourceHead": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.After_a_partial_receipt_the_whole_remainder_is_cancelled_in_one_save_and_leaves_the_future_supply_only",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Expected_supply_read_freshens_accepted_quantity_without_creating_a_second_effect",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Future_supply_answers_an_approved_general_line_with_technical_slices_folded_and_follows_acceptance",
+   "latestLocalProofSourceHead": "4358d76ef5cc391837815a73aa157105afe51f6e",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Future_supply_answers_draft_and_cancelled_lines_not_allocatable_and_another_company_not_found_without_writing",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Incoming_invoice_matches_real_receipts_and_emits_one_accounting_event_before_a_separate_finance_acknowledgement",
+   "latestLocalProofSourceHead": "4358d76ef5cc391837815a73aa157105afe51f6e",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Incoming_invoice_workflow_commits_the_pending_source_before_Finance_and_acknowledges_once",
+   "latestLocalProofSourceHead": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Incoming_invoice_workflow_keeps_real_pending_history_when_Finance_is_unknown_and_redrives_it",
+   "latestLocalProofSourceHead": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Invoice_cost_rate_never_chooses_or_averages_conflicting_official_rates_for_one_receipt",
+   "latestLocalProofSourceHead": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Invoice_cost_rate_refuses_a_cross_company_snapshot_even_when_the_row_filter_matches",
+   "latestLocalProofSourceHead": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Invoice_cost_rate_requires_full_coverage_and_accepts_two_finalized_sources_only_when_their_rates_agree",
+   "latestLocalProofSourceHead": "118aa796dfcec1dfd628539ba0aa09226b82c4fc",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Invoice_cost_rate_uses_the_finalized_official_source_before_separate_Finance_ack_without_writes",
+   "latestLocalProofSourceHead": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Net_zero_receipt_batch_commits_one_version_rebuilds_once_and_replays_before_later_revival",
+   "latestLocalProofSourceHead": "94479216856fe83563e3fc7ba8afe0e5046636a3",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Order_line_cost_answers_the_recorded_price_of_an_approved_line_and_its_technical_slice_and_another_company_not_found_without_writing",
+   "latestLocalProofSourceHead": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Purchasing_outbox_cursor_never_passes_an_earlier_uncommitted_revival",
+   "latestLocalProofSourceHead": "e728607c921ad51ef96fdc71ea576ff40cd35a9f",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Receipt_adjustment_Down_preserves_recorded_cancellation_history_with_error_51949",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Receipt_adjustment_and_Audit_owner_share_host_rollback_and_immutable_replay_survives_later_cancellation",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Receipt_cost_proof_reads_uncommitted_owner_acceptance_and_preserves_pending_price_without_committing",
+   "latestLocalProofSourceHead": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Service_invoice_matching_uses_actual_service_acceptance_and_never_creates_a_goods_or_Inventory_binding",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Supplier_return_creation_replay_preserves_its_original_pending_snapshot_after_a_later_rejection",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Supplier_return_invoice_corruption_or_missing_physical_proof_is_503_without_replacement_price",
+   "latestLocalProofSourceHead": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Supplier_return_invoice_cost_refreshes_actor_company_and_membership_after_await_and_refuses_separate_connection_in_borrowed_tx",
+   "latestLocalProofSourceHead": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Supplier_return_invoice_cost_uses_frozen_foreign_line_TL_amount_before_separate_Finance_ack",
+   "latestLocalProofSourceHead": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Supplier_return_invoice_cost_uses_official_line_net_and_original_measured_kg_without_writes_or_tax_allocation",
+   "latestLocalProofSourceHead": "4358d76ef5cc391837815a73aa157105afe51f6e",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Supplier_return_missing_pending_partial_and_nonunique_invoice_cost_use_existing_manual_exception_path",
+   "latestLocalProofSourceHead": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Supplier_return_proven_invoice_cost_outside_exact_four_decimal_contract_is_503_never_manual_or_rounded",
+   "latestLocalProofSourceHead": "698d9e82ff646ec40a5d3e141289bcf952b9a7c6",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.The_line_closure_checks_hold_the_shares_the_events_and_the_messages_and_company_B_neither_sees_nor_closes_the_line",
+   "latestLocalProofSourceHead": "de140ea9aa19c72adad3ad3279bbdd90f37741f7",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Two_schedules_of_one_line_saved_concurrently_yield_one_revision_and_the_loser_is_a_concurrent_change",
+   "latestLocalProofSourceHead": "7004b0dcc4d759709d5a32662128c8c278fac7bb",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.SalesCustomerReturnSqlServerRelationalAcceptanceTests.The_customer_return_migrations_Down_passes_with_no_return_and_refuses_51257_while_one_exists",
+   "latestLocalProofSourceHead": "0279d4b47f7189adae5cfefcd1bcf01d07345382",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.SalesCustomerReturnSqlServerRelationalAcceptanceTests.The_rejection_migrations_Down_passes_with_no_rejected_or_cancelled_return_and_refuses_51259_once_one_exists",
+   "latestLocalProofSourceHead": "0279d4b47f7189adae5cfefcd1bcf01d07345382",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.SalesDraftApprovalSqlServerRelationalAcceptanceTests.The_submitter_cannot_decide_their_own_order_a_different_approver_can_and_the_creator_withdraws_without_money_or_stock_on_real_sql",
+   "latestLocalProofSourceHead": "0279d4b47f7189adae5cfefcd1bcf01d07345382",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.SalesInvoiceSqlServerRelationalAcceptanceTests.Concurrent_official_cancellations_commit_one_fact_and_same_key_retry_reads_the_original_answer",
+   "latestLocalProofSourceHead": "0279d4b47f7189adae5cfefcd1bcf01d07345382",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.SalesInvoiceSqlServerRelationalAcceptanceTests.Order_invoiced_quantity_uses_actual_finalized_share_proof_and_excludes_the_same_claim_after_official_cancellation",
+   "latestLocalProofSourceHead": "0279d4b47f7189adae5cfefcd1bcf01d07345382",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.SalesOrderLineRevisionSqlServerRelationalAcceptanceTests.SAT_D219_the_submission_and_the_approval_read_the_linked_supply_of_the_removed_line_again_through_the_real_routes_on_real_sql",
+   "latestLocalProofSourceHead": "9fa1588031c770a4ac40700ea90d8e7eb789725c",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.SalesOrderQuantityRevisionSqlServerRelationalAcceptanceTests.A_rejected_decrease_resubmitted_after_loading_up_to_the_restored_cap_is_refused_and_passes_once_it_respects_the_loaded_total_on_real_sql",
+   "latestLocalProofSourceHead": "9fa1588031c770a4ac40700ea90d8e7eb789725c",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.SalesSubcontractServiceInvoiceSqlServerRelationalAcceptanceTests.Subcontract_official_cancellation_releases_actual_weighing_claim_retains_official_identity_and_original_immutable_finalization",
+   "latestLocalProofSourceHead": "0279d4b47f7189adae5cfefcd1bcf01d07345382",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.ShellCapabilitySqlServerRelationalAcceptanceTests.ExactCompanySnapshot_TracksPersistedAuthorizationAndHasNoWriteSideEffects",
+   "latestLocalProofSourceHead": "118aa796dfcec1dfd628539ba0aa09226b82c4fc",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.SqlServerRelationalAcceptanceTests.MigrationSeedWriteGuardCompositeForeignKeyAndHttpIsolation_AreEnforced",
+   "latestLocalProofSourceHead": "0279d4b47f7189adae5cfefcd1bcf01d07345382",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  },
+  {
+   "ciTestFqn": "GoymenERP.Api.IntegrationTests.WorkOutboxDispatchSqlServerRelationalAcceptanceTests.Dispatch_delivers_once_per_company_with_cursor_and_inbox_rows_in_real_SQL",
+   "latestLocalProofSourceHead": "a1ac08d7abb60229ea436d2d207ad59807a4d066",
+   "latestLocalOutcome": "PASS",
+   "ciFailedCases": 1
+  }
+ ]
+}
