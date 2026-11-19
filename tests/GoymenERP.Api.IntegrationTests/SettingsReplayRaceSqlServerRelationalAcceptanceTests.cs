@@ -39,6 +39,12 @@ public sealed partial class SettingsReplayRaceSqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public Task Legacy_company_policy_change_race_revalidates_the_winner_after_the_final_sql_read() => CheckAsync(Branch.LegacyPolicyChange);
 
+    [SqlServerFact]
+    public Task Reference_list_change_race_revalidates_the_winner_after_the_final_sql_read() => CheckAsync(Branch.ReferenceChange);
+
+    [SqlServerFact]
+    public Task Reference_list_refusal_race_revalidates_the_winner_after_the_final_sql_read() => CheckAsync(Branch.ReferenceRefusal);
+
     private static async Task CheckAsync(Branch branch)
     {
         await using var run = await Run.StartAsync();
@@ -46,6 +52,13 @@ public sealed partial class SettingsReplayRaceSqlServerRelationalAcceptanceTests
         {
             await using var initial = run.Request();
             await initial.Collateral.CreateAsync(new("TAKEN", "SENTETIK collateral", SettingsCollateralKindV1.Dbs, "SENTETIK initial"),
+                Metadata("SENTETIK-initial", "SENTETIK-initial"));
+        }
+        if (branch == Branch.ReferenceRefusal)
+        {
+            await using var initial = run.Request();
+            await initial.ReferenceLists.CreateAsync(SettingsReferenceListKindV1.ExpenseType,
+                new("TAKEN", "SENTETIK expense", "SENTETIK initial"),
                 Metadata("SENTETIK-initial", "SENTETIK-initial"));
         }
 
@@ -85,7 +98,7 @@ public sealed partial class SettingsReplayRaceSqlServerRelationalAcceptanceTests
             Assert.Equal(0, await run.CountAsync("SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [OriginalCorrelationId]=@correlation",
                 loserCorrelation));
             Assert.Equal(0, await run.CountAsync("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [CorrelationId]=@correlation", loserCorrelation));
-            var changes = branch is Branch.CollateralChange or Branch.ContractChange or Branch.LegacyPolicyChange;
+            var changes = branch is Branch.CollateralChange or Branch.ContractChange or Branch.LegacyPolicyChange or Branch.ReferenceChange;
             Assert.Equal(changes ? 1 : 0,
                 await run.CountAsync("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [CorrelationId]=@correlation", winnerCorrelation));
             var (businessSql, businessCount) = branch switch
@@ -94,6 +107,8 @@ public sealed partial class SettingsReplayRaceSqlServerRelationalAcceptanceTests
                 Branch.CollateralRefusal => ("SELECT COUNT(*) FROM [settings].[CollateralTypeVersions] WHERE [CompanyId]=@company", 1),
                 Branch.ContractChange => ("SELECT COUNT(*) FROM [settings].[CompanyPolicyVersions] WHERE [CompanyId]=@company AND [PolicyKey]='sales.contract-discount-limit'", index + 1),
                 Branch.PolicyRefusal => ("SELECT COUNT(*) FROM [settings].[CompanyPolicyVersions] WHERE [CompanyId]=@company AND [PolicyKey]='sales.contract-discount-limit'", 0),
+                Branch.ReferenceChange => ("SELECT COUNT(*) FROM [settings].[ReferenceListEntryVersions] WHERE [CompanyId]=@company", index + 1),
+                Branch.ReferenceRefusal => ("SELECT COUNT(*) FROM [settings].[ReferenceListEntryVersions] WHERE [CompanyId]=@company", 1),
                 _ => ("SELECT COUNT(*) FROM [settings].[CompanyPolicyVersions] WHERE [CompanyId]=@company AND [PolicyKey]='finance.opening-period'", index + 1),
             };
             Assert.Equal(businessCount, await run.CountAsync(businessSql, winnerCorrelation));
@@ -107,6 +122,12 @@ public sealed partial class SettingsReplayRaceSqlServerRelationalAcceptanceTests
 
     private static async Task<Answer> InvokeAsync(Request request, Branch branch, int index, SettingsCommandMetadataV1 metadata)
     {
+        if (branch is Branch.ReferenceChange or Branch.ReferenceRefusal)
+        {
+            var result = await request.ReferenceLists.CreateAsync(SettingsReferenceListKindV1.ExpenseType,
+                new(branch == Branch.ReferenceRefusal ? "TAKEN" : $"RACE-{index}", "SENTETIK expense", "SENTETIK race"), metadata);
+            return new(result.Answer.StatusCode, result.Answer.Code, result.IsReplay, result.OriginalCorrelationId);
+        }
         if (branch is Branch.CollateralChange or Branch.CollateralRefusal)
         {
             var result = await request.Collateral.CreateAsync(new(branch == Branch.CollateralRefusal ? "TAKEN" : $"RACE-{index}",
@@ -124,7 +145,7 @@ public sealed partial class SettingsReplayRaceSqlServerRelationalAcceptanceTests
     private static SettingsCommandMetadataV1 Metadata(string key, string correlation) =>
         new(CompanyA, Actor, correlation, null, "Web", null, null, key);
 
-    private enum Branch { CollateralChange, CollateralRefusal, ContractChange, PolicyRefusal, LegacyPolicyChange }
+    private enum Branch { CollateralChange, CollateralRefusal, ContractChange, PolicyRefusal, LegacyPolicyChange, ReferenceChange, ReferenceRefusal }
     private enum Fault { None, PermissionAfterLookup, CompanyAfterLookup, ActorAfterLookup, CompanyDuringRefresh, ActorDuringRefresh }
     private sealed record Answer(int Status, string? Code, bool IsReplay, string CorrelationId);
 
@@ -222,6 +243,7 @@ public sealed partial class SettingsReplayRaceSqlServerRelationalAcceptanceTests
         private readonly IAuditTransactionWriterV1 owner;
         public SettingsCollateralTypeAdministration Collateral { get; }
         public SettingsCompanyPolicyAdministration Policy { get; }
+        public SettingsReferenceListAdministration ReferenceLists { get; }
         public Request(Run run, Control control, Race? race)
         {
             var audit = new AuditEventCollector();
@@ -234,6 +256,8 @@ public sealed partial class SettingsReplayRaceSqlServerRelationalAcceptanceTests
                 NullLogger<SettingsCollateralTypeAdministration>.Instance);
             Policy = new(database, control.Company, control.User, control, control, audit, TimeProvider.System,
                 NullLogger<SettingsCompanyPolicyAdministration>.Instance, owner);
+            ReferenceLists = new(database, control.Company, control.User, control, control, audit, TimeProvider.System,
+                NullLogger<SettingsReferenceListAdministration>.Instance);
         }
         public async ValueTask DisposeAsync() { owner.DiscardPending(); await database.DisposeAsync(); }
     }

@@ -93,15 +93,14 @@ internal sealed class SettingsReferenceListAdministration(
         var requestHash = IdempotencyHash.ComputePayload(new { Kind = kindCode, Code = code, Name = name, Reason = reason });
         if (await FindExecutionAsync(CreateCommandName, keyHash, cancellationToken) is { } existing)
         {
-            await RequireStillAsync(permission, companyId, cancellationToken);
+            await RequireStillAsync(permission, companyId, metadata, cancellationToken);
             return Done("create", metadata, kindCode, null, Replay(existing, requestHash, metadata));
         }
 
         if (await ReadAsync(() => ReferenceListReads.CodeExistsAsync(database, kindCode, code, cancellationToken)))
         {
-            await RequireStillAsync(permission, companyId, cancellationToken);
             return Done("create", metadata, kindCode, null, await StoreRefusalAsync(CreateCommandName, Answers.CodeConflict(),
-                keyHash, requestHash, metadata, cancellationToken));
+                keyHash, requestHash, metadata, permission, companyId, cancellationToken));
         }
 
         var now = timeProvider.GetUtcNow();
@@ -129,9 +128,9 @@ internal sealed class SettingsReferenceListAdministration(
         database.ReferenceListEntryVersions.Add(version);
         Audit(CreatedEvent, "Create", companyId, entry.EntryId, null, version.Version, permission, scope, "{}",
             Image(entry, version), reason, "Referans listesi kaydı oluşturuldu; gerekçe kayıt içeriğindedir", metadata);
-        await RequireStillAsync(permission, companyId, cancellationToken);
+        await RequireStillAsync(permission, companyId, metadata, cancellationToken);
         return Done("create", metadata, kindCode, entry.EntryId, await SaveChangeAsync(CreateCommandName,
-            Answers.NoContent(), keyHash, requestHash, metadata, Answers.CodeConflict(), cancellationToken));
+            Answers.NoContent(), keyHash, requestHash, metadata, Answers.CodeConflict(), permission, companyId, cancellationToken));
     }
 
     public async Task<SettingsReferenceListCommandResultV1> RecordAsync(SettingsReferenceListKindV1 kind, Guid entryId,
@@ -180,31 +179,28 @@ internal sealed class SettingsReferenceListAdministration(
         });
         if (await FindExecutionAsync(RecordCommandName, keyHash, cancellationToken) is { } existing)
         {
-            await RequireStillAsync(permission, companyId, cancellationToken);
+            await RequireStillAsync(permission, companyId, metadata, cancellationToken);
             return Done("record", metadata, kindCode, entryId, Replay(existing, requestHash, metadata));
         }
 
         var snapshot = await ReadAsync(() => ReferenceListReads.FindAsync(database, kindCode, entryId, cancellationToken));
         if (snapshot is null)
         {
-            await RequireStillAsync(permission, companyId, cancellationToken);
             return Done("record", metadata, kindCode, entryId, await StoreRefusalAsync(RecordCommandName,
-                Answers.EntryNotFound(), keyHash, requestHash, metadata, cancellationToken));
+                Answers.EntryNotFound(), keyHash, requestHash, metadata, permission, companyId, cancellationToken));
         }
 
         var current = Latest(snapshot);
         if (current.Version != expectedVersion)
         {
-            await RequireStillAsync(permission, companyId, cancellationToken);
             return Done("record", metadata, kindCode, entryId, await StoreRefusalAsync(RecordCommandName,
-                Answers.VersionConflict(), keyHash, requestHash, metadata, cancellationToken));
+                Answers.VersionConflict(), keyHash, requestHash, metadata, permission, companyId, cancellationToken));
         }
 
         if (current.Active == active && string.Equals(current.Name, name, StringComparison.Ordinal))
         {
-            await RequireStillAsync(permission, companyId, cancellationToken);
             return Done("record", metadata, kindCode, entryId, await StoreRefusalAsync(RecordCommandName,
-                Answers.NoContent(), keyHash, requestHash, metadata, cancellationToken));
+                Answers.NoContent(), keyHash, requestHash, metadata, permission, companyId, cancellationToken));
         }
 
         var next = new ReferenceListEntryVersionRow
@@ -222,9 +218,9 @@ internal sealed class SettingsReferenceListAdministration(
         Audit(RecordedEvent, "RecordVersion", companyId, entryId, current.Version, next.Version, permission, scope,
             JsonSerializer.Serialize(Image(snapshot.Entry, current), Json), Image(snapshot.Entry, next), reason,
             "Referans listesi kaydı sürümü kaydedildi; gerekçe kayıt içeriğindedir", metadata);
-        await RequireStillAsync(permission, companyId, cancellationToken);
+        await RequireStillAsync(permission, companyId, metadata, cancellationToken);
         return Done("record", metadata, kindCode, entryId, await SaveChangeAsync(RecordCommandName, Answers.NoContent(),
-            keyHash, requestHash, metadata, Answers.VersionConflict(), cancellationToken));
+            keyHash, requestHash, metadata, Answers.VersionConflict(), permission, companyId, cancellationToken));
     }
 
     private static object Image(ReferenceListEntryRow entry, ReferenceListEntryVersionRow version) => new
@@ -284,6 +280,23 @@ internal sealed class SettingsReferenceListAdministration(
         if (scope is not { IsGranted: true, IsCompanyWide: true })
         {
             throw new UnauthorizedAccessException();
+        }
+    }
+
+    private async Task RequireStillAsync(string permission, Guid companyId, SettingsCommandMetadataV1 metadata,
+        CancellationToken cancellationToken)
+    {
+        RequireCommandContext();
+        await RequireStillAsync(permission, companyId, cancellationToken);
+        RequireCommandContext();
+
+        void RequireCommandContext()
+        {
+            if (!currentUser.IsAuthenticated || !companyContext.IsResolved || companyContext.CompanyId != companyId
+                || metadata.CompanyId != companyId
+                || !currentUser.CanAccessCompany(companyId)
+                || !string.Equals(currentUser.UserId, metadata.ActorId, StringComparison.Ordinal))
+                throw new UnauthorizedAccessException();
         }
     }
 
@@ -360,9 +373,10 @@ internal sealed class SettingsReferenceListAdministration(
     /// <summary>Stores a refusal or no-op (no business change) as the key's terminal answer; a same-key winner replays.</summary>
     private async Task<SettingsReferenceListCommandResultV1> StoreRefusalAsync(string commandName,
         SettingsReferenceListCommandAnswerV1 answer, string keyHash, string requestHash, SettingsCommandMetadataV1 metadata,
-        CancellationToken cancellationToken)
+        string permission, Guid companyId, CancellationToken cancellationToken)
     {
         database.ChangeTracker.Clear();
+        await RequireStillAsync(permission, companyId, metadata, cancellationToken);
         AddExecution(commandName, answer, keyHash, requestHash, metadata);
         try
         {
@@ -373,6 +387,7 @@ internal sealed class SettingsReferenceListAdministration(
         {
             database.ChangeTracker.Clear();
             var winner = await FindExecutionAsync(commandName, keyHash, cancellationToken);
+            await RequireStillAsync(permission, companyId, metadata, cancellationToken);
             if (winner is null)
             {
                 throw;
@@ -388,7 +403,7 @@ internal sealed class SettingsReferenceListAdministration(
     /// </summary>
     private async Task<SettingsReferenceListCommandResultV1> SaveChangeAsync(string commandName,
         SettingsReferenceListCommandAnswerV1 answer, string keyHash, string requestHash, SettingsCommandMetadataV1 metadata,
-        SettingsReferenceListCommandAnswerV1 onConflict, CancellationToken cancellationToken)
+        SettingsReferenceListCommandAnswerV1 onConflict, string permission, Guid companyId, CancellationToken cancellationToken)
     {
         AddExecution(commandName, answer, keyHash, requestHash, metadata);
         try
@@ -400,12 +415,14 @@ internal sealed class SettingsReferenceListAdministration(
         {
             database.ChangeTracker.Clear();
             var winner = await FindExecutionAsync(commandName, keyHash, cancellationToken);
+            await RequireStillAsync(permission, companyId, metadata, cancellationToken);
             if (winner is not null)
             {
                 return Replay(winner, requestHash, metadata);
             }
 
-            return await StoreRefusalAsync(commandName, onConflict, keyHash, requestHash, metadata, cancellationToken);
+            return await StoreRefusalAsync(commandName, onConflict, keyHash, requestHash, metadata,
+                permission, companyId, cancellationToken);
         }
     }
 
