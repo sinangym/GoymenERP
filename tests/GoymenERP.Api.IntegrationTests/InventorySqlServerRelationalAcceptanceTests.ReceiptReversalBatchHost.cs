@@ -2,6 +2,8 @@ using System.Data.Common;
 using System.Text.Json;
 using GoymenERP.Api.PurchasingRuntime;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Organization.Application.Contracts;
@@ -61,9 +63,15 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using var run = await Run.StartAsync(); var seed = await SeedCombinedBatchAsync(run);
         await using (var scope = run.Factory.Services.CreateAsyncScope())
         {
-            scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
-            var cancellation = GoodsReceiptPurchaseEnvelope(run, "SENTETIK-notification-cancel", "SENTETIK-notification-cancel");
-            await scope.ServiceProvider.GetRequiredService<IPurchasingStore>().MutateOrderAsync(cancellation, new string('a', 64),
+            var company = scope.ServiceProvider.GetRequiredService<ICompanyContext>(); company.Set(CompanyA);
+            var actor = new FixedCurrentUser(run.Actor, CompanyA);
+            var authority = new GoodsReceiptPurchaseNumberAuthority();
+            await using var numbers = new PurchaseDocumentNumberSqlTestOwner(run.Factory.Services, CompanyA, actor, authority);
+            var store = new PurchasingStore(scope.ServiceProvider.GetRequiredService<PurchasingDbContext>(), company,
+                scope.ServiceProvider.GetRequiredService<IAuditEventCollector>(), TimeProvider.System, numbers.Numbers, actor, authority);
+            var cancellation = GoodsReceiptPurchaseEnvelope(run, "SENTETIK-notification-cancel", "SENTETIK-notification-cancel")
+                with { PermissionCode = ErpPermissions.PurchasingOrdersCancel };
+            await store.MutateOrderAsync(cancellation, new string('a', 64),
                 PurchasingCommands.OrderCancelV1, seed.Seed.OrderId,
                 (order, now) => order.Cancel(order.Version, cancellation.ActorId, "SENTETIK close the remaining share", now),
                 new PurchasingMutationAudit("purchasing.purchase-order.cancelled.v1", "Cancel", "SENTETIK close the remaining share"));
