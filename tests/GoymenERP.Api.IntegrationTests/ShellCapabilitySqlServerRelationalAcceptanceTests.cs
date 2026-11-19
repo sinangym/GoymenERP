@@ -727,13 +727,13 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
     {
         var baseConnectionString = Environment.GetEnvironmentVariable(
             SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
-        var factory = new SqlServerRelationalApiFactory(baseConnectionString);
-        await CreateDatabaseWithRcsiDisabledAsync(
-            baseConnectionString,
-            factory.DatabaseName);
+        var database = new SqlServerTestDatabase(baseConnectionString, $"goymen_erp_ci_{Guid.NewGuid():N}",
+            Environment.GetEnvironmentVariable("GOYMEN_ERP_TEST_SQLSERVER_DATA_DIRECTORY"));
+        var factory = new SqlServerRelationalApiFactory(baseConnectionString, testDatabase: database);
 
         try
         {
+            await database.CreateAsync(rcsiEnabled: false);
             var exception = await Record.ExceptionAsync(async () =>
             {
                 using var client = factory.CreateClient();
@@ -750,7 +750,7 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
         finally
         {
             await factory.DisposeAsync();
-            await DropDatabaseAsync(baseConnectionString, factory.DatabaseName);
+            await database.DropAsync();
         }
     }
 
@@ -961,25 +961,6 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
                 ALTER DATABASE [{databaseName}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
                 DROP DATABASE [{databaseName}];
             END;
-            """;
-        await command.ExecuteNonQueryAsync();
-    }
-
-    private static async Task CreateDatabaseWithRcsiDisabledAsync(
-        string baseConnectionString,
-        string databaseName)
-    {
-        var builder = new SqlConnectionStringBuilder(baseConnectionString)
-        {
-            InitialCatalog = "master",
-        };
-        await using var connection = new SqlConnection(builder.ConnectionString);
-        await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = $"""
-            CREATE DATABASE [{databaseName}];
-            ALTER DATABASE [{databaseName}]
-                SET READ_COMMITTED_SNAPSHOT OFF WITH ROLLBACK IMMEDIATE;
             """;
         await command.ExecuteNonQueryAsync();
     }

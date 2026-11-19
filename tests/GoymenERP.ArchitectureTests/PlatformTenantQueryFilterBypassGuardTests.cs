@@ -496,7 +496,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 W5 (integration): +2 fact(s) from the W5 team merges; value from guard_fingerprint.py (71017138… -> 19a6d7c9…).
                 // Tren-1 W6: +4 source facts, ordinal-sorted; SQL execution NOT_RUN.
                 // Re-fingerprinted for tren-1 W7: source facts kept ordinal-sorted; SQL execution NOT_RUN.
-                "383291fae2b638c4a64d3c417ae886808ff5e1d5088baa193cb1ac1d5346e5e4",
+                // W8 local test database lifecycle: +1 real-SQL Fact; runtime proof pending.
+                "34d8d34fdbea2408ee349a3f5cbca69e3e09b13456dda58771f76fa28b51e7b3",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).

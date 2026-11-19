@@ -1183,14 +1183,16 @@ internal sealed class SqlServerRelationalApiFactory : WebApplicationFactory<Prog
         Action<IServiceCollection>? configureServices = null,
         bool applyTestCompanyBTopologyTemplates = true,
         string? databaseName = null,
-        IReadOnlyDictionary<string, string?>? configurationOverrides = null)
+        IReadOnlyDictionary<string, string?>? configurationOverrides = null,
+        SqlServerTestDatabase? testDatabase = null)
     {
         _configureServices = configureServices;
         _applyTestCompanyBTopologyTemplates = applyTestCompanyBTopologyTemplates;
         _configurationOverrides = configurationOverrides
             ?? new Dictionary<string, string?>();
-        DatabaseName = databaseName ?? $"goymen_erp_ci_{Guid.NewGuid():N}";
-        _databaseConnectionString = BuildDatabaseConnectionString(baseConnectionString, DatabaseName,
+        DatabaseName = databaseName ?? testDatabase?.Name ?? $"goymen_erp_ci_{Guid.NewGuid():N}";
+        _databaseConnectionString = testDatabase?.ConnectionForHost(baseConnectionString, DatabaseName)
+            ?? BuildDatabaseConnectionString(baseConnectionString, DatabaseName,
             Environment.GetEnvironmentVariable("GOYMEN_ERP_TEST_SQLSERVER_DATA_DIRECTORY"));
     }
 

@@ -5,6 +5,36 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed class LocalSqlServerTestStorageTests
 {
     [Fact]
+    public void Manual_creation_keeps_catalog_connections_and_escapes_file_paths_without_adopting_existing_files()
+    {
+        var directory = Directory.CreateTempSubdirectory("goymen-'storage-");
+        try
+        {
+            const string connection = "Server=localhost;Database=master;Integrated Security=True;Encrypt=True";
+            var name = "goymen_storage_" + Guid.NewGuid().ToString("N");
+            var owned = new SqlServerTestDatabase(connection, name, directory.FullName);
+            var reopened = new SqlConnectionStringBuilder(owned.ConnectionForHost(connection, name));
+            Assert.Equal(name, reopened.InitialCatalog);
+            Assert.Empty(reopened.AttachDBFilename);
+            Assert.Equal(SqlConnectionEncryptOption.Mandatory, reopened.Encrypt);
+            Assert.False(reopened.TrustServerCertificate);
+            Assert.Contains("goymen-''storage-", owned.CreateSql, StringComparison.Ordinal);
+            Assert.Throws<InvalidOperationException>(() => owned.ConnectionForHost(connection, "goymen_storage_" + Guid.NewGuid().ToString("N")));
+            Assert.Throws<InvalidOperationException>(() => owned.ConnectionForHost("Server=example.invalid;Integrated Security=True", name));
+            File.WriteAllText(Path.Combine(directory.FullName, name + ".mdf"), "SENTETIK existing file");
+            Assert.Throws<InvalidOperationException>(() => new SqlServerTestDatabase(connection, name, directory.FullName));
+            // The original owner does not request attach/create again when it opens a second host.
+            Assert.Equal(owned.ConnectionString, owned.ConnectionForHost(connection, name));
+            Assert.Throws<InvalidOperationException>(() => new SqlServerTestDatabase("Server=example.invalid", name, directory.FullName));
+            Assert.Throws<InvalidOperationException>(() => new SqlServerTestDatabase(connection, name, "relative"));
+            Assert.Throws<InvalidOperationException>(() => new SqlServerTestDatabase(connection, "master", null));
+            var ci = new SqlServerTestDatabase("Server=example.invalid;Encrypt=True", name, null);
+            Assert.Equal($"CREATE DATABASE [{name}];", ci.CreateSql);
+        }
+        finally { directory.Delete(recursive: true); }
+    }
+
+    [Fact]
     public void Unconfigured_local_storage_preserves_the_existing_SQL_connection_contract()
     {
         var result = new SqlConnectionStringBuilder(SqlServerRelationalApiFactory.BuildDatabaseConnectionString(
