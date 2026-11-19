@@ -657,10 +657,9 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
             Assert.True(
                 File.ReadAllBytes(readyOutput).SequenceEqual(ready.StandardOutput),
                 $"Wrapper stdout differed from evidence: {Encoding.UTF8.GetString(ready.StandardOutput)}");
-            Assert.DoesNotContain(
-                new SqlConnectionStringBuilder(readyConnection).Password,
-                Encoding.UTF8.GetString(ready.StandardOutput),
-                StringComparison.Ordinal);
+            var readyPassword = new SqlConnectionStringBuilder(readyConnection).Password;
+            if (readyPassword.Length > 0)
+                Assert.DoesNotContain(readyPassword, Encoding.UTF8.GetString(ready.StandardOutput), StringComparison.Ordinal);
             using (var document = JsonDocument.Parse(ready.StandardOutput))
             {
                 var hashes = document.RootElement
@@ -683,10 +682,9 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
                 testProcessTimeout: wrapperTestProcessTimeout);
             Assert.Equal(4, off.ExitCode);
             Assert.Contains("native exit 4", off.StandardError, StringComparison.Ordinal);
-            Assert.DoesNotContain(
-                new SqlConnectionStringBuilder(offConnection).Password,
-                off.StandardError,
-                StringComparison.Ordinal);
+            var offPassword = new SqlConnectionStringBuilder(offConnection).Password;
+            if (offPassword.Length > 0)
+                Assert.DoesNotContain(offPassword, off.StandardError, StringComparison.Ordinal);
             Assert.True(File.Exists(offOutput));
             Assert.Equal(File.ReadAllBytes(offOutput), off.StandardOutput);
             using (var document = JsonDocument.Parse(off.StandardOutput))
@@ -1127,7 +1125,9 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         Assert.False(fileBytes.AsSpan().StartsWith(new byte[] { 0xEF, 0xBB, 0xBF }));
         var fileJson = Encoding.UTF8.GetString(fileBytes);
         Assert.DoesNotContain(rawLogicalEndpoint, fileJson, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain(secret, fileJson, StringComparison.Ordinal);
+        // Integrated authentication supplies no password. An empty substring is present in every output;
+        // still enforce every schema/hash/endpoint check below and the real password check when one exists.
+        if (secret.Length > 0) Assert.DoesNotContain(secret, fileJson, StringComparison.Ordinal);
 
         using var document = JsonDocument.Parse(fileBytes);
         var root = document.RootElement;
