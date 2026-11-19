@@ -10,7 +10,9 @@ namespace GoymenERP.Modules.Audit.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            // Migration history marks the append-only rollback boundary; the model is unchanged.
+            // Reapplying the boundary restores appends after an interrupted empty-store rollback.
+            // EF Core 10 commits per migration: a transaction-only lock cannot bridge that gap.
+            migrationBuilder.Sql("DROP TRIGGER IF EXISTS [audit].[TR_AuditEvents_BlockAppendDuringRollback];");
         }
 
         /// <inheritdoc />
@@ -22,6 +24,16 @@ namespace GoymenERP.Modules.Audit.Infrastructure.Persistence.Migrations
                 BEGIN
                     THROW 51900, 'Audit history exists; ProtectAuditHistoryRollback requires a forward fix.', 1;
                 END;
+                EXEC(N'
+                    CREATE OR ALTER TRIGGER [audit].[TR_AuditEvents_BlockAppendDuringRollback]
+                    ON [audit].[AuditEvents]
+                    INSTEAD OF INSERT
+                    AS
+                    BEGIN
+                        SET NOCOUNT ON;
+                        THROW 51901, ''Audit rollback is active; reapply ProtectAuditHistoryRollback before appending.'', 1;
+                    END;
+                ');
                 """);
         }
     }

@@ -62,6 +62,19 @@ public sealed class AuditRollbackSqlServerRelationalAcceptanceTests
         await run.MigrateAsync(null);
         Assert.Equal(expectedHistory, await run.HistoryAsync());
 
+        // EF Core 10 commits per migration. The inter-migration barrier must survive
+        // the successful Down commit, rather than relying on that transaction's table lock.
+        await run.MigrateAsync(expectedHistory[^2]);
+        Assert.Equal(expectedHistory[..^1], await run.HistoryAsync());
+        await using (var betweenMigrations = await run.OpenAsync())
+        await using (var append = InsertCommand(betweenMigrations, LegacyEnvelope(run.CompanyId), latestSchema: true))
+        {
+            var refused = await Assert.ThrowsAsync<SqlException>(() => append.ExecuteNonQueryAsync());
+            Assert.Equal(51901, refused.Number);
+        }
+        await run.MigrateAsync(null);
+        Assert.Equal(expectedHistory, await run.HistoryAsync());
+
         await using (var owner = await run.OpenAsync())
         await using (var transaction = (SqlTransaction)await owner.BeginTransactionAsync(IsolationLevel.ReadCommitted))
         {

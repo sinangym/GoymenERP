@@ -75,12 +75,16 @@ public sealed class AuditPersistenceModelTests
     public void The_history_rollback_boundary_changes_no_model_and_refuses_before_any_destructive_operation()
     {
         var migration = new ProtectAuditHistoryRollback();
-        Assert.Empty(migration.UpOperations);
+        var resume = Assert.IsType<SqlOperation>(Assert.Single(migration.UpOperations));
+        Assert.Equal("DROP TRIGGER IF EXISTS [audit].[TR_AuditEvents_BlockAppendDuringRollback];", resume.Sql);
+        Assert.False(resume.SuppressTransaction);
         var guard = Assert.IsType<SqlOperation>(Assert.Single(migration.DownOperations));
         Assert.Contains("[audit].[AuditEvents]", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("TABLOCKX", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("HOLDLOCK", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("THROW 51900", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51901", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("INSTEAD OF INSERT", guard.Sql, StringComparison.Ordinal);
         Assert.False(guard.SuppressTransaction);
         Assert.DoesNotContain("DELETE FROM", guard.Sql, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("DROP TABLE", guard.Sql, StringComparison.OrdinalIgnoreCase);

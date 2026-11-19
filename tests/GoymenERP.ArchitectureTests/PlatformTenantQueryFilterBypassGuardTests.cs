@@ -5786,9 +5786,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Platform credential recovery audit exists; AddPlatformCredentialRecoveryAudit requires a forward fix. 1 lexical Sql call(s).
                 ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Persistence/Migrations/20261117160915_AddPlatformCredentialRecoveryAudit.cs"] =
                     new("a0c09cc3546cb4025ecdda1b2ada6709dd7d58c2b0c8d6501d2fdef0612cb925", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-                // W8 ERP-000D; K3 review pending: Down locks AuditEvents and refuses all historical Audit loss (51900); empty Up, no tenant bypass or data mutation.
+                // W8 ERP-000D; K3 review pending: Down refuses history loss (51900) and installs a table-only INSERT barrier (51901) across EF10 migration commits; Up removes only that barrier. No business DML or tenant bypass; two Sql calls.
                 ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Persistence/Migrations/20261119131410_ProtectAuditHistoryRollback.cs"] =
-                    new("22d1b20ed5c8c9efcb32c34a6ea7505f00fab698e340efc690ff45c4f0da0622", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                    new("44838dc3362a8a1edb2b308b96672432d52c27cc813a7a0913fa2cada29cb95f", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 2 }),
                 // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; UBL invoice source exists; AddPurchaseInvoiceXmlContentKind is not rolled back (forward fix). 1 lexical Sql call(s).
                 ["src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Persistence/Migrations/20261117112418_AddPurchaseInvoiceXmlContentKind.cs"] =
                     new("a79686204a833c18e35c9fccdd55be81e789dd17412ec00e1f870ba7ecae987d", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),

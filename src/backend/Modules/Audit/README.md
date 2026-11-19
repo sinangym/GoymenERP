@@ -66,19 +66,25 @@ allowlist was silently expanded. SQL and CLI runtime acceptance remain **NOT_RUN
 
 ## W8 historical Audit rollback boundary
 
-EF CLI generated `20261119131410_ProtectAuditHistoryRollback` as an append-only boundary with an empty
-Up: no model, business data, retention, permission or historical migration changes.
-Its first and only Down operation checks the entire AuditEvents table with
-`TABLOCKX, HOLDLOCK` and refuses with **51900** while any history exists, including
-legacy Company/schema-1 permission-bearing events. The transaction retains the
-empty-table lock through rollback processing; a concurrent append must not slip
-between the empty check and a historical drop. Empty isolated stores retain
-full Down-to-zero and reapply support.
+EF CLI generated `20261119131410_ProtectAuditHistoryRollback`; the model and
+historical migration files remain unchanged. Down first locks the entire
+AuditEvents table with `TABLOCKX, HOLDLOCK` and refuses with **51900** while any
+history exists, including legacy Company/schema-1 permission-bearing events.
+
+EF Core 10 commits each migration separately. An empty-store Down therefore
+installs an owner-only INSTEAD OF INSERT barrier in the same transaction as the
+empty check. **51901** refuses new appends between migration commits. It survives
+an interrupted rollback or a rollback stopped at the previous schema; that older
+schema intentionally refuses appends until this migration is reapplied. Up drops
+only this temporary barrier. A complete Down-to-zero drops the owner table and its
+barrier together. No business row, retention choice, permission or activation is
+changed. The constant trigger DDL and its two Sql calls require K3 review.
 
 The protection applies after this migration has been applied; it does not amend
-previously distributed binaries or SQL scripts. The rollback tests create their
-own synthetic Audit-only database and never delete host audit records. Tests cover
-legacy-record payload/hash and migration-history preservation for latest-to-previous
-and latest-to-zero refusals, an empty zero/latest cycle, and a real concurrent append
-blocked until the guard transaction ends. These new tests are **NOT_RUN**;
-build, real-SQL proof and two exact-head K3 reviews remain required.
+previously distributed binaries or SQL scripts. Isolated Audit-only SQL tests
+cover a canonical legacy record, both nonempty rollback refusals with unchanged
+payload/hash/history, an empty zero/latest cycle, a committed previous-schema
+barrier refusing an append, latest reapply, and a separate SQL session blocked
+while the guard transaction is open. Build and real-SQL acceptance are NOT_RUN.
+
+Transaction scope reference: [Microsoft EF migration transaction behavior](https://learn.microsoft.com/en-us/ef/core/what-is-new/ef-core-9.0/breaking-changes#all-pending-migrations-are-applied-in-a-single-transaction).
