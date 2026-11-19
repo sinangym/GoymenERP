@@ -26,7 +26,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         await StageAndCommitAsync(run, CompanyA, AcceptanceRequest(seed, second, "2") with { ExpectedPurchaseOrderVersion = "4" },
             Envelope("batch-source-two", "source-two"));
         await using (var stored = run.Store(CompanyA))
-            await stored.Store.MutateOrderAsync(Envelope("batch-cancel", "cancel"), AcceptanceHash("batch-cancel"),
+            await stored.Store.MutateOrderAsync(run.Envelope("batch-cancel", "cancel"), AcceptanceHash("batch-cancel"),
                 PurchasingCommands.OrderCancelV1, seed.OrderId,
                 (order, now) => order.Cancel(order.Version, "canceller", "Cancel open remainder", now),
                 new PurchasingMutationAudit("purchasing.purchase-order.cancelled.v1", "Cancel", "Cancel open remainder"));
