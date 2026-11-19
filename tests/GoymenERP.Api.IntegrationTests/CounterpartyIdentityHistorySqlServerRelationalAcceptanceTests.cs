@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
@@ -32,6 +33,89 @@ public sealed class CounterpartyIdentityHistorySqlServerRelationalAcceptanceTest
     private const string CommandName = "counterparty.party.succession.record.v1";
     private const string AuditEventType = "counterparty.party.succession.recorded.v1";
     private const string EffectiveOn = "2026-01-02";
+
+    [SqlServerFact]
+    public async Task Dated_history_race_classifier_accepts_only_its_three_real_unique_indexes_and_rejects_other_sql_failures()
+    {
+        await using var run = await Run.StartAsync(grantSuccession: false);
+        using var client = run.Client();
+        var predecessor = await run.CreatePartyAsync(client, "SQL Tarihçe yarış sınıflaması öncül");
+        var successor = await run.CreatePartyAsync(client, "SQL Tarihçe yarış sınıflaması halef");
+        var profileId = Guid.NewGuid();
+        await using (var scope = run.Factory.Services.CreateAsyncScope())
+        {
+            scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(TestCompanyIds.CompanyA);
+            var context = scope.ServiceProvider.GetRequiredService<CounterpartyDbContext>();
+            var profile = new CustomerEDocumentProfile(profileId, "1234567890", DateTimeOffset.UtcNow);
+            profile.RecordStatus(EDocumentStatus.EInvoiceTaxpayer, "synthetic-classifier", TestCompanyIds.CompanyA, DateTimeOffset.UtcNow);
+            context.CustomerEDocumentProfiles.Add(profile);
+            await context.SaveChangesAsync();
+        }
+        await run.ExecuteAsync("""
+            INSERT INTO counterparty.PartyIdentityRevisions
+                (Id, PartyId, Attribute, Sequence, Value, Kind, RecordedAtUtc)
+            VALUES (NEWID(), @Party, 2, 1, N'Sentetik unvan', 1, SYSDATETIMEOFFSET());
+            INSERT INTO counterparty.CustomerEDocumentStatusRevisions
+                (Id, ProfileId, Sequence, Status, EffectiveFrom, Kind, RecordedAtUtc)
+            VALUES (NEWID(), @Profile, 1, 0, '2026-01-02', 1, SYSDATETIMEOFFSET());
+            """, new SqlParameter("@Party", predecessor), new SqlParameter("@Profile", profileId));
+        await run.InsertSuccessionAsync(predecessor, successor, "Sentetik sınıflama kaynağı");
+
+        foreach (var entityType in new[] { typeof(PartyIdentityRevision), typeof(CustomerEDocumentStatusRevision), typeof(PartySuccession) })
+        {
+            await using var scope = run.Factory.Services.CreateAsyncScope();
+            scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(TestCompanyIds.CompanyA);
+            var context = scope.ServiceProvider.GetRequiredService<CounterpartyDbContext>();
+            object entity = entityType == typeof(PartyIdentityRevision)
+                ? await context.PartyIdentityRevisions.AsNoTracking().SingleAsync(row => row.PartyId == predecessor)
+                : entityType == typeof(CustomerEDocumentStatusRevision)
+                    ? await context.CustomerEDocumentStatusRevisions.AsNoTracking().SingleAsync(row => row.ProfileId == profileId)
+                    : await context.PartySuccessions.AsNoTracking().SingleAsync(row => row.PredecessorPartyId == predecessor);
+            var entry = context.Entry(entity);
+            entry.Property("Id").CurrentValue = Guid.NewGuid();
+            entry.State = EntityState.Added;
+            var duplicate = await Assert.ThrowsAsync<DbUpdateException>(() => context.SaveChangesAsync());
+            Assert.Contains(Assert.IsType<SqlException>(duplicate.InnerException).Number, new[] { 2601, 2627 });
+            Assert.True(CounterpartyCommandService.IsDatedHistoryRace(duplicate));
+            Assert.False(CounterpartyCommandService.IsDatedHistoryRace(new DbUpdateException(
+                "Same real SQL index failure without a matching dated entity.", duplicate.InnerException,
+                new[] { context.Entry(await context.Parties.SingleAsync(row => row.Id == successor)) })));
+            context.ChangeTracker.Clear();
+        }
+
+        // These are real provider failures with a dated entry, not fabricated SqlExceptions.
+        // Keep an existing PK for the wrong-unique-index case; otherwise give the clone a fresh key
+        // and unused sequence so the intended CHECK / length failure wins over uniqueness.
+        foreach (var failure in new[] { "wrong_unique_index", "check", "length" })
+        {
+            await using var scope = run.Factory.Services.CreateAsyncScope();
+            scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(TestCompanyIds.CompanyA);
+            var context = scope.ServiceProvider.GetRequiredService<CounterpartyDbContext>();
+            var clone = await context.PartyIdentityRevisions.AsNoTracking().SingleAsync(row => row.PartyId == predecessor);
+            var entry = context.Entry(clone);
+            entry.Property("Sequence").CurrentValue = 2L;
+            if (failure != "wrong_unique_index")
+            {
+                entry.Property("Id").CurrentValue = Guid.NewGuid();
+                entry.Property("Sequence").CurrentValue = failure == "check" ? 0L : 2L;
+                if (failure == "length") entry.Property("Value").CurrentValue = new string('x', PartyIdentityRevision.ValueMaximumLength + 1);
+            }
+            entry.State = EntityState.Added;
+            var rejected = await Assert.ThrowsAsync<DbUpdateException>(() => context.SaveChangesAsync());
+            var number = Assert.IsType<SqlException>(rejected.InnerException).Number;
+            Assert.Contains(number, failure switch
+            {
+                "wrong_unique_index" => new[] { 2601, 2627 },
+                "check" => new[] { 547 },
+                _ => new[] { 8152, 2628 },
+            });
+            Assert.False(CounterpartyCommandService.IsDatedHistoryRace(rejected));
+            context.ChangeTracker.Clear();
+        }
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM counterparty.PartyIdentityRevisions WHERE PartyId=@Party", new SqlParameter("@Party", predecessor)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM counterparty.CustomerEDocumentStatusRevisions WHERE ProfileId=@Profile", new SqlParameter("@Profile", profileId)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM counterparty.PartySuccessions WHERE PredecessorPartyId=@Party", new SqlParameter("@Party", predecessor)));
+    }
 
     [SqlServerFact]
     public async Task A_successor_closes_the_old_account_once_with_replay_one_audit_and_one_passive_event()

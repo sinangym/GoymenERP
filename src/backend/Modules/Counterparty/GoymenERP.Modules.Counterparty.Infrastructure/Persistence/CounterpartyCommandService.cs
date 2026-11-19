@@ -11,6 +11,7 @@ using GoymenERP.Modules.Counterparty.Domain.Parties;
 using GoymenERP.Modules.Identity.Application.Contracts;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -516,9 +517,19 @@ internal sealed partial class CounterpartyCommandService(
     /// conflict, so it is answered as one instead of a 500. The idempotency winner is still looked up first, so a lost
     /// Idempotency-Key race in the same batch replays exactly as before.
     /// </summary>
-    private static bool IsDatedHistoryRace(DbUpdateException exception) =>
-        exception.Entries.Any(entry => entry.Entity
-            is PartyIdentityRevision or CustomerEDocumentStatusRevision or PartySuccession);
+    internal static bool IsDatedHistoryRace(DbUpdateException exception)
+    {
+        if (exception.InnerException is not SqlException { Number: 2601 or 2627 } sql) return false;
+        // A dated entity can also fail a FK, check, length or unrelated unique constraint. Only the
+        // exact append-sequence/predecessor indexes prove the existing lost-race response below.
+        return exception.Entries.Any(entry => entry.Entity switch
+        {
+            PartyIdentityRevision => sql.Message.Contains("'UX_PartyIdentityRevisions_PartySequence'", StringComparison.Ordinal),
+            CustomerEDocumentStatusRevision => sql.Message.Contains("'UX_CustomerEDocumentStatusRevisions_ProfileSequence'", StringComparison.Ordinal),
+            PartySuccession => sql.Message.Contains("'UX_PartySuccessions_Predecessor'", StringComparison.Ordinal),
+            _ => false,
+        });
+    }
 
     private Task<CommandExecution?> FindCommandExecutionAsync(
         string commandName,
