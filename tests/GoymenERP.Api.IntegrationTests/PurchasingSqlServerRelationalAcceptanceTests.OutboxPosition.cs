@@ -23,7 +23,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         {
             await using var stored = run.Store(CompanyA);
             var key = "horizon-cancel-" + seed.OrderId.ToString("N");
-            await stored.Store.MutateOrderAsync(Envelope(key, "cancel"), AcceptanceHash(key), PurchasingCommands.OrderCancelV1, seed.OrderId,
+            await stored.Store.MutateOrderAsync(run.Envelope(key, "cancel"), AcceptanceHash(key), PurchasingCommands.OrderCancelV1, seed.OrderId,
                 (order, now) => order.Cancel(order.Version, "canceller", "Cancel remainder", now),
                 new PurchasingMutationAudit("purchasing.purchase-order.cancelled.v1", "Cancel", "Cancel remainder"));
         }
