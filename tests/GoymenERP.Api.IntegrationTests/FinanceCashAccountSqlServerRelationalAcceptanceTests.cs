@@ -1496,9 +1496,10 @@ public sealed class FinanceCashAccountSqlServerRelationalAcceptanceTests
         public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
             InterceptionResult<int> result, CancellationToken cancellationToken = default)
         {
-            Assert.NotNull(eventData.Context!.Database.CurrentTransaction);
+            var transaction = eventData.Context?.Database.CurrentTransaction
+                ?? throw new InvalidOperationException("Both cash-account decisions require an owner transaction.");
             Assert.Equal(System.Data.IsolationLevel.Serializable,
-                eventData.Context.Database.CurrentTransaction.GetDbTransaction().IsolationLevel);
+                transaction.GetDbTransaction().IsolationLevel);
             if (!barrier.SignalAndWait(TimeSpan.FromSeconds(30), cancellationToken))
                 throw new TimeoutException("Both cash-account decision saves must reach the rendezvous.");
             return ValueTask.FromResult(result);

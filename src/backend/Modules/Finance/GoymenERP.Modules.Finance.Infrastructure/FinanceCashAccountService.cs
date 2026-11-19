@@ -442,6 +442,10 @@ public sealed class FinanceCashAccountService(
         if (IdentityRefusal(context, request.AccountId, request.ExpectedVersion) is { } malformed) return malformed;
         // Approval holds the account's treasury read locks. Rejection must share its owner boundary:
         // either decision may be the deadlock victim, whose command and audit must roll back together.
+        if (!IsCanonical(request.Reason))
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("reason", "reason_invalid"));
+        if (request.Reason.Length > ReasonMaximumLength)
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("reason", "finance_value_does_not_fit"));
         return await FinanceTreasuryTransaction.ExecuteAsync(dbContext,
             () => RejectStateChangeTreasuryCoreAsync(context, metadata, change, request, cancellationToken),
             async () => await FenceAsync(context, kind.Approve, request.AccountId, cancellationToken)
