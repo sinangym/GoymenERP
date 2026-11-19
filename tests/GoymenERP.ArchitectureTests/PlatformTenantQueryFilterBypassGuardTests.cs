@@ -3296,10 +3296,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["Microsoft.Data.SqlClient"] = 1,
                             ["System.Data.Common"] = 2,
                         }),
-                // Tren-1 W8; K3 review pending. SqlClient only unique constraint classification in SaveAsync; owner
+                // Tren-1 W8; K3 review pending. Existing SqlClient classification also recognizes the exact EF-wrapped
+                // SQL 1205 after owner rollback and tracker clearing; no retry or new SQL surface is added.
                 // ManufacturingCostDifferenceStore uses Accounting Serializable transaction.
                 ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/ManufacturingCostDifferenceStoreV1.cs"] =
-                    new("1e7e4532f4971658aa9809965bba46daffd586f7079d501388975ebf92b60fba",
+                    new("9eebd35c29164588651033205780e849c2d76c845d2d7db17b663f38f446bc54",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
