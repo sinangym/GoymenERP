@@ -178,25 +178,40 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]).Sql;
         const string guardProofSql = "SELECT CompanyId, Version FROM inventory.NegativeStockValidationGuards ORDER BY CompanyId FOR JSON PATH";
         const string labelProofSql = "SELECT * FROM inventory.Labels ORDER BY Id FOR JSON PATH";
-        const string legacyAllocationSql = "SELECT JSON_MODIFY((SELECT * FROM inventory.Allocations WHERE Id = @id FOR JSON PATH, WITHOUT_ARRAY_WRAPPER), '$.IsSubstitute', NULL)";
+        const string fullAllocationSql = "SELECT * FROM inventory.Allocations WHERE Id = @id FOR JSON PATH, WITHOUT_ARRAY_WRAPPER";
+        // The successful flag update/DDL may refresh SQL rowversion; the persisted business Version remains in this proof.
+        const string legacyAllocationSql = "SELECT JSON_MODIFY(JSON_MODIFY((SELECT * FROM inventory.Allocations WHERE Id = @id FOR JSON PATH, WITHOUT_ARRAY_WRAPPER), '$.IsSubstitute', NULL), '$.RowVersion', NULL)";
+        const string rowVersionSql = "SELECT RowVersion FROM inventory.Allocations WHERE Id = @id";
         var guardProof = await run.ScalarAsync<string>(guardProofSql);
         var labelProof = await run.ScalarAsync<string>(labelProofSql);
         var allocationProof = await run.ScalarAsync<string>(legacyAllocationSql, ("@id", salesId));
+        var fullAllocationBeforeRefusal = await run.ScalarAsync<string>(fullAllocationSql, ("@id", salesId));
+        var rowVersionBeforeRefusal = await run.ScalarAsync<byte[]>(rowVersionSql, ("@id", salesId));
+        Assert.Equal(8, rowVersionBeforeRefusal.Length);
         Assert.True(await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.NegativeStockValidationGuards") > 0);
         var refused = await Assert.ThrowsAsync<SqlException>(() => ExecuteAsync(run, guard));
         Assert.Equal(51653, refused.Number);
+        Assert.Equal(fullAllocationBeforeRefusal, await run.ScalarAsync<string>(fullAllocationSql, ("@id", salesId)));
+        Assert.Equal(rowVersionBeforeRefusal, await run.ScalarAsync<byte[]>(rowVersionSql, ("@id", salesId)));
         Assert.Equal(appliedBefore, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'inventory.Allocations') AND [name] = N'IsSubstitute'"));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Allocations WHERE Id = @id AND IsSubstitute = 1", ("@id", salesId)));
 
         await ExecuteAsync(run, "UPDATE inventory.Allocations SET IsSubstitute = 0 WHERE Id = @id", ("@id", salesId));
+        var rowVersionBeforeDdl = await run.ScalarAsync<byte[]>(rowVersionSql, ("@id", salesId));
+        Assert.Equal(8, rowVersionBeforeDdl.Length);
+        Assert.True(StringComparer.Ordinal.Compare(Convert.ToHexString(rowVersionBeforeDdl), Convert.ToHexString(rowVersionBeforeRefusal)) > 0);
+        Assert.Equal(allocationProof, await run.ScalarAsync<string>(legacyAllocationSql, ("@id", salesId)));
         // Exercise the target's full DDL against a harmless legacy allocation without walking across newer proofs.
         // This deliberately does not alter EF's history; the separate empty-store test below covers IMigrator.
         var generator = context.GetService<IMigrationsSqlGenerator>();
         var model = context.GetService<IDesignTimeModel>().Model;
         foreach (var command in generator.Generate(migration.DownOperations, model))
             await context.Database.ExecuteSqlRawAsync(command.CommandText);
+        var rowVersionAfterDown = await run.ScalarAsync<byte[]>(rowVersionSql, ("@id", salesId));
+        Assert.Equal(8, rowVersionAfterDown.Length);
+        Assert.True(StringComparer.Ordinal.Compare(Convert.ToHexString(rowVersionAfterDown), Convert.ToHexString(rowVersionBeforeDdl)) >= 0);
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'inventory.Allocations') AND [name] = N'IsSubstitute'"));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Allocations WHERE Id = @id", ("@id", salesId)));
@@ -206,6 +221,9 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal(labelProof, await run.ScalarAsync<string>(labelProofSql));
         foreach (var command in generator.Generate(migration.UpOperations, model))
             await context.Database.ExecuteSqlRawAsync(command.CommandText);
+        var rowVersionAfterUp = await run.ScalarAsync<byte[]>(rowVersionSql, ("@id", salesId));
+        Assert.Equal(8, rowVersionAfterUp.Length);
+        Assert.True(StringComparer.Ordinal.Compare(Convert.ToHexString(rowVersionAfterUp), Convert.ToHexString(rowVersionAfterDown)) >= 0);
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'inventory.Allocations') AND [name] = N'IsSubstitute'"));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Allocations WHERE Id = @id AND IsSubstitute = 0", ("@id", salesId)));
