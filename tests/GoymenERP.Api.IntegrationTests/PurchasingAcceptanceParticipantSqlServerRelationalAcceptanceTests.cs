@@ -244,7 +244,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             sourceRequestLineId: null,
             AcceptanceTime);
         var stored = await store.StoreOrderAsync(
-            Envelope(createKey, $"correlation-{createKey}"),
+            run.Envelope(createKey, $"correlation-{createKey}"),
             AcceptanceHash(createKey),
             AcceptanceAccount,
             DateOnly.FromDateTime(AcceptanceTime.UtcDateTime),
@@ -254,7 +254,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         Assert.Equal(PurchaseOrderStatus.Draft, stored.Order.Order.Status);
         var versionBeforeApproval = stored.Order.Order.Version;
         var approved = await store.MutateOrderAsync(
-            Envelope(approveKey, $"correlation-{approveKey}"),
+            run.Envelope(approveKey, $"correlation-{approveKey}"),
             AcceptanceHash(approveKey),
             PurchasingCommands.OrderApproveV1,
             orderId,
