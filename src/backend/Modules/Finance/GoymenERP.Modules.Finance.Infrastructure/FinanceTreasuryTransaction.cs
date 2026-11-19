@@ -3,6 +3,7 @@ using System.Data.Common;
 using System.Runtime.CompilerServices;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -88,7 +89,9 @@ internal static class FinanceTreasuryTransaction
             completed = true;
             return result;
         }
-        catch (Exception exception) when (exception is DbException or DbUpdateException)
+        catch (Exception exception) when (exception is DbException or DbUpdateException
+            || exception is InvalidOperationException
+                { InnerException: DbUpdateException { InnerException: SqlException { Number: 1205 } } })
         {
             await RollbackAsync();
             if (operationStarted)

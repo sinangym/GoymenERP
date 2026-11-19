@@ -65,7 +65,9 @@ public sealed class AccountingSourceDocumentAdmissionStoreV1(
         }
         catch (Exception exception) when (exception is SqlException { Number: 1205 }
             || exception is DbUpdateException { InnerException: SqlException { Number: 1205 } }
-            || exception is AccountingStoreException { InnerException: DbUpdateException { InnerException: SqlException { Number: 1205 } } })
+            || exception is AccountingStoreException { InnerException: DbUpdateException { InnerException: SqlException { Number: 1205 } } }
+            || exception is InvalidOperationException
+                { InnerException: DbUpdateException { InnerException: SqlException { Number: 1205 } } })
         {
             // SQL Server has already rolled back a deadlock victim; do not replace the retryable failure with a second rollback error.
             dbContext.ChangeTracker.Clear();

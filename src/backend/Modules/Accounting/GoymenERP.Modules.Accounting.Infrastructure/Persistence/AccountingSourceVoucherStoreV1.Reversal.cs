@@ -85,7 +85,9 @@ public sealed partial class AccountingSourceVoucherStoreV1
             throw Refuse(AccountingStoreCodes.ConcurrentChange);
         }
         catch (Exception exception) when (exception is SqlException { Number: 1205 }
-            || exception is DbUpdateException { InnerException: SqlException { Number: 1205 } })
+            || exception is DbUpdateException { InnerException: SqlException { Number: 1205 } }
+            || exception is InvalidOperationException
+                { InnerException: DbUpdateException { InnerException: SqlException { Number: 1205 } } })
         {
             db.ChangeTracker.Clear();
             throw Refuse(AccountingStoreCodes.ConcurrentChange);
