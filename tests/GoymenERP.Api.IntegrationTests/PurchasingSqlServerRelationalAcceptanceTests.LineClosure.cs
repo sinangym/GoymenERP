@@ -15,9 +15,9 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <c>purchasing.order-line.closed.v1</c> outbox message in ONE save with the header version, the attempt and the audit; the same key
 /// replays; the closed remainder leaves the future supply (the line is not listed, its answer shows closed and zero allocatable) and
 /// the open-line port; the order is rebuilt closure by closure; the reopening gives the remainder back with a second event and a
-/// second message (<c>closed</c> false); the checks hold the shares, the closure/cancellation exclusivity, the events and the
-/// messages on a direct write; company B neither sees nor closes company A's line; the migration's Down refuses while a closure
-/// exists. SENTETIK owners.
+/// second message (<c>closed</c> false); the checks hold the shares, their nonnegative bounds, the events and the messages on a
+/// direct write (ALS-D92 permits historical closed and cancelled shares together); company B neither sees nor closes company
+/// A's line; the migration's Down refuses while a closure exists. SENTETIK owners.
 /// </summary>
 public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
 {
@@ -162,12 +162,50 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
                 (order, now) => order.CloseLine(approvedVersion, lineId, run.Actor, "SENTETIK", now), LineClosed);
         }
 
+        const string readLine = "SELECT * FROM purchasing.PurchaseOrderLines WHERE CompanyId = @company AND OrderId = @id AND LineId = @line FOR JSON PATH, WITHOUT_ARRAY_WRAPPER";
+        var originalRow = await run.ScalarAsync<string>(readLine, ("@company", CompanyA), ("@id", orderId), ("@line", lineId));
+        var originalClosed = await run.ScalarAsync<decimal>(
+            "SELECT Closed FROM purchasing.PurchaseOrderLines WHERE CompanyId = @company AND OrderId = @id AND LineId = @line",
+            ("@company", CompanyA), ("@id", orderId), ("@line", lineId));
+        var originalCancelled = await run.ScalarAsync<decimal>(
+            "SELECT Cancelled FROM purchasing.PurchaseOrderLines WHERE CompanyId = @company AND OrderId = @id AND LineId = @line",
+            ("@company", CompanyA), ("@id", orderId), ("@line", lineId));
+        var negativeClosed = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "UPDATE purchasing.PurchaseOrderLines SET Closed = -1 WHERE CompanyId = @company AND OrderId = @id AND LineId = @line",
+            ("@company", CompanyA), ("@id", orderId), ("@line", lineId)));
+        Assert.Equal(547, negativeClosed.Number);
+        // Both real CHECKs forbid a negative closed share; SQL does not guarantee which overlapping CHECK reports first.
+        Assert.True(negativeClosed.Message.Contains("CK_PurchaseOrderLines_Shares", StringComparison.Ordinal)
+            || negativeClosed.Message.Contains("CK_PurchaseOrderLines_ClosedOrCancelled", StringComparison.Ordinal));
+        Assert.Equal(originalRow, await run.ScalarAsync<string>(readLine,
+            ("@company", CompanyA), ("@id", orderId), ("@line", lineId)));
+
+        // ALS-D92: a receipt revival can leave historical closed and cancelled shares together, within the original total.
+        try
+        {
+            await run.ExecuteAsync(
+                "UPDATE purchasing.PurchaseOrderLines SET Closed = 5, Cancelled = 5 WHERE CompanyId = @company AND OrderId = @id AND LineId = @line",
+                ("@company", CompanyA), ("@id", orderId), ("@line", lineId));
+            Assert.Equal(5m, await run.ScalarAsync<decimal>(
+                "SELECT Closed FROM purchasing.PurchaseOrderLines WHERE CompanyId = @company AND OrderId = @id AND LineId = @line",
+                ("@company", CompanyA), ("@id", orderId), ("@line", lineId)));
+            Assert.Equal(5m, await run.ScalarAsync<decimal>(
+                "SELECT Cancelled FROM purchasing.PurchaseOrderLines WHERE CompanyId = @company AND OrderId = @id AND LineId = @line",
+                ("@company", CompanyA), ("@id", orderId), ("@line", lineId)));
+        }
+        finally
+        {
+            await run.ExecuteAsync(
+                "UPDATE purchasing.PurchaseOrderLines SET Closed = @closed, Cancelled = @cancelled WHERE CompanyId = @company AND OrderId = @id AND LineId = @line",
+                ("@closed", originalClosed), ("@cancelled", originalCancelled), ("@company", CompanyA), ("@id", orderId), ("@line", lineId));
+        }
+        Assert.Equal(originalRow, await run.ScalarAsync<string>(readLine,
+            ("@company", CompanyA), ("@id", orderId), ("@line", lineId)));
+
         // The checks refuse what the domain refuses, on a direct write too.
         foreach (var (sql, check) in new[]
                  {
                      ("UPDATE purchasing.PurchaseOrderLines SET Closed = 11 WHERE OrderId = @id", "CK_PurchaseOrderLines_Shares"),
-                     ("UPDATE purchasing.PurchaseOrderLines SET Closed = -1 WHERE OrderId = @id", "CK_PurchaseOrderLines_Shares"),
-                     ("UPDATE purchasing.PurchaseOrderLines SET Closed = 5, Cancelled = 5 WHERE OrderId = @id", "CK_PurchaseOrderLines_ClosedOrCancelled"),
                      ("UPDATE purchasing.PurchaseOrderLineClosureEvents SET OrderVersionAfter = 2 WHERE OrderId = @id", "CK_PurchaseOrderLineClosureEvents_Version"),
                      ("UPDATE purchasing.PurchaseOrderLineClosureEvents SET Reason = N'' WHERE OrderId = @id", "CK_PurchaseOrderLineClosureEvents_Text"),
                      ("UPDATE purchasing.PurchaseOrderLineClosureEvents SET LineId = '00000000-0000-0000-0000-000000000000' WHERE OrderId = @id", "CK_PurchaseOrderLineClosureEvents_Identity"),
