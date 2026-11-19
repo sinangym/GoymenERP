@@ -49,7 +49,7 @@
   "partial": 0,
   "remaining_not_started": 0,
   "last_wave": 8,
-  "progress_meaning": "174/174 kaynak DONE (%100), W8 son paket; yeni dalga yok. CI71: gozlenen1762 SQL sonucunda1610PASS152FAILskip0. Yerel gercek SQL hedefleri ve263Documents unit kaniti ayri; genis yeni-head CI ve iki bagimsiz tam K3 kabulu bekler; production degildir.",
+  "progress_meaning": "174/174 kaynak DONE (%100); W8 son paket, yeni dalga yok. Kaynak denetimi onarimlari ve dar unit/Python kaniti ayri; yeni birlesik SQL/CI ve iki bagimsiz tam K3 kabulu bekler; production degildir.",
   "w6_source_done_ids": [
    "KIM-S13",
    "KIM-S18",
@@ -1209,6 +1209,17 @@
      "fullConsumer": "NOT_RUN"
     }
    }
+  },
+  "w8_source_audit_repair": {
+   "source_base": "44bb807112984202b6acce62e002bfbdf95593df",
+   "source_head": "3f724f0ab00810844a3792d790f91e5c0eed69e1",
+   "report": "durum/W8_KAYNAK_DENETIMI_ONARIMI_20261119.md",
+   "scope": "inactive-user authority; reference-list race fences; six outbox isolation boundaries; historical Audit rollback barrier",
+   "identity_authority_unit_proof": "f9142e724: 11 PASS, 0 FAIL, 0 skip; targeted only",
+   "python_verifier_proof": "f9142e724: relational verifier104 and backend verifier38 PASS/skip0",
+   "recovery_producer": "3f724f0: exit0; risky1469/context19/migration344/Audit42",
+   "new_real_sql": "QUEUED_AFTER_EXISTING_BASELINE; NOT_RUN",
+   "full_acceptance": "PENDING; no K3 approval or production activation"
   }
  },
  "teams": [
