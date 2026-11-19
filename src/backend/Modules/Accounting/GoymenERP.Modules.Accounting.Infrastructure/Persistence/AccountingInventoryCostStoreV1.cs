@@ -290,6 +290,9 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
         catch (DbUpdateConcurrencyException) { throw Refuse(AccountingStoreCodes.ConcurrentChange); }
         catch (DbUpdateException e) when (e.GetBaseException() is SqlException { Number: 2601 or 2627 or 1205 }) { throw Refuse(AccountingStoreCodes.ConcurrentChange); }
         catch (SqlException e) when (e.Number == 1205) { throw Refuse(AccountingStoreCodes.ConcurrentChange); }
+        // EF may wrap this exact SQL deadlock update failure; the loser remains a concurrent-change refusal, never a retry.
+        catch (InvalidOperationException e) when (e.InnerException is DbUpdateException { InnerException: SqlException { Number: 1205 } })
+        { throw Refuse(AccountingStoreCodes.ConcurrentChange); }
         catch (DbUpdateException) { throw Refuse("inventory_cost_source_unavailable"); }
         catch (System.Data.Common.DbException) { throw Refuse("inventory_cost_source_unavailable"); }
         finally { if (started) { db.ChangeTracker.Clear(); auditWriter.DiscardPending(); } }
