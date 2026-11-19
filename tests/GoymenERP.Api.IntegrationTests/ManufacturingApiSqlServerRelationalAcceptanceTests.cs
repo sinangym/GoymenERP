@@ -291,13 +291,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             "manufacturing.output.lineage.recorded.v1",
             "manufacturing.plan.created.v1",
             "manufacturing.wip.measured.v1",
-        }, (await run.ScalarAsync<string>(
-            """
-            SELECT COALESCE(STRING_AGG(CONVERT(nvarchar(max), EventType), N'|')
-                WITHIN GROUP (ORDER BY EventType COLLATE Latin1_General_100_BIN2), N'')
-            FROM audit.AuditEvents
-            WHERE CompanyId = @company AND CorrelationId = @c AND EntityType LIKE N'Manufacturing.%';
-            """, ("@company", CompanyA), ("@c", correlation))).Split('|'));
+        }, await run.ManufacturingAuditEventTypesAsync(CompanyA, correlation));
         Assert.NotNull(plan.PreparedBy);
         Assert.Equal(0, await run.ScalarAsync<int>(
             """
@@ -1815,6 +1809,29 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         private static StockMovement InventoryMovement(params StockMovementLine[] lines) =>
             new(Guid.NewGuid(), CompanyA, StockMovementKind.Receipt, At,
                 new StockSourceReference("synthetic.manufacturing.parent-roll", Guid.NewGuid()), lines);
+
+        public async Task<string[]> ManufacturingAuditEventTypesAsync(Guid companyId, string correlationId)
+        {
+            await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
+            await connection.OpenAsync();
+            await using var command = new SqlCommand(
+                """
+                SELECT EventType FROM audit.AuditEvents
+                WHERE CompanyId = @company AND CorrelationId = @correlation
+                  AND EntityType LIKE N'Manufacturing.%'
+                ORDER BY EventType COLLATE Latin1_General_100_BIN2;
+                """, connection);
+            command.Parameters.AddWithValue("@company", companyId);
+            command.Parameters.AddWithValue("@correlation", correlationId);
+            await using var reader = await command.ExecuteReaderAsync();
+            var eventTypes = new List<string>();
+            while (await reader.ReadAsync())
+            {
+                eventTypes.Add(reader.GetString(0));
+            }
+
+            return eventTypes.ToArray();
+        }
 
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)
         {
