@@ -21,7 +21,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         var choice = new PlanPaintSelectionV1(Guid.NewGuid(), "12", "3", "synthetic-import:3",
             Guid.NewGuid(), Guid.NewGuid(), "4", "7");
         var plan = new ProductionPlan(Guid.NewGuid(), CompanyA, workCenter, ManufacturingProcess.Paint,
-            [new PlannedInput(RollA, Kg(1000m))], processSpec: new(paintSelection: choice));
+            [new PlannedInput(RollA, Kg(1000m), 17)], processSpec: new(paintSelection: choice));
         await using (var store = run.Store(CompanyA))
         {
             await store.Plans.SavePlanAsync(plan, Metadata(run));
@@ -42,8 +42,10 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             var migrations = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
             var index = Array.FindIndex(migrations, id => id.EndsWith("_AddManufacturingPaintSelections", StringComparison.Ordinal));
             Assert.True(index > 0);
-            var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(migrations[index - 1]));
+            // Exercise this historical migration's own populated guard before any newer guard can intercept it.
+            var error = await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(guard + "; SELECT 1"));
             Assert.Equal(51976, error.Number);
+            Assert.Equal(migrations, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
         }
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Plans WHERE Id=@id AND PaintSelectionJson IS NOT NULL", ("@id", plan.Id)));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.PlanRevisions WHERE PlanId=@id AND PaintSelectionJson IS NOT NULL", ("@id", plan.Id)));
