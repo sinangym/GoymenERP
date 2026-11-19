@@ -52,19 +52,22 @@ public sealed class ManufacturingCommercialContextSnapshotTests
         Assert.All(plan.Inputs, input => Assert.Equal(context, input.CommercialContext));
     }
 
-    public static IEnumerable<object[]> DifferentCommercialContexts()
-    {
-        yield return [Snapshot(partyId: Guid.Parse("30000000-0000-0000-0000-000000000099"))];
-        yield return [Snapshot(accountId: Guid.Parse("40000000-0000-0000-0000-000000000099"))];
-        yield return [Snapshot(partyVersion: "party-v2")];
-        yield return [Snapshot(accountVersion: "account-v2")];
-    }
-
+    // Primitive case data gives discovery and execution the same four exact identities.
     [Theory]
-    [MemberData(nameof(DifferentCommercialContexts))]
-    public void One_plan_refuses_a_different_identity_or_version(
-        PlanCommercialContextSnapshotV1 differentContext)
+    [InlineData("party-id")]
+    [InlineData("account-id")]
+    [InlineData("party-version")]
+    [InlineData("account-version")]
+    public void One_plan_refuses_a_different_identity_or_version(string changedField)
     {
+        var differentContext = changedField switch
+        {
+            "party-id" => Snapshot(partyId: Guid.Parse("30000000-0000-0000-0000-000000000099")),
+            "account-id" => Snapshot(accountId: Guid.Parse("40000000-0000-0000-0000-000000000099")),
+            "party-version" => Snapshot(partyVersion: "party-v2"),
+            "account-version" => Snapshot(accountVersion: "account-v2"),
+            _ => throw new ArgumentOutOfRangeException(nameof(changedField)),
+        };
         var first = Input(Guid.NewGuid(), Snapshot());
         var second = Input(Guid.NewGuid(), differentContext);
 
