@@ -418,6 +418,7 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         var owners = Owners.For(CompanyA);
+        await run.SeedApprovedBankAccountAsync(owners);
         var draft = await run.SaveDraftAsync(owners, "1250.50");
 
         CommandResult recorded;

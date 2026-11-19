@@ -44,7 +44,7 @@ public sealed partial class FinanceCreditAccountSqlServerRelationalAcceptanceTes
         var lines = JsonSerializer.Deserialize<FinancePeriodCarryLineV1[]>(await run.ScalarAsync<string>(
             "SELECT LinesJson FROM finance.PeriodCarryVouchers WHERE SourcePeriodId=@id", ("@id", period)), FinanceJson.CreateOptions())!;
         var carried = Assert.Single(lines);
-        Assert.Equal(("Bank", bank, Currency, "75", "0"),
+        Assert.Equal(("Bank", bank, Currency, "75.00", "0"),
             (carried.AccountKind, carried.AccountId, carried.CurrencyId, carried.Debit, carried.Credit));
         await using (var current = run.OpenMovement(Checker))
         {
