@@ -233,8 +233,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // This branch always retains native failure and cannot write proof; passing acceptance is unchanged.
     // User decision 2026-11-18: one broad SQL shard budget is 10800s; each native process stays capped at 2400s.
     // No renewal, retries, inventory changes, skips or partial proof; independent exact-head K3 review is pending.
+    // W8: 9077fdf4f reports the effective global/process timeout budget without changing either deadline.
+    // Reviewed the source delta and its timeout/redaction regression; re-fingerprinted with the house producer.
+    // Exact discovery, skip0 and proof gates are unchanged; independent exact-head K3 review remains pending.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "43af48e91901fb24b77b7cec50bcc3738b6b8e501f3fd591e1bf78a1fcc0f73e";
+        "7982b720bc2a38c988edfed745fba0c53a0654cc657af1140a43f2be6b2c2ae8";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";

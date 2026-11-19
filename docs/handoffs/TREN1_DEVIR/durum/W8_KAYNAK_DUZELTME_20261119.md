@@ -57,3 +57,18 @@ transfer kabulünün ilerlediğini doğrulamak üzere yazıldı; henüz çalış
 Ekran bellek kaydı browser storage'a yazılmaz. Sayfa oturum kapanırken unmounted ise eski kayıt
 sonraki mount'ta budanır; farklı session/actor bağından geri okunamaz. Tam tarayıcı kabulü ayrıca gerekir.
 Migration, işletme kararı, grant/rol/Critical, OPEN, production, Finance STOP veya workflow değişikliği yoktur.
+
+## İlk doğrulama sonrası dar pin düzeltmesi
+
+`b3f21f8f4` adayında derlemeler, 769 kimlik ve dört audit persistence testi geçti.
+405 mimari testin biri, SQL doğrulayıcısının eski kaynak fingerprint'i nedeniyle başarısız oldu;
+kuyruk SQL hedeflerini başlatmadan durdu. Bu sonuç tam kabul değildir.
+
+Kök neden: `9077fdf4f` süre aşımında etkin global/process bütçesini raporlarken
+`ReviewedSqlServerRcsiVerifierFingerprint` güncellenmemişti. Kaynak farkı ve mevcut
+timeout/redaction regresyonu okundu: toplam 10800 saniye ve süreç başına 2400 saniye,
+exact discovery, skip0, hata sonrası proof yasağı değişmiyor. Pin ev üreticisinin
+`7982b720…` çıktısına güncellendi; başka guard koşulu veya izin listesi değiştirilmedi.
+
+Bu ekin yazıldığı anda düzeltilmiş adayın testleri henüz çalıştırılmadı. Eski sonuçlar korunur;
+yeni kanıt yeni tam SHA'ya bağlanır. Bağımsız exact-head K3 incelemesi ayrıca bekler.
