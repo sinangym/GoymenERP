@@ -1535,10 +1535,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // explicitly constructs one InventoryDbContext over that exact connection. The
                 // source fingerprint and API counts keep this narrower than a general runtime
                 // context-construction or direct-database exemption.
+                // W8 guard-race closure; K3 review pending. Existing typed409, same owner transaction and SQL counts.
                 [ReviewedInventoryDefiniteShipmentParticipantPath] =
                     new(
                         // Re-fingerprinted for B-01: a definite shipment refuses a non-Sales (plan-input) allocation; provider tokens unchanged.
-                        "5c6f5106974dcf98dd6da309256d867bad49db9184cc9256358645106a84c93a",
+                        "a06242b10b55ddac408e4e1daca2ba35b1b41e8fe47527614ba1e62fd00de544",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -1547,9 +1548,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // Customer-return approval borrows the host's exact connection and transaction and constructs
                 // one Inventory context; its source and token counts are pinned independently from shipment.
+                // W8 guard-race closure; K3 review pending. Existing typed409, same owner transaction and SQL counts.
                 [ReviewedInventoryCustomerReturnParticipantPath] =
                     new(
-                        "1652ab5f2d4ed5317948e93bca102230ff2c6bd46af392eea745c2535d49e43b",
+                        "f46571193991fdf2d7e4b26b5608998293ca55384b7568189418aef283f2b443",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -2041,7 +2043,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "Persistence/InventorySupplierReturnExitParticipant.cs"] =
                     new(
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (36116eed… -> 95e9ff7c…).
-                        "a1c12b96cb7e9091bc04ae375040ed8b4fc04457001bcf180102e18e0d0263e6",
+                        "ffdc1fc88be6f8ad880992d48ac6fd36bd5588401255a97f4a1f3ce91242c150",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         ["System.Data.Common"] = 1,
@@ -2715,6 +2717,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 // R17: the Manufacturing realization participant owns one Inventory transaction and
                 // one reviewed provider connection; exact source/count drift remains fail-closed.
+                // W8 guard-race closure; K3 review pending. Existing typed409, same owner transaction and SQL counts.
                 [ReviewedInventoryManufacturingRealizationParticipantPath] =
                     new(
                         // Re-measured at the #479 forward onto main e1ffefe8: #479's customer-owned issue context
@@ -2728,7 +2731,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-measured on the combined file after merging main 6f1ff559: B-03 (1a5a23b7...) and SAT-D318
                         // (4c1a5d57...) combined; neither parent's value; provider tokens unchanged.
                         // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
-                        "95fc82c394062d4311678e254971bad5c809da36ee29c6ab9279bcbae0ceaa00",
+                        "5618e91ecd233d462e917d0e003cb94887d492ef222c1f76daba1ab04e765c46",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -3395,8 +3398,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // on supplied exact open connection/transaction; own receipt/future-supply conversion reversal, immutable history,
                 // command/outbox. Disposes only session context, never commits caller transaction. Existing read/write source
                 // predicates and owner query filters retained.
+                // W8 guard-race closure; K3 review pending. Existing typed409 only, same owner TX/SQL API counts.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryGoodsReceiptReversalParticipant.cs"] =
-                    new("98a24d19a271862839c54a26596d626e5b7267e69565eed05f50952c2cdbd249",
+                    new("77561c305e8296abadeb36994048e6fa2729b466a468a85b205c04a45ec0815b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["DbConnection"] = 3,
@@ -3497,8 +3501,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // filter, ReloadAsync refreshes only those tracked composite-company-key rows, then fresh authority and explicit
                 // source/label CompanyId validation. SqlClient only duplicate/concurrency classification. No unscoped client
                 // entity reload.
+                // W8 guard-race closure; K3 review pending. Existing typed409 only, same owner TX/SQL API counts.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventorySubcontractAllocationReleaseStoreV1.cs"] =
-                    new("f2914be6fff3ff2adc24c28d702db738d9969cdf0b968b4ae63d4b317a4a3a19",
+                    new("f04434b34a81871bd2436e92b85d59c06826985dbe24bf6ca1776a9a74091c71",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             [".ReloadAsync"] = 2,
@@ -3509,8 +3514,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // on supplied exact open connection/transaction; customer-owned subcontract reserve/ship, actual movement and
                 // owner outbox. Disposes only session context, never commits caller transaction. Existing read/write source
                 // predicates and owner query filters retained.
+                // W8 guard-race closure; K3 review pending. Existing typed409 only, same owner TX/SQL API counts.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventorySubcontractDeliveryParticipant.cs"] =
-                    new("bc0906ec02de0242eb46b3fdb37631cf4dfd7867435556b676c3d9c5781e6a65",
+                    new("409a5c1215711a9c294f61b93750e4f6be36f23f62470e4eeecd537ae234dcd6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["DbConnection"] = 3,
