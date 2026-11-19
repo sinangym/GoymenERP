@@ -35,8 +35,13 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         policy.Available = false;
         Assert.True((await workflow.MatchAsync(invoice.Id, request, metadata)).IsReplay);
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.ServiceInvoiceBindings WHERE InvoiceId=@id", ("@id", invoice.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM purchasing.ServiceInvoiceBindings WHERE CompanyId=@company AND InvoiceId=@id "
+            + "AND InvoiceLineId=@invoiceLine AND OrderId=@order AND LineId=@line AND AcceptanceId=@acceptance AND Quantity=4",
+            ("@company", CompanyA), ("@id", invoice.Id), ("@invoiceLine", invoice.Lines[0].Id),
+            ("@order", order.OrderId), ("@line", order.Lines[0].LineId), ("@acceptance", acceptance)));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.InvoiceReceiptBindings WHERE InvoiceId=@id", ("@id", invoice.Id)));
-        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.InvoiceOrderBindings WHERE InvoiceId=@id", ("@id", invoice.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseInvoiceOrderBindings WHERE InvoiceId=@id", ("@id", invoice.Id)));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements"));
     }
 
