@@ -249,13 +249,23 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             freshAuthorityFence, cancellationToken);
     }
 
-    public async Task<InventoryTransferReceiptResultV1> DecideOverageAsync(
+    public Task<InventoryTransferReceiptResultV1> DecideOverageAsync(
         Guid transferId,
         Guid lineId,
         DecideInventoryTransferOverageV1 request,
         InventoryCommandMetadata metadata,
         Func<CancellationToken, Task> freshAuthorityFence,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        WithinPhysicalValidationTransactionAsync(() => DecideOverageCoreAsync(transferId, lineId, request,
+            metadata, freshAuthorityFence, cancellationToken), cancellationToken);
+
+    private async Task<InventoryTransferReceiptResultV1> DecideOverageCoreAsync(
+        Guid transferId,
+        Guid lineId,
+        DecideInventoryTransferOverageV1 request,
+        InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(freshAuthorityFence);

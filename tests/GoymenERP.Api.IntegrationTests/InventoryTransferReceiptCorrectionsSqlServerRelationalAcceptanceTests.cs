@@ -6,6 +6,7 @@ using GoymenERP.Modules.Inventory.Domain.Transfers;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -79,12 +80,47 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 At.AddHours(5), OverageDecisionReason, RequestNumber: 2),
             renewer with { IdempotencyKey = Guid.NewGuid().ToString("N") }));
 
-        var approved = await DecideOverageAsync(run, transferId, lineId, new DecideInventoryTransferOverageV1(
-            InventoryTransferDecisionKindV1.Approve, At.AddHours(5), OverageDecisionReason, RequestNumber: 2),
-            LossChecker(run));
+        var approvalRequest = new DecideInventoryTransferOverageV1(
+            InventoryTransferDecisionKindV1.Approve, At.AddHours(5), OverageDecisionReason, RequestNumber: 2);
+        var approvalMetadata = LossChecker(run);
+        var beforeApproval = (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents"));
+        var stockBeforeApproval = await run.ScalarAsync<decimal>(
+            "SELECT SUM(QuantityKg) FROM inventory.Balances WHERE CompanyId = @company", ("@company", CompanyA));
+        // A borrowed transaction stays with its caller: the actual approval can be saved, then rolled back in full.
+        await using (var scope = run.Store(CompanyA))
+        {
+            await using var transaction = await scope.DbContext.Database.BeginTransactionAsync();
+            var staged = await scope.Store.DecideOverageAsync(transferId, lineId, approvalRequest, approvalMetadata, Authorized);
+            var movementId = Assert.Single(staged.Facts.OverageRenewals).MovementId!.Value;
+            Assert.Same(transaction, scope.DbContext.Database.CurrentTransaction);
+            Assert.True(await scope.DbContext.Movements.AsNoTracking().AnyAsync(row => row.Id == movementId));
+            await transaction.RollbackAsync();
+        }
+        Assert.Equal(beforeApproval, (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents")));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.TransferOverageDecisions WHERE TransferId = @id AND RequestNumber = 2",
+            ("@id", transferId)));
+        Assert.Equal(stockBeforeApproval, await run.ScalarAsync<decimal>(
+            "SELECT SUM(QuantityKg) FROM inventory.Balances WHERE CompanyId = @company", ("@company", CompanyA)));
+
+        // The same key can succeed after caller rollback; without a caller transaction the command owns its commit.
+        var approved = await DecideOverageAsync(run, transferId, lineId, approvalRequest, approvalMetadata);
+        Assert.False(approved.IsReplay);
         var approvedRenewal = Assert.Single(approved.Facts.OverageRenewals);
         Assert.Equal((2, "Approved"), (approvedRenewal.RequestNumber, approvedRenewal.Status));
         Assert.NotNull(approvedRenewal.MovementId);
+        var replay = await DecideOverageAsync(run, transferId, lineId, approvalRequest, approvalMetadata);
+        Assert.True(replay.IsReplay);
+        Assert.Equal(approved.OriginalCorrelationId, replay.OriginalCorrelationId);
+        Assert.Equal(approvedRenewal, Assert.Single(replay.Facts.OverageRenewals));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements WHERE Id = @id",
+            ("@id", approvedRenewal.MovementId!.Value)));
 
         // An approved excess is terminal for the line.
         await AssertLossRefusedAsync(InventoryTransferCodesV1.TransferStateConflict, () => RenewOverageAsync(run,
