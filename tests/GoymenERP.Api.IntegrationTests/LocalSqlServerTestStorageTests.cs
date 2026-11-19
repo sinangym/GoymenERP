@@ -26,7 +26,7 @@ public sealed class LocalSqlServerTestStorageTests
             var reopened = new SqlConnectionStringBuilder(connectionString);
             Assert.Equal(name, reopened.InitialCatalog);
             Assert.Empty(reopened.AttachDBFilename);
-            Assert.Equal(expectedEncrypt, reopened.Encrypt.ToString());
+            Assert.Equal(SqlConnectionEncryptOption.Parse(expectedEncrypt), reopened.Encrypt);
             Assert.True(reopened.IntegratedSecurity);
             Assert.False(reopened.TrustServerCertificate);
         }
