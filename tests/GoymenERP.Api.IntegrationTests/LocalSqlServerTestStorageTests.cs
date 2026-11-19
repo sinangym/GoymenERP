@@ -4,6 +4,64 @@ namespace GoymenERP.Api.IntegrationTests;
 
 public sealed class LocalSqlServerTestStorageTests
 {
+    [Theory]
+    [InlineData("True", "Mandatory")]
+    [InlineData("False", "Optional")]
+    [InlineData("Strict", "Strict")]
+    public void Host_binding_accepts_round_tripped_empty_fields_and_preserves_the_encryption_mode(
+        string encrypt, string expectedEncrypt)
+    {
+        var name = "goymen_storage_" + Guid.NewGuid().ToString("N");
+        var original = $"Server=example.invalid;Database=master;Integrated Security=True;Encrypt={encrypt};"
+            + "TrustServerCertificate=False;Application Name=SENTETIK;AttachDBFilename=;Workstation ID=";
+        var owned = new SqlServerTestDatabase(original, name, localDataDirectory: null);
+        var serialized = new SqlConnectionStringBuilder(original).ConnectionString;
+        var reordered = $"App=SENTETIK;TrustServerCertificate=False;Encrypt={expectedEncrypt};"
+            + "Trusted_Connection=True;Initial Catalog=master;Data Source=example.invalid";
+
+        foreach (var binding in new[] { original, serialized, reordered, owned.ConnectionString })
+        {
+            var connectionString = owned.ConnectionForHost(binding, name);
+            Assert.Equal(owned.ConnectionString, connectionString);
+            var reopened = new SqlConnectionStringBuilder(connectionString);
+            Assert.Equal(name, reopened.InitialCatalog);
+            Assert.Empty(reopened.AttachDBFilename);
+            Assert.Equal(expectedEncrypt, reopened.Encrypt.ToString());
+            Assert.True(reopened.IntegratedSecurity);
+            Assert.False(reopened.TrustServerCertificate);
+        }
+    }
+
+    [Fact]
+    public void Host_binding_rejects_changed_endpoint_identity_TLS_and_connection_behavior()
+    {
+        const string original = "Server=example.invalid;Database=master;Integrated Security=False;"
+            + "User ID=SENTETIK_USER;Password=SENTETIK_PASSWORD;Encrypt=Mandatory;TrustServerCertificate=False";
+        var name = "goymen_storage_" + Guid.NewGuid().ToString("N");
+        var owned = new SqlServerTestDatabase(original, name, localDataDirectory: null);
+        Assert.Equal(owned.ConnectionString, owned.ConnectionForHost(original, name));
+        var changes = new Dictionary<string, object>
+        {
+            ["Data Source"] = "other.invalid",
+            ["Integrated Security"] = true,
+            ["User ID"] = "OTHER_SENTETIK_USER",
+            ["Password"] = "OTHER_SENTETIK_PASSWORD",
+            ["Encrypt"] = "Optional",
+            ["TrustServerCertificate"] = true,
+            ["Host Name In Certificate"] = "other.invalid",
+            ["Application Intent"] = "ReadOnly",
+            ["Pooling"] = false,
+        };
+        foreach (var (key, value) in changes)
+        {
+            var changed = new SqlConnectionStringBuilder(original) { [key] = value };
+            Assert.Throws<InvalidOperationException>(() => owned.ConnectionForHost(changed.ConnectionString, name));
+        }
+        Assert.Throws<InvalidOperationException>(() => owned.ConnectionForHost(original,
+            "goymen_storage_" + Guid.NewGuid().ToString("N")));
+        Assert.Equal(owned.ConnectionString, owned.ConnectionForHost(original, name));
+    }
+
     [Fact]
     public void Manual_creation_keeps_catalog_connections_and_escapes_file_paths_without_adopting_existing_files()
     {

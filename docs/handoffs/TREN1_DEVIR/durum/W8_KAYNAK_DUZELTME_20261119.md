@@ -72,3 +72,22 @@ exact discovery, skip0, hata sonrası proof yasağı değişmiyor. Pin ev üreti
 
 Bu ekin yazıldığı anda düzeltilmiş adayın testleri henüz çalıştırılmadı. Eski sonuçlar korunur;
 yeni kanıt yeni tam SHA'ya bağlanır. Bağımsız exact-head K3 incelemesi ayrıca bekler.
+
+## Test veritabanı bağlantı eşliği düzeltmesi
+
+`3a51cca60` adayında derlemeler ve 405 mimari test geçti. 14 dar API sözleşme testinin
+biri, aynı test veritabanının aynı bağlantıyla yeniden açılmasını yanlış reddetti.
+SQL hedefleri başlamadan kuyruk durdu.
+
+`SqlServerTestDatabase.ConnectionForHost`, yerinde değiştirilmiş builder ile serileştirilip
+yeniden okunmuş builder'ı karşılaştırıyordu. Boş `AttachDBFilename` serileştirme/okuma sırasında
+anahtar listesinden düşebildiğinden `EquivalentTo` aynı bağlantıyı farklı sayıyordu.
+Karşılaştırmadan önce iki taraf aynı serileştirme/okuma adımından geçirilir; bütün kalan
+ayarlar ve katalog adı çiti korunur. Kaynak kontrolü: [.NET 10 bağlantı builder'ı](https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Data.Common/src/System/Data/Common/DbConnectionStringBuilder.cs).
+
+Yeni regresyonlar: Mandatory/Optional/Strict şifreleme modları, boş alan ve anahtar sırası/eşadı
+farkları kabul edilir; sunucu, kullanıcı/parola, Windows kimliği, TLS, sertifika adı, okuma niyeti,
+pooling veya katalog adı değişikliği reddedilir. Sadece sentetik bağlantılar ayrıştırılır; bu
+birim testleri veritabanına bağlanmaz. Mevcut gerçek SQL oluşturma/yeniden açma/çakışma/temizleme
+testi 46 hedef içinde korunur. Üretim bağlantıları, sunucu ayarları veya migration değişmedi.
+Bu ek yazılırken yeni regresyonlar henüz çalıştırılmadı; sonuçlar yeni aday SHA'sına kaydedilecek.

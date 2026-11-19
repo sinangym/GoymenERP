@@ -54,7 +54,11 @@ internal sealed class SqlServerTestDatabase
             InitialCatalog = name,
             AttachDBFilename = string.Empty,
         };
-        if (name != Name || !expected.EquivalentTo(new SqlConnectionStringBuilder(ConnectionString)))
+        // ConnectionString is already serialized. Parse both sides before comparing:
+        // parsing drops an explicitly empty AttachDBFilename, while EquivalentTo also
+        // compares the number of stored keys. Compare every remaining setting unchanged.
+        var requested = new SqlConnectionStringBuilder(expected.ConnectionString);
+        if (name != Name || !requested.EquivalentTo(new SqlConnectionStringBuilder(ConnectionString)))
             throw new InvalidOperationException("A test database cannot be borrowed by a different host binding.");
         return ConnectionString;
     }
