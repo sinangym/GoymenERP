@@ -1220,6 +1220,19 @@
    "recovery_producer": "3f724f0: exit0; risky1469/context19/migration344/Audit42",
    "new_real_sql": "QUEUED_AFTER_EXISTING_BASELINE; NOT_RUN",
    "full_acceptance": "PENDING; no K3 approval or production activation"
+  },
+  "w8_source_sql_followup": {
+   "source_base": "3367954ca559bd82a2de1120b3991ec888d47f98",
+   "source_head": "b82711730425d36b911d7b8e42e69d16b0db38ad",
+   "report": "durum/W8_SQL_HAZIRLIK_VE_GECICI_HATA_ONARIMI_20261119.md",
+   "scope": "owned SQL test database lifecycle; transient reference-list write failures; integrated-auth RCSI secret assertion",
+   "status": "SOURCE_READY_NATIVE_NOT_RUN",
+   "python_verifier_proof": "66b8cf8c5: backend38 and relational104 PASS/skip0; exit0",
+   "recovery_producer": "f2c83cb94: exit0; risky1469/context19/migration344/Audit42",
+   "relational_inventory": "1762 methods / 1769 expected executions; SDK proof NOT_RUN",
+   "followup_targets": 36,
+   "new_native_proof": "NOT_RUN; prepared after existing baseline; all prior17 targets preserved",
+   "full_acceptance": "PENDING; no K3 approval or production activation"
   }
  },
  "teams": [
