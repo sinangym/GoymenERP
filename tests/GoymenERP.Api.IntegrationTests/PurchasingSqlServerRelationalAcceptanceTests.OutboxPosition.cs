@@ -53,7 +53,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             await transaction.CommitAsync();
         }
         // A timestamp or identity cursor could publish B now and lose A permanently when A later commits.
-        Assert.Empty(await ReadPurchasingOutboxAsync(run, CompanyA));
+        Assert.Empty(await ReadPurchasingOutboxAsync(run, CompanyA, verifyReadIsolation: true));
         await firstTransaction.CommitAsync();
         var published = await ReadPurchasingOutboxAsync(run, CompanyA);
         Assert.Equal(2, published.Count);
