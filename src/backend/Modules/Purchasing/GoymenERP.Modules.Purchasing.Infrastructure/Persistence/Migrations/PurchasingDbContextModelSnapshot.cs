@@ -2227,7 +2227,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_OutboxMessages_Envelope", "LEN([EventType]) > 0 AND [SchemaVersion] >= 1 AND LEN([SourceOperation]) > 0 AND LEN([AggregateType]) > 0 AND [AggregateVersion] >= 1 AND [Sequence] >= 1 AND LEN([CorrelationId]) > 0 AND ISJSON([PayloadJson]) = 1");
 
-                            t.HasCheckConstraint("CK_OutboxMessages_EventType", "[EventType] IN ('purchasing.order-line.closed.v1', 'purchasing.order-line.revived.v1')");
+                            t.HasCheckConstraint("CK_OutboxMessages_EventType", "[EventType] IN ('purchasing.order-line.closed.v1', 'purchasing.order-line.revived.v1', 'purchasing.invoice.finalized.v1')");
 
                             t.HasCheckConstraint("CK_OutboxMessages_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [AggregateId] <> '00000000-0000-0000-0000-000000000000'");
                         });
