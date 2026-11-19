@@ -88,7 +88,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Assert.Empty(reverseFacts.ReversedBy);
         }
 
-        var dispatch = TransferDispatch();
+        var dispatch = TransferDispatch() with { DispatchedAtUtc = request.PlannedAtUtc.AddHours(1) };
         await using (var scope = run.Store(CompanyA))
         {
             var dispatched = await scope.Store.DispatchAsync(request.ReverseTransferId, dispatch,
@@ -103,7 +103,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using (var scope = run.Store(CompanyA))
         {
             var accepted = await scope.Store.AcceptLineAsync(request.ReverseTransferId, reverseLineId,
-                await RecordIncomingAcceptanceDocumentAsync(run, request.ReverseTransferId, reverseLineId, At.AddDays(1).AddHours(2)), Metadata(run), Authorized);
+                await RecordIncomingAcceptanceDocumentAsync(run, request.ReverseTransferId, reverseLineId, request.PlannedAtUtc.AddHours(2)), Metadata(run), Authorized);
             Assert.Equal(("3", nameof(InventoryTransferStatus.Accepted)),
                 (accepted.Transfer.Version, accepted.Transfer.Status));
             var originalAfter = await scope.Transfers.ReadAsync(original.TransferId);
@@ -174,7 +174,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await scope.Store.ReverseAsync(original.TransferId, second, Metadata(run), Authorized);
         }
 
-        var dispatch = TransferDispatch();
+        var dispatch = TransferDispatch() with { DispatchedAtUtc = first.PlannedAtUtc.AddHours(1) };
         await using (var scope = run.Store(CompanyA))
         {
             await scope.Store.DispatchAsync(first.ReverseTransferId, dispatch,
