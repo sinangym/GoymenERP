@@ -6,6 +6,7 @@ using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -165,10 +166,20 @@ internal sealed partial class SettingsTaxMasterAdministration(
         }
     }
 
-    private Task<CommandExecution?> FindExecutionAsync(string commandName, string keyHash, CancellationToken cancellationToken) =>
-        database.CommandExecutions.AsNoTracking()
-            .SingleOrDefaultAsync(execution => execution.CommandName == commandName && execution.IdempotencyKeyHash == keyHash,
-                cancellationToken);
+    private async Task<CommandExecution?> FindExecutionAsync(string commandName, string keyHash, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await database.CommandExecutions.AsNoTracking()
+                .SingleOrDefaultAsync(execution => execution.CommandName == commandName && execution.IdempotencyKeyHash == keyHash,
+                    cancellationToken);
+        }
+        catch (SqlException)
+        {
+            // Covers both the initial lookup and reads inside a save-race catch.
+            throw new SettingsPrerequisiteException(TaxMasterProblemCodesV1.ProviderUnavailable);
+        }
+    }
 
     private static TaxMasterCommandResultV1 Replay(CommandExecution execution, string requestHash, SettingsCommandMetadataV1 metadata)
     {
@@ -217,16 +228,23 @@ internal sealed partial class SettingsTaxMasterAdministration(
             await database.SaveChangesAsync(cancellationToken);
             return new TaxMasterCommandResultV1(answer, false, metadata.CorrelationId);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
+            || exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
         {
             database.ChangeTracker.Clear();
             var winner = await FindExecutionAsync(commandName, keyHash, cancellationToken);
             if (winner is null)
             {
-                throw;
+                throw new SettingsPrerequisiteException(TaxMasterProblemCodesV1.ProviderUnavailable);
             }
 
             return Replay(winner, requestHash, metadata);
+        }
+        catch (Exception exception) when (exception is DbUpdateException or SqlException)
+        {
+            // A provider failure is not a terminal business refusal and never consumes the retry key.
+            database.ChangeTracker.Clear();
+            throw new SettingsPrerequisiteException(TaxMasterProblemCodesV1.ProviderUnavailable);
         }
     }
 
@@ -244,7 +262,8 @@ internal sealed partial class SettingsTaxMasterAdministration(
             await database.SaveChangesAsync(cancellationToken);
             return new TaxMasterCommandResultV1(answer, false, metadata.CorrelationId);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
+            || exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
         {
             database.ChangeTracker.Clear();
             var winner = await FindExecutionAsync(commandName, keyHash, cancellationToken);
@@ -255,6 +274,12 @@ internal sealed partial class SettingsTaxMasterAdministration(
 
             var refusal = await onConflict(cancellationToken);
             return await StoreRefusalAsync(commandName, refusal, keyHash, requestHash, metadata, cancellationToken);
+        }
+        catch (Exception exception) when (exception is DbUpdateException or SqlException)
+        {
+            // A provider failure is not a terminal business refusal and never consumes the retry key.
+            database.ChangeTracker.Clear();
+            throw new SettingsPrerequisiteException(TaxMasterProblemCodesV1.ProviderUnavailable);
         }
     }
 

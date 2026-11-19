@@ -45,6 +45,12 @@ public sealed partial class SettingsReplayRaceSqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public Task Reference_list_refusal_race_revalidates_the_winner_after_the_final_sql_read() => CheckAsync(Branch.ReferenceRefusal);
 
+    [SqlServerFact]
+    public Task Money_profile_change_race_revalidates_the_winner_after_the_final_sql_read() => CheckAsync(Branch.MoneyChange);
+
+    [SqlServerFact]
+    public Task Money_profile_refusal_race_revalidates_the_winner_after_the_final_sql_read() => CheckAsync(Branch.MoneyRefusal);
+
     private static async Task CheckAsync(Branch branch)
     {
         await using var run = await Run.StartAsync();
@@ -98,7 +104,7 @@ public sealed partial class SettingsReplayRaceSqlServerRelationalAcceptanceTests
             Assert.Equal(0, await run.CountAsync("SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [OriginalCorrelationId]=@correlation",
                 loserCorrelation));
             Assert.Equal(0, await run.CountAsync("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [CorrelationId]=@correlation", loserCorrelation));
-            var changes = branch is Branch.CollateralChange or Branch.ContractChange or Branch.LegacyPolicyChange or Branch.ReferenceChange;
+            var changes = branch is Branch.CollateralChange or Branch.ContractChange or Branch.LegacyPolicyChange or Branch.ReferenceChange or Branch.MoneyChange;
             Assert.Equal(changes ? 1 : 0,
                 await run.CountAsync("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [CorrelationId]=@correlation", winnerCorrelation));
             var (businessSql, businessCount) = branch switch
@@ -107,6 +113,8 @@ public sealed partial class SettingsReplayRaceSqlServerRelationalAcceptanceTests
                 Branch.CollateralRefusal => ("SELECT COUNT(*) FROM [settings].[CollateralTypeVersions] WHERE [CompanyId]=@company", 1),
                 Branch.ContractChange => ("SELECT COUNT(*) FROM [settings].[CompanyPolicyVersions] WHERE [CompanyId]=@company AND [PolicyKey]='sales.contract-discount-limit'", index + 1),
                 Branch.PolicyRefusal => ("SELECT COUNT(*) FROM [settings].[CompanyPolicyVersions] WHERE [CompanyId]=@company AND [PolicyKey]='sales.contract-discount-limit'", 0),
+                Branch.MoneyChange => ("SELECT COUNT(*) FROM [settings].[MoneyProfileVersions] WHERE [CompanyId]=@company", index + 2),
+                Branch.MoneyRefusal => ("SELECT COUNT(*) FROM [settings].[MoneyProfileVersions] WHERE [CompanyId]=@company", 0),
                 Branch.ReferenceChange => ("SELECT COUNT(*) FROM [settings].[ReferenceListEntryVersions] WHERE [CompanyId]=@company", index + 1),
                 Branch.ReferenceRefusal => ("SELECT COUNT(*) FROM [settings].[ReferenceListEntryVersions] WHERE [CompanyId]=@company", 1),
                 _ => ("SELECT COUNT(*) FROM [settings].[CompanyPolicyVersions] WHERE [CompanyId]=@company AND [PolicyKey]='finance.opening-period'", index + 1),
@@ -122,6 +130,14 @@ public sealed partial class SettingsReplayRaceSqlServerRelationalAcceptanceTests
 
     private static async Task<Answer> InvokeAsync(Request request, Branch branch, int index, SettingsCommandMetadataV1 metadata)
     {
+        if (branch is Branch.MoneyChange or Branch.MoneyRefusal)
+        {
+            var result = await request.MoneyProfiles.RecordAsync(new(
+                branch == Branch.MoneyRefusal ? "999" : (index + 1).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                SettingsCurrencyIdentitiesV1.TurkishLira, "purchasing.order.v1", 2, index % 2 == 0 ? 3 : 4, true,
+                "SENTETIK money profile race"), metadata);
+            return new(result.Answer.StatusCode, result.Answer.Code, result.IsReplay, result.OriginalCorrelationId);
+        }
         if (branch is Branch.ReferenceChange or Branch.ReferenceRefusal)
         {
             var result = await request.ReferenceLists.CreateAsync(SettingsReferenceListKindV1.ExpenseType,
@@ -145,7 +161,7 @@ public sealed partial class SettingsReplayRaceSqlServerRelationalAcceptanceTests
     private static SettingsCommandMetadataV1 Metadata(string key, string correlation) =>
         new(CompanyA, Actor, correlation, null, "Web", null, null, key);
 
-    private enum Branch { CollateralChange, CollateralRefusal, ContractChange, PolicyRefusal, LegacyPolicyChange, ReferenceChange, ReferenceRefusal }
+    private enum Branch { CollateralChange, CollateralRefusal, ContractChange, PolicyRefusal, LegacyPolicyChange, ReferenceChange, ReferenceRefusal, MoneyChange, MoneyRefusal }
     private enum Fault { None, PermissionAfterLookup, CompanyAfterLookup, ActorAfterLookup, CompanyDuringRefresh, ActorDuringRefresh }
     private sealed record Answer(int Status, string? Code, bool IsReplay, string CorrelationId);
 
@@ -244,19 +260,26 @@ public sealed partial class SettingsReplayRaceSqlServerRelationalAcceptanceTests
         public SettingsCollateralTypeAdministration Collateral { get; }
         public SettingsCompanyPolicyAdministration Policy { get; }
         public SettingsReferenceListAdministration ReferenceLists { get; }
-        public Request(Run run, Control control, Race? race, SaveChangesInterceptor? saveFault = null)
+        public SettingsMoneyProfileAdministration MoneyProfiles { get; }
+        public SettingsBankCsvMappingAdministration BankCsvMappings { get; }
+        public Request(Run run, Control control, Race? race, SaveChangesInterceptor? saveFault = null, DbCommandInterceptor? readFault = null)
         {
             var audit = new AuditEventCollector();
             var options = new DbContextOptionsBuilder<SettingsDbContext>().UseSqlServer(run.Connection)
                 .AddInterceptors(new AuditSaveChangesInterceptor(audit, control.Company));
             if (race is not null) options.AddInterceptors(race, race.Reader);
             if (saveFault is not null) options.AddInterceptors(saveFault);
+            if (readFault is not null) options.AddInterceptors(readFault);
             database = new SettingsDbContext(options.Options, control.Company);
             owner = (IAuditTransactionWriterV1)ActivatorUtilities.CreateInstance(run.Services, run.AuditWriterType, audit, control.Company);
             Collateral = new(database, control.Company, control.User, control, control, audit, owner, TimeProvider.System,
                 NullLogger<SettingsCollateralTypeAdministration>.Instance);
             Policy = new(database, control.Company, control.User, control, control, audit, TimeProvider.System,
                 NullLogger<SettingsCompanyPolicyAdministration>.Instance, owner);
+            MoneyProfiles = new(database, control.Company, control.User, control, control, audit, TimeProvider.System,
+                NullLogger<SettingsMoneyProfileAdministration>.Instance);
+            BankCsvMappings = new(database, control.Company, control.User, control, control, audit, TimeProvider.System,
+                NullLogger<SettingsBankCsvMappingAdministration>.Instance);
             ReferenceLists = new(database, control.Company, control.User, control, control, audit, TimeProvider.System,
                 NullLogger<SettingsReferenceListAdministration>.Instance);
         }
@@ -268,8 +291,8 @@ public sealed partial class SettingsReplayRaceSqlServerRelationalAcceptanceTests
         public string Connection => factory.DatabaseConnectionString;
         public IServiceProvider Services => factory.Services;
         public Type AuditWriterType { get; } = auditWriterType;
-        public Request Request(Control? control = null, Race? race = null, SaveChangesInterceptor? saveFault = null) =>
-            new(this, control ?? new Control(), race, saveFault);
+        public Request Request(Control? control = null, Race? race = null, SaveChangesInterceptor? saveFault = null, DbCommandInterceptor? readFault = null) =>
+            new(this, control ?? new Control(), race, saveFault, readFault);
         public static async Task<Run> StartAsync()
         {
             var connection = Environment.GetEnvironmentVariable(SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;

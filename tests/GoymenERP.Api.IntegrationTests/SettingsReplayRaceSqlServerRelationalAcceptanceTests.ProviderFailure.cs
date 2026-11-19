@@ -62,6 +62,48 @@ public sealed partial class SettingsReplayRaceSqlServerRelationalAcceptanceTests
         }
     }
 
+    [SqlServerFact]
+    public async Task Money_profile_SQL_lock_timeout_preserves_the_retry_key_and_rolls_back_profile_and_audit()
+    {
+        await using var run = await Run.StartAsync();
+        foreach (var refusal in new[] { false, true })
+        {
+            var key = "SENTETIK-money-timeout-" + refusal;
+            var failedCorrelation = key + "-failed";
+            var request = new RecordMoneyProfileRequestV1(refusal ? "999" : "1",
+                SettingsCurrencyIdentitiesV1.TurkishLira, "purchasing.order.v1", 2, 3, true, "SENTETIK SQL timeout");
+            await using var fault = new LockTimeoutOnSave(run.Connection);
+            await using (var failed = run.Request(saveFault: fault))
+            {
+                var error = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() =>
+                    failed.MoneyProfiles.RecordAsync(request, Metadata(key, failedCorrelation)));
+                Assert.Equal(MoneyProfileProblemCodesV1.ProviderUnavailable, error.Code);
+            }
+            Assert.Equal(1, fault.SaveAttempts);
+            Assert.Equal(1222, fault.SqlErrorNumber);
+            Assert.Equal(refusal ? 2 : 0, await run.CountAsync("SELECT COUNT(*) FROM [settings].[MoneyProfileVersions] WHERE [CompanyId]=@company", failedCorrelation));
+            Assert.Equal(0, await run.CountAsync("SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [OriginalCorrelationId]=@correlation", failedCorrelation));
+            Assert.Equal(0, await run.CountAsync("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [CorrelationId]=@correlation", failedCorrelation));
+            var retryCorrelation = key + "-retry";
+            await using (var retry = run.Request())
+            {
+                var answer = await retry.MoneyProfiles.RecordAsync(request, Metadata(key, retryCorrelation));
+                Assert.False(answer.IsReplay);
+                Assert.Equal(refusal ? 409 : 204, answer.Answer.StatusCode);
+                Assert.Equal(refusal ? MoneyProfileProblemCodesV1.VersionConflict : null, answer.Answer.Code);
+            }
+            await using (var replay = run.Request())
+            {
+                var answer = await replay.MoneyProfiles.RecordAsync(request, Metadata(key, key + "-replay"));
+                Assert.True(answer.IsReplay);
+                Assert.Equal(retryCorrelation, answer.OriginalCorrelationId);
+            }
+            Assert.Equal(2, await run.CountAsync("SELECT COUNT(*) FROM [settings].[MoneyProfileVersions] WHERE [CompanyId]=@company", retryCorrelation));
+            Assert.Equal(1, await run.CountAsync("SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [OriginalCorrelationId]=@correlation", retryCorrelation));
+            Assert.Equal(refusal ? 0 : 1, await run.CountAsync("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [CorrelationId]=@correlation", retryCorrelation));
+        }
+    }
+
     private sealed class LockTimeoutOnSave(string connectionString) : SaveChangesInterceptor, IAsyncDisposable
     {
         private SqlConnection? blocker;

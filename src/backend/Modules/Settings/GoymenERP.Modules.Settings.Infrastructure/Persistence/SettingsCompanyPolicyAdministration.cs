@@ -502,10 +502,20 @@ internal sealed partial class SettingsCompanyPolicyAdministration(
         }
     }
 
-    private Task<CommandExecution?> FindExecutionAsync(KeySpec spec, string keyHash, CancellationToken cancellationToken) =>
-        database.CommandExecutions.AsNoTracking()
-            .SingleOrDefaultAsync(execution => execution.CommandName == spec.CommandName && execution.IdempotencyKeyHash == keyHash,
-                cancellationToken);
+    private async Task<CommandExecution?> FindExecutionAsync(KeySpec spec, string keyHash, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await database.CommandExecutions.AsNoTracking()
+                .SingleOrDefaultAsync(execution => execution.CommandName == spec.CommandName && execution.IdempotencyKeyHash == keyHash,
+                    cancellationToken);
+        }
+        catch (SqlException)
+        {
+            // Covers both the initial lookup and reads inside a save-race catch.
+            throw new SettingsPrerequisiteException(CompanyPolicyProblemCodesV1.ProviderUnavailable);
+        }
+    }
 
     private static CompanyPolicyCommandResultV1 Replay(CommandExecution execution, string requestHash,
         SettingsCommandMetadataV1 metadata)
@@ -555,17 +565,24 @@ internal sealed partial class SettingsCompanyPolicyAdministration(
             await database.SaveChangesAsync(cancellationToken);
             return new CompanyPolicyCommandResultV1(answer, false, metadata.CorrelationId);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
+            || exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
         {
             database.ChangeTracker.Clear();
             var winner = await FindExecutionAsync(spec, keyHash, cancellationToken);
             if (winner is null)
             {
-                throw;
+                throw new SettingsPrerequisiteException(CompanyPolicyProblemCodesV1.ProviderUnavailable);
             }
 
             await RequireReplayStillAsync(spec, metadata, cancellationToken);
             return Replay(winner, requestHash, metadata);
+        }
+        catch (Exception exception) when (exception is DbUpdateException or SqlException)
+        {
+            // A provider failure is not a terminal business refusal and never consumes the retry key.
+            database.ChangeTracker.Clear();
+            throw new SettingsPrerequisiteException(CompanyPolicyProblemCodesV1.ProviderUnavailable);
         }
     }
 
@@ -585,7 +602,8 @@ internal sealed partial class SettingsCompanyPolicyAdministration(
             await database.SaveChangesAsync(cancellationToken);
             return new CompanyPolicyCommandResultV1(answer, false, metadata.CorrelationId);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
+            || exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
         {
             database.ChangeTracker.Clear();
             var winner = await FindExecutionAsync(spec, keyHash, cancellationToken);
@@ -596,6 +614,12 @@ internal sealed partial class SettingsCompanyPolicyAdministration(
             }
 
             return await StoreRefusalAsync(spec, onConflict, keyHash, requestHash, metadata, cancellationToken);
+        }
+        catch (Exception exception) when (exception is DbUpdateException or SqlException)
+        {
+            // A provider failure is not a terminal business refusal and never consumes the retry key.
+            database.ChangeTracker.Clear();
+            throw new SettingsPrerequisiteException(CompanyPolicyProblemCodesV1.ProviderUnavailable);
         }
     }
 

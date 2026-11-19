@@ -6,6 +6,7 @@ using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -297,10 +298,20 @@ internal sealed class SettingsWorkCenterCapacityAdministration(
         }
     }
 
-    private Task<CommandExecution?> FindExecutionAsync(string keyHash, CancellationToken cancellationToken) =>
-        database.CommandExecutions.AsNoTracking()
-            .SingleOrDefaultAsync(execution => execution.CommandName == RecordCommandName && execution.IdempotencyKeyHash == keyHash,
-                cancellationToken);
+    private async Task<CommandExecution?> FindExecutionAsync(string keyHash, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await database.CommandExecutions.AsNoTracking()
+                .SingleOrDefaultAsync(execution => execution.CommandName == RecordCommandName && execution.IdempotencyKeyHash == keyHash,
+                    cancellationToken);
+        }
+        catch (SqlException)
+        {
+            // Covers both the initial lookup and reads inside a save-race catch.
+            throw new SettingsPrerequisiteException(WorkCenterCapacityProblemCodesV1.ProviderUnavailable);
+        }
+    }
 
     private static WorkCenterCapacityCommandResultV1 Replay(CommandExecution execution, string requestHash,
         SettingsCommandMetadataV1 metadata)
@@ -351,16 +362,23 @@ internal sealed class SettingsWorkCenterCapacityAdministration(
             await database.SaveChangesAsync(cancellationToken);
             return new WorkCenterCapacityCommandResultV1(answer, false, metadata.CorrelationId);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
+            || exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
         {
             database.ChangeTracker.Clear();
             var winner = await FindExecutionAsync(keyHash, cancellationToken);
             if (winner is null)
             {
-                throw;
+                throw new SettingsPrerequisiteException(WorkCenterCapacityProblemCodesV1.ProviderUnavailable);
             }
 
             return Replay(winner, requestHash, metadata);
+        }
+        catch (Exception exception) when (exception is DbUpdateException or SqlException)
+        {
+            // A provider failure is not a terminal business refusal and never consumes the retry key.
+            database.ChangeTracker.Clear();
+            throw new SettingsPrerequisiteException(WorkCenterCapacityProblemCodesV1.ProviderUnavailable);
         }
     }
 
@@ -378,7 +396,8 @@ internal sealed class SettingsWorkCenterCapacityAdministration(
             await database.SaveChangesAsync(cancellationToken);
             return new WorkCenterCapacityCommandResultV1(answer, false, metadata.CorrelationId);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
+            || exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
         {
             database.ChangeTracker.Clear();
             var winner = await FindExecutionAsync(keyHash, cancellationToken);
@@ -388,6 +407,12 @@ internal sealed class SettingsWorkCenterCapacityAdministration(
             }
 
             return await StoreRefusalAsync(onConflict, keyHash, requestHash, metadata, cancellationToken);
+        }
+        catch (Exception exception) when (exception is DbUpdateException or SqlException)
+        {
+            // A provider failure is not a terminal business refusal and never consumes the retry key.
+            database.ChangeTracker.Clear();
+            throw new SettingsPrerequisiteException(WorkCenterCapacityProblemCodesV1.ProviderUnavailable);
         }
     }
 
