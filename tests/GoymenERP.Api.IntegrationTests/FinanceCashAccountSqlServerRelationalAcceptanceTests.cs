@@ -1540,7 +1540,8 @@ public sealed class FinanceCashAccountSqlServerRelationalAcceptanceTests
             Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
             Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, CancellationToken cancellationToken = default)
         {
-            barrier.SignalAndWait(TimeSpan.FromSeconds(30));
+            if (!barrier.SignalAndWait(TimeSpan.FromSeconds(30), cancellationToken))
+                throw new TimeoutException("Concurrent save barrier timed out before both writers arrived.");
             return ValueTask.FromResult(result);
         }
     }

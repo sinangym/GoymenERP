@@ -800,7 +800,8 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         async Task<HttpResponseMessage> AttemptAsync()
         {
             using var client = run.ClientFor(userA, CompanyA);
-            start.SignalAndWait(TimeSpan.FromSeconds(30));
+            if (!start.SignalAndWait(TimeSpan.FromSeconds(30)))
+                throw new TimeoutException("Concurrent HTTP start barrier timed out before both attempts arrived.");
             return await client.PostWithKeyAsync($"{Base}/orders/{orderId}/input-issues", fact, "race-1");
         }
 

@@ -118,7 +118,11 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
                 await owner.Store.MutateAsync(run.Envelope(key), Hash(key),
                     LogisticsTransferOutgoingDocumentCommandsV1.Finalize, documentId,
                     (item, now) => item.Finalize(1, run.Actor, now),
-                    _ => Task.Run(() => barrier.SignalAndWait(TimeSpan.FromSeconds(30))));
+                    token => Task.Run(() =>
+                    {
+                        if (!barrier.SignalAndWait(TimeSpan.FromSeconds(30), token))
+                            throw new TimeoutException("Concurrent transfer-document finalization barrier timed out before both writers arrived.");
+                    }, token));
                 return "winner";
             }
             catch (Exception exception) when (exception is LogisticsStoreException or TransferOutgoingDocumentRuleException)

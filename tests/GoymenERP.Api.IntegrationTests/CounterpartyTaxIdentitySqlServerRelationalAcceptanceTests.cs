@@ -797,7 +797,8 @@ public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
                     entry.Entity.CommandName == "counterparty.party.tax-identity.enter.v1")
                 && Interlocked.Increment(ref _arrivals) <= 2)
             {
-                barrier.SignalAndWait(TimeSpan.FromSeconds(30), cancellationToken);
+                if (!barrier.SignalAndWait(TimeSpan.FromSeconds(30), cancellationToken))
+                    throw new TimeoutException("Concurrent save barrier timed out before both writers arrived.");
             }
 
             return ValueTask.FromResult(result);
