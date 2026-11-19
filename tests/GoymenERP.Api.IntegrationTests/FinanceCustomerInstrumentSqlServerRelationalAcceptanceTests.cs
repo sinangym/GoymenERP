@@ -167,12 +167,33 @@ public sealed class FinanceCustomerInstrumentSqlServerRelationalAcceptanceTests
                 CancellationToken.None);
         }
 
-        var results = await Task.WhenAll(
-            Task.Run(() => CollectAsync("race-a", "SENTETIK-collector-a")),
-            Task.Run(() => CollectAsync("race-b", "SENTETIK-collector-b")));
+        (string Key, string Actor)[] attempts =
+            [("race-a", "SENTETIK-collector-a"), ("race-b", "SENTETIK-collector-b")];
+        var results = await Task.WhenAll(attempts.Select(attempt =>
+            Task.Run(() => CollectAsync(attempt.Key, attempt.Actor))));
 
         Assert.Single(results, result => result.Outcome == CommandOutcome.Succeeded && !result.IsReplay);
-        Assert.Single(results, result => result.Outcome is CommandOutcome.VersionConflict or CommandOutcome.ValidationFailed);
+        var loser = Assert.Single(results, result => result.Outcome != CommandOutcome.Succeeded);
+        Assert.Contains(loser.Outcome,
+            new[] { CommandOutcome.VersionConflict, CommandOutcome.ValidationFailed, CommandOutcome.Unavailable });
+        if (loser.Outcome == CommandOutcome.Unavailable)
+        {
+            // The SERIALIZABLE deadlock loser is nonterminal: its entire collection and command key were rolled back.
+            // Explicitly reissue the same actor/key in a new scope; production never retries the economic operation.
+            var attempt = attempts[Array.IndexOf(results, loser)];
+            Assert.False(loser.IsReplay);
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.Commands WHERE CompanyId=@company AND CommandName=@command AND IdempotencyKeyHash=@hash",
+                ("@company", CompanyA), ("@command", CustomerInstrumentService.CollectCommand),
+                ("@hash", FinanceCommandKeys.Hash(attempt.Key))));
+            Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
+            Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.ReceiptDrafts"));
+            Assert.Equal(2L, await run.ScalarAsync<long>("SELECT Version FROM finance.CustomerInstruments"));
+            var reissued = await CollectAsync(attempt.Key, attempt.Actor);
+            Assert.Equal(CommandOutcome.VersionConflict, reissued.Outcome);
+            Assert.False(reissued.IsReplay);
+            Assert.Contains(reissued.Issues, issue => issue.Code == "version_conflict");
+        }
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.ReceiptDrafts"));
         Assert.Equal(2L, await run.ScalarAsync<long>("SELECT Version FROM finance.CustomerInstruments"));
