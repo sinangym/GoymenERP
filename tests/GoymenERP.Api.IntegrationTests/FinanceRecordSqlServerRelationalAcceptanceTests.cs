@@ -550,8 +550,9 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
             Audits: await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.receipt-reversal.proposed.v1'")));
 
-        // The first definitive reversal does not prevent an auditor from seeing a later proposal attempt,
-        // but the database and service together prevent that proposal from becoming a second money fact.
+        // The first definitive reversal leaves this real bank balance at zero. A later proposal remains visible,
+        // but FNS-D87's outgoing balance guard refuses its approval before the separate source-allocation barrier.
+        // This case proves that earlier guard and the absence of any second economic fact, not the barrier's error code.
         var secondMaker = Guid.NewGuid().ToString("D");
         ReversalProposalCommandResult secondProposal;
         await using (var maker = run.ReversalService(CompanyA, secondMaker))
@@ -569,7 +570,7 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
                 new ApproveReversalRequest(secondProposal.Resource!.Id, secondProposal.Resource.Version),
                 CancellationToken.None);
             Assert.Equal(CommandOutcome.ValidationFailed, refused.Outcome);
-            Assert.Equal(new ValidationIssue("sourceId", "finance_allocation_state_invalid"),
+            Assert.Equal(new ValidationIssue("money.amount", TreasuryBalanceAnswer.InsufficientCode),
                 Assert.Single(refused.Issues));
             Assert.Null(refused.Resource);
         }
