@@ -50,9 +50,9 @@ EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
     "3d62237456b4c9d291ced56872b2748d1ce53eed7f6d6164f8cc63e406eca09c"
 )
 # W8 approval-mode repair (7e2c50a0b): exact producer measurements; K3 review remains pending.
-EXPECTED_MIGRATION_COUNT = 344
+EXPECTED_MIGRATION_COUNT = 346
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
-    "440c1b4406389f9839950850630241a387b8cbae9d7cf1bb73cc27b0613ea479"
+    'ee6e22a3b59e1e3bacc79a0f7205d47f4a5ecbecbdcfb814d9627e5e9acbad9c'
 )
 # tren-1 wave 3 integration: +7 durable stores from platform/alis_cari/uretim/finans/kimlik and
 # +1 from stok_lojistik (product.profile-weight-attempts); every new classification is
@@ -97,10 +97,10 @@ EXPECTED_DURABLE_STORE_COUNT = 66
 # The full src/backend byte digest is still computed and emitted as `sourceSurface` in the
 # inventory (and copied into the release manifest).  The manifest sourceSurface is post-hoc
 # evidence, not a merge block: it is never compared with a pinned constant.
-EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 1469
-# W8 SQL report corrections: producer measured at 0fade9409; 1469 inputs, 344 migrations; K3 pending.
+EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 1478
+# W8 K3 A/B corrections: producer measured at 40727af79; 1478 inputs, 346 migrations; K3 pending.
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    'c7b10664d5b2e4d050563f1da4cbc59306069fc18a1220eb9eca5ca1793237f6'
+    '98f8753c13533f51574446a5b31506e3e5eb18d64e0d9a6b46259d8fccc23e4a'
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -1484,7 +1484,7 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
     (
         "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventorySupplierReturnExitParticipant.cs",
         "StageAsync",
-    ): "7e1f2178533cd9d425385d77b9f708ed89d6ea9a83db7decc960ef4f7e471f5a",
+    ): '5d7d77194dfa2c9771d3017560d1d97a4378139c2e5608d3b9b8bbff4ad4225a',
     (
         "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductProfileWeightTableService.cs",
         "AddAttempt",
@@ -1597,7 +1597,7 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
     (
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseSupplierReturnStore.cs",
         "SaveNewAsync",
-    ): "608d385e3867eeaa1807b4869a81636f485dd677fbe944aca69bf98835501eca",
+    ): '541aa15544a058b3c254902065e8a93d719250874a89a33924b416ae36eef372',
     (
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.SubcontractServiceInvoices.cs",
         "StoreSubcontractServiceInvoiceAsync",
@@ -1671,13 +1671,13 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductDimensionService.cs": "917f76d56262c646943d23540c306f9eecbf035fe77fbeae18c7ef309cb2e115",
     # tren-1 wave 3 (stok_lojistik): new live writers; K3 review pending (stok).
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductProfileWeightTableService.cs": "23fbd437a6ce008fba062e652a547692f2fe70f07ddad6525225736f2568f625",
-    "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventorySupplierReturnExitParticipant.cs": "ffdc1fc88be6f8ad880992d48ac6fd36bd5588401255a97f4a1f3ce91242c150",
+    "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventorySupplierReturnExitParticipant.cs": '1870def44bc583226c9a124d5f3943f6766fc06565f7401edd811aa13bcc1c2e',
     # tren-1 wave 5 integration: values from print_recovery_actuals.py; K3 review pending.
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCreditAccountService.cs": '8c3cd1d3609ee51f45ce933e387e199e5e27a10da084b8982a3ef3864b072d21',
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOpeningBalanceService.cs": "b264220af4b1147e09e305d325aa3ae1fc3d62fca63d580b4c585664a4c0801c",
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsWeighingDifferenceStore.cs": "6a8f49845400b0d6380441734e2b68434e8004cdf639615752ece8be239d433b",
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPackageStandardService.cs": "b44f4ff760e074b6a6f7ebf1a5c1f1186e16cc269e7eba7bc0a299b035cdd573",
-    "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseSupplierReturnStore.cs": '55e8a86217760de4e1ffc1d6cc7a49ffc3f44347b374bd890d31ccaa9a9639ad',
+    "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseSupplierReturnStore.cs": 'a933ab7d748933a19a0513166c416222b317952d1a8c2b7ab9c4159dd757c279',
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.SubcontractServiceInvoices.cs": "ca6451e77c725c5f23e3110045adef1041bd96f846e152c9228954ff170f1b02",
 }
 
