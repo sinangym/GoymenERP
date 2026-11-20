@@ -137,11 +137,11 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
-    public async Task Supplier_return_exit_refuses_a_cost_difference_against_a_readable_average_and_writes_nothing()
+    public async Task Supplier_return_exit_preserves_D410_pool_residual_refusal_and_writes_nothing()
     {
-        // SAT-D371 (completes SAT-D306 (c)): until the Finance accounting-voucher spec names the account, a return whose
-        // original cost would leave a cost difference against the readable moving average is refused; a return without
-        // a difference proceeds. The ledger is read only, never written by the exit. SENTETIK figures.
+        // SAT-D410 preserves this stock-pool 409 even for an approved cost exception. SAT-D392's invoice-relative
+        // cost is selected by Purchasing; these examples assert only the separate residual/non-positive-value guard.
+        // This fixture has an unavailable receipt stamp, so its seeded legacy ledger is not repriced. SENTETIK figures.
         await using var run = await Run.StartAsync();
         var receipt = await ReceiveForSupplierReturnAsync(run, BlockState.Free);
         Assert.Equal(4m, await run.ScalarAsync<decimal>(
@@ -175,6 +175,27 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
               AND Version = 1 AND QuantityKg = 4 AND AverageCostPerKg = 10;
             """,
             ("@company", CompanyA), ("@location", receipt.LocationId), ("@product", receipt.ProductId)));
+    }
+
+    [SqlServerFact]
+    public async Task Supplier_return_exit_allows_a_price_different_from_average_when_the_remaining_pool_is_valid()
+    {
+        // SAT-D392 does not define the difference against the average. A safe pool can accept the owner-supplied
+        // invoice/approved-exception cost of 12 although the actual receipt pool is 4 kg at 10.
+        await using var run = await Run.StartAsync();
+        var receipt = await SeedInvoiceCostReceipt(run, 10m);
+        var request = SupplierReturnRequest(receipt, BlockState.Free, "1", "12");
+        await StageSupplierReturnAsync(run, request);
+
+        await using var verify = run.Context(CompanyA);
+        Assert.Equal(3m, await LabelBlockKgAsync(run, receipt.LabelId, BlockState.Free));
+        var ledger = await verify.AverageCostLedger.SingleAsync(row => row.ProductId == receipt.ProductId);
+        Assert.Equal((3m, 9.3333m), (ledger.QuantityKg, ledger.AverageCostPerKg));
+        var stamp = await verify.MovementCostStamps.SingleAsync(row => row.MovementId == request.InventoryMovementId
+            && row.CurrencyId == GoymenERP.Modules.Settings.Application.Contracts.V1.SettingsCurrencyIdentitiesV1.TurkishLira);
+        Assert.Equal((12m, 12m), (stamp.UnitCostPerKg, stamp.Amount));
+        Assert.Equal((int)InventoryMovementCostStampStatusV1.Known, stamp.Status);
+        Assert.Single(await verify.Movements.Where(row => row.Kind == (int)StockMovementKind.SupplierReturnExit).ToListAsync());
     }
 
     [SqlServerFact]

@@ -35,7 +35,9 @@ public static class PurchaseIncomingInvoiceFinalizationV1
         // Historical matches may predate the owner quantity proof. Never fill their gap from current rows.
         if (matches.Length == 0 || matches.Any(x => x.AcceptedQuantity is not > 0)) return null;
         return new(line.ProductId, line.UnitId, line.Quantity, Array.AsReadOnly(matches.Select(x =>
-            new PurchaseInvoiceReceiptCostShareV1(x.AcceptanceId, x.OrderId, x.OrderLineId, x.OrderVersion, x.Quantity, x.AcceptedQuantity!.Value)).ToArray()));
+            new PurchaseInvoiceReceiptCostShareV1(x.AcceptanceId, x.OrderId, x.OrderLineId, x.OrderVersion, x.Quantity, x.AcceptedQuantity!.Value,
+                x.ReceiptAdjustments is null ? null : Array.AsReadOnly(x.ReceiptAdjustments.Select(adjustment =>
+                    new PurchaseInvoiceReceiptAdjustmentV1(adjustment.AdjustmentId, adjustment.UndoQuantity, adjustment.IsSupplierReturn)).ToArray()))).ToArray()));
     }
 
     private static IReadOnlyList<PurchaseInvoiceSubcontractTaxSourceV1>? TaxSources(PurchaseIncomingInvoice invoice, Guid lineId)

@@ -25,6 +25,7 @@ internal sealed class PurchaseSupplierReturnRow : IPurchasingTenantRow
     public bool ReplacementExpected { get; set; }
     public long? ExpectedPurchaseOrderVersion { get; set; }
     public decimal? UndoQuantity { get; set; }
+    public string? CostAllocationJson { get; set; }
     public string Reason { get; set; } = string.Empty;
     public DateTimeOffset OccurredAtUtc { get; set; }
     public string RequestedBy { get; set; } = string.Empty;

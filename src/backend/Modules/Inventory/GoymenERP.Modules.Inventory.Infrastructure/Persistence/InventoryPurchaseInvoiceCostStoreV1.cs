@@ -69,23 +69,35 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
                     || orderVersion > share.OrderVersion || receipt.OwnerKind != StockPartyKind.Company || receipt.OwnerId != companyId
                     || receipt.CustodianKind != StockPartyKind.Company || receipt.CustodianId != companyId)
                     throw Invalid("purchase_invoice_cost_receipt_source_conflict");
-                if (await db.GoodsReceiptReversals.AnyAsync(row => row.AcceptanceId == share.AcceptanceId, cancellationToken))
-                    throw Invalid("purchase_invoice_cost_receipt_reversed");
+                var basis = await ReadReceiptCostBasisAsync(receipt, share, cancellationToken);
+                if (basis.Cohort is { } cohort ? ExactCostRatio.Of(share.MatchedQuantity).CompareTo(cohort.PendingQuantity) > 0
+                    : priorShares.Aggregate(ExactCostRatio.Of(share.MatchedQuantity),
+                        (sum, row) => sum.Add(ExactCostRatio.Of(row.MatchedQuantity))).CompareTo(basis.EligibleQuantity) > 0)
+                    throw Invalid("purchase_invoice_cost_receipt_share_conflict");
                 var stamp = await db.MovementCostStamps.AsNoTracking().SingleOrDefaultAsync(row => row.MovementId == receipt.MovementId
                     && row.LineNumber == 1 && row.CurrencyId == Tl, cancellationToken);
                 if (stamp is null || stamp.StampVersion < 1) throw Unavailable("purchase_invoice_cost_receipt_unavailable");
                 if (stamp.Status != (int)InventoryMovementCostStampStatusV1.Known)
                 {
+                    // A later return changes the priced/unpriced cohort after an earlier recognition. Its economic
+                    // allocation is not decided by this fix; preserve the earlier evidence and keep the new source retryable.
+                    if (basis.Cohort is null && priorShares.Any(prior => !(FirstCostPhysicalSource(prior).ReceiptReversals ?? [])
+                        .OrderBy(x => x.ReversalId).SequenceEqual(basis.Reversals.OrderBy(x => x.ReversalId))))
+                        throw Unavailable("purchase_invoice_cost_first_reversal_basis_changed");
                     firstPlans.Add(await PrepareFirstCostAsync(source, share, receipt.MovementId,
-                        receipt.LabelId, receipt.LocationId, receipt.QuantityKg, stamp, cancellationToken));
+                        receipt.LabelId, receipt.LocationId, receipt.QuantityKg, stamp, basis, cancellationToken));
                     continue;
                 }
                 var originalUnit = InventoryExactCostRatioV1.Resolve(stamp.UnitCostPerKg, stamp.UnitCostRatioJson is null ? null
                     : JsonSerializer.Deserialize<InventoryExactCostRatioV1>(stamp.UnitCostRatioJson, Json));
                 if (originalUnit.Sign < 0) throw Invalid("purchase_invoice_cost_receipt_source_conflict");
+                // The existing late-difference contract retains the original stamped kg/purchase-unit basis.
+                // A non-proportional measured undo cannot silently reinterpret that historical cost contract.
+                if (basis.EligibleKg.Divide(basis.EligibleQuantity)
+                    .CompareTo(basis.OriginalKg.Divide(share.AcceptedQuantity)) != 0)
+                    throw Unavailable("purchase_invoice_cost_known_reversal_basis_unavailable");
                 // Physical kg comes from the immutable original Inventory receipt, not current Product conversion.
-                var physicalKg = decimal.Parse(receipt.QuantityKg, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture);
-                var invoicedKg = ExactCostRatio.Of(physicalKg).Multiply(share.MatchedQuantity).Divide(share.AcceptedQuantity);
+                var invoicedKg = basis.EligibleKg.Multiply(share.MatchedQuantity).Divide(basis.EligibleQuantity);
                 var previousValue = originalUnit.Multiply(invoicedKg);
                 var invoiceValue = share.TlNetShare.Value();
                 var result = new InventoryPurchaseInvoiceCostReceiptResultV1(share.InvoiceLineId, share.InvoiceLineNo, share.AcceptanceId,

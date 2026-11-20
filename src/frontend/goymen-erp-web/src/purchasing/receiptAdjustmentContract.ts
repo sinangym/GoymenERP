@@ -1,6 +1,7 @@
 import { isPurchasingGuid as guid, isPurchasingVersion as version } from './contract'
 import { FUTURE_SUPPLY_RELEASE_CODES, type FutureSupplyRelease, type GoodsReceiptRequest } from './goodsReceiptContract'
 import { decodeSupplierReturn, type SupplierReturn } from './supplierReturnContract'
+import type { SupplierReturnCostAllocation } from './supplierReturnSourceContract'
 
 export interface ReceiptReversalRequest {
   readonly expectedPurchaseOrderVersion: string
@@ -27,6 +28,7 @@ export interface SupplierReturnRequest {
   readonly occurredAtUtc: string
   readonly expectedPurchaseOrderVersion: string
   readonly undoQuantity: string
+  readonly costAllocation?: SupplierReturnCostAllocation
 }
 export interface SupplierReturnDecision {
   readonly expectedVersion: string

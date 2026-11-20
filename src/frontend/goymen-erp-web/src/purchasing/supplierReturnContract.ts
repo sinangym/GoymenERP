@@ -1,4 +1,5 @@
 import { isPurchasingGuid, isPurchasingInstant, isPurchasingVersion } from './contract'
+import { decodeSupplierReturnCostAllocation, decodeSupplierReturnSourceLabels, type SupplierReturnCostAllocation, type SupplierReturnSourceLabel } from './supplierReturnSourceContract'
 
 /**
  * B-19 (ALC-S5; SAT-D306, SAT-D392, SAT-D393, SAT-D396): GET …/orders/{id}/supplier-returns — the order's returns to supplier.
@@ -23,7 +24,8 @@ export interface SupplierReturn {
   readonly sourceBlock: SupplierReturnSourceBlock
   readonly quantityKg: string
   readonly costBasis: SupplierReturnCostBasis
-  readonly unitCostTryPerKg: string
+  readonly unitCostTryPerKg: string | null
+  readonly priceDisclosure: 'Visible' | 'Withheld'
   readonly replacementExpected: boolean
   readonly reason: string
   readonly occurredAtUtc: string
@@ -34,6 +36,8 @@ export interface SupplierReturn {
   readonly decisionReason: string | null
   readonly expectedPurchaseOrderVersion?: string
   readonly undoQuantity?: string
+  readonly costAllocation?: SupplierReturnCostAllocation
+  readonly costAllocationSources?: readonly SupplierReturnSourceLabel[]
 }
 
 export interface SupplierReturnPage {
@@ -48,7 +52,7 @@ const STATUSES: readonly string[] = ['PendingCostException', 'Recorded', 'Reject
 const BASES: readonly string[] = ['InvoiceUnitCost', 'ManualCostWithException']
 const BLOCKS: readonly string[] = ['Free', 'Blocked']
 const RETURN_FIELDS = ['companyId', 'returnId', 'returnLineId', 'purchaseOrderId', 'purchaseOrderLineId', 'goodsAcceptanceId',
-  'inventoryMovementId', 'status', 'version', 'sourceBlock', 'quantityKg', 'costBasis', 'unitCostTryPerKg', 'replacementExpected',
+  'inventoryMovementId', 'status', 'version', 'sourceBlock', 'quantityKg', 'costBasis', 'unitCostTryPerKg', 'priceDisclosure', 'replacementExpected',
   'reason', 'occurredAtUtc', 'requestedBy', 'requestedAtUtc', 'decidedBy', 'decidedAtUtc', 'decisionReason'] as const
 
 function record(value: unknown): JsonObject | null {
@@ -86,21 +90,29 @@ function oneOf(value: unknown, names: readonly string[]): value is string {
 export function decodeSupplierReturn(value: unknown, companyId: string, orderId: string): SupplierReturn | null {
   const source = record(value)
   const metadataPresent = source !== null && Object.hasOwn(source, 'expectedPurchaseOrderVersion')
-  const fields = metadataPresent ? [...RETURN_FIELDS, 'expectedPurchaseOrderVersion', 'undoQuantity'] : RETURN_FIELDS
+  const allocationPresent = source !== null && Object.hasOwn(source, 'costAllocation')
+  const labelsPresent = source !== null && Object.hasOwn(source, 'costAllocationSources')
+  const allocation = allocationPresent ? decodeSupplierReturnCostAllocation(source.costAllocation) : null
+  const fields = [...RETURN_FIELDS, ...(metadataPresent ? ['expectedPurchaseOrderVersion', 'undoQuantity'] : []),
+    ...(allocationPresent ? ['costAllocation'] : []), ...(labelsPresent ? ['costAllocationSources'] : [])]
   if (source === null || !exact(source, fields)
     || !isPurchasingGuid(source.companyId) || source.companyId.toLowerCase() !== companyId.toLowerCase()
     || !isPurchasingGuid(source.returnId) || !isPurchasingGuid(source.returnLineId) || !isPurchasingGuid(source.purchaseOrderId)
     || source.purchaseOrderId.toLowerCase() !== orderId.toLowerCase() || !isPurchasingGuid(source.purchaseOrderLineId)
     || !isPurchasingGuid(source.goodsAcceptanceId) || !isPurchasingGuid(source.inventoryMovementId)
     || !oneOf(source.status, STATUSES) || !isPurchasingVersion(source.version) || !oneOf(source.sourceBlock, BLOCKS)
-    || !positive(source.quantityKg) || !oneOf(source.costBasis, BASES) || !positive(source.unitCostTryPerKg)
+    || !positive(source.quantityKg) || !oneOf(source.costBasis, BASES)
+    || !(source.priceDisclosure === 'Withheld' && source.unitCostTryPerKg === null
+      || source.priceDisclosure === 'Visible' && positive(source.unitCostTryPerKg))
     || typeof source.replacementExpected !== 'boolean' || source.replacementExpected && !metadataPresent
     || metadataPresent && (!isPurchasingVersion(source.expectedPurchaseOrderVersion) || !positive(source.undoQuantity)
       || !/^(0|[1-9]\d{0,14})(\.[0-9]{0,2}[1-9])?$/.test(source.undoQuantity))
     || !nonBlank(source.reason) || !isPurchasingInstant(source.occurredAtUtc)
     || !nonBlank(source.requestedBy) || !isPurchasingInstant(source.requestedAtUtc)
     || !nullableNonBlank(source.decidedBy) || !(source.decidedAtUtc === null || isPurchasingInstant(source.decidedAtUtc))
-    || !nullableNonBlank(source.decisionReason)) return null
+    || !nullableNonBlank(source.decisionReason)
+    || allocationPresent && (!metadataPresent || allocation === null || !labelsPresent)
+    || labelsPresent && (allocation === null || decodeSupplierReturnSourceLabels(source.costAllocationSources, allocation) === null)) return null
   const decided = source.decidedBy !== null
   if (decided !== (source.decidedAtUtc !== null)) return null
   if (source.costBasis === 'InvoiceUnitCost') {

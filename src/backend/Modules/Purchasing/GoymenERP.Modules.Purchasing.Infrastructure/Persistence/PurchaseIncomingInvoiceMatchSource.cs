@@ -46,6 +46,13 @@ public sealed partial class PurchaseIncomingInvoiceMatchSource(PurchasingDbConte
             if (accepted is null || accepted.CompanyId != invoice.CompanyId || accepted.PurchaseOrderId != item.PurchaseOrderId
                 || accepted.AcceptanceId != item.AcceptanceId || accepted.PurchaseOrderLineId == Guid.Empty) throw Mismatch();
             var acceptedQuantity = Quantity(accepted.AcceptedQuantity);
+            var adjustments = await context.ReceiptAdjustments.AsNoTracking()
+                .Where(row => row.AcceptanceId == accepted.AcceptanceId).OrderBy(row => row.AdjustmentId)
+                .Select(row => new { row.AdjustmentId, row.UndoQuantity, row.IsSupplierReturn, row.OrderId, row.LineId })
+                .ToListAsync(cancellationToken);
+            RequireScope(invoice.CompanyId);
+            if (adjustments.Any(row => row.OrderId != item.PurchaseOrderId || row.LineId != accepted.PurchaseOrderLineId))
+                throw Mismatch();
             var order = await context.Orders.AsNoTracking().Where(row => row.Id == item.PurchaseOrderId)
                 .Select(row => new { row.CompanyId, row.Id, row.Version, row.SupplierPartyId, row.CompanyAccountId, row.CurrencyId })
                 .SingleOrDefaultAsync(cancellationToken);
@@ -81,7 +88,9 @@ public sealed partial class PurchaseIncomingInvoiceMatchSource(PurchasingDbConte
             catch (Exception exception) when (exception is ArgumentException or OverflowException) { throw Unavailable(); }
             matches.Add(new PurchaseInvoiceReceiptMatch(invoice.CompanyId, line.Id, accepted.AcceptanceId, order.Id, accepted.PurchaseOrderLineId,
                 order.Version, order.SupplierPartyId, order.CompanyAccountId, invoice.CurrencyId, line.UnitId,
-                quantity, expected, control, day, AcceptedQuantity: acceptedQuantity));
+                quantity, expected, control, day, AcceptedQuantity: acceptedQuantity,
+                ReceiptAdjustments: Array.AsReadOnly(adjustments.Select(row =>
+                    new PurchaseInvoiceReceiptAdjustment(row.AdjustmentId, row.UndoQuantity, row.IsSupplierReturn)).ToArray())));
         }
         RequireScope(invoice.CompanyId);
         return new PurchaseIncomingInvoiceMatchSourceV1(matches, new PurchaseInvoiceVariancePolicy(policy.PolicyId, policy.Version, policy.AmountTolerance, policy.RateTolerance));

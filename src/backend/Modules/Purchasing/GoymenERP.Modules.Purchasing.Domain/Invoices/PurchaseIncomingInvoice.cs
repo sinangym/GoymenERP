@@ -34,7 +34,11 @@ public sealed record PurchaseInvoiceReceiptMatch(Guid CompanyId, Guid InvoiceLin
     decimal Quantity, decimal ExpectedNet, decimal? ControlRate, DateOnly AcceptedOn,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? ServiceTypeId = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] GoymenERP.Modules.Purchasing.Domain.Services.PurchaseServiceTax? SubcontractTax = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] decimal? AcceptedQuantity = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] decimal? AcceptedQuantity = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseInvoiceReceiptAdjustment>? ReceiptAdjustments = null);
+
+/// <summary>Immutable Purchasing undo facts observed under the match's order lock. Null on old matches is not an empty proof.</summary>
+public sealed record PurchaseInvoiceReceiptAdjustment(Guid AdjustmentId, decimal UndoQuantity, bool IsSupplierReturn);
 
 /// <summary>The actual Settings version used for comparison. Null policy means unavailable, never zero tolerance.</summary>
 public sealed record PurchaseInvoiceVariancePolicy(Guid Id, long Version, decimal AmountTolerance, decimal RateTolerance);
@@ -176,6 +180,8 @@ public sealed class PurchaseIncomingInvoice
             || frozen.Select(item => item.AcceptanceId).Distinct().Count() != frozen.Length
             || expenses.Select(item => (item.InvoiceLineId, item.CostId)).Distinct().Count() != expenses.Length)
             throw new ArgumentException("Kabul payı yalnız bir kez eşleştirilir.");
+        frozen = frozen.Select(item => item with { ReceiptAdjustments = item.ReceiptAdjustments is null
+            ? null : Array.AsReadOnly(item.ReceiptAdjustments.ToArray()) }).ToArray();
         var differences = new List<PurchaseInvoiceVariance>();
         foreach (var item in frozen)
         {
@@ -184,6 +190,14 @@ public sealed class PurchaseIncomingInvoice
             if (item.AcceptedQuantity is { } original && (original <= 0 || original > MaximumStoredQuantity
                 || decimal.Round(original, MaximumStoredScale) != original))
                 throw new ArgumentException("Özgün kabul miktarı kayıt ölçeğine tam olarak sığmalıdır; yuvarlanmaz.");
+            if (item.ReceiptAdjustments is { } adjustments && (item.AcceptedQuantity is not { } accepted
+                || adjustments.Count > 10000 || adjustments.Any(x => x is null || x.AdjustmentId == Guid.Empty
+                    || x.UndoQuantity <= 0 || x.UndoQuantity > MaximumStoredQuantity
+                    || decimal.Round(x.UndoQuantity, MaximumStoredScale) != x.UndoQuantity)
+                || adjustments.Select(x => x.AdjustmentId).Distinct().Count() != adjustments.Count
+                || adjustments.Sum(x => x.UndoQuantity) >= accepted
+                || item.Quantity > accepted - adjustments.Sum(x => x.UndoQuantity)))
+                throw new PurchasingRuleException(SourceMismatch, "Kabul düzeltme kanıtı ve faturalanabilir pay uyuşmuyor.");
             if (item.CompanyId != CompanyId || item.AcceptanceId == Guid.Empty || item.OrderId == Guid.Empty || item.OrderLineId == Guid.Empty || item.OrderVersion < 1
                 || item.SupplierPartyId != SupplierPartyId || item.CompanyAccountId != CompanyAccountId || item.CurrencyId != CurrencyId
                 || item.Quantity <= 0 || item.ExpectedNet < 0 || item.AcceptedOn == default

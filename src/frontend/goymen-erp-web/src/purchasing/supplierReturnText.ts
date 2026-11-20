@@ -17,6 +17,7 @@ export const SUPPLIER_RETURN_TEXT = {
   quantityKg: 'İade (kg)',
   costBasis: 'Maliyet dayanağı',
   unitCost: 'Birim maliyet (TRY/kg)',
+  priceWithheld: 'Fiyat görme yetkiniz bulunmuyor.',
   reason: 'İade gerekçesi',
   occurredAtUtc: 'İade zamanı (UTC)',
   requestedBy: 'Giren',

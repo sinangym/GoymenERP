@@ -50,15 +50,27 @@ public sealed partial class InventoryStore
             foreach (var batch in movements.Chunk(256))
                 effects.AddRange(await context.PurchaseInvoiceReceiptCostEffects.Where(row => batch.Contains(row.MovementId))
                     .ToListAsync(token));
-            effects.AddRange(context.PurchaseInvoiceReceiptCostEffects.Local.Where(row => row.CompanyId == company.CompanyId
-                && movements.Contains(row.MovementId) && !effects.Contains(row)));
+            var stagedEffects = context.PurchaseInvoiceReceiptCostEffects.Local.Where(row => row.CompanyId == company.CompanyId
+                && movements.Contains(row.MovementId) && !effects.Contains(row)).ToArray();
+            effects.AddRange(stagedEffects);
             foreach (var group in effects.GroupBy(row => row.MovementId))
             {
                 if (group.Any(row => row.AcceptedQuantity <= 0m || row.MatchedQuantity <= 0m
                     || row.AcceptedQuantity != group.First().AcceptedQuantity))
                     throw new InvalidOperationException("purchase_first_cost_share_unreadable");
-                var fraction = group.Aggregate(ExactCostRatio.Of(0m), (sum, row) =>
-                    sum.Add(ExactCostRatio.Of(row.MatchedQuantity).Divide(row.AcceptedQuantity)));
+                var storedSource = await InventorySupplierReturnCostSourceReader.ReadStoredPurchaseSourceAsync(
+                    context, group.Key, group.First().AcceptanceId, token);
+                ExactCostRatio fraction;
+                if (storedSource is not null)
+                {
+                    var current = await new InventorySupplierReturnCostSourceReader(context, company).ReadStockAttributionAsync(
+                        company.CompanyId, group.First().AcceptanceId, storedSource,
+                        stagedEffects.Where(row => row.MovementId == group.Key).ToArray(), token);
+                    fraction = current.StockKg.Sign == 0 ? ExactCostRatio.Of(0m)
+                        : ExactCostRatio.Of(1m).Subtract(current.PendingStockKg.Divide(current.StockKg));
+                }
+                else fraction = group.Aggregate(ExactCostRatio.Of(0m), (sum, row) =>
+                    sum.Add(InventoryPurchaseInvoiceCostStoreV1.FirstCostReceiptFraction(row)));
                 if (fraction.CompareTo(ExactCostRatio.Of(1m)) > 0)
                     throw new InvalidOperationException("purchase_first_cost_share_unreadable");
                 purchasePriced.Add(group.Key, fraction);

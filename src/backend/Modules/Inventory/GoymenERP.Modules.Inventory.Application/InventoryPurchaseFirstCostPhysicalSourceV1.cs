@@ -8,7 +8,20 @@ public sealed record InventoryPurchaseFirstCostPhysicalSourceV1(string SourceVer
     Guid AcceptanceId, Guid InvoiceLineId, int InvoiceLineNo, Guid ReceiptMovementId, Guid RootLabelId,
     Guid ProductId, decimal MatchedQuantity, decimal AcceptedQuantity, string AllocationBasis,
     InventoryExactCostRatioV1 RemainingRootQuantityKg, InventoryExactCostRatioV1 NetShippedRootQuantityKg,
-    IReadOnlyList<InventoryPurchaseFirstCostLabelV1> Labels, IReadOnlyList<InventoryPurchaseFirstCostShipmentV1> Shipments);
+    IReadOnlyList<InventoryPurchaseFirstCostLabelV1> Labels, IReadOnlyList<InventoryPurchaseFirstCostShipmentV1> Shipments,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<InventoryPurchaseFirstCostReceiptReversalV1>? ReceiptReversals = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    InventoryPurchaseFirstCostPendingBasisV1? PendingBasis = null);
+
+/// <summary>Remaining uninvoiced source after explicitly attributed supplier returns.</summary>
+public sealed record InventoryPurchaseFirstCostPendingBasisV1(InventoryExactCostRatioV1 RootQuantityKg,
+    InventoryExactCostRatioV1 StockQuantityKg, InventoryExactCostRatioV1 PurchaseQuantity,
+    InventorySupplierReturnCostSourcesV1 SourceSnapshot);
+
+/// <summary>Separate owner-measured purchase quantity and stock kg, joined by the actual adjustment/reversal identity.</summary>
+public sealed record InventoryPurchaseFirstCostReceiptReversalV1(Guid ReversalId, Guid MovementId,
+    InventoryGoodsReceiptReversalKindV1 Kind, decimal UndoQuantity, decimal QuantityKg);
 
 public sealed record InventoryPurchaseFirstCostLabelV1(Guid LabelId, long VersionBefore, long VersionAfter,
     string ProductVersion, InventoryExactCostRatioV1 RootShare,

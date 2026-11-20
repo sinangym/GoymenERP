@@ -50,7 +50,8 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
             write.Request.ReversalLineId, write.AcceptanceId, write.Request.InventoryMovementId,
             write.IsSupplierReturn ? InventoryGoodsReceiptReversalKindV1.SupplierReturn : InventoryGoodsReceiptReversalKindV1.AcceptanceUndo,
             write.Request.SourceBlock == "Free" ? BlockState.Free : BlockState.Blocked, write.Request.MeasuredUndoQuantityKg,
-            write.OriginalUnitCostTryPerKg, write.Request.Reason, write.Request.OccurredAtUtc);
+            write.OriginalUnitCostTryPerKg, write.Request.Reason, write.Request.OccurredAtUtc,
+            PurchaseSupplierReturnCostSources.Map(write.CostAllocation), UndoQuantity: write.IsSupplierReturn ? write.Request.UndoQuantity : null);
         try
         {
             for (var attempt = 0; attempt < PurchaseGoodsReceiptPrelock.MaximumPreparationAttempts; attempt++)
@@ -100,6 +101,13 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
                         throw new PurchasingServiceException(409, PurchaseAcceptanceParticipantCodes.ProductVersionConflict);
                     var notificationSnapshots = await CaptureRevivalNotificationsAsync(connection, borrowed, companyId, write.OrderId,
                         [target], freshAuthority, cancellationToken);
+                    if (write.IsSupplierReturn)
+                    {
+                        // Read the original purchase-unit proof under the host transaction before staging this adjustment.
+                        var proof = await Checked(() => services.GetRequiredService<PurchaseSupplierReturnPurchaseSourceReader>().ReadAsync(
+                            companyId, write.OrderId, write.AcceptanceId, write.Request.AdjustmentId, cancellationToken));
+                        stockRequest = stockRequest with { PurchaseSource = PurchaseSupplierReturnCostSources.Map(proof) };
+                    }
                     var adjusted = await Checked(() => purchase.StageAsync(new PurchaseReceiptAdjustmentStageV1(companyId, write.Request.AdjustmentId,
                         write.OrderId, write.AcceptanceId, write.Request.ExpectedPurchaseOrderVersion, write.Request.UndoQuantity,
                         write.ReplacementExpected, write.IsSupplierReturn, write.Request.Reason, write.Request.OccurredAtUtc,
@@ -133,8 +141,14 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
                 detail: InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, new Dictionary<string, object?>())); }
         catch (InventoryGoodsReceiptException exception) { throw new PurchasingServiceException(exception.Status, exception.Code, innerException: exception,
                 detail: InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, new Dictionary<string, object?>())); }
-        catch (InventorySupplierReturnExitException exception) { throw new PurchasingServiceException(exception.Status, exception.Code, innerException: exception,
-                detail: InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, new Dictionary<string, object?>())); }
+        catch (InventorySupplierReturnExitException exception)
+        {
+            if (exception.Code == InventorySupplierReturnExitCodesV1.CostAllocationRequired)
+                throw new PurchasingServiceException(409, PurchaseSupplierReturnCostAllocationContractV1.Required,
+                    [new PurchasingFieldError("costAllocation", PurchaseSupplierReturnCostAllocationContractV1.Required)], innerException: exception);
+            throw new PurchasingServiceException(exception.Status, exception.Code, innerException: exception,
+                detail: InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, new Dictionary<string, object?>()));
+        }
         catch (InventoryAllocationException exception)
         {
             throw exception.Status == 409

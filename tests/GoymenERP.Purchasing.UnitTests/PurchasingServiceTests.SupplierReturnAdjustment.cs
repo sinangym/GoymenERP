@@ -6,6 +6,77 @@ namespace GoymenERP.Purchasing.UnitTests;
 /// <summary>Synthetic service protocol only; no claim of a shared SQL transaction or real Inventory cost evidence.</summary>
 public sealed partial class PurchasingServiceTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Supplier_return_price_disclosure_covers_create_reads_decisions_and_original_replays(bool visible)
+    {
+        foreach (var approve in new[] { true, false })
+        {
+            var (world, order, returns) = await ReturnWorldAsync();
+            if (!visible) world.Authority.Denied.Add(PurchasingPermissionManifestV1.OrdersPriceRead);
+            var host = new ReturnAdjustmentHost();
+            var service = world.Service(reversals: host, returns: returns);
+            var request = ReturnRequest();
+            var created = await service.CreateSupplierReturnAsync(order, request, Metadata("disclosure-create"));
+            AssertReturnPrice(created.Return, visible);
+            AssertReturnPrice((await service.GetSupplierReturnAsync(order, request.ReturnId)).Return, visible);
+            AssertReturnPrice(Assert.Single((await service.GetSupplierReturnsAsync(order)).Items), visible);
+            async Task<PurchaseSupplierReturnResponseV1> Decide() => approve
+                ? await service.ApproveSupplierReturnCostExceptionAsync(order, request.ReturnId, new("1", null), Metadata("disclosure-decision"))
+                : await service.RejectSupplierReturnCostExceptionAsync(order, request.ReturnId, new("1", "SENTETIK rejected"), Metadata("disclosure-decision"));
+            AssertReturnPrice((await world.AsApprover(Decide)).Return, visible);
+            var decisionReplay = await world.AsApprover(Decide);
+            Assert.True(decisionReplay.IsReplay);
+            AssertReturnPrice(decisionReplay.Return, visible);
+            var creationReplay = await service.CreateSupplierReturnAsync(order, request, Metadata("disclosure-create"));
+            Assert.True(creationReplay.IsReplay);
+            Assert.Equal("PendingCostException", creationReplay.Return.Status);
+            AssertReturnPrice(creationReplay.Return, visible);
+            Assert.Equal(12.3456m, returns.Stored!.Return.UnitCostTryPerKg);
+            Assert.Equal((1, 1), (returns.NewWrites, returns.DecisionWrites));
+        }
+    }
+
+    [Theory]
+    [InlineData("detail")]
+    [InlineData("list")]
+    [InlineData("replay")]
+    [InlineData("legacy-replay")]
+    [InlineData("create")]
+    [InlineData("decision")]
+    public async Task Supplier_return_price_loss_during_the_store_await_is_measured_at_disclosure(string operation)
+    {
+        var (world, order, returns) = await ReturnWorldAsync();
+        var host = new ReturnAdjustmentHost();
+        var service = world.Service(reversals: host, returns: returns);
+        var request = ReturnRequest();
+        if (operation != "create") await service.CreateSupplierReturnAsync(order, request, Metadata("price-revoke"));
+        returns.LegacyReplay = operation == "legacy-replay";
+        returns.AfterAccess = () => world.Authority.Denied.Add(PurchasingPermissionManifestV1.OrdersPriceRead);
+        var view = operation switch
+        {
+            "detail" => (await service.GetSupplierReturnAsync(order, request.ReturnId)).Return,
+            "list" => Assert.Single((await service.GetSupplierReturnsAsync(order)).Items),
+            "decision" => (await world.AsApprover(() => service.ApproveSupplierReturnCostExceptionAsync(
+                order, request.ReturnId, new("1", null), Metadata("price-revoke-decision")))).Return,
+            _ => (await service.CreateSupplierReturnAsync(order, request, Metadata("price-revoke"))).Return,
+        };
+        AssertReturnPrice(view, visible: false);
+        Assert.Equal(12.3456m, returns.Stored!.Return.UnitCostTryPerKg);
+    }
+
+    private static void AssertReturnPrice(PurchaseSupplierReturnViewV1 view, bool visible)
+    {
+        Assert.Equal(visible ? PurchasingPriceDisclosureV1.Visible : PurchasingPriceDisclosureV1.Withheld, view.PriceDisclosure);
+        Assert.Equal(visible ? "12.3456" : null, view.UnitCostTryPerKg);
+        if (!visible)
+        {
+            using var json = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(view));
+            Assert.Equal(System.Text.Json.JsonValueKind.Null, json.RootElement.GetProperty("UnitCostTryPerKg").ValueKind);
+        }
+    }
+
     [Fact]
     public async Task Replacement_expected_manual_cost_return_waits_without_opening_quantity_or_posting_stock()
     {
@@ -165,22 +236,32 @@ public sealed partial class PurchasingServiceTests
         public StoredPurchaseSupplierReturn? Stored { get; private set; }
         public int NewWrites { get; private set; }
         public int DecisionWrites { get; private set; }
+        public Action? AfterAccess { get; set; }
+        public bool LegacyReplay { get; set; }
         public Task<PurchaseSupplierReturnReplay?> FindReplayAsync(PurchasingWriteEnvelope envelope, string hash, string command, CancellationToken cancellationToken = default)
         {
             if (!attempts.TryGetValue((command, envelope.IdempotencyKey), out var found)) return Task.FromResult<PurchaseSupplierReturnReplay?>(null);
             if (found.Actor != envelope.ActorId || found.Hash != hash) throw new PurchasingStoreException(PurchasingStoreCodes.SameKeyPayloadMismatch, "SENTETIK");
-            return Task.FromResult<PurchaseSupplierReturnReplay?>(found.Replay);
+            AfterAccess?.Invoke();
+            return Task.FromResult<PurchaseSupplierReturnReplay?>(LegacyReplay ? found.Replay with { Original = null } : found.Replay);
         }
-        public Task<StoredPurchaseSupplierReturn?> FindAsync(Guid order, Guid id, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Stored is { } stored && stored.Return.ReturnId == id && stored.Return.PurchaseOrderId == order ? stored : null);
+        public Task<StoredPurchaseSupplierReturn?> FindAsync(Guid order, Guid id, CancellationToken cancellationToken = default)
+        {
+            AfterAccess?.Invoke();
+            return Task.FromResult(Stored is { } stored && stored.Return.ReturnId == id && stored.Return.PurchaseOrderId == order ? stored : null);
+        }
         public Task<bool> ReturnIdExistsAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(Stored?.Return.ReturnId == id);
-        public Task<IReadOnlyList<StoredPurchaseSupplierReturn>> ListForOrderAsync(Guid order, int take, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<StoredPurchaseSupplierReturn>>(Stored is null ? [] : [Stored]);
+        public Task<IReadOnlyList<StoredPurchaseSupplierReturn>> ListForOrderAsync(Guid order, int take, CancellationToken cancellationToken = default)
+        {
+            AfterAccess?.Invoke();
+            return Task.FromResult<IReadOnlyList<StoredPurchaseSupplierReturn>>(Stored is null ? [] : [Stored]);
+        }
         public Task<Guid?> FindAcceptanceLineAsync(Guid order, Guid id, CancellationToken cancellationToken = default) => Task.FromResult<Guid?>(lineId);
         public Task<StoredPurchaseSupplierReturn> SaveNewAsync(PurchaseSupplierReturnDraft draft, PurchasingWriteEnvelope envelope, string hash, string command, CancellationToken cancellationToken = default)
         {
             NewWrites++; Stored = new(Company, draft, 1, envelope.ActorId, DateTimeOffset.UnixEpoch, null, null, null);
             Remember(envelope, hash, command, new(draft.ReturnId, null, envelope.CorrelationId, Stored));
+            AfterAccess?.Invoke();
             return Task.FromResult(Stored);
         }
         public Task<StoredPurchaseSupplierReturn> SaveDecisionAsync(Guid order, PurchaseSupplierReturn decided, long version, PurchasingWriteEnvelope envelope,
@@ -189,6 +270,7 @@ public sealed partial class PurchasingServiceTests
             DecisionWrites++; Stored = Stored! with { Return = Stored!.Return with { Status = decided.Status }, Version = decided.Version,
                 DecidedBy = envelope.ActorId, DecidedAtUtc = DateTimeOffset.UnixEpoch, DecisionReason = decided.Reason };
             Remember(envelope, hash, command, new(decided.Id, null, envelope.CorrelationId, Stored));
+            AfterAccess?.Invoke();
             return Task.FromResult(Stored);
         }
         public Task RecordRefusalAsync(PurchasingWriteEnvelope envelope, string hash, string command, PurchasingTerminalRefusal refusal, CancellationToken cancellationToken = default)

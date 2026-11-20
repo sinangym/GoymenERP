@@ -63,6 +63,7 @@ public static class InventoryModuleExtensions
                 serviceProvider.GetRequiredService<IInventoryFutureUnitConverterV1>(),
                 serviceProvider.GetService<ISalesOrderLineSerializationLockBinderV1>()));
         services.AddScoped<IInventoryGoodsReceiptSourceV1, InventoryGoodsReceiptSourceService>();
+        services.AddScoped<IInventorySupplierReturnCostSourceReadPortV1, InventorySupplierReturnCostSourceReader>();
         // DEC-SAL-005: Inventory answers the Sales-declared active-allocation read over its own company-filtered allocations.
         // Registered here, in the owner's module (no host file), so that Sales reads allocations only through this port.
         services.AddScoped<ISalesOrderAllocationReadPortV1, InventorySalesOrderAllocationReadPort>();

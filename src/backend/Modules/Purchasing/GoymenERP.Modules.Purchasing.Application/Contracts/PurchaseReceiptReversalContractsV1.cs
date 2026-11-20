@@ -26,7 +26,8 @@ public sealed record PurchaseReceiptReversalResponseV1(PurchaseReceiptAdjustment
 /// <summary>The service has freshly authorized this owner operation. The host rechecks that SAME authority after awaited reads and before commit.</summary>
 public sealed record PurchaseReceiptReversalWriteV1(Guid OrderId, Guid AcceptanceId, ReversePurchaseReceiptV1 Request,
     bool IsSupplierReturn = false, bool ReplacementExpected = false, string? OriginalUnitCostTryPerKg = null,
-    string CommandName = PurchaseReceiptReversalApiV1.CommandName, string? RequestHash = null);
+    string CommandName = PurchaseReceiptReversalApiV1.CommandName, string? RequestHash = null,
+    PurchaseSupplierReturnCostAllocationV1? CostAllocation = null);
 
 public interface IPurchaseReceiptReversalTransactionV1
 {
@@ -60,7 +61,9 @@ public static class PurchaseReceiptReversalHashV1
 {
     public static string Compute(PurchaseReceiptReversalWriteV1 write) => PurchasingRequestHash.Compute(
         PurchaseReceiptReversalApiV1.CommandName, write.OrderId,
-        new { write.AcceptanceId, write.Request, write.IsSupplierReturn, write.ReplacementExpected, write.OriginalUnitCostTryPerKg });
+        write.CostAllocation is null
+            ? (object)new { write.AcceptanceId, write.Request, write.IsSupplierReturn, write.ReplacementExpected, write.OriginalUnitCostTryPerKg }
+            : new { write.AcceptanceId, write.Request, write.IsSupplierReturn, write.ReplacementExpected, write.OriginalUnitCostTryPerKg, write.CostAllocation });
 }
 
 public static class PurchaseReceiptReversalJsonV1

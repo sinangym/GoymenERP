@@ -12,6 +12,7 @@ import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { Button } from '../ui/Button'
+import { SupplierReturnSourceSummary } from './SupplierReturnSourceSummary'
 import styles from './PurchaseOrderDetailPage.module.css'
 
 export interface SupplierReturnPanelProps {
@@ -81,7 +82,7 @@ function ReturnFacts({ item, index }: { readonly item: SupplierReturn; readonly 
         <div><dt>{T.replacementExpected}</dt><dd>{item.replacementExpected ? T.replacementExpected : T.definitiveReturn}</dd></div>
       </> : null}
       <div><dt>{T.costBasis}</dt><dd>{SUPPLIER_RETURN_COST_BASIS_TEXT[item.costBasis] ?? item.costBasis}</dd></div>
-      <div><dt>{T.unitCost}</dt><dd className={styles.number}>{item.unitCostTryPerKg}</dd></div>
+      <div><dt>{T.unitCost}</dt><dd className={styles.number}>{item.priceDisclosure === 'Withheld' ? T.priceWithheld : item.unitCostTryPerKg}</dd></div>
       <div><dt>{T.reason}</dt><dd>{item.reason}</dd></div>
       <div><dt>{T.occurredAtUtc}</dt><dd><time dateTime={item.occurredAtUtc}>{item.occurredAtUtc}</time></dd></div>
       <div><dt>{T.requestedBy}</dt><dd className={styles.identifier}>{item.requestedBy}</dd></div>
@@ -92,5 +93,6 @@ function ReturnFacts({ item, index }: { readonly item: SupplierReturn; readonly 
       </> : null}
       {item.decisionReason !== null ? <div><dt>{T.decisionReason}</dt><dd>{item.decisionReason}</dd></div> : null}
     </dl>
+    {item.costAllocation !== undefined ? <SupplierReturnSourceSummary allocation={item.costAllocation} labels={item.costAllocationSources} /> : null}
   </article>
 }

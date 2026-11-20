@@ -8,7 +8,10 @@ public sealed record InventoryPurchaseInvoiceOfficialDocumentV1(Guid DocumentId,
 /// <summary>Both quantities are frozen by the actual Purchasing owner in the same order unit. The Inventory owner
 /// verifies the referenced receipt and its physical kg; no current Product conversion or inferred label is used.</summary>
 public sealed record InventoryPurchaseInvoiceReceiptCostShareV1(Guid AcceptanceId, Guid OrderId, Guid OrderLineId,
-    long OrderVersion, decimal MatchedQuantity, decimal AcceptedQuantity);
+    long OrderVersion, decimal MatchedQuantity, decimal AcceptedQuantity,
+    IReadOnlyList<InventoryPurchaseInvoiceReceiptAdjustmentV1>? ReceiptAdjustments = null);
+
+public sealed record InventoryPurchaseInvoiceReceiptAdjustmentV1(Guid AdjustmentId, decimal UndoQuantity, bool IsSupplierReturn);
 
 public sealed record InventoryPurchaseInvoiceGoodsCostSourceV1(Guid ProductId, Guid UnitId, decimal InvoiceQuantity,
     IReadOnlyList<InventoryPurchaseInvoiceReceiptCostShareV1> Receipts);
@@ -34,7 +37,8 @@ public static class InventoryPurchaseInvoiceCostInboxV1
 /// cost difference is absorbed: those require the actual Inventory receipt/stamp/pool under the owner transaction.</summary>
 public sealed record InventoryPurchaseInvoiceCostReceiptV1(Guid InvoiceLineId, int InvoiceLineNo,
     Guid ProductId, Guid UnitId, Guid AcceptanceId, Guid OrderId, Guid OrderLineId, long OrderVersion,
-    decimal MatchedQuantity, decimal AcceptedQuantity, InventoryExactCostRatioV1 TlNetShare);
+    decimal MatchedQuantity, decimal AcceptedQuantity, InventoryExactCostRatioV1 TlNetShare,
+    IReadOnlyList<InventoryPurchaseInvoiceReceiptAdjustmentV1>? ReceiptAdjustments = null);
 
 public sealed record InventoryPurchaseInvoiceCostProjectionV1(Guid CompanyId, Guid InvoiceId, long InvoiceVersion,
     Guid AdmissionId, DateOnly InvoiceDate, string FinalizedBy, InventoryPurchaseInvoiceOfficialDocumentV1 OfficialDocument,

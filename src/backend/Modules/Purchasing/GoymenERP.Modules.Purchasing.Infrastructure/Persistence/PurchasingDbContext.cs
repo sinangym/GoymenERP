@@ -801,6 +801,8 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
             table.HasCheckConstraint("CK_PurchaseSupplierReturns_Text",
                 "LEN([Reason]) > 0 AND LEN([RequestedBy]) > 0 AND LEN([CorrelationId]) > 0");
             table.HasCheckConstraint("CK_PurchaseSupplierReturns_Decision", SupplierReturnDecisionCheck);
+            table.HasCheckConstraint("CK_PurchaseSupplierReturns_CostAllocationJson",
+                "[CostAllocationJson] IS NULL OR ISJSON([CostAllocationJson]) = 1");
         });
         entity.HasKey(x => x.ReturnId);
         entity.HasAlternateKey(x => new { x.CompanyId, x.ReturnId });
@@ -810,6 +812,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
         entity.Property(x => x.SourceBlock).HasMaxLength(16).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
         entity.Property(x => x.QuantityKg).HasPrecision(18, 3);
         entity.Property(x => x.UnitCostTryPerKg).HasPrecision(18, 4);
+        entity.Property(x => x.CostAllocationJson).HasColumnType("nvarchar(max)");
         entity.Property(x => x.Reason).HasMaxLength(PurchaseSupplierReturnMaximumReasonLength).IsRequired();
         entity.Property(x => x.RequestedBy).HasMaxLength(128).IsRequired();
         entity.Property(x => x.DecidedBy).HasMaxLength(128);

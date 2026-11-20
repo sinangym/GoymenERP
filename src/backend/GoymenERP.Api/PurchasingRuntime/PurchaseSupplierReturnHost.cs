@@ -35,7 +35,8 @@ internal sealed class PurchaseSupplierReturnHost(
         {
             await using var transaction = await purchasing.Database.BeginTransactionAsync(cancellationToken);
             var exit = new Exit(companyId, purchasing.Database.GetDbConnection(), transaction.GetDbTransaction(),
-                services.GetRequiredService<ISettingsPrerequisiteProvider>(), clock);
+                services.GetRequiredService<ISettingsPrerequisiteProvider>(), clock,
+                services.GetRequiredService<PurchaseSupplierReturnPurchaseSourceReader>());
             try
             {
                 var result = await operation(exit, cancellationToken);
@@ -62,6 +63,9 @@ internal sealed class PurchaseSupplierReturnHost(
         }
         catch (InventorySupplierReturnExitException exception)
         {
+            if (exception.Code == InventorySupplierReturnExitCodesV1.CostAllocationRequired)
+                throw new PurchasingServiceException(409, PurchaseSupplierReturnCostAllocationContractV1.Required,
+                    [new PurchasingFieldError("costAllocation", PurchaseSupplierReturnCostAllocationContractV1.Required)], innerException: exception);
             throw new PurchasingServiceException(exception.Status, exception.Code, innerException: exception,
                 detail: InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, new Dictionary<string, object?>()));
         }
@@ -75,7 +79,8 @@ internal sealed class PurchaseSupplierReturnHost(
 
     /// <summary>Adapts the Purchasing exit request to Inventory's port; the source block text is parsed strictly (Free or Blocked).</summary>
     private sealed class Exit(Guid companyId, DbConnection connection, DbTransaction transaction,
-        ISettingsPrerequisiteProvider settings, TimeProvider clock) : IPurchaseSupplierReturnExitV1, IAsyncDisposable
+        ISettingsPrerequisiteProvider settings, TimeProvider clock, PurchaseSupplierReturnPurchaseSourceReader purchases)
+        : IPurchaseSupplierReturnExitV1, IAsyncDisposable
     {
         private InventorySupplierReturnExitParticipant? participant;
 
@@ -88,11 +93,14 @@ internal sealed class PurchaseSupplierReturnHost(
             if (participant is not null) throw new InvalidOperationException("A supplier return stages its stock exit once.");
             if (!TryParseBlock(request.SourceBlock, out var block))
                 throw new InvalidOperationException("Supplier return source block is not recognised.");
+            var purchase = await purchases.ReadAsync(companyId, request.PurchaseOrderId, request.GoodsAcceptanceId,
+                request.ReturnId, cancellationToken);
             participant = await InventorySupplierReturnExitParticipant.EnlistAsync(connection, transaction, companyId, settings,
                 cancellationToken, clock);
             var staged = await participant.StageAsync(new InventorySupplierReturnExitRequestV1(request.CompanyId, request.ReturnId,
                 request.ReturnLineId, request.GoodsAcceptanceId, request.InventoryMovementId, block, request.QuantityKg,
-                request.UnitCostTryPerKg, request.OccurredAtUtc), Metadata(envelope), cancellationToken);
+                request.UnitCostTryPerKg, request.OccurredAtUtc, PurchaseSupplierReturnCostSources.Map(request.CostAllocation),
+                PurchaseSupplierReturnCostSources.Map(purchase), request.UndoQuantity), Metadata(envelope), cancellationToken);
             return new PurchaseSupplierReturnExitResultV1(staged.InventoryMovementId, staged.LabelId, staged.QuantityKg, staged.IsReplay);
         }
 

@@ -45,25 +45,61 @@ public static partial class AccountingPurchaseInvoiceCostSourceV1
                     || physical.InvoiceLineNo != line.InvoiceLineNo || physical.ReceiptMovementId != receipt.ReceiptMovementId
                     || physical.RootLabelId != receipt.RootLabelId || physical.ProductId != line.ProductId
                     || physical.MatchedQuantity != receipt.MatchedQuantity || physical.AcceptedQuantity != receipt.AcceptedQuantity
-                    || physical.AllocationBasis != "receipt-root-proportional" || physical.Labels is not { Count: > 0 and <= 65536 }
+                    || physical.AllocationBasis is not ("receipt-root-proportional" or "explicit-supplier-return-source")
+                    || (physical.AllocationBasis == "explicit-supplier-return-source") != (physical.PendingBasis is not null)
+                    || physical.Labels is not { Count: > 0 and <= 65536 }
                     || physical.Shipments is not { Count: <= 65536 }) throw Invalid();
                 var accepted = Value(receipt.AcceptedPhysicalKg); var invoiced = Value(receipt.InvoicedPhysicalKg);
                 var net = Value(physical.NetShippedRootQuantityKg); var remaining = Value(physical.RemainingRootQuantityKg);
                 var receiptValue = Value(receipt.InvoiceTlValue);
+                var reversals = physical.ReceiptReversals ?? [];
+                if (reversals.Count > 10000 || reversals.Any(x => x is null || x.ReversalId == Guid.Empty || x.MovementId == Guid.Empty
+                    || !Enum.IsDefined(x.Kind) || x.UndoQuantity <= 0m || x.QuantityKg <= 0m)
+                    || reversals.Select(x => x.ReversalId).Distinct().Count() != reversals.Count
+                    || reversals.Select(x => x.MovementId).Distinct().Count() != reversals.Count) throw Invalid();
+                var eligible = reversals.Aggregate(accepted, (value, reversal) => value.Subtract(ExactCostRatio.Of(reversal.QuantityKg)));
+                var eligibleQuantity = reversals.Aggregate(ExactCostRatio.Of(receipt.AcceptedQuantity),
+                    (value, reversal) => value.Subtract(ExactCostRatio.Of(reversal.UndoQuantity)));
+                var costRoot = eligible; var costQuantity = eligibleQuantity; var costRemaining = remaining; var costNet = net;
+                if (physical.PendingBasis is { } pending)
+                {
+                    costRoot = Value(pending.RootQuantityKg); costQuantity = Value(pending.PurchaseQuantity);
+                    costRemaining = Value(pending.StockQuantityKg); costNet = costRoot.Subtract(costRemaining);
+                    var snapshot = pending.SourceSnapshot;
+                    if (snapshot is null || snapshot.CompanyId != source.CompanyId || snapshot.GoodsAcceptanceId != receipt.AcceptanceId
+                        || snapshot.LabelId != receipt.RootLabelId || string.IsNullOrWhiteSpace(snapshot.SourceVersion)
+                        || !snapshot.SourceVersion.StartsWith("supplier-return-sources.v1/", StringComparison.Ordinal)
+                        || snapshot.InvoicedSources is not { Count: <= 10000 }
+                        || snapshot.InvoicedSources.Any(x => x is null || x.SourceEventId == Guid.Empty || x.InvoiceId == Guid.Empty
+                            || x.InvoiceLineId == Guid.Empty || Value(x.AvailableQuantityKg).Sign < 0 || Value(x.AvailableUndoQuantity).Sign < 0)
+                        || snapshot.InvoicedSources.Select(x => x.SourceEventId).Distinct().Count() != snapshot.InvoicedSources.Count
+                        || costRoot.Sign <= 0 || costQuantity.Sign <= 0 || costRemaining.Sign < 0 || costNet.Sign < 0
+                        || costRoot.CompareTo(eligible) > 0 || costQuantity.CompareTo(eligibleQuantity) > 0
+                        || costRemaining.CompareTo(remaining) > 0 || costNet.CompareTo(net) > 0
+                        || costRemaining.CompareTo(Value(snapshot.PendingQuantityKg)) != 0
+                        || costQuantity.CompareTo(Value(snapshot.PendingUndoQuantity)) != 0
+                        || snapshot.InvoicedSources.Aggregate(costRemaining, (sum, x) => sum.Add(Value(x.AvailableQuantityKg))).CompareTo(remaining) != 0
+                        || snapshot.InvoicedSources.Aggregate(costQuantity, (sum, x) => sum.Add(Value(x.AvailableUndoQuantity))).CompareTo(eligibleQuantity) != 0)
+                        throw Invalid();
+                }
                 if (accepted.Sign <= 0 || invoiced.Sign <= 0 || net.Sign < 0 || remaining.Sign < 0 || receiptValue.Sign < 0
-                    || net.Add(remaining).CompareTo(accepted) != 0
-                    || accepted.Multiply(receipt.MatchedQuantity).Divide(receipt.AcceptedQuantity).CompareTo(invoiced) != 0
-                    || net.Multiply(receipt.MatchedQuantity).Divide(receipt.AcceptedQuantity).CompareTo(Value(receipt.ConsumedQuantityKg)) != 0
-                    || receiptValue.Multiply(net).Divide(accepted).CompareTo(Value(receipt.ConsumedExactTlAmount)) != 0)
+                    || eligible.Sign <= 0 || eligibleQuantity.Sign <= 0
+                    || ExactCostRatio.Of(receipt.MatchedQuantity).CompareTo(costQuantity) > 0
+                    || net.Add(remaining).CompareTo(eligible) != 0
+                    || costRoot.Multiply(receipt.MatchedQuantity).Divide(costQuantity).CompareTo(invoiced) != 0
+                    || costNet.Multiply(receipt.MatchedQuantity).Divide(costQuantity).CompareTo(Value(receipt.ConsumedQuantityKg)) != 0
+                    || receiptValue.Multiply(costNet).Divide(costRoot).CompareTo(Value(receipt.ConsumedExactTlAmount)) != 0)
                     throw Invalid();
                 RequirePhysicalTotals(source.CompanyId, line.ProductId, physical, remaining, net);
                 hasActualReturnedShipment |= physical.Shipments.Any(shipment => shipment.PhysicalQuantityKg > 0
                     && Value(shipment.NetRootQuantityKg).Sign == 0 && shipment.Returns.Count > 0);
-                var fraction = ExactCostRatio.Of(receipt.MatchedQuantity).Divide(receipt.AcceptedQuantity);
+                var fraction = ExactCostRatio.Of(receipt.MatchedQuantity).Divide(costQuantity)
+                    .Multiply(remaining.Sign == 0 ? zero : costRemaining.Divide(remaining));
                 foreach (var label in physical.Labels)
                 foreach (var position in label.Positions.Where(x => x.QuantityKg > 0))
                 {
                     var quantity = Value(label.RootShare).Multiply(position.QuantityKg).Multiply(fraction);
+                    if (quantity.Sign == 0) continue;
                     var included = position.CustodianKind == StockPartyKind.Company && position.CustodianId == source.CompanyId;
                     if (expectedPositions.TryGetValue(position.LocationId, out var prior))
                     {

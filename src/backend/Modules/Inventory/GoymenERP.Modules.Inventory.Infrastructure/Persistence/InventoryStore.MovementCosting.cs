@@ -15,11 +15,13 @@ public sealed partial class InventoryStore
     private readonly Dictionary<Guid, InventoryPurchaseReceiptCostV1> receiptCostInputs = [];
     private readonly Dictionary<Guid, Guid?> returnIssueCostInputs = [];
     private readonly Dictionary<Guid, decimal?> supplierReturnCostInputs = [];
+    private readonly Dictionary<Guid, InventorySupplierReturnAllocationProofV1> supplierReturnAllocations = [];
 
     internal void UseReceiptCost(Guid movementId, InventoryPurchaseReceiptCostV1 proof) => receiptCostInputs.Add(movementId, proof);
     internal void UseReturnIssueCost(Guid movementId, Guid? issueMovementId) => returnIssueCostInputs.Add(movementId, issueMovementId);
     // SAT-D411: this value is admitted by Purchasing's actual invoice/manual-exception flow, never a receipt-price fallback.
     internal void UseSupplierReturnCost(Guid movementId, decimal? approvedTlUnitCost) => supplierReturnCostInputs.Add(movementId, approvedTlUnitCost);
+    internal void UseSupplierReturnAllocation(Guid movementId, InventorySupplierReturnAllocationProofV1 proof) => supplierReturnAllocations.Add(movementId, proof);
 
     /// <summary>
     /// Called after physical-domain validation, before changing the tracked balances. Stamp and cost-pool updates are part
@@ -144,7 +146,9 @@ public sealed partial class InventoryStore
                         unit = supplierReturnCostInputs.GetValueOrDefault(movement.Id);
                         exactUnit = unit is { } approved ? ExactCostRatio.Of(approved) : null;
                         sourceVersion = pool.Version;
-                        stamp.EvidenceJson = System.Text.Json.JsonSerializer.Serialize(new { movement.Source, approvedReturnTlUnitCost = unit });
+                        stamp.EvidenceJson = supplierReturnAllocations.TryGetValue(movement.Id, out var allocation)
+                            ? JsonSerializer.Serialize(new { movement.Source, approvedReturnTlUnitCost = unit, supplierReturnAllocation = allocation }, CostJson)
+                            : JsonSerializer.Serialize(new { movement.Source, approvedReturnTlUnitCost = unit });
                         stamp.EntryCurrencyStatus = (int)InventoryIssueCostCurrencyStatusV1.FunctionalCurrency;
                         stamp.OriginalCurrencyId = null; stamp.ForeignUnitCostPerKg = null; stamp.EntryExchangeRate = null;
                         stamp.ForeignUnitCostRatioJson = null; stamp.EntryExchangeRateRatioJson = null;
@@ -221,7 +225,12 @@ public sealed partial class InventoryStore
                 }
                 else if (pool.IsConsistent && pool.ExactPosition is not null)
                 {
-                    var pricedKg = pool.PricedQuantity(position.LabelId, kg);
+                    var pricedKg = movement.Kind == StockMovementKind.SupplierReturnExit
+                        && currency == SettingsCurrencyIdentitiesV1.TurkishLira && supplierReturnAllocations.TryGetValue(movement.Id, out var selected)
+                        && !pool.IsComplete
+                        ? selected.Selected.Where(x => x.SourceEventId is not null).Aggregate(ExactCostRatio.Of(0m),
+                            (sum, x) => sum.Add(x.QuantityKg.Value()))
+                        : pool.PricedQuantity(position.LabelId, kg);
                     if (pricedKg.Sign > 0)
                     {
                         ExactAverageCostPool? after = null;
@@ -232,10 +241,17 @@ public sealed partial class InventoryStore
                             // A purchase return without its admitted original cost never becomes a generic average issue.
                             if (originalCostExit && exactUnit is null) throw new InvalidOperationException();
                             after = pool.ExactPosition.Remove(pricedKg, actualValue);
+                            if (movement.Kind == StockMovementKind.SupplierReturnExit && supplierReturnAllocations.ContainsKey(movement.Id)
+                                && after.QuantityKg.Sign > 0 && after.Value.Sign <= 0)
+                                throw new InvalidOperationException("The return leaves a non-positive priced pool.");
                             if (after.AverageCostPerKg >= 100_000_000_000_000m) throw new OverflowException();
                         }
                         catch (Exception exception) when (exception is OverflowException or InvalidOperationException)
-                        { stamp.Reason = "movement_cost_reversal_unreadable"; }
+                        {
+                            if (movement.Kind == StockMovementKind.SupplierReturnExit && supplierReturnAllocations.ContainsKey(movement.Id))
+                                throw InventorySupplierReturnExitException.Refused(409, InventorySupplierReturnExitCodesV1.CostDifferenceUnposted);
+                            stamp.Reason = "movement_cost_reversal_unreadable";
+                        }
                         afterVersion = await WriteCostPoolAsync(dbContext, companyContext, timeProvider, position.LocationId,
                             position.ProductId, currency, pool, after, token, after is null ? AverageCostUnreadableReason.Return : null);
                         afterPosition = after; costedDelta = ExactCostRatio.Of(0m).Subtract(pricedKg);

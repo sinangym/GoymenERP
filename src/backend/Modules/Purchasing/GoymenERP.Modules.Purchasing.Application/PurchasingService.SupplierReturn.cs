@@ -64,6 +64,17 @@ public sealed partial class PurchasingService
                 cancellationToken);
         }
 
+        IReadOnlyList<PurchaseSupplierReturnInvoiceSourceLabelV1>? costSourceLabels;
+        try
+        {
+            costSourceLabels = await ValidateReturnCostSourcesAsync(scope, permission, orderId, request.GoodsAcceptanceId, request.QuantityKg,
+                request.UndoQuantity, request.CostAllocation, cancellationToken);
+        }
+        catch (PurchasingServiceException exception) when (exception.Status == 409)
+        {
+            return await ReturnTerminalAsync(scope, permission, returns, orderId, envelope, requestHash, command,
+                new(exception.Status, exception.Code, exception.Errors, exception.Detail), cancellationToken);
+        }
         var invoiceCost = await ReadReturnInvoiceCostAsync(scope, permission, request.GoodsAcceptanceId, cancellationToken);
         PurchaseSupplierReturnStatus status;
         PurchaseSupplierReturnCostBasis basis;
@@ -96,7 +107,7 @@ public sealed partial class PurchasingService
             request.InventoryMovementId, status, request.SourceBlock, ParseKg(request.QuantityKg), basis, unitCost, request.ReplacementExpected,
             request.Reason.Trim(), request.OccurredAtUtc,
             request.ExpectedPurchaseOrderVersion is null ? null : long.Parse(request.ExpectedPurchaseOrderVersion, CultureInfo.InvariantCulture),
-            request.UndoQuantity is null ? null : ParseKg(request.UndoQuantity));
+            request.UndoQuantity is null ? null : ParseKg(request.UndoQuantity), request.CostAllocation, costSourceLabels);
         try
         {
             StoredPurchaseSupplierReturn saved;
@@ -122,7 +133,7 @@ public sealed partial class PurchasingService
                 }, token => RequireStillAsync(scope, permission, token), cancellationToken);
             }
 
-            return new(ReturnView(saved), IsReplay: false, envelope.CorrelationId);
+            return new(await DiscloseReturnAsync(scope, permission, orderId, saved, cancellationToken, commandCommitted: true), IsReplay: false, envelope.CorrelationId);
         }
         catch (PurchasingStoreException exception) when (exception.Code == PurchasingStoreCodes.ConcurrentChange)
         {
@@ -165,7 +176,7 @@ public sealed partial class PurchasingService
         var returns = returnStore ?? throw ReturnUnavailable();
         var stored = await GuardedAsync(scope, permission, () => returns.FindAsync(orderId, returnId, cancellationToken), cancellationToken)
             ?? throw new PurchasingServiceException(404, "not_found");
-        return new(ReturnView(RequireOwnReturn(scope, orderId, stored)));
+        return new(await DiscloseReturnAsync(scope, permission, orderId, stored, cancellationToken));
     }
 
     public async Task<PurchaseSupplierReturnPageV1> GetSupplierReturnsAsync(Guid orderId, int limit = 50, CancellationToken cancellationToken = default)
@@ -178,7 +189,9 @@ public sealed partial class PurchasingService
         _ = await GuardedAsync(scope, permission, () => store.FindOrderAsync(orderId, cancellationToken), cancellationToken)
             ?? throw new PurchasingServiceException(404, "not_found");
         var rows = await GuardedAsync(scope, permission, () => returns.ListForOrderAsync(orderId, limit + 1, cancellationToken), cancellationToken);
-        return new(rows.Take(limit).Select(row => ReturnView(RequireOwnReturn(scope, orderId, row))).ToArray(), rows.Count > limit);
+        await RequireStillAsync(scope, permission, cancellationToken);
+        var disclosure = await DiscloseAsync(scope, cancellationToken);
+        return new(rows.Take(limit).Select(row => ReturnView(RequireOwnReturn(scope, orderId, row), disclosure)).ToArray(), rows.Count > limit);
     }
 
     // ---- cost exception decision ----------------------------------------------------------------
@@ -239,6 +252,10 @@ public sealed partial class PurchasingService
 
         try
         {
+            if (approve && stored.Return.CostAllocation is null)
+                await ValidateReturnCostSourcesAsync(scope, permission, orderId, stored.Return.GoodsAcceptanceId,
+                    Kg(stored.Return.QuantityKg), stored.Return.UndoQuantity is { } undo ? Kg(undo) : null,
+                    null, cancellationToken);
             StoredPurchaseSupplierReturn saved;
             if (!approve)
             {
@@ -265,7 +282,7 @@ public sealed partial class PurchasingService
                 }, token => RequireStillAsync(scope, permission, token), cancellationToken);
             }
 
-            return new(ReturnView(saved), IsReplay: false, envelope.CorrelationId);
+            return new(await DiscloseReturnAsync(scope, permission, orderId, saved, cancellationToken, commandCommitted: true), IsReplay: false, envelope.CorrelationId);
         }
         catch (PurchasingStoreException exception) when (exception.Code == PurchasingStoreCodes.ConcurrentChange)
         {
@@ -301,7 +318,7 @@ public sealed partial class PurchasingService
             draft.ReturnId, draft.ReturnLineId, draft.InventoryMovementId, Kg(draft.UndoQuantity.Value), Kg(draft.QuantityKg),
             draft.SourceBlock, draft.Reason.Trim(), draft.OccurredAtUtc);
         var write = new PurchaseReceiptReversalWriteV1(draft.PurchaseOrderId, draft.GoodsAcceptanceId, request,
-            IsSupplierReturn: true, draft.ReplacementExpected, UnitCostText(draft.UnitCostTryPerKg), command, requestHash);
+            IsSupplierReturn: true, draft.ReplacementExpected, UnitCostText(draft.UnitCostTryPerKg), command, requestHash, draft.CostAllocation);
         return await runner.ExecuteWithWriteAsync(scope.CompanyId, write, envelope,
             (_, token) => writeReturn(token), token => RequireStillAsync(scope, permission, token), cancellationToken);
     }
@@ -316,7 +333,8 @@ public sealed partial class PurchasingService
     {
         var result = await exit.StageExitAsync(new PurchaseSupplierReturnExitRequestV1(scope.CompanyId, draft.ReturnId, draft.ReturnLineId,
             draft.GoodsAcceptanceId, draft.InventoryMovementId, draft.SourceBlock, Kg(draft.QuantityKg), UnitCostText(draft.UnitCostTryPerKg),
-            draft.OccurredAtUtc), envelope, cancellationToken);
+            draft.OccurredAtUtc, draft.CostAllocation, draft.PurchaseOrderId,
+            draft.UndoQuantity is { } undo ? Kg(undo) : null), envelope, cancellationToken);
         if (result is null || result.InventoryMovementId != draft.InventoryMovementId) throw ReturnUnavailable();
     }
 
@@ -366,12 +384,12 @@ public sealed partial class PurchasingService
         if (replay.Original is { } original)
         {
             if (original.Return.ReturnId != returnId) throw ReturnUnavailable();
-            return new(ReturnView(RequireOwnReturn(scope, orderId, original)), IsReplay: true, replay.OriginalCorrelationId);
+            return new(await DiscloseReturnAsync(scope, permission, orderId, original, cancellationToken), IsReplay: true, replay.OriginalCorrelationId);
         }
         // Legacy attempts have no immutable snapshot. They remain readable without inventing a historical response.
         var stored = await GuardedAsync(scope, permission, () => returns.FindAsync(orderId, returnId, cancellationToken), cancellationToken)
             ?? throw new PurchasingServiceException(503, "service_unavailable");
-        return new(ReturnView(RequireOwnReturn(scope, orderId, stored)), IsReplay: true, replay.OriginalCorrelationId);
+        return new(await DiscloseReturnAsync(scope, permission, orderId, stored, cancellationToken), IsReplay: true, replay.OriginalCorrelationId);
     }
 
     /// <summary>§7/§8: a terminal refusal is recorded under the key before it is answered; a same-key winner is answered as a replay.</summary>
@@ -400,14 +418,29 @@ public sealed partial class PurchasingService
     private static StoredPurchaseSupplierReturn RequireOwnReturn(Scope scope, Guid orderId, StoredPurchaseSupplierReturn stored) =>
         stored.CompanyId != scope.CompanyId || stored.Return.PurchaseOrderId != orderId ? throw ReturnUnavailable() : stored;
 
-    private static PurchaseSupplierReturnViewV1 ReturnView(StoredPurchaseSupplierReturn stored)
+    private async Task<PurchaseSupplierReturnViewV1> DiscloseReturnAsync(Scope scope, string? permission, Guid orderId,
+        StoredPurchaseSupplierReturn stored, CancellationToken cancellationToken, bool commandCommitted = false)
+    {
+        // Stored replay snapshots retain their original facts; disclosure always belongs to the current caller.
+        // S03: a committed mutation is not converted to a command refusal by a later permission measurement.
+        if (!commandCommitted) await RequireStillAsync(scope, permission, cancellationToken);
+        var disclosure = await DiscloseAsync(scope, cancellationToken);
+        return ReturnView(RequireOwnReturn(scope, orderId, stored), disclosure);
+    }
+
+    private static PurchaseSupplierReturnViewV1 ReturnView(StoredPurchaseSupplierReturn stored, string disclosure)
     {
         var item = stored.Return;
+        var visible = string.Equals(disclosure, PurchasingPriceDisclosureV1.Visible, StringComparison.Ordinal);
         return new(stored.CompanyId, item.ReturnId, item.ReturnLineId, item.PurchaseOrderId, item.PurchaseOrderLineId, item.GoodsAcceptanceId,
             item.InventoryMovementId, item.Status.ToString(), stored.Version.ToString(CultureInfo.InvariantCulture), item.SourceBlock,
-            Kg(item.QuantityKg), item.CostBasis.ToString(), UnitCostText(item.UnitCostTryPerKg), item.ReplacementExpected, item.Reason,
+            Kg(item.QuantityKg), item.CostBasis.ToString(), visible ? UnitCostText(item.UnitCostTryPerKg) : null, item.ReplacementExpected, item.Reason,
             item.OccurredAtUtc, stored.RequestedBy, stored.RequestedAtUtc, stored.DecidedBy, stored.DecidedAtUtc, stored.DecisionReason,
-            item.ExpectedPurchaseOrderVersion?.ToString(CultureInfo.InvariantCulture), item.UndoQuantity is { } undo ? Kg(undo) : null);
+            item.ExpectedPurchaseOrderVersion?.ToString(CultureInfo.InvariantCulture), item.UndoQuantity is { } undo ? Kg(undo) : null,
+            item.CostAllocation, item.CostAllocationSources)
+        {
+            PriceDisclosure = visible ? PurchasingPriceDisclosureV1.Visible : PurchasingPriceDisclosureV1.Withheld,
+        };
     }
 
     private static string UnitCostText(decimal value) => value.ToString("0.####", CultureInfo.InvariantCulture);

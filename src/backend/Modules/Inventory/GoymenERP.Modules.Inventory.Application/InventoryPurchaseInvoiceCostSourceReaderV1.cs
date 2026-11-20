@@ -66,10 +66,18 @@ public static class InventoryPurchaseInvoiceCostSourceReaderV1
                     || receipt.MatchedQuantity <= 0m || receipt.AcceptedQuantity <= 0m
                     || receipt.MatchedQuantity > receipt.AcceptedQuantity)
                     throw Invalid("purchase_invoice_cost_receipt_source_invalid");
+                if (receipt.ReceiptAdjustments is { } adjustments && (adjustments.Count > 10000
+                    || adjustments.Any(x => x is null || x.AdjustmentId == Guid.Empty || x.UndoQuantity <= 0m
+                        || x.UndoQuantity > receipt.AcceptedQuantity)
+                    || adjustments.Select(x => x.AdjustmentId).Distinct().Count() != adjustments.Count
+                    || adjustments.Aggregate(ExactCostRatio.Of(receipt.MatchedQuantity),
+                        (sum, x) => sum.Add(ExactCostRatio.Of(x.UndoQuantity))).CompareTo(ExactCostRatio.Of(receipt.AcceptedQuantity)) > 0))
+                    throw Invalid("purchase_invoice_cost_receipt_adjustment_invalid");
                 quantity = quantity.Add(ExactCostRatio.Of(receipt.MatchedQuantity));
                 results.Add(new(line.LineId, line.LineNo, goods.ProductId, goods.UnitId, receipt.AcceptanceId,
                     receipt.OrderId, receipt.OrderLineId, receipt.OrderVersion, receipt.MatchedQuantity, receipt.AcceptedQuantity,
-                    InventoryExactCostRatioV1.From(lineTl.Multiply(receipt.MatchedQuantity).Divide(goods.InvoiceQuantity))));
+                    InventoryExactCostRatioV1.From(lineTl.Multiply(receipt.MatchedQuantity).Divide(goods.InvoiceQuantity)),
+                    receipt.ReceiptAdjustments));
             }
             if (quantity.CompareTo(ExactCostRatio.Of(goods.InvoiceQuantity)) != 0)
                 throw Invalid("purchase_invoice_cost_source_quantity_mismatch");

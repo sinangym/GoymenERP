@@ -33,7 +33,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// original cost would leave a cost difference against a readable position (SAT-D306 (c)) until the Finance
 /// accounting-voucher spec names its account.
 /// </summary>
-public sealed class InventorySupplierReturnExitParticipant : IInventorySupplierReturnExitParticipantV1
+public sealed partial class InventorySupplierReturnExitParticipant : IInventorySupplierReturnExitParticipantV1
 {
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     private readonly InventoryDbContext context;
@@ -169,10 +169,12 @@ public sealed class InventorySupplierReturnExitParticipant : IInventorySupplierR
                 store.PhysicalStockRefusal(movement, shortfall, metadata, receipt.LabelRow.Code));
         }
         await RequireExitLeavesAllocationsAsync(receipt.LabelRow.Id, input.Quantity.Value, cancellationToken);
-        await RequireNoUnpostedCostDifferenceAsync(receipt, source, input, cancellationToken);
+        var allocation = await ResolveCostAllocationAsync(request, receipt.LabelRow.Version, cancellationToken);
+        await RequireReturnPoolValueSafetyAsync(receipt, source, input, cancellationToken);
         try
         {
             store.UseSupplierReturnCost(movement.Id, input.OriginalUnitCostTryPerKg);
+            if (allocation is not null) store.UseSupplierReturnAllocation(movement.Id, allocation);
             var outcome = await store.StageMovementAsync(
                 movement, metadata, recordAudit: false, cancellationToken);
             if (outcome != InventoryWriteOutcome.Recorded)
@@ -498,15 +500,13 @@ public sealed class InventorySupplierReturnExitParticipant : IInventorySupplierR
     }
 
     /// <summary>
-    /// SAT-D371 (completes SAT-D306 (c)): the account of a purchase-return cost difference is named by the Finance
-    /// accounting-voucher spec, so until then a return that would leave one is refused; a return without a difference
-    /// proceeds under the existing rules. A difference is measurable only for the company's own goods (counterparty-owned
-    /// goods never had this company's purchase cost), with a known original cost, against a readable ledger position at
-    /// the exit's location whose quantity is the costed stock there (the ledger writer's own reading). An unknown cost,
-    /// an untracked or unreadable position, or a ledger that disagrees with the stock has no figure to compare: the
-    /// return is not refused for it here, and nothing is written to the ledger. The rule itself is the cost core's.
+    /// SAT-D410 explicitly preserves this stock-pool 409, including for an approved manual exception. It prevents
+    /// residual value at zero stock or non-positive value with stock remaining (SAT-D306 (c)). It is not an equality
+    /// comparison between the return price and the average: SAT-D392's invoice-relative cost selection belongs to
+    /// Purchasing. A different return price can proceed when the remaining pool is valid. Only a readable company
+    /// pool that reconciles with physical stock supplies this arithmetic check; unknown valuation stays unknown.
     /// </summary>
-    private async Task RequireNoUnpostedCostDifferenceAsync(ReceiptTrace receipt, SourcePosition source,
+    private async Task RequireReturnPoolValueSafetyAsync(ReceiptTrace receipt, SourcePosition source,
         InventorySupplierReturnExitInput input, CancellationToken cancellationToken)
     {
         if (input.OriginalUnitCostTryPerKg is not { } returnCost
@@ -613,7 +613,8 @@ public sealed class InventorySupplierReturnExitParticipant : IInventorySupplierR
     }
 
     private static string RequestHash(InventorySupplierReturnExitRequestV1 request) =>
-        Hash(JsonSerializer.Serialize(request, Json));
+        Hash(JsonSerializer.Serialize(request with { PurchaseSource = null,
+            UndoQuantity = request.CostAllocation is null ? null : request.UndoQuantity }, Json));
 
     private static string Hash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));

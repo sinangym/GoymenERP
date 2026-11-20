@@ -21,6 +21,24 @@ public static partial class PurchasingEndpoints
 
     private static void MapSupplierReturns(RouteGroupBuilder group)
     {
+        group.MapGet("/{id:guid}/goods-receipts/{acceptanceId:guid}/supplier-return-cost-sources", async (Guid id, Guid acceptanceId,
+            HttpContext httpContext, [FromServices] IPurchaseSupplierReturnServiceV1 service, ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (httpContext.Request.Query.Count != 0)
+                return Problem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            try { return Results.Json(await service.GetSupplierReturnCostSourcesAsync(id, acceptanceId, cancellationToken), PurchasingJson.Options); }
+            catch (PurchasingServiceException exception) { return Problem(httpContext, exception, correlation); }
+        })
+            .WithName("GetPurchaseSupplierReturnCostSourcesV1")
+            .Produces<PurchaseSupplierReturnCostSourcesV1>()
+            .ProducesErpBadRequest("validation_failed")
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(InventorySupplierReturnExitCodesV1.Status409Codes.Order(StringComparer.Ordinal).ToArray())
+            .ProducesErpServiceUnavailable(SupplierReturnUnavailableCodes())
+            .ProducesErpAuthenticatedProblems();
+
         group.MapPost("/{id:guid}/supplier-returns", (Guid id, HttpContext httpContext,
                 [FromServices] IPurchaseSupplierReturnServiceV1 service, ICorrelationContext correlation,
                 CancellationToken cancellationToken) =>
@@ -133,6 +151,9 @@ public static partial class PurchasingEndpoints
         PurchaseSupplierReturnCodesV1.ReturnIdTaken,
         PurchaseSupplierReturnCodesV1.InvoiceCostAvailable,
         PurchaseSupplierReturnCodesV1.CostRequired,
+        PurchaseSupplierReturnCostAllocationContractV1.Required,
+        PurchaseSupplierReturnCostAllocationContractV1.Stale,
+        PurchaseSupplierReturnCostAllocationContractV1.ExceedsSource,
         .. InventorySupplierReturnExitCodesV1.Status409Codes.Order(StringComparer.Ordinal),
     ];
 
@@ -144,6 +165,9 @@ public static partial class PurchasingEndpoints
         PurchaseSupplierReturnRuleCodes.NotPending,
         PurchaseSupplierReturnRuleCodes.SameActor,
         PurchaseSupplierReturnRuleCodes.MakerUnknown,
+        PurchaseSupplierReturnCostAllocationContractV1.Required,
+        PurchaseSupplierReturnCostAllocationContractV1.Stale,
+        PurchaseSupplierReturnCostAllocationContractV1.ExceedsSource,
         .. InventorySupplierReturnExitCodesV1.Status409Codes.Order(StringComparer.Ordinal),
     ];
 

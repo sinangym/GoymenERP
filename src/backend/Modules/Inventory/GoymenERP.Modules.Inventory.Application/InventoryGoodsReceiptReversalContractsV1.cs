@@ -46,7 +46,13 @@ public sealed record InventoryGoodsReceiptReversalLinkV1(Guid ConversionId, Guid
 public sealed record InventoryGoodsReceiptReversalRequestV1(Guid CompanyId, Guid ReversalId, Guid ReversalLineId,
     Guid AcceptanceId, Guid InventoryMovementId, InventoryGoodsReceiptReversalKindV1 Kind,
     BlockState SourceBlock, string QuantityKg, string? OriginalUnitCostTryPerKg, string Reason,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    InventorySupplierReturnCostAllocationV1? CostAllocation = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    InventorySupplierReturnPurchaseSourceV1? PurchaseSource = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    string? UndoQuantity = null);
 
 /// <summary>Post-write Purchasing expectation. Its actual source must be bound to the SAME host transaction.</summary>
 public sealed record InventoryGoodsReceiptReversalSupplyV1(Guid CompanyId, Guid PurchaseOrderId,

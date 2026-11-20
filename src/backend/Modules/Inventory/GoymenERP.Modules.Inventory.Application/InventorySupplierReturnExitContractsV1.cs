@@ -35,7 +35,13 @@ public sealed record InventorySupplierReturnExitRequestV1(
     BlockState SourceBlock,
     string QuantityKg,
     string? OriginalUnitCostTryPerKg,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    InventorySupplierReturnCostAllocationV1? CostAllocation = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    InventorySupplierReturnPurchaseSourceV1? PurchaseSource = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    string? UndoQuantity = null);
 
 /// <summary>The exact Inventory identities staged by one supplier-return exit.</summary>
 public sealed record InventorySupplierReturnExitResultV1(
@@ -73,11 +79,12 @@ public static class InventorySupplierReturnExitCodesV1
     public const string StockAllocated = "inventory_supplier_return_exit_stock_allocated";
 
     /// <summary>
-    /// SAT-D371 (completes SAT-D306 (c)): leaving at the original unit cost would leave a cost difference against the
-    /// moving average that no account can take yet (residual value at zero stock, or a non-positive remaining value).
-    /// Fail-closed until the Finance accounting-voucher spec names that account; a return without a difference proceeds.
+    /// SAT-D410 preserves the SAT-D306 (c) stock-pool refusal: residual value at zero stock, or non-positive remaining
+    /// value, requires an unposted difference. An approved manual exception cannot bypass it. SAT-D392's invoice-relative
+    /// comparison is separate; merely differing from the moving average does not cause this refusal.
     /// </summary>
     public const string CostDifferenceUnposted = "inventory_supplier_return_exit_cost_difference_unposted";
+    public const string CostAllocationRequired = "inventory_supplier_return_exit_cost_allocation_required";
     public const string IdempotencyConflict = "inventory_supplier_return_exit_idempotency_conflict";
     public const string ConcurrentChange = "inventory_supplier_return_exit_concurrent_change";
     public const string QuantityProfileUnavailable = "inventory_supplier_return_exit_quantity_profile_unavailable";
@@ -86,7 +93,7 @@ public static class InventorySupplierReturnExitCodesV1
     public static IReadOnlySet<string> Status400Codes { get; } = Set(InvalidRequest, InvalidQuantity, InvalidCost);
     public static IReadOnlySet<string> Status404Codes { get; } = Set(InvalidReference);
     public static IReadOnlySet<string> Status409Codes { get; } = Set(
-        ReceiptNotRecorded, ExitExceedsReceipt, StockNotAvailable, StockAllocated, CostDifferenceUnposted,
+        ReceiptNotRecorded, ExitExceedsReceipt, StockNotAvailable, StockAllocated, CostDifferenceUnposted, CostAllocationRequired,
         IdempotencyConflict, ConcurrentChange);
     public static IReadOnlySet<string> Status503Codes { get; } = Set(
         ReceiptTraceInvalid, QuantityProfileUnavailable, Unavailable);

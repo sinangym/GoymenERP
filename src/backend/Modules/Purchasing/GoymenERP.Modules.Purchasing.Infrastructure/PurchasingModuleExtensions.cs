@@ -80,6 +80,7 @@ public static class PurchasingModuleExtensions
         services.AddScoped<IPurchaseGoodsReceiptBatchStore, PurchaseGoodsReceiptBatchStore>();
         services.AddScoped<IPurchaseGoodsReceiptBatchServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchaseSupplierReturnStore, PurchaseSupplierReturnStore>();
+        services.AddScoped<PurchaseSupplierReturnPurchaseSourceReader>();
         services.AddScoped<IPurchaseSupplierReturnServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchaseReceiptReversalServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchaseReceiptReversalBatchServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
@@ -143,7 +144,8 @@ public static class PurchasingModuleExtensions
         serviceProvider.GetService<IPurchaseSupplierReturnInvoiceCostReadPortV1>(),
         serviceProvider.GetService<PurchaseSupplierReturnPolicyV1>(),
         serviceProvider.GetService<IPurchaseReceiptReversalTransactionV1>(),
-        serviceProvider.GetService<IPurchaseReceiptReversalBatchTransactionV1>());
+        serviceProvider.GetService<IPurchaseReceiptReversalBatchTransactionV1>(),
+        serviceProvider.GetService<IPurchaseSupplierReturnCostSourceReadPortV1>());
 
     /// <summary>Applies Purchasing's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializePurchasingModuleAsync(this IServiceProvider services, CancellationToken cancellationToken = default)

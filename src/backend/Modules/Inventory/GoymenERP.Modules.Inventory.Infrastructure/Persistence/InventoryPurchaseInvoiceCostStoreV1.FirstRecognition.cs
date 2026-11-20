@@ -16,7 +16,8 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1
 
     private async Task<FirstCostReceiptPlan> PrepareFirstCostAsync(
         InventoryPurchaseInvoiceCostProjectionV1 source, InventoryPurchaseInvoiceCostReceiptV1 share,
-        Guid movementId, Guid rootLabelId, Guid receiptLocationId, string receiptQuantityKg, MovementCostStampRow stamp, CancellationToken token)
+        Guid movementId, Guid rootLabelId, Guid receiptLocationId, string receiptQuantityKg, MovementCostStampRow stamp,
+        ReceiptCostBasis basis, CancellationToken token)
     {
         if (firstCostPrerequisites is null) throw Unavailable("purchase_invoice_cost_first_recognition_pending");
         var pending = await db.PendingMovementCosts.AsNoTracking().SingleOrDefaultAsync(x => x.MovementId == movementId
@@ -30,7 +31,7 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1
         RequireCompany(source.CompanyId);
         if (lineage.Outcome != InventoryCostLineageOutcome.Value || lineage.RemainingKg is null
             || lineage.NetShippedKg is null || lineage.NetShippedKg.Sign < 0
-            || lineage.RemainingKg.Add(lineage.NetShippedKg).CompareTo(ExactCostRatio.Of(acceptedKg)) != 0)
+            || lineage.RemainingKg.Add(lineage.NetShippedKg).CompareTo(basis.EligibleKg) != 0)
             throw Unavailable("purchase_invoice_cost_first_physical_source_unavailable");
         if (lineage.Labels.Where(x => x.RootShare.Sign > 0).SelectMany(x => x.Positions)
             .Any(x => x.QuantityKg > 0m && (x.Owner.Kind != StockPartyKind.Company || x.Owner.Id != source.CompanyId)))
@@ -70,13 +71,21 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1
             || prerequisites.LocationCodes.Count != physical.Length
             || physical.Any(x => !prerequisites.LocationCodes.ContainsKey(x.Key.LocationId)))
             throw Unavailable("purchase_invoice_cost_first_profile_unavailable");
+        var rootKg = basis.Cohort?.PendingRootKg ?? basis.EligibleKg;
+        var purchaseQuantity = basis.Cohort?.PendingQuantity ?? basis.EligibleQuantity;
+        var remainingKg = basis.Cohort?.PendingStockKg ?? lineage.RemainingKg;
+        if (rootKg.Sign <= 0 || purchaseQuantity.Sign <= 0) throw Unavailable("purchase_invoice_cost_first_pending_source_unavailable");
+        var stockFraction = lineage.RemainingKg.Sign == 0 ? ExactCostRatio.Of(0m) : remainingKg.Divide(lineage.RemainingKg);
+        var netShippedKg = rootKg.Subtract(remainingKg);
         var stockShares = physical.Select(x => new PurchaseFirstCostStockShare(x.Key.LocationId.ToString("D"),
             prerequisites.LocationCodes[x.Key.LocationId], share.InvoiceLineNo,
-            x.Aggregate(ExactCostRatio.Of(0m), (sum, position) => sum.Add(position.Quantity)))).ToArray();
-        var invoicedKg = ExactCostRatio.Of(acceptedKg).Multiply(share.MatchedQuantity).Divide(share.AcceptedQuantity);
+            x.Aggregate(ExactCostRatio.Of(0m), (sum, position) => sum.Add(position.Quantity)).Multiply(stockFraction)))
+            .Where(x => x.RootQuantityKg.Sign > 0).ToArray();
+        var invoicedKg = rootKg.Multiply(share.MatchedQuantity).Divide(purchaseQuantity);
         var physicalSource = new InventoryPurchaseFirstCostPhysicalSourceV1(PurchaseFirstCostAllocationCalculator.Version,
             source.CompanyId, share.AcceptanceId, share.InvoiceLineId, share.InvoiceLineNo, movementId, rootLabelId,
-            share.ProductId, share.MatchedQuantity, share.AcceptedQuantity, "receipt-root-proportional",
+            share.ProductId, share.MatchedQuantity, share.AcceptedQuantity,
+            basis.Cohort is null ? "receipt-root-proportional" : "explicit-supplier-return-source",
             Ratio(lineage.RemainingKg), Ratio(lineage.NetShippedKg), lineage.Labels.Where(x => x.RootShare.Sign > 0)
                 .Select(label => new InventoryPurchaseFirstCostLabelV1(label.LabelId, label.Version, checked(label.Version + 1),
                     label.ProductVersion, Ratio(label.RootShare), label.Positions.Select(position =>
@@ -86,15 +95,17 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1
                 shipment.LineNumber, shipment.LoadingInstructionLineId, shipment.LabelId, shipment.ProductId, shipment.ProductVersion,
                 shipment.LocationId, shipment.QuantityKg, Ratio(shipment.RootShare), Ratio(shipment.NetRootQuantityKg),
                 shipment.Returns.Select(item => new InventoryPurchaseFirstCostReturnV1(item.ReturnId, item.MovementId,
-                    item.LineNumber, item.SourceIssueMovementId, item.QuantityKg, item.RecordedAtUtc)).ToArray(), shipment.RecordedAtUtc)).ToArray());
+                    item.LineNumber, item.SourceIssueMovementId, item.QuantityKg, item.RecordedAtUtc)).ToArray(), shipment.RecordedAtUtc)).ToArray(),
+            basis.Reversals.Count == 0 ? null : basis.Reversals,
+            basis.Cohort is null ? null : new(Ratio(rootKg), Ratio(remainingKg), Ratio(purchaseQuantity), basis.Cohort.Preview));
         var physicalJson = JsonSerializer.Serialize(physicalSource, Json);
-        var consumedKg = lineage.NetShippedKg.Multiply(invoicedKg).Divide(acceptedKg);
-        var consumedExact = share.TlNetShare.Value().Multiply(lineage.NetShippedKg).Divide(acceptedKg);
+        var consumedKg = netShippedKg.Multiply(invoicedKg).Divide(rootKg);
+        var consumedExact = share.TlNetShare.Value().Multiply(netShippedKg).Divide(rootKg);
         return new(share, profile, new(share.AcceptanceId, movementId, rootLabelId, receiptLocationId,
             share.MatchedQuantity, share.AcceptedQuantity, Ratio(ExactCostRatio.Of(acceptedKg)), Ratio(invoicedKg),
             share.TlNetShare, Ratio(consumedKg), Ratio(consumedExact), physicalJson,
             Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(physicalJson)))),
-            new(share.TlNetShare.Value(), ExactCostRatio.Of(acceptedKg), invoicedKg, lineage.NetShippedKg, stockShares),
+            new(share.TlNetShare.Value(), rootKg, invoicedKg, netShippedKg, stockShares),
             physical.ToDictionary(x => x.Key.LocationId, x => x.Key.Included), HasFullyReturnedShipmentWitness(lineage));
     }
 

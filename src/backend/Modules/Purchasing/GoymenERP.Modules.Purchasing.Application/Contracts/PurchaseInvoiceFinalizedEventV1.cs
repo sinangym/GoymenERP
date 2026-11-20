@@ -22,7 +22,10 @@ public sealed record PurchaseInvoiceFinalizedLineV1(Guid LineId, int LineNo, str
 public sealed record PurchaseInvoiceGoodsCostSourceV1(Guid ProductId, Guid UnitId, decimal InvoiceQuantity,
     IReadOnlyList<PurchaseInvoiceReceiptCostShareV1> Receipts);
 public sealed record PurchaseInvoiceReceiptCostShareV1(Guid AcceptanceId, Guid OrderId, Guid OrderLineId,
-    long OrderVersion, decimal MatchedQuantity, decimal AcceptedQuantity);
+    long OrderVersion, decimal MatchedQuantity, decimal AcceptedQuantity,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<PurchaseInvoiceReceiptAdjustmentV1>? ReceiptAdjustments = null);
+public sealed record PurchaseInvoiceReceiptAdjustmentV1(Guid AdjustmentId, decimal UndoQuantity, bool IsSupplierReturn);
 public sealed record PurchaseInvoiceOfficialDocumentV1(Guid DocumentId, long DocumentVersion, string Sha256, Guid Ettn);
 
 /// <summary>Approved service-source metadata only. Official invoice amounts are unchanged and never recalculated from it.</summary>

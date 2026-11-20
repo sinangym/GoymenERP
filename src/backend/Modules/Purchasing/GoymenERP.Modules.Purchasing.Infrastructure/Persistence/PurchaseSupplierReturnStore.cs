@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Globalization;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
@@ -65,6 +66,7 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
                     || original.Return.QuantityKg <= 0 || original.Return.UnitCostTryPerKg <= 0
                     || string.IsNullOrWhiteSpace(original.RequestedBy))
                     throw new InvalidOperationException("Kayıtlı iade yanıtı deneme kimlikleriyle uyuşmuyor.");
+                ValidateAllocation(original.Return);
                 return new PurchaseSupplierReturnReplay(original.Return.ReturnId, null, attempt.CorrelationId, original);
             }
             // Older attempts did not persist an original response; their explicit legacy fallback stays identifiable.
@@ -164,6 +166,8 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
             ReplacementExpected = draft.ReplacementExpected,
             ExpectedPurchaseOrderVersion = draft.ExpectedPurchaseOrderVersion,
             UndoQuantity = draft.UndoQuantity,
+            CostAllocationJson = draft.CostAllocation is null ? null : JsonSerializer.Serialize(
+                new CostAllocationSnapshot(draft.CostAllocation, draft.CostAllocationSources!), Json),
             Reason = reason,
             OccurredAtUtc = draft.OccurredAtUtc,
             RequestedBy = actorId,
@@ -293,9 +297,13 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
             throw new InvalidOperationException("Kayıtlı tedarikçi iadesi kaynak bloğu tanınmıyor.");
         }
 
+        var allocation = row.CostAllocationJson is null ? null : JsonSerializer.Deserialize<CostAllocationSnapshot>(row.CostAllocationJson, Json)
+            ?? throw new InvalidOperationException("Kayıtlı iade maliyet kaynak seçimi okunamadı.");
         var draft = new PurchaseSupplierReturnDraft(row.ReturnId, row.ReturnLineId, row.OrderId, row.LineId, row.GoodsAcceptanceId, row.MovementId,
             status, row.SourceBlock, row.QuantityKg, basis, row.UnitCostTryPerKg, row.ReplacementExpected, row.Reason, row.OccurredAtUtc,
-            row.ExpectedPurchaseOrderVersion, row.UndoQuantity);
+            row.ExpectedPurchaseOrderVersion, row.UndoQuantity,
+            allocation?.Selection, allocation?.InvoiceSources);
+        ValidateAllocation(draft);
         return new StoredPurchaseSupplierReturn(companyId, draft, row.Version, row.RequestedBy, row.RequestedAtUtc, row.DecidedBy, row.DecidedAtUtc,
             row.DecisionReason);
     }
@@ -304,6 +312,7 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
 
     private static void RequireDraft(PurchaseSupplierReturnDraft draft)
     {
+        ValidateAllocation(draft);
         var coherent = (draft.Status == PurchaseSupplierReturnStatus.Recorded && draft.CostBasis == PurchaseSupplierReturnCostBasis.InvoiceUnitCost)
             || (draft.Status == PurchaseSupplierReturnStatus.PendingCostException
                 && draft.CostBasis == PurchaseSupplierReturnCostBasis.ManualCostWithException);
@@ -324,6 +333,28 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
             throw Refused(PurchasingStoreCodes.ValueDoesNotFit, "İade gerekçesi sütununa sığmıyor.");
         }
     }
+
+    private static void ValidateAllocation(PurchaseSupplierReturnDraft draft)
+    {
+        if ((draft.CostAllocation is null) != (draft.CostAllocationSources is null))
+            throw new JsonException("Source allocation and invoice labels must be retained together.");
+        if (draft.CostAllocation is { } allocation)
+        {
+            if (draft.ExpectedPurchaseOrderVersion is null) throw new JsonException("Source allocation requires a purchase-unit adjustment.");
+            PurchaseSupplierReturnCostAllocationContractV1.Validate(allocation,
+                draft.QuantityKg.ToString("0.###", CultureInfo.InvariantCulture), draft.UndoQuantity?.ToString("0.###", CultureInfo.InvariantCulture));
+            var labels = draft.CostAllocationSources!;
+            if (labels.Count != allocation.InvoicedSources.Count || labels.Any(row => row is null || row.SourceEventId == Guid.Empty
+                || row.InvoiceId == Guid.Empty || row.InvoiceLineId == Guid.Empty || string.IsNullOrWhiteSpace(row.InvoiceNumber)
+                || row.InvoiceNumber.Length > 128 || row.InvoiceLineNo < 1)
+                || labels.Select(row => row.SourceEventId).Distinct().Count() != labels.Count
+                || allocation.InvoicedSources.Any(row => !labels.Any(label => label.SourceEventId == row.SourceEventId)))
+                throw new JsonException("Stored source labels do not identify the selected invoice sources.");
+        }
+    }
+
+    private sealed record CostAllocationSnapshot(PurchaseSupplierReturnCostAllocationV1 Selection,
+        IReadOnlyList<PurchaseSupplierReturnInvoiceSourceLabelV1> InvoiceSources);
 
     private static decimal RequireKgFits(decimal value) =>
         value > -KgColumnBound && value < KgColumnBound && decimal.Round(value, KgScale) == value
@@ -394,6 +425,8 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
         stored.Return.ReplacementExpected,
         stored.Return.ExpectedPurchaseOrderVersion,
         stored.Return.UndoQuantity,
+        stored.Return.CostAllocation,
+        stored.Return.CostAllocationSources,
         stored.Return.Reason,
         stored.RequestedBy,
         stored.DecidedBy,

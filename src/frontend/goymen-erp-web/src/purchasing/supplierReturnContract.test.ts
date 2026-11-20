@@ -12,7 +12,7 @@ function supplierReturn(over: Record<string, unknown> = {}) {
     purchaseOrderId: ORDER, purchaseOrderLineId: '66666666-6666-4666-8666-666666666666',
     goodsAcceptanceId: '77777777-7777-4777-8777-777777777777', inventoryMovementId: '88888888-8888-4888-8888-888888888888',
     status: 'Recorded', version: '1', sourceBlock: 'Blocked', quantityKg: '120.5', costBasis: 'InvoiceUnitCost',
-    unitCostTryPerKg: '41.2575', replacementExpected: false, reason: 'SENTETIK hatalı ölçü', occurredAtUtc: '2026-11-16T06:00:00Z',
+    unitCostTryPerKg: '41.2575', priceDisclosure: 'Visible', replacementExpected: false, reason: 'SENTETIK hatalı ölçü', occurredAtUtc: '2026-11-16T06:00:00Z',
     requestedBy: 'SENTETIK-iade-giren', requestedAtUtc: '2026-11-16T06:01:00Z', decidedBy: null, decidedAtUtc: null,
     decisionReason: null,
     ...over,
@@ -50,6 +50,28 @@ describe('supplier return decoder (B-19; SAT-D306, SAT-D393, ALS-D91)', () => {
     expect(decodeSupplierReturn(supplierReturn({ unitCostTryPerKg: '0' }), COMPANY, ORDER)).toBeNull()
     expect(decodeSupplierReturn(supplierReturn({ replacementExpected: true }), COMPANY, ORDER)).toBeNull()
     expect(decodeSupplierReturn(supplierReturn({ reason: ' ' }), COMPANY, ORDER)).toBeNull()
+  })
+
+  it('accepts a withheld null cost and rejects missing, unknown or contradictory disclosure', () => {
+    const withheld = supplierReturn({ priceDisclosure: 'Withheld', unitCostTryPerKg: null })
+    expect(decodeSupplierReturn(withheld, COMPANY, ORDER)).toEqual(withheld)
+    for (const invalid of [{ priceDisclosure: 'Withheld' }, { unitCostTryPerKg: null },
+      { priceDisclosure: 'Unknown' }, { priceDisclosure: undefined }]) {
+      expect(decodeSupplierReturn(supplierReturn(invalid), COMPANY, ORDER)).toBeNull()
+    }
+  })
+
+  it('requires price-free immutable labels for exactly the selected invoice sources', () => {
+    const sourceEventId = '99999999-9999-4999-8999-999999999999'
+    const costAllocation = { expectedSourceVersion: 'synthetic-v1', pending: { takeAll: false, quantityKg: '0', undoQuantity: '0' },
+      invoicedSources: [{ sourceEventId, takeAll: false, quantityKg: '120.5', undoQuantity: '2' }] }
+    const labels = [{ sourceEventId, invoiceId: OTHER, invoiceLineId: ORDER, invoiceNumber: 'SENTETIK-FATURA', invoiceLineNo: 1 }]
+    const view = supplierReturn({ expectedPurchaseOrderVersion: '4', undoQuantity: '2', costAllocation, costAllocationSources: labels })
+    expect(decodeSupplierReturn(view, COMPANY, ORDER)).toEqual(view)
+    for (const costAllocationSources of [undefined, null, [], [...labels, ...labels],
+      [{ ...labels[0], sourceEventId: OTHER }], [{ ...labels[0], unitCostTryPerKg: '10' }]]) {
+      expect(decodeSupplierReturn({ ...view, costAllocationSources }, COMPANY, ORDER)).toBeNull()
+    }
   })
 
   it('refuses incoherent status, cost basis and decision facts', () => {

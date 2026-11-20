@@ -17,6 +17,9 @@ import { StateBlock } from '../shell/StateBlock'
 import { Button } from '../ui/Button'
 import styles from './purchasing.module.css'
 import { ReceiptAdjustmentBatchPanel } from './ReceiptAdjustmentBatchPanel'
+import { SupplierReturnSourceAllocation } from './SupplierReturnSourceAllocation'
+import { SupplierReturnSourceSummary } from './SupplierReturnSourceSummary'
+import type { SupplierReturnCostAllocation } from './supplierReturnSourceContract'
 
 interface Props {
   readonly detail: PurchaseOrderDetail; readonly binding: string; readonly attemptBinding: string
@@ -75,6 +78,7 @@ function ReceiptOperation(props: Props & { readonly receipt: GoodsReceipt }) {
   const [reason, setReason] = useState(''), [cost, setCost] = useState(''), [replacement, setReplacement] = useState(false)
   const [nextQuantity, setNextQuantity] = useState(''), [nextKg, setNextKg] = useState(''), [label, setLabel] = useState('')
   const [location, setLocation] = useState(receipt.locationId), [invalid, setInvalid] = useState(false)
+  const [costAllocation, setCostAllocation] = useState<SupplierReturnCostAllocation | null>(null)
   const line = detail.lines.find((candidate) => candidate.lineId === receipt.purchaseOrderLineId)
   const options = useQuery({ queryKey: [props.binding, 'receipt-correction-locations', receipt.acceptanceId, detail.order.version],
     enabled: mode === 'correction' && line !== undefined && detail.order.status === 'Approved', queryFn: async ({ signal }) => {
@@ -94,7 +98,7 @@ function ReceiptOperation(props: Props & { readonly receipt: GoodsReceipt }) {
     const newQuantity = receiptQuantityInput(nextQuantity), newKg = receiptQuantityInput(nextKg)
     const manualCost = cost.trim() === '' ? null : costInput(cost)
     if (undo === null || measured === null || reason.trim() === '' || reason.trim().length > 1000
-      || mode === 'return' && cost.trim() !== '' && manualCost === null
+      || mode === 'return' && (costAllocation === null || cost.trim() !== '' && manualCost === null)
       || mode === 'correction' && (newQuantity === null || newKg === null || label.trim() === '' || label.trim().length > 64
         || location !== receipt.locationId && !locations.some((item) => item.locationId === location))) { setInvalid(true); return }
     setInvalid(false)
@@ -102,7 +106,8 @@ function ReceiptOperation(props: Props & { readonly receipt: GoodsReceipt }) {
     if (mode === 'return') {
       attempt.submit({ mode, request: { returnId: receiptIdentity(), returnLineId: receiptIdentity(), goodsAcceptanceId: receipt.acceptanceId,
         inventoryMovementId: receiptIdentity(), sourceBlock: block, quantityKg: measured, manualUnitCostTryPerKg: manualCost,
-        replacementExpected: replacement, reason: reason.trim(), occurredAtUtc: at, expectedPurchaseOrderVersion: detail.order.version, undoQuantity: undo } })
+        replacementExpected: replacement, reason: reason.trim(), occurredAtUtc: at, expectedPurchaseOrderVersion: detail.order.version, undoQuantity: undo,
+        costAllocation: costAllocation! } })
     } else {
       attempt.submit({ mode, request: { expectedPurchaseOrderVersion: detail.order.version, adjustmentId: receiptIdentity(),
         reversalLineId: receiptIdentity(), inventoryMovementId: receiptIdentity(), undoQuantity: undo, measuredUndoQuantityKg: measured,
@@ -144,6 +149,8 @@ function ReceiptOperation(props: Props & { readonly receipt: GoodsReceipt }) {
           </select>
         </> : null}
       </div>
+      {mode === 'return' ? <SupplierReturnSourceAllocation companyId={detail.order.companyId} orderId={detail.order.id}
+        acceptanceId={receipt.acceptanceId} labelId={receipt.labelId} binding={props.binding} onChange={setCostAllocation} /> : null}
       {mode === 'return' ? <p>{T.definitive}</p> : null}
       {invalid ? <p role="alert">{T.invalid}</p> : null}<Button type="submit">{T.save}</Button>
     </fieldset></form>
@@ -164,7 +171,8 @@ function ReturnDecision(props: Props & { readonly item: SupplierReturn }) {
       ...(approve && item.expectedPurchaseOrderVersion !== undefined ? { expectedPurchaseOrderVersion: version } : {}) } })
   }
   return <article className={styles.actionCard} aria-labelledby={`${id}-heading`}>
-    <h4 id={`${id}-heading`}>{T.returns}: {item.quantityKg} kg</h4><p>{item.reason}</p><p>{T.manualCost}: {item.unitCostTryPerKg}</p>
+    <h4 id={`${id}-heading`}>{T.returns}: {item.quantityKg} kg</h4><p>{item.reason}</p><p>{T.manualCost}: {item.priceDisclosure === 'Withheld' ? T.sourcePriceWithheld : item.unitCostTryPerKg}</p>
+    {item.costAllocation !== undefined ? <SupplierReturnSourceSummary allocation={item.costAllocation} labels={item.costAllocationSources} /> : null}
     <AttemptFeedback attempt={attempt} />
     {attempt.snapshot !== null ? <p>{(attempt.snapshot.payload as { approve: boolean }).approve ? T.approve : T.reject};
       {' '}{T.expectedOrderVersion}: {(attempt.snapshot.payload as { request: SupplierReturnDecision }).request.expectedPurchaseOrderVersion ?? item.expectedPurchaseOrderVersion}</p> : null}
@@ -186,6 +194,9 @@ function AttemptFeedback<TAnswer>({ attempt }: { readonly attempt: { readonly se
     {attempt.sending ? <p role="status">{T.sending}</p> : null}
     {!attempt.sending && attempt.snapshot !== null ? <div role="alert"><p>{T.unknown}</p><Button type="button" onClick={attempt.retry}>{T.retry}</Button></div> : null}
     {result?.type === 'failed' ? <StateBlock subject={T.heading} state={classifyOutcome({ type: 'http', status: result.status, body: { code: result.code } })} /> : null}
+    {result?.type === 'failed' && result.code === 'purchasing_supplier_return_cost_allocation_required' ? <p role="alert">{T.sourceAllocationRequired}</p> : null}
+    {result?.type === 'failed' && result.code === 'purchasing_supplier_return_cost_allocation_stale' ? <p role="alert">{T.sourceAllocationStale}</p> : null}
+    {result?.type === 'failed' && result.code === 'purchasing_supplier_return_cost_allocation_exceeds_source' ? <p role="alert">{T.sourceAllocationExceeds}</p> : null}
     {result?.type === 'failed' && result.detail !== undefined ? <p role="alert">{result.detail}</p> : null}
     {result?.type === 'unknown' ? <StateBlock subject={T.heading} state={classifyOutcome(result.reason === 'service-unavailable'
       ? { type: 'http', status: result.status ?? 503, body: null } : { type: result.reason })} /> : null}
@@ -204,12 +215,13 @@ function AdjustmentResult({ answer }: { readonly answer: Answer }) {
 function PendingOperationSummary({ operation }: { readonly operation: Operation }) {
   const quantity = operation.mode === 'return' ? operation.request.undoQuantity : operation.request.undoQuantity
   const kg = operation.mode === 'return' ? operation.request.quantityKg : operation.request.measuredUndoQuantityKg
-  return <p>{operation.mode === 'return' ? T.supplierReturn : operation.mode === 'correction' ? T.correction : T.undo};
+  return <><p>{operation.mode === 'return' ? T.supplierReturn : operation.mode === 'correction' ? T.correction : T.undo};
     {' '}{T.purchaseQuantity}: {quantity}; {T.measuredKg}: {kg}
     {operation.mode === 'correction' && operation.request.replacementReceipt != null
       ? <>; {T.newLabel}: {operation.request.replacementReceipt.labelCode}; {T.newQuantity}: {operation.request.replacementReceipt.acceptedQuantity};
           {' '}{T.newKg}: {operation.request.replacementReceipt.measuredQuantityKg}</> : null}
-  </p>
+  </p>{operation.mode === 'return' && operation.request.costAllocation !== undefined
+    ? <SupplierReturnSourceSummary allocation={operation.request.costAllocation} /> : null}</>
 }
 function costInput(value: string): string | null {
   const raw = value.trim().replace(',', '.')
