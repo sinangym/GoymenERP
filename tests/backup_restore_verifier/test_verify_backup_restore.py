@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import dataclasses
 import datetime as dt
 import hashlib
 import importlib.util
@@ -297,6 +298,71 @@ class RestorePlanTests(unittest.TestCase):
         plan = self.plan(two_day_history(), None)
         self.assertEqual(stamp(plan.reached_point), "2026-11-15T01:50:00Z")
         self.assertNotIn("STOPAT", plan.script)
+
+    def test_source_database_rejects_comment_escape_at_parser_and_plan_boundaries(self) -> None:
+        clean = VERIFIER.parse_history(two_day_history())
+        for separator in ("\n", "\r", "\r\n", "\x00", "\t", "\x1b", "\x7f", "\x85", "\u2028", "\u2029"):
+            with self.subTest(separator=repr(separator)):
+                name = f"Source{separator}SELECT 1201 AS injected_statement;"
+                document = two_day_history()
+                document["databaseName"] = name
+                with self.assertRaises(VERIFIER.InputError):
+                    VERIFIER.parse_history(document)
+                with self.assertRaises(VERIFIER.InputError):
+                    VERIFIER.build_restore_plan(
+                        dataclasses.replace(clean, database_name=name), recovery_point=None,
+                        target_database="GoymenErp_Drill", data_directory="E:\\SqlData",
+                        log_directory="F:\\SqlLog", allow_source_name=False,
+                    )
+        document = two_day_history()
+        document["databaseName"] = "Göymen's ERP -- source"
+        script = self.plan(document, None).script
+        self.assertIn("-- Source database: Göymen's ERP -- source;", script)
+
+    def test_nonadvancing_log_is_rejected_before_latest_or_point_plan(self) -> None:
+        document = two_day_history()
+        row = row_at(document, "L", "2026-11-15T01:20:00Z")
+        row["lastLsn"] = row["firstLsn"]
+        for point in (None, "2026-11-15T01:42:30Z"):
+            with self.subTest(point=point), self.assertRaises(VERIFIER.InputError):
+                self.plan(document, point)
+
+    def test_direct_plan_rejects_nonadvancing_or_repeated_log_identifiers(self) -> None:
+        history = VERIFIER.parse_history(two_day_history())
+        previous = next(log for log in history.backups if log.type == "L" and stamp(log.start) == "2026-11-15T01:05:00Z")
+        selected = next(log for log in history.backups if log.type == "L" and stamp(log.start) == "2026-11-15T01:20:00Z")
+        for malformed in (
+            dataclasses.replace(selected, last_lsn=selected.first_lsn),
+            dataclasses.replace(selected, last_lsn=selected.first_lsn - 1),
+            dataclasses.replace(selected, backup_set_id=previous.backup_set_id),
+        ):
+            with self.subTest(malformed=malformed):
+                replaced = dataclasses.replace(history, backups=tuple(malformed if row is selected else row for row in history.backups))
+                with self.assertRaises(VERIFIER.PlanError) as raised:
+                    VERIFIER.build_restore_plan(
+                        replaced, recovery_point=None, target_database="GoymenErp_Drill",
+                        data_directory="E:\\SqlData", log_directory="F:\\SqlLog", allow_source_name=False,
+                    )
+                self.assertEqual(raised.exception.code, "LOG_CHAIN_NOT_ADVANCING")
+
+    def test_cli_malformed_metadata_or_log_creates_no_script(self) -> None:
+        documents = [two_day_history(), two_day_history()]
+        documents[0]["databaseName"] = "Source\nSELECT 1201 AS injected_statement;"
+        row = row_at(documents[1], "L", "2026-11-15T01:20:00Z")
+        row["lastLsn"] = row["firstLsn"]
+        with tempfile.TemporaryDirectory() as directory:
+            history = Path(directory) / "history.json"
+            output = Path(directory) / "restore.sql"
+            for document in documents:
+                with self.subTest(document=document["databaseName"]):
+                    history.write_text(json.dumps(document), encoding="utf-8")
+                    result = VERIFIER.run([
+                        "restore-plan", "--history", str(history), "--recovery-point", "latest",
+                        "--target-database", "GoymenErp_Drill", "--data-directory", "E:\\SqlData",
+                        "--log-directory", "F:\\SqlLog", "--output", str(output),
+                    ], io.StringIO())
+                    self.assertEqual(result, VERIFIER.EXIT_INPUT_ERROR)
+                    self.assertFalse(output.exists())
 
     def test_point_beyond_the_last_log_is_not_covered(self) -> None:
         with self.assertRaises(VERIFIER.PlanError) as raised:

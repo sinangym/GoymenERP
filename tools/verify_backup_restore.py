@@ -219,6 +219,15 @@ def require_string(value: Any, where: str, *, allow_empty: bool = False) -> str:
     return value
 
 
+def require_single_line_text(value: Any, where: str) -> str:
+    text = require_string(value, where)
+    # Metadata emitted into SQL comments must never terminate that comment or
+    # inject control characters into the generated, human-reviewed script.
+    if any(ord(char) < 32 or 127 <= ord(char) <= 159 or char in "\u2028\u2029" for char in text):
+        raise InputError(f"{where}: satır sonu veya kontrol karakteri içeremez.")
+    return text
+
+
 def require_int(value: Any, where: str, *, minimum: int) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
         raise InputError(f"{where}: en az {minimum} olan tam sayı bekleniyor.")
@@ -363,6 +372,8 @@ def parse_backup(value: Any, index: int) -> Backup:
     last_lsn = parse_lsn(data["lastLsn"], f"{where}.lastLsn")
     if last_lsn < first_lsn:
         raise InputError(f"{where}: lastLsn firstLsn'den küçük olamaz.")
+    if backup_type == LOG_BACKUP and last_lsn == first_lsn:
+        raise InputError(f"{where}: günlük yedeğinin lastLsn değeri firstLsn'den büyük olmalıdır.")
     key_algorithm = data["keyAlgorithm"]
     if key_algorithm is not None:
         key_algorithm = require_string(key_algorithm, f"{where}.keyAlgorithm")
@@ -421,7 +432,7 @@ def parse_history(document: Any) -> History:
         raise InputError("yedek geçmişi: yinelenen backupSetId.")
     backups.sort(key=lambda backup: (backup.start, backup.backup_set_id))
     return History(
-        database_name=require_string(data["databaseName"], "yedek geçmişi.databaseName"),
+        database_name=require_single_line_text(data["databaseName"], "yedek geçmişi.databaseName"),
         recovery_model=require_string(data["recoveryModel"], "yedek geçmişi.recoveryModel"),
         exported_at=parse_utc(data["exportedAtUtc"], "yedek geçmişi.exportedAtUtc"),
         backups=tuple(backups),
@@ -756,6 +767,8 @@ def build_restore_plan(
     log_directory: str,
     allow_source_name: bool,
 ) -> RestorePlan:
+    # Also guard direct callers that constructed History without parse_history.
+    require_single_line_text(history.database_name, "yedek geçmişi.databaseName")
     if not DATABASE_NAME_PATTERN.match(target_database):
         raise InputError("--target-database harf ile başlamalı; yalnız harf, rakam ve alt çizgi içerebilir.")
     if same_database_name(target_database, history.database_name) and not allow_source_name:
@@ -784,15 +797,22 @@ def build_restore_plan(
         (backup for backup in usable if backup.type == LOG_BACKUP),
         key=lambda backup: (backup.first_lsn, backup.start, backup.backup_set_id),
     )
+    if any(log.last_lsn <= log.first_lsn for log in logs_by_first):
+        raise PlanError("LOG_CHAIN_NOT_ADVANCING", "Günlük yedeği LSN aralığı ilerlemiyor.")
     chain: list[Backup] = []
     first = [log for log in logs_by_first if log.first_lsn <= full.last_lsn < log.last_lsn]
     if first:
         chain.append(first[0])
+        visited = {first[0].backup_set_id}
         while recovery_point is None or chain[-1].start < recovery_point:
             following = [log for log in logs_by_first if log.first_lsn == chain[-1].last_lsn]
             if not following:
                 break
-            chain.append(following[0])
+            candidate = following[0]
+            if candidate.backup_set_id in visited or candidate.last_lsn <= chain[-1].last_lsn:
+                raise PlanError("LOG_CHAIN_NOT_ADVANCING", "Günlük zinciri yineleniyor veya LSN ilerlemiyor.")
+            visited.add(candidate.backup_set_id)
+            chain.append(candidate)
 
     if recovery_point is None:
         reached = chain[-1].start if chain else full.start
