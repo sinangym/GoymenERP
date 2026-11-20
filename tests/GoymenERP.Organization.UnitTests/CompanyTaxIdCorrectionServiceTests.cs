@@ -30,6 +30,29 @@ public sealed class CompanyTaxIdCorrectionServiceTests
     private const string Approver = "SENTETIK-tax-approver";
 
     [Fact]
+    public async Task Correction_authority_lost_after_entry_leaves_no_staged_change_audit_or_success_receipt()
+    {
+        var database = await SeedAsync();
+        var correctionId = await StageAsync(database, Placeholder, StandIn, correctedVkn: null);
+        var run = new Run(database, Placeholder, Approver, canApprove: true, revokeBeforeSave: true);
+        var result = await run.Service.ApplyCompanyTaxIdCorrectionAsync(correctionId, new(1), run.Metadata("lost-authority"), default);
+        Assert.Equal(CommandResult.NotFound, result.Result);
+        Assert.False(result.IsReplay);
+        Assert.Empty(run.Audit.Drafts);
+        Assert.Empty(run.Db.ChangeTracker.Entries());
+        await run.Db.SaveChangesAsync();
+        Assert.Empty(await run.Db.CommandExecutions.ToListAsync());
+        var company = await run.Db.Companies.AsNoTracking().SingleAsync(x => x.Id == Placeholder);
+        Assert.Equal((StandIn, 1L), (company.Vkn, company.Version));
+        Assert.True((await run.Db.CompanyTaxIdCorrections.AsNoTracking().SingleAsync()).IsPending);
+
+        var restored = new Run(database, Placeholder, Approver, canApprove: true);
+        var retry = await restored.Service.ApplyCompanyTaxIdCorrectionAsync(correctionId, new(1), restored.Metadata("lost-authority"), default);
+        Assert.Equal(CommandResult.Succeeded, retry.Result);
+        Assert.False(retry.IsReplay);
+    }
+
+    [Fact]
     public async Task An_approver_applies_the_pending_clear_with_one_system_actor_audit_event()
     {
         var database = await SeedAsync();
@@ -307,7 +330,7 @@ public sealed class CompanyTaxIdCorrectionServiceTests
 
     private sealed class Run
     {
-        public Run(string database, Guid companyId, string actor, bool canRequest = false, bool canApprove = false)
+        public Run(string database, Guid companyId, string actor, bool canRequest = false, bool canApprove = false, bool revokeBeforeSave = false)
         {
             Company = Resolved(companyId);
             Db = Context(database, Company);
@@ -316,7 +339,7 @@ public sealed class CompanyTaxIdCorrectionServiceTests
                 [OrganizationCompanyTaxIdPermissionsV1.Request] = canRequest ? CompanyWide() : Denied(),
                 [OrganizationCompanyTaxIdPermissionsV1.Approve] = canApprove ? CompanyWide() : Denied(),
             };
-            var authority = new PerPermissionAuthority(scopes);
+            var authority = new PerPermissionAuthority(scopes, revokeBeforeSave);
             Service = new OrganizationMasterDataService(
                 Db,
                 new FixedUser(actor, companyId),
@@ -355,9 +378,10 @@ public sealed class CompanyTaxIdCorrectionServiceTests
     }
 
     /// <summary>Each permission name answers its own synthetic scope; an unknown name is denied.</summary>
-    private sealed class PerPermissionAuthority(IReadOnlyDictionary<string, PermissionScope> scopes)
+    private sealed class PerPermissionAuthority(IReadOnlyDictionary<string, PermissionScope> scopes, bool revokeBeforeSave = false)
         : IErpAuthorizationService, IErpAuthorityRevalidationService
     {
+        private int revalidations;
         public Task<AuthorizationSnapshot> GetAuthorizationSnapshotAsync(
             Guid companyId, IReadOnlyCollection<string> permissions, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
@@ -371,7 +395,7 @@ public sealed class CompanyTaxIdCorrectionServiceTests
 
         public Task<PermissionScope> RevalidatePermissionScopeAsync(
             string permission, Guid companyId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Scope(permission));
+            Task.FromResult(revokeBeforeSave && ++revalidations > 1 ? Denied() : Scope(permission));
 
         private PermissionScope Scope(string permission) =>
             scopes.TryGetValue(permission, out var scope) ? scope : Denied();

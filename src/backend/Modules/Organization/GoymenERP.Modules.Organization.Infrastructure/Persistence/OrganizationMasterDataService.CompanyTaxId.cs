@@ -173,6 +173,9 @@ internal sealed partial class OrganizationMasterDataService
                 cancellationToken);
         }
 
+        var freshScope = await ReadFreshCompanyTaxIdMutationScopeAsync(metadata, permission, cancellationToken);
+        if (freshScope is null) return NotRecordedNotFound(metadata);
+
         var changeRequest = new CompanyTaxIdChangeRequest(
             Guid.NewGuid(),
             companyId,
@@ -185,7 +188,7 @@ internal sealed partial class OrganizationMasterDataService
         dbContext.CompanyTaxIdChangeRequests.Add(changeRequest);
         EnqueueAudit(
             metadata,
-            scope,
+            freshScope,
             permission,
             CompanyTaxIdChangeRequestedEventType,
             CompanyTaxIdChangeRequestEntityType,
@@ -319,8 +322,6 @@ internal sealed partial class OrganizationMasterDataService
                 cancellationToken);
         }
 
-        var now = DateTimeOffset.UtcNow;
-        Guid auditEntityId;
         if (approve)
         {
             if (!changeRequest.IsCurrentFor(company))
@@ -340,13 +341,21 @@ internal sealed partial class OrganizationMasterDataService
                     CommandResponses.For(CommandResult.TaxIdInUse),
                     cancellationToken);
             }
+        }
 
+        var freshScope = await ReadFreshCompanyTaxIdMutationScopeAsync(metadata, permission, cancellationToken);
+        if (freshScope is null) return NotRecordedNotFound(metadata);
+
+        var now = DateTimeOffset.UtcNow;
+        Guid auditEntityId;
+        if (approve)
+        {
             var companyVersionBefore = company.Version;
             var companyBeforeJson = SerializeCompanyTaxId(company, companyVersionBefore, changeRequest);
             changeRequest.Approve(company, metadata.ActorId, note, now);
             EnqueueAudit(
                 metadata,
-                scope,
+                freshScope,
                 permission,
                 CompanyTaxIdChangeApprovedEventType,
                 CompanyEntityType,
@@ -366,7 +375,7 @@ internal sealed partial class OrganizationMasterDataService
             changeRequest.Reject(metadata.ActorId, note, now);
             EnqueueAudit(
                 metadata,
-                scope,
+                freshScope,
                 permission,
                 CompanyTaxIdChangeRejectedEventType,
                 CompanyTaxIdChangeRequestEntityType,
@@ -421,6 +430,29 @@ internal sealed partial class OrganizationMasterDataService
             },
             auditEntityId,
             cancellationToken);
+    }
+
+    /// <summary>
+    /// The last awaited read before staging a VKN mutation and its success audit/receipt. Losing authority leaves
+    /// nothing staged; callers go directly from this fence to the single SaveChanges, with no intervening async reads.
+    /// </summary>
+    private async Task<PermissionScope?> ReadFreshCompanyTaxIdMutationScopeAsync(
+        CommandMetadata metadata, string permission, CancellationToken cancellationToken)
+    {
+        bool SameActorAndCompany() => currentUser.IsAuthenticated
+            && string.Equals(currentUser.UserId, metadata.ActorId, StringComparison.Ordinal)
+            && companyContext.IsResolved && companyContext.CompanyId == metadata.CompanyId
+            && currentUser.CanAccessCompany(metadata.CompanyId);
+
+        if (SameActorAndCompany())
+        {
+            var fresh = await authorityRevalidationService.RevalidatePermissionScopeAsync(
+                permission, metadata.CompanyId, cancellationToken);
+            if (IsCompanyWideGrant(fresh) && SameActorAndCompany()) return fresh;
+        }
+
+        dbContext.ChangeTracker.Clear();
+        return null;
     }
 
     private static bool IsCompanyWideGrant(PermissionScope scope) => scope.IsGranted && scope.IsCompanyWide;

@@ -151,6 +151,9 @@ internal sealed partial class OrganizationMasterDataService
                 cancellationToken);
         }
 
+        var freshScope = await ReadFreshCompanyTaxIdMutationScopeAsync(metadata, permission, cancellationToken);
+        if (freshScope is null) return NotRecordedNotFound(metadata);
+
         var now = DateTimeOffset.UtcNow;
         var companyVersionBefore = company.Version;
         var beforeJson = SerializeCompanyTaxIdCorrection(company, companyVersionBefore, correction);
@@ -166,7 +169,7 @@ internal sealed partial class OrganizationMasterDataService
             AuditActorTypes.System,
             correction.Source,
             permission,
-            scope.RoleCodes,
+            freshScope.RoleCodes,
             beforeJson,
             SerializeCompanyTaxIdCorrection(company, company.Version, correction),
             correction.Reason,

@@ -27,6 +27,42 @@ public sealed class CompanyTaxIdServiceTests
     private const string Maker = "SENTETIK-tax-maker";
     private const string Checker = "SENTETIK-tax-checker";
 
+    [Theory]
+    [InlineData("request")]
+    [InlineData("approve")]
+    [InlineData("reject")]
+    public async Task Authority_lost_after_entry_leaves_no_mutation_audit_or_success_receipt(string operation)
+    {
+        var database = await SeedAsync();
+        var requestId = operation == "request" ? Guid.Empty : await OpenRequestAsync(database);
+        var run = new Run(database, CompanyA, operation == "request" ? Maker : Checker,
+            canRequest: true, canApprove: true, revokeBeforeSave: true);
+        var beforeExecutions = await run.Db.CommandExecutions.CountAsync();
+        var result = operation == "request"
+            ? await run.Service.RequestCompanyTaxIdChangeAsync(new(1, NewVkn, "SENTETIK authority race"), run.Metadata("lost-authority"), default)
+            : await run.Service.DecideCompanyTaxIdChangeAsync(requestId, new(1, operation, null), run.Metadata("lost-authority"), default);
+
+        Assert.Equal(CommandResult.NotFound, result.Result);
+        Assert.False(result.IsReplay);
+        Assert.Empty(run.Audit.Drafts);
+        Assert.Empty(run.Db.ChangeTracker.Entries());
+        // A subsequent save in the same scope must not flush a denied mutation or terminal success.
+        await run.Db.SaveChangesAsync();
+        Assert.Equal(beforeExecutions, await run.Db.CommandExecutions.CountAsync());
+        var company = await run.Db.Companies.AsNoTracking().SingleAsync(x => x.Id == CompanyA);
+        Assert.Equal((VknA, 1L), (company.Vkn, company.Version));
+        var pending = await run.Db.CompanyTaxIdChangeRequests.AsNoTracking().ToListAsync();
+        if (operation == "request") Assert.Empty(pending);
+        else Assert.True(Assert.Single(pending).IsPending);
+
+        var restored = new Run(database, CompanyA, operation == "request" ? Maker : Checker, canRequest: true, canApprove: true);
+        var retry = operation == "request"
+            ? await restored.Service.RequestCompanyTaxIdChangeAsync(new(1, NewVkn, "SENTETIK authority race"), restored.Metadata("lost-authority"), default)
+            : await restored.Service.DecideCompanyTaxIdChangeAsync(requestId, new(1, operation, null), restored.Metadata("lost-authority"), default);
+        Assert.Equal(operation == "request" ? CommandResult.Created : CommandResult.Succeeded, retry.Result);
+        Assert.False(retry.IsReplay);
+    }
+
     [Fact]
     public async Task A_request_opens_one_pending_change_and_leaves_the_company_vkn_untouched()
     {
@@ -490,7 +526,8 @@ public sealed class CompanyTaxIdServiceTests
             string actor,
             bool canRequest = false,
             bool canApprove = false,
-            bool scopedRequest = false)
+            bool scopedRequest = false,
+            bool revokeBeforeSave = false)
         {
             Company = Resolved(companyId);
             Db = Context(database, Company);
@@ -500,7 +537,7 @@ public sealed class CompanyTaxIdServiceTests
                     scopedRequest ? SiteScoped() : canRequest ? CompanyWide() : Denied(),
                 [OrganizationCompanyTaxIdPermissionsV1.Approve] = canApprove ? CompanyWide() : Denied(),
             };
-            var authority = new PerPermissionAuthority(scopes);
+            var authority = new PerPermissionAuthority(scopes, revokeBeforeSave);
             Service = new OrganizationMasterDataService(
                 Db,
                 new FixedUser(actor, companyId),
@@ -539,9 +576,10 @@ public sealed class CompanyTaxIdServiceTests
     }
 
     /// <summary>Each permission name answers its own synthetic scope; an unknown name is denied.</summary>
-    private sealed class PerPermissionAuthority(IReadOnlyDictionary<string, PermissionScope> scopes)
+    private sealed class PerPermissionAuthority(IReadOnlyDictionary<string, PermissionScope> scopes, bool revokeBeforeSave = false)
         : IErpAuthorizationService, IErpAuthorityRevalidationService
     {
+        private int revalidations;
         public Task<AuthorizationSnapshot> GetAuthorizationSnapshotAsync(
             Guid companyId, IReadOnlyCollection<string> permissions, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
@@ -555,7 +593,7 @@ public sealed class CompanyTaxIdServiceTests
 
         public Task<PermissionScope> RevalidatePermissionScopeAsync(
             string permission, Guid companyId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Scope(permission));
+            Task.FromResult(revokeBeforeSave && ++revalidations > 1 ? Denied() : Scope(permission));
 
         private PermissionScope Scope(string permission) =>
             scopes.TryGetValue(permission, out var scope) ? scope : Denied();
