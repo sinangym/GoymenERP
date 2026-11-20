@@ -56,7 +56,9 @@ PROOF_SCHEMA = 5
 # The api project is the CI critical path; its classes are split over this many
 # parallel jobs. The partition is recomputed from the union of the shard proofs.
 API_SHARD_COUNT = 3
-MAX_PROOF_BYTES = 2 * 1024 * 1024
+# CI 4889's complete 20-project modules proof is 2,665,705 bytes. Keep a
+# bounded transport budget at both ends without dropping native identities.
+MAX_PROOF_BYTES = 4 * 1024 * 1024
 # Release per-process memory between API batches on the bounded local runner.
 # Keep complete classes together; a large class remains one indivisible batch.
 API_BATCH_METHOD_BUDGET = 32
@@ -726,6 +728,14 @@ def _valid_proof(proof: object, expected: dict[str, object], group: str, root: P
         raise RuntimeError("Backend group proof full discovery hash differs from its projects.")
 
 
+def _check_proof_size(size: int, unit: str) -> None:
+    if size > MAX_PROOF_BYTES:
+        raise RuntimeError(
+            f"Backend group proof {unit} is oversized "
+            f"({size} bytes; limit {MAX_PROOF_BYTES} bytes)."
+        )
+
+
 def verify_aggregate(
     root: Path, directory: Path, source_head: str, tested_commit: str,
     build_result: str, worker_result: str,
@@ -756,10 +766,15 @@ def verify_aggregate(
         } != {f"proof-{name}.json"}:
             raise RuntimeError("Backend group artifact contents are missing or extra.")
         path = artifact / f"proof-{name}.json"
-        if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_PROOF_BYTES:
-            raise RuntimeError("Backend group proof is missing or oversized.")
+        if path.is_symlink() or not path.is_file():
+            raise RuntimeError("Backend group proof is missing or linked.")
+        _check_proof_size(path.stat().st_size, name)
         try:
-            proof = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_object)
+            # Bound the actual read too: the file can grow after the stat check.
+            with path.open("rb") as source:
+                payload = source.read(MAX_PROOF_BYTES + 1)
+            _check_proof_size(len(payload), name)
+            proof = json.loads(payload.decode("utf-8"), object_pairs_hook=_unique_object)
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exception:
             raise RuntimeError("Backend group proof is unreadable or malformed.") from exception
         _valid_proof(proof, expected_proof(group, source_head, tested_commit, root, index, count),
@@ -930,10 +945,12 @@ def run_group(
     )
     _valid_proof(proof, expected_proof(group, source_head, tested_commit, root, shard_index, shard_count),
                  group, root)
+    payload = json.dumps(proof, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    _check_proof_size(len(payload), unit_name(group, shard_index, shard_count))
     proof_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = proof_path.with_suffix(".tmp")
-    with temporary.open("x", encoding="utf-8") as output:
-        json.dump(proof, output, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    with temporary.open("xb") as output:
+        output.write(payload)
     temporary.replace(proof_path)
     return sum(row["executionCount"] for row in proof["projects"])
 

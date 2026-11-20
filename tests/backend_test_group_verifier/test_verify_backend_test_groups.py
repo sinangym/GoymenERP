@@ -5,6 +5,7 @@ from collections import Counter
 import json
 import copy
 import hashlib
+import io
 import uuid
 import os
 from pathlib import Path
@@ -404,6 +405,75 @@ class BackendGroupVerifierTests(unittest.TestCase):
                     self.aggregate(directory, build=build, workers=workers)
         with self.assertRaisesRegex(RuntimeError, "does not match"):
             self.aggregate(directory, head="f" * 40)
+
+    def test_complete_large_modules_proof_survives_producer_and_consumer_without_losing_cases(self) -> None:
+        directory = self.proof_directory()
+        path = directory / "ci-backend-test-group-proof-modules" / "proof-modules.json"
+        path.unlink()
+        project = VERIFIER.GROUP_PROJECTS["modules"][0]
+        names = [f"{Path(project).stem}.VolumeTests.Case_{index:05d}_{'x' * 100}"
+                 for index in range(7000)]
+        path = self.produce_group("modules", directory, project, names, names)
+        self.assertGreater(path.stat().st_size, 2 * 1024 * 1024)
+        self.assertLessEqual(path.stat().st_size, VERIFIER.MAX_PROOF_BYTES)
+        self.assertEqual(self.aggregate(directory), len(names) + 21)
+        proof = json.loads(path.read_bytes())
+        self.assertEqual(len(proof["projects"][0]["testCases"]), len(names))
+        # A large proof still has to satisfy the same exact head and count gates.
+        with self.assertRaisesRegex(RuntimeError, "does not match"):
+            self.aggregate(directory, head="f" * 40)
+        proof["projects"][0]["testCases"].pop()
+        path.write_text(json.dumps(proof), encoding="utf-8")
+        with self.assertRaises(RuntimeError):
+            self.aggregate(directory)
+
+    def test_producer_checks_inclusive_byte_budget_before_publishing_any_proof(self) -> None:
+        project = VERIFIER.GROUP_PROJECTS["api"][0]
+        name = Path(project).stem + ".ExampleTests.Runs"
+        with mock.patch.object(VERIFIER.time, "monotonic_ns", return_value=0):
+            path = self.produce_group("api", self.root / "measured", project, [name], [name])
+            expected = path.read_bytes()
+            size = len(expected)
+            with mock.patch.object(VERIFIER, "MAX_PROOF_BYTES", size):
+                boundary = self.produce_group("api", self.root / "boundary", project, [name], [name])
+                self.assertEqual(boundary.read_bytes(), expected)
+            directory = self.root / "oversized"
+            rejected = directory / "ci-backend-test-group-proof-api" / "proof-api.json"
+            with mock.patch.object(VERIFIER, "MAX_PROOF_BYTES", size - 1):
+                with self.assertRaisesRegex(RuntimeError, rf"api is oversized.*{size} bytes; limit {size - 1}"):
+                    self.produce_group("api", directory, project, [name], [name])
+            self.assertFalse(rejected.exists())
+            self.assertFalse(rejected.with_suffix(".tmp").exists())
+
+    def test_consumer_checks_byte_boundary_and_bounds_a_file_that_grows_after_stat(self) -> None:
+        directory = self.proof_directory()
+        path = directory / "ci-backend-test-group-proof-modules" / "proof-modules.json"
+        original = path.read_bytes()
+        limit = VERIFIER.MAX_PROOF_BYTES
+        path.write_bytes(original + b" " * (limit - len(original)))
+        self.assertEqual(self.aggregate(directory), 22)
+        with path.open("ab") as output:
+            output.write(b" ")
+        with self.assertRaisesRegex(RuntimeError, rf"modules is oversized.*{limit + 1} bytes; limit {limit}"):
+            self.aggregate(directory)
+        path.write_bytes(original)
+        real_open = Path.open
+        read_sizes = []
+
+        class GrowingProof(io.BytesIO):
+            def read(self, size: int = -1) -> bytes:
+                read_sizes.append(size)
+                return super().read(size)
+
+        def open_file(current: Path, *args, **kwargs):
+            if current == path and args == ("rb",):
+                return GrowingProof(original + b" " * limit)
+            return real_open(current, *args, **kwargs)
+
+        with mock.patch.object(Path, "open", new=open_file):
+            with self.assertRaisesRegex(RuntimeError, rf"modules is oversized.*limit {limit}"):
+                self.aggregate(directory)
+        self.assertEqual(read_sizes, [limit + 1])
 
     def test_aggregate_rejects_missing_unknown_duplicate_json_and_bad_count(self) -> None:
         directory = self.proof_directory()

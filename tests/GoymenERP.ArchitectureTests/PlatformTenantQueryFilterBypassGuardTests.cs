@@ -703,11 +703,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // Class fixtures, partition, exact native IDs/theories, SQL-only skips and proof checks remain.
         // House-producer fingerprint; independent exact-head K3 review is pending.
         // W8: Manufacturing's four primitive InlineData identities are discovered exactly; no production deferred exception remains.
-        "1cc19d0b6ba103fbf4e4bdacd545de31be45902c04f080dd1940ffe4f3fc2612";
+        // W8 CI 4889: shared bounded 4 MiB proof transport, producer admission and bounded consumer reads.
+        // Exact source/discovery/execution/skip gates are unchanged; independent K3 review remains pending.
+        "8b86900ab54d82b0e34230ce140e9e7541885214d8d58bd991f7f97d2afc58aa";
     private const string ReviewedBackendTestGroupVerifierTestsFingerprint =
         // Deferred metadata count 2 -> 1, with Organization explicitly excluded; negative gates retained.
         // W8: production deferred cases are empty; explicit synthetic source/identity negative gates remain.
-        "211465ba0b5738fc1abbfe4934bd3216e6e189d40d5a7b51415eb22f1ef02ee5";
+        // W8: complete >2 MiB proof and producer/consumer inclusive byte boundaries, including post-stat growth.
+        "035b2f352ca9828d934647e06475ed614112e5b25c04457c853505d8d7de67be";
     // Re-reviewed with the existing recovery proof intact and the release-manifest proof bound to the exact head:
     // both jobs are artifact-free, fail closed and do not deploy; ci_safe_trx_summary guards them separately.
     // Re-fingerprinted for CIH-D5: only the trigger path filter under `on:` changed (prose no job reads does not
