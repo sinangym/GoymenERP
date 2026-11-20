@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { collateralAttemptStoreKey } from './CollateralCommand'
+import { collateralAttemptStoreKey, useCollateralAttempt } from './CollateralCommand'
+import type { CollateralCommand } from './CollateralHttp'
 import { CollateralPage } from './CollateralPage'
 import { COLLATERAL_SUCCESS, COLLATERAL_TEXT as T, collateralFigureReasonText, collateralIssueText } from './CollateralText'
 import {
@@ -330,6 +331,32 @@ describe('CollateralPage record', () => {
     expect(sessionStorage.getItem(storeKey ?? '')).toBeNull()
   })
 
+  it.each([400, 401, 403, 404, 415])('retains the original unknown attempt after a preliminary HTTP %i refusal', async status => {
+    const user = userEvent.setup()
+    let answer = () => new Response(null, { status: 503 })
+    const calls = serve({}, () => answer())
+    renderPage(true)
+    const record = form(await openAccount(user), 'record')
+    await fillRecord(user, record)
+    await user.click(within(record).getByRole('button', { name: T.recordSubmit }))
+    expect(await within(record).findByText(T.unknownTitle)).not.toBeNull()
+    const storeKey = collateralAttemptStoreKey(BINDING, 'record', CO_ACCOUNT) ?? ''
+    const original = JSON.parse(sessionStorage.getItem(storeKey) ?? 'null') as { key: string; command: unknown }
+    answer = () => new Response(null, { status })
+    await user.click(within(record).getByRole('button', { name: T.resend }))
+    await waitFor(() => expect(posts(calls)).toHaveLength(2))
+    expect(within(record).getByText(T.unknownTitle)).not.toBeNull()
+    expect(JSON.parse(sessionStorage.getItem(storeKey) ?? 'null')).toMatchObject({ key: original.key, command: original.command })
+    if (status === 401 || status === 403) expect(boundary.report).toHaveBeenCalledWith(status, { token: 1 })
+    answer = () => jsonResponse(succeeded(recorded()))
+    await user.click(within(record).getByRole('button', { name: T.resend }))
+    expect(await within(record).findByText(COLLATERAL_SUCCESS.record)).not.toBeNull()
+    expect(posts(calls)).toHaveLength(3)
+    expect(new Set(posts(calls).map(call => call.key)).size).toBe(1)
+    expect(posts(calls).every(call => JSON.stringify(call.body) === JSON.stringify(posts(calls)[0].body))).toBe(true)
+    expect(sessionStorage.getItem(storeKey)).toBeNull()
+  })
+
   it('stores nothing while the server gave no session binding', async () => {
     signIn(CO_COMPANY, null)
     const user = userEvent.setup()
@@ -340,6 +367,113 @@ describe('CollateralPage record', () => {
     await user.click(within(record).getByRole('button', { name: T.recordSubmit }))
     expect(await within(record).findByText(T.unknownTitle)).not.toBeNull()
     expect(sessionStorage.length).toBe(0)
+  })
+
+  it('does not send a bound record when its retry journal cannot be reserved', async () => {
+    const user = userEvent.setup()
+    const calls = serve({}, () => jsonResponse(succeeded(recorded())))
+    renderPage(true)
+    const record = form(await openAccount(user), 'record')
+    await fillRecord(user, record)
+    const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('SENTETIK storage refused') })
+    await user.click(within(record).getByRole('button', { name: T.recordSubmit }))
+    expect(await within(record).findByText(T.unknownTitle)).not.toBeNull()
+    expect(posts(calls)).toHaveLength(0)
+    storage.mockRestore()
+    await user.click(within(record).getByRole('button', { name: T.resend }))
+    expect(await within(record).findByText(COLLATERAL_SUCCESS.record)).not.toBeNull()
+    expect(posts(calls)).toHaveLength(1)
+  })
+
+  it('keeps the newer retry after an unmounted request succeeds and that retry remains unknown', async () => {
+    const user = userEvent.setup()
+    const replies: ((response: Response) => void)[] = []
+    const calls = serve({}, () => new Promise<Response>(resolve => { replies.push(resolve) }))
+    const firstPage = renderPage(true)
+    const firstRecord = form(await openAccount(user), 'record')
+    await fillRecord(user, firstRecord)
+    await user.click(within(firstRecord).getByRole('button', { name: T.recordSubmit }))
+    expect(posts(calls)).toHaveLength(1)
+    const storeKey = collateralAttemptStoreKey(BINDING, 'record', CO_ACCOUNT) ?? ''
+    const firstReservation = sessionStorage.getItem(storeKey)
+    firstPage.unmount()
+
+    const secondPage = renderPage(true)
+    const secondRecord = form(await openAccount(user), 'record')
+    expect(within(secondRecord).getByText(T.unknownTitle)).not.toBeNull()
+    await user.click(within(secondRecord).getByRole('button', { name: T.resend }))
+    expect(posts(calls)).toHaveLength(2)
+    const retryReservation = sessionStorage.getItem(storeKey)
+    expect(retryReservation).not.toBe(firstReservation)
+    await act(async () => { replies[0](jsonResponse(succeeded(recorded()))) })
+    expect(sessionStorage.getItem(storeKey)).toBe(retryReservation)
+    expect(within(secondRecord).queryByText(COLLATERAL_SUCCESS.record)).toBeNull()
+    await act(async () => { replies[1](new Response(null, { status: 503 })) })
+    expect(await within(secondRecord).findByText(T.unknownTitle)).not.toBeNull()
+    secondPage.unmount()
+
+    renderPage(true)
+    const thirdRecord = form(await openAccount(user), 'record')
+    expect(within(thirdRecord).getByText(T.unknownTitle)).not.toBeNull()
+    await user.click(within(thirdRecord).getByRole('button', { name: T.resend }))
+    expect(posts(calls)).toHaveLength(3)
+    expect(new Set(posts(calls).map(call => call.key)).size).toBe(1)
+    expect(posts(calls).every(call => JSON.stringify(call.body) === JSON.stringify(posts(calls)[0].body))).toBe(true)
+    await act(async () => { replies[2](jsonResponse(succeeded(recorded()))) })
+    expect(await within(thirdRecord).findByText(COLLATERAL_SUCCESS.record)).not.toBeNull()
+    expect(sessionStorage.getItem(storeKey)).toBeNull()
+  })
+})
+
+describe('Collateral attempt completion fences', () => {
+  const command: CollateralCommand = { operation: 'record', body: {
+    companyAccountId: CO_ACCOUNT, partyId: CO_PARTY, collateralTypeId: CO_TYPE, currencyId: CO_CURRENCY, amount: '250000.5',
+    validFrom: '2026-11-01', validUntil: null, documentReference: 'SENTETIK-BELGE-1',
+  } }
+
+  it('does not let an older mounted dispatch settle or abandon a newer claim for the same attempt', async () => {
+    const replies: ((response: Response) => void)[] = []
+    const calls = serve({}, () => new Promise<Response>(resolve => { replies.push(resolve) }))
+    const oldSettled = vi.fn()
+    const currentSettled = vi.fn()
+    const old = renderHook(() => useCollateralAttempt(BINDING, 'record', CO_ACCOUNT, oldSettled))
+    let oldRequest: Promise<unknown> = Promise.resolve()
+    act(() => { oldRequest = old.result.current.submit(command) })
+    const current = renderHook(() => useCollateralAttempt(BINDING, 'record', CO_ACCOUNT, currentSettled))
+    let retry: Promise<unknown> = Promise.resolve()
+    act(() => { retry = current.result.current.resend() })
+    const storeKey = collateralAttemptStoreKey(BINDING, 'record', CO_ACCOUNT) ?? ''
+    const retryReservation = sessionStorage.getItem(storeKey)
+    await act(async () => { replies[0](jsonResponse(succeeded(recorded()))); await oldRequest })
+    expect(oldSettled).not.toHaveBeenCalled()
+    expect(sessionStorage.getItem(storeKey)).toBe(retryReservation)
+    act(() => { old.result.current.abandon() })
+    expect(sessionStorage.getItem(storeKey)).toBe(retryReservation)
+    await act(async () => { replies[1](new Response(null, { status: 503 })); await retry })
+    expect(current.result.current.state.phase).toBe('unknown')
+    expect(currentSettled).not.toHaveBeenCalled()
+    expect(posts(calls)[1].key).toBe(posts(calls)[0].key)
+    expect(posts(calls)[1].body).toEqual(posts(calls)[0].body)
+  })
+
+  it('blocks dispatch and old completion after a hook is rebound to a different company', async () => {
+    let resolveReply: (response: Response) => void = () => {}
+    const calls = serve({}, () => new Promise<Response>(resolve => { resolveReply = resolve }))
+    const settled = vi.fn()
+    const hook = renderHook(({ binding }) => useCollateralAttempt(binding, 'record', CO_ACCOUNT, settled),
+      { initialProps: { binding: BINDING } })
+    let request: Promise<unknown> = Promise.resolve()
+    act(() => { request = hook.result.current.submit(command) })
+    const storeKey = collateralAttemptStoreKey(BINDING, 'record', CO_ACCOUNT) ?? ''
+    const original = sessionStorage.getItem(storeKey)
+    hook.rerender({ binding: { ...BINDING, companyId: 'ffffffff-ffff-ffff-ffff-ffffffffffff' } })
+    await act(async () => { resolveReply(jsonResponse(succeeded(recorded()))); await request })
+    expect(settled).not.toHaveBeenCalled()
+    expect(sessionStorage.getItem(storeKey)).toBe(original)
+    await act(async () => { expect(await hook.result.current.submit(command)).toBe('blocked') })
+    act(() => { hook.result.current.abandon(); hook.result.current.reset() })
+    expect(posts(calls)).toHaveLength(1)
+    expect(sessionStorage.getItem(storeKey)).toBe(original)
   })
 })
 

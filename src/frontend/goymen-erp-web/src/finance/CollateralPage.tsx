@@ -415,6 +415,9 @@ function AttemptPanel({ attempt, operation, onReload }: {
       return <div className={styles.attempt} role="alert" data-attempt="unknown">
         <p className={styles.attemptTitle}>{T.unknownTitle}</p>
         <p>{T.unknownBody}</p>
+        {state.refusalStatus === undefined ? null : <p className={styles.error}>
+          {T.refusedStatus[state.refusalStatus] ?? T.refusedOther}
+        </p>}
         {requiresCheckBeforeAbandon(operation) ? <p className={styles.error}>{T.unknownRecordWarning}</p> : null}
         <div className={styles.actions}>
           <Button type="button" variant="primary" onClick={() => void attempt.resend()}>{T.resend}</Button>
