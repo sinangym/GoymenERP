@@ -22,6 +22,7 @@ import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { SETTINGS_CAPABILITY } from './capabilities'
 import type { CommandOutcome } from './discountLimitApi'
+import { isDateText, isUuid } from './discountLimitContract'
 import { businessDateLabel } from './discountLimitText'
 import {
   EffectiveFromField,
@@ -42,6 +43,8 @@ import {
   parseScale,
   type UnitProfileUnit,
   type UnitProfileView,
+  type RecordUnitProfileBody,
+  type TransferUnitProfileBaselineBody,
 } from './unitProfileContract'
 import {
   UNIT_PROFILE_TEXT as T,
@@ -51,14 +54,25 @@ import {
   unitLabel,
   unitProfileRefusalText,
 } from './unitProfileText'
-import { useCommandAttempt, type AttemptStatus } from './useCommandAttempt'
+import { hasCommandFields, useScopedCommandAttempt, type AttemptStatus, type ScopedCommandAttempt } from './useCommandAttempt'
 import styles from './settings.module.css'
+
+function baselinePayload(value: unknown): value is TransferUnitProfileBaselineBody {
+  return hasCommandFields(value, { reason: 'string' })
+}
+
+function recordPayload(value: unknown): value is RecordUnitProfileBody {
+  return hasCommandFields(value, { expectedVersion: 'string', unitId: 'string', scale: 'number', isActive: 'boolean',
+    reason: 'string', effectiveFrom: 'nullable-string' }) && isUuid(value.unitId)
+    && /^(0|[1-9][0-9]*)$/.test(value.expectedVersion as string) && Number.isInteger(value.scale)
+    && (value.effectiveFrom === null || isDateText(value.effectiveFrom))
+}
 
 export function UnitProfilePage() {
   const shell = useShellState()
   const key = contextKey(shell)
   const namespace = key === null ? null : contextKeyString(key)
-  return <ProfileScreen key={`${namespace ?? 'no-context'}::${shell.routeEntryGeneration}`} namespace={namespace} />
+  return <ProfileScreen key={`${namespace ?? 'no-context'}::${shell.routeEntryGeneration}::${shell.sessionBinding ?? ''}`} namespace={namespace} />
 }
 
 function ProfileScreen({ namespace }: { readonly namespace: string | null }) {
@@ -68,6 +82,10 @@ function ProfileScreen({ namespace }: { readonly namespace: string | null }) {
   const ready = namespace !== null && singleCompany && hasCapability(shell, SETTINGS_CAPABILITY.unitProfiles)
   const queryKey = [namespace ?? 'no-context', shell.routeEntryGeneration, 'settings-unit-profiles']
   const view = useBoundaryRead(queryKey, ready, (signal) => fetchUnitProfiles(companyId ?? '', signal))
+  const baseline = useScopedCommandAttempt<TransferUnitProfileBaselineBody, true>('unit-profile-baseline',
+    (body, idempotencyKey) => transferUnitProfileBaseline({ companyId: companyId ?? '', idempotencyKey }, body), baselinePayload)
+  const record = useScopedCommandAttempt<RecordUnitProfileBody, true>('unit-profile-record',
+    (body, idempotencyKey) => recordUnitProfileVersion({ companyId: companyId ?? '', idempotencyKey }, body), recordPayload)
 
   if (!singleCompany) {
     return (
@@ -89,7 +107,7 @@ function ProfileScreen({ namespace }: { readonly namespace: string | null }) {
   return (
     <Frame title={T.title} intro={T.intro}>
       {state.kind === 'ready' ? (
-        <ProfileSection data={state.data} companyId={companyId} onChanged={() => void view.refetch()} />
+        <ProfileSection data={state.data} baseline={baseline} record={record} onChanged={() => void view.refetch()} />
       ) : (
         <StateBlock state={state} subject={T.subject} onRetry={() => void view.refetch()} />
       )}
@@ -99,11 +117,13 @@ function ProfileScreen({ namespace }: { readonly namespace: string | null }) {
 
 function ProfileSection({
   data,
-  companyId,
+  baseline,
+  record,
   onChanged,
 }: {
   readonly data: UnitProfileView
-  readonly companyId: string
+  readonly baseline: ScopedCommandAttempt<TransferUnitProfileBaselineBody, true>
+  readonly record: ScopedCommandAttempt<RecordUnitProfileBody, true>
   readonly onChanged: () => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -132,10 +152,10 @@ function ProfileSection({
       {data.units.map((unit) => (
         <UnitTable key={unit.unitId} unit={unit} />
       ))}
-      {!data.isBaselineTransferred ? (
-        <BaselineForm companyId={companyId} onApplied={close} onStale={stale} />
-      ) : editing ? (
-        <RecordForm data={data} companyId={companyId} onDone={close} onStale={stale} />
+      {baseline.hasPendingRetry || (!data.isBaselineTransferred && !record.hasPendingRetry) ? (
+        <BaselineForm attempt={baseline} onApplied={close} onStale={stale} />
+      ) : editing || record.hasPendingRetry ? (
+        <RecordForm data={data} attempt={record} onDone={close} onStale={stale} />
       ) : (
         <div className={styles.actions}>
           <Button
@@ -191,23 +211,20 @@ function UnitTable({ unit }: { readonly unit: UnitProfileUnit }) {
 
 /** URN-D5: the one-time transfer of the approved catalog's entries, values unchanged, with its effect stated first. */
 function BaselineForm({
-  companyId,
+  attempt,
   onApplied,
   onStale,
 }: {
-  readonly companyId: string
+  readonly attempt: ScopedCommandAttempt<TransferUnitProfileBaselineBody, true>
   readonly onApplied: (notice: string | null) => void
   readonly onStale: (notice: string) => void
 }) {
-  const [reason, setReason] = useState('')
-  const attempt = useCommandAttempt<true>()
+  const [reason, setReason] = useState(attempt.pendingPayload?.reason ?? '')
 
   async function submit(event: FormEvent) {
     event.preventDefault()
     const body = { reason: reason.trim() }
-    const outcome = await attempt.run({ transfer: 'unit-profiles', ...body }, (idempotencyKey) =>
-      transferUnitProfileBaseline({ companyId, idempotencyKey }, body),
-    )
+    const outcome = await (attempt.hasPendingRetry ? attempt.retry() : attempt.run(body))
     if (outcome.type === 'applied') {
       onApplied(outcome.replayed ? T.savedReplay : T.baselineDone)
       return
@@ -219,9 +236,11 @@ function BaselineForm({
   return (
     <form className={styles.form} onSubmit={(event) => void submit(event)} aria-labelledby="unit-profiles-baseline">
       <h3 id="unit-profiles-baseline">{T.baselineHeading}</h3>
-      <p className={styles.muted}>{T.baselinePending}</p>
-      <p className={styles.notice}>{T.baselinePreview}</p>
-      <ReasonField value={reason} onChange={setReason} />
+      <fieldset className={styles.commandFields} disabled={attempt.status.kind === 'busy' || attempt.hasPendingRetry}>
+        <p className={styles.muted}>{T.baselinePending}</p>
+        <p className={styles.notice}>{T.baselinePreview}</p>
+        <ReasonField value={reason} onChange={setReason} />
+      </fieldset>
       <Footer status={attempt.status} hasPendingRetry={attempt.hasPendingRetry} submitLabel={T.baselineSubmit} />
     </form>
   )
@@ -229,21 +248,20 @@ function BaselineForm({
 
 function RecordForm({
   data,
-  companyId,
+  attempt,
   onDone,
   onStale,
 }: {
   readonly data: UnitProfileView
-  readonly companyId: string
+  readonly attempt: ScopedCommandAttempt<RecordUnitProfileBody, true>
   readonly onDone: (notice: string | null) => void
   readonly onStale: (notice: string) => void
 }) {
-  const [unitId, setUnitId] = useState('')
-  const [scaleText, setScaleText] = useState('')
-  const [isActive, setIsActive] = useState<boolean | null>(null)
-  const [effectiveFrom, setEffectiveFrom] = useState(data.today)
-  const [reason, setReason] = useState('')
-  const attempt = useCommandAttempt<true>()
+  const [unitId, setUnitId] = useState(attempt.pendingPayload?.unitId ?? '')
+  const [scaleText, setScaleText] = useState(attempt.pendingPayload === null ? '' : String(attempt.pendingPayload.scale))
+  const [isActive, setIsActive] = useState<boolean | null>(attempt.pendingPayload?.isActive ?? null)
+  const [effectiveFrom, setEffectiveFrom] = useState(attempt.pendingPayload?.effectiveFrom ?? data.today)
+  const [reason, setReason] = useState(attempt.pendingPayload?.reason ?? '')
   const option = data.unitOptions.find((entry) => entry.unitId === unitId) ?? null
   const unit = data.units.find((entry) => entry.unitId === unitId) ?? null
   const scale = option === null ? null : parseScale(scaleText, option.maximumScale)
@@ -258,6 +276,15 @@ function RecordForm({
 
   async function submit(event: FormEvent) {
     event.preventDefault()
+    if (attempt.hasPendingRetry) {
+      const outcome = await attempt.retry()
+      if (outcome.type === 'applied') onDone(outcome.replayed ? T.savedReplay : T.saved)
+      else {
+        const stale = staleRefusal(outcome)
+        if (stale !== null) onStale(stale)
+      }
+      return
+    }
     if (option === null || scale === null || isActive === null || !isEffectiveFromValid(effectiveFrom, data.today)) {
       return
     }
@@ -269,9 +296,7 @@ function RecordForm({
       reason: reason.trim(),
       effectiveFrom: effectiveFromBody(effectiveFrom, data.today),
     }
-    const outcome = await attempt.run(body, (idempotencyKey) =>
-      recordUnitProfileVersion({ companyId, idempotencyKey }, body),
-    )
+    const outcome = await attempt.run(body)
     if (outcome.type === 'applied') {
       onDone(outcome.replayed ? T.savedReplay : T.saved)
       return
@@ -284,82 +309,84 @@ function RecordForm({
   return (
     <form className={styles.form} onSubmit={(event) => void submit(event)} aria-labelledby="unit-profiles-edit-heading">
       <h3 id="unit-profiles-edit-heading">{T.newVersion}</h3>
-      <Field label={T.unitLabel} help={T.unitHelp}>
-        {(control) => (
-          <select {...control} required value={unitId} onChange={(event) => chooseUnit(event.target.value)}>
-            <option value="">{T.unitPlaceholder}</option>
-            {data.unitOptions.map((entry) => (
-              <option key={entry.unitId} value={entry.unitId}>
-                {unitLabel(entry.unitCode, entry.dimensionCode)}
-              </option>
-            ))}
-          </select>
-        )}
-      </Field>
-      <Field
-        label={T.scaleLabel}
-        help={option === null ? undefined : scaleHelp(option.maximumScale)}
-        error={option !== null && scaleText.trim().length > 0 && scale === null ? T.scaleError : undefined}
-      >
-        {(control) => (
-          <input
-            {...control}
-            type="text"
-            inputMode="numeric"
-            required
-            autoComplete="off"
-            value={scaleText}
-            onChange={(event) => setScaleText(event.target.value)}
-          />
-        )}
-      </Field>
-      <fieldset className={styles.fieldset}>
-        <legend>{T.activeLegend}</legend>
-        <label className={styles.choice}>
-          <input
-            type="radio"
-            name="unit-profile-active"
-            required
-            checked={isActive === true}
-            onChange={() => setIsActive(true)}
-          />
-          {T.activeOn}
-        </label>
-        <label className={styles.choice}>
-          <input
-            type="radio"
-            name="unit-profile-active"
-            required
-            checked={isActive === false}
-            onChange={() => setIsActive(false)}
-          />
-          {T.activeOff}
-        </label>
+      <fieldset className={styles.commandFields} disabled={attempt.status.kind === 'busy' || attempt.hasPendingRetry}>
+        <Field label={T.unitLabel} help={T.unitHelp}>
+          {(control) => (
+            <select {...control} required value={unitId} onChange={(event) => chooseUnit(event.target.value)}>
+              <option value="">{T.unitPlaceholder}</option>
+              {data.unitOptions.map((entry) => (
+                <option key={entry.unitId} value={entry.unitId}>
+                  {unitLabel(entry.unitCode, entry.dimensionCode)}
+                </option>
+              ))}
+            </select>
+          )}
+        </Field>
+        <Field
+          label={T.scaleLabel}
+          help={option === null ? undefined : scaleHelp(option.maximumScale)}
+          error={option !== null && scaleText.trim().length > 0 && scale === null ? T.scaleError : undefined}
+        >
+          {(control) => (
+            <input
+              {...control}
+              type="text"
+              inputMode="numeric"
+              required
+              autoComplete="off"
+              value={scaleText}
+              onChange={(event) => setScaleText(event.target.value)}
+            />
+          )}
+        </Field>
+        <fieldset className={styles.fieldset}>
+          <legend>{T.activeLegend}</legend>
+          <label className={styles.choice}>
+            <input
+              type="radio"
+              name="unit-profile-active"
+              required
+              checked={isActive === true}
+              onChange={() => setIsActive(true)}
+            />
+            {T.activeOn}
+          </label>
+          <label className={styles.choice}>
+            <input
+              type="radio"
+              name="unit-profile-active"
+              required
+              checked={isActive === false}
+              onChange={() => setIsActive(false)}
+            />
+            {T.activeOff}
+          </label>
+        </fieldset>
+        <EffectiveFromField value={effectiveFrom} today={data.today} onChange={setEffectiveFrom} />
+        <section aria-label={T.previewHeading} className={styles.notice}>
+          <h4>{T.previewHeading}</h4>
+          {option === null || scale === null || isActive === null ? (
+            <p>{T.previewIncomplete}</p>
+          ) : (
+            <ul>
+              <li>
+                {current === null
+                  ? T.previewCurrentNone
+                  : `${T.previewCurrentPrefix} ${profileValueLabel(current.scale, current.isActive)}`}
+              </li>
+              <li>
+                {T.previewNextPrefix} {profileValueLabel(scale, isActive)}
+              </li>
+              <li>
+                {T.previewFromPrefix}{' '}
+                {isEffectiveFromValid(effectiveFrom, data.today) ? businessDateLabel(effectiveFrom) : POLICY_TEXT.notRecorded}
+              </li>
+              <li>{T.previewHistory}</li>
+            </ul>
+          )}
+        </section>
+        <ReasonField value={reason} onChange={setReason} />
       </fieldset>
-      <EffectiveFromField value={effectiveFrom} today={data.today} onChange={setEffectiveFrom} />
-      <section aria-label={T.previewHeading} className={styles.notice}>
-        <h4>{T.previewHeading}</h4>
-        {option === null || scale === null || isActive === null ? (
-          <p>{T.previewIncomplete}</p>
-        ) : (
-          <ul>
-            <li>
-              {current === null
-                ? T.previewCurrentNone
-                : `${T.previewCurrentPrefix} ${profileValueLabel(current.scale, current.isActive)}`}
-            </li>
-            <li>
-              {T.previewNextPrefix} {profileValueLabel(scale, isActive)}
-            </li>
-            <li>
-              {T.previewFromPrefix}{' '}
-              {isEffectiveFromValid(effectiveFrom, data.today) ? businessDateLabel(effectiveFrom) : POLICY_TEXT.notRecorded}
-            </li>
-            <li>{T.previewHistory}</li>
-          </ul>
-        )}
-      </section>
-      <ReasonField value={reason} onChange={setReason} />
       <Footer
         status={attempt.status}
         hasPendingRetry={attempt.hasPendingRetry}
@@ -421,7 +448,7 @@ function Footer<D>({
           {status.kind === 'busy' ? T.saving : hasPendingRetry ? T.retrySame : submitLabel}
         </Button>
         {onCancel === undefined ? null : (
-          <Button type="button" variant="ghost" onClick={onCancel} disabled={status.kind === 'busy'}>
+          <Button type="button" variant="ghost" onClick={onCancel} disabled={status.kind === 'busy' || hasPendingRetry}>
             {T.cancel}
           </Button>
         )}

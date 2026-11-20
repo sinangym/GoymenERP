@@ -8,6 +8,7 @@ using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
@@ -45,6 +46,7 @@ internal sealed class SettingsSegregationOfDutiesPolicyAdministration(
     TimeProvider timeProvider,
     ICorrelationContext correlation,
     ILogger<SettingsSegregationOfDutiesPolicyAdministration> logger,
+    IServiceScopeFactory scopes,
     ISettingsCompanyActiveUsersV1? activeUsers = null) : ISettingsSegregationOfDutiesPolicyAdministrationV1
 {
     private const int CommandExecutionSchemaVersion = 1;
@@ -52,23 +54,23 @@ internal sealed class SettingsSegregationOfDutiesPolicyAdministration(
     private const string EntityType = "Settings.SegregationOfDutiesPolicy";
     private const string RecordCommandName = "settings.segregation-of-duties.record.v1";
     private const string RecordedEvent = "settings.segregation-of-duties.recorded.v1";
-    private const string ClosedAutomaticallyEvent = "settings.segregation-of-duties.closed-automatically.v1";
-    private const string AutomaticCloseReason =
-        "Şirkette ikinci aktif kullanıcı olduğu için hazırlayanın onaylaması gevşetmesi sistem tarafından kapatıldı (KIM-D39).";
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<SegregationOfDutiesPolicyViewV1> GetAsync(CancellationToken cancellationToken = default)
     {
         var companyId = RequireContextCompany();
+        var actorId = currentUser.UserId!;
+        if (System.Transactions.Transaction.Current is not null)
+            throw new SettingsPrerequisiteException(SegregationOfDutiesPolicyProblemCodesV1.ProviderUnavailable);
         await RequireAsync(companyId, cancellationToken);
-        var rows = await ReadAsync(() => SegregationOfDutiesPolicyReads.LoadAsync(database, cancellationToken));
+        var rows = await ReadOwnerHistoryAsync(companyId, cancellationToken);
         var single = await HasSingleActiveUserAsync(companyId, cancellationToken);
         if (rows.Length != 0 && rows[0].PreparerMayApprove && !single)
         {
-            rows = await CloseAutomaticallyAsync(companyId, rows, cancellationToken);
+            rows = await CloseAutomaticallyAsync(companyId, actorId, cancellationToken);
         }
 
-        await RequireStillAsync(companyId, cancellationToken);
+        await RequireReadStillAsync(companyId, actorId, cancellationToken);
         var latest = rows.Length == 0 ? null : rows[0];
         return new SegregationOfDutiesPolicyViewV1(
             companyId,
@@ -178,83 +180,37 @@ internal sealed class SettingsSegregationOfDutiesPolicyAdministration(
         SegregationOfDutiesSingleUserCheck.HasSingleActiveUserAsync(activeUsers, companyId, currentUser.UserId ?? string.Empty,
             cancellationToken);
 
-    /// <summary>
-    /// KIM-D39: closes a stored relaxation found while the company has more than one active user — one system version
-    /// (<c>false</c>, <see cref="SegregationOfDutiesRuleV1.AutomaticCloseActorId"/>, a fixed reason) and one system audit event
-    /// in the same save, after a fresh authority check of the reader. A lost race (another read closed it first, the version
-    /// primary key) or any save failure re-reads the history; the answer stays <c>false</c> either way because the provider and
-    /// the view measure the active users on every read. Without a resolved correlation (no request) nothing is written.
-    /// </summary>
-    private async Task<SegregationOfDutiesPolicyVersionRow[]> CloseAutomaticallyAsync(Guid companyId,
-        SegregationOfDutiesPolicyVersionRow[] rows, CancellationToken cancellationToken)
+    /// <summary>KIM-D39: use the same isolated, atomic system closure as the consuming read port.</summary>
+    private async Task<SegregationOfDutiesPolicyVersionRow[]> CloseAutomaticallyAsync(Guid companyId, string actorId,
+        CancellationToken cancellationToken)
     {
-        var relaxed = rows[0];
-        if (!correlation.IsResolved || string.IsNullOrWhiteSpace(correlation.CorrelationId))
-        {
-            logger.LogWarning(
-                "Settings segregation of duties relaxation not closed durably: no correlation. CompanyId={CompanyId} Version={Version}",
-                companyId, relaxed.Version);
-            return rows;
-        }
+        await SegregationOfDutiesAutomaticClosure.CloseAsync(scopes, companyId, actorId,
+            correlation, timeProvider, token => RequireReadStillAsync(companyId, actorId, token), cancellationToken);
+        return await ReadOwnerHistoryAsync(companyId, cancellationToken);
+    }
 
+    private Task<SegregationOfDutiesPolicyVersionRow[]> ReadOwnerHistoryAsync(Guid companyId,
+        CancellationToken cancellationToken) => ReadAsync(async () =>
+    {
+        if (System.Transactions.Transaction.Current is not null)
+            throw new SettingsPrerequisiteException(SegregationOfDutiesPolicyProblemCodesV1.ProviderUnavailable);
+        // Neither the first history read nor the reload may retain a caller's Serializable range lock.
+        await using var owner = scopes.CreateAsyncScope();
+        owner.ServiceProvider.GetRequiredService<ICompanyContext>().Set(companyId);
+        var isolated = owner.ServiceProvider.GetRequiredService<SettingsDbContext>();
+        if (ReferenceEquals(isolated, database) || isolated.ChangeTracker.Entries().Any()
+            || isolated.Database.CurrentTransaction is not null)
+            throw new SettingsPrerequisiteException(SegregationOfDutiesPolicyProblemCodesV1.ProviderUnavailable);
+        return await SegregationOfDutiesPolicyReads.LoadAsync(isolated, cancellationToken);
+    });
+
+    private async Task RequireReadStillAsync(Guid companyId, string actorId, CancellationToken cancellationToken)
+    {
+        if (RequireContextCompany() != companyId || !string.Equals(actorId, currentUser.UserId, StringComparison.Ordinal))
+            throw new UnauthorizedAccessException();
         await RequireStillAsync(companyId, cancellationToken);
-        var version = checked(relaxed.Version + 1);
-        var row = new SegregationOfDutiesPolicyVersionRow
-        {
-            CompanyId = companyId,
-            Version = version,
-            PreparerMayApprove = false,
-            RecordedAtUtc = timeProvider.GetUtcNow(),
-            RecordedBy = SegregationOfDutiesRuleV1.AutomaticCloseActorId,
-            Reason = AutomaticCloseReason,
-        };
-        database.ChangeTracker.Clear();
-        database.SegregationOfDutiesPolicyVersions.Add(row);
-        auditEvents.Enqueue(new AuditEventDraft(
-            companyId,
-            ClosedAutomaticallyEvent,
-            EntityType,
-            companyId.ToString("D"),
-            "CloseAutomatically",
-            relaxed.Version,
-            version,
-            AuditActorTypes.System,
-            SegregationOfDutiesRuleV1.AutomaticCloseActorId,
-            Permission,
-            [],
-            "{}",
-            AfterJson(new
-            {
-                CompanyId = companyId,
-                row.Version,
-                row.PreparerMayApprove,
-                PreviousPreparerMayApprove = true,
-                Trigger = "SecondActiveUser",
-                ObservedBy = currentUser.UserId,
-            }, AutomaticCloseReason),
-            "Görev ayrılığı gevşetmesi ikinci aktif kullanıcı nedeniyle sistem tarafından kapatıldı",
-            ApprovalContextJson: null,
-            AuditAiInvolvement.None,
-            AiContextJson: null,
-            SourceChannels.System,
-            correlation.ClientIpAddress,
-            correlation.UserAgent,
-            correlation.CorrelationId,
-            correlation.CausationId,
-            string.Create(CultureInfo.InvariantCulture, $"{ClosedAutomaticallyEvent}:{companyId:D}:{version}")));
-        try
-        {
-            await database.SaveChangesAsync(cancellationToken);
-            logger.LogInformation(
-                "Settings segregation of duties relaxation closed automatically. CompanyId={CompanyId} Version={Version} CorrelationId={CorrelationId}",
-                companyId, version, correlation.CorrelationId);
-        }
-        catch (DbUpdateException)
-        {
-            database.ChangeTracker.Clear();
-        }
-
-        return await ReadAsync(() => SegregationOfDutiesPolicyReads.LoadAsync(database, cancellationToken));
+        if (RequireContextCompany() != companyId || !string.Equals(actorId, currentUser.UserId, StringComparison.Ordinal))
+            throw new UnauthorizedAccessException();
     }
 
     private Guid RequireContextCompany()

@@ -16,7 +16,8 @@ public sealed partial class SettingsDbContext
 
     internal const string WorkCenterSafetyBufferCheck =
         "([SafetyBufferValue] IS NULL AND [SafetyBufferUnit] IS NULL) OR "
-        + "([SafetyBufferValue] > 0 AND [SafetyBufferUnit] IN ('Hours','Days'))";
+        + "([SafetyBufferValue] IS NOT NULL AND [SafetyBufferUnit] IS NOT NULL "
+        + "AND [SafetyBufferValue] > 0 AND [SafetyBufferUnit] IN ('Hours','Days'))";
 
     internal DbSet<WorkCenterCapacityVersionRow> WorkCenterCapacityVersions => Set<WorkCenterCapacityVersionRow>();
 

@@ -625,6 +625,15 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
                 continue;
             }
 
+            // Use the mapped tenant key, so a newly mapped company-owned row cannot silently bypass this fence.
+            // Group-wide rows (for example LoginRateLimitVersionRow) deliberately have no CompanyId property.
+            if (entry.Metadata.FindProperty("CompanyId") is not null
+                && (!companyContext.IsResolved || companyContext.CompanyId == Guid.Empty
+                    || entry.Property("CompanyId").CurrentValue is not Guid owner || owner != companyContext.CompanyId))
+            {
+                throw new InvalidOperationException("Ayarlar kaydı yalnız etkin şirket bağlamında yazılır.");
+            }
+
             // Üretim U1-a: the registry row is written only by its approved command workflow — inserted in the same save
             // as its lifecycle version moving Approved → Published (ApplyManufacturingProfileWriteGuard).
             if (entry.Entity is ManufacturingTolerancePolicyRow policy && !IsToleranceRegistryPublication(entry, policy)
@@ -674,7 +683,16 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
                 or FinanceCreditAccountMappingVersionRow or ReferenceListEntryRow or ReferenceListEntryVersionRow
                 or CollateralTypeRow or CollateralTypeVersionRow
                 or DocumentNumberFormatRow or DocumentNumberReservationRow or DocumentNumberCancellationRow
-                or ManufacturingProfileBaselineTransferRow)
+                or ManufacturingProfileBaselineTransferRow
+                or BankCsvMappingVersionRow or SalesPolicyBaselineTransferRow
+                or SalesDeliveryToleranceVersionRow or SalesApprovalAmountThresholdVersionRow
+                or SalesQuoteLossReasonListVersionRow or SalesQuoteLossReasonEntryRow
+                or SalesQuoteDefaultValidityVersionRow or EInvoiceScenarioCodeListVersionRow
+                or EInvoiceScenarioCodeRow or EInvoiceScenarioDefaultVersionRow
+                or SegregationOfDutiesPolicyVersionRow or TaxRateListVersionRow
+                or TaxRateListEntryRow or TaxRateListWithdrawalRow
+                or UnitConversionPolicyVersionRow or UnitProfileVersionRow or UnitProfileBaselineTransferRow
+                or WorkCenterCapacityVersionRow or LoginRateLimitVersionRow)
             {
                 throw new InvalidOperationException("Ayarlar kaydı değiştirilemez; yeni sürüm yazılır.");
             }
@@ -687,55 +705,6 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
                     throw new InvalidOperationException("Document counters advance exactly once; they never reset within a year.");
             }
 
-            var companyId = entry.Entity switch
-            {
-                SalesDiscountLimitGroupRow row => row.CompanyId,
-                SalesDiscountLimitVersionRow row => row.CompanyId,
-                SalesDiscountLimitWithdrawalRow row => row.CompanyId,
-                SalesDiscountLimitMembershipRow row => row.CompanyId,
-                SalesDiscountLimitMembershipGroupRow row => row.CompanyId,
-                TaxItemTypeDefaultSeriesRow row => row.CompanyId,
-                TaxItemTypeDefaultRecordRow row => row.CompanyId,
-                TaxItemTypeDefaultWithdrawalRow row => row.CompanyId,
-                TaxCodeListRow row => row.CompanyId,
-                TaxCodeListVersionRow row => row.CompanyId,
-                TaxCodeListEntryRow row => row.CompanyId,
-                TaxCodeListWithdrawalRow row => row.CompanyId,
-                TaxWithholdingThresholdRow row => row.CompanyId,
-                TaxWithholdingThresholdRecordRow row => row.CompanyId,
-                TaxWithholdingThresholdWithdrawalRow row => row.CompanyId,
-                TaxBuyerSituationListRow row => row.CompanyId,
-                TaxBuyerSituationListVersionRow row => row.CompanyId,
-                TaxBuyerSituationEntryRow row => row.CompanyId,
-                TaxBuyerSituationListWithdrawalRow row => row.CompanyId,
-                ExchangeRateDayRow row => row.CompanyId,
-                ExchangeRateRecordRow row => row.CompanyId,
-                ExchangeRateRecordRateRow row => row.CompanyId,
-                ManufacturingTolerancePolicyRow row => row.CompanyId,
-                ManufacturingParameterProfileRow row => row.CompanyId,
-                ManufacturingProfileBaselineTransferRow row => row.CompanyId,
-                ManufacturingParameterProfileValueRow row => row.CompanyId,
-                ManufacturingToleranceProfileVersionRow row => row.CompanyId,
-                MoneyProfileVersionRow row => row.CompanyId,
-                MoneyProfileBaselineTransferRow row => row.CompanyId,
-                CompanyPolicyVersionRow row => row.CompanyId,
-                PurchaseInvoiceVariancePolicyRow row => row.CompanyId,
-                WarehouseTransferScaleVersionRow row => row.CompanyId,
-                FinanceCreditAccountMappingVersionRow row => row.CompanyId,
-                ReferenceListEntryRow row => row.CompanyId,
-                ReferenceListEntryVersionRow row => row.CompanyId,
-                CollateralTypeRow row => row.CompanyId,
-                CollateralTypeVersionRow row => row.CompanyId,
-                DocumentNumberFormatRow row => row.CompanyId,
-                DocumentNumberCounterRow row => row.CompanyId,
-                DocumentNumberReservationRow row => row.CompanyId,
-                DocumentNumberCancellationRow row => row.CompanyId,
-                _ => (Guid?)null,
-            };
-            if (companyId is { } owner && (!companyContext.IsResolved || owner != companyContext.CompanyId))
-            {
-                throw new InvalidOperationException("Ayarlar kaydı yalnız etkin şirket bağlamında yazılır.");
-            }
         }
     }
 }

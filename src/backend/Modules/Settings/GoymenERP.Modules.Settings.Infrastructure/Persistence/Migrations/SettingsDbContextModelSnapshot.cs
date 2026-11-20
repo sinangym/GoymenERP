@@ -3931,7 +3931,7 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_SettingsWorkCenterCapacityVersions_Recorded", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
 
-                            t.HasCheckConstraint("CK_SettingsWorkCenterCapacityVersions_SafetyBuffer", "([SafetyBufferValue] IS NULL AND [SafetyBufferUnit] IS NULL) OR ([SafetyBufferValue] > 0 AND [SafetyBufferUnit] IN ('Hours','Days'))");
+                            t.HasCheckConstraint("CK_SettingsWorkCenterCapacityVersions_SafetyBuffer", "([SafetyBufferValue] IS NULL AND [SafetyBufferUnit] IS NULL) OR ([SafetyBufferValue] IS NOT NULL AND [SafetyBufferUnit] IS NOT NULL AND [SafetyBufferValue] > 0 AND [SafetyBufferUnit] IN ('Hours','Days'))");
                         });
                 });
 

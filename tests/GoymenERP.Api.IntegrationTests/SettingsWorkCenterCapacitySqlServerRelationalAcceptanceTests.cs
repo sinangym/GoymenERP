@@ -246,6 +246,71 @@ public sealed class SettingsWorkCenterCapacitySqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM sys.tables WHERE [name] = N'WorkCenterCapacityVersions' AND SCHEMA_NAME([schema_id]) = N'settings'"));
     }
 
+    [SqlServerFact]
+    public async Task Work_center_safety_buffer_constraint_rejects_partial_null_pairs_on_real_sql()
+    {
+        await using var run = await HostRun.StartAsync();
+        const string insert = "INSERT INTO [settings].[WorkCenterCapacityVersions] "
+            + "([CompanyId],[WorkCenterId],[Version],[ProfileId],[InputCapacityKgPerHour],"
+            + "[SafetyBufferValue],[SafetyBufferUnit],[RecordedAtUtc],[RecordedBy],[Reason]) "
+            + "VALUES (@c,@w,1,@p,1000,@v,@u,SYSUTCDATETIME(),N'synthetic',N'SENTETIK constraint regression')";
+        foreach (var pair in new (object Value, object Unit)[]
+                 { (DBNull.Value, "Hours"), (1m, DBNull.Value), (0m, "Hours"), (1m, "Weeks") })
+        {
+            var refusal = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(insert,
+                ("@c", CompanyA), ("@w", Guid.NewGuid()), ("@p", Guid.NewGuid()), ("@v", pair.Value), ("@u", pair.Unit)));
+            Assert.Equal(547, refusal.Number);
+            Assert.Contains("CK_SettingsWorkCenterCapacityVersions_SafetyBuffer", refusal.Message, StringComparison.Ordinal);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>(CountRows));
+        foreach (var pair in new (object Value, object Unit)[]
+                 { (DBNull.Value, DBNull.Value), (1m, "Hours"), (1m, "Days") })
+        {
+            await run.ExecuteAsync(insert, ("@c", CompanyA), ("@w", Guid.NewGuid()), ("@p", Guid.NewGuid()),
+                ("@v", pair.Value), ("@u", pair.Unit));
+        }
+
+        Assert.Equal(3, await run.ScalarAsync<int>(CountRows));
+    }
+
+    [SqlServerFact]
+    public async Task Work_center_history_rejects_cross_company_and_unresolved_writes_and_persisted_mutation_on_real_sql()
+    {
+        await using var run = await HostRun.StartAsync();
+        static WorkCenterCapacityVersionRow Row(Guid company) => new()
+        {
+            CompanyId = company, WorkCenterId = Guid.NewGuid(), ProfileId = Guid.NewGuid(), Version = 1,
+            InputCapacityKgPerHour = 1000, RecordedAtUtc = DateTimeOffset.UtcNow,
+            RecordedBy = "synthetic", Reason = "SENTETIK write fence",
+        };
+        await using (var foreign = run.SettingsContext(CompanyA))
+        {
+            foreign.Add(Row(CompanyB));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => foreign.SaveChangesAsync());
+        }
+
+        await using (var unresolved = new SettingsDbContext(new DbContextOptionsBuilder<SettingsDbContext>()
+                         .UseSqlServer(run.Factory.DatabaseConnectionString).Options, new CompanyContext()))
+        {
+            unresolved.Add(Row(CompanyA));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => unresolved.SaveChangesAsync());
+        }
+
+        await using var own = run.SettingsContext(CompanyA);
+        var row = Row(CompanyA);
+        own.Add(row);
+        await own.SaveChangesAsync();
+        row.InputCapacityKgPerHour = 2000;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => own.SaveChangesAsync());
+        own.Entry(row).State = EntityState.Unchanged;
+        own.Remove(row);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => own.SaveChangesAsync());
+        Assert.Equal(1, await run.ScalarAsync<int>(CountRows));
+        Assert.Equal(1000m, await run.ScalarAsync<decimal>(
+            "SELECT [InputCapacityKgPerHour] FROM [settings].[WorkCenterCapacityVersions] WHERE [CompanyId] = @c", ("@c", CompanyA)));
+    }
+
     private static HttpRequestMessage Json(string path, string key, object body)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, path)
@@ -396,11 +461,12 @@ public sealed class SettingsWorkCenterCapacitySqlServerRelationalAcceptanceTests
             return (T)(await command.ExecuteScalarAsync())!;
         }
 
-        public async Task ExecuteAsync(string sql)
+        public async Task ExecuteAsync(string sql, params (string Name, object Value)[] parameters)
         {
             await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
             await connection.OpenAsync();
             await using var command = new SqlCommand(sql, connection);
+            foreach (var (name, value) in parameters) command.Parameters.AddWithValue(name, value);
             await command.ExecuteNonQueryAsync();
         }
 

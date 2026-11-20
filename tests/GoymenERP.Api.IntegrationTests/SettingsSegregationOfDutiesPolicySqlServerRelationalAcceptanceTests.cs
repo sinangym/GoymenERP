@@ -1,10 +1,13 @@
+using System.Data;
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Identity.Domain.Assignments;
@@ -16,6 +19,7 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using GoymenERP.Modules.Settings.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations;
 using Microsoft.Data.SqlClient;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
@@ -31,7 +35,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// stored no-op without audit, restoring the default is a new version, another company sees nothing and its port refuses a
 /// foreign company id, 403 without the name, and the migration's Down refuses (51622) while any version exists. KIM-D39: the
 /// relaxation is recorded only while the company has exactly one active user (otherwise 409, stored for its key); a second
-/// active user makes the read port answer the default at once and the administration's read close it durably with one
+/// active user makes the read port close it durably before answering, with one
 /// system version and one system audit event. Every grant is a fresh synthetic role; every reason is SENTETIK; every value in
 /// the requests is test data, not a policy choice.
 /// </summary>
@@ -224,12 +228,12 @@ public sealed class SettingsSegregationOfDutiesPolicySqlServerRelationalAcceptan
         await run.CommandAsync(editor, Versions, "k-single", relax, HttpStatusCode.NoContent);
         await run.AssertPortAnswersAsync(CompanyA, editorActor, preparerMayApprove: true, version: 1);
 
-        // A second active user: the read port answers the default at once and writes nothing.
+        // A second active user: the read port commits the system closure before answering.
         await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, SettingsExchangeRatePermissionManifestV1.Read);
-        await run.AssertPortAnswersAsync(CompanyA, editorActor, preparerMayApprove: false, version: 1);
-        Assert.Equal(1, await run.ScalarAsync<int>(CountRows));
+        await run.AssertPortAnswersAsync(CompanyA, editorActor, preparerMayApprove: false, version: 2);
+        Assert.Equal(2, await run.ScalarAsync<int>(CountRows));
 
-        // The administration's read closes it durably: one system version and one system audit event.
+        // The administration observes the already committed system version and audit.
         var closed = await run.JsonAsync(editor, Root);
         Assert.False(closed.GetProperty("preparerMayApprove").GetBoolean());
         Assert.False(closed.GetProperty("relaxationPermitted").GetBoolean());
@@ -264,6 +268,216 @@ public sealed class SettingsSegregationOfDutiesPolicySqlServerRelationalAcceptan
             await AssertProblemAsync(again, HttpStatusCode.Conflict,
                 SegregationOfDutiesPolicyProblemCodesV1.RelaxationRequiresSingleUser);
         }
+    }
+
+    [SqlServerFact]
+    public async Task Provider_closure_survives_return_to_one_user_without_an_administration_read_and_preserves_pending_writes()
+    {
+        await using var run = await HostRun.StartAsync();
+        var (editorSubject, editorActor) = await run.GrantAsync(TestUsers.CompanyA, CompanyA, Manage);
+        await run.MakeSoleActiveMemberAsync(CompanyA, editorActor);
+        using var editor = run.Client(editorSubject, CompanyA);
+        await run.CommandAsync(editor, Versions, "k-no-admin", new RecordSegregationOfDutiesPolicyRequestV1("0", true,
+            "SENTETIK tek kullanıcı"), HttpStatusCode.NoContent);
+        var (_, viewerActor) = await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA,
+            SettingsExchangeRatePermissionManifestV1.Read);
+
+        await using var first = run.Port(CompanyA, viewerActor);
+        await using var second = run.Port(CompanyA, viewerActor);
+        var pending = new CompanyPolicyVersionRow { CompanyId = CompanyA, PolicyKey = "finance.opening-period",
+            Version = 1, BooleanValue = false, RecordedBy = "synthetic", Reason = "SENTETIK caller pending write" };
+        first.Database.Add(pending);
+        await using (var consumerTransaction = await first.Database.Database.BeginTransactionAsync())
+        {
+            var answers = await Task.WhenAll(first.Value.GetSegregationOfDutiesPolicyAsync(CompanyA),
+                second.Value.GetSegregationOfDutiesPolicyAsync(CompanyA));
+            Assert.All(answers, answer => Assert.Equal((false, 2L), (answer.PreparerMayApprove, answer.Version)));
+            Assert.Equal(EntityState.Added, first.Database.Entry(pending).State);
+            Assert.Single(first.Database.ChangeTracker.Entries());
+            Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[CompanyPolicyVersions]"));
+            await consumerTransaction.RollbackAsync();
+        }
+
+        // No Settings GET has run since the relaxation. Returning to one active user cannot restore v1=true.
+        await run.MakeSoleActiveMemberAsync(CompanyA, editorActor);
+        await run.AssertPortAnswersAsync(CompanyA, editorActor, preparerMayApprove: false, version: 2);
+        Assert.Equal(2, await run.ScalarAsync<int>(CountRows));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = @e AND [CompanyId] = @c "
+            + "AND [ActorType] = @t AND [ActorId] = @a AND [EntityVersionBefore] = 1 AND [EntityVersionAfter] = 2",
+            ("@e", ClosedAutomaticallyEvent), ("@c", CompanyA), ("@t", AuditActorTypes.System),
+            ("@a", SegregationOfDutiesRuleV1.AutomaticCloseActorId)));
+    }
+
+    [SqlServerFact]
+    public async Task Provider_initial_read_is_isolated_from_a_serializable_consumer_transaction()
+    {
+        await using var run = await HostRun.StartAsync();
+        var (editorSubject, editorActor) = await run.GrantAsync(TestUsers.CompanyA, CompanyA, Manage);
+        await run.MakeSoleActiveMemberAsync(CompanyA, editorActor);
+        using var editor = run.Client(editorSubject, CompanyA);
+        await run.CommandAsync(editor, Versions, "k-serializable", new RecordSegregationOfDutiesPolicyRequestV1("0", true,
+            "SENTETIK tek kullanıcı"), HttpStatusCode.NoContent);
+        var (_, viewerActor) = await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA,
+            SettingsExchangeRatePermissionManifestV1.Read);
+
+        // A composition without the registered owner scope must fail before acquiring a caller range lock.
+        await using (var uncomposed = run.Port(CompanyA, viewerActor, composeOwnerScope: false))
+        await using (var transaction = await uncomposed.Database.Database.BeginTransactionAsync(IsolationLevel.Serializable))
+        {
+            var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() =>
+                uncomposed.Value.GetSegregationOfDutiesPolicyAsync(CompanyA));
+            Assert.Equal(SegregationOfDutiesPolicyProblemCodesV1.ProviderUnavailable, failure.Code);
+            Assert.Same(transaction, uncomposed.Database.Database.CurrentTransaction);
+            await transaction.RollbackAsync();
+        }
+        Assert.Equal(1, await run.ScalarAsync<int>(CountRows));
+
+        await using var consumer = run.Port(CompanyA, viewerActor);
+        var pending = new CompanyPolicyVersionRow { CompanyId = CompanyA, PolicyKey = "finance.opening-period",
+            Version = 1, BooleanValue = false, RecordedBy = "synthetic", Reason = "SENTETIK serializable pending write" };
+        consumer.Database.Add(pending);
+        await using (var transaction = await consumer.Database.Database.BeginTransactionAsync(IsolationLevel.Serializable))
+        {
+            // One reader is intentional: a parallel reader could win the closure before the caller's initial read
+            // and hide the self-block. Cancellation bounds the regression if that read returns to the caller context.
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var answer = await consumer.Value.GetSegregationOfDutiesPolicyAsync(CompanyA, deadline.Token);
+            Assert.Equal((false, 2L), (answer.PreparerMayApprove, answer.Version));
+            Assert.Same(transaction, consumer.Database.Database.CurrentTransaction);
+            Assert.Equal(EntityState.Added, consumer.Database.Entry(pending).State);
+            Assert.Single(consumer.Database.ChangeTracker.Entries());
+            Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[CompanyPolicyVersions]"));
+            await transaction.RollbackAsync();
+        }
+
+        Assert.Equal(EntityState.Added, consumer.Database.Entry(pending).State);
+        await run.MakeSoleActiveMemberAsync(CompanyA, editorActor);
+        await run.AssertPortAnswersAsync(CompanyA, editorActor, preparerMayApprove: false, version: 2);
+        Assert.Equal(2, await run.ScalarAsync<int>(CountRows));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = @e AND [CompanyId] = @c "
+            + "AND [ActorType] = @t AND [ActorId] = @a AND [EntityVersionBefore] = 1 AND [EntityVersionAfter] = 2",
+            ("@e", ClosedAutomaticallyEvent), ("@c", CompanyA), ("@t", AuditActorTypes.System),
+            ("@a", SegregationOfDutiesRuleV1.AutomaticCloseActorId)));
+
+        // Reopen explicitly while there is one active user, then exercise the administration entry path.
+        await run.CommandAsync(editor, Versions, "k-admin-serializable", new RecordSegregationOfDutiesPolicyRequestV1("2", true,
+            "SENTETIK yönetim okuma sınırı"), HttpStatusCode.NoContent);
+        await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, SettingsExchangeRatePermissionManifestV1.Read);
+        await using var adminScope = run.Factory.Services.CreateAsyncScope();
+        var services = adminScope.ServiceProvider;
+        var accessor = services.GetRequiredService<IHttpContextAccessor>();
+        var previousHttp = accessor.HttpContext;
+        try
+        {
+            accessor.HttpContext = new DefaultHttpContext
+            {
+                RequestServices = services,
+                User = new ClaimsPrincipal(new ClaimsIdentity([
+                    new Claim(GoymenClaimTypes.UserId, editorActor),
+                    new Claim(GoymenClaimTypes.CompanyAccess, CompanyA.ToString("D")),
+                ], "synthetic-sod-administration")),
+            };
+            services.GetRequiredService<ICompanyContext>().Set(CompanyA);
+            var correlation = services.GetRequiredService<ICorrelationContext>();
+            correlation.Set("synthetic-sod-administration", null, SourceChannels.System, null, null);
+            var administration = services.GetRequiredService<ISettingsSegregationOfDutiesPolicyAdministrationV1>();
+            var adminDatabase = services.GetRequiredService<SettingsDbContext>();
+            var adminPending = new CompanyPolicyVersionRow { CompanyId = CompanyA, PolicyKey = "finance.opening-period",
+                Version = 1, BooleanValue = false, RecordedBy = "synthetic", Reason = "SENTETIK administration pending write" };
+            adminDatabase.Add(adminPending);
+
+            using (var ambient = new System.Transactions.TransactionScope(System.Transactions.TransactionScopeOption.Required,
+                System.Transactions.TransactionScopeAsyncFlowOption.Enabled))
+            {
+                var ambientTransaction = System.Transactions.Transaction.Current;
+                Assert.NotNull(ambientTransaction);
+                var adminFailure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() => administration.GetAsync());
+                Assert.Equal(SegregationOfDutiesPolicyProblemCodesV1.ProviderUnavailable, adminFailure.Code);
+                var providerFailure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() =>
+                    consumer.Value.GetSegregationOfDutiesPolicyAsync(CompanyA));
+                Assert.Equal(SegregationOfDutiesPolicyProblemCodesV1.ProviderUnavailable, providerFailure.Code);
+                var fenceCalled = false;
+                var closureFailure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() =>
+                    SegregationOfDutiesAutomaticClosure.CloseAsync(services.GetRequiredService<IServiceScopeFactory>(),
+                        CompanyA, editorActor, correlation, TimeProvider.System, _ =>
+                        { fenceCalled = true; return Task.CompletedTask; }, CancellationToken.None));
+                Assert.Equal(SegregationOfDutiesPolicyProblemCodesV1.ProviderUnavailable, closureFailure.Code);
+                Assert.False(fenceCalled);
+                Assert.Same(ambientTransaction, System.Transactions.Transaction.Current);
+                // No Complete: the caller rolls back its ambient scope, with no closure enlisted in it.
+            }
+            Assert.Equal(3, await run.ScalarAsync<int>(CountRows));
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = @e AND [CompanyId] = @c",
+                ("@e", ClosedAutomaticallyEvent), ("@c", CompanyA)));
+            Assert.Equal(EntityState.Added, adminDatabase.Entry(adminPending).State);
+            await using (var transaction = await adminDatabase.Database.BeginTransactionAsync(IsolationLevel.Serializable))
+            {
+                using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                var answer = await administration.GetAsync(deadline.Token);
+                Assert.False(answer.PreparerMayApprove);
+                Assert.Equal("4", answer.Version);
+                Assert.Same(transaction, adminDatabase.Database.CurrentTransaction);
+                Assert.Equal(EntityState.Added, adminDatabase.Entry(adminPending).State);
+                Assert.Single(adminDatabase.ChangeTracker.Entries());
+                Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[CompanyPolicyVersions]"));
+                await transaction.RollbackAsync();
+            }
+            Assert.Equal(EntityState.Added, adminDatabase.Entry(adminPending).State);
+        }
+        finally
+        {
+            accessor.HttpContext = previousHttp;
+        }
+        await run.MakeSoleActiveMemberAsync(CompanyA, editorActor);
+        await run.AssertPortAnswersAsync(CompanyA, editorActor, preparerMayApprove: false, version: 4);
+        Assert.Equal(4, await run.ScalarAsync<int>(CountRows));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = @e AND [CompanyId] = @c "
+            + "AND [ActorType] = @t AND [ActorId] = @a AND [EntityVersionBefore] = 3 AND [EntityVersionAfter] = 4",
+            ("@e", ClosedAutomaticallyEvent), ("@c", CompanyA), ("@t", AuditActorTypes.System),
+            ("@a", SegregationOfDutiesRuleV1.AutomaticCloseActorId)));
+    }
+
+    [SqlServerFact]
+    public async Task Automatic_closure_failure_is_unavailable_and_rolls_back_both_version_and_audit()
+    {
+        await using var run = await HostRun.StartAsync();
+        var (editorSubject, editorActor) = await run.GrantAsync(TestUsers.CompanyA, CompanyA, Manage);
+        await run.MakeSoleActiveMemberAsync(CompanyA, editorActor);
+        using var editor = run.Client(editorSubject, CompanyA);
+        await run.CommandAsync(editor, Versions, "k-fail-close", new RecordSegregationOfDutiesPolicyRequestV1("0", true,
+            "SENTETIK tek kullanıcı"), HttpStatusCode.NoContent);
+        await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, SettingsExchangeRatePermissionManifestV1.Read);
+
+        await using (var uncorrelated = run.Port(CompanyA, editorActor, resolveCorrelation: false))
+        {
+            var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() =>
+                uncorrelated.Value.GetSegregationOfDutiesPolicyAsync(CompanyA));
+            Assert.Equal(SegregationOfDutiesPolicyProblemCodesV1.ProviderUnavailable, failure.Code);
+            Assert.Equal(1, await run.ScalarAsync<int>(CountRows));
+        }
+
+        await run.ExecuteAsync("ALTER TABLE [audit].[AuditEvents] ADD CONSTRAINT [CK_SyntheticRejectSoDClosure] "
+            + "CHECK ([EventType] <> 'settings.segregation-of-duties.closed-automatically.v1')");
+        try
+        {
+            await using var port = run.Port(CompanyA, editorActor);
+            var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() =>
+                port.Value.GetSegregationOfDutiesPolicyAsync(CompanyA));
+            Assert.Equal(SegregationOfDutiesPolicyProblemCodesV1.ProviderUnavailable, failure.Code);
+            Assert.Equal(1, await run.ScalarAsync<int>(CountRows));
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = @e", ("@e", ClosedAutomaticallyEvent)));
+        }
+        finally
+        {
+            await run.ExecuteAsync("ALTER TABLE [audit].[AuditEvents] DROP CONSTRAINT [CK_SyntheticRejectSoDClosure]");
+        }
+
+        await run.AssertPortAnswersAsync(CompanyA, editorActor, preparerMayApprove: false, version: 2);
     }
 
     [SqlServerFact]
@@ -310,9 +524,10 @@ public sealed class SettingsSegregationOfDutiesPolicySqlServerRelationalAcceptan
         public bool CanAccessCompany(Guid candidate) => AllowedCompanyIds.Contains(candidate);
     }
 
-    private sealed class PortScope<T>(IAsyncDisposable owner, T value) : IAsyncDisposable
+    private sealed class PortScope<T>(IAsyncDisposable owner, T value, SettingsDbContext database) : IAsyncDisposable
     {
         public T Value { get; } = value;
+        public SettingsDbContext Database { get; } = database;
 
         public ValueTask DisposeAsync() => owner.DisposeAsync();
     }
@@ -381,7 +596,8 @@ public sealed class SettingsSegregationOfDutiesPolicySqlServerRelationalAcceptan
         /// The read port as a consumer module composes it: the Settings provider over its own context, asking the Identity
         /// owner (its own context, through the host adapter) for the single active user check (KIM-D39).
         /// </summary>
-        public PortScope<ISettingsSegregationOfDutiesPolicyProviderV1> Port(Guid company, string actorId)
+        public PortScope<ISettingsSegregationOfDutiesPolicyProviderV1> Port(Guid company, string actorId,
+            bool resolveCorrelation = true, bool composeOwnerScope = true)
         {
             var database = NewSettingsContext(company, out var companyContext);
             var identity = new IdentityDbContext(new DbContextOptionsBuilder<IdentityDbContext>()
@@ -390,8 +606,11 @@ public sealed class SettingsSegregationOfDutiesPolicySqlServerRelationalAcceptan
                 .Options);
             var actor = new FixedActor(actorId, company);
             var activeUsers = new SettingsCompanyActiveUsersHost(new UserDirectoryReadPortV1(identity, companyContext, actor));
+            var correlation = new CorrelationContext();
+            if (resolveCorrelation) correlation.Set("synthetic-sod-provider", null, SourceChannels.System, null, null);
             return new PortScope<ISettingsSegregationOfDutiesPolicyProviderV1>(new Owners(database, identity),
-                new SettingsSegregationOfDutiesPolicyProviderV1(database, companyContext, actor, activeUsers));
+                new SettingsSegregationOfDutiesPolicyProviderV1(database, companyContext, actor, activeUsers, correlation,
+                    scopes: composeOwnerScope ? Factory.Services.GetRequiredService<IServiceScopeFactory>() : null), database);
         }
 
         public async Task AssertPortAnswersAsync(Guid company, string actorId, bool preparerMayApprove, long version)

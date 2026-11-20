@@ -20,6 +20,7 @@ import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { SETTINGS_CAPABILITY } from './capabilities'
 import type { CommandOutcome } from './discountLimitApi'
+import { isDateText } from './discountLimitContract'
 import { businessDateLabel } from './discountLimitText'
 import { percentLabel, stateLabel } from './salesPolicyText'
 import {
@@ -46,6 +47,7 @@ import {
   type UnitConversionBoundary,
   type UnitConversionPolicyView,
   type UnitConversionRounding,
+  type RecordUnitConversionPolicyBody,
 } from './unitConversionPolicyContract'
 import {
   UNIT_CONVERSION_TEXT as T,
@@ -55,14 +57,29 @@ import {
   roundingRuleLabel,
   unitConversionRefusalText,
 } from './unitConversionPolicyText'
-import { useCommandAttempt, type AttemptStatus } from './useCommandAttempt'
+import { hasCommandFields, useScopedCommandAttempt, type AttemptStatus, type ScopedCommandAttempt } from './useCommandAttempt'
 import styles from './settings.module.css'
+
+function policyPayload(value: unknown): value is RecordUnitConversionPolicyBody {
+  return hasCommandFields(value, { expectedVersion: 'string', densityGramsPerCubicCentimetre: 'string',
+    coefficientDecimals: 'number', coefficientRounding: 'string', documentTotalDecimals: 'number',
+    documentTotalRounding: 'string', wholeUnitRounding: 'string', weighbridgeTolerancePercent: 'string',
+    toleranceBoundary: 'string', toleranceBase: 'string', reason: 'string', effectiveFrom: 'nullable-string' })
+    && /^(0|[1-9][0-9]*)$/.test(value.expectedVersion as string)
+    && Number.isInteger(value.coefficientDecimals) && Number.isInteger(value.documentTotalDecimals)
+    && value.coefficientRounding === DECIDED_COEFFICIENT_ROUNDING
+    && UNIT_CONVERSION_ROUNDINGS.some(entry => entry === value.documentTotalRounding)
+    && UNIT_CONVERSION_ROUNDINGS.some(entry => entry === value.wholeUnitRounding)
+    && UNIT_CONVERSION_BOUNDARIES.some(entry => entry === value.toleranceBoundary)
+    && UNIT_CONVERSION_BASES.some(entry => entry === value.toleranceBase)
+    && (value.effectiveFrom === null || isDateText(value.effectiveFrom))
+}
 
 export function UnitConversionPolicyPage() {
   const shell = useShellState()
   const key = contextKey(shell)
   const namespace = key === null ? null : contextKeyString(key)
-  return <PolicyScreen key={`${namespace ?? 'no-context'}::${shell.routeEntryGeneration}`} namespace={namespace} />
+  return <PolicyScreen key={`${namespace ?? 'no-context'}::${shell.routeEntryGeneration}::${shell.sessionBinding ?? ''}`} namespace={namespace} />
 }
 
 function PolicyScreen({ namespace }: { readonly namespace: string | null }) {
@@ -72,6 +89,8 @@ function PolicyScreen({ namespace }: { readonly namespace: string | null }) {
   const ready = namespace !== null && singleCompany && hasCapability(shell, SETTINGS_CAPABILITY.unitConversionPolicy)
   const queryKey = [namespace ?? 'no-context', shell.routeEntryGeneration, 'settings-unit-conversion-policy']
   const view = useBoundaryRead(queryKey, ready, (signal) => fetchUnitConversionPolicy(companyId ?? '', signal))
+  const attempt = useScopedCommandAttempt<RecordUnitConversionPolicyBody, true>('unit-conversion-policy-record',
+    (body, idempotencyKey) => recordUnitConversionPolicyVersion({ companyId: companyId ?? '', idempotencyKey }, body), policyPayload)
 
   if (!singleCompany) {
     return (
@@ -93,7 +112,7 @@ function PolicyScreen({ namespace }: { readonly namespace: string | null }) {
   return (
     <Frame title={T.title} intro={T.intro}>
       {state.kind === 'ready' ? (
-        <PolicySection data={state.data} companyId={companyId} onChanged={() => void view.refetch()} />
+        <PolicySection data={state.data} attempt={attempt} onChanged={() => void view.refetch()} />
       ) : (
         <StateBlock state={state} subject={T.subject} onRetry={() => void view.refetch()} />
       )}
@@ -103,11 +122,11 @@ function PolicyScreen({ namespace }: { readonly namespace: string | null }) {
 
 function PolicySection({
   data,
-  companyId,
+  attempt,
   onChanged,
 }: {
   readonly data: UnitConversionPolicyView
-  readonly companyId: string
+  readonly attempt: ScopedCommandAttempt<RecordUnitConversionPolicyBody, true>
   readonly onChanged: () => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -179,8 +198,8 @@ function PolicySection({
           </table>
         </>
       )}
-      {editing ? (
-        <PolicyForm data={data} companyId={companyId} onDone={close} onStale={stale} />
+      {editing || attempt.hasPendingRetry ? (
+        <PolicyForm data={data} attempt={attempt} onDone={close} onStale={stale} />
       ) : (
         <div className={styles.actions}>
           <Button
@@ -201,17 +220,17 @@ function PolicySection({
 
 function PolicyForm({
   data,
-  companyId,
+  attempt,
   onDone,
   onStale,
 }: {
   readonly data: UnitConversionPolicyView
-  readonly companyId: string
+  readonly attempt: ScopedCommandAttempt<RecordUnitConversionPolicyBody, true>
   readonly onDone: (notice: string | null) => void
   readonly onStale: (notice: string) => void
 }) {
   // KIM-D37: the form starts from the version in force, or empty; never from the decision's suggestions.
-  const base = inForceUnitConversionPolicy(data.versions)
+  const base = attempt.pendingPayload ?? inForceUnitConversionPolicy(data.versions)
   const [density, setDensity] = useState(base?.densityGramsPerCubicCentimetre ?? '')
   const [coefficientDecimalsText, setCoefficientDecimalsText] = useState(
     base === null ? '' : String(base.coefficientDecimals),
@@ -230,9 +249,8 @@ function PolicyForm({
     base?.toleranceBoundary ?? null,
   )
   const [toleranceBase, setToleranceBase] = useState<UnitConversionBase | null>(base?.toleranceBase ?? null)
-  const [effectiveFrom, setEffectiveFrom] = useState(data.today)
-  const [reason, setReason] = useState('')
-  const attempt = useCommandAttempt<true>()
+  const [effectiveFrom, setEffectiveFrom] = useState(attempt.pendingPayload?.effectiveFrom ?? data.today)
+  const [reason, setReason] = useState(attempt.pendingPayload?.reason ?? '')
   const densityText = density.trim()
   const toleranceText = tolerance.trim()
   const coefficientDecimals = parseDecimals(coefficientDecimalsText)
@@ -240,6 +258,15 @@ function PolicyForm({
 
   async function submit(event: FormEvent) {
     event.preventDefault()
+    if (attempt.hasPendingRetry) {
+      const outcome = await attempt.retry()
+      if (outcome.type === 'applied') onDone(outcome.replayed ? T.savedReplay : T.saved)
+      else {
+        const stale = staleRefusal(outcome)
+        if (stale !== null) onStale(stale)
+      }
+      return
+    }
     if (
       !isDensityInput(densityText) ||
       !isPercentInput(toleranceText) ||
@@ -267,9 +294,7 @@ function PolicyForm({
       reason: reason.trim(),
       effectiveFrom: effectiveFromBody(effectiveFrom, data.today),
     }
-    const outcome = await attempt.run(body, (idempotencyKey) =>
-      recordUnitConversionPolicyVersion({ companyId, idempotencyKey }, body),
-    )
+    const outcome = await attempt.run(body)
     if (outcome.type === 'applied') {
       onDone(outcome.replayed ? T.savedReplay : T.saved)
       return
@@ -285,147 +310,149 @@ function PolicyForm({
       aria-labelledby="unit-conversion-policy-edit-heading"
     >
       <h3 id="unit-conversion-policy-edit-heading">{T.newVersion}</h3>
-      <div className={styles.muted}>
-        <p>{T.hintsHeading}</p>
-        <ul aria-label={T.hintsHeading}>
-          <li>{T.hintDensity}</li>
-          <li>{T.hintCoefficientDecimals}</li>
-          <li>{T.hintCoefficientRounding}</li>
-          <li>{T.hintWholeUnit}</li>
-          <li>{T.hintDocumentTotal}</li>
-          <li>{T.hintTolerance}</li>
-        </ul>
-      </div>
-      <Field
-        label={T.densityLabel}
-        help={T.densityHelp}
-        error={densityText.length > 0 && !isDensityInput(densityText) ? T.densityError : undefined}
-      >
-        {(control) => (
-          <input
-            {...control}
-            type="text"
-            inputMode="decimal"
-            required
-            autoComplete="off"
-            value={density}
-            onChange={(event) => setDensity(event.target.value)}
-          />
-        )}
-      </Field>
-      <Field
-        label={T.coefficientDecimalsLabel}
-        help={T.decimalsHelp}
-        error={coefficientDecimalsText.trim().length > 0 && coefficientDecimals === null ? T.decimalsError : undefined}
-      >
-        {(control) => (
-          <input
-            {...control}
-            type="text"
-            inputMode="numeric"
-            required
-            autoComplete="off"
-            value={coefficientDecimalsText}
-            onChange={(event) => setCoefficientDecimalsText(event.target.value)}
-          />
-        )}
-      </Field>
-      <fieldset className={styles.fieldset}>
-        <legend>{T.coefficientRoundingLegend}</legend>
-        <p>{roundingLabel(DECIDED_COEFFICIENT_ROUNDING)}</p>
-        <p className={styles.muted}>{T.coefficientRoundingDecided}</p>
-      </fieldset>
-      <Field
-        label={T.documentTotalDecimalsLabel}
-        help={T.decimalsHelp}
-        error={
-          documentTotalDecimalsText.trim().length > 0 && documentTotalDecimals === null ? T.decimalsError : undefined
-        }
-      >
-        {(control) => (
-          <input
-            {...control}
-            type="text"
-            inputMode="numeric"
-            required
-            autoComplete="off"
-            value={documentTotalDecimalsText}
-            onChange={(event) => setDocumentTotalDecimalsText(event.target.value)}
-          />
-        )}
-      </Field>
-      <RoundingChoice
-        name="unit-conversion-document-total-rounding"
-        legend={T.documentTotalRoundingLegend}
-        value={documentTotalRounding}
-        onChange={setDocumentTotalRounding}
-      />
-      <RoundingChoice
-        name="unit-conversion-whole-unit-rounding"
-        legend={T.wholeUnitRoundingLegend}
-        value={wholeUnitRounding}
-        onChange={setWholeUnitRounding}
-      />
-      <Field
-        label={T.toleranceLabel}
-        help={T.toleranceHelp}
-        error={toleranceText.length > 0 && !isPercentInput(toleranceText) ? T.toleranceError : undefined}
-      >
-        {(control) => (
-          <input
-            {...control}
-            type="text"
-            inputMode="decimal"
-            required
-            autoComplete="off"
-            value={tolerance}
-            onChange={(event) => setTolerance(event.target.value)}
-          />
-        )}
-      </Field>
-      <fieldset className={styles.fieldset}>
-        <legend>{T.boundaryLegend}</legend>
-        {UNIT_CONVERSION_BOUNDARIES.map((boundary) => (
-          <label key={boundary} className={styles.choice}>
+      <fieldset className={styles.commandFields} disabled={attempt.status.kind === 'busy' || attempt.hasPendingRetry}>
+        <div className={styles.muted}>
+          <p>{T.hintsHeading}</p>
+          <ul aria-label={T.hintsHeading}>
+            <li>{T.hintDensity}</li>
+            <li>{T.hintCoefficientDecimals}</li>
+            <li>{T.hintCoefficientRounding}</li>
+            <li>{T.hintWholeUnit}</li>
+            <li>{T.hintDocumentTotal}</li>
+            <li>{T.hintTolerance}</li>
+          </ul>
+        </div>
+        <Field
+          label={T.densityLabel}
+          help={T.densityHelp}
+          error={densityText.length > 0 && !isDensityInput(densityText) ? T.densityError : undefined}
+        >
+          {(control) => (
             <input
-              type="radio"
-              name="unit-conversion-tolerance-boundary"
+              {...control}
+              type="text"
+              inputMode="decimal"
               required
-              checked={toleranceBoundary === boundary}
-              onChange={() => setToleranceBoundary(boundary)}
+              autoComplete="off"
+              value={density}
+              onChange={(event) => setDensity(event.target.value)}
             />
-            {boundaryLabel(boundary)}
-          </label>
-        ))}
-      </fieldset>
-      <fieldset className={styles.fieldset}>
-        <legend>{T.baseLegend}</legend>
-        {UNIT_CONVERSION_BASES.map((entry) => (
-          <label key={entry} className={styles.choice}>
+          )}
+        </Field>
+        <Field
+          label={T.coefficientDecimalsLabel}
+          help={T.decimalsHelp}
+          error={coefficientDecimalsText.trim().length > 0 && coefficientDecimals === null ? T.decimalsError : undefined}
+        >
+          {(control) => (
             <input
-              type="radio"
-              name="unit-conversion-tolerance-base"
+              {...control}
+              type="text"
+              inputMode="numeric"
               required
-              checked={toleranceBase === entry}
-              onChange={() => setToleranceBase(entry)}
+              autoComplete="off"
+              value={coefficientDecimalsText}
+              onChange={(event) => setCoefficientDecimalsText(event.target.value)}
             />
-            {baseLabel(entry)}
-          </label>
-        ))}
+          )}
+        </Field>
+        <fieldset className={styles.fieldset}>
+          <legend>{T.coefficientRoundingLegend}</legend>
+          <p>{roundingLabel(DECIDED_COEFFICIENT_ROUNDING)}</p>
+          <p className={styles.muted}>{T.coefficientRoundingDecided}</p>
+        </fieldset>
+        <Field
+          label={T.documentTotalDecimalsLabel}
+          help={T.decimalsHelp}
+          error={
+            documentTotalDecimalsText.trim().length > 0 && documentTotalDecimals === null ? T.decimalsError : undefined
+          }
+        >
+          {(control) => (
+            <input
+              {...control}
+              type="text"
+              inputMode="numeric"
+              required
+              autoComplete="off"
+              value={documentTotalDecimalsText}
+              onChange={(event) => setDocumentTotalDecimalsText(event.target.value)}
+            />
+          )}
+        </Field>
+        <RoundingChoice
+          name="unit-conversion-document-total-rounding"
+          legend={T.documentTotalRoundingLegend}
+          value={documentTotalRounding}
+          onChange={setDocumentTotalRounding}
+        />
+        <RoundingChoice
+          name="unit-conversion-whole-unit-rounding"
+          legend={T.wholeUnitRoundingLegend}
+          value={wholeUnitRounding}
+          onChange={setWholeUnitRounding}
+        />
+        <Field
+          label={T.toleranceLabel}
+          help={T.toleranceHelp}
+          error={toleranceText.length > 0 && !isPercentInput(toleranceText) ? T.toleranceError : undefined}
+        >
+          {(control) => (
+            <input
+              {...control}
+              type="text"
+              inputMode="decimal"
+              required
+              autoComplete="off"
+              value={tolerance}
+              onChange={(event) => setTolerance(event.target.value)}
+            />
+          )}
+        </Field>
+        <fieldset className={styles.fieldset}>
+          <legend>{T.boundaryLegend}</legend>
+          {UNIT_CONVERSION_BOUNDARIES.map((boundary) => (
+            <label key={boundary} className={styles.choice}>
+              <input
+                type="radio"
+                name="unit-conversion-tolerance-boundary"
+                required
+                checked={toleranceBoundary === boundary}
+                onChange={() => setToleranceBoundary(boundary)}
+              />
+              {boundaryLabel(boundary)}
+            </label>
+          ))}
+        </fieldset>
+        <fieldset className={styles.fieldset}>
+          <legend>{T.baseLegend}</legend>
+          {UNIT_CONVERSION_BASES.map((entry) => (
+            <label key={entry} className={styles.choice}>
+              <input
+                type="radio"
+                name="unit-conversion-tolerance-base"
+                required
+                checked={toleranceBase === entry}
+                onChange={() => setToleranceBase(entry)}
+              />
+              {baseLabel(entry)}
+            </label>
+          ))}
+        </fieldset>
+        <EffectiveFromField value={effectiveFrom} today={data.today} onChange={setEffectiveFrom} />
+        <Field label={T.reasonLabel} help={T.reasonHelp}>
+          {(control) => (
+            <textarea
+              {...control}
+              required
+              rows={3}
+              maxLength={UNIT_CONVERSION_POLICY_INPUT.reasonMaximumLength}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+            />
+          )}
+        </Field>
       </fieldset>
-      <EffectiveFromField value={effectiveFrom} today={data.today} onChange={setEffectiveFrom} />
-      <Field label={T.reasonLabel} help={T.reasonHelp}>
-        {(control) => (
-          <textarea
-            {...control}
-            required
-            rows={3}
-            maxLength={UNIT_CONVERSION_POLICY_INPUT.reasonMaximumLength}
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-          />
-        )}
-      </Field>
       <Footer status={attempt.status} hasPendingRetry={attempt.hasPendingRetry} onCancel={() => onDone(null)} />
     </form>
   )
@@ -488,7 +515,7 @@ function Footer<D>({
         <Button type="submit" variant="primary" disabled={status.kind === 'busy'} aria-busy={status.kind === 'busy'}>
           {status.kind === 'busy' ? T.saving : hasPendingRetry ? T.retrySame : T.save}
         </Button>
-        <Button type="button" variant="ghost" onClick={onCancel} disabled={status.kind === 'busy'}>
+        <Button type="button" variant="ghost" onClick={onCancel} disabled={status.kind === 'busy' || hasPendingRetry}>
           {T.cancel}
         </Button>
       </div>

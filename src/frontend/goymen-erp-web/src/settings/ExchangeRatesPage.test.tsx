@@ -10,9 +10,9 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { COMPANY_A, COMPANY_B, commands, installFetch, json, noContent, problem, renderAt } from './testHarness'
+import { COMPANY_A, COMPANY_B, IDENTITY, commands, installFetch, json, noContent, problem, renderAt } from './testHarness'
 import { SETTINGS_CAPABILITY, SETTINGS_EXCHANGE_RATE_CONTROL } from './capabilities'
 import { EXCHANGE_RATE_INPUT, addDays } from './exchangeRateContract'
 import {
@@ -37,6 +37,8 @@ const ALL_CONTROLS = [
 ]
 
 afterEach(() => {
+  Object.assign(IDENTITY, { authenticationSessionBinding: null })
+  sessionStorage.clear()
   vi.useRealTimers()
   vi.unstubAllGlobals()
 })
@@ -321,18 +323,19 @@ describe('Kurlar — commands', () => {
     expect(commands(recorded)).toEqual([])
   })
 
-  it('keeps the same key for a retry after a code-less 503 (unknown outcome)', async () => {
+  it('freezes outer controls and restores the same key after a route remount with a code-less 503 outcome', async () => {
+    Object.assign(IDENTITY, { authenticationSessionBinding: 'synthetic-exchange-session' })
     const user = userEvent.setup()
     let attempt = 0
     const recorded = install((url, init) => {
-      if (isList(url)) return json(dayList(url, standardDays))
+      if (isList(url)) return json(dayList(url, (from, to) => standardDays(from, to).filter(day => day.date >= from)))
       if (init?.method === 'POST' && url.endsWith('/reverification')) {
         attempt += 1
         return attempt === 1 ? new Response(null, { status: 503 }) : noContent({ 'Idempotency-Replayed': 'true' })
       }
       return undefined
     })
-    renderAt(RATES_PATH)
+    const { router } = renderAt(RATES_PATH)
     await screen.findByRole('table')
     const today = rangeOf(lastListUrl() ?? '').to
 
@@ -340,6 +343,19 @@ describe('Kurlar — commands', () => {
     await user.type(screen.getByLabelText(T.reasonLabel, { exact: false }), 'SENTETIK')
     await user.click(screen.getByRole('button', { name: T.save }))
     expect(await screen.findByText(T.unknownOutcome)).toBeTruthy()
+    const rangeForm = screen.getByRole('form', { name: T.rangeHeading })
+    expect(within(rangeForm).getByRole('button', { name: T.show }).matches(':disabled')).toBe(true)
+    expect(within(rangeForm).getByLabelText(T.fromLabel).matches(':disabled')).toBe(true)
+    const replace = screen.getByRole('button', { name: `${T.correct} — ${formatDate(today)}` })
+    expect(replace.matches(':disabled')).toBe(true)
+    await user.click(replace)
+    await user.click(within(rangeForm).getByRole('button', { name: T.show }))
+    expect(commands(recorded)).toHaveLength(1)
+    await act(async () => { await router.navigate('/synthetic-away') })
+    await act(async () => { await router.navigate(RATES_PATH) })
+    await screen.findByText(T.unknownOutcome)
+    expect(screen.getByRole('form', { name: T.reverifyHeading(today) })).toBeTruthy()
+    expect((screen.getByLabelText(T.reasonLabel, { exact: false }) as HTMLTextAreaElement).value).toBe('SENTETIK')
     await user.click(screen.getByRole('button', { name: T.retrySame }))
     expect(await screen.findByText(T.savedReplay)).toBeTruthy()
 
@@ -347,6 +363,33 @@ describe('Kurlar — commands', () => {
     expect(sent).toHaveLength(2)
     expect(sent[0].headers['Idempotency-Key']).toBe(sent[1].headers['Idempotency-Key'])
     expect(sent[0].body).toEqual({ expectedVersion: '2', reason: 'SENTETIK' })
+    expect(sent[1].body).toEqual(sent[0].body)
+    expect(sent[1].url).toBe(sent[0].url)
+  })
+
+  it('preserves an import through failed reads and freezes day actions until its original range is replayed', async () => {
+    const user = userEvent.setup()
+    let unavailable = false
+    const recorded = install((url, init) => {
+      if (isList(url)) return unavailable ? problem(503) : json(dayList(url, standardDays))
+      return init?.method === 'POST' && url.endsWith('/imports') ? problem(503) : undefined
+    })
+    const { queryClient } = renderAt(RATES_PATH)
+    await screen.findByRole('table')
+    const today = rangeOf(lastListUrl() ?? '').to
+    await user.click(screen.getByRole('button', { name: T.importSubmit }))
+    await screen.findByText(T.unknownOutcome)
+    expect(screen.getByRole('button', { name: `${T.correct} — ${formatDate(today)}` }).matches(':disabled')).toBe(true)
+    unavailable = true
+    await act(async () => { await queryClient.refetchQueries({ predicate: query => query.queryKey.includes('settings-exchange-rates') }) })
+    await waitFor(() => expect(screen.queryByRole('button', { name: T.retrySame })).toBeNull())
+    unavailable = false
+    await act(async () => { await queryClient.refetchQueries({ predicate: query => query.queryKey.includes('settings-exchange-rates') }) })
+    await user.click(await screen.findByRole('button', { name: T.retrySame }))
+    const sent = commands(recorded)
+    expect(sent).toHaveLength(2)
+    expect(sent[1].headers['Idempotency-Key']).toBe(sent[0].headers['Idempotency-Key'])
+    expect(sent[1].body).toEqual(sent[0].body)
   })
 
   it('marks a half day only after a choice, with version "0" for an unrecorded day', async () => {

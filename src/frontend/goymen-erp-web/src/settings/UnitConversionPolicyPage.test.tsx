@@ -12,7 +12,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { COMPANY_A, COMPANY_B, IDENTITY, commands, installFetch, json, noContent, problem, renderAt } from './testHarness'
 import { SETTINGS_CAPABILITY } from './capabilities'
@@ -24,6 +24,8 @@ const PROFILE = 'dddddddd-0000-4000-8000-00000000000d'
 const TODAY = '2026-11-15'
 
 function reset() {
+  Object.assign(IDENTITY, { authenticationSessionBinding: null })
+  sessionStorage.clear()
   vi.unstubAllGlobals()
   document.body.innerHTML = ''
 }
@@ -362,6 +364,71 @@ describe('Birim çevrim politikası — commands', () => {
     expect(second.body).toEqual(first.body)
   })
 
+  it('retries the saved policy after a changed live version and a route remount', async () => {
+    Object.assign(IDENTITY, { authenticationSessionBinding: 'synthetic-conversion-session' })
+    const user = userEvent.setup()
+    let advanced = false
+    let attempts = 0
+    const recorded = install((url, init) => {
+      if (isRead(url)) {
+        const view = recordedView()
+        if (advanced) { view.version = '3'; view.versions[0].version = '3' }
+        return json(view)
+      }
+      if (!isRecord(url, init)) return undefined
+      return ++attempts <= 2 ? problem(503) : noContent({ 'Idempotency-Replayed': 'true' })
+    })
+    const { router, queryClient } = renderAt(PATH)
+    await openForm(user)
+    await user.type(screen.getByLabelText(T.reasonLabel, { exact: false }), 'SENTETIK restored policy')
+    await user.click(screen.getByRole('button', { name: T.save }))
+    await screen.findByText(T.unknownOutcome)
+    advanced = true
+    await act(async () => { await queryClient.refetchQueries({ predicate: query => query.queryKey.includes('settings-unit-conversion-policy') }) })
+    await user.click(screen.getByRole('button', { name: T.retrySame }))
+    expect(commands(recorded)).toHaveLength(2)
+    await act(async () => { await router.navigate('/synthetic-away') })
+    await act(async () => { await router.navigate(PATH) })
+    await screen.findByText(T.unknownOutcome)
+    expect(screen.getByLabelText(T.reasonLabel, { exact: false }).matches(':disabled')).toBe(true)
+    await user.click(screen.getByRole('button', { name: T.retrySame }))
+    expect(await screen.findByText(T.savedReplay)).toBeTruthy()
+    const sent = commands(recorded)
+    expect(sent).toHaveLength(3)
+    expect(new Set(sent.map(command => command.headers['Idempotency-Key'])).size).toBe(1)
+    expect(sent.every(command => JSON.stringify(command.body) === JSON.stringify(sent[0].body))).toBe(true)
+  })
+
+  it('reports a retry refusal to the real auth boundary without releasing the earlier unknown key', async () => {
+    Object.assign(IDENTITY, { authenticationSessionBinding: 'synthetic-conversion-auth-session' })
+    const user = userEvent.setup()
+    let attempts = 0
+    const recorded = install((url, init) => {
+      if (isRead(url)) return json(recordedView())
+      if (!isRecord(url, init)) return undefined
+      attempts += 1
+      return attempts === 1 ? problem(503) : attempts === 2 ? problem(403)
+        : noContent({ 'Idempotency-Replayed': 'true' })
+    })
+    const { router } = renderAt(PATH)
+    await openForm(user)
+    await user.type(screen.getByLabelText(T.reasonLabel, { exact: false }), 'SENTETIK auth retry')
+    await user.click(screen.getByRole('button', { name: T.save }))
+    await screen.findByText(T.unknownOutcome)
+    await user.click(screen.getByRole('button', { name: T.retrySame }))
+    await waitFor(() => expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+    expect(commands(recorded)).toHaveLength(2)
+    await act(async () => { await router.navigate('/synthetic-away') })
+    await act(async () => { await router.navigate(PATH) })
+    await waitFor(() => expect(recorded.filter(request => request.url.endsWith('/shell/capabilities')).length).toBeGreaterThan(1))
+    await user.click(await screen.findByRole('button', { name: T.retrySame }))
+    expect(await screen.findByText(T.savedReplay)).toBeTruthy()
+    const sent = commands(recorded)
+    expect(sent).toHaveLength(3)
+    expect(new Set(sent.map(command => command.headers['Idempotency-Key'])).size).toBe(1)
+    expect(sent[2].body).toEqual(sent[0].body)
+  })
+
   it('closes the form and reads again on a version conflict', async () => {
     const user = userEvent.setup()
     let reads = 0
@@ -389,7 +456,7 @@ describe('Birim çevrim politikası — commands', () => {
     const user = userEvent.setup()
     install((url, init) => {
       if (isRead(url)) return json(recordedView())
-      return isRecord(url, init) ? problem(403, { code: 'settings_access_denied' }) : undefined
+      return isRecord(url, init) ? problem(415) : undefined
     })
     renderAt(PATH)
 
@@ -397,7 +464,7 @@ describe('Birim çevrim politikası — commands', () => {
     await user.type(screen.getByLabelText(T.reasonLabel, { exact: false }), 'SENTETIK')
     await user.click(screen.getByRole('button', { name: T.save }))
 
-    expect((await screen.findByRole('alert')).textContent).toBe('Bu işlem için yetkiniz yok.')
+    expect((await screen.findByRole('alert')).textContent).toBe('İstek biçimi kabul edilmedi.')
     expect(screen.getByRole('button', { name: T.save })).toBeTruthy()
   })
 })

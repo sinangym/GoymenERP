@@ -12,7 +12,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { COMPANY_A, COMPANY_B, IDENTITY, commands, installFetch, json, noContent, problem, renderAt } from './testHarness'
 import { SETTINGS_CAPABILITY } from './capabilities'
@@ -30,6 +30,8 @@ const KG_CAPTION = `${T.unitTableLabel} — ${unitLabel('kg', 'Kütle')}`
 const PIECE_CAPTION = `${T.unitTableLabel} — ${unitLabel('adet', 'Sayı')}`
 
 function reset() {
+  Object.assign(IDENTITY, { authenticationSessionBinding: null })
+  sessionStorage.clear()
   vi.unstubAllGlobals()
   document.body.innerHTML = ''
 }
@@ -476,12 +478,84 @@ describe('Birim profilleri — new version', () => {
     await user.type(screen.getByLabelText(POLICY_TEXT.reasonLabel), 'SENTETIK')
     await user.click(screen.getByRole('button', { name: T.save }))
     expect(await screen.findByText(T.unknownOutcome)).toBeTruthy()
+    const unitSelect = screen.getByRole('combobox', { name: T.unitLabel })
+    expect(unitSelect.matches(':disabled')).toBe(true)
+    expect(screen.getByLabelText(POLICY_TEXT.reasonLabel).matches(':disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: T.cancel }).matches(':disabled')).toBe(true)
+    await user.selectOptions(unitSelect, PIECE)
+    await user.click(screen.getByRole('button', { name: T.cancel }))
+    expect((unitSelect as HTMLSelectElement).value).toBe(KG)
+    expect(commands(recorded)).toHaveLength(1)
     await user.click(screen.getByRole('button', { name: T.retrySame }))
 
     expect(await screen.findByText(T.savedReplay)).toBeTruthy()
     const [first, second] = commands(recorded)
     expect(second.headers['Idempotency-Key']).toBe(first.headers['Idempotency-Key'])
     expect(second.body).toEqual(first.body)
+  })
+
+  it('restores an unresolved record through a failed read and route remount, even after the live version changes', async () => {
+    Object.assign(IDENTITY, { authenticationSessionBinding: 'synthetic-unit-profile-session' })
+    const user = userEvent.setup()
+    let unavailable = false
+    let advanced = false
+    let attempts = 0
+    const recorded = install((url, init) => {
+      if (isRead(url)) {
+        if (unavailable) return problem(503)
+        const view = storedView()
+        if (advanced) { view.units[1].version = '3'; view.units[1].versions[0].version = '3' }
+        return json(view)
+      }
+      if (!isRecord(url, init)) return undefined
+      return ++attempts <= 2 ? problem(503) : noContent({ 'Idempotency-Replayed': 'true' })
+    })
+    const { router, queryClient } = renderAt(PATH)
+    await openForm(user)
+    await chooseUnit(user, KG)
+    await user.type(screen.getByLabelText(POLICY_TEXT.reasonLabel), 'SENTETIK restore')
+    await user.click(screen.getByRole('button', { name: T.save }))
+    await screen.findByText(T.unknownOutcome)
+    advanced = true
+    await act(async () => { await queryClient.refetchQueries({ predicate: query => query.queryKey.includes('settings-unit-profiles') }) })
+    await user.click(screen.getByRole('button', { name: T.retrySame }))
+    expect(commands(recorded)).toHaveLength(2)
+    unavailable = true
+    await act(async () => { await queryClient.refetchQueries({ predicate: query => query.queryKey.includes('settings-unit-profiles') }) })
+    await waitFor(() => expect(screen.queryByRole('button', { name: T.retrySame })).toBeNull())
+    unavailable = false
+    await act(async () => { await router.navigate('/synthetic-away') })
+    await act(async () => { await router.navigate(PATH) })
+    expect(await screen.findByText(T.unknownOutcome)).toBeTruthy()
+    expect((screen.getByRole('combobox', { name: T.unitLabel }) as HTMLSelectElement).value).toBe(KG)
+    expect(screen.getByLabelText(POLICY_TEXT.reasonLabel).matches(':disabled')).toBe(true)
+    await user.click(screen.getByRole('button', { name: T.retrySame }))
+    expect(await screen.findByText(T.savedReplay)).toBeTruthy()
+    const sent = commands(recorded)
+    expect(sent).toHaveLength(3)
+    expect(new Set(sent.map(command => command.headers['Idempotency-Key'])).size).toBe(1)
+    expect(sent.every(command => JSON.stringify(command.body) === JSON.stringify(sent[0].body))).toBe(true)
+  })
+
+  it('keeps the unresolved baseline transfer visible when a refreshed GET reports it already transferred', async () => {
+    const user = userEvent.setup()
+    let transferred = false
+    let attempts = 0
+    const recorded = install((url, init) => {
+      if (isRead(url)) return json(transferred ? storedView() : catalogView())
+      if (!isBaseline(url, init)) return undefined
+      transferred = true
+      return ++attempts === 1 ? problem(503) : noContent({ 'Idempotency-Replayed': 'true' })
+    })
+    const { queryClient } = renderAt(PATH)
+    await user.type(await screen.findByLabelText(POLICY_TEXT.reasonLabel), 'SENTETIK baseline')
+    await user.click(screen.getByRole('button', { name: T.baselineSubmit }))
+    await screen.findByText(T.unknownOutcome)
+    await act(async () => { await queryClient.refetchQueries({ predicate: query => query.queryKey.includes('settings-unit-profiles') }) })
+    expect(screen.queryByRole('button', { name: T.newVersion })).toBeNull()
+    await user.click(screen.getByRole('button', { name: T.retrySame }))
+    expect(await screen.findByText(T.savedReplay)).toBeTruthy()
+    expect(commands(recorded)[1].headers['Idempotency-Key']).toBe(commands(recorded)[0].headers['Idempotency-Key'])
   })
 
   it('closes the form and reads again on a version conflict', async () => {
@@ -510,7 +584,7 @@ describe('Birim profilleri — new version', () => {
     const user = userEvent.setup()
     install((url, init) => {
       if (isRead(url)) return json(storedView())
-      return isRecord(url, init) ? problem(403, { code: 'settings_access_denied' }) : undefined
+      return isRecord(url, init) ? problem(415) : undefined
     })
     renderAt(PATH)
 
@@ -519,7 +593,7 @@ describe('Birim profilleri — new version', () => {
     await user.type(screen.getByLabelText(POLICY_TEXT.reasonLabel), 'SENTETIK')
     await user.click(screen.getByRole('button', { name: T.save }))
 
-    expect((await screen.findByRole('alert')).textContent).toBe('Bu işlem için yetkiniz yok.')
+    expect((await screen.findByRole('alert')).textContent).toBe('İstek biçimi kabul edilmedi.')
     expect(screen.getByRole('button', { name: T.save })).toBeTruthy()
   })
 
