@@ -142,6 +142,29 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task SAT_D430_an_order_approved_without_a_rate_freezes_it_at_its_next_successful_approval()
+    {
+        var source = new MarginCostSource { CostCurrency = SettingsCurrencyIdentitiesV1.TurkishLira, Cost = 3m };
+        var rates = new FakeExchangeRates("NotFound", null);
+        var world = new World { MarginCosts = source, ExchangeRates = rates };
+        var (approved, firstLine) = await AcceptedApprovedAsync(world);
+        var draft = Assert.Single(world.Store.Drafts);
+        Assert.Null(Assert.Single(draft.MarginCosts).SaleRate);
+
+        rates.State = ExchangeRateResolutionStatesV1.Resolved;
+        rates.Rate = "34.5678";
+        Owners(world);
+        var added = AddedLine();
+        await world.Service().ReviseLinesAsync(approved.Id, LineRevision("5", [added]), Metadata("fx-late-add"));
+        await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("fx-late-submit"));
+        await world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("fx-late-approve"));
+
+        var frozen = Assert.Single(draft.MarginCosts, cost => cost.LineId == added.LineId).SaleRate!;
+        Assert.Equal((Currency, 34.5678m), (frozen.CurrencyId, frozen.Rate));
+        Assert.Null(Assert.Single(draft.MarginCosts, cost => cost.LineId == firstLine).SaleRate);
+    }
+
+    [Fact]
     public async Task SAT_D426_an_unreadable_approval_day_rate_does_not_block_approval_and_leaves_the_margin_unavailable()
     {
         var source = new MarginCostSource { CostCurrency = SettingsCurrencyIdentitiesV1.TurkishLira, Cost = 3m };

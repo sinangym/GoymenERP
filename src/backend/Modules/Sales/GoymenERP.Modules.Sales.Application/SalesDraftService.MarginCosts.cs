@@ -41,12 +41,12 @@ public sealed partial class SalesDraftService
         SalesOrderDraft draft, CancellationToken cancellationToken)
     {
         var costs = new List<SalesMarginCostSnapshot>();
-        // SAT-D426: the order rate is frozen once, at the first approval that pins a snapshot, and never changes. A revision
-        // approval reuses it for every re-pinned line; an order already pinned without a rate (unreadable, or a currency the
-        // frozen rate does not belong to) stays without one rather than mixing approval days on one order.
-        var frozen = draft.MarginCosts.Count != 0;
-        SalesMarginSaleRate? saleRate = frozen ? FrozenSaleRate(draft) : null;
-        var saleRateRead = frozen;
+        // SAT-D426 / SAT-D430: the order rate is frozen once, at the first approval that resolves it, and never changes. A
+        // revision approval reuses it for every re-pinned line; an order whose earlier approvals found no rate reads it at
+        // this approval (lines pinned before keep no rate). A rate frozen for another currency is never replaced.
+        var frozen = FrozenSaleRateOf(draft);
+        SalesMarginSaleRate? saleRate = frozen is { } existing && existing.CurrencyId == draft.Header.CurrencyId ? existing : null;
+        var saleRateRead = frozen is not null;
         foreach (var line in draft.Lines.OrderBy(item => item.LineNo))
         {
             var previous = LastMarginCost(draft, line.Id);
@@ -63,9 +63,8 @@ public sealed partial class SalesDraftService
         return costs;
     }
 
-    private static SalesMarginSaleRate? FrozenSaleRate(SalesOrderDraft draft) =>
-        draft.MarginCosts.OrderBy(cost => cost.Revision).Select(cost => cost.SaleRate).FirstOrDefault(rate => rate is not null)
-            is { } rate && rate.CurrencyId == draft.Header.CurrencyId ? rate : null;
+    private static SalesMarginSaleRate? FrozenSaleRateOf(SalesOrderDraft draft) =>
+        draft.MarginCosts.OrderBy(cost => cost.Revision).Select(cost => cost.SaleRate).FirstOrDefault(rate => rate is not null);
 
     /// <summary>
     /// SAT-D426: a foreign-currency order freezes, at its internal approval, the Settings rate of the approval day (the server's
