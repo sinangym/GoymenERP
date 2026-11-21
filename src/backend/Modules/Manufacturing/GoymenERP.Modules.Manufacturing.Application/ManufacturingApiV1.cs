@@ -844,6 +844,15 @@ public sealed partial class ManufacturingCommandService(
                 if (await VerifyPaintSelectionAsync(processSpec.Value, process.Value, permission, companyId, actorId, cancellationToken) is { } paintRefusal)
                     return Refusal<PlanViewV1>(paintRefusal);
 
+                // U5-b / API-36: a linked plan whose new inputs are customer-owned keeps the subcontract service order
+                // rule of the link; the order is read again here, not trusted from the link time.
+                if (current.SalesOrderLink is { } revisedLink
+                    && await RefuseCustomerGoodsOrderAsync([.. PlannedInputs(verified.Inputs)], revisedLink, permission,
+                        companyId, actorId, cancellationToken) is { } customerGoodsRefusal)
+                {
+                    return customerGoodsRefusal;
+                }
+
                 if (await FenceCapturedAsync<PlanViewV1>(permission, companyId, actorId, cancellationToken) is { } fenced)
                 {
                     return fenced;
@@ -1372,6 +1381,15 @@ public sealed partial class ManufacturingCommandService(
                     {
                         return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unprocessable, null, false,
                             ManufacturingRuleCodes.DueDateInPast);
+                    }
+
+                    // U5-b / API-36: a linked plan with customer-owned inputs is approved only while its order is still
+                    // that customer's open, approved subcontract service order carrying the line (read now, not at link).
+                    if (current.SalesOrderLink is { } approvalLink
+                        && await RefuseCustomerGoodsOrderAsync(current.Inputs, approvalLink, permission, companyId, actor,
+                            cancellationToken) is { } customerGoodsRefusal)
+                    {
+                        return customerGoodsRefusal;
                     }
 
                     var parameters = await ReadParameterProfileAsync(current.Process, current.WorkCenterId,

@@ -238,9 +238,27 @@ public sealed partial class ManufacturingCommandService
     private async Task<ManufacturingApiResult<PlanViewV1>?> RefuseCustomerGoodsLinkAsync(Guid planId, long expectedVersion,
         PlanSalesOrderLink link, string permission, Guid companyId, Guid actor, CancellationToken cancellationToken)
     {
-        if (await plans.FindPlanAsync(planId, cancellationToken) is not { } current || current.Version != expectedVersion
-            || current.Inputs.Select(input => input.CommercialContext).FirstOrDefault(context => context is not null)
-                is not { } customer)
+        if (await plans.FindPlanAsync(planId, cancellationToken) is not { } current || current.Version != expectedVersion)
+        {
+            return null;
+        }
+
+        return await RefuseCustomerGoodsOrderAsync(current.Inputs, link, permission, companyId, actor, cancellationToken);
+    }
+
+    /// <summary>
+    /// U5-b / API-36 (URT-D16, URT-D22) wherever customer goods and an order line meet: the link itself, a Draft revision
+    /// whose new inputs are customer-owned while the plan is linked, and the approval of a linked plan. When the inputs
+    /// carry a customer-owned roll, the linked order must be an open, approved subcontract service order of that customer
+    /// (party and company account) whose usable basis carries the line; otherwise 422
+    /// <see cref="ManufacturingRuleCodes.PlanCustomerGoodsRequireSubcontractOrder"/>. Inputs without customer goods ask
+    /// nothing. Sales is read before a fresh fence; any unreadable answer is 503. Null when the plan may proceed.
+    /// </summary>
+    private async Task<ManufacturingApiResult<PlanViewV1>?> RefuseCustomerGoodsOrderAsync(IEnumerable<PlannedInput> inputs,
+        PlanSalesOrderLink link, string permission, Guid companyId, Guid actor, CancellationToken cancellationToken)
+    {
+        if (inputs.Select(input => input.CommercialContext).FirstOrDefault(context => context is not null)
+            is not { } customer)
         {
             return null;
         }
