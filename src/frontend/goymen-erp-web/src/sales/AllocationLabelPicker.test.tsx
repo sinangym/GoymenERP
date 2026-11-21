@@ -31,14 +31,15 @@ function answer(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
 
-function Harness({ disabled = false, canOpenLabelHistory = false, onSelect }: {
+function Harness({ disabled = false, canOpenLabelHistory = false, onSelect, initialQuery }: {
   readonly disabled?: boolean
   readonly canOpenLabelHistory?: boolean
   readonly onSelect?: (choice: AllocationLabelChoice | null) => void
+  readonly initialQuery?: string
 }) {
   const [selected, setSelected] = useState<AllocationLabelChoice | null>(null)
   return <MemoryRouter><AllocationLabelPicker companyId={COMPANY} productId={PRODUCT} lineId={LINE} disabled={disabled}
-    canOpenLabelHistory={canOpenLabelHistory}
+    canOpenLabelHistory={canOpenLabelHistory} initialQuery={initialQuery}
     selected={selected} onSelect={(choice) => { setSelected(choice); onSelect?.(choice) }} /></MemoryRouter>
 }
 
@@ -54,6 +55,19 @@ afterEach(() => {
 })
 
 describe('UI-13 allocation label picker', () => {
+  it('starts with a label code carried from a stock row, asks nothing on mount, and searches it on request (KLN-D117)', async () => {
+    const fetchMock = vi.fn(async () => answer({ items: [position()], nextCursor: null, searchWindowFull: false }))
+    vi.stubGlobal('fetch', fetchMock)
+    render(<Harness initialQuery="ETK-001" />)
+    expect((screen.getByLabelText('Etiket kodu ara') as HTMLInputElement).value).toBe('ETK-001')
+    expect(fetchMock).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Etiketleri getir' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    const url = String((fetchMock.mock.calls[0] as unknown[])[0])
+    expect(new URL(url, 'https://example.test').searchParams.get('q')).toBe('ETK-001')
+  })
+
+
   it('searches only this line\'s product in this company and hands back the picked id and version', async () => {
     const fetch = vi.fn(async () => answer({ items: [position()], searchWindowFull: false }))
     vi.stubGlobal('fetch', fetch)

@@ -363,6 +363,9 @@ export const ORDER_LIST_TEXT = {
   subcontract: 'Fason',
   heading: 'Satış siparişi taslakları',
   newDraft: 'Yeni taslak',
+  /** KLN-D117: the list was opened from a stock label row to allocate that label. */
+  allocationLabelContext: (labelCode: string) =>
+    `${labelCode} etiketini tahsis etmek için onaylı bir sipariş açın; siparişin tahsis bölümünde etiket kodu aranmaya hazır gelir.`,
   caption: 'Seçili şirketteki sipariş taslakları, en yeni önce',
   documentNo: 'Belge no',
   /** The record-bound Cari, as the Cari owner publishes it for this Sales record. */

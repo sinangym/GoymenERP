@@ -40,6 +40,8 @@ export interface SalesDraftAllocationPanelProps {
   readonly routeEntryGeneration: number
   readonly salesOrderId: string
   readonly lines: readonly DraftLine[]
+  /** KLN-D117: a label code carried from a stock row; every line's label search starts with it. */
+  readonly initialLabelQuery?: string
 }
 
 export function SalesDraftAllocationPanel(props: SalesDraftAllocationPanelProps) {
@@ -67,7 +69,7 @@ function httpRefusalText(status: number, code: string | null): string {
   return T.failed
 }
 
-function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrderId, line, canOpenLabelHistory }: SalesDraftAllocationPanelProps & {
+function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrderId, line, canOpenLabelHistory, initialLabelQuery }: SalesDraftAllocationPanelProps & {
   readonly line: DraftLine
 }) {
   const boundary = useAuthBoundary()
@@ -265,7 +267,7 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
           {pendingCreate === null ? (
             <AllocationLabelPicker key={pickerGeneration} companyId={companyId} productId={line.productId}
               lineId={line.lineId} disabled={busy} canOpenLabelHistory={canOpenLabelHistory}
-              selected={selectedLabel} onSelect={setSelectedLabel} />
+              selected={selectedLabel} onSelect={setSelectedLabel} initialQuery={initialLabelQuery} />
           ) : null}
           <div className={styles.grid}>
             <label htmlFor={`allocation-quantity-${line.lineId}`}>{T.quantity}</label>

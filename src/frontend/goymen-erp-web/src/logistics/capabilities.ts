@@ -79,3 +79,14 @@ export const LOGISTICS_NAV_LABEL = {
 
 export const instructionDetailRoute = (instructionId: string) =>
   `/lojistik/yukleme-talimatlari/${encodeURIComponent(instructionId)}`
+
+/**
+ * KLN-D117 (Sinan 2026-11-21): "Yükleme talimatı oluştur" started from a stock label row. The L-03 create screen keeps the
+ * label code (`?etiket=`) as context and narrows its approved-line picker to the label's product (`?urun=`); the user still
+ * chooses the customer and the order lines, and the Draft is the same server command as from the list.
+ */
+export const INSTRUCTION_LABEL_PARAM = 'etiket' as const
+export const INSTRUCTION_PRODUCT_PARAM = 'urun' as const
+
+export const instructionCreateFromLabelPath = (labelCode: string, productId: string) =>
+  `${LOGISTICS_ROUTE.create}?${new URLSearchParams({ [INSTRUCTION_LABEL_PARAM]: labelCode, [INSTRUCTION_PRODUCT_PARAM]: productId }).toString()}`

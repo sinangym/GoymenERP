@@ -100,6 +100,8 @@ import {
   SALES_QUANTITY_WRITE_CAPABILITY,
   SALES_ROUTE,
   salesPriceControlPath,
+  ORDER_LABEL_PARAM,
+  carriedLabelCode,
 } from './capabilities'
 import { PRICE_CONTROL_TEXT } from './priceControlText'
 import { APPROVAL_STATE_TEXT, COMMERCIAL_STAGE_TEXT, ORDER_DETAIL_TEXT as T, ORDER_DRAFT_TEXT, ORDER_TABS_TEXT, problemCodeText } from './salesText'
@@ -190,6 +192,8 @@ export function SalesDraftDetailPage() {
   const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
   const activeTab = parseOrderTab(searchParams.get(TAB_PARAM))
+  // KLN-D117: a label code carried from a stock row ("Satışa tahsis et") prefills the allocation label search.
+  const carriedLabel = carriedLabelCode(searchParams.get(ORDER_LABEL_PARAM))
   const changeTab = (tab: OrderTab) =>
     setSearchParams(
       (current) => {
@@ -465,6 +469,7 @@ export function SalesDraftDetailPage() {
             routeEntryGeneration={shell.routeEntryGeneration}
             salesOrderId={outcome.data.draft.id}
             lines={outcome.data.lines}
+            initialLabelQuery={carriedLabel ?? undefined}
           />
         ) : null
       }

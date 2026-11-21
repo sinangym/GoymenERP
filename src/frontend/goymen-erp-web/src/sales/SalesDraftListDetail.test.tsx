@@ -622,6 +622,35 @@ describe('SALES-DS-01: the S-02 list on GOY-DS-001', () => {
     expect(screen.getByText(ORDER_LIST_TEXT.end)).toBeTruthy()
   })
 
+  it('opened from a stock label row, starts on approved orders and carries the label code into the order allocation tab (KLN-D117)', async () => {
+    stubViewport(false)
+    const fetch = installFetch({
+      onList: (url) => {
+        const params = new URL(url, 'http://x').searchParams
+        return json({ items: params.get('approvalState') === 'Approved' ? [draftRow(9, { approvalState: 'Approved' })] : [draftRow(1)], nextCursor: null })
+      },
+    })
+    renderSalesApp('/satis/siparisler?tahsisEtiketi=ETK-001')
+    const link = await screen.findByRole('link', { name: 'SO-2026-0009' })
+    expect(link.getAttribute('href')).toBe(`/satis/siparisler/${ids(9)}?sekme=tahsis&etiket=ETK-001`)
+    expect(screen.getByTestId('sales-allocation-label-context').textContent).toBe(ORDER_LIST_TEXT.allocationLabelContext('ETK-001'))
+    expect(listReads(fetch)).toEqual([{ companyId: COMPANY_A, cursor: null, approvalState: 'Approved' }])
+    // The user may still lift the narrowing; the label stays carried.
+    await userEvent.selectOptions(screen.getByLabelText(ORDER_LIST_TEXT.filter), '')
+    const other = await screen.findByRole('link', { name: 'SO-2026-0001' })
+    expect(other.getAttribute('href')).toBe(`/satis/siparisler/${ids(1)}?sekme=tahsis&etiket=ETK-001`)
+  })
+
+  it('ignores an unusable carried label code and lists as usual', async () => {
+    stubViewport(false)
+    const fetch = installFetch({ onList: () => json({ items: [draftRow(1)], nextCursor: null }) })
+    renderSalesApp(`/satis/siparisler?tahsisEtiketi=${encodeURIComponent('   ')}`)
+    const link = await screen.findByRole('link', { name: 'SO-2026-0001' })
+    expect(link.getAttribute('href')).toBe(`/satis/siparisler/${ids(1)}`)
+    expect(screen.queryByTestId('sales-allocation-label-context')).toBeNull()
+    expect(listReads(fetch)).toEqual([{ companyId: COMPANY_A, cursor: null, approvalState: null }])
+  })
+
   it('on a phone each draft is one labelled card with the same facts; the long Cari is whole and there is no table', async () => {
     stubViewport(true)
     installFetch({ capabilities: [...ALL_SALES, CAPABILITY.cariPartiesDetail], onList: () => json({ items: STATE_ROWS, nextCursor: null }) })

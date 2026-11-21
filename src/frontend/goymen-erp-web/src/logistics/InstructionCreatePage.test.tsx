@@ -25,6 +25,7 @@ import {
   instructionLine,
   json,
   mutation,
+  PRODUCT,
   renderLogisticsApp,
   type RecordedCall,
 } from './testHarness'
@@ -81,6 +82,34 @@ describe('L-03 Yeni Yükleme Talimatı', () => {
     expect(body.lines[0].productId).toBeUndefined()
     expect(create!.idempotencyKey).toMatch(/^[0-9a-f]{32}$/)
     expect(create!.body).not.toMatch(/price|unitPrice|currency/)
+  })
+
+  it('opened from a stock label row, lists only the approved lines of the label product and can lift the narrowing (KLN-D117)', async () => {
+    const OTHER_PRODUCT = '99999999-9999-4999-8999-999999999999'
+    const OTHER_PARTY = '88888888-8888-4888-8888-888888888888'
+    installFetch({
+      onApprovedLines: () => json({
+        items: [
+          approvedOrderLine(),
+          approvedOrderLine({
+            orderId: '77777777-7777-4777-8777-777777777777', documentNo: 'SO-2026-0002',
+            lineId: '66666666-6666-4666-8666-666666666666', customerPartyId: OTHER_PARTY,
+            customerName: 'SENTETIK başka ürün müşterisi', productId: OTHER_PRODUCT,
+          }),
+        ],
+        nextCursor: null,
+      }),
+    })
+    renderLogisticsApp(`/lojistik/yukleme-talimatlari/yeni?etiket=ETK-001&urun=${PRODUCT}`)
+    const select = await screen.findByLabelText(T.field.customer)
+    await within(select).findByRole('option', { name: /Yükleme müşterisi/ })
+    expect(within(select).queryByRole('option', { name: /başka ürün müşterisi/ })).toBeNull()
+    const context = screen.getByTestId('logistics-label-context')
+    expect(context.textContent).toContain(T.labelContext('ETK-001'))
+
+    await userEvent.click(within(context).getByRole('link', { name: T.labelContextClear }))
+    await within(await screen.findByLabelText(T.field.customer)).findByRole('option', { name: /başka ürün müşterisi/ })
+    expect(screen.queryByTestId('logistics-label-context')).toBeNull()
   })
 
   it('a lost reply keeps the key: the retry resends the same snapshot under the same key and a replay is shown as a replay', async () => {

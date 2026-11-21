@@ -198,6 +198,30 @@ export const SALES_ROUTE = {
 export const salesCustomerReturnPath = (returnId: string) => `/satis/iadeler/${encodeURIComponent(returnId)}`
 
 export const salesDetailPath = (draftId: string) => `/satis/siparisler/${encodeURIComponent(draftId)}`
+
+/**
+ * KLN-D117 (Sinan 2026-11-21): "Satışa tahsis et" started from a stock label row. The S-02 list carries the label code in
+ * `?tahsisEtiketi=`; the user chooses the approved order, whose S-04 allocation tab opens with the code in the label search
+ * (`?sekme=tahsis&etiket=`). The allocation itself is the same server command as from the order line.
+ */
+export const ALLOCATION_LABEL_PARAM = 'tahsisEtiketi' as const
+export const ORDER_LABEL_PARAM = 'etiket' as const
+/** A carried label code longer than this is ignored (the picker's own code bound). */
+export const CARRIED_LABEL_CODE_MAX_LENGTH = 64
+
+/** A carried label code: trimmed, bounded, printable; anything else is no code. */
+export function carriedLabelCode(value: string | null): string | null {
+  if (value === null) return null
+  const trimmed = value.trim()
+  const printable = [...trimmed].every((character) => character.charCodeAt(0) >= 0x20 && character.charCodeAt(0) !== 0x7f)
+  return trimmed !== '' && trimmed.length <= CARRIED_LABEL_CODE_MAX_LENGTH && printable ? trimmed : null
+}
+
+export const salesAllocationFromLabelPath = (labelCode: string) =>
+  `${SALES_ROUTE.list}?${new URLSearchParams({ [ALLOCATION_LABEL_PARAM]: labelCode }).toString()}`
+
+export const salesAllocationDetailPath = (draftId: string, labelCode: string) =>
+  `${salesDetailPath(draftId)}?${new URLSearchParams({ sekme: 'tahsis', [ORDER_LABEL_PARAM]: labelCode }).toString()}`
 export const salesPriceControlPath = (draftId: string) => `${salesDetailPath(draftId)}/kontrol`
 /** S-06 query member naming the approval row to bring into view (SAT-D243: the Work inbox links each Sales row here). */
 export const SALES_APPROVAL_PARAM = 'onay'

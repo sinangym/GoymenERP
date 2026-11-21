@@ -54,6 +54,10 @@ export const INSTRUCTION_LIST_TEXT = {
 export const INSTRUCTION_CREATE_TEXT = {
   heading: 'Yeni yükleme talimatı',
   backToList: 'Yükleme talimatları',
+  /** KLN-D117: opened from a stock label row. */
+  labelContext: (labelCode: string) =>
+    `${labelCode} etiketinden açıldı: yalnız bu etiketin ürününe ait onaylı sipariş satırları listeleniyor.`,
+  labelContextClear: 'Tüm onaylı satırları göster',
   singleCompanyOnly: 'Yükleme talimatı yalnız tek bir şirket seçiliyken oluşturulabilir.',
   field: {
     effectiveOn: 'İş tarihi',
