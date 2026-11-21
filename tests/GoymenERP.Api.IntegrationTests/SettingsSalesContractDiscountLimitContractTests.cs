@@ -22,7 +22,8 @@ public sealed class SettingsSalesContractDiscountLimitContractTests
         Assert.Equal(["20261116181354_AddCollateralTypeCatalog", "20261116182730_AddSalesContractDiscountLimit",
                 "20261116220424_AddDocumentNumberSeriesAndOperationalPolicies", "20261117001828_AddManufacturingProfileBaselineTransfers",
                 "20261117085524_AddPurchaseInvoiceVariancePolicies", "20261117111242_AddWarehouseTransferScalePolicies",
-                "20261117200733_AddFinanceDocumentNumberSeries", "20261117220044_AddFinancePolicyFamilies"], database.Database.GetMigrations().TakeLast(8));
+                "20261117200733_AddFinanceDocumentNumberSeries", "20261117220044_AddFinancePolicyFamilies",
+                "20261120101534_HardenWorkCenterSafetyBufferNullPairs"], database.Database.GetMigrations().TakeLast(9));
         Assert.False(database.Database.HasPendingModelChanges());
     }
 

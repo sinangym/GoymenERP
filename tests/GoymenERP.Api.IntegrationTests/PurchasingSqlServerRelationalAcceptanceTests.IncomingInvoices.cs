@@ -176,9 +176,12 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
             var context = scope.ServiceProvider.GetRequiredService<PurchasingDbContext>();
             var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.EndsWith("_AllowPurchaseIncomingInvoiceFinalizedOutboxEvents", applied[^1], StringComparison.Ordinal);
-            await context.GetService<IMigrator>().MigrateAsync(applied[^2]);
-            Assert.Equal(applied[..^1], (await context.Database.GetAppliedMigrationsAsync()).ToArray());
+            // Later migrations may follow this one; the empty module rolls back through them to the one before it.
+            var target = Array.FindIndex(applied, migration =>
+                migration.EndsWith("_AllowPurchaseIncomingInvoiceFinalizedOutboxEvents", StringComparison.Ordinal));
+            Assert.True(target > 0);
+            await context.GetService<IMigrator>().MigrateAsync(applied[target - 1]);
+            Assert.Equal(applied[..target], (await context.Database.GetAppliedMigrationsAsync()).ToArray());
             await context.Database.MigrateAsync();
             Assert.Equal(applied, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
         }
