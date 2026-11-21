@@ -65,12 +65,15 @@ public sealed class ProductHttpContractTests
         Assert.True(response.Headers.CacheControl!.NoStore);
         using var json = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var root = json.RootElement;
-        Assert.Equal(["rule", "name", "exactName", "hasMore"], root.EnumerateObject().Select(member => member.Name));
+        Assert.Equal(["rule", "name", "exactName", "hasMore", "sameTechnical", "sameTechnicalHasMore"],
+            root.EnumerateObject().Select(member => member.Name));
         Assert.Equal("exactName", root.GetProperty("rule").GetString());
         // The server compared the name the write path would store: trimmed.
         Assert.Equal("Sac", root.GetProperty("name").GetString());
         Assert.Equal(service.Card.Product.Id, root.GetProperty("exactName")[0].GetProperty("id").GetGuid());
         Assert.False(root.GetProperty("hasMore").GetBoolean());
+        Assert.Equal(service.Card.Product.Id, root.GetProperty("sameTechnical")[0].GetProperty("id").GetGuid());
+        Assert.True(root.GetProperty("sameTechnicalHasMore").GetBoolean());
         Assert.Equal(excluded, service.LastDuplicateQuery!.ExcludeProductId);
     }
 
@@ -446,7 +449,7 @@ public sealed class ProductHttpContractTests
             if (Denied) throw new UnauthorizedAccessException("synthetic Product read refusal");
             LastDuplicateQuery = ProductDuplicateRules.Normalize(query);
             return Task.FromResult(new ProductDuplicateCandidates(ProductDuplicateRules.ExactName,
-                LastDuplicateQuery.Name!, [Card.Product], false));
+                LastDuplicateQuery.Name!, [Card.Product], false, [Card.Product], true));
         }
         public Task<ProductReferenceOptions> GetReferenceOptionsAsync(ProductReferenceQuery query,
             CancellationToken cancellationToken) => Task.FromResult(new ProductReferenceOptions(

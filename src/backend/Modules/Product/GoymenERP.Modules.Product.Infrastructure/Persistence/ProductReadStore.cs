@@ -91,6 +91,22 @@ public sealed class ProductReadStore(ProductDbContext context, ILogger<ProductRe
         return rows.Select(row => row.ToRecord()).ToArray();
     }
 
+    /// <summary>
+    /// URN-D25: the ACTIVE cards of one family except <paramref name="excludeProductId"/>, in code order (binary collation)
+    /// then UUID. The technical comparison itself is the caller's (exact values from each card's template fields).
+    /// </summary>
+    public async Task<IReadOnlyList<ProductStoredRecord>> ReadActiveFamilyMembersAsync(GroupSharedMasterReadContext authority,
+        Guid familyId, Guid excludeProductId, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(authority);
+        var active = (int)Domain.Products.ProductLifecycle.Active;
+        var rows = await context.Products.AsNoTracking()
+            .Where(row => row.FamilyId == familyId && row.Id != excludeProductId && row.Lifecycle == active)
+            .OrderBy(row => row.Code).ThenBy(row => row.Id)
+            .ToListAsync(cancellationToken);
+        return rows.Select(row => row.ToRecord()).ToArray();
+    }
+
     public IQueryable<ProductRow> BuildExactNameQuery(string name, Guid? excludeProductId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);

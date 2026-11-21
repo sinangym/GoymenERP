@@ -161,7 +161,7 @@ export function productHistory(over: Record<string, unknown> = {}) {
 
 /** `ProductDuplicateCandidates`: the exact-name rule, no other card by default. */
 export function duplicateCandidates(over: Record<string, unknown> = {}) {
-  return { rule: 'exactName', name: 'Sac', exactName: [], hasMore: false, ...over }
+  return { rule: 'exactName', name: 'Sac', exactName: [], hasMore: false, sameTechnical: [], sameTechnicalHasMore: false, ...over }
 }
 
 export interface RecordedCall {

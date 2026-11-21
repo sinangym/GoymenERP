@@ -380,7 +380,14 @@ export const PRODUCT_DUPLICATE_TEXT = {
   foundTitle: 'Bu adla kayıtlı başka ürün kartları var',
   foundDetail:
     'Karşılaştırın: aynı ürünü ikinci kez tanımlamadığınızdan emin olun. Bu uyarı kaydı veya onayı engellemez ve kartları birleştirmez.',
-  rule: 'Kontrol kuralı: aynı ad (Türkçe büyük/küçük harf farkı gözetilmez). Teknik özellik benzerliği bu kontrolde yoktur.',
+  rule:
+    'Kontrol kuralları: aynı ad (Türkçe büyük/küçük harf farkı gözetilmez) ve kayıtlı kart için aynı ailede aynı kalınlık, ' +
+    'genişlik, kalite ve kaplama (yalnız aktif kartlar).',
+  technicalTitle: 'Aynı teknik ölçülere sahip aktif ürün kartları var',
+  technicalDetail:
+    'Bu kartlar aynı ailede kalınlık, genişlik, kalite ve kaplama bakımından bu kartla aynı. Karşılaştırın; uyarı kaydı veya ' +
+    'onayı engellemez.',
+  technicalMore: 'Aynı teknik ölçülere sahip daha fazla aktif kart var; tamamı için ürün listesinde arayın.',
   more: 'Aynı adlı daha fazla kart var; tamamı için ürün listesinde arayın.',
   failed: 'Aynı ad kontrolü yapılamadı. Bu, kaydı veya onayı engellemez.',
   changedBeforeApproval:

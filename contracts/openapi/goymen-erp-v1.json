@@ -283954,7 +283954,9 @@
           "rule",
           "name",
           "exactName",
-          "hasMore"
+          "hasMore",
+          "sameTechnical",
+          "sameTechnicalHasMore"
         ],
         "type": "object",
         "properties": {
@@ -283971,6 +283973,15 @@
             }
           },
           "hasMore": {
+            "type": "boolean"
+          },
+          "sameTechnical": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductDraftView"
+            }
+          },
+          "sameTechnicalHasMore": {
             "type": "boolean"
           }
         }

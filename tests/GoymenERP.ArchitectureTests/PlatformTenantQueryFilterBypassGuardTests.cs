@@ -518,7 +518,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): +3 facts, ordinal-sorted (1f399639… -> ea3dcfbe…).
                 // Re-fingerprinted for tren-1 W5 (integration): +4 fact(s) from the W5 team merges; value from guard_fingerprint.py (ea3dcfbe… -> 392d7170…).
                 // Tren-1 W6: +1 source facts, ordinal-sorted; SQL execution NOT_RUN.
-                "da06f16d25bda67c8b21f0641e62cc4b3040b2b5036fc36174f29c0f5954f196",
+                // Tren-1 close (URN-D25): +1 technical duplicate warning fact, ordinal-sorted; value from guard_fingerprint.py (da06f16d… -> bac9d6bc…).
+                "bac9d6bcfc034b7d314dbb8935ac2574bae91783f70e7e6df2129c997bef453e",
 
             // purchasing
             // Purchasing supplier filter: +1 company-scoped cursor-paging SQL fact, kept ordinal-sorted.

@@ -24,7 +24,10 @@ export function duplicateQueryKey(
 /** The ids the server listed, in its order; null when there is no successful answer to compare. */
 export function duplicateIds(outcome: DuplicateOutcome | undefined): string | null {
   if (outcome === undefined || outcome.type !== 'ok-single') return null
-  return `${outcome.data.exactName.map((item) => item.id).join(',')}|${outcome.data.hasMore ? 'more' : ''}`
+  const { exactName, hasMore, sameTechnical, sameTechnicalHasMore } = outcome.data
+  return `${exactName.map((item) => item.id).join(',')}|${hasMore ? 'more' : ''}|${sameTechnical
+    .map((item) => item.id)
+    .join(',')}|${sameTechnicalHasMore ? 'more' : ''}`
 }
 
 export function useDuplicateCandidates({
