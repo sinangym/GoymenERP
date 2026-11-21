@@ -154,7 +154,7 @@ public sealed class SalesLineMarginCalculatorTests
     }
 
     [Theory]
-    // SAT-D426 golden rows D01-D12 (independent golden, SAT-D431; PR1203, SAT_S12_SATIS_MARJI_FORMUL_GOLDEN_V1.md):
+    // SAT-D426 golden rows D01-D12 (independent golden, SAT-D431; PR1203 merge d8331e35, SAT_S12_SATIS_MARJI_FORMUL_GOLDEN_V1.md):
     // foreign net sale x the rate frozen at approval = exact TL net (no intermediate rounding); then the TL steps.
     // row, foreign net, frozen rate, quantity, TL unit cost, amount (0,01 TL), percent (0,01) or null = NetSaleNotPositive
     [InlineData("D01", "1000.00", "34.5678", "100", "300.1234", "4555.46", "13.18")]

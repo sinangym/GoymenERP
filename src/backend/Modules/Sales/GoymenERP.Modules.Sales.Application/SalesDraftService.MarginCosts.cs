@@ -13,10 +13,10 @@ public sealed partial class SalesDraftService
     // It neither grants margin disclosure nor supplies missing costs, currencies or historical snapshots.
     private static bool MarginGoldenAccepted => true;
 
-    // SAT-D426 / SAT-D265(5): the PR1200 golden in main still locks G20 (a non-TL sale stays CurrencyConversionUndecided, its
-    // amount is not converted). The approval freezes and stores the order rate now; the TL conversion of a foreign sale is
-    // enabled only when independent golden rows for SAT-D426 replace G20 in main. Until then the margin stays undecided.
-    private static bool ForeignSaleMarginGoldenAccepted => false;
+    // SAT-D426 / SAT-D265(5) / SAT-D431: the independent SAT-D426 golden (rows D01-D23, which replace G20's sale-currency
+    // part) is in main via PR1203, merge d8331e35cede70bae6fbc107ee487e116995bf63, after two independent DOCS reviews. This
+    // implementation change still requires the train's final exact-head K3 acceptance.
+    private static bool ForeignSaleMarginGoldenAccepted => true;
 
     private static SalesMarginCostSnapshot? LastMarginCost(SalesOrderDraft draft, Guid lineId) =>
         draft.MarginCosts.Where(cost => cost.LineId == lineId && cost.Revision <= draft.Revision)
@@ -180,7 +180,7 @@ public sealed partial class SalesDraftService
     }
 
     // SAT-D259 / BS-1: a restored snapshot is data, never the TL currency authority; the actual owner supplies TL cost or
-    // Unavailable. SAT-D426: a foreign sale is converted only at the rate the order froze, and only once its golden is in main.
+    // Unavailable. SAT-D426: a foreign sale is converted only at the rate the order froze (golden D01-D23).
     internal static SalesLineMargin CalculateMarginInTurkishLira(Money? netSale, Guid orderUnitId,
         decimal quantity, SalesMarginCostSnapshot cost) => cost.CostPerUnit == 0m
         ? SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.CostUnreadable)

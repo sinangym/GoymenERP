@@ -1096,7 +1096,6 @@ Down operation refuses with **52013** while any frozen rate exists (forward fix)
 The order rate is frozen once (SAT-D430): the first approval that resolves it freezes it, every later revision approval reuses it
 for the lines it re-pins, and an order whose earlier approvals found no rate reads it at its next approval (the lines pinned before
 keep no rate and stay undecided). A rate frozen for another currency is never replaced, so one order never mixes two frozen rates.
-An unreadable rate never blocks the approval (SAT-D429). The TL conversion itself is **not active yet**: SAT-D265 (5) requires
-the formula golden in main first, and main's golden still locks G20 (a non-TL sale stays `CurrencyConversionUndecided`). Until
-independent golden rows for SAT-D426 replace G20 in main, `ForeignSaleMarginGoldenAccepted` stays `false`; the calculator rows in
-`SalesLineMarginCalculatorTests` are the author's expectation, not that golden.
+An unreadable rate never blocks the approval (SAT-D429). The TL conversion follows the independent SAT-D426 golden (SAT-D431: rows D01-D23 in
+`docs/decisions/SAT_S12_SATIS_MARJI_FORMUL_GOLDEN_V1.md`, PR #1203, merge `d8331e35`), which replaces G20's sale-currency part;
+`ForeignSaleMarginGoldenAccepted` is `true` and `SalesLineMarginCalculatorTests` pins rows D01-D12.

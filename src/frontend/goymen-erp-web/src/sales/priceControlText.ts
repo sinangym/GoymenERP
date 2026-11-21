@@ -73,7 +73,7 @@ export const PRICE_CONTROL_TEXT = {
       ProducedItem: 'Üretim maliyeti henüz kesinleşmemiş',
       MixedSourceItem: 'Alış ve üretim maliyetinin ortak kaynağı okunamadı',
       UnitConversionUndecided: 'Maliyet birimi sipariş biriminden farklı: dönüşüm karara bağlanmadı',
-      CurrencyConversionUndecided: 'Satış veya maliyet TL dışında: kur dönüşümü karara bağlanmadı',
+      CurrencyConversionUndecided: 'Dövizli satışta onayda dondurulmuş sipariş kuru yok veya maliyet TL dışında: marj hesaplanamaz',
       SalesAmountUnavailable: 'Satırın net satış tutarı yok',
       CostInvalid: 'Gelen maliyet geçersiz',
       AmountOutOfRange: 'Marj tutarı gösterilebilir aralığın dışında',
