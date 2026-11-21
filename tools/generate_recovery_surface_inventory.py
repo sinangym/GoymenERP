@@ -98,9 +98,9 @@ EXPECTED_DURABLE_STORE_COUNT = 66
 # inventory (and copied into the release manifest).  The manifest sourceSurface is post-hoc
 # evidence, not a merge block: it is never compared with a pinned constant.
 EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 1480
-# SAT-D426 approval sale rate (migration + Designer, SalesStore, margin row): producer re-measured; 1480 inputs, 347 migrations; K3 pending.
+# URN-D25 duplicate read (ProductReadStore) after SAT-D426: producer re-measured; 1480 inputs, 347 migrations; K3 pending.
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    '35a026bee631706ccee9920a81db349fe9b0f7dc0110ede66e67ba3674501186'
+    '45559e37e3297223f591a5dd1cec3e757aa0da296f127c5d0b07a94d5a7d742f'
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
