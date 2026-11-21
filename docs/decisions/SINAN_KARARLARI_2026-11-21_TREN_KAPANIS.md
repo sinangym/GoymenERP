@@ -1,7 +1,7 @@
 # Sinan Kararları — 2026-11-21 (tren-1 kapanışı: dövizli marj, Finans reddi ve yeniden gönderim, muhasebe aktarımı, stok satırından tahsis, cari filtresi, mükerrer ürün uyarısı, fiyat listesi kapsamı)
 
 Bu belge önceki karar dosyalarını silmez; SAT-D426, SAT-D427, SAT-D428, KLN-D116, KLN-D117, KLN-D118, URN-D25,
-URN-D26, SAT-D429, SAT-D430, SAT-D431, SAT-D432, SAT-D433 ve GOV-D12 ekler. SAT-D259 (2) (marj TL tutarıdır), SAT-D265, SAT-D230, SAT-D249, BS-1 (dövizli alışta TL maliyetin
+URN-D26, SAT-D429, SAT-D430, SAT-D431, SAT-D432, SAT-D433, GOV-D12, SAT-D434–SAT-D438, ALS-D119, KLN-D119 ve URT-D112 ekler. SAT-D259 (2) (marj TL tutarıdır), SAT-D265, SAT-D230, SAT-D249, BS-1 (dövizli alışta TL maliyetin
 tedarikçi faturasındaki resmî kurla hesaplanması), DEC-CAR-003 ve SAT-D306 geçerliliğini korur; bu kararlar onların
 ve tren-1 kod incelemesinin açık bıraktığı noktaları kapatır.
 
@@ -12,7 +12,8 @@ işaretleri soranındır. Sorular, PR #1201 (tren-1) incelemesinde koddaki `NEED
 "Kararımı bekleyenleri önerili şekilde sor" isteğiyle soruldu (SINAN-CEVAP 50, ajan aktarımı: Issue #1189 yorumu 7067213965);
 10. soruya seçenek dışı serbest cevap verildi, 12. soruda önerilmeyen seçenek seçildi. 14–17. sorular aynı gün "Benden karar
 bekleyen sorularını sor" isteğiyle soruldu (SINAN-CEVAP 51, ajan aktarımı: Issue #1189 yorumu 7069053648); 14. soruya serbest
-cevap verildi, 16. soruda önerilmeyen seçenek seçildi.
+cevap verildi, 16. soruda önerilmeyen seçenek seçildi. 18–26. sorular aynı gün adet/kg konusunda soruldu (SINAN-CEVAP 52,
+ajan aktarımı: Issue #1189 yorumu 7069251238); 18. soruya serbest açıklama verildi, 21. soruda önerilmeyen seçenek seçildi.
 
 ## Soru ve cevaplar
 
@@ -35,6 +36,15 @@ cevap verildi, 16. soruda önerilmeyen seçenek seçildi.
 | 15 | Onaylı dövizli siparişte revizyon yapılırken yeni/değişen satırların onay öncesi marj önizlemesi nasıl gösterilsin? | **Dondurulmuş kurla önizlensin (Önerilen)** | Sipariş kuru zaten dondurulmuş olduğundan revizyon taslağı da o kurla "tahmini" marj gösterir. | Hesaplanamaz kalsın. |
 | 16 | Etiketi bölünmüş veya birleştirilmiş, karışık kaynaklı mallarda tedarikçi iadesi (şu an 503 ile kapalı) pilotta ne olsun? | **Desteklensin** | Bölünmüş/birleştirilmiş etiketlerde iade maliyet payı soy ağacından hesaplanır; yeni maliyet kuralı, golden ve SQL testleri ister. | Pilotta kapalı kalsın (Önerilen). |
 | 17 | İki bağımsız K3 review APPROVE verir ve CI yeşil olursa tren (PR #1201) ana dala nasıl alınsın? | **Kurallar sağlanınca sen merge et** | İki APPROVE, yeşil CI ve tazelik kontrolü sağlanınca Claude squash merge yapar ve #1189'a makbuz yazar; production aktivasyonu yapılmaz. | Önce bana sor (Önerilen). |
+| 18 | Adet/kg modeli (sipariş adet, maliyet ve fiziksel teslim kg) ne zaman yapılsın? (ilk soruluş) | **Serbest açıklama:** "adet satış fiyatlı sipariş faturalanırken çıkan miktar adet fiyatı ve miktarı üzerinden fiyatlanacak ama çıkan adetli ürünlerin faturların aslında kg karşılığıda olduğu için o siparişin gerçekleşmesini görürken siparişin kg fiyatınında ne olduğunu görmek isterim maliyetten hesaplama olmayacak yani, satışın adetli ve birim fiyatı da böyleyken teorik kg ından da ürünlerin siparişin tutarını görürken teorik kg karşılışı fiyatında görebiliriz ve bu alış siparişinde de bu şekilde, yani aslında burda bir maliyet hesabı değilde ürünlerin adetli çıkanlar için teorik ve gerçek çıkan kg larından kg fiyatlarınıda sipariş ve fatura bazında görebiliriz" | Kg fiyatı bir maliyet hesabı değil, sipariş ve fatura bazında bilgi göstergesidir (SAT-D436). | — |
+| 19 | Adetle satılan malın faturasında miktar hangi birimle yazılsın? | **Adet; kg bilgi olarak (Önerilen)** | Fatura satırı siparişteki gibi adet × adet fiyatıdır; gerçek kg ve türetilen kg fiyatı bilgi olarak yazılır. | Kg; adet bilgi olarak; Cariye göre seçilsin. |
+| 20 | Adet fiyatlı satışta kantar kg'si teorik kg'den farklı çıkarsa satış tutarı değişsin mi? | **Tutar sabit, kg fiyatı türetilir (Önerilen)** | Müşteri adet fiyatı öder; gerçek kg yalnız kg fiyatını değiştirir. | Tutar kg'den yeniden hesaplansın. |
+| 21 | Adet/kg paketi ve bölünmüş/birleştirilmiş etiketli tedarikçi iadesi ne zaman yapılsın? | **Bu trene eklensin** | Bu trende yapılır; K3 kabulü ve genel değerlendirme kayar. | Sonraki trende (Önerilen). |
+| 22 | Alışta stok maliyeti kg başına hesaplanırken hangi kg kullanılsın? | **Tartılan gerçek kg (Önerilen)** | Maliyet/kg = ödenen tutar ÷ kabulde tartılan kg; SAT-D298'i bu noktada değiştirir. | Teorik kg kalsın. |
+| 23 | Kg fiyatı göstergesinde teorik kg nereden alınsın? | **Ürün kartı formülü, belgeye kaydedilir (Önerilen)** | Kartın ölçü/formül/ağırlık tablosundan hesaplanan kg/adet, sipariş onayında belgeye yazılır; kart sonradan değişse de belge değişmez. | Her gösterimde karttan canlı. |
+| 24 | Sipariş ve faturada gösterilecek kg fiyatı kaç basamakla gösterilsin? | **0,01 TL/kg (Önerilen)** | Mevcut para gösterim kuralıyla aynı: kuruşa, yarımda sıfırdan uzağa. | 0,0001 TL/kg. |
+| 25 | Adetle satılan/alınan mallarda stok etiketinde adet de tutulsun mu? Üretim çıktısında adet kaydedilsin mi? | **Evet, etiket adet + kg (Önerilen)**; **Evet, çıktı adet + tartılan kg (Önerilen)** | Adetli ürünlerde etiket hem adet hem kg taşır; kabul, üretim çıktısı, bölme ve sevk adedi günceller. Üretim çıktısı adet ve tartılan kg ile kaydedilir; maliyet kg başınadır. | Adet yalnız belgede; Üretim yalnız kg. |
+| 26 | Bölünmüş/birleştirilmiş etiketten tedarikçi iadesinde iade edilen kg hangi alış kabulünden düşülsün? | **Soy ağacı paylarına orantılı (Önerilen)** | Etiketin içindeki her kabulün soy ağacındaki payına göre otomatik dağıtılır; her kabul içinde faturalı/fatura bekleyen payı yine hazırlayan seçer. | Hazırlayan her kabulü elle seçsin. |
 
 ## Kararlar
 
@@ -47,8 +57,16 @@ cevap verildi, 16. soruda önerilmeyen seçenek seçildi.
 | SAT-D430 | Kursuz kalan siparişin kuru | Sipariş kuru, **kurun çözülebildiği ilk onayda** dondurulur ve sonra değişmez; önceki onaylarda kursuz sabitlenen satırlar kursuz kalır, sonraki revizyon onaylarında sabitlenen satırlar dondurulan kuru kullanır. Başka para birimi için dondurulmuş kur yeni kurla değiştirilmez (türetilmiş; uygulama ayrıntısı). | Satış iç/revizyon onayı, marj anlık görüntüsü |
 | SAT-D431 | SAT-D426 formül golden'ının hazırlanması | SAT-D426 golden satırlarını ChatGPT şeridi yerine **Claude organize eder**: uygulamanın yazarı olmayan, temiz bağlamlı ayrı bir oturum golden'ı karar metinlerinden bağımsız hesaplar; ayrı dokümantasyon PR'ı iki bağımsız review sonrası main'e girer. Döviz dönüşümü uygulamada ancak bu golden main'e girdikten ve uygulama ona eşit çıktıktan sonra açılır (SAT-D265 (5)). | Marj golden belgesi, `ForeignSaleMarginGoldenAccepted` |
 | SAT-D432 | Revizyon önizlemesinde döviz kuru | Kuru dondurulmuş dövizli siparişin revizyon taslağında, yeni/değişen satırların saklanmayan marj önizlemesi (SAT-D267) dondurulmuş sipariş kuruyla hesaplanır; kur henüz dondurulmamışsa önizleme hesaplanamaz kalır (golden D17). | Satış line-pricing okuması |
-| SAT-D433 | Bölünmüş/birleştirilmiş etiketli tedarikçi iadesi | Etiketi bölünmüş veya birleştirilmiş, karışık kaynaklı mallarda tedarikçi iadesi **desteklenir**; iade maliyet payı etiketin soy ağacından hesaplanır. Payın kaynaklar arasında dağıtım kuralı ve golden'ı ayrıca netleştirilir; netleşene kadar mevcut 503 sınırı sürer (para/stok politikası tahminle etkinleştirilmez). | Satın alma tedarikçi iadesi, Stok iade çıkışı ve maliyet kaynağı |
+| SAT-D433 | Bölünmüş/birleştirilmiş etiketli tedarikçi iadesi | Etiketi bölünmüş veya birleştirilmiş, karışık kaynaklı mallarda tedarikçi iadesi **desteklenir**; iade maliyet payı etiketin soy ağacından hesaplanır. Pay, etiketin içindeki her alış kabulünün **soy ağacı payına orantılı** dağıtılır; her kabul içinde faturalı/fatura bekleyen payı hazırlayan açıkça seçer (26. cevap, K3-B2). Golden main'e girene kadar mevcut 503 sınırı sürer. | Satın alma tedarikçi iadesi, Stok iade çıkışı ve maliyet kaynağı |
 | GOV-D12 | PR #1201 (tren-1) merge yetkisi | İki bağımsız exact-head K3 review APPROVE, fresh zorunlu CI yeşil, açık P0/P1 yok ve AGENTS.md main tazelik kontrolü sağlanınca Claude şeridi PR #1201'i squash merge eder ve #1189'a makbuz yazar. Production aktivasyonu, grant/rol/Critical, OPEN kapatma ve diğer insan kapıları değişmez. | PR #1201 merge kapısı |
+| SAT-D434 | Adet fiyatlı satışın faturası | Adetle fiyatlanan satış satırı **adet × adet fiyatı** olarak faturalanır; satırın teorik ve gerçek kg'si ile kg fiyatı faturada bilgi olarak gösterilir. | Satış faturası, resmî fatura kaynağı |
+| SAT-D435 | Kantar sapması | Adet fiyatlı satışta kantar kg'si teorik kg'den farklı çıkarsa satış tutarı **değişmez**; yalnız gerçek kg fiyatı türetilir. | Satış faturası, kg fiyatı göstergesi |
+| SAT-D436 | Kg fiyatı göstergesi | Satış ve alış siparişinde ve faturasında, satır ve belge bazında **teorik kg fiyatı** (tutar ÷ teorik kg) ve **gerçek kg fiyatı** (faturalanan tutar ÷ kantarda/kabulde tartılan kg) gösterilir; sipariş ekranında gerçekleşme (faturalanan adet, tutar, gerçek kg, kg fiyatı, teorik farkı) görülür. Bu bir **maliyet hesabı değildir**; gösterim 0,01 TL/kg, yarımda sıfırdan uzağa. | Satış/alış sipariş ve fatura ekranları ve okumaları |
+| SAT-D437 | Teorik kg kaynağı | Teorik kg/adet ürün kartının ölçü/formül/ağırlık tablosu ve Ayarlar yoğunluğundan hesaplanır ve **sipariş onayında belgeye kaydedilir**; kart sonradan değişse de belge değişmez (KIM-D47 ile uyumlu). | Satış/alış sipariş satırı anlık görüntüsü |
+| SAT-D438 | Adetli satırda marj | Sipariş birimi maliyet biriminden (kg) farklı satırda marj, kg maliyetinin satırın belgeye kaydedilen teorik kg/adet'i ile sipariş birimine çevrilmesiyle hesaplanır (14. ve 21. cevap). Formül golden'ı main'e girmeden etkinleştirilmez (SAT-D265 (5)). | Marj hesaplayıcısı, Stok maliyet okuma portu |
+| ALS-D119 | Alış stok maliyeti kg'si | Alıştan gelen stok maliyeti kg başına **ödenen tutar ÷ kabulde tartılan gerçek kg** ile hesaplanır; SAT-D298'in teorik kg (kart katsayısı) kısmının yerine geçer. Golden main'e girmeden etkinleştirilmez. | Stok ortalama maliyeti, alış kabul maliyet kaynağı |
+| KLN-D119 | Etikette adet | Adetle satılan/alınan ürünlerde stok etiketi **adet + kg** taşır; alış kabulü, üretim çıktısı, bölme/birleştirme ve sevk adedi günceller; adetle siparişe tahsis ve sevk mümkün olur. | Stok etiketi, kabul, tahsis, sevk |
+| URT-D112 | Üretim çıktısında adet | Adetli ürünün üretim çıktısı **adet + tartılan kg** ile kaydedilir; maliyet kg başına kalır; gerçek kg/adet ile teorik arasındaki sapma görülür (sapma eşiği URT-D51 (5) ile açık kalır). | Üretim çıktı beyanı, etiket |
 | KLN-D116 | Muhasebeye otomatik aktarım pilotta | Fatura olaylarının muhasebe kaynak fişine otomatik alınması pilotun ilk aşamasında **kapalı** kalır; açılması ayrı muhasebe kabulünden sonra ayrı kullanıcı kararıyla yapılır. | Muhasebe aktivasyon ayarı (değişmez) |
 | KLN-D117 | Stok etiket satırından tahsis ve yükleme talimatı | Stok listesinde bir etiket satırından "Satışa tahsis et" ve "Yükleme talimatı oluştur" başlatılabilir: kullanıcı sipariş satırını seçer; tahsis ve talimat, sipariş satırından başlayan akışla aynı sunucu komutlarını ve kurallarını kullanır (yetki, miktar, sahiplik, şirket sınırı). Sipariş satırından başlatma da korunur. | Stok listesi satır eylemleri, ilgili seçim ekranı |
 | KLN-D118 | Cari listesinin varsayılan filtresi | Cari listesi varsayılan olarak **yalnız aktif** carileri gösterir; pasifler filtreyle görülür (mevcut uygulama). | Cari listesi (değişmez; açık not kapanır) |
@@ -62,8 +80,8 @@ cevap verildi, 16. soruda önerilmeyen seçenek seçildi.
   Uygulama marj golden'ına yeni satır ister (SAT-D265 (5)); main'deki golden G20'yi koruduğu sürece döviz dönüşümü uygulamada
   kapalıdır, kur onayda dondurulup saklanır. Sipariş kuru tektir: revizyon onayı ilk onayda dondurulan kuru kullanır.
 - Maliyet birimi ile sipariş birimi farklı olduğunda marj (birim dönüşümü) ve karışık kaynaklı kalem marjı bu belgeyle
-  açılmaz; 14. sorunun cevabı kapsamlı analiz ister (adet fiyatlı satışta faturalama/sevk ile oluşan kg fiyatı; alış ve
-  üretimde benzer durumlar).
+  açılmaz; adetli satırların marjı SAT-D438 ile, kg fiyatı göstergesi SAT-D436 ile karara bağlandı; karışık kaynaklı kalem
+  marjı açık kalır.
 - KLN-D117'deki seçim ekranının ayrıntısı (hangi sipariş satırlarının listeleneceği) geri alınabilir uygulama ayrıntısıdır;
   tahsis/sevk kuralları değişmez.
 - URN-D25 benzerlik (bulanık eşleşme) kuralı getirmez; yalnız beş alanın tam eşitliğine bakar.
