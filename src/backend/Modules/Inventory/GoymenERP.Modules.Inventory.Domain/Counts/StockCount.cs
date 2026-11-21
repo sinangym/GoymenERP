@@ -26,7 +26,7 @@ public sealed class StockCount
     public const int MaximumReasonLength = 1000;
 
     public StockCount(Guid id, Guid companyId, StockPosition position, Kilograms book, Kilograms counted,
-        DateTimeOffset countedAtUtc, string reason)
+        DateTimeOffset countedAtUtc, string reason, PieceCount? bookPieces = null, PieceCount? countedPieces = null)
     {
         Id = id == Guid.Empty
             ? throw new InventoryRuleException(InventoryRuleCodes.MissingReference, "Sayım kimliği zorunludur.")
@@ -50,12 +50,24 @@ public sealed class StockCount
             throw Invalid($"Sayım gerekçesi zorunludur (en fazla {MaximumReasonLength} karakter).");
         }
 
+        RequirePieces(book, counted, bookPieces, countedPieces);
         Position = position;
         Book = book;
         Counted = counted;
+        BookPieces = bookPieces;
+        CountedPieces = countedPieces;
         CountedAtUtc = countedAtUtc;
         Reason = reason.Trim();
     }
+
+    /// <summary>KLN-D119: the stored piece count the counter saw on a piece-tracking label; null on a kg-only label.</summary>
+    public PieceCount? BookPieces { get; }
+
+    /// <summary>KLN-D119: the counted pieces; given exactly when the label tracks pieces.</summary>
+    public PieceCount? CountedPieces { get; }
+
+    /// <summary>KLN-D119: <c>counted − book</c> pieces on a piece-tracking label, else null.</summary>
+    public int? PieceDifference => CountedPieces is { } counted && BookPieces is { } book ? counted.Value - book.Value : null;
 
     public Guid Id { get; }
 
@@ -91,7 +103,41 @@ public sealed class StockCount
         var direction = Difference > 0m ? StockDirection.In : StockDirection.Out;
         return new StockMovement(movementId, CompanyId, StockMovementKind.CountAdjustment, occurredAtUtc,
             new StockSourceReference(SourceKind, Id),
-            [new StockMovementLine(Position, direction, Kilograms.Positive(Math.Abs(Difference)))]);
+            [new StockMovementLine(Position, direction, Kilograms.Positive(Math.Abs(Difference)),
+                PieceDifference is { } pieces ? PieceCount.Of(Math.Abs(pieces)) : null)]);
+    }
+
+    /// <summary>
+    /// KLN-D119 (AK-2): a piece-tracking label is counted in pieces too, a kg-only label never is (no backfill). Counted
+    /// pieces and kilograms are both zero or both positive. The approved difference is ONE movement line, so a piece
+    /// difference moves with a kilogram difference in the same direction (a missing piece is missing kilograms); a piece
+    /// difference without one, or against it, is refused rather than split into a second movement.
+    /// </summary>
+    private static void RequirePieces(Kilograms book, Kilograms counted, PieceCount? bookPieces, PieceCount? countedPieces)
+    {
+        if ((bookPieces is null) != (countedPieces is null))
+        {
+            throw new InventoryRuleException(bookPieces is null ? InventoryRuleCodes.PieceCountNotTracked
+                : InventoryRuleCodes.PieceCountRequired, "Adetli etiket adetle, adetsiz etiket adetsiz sayılır.");
+        }
+
+        if (bookPieces is not { } bookCount || countedPieces is not { } countedCount)
+        {
+            return;
+        }
+
+        if ((countedCount.Value == 0) != (counted.Value == 0m) || (bookCount.Value == 0) != (book.Value == 0m))
+        {
+            throw new InventoryRuleException(InventoryRuleCodes.InvalidPieceCount,
+                "Sayılan adet ile kilogram birlikte sıfır ya da birlikte pozitif olmalıdır.");
+        }
+
+        var pieceSign = Math.Sign(countedCount.Value - bookCount.Value);
+        if (pieceSign != 0 && pieceSign != Math.Sign(counted.Value - book.Value))
+        {
+            throw new InventoryRuleException(InventoryRuleCodes.InvalidPieceCount,
+                "Adet farkı aynı yönde bir kilogram farkıyla birlikte düzeltilir.");
+        }
     }
 
     private static InventoryRuleException Invalid(string message) =>

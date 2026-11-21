@@ -473,6 +473,9 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                     b.Property<int>("OwnerKind")
                         .HasColumnType("int");
 
+                    b.Property<int?>("PieceCount")
+                        .HasColumnType("int");
+
                     b.Property<Guid>("ProductId")
                         .HasColumnType("uniqueidentifier");
 
@@ -497,6 +500,8 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                     b.ToTable("Balances", "inventory", t =>
                         {
                             t.HasCheckConstraint("CK_Balances_Enums", "[OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] IN (1, 2)");
+
+                            t.HasCheckConstraint("CK_Balances_PieceCount", "[PieceCount] IS NULL OR ([PieceCount] = 0 AND [QuantityKg] = 0) OR ([PieceCount] > 0 AND [QuantityKg] > 0)");
 
                             t.HasCheckConstraint("CK_Balances_Quantity", "[QuantityKg] >= 0");
                         });
@@ -2260,6 +2265,9 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                     b.Property<long>("LabelVersion")
                         .HasColumnType("bigint");
 
+                    b.Property<int?>("PieceCount")
+                        .HasColumnType("int");
+
                     b.Property<decimal>("QuantityKg")
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
@@ -2273,6 +2281,8 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
 
                     b.ToTable("LabelTransformationInputs", "inventory", t =>
                         {
+                            t.HasCheckConstraint("CK_LabelTransformationInputs_PieceCount", "[PieceCount] IS NULL OR [PieceCount] > 0");
+
                             t.HasCheckConstraint("CK_LabelTransformationInputs_Sequence", "[Sequence] >= 1");
 
                             t.HasCheckConstraint("CK_LabelTransformationInputs_State", "[LabelVersion] >= 1 AND [QuantityKg] > 0");
@@ -2296,6 +2306,9 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                     b.Property<long>("LabelVersion")
                         .HasColumnType("bigint");
 
+                    b.Property<int?>("PieceCount")
+                        .HasColumnType("int");
+
                     b.Property<decimal>("QuantityKg")
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
@@ -2309,6 +2322,8 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
 
                     b.ToTable("LabelTransformationOutputs", "inventory", t =>
                         {
+                            t.HasCheckConstraint("CK_LabelTransformationOutputs_PieceCount", "[PieceCount] IS NULL OR [PieceCount] > 0");
+
                             t.HasCheckConstraint("CK_LabelTransformationOutputs_Sequence", "[Sequence] >= 1");
 
                             t.HasCheckConstraint("CK_LabelTransformationOutputs_State", "[LabelVersion] >= 1 AND [QuantityKg] > 0");
@@ -2736,6 +2751,9 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                     b.Property<int>("OwnerKind")
                         .HasColumnType("int");
 
+                    b.Property<int?>("PieceCount")
+                        .HasColumnType("int");
+
                     b.Property<Guid>("ProductId")
                         .HasColumnType("uniqueidentifier");
 
@@ -2754,6 +2772,8 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_MovementLines_Enums", "[Direction] IN (1, 2) AND [OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] IN (1, 2)");
 
                             t.HasCheckConstraint("CK_MovementLines_LineNumber", "[LineNumber] >= 1");
+
+                            t.HasCheckConstraint("CK_MovementLines_PieceCount", "[PieceCount] IS NULL OR [PieceCount] >= 0");
 
                             t.HasCheckConstraint("CK_MovementLines_Quantity", "[QuantityKg] > 0");
                         });
@@ -3511,6 +3531,9 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<int?>("BookPieceCount")
+                        .HasColumnType("int");
+
                     b.Property<Guid>("CompanyId")
                         .HasColumnType("uniqueidentifier");
 
@@ -3525,6 +3548,9 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                     b.Property<decimal>("CountedKg")
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
+
+                    b.Property<int?>("CountedPieceCount")
+                        .HasColumnType("int");
 
                     b.Property<Guid>("CustodianId")
                         .HasColumnType("uniqueidentifier");
@@ -3578,6 +3604,8 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                     b.ToTable("StockCounts", "inventory", t =>
                         {
                             t.HasCheckConstraint("CK_StockCounts_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OwnerId] <> '00000000-0000-0000-0000-000000000000' AND [CustodianId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_StockCounts_PieceCount", "([BookPieceCount] IS NULL AND [CountedPieceCount] IS NULL) OR ([BookPieceCount] IS NOT NULL AND [CountedPieceCount] IS NOT NULL AND (([BookPieceCount] = 0 AND [BookKg] = 0) OR ([BookPieceCount] > 0 AND [BookKg] > 0)) AND (([CountedPieceCount] = 0 AND [CountedKg] = 0) OR ([CountedPieceCount] > 0 AND [CountedKg] > 0)))");
 
                             t.HasCheckConstraint("CK_StockCounts_State", "[OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] IN (1, 2) AND [LabelVersion] >= 1 AND [BookKg] >= 0 AND [CountedKg] >= 0");
 

@@ -21,7 +21,10 @@ public interface IInventoryDefiniteShipmentParticipantV1 : IAsyncDisposable
 /// <summary>
 /// The exact Inventory facts carried by a definite shipment. The allocation is the authority for
 /// the physical label and position; owner, custodian and location are deliberately not accepted
-/// from Logistics. Quantity is lossless kg text and is consumed exactly as supplied.
+/// from Logistics. Quantity is lossless kg text and is consumed exactly as supplied. <c>PieceCount</c> (KLN-D119, AK-2) is
+/// the number of pieces leaving a piece-tracking label: required for such a label (omitted → refused, fail-closed) and
+/// refused on a kg-only label; both answer 400 <see cref="InventoryDefiniteShipmentCodesV1.InvalidQuantity"/>. Callers before
+/// AK-4 omit it and kg-only labels ship exactly as before.
 /// </summary>
 public sealed record InventoryDefiniteShipmentRequestV1(
     Guid CompanyId,
@@ -34,7 +37,8 @@ public sealed record InventoryDefiniteShipmentRequestV1(
     string ExpectedLabelVersion,
     Guid MovementId,
     string QuantityKg,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    int? PieceCount = null);
 
 /// <summary>
 /// Inventory's staged answer. It is uncommitted until the host atomically persists the Logistics

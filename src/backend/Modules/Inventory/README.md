@@ -936,3 +936,20 @@ STK-S3 source checkpoint: EF-generated `20261117140912_AddInventorySubcontractDe
 `20261117165518_AddPurchaseInvoiceCostApplications` is EF-generated and adds append-only invoice application and acceptance-share effect proofs. Company/invoice and company/admission identities are unique; the same Serializable transaction caps all invoiced shares against the immutable accepted quantity and updates only the current original-location TL cost pool. Original receipt and issue stamps and physical movements are unchanged. Actual Purchasing finalized-event document, receipt and quantity proofs are required; missing legacy evidence, mismatched invoice/matched quantity and unknown first receipt cost remain explicit refusals.
 
 Down first refuses with **THROW 51926** while either proof table contains rows. Database UPDATE/DELETE guards use **51927** (application) and **51928** (receipt effect); the immutable child FK also prevents parent deletion. Two Up trigger SQL operations and one Down guard require K3 review; no guard allowlist has been broadened. Exact unabsorbed position differences are persisted once in `inventory.purchase-invoice-cost-difference.proposed.v1`; they are not rounded into or treated as a posted journal. Accounting source proposal, first recognition decisions, central composition/pins and real SQL acceptance remain separate work. Runtime/SQL **NOT_RUN**.
+
+### AK-1 / AK-2 — piece count on the label (KLN-D119)
+
+- AK-1: `IInventoryKilogramsPerUnitSourceV1` now receives the policy date; the host registers
+  `ProductOwnerInventoryKilogramsPerUnitSource` (over Product's `IProductTheoreticalKilogramsPerUnitReadPortV1`) in place of
+  the module's `NoSourceInventoryKilogramsPerUnitSourceV1` default, refusing a figure computed with another policy density.
+  The Sales margin boundary keeps a converted (non-kg) cost `UnitConversionUndecided` until the SAT-D438 golden (AK-6).
+- AK-2: a label either tracks pieces from its first stock or never (`PieceCount`, `StockLedger`). Receipt
+  (`InventoryGoodsReceiptRequestV1.PieceCount`), definite shipment (`InventoryDefiniteShipmentRequestV1.PieceCount`, refusal
+  400 `inventory_definite_shipment_quantity_invalid`), split/merge outputs (`pieceCount`) and stock counts
+  (`countedPieceCount`) carry it; every other movement of a piece-tracking label (block/release, transfer, scrap, supplier
+  return, manufacturing, reversal) is refused fail-closed until its slice sends pieces. Piece-less labels stay piece-less
+  (no backfill) and every piece-less request keeps its stored idempotency hash.
+- `20261121214213_AddInventoryLabelPieceCounts` adds nullable piece columns and checks on `Balances`, `MovementLines`,
+  `LabelTransformationInputs/Outputs` and `StockCounts` (pure DDL). Down first refuses with **THROW 52021** while any piece
+  count exists (forward fix). Real SQL acceptance: `InventorySqlServerRelationalAcceptanceTests.PieceCounts.cs`, **NOT_RUN**
+  locally.

@@ -335,7 +335,8 @@ public sealed partial class InventoryStore(
         var labelObjects = labels.ToDictionary(row => row.Id, IdentityOnly);
         var ledger = StockLedger.FromStoredBalances(balanceRows.Select(row =>
             new StockBalance(Position(row.CompanyId, row.OwnerKind, row.OwnerId, row.CustodianKind, row.CustodianId,
-                row.LocationId, labelObjects[row.LabelId], row.Block), Kilograms.Of(row.QuantityKg))));
+                row.LocationId, labelObjects[row.LabelId], row.Block), Kilograms.Of(row.QuantityKg),
+                row.PieceCount is { } pieces ? PieceCount.Of(pieces) : null)));
 
         // The domain decides; nothing below runs for a refused movement.
         try { ledger.Apply(movement); }
@@ -351,6 +352,7 @@ public sealed partial class InventoryStore(
         foreach (var position in movement.Lines.Select(line => line.Position).Distinct())
         {
             var quantity = ledger.QuantityAt(position).Value;
+            var pieceCount = ledger.PiecesAt(position)?.Value;
             var row = balanceRows.SingleOrDefault(candidate => Matches(candidate, position));
             if (row is null)
             {
@@ -367,11 +369,13 @@ public sealed partial class InventoryStore(
                     ProductId = position.ProductId,
                     Block = (int)position.Block,
                     QuantityKg = quantity,
+                    PieceCount = pieceCount,
                 });
             }
             else
             {
                 row.QuantityKg = quantity;
+                row.PieceCount = pieceCount;
             }
         }
 
@@ -431,6 +435,7 @@ public sealed partial class InventoryStore(
                 ProductId = position.ProductId,
                 Block = (int)position.Block,
                 QuantityKg = line.Quantity.Value,
+                PieceCount = line.Pieces?.Value,
             });
         }
 
@@ -1164,21 +1169,38 @@ public sealed partial class InventoryStore(
                     : null,
                 currencyId = movement.Cost.CurrencyId,
             },
-            lines = movement.Lines.Select(line => new
-            {
-                direction = (int)line.Direction,
-                ownerKind = (int)line.Position.Owner.Kind,
-                ownerId = line.Position.Owner.Id,
-                custodianKind = (int)line.Position.Custodian.Kind,
-                custodianId = line.Position.Custodian.Id,
-                locationId = line.Position.LocationId,
-                labelId = line.Position.LabelId,
-                productId = line.Position.ProductId,
-                block = (int)line.Position.Block,
-                quantityKg = line.Quantity.ToString(),
-            }),
+            lines = movement.Lines.Select(PayloadLine),
         }, Json);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// One line of the canonical movement content. KLN-D119: the piece count joins the content only when the line carries
+    /// one, so every piece-less movement keeps exactly the hash it had before AK-2 (stored replays stay valid).
+    /// </summary>
+    private static object PayloadLine(StockMovementLine line)
+    {
+        var kilogramsOnly = new
+        {
+            direction = (int)line.Direction,
+            ownerKind = (int)line.Position.Owner.Kind,
+            ownerId = line.Position.Owner.Id,
+            custodianKind = (int)line.Position.Custodian.Kind,
+            custodianId = line.Position.Custodian.Id,
+            locationId = line.Position.LocationId,
+            labelId = line.Position.LabelId,
+            productId = line.Position.ProductId,
+            block = (int)line.Position.Block,
+            quantityKg = line.Quantity.ToString(),
+        };
+        return line.Pieces is { } pieces
+            ? new
+            {
+                kilogramsOnly.direction, kilogramsOnly.ownerKind, kilogramsOnly.ownerId, kilogramsOnly.custodianKind,
+                kilogramsOnly.custodianId, kilogramsOnly.locationId, kilogramsOnly.labelId, kilogramsOnly.productId,
+                kilogramsOnly.block, kilogramsOnly.quantityKg, pieceCount = pieces.Value,
+            }
+            : kilogramsOnly;
     }
 
     /// <summary>

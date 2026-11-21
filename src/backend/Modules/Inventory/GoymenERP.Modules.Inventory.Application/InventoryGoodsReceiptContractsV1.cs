@@ -58,6 +58,8 @@ public sealed record InventoryGoodsReceiptSourceV1(
 /// tolerance, quality or initial block policy is inferred here. Owner, custodian, location and block
 /// must be supplied from already-authorized server-side facts. <paramref name="PurchaseOrderVersionAfter"/>
 /// is Purchasing's returned post-stage version, never the host request's pre-stage expected version.
+/// <c>PieceCount</c> (KLN-D119, AK-2) is the received piece count of a piece-tracking product: when given (at least one) the
+/// new label tracks pieces from its first stock; when omitted (every caller before AK-3) the label is kg-only as before.
 /// </summary>
 public sealed record InventoryGoodsReceiptRequestV1(
     Guid CompanyId,
@@ -82,7 +84,8 @@ public sealed record InventoryGoodsReceiptRequestV1(
     BlockState InitialBlock,
     Guid MovementId,
     string QuantityKg,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    int? PieceCount = null);
 
 public sealed record InventoryGoodsReceiptResultV1(
     Guid CompanyId,

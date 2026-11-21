@@ -32,7 +32,11 @@ public static class InventoryStockCountApiV1
     public const int LabelCountsLimit = 50;
 }
 
-/// <summary>One physical count of one stocked label, as the client sends it.</summary>
+/// <summary>
+/// One physical count of one stocked label, as the client sends it. <c>CountedPieceCount</c> (KLN-D119, AK-2) is required
+/// for a label that tracks pieces and refused for a kg-only label (400 validation); a piece difference is posted together
+/// with a kilogram difference in the same direction.
+/// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record RecordInventoryStockCountV1(
     [property: JsonRequired] Guid CountId,
@@ -40,7 +44,8 @@ public sealed record RecordInventoryStockCountV1(
     [property: JsonRequired] string ExpectedLabelVersion,
     [property: JsonRequired] string CountedKg,
     [property: JsonRequired] DateTimeOffset CountedAtUtc,
-    [property: JsonRequired] string Reason);
+    [property: JsonRequired] string Reason,
+    int? CountedPieceCount = null);
 
 /// <summary>The wire form is the name ("Approve" / "Reject").</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<InventoryStockCountDecisionKindV1>))]
@@ -71,6 +76,8 @@ public sealed record InventoryStockCountDecisionViewV1(
 /// One count: the counted position as stored when counted, the book kg the counter saw at that label version,
 /// the counted kg, the signed difference (canonical text, e.g. <c>-2.5</c>), the reason and the status —
 /// <c>NoDifference</c> (closed, nothing to post), <c>PendingApproval</c>, <c>Approved</c> or <c>Rejected</c>.
+/// <c>BookPieceCount</c> / <c>CountedPieceCount</c> appear only for a piece-tracking label (KLN-D119); a kg-only count answers
+/// exactly as before.
 /// </summary>
 public sealed record InventoryStockCountViewV1(
     Guid CountId,
@@ -91,7 +98,9 @@ public sealed record InventoryStockCountViewV1(
     string Reason,
     DateTimeOffset RecordedAtUtc,
     string Status,
-    InventoryStockCountDecisionViewV1? Decision);
+    InventoryStockCountDecisionViewV1? Decision,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? BookPieceCount = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? CountedPieceCount = null);
 
 public sealed record InventoryStockCountResultV1(
     InventoryStockCountViewV1 Count,

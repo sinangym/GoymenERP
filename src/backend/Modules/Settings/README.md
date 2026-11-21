@@ -136,7 +136,11 @@ stays exactly as the unavailable adapter answers it.
 
 The approved profiles: `ApprovedUnitProfileCatalog.GdcKilogramV1`, and since SAT-D18
 (Sinan, 2026-10-26, `docs/decisions/SINAN_KARARLARI_2026-10-26_SATIS_EK.md`) `GspKilogramV1` and
-`GinKilogramV1` with the same values, each its own per-company version. GDC's:
+`GinKilogramV1` with the same values, each its own per-company version. Since AK-1 of the piece/kg package (SAT-D434/D435,
+KLN-D119, `docs/decisions/SINAN_KARARLARI_2026-11-21_TREN_KAPANIS.md`) every company also has a piece profile
+(`GdcPieceV1`/`GspPieceV1`/`GinPieceV1`: identity `adet`/`count`, scale 0, from 2026-11-21, no end); metre and tonne stay
+identities without a profile. A company whose baseline was already transferred keeps its stored rows (URN-D5) and records
+the piece version itself. GDC's kg profile:
 
 | Field | Value | Source |
 |---|---|---|
