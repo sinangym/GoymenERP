@@ -262,13 +262,19 @@ public sealed record InventoryKilogramsPerUnitV1(
 /// KLN-D85 seam: the kilograms one unit (piece, metre…) of the product weighs, computed from the product's own facts
 /// (dimensions, kg/m; URN-D11 / URN-D16) with the policy's density through the shared deterministic unit calculator. The
 /// product card carries no separate coefficient (KLN-D85). Inventory owns no product facts and no unit formula, so the
-/// implementation is the host's adapter over the Product owner's answer; Inventory's default is fail-closed
-/// (<see cref="InventoryKilogramsPerUnitOutcomeV1.NoSource"/>) until that adapter exists.
+/// implementation is the host's adapter over the Product owner's answer (AK-1: <c>ProductOwnerInventoryKilogramsPerUnitSource</c>
+/// over <c>IProductTheoreticalKilogramsPerUnitReadPortV1</c>); Inventory's module default stays fail-closed
+/// (<see cref="InventoryKilogramsPerUnitOutcomeV1.NoSource"/>) where no host adapter is registered.
+/// <para>
+/// <c>policyDate</c> is the date of the Settings unit conversion policy the caller read and <c>densityGramsPerCubicCentimetre</c>
+/// that policy's density: the source answers for the same date and must refuse (<see cref="InventoryKilogramsPerUnitOutcomeV1.Unavailable"/>)
+/// when its own figure was computed with another density, so one conversion never mixes two policy versions.
+/// </para>
 /// </summary>
 public interface IInventoryKilogramsPerUnitSourceV1
 {
-    Task<InventoryKilogramsPerUnitV1> ReadAsync(Guid productId, Guid unitId, decimal densityGramsPerCubicCentimetre,
-        CancellationToken cancellationToken = default);
+    Task<InventoryKilogramsPerUnitV1> ReadAsync(Guid productId, Guid unitId, DateOnly policyDate,
+        decimal densityGramsPerCubicCentimetre, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

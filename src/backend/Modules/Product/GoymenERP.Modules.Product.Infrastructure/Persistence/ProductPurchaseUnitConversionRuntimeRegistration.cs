@@ -23,6 +23,8 @@ public static class ProductPurchaseUnitConversionRuntimeRegistration
             && provider.GetService<ISettingsPrerequisiteProvider>() is not null
                 ? CreateConfiguredService(provider)
                 : new UnavailableProductPurchaseUnitConversion());
+        // AK-1: the theoretical kg/unit read is a view over the same owner source; when the source is unavailable so is it.
+        services.TryAddScoped<IProductTheoreticalKilogramsPerUnitReadPortV1, ProductTheoreticalKilogramsPerUnitReadPort>();
         return services;
     }
 

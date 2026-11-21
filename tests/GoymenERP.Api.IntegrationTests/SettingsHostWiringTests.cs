@@ -608,6 +608,31 @@ public sealed class SettingsHostWiringTests
         }
     }
 
+    [Fact]
+    public void AK1_the_host_composes_the_product_owner_kg_per_unit_source_for_inventory_once_instead_of_the_no_source_default()
+    {
+        using var factory = Host(Gdc);
+        using var scope = factory.Services.CreateScope();
+
+        Assert.IsType<GoymenERP.Api.InventoryRuntime.ProductOwnerInventoryKilogramsPerUnitSource>(
+            Assert.Single(scope.ServiceProvider.GetServices<IInventoryKilogramsPerUnitSourceV1>()));
+        Assert.IsType<GoymenERP.Modules.Product.Infrastructure.Persistence.ProductTheoreticalKilogramsPerUnitReadPort>(
+            Assert.Single(scope.ServiceProvider.GetServices<IProductTheoreticalKilogramsPerUnitReadPortV1>()));
+    }
+
+    [Fact]
+    public async Task AK1_GDC_piece_resolves_to_its_whole_number_approved_profile_through_the_host()
+    {
+        using var factory = Host(Gdc);
+        using var scope = factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ISettingsPrerequisiteProvider>();
+
+        var profile = await provider.GetUnitProfileAsync(SettingsUnitIdentitiesV1.Piece, new DateOnly(2026, 11, 21));
+
+        Assert.Equal((Gdc, SettingsUnitIdentitiesV1.Piece, false, 0), (profile.CompanyId, profile.UnitId, profile.IsKilogram, profile.Scale));
+        Assert.Equal(ApprovedUnitProfileCatalog.GdcPieceV1.ProfileId, profile.Profile.ProfileId);
+    }
+
     private static WebApplicationFactoryWithFixedContext Host(Guid company, Guid? actorAllowedIn = null) =>
         new(company, actorAllowedIn ?? company);
 

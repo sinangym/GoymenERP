@@ -20,7 +20,7 @@ public sealed record ApprovedUnitProfileEntry(
 /// <summary>
 /// The approved unit profiles, as versioned, reviewed source data (T02-a).
 /// <para>
-/// <b>Why source data and not a table:</b> one profile is approved today and nothing may edit it
+/// <b>Why source data and not a table:</b> the approved profiles are fixed and nothing may edit them
 /// at runtime — a new approval is a new version, reviewed like code. Keeping it here means no
 /// migration, no seed write, no DbContext and no host change, and every value is visible in the
 /// diff that introduces it. When profiles become user-maintained, a persistent provider replaces
@@ -45,6 +45,9 @@ public sealed class ApprovedUnitProfileCatalog
     /// <summary>GIN — the permanent company identity pinned by the same Organization seed migration.
     /// It stays invoice-closed (DEC-ORG-005); a unit profile does not change that.</summary>
     public static readonly Guid GinCompanyId = Guid.Parse("10000000-0000-0000-0000-000000000003");
+
+    /// <summary>KLN-D119: a piece count is a whole number, so the piece profile carries no decimals.</summary>
+    public const int PieceScale = 0;
 
     /// <summary>
     /// GDC kg, version 1. Values and sources:
@@ -102,7 +105,52 @@ public sealed class ApprovedUnitProfileCatalog
         Source = "SAT-D18 (SINAN_KARARLARI_2026-10-26_SATIS_EK.md); values Sinan Ö1/Ö2 2026-09-18; Master §28.1",
     };
 
-    public static ApprovedUnitProfileCatalog Approved { get; } = new([GdcKilogramV1, GspKilogramV1, GinKilogramV1]);
+    /// <summary>
+    /// GDC piece (adet), version 1 (AK-1). Values and sources:
+    /// <list type="bullet">
+    /// <item>unit piece: SAT-D434/SAT-D435 and KLN-D119 (Sinan, 2026-11-21,
+    /// <c>docs/decisions/SINAN_KARARLARI_2026-11-21_TREN_KAPANIS.md</c>, answers 19 and 25): goods are sold and bought by
+    /// the piece and the stock label carries a piece count; the identity, code <c>adet</c> and dimension <c>count</c> are
+    /// the existing standard identity (ALS-D43/D51, <see cref="SettingsUnitIdentitiesV1.Piece"/>);</item>
+    /// <item>scale 0 (<see cref="PieceScale"/>): a piece count is a whole number (KLN-D119 "etiket adet + kg");</item>
+    /// <item>effective from that decision's date with no end;</item>
+    /// <item>profile id: UUIDv5 name "unit-profile:10000000-0000-0000-0000-000000000001:piece:v1" in the namespace documented on
+    /// <see cref="SettingsUnitIdentitiesV1"/>.</item>
+    /// </list>
+    /// A profile only lets the company use the unit; every module still refuses what it does not support yet (purchase and
+    /// loading lines stay kilogram-only until AK-3/AK-4). Metre is not opened here.
+    /// </summary>
+    public static readonly ApprovedUnitProfileEntry GdcPieceV1 = new(
+        GdcCompanyId,
+        SettingsUnitIdentitiesV1.Piece,
+        UnitCode: "adet",
+        DimensionCode: "count",
+        IsKilogram: false,
+        ProfileId: Guid.Parse("a2d30cad-e3ac-5484-adbc-d56daa5304f6"),
+        Version: 1,
+        Scale: PieceScale,
+        IsActive: true,
+        EffectiveFrom: new DateOnly(2026, 11, 21),
+        EffectiveThrough: null,
+        Source: "SAT-D434/SAT-D435, KLN-D119 (SINAN_KARARLARI_2026-11-21_TREN_KAPANIS.md); identity ALS-D43/D51");
+
+    /// <summary>GSP piece, version 1: as <see cref="GdcPieceV1"/>. UUIDv5 name "unit-profile:10000000-0000-0000-0000-000000000002:piece:v1".</summary>
+    public static readonly ApprovedUnitProfileEntry GspPieceV1 = GdcPieceV1 with
+    {
+        CompanyId = GspCompanyId,
+        ProfileId = Guid.Parse("0e1c5ef9-2882-5f3e-af45-21ce4f1e5fad"),
+    };
+
+    /// <summary>GIN piece, version 1: as <see cref="GdcPieceV1"/>; GIN stays invoice-closed (DEC-ORG-005).
+    /// UUIDv5 name "unit-profile:10000000-0000-0000-0000-000000000003:piece:v1".</summary>
+    public static readonly ApprovedUnitProfileEntry GinPieceV1 = GdcPieceV1 with
+    {
+        CompanyId = GinCompanyId,
+        ProfileId = Guid.Parse("5ba81ac9-9bea-587b-afbd-d407f541fdc1"),
+    };
+
+    public static ApprovedUnitProfileCatalog Approved { get; } = new(
+        [GdcKilogramV1, GspKilogramV1, GinKilogramV1, GdcPieceV1, GspPieceV1, GinPieceV1]);
 
     private readonly IReadOnlyDictionary<(Guid CompanyId, Guid UnitId), ApprovedUnitProfileEntry[]> _versions;
     private readonly IReadOnlySet<Guid> _companies;

@@ -27,6 +27,7 @@ using GoymenERP.Modules.Sales.Infrastructure.Outbox;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
 using GoymenERP.Modules.Work.Infrastructure;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.Shell;
 
@@ -62,6 +63,8 @@ public static class TrainCompletionHostComposition
             (IPurchasingPartyAccountPortV2)provider.GetRequiredService<IPurchasingPartyAccountPortV1>());
         services.AddProductPurchaseUnitConversion(provider => provider.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
         services.AddScoped<IInventoryProductUnitConversionSourceV1, ProductOwnerInventoryUnitConversionSource>();
+        // AK-1: Inventory's kg/unit seam reads the Product owner (replaces the module's fail-closed NoSource default).
+        services.Replace(ServiceDescriptor.Scoped<IInventoryKilogramsPerUnitSourceV1, ProductOwnerInventoryKilogramsPerUnitSource>());
         services.AddScoped<IManufacturingPaintSelectionSourceV1, ManufacturingPaintSelectionSourceV1>();
         services.AddScoped<PurchaseReceiptAdjustmentParticipantFactoryV1>(provider => (connection, transaction, company, token) =>
             PurchaseReceiptAdjustmentParticipant.EnlistAsync(connection, transaction, company,

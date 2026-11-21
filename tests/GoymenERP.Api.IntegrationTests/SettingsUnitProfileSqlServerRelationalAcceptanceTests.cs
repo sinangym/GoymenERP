@@ -62,6 +62,9 @@ public sealed class SettingsUnitProfileSqlServerRelationalAcceptanceTests
         using var viewer = run.Client(viewerSubject, CompanyA);
         using var editorB = run.Client(editorBSubject, CompanyB);
         var approvedA = ApprovedUnitProfileCatalog.Approved.Entries.Single(entry => entry.CompanyId == CompanyA && entry.UnitId == Kilogram);
+        // AK-1: company A's approved entries are kg and piece; every count below follows the catalog, not a literal.
+        var approvedEntriesA = ApprovedUnitProfileCatalog.Approved.Entries.Count(entry => entry.CompanyId == CompanyA);
+        Assert.Equal(2, approvedEntriesA);
         var transfer = new TransferUnitProfileBaselineRequestV1("SENTETIK birim profili başlangıç aktarımı");
         var record = new RecordUnitProfileRequestV1("1", Kilogram, approvedA.Scale, approvedA.IsActive, "SENTETIK birim profili");
 
@@ -88,7 +91,9 @@ public sealed class SettingsUnitProfileSqlServerRelationalAcceptanceTests
         // Before the transfer: the view shows the approved entries, the port answers exactly as the approved provider.
         var before = await run.JsonAsync(editor, Root);
         Assert.False(before.GetProperty("isBaselineTransferred").GetBoolean());
-        var catalogUnit = Assert.Single(before.GetProperty("units").EnumerateArray());
+        Assert.Equal(approvedEntriesA, before.GetProperty("units").GetArrayLength());
+        var catalogUnit = Assert.Single(before.GetProperty("units").EnumerateArray(),
+            unit => unit.GetProperty("unitId").GetGuid() == Kilogram);
         Assert.Equal((Kilogram, "0"), (catalogUnit.GetProperty("unitId").GetGuid(), catalogUnit.GetProperty("version").GetString()));
         var catalogVersion = Assert.Single(catalogUnit.GetProperty("versions").EnumerateArray());
         Assert.Equal(("1", approvedA.Scale, SalesPolicySourceKindsV1.CompiledBaselineV0),
@@ -139,10 +144,10 @@ public sealed class SettingsUnitProfileSqlServerRelationalAcceptanceTests
             + "AND [EffectiveFrom] = @d AND [SourceKind] = 'CompiledBaselineV0' AND [DecisionReference] = @ref AND [RecordedBy] = @a",
             ("@c", CompanyA), ("@u", Kilogram), ("@p", approvedA.ProfileId), ("@code", approvedA.UnitCode), ("@s", approvedA.Scale),
             ("@d", approvedA.EffectiveFrom.ToDateTime(TimeOnly.MinValue)), ("@ref", approvedA.Source), ("@a", editorActor)));
-        Assert.Equal(1, await run.ScalarAsync<int>(CountRows));
+        Assert.Equal(approvedEntriesA, await run.ScalarAsync<int>(CountRows));
         Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM [settings].[UnitProfileBaselineTransfers] WHERE [CompanyId] = @c AND [EntryCount] = 1 "
-            + "AND [TransferredBy] = @a", ("@c", CompanyA), ("@a", editorActor)));
+            "SELECT COUNT(*) FROM [settings].[UnitProfileBaselineTransfers] WHERE [CompanyId] = @c AND [EntryCount] = @n "
+            + "AND [TransferredBy] = @a", ("@c", CompanyA), ("@n", approvedEntriesA), ("@a", editorActor)));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = @e AND [CompanyId] = @c AND [PermissionCode] = @p",
             ("@e", TransferredEvent), ("@c", CompanyA), ("@p", Manage)));
@@ -151,7 +156,9 @@ public sealed class SettingsUnitProfileSqlServerRelationalAcceptanceTests
         Assert.Equal(catalogAnswer, await run.UnitProfileAsync(CompanyA, run.Today));
         var transferred = await run.JsonAsync(editor, Root);
         Assert.True(transferred.GetProperty("isBaselineTransferred").GetBoolean());
-        Assert.Equal("1", Assert.Single(transferred.GetProperty("units").EnumerateArray()).GetProperty("version").GetString());
+        Assert.Equal(approvedEntriesA, transferred.GetProperty("units").GetArrayLength());
+        Assert.All(transferred.GetProperty("units").EnumerateArray(),
+            unit => Assert.Equal("1", unit.GetProperty("version").GetString()));
 
         // Refusals before anything is stored (not replayed under their key): an unknown unit, a kilogram scale above Ö2.
         using (var unknown = await editor.SendAsync(Json(HttpMethod.Post, Versions, "k-unknown", record with { UnitId = Guid.NewGuid() })))
@@ -179,7 +186,7 @@ public sealed class SettingsUnitProfileSqlServerRelationalAcceptanceTests
 
         // The in-force values again: a stored no-op (204), no row, no audit.
         await run.CommandAsync(editor, Versions, "k-noop", record, HttpStatusCode.NoContent);
-        Assert.Equal(1, await run.ScalarAsync<int>(CountRows));
+        Assert.Equal(approvedEntriesA, await run.ScalarAsync<int>(CountRows));
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = @e", ("@e", RecordedEvent)));
 
@@ -216,7 +223,7 @@ public sealed class SettingsUnitProfileSqlServerRelationalAcceptanceTests
         var guard = Assert.IsType<SqlOperation>(new AddUnitProfileVersions().DownOperations[0]).Sql;
         var refusedRollback = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
         Assert.Equal(51341, refusedRollback.Number);
-        Assert.Equal(2, await run.ScalarAsync<int>(CountRows));
+        Assert.Equal(approvedEntriesA + 1, await run.ScalarAsync<int>(CountRows));
         await run.ExecuteAsync("DELETE FROM [settings].[UnitProfileVersions];");
         var markerOnly = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
         Assert.Equal(51341, markerOnly.Number);

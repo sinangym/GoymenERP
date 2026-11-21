@@ -124,6 +124,8 @@ public sealed class InventoryAverageCostUnitReadPortTests
                 answer.PolicyProfileId, answer.PolicyVersion));
         Assert.Equal([PolicyDate], policies.Dates);
         Assert.Equal([(Product, Piece, 7.85m)], weights.Calls);
+        // AK-1: the weight source answers for the same policy date the conversion policy was read for.
+        Assert.Equal([PolicyDate], weights.PolicyDates);
     }
 
     [Fact]
@@ -379,10 +381,13 @@ public sealed class InventoryAverageCostUnitReadPortTests
 
         public List<(Guid ProductId, Guid UnitId, decimal Density)> Calls { get; } = [];
 
-        public Task<InventoryKilogramsPerUnitV1> ReadAsync(Guid productId, Guid unitId, decimal densityGramsPerCubicCentimetre,
-            CancellationToken cancellationToken = default)
+        public List<DateOnly> PolicyDates { get; } = [];
+
+        public Task<InventoryKilogramsPerUnitV1> ReadAsync(Guid productId, Guid unitId, DateOnly policyDate,
+            decimal densityGramsPerCubicCentimetre, CancellationToken cancellationToken = default)
         {
             Calls.Add((productId, unitId, densityGramsPerCubicCentimetre));
+            PolicyDates.Add(policyDate);
             return fails ? throw new InvalidOperationException("synthetic failure") : Task.FromResult(answer!);
         }
     }

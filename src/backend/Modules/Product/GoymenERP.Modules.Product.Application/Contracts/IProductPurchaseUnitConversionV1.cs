@@ -20,12 +20,14 @@ public sealed record ProductPurchaseConversionUnitV1(Guid UnitId, ProductPhysica
 /// Fixed kg/ton scales are unit semantics, not an invented Product fixed-conversion definition.
 /// DefaultPriceUnitId is the card's actual Price reference; it never falls back to another unit.
 /// The consumer measures its own permission; this reference read requires current company membership.
+/// PolicyDensityGramsPerCubicCentimetre is the density of the policy named by PolicyId/PolicyVersion (null without a
+/// policy), so a consumer that reads the policy itself can prove both reads saw the same version (AK-1).
 /// </summary>
 public sealed record ProductPurchaseUnitConversionSourceV1(Guid CompanyId, Guid ProductId, string ProductVersion,
     Guid? DefaultPriceUnitId, UnitConversionClassV1 ConversionClass,
     IReadOnlyList<ProductPurchaseConversionUnitV1> Units, string FormulaVersion,
     long? DimensionVersion, long? WeightTableVersion, string? WeightTableSource,
-    Guid? PolicyId, long? PolicyVersion, string? Reason)
+    Guid? PolicyId, long? PolicyVersion, string? Reason, decimal? PolicyDensityGramsPerCubicCentimetre = null)
 {
     public int ContractVersion => ProductPurchaseUnitConversionContractV1.Version;
 }

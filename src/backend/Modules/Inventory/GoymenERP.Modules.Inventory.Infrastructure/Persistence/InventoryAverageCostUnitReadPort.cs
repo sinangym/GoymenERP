@@ -93,7 +93,7 @@ internal sealed class InventoryAverageCostUnitReadPort(
         try
         {
             weight = await kilogramsPerUnit.ReadAsync(
-                productId, unitId, policy.DensityGramsPerCubicCentimetre, cancellationToken);
+                productId, unitId, policyDate, policy.DensityGramsPerCubicCentimetre, cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -134,14 +134,14 @@ internal sealed class InventoryAverageCostUnitReadPort(
 }
 
 /// <summary>
-/// KLN-D85 default for <see cref="IInventoryKilogramsPerUnitSourceV1"/>: no source. Product exposes no kilograms-per-unit
-/// port Inventory may call yet and Settings has no piece or metre identity, so every non-kilogram conversion is refused
-/// (fail-closed) until the host registers an adapter over the Product owner's answer. Nothing here computes a weight.
+/// KLN-D85 module default for <see cref="IInventoryKilogramsPerUnitSourceV1"/>: no source. Inventory cannot reach the Product
+/// owner by itself, so without a host adapter (AK-1 registers one over the Product owner's theoretical kg/unit read) every
+/// non-kilogram conversion is refused (fail-closed). Nothing here computes a weight.
 /// </summary>
 public sealed class NoSourceInventoryKilogramsPerUnitSourceV1 : IInventoryKilogramsPerUnitSourceV1
 {
-    public Task<InventoryKilogramsPerUnitV1> ReadAsync(Guid productId, Guid unitId, decimal densityGramsPerCubicCentimetre,
-        CancellationToken cancellationToken = default)
+    public Task<InventoryKilogramsPerUnitV1> ReadAsync(Guid productId, Guid unitId, DateOnly policyDate,
+        decimal densityGramsPerCubicCentimetre, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(new InventoryKilogramsPerUnitV1(InventoryKilogramsPerUnitOutcomeV1.NoSource, null, null));

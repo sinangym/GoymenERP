@@ -15,6 +15,7 @@ public sealed class ApprovedUnitProfileProviderTests
     private static readonly Guid Gdc = Guid.Parse("10000000-0000-0000-0000-000000000001");
     private static readonly Guid Gsp = Guid.Parse("10000000-0000-0000-0000-000000000002");
     private static readonly Guid Kg = Guid.Parse("c5ef643e-a6e8-51f3-89f2-8e68b00cb983");
+    private static readonly Guid Piece = Guid.Parse("5e0cbe45-61cc-541a-834a-366355de36e5");
     private static readonly DateOnly Approval = new(2026, 9, 18);
 
     [Fact]
@@ -71,15 +72,56 @@ public sealed class ApprovedUnitProfileProviderTests
     [Fact]
     public void The_approved_catalog_holds_exactly_the_approved_profiles()
     {
-        // No fixture, example or second unit rides along with the approved data: GDC kg (Ö1/Ö2) and
-        // GSP/GIN kg (SAT-D18), one per company.
+        // No fixture or example rides along with the approved data: GDC kg (Ö1/Ö2), GSP/GIN kg (SAT-D18) and the piece
+        // profile of every company (SAT-D434/KLN-D119, AK-1), one per company and unit. Metre and tonne have no profile.
         var entries = ApprovedUnitProfileCatalog.Approved.Entries;
-        Assert.Equal(3, entries.Count);
+        Assert.Equal(6, entries.Count);
         Assert.Contains(ApprovedUnitProfileCatalog.GdcKilogramV1, entries);
         Assert.Contains(ApprovedUnitProfileCatalog.GspKilogramV1, entries);
         Assert.Contains(ApprovedUnitProfileCatalog.GinKilogramV1, entries);
+        Assert.Contains(ApprovedUnitProfileCatalog.GdcPieceV1, entries);
+        Assert.Contains(ApprovedUnitProfileCatalog.GspPieceV1, entries);
+        Assert.Contains(ApprovedUnitProfileCatalog.GinPieceV1, entries);
         Assert.All(entries, entry => Assert.False(string.IsNullOrWhiteSpace(entry.Source)));
-        Assert.All(entries, entry => Assert.Equal(Kg, entry.UnitId));
+        Assert.Equal(3, entries.Count(entry => entry.UnitId == Kg));
+        Assert.Equal(3, entries.Count(entry => entry.UnitId == Piece));
+        Assert.DoesNotContain(entries, entry => entry.UnitId == SettingsUnitIdentitiesV1.Metre
+            || entry.UnitId == SettingsUnitIdentitiesV1.Tonne);
+    }
+
+    [Theory]
+    [InlineData("10000000-0000-0000-0000-000000000001", "a2d30cad-e3ac-5484-adbc-d56daa5304f6")] // GDC
+    [InlineData("10000000-0000-0000-0000-000000000002", "0e1c5ef9-2882-5f3e-af45-21ce4f1e5fad")] // GSP
+    [InlineData("10000000-0000-0000-0000-000000000003", "5ba81ac9-9bea-587b-afbd-d407f541fdc1")] // GIN
+    public async Task Every_company_gets_a_whole_number_piece_profile_from_KLN_D119(string company, string profileId)
+    {
+        var companyId = Guid.Parse(company);
+        var decision = new DateOnly(2026, 11, 21);
+
+        var profile = await Provider(companyId).GetUnitProfileAsync(Piece, decision);
+        var before = await Provider(companyId).GetUnitProfileAsync(Piece, decision.AddDays(-1));
+
+        Assert.Equal(companyId, profile.CompanyId);
+        // The standard identity (ALS-D43/D51): code "adet", dimension "count", not a kilogram.
+        Assert.Equal((Piece, "adet", "count", false), (profile.UnitId, profile.UnitCode, profile.DimensionCode, profile.IsKilogram));
+        // UUIDv5 name "unit-profile:<company>:piece:v1" in the unit-profiles namespace.
+        Assert.Equal(new ProfileVersionV1(Guid.Parse(profileId), 1), profile.Profile);
+        Assert.Equal(0, profile.Scale);
+        Assert.Equal(ApprovedUnitProfileCatalog.PieceScale, profile.Scale);
+        Assert.True(profile.IsActive);
+        Assert.Equal(decision, profile.EffectiveFrom);
+        Assert.Null(profile.EffectiveThrough);
+        // Before the decision the real window comes back, so a consumer's date check refuses it.
+        Assert.Equal(decision, before.EffectiveFrom);
+    }
+
+    [Fact]
+    public async Task Metre_stays_without_a_company_profile()
+    {
+        var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => Provider(Gdc).GetUnitProfileAsync(SettingsUnitIdentitiesV1.Metre, new DateOnly(2026, 11, 21)));
+
+        Assert.Equal(SettingsPrerequisiteCodesV1.UnitProfileNotFound, failure.Code);
     }
 
     [Theory]
