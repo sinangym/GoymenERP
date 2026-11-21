@@ -1,6 +1,7 @@
 using System.Text.Json;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Costing;
+using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
@@ -11,6 +12,49 @@ namespace GoymenERP.Api.IntegrationTests;
 
 public sealed partial class InventorySqlServerRelationalAcceptanceTests
 {
+    [SqlServerFact]
+    public async Task A_split_after_an_explicit_return_makes_the_shared_pool_unreadable_without_stopping_the_products_movements()
+    {
+        await using var run = await Run.StartAsync();
+        var receipt = await SeedInvoiceCostReceipt(run, null);
+        await ApplyInvoiceCostCore(run, InvoiceCostEvent(receipt, 1m, 10m), new FirstCostPrerequisites());
+        var preview = await ReturnSourcesAsync(run, receipt);
+        var returned = CombinedReversalWrite(receipt) with
+        {
+            IsSupplierReturn = true, OriginalUnitCostTryPerKg = "10",
+            CostAllocation = new PurchaseSupplierReturnCostAllocationV1(preview.SourceVersion,
+                new PurchaseSupplierReturnSourceSelectionV1(false, "1", "1"), []),
+            Request = CombinedReversalWrite(receipt).Request with { UndoQuantity = "1", MeasuredUndoQuantityKg = "1" },
+        };
+        await RunCombinedReversalHostAsync(run, returned, GoodsReceiptPurchaseEnvelope(run, "B2-split-pool", "B2-split-pool"));
+
+        // The split breaks the sole-label lineage the supplier-return attribution needs (K3-REVIEW-B P1-2).
+        var left = Guid.NewGuid();
+        await RepackFirstFxAsync(run, InventoryLabelTransformationKindV1.Split, [receipt.LabelId], [(left, 1m), (Guid.NewGuid(), 2m)]);
+        await using (var read = run.Context(CompanyA))
+        {
+            var failure = await Assert.ThrowsAsync<InventorySupplierReturnExitException>(() => ReturnSourcesAsync(run, receipt));
+            Assert.Equal((503, InventorySupplierReturnExitCodesV1.ReceiptTraceInvalid), (failure.Status, failure.Code));
+            var pool = await InventoryStore.ReadCostPoolAsync(read, Company(CompanyA), receipt.LocationId,
+                receipt.ProductId, SettingsCurrencyIdentitiesV1.TurkishLira, default);
+            Assert.False(pool.SourceReadable);
+            Assert.False(pool.IsConsistent);
+        }
+
+        GoymenERP.Modules.Inventory.Domain.Labels.MaterialLabel label;
+        await using (var owner = run.Store(CompanyA)) label = (await owner.Labels.FindLabelAsync(left))!;
+        var shipment = Movement(CompanyA, StockMovementKind.Issue,
+            new StockSourceReference(InventoryLabelDispositionReader.DefiniteShipmentSourceKind, Guid.NewGuid(), Guid.NewGuid()),
+            Out(Position(CompanyA, receipt.LocationId, label, BlockState.Free), 1m));
+        await using (var owner = run.Store(CompanyA)) await owner.Store.RecordMovementAsync(shipment, Metadata(run));
+
+        await using var verify = run.Context(CompanyA);
+        Assert.True(await verify.Movements.AnyAsync(x => x.Id == shipment.Id));
+        Assert.All(await verify.MovementCostStamps.Where(x => x.MovementId == shipment.Id).ToListAsync(),
+            stamp => Assert.Null(stamp.Amount));
+        Assert.Equal(0m, await LabelBlockKgAsync(run, left, BlockState.Free));
+    }
+
     [SqlServerFact]
     public async Task Two_invoice_lines_in_one_pool_after_an_explicit_return_commit_their_source_shares_atomically_and_replay()
     {

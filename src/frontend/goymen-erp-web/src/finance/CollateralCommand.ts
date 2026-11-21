@@ -144,6 +144,8 @@ export function useCollateralAttempt(binding: CollateralAttemptBinding | null, o
   const [state, setState] = useState<CollateralAttemptState>(() =>
     pending === null ? { phase: 'idle' } : { phase: 'unknown', reason: 'recalled' })
   const pendingRef = useRef(pending)
+  // K3-REVIEW-B P3-2: true while the pending attempt has never been reserved, so it has never left this tab.
+  const unsentRef = useRef(false)
   const bindingKey = JSON.stringify([binding?.sessionBinding, binding?.actorId, companyId, operation, target])
   const originalBinding = useRef(bindingKey)
   const liveBinding = useRef(bindingKey)
@@ -170,9 +172,11 @@ export function useCollateralAttempt(binding: CollateralAttemptBinding | null, o
     setPending(claimed)
     if (!reserve(storeKey, operation, target, claimed)) {
       inFlight.current = false
+      if (!previouslyUnknown) unsentRef.current = true
       setState({ phase: 'unknown', reason: 'recalled' })
       return
     }
+    unsentRef.current = false
     setState({ phase: 'submitting' })
     const reply = await sendCollateralCommand(companyId, attempt.command, attempt.key).finally(() => {
       inFlight.current = false
@@ -230,7 +234,10 @@ export function useCollateralAttempt(binding: CollateralAttemptBinding | null, o
   const abandon = useCallback(() => {
     if (inFlight.current || !mounted.current || liveBinding.current !== bindingKey || originalBinding.current !== bindingKey) return
     const current = pendingRef.current
-    if (current !== null && !release(storeKey, operation, target, current)) return
+    // An attempt that was never reserved never left; dropping it cannot lose an outcome, even when the slot holds
+    // another owner's unreadable record that this tab must not release.
+    if (current !== null && !unsentRef.current && !release(storeKey, operation, target, current)) return
+    unsentRef.current = false
     pendingRef.current = null
     setPending(null)
     setState({ phase: 'idle' })

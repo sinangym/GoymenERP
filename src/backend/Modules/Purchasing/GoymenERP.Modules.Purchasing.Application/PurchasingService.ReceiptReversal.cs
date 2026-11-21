@@ -70,5 +70,7 @@ public sealed partial class PurchasingService
             or PurchaseAcceptanceParticipantCodes.ConcurrentChange or "sales_order_line_busy"
             or "inventory_concurrent_change" or "inventory_goods_receipt_concurrent_change"
             or PurchasingProblemCodesV1.SameKeyPayloadMismatch or "inventory_goods_receipt_reversal_idempotency_conflict"
-            or "inventory_goods_receipt_idempotency_conflict");
+            or "inventory_goods_receipt_idempotency_conflict"
+            // K3-REVIEW-B P3-1: the supplier-return exit's own lock contention retries like its sibling codes.
+            or "inventory_supplier_return_exit_concurrent_change" or "inventory_supplier_return_exit_idempotency_conflict");
 }

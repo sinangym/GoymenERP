@@ -301,7 +301,8 @@ class RestorePlanTests(unittest.TestCase):
 
     def test_source_database_rejects_comment_escape_at_parser_and_plan_boundaries(self) -> None:
         clean = VERIFIER.parse_history(two_day_history())
-        for separator in ("\n", "\r", "\r\n", "\x00", "\t", "\x1b", "\x7f", "\x85", "\u2028", "\u2029"):
+        for separator in ("\n", "\r", "\r\n", "\x00", "\t", "\x1b", "\x7f", "\x85", "\u2028", "\u2029",
+                          "\u202a", "\u202e", "\u2066", "\u2069", "\u200b", "\ufeff"):
             with self.subTest(separator=repr(separator)):
                 name = f"Source{separator}SELECT 1201 AS injected_statement;"
                 document = two_day_history()

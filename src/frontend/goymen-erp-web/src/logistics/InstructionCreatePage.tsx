@@ -423,9 +423,15 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
       </p>
     ) : sourceState.type === 'ok-single' ? (
       options.length === 0 ? (
-        <p role="status" className={styles.notice} data-tone="unknown" data-testid="logistics-no-approved">
-          {T.noApprovedDrafts}
-        </p>
+        productFilter !== null ? (
+          <p role="status" className={styles.notice} data-tone="unknown" data-testid="logistics-no-label-lines">
+            {nextCursor === null ? T.noLabelProductLines : T.noLabelProductLinesLoaded}
+          </p>
+        ) : (
+          <p role="status" className={styles.notice} data-tone="unknown" data-testid="logistics-no-approved">
+            {T.noApprovedDrafts}
+          </p>
+        )
       ) : null
     ) : (
       <p role="alert" className={styles.notice} data-tone="error" data-testid="logistics-sources-failed">

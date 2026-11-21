@@ -137,6 +137,25 @@ public sealed partial class PurchasingServiceTests
         Assert.Equal((1, 0, PurchaseSupplierReturnStatus.PendingCostException), (host.Calls, returns.DecisionWrites, returns.Stored!.Return.Status));
     }
 
+    [Theory]
+    [InlineData("inventory_supplier_return_exit_concurrent_change")]
+    [InlineData("inventory_supplier_return_exit_idempotency_conflict")]
+    public async Task A_supplier_return_exit_lock_contention_is_not_terminal_and_the_same_key_retries(string code)
+    {
+        var (world, order, returns) = await ReturnWorldAsync();
+        var host = new ReturnAdjustmentHost { Failure = new(409, code) };
+        var request = ReturnRequest();
+        await world.Service(reversals: host, returns: returns).CreateSupplierReturnAsync(order, request, Metadata("pending-return"));
+        var first = await world.AsApprover(() => Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service(reversals: host, returns: returns)
+            .ApproveSupplierReturnCostExceptionAsync(order, request.ReturnId, new("1", null), Metadata("contended-return"))));
+        Assert.Equal((409, code, false), (first.Status, first.Code, first.IsReplay));
+        host.Failure = null;
+        var retried = await world.AsApprover(() => world.Service(reversals: host, returns: returns)
+            .ApproveSupplierReturnCostExceptionAsync(order, request.ReturnId, new("1", null), Metadata("contended-return")));
+        Assert.Equal("Recorded", retried.Return.Status);
+        Assert.Equal((2, 1), (host.Calls, returns.DecisionWrites));
+    }
+
     [Fact]
     public async Task Return_rejection_and_same_actor_approval_never_enter_the_adjustment_host()
     {

@@ -33,6 +33,7 @@ import os
 import re
 import stat
 import sys
+import unicodedata
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -223,8 +224,11 @@ def require_single_line_text(value: Any, where: str) -> str:
     text = require_string(value, where)
     # Metadata emitted into SQL comments must never terminate that comment or
     # inject control characters into the generated, human-reviewed script.
-    if any(ord(char) < 32 or 127 <= ord(char) <= 159 or char in "\u2028\u2029" for char in text):
-        raise InputError(f"{where}: satır sonu veya kontrol karakteri içeremez.")
+    # Format characters (bidi overrides/isolates, zero-width, BOM) would make the
+    # reviewed comment read differently from what it contains.
+    if any(ord(char) < 32 or 127 <= ord(char) <= 159 or char in "\u2028\u2029"
+           or unicodedata.category(char) == "Cf" for char in text):
+        raise InputError(f"{where}: satır sonu, kontrol veya biçim karakteri içeremez.")
     return text
 
 

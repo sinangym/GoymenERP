@@ -431,6 +431,23 @@ describe('Collateral attempt completion fences', () => {
     validFrom: '2026-11-01', validUntil: null, documentReference: 'SENTETIK-BELGE-1',
   } }
 
+  it('lets a never-sent attempt blocked by an unreadable slot be abandoned without touching that slot', async () => {
+    const calls = serve({}, () => jsonResponse(succeeded(recorded())))
+    const storeKey = collateralAttemptStoreKey(BINDING, 'record', CO_ACCOUNT) ?? ''
+    sessionStorage.setItem(storeKey, '{SENTETIK unreadable')
+    const hook = renderHook(() => useCollateralAttempt(BINDING, 'record', CO_ACCOUNT))
+    await act(async () => { await hook.result.current.submit(command) })
+    expect(hook.result.current.state.phase).toBe('unknown')
+    expect(posts(calls)).toHaveLength(0)
+    act(() => { hook.result.current.abandon() })
+    expect(hook.result.current.state.phase).toBe('idle')
+    expect(sessionStorage.getItem(storeKey)).toBe('{SENTETIK unreadable')
+    sessionStorage.removeItem(storeKey)
+    await act(async () => { await hook.result.current.submit(command) })
+    expect(hook.result.current.state.phase).toBe('answered')
+    expect(posts(calls)).toHaveLength(1)
+  })
+
   it('does not let an older mounted dispatch settle or abandon a newer claim for the same attempt', async () => {
     const replies: ((response: Response) => void)[] = []
     const calls = serve({}, () => new Promise<Response>(resolve => { replies.push(resolve) }))

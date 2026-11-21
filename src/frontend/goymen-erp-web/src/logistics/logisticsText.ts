@@ -71,6 +71,10 @@ export const INSTRUCTION_CREATE_TEXT = {
   moreLinesFailed: 'Sonraki satırlar alınamadı. Gösterilen satırlar geçerli.',
   noApprovedDrafts: 'Bu şirkette onaylı sipariş satırı yok. Talimat yalnız onaylı bir satıra açılır.',
   noLinesForCustomer: 'Seçilen müşterinin onaylı siparişinde satır bulunamadı.',
+  /** KLN-D117: the label narrowing found nothing in the lines read so far (more may follow) or at all. */
+  noLabelProductLinesLoaded:
+    'Okunan satırlarda bu etiketin ürününe ait onaylı sipariş satırı yok. Daha fazla satır gösterebilir veya tüm satırları açabilirsiniz.',
+  noLabelProductLines: 'Bu etiketin ürününe ait onaylı sipariş satırı yok. Tüm satırları açarak başka bir satır seçebilirsiniz.',
   sourcesFailed: 'Onaylı sipariş satırları okunamadı. Seçenek olmadan talimat oluşturulamaz.',
   sourcesForbidden: 'Onaylı sipariş satırlarını okuma yetkiniz yok; talimat için satır seçilemez.',
   picker: {

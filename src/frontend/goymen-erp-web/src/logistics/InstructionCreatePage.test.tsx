@@ -112,6 +112,28 @@ describe('L-03 Yeni Yükleme Talimatı', () => {
     expect(screen.queryByTestId('logistics-label-context')).toBeNull()
   })
 
+  it('a label narrowing with no match in the lines read so far does not claim the company has no approved lines (KLN-D117)', async () => {
+    const OTHER_PRODUCT = '99999999-9999-4999-8999-999999999999'
+    let reads = 0
+    installFetch({
+      onApprovedLines: () => {
+        reads += 1
+        return json(reads === 1
+          ? { items: [approvedOrderLine({ productId: OTHER_PRODUCT })], nextCursor: 'next-page' }
+          : { items: [approvedOrderLine({ productId: OTHER_PRODUCT, lineId: '66666666-6666-4666-8666-666666666666' })], nextCursor: null })
+      },
+    })
+    renderLogisticsApp(`/lojistik/yukleme-talimatlari/yeni?etiket=ETK-001&urun=${PRODUCT}`)
+    const notice = await screen.findByTestId('logistics-no-label-lines')
+    expect(notice.textContent).toBe(T.noLabelProductLinesLoaded)
+    expect(screen.queryByTestId('logistics-no-approved')).toBeNull()
+
+    await userEvent.click(screen.getByTestId('logistics-more-lines'))
+    await waitFor(() => expect(screen.getByTestId('logistics-no-label-lines').textContent).toBe(T.noLabelProductLines))
+    expect(screen.queryByTestId('logistics-more-lines')).toBeNull()
+    expect(screen.queryByTestId('logistics-no-approved')).toBeNull()
+  })
+
   it('a lost reply keeps the key: the retry resends the same snapshot under the same key and a replay is shown as a replay', async () => {
     const first = deferred<Response>()
     const harness = installFetch({

@@ -100,8 +100,6 @@ export function useCommandAttempt<T>(journal?: Journal<T>) {
       }
       const storeKey = journal?.storeKey ?? null
       const claim = crypto.randomUUID()
-      pendingRef.current = attempt
-      setPending(attempt)
       if (storeKey !== null) {
         try {
           const current = recall(storeKey)
@@ -117,6 +115,10 @@ export function useCommandAttempt<T>(journal?: Journal<T>) {
           return { type: 'unknown', reason: 'unexpected' }
         }
       }
+      // K3-REVIEW-B P3-2: an attempt becomes the pending one only once its slot is reserved. A blocked new attempt
+      // never left, so it must not lock the form: reset stays possible and the slot owner keeps its own key.
+      pendingRef.current = attempt
+      setPending(attempt)
       inFlight.current = true
       setStatus({ kind: 'busy' })
       const observe = journal?.observe?.()

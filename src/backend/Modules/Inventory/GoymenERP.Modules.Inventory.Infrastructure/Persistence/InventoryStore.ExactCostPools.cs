@@ -43,6 +43,7 @@ public sealed partial class InventoryStore
         // BS-1 partial first invoices price only their immutable receipt fraction. The original
         // unavailable stamp/pending entry stays intact; it is not a new whole-receipt recognition.
         var purchasePriced = new Dictionary<Guid, ExactCostRatio>();
+        var readable = true;
         if (currency == SettingsCurrencyIdentitiesV1.TurkishLira && pending.Count != 0)
         {
             var movements = pending.Select(row => row.MovementId).Distinct().ToArray();
@@ -63,9 +64,22 @@ public sealed partial class InventoryStore
                 ExactCostRatio fraction;
                 if (storedSource is not null)
                 {
-                    var current = await new InventorySupplierReturnCostSourceReader(context, company).ReadStockAttributionAsync(
-                        company.CompanyId, group.First().AcceptanceId, storedSource,
-                        stagedEffects.Where(row => row.MovementId == group.Key).ToArray(), token);
+                    InventorySupplierReturnCostSourceReader.StockAttribution current;
+                    try
+                    {
+                        current = await new InventorySupplierReturnCostSourceReader(context, company).ReadStockAttributionAsync(
+                            company.CompanyId, group.First().AcceptanceId, storedSource,
+                            stagedEffects.Where(row => row.MovementId == group.Key).ToArray(), token);
+                    }
+                    catch (InventorySupplierReturnExitException exception)
+                        when (exception.Status == 503 && exception.Code == InventorySupplierReturnExitCodesV1.ReceiptTraceInvalid)
+                    {
+                        // K3-REVIEW-B P1-2: a receipt whose supplier-return attribution no longer reads (split, block, customer
+                        // return) makes this shared pool unreadable, like an unreadable lineage. Its 503 belongs to the
+                        // supplier-return command; it must not stop every costed movement of the product.
+                        readable = false;
+                        continue;
+                    }
                     fraction = current.StockKg.Sign == 0 ? ExactCostRatio.Of(0m)
                         : ExactCostRatio.Of(1m).Subtract(current.PendingStockKg.Divide(current.StockKg));
                 }
@@ -77,7 +91,6 @@ public sealed partial class InventoryStore
             }
         }
         var shares = new Dictionary<Guid, ExactCostRatio>();
-        var readable = true;
         foreach (var root in pending.Select(row => row.LabelId).Distinct().Order())
         {
             var entries = pending.Where(row => row.LabelId == root).ToArray();

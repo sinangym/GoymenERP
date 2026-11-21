@@ -388,7 +388,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 W5 (integration): +6 fact(s) from the W5 team merges; value from guard_fingerprint.py (86ec6a12… -> 5d0beeaf…).
                 // Tren-1 W6: +4 source facts, ordinal-sorted; SQL execution NOT_RUN.
                 // Re-fingerprinted for tren-1 W7: source facts kept ordinal-sorted; SQL execution NOT_RUN.
-                "1154831b27e5ea49c95b3ca97e0e4d5639a9991359bdc1253f4cccd9f9645103",
+                "b1a5f10046bd55ae24e698fab9da2042792fd98bc93df6e723437cff18321cca",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -3572,7 +3572,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // product/position/currency identity. Inventory alone changes its exact-cost pools; no query-filter bypass or
                 // foreign-schema write.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.ExactCostPools.cs"] =
-                    new("cade43ddb1962e5ad0b752f95929a72da5dfec807f4f3de165ef96730757c38d",
+                    new("6339ff40400a4ec4e34d93f50634be89a2df92220f6e2b1f451c950531510885",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             [".Local"] = 8,
