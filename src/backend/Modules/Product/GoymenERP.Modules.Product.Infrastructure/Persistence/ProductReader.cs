@@ -68,7 +68,7 @@ public sealed class ProductReader(ProductReadStore store, ProductCursorCodec cur
                 var definition = await store.ReadFamilyDefinitionAsync(context, cancellationToken);
                 if (ProductTechnicalDuplicateKeyV1.Of(familyId, card.RestoreReferences(), definition) is { } key)
                 {
-                    foreach (var member in await store.ReadActiveFamilyMembersAsync(context, familyId, cardId, cancellationToken))
+                    await foreach (var member in store.ReadActiveFamilyMembersAsync(context, familyId, cardId, cancellationToken))
                     {
                         if (ProductTechnicalDuplicateKeyV1.Of(member.FamilyId, member.RestoreReferences(), definition) == key)
                             technical.Add(member);

@@ -90,7 +90,7 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
-    public async Task SAT_D426_a_foreign_order_freezes_the_approval_day_rate_and_its_margin_is_computed_in_TL_from_it()
+    public async Task SAT_D426_a_foreign_order_freezes_the_approval_day_rate_and_its_margin_stays_undecided_until_its_golden_is_in_main()
     {
         var source = new MarginCostSource { CostCurrency = SettingsCurrencyIdentitiesV1.TurkishLira, Cost = 3m };
         var rates = new FakeExchangeRates(ExchangeRateResolutionStatesV1.Resolved, "34.5678");
@@ -109,13 +109,36 @@ public sealed partial class SalesDraftServiceTests
         Assert.Contains(rates.Asked, asked => asked.Source == Currency && asked.Target == SettingsCurrencyIdentitiesV1.TurkishLira
             && asked.Day == pin.SaleRate.RateDay);
 
-        // The margin uses the frozen rate: a later Settings rate changes nothing.
+        // SAT-D265(5): main's golden G20 still keeps a non-TL sale undecided; the frozen rate is stored, not yet applied.
         rates.Rate = "50";
         var margin = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Margin.Lines!);
-        Assert.Null(margin.UnavailableReason);
-        Assert.NotNull(margin.Amount);
-        var again = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Margin.Lines!);
-        Assert.Equal(margin, again);
+        Assert.Equal("CurrencyConversionUndecided", margin.UnavailableReason);
+        Assert.Null(margin.Amount);
+        Assert.Null(margin.Percent);
+        Assert.Equal(pin, Assert.Single(draft.MarginCosts));
+    }
+
+    [Fact]
+    public async Task SAT_D426_a_revision_approval_reuses_the_order_rate_frozen_at_the_first_approval()
+    {
+        var source = new MarginCostSource { CostCurrency = SettingsCurrencyIdentitiesV1.TurkishLira, Cost = 3m };
+        var rates = new FakeExchangeRates(ExchangeRateResolutionStatesV1.Resolved, "34.5678");
+        var world = new World { MarginCosts = source, ExchangeRates = rates };
+        var (approved, _) = await AcceptedApprovedAsync(world);
+        var draft = Assert.Single(world.Store.Drafts);
+        var first = Assert.Single(draft.MarginCosts).SaleRate!;
+        Assert.Equal((Currency, 34.5678m), (first.CurrencyId, first.Rate));
+
+        rates.Rate = "50"; // A later Settings rate (the risk check may still read it) never re-freezes the order rate.
+        Owners(world);
+        var added = AddedLine();
+        await world.Service().ReviseLinesAsync(approved.Id, LineRevision("5", [added]), Metadata("fx-revision-add"));
+        await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("fx-revision-submit"));
+        await world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("fx-revision-approve"));
+
+        var repinned = Assert.Single(draft.MarginCosts, cost => cost.LineId == added.LineId);
+        Assert.Equal(first, repinned.SaleRate);
+        Assert.All(draft.MarginCosts, cost => Assert.Equal(first, cost.SaleRate));
     }
 
     [Fact]

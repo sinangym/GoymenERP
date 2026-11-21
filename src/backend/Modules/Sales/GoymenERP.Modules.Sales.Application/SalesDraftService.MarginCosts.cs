@@ -13,6 +13,11 @@ public sealed partial class SalesDraftService
     // It neither grants margin disclosure nor supplies missing costs, currencies or historical snapshots.
     private static bool MarginGoldenAccepted => true;
 
+    // SAT-D426 / SAT-D265(5): the PR1200 golden in main still locks G20 (a non-TL sale stays CurrencyConversionUndecided, its
+    // amount is not converted). The approval freezes and stores the order rate now; the TL conversion of a foreign sale is
+    // enabled only when independent golden rows for SAT-D426 replace G20 in main. Until then the margin stays undecided.
+    private static bool ForeignSaleMarginGoldenAccepted => false;
+
     private static SalesMarginCostSnapshot? LastMarginCost(SalesOrderDraft draft, Guid lineId) =>
         draft.MarginCosts.Where(cost => cost.LineId == lineId && cost.Revision <= draft.Revision)
             .OrderByDescending(cost => cost.Revision).FirstOrDefault();
@@ -36,8 +41,12 @@ public sealed partial class SalesDraftService
         SalesOrderDraft draft, CancellationToken cancellationToken)
     {
         var costs = new List<SalesMarginCostSnapshot>();
-        SalesMarginSaleRate? saleRate = null;
-        var saleRateRead = false;
+        // SAT-D426: the order rate is frozen once, at the first approval that pins a snapshot, and never changes. A revision
+        // approval reuses it for every re-pinned line; an order already pinned without a rate (unreadable, or a currency the
+        // frozen rate does not belong to) stays without one rather than mixing approval days on one order.
+        var frozen = draft.MarginCosts.Count != 0;
+        SalesMarginSaleRate? saleRate = frozen ? FrozenSaleRate(draft) : null;
+        var saleRateRead = frozen;
         foreach (var line in draft.Lines.OrderBy(item => item.LineNo))
         {
             var previous = LastMarginCost(draft, line.Id);
@@ -53,6 +62,10 @@ public sealed partial class SalesDraftService
         }
         return costs;
     }
+
+    private static SalesMarginSaleRate? FrozenSaleRate(SalesOrderDraft draft) =>
+        draft.MarginCosts.OrderBy(cost => cost.Revision).Select(cost => cost.SaleRate).FirstOrDefault(rate => rate is not null)
+            is { } rate && rate.CurrencyId == draft.Header.CurrencyId ? rate : null;
 
     /// <summary>
     /// SAT-D426: a foreign-currency order freezes, at its internal approval, the Settings rate of the approval day (the server's
@@ -168,14 +181,14 @@ public sealed partial class SalesDraftService
     }
 
     // SAT-D259 / BS-1: a restored snapshot is data, never the TL currency authority; the actual owner supplies TL cost or
-    // Unavailable. SAT-D426: a foreign sale is converted only at the rate the same approval snapshot froze.
+    // Unavailable. SAT-D426: a foreign sale is converted only at the rate the order froze, and only once its golden is in main.
     internal static SalesLineMargin CalculateMarginInTurkishLira(Money? netSale, Guid orderUnitId,
         decimal quantity, SalesMarginCostSnapshot cost) => cost.CostPerUnit == 0m
         ? SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.CostUnreadable)
         : SalesLineMarginCalculator.Calculate(new SalesLineMarginInput(
             netSale, orderUnitId, quantity, SettingsCurrencyIdentitiesV1.TurkishLira,
             SalesLineMarginCost.Of(cost.CostPerUnit!.Value, cost.CurrencyId!.Value, cost.UnitId),
-            cost.SaleRate is { } rate
+            ForeignSaleMarginGoldenAccepted && cost.SaleRate is { } rate
                 ? ExchangeRate.Of(rate.CurrencyId, SettingsCurrencyIdentitiesV1.TurkishLira, rate.Rate)
                 : null));
 }

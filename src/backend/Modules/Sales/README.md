@@ -1092,3 +1092,10 @@ it never reads a rate at display time. A TL order stores no rate. A rate Setting
 snapshot keeps no rate and the margin stays `CurrencyConversionUndecided`, as for the approval preview and for orders approved
 before this change. EF migration `20261121094747_AddSalesMarginSaleRates` adds the three nullable columns and the check; its first
 Down operation refuses with **52013** while any frozen rate exists (forward fix); a store without rates rolls back freely.
+
+The order rate is frozen once: the first approval that pins a snapshot reads it, every later revision approval reuses it for the
+lines it re-pins, and an order pinned without a rate (unreadable rate, legacy snapshot, or a currency the frozen rate does not belong
+to) stays without one, so one order never mixes approval days. The TL conversion itself is **not active yet**: SAT-D265 (5) requires
+the formula golden in main first, and main's golden still locks G20 (a non-TL sale stays `CurrencyConversionUndecided`). Until
+independent golden rows for SAT-D426 replace G20 in main, `ForeignSaleMarginGoldenAccepted` stays `false`; the calculator rows in
+`SalesLineMarginCalculatorTests` are the author's expectation, not that golden.

@@ -154,7 +154,8 @@ public sealed class SalesLineMarginCalculatorTests
     }
 
     [Theory]
-    // SAT-D426 golden (author-computed, exact): foreign net sale × the rate frozen at approval = TL net; then the TL steps.
+    // SAT-D426 expectation (author-computed, exact; NOT the SAT-D265 (5) golden, which must replace G20 in main before the
+    // application enables the conversion): foreign net sale × the rate frozen at approval = TL net; then the TL steps.
     // foreign net, frozen rate, quantity, TL unit cost, amount (0,01 TL), percent (0,01)
     [InlineData("1000.00", "34.5678", "10", "3000", "4567.80", "13.21")]
     [InlineData("1234.56", "34.56789012", "12.345", "3100.1234", "4405.11", "10.32")]
