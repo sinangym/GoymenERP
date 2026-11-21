@@ -93,9 +93,18 @@ public sealed class FinanceShellRegistrationTests
                 (SalesShellCapabilityProvider.DetailCapabilityId, null, SalesPermissionManifestV1.DraftsRead),
                 (SalesShellCapabilityProvider.ListCapabilityId, null, SalesPermissionManifestV1.DraftsRead),
                 (SalesShellCapabilityProvider.InvoiceCandidateListCapabilityId, null, SalesPermissionManifestV1.InvoicesRead),
+                // Sales 1.27 (API-33 / API-36): the four invoice controls of the S-09 list (invoice read + price read + own name).
+                (SalesShellCapabilityProvider.InvoiceApproveCapabilityId, SalesShellCapabilityProvider.InvoiceListCapabilityId,
+                    $"{SalesPermissionManifestV1.InvoicesRead}+{SalesPermissionManifestV1.OrdersPriceRead}+{SalesPermissionManifestV1.InvoicesApprove}"),
+                (SalesShellCapabilityProvider.InvoiceFinalizeCapabilityId, SalesShellCapabilityProvider.InvoiceListCapabilityId,
+                    $"{SalesPermissionManifestV1.InvoicesRead}+{SalesPermissionManifestV1.OrdersPriceRead}+{SalesPermissionManifestV1.InvoicesFinalize}"),
                 // Sales 1.19 (UI-63); 1.20 (SAT-D238): the S-09 invoice list on the invoice read alone; its list read withholds the amounts.
                 (SalesShellCapabilityProvider.InvoiceListCapabilityId, null, SalesPermissionManifestV1.InvoicesRead),
+                (SalesShellCapabilityProvider.InvoiceMatchCapabilityId, SalesShellCapabilityProvider.InvoiceListCapabilityId,
+                    $"{SalesPermissionManifestV1.InvoicesRead}+{SalesPermissionManifestV1.OrdersPriceRead}+{SalesPermissionManifestV1.InvoicesMatch}"),
                 (SalesShellCapabilityProvider.OfficialCancellationCapabilityId, null, SalesPermissionManifestV1.InvoicesFinalize),
+                (SalesShellCapabilityProvider.InvoiceWriteCapabilityId, SalesShellCapabilityProvider.InvoiceListCapabilityId,
+                    $"{SalesPermissionManifestV1.InvoicesRead}+{SalesPermissionManifestV1.OrdersPriceRead}+{SalesPermissionManifestV1.InvoicesWrite}"),
                 (SalesShellCapabilityProvider.ApproveCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersApprove}"),
                 (SalesShellCapabilityProvider.CancelCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,

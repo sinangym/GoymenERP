@@ -93,7 +93,7 @@ export const INVOICE_FINALIZATION_TEXT = {
     'Finans yanıtı beklenirken otomatik yeniden gönderim politikası (sıklık ve üst sınır) karar bekliyor; bu ekran arka planda ' +
     'yeniden göndermez.',
   controlsUnavailable:
-    'Kesinleştirme ve yeniden gönderme düğmeleri, bu işlemlerin ekran yetkisi yayımlanana kadar gösterilmez.',
+    'Faturayı kesinleştirme ve Finans’a yeniden gönderme yetkiniz bu oturumda yayımlanmadı.',
   finalize: 'Faturayı kesinleştir',
   finalizeNote:
     'Kesinleştirme faturayı kilitler ve vade planını Finans\'a gönderir; geri alınamaz. Tutar farkı açıksa sunucu kesinleştirmez.',

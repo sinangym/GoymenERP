@@ -151,14 +151,19 @@ export type SalesCapabilityId =
   | typeof SALES_CUSTOMER_RETURN_FINALIZE_CAPABILITY
 
 /**
- * API-32 / API-33 (SAT-D202): the invoice-draft CONTROLS — "Fatura taslağı hazırla" on S-08, and submit / cancel on the draft —
- * follow `sales.invoices.write`; approve / reject follow `sales.invoices.approve` (never the preparer, SAT-D88 / SAT-D204, which
- * the server decides). Non-routed control ids named after the backend permissions. The Sales shell provider does not publish
- * them yet, so `hasCapability` fails closed and the controls stay hidden behind a neutral note (NEEDS-SINAN); the API
- * re-measures every call either way.
+ * API-32 / API-33 / API-36 (SAT-D202, SAT-D204, SAT-D230, SAT-D249): the invoice CONTROLS, non-routed control ids named after the
+ * backend permissions and published by the Sales shell provider 1.27 as controls of the S-09 list (each on the invoice read, the
+ * price read and its own name):
+ *  - `sales.invoices.write`: "Fatura taslağı hazırla" on S-08, and submit / cancel on the draft;
+ *  - `sales.invoices.approve`: approve / reject (never the preparer, SAT-D88 / SAT-D204, which the server decides);
+ *  - `sales.invoices.match`: the official e-invoice match form (an excess also needs `sales.invoices.approve`, SAT-D106);
+ *  - `sales.invoices.finalize`: finalize a matched invoice and re-send it to Finance (normal permission, SAT-D249).
+ * Without the capability `hasCapability` fails closed and the control stays hidden; the API re-measures every call either way.
  */
 export const SALES_INVOICE_WRITE_CAPABILITY = 'sales.invoices.write' as const
 export const SALES_INVOICE_APPROVE_CAPABILITY = 'sales.invoices.approve' as const
+export const SALES_INVOICE_MATCH_CAPABILITY = 'sales.invoices.match' as const
+export const SALES_INVOICE_FINALIZE_CAPABILITY = 'sales.invoices.finalize' as const
 
 export const SALES_ROUTE = {
   list: '/satis/siparisler',

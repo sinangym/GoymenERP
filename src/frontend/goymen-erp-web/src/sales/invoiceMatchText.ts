@@ -23,7 +23,7 @@ export const INVOICE_MATCH_TEXT = {
   differenceReasonHelp: 'Onay gerekçesi denetim kaydına yazılır.',
   submit: 'Eşleştir',
   submitApproval: 'Farkı onaylayarak eşleştir',
-  formUnavailable: 'Eşleştirme formu, bu işlemin ekran yetkisi yayımlanana kadar gösterilmez.',
+  formUnavailable: 'Faturayı resmî e-faturayla eşleştirme yetkiniz bu oturumda yayımlanmadı.',
   approvalNeeded:
     'Sunucu, resmî tutarla fatura tutarı (ödenecek tutar, KDV veya tevkifat) arasındaki farkın tolerans üstünde olduğunu bildirdi. Eşleşme ancak ayrı onay ' +
     'yetkisiyle, gerekçe yazılarak kaydedilebilir.',

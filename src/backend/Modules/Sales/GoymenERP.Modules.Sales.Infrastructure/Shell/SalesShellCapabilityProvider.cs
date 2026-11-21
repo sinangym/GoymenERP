@@ -43,11 +43,17 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 /// Every API-40 read and command answers amounts, so every screen and control also needs
 /// <see cref="SalesPermissionManifestV1.OrdersPriceRead"/>: a screen that opens never meets a 403 from its own read.</para>
 /// <para>1.26 (SAT-SC34, Q3): standalone official cancellation recording on existing invoice finalize authority only; no price/read grant.</para>
+/// <para>1.27 (API-33 / API-36, UI-64; SAT-D202, SAT-D204, SAT-D230, SAT-D249): publishes the four invoice CONTROLS of the S-09 invoice
+/// list that the screens already render fail-closed: preparing / submitting / cancelling a draft (<see cref="InvoiceWriteCapabilityId"/>),
+/// approving / rejecting it (<see cref="InvoiceApproveCapabilityId"/>), matching the official invoice
+/// (<see cref="InvoiceMatchCapabilityId"/>) and finalizing / re-sending it to Finance (<see cref="InvoiceFinalizeCapabilityId"/>). Each
+/// control needs the invoice read, the price read (every invoice command measures it and answers amounts) and its own existing name.
+/// No new name is registered, nothing is granted and no name becomes Critical (SAT-D249: finalize is a normal permission).</para>
 /// </summary>
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.26";
+    public const string OwnerContractVersion = "1.27";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";
@@ -247,6 +253,18 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 
     // Q3/6957924089: a standalone price-free route uses only the existing finalize authority.
     public const string OfficialCancellationCapabilityId = "sales.invoices.official-cancellation";
+
+    /// <summary>1.27 (API-33, SAT-D202): prepare, submit and cancel an invoice draft — a control of the S-09 invoice list.</summary>
+    public const string InvoiceWriteCapabilityId = "sales.invoices.write";
+
+    /// <summary>1.27 (API-33, SAT-D204): approve or reject a submitted invoice draft (never its preparer, enforced by the service).</summary>
+    public const string InvoiceApproveCapabilityId = "sales.invoices.approve";
+
+    /// <summary>1.27 (API-36): match the approved invoice to the official e-invoice (an excess also measures the approve name).</summary>
+    public const string InvoiceMatchCapabilityId = "sales.invoices.match";
+
+    /// <summary>1.27 (API-36, SAT-D230 / SAT-D249): finalize a matched invoice and re-send its Finance admission.</summary>
+    public const string InvoiceFinalizeCapabilityId = "sales.invoices.finalize";
     public const string OfficialCancellationRoutePath = "/satis/fatura-resmi-iptal";
 
     /// <summary>
@@ -475,6 +493,17 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
         ];
     }
 
+    private static readonly ShellCapabilityDeclaration InvoiceList = new(
+        InvoiceListCapabilityId,
+        InvoiceListRouteId,
+        InvoiceListRoutePath,
+        InvoiceListScreenId,
+        ShellCapabilityRoutePrecedence.Static,
+        ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+        ShellCapabilityScopeRequirement.CompanyWide,
+        [SalesPermissionManifestV1.InvoicesRead],
+        ImplementationAvailable: true);
+
     private static ShellCapabilityDeclaration[] DispatchDeclarations() =>
     [
         new ShellCapabilityDeclaration(
@@ -497,16 +526,45 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             ShellCapabilityScopeRequirement.CompanyWide,
             [SalesPermissionManifestV1.InvoicesRead],
             ImplementationAvailable: true),
-        new ShellCapabilityDeclaration(
-            InvoiceListCapabilityId,
-            InvoiceListRouteId,
-            InvoiceListRoutePath,
-            InvoiceListScreenId,
-            ShellCapabilityRoutePrecedence.Static,
-            ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
-            ShellCapabilityScopeRequirement.CompanyWide,
-            [SalesPermissionManifestV1.InvoicesRead],
-            ImplementationAvailable: true),
+        InvoiceList,
+        // 1.27 (API-33 / API-36): the invoice commands are controls of the S-09 list, each on the invoice read, the price read
+        // (every invoice command measures it) and its own existing name.
+        InvoiceList with
+        {
+            CapabilityId = InvoiceWriteCapabilityId,
+            ParentCapabilityId = InvoiceListCapabilityId,
+            RequiredPermissions =
+            [
+                SalesPermissionManifestV1.InvoicesRead, SalesPermissionManifestV1.OrdersPriceRead, SalesPermissionManifestV1.InvoicesWrite,
+            ],
+        },
+        InvoiceList with
+        {
+            CapabilityId = InvoiceApproveCapabilityId,
+            ParentCapabilityId = InvoiceListCapabilityId,
+            RequiredPermissions =
+            [
+                SalesPermissionManifestV1.InvoicesRead, SalesPermissionManifestV1.OrdersPriceRead, SalesPermissionManifestV1.InvoicesApprove,
+            ],
+        },
+        InvoiceList with
+        {
+            CapabilityId = InvoiceMatchCapabilityId,
+            ParentCapabilityId = InvoiceListCapabilityId,
+            RequiredPermissions =
+            [
+                SalesPermissionManifestV1.InvoicesRead, SalesPermissionManifestV1.OrdersPriceRead, SalesPermissionManifestV1.InvoicesMatch,
+            ],
+        },
+        InvoiceList with
+        {
+            CapabilityId = InvoiceFinalizeCapabilityId,
+            ParentCapabilityId = InvoiceListCapabilityId,
+            RequiredPermissions =
+            [
+                SalesPermissionManifestV1.InvoicesRead, SalesPermissionManifestV1.OrdersPriceRead, SalesPermissionManifestV1.InvoicesFinalize,
+            ],
+        },
         new ShellCapabilityDeclaration(
             OfficialCancellationCapabilityId,
             OfficialCancellationCapabilityId,

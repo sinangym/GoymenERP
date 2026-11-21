@@ -4,8 +4,8 @@
  *
  *  - The difference, the tolerance and who approved an excess are the server's text, shown verbatim; the screen never compares,
  *    rounds or recomputes an amount or a tolerance (SAT-D229, AGENTS.md "Fiyat/formül/toleransı ekran içinde yeniden yazma").
- *  - The form shows only when the server's state allows a match (Approved, no match) AND the caller may use it. The shell
- *    publishes no capability for `sales.invoices.match` yet, so the routed tab mounts it with `canMatch` false and says so.
+ *  - The form shows only when the server's state allows a match (Approved, no match) AND the caller holds the Sales shell 1.27
+ *    `sales.invoices.match` control; without it the panel says so neutrally.
  *  - The difference-approval fields appear only after the server asked for an approval for exactly this number and ETTN, and
  *    only when `canApproveDifference` (SAT-D106 / SAT-D204); otherwise the need for a separate approval is said neutrally.
  *  - 401/403 go to the shell's auth boundary; an unknown outcome keeps the same key until it is retried or left.

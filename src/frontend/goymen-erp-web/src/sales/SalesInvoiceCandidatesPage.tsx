@@ -18,7 +18,13 @@ import { Link, useSearchParams } from 'react-router'
 import { fetchInvoiceCandidates } from './dispatchApi'
 import type { InvoiceCandidateGroup, InvoiceCandidateShare } from './dispatchContract'
 import { DISPATCH_TEXT, GROUP_KEY_PART_TEXT } from './dispatchText'
-import { SALES_INVOICE_APPROVE_CAPABILITY, SALES_INVOICE_WRITE_CAPABILITY, SALES_ROUTE } from './capabilities'
+import {
+  SALES_INVOICE_APPROVE_CAPABILITY,
+  SALES_INVOICE_FINALIZE_CAPABILITY,
+  SALES_INVOICE_MATCH_CAPABILITY,
+  SALES_INVOICE_WRITE_CAPABILITY,
+  SALES_ROUTE,
+} from './capabilities'
 import { INVOICE_DRAFT_CREATE_TEXT as CT } from './invoiceDraftText'
 import type { SalesInvoiceDetail } from './invoiceFinalizationContract'
 import { SalesInvoiceDraftCreate } from './SalesInvoiceDraftCreate'
@@ -109,9 +115,11 @@ function InvoiceCandidates({ namespace }: { readonly namespace: string | null })
           companyId={companyId}
           namespace={namespace}
           entryGeneration={shell.routeEntryGeneration}
-          canControl={false}
+          canControl={hasCapability(shell, SALES_INVOICE_FINALIZE_CAPABILITY)}
           canWrite={canCreate}
           canApprove={canApprove}
+          canMatch={hasCapability(shell, SALES_INVOICE_MATCH_CAPABILITY)}
+          canApproveDifference={hasCapability(shell, SALES_INVOICE_MATCH_CAPABILITY) && canApprove}
           onRecorded={() => void read.refetch()}
         />
       </section>
