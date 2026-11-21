@@ -1,3 +1,4 @@
+using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
@@ -140,6 +141,34 @@ public sealed partial class SalesDraftServiceTests
         var repinned = Assert.Single(draft.MarginCosts, cost => cost.LineId == added.LineId);
         Assert.Equal(first, repinned.SaleRate);
         Assert.All(draft.MarginCosts, cost => Assert.Equal(first, cost.SaleRate));
+    }
+
+    [Fact]
+    public async Task SAT_D432_a_revision_preview_of_a_frozen_rate_order_shows_the_new_line_margin_at_that_rate()
+    {
+        var source = new MarginCostSource { CostCurrency = SettingsCurrencyIdentitiesV1.TurkishLira, Cost = 3m };
+        var rates = new FakeExchangeRates(ExchangeRateResolutionStatesV1.Resolved, "34.5678");
+        var world = new World { MarginCosts = source, ExchangeRates = rates };
+        var (approved, _) = await AcceptedApprovedAsync(world);
+        var draft = Assert.Single(world.Store.Drafts);
+        rates.Rate = "50"; // A later Settings rate is never used for the preview.
+        Owners(world);
+        var added = AddedLine(price: "12.00");
+        await world.Service().ReviseLinesAsync(approved.Id, LineRevision("5", [added]), Metadata("fx-preview-add"));
+
+        var preview = Assert.Single((await world.Service().GetDraftLinePricingAsync(approved.Id)).Margin.Lines!,
+            item => item.LineId == added.LineId);
+        Assert.Null(preview.UnavailableReason);
+        Assert.NotNull(preview.Amount);
+        Assert.DoesNotContain(draft.MarginCosts, cost => cost.LineId == added.LineId); // A preview is never stored.
+
+        var frozen = Assert.Single(draft.MarginCosts).SaleRate!;
+        var expected = SalesDraftService.CalculateMarginInTurkishLira(
+            SalesOrderTotalsCalculator.CalculateWithLineTax(draft).Lines.Single(item => item.LineId == added.LineId).NetAmountBeforeSurcharge,
+            draft.Lines.Single(item => item.Id == added.LineId).OrderUnit.UnitId, 3m,
+            new SalesMarginCostSnapshot(added.LineId, draft.Revision, Product, KgUnit, 3m, SettingsCurrencyIdentitiesV1.TurkishLira, 3m,
+                null, "{}", DateTimeOffset.UnixEpoch, frozen));
+        Assert.Equal(expected.Amount!.Value.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture), preview.Amount);
     }
 
     [Fact]

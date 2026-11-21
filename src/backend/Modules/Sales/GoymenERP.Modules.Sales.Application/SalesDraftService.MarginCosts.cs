@@ -63,6 +63,10 @@ public sealed partial class SalesDraftService
         return costs;
     }
 
+    // SAT-D432: the unsaved preview of a revision uses the order's frozen rate; before the first freeze it has none (golden D17).
+    private static SalesMarginSaleRate? PreviewSaleRate(SalesOrderDraft draft) =>
+        FrozenSaleRateOf(draft) is { } rate && rate.CurrencyId == draft.Header.CurrencyId ? rate : null;
+
     private static SalesMarginSaleRate? FrozenSaleRateOf(SalesOrderDraft draft) =>
         draft.MarginCosts.OrderBy(cost => cost.Revision).Select(cost => cost.SaleRate).FirstOrDefault(rate => rate is not null);
 
@@ -160,7 +164,9 @@ public sealed partial class SalesDraftService
             else if (cost is null || !SameCostBasis(draft, line, cost))
                 cost = draft.ApprovalState == InternalApprovalState.Approved || LegacyApprovedCost(draft, line)
                     ? UnavailableCost(draft, line, SalesLineMarginUnavailableReason.CostSourceMissing)
-                    : await ReadMarginCostAsync(scope, bindings.ReadPermission, draft, line, cancellationToken);
+                    : await ReadMarginCostAsync(scope, bindings.ReadPermission, draft, line, cancellationToken)
+                        // SAT-D432: a revision preview of an order whose rate is frozen shows the margin at that rate.
+                        with { SaleRate = PreviewSaleRate(draft) };
             var margin = cost.UnavailableReason is { } reason ? SalesLineMargin.Unavailable(reason)
                 : cost.CostPerUnit == 0m ? SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.CostUnreadable)
                 : !MarginGoldenAccepted ? SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.FormulaGoldenPending)
