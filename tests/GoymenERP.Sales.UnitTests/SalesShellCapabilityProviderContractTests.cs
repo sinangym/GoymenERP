@@ -55,8 +55,9 @@ public sealed class SalesShellCapabilityProviderContractTests
         // API-07 / SAT-D153..SAT-D162 (1.24, merged after API-34 1.23): registers the two risk exception names (manifest v29) and their detail controls.
         // API-40 / UI-70b / SAT-D288..SAT-D294 (1.25, merged after API-07 1.24): registers the four return names (manifest v30), the S-10
         // return list, create and detail screens and the detail's submission, approval and finalisation controls.
-        Assert.Equal(("SALES", "1.26"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(39, declarations.Count);
+        // API-33 / API-36 (1.27): the four invoice controls of the S-09 list (write, approve, match, finalize); no new name.
+        Assert.Equal(("SALES", "1.27"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(43, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -317,21 +318,23 @@ public sealed class SalesShellCapabilityProviderContractTests
             Assert.Contains($"'{item.Path}'", source);
         }
 
-        // The invoice read name opens only S-08 and the S-09 invoice list (UI-63, 1.19; alone since 1.20): no other declaration asks for it.
-        Assert.Equal(["sales.invoice-candidates.list", "sales.invoices.list"],
+        // The invoice read name opens only S-08 and the S-09 invoice list (UI-63, 1.19; alone since 1.20) and, since 1.27, the four
+        // invoice controls of that list: no other declaration asks for it.
+        Assert.Equal(["sales.invoice-candidates.list", "sales.invoices.approve", "sales.invoices.finalize", "sales.invoices.list",
+                "sales.invoices.match", "sales.invoices.write"],
             declarations.Where(candidate => candidate.RequiredPermissions.Contains(SalesPermissionManifestV1.InvoicesRead))
                 .Select(candidate => candidate.CapabilityId).Order(StringComparer.Ordinal).ToArray());
     }
 
     [Fact]
-    public void The_UI63_invoice_list_is_a_routed_screen_on_the_invoice_read_alone_without_a_control_SAT_D238()
+    public void The_UI63_invoice_list_is_a_routed_screen_on_the_invoice_read_alone_and_parents_the_four_invoice_controls_SAT_D238()
     {
         var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(), FrontendCapabilities));
         var declarations = new SalesShellCapabilityProvider().GetDeclarations();
 
         // SAT-D238 (1.20): API-32 GET invoices requires sales.invoices.read and only asks sales.orders.price.read (an actor without it
         // sees the rows with every amount withheld), so the screen asks for the invoice read alone and never opens onto its own 403.
-        // No new name, no control.
+        // No new name. Since 1.27 (API-33 / API-36) the list parents the four invoice controls.
         var invoices = Assert.Single(declarations, candidate => candidate.CapabilityId == "sales.invoices.list");
         Assert.Equal(("sales.invoices.list", "/satis/faturalar", "S-09", ShellCapabilityRoutePrecedence.Static,
                 ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead, ShellCapabilityScopeRequirement.CompanyWide),
@@ -340,7 +343,30 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal([SalesPermissionManifestV1.InvoicesRead], invoices.RequiredPermissions);
         Assert.Null(invoices.ParentCapabilityId);
         Assert.True(invoices.ImplementationAvailable);
-        Assert.DoesNotContain(declarations, candidate => candidate.ParentCapabilityId == invoices.CapabilityId);
+        // Each control keeps the list's route, screen, precedence, context and scope, and needs the invoice read, the price read
+        // (every invoice command measures it) and its own existing name; the frontend gates its control on the same id.
+        var expectedControls = new (string Id, string Own)[]
+        {
+            ("sales.invoices.approve", SalesPermissionManifestV1.InvoicesApprove),
+            ("sales.invoices.finalize", SalesPermissionManifestV1.InvoicesFinalize),
+            ("sales.invoices.match", SalesPermissionManifestV1.InvoicesMatch),
+            ("sales.invoices.write", SalesPermissionManifestV1.InvoicesWrite),
+        };
+        var controls = declarations.Where(candidate => candidate.ParentCapabilityId == invoices.CapabilityId)
+            .OrderBy(candidate => candidate.CapabilityId, StringComparer.Ordinal).ToArray();
+        Assert.Equal(expectedControls.Select(item => item.Id), controls.Select(control => control.CapabilityId));
+        foreach (var (control, item) in controls.Zip(expectedControls))
+        {
+            Assert.Equal((invoices.RouteId, invoices.RoutePath, invoices.ScreenId, invoices.RoutePrecedence,
+                    invoices.ContextRequirement, invoices.ScopeRequirement),
+                (control.RouteId, control.RoutePath, control.ScreenId, control.RoutePrecedence, control.ContextRequirement,
+                    control.ScopeRequirement));
+            Assert.Equal([SalesPermissionManifestV1.InvoicesRead, SalesPermissionManifestV1.OrdersPriceRead, item.Own],
+                control.RequiredPermissions);
+            Assert.True(control.ImplementationAvailable);
+            Assert.Contains($"'{item.Id}'", source);
+        }
+
         Assert.Contains("'sales.invoices.list'", source);
         Assert.Contains("'/satis/faturalar'", source);
     }
