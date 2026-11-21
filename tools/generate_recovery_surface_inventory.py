@@ -98,9 +98,9 @@ EXPECTED_DURABLE_STORE_COUNT = 66
 # inventory (and copied into the release manifest).  The manifest sourceSurface is post-hoc
 # evidence, not a merge block: it is never compared with a pinned constant.
 EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 1478
-# W8 K3 A/B corrections: producer measured at 40727af79; 1478 inputs, 346 migrations; K3 pending.
+# W8 posting deadlock mapping (AccountingStore.cs): producer re-measured; 1478 inputs, 346 migrations; K3 pending.
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    '98f8753c13533f51574446a5b31506e3e5eb18d64e0d9a6b46259d8fccc23e4a'
+    'e8cf2a7c1789889a078b01f178aa39e33604d5475bfc1dfb06093451d033269b'
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -1632,7 +1632,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Contracts.cs": "f4014c66f561b649148f36f594c4076dfa02f26a4831c41d0401ea0573e79e2d",
     "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs": "298f6a269c2eab1827bc5bf6afdea08e2dda08d7f02a06234c4ad1e44b18aec5",
     ACCOUNTING_SOURCE_DOCUMENT_ADMISSION_STORE: "8ca65bf50efebdeb14e2b4f53cb21e2bbed63fda725d5eaf80818cafe0da4076",
-    ACCOUNTING_STORE: '9753a303d40da5210fe67cb2f542edf6c293ebe318ddfaeed8e579d4b8df3368',
+    ACCOUNTING_STORE: 'f1bf12e1a6e1232127b67202e6b0b882f34ab139b7d5ce95ae011630f8517fc3',
     DOCUMENT_MODULE_PATH: "daf96c1173fd67e0374d6c2b33a15df758aaae54fd9ee527e13e2849b0d5c8a6",
     DOCUMENTS_STORE: "5650ad7c0588f9b054964b578ab26fdc7d6d10a8a6ba646e9ecf4c5ff4714217",
     DOCUMENT_SCANNER_PATH: "39686c28f47ddb2f65085e7587241141426641b069ab8079ac1a93542d144189",
