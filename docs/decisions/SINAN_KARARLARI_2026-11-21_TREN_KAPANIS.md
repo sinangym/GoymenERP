@@ -5,8 +5,8 @@ URN-D26 ekler. SAT-D259 (2) (marj TL tutarıdır), SAT-D265, SAT-D230, SAT-D249,
 tedarikçi faturasındaki resmî kurla hesaplanması), DEC-CAR-003 ve SAT-D306 geçerliliğini korur; bu kararlar onların
 ve tren-1 kod incelemesinin açık bıraktığı noktaları kapatır.
 
-**Kaynak:** Sinan, 2026-11-21, oturum içinde önerili seçeneklerle soruldu ("Benim kararımı bekleyen tüm soruları sor
-önerili şekilde"). Dokuz cevabın sekizi önerilen seçenektir; 5. soruda önerilmeyen seçenek seçildi. 9. soru, 1. cevabın uygulanmasında çıkan boşluk için aynı oturumda soruldu. "(Önerilen)"
+**Kaynak:** Sinan, 2026-11-21, bu Claude Code oturumunda soru penceresiyle önerili seçeneklerle cevapladı ("Benim kararımı
+bekleyen tüm soruları sor önerili şekilde"; SINAN-CEVAP 49, ajan aktarımı: Issue #1189 yorumu 7065185254). Dokuz cevabın sekizi önerilen seçenektir; 5. soruda önerilmeyen seçenek seçildi. 9. soru, 1. cevabın uygulanmasında çıkan boşluk için aynı oturumda soruldu. "(Önerilen)"
 işaretleri soranındır. Sorular, PR #1201 (tren-1) incelemesinde koddaki `NEEDS-SINAN` notlarından ve marj golden'ının
 (`SAT_S12_SATIS_MARJI_FORMUL_GOLDEN_V1.md`) açık bıraktığı sınırdan doğdu.
 
@@ -41,7 +41,8 @@ işaretleri soranındır. Sorular, PR #1201 (tren-1) incelemesinde koddaki `NEED
 
 - SAT-D426 faturadaki kuru siparişin marjına taşımaz; fatura kendi kurunu korur. Kurun okunamadığı onayın reddedilip
   reddedilmeyeceği seçilmedi; uygulama onayı engellemez, marjı hesaplanamaz bırakır (geri alınabilir uygulama ayrıntısı).
-  Uygulama marj golden'ına yeni satır ister (SAT-D265 (5)).
+  Uygulama marj golden'ına yeni satır ister (SAT-D265 (5)); main'deki golden G20'yi koruduğu sürece döviz dönüşümü uygulamada
+  kapalıdır, kur onayda dondurulup saklanır. Sipariş kuru tektir: revizyon onayı ilk onayda dondurulan kuru kullanır.
 - Maliyet birimi ile sipariş birimi farklı olduğunda marj (birim dönüşümü) ve karışık kaynaklı kalem marjı bu belgeyle
   açılmaz.
 - KLN-D117'deki seçim ekranının ayrıntısı (hangi sipariş satırlarının listeleneceği) geri alınabilir uygulama ayrıntısıdır;
