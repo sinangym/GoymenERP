@@ -16,16 +16,20 @@ public enum InventoryLabelTransformationKind
     Manufacturing = 3,
 }
 
+/// <summary>A whole source label. <paramref name="Pieces"/> is its stored piece count (KLN-D119), null when it tracks none.</summary>
 public sealed record InventoryLabelTransformationSource(
     MaterialLabel Label,
     StockPosition Position,
     Kilograms Quantity,
-    long ExpectedVersion);
+    long ExpectedVersion,
+    PieceCount? Pieces = null);
 
+/// <summary>A new output label. <paramref name="Pieces"/> is its piece count when the sources track pieces (KLN-D119).</summary>
 public sealed record InventoryLabelTransformationOutput(
     MaterialLabel Label,
     StockPosition Position,
-    Kilograms Quantity);
+    Kilograms Quantity,
+    PieceCount? Pieces = null);
 
 /// <summary>
 /// One same-company physical repack event (DEC-LBL-002/003, AT-038). A split consumes one whole
@@ -154,6 +158,52 @@ public sealed class InventoryLabelTransformation
         if (sourceTotal != outputTotal)
         {
             throw Invalid("Etiket dönüşümünde kaynak ve çıktı kilogram toplamları eşit olmalıdır.");
+        }
+
+        RequirePiecesConserved();
+    }
+
+    /// <summary>
+    /// KLN-D119 (AK-2): piece-tracking sources give piece-tracking outputs whose pieces add up to the sources' pieces, each
+    /// output holding at least one piece; piece-less sources give piece-less outputs (no backfill); a mix is refused.
+    /// </summary>
+    private void RequirePiecesConserved()
+    {
+        var trackedSources = sources.Count(source => source.Pieces is not null);
+        if (trackedSources != 0 && trackedSources != sources.Length)
+        {
+            throw new InventoryRuleException(InventoryRuleCodes.InvalidPieceCount,
+                "Adetli ve adetsiz etiketler birlikte birleştirilemez.");
+        }
+
+        if (trackedSources == 0)
+        {
+            if (outputs.Any(output => output.Pieces is not null))
+            {
+                throw new InventoryRuleException(InventoryRuleCodes.PieceCountNotTracked,
+                    "Adetsiz kaynaktan çıkan etikete adet verilmez.");
+            }
+
+            return;
+        }
+
+        if (sources.Any(source => source.Pieces!.Value.Value <= 0))
+        {
+            throw new InventoryRuleException(InventoryRuleCodes.InvalidPieceCount, "Adetli kaynak etiketin adedi pozitif olmalıdır.");
+        }
+
+        if (outputs.Any(output => output.Pieces is not { Value: > 0 }))
+        {
+            throw new InventoryRuleException(InventoryRuleCodes.PieceCountRequired,
+                "Adetli kaynaktan çıkan her etiket en az bir adet taşır.");
+        }
+
+        var sourcePieces = sources.Aggregate(PieceCount.Zero, (sum, source) => sum + source.Pieces!.Value);
+        var outputPieces = outputs.Aggregate(PieceCount.Zero, (sum, output) => sum + output.Pieces!.Value);
+        if (sourcePieces != outputPieces)
+        {
+            throw new InventoryRuleException(InventoryRuleCodes.InvalidPieceCount,
+                "Etiket dönüşümünde çıktı adetleri toplamı kaynak adedine eşit olmalıdır.");
         }
     }
 
