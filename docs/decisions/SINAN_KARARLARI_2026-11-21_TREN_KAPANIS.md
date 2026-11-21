@@ -1,7 +1,7 @@
 # Sinan Kararları — 2026-11-21 (tren-1 kapanışı: dövizli marj, Finans reddi ve yeniden gönderim, muhasebe aktarımı, stok satırından tahsis, cari filtresi, mükerrer ürün uyarısı, fiyat listesi kapsamı)
 
 Bu belge önceki karar dosyalarını silmez; SAT-D426, SAT-D427, SAT-D428, KLN-D116, KLN-D117, KLN-D118, URN-D25,
-URN-D26, SAT-D429, SAT-D430, SAT-D431, SAT-D432, SAT-D433, GOV-D12, SAT-D434–SAT-D438, ALS-D119, KLN-D119 ve URT-D112 ekler. SAT-D259 (2) (marj TL tutarıdır), SAT-D265, SAT-D230, SAT-D249, BS-1 (dövizli alışta TL maliyetin
+URN-D26, SAT-D429, SAT-D430, SAT-D431, SAT-D432, SAT-D433, GOV-D12, SAT-D434–SAT-D438, ALS-D119, KLN-D119, URT-D112, SAT-D439–SAT-D443, ALS-D120 ve ALS-D121 ekler. SAT-D259 (2) (marj TL tutarıdır), SAT-D265, SAT-D230, SAT-D249, BS-1 (dövizli alışta TL maliyetin
 tedarikçi faturasındaki resmî kurla hesaplanması), DEC-CAR-003 ve SAT-D306 geçerliliğini korur; bu kararlar onların
 ve tren-1 kod incelemesinin açık bıraktığı noktaları kapatır.
 
@@ -13,7 +13,9 @@ işaretleri soranındır. Sorular, PR #1201 (tren-1) incelemesinde koddaki `NEED
 10. soruya seçenek dışı serbest cevap verildi, 12. soruda önerilmeyen seçenek seçildi. 14–17. sorular aynı gün "Benden karar
 bekleyen sorularını sor" isteğiyle soruldu (SINAN-CEVAP 51, ajan aktarımı: Issue #1189 yorumu 7069053648); 14. soruya serbest
 cevap verildi, 16. soruda önerilmeyen seçenek seçildi. 18–26. sorular aynı gün adet/kg konusunda soruldu (SINAN-CEVAP 52,
-ajan aktarımı: Issue #1189 yorumu 7069251238); 18. soruya serbest açıklama verildi, 21. soruda önerilmeyen seçenek seçildi.
+ajan aktarımı: Issue #1189 yorumu 7069251238); 18. soruya serbest açıklama verildi, 21. soruda önerilmeyen seçenek seçildi. 27–35. sorular adet/kg golden'ının (PR #1204)
+NEEDS-SINAN noktaları için soruldu (SINAN-CEVAP 53, ajan aktarımı: Issue #1189 yorumu 7070761130); 28. soru "Bunu bilmiyorum"
+diye açık kaldı, 32–33. sorulara serbest cevap verildi ve 34. netleştirme sorusuyla tamamlandı.
 
 ## Soru ve cevaplar
 
@@ -45,6 +47,15 @@ ajan aktarımı: Issue #1189 yorumu 7069251238); 18. soruya serbest açıklama v
 | 24 | Sipariş ve faturada gösterilecek kg fiyatı kaç basamakla gösterilsin? | **0,01 TL/kg (Önerilen)** | Mevcut para gösterim kuralıyla aynı: kuruşa, yarımda sıfırdan uzağa. | 0,0001 TL/kg. |
 | 25 | Adetle satılan/alınan mallarda stok etiketinde adet de tutulsun mu? Üretim çıktısında adet kaydedilsin mi? | **Evet, etiket adet + kg (Önerilen)**; **Evet, çıktı adet + tartılan kg (Önerilen)** | Adetli ürünlerde etiket hem adet hem kg taşır; kabul, üretim çıktısı, bölme ve sevk adedi günceller. Üretim çıktısı adet ve tartılan kg ile kaydedilir; maliyet kg başınadır. | Adet yalnız belgede; Üretim yalnız kg. |
 | 26 | Bölünmüş/birleştirilmiş etiketten tedarikçi iadesinde iade edilen kg hangi alış kabulünden düşülsün? | **Soy ağacı paylarına orantılı (Önerilen)** | Etiketin içindeki her kabulün soy ağacındaki payına göre otomatik dağıtılır; her kabul içinde faturalı/fatura bekleyen payı yine hazırlayan seçer. | Hazırlayan her kabulü elle seçsin. |
+| 27 | Dövizli (ör. USD) satış/alış belgesinde kg fiyatı göstergesi hangi para biriminde gösterilsin? | **Belge para biriminde (Önerilen)** | USD belgede USD/kg gösterilir; kur gerekmez. | TL/kg; İkisi birden. |
+| 28 | Belge düzeyi kg fiyatında belge altı iskonto, vade farkı, kg'si olmayan hizmet satırları ve iade satırları ne olsun? | **"Bunu bilmiyorum"** | Açık kalır (Sınırlar). | Yalnız kg'li mal satırları (Önerilen); Belgenin tüm net tutarı. |
+| 29 | Alışta stok ortalamasına girişte maliyet nasıl taşınsın? | **Kesin tutar taşınsın (Önerilen)** | Ortalamaya girilen tutar faturadaki kesin tutardır; ara yuvarlama yok. | Önce 4 ondalığa yuvarlansın. |
+| 30 | Dövizli adetli alış kabulünün kısmi faturasında faturalanan adede düşen kg nasıl bulunsun? | **Adede orantılı (Önerilen)** | Kabulde tartılan kg × faturalanan adet ÷ kabul adedi. | Faturaya bağlanan etiketlerin kg'si. |
+| 31 | Orantılı iade dağıtımında 3 ondalıkta kalan 0,001 kg artık hangi kabule yazılsın? | **En büyük paya (Önerilen)** | Eşitlikte kabul sırasına göre ilkine (SAT-D409 emsali). | Son paya. |
+| 32 | Etiketin soyunda farklı tedarikçilerin kabulleri varsa tek tedarikçiye iade nasıl yapılsın? | **Serbest cevap:** "Bence burda kesin bir sınıt koymayalım iade edebilsin, bazen iade kendi ürününi değil miktarı iade etmek olabilir" | Sınır konmaz (34. soru). | Yalnız o tedarikçinin payı kadar (Önerilen); Karışık etiket iade edilemesin. |
+| 33 | Etiketin soyunda alış kabulü olmayan pay varsa tedarikçiye iadede ne olsun? | **Serbest cevap:** "Bir önceki soru ile cevapladım bende" | 32. ve 34. cevapla aynı. | Yalnız alış payı iade edilebilir (Önerilen); Bu etiket iade edilemesin. |
+| 34 | Tedarikçi X'e, soyunda X'in kabulü olmayan bir etiketten iade yapılırsa hangi alış belgesinden düşülsün ve maliyet nasıl olsun? | **Hazırlayan X'in kabulünü seçer (Önerilen)** | İade seçilen X kabulünden düşülür; stok çıkışı etiketin kendi maliyetiyle yapılır; fark mevcut iade farkı kuralıyla kaydedilir. | Yalnız kayıt, maliyet etiketten. |
+| 35 | Adetli etiketten iade edilen adet kabullere dağıtılırken kesirli çıkarsa ne olsun? | **Tam adete yuvarla, artık en büyük paya (Önerilen)** | Adet tam sayıya aşağı yuvarlanır, kalan adet en büyük paya yazılır; kg dağıtımı ayrıca orantılı kalır. | Hazırlayan seçsin. |
 
 ## Kararlar
 
@@ -67,6 +78,13 @@ ajan aktarımı: Issue #1189 yorumu 7069251238); 18. soruya serbest açıklama v
 | ALS-D119 | Alış stok maliyeti kg'si | Alıştan gelen stok maliyeti kg başına **ödenen tutar ÷ kabulde tartılan gerçek kg** ile hesaplanır; SAT-D298'in teorik kg (kart katsayısı) kısmının yerine geçer. Golden main'e girmeden etkinleştirilmez. | Stok ortalama maliyeti, alış kabul maliyet kaynağı |
 | KLN-D119 | Etikette adet | Adetle satılan/alınan ürünlerde stok etiketi **adet + kg** taşır; alış kabulü, üretim çıktısı, bölme/birleştirme ve sevk adedi günceller; adetle siparişe tahsis ve sevk mümkün olur. | Stok etiketi, kabul, tahsis, sevk |
 | URT-D112 | Üretim çıktısında adet | Adetli ürünün üretim çıktısı **adet + tartılan kg** ile kaydedilir; maliyet kg başına kalır; gerçek kg/adet ile teorik arasındaki sapma görülür (sapma eşiği URT-D51 (5) ile açık kalır). | Üretim çıktı beyanı, etiket |
+| SAT-D439 | Dövizli belgede kg fiyatı | Kg fiyatı göstergesi (SAT-D436) belge para biriminde gösterilir (USD belgede USD/kg); kur kullanılmaz. | Kg fiyatı göstergesi |
+| SAT-D440 | Orantılı iade artığı | Soy ağacı orantılı iade dağıtımında (SAT-D433) 3 ondalık kg artığı **en büyük paya** yazılır; eşitlikte kabul sırasına göre ilkine. | Tedarikçi iadesi dağıtımı |
+| SAT-D441 | Miktar iadesi (soyunda tedarikçinin kabulü olmayan etiket) | Tedarikçiye iade için etiketin soyuna kesin sınır konmaz: soyunda o tedarikçinin kabulü olmayan (başka tedarikçi, üretim, açılış, müşteri iadesi) etiketten de iade yapılabilir. İade, hazırlayanın seçtiği o tedarikçinin kabulünden (açık miktarı kadar) düşülür; stok çıkışı etiketin kendi maliyetiyle yapılır; seçilen kabulün fatura maliyetiyle aradaki fark mevcut iade farkı kuralıyla (SAT-D392/D393, farklı kişi onayı) kaydedilir. | Satın alma tedarikçi iadesi, Stok iade çıkışı |
+| SAT-D442 | Adetli etiketten iadede adet dağıtımı | İade edilen adet kabullere orantılı dağıtılırken tam sayıya **aşağı yuvarlanır**, kalan adet en büyük paya yazılır; kg dağıtımı ayrıca orantılı kalır. | Tedarikçi iadesi, etiket adedi |
+| SAT-D443 | Metre birimi | Adet/kg paketi bu trende yalnız adet birimini açar; metre gibi ondalıklı ticari birimler ayrı karardır (golden N3). | Ayarlar birim kataloğu |
+| ALS-D120 | Ortalamaya giriş tutarı | Alıştan ortalama maliyete girişte faturadaki **kesin tutar** taşınır; giriş maliyeti/kg ara adımda yuvarlanmaz, iç hassasiyet (4 ondalık) yalnız sonuçta uygulanır. | Stok ortalama maliyeti |
+| ALS-D121 | Kısmi faturada kg payı | Dövizli veya TL adetli alış kabulünün kısmi faturasında faturalanan adede düşen kg = kabulde tartılan kg × faturalanan adet ÷ kabul adedi. | Alış faturası maliyet uygulaması |
 | KLN-D116 | Muhasebeye otomatik aktarım pilotta | Fatura olaylarının muhasebe kaynak fişine otomatik alınması pilotun ilk aşamasında **kapalı** kalır; açılması ayrı muhasebe kabulünden sonra ayrı kullanıcı kararıyla yapılır. | Muhasebe aktivasyon ayarı (değişmez) |
 | KLN-D117 | Stok etiket satırından tahsis ve yükleme talimatı | Stok listesinde bir etiket satırından "Satışa tahsis et" ve "Yükleme talimatı oluştur" başlatılabilir: kullanıcı sipariş satırını seçer; tahsis ve talimat, sipariş satırından başlayan akışla aynı sunucu komutlarını ve kurallarını kullanır (yetki, miktar, sahiplik, şirket sınırı). Sipariş satırından başlatma da korunur. | Stok listesi satır eylemleri, ilgili seçim ekranı |
 | KLN-D118 | Cari listesinin varsayılan filtresi | Cari listesi varsayılan olarak **yalnız aktif** carileri gösterir; pasifler filtreyle görülür (mevcut uygulama). | Cari listesi (değişmez; açık not kapanır) |
@@ -81,7 +99,9 @@ ajan aktarımı: Issue #1189 yorumu 7069251238); 18. soruya serbest açıklama v
   kapalıdır, kur onayda dondurulup saklanır. Sipariş kuru tektir: revizyon onayı ilk onayda dondurulan kuru kullanır.
 - Maliyet birimi ile sipariş birimi farklı olduğunda marj (birim dönüşümü) ve karışık kaynaklı kalem marjı bu belgeyle
   açılmaz; adetli satırların marjı SAT-D438 ile, kg fiyatı göstergesi SAT-D436 ile karara bağlandı; karışık kaynaklı kalem
-  marjı açık kalır.
+  marjı açık kalır. Belge düzeyi kg fiyatına belge altı iskonto, vade farkı, kg'siz hizmet ve iade satırlarının nasıl
+  gireceği açıktır (28. soru); karar gelene kadar belge düzeyi kg fiyatı yalnız bütün satırlar kg'li mal satırı olduğunda
+  gösterilir, satır düzeyi her zaman gösterilir.
 - KLN-D117'deki seçim ekranının ayrıntısı (hangi sipariş satırlarının listeleneceği) geri alınabilir uygulama ayrıntısıdır;
   tahsis/sevk kuralları değişmez.
 - URN-D25 benzerlik (bulanık eşleşme) kuralı getirmez; yalnız beş alanın tam eşitliğine bakar.
