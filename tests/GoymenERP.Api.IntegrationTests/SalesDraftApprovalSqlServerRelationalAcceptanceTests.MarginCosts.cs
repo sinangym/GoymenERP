@@ -95,7 +95,11 @@ public sealed partial class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         var index = Array.FindIndex(applied, item => item.EndsWith("_AddSalesMarginCostSnapshots", StringComparison.Ordinal));
         Assert.True(index > 0);
         await context.GetService<IMigrator>().MigrateAsync(applied[index - 1]);
-        await context.GetService<IMigrator>().MigrateAsync(applied[index]);
+        Assert.Equal(applied[..index], (await context.Database.GetAppliedMigrationsAsync()).ToArray());
+        // Forward again through every later migration of the table (SAT-D426 adds the frozen sale rate columns), so the
+        // current store reads the restored schema; nothing is backfilled on the way.
+        await context.Database.MigrateAsync();
+        Assert.Equal(applied, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftMarginCosts"));
         await using var restored = run.Store(CompanyA);
         var legacy = (await restored.Store.FindDraftAsync(draftId))!;
