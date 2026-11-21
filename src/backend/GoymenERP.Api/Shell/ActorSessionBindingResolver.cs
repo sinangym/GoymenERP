@@ -67,7 +67,55 @@ internal sealed class ActorSessionBindingResolver(
             return ResolveBearerBinding(httpContext, schemeName);
         }
 
+        if (string.Equals(
+                schemeName,
+                LocalAccountSession.SchemeName,
+                StringComparison.Ordinal))
+        {
+            return ResolveLocalAccountBinding(httpContext, schemeName);
+        }
+
         return null;
+    }
+
+    /// <summary>
+    /// F-001 local session (cookie). The binding is the exact session the cookie ticket carries: the local claim pair,
+    /// the security stamp that a logout or password change renews, and the login instant kept in the protected ticket,
+    /// so a new login or a renewed stamp is a new binding. Any missing piece fails closed.
+    /// </summary>
+    private string? ResolveLocalAccountBinding(
+        HttpContext httpContext,
+        string schemeName)
+    {
+        var principal = httpContext.User;
+        if (!principal.Identities.Any(identity => identity.IsAuthenticated && string.Equals(
+                identity.AuthenticationType,
+                LocalAccountSession.SchemeName,
+                StringComparison.Ordinal))
+            || !TryReadSingleClaim(
+                principal,
+                LocalAccountSession.IssuerClaimType,
+                out var issuer)
+            || !string.Equals(issuer, LocalAccountSession.Issuer, StringComparison.Ordinal)
+            || !TryReadSingleClaim(
+                principal,
+                LocalAccountSession.SubjectClaimType,
+                out var subject)
+            || !TryReadSingleClaim(
+                principal,
+                LocalAccountSession.SecurityStampClaimType,
+                out var securityStamp)
+            || httpContext.Features.Get<IAuthenticateResultFeature>()?.AuthenticateResult
+                is not { Succeeded: true, Ticket: { } ticket }
+            || !string.Equals(ticket.AuthenticationScheme, schemeName, StringComparison.Ordinal)
+            || !ticket.Properties.Items.TryGetValue(LocalAccountSession.StartedAtUtcItem, out var startedAtUtc)
+            || string.IsNullOrWhiteSpace(startedAtUtc))
+        {
+            return null;
+        }
+
+        return protector.Protect(
+            ["local-account-session", schemeName, issuer, subject, currentUser.UserId!, securityStamp, startedAtUtc]);
     }
 
     private string? ResolveDevelopmentBinding(
