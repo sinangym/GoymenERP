@@ -11,8 +11,8 @@ import { SalesOfficialInvoiceCancellationPanel } from './SalesOfficialInvoiceCan
  *  - UI-64 (API-33): a draft's submit / approve / reject / cancel controls (`SalesInvoiceDraftActions`) follow the
  *    `sales.invoices.write` / `sales.invoices.approve` controls, the official match form `sales.invoices.match` (an excess also
  *    needs `sales.invoices.approve`, SAT-D106). Each fails closed without its capability; the server re-measures every call.
- *  - Open policies are said neutrally, never decided: the dead end after Finance's authority refusal (`refused:denied`) and the
- *    automatic background re-send (NEEDS-SINAN).
+ *  - After Finance's authority refusal (`refused:denied`) a user holding the finalize control re-sends the same invoice
+ *    (SAT-D427); nothing is re-sent in the background (SAT-D428). The server re-measures the authority on every re-send.
  *  - 401/403 go to the shell's auth boundary; the screen does not change the session or the authority itself.
  */
 import { useId, useState } from 'react'

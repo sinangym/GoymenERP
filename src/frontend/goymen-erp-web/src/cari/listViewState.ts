@@ -60,10 +60,9 @@ export interface CariListView {
 }
 
 /**
- * NEEDS-SINAN (via ChatGPT C-01 spec): the default party-state filter. `active` is
- * used here because DEC-CAR-003 keeps used records visible but inactive, and an
- * operator listing counterparties normally works with active ones. Passives remain
- * reachable via the filter (AT-013).
+ * KLN-D118 (Sinan 2026-11-21): the default party-state filter is `active`; DEC-CAR-003
+ * keeps used records visible but inactive, and passives remain reachable via the
+ * filter (AT-013).
  *
  * The account-state default is the contract's own: the company-account state is
  * filtered independently of the Party.

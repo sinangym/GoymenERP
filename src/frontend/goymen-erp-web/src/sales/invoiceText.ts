@@ -87,11 +87,11 @@ export const INVOICE_FINALIZATION_TEXT = {
   functionalMissing: '—',
   openItemId: 'Finans açık kalem',
   deniedNote:
-    'Finans bu faturayı yetki gerekçesiyle reddetti. Bu durumdan çıkış yolu (iptal ya da düzeltme) henüz kararlaştırılmadı; ' +
-    'ekran bir çözüm önermez.',
+    'Finans bu faturayı yetki gerekçesiyle reddetti. Faturayı kesinleştirme yetkisi olan bir kullanıcı aynı faturayı ' +
+    '“Finans’a yeniden gönder” ile tekrar gönderebilir; fatura değişmez.',
   redriveNote:
-    'Finans yanıtı beklenirken otomatik yeniden gönderim politikası (sıklık ve üst sınır) karar bekliyor; bu ekran arka planda ' +
-    'yeniden göndermez.',
+    'Finans yanıtı beklenirken sistem arka planda yeniden göndermez; yeniden gönderim yalnız yetkili kullanıcının bu düğmesiyle ' +
+    'yapılır.',
   controlsUnavailable:
     'Faturayı kesinleştirme ve Finans’a yeniden gönderme yetkiniz bu oturumda yayımlanmadı.',
   finalize: 'Faturayı kesinleştir',
