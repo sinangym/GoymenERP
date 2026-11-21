@@ -1192,6 +1192,17 @@ public sealed partial class AccountingStore(
             throw Refused(AccountingStoreCodes.ConcurrentChange,
                 "Kalıcı tekillik kuralı başka bir yazmanın lehine sonuçlandı; hiçbir şey kaydedilmedi.", exception);
         }
+        catch (Exception exception) when (dbContext.Database.CurrentTransaction is null
+            && IsPeriodTransactionDeadlock(exception))
+        {
+            // A standalone save chosen as the deadlock victim (raw or EF-wrapped 1205), e.g. a posting that bumps the
+            // period version while a SERIALIZABLE close holds the period row: SQL Server rolled the implicit save back,
+            // so it is the same retryable lost race as a version conflict. Inside an explicit transaction the owner of
+            // that transaction decides (the period lifecycle maps it itself).
+            dbContext.ChangeTracker.Clear();
+            throw Refused(AccountingStoreCodes.ConcurrentChange,
+                "Aynı dönem ya da kayıt eşzamanlı bir işlemle çakıştı; hiçbir şey kaydedilmedi.", exception);
+        }
     }
 
     private void Audit(AccountingCommandMetadata metadata, Guid companyId, string entityType, string entityId, string eventType,

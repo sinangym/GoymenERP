@@ -1783,9 +1783,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // journal draft and reversal lifecycles persist through EF and carry late authority fences;
                 // SqlClient count remains unchanged (1). Re-fingerprinted for the #464 K3 fix (#485): one company-bound
                 // EF read admits the reversal period before staging; no SQL, connection, context or filter bypass.
+                // Re-fingerprinted for W8 (period close vs posting race): a standalone save chosen as the deadlock
+                // victim maps to the retryable ConcurrentChange through the existing IsPeriodTransactionDeadlock
+                // classifier; no new SQL, connection, context or filter bypass; SqlClient count unchanged (1).
                 [ReviewedAccountingStorePath] =
                     new(
-                        "9753a303d40da5210fe67cb2f542edf6c293ebe318ddfaeed8e579d4b8df3368",
+                        "f1bf12e1a6e1232127b67202e6b0b882f34ab139b7d5ce95ae011630f8517fc3",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
