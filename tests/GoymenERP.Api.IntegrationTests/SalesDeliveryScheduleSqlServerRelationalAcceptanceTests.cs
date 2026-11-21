@@ -69,7 +69,7 @@ public sealed class SalesDeliveryScheduleSqlServerRelationalAcceptanceTests
             var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
                 run.Service(a, "SENTETIK-approver", approver).RescheduleDeliveryAsync(draft.Id, request, run.Metadata("k-denied")));
             Assert.Equal((403, "forbidden"), (refused.Status, refused.Code));
-            Assert.Equal([(SchedulePermission, CompanyA)], approver.Measured);
+            Assert.Equal([(SchedulePermission, CompanyA), (SalesPermissionManifestV1.OrdersHeaderWrite, CompanyA)], approver.Measured);
         }
 
         // (b) The ONE save, measured and refused: the whole change set reached it together, and SQL Server keeps nothing of it.

@@ -4,7 +4,8 @@
  *   GET  /api/v1/sales/customer-returns[?invoiceId]       → the list (one page; the server sends no cursor)
  *   GET  /api/v1/sales/customer-returns/{id}              → the detail
  *   POST /api/v1/sales/customer-returns                   → 201 the recorded Draft
- *   POST /api/v1/sales/customer-returns/{id}/{command}    → 200 the moved return
+ *   GET  /api/v1/sales/customer-returns/{id}/installments → the open installments and Finance's prefill (FNS-D81)
+ *   POST /api/v1/sales/customer-returns/{id}/{command}    → 200 the moved return (finalization: `allocations` when partial)
  *   POST /api/v1/sales/customer-returns/{id}/rejection    → 200 the rejected return (`{ expectedVersion, reason }`)
  *   POST /api/v1/sales/customer-returns/{id}/cancellation → 200 the cancelled return (`{ expectedVersion, reason }`)
  *
@@ -17,9 +18,12 @@ import { headers, readFailure, request } from './api'
 import { CREATED_STATUS, STATE_COMMAND_STATUS, decodeProblem } from './contract'
 import {
   SALES_CUSTOMER_RETURNS_PATH,
+  decodeCustomerReturnInstallments,
   decodeCustomerReturnList,
   decodeCustomerReturnView,
   salesCustomerReturnApiPath,
+  salesCustomerReturnInstallmentsPath,
+  type CustomerReturnInstallments,
   salesCustomerReturnsListPath,
   type CustomerReturnState,
   type CustomerReturnSummary,
@@ -59,6 +63,19 @@ export async function fetchCustomerReturn(
   return view === null ? { type: 'malformed' } : { type: 'ok-single', data: view }
 }
 
+/** FNS-D81: the installments an approved return may reduce; a read, never a write (no idempotency key). */
+export async function fetchCustomerReturnInstallments(
+  returnId: string,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<CustomerReturnInstallments>> {
+  const raw = await request(salesCustomerReturnInstallmentsPath(returnId), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const installments = decodeCustomerReturnInstallments(raw.body, returnId)
+  return installments === null ? { type: 'malformed' } : { type: 'ok-single', data: installments }
+}
+
 export interface CreateCustomerReturnLineBody {
   readonly originalInvoiceLineId: string
   readonly quantity: string
@@ -73,9 +90,20 @@ export interface CreateCustomerReturnBody {
   readonly lines: readonly CreateCustomerReturnLineBody[]
 }
 
-/** `SalesDraftStateCommandRequest`: the version the screen read. */
+/** One chosen installment and the part of the return put on it (`SalesCustomerReturnAllocationRequest`). */
+export interface CustomerReturnAllocationBody {
+  readonly openItemId: string
+  readonly amount: string
+}
+
+/**
+ * `SalesDraftStateCommandRequest` (submission, approval) or `FinalizeSalesCustomerReturnRequest` (finalization): the version
+ * the screen read and, for a partial return's finalization only, the user's installment selection (FNS-D81). Without a
+ * selection the member is not sent at all — an empty list is malformed for the server.
+ */
 export interface CustomerReturnCommandBody {
   readonly expectedVersion: string
+  readonly allocations?: readonly CustomerReturnAllocationBody[]
 }
 
 export type CustomerReturnCommand = 'submission' | 'approval' | 'finalization'
@@ -182,7 +210,13 @@ export async function sendCustomerReturnCommand(
   context: CustomerReturnCommandContext,
   signal?: AbortSignal,
 ): Promise<OrderCommandOutcome<CustomerReturnMutation>> {
-  const raw = await post(customerReturnCommandPath(returnId, command), { expectedVersion: payload.expectedVersion }, context, signal)
+  const allocations = command === 'finalization' && payload.allocations !== undefined && payload.allocations.length > 0
+    ? payload.allocations.map((allocation) => ({ openItemId: allocation.openItemId, amount: allocation.amount }))
+    : undefined
+  const body = allocations === undefined
+    ? { expectedVersion: payload.expectedVersion }
+    : { expectedVersion: payload.expectedVersion, allocations }
+  const raw = await post(customerReturnCommandPath(returnId, command), body, context, signal)
   return interpret(raw, STATE_COMMAND_STATUS, (value) => {
     const view = decodeCustomerReturnView(value, returnId)
     return view !== null && view.state === CUSTOMER_RETURN_COMMAND_TARGET[command] ? view : null

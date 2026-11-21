@@ -315,6 +315,7 @@ public sealed class CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests
             Assert.Equal(6, await MigrationCountAsync(connection));
             await MigrateAsync(factory.DatabaseConnectionString, EDocumentProfileMigration);
             Assert.Equal(7, await MigrationCountAsync(connection));
+            await MigrateAsync(factory.DatabaseConnectionString, null);
             await AssertLegacyReplaysAsync(factory, connection, legacy, currentModelSnapshot);
 
             // A safe down must restore 1..15 without rewriting any identities, timestamps,
@@ -336,6 +337,7 @@ public sealed class CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests
             Assert.Equal(6, await MigrationCountAsync(connection));
             await MigrateAsync(factory.DatabaseConnectionString, EDocumentProfileMigration);
             Assert.Equal(7, await MigrationCountAsync(connection));
+            await MigrateAsync(factory.DatabaseConnectionString, null);
             await AssertLegacyReplaysAsync(factory, connection, legacy, currentModelSnapshot);
             await AssertLegacyReplaysAsync(factory, connection, legacy, currentModelSnapshot);
             await CreateReceiptAsync(
@@ -423,6 +425,7 @@ public sealed class CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests
             Assert.Equal(6, await MigrationCountAsync(connection));
             await MigrateAsync(factory.DatabaseConnectionString, EDocumentProfileMigration);
             Assert.Equal(7, await MigrationCountAsync(connection));
+            await MigrateAsync(factory.DatabaseConnectionString, null);
             Assert.Equal(currentModelSnapshot, await ReadSnapshotAsync(connection));
             await AssertReplayAsync(source, created, CreateJson("SQL Blocked Down Roleless Fixture", "0"));
             await AssertReplayAsync(target, linked, LinkJson("0"));
@@ -676,7 +679,7 @@ public sealed class CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests
                 request.Headers.Add("Idempotency-Key", key);
                 request.Headers.Add("X-Correlation-Id", correlation);
                 request.Content = new StringContent(JsonSerializer.Serialize(
-                    new { isActive = active, expectedVersion = version, reason = "CRO-AC-009" }),
+                    new { isActive = active, expectedVersion = version, reason = "CRO-AC-009", exposureWarningAcknowledged = true }),
                     Encoding.UTF8, "application/json");
                 return await client.SendAsync(request);
             }
@@ -797,7 +800,7 @@ public sealed class CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests
         return new CounterpartyDbContext(options, new CompanyContext());
     }
 
-    private static async Task MigrateAsync(string connectionString, string migration)
+    private static async Task MigrateAsync(string connectionString, string? migration)
     {
         await using var context = CreateMigrationContext(connectionString);
         await context.GetService<IMigrator>().MigrateAsync(migration);

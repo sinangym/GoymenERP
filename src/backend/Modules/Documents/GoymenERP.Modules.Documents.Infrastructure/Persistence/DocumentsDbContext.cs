@@ -14,12 +14,32 @@ namespace GoymenERP.Modules.Documents.Infrastructure.Persistence;
 /// OPEN-018/021). Hashes and link kinds are compared under a binary collation. The audit sidecar is Audit's table,
 /// written in the same save and filtered the same way.
 /// </summary>
-public sealed class DocumentsDbContext(DbContextOptions<DocumentsDbContext> options, ICompanyContext companyContext)
+public sealed partial class DocumentsDbContext(DbContextOptions<DocumentsDbContext> options, ICompanyContext companyContext)
     : DbContext(options)
 {
     public const string Schema = "documents";
     public const string IdentityCollation = "Latin1_General_100_BIN2";
     private const string EmptyGuid = "'00000000-0000-0000-0000-000000000000'";
+
+    /// <summary>KLN-D49 (4): the filtered unique index that keeps one primary link per document.</summary>
+    internal const string PrimaryLinkIndex = "UX_DocumentLinks_Primary";
+
+    /// <summary>The primary-link index's filter; tests compare the model's filter with it.</summary>
+    internal const string PrimaryLinkFilter = "[IsPrimary] = 1";
+
+    /// <summary>
+    /// The stored content kinds (<c>DocumentFileKind</c>): the standard PDF/PNG/JPEG and, since FNS-D52,
+    /// the bank-statement import kinds XLSX/MT940/CSV. Tests compare the model's check with it.
+    /// </summary>
+    internal const string ContentKindCheck = "[ContentKind] IN (1, 2, 3, 4, 5, 6, 7)";
+
+    /// <summary>
+    /// DEC-DOC-009 / KLN-D60: a Clean (2) version names its scanner; a NotScanned (1) or a SystemGenerated (3) version —
+    /// a PDF the server itself produced, kept without a malware scan — names none.
+    /// </summary>
+    internal const string ScanCheck =
+        "([ScanState] = 2 AND [ScannerId] IS NOT NULL AND LEN([ScannerId]) > 0) OR ([ScanState] = 1 AND [ScannerId] IS NULL) "
+        + "OR ([ScanState] = 3 AND [ScannerId] IS NULL)";
 
     internal DbSet<ContentBlobRow> Blobs => Set<ContentBlobRow>();
 
@@ -44,6 +64,7 @@ public sealed class DocumentsDbContext(DbContextOptions<DocumentsDbContext> opti
         ConfigureVersions(modelBuilder);
         ConfigureLinks(modelBuilder);
         ConfigureAttempts(modelBuilder);
+        ConfigureBranding(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -69,7 +90,7 @@ public sealed class DocumentsDbContext(DbContextOptions<DocumentsDbContext> opti
             table.HasCheckConstraint("CK_ContentBlobs_Identity",
                 $"[CompanyId] <> {EmptyGuid} AND LEN([Sha256]) = 64 AND LEN([ObjectKey]) > 0 AND LEN([FirstStoredBy]) > 0");
             table.HasCheckConstraint("CK_ContentBlobs_Size", "[SizeBytes] > 0");
-            table.HasCheckConstraint("CK_ContentBlobs_Kind", "[ContentKind] IN (1, 2, 3)");
+            table.HasCheckConstraint("CK_ContentBlobs_Kind", ContentKindCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.Sha256 });
         entity.Property(x => x.Sha256).HasMaxLength(64).IsUnicode(false).IsFixedLength().UseCollation(IdentityCollation).IsRequired();
@@ -105,8 +126,8 @@ public sealed class DocumentsDbContext(DbContextOptions<DocumentsDbContext> opti
             table.HasCheckConstraint("CK_DocumentVersions_Text",
                 "LEN([FileName]) > 0 AND LEN([UploadedBy]) > 0 AND LEN([CorrelationId]) > 0");
             // DEC-DOC-009: a version is Clean only with the scanner that cleared it; NotScanned names no scanner.
-            table.HasCheckConstraint("CK_DocumentVersions_Scan",
-                "([ScanState] = 2 AND [ScannerId] IS NOT NULL AND LEN([ScannerId]) > 0) OR ([ScanState] = 1 AND [ScannerId] IS NULL)");
+            // KLN-D60: a system-generated PDF (3) was not scanned and names no scanner either.
+            table.HasCheckConstraint("CK_DocumentVersions_Scan", ScanCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.DocumentId, x.VersionNo });
         entity.Property(x => x.FileName).HasMaxLength(200).IsRequired();
@@ -140,6 +161,9 @@ public sealed class DocumentsDbContext(DbContextOptions<DocumentsDbContext> opti
         entity.Property(x => x.LinkedBy).HasMaxLength(128).IsRequired();
         entity.HasIndex(x => new { x.CompanyId, x.OwnerKind, x.OwnerId, x.LinkedAtUtc })
             .HasDatabaseName("IX_DocumentLinks_CompanyId_OwnerKind_OwnerId_LinkedAtUtc");
+        // KLN-D49 (4): the first link is the primary one; at most one primary link per document.
+        entity.HasIndex(x => new { x.CompanyId, x.DocumentId }).IsUnique().HasDatabaseName(PrimaryLinkIndex)
+            .HasFilter(PrimaryLinkFilter);
         entity.HasOne<DocumentRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.DocumentId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })

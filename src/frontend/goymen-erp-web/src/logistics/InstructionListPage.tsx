@@ -7,13 +7,14 @@
  * (the summary has none), no amount, no KPI, no price. Continuation follows the contract:
  * `nextCursor = null` is the end, there is no total count, and a failed next page keeps the rows
  * already shown and offers an explicit retry of the SAME cursor — never an automatic resend.
+ * LOJ-D17: a cancelled instruction whose loaded goods have no unload weighing carries the "İndirme kaydı yok" mark.
  */
 
 import { useCallback, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { fetchInstructionPage } from './api'
-import { INSTRUCTION_STATUS, type InstructionStatus, type InstructionSummary } from './contract'
+import { INSTRUCTION_STATUS, UNLOAD_RECORD, type InstructionStatus, type InstructionSummary } from './contract'
 import { LOGISTICS_CAPABILITY, LOGISTICS_ROUTE, instructionDetailRoute } from './capabilities'
 import { INSTRUCTION_LIST_TEXT, INSTRUCTION_STATUS_TEXT } from './logisticsText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
@@ -162,6 +163,15 @@ function InstructionList({ namespace }: { readonly namespace: string | null }) {
                   <span className={row.status === INSTRUCTION_STATUS.cancelled ? `${styles.badge} ${styles.blocked}` : styles.badge} data-testid={`logistics-row-status-${row.id}`}>
                     {INSTRUCTION_STATUS_TEXT[row.status]}
                   </span>
+                  {/* LOJ-D17 (3): the backend's "indirme kaydı yok" mark on a cancelled instruction with loaded goods. */}
+                  {row.unloadRecord === UNLOAD_RECORD.missing ? (
+                    <>
+                      {' '}
+                      <span className={`${styles.badge} ${styles.blocked}`} data-testid={`logistics-row-unload-missing-${row.id}`}>
+                        {INSTRUCTION_LIST_TEXT.unloadMissing}
+                      </span>
+                    </>
+                  ) : null}
                 </td>
                 <td>{formatBusinessDate(row.effectiveOn)}</td>
                 <td className={styles.identifier}>{row.customerPartyId}</td>

@@ -167,6 +167,19 @@ async function openEditForm(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByRole('option', { name: /DL-2/ })
 }
 
+it('opens a released plan for label recalculation and keeps the first approval content read only', async () => {
+  const user = userEvent.setup()
+  const stored = server(undefined, [planRevision()], plan({ status: 'Approved', version: 3,
+    approvedByUserId: APPROVER, approvedAtUtc: '2026-09-27T09:00:00Z', requiresReapproval: true }))
+  installFetch({ capabilities: EDITOR_CAPABILITIES, respond: stored.respond })
+  renderAt(`/uretim/plan/${PLAN}`)
+  await user.click(await screen.findByRole('button', { name: 'Planı düzenle' }))
+  expect(screen.getByRole('heading', { name: 'Planı yeniden hesapla' })).toBeTruthy()
+  expect(screen.getByRole('combobox', { name: 'İş merkezi' }).closest('fieldset')?.disabled).toBe(true)
+  expect(screen.getByRole('textbox', { name: `${ROLL_1} planlanan kg` }).closest('fieldset')?.disabled).toBe(false)
+  expect(screen.queryByRole('button', { name: 'Üretim emri aç' })).toBeNull()
+})
+
 describe('plan edit on the detail screen', () => {
   it('edits the draft as a whole, re-reads the plan and its history, and the reopened plan shows the change', async () => {
     const user = userEvent.setup()
@@ -340,9 +353,27 @@ describe('plan edit on the detail screen', () => {
       targetThicknessMm: null,
       paintDescription: 'Polyester toz boya, Tedarikçi A',
       paintColorCode: 'RAL 9010',
+      paintSelection: {
+        productId: '20000000-0000-0000-0000-000000000002', productVersion: '12',
+        membershipVersion: '3', productSourceVersion: 'source:3',
+        supplierPartyId: '30000000-0000-0000-0000-000000000003',
+        supplierCompanyAccountId: '40000000-0000-0000-0000-000000000004',
+        supplierPartyVersion: '4', supplierAccountVersion: '5', colorId: null, colorVersion: null,
+      },
     }
     const fake = server(undefined, [planRevision({ processSpec: paint })], plan({ process: 'Paint', processSpec: paint }))
-    const recorded = installFetch({ capabilities: EDITOR_CAPABILITIES, respond: fake.respond })
+    const recorded = installFetch({ capabilities: EDITOR_CAPABILITIES, respond: (url, init) => {
+      if (url.includes('/manufacturing/references/paint-selections')) return json({
+        companyId: COMPANY_A,
+        products: [{ productId: paint.paintSelection.productId, productVersion: '12', membershipVersion: '3',
+          sourceVersion: 'source:3', code: 'SENTETIK-PNT', name: 'SENTETIK Boya' }],
+        suppliers: [{ partyId: paint.paintSelection.supplierPartyId,
+          companyAccountId: paint.paintSelection.supplierCompanyAccountId, partyVersion: '4', accountVersion: '5',
+          code: 'SENTETIK-TED', name: 'SENTETIK Tedarikçi' }],
+        colors: [], supplierSearchWindowFull: false,
+      })
+      return fake.respond(url, init)
+    } })
     renderAt(`/uretim/plan/${PLAN}`)
 
     await openEditForm(user)
@@ -643,8 +674,8 @@ describe('plan edit on the detail screen', () => {
 
   it.each([
     ['manufacturing_plan_process_fixed', 'Seçilen iş merkezi planın sürecini (Slitting) yürütmüyor; planın süreci değişmez.'],
-    ['manufacturing_plan_not_draft', 'Plan artık taslak değil (onaylandı ya da emir açtı); onaylı plan düzenlenmez.'],
-    ['manufacturing_plan_slitting_spec_fixed', 'Dilme ayrıntısı taşıyan plan düzenlenmez; ana ruloyla dengesi iş kararı bekliyor (AT-044).'],
+    ['manufacturing_plan_not_draft', 'Plan bu durumda düzenlenemez. Taslak veya emri iptal edildikten sonra yeniden onay bekleyen bir plan açın.'],
+    ['manufacturing_plan_slitting_spec_fixed', 'Dilme satırları korunur; yeni ana rulo ve kg değerleri sunucuda yeniden hesaplanır.'],
   ])('a %s refusal is explained and nothing is claimed as saved', async (code, message) => {
     const user = userEvent.setup()
     const fake = server(() => problem(422, { code }))

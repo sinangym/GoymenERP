@@ -73,7 +73,15 @@ public sealed partial class SalesDraftService(
     ISalesSubcontractOrderBindingReadPortV1? subcontractBindings = null,
     ISalesOrderOwnerAxesSourceV1? ownerAxes = null,
     IEnumerable<ISalesOrderLinkedSupplyReadPortV1>? linkedSupplies = null,
-    IEnumerable<ISalesOrderLinkedSupplyRecorderV1>? linkedSupplyRecorders = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
+    IEnumerable<ISalesOrderLinkedSupplyRecorderV1>? linkedSupplyRecorders = null,
+    ISalesInvoiceStore? invoiceRecords = null,
+    ISalesInvoiceableShipmentReadPortV1? postedShares = null,
+    ISalesOrderAllocationReadPortV2? allocationsV2 = null,
+    ISalesOrderFutureAllocationReleaseParticipantV1? futureAllocationRelease = null,
+    ISalesOrderPlannedQuantityReadPortV1? plannedQuantities = null,
+    ISalesOrderFutureDemandReductionParticipantV1? futureDemandReduction = null,
+    ISalesMarginCostReadPortV1? marginCosts = null,
+    ISalesOrderInvoicedQuantityReadPortV1? invoicedQuantities = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -96,7 +104,9 @@ public sealed partial class SalesDraftService(
         // reads like the create permission (#276).
         var priced = CommercialFields(request);
         // MOD-03 → Sales (SAT-D93): a line tax change moves the line's amounts, so it is fenced like a price.
-        priced.AddRange(TaxChangeFields(request));
+        if (request.SubcontractService == true && request.Lines.Any(x => x.TaxOverride is not null))
+            scope = await WithSubcontractTaxAuthorityAsync(scope, cancellationToken);
+        else priced.AddRange(TaxChangeFields(request));
         if (priced.Count > 0)
         {
             await RequirePriceWriteAsync(scope, priced, cancellationToken);
@@ -607,6 +617,8 @@ public sealed partial class SalesDraftService(
                 async writeCancellationToken =>
                 {
                     scope = await RequireStillAsync(scope, permission, writeCancellationToken);
+                    if (taxes?.RequiresSubcontractAuthority == true)
+                        await RequireStillAsync(scope, bindings.ApprovePermission, writeCancellationToken);
                 }, cancellationToken);
         }
         catch (SalesVersionConflictException exception)
@@ -807,7 +819,11 @@ public sealed partial class SalesDraftService(
     /// appended schedule, the header's version, the attempt, the audit event with the dates before and after). A stale
     /// version or a withdrawn draft is the key's TERMINAL 409 (recorded, replayed); a line/slice mismatch or a no-change
     /// update is a 422 on <c>lines</c> / <c>lines[i].slices</c>; a lost race answers the winner (§8). Nothing is measured
-    /// after the commit (S03). The approval axis and the commercial revision do not move.
+    /// after the commit (S03). The approval axis and the commercial revision do not move. SAT-D398/SAT-D400 (SINAN-CEVAP 33, replaces
+    /// the SAT-D370 reading): the header and line termin may be changed by an actor holding EITHER the registered delivery-schedule name
+    /// OR the order edit permission (the <see cref="SalesDraftServiceBindings.HeaderPermission"/> binding, <c>sales.orders.header.write</c>
+    /// per EK15 36.6 — the exact code mapping is an author reading to be confirmed in K3 review). No new name, grant or role is opened.
+    /// The name that granted the call is the one the envelope, the audit, the replay and every later fence use.
     /// </summary>
     public async Task<SalesOrderDraftResponse> RescheduleDeliveryAsync(Guid draftId, SalesDraftDeliveryScheduleRequest request,
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default)
@@ -816,8 +832,7 @@ public sealed partial class SalesDraftService(
         ArgumentNullException.ThrowIfNull(metadata);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var permission = bindings.DeliverySchedulePermission;
-        var scope = await RequireAsync(permission, cancellationToken);
+        var (scope, permission) = await RequireDeliveryScheduleAsync(cancellationToken);
         if (!long.TryParse(request.ExpectedVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var expectedVersion) || expectedVersion < 1)
         {
             throw new SalesDraftServiceException(400, "validation_failed", [new("expectedVersion", "validation_failed")]);
@@ -893,6 +908,27 @@ public sealed partial class SalesDraftService(
         }
 
         return Response(scope, result.Draft, result.Outcome == SalesDraftWriteOutcome.Replayed, result.OriginalCorrelationId, await DiscloseAsync(scope, cancellationToken));
+    }
+
+    /// <summary>
+    /// SAT-D398/SAT-D400: the termin fence is an OR of two registered names. The delivery-schedule name is measured first; only a plain
+    /// 403 on it falls through to the order edit name (a 401 or a 503 setup gap is answered as is). With no distinct edit binding the
+    /// first refusal stands. Returns the scope and the name that granted it.
+    /// </summary>
+    private async Task<(Scope Scope, string? Permission)> RequireDeliveryScheduleAsync(CancellationToken cancellationToken)
+    {
+        var schedule = bindings.DeliverySchedulePermission;
+        var edit = bindings.HeaderPermission;
+        try
+        {
+            return (await RequireAsync(schedule, cancellationToken), schedule);
+        }
+        catch (SalesDraftServiceException exception) when (exception.Status == 403
+            && !string.IsNullOrWhiteSpace(edit)
+            && !string.Equals(edit, schedule, StringComparison.Ordinal))
+        {
+            return (await RequireAsync(edit, cancellationToken), edit);
+        }
     }
 
     /// <summary>The field a schedule refusal is answered on: <c>lines[i].slices</c> for a line's slice mismatch (i = the line's index in THIS request), else <c>lines</c>.</summary>
@@ -1000,7 +1036,7 @@ public sealed partial class SalesDraftService(
         // SAT-D111 / SAT-D112 (EK13 / EK14; K3-REVIEW-B P1-1): during a re-approval the submission and the approval measure
         // the CURRENT quantities against Logistics' loaded total again — a revision rejected and then resubmitted unchanged
         // must not be approved below what was loaded meanwhile under the restored cap.
-        if (commandName is SalesDraftCommands.SubmitV1 or SalesDraftCommands.ApproveV1)
+        if (commandName is SalesDraftCommands.SubmitV1 or SalesDraftCommands.ApproveV1 or SalesDraftCommands.RecordCustomerAcceptanceV1)
         {
             await RequireReapprovalFloorAsync(scope, permission, current, expectedVersion, commandName, cancellationToken);
         }
@@ -1011,14 +1047,77 @@ public sealed partial class SalesDraftService(
             await RequireHeaderReapprovalClearAsync(scope, permission, current, expectedVersion, cancellationToken);
         }
 
+        // F-018 / plan S1 (FNS-D27(3)): a limit overrun (or an undecidable risk) is a warning only — it is recorded in the same
+        // save as the transition and never refuses the command. A replay was answered above, so a retry records nothing twice; a
+        // transition the domain will refuse (stale version, wrong state) asks no owner.
+        var riskWarning = RiskWarningDue(commandName, current, expectedVersion)
+            ? await OrderRiskWarningAsync(scope, permission, current, cancellationToken)
+            : null;
+
+        var approvalCosts = commandName == SalesDraftCommands.ApproveV1
+            && current.Version == expectedVersion && current.ApprovalState == InternalApprovalState.PendingApproval
+            ? await PrepareMarginCostsAsync(scope, permission, current, cancellationToken)
+            : [];
+
         // The last fence that can still prevent the write; none after the commit (ORG #321 P3-1).
         scope = await RequireStillAsync(scope, permission, cancellationToken);
         await RequirePersonaFenceAsync(scope, commandName, current, cancellationToken);
         SalesDraftStateResult? result;
         try
         {
-            result = await store.UpdateDraftStateAsync(envelope, requestHash, commandName, draftId,
-                (draft, now) => transition(draft, scope.ActorId, expectedVersion, now), audit, cancellationToken);
+            Action<SalesOrderDraft, DateTimeOffset> mutate = (draft, now) =>
+            {
+                transition(draft, scope.ActorId, expectedVersion, now);
+                if (approvalCosts.Count > 0)
+                    draft.PinMarginCosts([.. approvalCosts.Select(cost => cost with { RecordedAtUtc = now.ToUniversalTime() })]);
+            };
+            if (CompletesReducedRevision(current, expectedVersion, commandName))
+            {
+                result = await store.UpdateDraftStateWithTransactionAsync(envelope, requestHash, commandName, draftId,
+                    mutate, audit, async (draft, previouslyAcceptedRevision, transaction, token) =>
+                    {
+                        scope = await RequireStillAsync(scope, permission, token);
+                        var reductions = ReducedRevisionLines(draft, previouslyAcceptedRevision);
+                        if (reductions.Count == 0) return;
+                        if (futureDemandReduction is null)
+                            throw new SalesFutureAllocationReleaseException(503, SalesDraftProblemCodesV1.RevisionImpactUnavailable, false);
+                        var loading = await ReadLoadingAsync(scope, permission, draft, token)
+                            ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.RevisionImpactUnavailable);
+                        var lines = new List<SalesOrderFutureDemandReductionLineV1>(reductions.Count);
+                        foreach (var reduction in reductions)
+                        {
+                            var loaded = loading.GetValueOrDefault(reduction.Line.Id);
+                            var shipped = loaded?.Shipped ?? 0m;
+                            if (reduction.NewQuantity < shipped)
+                                throw new SalesDraftServiceException(422, "validation_failed",
+                                    [new("lines", SalesRuleCodes.RevisionBelowShipped)]);
+                            if (reduction.NewQuantity < (loaded?.Loaded ?? 0m))
+                                throw new SalesDraftServiceException(422, "validation_failed",
+                                    [new("lines", SalesRuleCodes.RevisionBelowLoaded)]);
+                            lines.Add(new(reduction.Line.Id, reduction.Line.Product.ProductId,
+                                reduction.Line.Product.ProductVersion, reduction.Line.OrderUnit.UnitId,
+                                Text(reduction.NewQuantity - shipped, reduction.Line.Quantity.Unit)));
+                        }
+                        await futureDemandReduction.ReduceForAcceptedRevisionAsync(transaction,
+                            new SalesOrderFutureDemandReductionRequestV1(draft.Id, draft.Revision, lines,
+                                SalesOrderFutureDemandReductionTextsV1.AcceptedRevision, envelope), token);
+                        scope = await RequireStillAsync(scope, permission, token);
+                    }, cancellationToken, riskWarning);
+            }
+            else
+                result = await store.UpdateDraftStateAsync(envelope, requestHash, commandName, draftId,
+                    mutate, audit, cancellationToken, riskWarning);
+        }
+        catch (SalesFutureAllocationReleaseException exception) when (exception.Terminal)
+        {
+            throw await TerminalAsync(scope, permission, envelope, requestHash, new SalesDraftTerminalRefusal(
+                exception.Status is 409 or 422 ? exception.Status : 409, exception.Code,
+                [new(FutureSupplyAllocationsField, exception.Code)]), cancellationToken, commandName, draftId);
+        }
+        catch (SalesFutureAllocationReleaseException exception)
+        {
+            throw new SalesDraftServiceException(exception.Status is 409 or 503 ? exception.Status : 503,
+                exception.Code, [new(FutureSupplyAllocationsField, exception.Code)]);
         }
         catch (SalesVersionConflictException exception)
         {
@@ -1109,11 +1208,19 @@ public sealed partial class SalesDraftService(
 
     // ---- authority ------------------------------------------------------------------------------
 
+    /// <summary>
+    /// The released authority of one call. <paramref name="IsSystemRead"/> marks the plan S2 shipment gate's company-scoped system
+    /// read (<see cref="ISalesShipmentRiskGateSource"/>): no actor, role or Sales permission is part of it, and every later fence
+    /// re-checks only that the server-resolved company is still the same. Only the gate's read creates such a scope; it never
+    /// reaches a write.
+    /// </summary>
     private sealed record Scope(
         Guid CompanyId,
         string ActorId,
         IReadOnlyCollection<string> RoleCodes,
-        bool IsSalesSupport);
+        bool IsSalesSupport,
+        bool IsSystemRead = false,
+        bool RequiresSubcontractTaxAuthority = false);
 
     /// <summary>
     /// The fence: capture server identity/company, read the active persona, then make the permission
@@ -1156,13 +1263,29 @@ public sealed partial class SalesDraftService(
 
     private async Task<Scope> RequireStillAsync(Scope scope, string? permission, CancellationToken cancellationToken)
     {
+        if (scope.IsSystemRead)
+        {
+            // Plan S2 system read: the consumer measured its own authority; here only the company must still be the same.
+            if (!companyContext.IsResolved || companyContext.CompanyId == Guid.Empty || companyContext.CompanyId != scope.CompanyId)
+            {
+                throw new SalesDraftServiceException(403, "forbidden");
+            }
+
+            return scope;
+        }
+
         var current = await RequireAsync(permission, cancellationToken);
         if (current.CompanyId != scope.CompanyId || !string.Equals(current.ActorId, scope.ActorId, StringComparison.Ordinal))
         {
             throw new SalesDraftServiceException(403, "forbidden");
         }
 
-        return current;
+        if (scope.RequiresSubcontractTaxAuthority)
+        {
+            var approval = await RequireAsync(bindings.ApprovePermission, cancellationToken);
+            if (approval.CompanyId != scope.CompanyId || approval.ActorId != scope.ActorId) throw new SalesDraftServiceException(403, "forbidden");
+        }
+        return current with { RequiresSubcontractTaxAuthority = scope.RequiresSubcontractTaxAuthority };
     }
 
     /// <summary>An awaited read is released only under the authority a success would need (the Product fence, #276).</summary>

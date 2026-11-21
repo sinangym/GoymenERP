@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
@@ -13,6 +14,7 @@ using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Engines;
 using GoymenERP.Modules.Manufacturing.Domain.Engines.Balance;
+using GoymenERP.Modules.Manufacturing.Domain.Lineage;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Organization.Application.Contracts;
@@ -108,14 +110,34 @@ public sealed record IssueInventoryInputRequestV1(
 
 public sealed record ReturnInventoryInputRequestV1(
     Guid ReturnId, long ExpectedVersion, Guid ParentRollId, string? ExpectedParentLabelVersion,
-    Guid MovementId, string? Kg, DateTimeOffset? OccurredAtUtc);
+    Guid MovementId, string? Kg, DateTimeOffset? OccurredAtUtc,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? SourceIssueMovementId = null);
 
+/// <summary>
+/// F-009 D3 (API-25, URT-S2): takes <see cref="Kg"/> back from one recorded output declaration (the path's fact id) as an
+/// append-only reversal. <see cref="ReversalId"/> is the new reversal fact, <see cref="MovementId"/> Inventory's reversal
+/// movement and <see cref="LabelId"/> the output's label at its read <see cref="ExpectedLabelVersion"/>.
+/// <see cref="Reason"/> is required (1 to the domain's maximum characters, trimmed, no control characters).
+/// </summary>
+public sealed record CorrectOutputRequestV1(
+    Guid ReversalId, long ExpectedVersion, Guid LabelId, string? ExpectedLabelVersion, Guid MovementId, string? Kg,
+    string? Reason, DateTimeOffset? OccurredAtUtc);
+
+/// <summary>
+/// URT-S16 (BS-14, URT-D43): <see cref="RemnantClassification"/> is the stock label classification the operator chose
+/// for a <c>UsableRemnant</c> output, <c>Standard</c> or <c>SecondQuality</c>; omitted or null means SecondQuality. It
+/// is refused with any other output class, whose label classification follows the fixed mapping.
+/// </summary>
 public sealed record DeclareInventoryOutputRequestV1(
     Guid OutputId, long ExpectedVersion, Guid ParentRollId, string? ExpectedParentLabelVersion,
     string? OutputClass, Guid ProductId, string? ExpectedProductVersion, Guid LotId, Guid LabelId,
     string? LabelCode, string? HeatNumber, string? CoilNumber, IReadOnlyList<string>? RequiredDocuments,
     string? OwnerKind, Guid OwnerId, string? CustodianKind, Guid CustodianId, Guid LocationId,
-    string? InitialBlock, Guid MovementId, string? Kg, DateTimeOffset? OccurredAtUtc);
+    string? InitialBlock, Guid MovementId, string? Kg, DateTimeOffset? OccurredAtUtc,
+    string? RemnantClassification = null, ManufacturingOutputLineReferenceV1? OutputLine = null);
+
+/// <summary>URT-D30: the user's exact plan output line, or the class line for an unlined output class.</summary>
+public sealed record ManufacturingOutputLineReferenceV1(string Kind, int? SlitLineSequence, Guid? CutLineId);
 
 /// <summary><see cref="OutputClass"/> is one of the five <c>OutputClass</c> names.</summary>
 public sealed record DeclareOutputRequestV1(
@@ -208,7 +230,12 @@ public sealed record PlanCancellationViewV1(string Reason, Guid CancelledByUserI
 /// U2-d and never revised. An id only, never a name. Üretim U2-b / API-16 (additive, SAT-D219):
 /// <see cref="SalesOrderLink"/> is the approved sales order line the plan supplies, or null, and
 /// <see cref="SalesOrderLinkRevision"/> how many times the link was set or removed (the next link request sends it back).
+/// Üretim F-010a (additive, URT-D29): <see cref="RequestedDueDate"/> is the termin a user entered by hand (a calendar day,
+/// no time), or null, and <see cref="DueDateRevision"/> how many times it was set, changed or removed (the next termin
+/// request sends it back). Neither moves the plan's version.
 /// </summary>
+public sealed record PlanReapprovalViewV1(int Number, Guid ReapprovedByUserId, DateTimeOffset ReapprovedAtUtc, long PlanVersion);
+
 public sealed record PlanViewV1(
     Guid PlanId, Guid CompanyId, Guid WorkCenterId, string Process, string Status, long Version,
     IReadOnlyList<PlannedInputViewV1> Inputs, TargetViewV1? Target, Guid? ApprovedByUserId, DateTimeOffset? ApprovedAtUtc,
@@ -217,7 +244,9 @@ public sealed record PlanViewV1(
     string? LineSpeedMetresPerMinute = null, Guid? OrderId = null,
     IReadOnlyList<PlanRejectionViewV1>? Rejections = null, PlanCancellationViewV1? Cancellation = null,
     PlanProcessSpecViewV1? ProcessSpec = null, string? PreparedBy = null,
-    PlanSalesOrderLinkViewV1? SalesOrderLink = null, long SalesOrderLinkRevision = 0);
+    PlanSalesOrderLinkViewV1? SalesOrderLink = null, long SalesOrderLinkRevision = 0,
+    DateOnly? RequestedDueDate = null, long DueDateRevision = 0, bool RequiresReapproval = false,
+    IReadOnlyList<PlanReapprovalViewV1>? Reapprovals = null);
 
 /// <summary>
 /// MFG-PLAN-EDIT: one planned parent roll of a history entry, with the Inventory label version accepted for it
@@ -257,11 +286,19 @@ public sealed record RollBalanceViewV1(
 /// <summary>Only in the basis the plan declared; otherwise <c>Basis</c> is null (unavailable, never 0).</summary>
 public sealed record RemainingTargetViewV1(string? Basis, string? TargetKg, string? AchievedKg, string? RemainingKg);
 
-/// <summary>Cost is a status only in this slice: every output is <c>NotCalculated</c>.</summary>
+/// <summary>URT-D32/D56: the prior close and its separate reasoned reopening; retained through every later correction.</summary>
+public sealed record OrderReopeningViewV1(long ClosedOrderVersion, Guid ClosedByUserId, DateTimeOffset ClosedAtUtc,
+    long ReopenedOrderVersion, Guid ReopenedByUserId, DateTimeOffset ReopenedAtUtc, string Reason);
+
+/// <summary>Cost is a status only in this view; separate versioned cost reads carry figures.</summary>
 public sealed record OrderViewV1(
     Guid OrderId, Guid CompanyId, Guid PlanId, Guid WorkCenterId, string Process, string Status, long Version,
     TargetViewV1? Target, RemainingTargetViewV1 RemainingTarget, IReadOnlyList<RollBalanceViewV1> Rolls,
-    string CostStatus, Guid? ClosedByUserId, DateTimeOffset? ClosedAtUtc);
+    string CostStatus, Guid? ClosedByUserId, DateTimeOffset? ClosedAtUtc,
+    DateOnly? DueDate = null, long DueDateRevision = 0, DateOnly? PlanDueDate = null, bool DueDateDiffersFromPlan = false,
+    string? CancellationReason = null, Guid? CancelledByUserId = null, DateTimeOffset? CancelledAtUtc = null,
+    IReadOnlyList<ManufacturingOutputLineReferenceV1>? OutputLines = null,
+    IReadOnlyList<OrderReopeningViewV1>? Reopenings = null);
 
 /// <summary>
 /// One plan in the plan list (MFG-PLAN-LIST): its stored row only — the work center and process it was bound to,
@@ -319,6 +356,31 @@ public sealed record RollMassBalanceViewV1(Guid ParentRollId, MassDifferenceView
 /// <summary>The order's mass balance, roll by roll, through the one calculator the close uses; the order's version it was read at.</summary>
 public sealed record MassBalanceViewV1(Guid OrderId, long Version, string FormulaVersion, IReadOnlyList<RollMassBalanceViewV1> Rolls);
 
+/// <summary>
+/// SAT-D318 (owner decision of 2026-11-13): the public answer to "which operation, and where" on an input issue that
+/// Inventory refused because it would take physical stock below zero. It names the refused movement kind and source
+/// (Inventory's opaque names), the order and the issue fact, the parent label, its product and the stored location
+/// (absent when the label holds no stock anywhere), the kilograms the issue asked for and the usable kilograms it could
+/// have taken there, both as lossless invariant text.
+/// <para>
+/// The usable kilograms are shown with the requested ones (owner answer of 2026-11-13 on Issue #66, SINAN-CEVAP (8)
+/// question 5: the message shows the kg on hand and the kg asked for together, so the user sees the gap and can ask for
+/// a count). They are Inventory's free physical kilograms less other demands' active reservations, never negative and
+/// always less than the requested kilograms. The reserved kilograms are deliberately not a member. Absent from every
+/// other refusal, and from older servers.
+/// </para>
+/// </summary>
+public sealed record ManufacturingStockShortfallViewV1(
+    string MovementKind,
+    string SourceKind,
+    Guid SourceId,
+    Guid? SourceLineId,
+    Guid LabelId,
+    Guid ProductId,
+    Guid? LocationId,
+    string RequestedKg,
+    string AvailableKg);
+
 /// <summary>How a command ended, before HTTP: the endpoint maps it and adds nothing of its own.</summary>
 public enum ManufacturingApiStatus
 {
@@ -339,7 +401,19 @@ public enum ManufacturingApiStatus
 public sealed record ManufacturingApiResult<T>(
     ManufacturingApiStatus Status, T? Resource, bool IsReplay, string? Code, string? Field = null,
     long? ExpectedVersion = null, long? CurrentVersion = null, string? OriginalCorrelationId = null)
-    where T : class;
+    where T : class
+{
+    /// <summary>
+    /// SAT-D318: set only on a fresh physical-stock refusal of an input issue. That refusal is not terminal, so it is
+    /// never stored: the member is not serialized and a stored answer stays byte for byte what it was.
+    /// </summary>
+    [JsonIgnore]
+    public ManufacturingStockShortfallViewV1? StockShortfall { get; init; }
+
+    /// <summary>URT-D35: fresh refusal only; never persisted or replayed as an old owner measurement.</summary>
+    [JsonIgnore]
+    public ManufacturingPlanAllocationShortfallV1? PlanAllocationShortfall { get; init; }
+}
 
 /// <summary>Codes the command surface adds; everything else is the domain's, the store's or Settings'.</summary>
 public static class ManufacturingApiCodes
@@ -374,13 +448,28 @@ public static class ManufacturingCommandNames
     public const string RejectPlan = "manufacturing.plan.reject.v1";
     public const string CancelPlan = "manufacturing.plan.cancel.v1";
     public const string ChangePlanSalesOrderLink = "manufacturing.plan.sales-order-link.v1";
+    public const string ChangePlanDueDate = "manufacturing.plan.due-date.v1";
+    public const string ChangeOrderDueDate = "manufacturing.order.due-date.v1";
     public const string CreateOrder = "manufacturing.order.create.v1";
     public const string IssueInput = "manufacturing.input.issue.v1";
     public const string ReturnInput = "manufacturing.input.return.v1";
+
+    /// <summary>F-009 D3 (API-25): corrects one output declaration with an append-only reversal.</summary>
+    public const string CorrectOutput = "manufacturing.output.correct.v1";
     public const string DeclareOutput = "manufacturing.output.declare.v1";
     public const string DeclareProcessLoss = "manufacturing.process-loss.declare.v1";
     public const string RecordWorkInProgress = "manufacturing.wip.record.v1";
     public const string CloseOrder = "manufacturing.order.close.v1";
+
+    /// <summary>F-009 D5 (URT-D33/D34): cancels an order with no net effect and releases its plan.</summary>
+    public const string CancelOrder = "manufacturing.order.cancel.v1";
+
+    /// <summary>F-009 D5 (URT-D35/D39): the minimal re-approval of a plan released by an order cancel.</summary>
+    public const string ReapprovePlan = "manufacturing.plan.reapprove.v1";
+    public const string RecordScrapPrice = "manufacturing.scrap-price.record.v1";
+
+    /// <summary>URT-D72: corrects a month's scrap price with a new version and a reason.</summary>
+    public const string CorrectScrapPrice = "manufacturing.scrap-price.correct.v1";
 }
 
 /// <summary>
@@ -437,7 +526,32 @@ public sealed partial class ManufacturingCommandService(
     IManufacturingPlanSalesOrderLinkStore? planSalesOrderLinks = null,
     IManufacturingSalesOrderLineReferencePortV1? salesOrderLines = null,
     IManufacturingSubcontractServiceOrderPortV1? subcontractServiceOrders = null,
-    IManufacturingClosedOrderListStore? closedOrders = null)
+    IManufacturingClosedOrderListStore? closedOrders = null,
+    IManufacturingPlanDueDateStore? planDueDates = null,
+    IManufacturingMonthlyScrapPriceStore? scrapPrices = null,
+    IManufacturingOrderDueDateStore? orderDueDates = null,
+    IManufacturingScrapCostDistributionPortV1? costDistribution = null,
+    IOrganizationWorkCenterPlanningReferenceV2? workCenterCalendars = null,
+    IManufacturingProductionCostPortV2? productionCost = null,
+    IManufacturingLabelLineageReadPortV1? labelLineage = null,
+    IManufacturingWorkCenterQueueStore? workCenterQueues = null,
+    IManufacturingInventoryOutputCorrectionPortV1? outputCorrections = null,
+    IManufacturingOrderCancellationStore? orderCancellations = null,
+    IManufacturingPlanReapprovalStore? planReapprovals = null,
+    ISettingsWorkCenterCapacityProviderV1? workCenterCapacities = null,
+    IInventoryFreeQuantityReadPortV1? freeQuantity = null,
+    IInventoryLabelDispositionReadPortV1? inputDisposition = null,
+    ISettingsManufacturingDueDateBufferProviderV1? companyDueDateBuffer = null,
+    IManufacturingPlanPriorityStore? planPriorities = null,
+    IManufacturingWorkCenterQueueOrderingStore? queueOrdering = null,
+    IManufacturingOrderReopeningStoreV1? orderReopenings = null,
+    IManufacturingReopeningAccountingPeriodStatusPortV1? accountingPeriods = null,
+    IManufacturingOrderReopeningInventoryPortV1? reopeningInventory = null,
+    IManufacturingCostGenerationStoreV1? costGenerations = null,
+    IManufacturingClosedOrderCostRecognitionPortV1? costRecognition = null,
+    IManufacturingScrapCostDistributionSourceV1? costSource = null,
+    IManufacturingNonKgInputStoreV1? nonKgInputs = null,
+    IManufacturingPaintSelectionSourceV1? paintSelections = null)
 {
     // These owner-provider codes stay inside the application result. The public endpoint continues to
     // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the
@@ -525,7 +639,7 @@ public sealed partial class ManufacturingCommandService(
                 }
 
                 var verified = await VerifyPlanContentAsync(
-                    inputs, targetKg, permission, companyId, actorId, cancellationToken);
+                    inputs, targetKg, process.Value, permission, companyId, actorId, cancellationToken);
                 if (verified.Refusal is not null)
                 {
                     return Refusal<PlanViewV1>(verified.Refusal);
@@ -547,6 +661,9 @@ public sealed partial class ManufacturingCommandService(
                 }
 
                 saveParameters = parameters.Snapshot;
+                if (await VerifyPaintSelectionAsync(processSpec.Value, process.Value, permission, companyId, actorId, cancellationToken) is { } paintRefusal)
+                    return Refusal<PlanViewV1>(paintRefusal);
+
                 if (await FenceCapturedAsync<PlanViewV1>(permission, companyId, actorId, cancellationToken) is { } fenced)
                 {
                     return fenced;
@@ -699,7 +816,7 @@ public sealed partial class ManufacturingCommandService(
                 }
 
                 var verified = await VerifyPlanContentAsync(
-                    inputs, targetKg, permission, companyId, actorId, cancellationToken);
+                    inputs, targetKg, process.Value, permission, companyId, actorId, cancellationToken);
                 if (verified.Refusal is not null)
                 {
                     return Refusal<PlanViewV1>(verified.Refusal);
@@ -712,16 +829,44 @@ public sealed partial class ManufacturingCommandService(
                     return Refusal<PlanViewV1>(parameters.Refusal);
                 }
 
+                if (current.RequiresReapproval && !PlanParameterSnapshotV1.SameSettingsAs(current.ParameterSnapshot,
+                        parameters.Snapshot))
+                    return new(ManufacturingApiStatus.Unprocessable, null, false, ManufacturingRuleCodes.PlanReapprovalSettingsChanged);
+                if (current.RequiresReapproval && current.Spec is not null)
+                {
+                    var candidate = new ProductionPlan(current.Id, companyId, request.WorkCenterId, process.Value,
+                        PlannedInputs(verified.Inputs), Target(request.Target, verified.TargetMass), current.Spec,
+                        BuildCutToLengthSpec(content.CutToLengthSpec), lineSpeed.Value, processSpec.Value);
+                    SlittingApprovalGate.Require(candidate, SlittingPlanParameters.FromCaptured(candidate.Inputs,
+                        current.ParameterSnapshot, candidate.Inputs.ToDictionary(input => input.ParentRollId, _ => true)));
+                }
                 reviseParameters = parameters.Snapshot;
+                if (await VerifyPaintSelectionAsync(processSpec.Value, process.Value, permission, companyId, actorId, cancellationToken) is { } paintRefusal)
+                    return Refusal<PlanViewV1>(paintRefusal);
+
+                // U5-b / API-36: a linked plan whose new inputs are customer-owned keeps the subcontract service order
+                // rule of the link; the order is read again here, not trusted from the link time.
+                if (current.SalesOrderLink is { } revisedLink
+                    && await RefuseCustomerGoodsOrderAsync([.. PlannedInputs(verified.Inputs)], revisedLink, permission,
+                        companyId, actorId, cancellationToken) is { } customerGoodsRefusal)
+                {
+                    return customerGoodsRefusal;
+                }
+
                 if (await FenceCapturedAsync<PlanViewV1>(permission, companyId, actorId, cancellationToken) is { } fenced)
                 {
                     return fenced;
                 }
 
-                var revised = await planRevisions.RevisePlanContentAsync(planId, request.ExpectedVersion,
-                    request.WorkCenterId, process.Value, [.. PlannedInputs(verified.Inputs)],
+                Task<ProductionPlan> Write(CancellationToken token) => planRevisions.RevisePlanContentAsync(planId,
+                    request.ExpectedVersion, request.WorkCenterId, process.Value, [.. PlannedInputs(verified.Inputs)],
                     Target(request.Target, verified.TargetMass), BuildCutToLengthSpec(content.CutToLengthSpec),
-                    lineSpeed.Value, reason, metadata, cancellationToken, processSpec.Value);
+                    lineSpeed.Value, reason, metadata, token, processSpec.Value);
+                if (current.RequiresReapproval && planAllocations is null)
+                    return new(ManufacturingApiStatus.Unavailable, null, false, ManufacturingPlanAllocationCodesV1.Incomplete);
+                var revised = current.RequiresReapproval
+                    ? await planAllocations!.WriteReleasedPlanAsync(planId, Write, metadata, cancellationToken)
+                    : await Write(cancellationToken);
                 return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok,
                     PlanView(revised, reviseParameters), false, null);
             }, stored => PlanView((ProductionPlan)stored, reviseParameters), cancellationToken);
@@ -1117,8 +1262,8 @@ public sealed partial class ManufacturingCommandService(
     /// </summary>
     private async Task<(List<VerifiedPlanInput> Inputs, Kilograms? TargetMass,
         ManufacturingApiResult<object>? Refusal)> VerifyPlanContentAsync(
-        List<ParsedPlanInput> inputs, decimal? targetKg, string permission, Guid companyId, Guid actorId,
-        CancellationToken cancellationToken)
+        List<ParsedPlanInput> inputs, decimal? targetKg, ManufacturingProcess process,
+        string permission, Guid companyId, Guid actorId, CancellationToken cancellationToken)
     {
         var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
         var planned = new List<VerifiedPlanInput>();
@@ -1144,6 +1289,21 @@ public sealed partial class ManufacturingCommandService(
             if (reference.Refusal is not null)
             {
                 return (planned, null, reference.Refusal);
+            }
+
+            // AT-044 (URT-D37/URT-D111): a slitting draft/revision may use at most the label's current TOTAL physical
+            // mass, across every position. This exact-version owner reference already includes blocked stock; do not
+            // subtract reservations or apply the approval's separate Free/single-position allocation rule here.
+            if (process == ManufacturingProcess.Slitting)
+            {
+                var physicalText = reference.Reference!.PhysicalKg;
+                if (!decimal.TryParse(physicalText, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture,
+                        out var physicalKg) || physicalKg < 0m
+                    || physicalKg.ToString("0.###", CultureInfo.InvariantCulture) != physicalText)
+                    return (planned, null, new(ManufacturingApiStatus.Unavailable, null, false, InventoryParentRollCodesV1.Unavailable));
+                if (mass.Value.Value > physicalKg)
+                    return (planned, null, new(ManufacturingApiStatus.Unprocessable, null, false,
+                        ManufacturingRuleCodes.PlanLabelNotUsable, $"inputs[{index}].plannedKg"));
             }
 
             var technical = await ReadTechnicalSnapshotAsync(reference.Reference!, today,
@@ -1197,6 +1357,13 @@ public sealed partial class ManufacturingCommandService(
                 PlanParameterSnapshotV1? snapshot = null;
                 IReadOnlyDictionary<Guid, bool>? labelUsable = null;
                 IReadOnlyDictionary<Guid, long> labelVersions = new Dictionary<Guid, long>();
+                // URT-D70: the approval compares the plan's termin with the server's Istanbul business day; a host that
+                // cannot resolve the zone answers 503 and nothing is guessed (the domain reads the same day at the save).
+                if (BusinessToday() is not { } businessToday)
+                {
+                    return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
+                }
+
                 var current = await plans.FindPlanAsync(planId, cancellationToken);
                 if (current is { Status: PlanStatus.Draft } && current.Version == request.ExpectedVersion)
                 {
@@ -1206,6 +1373,23 @@ public sealed partial class ManufacturingCommandService(
                     {
                         return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unprocessable, null, false,
                             ManufacturingRuleCodes.PlanSelfApproval);
+                    }
+
+                    // URT-D70: a termin before today is refused before Settings or Inventory is read (nothing is
+                    // allocated for a plan that cannot be approved); the store's domain decision refuses it again.
+                    if (current.RequestedDueDate is { } dueDate && dueDate < businessToday)
+                    {
+                        return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unprocessable, null, false,
+                            ManufacturingRuleCodes.DueDateInPast);
+                    }
+
+                    // U5-b / API-36: a linked plan with customer-owned inputs is approved only while its order is still
+                    // that customer's open, approved subcontract service order carrying the line (read now, not at link).
+                    if (current.SalesOrderLink is { } approvalLink
+                        && await RefuseCustomerGoodsOrderAsync(current.Inputs, approvalLink, permission, companyId, actor,
+                            cancellationToken) is { } customerGoodsRefusal)
+                    {
+                        return customerGoodsRefusal;
                     }
 
                     var parameters = await ReadParameterProfileAsync(current.Process, current.WorkCenterId,
@@ -1268,6 +1452,10 @@ public sealed partial class ManufacturingCommandService(
                         ManufacturingPlanAllocationCodesV1.Incomplete);
                 }
 
+                if (current is { Status: PlanStatus.Draft } && current.Version == request.ExpectedVersion
+                    && await VerifyPaintSelectionAsync(current.ProcessSpec, current.Process, permission, companyId, actor, cancellationToken, approval: true) is { } paintRefusal)
+                    return Refusal<PlanViewV1>(paintRefusal);
+
                 var approvedAt = timeProvider.GetUtcNow();
                 Task<ProductionPlan> Approve(CancellationToken token) => plans.ApprovePlanAsync(planId,
                     request.ExpectedVersion, actor, approvedAt, snapshot, labelUsable, metadata, token);
@@ -1292,6 +1480,13 @@ public sealed partial class ManufacturingCommandService(
             new { orderId = request.OrderId, planId = request.PlanId }, ManufacturingApiStatus.Created,
             async (metadata, _, _) =>
             {
+                // URT-D70: the order opens only while the plan's termin is not before the server's Istanbul business day,
+                // which the store reads; a host that cannot resolve the zone answers 503 and nothing is guessed.
+                if (BusinessToday() is null)
+                {
+                    return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
+                }
+
                 var outcome = await orders.CreateOrderAsync(request.OrderId, request.PlanId, metadata, cancellationToken);
                 return await OrderResultAsync(request.OrderId, ManufacturingApiStatus.Created,
                     outcome == ManufacturingWriteOutcome.Replayed, cancellationToken);
@@ -1369,6 +1564,8 @@ public sealed partial class ManufacturingCommandService(
         string permission,
         CancellationToken cancellationToken)
     {
+        if (request?.SourceIssueMovementId == Guid.Empty)
+            return Task.FromResult(Invalid<OrderViewV1>("sourceIssueMovementId"));
         if (orderId == Guid.Empty || request is null || request.ReturnId == Guid.Empty
             || request.ParentRollId == Guid.Empty || request.MovementId == Guid.Empty
             || request.MovementId == request.ReturnId || request.ExpectedVersion <= 0)
@@ -1393,7 +1590,7 @@ public sealed partial class ManufacturingCommandService(
 
         var expectedParentLabelVersion = long.Parse(
             request.ExpectedParentLabelVersion!, CultureInfo.InvariantCulture);
-        var canonical = new
+        object canonical = new
         {
             orderId,
             returnId = request.ReturnId,
@@ -1404,6 +1601,13 @@ public sealed partial class ManufacturingCommandService(
             kg = Text(kg),
             occurredAtUtc = occurredAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
         };
+        // SAT-D317 (2), ADR-011: legacy requests keep their exact canonical hash; an explicit trace is immutable input.
+        if (request.SourceIssueMovementId is { } sourceIssueMovementId)
+        {
+            var node = JsonSerializer.SerializeToNode(canonical, Json)!.AsObject();
+            node["sourceIssueMovementId"] = sourceIssueMovementId;
+            canonical = node;
+        }
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.ReturnInput,
             canonical, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
@@ -1428,7 +1632,93 @@ public sealed partial class ManufacturingCommandService(
                 var outcome = await inventoryReturnsAndOutputs.ReturnAsync(
                     new ManufacturingInventoryInputReturnPortCommandV1(
                         orderId, request.ExpectedVersion, request.ReturnId, request.ParentRollId,
-                        expectedParentLabelVersion, request.MovementId, mass.Value, occurredAt),
+                        expectedParentLabelVersion, request.MovementId, mass.Value, occurredAt, request.SourceIssueMovementId),
+                    metadata, cancellationToken);
+                return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, outcome.IsReplay, cancellationToken);
+            }, stored => OrderView((ProductionOrder)stored), cancellationToken);
+    }
+
+    /// <summary>
+    /// F-009 D3 (API-25, URT-S2): corrects output declaration <paramref name="factId"/> of order
+    /// <paramref name="orderId"/>. The request grammar and the Settings mass check run here; the order's expected version,
+    /// the domain rules and Inventory's label fence are decided in one transaction by
+    /// <see cref="IManufacturingInventoryOutputCorrectionPortV1"/>. No correction is written without that port.
+    /// </summary>
+    public Task<ManufacturingApiResult<OrderViewV1>> CorrectOutputAsync(
+        Guid orderId,
+        Guid factId,
+        CorrectOutputRequestV1? request,
+        string idempotencyKey,
+        string permission,
+        CancellationToken cancellationToken)
+    {
+        if (orderId == Guid.Empty || factId == Guid.Empty || request is null || request.ReversalId == Guid.Empty
+            || request.LabelId == Guid.Empty || request.MovementId == Guid.Empty
+            || request.MovementId == request.ReversalId || request.ReversalId == factId
+            || request.MovementId == factId || request.ExpectedVersion <= 0)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("fact"));
+        }
+
+        if (!IsPositiveCanonicalInt64(request.ExpectedLabelVersion))
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("expectedLabelVersion"));
+        }
+
+        if (ParseKg(request.Kg) is not { } kg)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("kg"));
+        }
+
+        if (request.Reason?.Trim() is not { Length: > 0 } reason)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("reason"));
+        }
+
+        if (request.OccurredAtUtc is not { } occurredAt || occurredAt.Offset != TimeSpan.Zero)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("occurredAtUtc"));
+        }
+
+        var expectedLabelVersion = long.Parse(request.ExpectedLabelVersion!, CultureInfo.InvariantCulture);
+        var canonical = new
+        {
+            orderId,
+            outputId = factId,
+            reversalId = request.ReversalId,
+            expectedVersion = request.ExpectedVersion,
+            labelId = request.LabelId,
+            expectedLabelVersion,
+            movementId = request.MovementId,
+            kg = Text(kg),
+            reason,
+            occurredAtUtc = occurredAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
+        };
+
+        return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.CorrectOutput,
+            canonical, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
+            {
+                if (outputCorrections is null)
+                {
+                    return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unavailable, null, false,
+                        InventoryManufacturingRealizationCodesV1.Unavailable);
+                }
+
+                var mass = await VerifyAsync(kg, DateOnly.FromDateTime(occurredAt.UtcDateTime), "kg", cancellationToken);
+                if (mass.Refusal is not null)
+                {
+                    return Refusal<OrderViewV1>(mass.Refusal);
+                }
+
+                if (await FenceAsync<OrderViewV1>(permission, cancellationToken) is { } fenced)
+                {
+                    return fenced;
+                }
+
+                var outcome = await outputCorrections.CorrectOutputAsync(
+                    new ManufacturingInventoryOutputCorrectionPortCommandV1(
+                        orderId, request.ExpectedVersion, factId, request.ReversalId, request.LabelId,
+                        expectedLabelVersion, request.MovementId, mass.Value, reason, occurredAt),
                     metadata, cancellationToken);
                 return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, outcome.IsReplay, cancellationToken);
             }, stored => OrderView((ProductionOrder)stored), cancellationToken);
@@ -1503,7 +1793,19 @@ public sealed partial class ManufacturingCommandService(
             return Task.FromResult(Invalid<OrderViewV1>("outputClass"));
         }
 
-        if (string.IsNullOrWhiteSpace(request.LabelCode))
+        // URT-S16 (BS-14, URT-D43): only a usable remnant takes an operator-chosen label classification, and only
+        // Standard or SecondQuality. Refused before any read or write; the fixed mapping covers every other class.
+        if (!ManufacturingOutputClassMappingV1.TryParseRemnantClassification(request.RemnantClassification,
+                out var remnantClassification)
+            || !ManufacturingOutputClassMappingV1.TryMap(outputClass, remnantClassification, out _))
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("remnantClassification"));
+        }
+
+        // URT-S21 (URT-D62): the output label code is optional. Sent, it is the output label's own code and must be a
+        // usable code once trimmed; omitted, the host gives the next number of the company's Ayarlar output label format.
+        var enteredLabelCode = request.LabelCode?.Trim();
+        if (request.LabelCode is not null && !ProductionOutputLabelCodes.IsValidCode(enteredLabelCode))
         {
             return Task.FromResult(Invalid<OrderViewV1>("labelCode"));
         }
@@ -1553,7 +1855,7 @@ public sealed partial class ManufacturingCommandService(
             expectedProductVersion = request.ExpectedProductVersion,
             lotId = request.LotId,
             labelId = request.LabelId,
-            labelCode = request.LabelCode.Trim(),
+            labelCode = enteredLabelCode,
             request.HeatNumber,
             request.CoilNumber,
             requiredDocuments = request.RequiredDocuments,
@@ -1567,9 +1869,29 @@ public sealed partial class ManufacturingCommandService(
             kg = Text(kg),
             occurredAtUtc = occurredAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
         };
+        // URT-S16: the remnant classification joins the request hash only when it was sent, so an output declared
+        // without it keeps the request hash it had before the field existed.
+        object canonicalRequest = remnantClassification is { } chosenRemnantClassification
+            ? new { declaration = canonical, remnantClassification = chosenRemnantClassification.ToString() }
+            : canonical;
+
+        PlanOutputLineReference? outputLine = null;
+        if (request.OutputLine is { } selectedLine)
+        {
+            try
+            {
+                if (!Enum.TryParse<PlanOutputLineKind>(selectedLine.Kind, ignoreCase: false, out var kind)
+                    || !Enum.IsDefined(kind) || kind.ToString() != selectedLine.Kind)
+                    return Task.FromResult(Invalid<OrderViewV1>("outputLine"));
+                outputLine = PlanOutputLineReference.FromStored(kind, selectedLine.SlitLineSequence, selectedLine.CutLineId);
+            }
+            catch (ArgumentException) { return Task.FromResult(Invalid<OrderViewV1>("outputLine")); }
+            // Omitted on old commands: their canonical request and replay hashes remain unchanged.
+            canonicalRequest = new { declaration = canonicalRequest, outputLine = selectedLine };
+        }
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.DeclareOutput,
-            canonical, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
+            canonicalRequest, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
             {
                 if (inventoryReturnsAndOutputs is null)
                 {
@@ -1592,10 +1914,10 @@ public sealed partial class ManufacturingCommandService(
                     new ManufacturingInventoryOutputPortCommandV1(
                         orderId, request.ExpectedVersion, request.OutputId, request.ParentRollId,
                         expectedParentLabelVersion, outputClass, request.ProductId, request.ExpectedProductVersion!,
-                        request.LotId, request.LabelId, request.LabelCode.Trim(), request.HeatNumber,
+                        request.LotId, request.LabelId, enteredLabelCode, request.HeatNumber,
                         request.CoilNumber, request.RequiredDocuments, request.OwnerKind, request.OwnerId,
                         request.CustodianKind, request.CustodianId, request.LocationId, request.InitialBlock,
-                        request.MovementId, mass.Value, occurredAt),
+                        request.MovementId, mass.Value, occurredAt, remnantClassification, outputLine),
                     metadata, cancellationToken);
                 return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, outcome.IsReplay, cancellationToken);
             }, stored => OrderView((ProductionOrder)stored), cancellationToken);
@@ -1639,7 +1961,8 @@ public sealed partial class ManufacturingCommandService(
     /// Closes the order at the version the caller read. Settings supplies the exact company/line/process/date tolerance
     /// (URT-D6: the order's work center version, else the process version, else the version-0 catalog, URT-D23);
     /// Manufacturing persists it with its source and version and derives fire (Scrap + ProcessLoss) and net issued mass
-    /// from its own facts. Output above input on any planned parent roll is refused
+    /// from its own facts. Output above input on any planned parent roll — on the order total for a process without a
+    /// main roll input (URT-D49) — is refused
     /// (<see cref="ClosureAssessmentCodesV1.OutputExceedsInput"/>, URT-D41 (1)-(2), URT-D42 (1)-(2)): the tolerance does
     /// not apply in that direction and the refusal is answered before any approval step, with or without a reason.
     /// A roll's unexplained shortfall within the mass-balance tolerance is accepted as it is (URT-D5; never
@@ -2219,7 +2542,12 @@ public sealed partial class ManufacturingCommandService(
             result = exception.Status == ManufacturingApiStatus.NotFound
                 ? NotFoundResult<T>()
                 : new ManufacturingApiResult<T>(exception.Status, null, false, exception.Code,
-                    exception.Field, exception.ExpectedVersion, exception.CurrentVersion);
+                    exception.Field, exception.ExpectedVersion, exception.CurrentVersion)
+                {
+                    StockShortfall = StockShortfallView(exception.StockShortfall),
+                    PlanAllocationShortfall = commandName is ManufacturingCommandNames.ApprovePlan or ManufacturingCommandNames.ReapprovePlan
+                        && exception.PlanAllocationShortfall?.CompanyId == companyId ? exception.PlanAllocationShortfall : null,
+                };
         }
         catch (ManufacturingVersionConflictException exception)
         {
@@ -2228,9 +2556,14 @@ public sealed partial class ManufacturingCommandService(
         }
         catch (ManufacturingRuleException exception)
         {
-            // U2-b / API-16: a moved sales order link is a conflict (read again), not a rule of the request.
+            // U2-b / API-16: a moved sales order link is a conflict (read again), not a rule of the request; F-010a
+            // (URT-D29): a moved termin likewise (URT-D66: the order's termin as well); URT-S13: a month whose scrap price is
+            // already recorded likewise.
             result = new ManufacturingApiResult<T>(
-                exception.Code == ManufacturingRuleCodes.PlanSalesOrderLinkChanged
+                exception.Code is ManufacturingRuleCodes.PlanSalesOrderLinkChanged
+                    or ManufacturingRuleCodes.PlanDueDateChanged
+                    or ManufacturingRuleCodes.OrderDueDateChanged
+                    or ManufacturingRuleCodes.ScrapPriceAlreadyRecorded
                     ? ManufacturingApiStatus.Conflict
                     : ManufacturingApiStatus.Unprocessable, null, false, exception.Code);
         }
@@ -2257,7 +2590,8 @@ public sealed partial class ManufacturingCommandService(
         {
             result = new ManufacturingApiResult<T>(exception.Code switch
             {
-                ManufacturingStoreCodes.PlanNotFound or ManufacturingStoreCodes.OrderNotFound => ManufacturingApiStatus.NotFound,
+                ManufacturingStoreCodes.PlanNotFound or ManufacturingStoreCodes.OrderNotFound
+                    or ManufacturingStoreCodes.ScrapPriceNotFound => ManufacturingApiStatus.NotFound,
                 ManufacturingStoreCodes.CompanyContextMismatch => ManufacturingApiStatus.Denied,
                 ManufacturingStoreCodes.PlanIdConflict or ManufacturingStoreCodes.OrderIdConflict
                     or ManufacturingStoreCodes.FactIdConflict => ManufacturingApiStatus.Conflict,
@@ -2905,7 +3239,11 @@ public sealed partial class ManufacturingCommandService(
                 salesLink.CustomerAccountId, salesLink.ProductId, salesLink.LineRevision, salesLink.LinkedBy,
                 salesLink.LinkedAtUtc)
             : null,
-        plan.SalesOrderLinkRevision);
+        plan.SalesOrderLinkRevision,
+        plan.RequestedDueDate,
+        plan.DueDateRevision, plan.RequiresReapproval,
+        [.. plan.Reapprovals.Select(reapproval => new PlanReapprovalViewV1(reapproval.Number,
+            reapproval.ReapprovedByUserId, reapproval.ReapprovedAtUtc, reapproval.PlanVersion))]);
 
     private static PlanParameterSnapshotViewV1? ParameterSnapshotView(PlanParameterSnapshotV1? snapshot) =>
         snapshot is null
@@ -2990,7 +3328,14 @@ public sealed partial class ManufacturingCommandService(
                     Text(balance.WorkInProgress.Value), Text(balance.Unexplained), balance.IsFullyAccounted,
                     CommercialContextView(input.CommercialContext));
             })],
-            nameof(CostStatus.NotCalculated), order.ClosedByUserId, order.ClosedAtUtc);
+            nameof(CostStatus.NotCalculated), order.ClosedByUserId, order.ClosedAtUtc,
+            order.DueDate, order.DueDateRevision, order.PlanDueDate, order.DueDateDiffersFromPlan,
+            order.CancellationReason, order.CancelledByUserId, order.CancelledAtUtc,
+            [.. order.PlannedOutputLines.Append(PlanOutputLineReference.ClassLine).Select(line =>
+                new ManufacturingOutputLineReferenceV1(line.Kind.ToString(), line.SlitLineSequence, line.CutLineId))],
+            [.. order.Reopenings.Select(reopening => new OrderReopeningViewV1(reopening.ClosedOrderVersion,
+                reopening.ClosedByUserId, reopening.ClosedAtUtc, reopening.ReopenedOrderVersion,
+                reopening.ReopenedByUserId, reopening.ReopenedAtUtc, reopening.Reason))]);
     }
 
     /// <summary>
@@ -3022,6 +3367,18 @@ public sealed partial class ManufacturingCommandService(
     /// <summary>Lossless invariant text without trailing zeros: 5.00 and 5 are both "5".</summary>
     internal static string Text(decimal value) =>
         (value / 1.0000000000000000000000000000m).ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// SAT-D318: the disclosed part of the port's shortfall: the identities, the requested kilograms and Inventory's
+    /// usable kilograms (SINAN-CEVAP (8) question 5). The free physical and reserved kilograms stop here; the view has
+    /// no member for them.
+    /// </summary>
+    internal static ManufacturingStockShortfallViewV1? StockShortfallView(ManufacturingInventoryStockShortfallV1? shortfall) =>
+        shortfall is null
+            ? null
+            : new ManufacturingStockShortfallViewV1(shortfall.MovementKind, shortfall.SourceKind, shortfall.SourceId,
+                shortfall.SourceLineId, shortfall.LabelId, shortfall.ProductId, shortfall.LocationId,
+                Text(shortfall.RequestedKg.Value), Text(shortfall.AvailableKg.Value));
 
     private static ManufacturingApiResult<T> Invalid<T>(string field) where T : class =>
         new(ManufacturingApiStatus.Invalid, null, false, ManufacturingApiCodes.RequestInvalid, field);

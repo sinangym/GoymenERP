@@ -19,7 +19,8 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Shell;
 /// browser walk is the acc01 reversal case (ACC01-09), which needs the synthetic posted-journal fixture; the flip is
 /// merge-gated on that hosted acceptance.
 /// <b>Staged:</b> the reversal PROPOSE control of the journal detail (the POST exists; not yet browser-walked) and the
-/// reversal APPROVAL route, which has no reopen read (`GET /accounting/journal-reversal-proposals/{id}`) yet.
+/// reversal APPROVAL route, which has no reopen read (`GET /accounting/journal-reversal-proposals/{id}`) yet; and
+/// (FIN-S16) the M-05 Hesap Planı route over `GET /accounting/account-plan`, until a browser walk accepts it.
 /// The staged-then-flip order is the FIN-UI-1c / MFG-UI-F pattern (card FIN-UI-1 §6). The approval
 /// and the close are controls of the period list (<c>ParentCapabilityId</c>), not routes, and keep the
 /// list's route, context and scope. A declaration grants nothing: each route's service measures its own
@@ -38,8 +39,43 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     /// 1.3 (ACC-V1 reversal UI, phase 1; #478 review 5327037504): the declaration set changed — the journal detail and
     /// M-06 are published, and the staged reversal propose control and approval route are declared — so the contract
     /// version moves with it (the host registry's revision rows are re-derived centrally).
+    /// <para>
+    /// 1.4 (FIN-S16, M-05 Hesap Planı): the declaration set changed again — the staged account plan route under its
+    /// own narrow read name (<see cref="AccountPlanPermissionNamesV1.Read"/>) is declared.
+    /// </para>
     /// </summary>
-    public const string OwnerContractVersion = "1.3";
+    public const string OwnerContractVersion = "1.10";
+
+    public const string InvoicedShipmentPrepareCapabilityId = "accounting.invoiced-shipment-costs.prepare";
+    public const string InvoicedShipmentPrepareRoutePath = "/muhasebe/sevk-smm-hazirla";
+    public const string InvoicedShipmentApproveCapabilityId = "accounting.invoiced-shipment-costs.approve";
+    public const string InvoicedShipmentApproveRoutePath = "/muhasebe/sevk-smm-onay";
+    public const string InvoicedShipmentReverseCapabilityId = "accounting.invoiced-shipment-costs.reverse";
+    public const string InvoicedShipmentReverseRoutePath = "/muhasebe/sevk-smm-ters-kayit";
+    public const string InvoicedShipmentReverseApproveCapabilityId = "accounting.invoiced-shipment-costs.reverse-approve";
+    public const string InvoicedShipmentReverseApproveRoutePath = "/muhasebe/sevk-smm-ters-kayit-onay";
+    public const string PurchaseCostPrepareCapabilityId = "accounting.purchase-cost-differences.prepare";
+    public const string PurchaseCostPrepareRoutePath = "/muhasebe/alis-maliyet-farki-hazirla";
+    public const string PurchaseCostApproveCapabilityId = "accounting.purchase-cost-differences.approve";
+    public const string PurchaseCostApproveRoutePath = "/muhasebe/alis-maliyet-farki-onay";
+
+    public const string PostingMappingsReadCapabilityId = "accounting.posting-mappings.read";
+    public const string PostingMappingsPrepareCapabilityId = "accounting.posting-mappings.prepare";
+    public const string PostingMappingsActivateCapabilityId = "accounting.posting-mappings.activate";
+    public const string PostingMappingsRoutePath = "/muhasebe/hesap-eslemeleri";
+    public const string SourceVouchersCapabilityId = "accounting.source-vouchers.list";
+    public const string SourceVouchersApproveCapabilityId = "accounting.source-vouchers.approve";
+    public const string SourceVouchersRoutePath = "/muhasebe/kaynak-fisler";
+
+    public const string InvoiceLineCogsPrepareCapabilityId = "accounting.invoice-line-cogs.prepare";
+    public const string InvoiceLineCogsApproveCapabilityId = "accounting.invoice-line-cogs.approve";
+    public const string InvoiceLineCogsPrepareRoutePath = "/muhasebe/fatura-satiri-smm";
+    public const string InvoiceLineCogsApproveRoutePath = "/muhasebe/fatura-satiri-smm-onay";
+
+    public const string CostDifferencePrepareCapabilityId = "accounting.manufacturing-cost-differences.prepare";
+    public const string CostDifferenceApproveCapabilityId = "accounting.manufacturing-cost-differences.approve";
+    public const string CostDifferencePrepareRoutePath = "/muhasebe/uretim-maliyet-farklari";
+    public const string CostDifferenceApproveRoutePath = "/muhasebe/uretim-maliyet-farki-onay";
 
     public const string PeriodListScreenId = "M-07";
     public const string PeriodProposeScreenId = "M-07-NEW";
@@ -47,6 +83,7 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     public const string JournalDetailScreenId = "M-04-DETAIL";
     public const string PostingQueuesScreenId = "M-01";
     public const string TrialBalanceScreenId = "M-06";
+    public const string AccountPlanScreenId = "M-05";
 
     public const string PeriodListCapabilityId = "accounting.periods.list";
     public const string PeriodListRouteId = "accounting.periods";
@@ -71,6 +108,10 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     public const string TrialBalanceCapabilityId = "accounting.trial-balance";
     public const string TrialBalanceRouteId = "accounting.trial-balance";
     public const string TrialBalanceRoutePath = "/muhasebe/mizan";
+
+    public const string AccountPlanCapabilityId = "accounting.account-plan";
+    public const string AccountPlanRouteId = "accounting.account-plan";
+    public const string AccountPlanRoutePath = "/muhasebe/hesap-plani";
 
     public const string NormalDraftCreateScreenId = "M-04-NEW";
     public const string NormalDraftDetailScreenId = "M-04-DRAFT";
@@ -103,8 +144,33 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
         var journalDetail = Declaration(JournalDetailCapabilityId, JournalDetailRouteId, JournalDetailRoutePath,
             JournalDetailScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
             [AccountingPermissionManifestV1.JournalsRead], available: true);
+        // The actual owner is composed; financial browser acceptance remains a separate staged gate.
+        var sourceVouchers = Declaration(SourceVouchersCapabilityId, SourceVouchersCapabilityId, SourceVouchersRoutePath,
+            "M-04-SOURCE", ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.JournalsRead], available: false);
+        var mappings = Declaration(PostingMappingsReadCapabilityId, PostingMappingsReadCapabilityId, PostingMappingsRoutePath,
+            "M-05-COGS-MAPPING", ShellCapabilityRoutePrecedence.Static, [AccountingPostingAccountMappingPermissionNamesV1.Read], available: false);
         return
         [
+            Declaration(InvoicedShipmentPrepareCapabilityId, InvoicedShipmentPrepareCapabilityId, InvoicedShipmentPrepareRoutePath,
+                "M-04-INVOICEDSHIPMENTPREPARE", ShellCapabilityRoutePrecedence.Static, [NormalJournalPermissionNamesV1.DraftCreate], available: false),
+            Declaration(InvoicedShipmentApproveCapabilityId, InvoicedShipmentApproveCapabilityId, InvoicedShipmentApproveRoutePath,
+                "M-04-INVOICEDSHIPMENTAPPROVE", ShellCapabilityRoutePrecedence.Static, [NormalJournalPermissionNamesV1.DraftApprove], available: false),
+            Declaration(InvoicedShipmentReverseCapabilityId, InvoicedShipmentReverseCapabilityId, InvoicedShipmentReverseRoutePath,
+                "M-04-INVOICEDSHIPMENTREVERSE", ShellCapabilityRoutePrecedence.Static, [AccountingJournalReversalPermissionNamesV1.Propose], available: false),
+            Declaration(InvoicedShipmentReverseApproveCapabilityId, InvoicedShipmentReverseApproveCapabilityId, InvoicedShipmentReverseApproveRoutePath,
+                "M-04-INVOICEDSHIPMENTREVERSEAPPROVE", ShellCapabilityRoutePrecedence.Static, [AccountingJournalReversalPermissionNamesV1.Approve], available: false),
+            Declaration(PurchaseCostPrepareCapabilityId, PurchaseCostPrepareCapabilityId, PurchaseCostPrepareRoutePath,
+                "M-04-PURCHASECOSTPREPARE", ShellCapabilityRoutePrecedence.Static, [AccountingJournalReversalPermissionNamesV1.Propose], available: false),
+            Declaration(PurchaseCostApproveCapabilityId, PurchaseCostApproveCapabilityId, PurchaseCostApproveRoutePath,
+                "M-04-PURCHASECOSTAPPROVE", ShellCapabilityRoutePrecedence.Static, [AccountingJournalReversalPermissionNamesV1.Approve], available: false),
+            mappings,
+            mappings with { CapabilityId = PostingMappingsPrepareCapabilityId, ParentCapabilityId = PostingMappingsReadCapabilityId,
+                RequiredPermissions = [AccountingPostingAccountMappingPermissionNamesV1.Read, AccountingPostingAccountMappingPermissionNamesV1.Prepare] },
+            mappings with { CapabilityId = PostingMappingsActivateCapabilityId, ParentCapabilityId = PostingMappingsReadCapabilityId,
+                RequiredPermissions = [AccountingPostingAccountMappingPermissionNamesV1.Read, AccountingPostingAccountMappingPermissionNamesV1.Activate] },
+            sourceVouchers,
+            sourceVouchers with { CapabilityId = SourceVouchersApproveCapabilityId, ParentCapabilityId = SourceVouchersCapabilityId,
+                RequiredPermissions = [AccountingPermissionManifestV1.JournalsRead, NormalJournalPermissionNamesV1.DraftApprove] },
             periods,
             Declaration(PeriodProposeCapabilityId, PeriodProposeRouteId, PeriodProposeRoutePath, PeriodProposeScreenId,
                 ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.PeriodsPropose], available: true),
@@ -158,6 +224,23 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
             // M-06 Mizan: the real read route and screen exist (#456); walked by acc01 ACC01-09 over the fixture journal.
             Declaration(TrialBalanceCapabilityId, TrialBalanceRouteId, TrialBalanceRoutePath, TrialBalanceScreenId,
                 ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.JournalsRead], available: true),
+            // FIN-S16 M-05 Hesap Planı: the real read route and screen exist; staged until a browser walk accepts it
+            // (the staged-then-flip order), and its read name is registered, not granted.
+            Declaration(AccountPlanCapabilityId, AccountPlanRouteId, AccountPlanRoutePath, AccountPlanScreenId,
+                ShellCapabilityRoutePrecedence.Static, [AccountPlanPermissionNamesV1.Read], available: false),
+            // Source-complete routes stay staged until the train's final SQL/browser acceptance. No grants or production activation.
+            Declaration(CostDifferencePrepareCapabilityId, CostDifferencePrepareCapabilityId, CostDifferencePrepareRoutePath,
+                "M-01-COST-PREPARE", ShellCapabilityRoutePrecedence.Static,
+                [AccountingJournalReversalPermissionNamesV1.Propose, AccountingPermissionManifestV1.PeriodsRead, AccountPlanPermissionNamesV1.Read], available: false),
+            Declaration(CostDifferenceApproveCapabilityId, CostDifferenceApproveCapabilityId, CostDifferenceApproveRoutePath,
+                "M-01-COST-APPROVE", ShellCapabilityRoutePrecedence.Static,
+                [AccountingJournalReversalPermissionNamesV1.Approve], available: false),
+            Declaration(InvoiceLineCogsPrepareCapabilityId, InvoiceLineCogsPrepareCapabilityId, InvoiceLineCogsPrepareRoutePath,
+                "M-04-LINE-COGS-PREPARE", ShellCapabilityRoutePrecedence.Static,
+                [AccountingJournalReversalPermissionNamesV1.Propose], available: false),
+            Declaration(InvoiceLineCogsApproveCapabilityId, InvoiceLineCogsApproveCapabilityId, InvoiceLineCogsApproveRoutePath,
+                "M-04-LINE-COGS-APPROVE", ShellCapabilityRoutePrecedence.Static,
+                [AccountingJournalReversalPermissionNamesV1.Approve], available: false),
         ];
     }
 

@@ -55,17 +55,26 @@ public sealed class OrganizationAuditEventTenantGuardSqlServerRelationalAcceptan
                     factory.DatabaseConnectionString,
                     companyACorrelation,
                     companyBCorrelation));
-            Assert.Equal(
-                4,
-                await ScalarAsync<int>(
-                    factory.DatabaseConnectionString,
-                    "SELECT COUNT(*) FROM [organization].[__EFMigrationsHistory];"));
+            await AssertOwnerMigrationHistoryAsync(factory);
         }
         finally
         {
             await factory.DisposeAsync();
             await DropDatabaseAsync(baseConnectionString, factory.DatabaseName);
         }
+    }
+
+    private static async Task AssertOwnerMigrationHistoryAsync(SqlServerRelationalApiFactory factory)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(TestCompanyIds.CompanyA);
+        var owner = scope.ServiceProvider.GetRequiredService<OrganizationDbContext>();
+        // Compare the complete owner migration identities with the actual SQL history.
+        var expected = owner.Database.GetMigrations().OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        Assert.NotEmpty(expected);
+        var applied = (await owner.Database.GetAppliedMigrationsAsync())
+            .OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        Assert.Equal(expected, applied);
     }
 
     private static async Task SaveCollectorEventAsync(

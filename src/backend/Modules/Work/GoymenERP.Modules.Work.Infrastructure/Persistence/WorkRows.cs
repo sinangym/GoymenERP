@@ -81,7 +81,10 @@ internal sealed class WorkOutboxSourceCursorRow : IWorkTenantRow
     public byte[] RowVersion { get; set; } = [];
 }
 
-/// <summary>Consumer inbox/dedup, retry and poison record: one row per (company, source, consumer, message).</summary>
+/// <summary>
+/// Consumer inbox/dedup, retry and poison record: one row per (company, consumer, message); the source that first
+/// handed the message is kept as evidence (registration contract v1 dedup key, F-021).
+/// </summary>
 internal sealed class WorkOutboxDeliveryRow : IWorkTenantRow
 {
     public Guid CompanyId { get; set; }

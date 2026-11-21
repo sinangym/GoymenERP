@@ -8,15 +8,22 @@
  * or rounds. Each command is offered only in its source state and under its own published capability; the server re-judges
  * every one (the preparer/submitter cannot approve — 409 — and finalization fails closed with 503 while no Finance port is
  * registered, SAT-D294). After a recorded command, or a 409, the return is re-read.
+ *
+ * SAT-S2 / FNS-D81: before "Kesinleştir" the screen reads the original invoice's open installments. A partial return
+ * (`selectionAllowed`) needs the user's installment selection: the editor is prefilled with Finance's suggestion (the
+ * nearest-due open installment) and the user may change it; Finance's automatic order (FNS-D54) is never applied silently.
+ * Only non-zero amounts are sent; the sum and every bound are judged by Finance (422), never computed here.
  */
-import { useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
 import {
   cancelCustomerReturn,
   fetchCustomerReturn,
+  fetchCustomerReturnInstallments,
   rejectCustomerReturn,
   sendCustomerReturnCommand,
+  type CustomerReturnAllocationBody,
   type CustomerReturnCommand,
   type CustomerReturnDecision,
   type CustomerReturnDecisionBody,
@@ -26,10 +33,17 @@ import {
   CUSTOMER_RETURN_REASON_MAX,
   trimServerWhiteSpace,
   type CustomerReturnAmounts,
+  type CustomerReturnInstallments,
   type CustomerReturnState,
   type CustomerReturnView,
 } from './customerReturnContract'
-import { CUSTOMER_RETURN_STATE_TEXT, CUSTOMER_RETURN_SUBJECT, CUSTOMER_RETURN_TEXT, CUSTOMER_RETURN_TONE } from './customerReturnText'
+import {
+  CUSTOMER_RETURN_STATE_TEXT,
+  CUSTOMER_RETURN_SUBJECT,
+  CUSTOMER_RETURN_TEXT,
+  CUSTOMER_RETURN_TONE,
+  customerReturnOwnProblemText,
+} from './customerReturnText'
 import { customerReturnNotice } from './customerReturnNotice'
 import {
   SALES_CAPABILITY,
@@ -41,7 +55,9 @@ import {
 import { usePoolAttempt } from './poolAttempt'
 import { PoolAttemptNotice, PoolPartyCell } from './SalesPoolShared'
 import { formatBusinessDate, formatInstant } from './format'
-import { classifyOutcome } from '../shell/uiState'
+import { decodeProblem } from './contract'
+import { parseDecimalInput } from './wirePrimitives'
+import { classifyOutcome, type ViewOutcome } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
@@ -52,6 +68,7 @@ import styles from './SalesPool.module.css'
 
 const T = CUSTOMER_RETURN_TEXT.detail
 const C = CUSTOMER_RETURN_TEXT.common
+const I = CUSTOMER_RETURN_TEXT.detail.installments
 
 export function SalesCustomerReturnDetailPage() {
   const shell = useShellState()
@@ -344,6 +361,33 @@ const NO_REASONS: Readonly<Record<CustomerReturnDecision, string>> = { rejection
 
 const isDecision = (action: ReturnAction): action is CustomerReturnDecision => action === 'rejection' || action === 'cancellation'
 
+/** What one attempt sends: the version, a decision's reason, and a partial finalization's installment selection (FNS-D81). */
+interface ReturnActionBody extends CustomerReturnDecisionBody {
+  readonly allocations: readonly CustomerReturnAllocationBody[] | null
+}
+
+type InstallmentValues = Readonly<Record<string, string>>
+
+const prefillValues = (installments: CustomerReturnInstallments): InstallmentValues =>
+  Object.fromEntries(installments.installments.map((item) => [item.openItemId, item.prefillAmount]))
+
+/**
+ * The user's selection as the server reads it: every typed amount canonicalized as text, zero amounts left out. `null` when
+ * an amount is not a number or nothing remains — the sum and every bound are Finance's judgement, never this screen's.
+ */
+function selectionOf(installments: CustomerReturnInstallments, values: InstallmentValues): CustomerReturnAllocationBody[] | null {
+  const allocations: CustomerReturnAllocationBody[] = []
+  for (const item of installments.installments) {
+    const parsed = parseDecimalInput(values[item.openItemId] ?? '')
+    if (!parsed.ok) {
+      if (parsed.error === 'required') continue
+      return null
+    }
+    if (/[1-9]/.test(parsed.value)) allocations.push({ openItemId: item.openItemId, amount: parsed.value })
+  }
+  return allocations.length === 0 ? null : allocations
+}
+
 /** The action whose target state a recorded answer is in (the transport accepts only the target state). */
 const actionFor = (state: CustomerReturnState): ReturnAction =>
   state === 'Finalized'
@@ -366,8 +410,51 @@ function ReturnCommands({ view, onReread }: { readonly view: CustomerReturnView;
   // Each decision keeps its own reason: switching between Reddet and İptal et never carries one's text to the other.
   const [reasons, setReasons] = useState<Record<CustomerReturnDecision, string>>(NO_REASONS)
   const [localError, setLocalError] = useState<string | null>(null)
-  // Every action posts the version it read; only a decision sends its reason (the steps refuse a reason member).
-  const attempt = usePoolAttempt<CustomerReturnDecisionBody, CustomerReturnMutation>(
+  // FNS-D81: the user's installment amounts by open item, seeded from Finance's prefill once it is read.
+  // The typed amounts belong to the version they were typed against; a re-read return starts again from the prefill.
+  const [edited, setEdited] = useState<{ readonly version: string; readonly values: InstallmentValues } | null>(null)
+  const [selectionError, setSelectionError] = useState<string | null>(null)
+  const boundary = useAuthBoundary()
+  const key = contextKey(shell)
+  const namespace = key === null ? null : contextKeyString(key)
+  const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
+  const finalizationOffered = view.state === COMMAND_SOURCE.finalization
+    && hasCapability(shell, COMMAND_CAPABILITY.finalization)
+  const installmentsQuery = useQuery({
+    queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'sales-customer-return-installments', view.id, view.version],
+    enabled: finalizationOffered && namespace !== null && companyId !== null,
+    gcTime: 0,
+    staleTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+    queryFn: async ({ signal }): Promise<ViewOutcome<CustomerReturnInstallments>> => {
+      const snapshot = boundary.capture()
+      const outcome = await fetchCustomerReturnInstallments(view.id, companyId as string, signal)
+      if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
+      return outcome
+    },
+  })
+  const installmentsOutcome = installmentsQuery.data
+  // An answer for another version is not this return's prefill: the return is re-read.
+  const installments = installmentsOutcome?.type === 'ok-single' && installmentsOutcome.data.version === view.version
+    ? installmentsOutcome.data
+    : null
+  const driftVersion = installmentsOutcome?.type === 'ok-single' && installmentsOutcome.data.version !== view.version
+    ? installmentsOutcome.data.version
+    : null
+  const rereadRef = useRef(onReread)
+  useEffect(() => {
+    rereadRef.current = onReread
+  }, [onReread])
+  useEffect(() => {
+    // Once per drifted answer (the parent's callback is a new function on every render).
+    if (driftVersion !== null) rereadRef.current()
+  }, [driftVersion])
+  const values = edited !== null && edited.version === view.version ? edited.values : null
+  const shownValues = values ?? (installments === null ? null : prefillValues(installments))
+  // Every action posts the version it read; only a decision sends its reason (the steps refuse a reason member), and only
+  // a partial finalization sends the installment selection.
+  const attempt = usePoolAttempt<ReturnActionBody, CustomerReturnMutation>(
     commandScope(view.id),
     async (snapshot) => {
       const action = actionOf(snapshot.path)
@@ -376,7 +463,14 @@ function ReturnCommands({ view, onReread }: { readonly view: CustomerReturnView;
         ? await rejectCustomerReturn(view.id, snapshot.payload, context)
         : action === 'cancellation'
           ? await cancelCustomerReturn(view.id, snapshot.payload, context)
-          : await sendCustomerReturnCommand(action, view.id, { expectedVersion: snapshot.payload.expectedVersion }, context)
+          : await sendCustomerReturnCommand(
+            action,
+            view.id,
+            snapshot.payload.allocations === null
+              ? { expectedVersion: snapshot.payload.expectedVersion }
+              : { expectedVersion: snapshot.payload.expectedVersion, allocations: snapshot.payload.allocations },
+            context,
+          )
       setServiceCode(outcome.type === 'http' && outcome.status >= 500 ? (outcome.problem?.code ?? null) : null)
       return outcome
     },
@@ -405,16 +499,41 @@ function ReturnCommands({ view, onReread }: { readonly view: CustomerReturnView;
   if (offered.length === 0 && decisions.length === 0 && notice === null) return null
   const formOpen = reasonFor !== null && decisions.includes(reasonFor)
 
-  function send(action: ReturnAction, reasonText: string | null) {
+  function send(action: ReturnAction, reasonText: string | null, allocations: readonly CustomerReturnAllocationBody[] | null) {
     // A recorded earlier command closed its own attempt; the next command is a new one (an unresolved one is kept).
     attempt.reset()
-    attempt.submit(`${view.id}/${action}`, { expectedVersion: view.version, reason: isDecision(action) ? reasonText : null })
+    attempt.submit(`${view.id}/${action}`, {
+      expectedVersion: view.version,
+      reason: isDecision(action) ? reasonText : null,
+      allocations: action === 'finalization' ? allocations : null,
+    })
   }
 
   function startStep(command: CustomerReturnCommand) {
     setReasonFor(null)
     setLocalError(null)
-    send(command, null)
+    setSelectionError(null)
+    if (command !== 'finalization') {
+      send(command, null, null)
+      return
+    }
+    // The finalization waits for the installment read; a whole return needs no selection (the member is not sent).
+    if (installments === null) return
+    if (!installments.selectionAllowed) {
+      send(command, null, null)
+      return
+    }
+    const allocations = selectionOf(installments, shownValues ?? {})
+    if (allocations === null) {
+      setSelectionError(I.amountInvalid)
+      return
+    }
+    send(command, null, allocations)
+  }
+
+  function changeAmount(openItemId: string, text: string) {
+    setSelectionError(null)
+    setEdited({ version: view.version, values: { ...(shownValues ?? {}), [openItemId]: text } })
   }
 
   function openDecision(decision: CustomerReturnDecision) {
@@ -431,7 +550,7 @@ function ReturnCommands({ view, onReread }: { readonly view: CustomerReturnView;
       return
     }
     setLocalError(null)
-    send(reasonFor, trimmed.length === 0 ? null : trimmed)
+    send(reasonFor, trimmed.length === 0 ? null : trimmed, null)
   }
 
   return (
@@ -440,10 +559,30 @@ function ReturnCommands({ view, onReread }: { readonly view: CustomerReturnView;
       {offered.includes('approval') || decisions.includes('rejection') ? <p className={styles.muted}>{T.approveHint}</p> : null}
       {decisions.includes('rejection') ? <p className={styles.muted}>{T.rejectNote}</p> : null}
       {decisions.includes('cancellation') ? <p className={styles.muted}>{T.cancelNote}</p> : null}
+      {offered.includes('finalization') ? (
+        <InstallmentSelection
+          outcome={installmentsOutcome}
+          installments={installments}
+          values={shownValues}
+          error={selectionError}
+          disabled={attempt.frozen}
+          onChange={changeAmount}
+          onRetry={() => {
+            setEdited(null)
+            void installmentsQuery.refetch()
+          }}
+        />
+      ) : null}
       {offered.length === 0 && decisions.length === 0 ? null : (
         <div className={styles.actions}>
           {offered.map((command) => (
-            <Button key={command} type="button" variant="primary" disabled={attempt.frozen} onClick={() => startStep(command)}>
+            <Button
+              key={command}
+              type="button"
+              variant="primary"
+              disabled={attempt.frozen || (command === 'finalization' && installments === null)}
+              onClick={() => startStep(command)}
+            >
               {COMMAND_LABEL[command]}
             </Button>
           ))}
@@ -496,5 +635,110 @@ function ReturnCommands({ view, onReread }: { readonly view: CustomerReturnView;
         </div>
       ) : null}
     </div>
+  )
+}
+
+/**
+ * FNS-D81: the open installments of the original invoice and, for a partial return, one amount field per installment seeded
+ * with Finance's prefill. Every shown amount is the server's text; the screen neither sums nor checks the total.
+ */
+function InstallmentSelection({
+  outcome,
+  installments,
+  values,
+  error,
+  disabled,
+  onChange,
+  onRetry,
+}: {
+  readonly outcome: ViewOutcome<CustomerReturnInstallments> | undefined
+  readonly installments: CustomerReturnInstallments | null
+  readonly values: InstallmentValues | null
+  readonly error: string | null
+  readonly disabled: boolean
+  readonly onChange: (openItemId: string, text: string) => void
+  readonly onRetry: () => void
+}) {
+  const fieldPrefix = useId()
+  if (outcome === undefined) {
+    return <p role="status" aria-busy="true" data-testid="customer-return-installments-loading">{I.loading}</p>
+  }
+  if (installments === null) {
+    if (outcome.type === 'ok-single') {
+      return <p role="status" data-testid="customer-return-installments-reread">{I.versionChanged}</p>
+    }
+    // A coded refusal (the Finance port missing, Finance refusing the return) is said in its own words; the rest is the shell's.
+    const ownText = outcome.type === 'http' ? customerReturnOwnProblemText(decodeProblem(outcome.body, outcome.status)?.code ?? null) : null
+    if (ownText !== null) {
+      return (
+        <div className={styles.actions} data-testid="customer-return-installments-error">
+          <p role="alert" className={styles.notice}>{I.unavailable} {ownText}</p>
+          <Button type="button" variant="secondary" onClick={onRetry}>{I.retry}</Button>
+        </div>
+      )
+    }
+    return (
+      <div data-testid="customer-return-installments-error">
+        <StateBlock state={classifyOutcome(outcome)} subject={I.heading} onRetry={onRetry} />
+      </div>
+    )
+  }
+  const selecting = installments.selectionAllowed
+  return (
+    <section className={styles.section} aria-labelledby={`${fieldPrefix}-heading`} data-testid="customer-return-installments">
+      <h3 id={`${fieldPrefix}-heading`} className={styles.subtitle}>{I.heading}</h3>
+      <p className={styles.muted}>{selecting ? I.partialHint : I.wholeHint}</p>
+      <dl className={styles.facts}>
+        <div><dt>{I.returnAmount}</dt><dd className={styles.numeric}>{installments.amount}</dd></div>
+        <div><dt>{I.appliedAmount}</dt><dd className={styles.numeric}>{installments.appliedAmount}</dd></div>
+        <div><dt>{I.advanceAmount}</dt><dd className={styles.numeric}>{installments.advanceAmount}</dd></div>
+      </dl>
+      {error === null ? null : (
+        <p role="alert" className={styles.notice} data-testid="customer-return-installments-selection-error">{error}</p>
+      )}
+      {installments.installments.length === 0 ? null : (
+        <div className={styles.scroll}>
+          <table aria-labelledby={`${fieldPrefix}-heading`}>
+            <caption className={styles.muted}>{I.caption}</caption>
+            <thead>
+              <tr>
+                <th scope="col">{I.dueOn}</th>
+                <th scope="col" className={styles.numeric}>{I.originalAmount}</th>
+                <th scope="col" className={styles.numeric}>{I.outstandingAmount}</th>
+                <th scope="col" className={styles.numeric}>{I.amount}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {installments.installments.map((item) => {
+                const dueOn = formatBusinessDate(item.dueOn)
+                return (
+                  <tr key={item.openItemId} data-testid={`customer-return-installment-${item.openItemId}`}>
+                    <td>{dueOn}</td>
+                    <td className={styles.numeric}>{item.originalAmount}</td>
+                    <td className={styles.numeric}>{item.outstandingAmount}</td>
+                    <td className={styles.numeric}>
+                      {selecting ? (
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          aria-label={I.amountLabel(dueOn)}
+                          aria-invalid={error === null ? undefined : true}
+                          value={values?.[item.openItemId] ?? item.prefillAmount}
+                          disabled={disabled}
+                          onChange={(event) => onChange(item.openItemId, event.target.value)}
+                          data-testid={`customer-return-installment-amount-${item.openItemId}`}
+                        />
+                      ) : (
+                        item.prefillAmount
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   )
 }

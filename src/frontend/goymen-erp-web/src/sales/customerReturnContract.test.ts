@@ -7,9 +7,11 @@ import {
   CUSTOMER_RETURN_REASON_MAX,
   CUSTOMER_RETURN_VIEW_FIELDS,
   SALES_CUSTOMER_RETURNS_PATH,
+  decodeCustomerReturnInstallments,
   decodeCustomerReturnList,
   decodeCustomerReturnView,
   salesCustomerReturnApiPath,
+  salesCustomerReturnInstallmentsPath,
   salesCustomerReturnsListPath,
   trimServerWhiteSpace,
 } from './customerReturnContract'
@@ -19,6 +21,8 @@ import { INVOICE_ID, OTHER_INVOICE_ID } from './invoiceTestData'
 import {
   APPROVER,
   CANCELLATION_REASON,
+  OPEN_ITEM_1,
+  OPEN_ITEM_2,
   PREPARER,
   REJECTION_REASON,
   RETURN_2,
@@ -28,9 +32,12 @@ import {
   finalizedInvoiceWithLines,
   foreignReturnView,
   returnAmounts,
+  returnInstallment,
+  returnInstallments,
   returnLine,
   returnSummary,
   returnView,
+  wholeReturnInstallments,
 } from './customerReturnTestData'
 
 describe('UI-70b customer return view decoder', () => {
@@ -139,6 +146,38 @@ describe('UI-70b customer return view decoder', () => {
   })
 })
 
+describe('SAT-S2 customer return installments decoder (FNS-D81)', () => {
+  it('accepts a partial return\'s installments in the server order with the prefill as text', () => {
+    const decoded = decodeCustomerReturnInstallments(returnInstallments(), RETURN_ID)
+    expect(decoded?.selectionAllowed).toBe(true)
+    expect(decoded?.installments.map((item) => [item.openItemId, item.prefillAmount])).toEqual([
+      [OPEN_ITEM_1, '240.00'],
+      [OPEN_ITEM_2, '0'],
+    ])
+    expect(decodeCustomerReturnInstallments(wholeReturnInstallments(), RETURN_ID)?.selectionAllowed).toBe(false)
+    expect(decodeCustomerReturnInstallments(returnInstallments({ customerReturnId: RETURN_ID.toUpperCase() }), RETURN_ID)).not.toBeNull()
+  })
+
+  it.each([
+    ['another return', returnInstallments({ customerReturnId: RETURN_2 })],
+    ['a stray member', returnInstallments({ isReplay: false })],
+    ['a missing member', (() => { const body = returnInstallments(); delete body.advanceAmount; return body })()],
+    ['a numeric version', returnInstallments({ version: 3 })],
+    ['a numeric amount', returnInstallments({ amount: 240 })],
+    ['a negative applied amount', returnInstallments({ appliedAmount: '-1.00' })],
+    ['a string flag', returnInstallments({ selectionAllowed: 'true' })],
+    ['a selection over nothing', returnInstallments({ installments: [] })],
+    ['a repeated installment', returnInstallments({ installments: [returnInstallment(), returnInstallment()] })],
+    ['an installment with a stray member', returnInstallments({ installments: [returnInstallment({ extra: 1 })] })],
+    ['an installment with a bad due date', returnInstallments({ installments: [returnInstallment({ dueOn: '2026-13-01' })] })],
+    ['an installment with a numeric prefill', returnInstallments({ installments: [returnInstallment({ prefillAmount: 240 })] })],
+    ['an installment without an open item', returnInstallments({ installments: [returnInstallment({ openItemId: 'x' })] })],
+    ['not an object', [returnInstallments()]],
+  ])('refuses %s', (_label, body) => {
+    expect(decodeCustomerReturnInstallments(body, RETURN_ID)).toBeNull()
+  })
+})
+
 describe('UI-70b customer return list decoder', () => {
   it('keeps the server order and refuses a repeated id', () => {
     const list = decodeCustomerReturnList({ items: [returnSummary({ id: RETURN_2 }), returnSummary()] }, null)
@@ -206,6 +245,16 @@ describe('UI-70b OpenAPI parity', () => {
     expect(keys(returnAmounts())).toEqual(members('SalesCustomerReturnAmountsView'))
     expect(keys(returnSummary())).toEqual(members('SalesCustomerReturnSummaryView'))
     expect(members('SalesCustomerReturnListResponse')).toEqual(['items'])
+    expect(keys(returnInstallments())).toEqual(members('SalesCustomerReturnInstallmentsResponse'))
+    expect(keys(returnInstallment())).toEqual(members('SalesCustomerReturnInstallmentView'))
+  })
+
+  it('the installment read exists and the finalization body declares the optional selection (FNS-D81)', () => {
+    const at = (built: string) => `/api/v1${built}`.replace(RETURN_ID, '{id}')
+    expect(document.paths[at(salesCustomerReturnInstallmentsPath(RETURN_ID))]?.get).toBeDefined()
+    expect(members('FinalizeSalesCustomerReturnRequest')).toEqual(['allocations', 'expectedVersion'])
+    expect(document.components.schemas.FinalizeSalesCustomerReturnRequest?.required ?? []).toEqual(['expectedVersion'])
+    expect(members('SalesCustomerReturnAllocationRequest')).toEqual(['amount', 'openItemId'])
   })
 
   it('every route the client calls exists with the request body the client sends', () => {

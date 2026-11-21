@@ -80,7 +80,7 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
             table.HasCheckConstraint("CK_SettingsMfgTolerance_Version", "[Version] > 0");
             table.HasCheckConstraint("CK_SettingsMfgTolerance_Percent", "[MaximumFirePercent] >= 0");
             table.HasCheckConstraint("CK_SettingsMfgTolerance_Window", "[EffectiveThrough] IS NULL OR [EffectiveThrough] >= [EffectiveFrom]");
-            table.HasCheckConstraint("CK_SettingsMfgTolerance_Approval", "[ApprovalStatus] = 'Approved' AND LEN(LTRIM(RTRIM([ApprovedBy]))) > 0 AND [ApprovedAtUtc] > '0001-01-01T00:00:00+00:00' AND LEN(LTRIM(RTRIM([ApprovalReason]))) > 0");
+            table.HasCheckConstraint("CK_SettingsMfgTolerance_Approval", ToleranceRegistryApprovalCheck);
         });
         policy.HasKey(x => new { x.CompanyId, x.ProfileId });
         policy.HasIndex(x => new { x.CompanyId, x.Process, x.Version }).IsUnique();
@@ -94,9 +94,27 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
 
         ConfigureSalesDiscountLimits(modelBuilder);
         ConfigureManufacturingProfiles(modelBuilder);
+        ConfigureManufacturingProfileBaselines(modelBuilder);
         ConfigureTaxMaster(modelBuilder);
         ConfigureTaxBuyerSituations(modelBuilder);
         ConfigureExchangeRates(modelBuilder);
+        ConfigureSalesPolicies(modelBuilder);
+        ConfigureSalesQuoteAndEInvoicePolicies(modelBuilder);
+        ConfigureTaxRateLists(modelBuilder);
+        ConfigureUnitConversionPolicies(modelBuilder);
+        ConfigureUnitProfiles(modelBuilder);
+        ConfigureMoneyProfiles(modelBuilder);
+        ConfigureBankCsvMappings(modelBuilder);
+        ConfigureSegregationOfDutiesPolicies(modelBuilder);
+        ConfigureLoginRateLimits(modelBuilder);
+        ConfigureWorkCenterCapacities(modelBuilder);
+        ConfigureReferenceLists(modelBuilder);
+        ConfigureCollateralTypes(modelBuilder);
+        ConfigureCompanyPolicies(modelBuilder);
+        ConfigurePurchaseInvoiceVariancePolicies(modelBuilder);
+        ConfigureWarehouseTransferScale(modelBuilder);
+        ConfigureDocumentNumbers(modelBuilder);
+        ConfigureFinancePolicies(modelBuilder);
 
         // The platform audit and command-result tables are their owners' (excluded from Settings' migrations); Settings
         // writes them in the same SaveChanges as its own rows and reads them only through the company filter.
@@ -607,6 +625,15 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
                 continue;
             }
 
+            // Use the mapped tenant key, so a newly mapped company-owned row cannot silently bypass this fence.
+            // Group-wide rows (for example LoginRateLimitVersionRow) deliberately have no CompanyId property.
+            if (entry.Metadata.FindProperty("CompanyId") is not null
+                && (!companyContext.IsResolved || companyContext.CompanyId == Guid.Empty
+                    || entry.Property("CompanyId").CurrentValue is not Guid owner || owner != companyContext.CompanyId))
+            {
+                throw new InvalidOperationException("Ayarlar kaydı yalnız etkin şirket bağlamında yazılır.");
+            }
+
             // Üretim U1-a: the registry row is written only by its approved command workflow — inserted in the same save
             // as its lifecycle version moving Approved → Published (ApplyManufacturingProfileWriteGuard).
             if (entry.Entity is ManufacturingTolerancePolicyRow policy && !IsToleranceRegistryPublication(entry, policy)
@@ -617,6 +644,7 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
             }
 
             ApplyManufacturingProfileWriteGuard(entry);
+            ApplyFinancePolicyWriteGuard(entry);
 
             if (entry.State == EntityState.Deleted)
             {
@@ -644,40 +672,39 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
                 throw new InvalidOperationException("Kur kaydı değiştirilemez; yeni kayıt eklenir.");
             }
 
-            var companyId = entry.Entity switch
+            if (entry.State == EntityState.Modified && entry.Entity is MoneyProfileVersionRow or MoneyProfileBaselineTransferRow)
             {
-                SalesDiscountLimitGroupRow row => row.CompanyId,
-                SalesDiscountLimitVersionRow row => row.CompanyId,
-                SalesDiscountLimitWithdrawalRow row => row.CompanyId,
-                SalesDiscountLimitMembershipRow row => row.CompanyId,
-                SalesDiscountLimitMembershipGroupRow row => row.CompanyId,
-                TaxItemTypeDefaultSeriesRow row => row.CompanyId,
-                TaxItemTypeDefaultRecordRow row => row.CompanyId,
-                TaxItemTypeDefaultWithdrawalRow row => row.CompanyId,
-                TaxCodeListRow row => row.CompanyId,
-                TaxCodeListVersionRow row => row.CompanyId,
-                TaxCodeListEntryRow row => row.CompanyId,
-                TaxCodeListWithdrawalRow row => row.CompanyId,
-                TaxWithholdingThresholdRow row => row.CompanyId,
-                TaxWithholdingThresholdRecordRow row => row.CompanyId,
-                TaxWithholdingThresholdWithdrawalRow row => row.CompanyId,
-                TaxBuyerSituationListRow row => row.CompanyId,
-                TaxBuyerSituationListVersionRow row => row.CompanyId,
-                TaxBuyerSituationEntryRow row => row.CompanyId,
-                TaxBuyerSituationListWithdrawalRow row => row.CompanyId,
-                ExchangeRateDayRow row => row.CompanyId,
-                ExchangeRateRecordRow row => row.CompanyId,
-                ExchangeRateRecordRateRow row => row.CompanyId,
-                ManufacturingTolerancePolicyRow row => row.CompanyId,
-                ManufacturingParameterProfileRow row => row.CompanyId,
-                ManufacturingParameterProfileValueRow row => row.CompanyId,
-                ManufacturingToleranceProfileVersionRow row => row.CompanyId,
-                _ => (Guid?)null,
-            };
-            if (companyId is { } owner && (!companyContext.IsResolved || owner != companyContext.CompanyId))
-            {
-                throw new InvalidOperationException("Ayarlar kaydı yalnız etkin şirket bağlamında yazılır.");
+                throw new InvalidOperationException("Para profili kaydı değiştirilemez; yeni sürüm yazılır.");
             }
+
+            if (entry.State == EntityState.Modified && entry.Entity is CompanyPolicyVersionRow
+                or PurchaseInvoiceVariancePolicyRow
+                or WarehouseTransferScaleVersionRow
+                or FinanceCreditAccountMappingVersionRow or ReferenceListEntryRow or ReferenceListEntryVersionRow
+                or CollateralTypeRow or CollateralTypeVersionRow
+                or DocumentNumberFormatRow or DocumentNumberReservationRow or DocumentNumberCancellationRow
+                or ManufacturingProfileBaselineTransferRow
+                or BankCsvMappingVersionRow or SalesPolicyBaselineTransferRow
+                or SalesDeliveryToleranceVersionRow or SalesApprovalAmountThresholdVersionRow
+                or SalesQuoteLossReasonListVersionRow or SalesQuoteLossReasonEntryRow
+                or SalesQuoteDefaultValidityVersionRow or EInvoiceScenarioCodeListVersionRow
+                or EInvoiceScenarioCodeRow or EInvoiceScenarioDefaultVersionRow
+                or SegregationOfDutiesPolicyVersionRow or TaxRateListVersionRow
+                or TaxRateListEntryRow or TaxRateListWithdrawalRow
+                or UnitConversionPolicyVersionRow or UnitProfileVersionRow or UnitProfileBaselineTransferRow
+                or WorkCenterCapacityVersionRow or LoginRateLimitVersionRow)
+            {
+                throw new InvalidOperationException("Ayarlar kaydı değiştirilemez; yeni sürüm yazılır.");
+            }
+
+            if (entry.Entity is DocumentNumberCounterRow counter)
+            {
+                var original = entry.Property(nameof(DocumentNumberCounterRow.LastSequence)).OriginalValue;
+                if (entry.State == EntityState.Added ? counter.LastSequence != 1
+                    : entry.State == EntityState.Modified && (original is not long previous || previous == long.MaxValue || counter.LastSequence != previous + 1))
+                    throw new InvalidOperationException("Document counters advance exactly once; they never reset within a year.");
+            }
+
         }
     }
 }

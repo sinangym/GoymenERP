@@ -9,7 +9,7 @@
  * block and `hasCapability` answers false. The frontend never mints a capability to open
  * its own screen, and the server re-authorizes every request regardless (ERP-000K §10.2).
  *
- * WHY ELEVEN IDS. They map onto the permissions the server enforces separately
+ * WHY EIGHTEEN IDS. They map onto the permissions the server enforces separately
  * (`ManufacturingEndpoints`):
  *
  *   manufacturing.orders.detail <- manufacturing.orders.read
@@ -17,6 +17,10 @@
  *   manufacturing.orders.list   <- manufacturing.orders.read
  *   manufacturing.orders.close  <- manufacturing.orders.read + manufacturing.orders.close
  *   manufacturing.orders.close-exception-approve <- manufacturing.orders.close-exception.approve
+ *   manufacturing.orders.due-date <- manufacturing.orders.read + manufacturing.orders.write (URT-D66: the order termin)
+ *   manufacturing.orders.cost-trace <- manufacturing.orders.read + manufacturing.reports.read (URT-S19: the cost trace)
+ *   manufacturing.orders.output-correction <- manufacturing.orders.read + manufacturing.facts.correct (F-009 D6, UI-14)
+ *   manufacturing.orders.cancel <- manufacturing.orders.read + manufacturing.orders.cancel (F-009 D6; see orderCancel)
  *   manufacturing.plans.create  <- manufacturing.plans.write
  *   manufacturing.plans.detail  <- manufacturing.plans.read
  *   manufacturing.plans.approve <- manufacturing.plans.read + manufacturing.plans.approve
@@ -24,6 +28,8 @@
  *   manufacturing.plans.order-create <- manufacturing.plans.read + manufacturing.orders.create
  *   manufacturing.plans.edit    <- manufacturing.plans.read + manufacturing.plans.write (MFG-PLAN-EDIT: the plan save's grant)
  *   manufacturing.plans.list    <- manufacturing.plans.read (MFG-PLAN-LIST: the plan read's own grant)
+ *   manufacturing.scrap-prices.list   <- manufacturing.scrap-prices.read (URT-S13: the monthly scrap prices)
+ *   manufacturing.scrap-prices.record <- manufacturing.scrap-prices.read + manufacturing.scrap-prices.write (URT-S13)
  *
  * Reading an order and recording a fact on it are different authorities, so a reader
  * sees the balances and NO form (card D3: without the capability the control is not
@@ -48,6 +54,33 @@ export const MANUFACTURING_CAPABILITY = {
   orderClose: 'manufacturing.orders.close',
   /** The reasoned out-of-tolerance close control. Never implied by ordinary close authority. */
   orderCloseExceptionApprove: 'manufacturing.orders.close-exception-approve',
+  /**
+   * URT-S23 (URT-D66 (3)/(5)): change the order's own termin INSIDE the order screen. Not a route — a control. Its
+   * permission (`manufacturing.orders.write`) is registered and granted to no role, so until a grant exists the
+   * registry publishes it to nobody and no termin form is drawn.
+   */
+  orderDueDate: 'manufacturing.orders.due-date',
+  /**
+   * URT-S19 (B-27, DEC-PRDCT-009, API-42): the order's cost trace INSIDE the order screen — lots, outputs, fact moments
+   * and the production cost port's answer. Not a route — a control. Its permission (`manufacturing.reports.read`) is
+   * registered and granted to no role, so until a grant exists the registry publishes it to nobody and no trace is read.
+   */
+  orderCostTrace: 'manufacturing.orders.cost-trace',
+  /**
+   * F-009 D6 (UI-14, API-25): correct a recorded output declaration INSIDE the order screen with an append-only
+   * reversal. Not a route — a control. Its permission (`manufacturing.facts.correct`, URT-S2) is registered and granted
+   * to no role; the shell provider must publish this id (permission-capability-registration). Until it does
+   * `hasCapability` answers false and no correction form is drawn.
+   */
+  orderOutputCorrection: 'manufacturing.orders.output-correction',
+  /**
+   * F-009 D6 (URT-D33): cancel an order with nothing left on it INSIDE the order screen. Not a route — a control. The
+   * endpoint and its permission (`manufacturing.orders.cancel`) are URT-S4's; no provider publishes this id, so
+   * `hasCapability` answers false and no cancel control is drawn until that contract is merged and published.
+   */
+  orderCancel: 'manufacturing.orders.cancel',
+  /** URT-D32/D77: enabled once the real enlisted Inventory cost-generation participant is connected. */
+  orderReopen: 'manufacturing.orders.reopen',
   /** Create a Draft plan from authorized work-center and Inventory candidate reads. */
   planCreate: 'manufacturing.plans.create',
   /** Reopen one stored plan through `manufacturing.plans.read`. */
@@ -60,12 +93,22 @@ export const MANUFACTURING_CAPABILITY = {
    * false and no cancel control is drawn. The rejection (API-10) needs no id of its own: it runs under `planApprove`.
    */
   planCancel: 'manufacturing.plans.cancel',
+  /** URT-D106/D110: manual queue movement on its separate registered permission; the provider never grants it. */
+  planReorder: 'manufacturing.plans.reorder',
   /** Create one order from the Approved plan shown on the detail screen. Not a route — a control. */
   planOrderCreate: 'manufacturing.plans.order-create',
   /** MFG-PLAN-EDIT: edit the Draft shown on the detail screen, with its history. Not a route — a control. */
   planEdit: 'manufacturing.plans.edit',
   /** MFG-PLAN-LIST the company's saved plans, so a closed plan is found and reopened. Route `/uretim/planlar`. */
   planList: 'manufacturing.plans.list',
+  /**
+   * URT-S13 (URT-D47, URT-D65) the company's monthly scrap prices, TL per kg, one per month. Route
+   * `/uretim/hurda-fiyatlari`. Its two permissions are registered and granted to no role (who enters the price is not
+   * decided), so until a grant exists the registry publishes it to nobody.
+   */
+  scrapPriceList: 'manufacturing.scrap-prices.list',
+  /** URT-S13: enter one month's scrap price on the scrap price screen. Not a route — a control. */
+  scrapPriceRecord: 'manufacturing.scrap-prices.record',
 } as const
 
 export type ManufacturingCapabilityId =
@@ -78,6 +121,7 @@ export const MANUFACTURING_ROUTE: Record<string, string> = {
   [MANUFACTURING_CAPABILITY.orderDetail]: '/uretim/emir/:orderId',
   [MANUFACTURING_CAPABILITY.orderList]: '/uretim/emirler',
   [MANUFACTURING_CAPABILITY.planList]: '/uretim/planlar',
+  [MANUFACTURING_CAPABILITY.scrapPriceList]: '/uretim/hurda-fiyatlari',
 }
 
 /**
@@ -91,6 +135,7 @@ export const MANUFACTURING_NAV_LABEL: Record<string, string> = {
   [MANUFACTURING_CAPABILITY.planCreate]: '',
   [MANUFACTURING_CAPABILITY.planDetail]: '',
   [MANUFACTURING_CAPABILITY.planList]: '',
+  [MANUFACTURING_CAPABILITY.scrapPriceList]: '',
 }
 
 export function planCreatePath(): string {
@@ -138,6 +183,11 @@ export function orderDetailPath(orderId: string): string {
 /** The plan list's own path. */
 export function planListPath(): string {
   return MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.planList]
+}
+
+/** URT-S13: the monthly scrap price list's own path. */
+export function scrapPriceListPath(): string {
+  return MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.scrapPriceList]
 }
 
 /** The order list's own path. */

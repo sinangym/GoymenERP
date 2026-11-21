@@ -8,8 +8,8 @@
  * save or an approval and never merges. So this panel:
  *  - lists the other cards with a link to each (when the actor may open a card), code, name and lifecycle;
  *  - never disables a save or an approval, and says so; a failed check says so too and blocks nothing;
- *  - computes no similarity of its own: which technical attributes define "the same product" and any
- *    fuzzy rule are undecided (NEEDS-SINAN), so nothing here guesses one.
+ *  - shows the server's second list (URN-D25): active cards of the same family with the same thickness, width,
+ *    quality and coating; it computes no similarity of its own and no fuzzy rule.
  *
  * The query side (fresh on every mount) is ./duplicateQuery.ts.
  */
@@ -37,33 +37,44 @@ export function DuplicateCandidatesPanel({
   if (outcome === undefined || outcome.type === 'fence-stale') {
     body = <p className={styles.line}>{PRODUCT_DUPLICATE_TEXT.checking}</p>
   } else if (outcome.type === 'ok-single') {
-    const { exactName, hasMore } = outcome.data
-    body =
-      exactName.length === 0 ? (
-        <p className={styles.line}>{PRODUCT_DUPLICATE_TEXT.none}</p>
-      ) : (
-        <>
-          <p className={styles.title}>{PRODUCT_DUPLICATE_TEXT.foundTitle}</p>
-          <p className={styles.line}>{PRODUCT_DUPLICATE_TEXT.foundDetail}</p>
-          <ul className={styles.list} data-testid="product-duplicate-candidates">
-            {exactName.map((item) => (
-              <li key={item.id}>
-                {canOpenDetail ? (
-                  <Link to={productDetailPath(item.id)}>{item.code}</Link>
-                ) : (
-                  <span>{item.code}</span>
-                )}{' '}
-                {item.name} — {lifecycleLabel(item.lifecycle)}
-              </li>
-            ))}
-          </ul>
-          {hasMore ? <p className={styles.line}>{PRODUCT_DUPLICATE_TEXT.more}</p> : null}
-        </>
-      )
+    const { exactName, hasMore, sameTechnical, sameTechnicalHasMore } = outcome.data
+    const list = (items: typeof exactName, testId: string) => (
+      <ul className={styles.list} data-testid={testId}>
+        {items.map((item) => (
+          <li key={item.id}>
+            {canOpenDetail ? <Link to={productDetailPath(item.id)}>{item.code}</Link> : <span>{item.code}</span>}{' '}
+            {item.name} — {lifecycleLabel(item.lifecycle)}
+          </li>
+        ))}
+      </ul>
+    )
+    body = (
+      <>
+        {exactName.length === 0 ? (
+          <p className={styles.line}>{PRODUCT_DUPLICATE_TEXT.none}</p>
+        ) : (
+          <>
+            <p className={styles.title}>{PRODUCT_DUPLICATE_TEXT.foundTitle}</p>
+            <p className={styles.line}>{PRODUCT_DUPLICATE_TEXT.foundDetail}</p>
+            {list(exactName, 'product-duplicate-candidates')}
+            {hasMore ? <p className={styles.line}>{PRODUCT_DUPLICATE_TEXT.more}</p> : null}
+          </>
+        )}
+        {sameTechnical.length === 0 ? null : (
+          <>
+            <p className={styles.title}>{PRODUCT_DUPLICATE_TEXT.technicalTitle}</p>
+            <p className={styles.line}>{PRODUCT_DUPLICATE_TEXT.technicalDetail}</p>
+            {list(sameTechnical, 'product-duplicate-technical-candidates')}
+            {sameTechnicalHasMore ? <p className={styles.line}>{PRODUCT_DUPLICATE_TEXT.technicalMore}</p> : null}
+          </>
+        )}
+      </>
+    )
   } else {
     body = <p className={styles.line}>{PRODUCT_DUPLICATE_TEXT.failed}</p>
   }
-  const found = outcome?.type === 'ok-single' && outcome.data.exactName.length > 0
+  const found =
+    outcome?.type === 'ok-single' && (outcome.data.exactName.length > 0 || outcome.data.sameTechnical.length > 0)
   return (
     <section
       id={id}

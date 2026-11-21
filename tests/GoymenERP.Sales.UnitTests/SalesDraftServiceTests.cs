@@ -475,11 +475,13 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
-    public async Task Without_the_schedule_name_it_is_403_before_the_draft_is_read_and_the_other_names_do_not_confer_it()
+    public async Task Without_the_schedule_name_and_the_order_edit_name_it_is_403_before_the_draft_is_read_and_the_other_names_do_not_confer_it()
     {
         var world = new World();
         var created = (await world.Service().CreateDraftAsync(Request(lines: 2), Metadata("k-1"))).Detail;
         world.Authority.Denied.Add(SchedulePermission);
+        // SAT-D398/SAT-D400: the order edit name is the only other name that confers the termin change.
+        world.Authority.Denied.Add(SalesPermissionManifestV1.OrdersHeaderWrite);
 
         var forbidden = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().RescheduleDeliveryAsync(created.Draft.Id,
             Schedule("3", Day.AddDays(30), SameDates(created.Lines[0]), SameDates(created.Lines[1])), Metadata("k-s1")));
@@ -487,6 +489,50 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal((403, "forbidden"), (forbidden.Status, forbidden.Code));
         Assert.Empty(world.Store.Schedules);
         Assert.DoesNotContain(world.Store.Transitions, item => item.Command == SalesDraftCommands.RescheduleDeliveryV1);
+    }
+
+    [Fact]
+    public async Task An_order_edit_holder_without_the_schedule_name_moves_the_dates_audited_under_the_edit_name_without_re_approval()
+    {
+        // SAT-D398/SAT-D400 (SINAN-CEVAP 33): termin = the order edit permission OR the delivery-schedule name; approval stays.
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Request(lines: 2), Metadata("k-1"))).Detail;
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("3"), Metadata("k-submit"));
+        var approved = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("4"), Metadata("k-approve"));
+        world.Authority.Denied.Add(SchedulePermission);
+
+        var moved = await world.Service().RescheduleDeliveryAsync(created.Draft.Id,
+            Schedule("5", Day.AddDays(30), SameDates(created.Lines[0], 7), SameDates(created.Lines[1])), Metadata("k-s1"));
+
+        Assert.Equal(("Approved", "6"), (moved.Detail.Draft.ApprovalState, moved.Detail.Draft.Version));
+        Assert.Equal(approved.Detail.Approval, moved.Detail.Approval);
+        var transition = world.Store.Transitions.Single(item => item.Command == SalesDraftCommands.RescheduleDeliveryV1);
+        Assert.Equal((SalesPermissionManifestV1.OrdersHeaderWrite, "sales.order-draft.delivery-rescheduled.v1"),
+            (transition.Envelope.PermissionCode, transition.Audit.EventType));
+        Assert.Single(world.Store.Schedules);
+    }
+
+    [Fact]
+    public async Task With_no_order_edit_binding_a_missing_schedule_name_stays_403_and_an_edit_name_revoked_after_the_read_is_refused()
+    {
+        var unbound = new World();
+        var created = (await unbound.Service().CreateDraftAsync(Request(lines: 2), Metadata("k-1"))).Detail;
+        unbound.Bindings = unbound.Bindings with { HeaderPermission = null };
+        unbound.Authority.Denied.Add(SchedulePermission);
+        var forbidden = await Assert.ThrowsAsync<SalesDraftServiceException>(() => unbound.Service().RescheduleDeliveryAsync(created.Draft.Id,
+            Schedule("3", Day.AddDays(30), SameDates(created.Lines[0]), SameDates(created.Lines[1])), Metadata("k-s1")));
+        Assert.Equal((403, "forbidden"), (forbidden.Status, forbidden.Code));
+        Assert.Empty(unbound.Store.Schedules);
+
+        // The name that granted the call is the one the last fence re-measures.
+        var world = new World();
+        var draft = (await world.Service().CreateDraftAsync(Request(lines: 2), Metadata("k-1"))).Detail;
+        world.Authority.Denied.Add(SchedulePermission);
+        world.Store.OnStore = () => world.Authority.Denied.Add(SalesPermissionManifestV1.OrdersHeaderWrite);
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().RescheduleDeliveryAsync(draft.Draft.Id,
+            Schedule("3", Day.AddDays(30), SameDates(draft.Lines[0]), SameDates(draft.Lines[1])), Metadata("k-s2")));
+        Assert.Equal((403, "forbidden"), (refused.Status, refused.Code));
+        Assert.Empty(world.Store.Schedules);
     }
 
     [Fact]
@@ -1638,6 +1684,8 @@ public sealed partial class SalesDraftServiceTests
         public FakeSettings Settings { get; init; } = new();
         public FakeProducts Products { get; init; } = new();
         public FakeStore Store { get; init; } = new();
+        public ISalesMarginCostReadPortV1? MarginCosts { get; set; }
+        public ISalesOrderInvoicedQuantityReadPortV1? InvoicedQuantities { get; set; }
         /// <summary>API-20 / API-21: the in-memory request store; null = not composed (503).</summary>
         public FakeRequestStore? Requests { get; set; } = new();
         /// <summary>API-22…24: the in-memory quote store over the same draft and request fakes; null = not composed (503).</summary>
@@ -1648,6 +1696,16 @@ public sealed partial class SalesDraftServiceTests
         public ISalesOrderDeliveryReadPortV1? Deliveries { get; set; }
         /// <summary>DEC-SAL-005: the allocation owner's read port (Inventory); null = not composed.</summary>
         public ISalesOrderAllocationReadPortV1? Allocations { get; set; }
+        /// <summary>
+        /// F-017 STOK §5.1: the allocation owner's kind-aware read (Inventory registers it beside V1). When unset and V1 is composed,
+        /// a SYNTHETIC owner answering "no allocation of either kind" stands in, as the Inventory module registers both together.
+        /// </summary>
+        public ISalesOrderAllocationReadPortV2? FutureAllocations { get; set; }
+        /// <summary>F-017 STOK §5.1: true = the kind-aware read is not composed even beside V1 (the preview is unreadable).</summary>
+        public bool NoFutureAllocations { get; set; }
+        /// <summary>X1 / KLN-D28 (9): the host's future allocation release participant; null = not composed (future ones block).</summary>
+        public ISalesOrderFutureAllocationReleaseParticipantV1? FutureAllocationRelease { get; set; }
+        public ISalesOrderFutureDemandReductionParticipantV1? FutureDemandReduction { get; set; } = new FakeFutureDemandReduction();
         /// <summary>DEC-SAL-005: the loading owner's read port (Logistics); null = not composed.</summary>
         public ISalesOrderLoadingReadPortV1? Loadings { get; set; }
         /// <summary>AT-018 / MOD-02: the Product price tier chain; null = not composed.</summary>
@@ -1688,16 +1746,46 @@ public sealed partial class SalesDraftServiceTests
         public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission, PriceReadPermission, SchedulePermission,
             CancelPermission, QuantityPermission);
 
+        /// <summary>Plan S2: the server company context the draft service gets instead of the resolved test company (null = the default).</summary>
+        public ICompanyContext? CompanyOverride { get; set; }
+
         public SalesDraftService Service()
         {
-            var company = new CompanyContext();
-            company.Set(Company);
+            var resolved = new CompanyContext();
+            resolved.Set(Company);
+            var company = CompanyOverride ?? resolved;
             return new SalesDraftService(company, User, Authority, ActiveRoleCodes, new FixedCorrelation(), Accounts, Settings,
                 NoProducts ? null : Products, Store, Bindings, Clock, NoContactInformation ? null : ContactInformation, Deliveries,
                 Allocations, Loadings, PriceReferences, CustomerReturns, Requests, Quotes ??= new FakeQuoteStore(Store, Requests, () => Clock),
                 SalesPolicies, DiscountLimitGroups, PartyRisk, QuotePolicies, NoUserDisplays ? null : UserDisplays, SalesOwners, Reports, PartyDisplays,
-                LineTaxes, RateLists, ExchangeRates, ItemTypes, SubcontractBindings, OwnerAxes, LinkedSupplies, LinkedSupplyRecorders);
+                LineTaxes, RateLists, ExchangeRates, ItemTypes, SubcontractBindings, OwnerAxes, LinkedSupplies, LinkedSupplyRecorders,
+                InvoiceRecords, PostedShares,
+                NoFutureAllocations ? null : FutureAllocations ?? (Allocations is null ? null : new NoFutureSupplyAllocations()),
+                FutureAllocationRelease, NoPlannedQuantities ? null : PlannedQuantities ?? new ApprovedLessShippedPlan(this), FutureDemandReduction, MarginCosts,
+                InvoicedQuantities);
         }
+
+        /// <summary>
+        /// SAT-D406: the Logistics shipment-plan owner's read for the risk remainder; null = the default SYNTHETIC plan, which plans
+        /// exactly the approved basis less the case's definitely shipped quantities, so the cases whose subject is not the plan keep
+        /// measuring what they did.
+        /// </summary>
+        public ISalesOrderPlannedQuantityReadPortV1? PlannedQuantities { get; set; }
+        /// <summary>SAT-D406: true = the plan owner is not composed (the remainder of an open approved order is unavailable).</summary>
+        public bool NoPlannedQuantities { get; set; }
+
+        /// <summary>The default SYNTHETIC kind-aware allocation owner: nothing of either kind for any order of the company.</summary>
+        private sealed class NoFutureSupplyAllocations : ISalesOrderAllocationReadPortV2
+        {
+            public Task<SalesOrderAllocationReadAnswerV2> ReadOrderAllocationsAsync(Guid orderId, CancellationToken cancellationToken = default) =>
+                Task.FromResult(new SalesOrderAllocationReadAnswerV2(Company, orderId, []));
+        }
+
+        /// <summary>Plan S0 / SAT-D311: Sales' own invoice records for the risk check (null = not composed).</summary>
+        public ISalesInvoiceStore? InvoiceRecords { get; set; }
+
+        /// <summary>Plan S0: the Logistics owner's posted shipment shares for the risk check (null = not composed).</summary>
+        public ISalesInvoiceableShipmentReadPortV1? PostedShares { get; set; }
 
         /// <summary>SAT-D176: the Product owner's item type reader (null = not composed).</summary>
         public IProductItemTypeReaderV1? ItemTypes { get; set; }
@@ -2038,7 +2126,7 @@ public sealed partial class SalesDraftServiceTests
     }
 
     /// <summary>An in-memory store with the contract's replay semantics; no database, no owner rule.</summary>
-    private sealed class FakeStore : ISalesOrderDraftStore
+    private sealed partial class FakeStore : ISalesOrderDraftStore
     {
         private readonly Dictionary<(string Command, string Key), (string Actor, string Hash, SalesOrderDraft? Draft, SalesDraftTerminalRefusal? Refusal, string Correlation, SalesDraftReplayResult? Result)> _attempts = [];
         private readonly List<SalesOrderDraft> _drafts = [];
@@ -2059,14 +2147,38 @@ public sealed partial class SalesDraftServiceTests
         public string? Race { get; set; }
         public SalesOrderDraft? Winner { get; private set; }
 
-        public Task<SalesDraftStateResult?> UpdateDraftStateAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
-            Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit, CancellationToken cancellationToken = default) =>
-            UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId, mutate, audit, null, cancellationToken);
+        /// <summary>F-018: every limit warning the store appended, with the transition that carried it.</summary>
+        public List<(string Command, Guid DraftId, long DraftVersion, int Revision, SalesOrderRiskAssessment Warning, SalesDraftWriteEnvelope Envelope)> RiskWarnings { get; } = [];
+
+        public async Task<SalesDraftStateResult?> UpdateDraftStateAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+            Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit, CancellationToken cancellationToken = default,
+            SalesOrderRiskAssessment? riskWarning = null)
+        {
+            if (riskWarning is not null && commandName is not (SalesDraftCommands.SubmitV1 or SalesDraftCommands.ApproveV1))
+                throw new ArgumentException("a limit warning rides only on submit / approve", nameof(riskWarning));
+            var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId, mutate, audit, null, cancellationToken);
+            if (riskWarning is not null && result is { Outcome: SalesDraftWriteOutcome.Recorded } recorded)
+                RiskWarnings.Add((commandName, draftId, recorded.Draft.Version, recorded.Draft.Revision, riskWarning, envelope));
+            return result;
+        }
+
+        public Task<IReadOnlyList<SalesOrderRiskWarningRecord>?> ListDraftRiskWarningsAsync(Guid draftId, CancellationToken cancellationToken = default)
+        {
+            if (Fault is not null) throw new SalesDraftStoreException(Fault, "synthetic");
+            if (_drafts.All(candidate => candidate.Id != draftId)) return Task.FromResult<IReadOnlyList<SalesOrderRiskWarningRecord>?>(null);
+            IReadOnlyList<SalesOrderRiskWarningRecord> records = [.. StoredRiskWarnings.Where(record => record.DraftId == draftId)
+                .Select(record => record.Record).OrderByDescending(record => record.DraftVersion).Take(SalesDraftRiskWarningsApiV1.MaximumListed + 1)];
+            return Task.FromResult<IReadOnlyList<SalesOrderRiskWarningRecord>?>(records);
+        }
+
+        /// <summary>F-018: the rows the read answers (seeded by a test; the write recorder above stays separate).</summary>
+        public List<(Guid DraftId, SalesOrderRiskWarningRecord Record)> StoredRiskWarnings { get; } = [];
 
         private async Task<SalesDraftStateResult?> UpdateDraftStateAsyncCore(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
             Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit,
             Func<CancellationToken, Task>? beforeWrite, CancellationToken cancellationToken,
-            Func<SalesOrderDraft, SalesDraftReplayResult?>? replayResult = null)
+            Func<SalesOrderDraft, SalesDraftReplayResult?>? replayResult = null,
+            Func<SalesOrderDraft, int?, CancellationToken, Task>? withinTransaction = null)
         {
             if (Fault is not null) throw new SalesDraftStoreException(Fault, "synthetic");
             if (_attempts.TryGetValue((commandName, envelope.IdempotencyKey), out var attempt))
@@ -2088,7 +2200,26 @@ public sealed partial class SalesDraftServiceTests
             }
 
             var before = draft.Version;
-            mutate(draft, TimeProvider.System.GetUtcNow());
+            var savedState = (draft.ApprovalState, draft.Approval, draft.CustomerAcceptance, draft.Version, draft.UpdatedAtUtc);
+            try
+            {
+                mutate(draft, TimeProvider.System.GetUtcNow());
+                if (withinTransaction is not null)
+                    await withinTransaction(draft, savedState.CustomerAcceptance?.Revision, cancellationToken);
+            }
+            catch
+            {
+                if (withinTransaction is not null)
+                {
+                    // SYNTHETIC store rollback of the five state-command columns; real SQL proves transactional behavior.
+                    typeof(SalesOrderDraft).GetProperty(nameof(draft.ApprovalState))!.SetValue(draft, savedState.ApprovalState);
+                    typeof(SalesOrderDraft).GetProperty(nameof(draft.Approval))!.SetValue(draft, savedState.Approval);
+                    typeof(SalesOrderDraft).GetProperty(nameof(draft.CustomerAcceptance))!.SetValue(draft, savedState.CustomerAcceptance);
+                    typeof(SalesOrderDraft).GetProperty(nameof(draft.Version))!.SetValue(draft, savedState.Version);
+                    typeof(SalesOrderDraft).GetProperty(nameof(draft.UpdatedAtUtc))!.SetValue(draft, savedState.UpdatedAtUtc);
+                }
+                throw;
+            }
             var storedResult = replayResult?.Invoke(draft);
             _attempts[(commandName, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, draft, null, envelope.CorrelationId, storedResult);
             Transitions.Add((commandName, draftId, envelope, audit, before, draft.Version));
@@ -2103,7 +2234,7 @@ public sealed partial class SalesDraftServiceTests
             Func<SalesOrderDraft, SalesDraftReplayResult?>? replayResult = null)
         {
             if (commandName is not (SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.ApprovePriceFloorExceptionsV1
-                    or SalesDraftCommands.ApproveDiscountExceptionsV1))
+                    or SalesDraftCommands.ApproveDiscountExceptionsV1 or SalesDraftCommands.ReviseSubcontractTaxV1))
                 throw new ArgumentException("wrong command", nameof(commandName));
             ApprovedRevisionSnapshot? archived = null;
             var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
@@ -2186,7 +2317,9 @@ public sealed partial class SalesDraftServiceTests
 
         public async Task<SalesDraftStateResult?> CancelDraftAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
             Guid draftId, Func<SalesOrderDraft, CancellationImpactSnapshot, DateTimeOffset, CancellationFacts> mutate, SalesDraftStateAudit audit,
-            Func<SalesOrderDraft, CancellationToken, Task<CancellationImpactSnapshot>> beforeWrite, CancellationToken cancellationToken = default)
+            Func<SalesOrderDraft, CancellationToken, Task<CancellationImpactSnapshot>> beforeWrite,
+            Func<SalesOrderDraft, System.Data.IDbTransaction, CancellationToken, Task>? withinTransaction = null,
+            CancellationToken cancellationToken = default)
         {
             if (commandName != SalesDraftCommands.CancelV1) throw new ArgumentException("wrong command", nameof(commandName));
             CancellationImpactSnapshot? impact = null;
@@ -2194,10 +2327,21 @@ public sealed partial class SalesDraftServiceTests
             var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
             var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
                 (target, now) => recorded = mutate(target, impact!, now), audit,
-                async token => impact = await beforeWrite(draft!, token), cancellationToken);
+                async token =>
+                {
+                    impact = await beforeWrite(draft!, token);
+                    if (withinTransaction is not null)
+                    {
+                        // X1: the owners' work runs in the store's transaction before the mutation; a refusal leaves nothing.
+                        CancellationTransactions++;
+                        await withinTransaction(draft!, FakeTransaction.Instance, token);
+                    }
+                }, cancellationToken);
             if (recorded is not null) Cancellations.Add(recorded);
             return result;
         }
+
+        public int CancellationTransactions { get; private set; }
 
         public List<ForceClosureFacts> ForceClosures { get; } = [];
 

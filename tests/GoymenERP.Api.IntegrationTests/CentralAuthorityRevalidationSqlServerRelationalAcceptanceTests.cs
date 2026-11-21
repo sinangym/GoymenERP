@@ -131,6 +131,25 @@ public sealed class CentralAuthorityRevalidationSqlServerRelationalAcceptanceTes
             Assert.Equal(PermissionScope.Denied,
                 await fresh.RevalidatePermissionScopeAsync(Permission, Guid.Empty));
             Assert.Equal(2, reads.Count);
+
+            // Another request deactivates the user, without removing any assignment. The old
+            // principal and cached answer remain in this request; fresh authority must deny.
+            await using (var deactivate = factory.Services.CreateAsyncScope())
+            {
+                var identity = deactivate.ServiceProvider.GetRequiredService<IdentityDbContext>();
+                var user = await identity.Users.SingleAsync(x => x.Id == actor);
+                user.Deactivate(DateTimeOffset.UtcNow);
+                await identity.SaveChangesAsync();
+                Assert.True(await identity.RoleAssignments.AnyAsync(x => x.UserId == actor));
+            }
+            Assert.True(await cached.HasPermissionAsync(Permission, company));
+            Assert.False((await fresh.RevalidatePermissionScopeAsync(Permission, company)).IsGranted);
+            Assert.Equal(3, reads.Count);
+            Assert.False(await cached.HasPermissionAsync(Permission, company));
+            Assert.Equal(3, reads.Count);
+            await using var nextRequest = factory.Services.CreateAsyncScope();
+            Assert.False(await nextRequest.ServiceProvider.GetRequiredService<IErpAuthorizationService>()
+                .HasPermissionAsync(Permission, company));
         }
         finally
         {

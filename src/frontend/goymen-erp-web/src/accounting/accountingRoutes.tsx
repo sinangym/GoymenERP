@@ -11,6 +11,8 @@
 import type { ReactNode } from 'react'
 import type { RouteObject } from 'react-router'
 import { CapabilityRoute } from '../shell/CapabilityRoute'
+import { useShellState } from '../shell/shellContext'
+import { hasCapability } from '../shell/shellState'
 import type { CapabilityId } from '../shell/capabilities'
 import { ACCOUNTING_CAPABILITY, ACCOUNTING_ROUTE, type AccountingCapabilityId } from './capabilities'
 import { PeriodsPage } from './PeriodsPage'
@@ -18,7 +20,13 @@ import { PeriodProposePage } from './PeriodProposePage'
 import { JournalDetailPage, JournalsPage } from './JournalPages'
 import { PostingQueuesPage } from './PostingQueuesPage'
 import { TrialBalancePage } from './TrialBalancePage'
+import { AccountPlanPage } from './AccountPlanPage'
+import { ManufacturingCostDifferencesPage } from './ManufacturingCostDifferencesPage'
+import { InvoiceLineCogsCorrectionPage } from './InvoiceLineCogsCorrectionPage'
 import { JournalReversalApprovalPage } from './JournalReversalPages'
+import { SourceVouchersPage } from './SourceVouchersPage'
+import { CogsMappingPage } from './CogsMappingPage'
+import { InventoryCostProposalsPage } from './InventoryCostProposalsPage'
 import {
   NormalJournalDraftCreatePage,
   NormalJournalDraftPage,
@@ -36,6 +44,18 @@ function gate(capability: AccountingCapabilityId, children: ReactNode) {
 }
 
 export const accountingRoutes: RouteObject[] = [
+  { path: ACCOUNTING_ROUTE.invoicedShipmentPrepare.slice(1), element: gate(ACCOUNTING_CAPABILITY.invoicedShipmentPrepare, <InventoryCostWorkspace kind={1} />) },
+  { path: ACCOUNTING_ROUTE.invoicedShipmentApprove.slice(1), element: gate(ACCOUNTING_CAPABILITY.invoicedShipmentApprove, <InventoryCostWorkspace kind={1} />) },
+  { path: ACCOUNTING_ROUTE.invoicedShipmentReverse.slice(1), element: gate(ACCOUNTING_CAPABILITY.invoicedShipmentReverse, <InventoryCostWorkspace kind={1} />) },
+  { path: ACCOUNTING_ROUTE.invoicedShipmentReverseApprove.slice(1), element: gate(ACCOUNTING_CAPABILITY.invoicedShipmentReverseApprove, <InventoryCostWorkspace kind={1} />) },
+  { path: ACCOUNTING_ROUTE.purchaseCostPrepare.slice(1), element: gate(ACCOUNTING_CAPABILITY.purchaseCostPrepare, <InventoryCostWorkspace kind={2} />) },
+  { path: ACCOUNTING_ROUTE.purchaseCostApprove.slice(1), element: gate(ACCOUNTING_CAPABILITY.purchaseCostApprove, <InventoryCostWorkspace kind={2} />) },
+  { path: ACCOUNTING_ROUTE.postingMappings.slice(1), element: gate(ACCOUNTING_CAPABILITY.postingMappingsRead, <PostingMappingWorkspace />) },
+  { path: ACCOUNTING_ROUTE.sourceVouchers.slice(1), element: gate(ACCOUNTING_CAPABILITY.sourceVouchers, <SourceVoucherWorkspace />) },
+  { path: ACCOUNTING_ROUTE.invoiceLineCogsPrepare.slice(1), element: gate(ACCOUNTING_CAPABILITY.invoiceLineCogsPrepare, <InvoiceLineCogsCorrectionPage mode="prepare" />) },
+  { path: ACCOUNTING_ROUTE.invoiceLineCogsApprove.slice(1), element: gate(ACCOUNTING_CAPABILITY.invoiceLineCogsApprove, <InvoiceLineCogsCorrectionPage mode="approve" />) },
+  { path: ACCOUNTING_ROUTE.costDifferencePrepare.slice(1), element: gate(ACCOUNTING_CAPABILITY.costDifferencePrepare, <ManufacturingCostDifferencesPage mode="prepare" />) },
+  { path: ACCOUNTING_ROUTE.costDifferenceApprove.slice(1), element: gate(ACCOUNTING_CAPABILITY.costDifferenceApprove, <ManufacturingCostDifferencesPage mode="approve" />) },
   {
     path: ACCOUNTING_ROUTE.normalDraftCreate.slice(1),
     element: gate(ACCOUNTING_CAPABILITY.normalDraftCreate, <NormalJournalDraftCreatePage />),
@@ -64,7 +84,31 @@ export const accountingRoutes: RouteObject[] = [
     element: gate(ACCOUNTING_CAPABILITY.trialBalance, <TrialBalancePage />),
   },
   {
+    path: ACCOUNTING_ROUTE.accountPlan.slice(1),
+    element: gate(ACCOUNTING_CAPABILITY.accountPlan, <AccountPlanPage />),
+  },
+  {
     path: ACCOUNTING_ROUTE.journalReversalApprove.slice(1),
     element: gate(ACCOUNTING_CAPABILITY.journalReversalApprove, <JournalReversalApprovalPage />),
   },
 ]
+
+function SourceVoucherWorkspace() {
+  const shell = useShellState()
+  return <SourceVouchersPage mode={hasCapability(shell, ACCOUNTING_CAPABILITY.sourceVouchersApprove) ? 'approve' : 'read'} />
+}
+
+function PostingMappingWorkspace() {
+  const shell = useShellState()
+  return <CogsMappingPage canPrepare={hasCapability(shell, ACCOUNTING_CAPABILITY.postingMappingsPrepare)}
+    canActivate={hasCapability(shell, ACCOUNTING_CAPABILITY.postingMappingsActivate)} />
+}
+
+function InventoryCostWorkspace({ kind }: { readonly kind: 1 | 2 }) {
+  const shell = useShellState()
+  return <InventoryCostProposalsPage kind={kind}
+    canPrepare={hasCapability(shell, kind === 1 ? ACCOUNTING_CAPABILITY.invoicedShipmentPrepare : ACCOUNTING_CAPABILITY.purchaseCostPrepare)}
+    canApprove={hasCapability(shell, kind === 1 ? ACCOUNTING_CAPABILITY.invoicedShipmentApprove : ACCOUNTING_CAPABILITY.purchaseCostApprove)}
+    canProposeReversal={hasCapability(shell, ACCOUNTING_CAPABILITY.invoicedShipmentReverse)}
+    canApproveCancellation={hasCapability(shell, ACCOUNTING_CAPABILITY.invoicedShipmentReverseApprove)} />
+}

@@ -96,9 +96,12 @@ import {
 import {
   SALES_CAPABILITY,
   SALES_CUSTOMER_ACCEPTANCE_RECORD_CAPABILITY,
+  SALES_INVOICE_WRITE_CAPABILITY,
   SALES_QUANTITY_WRITE_CAPABILITY,
   SALES_ROUTE,
   salesPriceControlPath,
+  ORDER_LABEL_PARAM,
+  carriedLabelCode,
 } from './capabilities'
 import { PRICE_CONTROL_TEXT } from './priceControlText'
 import { APPROVAL_STATE_TEXT, COMMERCIAL_STAGE_TEXT, ORDER_DETAIL_TEXT as T, ORDER_DRAFT_TEXT, ORDER_TABS_TEXT, problemCodeText } from './salesText'
@@ -107,6 +110,8 @@ import { classifyOutcome } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability, type ShellState } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
+import { INVENTORY_FUTURE_ALLOCATION_READ_CAPABILITY, inventoryFutureAllocationPath } from '../inventory/capabilities'
+import { FUTURE_ALLOCATION_TEXT } from '../inventory/futureAllocationText'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { SalesDraftCommercialRevisionForm } from './SalesDraftCommercialRevisionForm'
 import { SalesDraftLinePricing } from './SalesDraftLinePricing'
@@ -125,6 +130,7 @@ import { SalesOrderStatusAxes } from './SalesOrderStatusAxes'
 import { customerAcceptedFallback, previousRevision } from './orderStatus'
 import { SalesOrderTotalsCard } from './SalesOrderTotalsCard'
 import { SalesOrderTaxCard } from './SalesOrderTaxCard'
+import { SalesSubcontractTaxRevision } from './SalesSubcontractTaxRevision'
 import { SalesOrderRiskCard } from './SalesOrderRiskCard'
 import { SalesOrderRiskExceptions } from './SalesOrderRiskExceptions'
 import { SalesOrderHeaderSummary } from './SalesOrderHeaderSummary'
@@ -142,6 +148,8 @@ import { ORDER_TAB, parseOrderTab, type OrderTab } from './orderTabs'
 import { SalesOrderTabs } from './SalesOrderTabs'
 import { SalesOrderDocumentsWorkspace } from './SalesOrderDocumentsWorkspace'
 import { SalesOrderInvoices } from './SalesInvoiceFinalization'
+import { SubcontractInvoiceCreate } from './SubcontractInvoiceCreate'
+import { SubcontractInvoiceLifecycle } from './SubcontractInvoiceLifecycle'
 import { SalesOrderPdfAction } from './SalesOrderPdfAction'
 import styles from './SalesDraftDetailPage.module.css'
 
@@ -184,6 +192,8 @@ export function SalesDraftDetailPage() {
   const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
   const activeTab = parseOrderTab(searchParams.get(TAB_PARAM))
+  // KLN-D117: a label code carried from a stock row ("Satışa tahsis et") prefills the allocation label search.
+  const carriedLabel = carriedLabelCode(searchParams.get(ORDER_LABEL_PARAM))
   const changeTab = (tab: OrderTab) =>
     setSearchParams(
       (current) => {
@@ -230,6 +240,7 @@ export function SalesDraftDetailPage() {
     <DraftView
       detail={outcome.data}
       canOpenParty={hasCapability(shell, CAPABILITY.cariPartiesDetail)}
+      canOpenFutureAllocations={hasCapability(shell, INVENTORY_FUTURE_ALLOCATION_READ_CAPABILITY)}
       backLink={
         <>
           {backLink}
@@ -253,13 +264,29 @@ export function SalesDraftDetailPage() {
       }
       invoices={
         namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
-          <SalesOrderInvoices
-            key={`invoices:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
-            draftId={outcome.data.draft.id}
-            companyId={companyId}
-            namespace={namespace}
-            entryGeneration={shell.routeEntryGeneration}
-          />
+          <>
+            <SalesOrderInvoices
+              key={`invoices:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+              draftId={outcome.data.draft.id}
+              companyId={companyId}
+              namespace={namespace}
+              entryGeneration={shell.routeEntryGeneration}
+            />
+            {/* F2: a subcontract service order is invoiced from its delivery weighing (the server decides readiness). */}
+            {outcome.data.draft.subcontractService === true && hasCapability(shell, SALES_INVOICE_WRITE_CAPABILITY) ? (
+              <SubcontractInvoiceCreate
+                key={`subcontract-invoice:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+                salesOrderId={outcome.data.draft.id}
+              />
+            ) : null}
+            {outcome.data.draft.subcontractService === true && !hasCapability(shell, SALES_INVOICE_WRITE_CAPABILITY)
+              && hasCapability(shell, SALES_CAPABILITY.invoiceCandidatesList) ? (
+                <SubcontractInvoiceLifecycle
+                  key={`subcontract-read:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+                  salesOrderId={outcome.data.draft.id}
+                />
+              ) : null}
+          </>
         ) : null
       }
       documents={
@@ -297,6 +324,7 @@ export function SalesDraftDetailPage() {
               key={`tax:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
               detail={outcome.data}
             />
+            <SalesSubcontractTaxRevision detail={outcome.data} onRecorded={() => void queryClient.invalidateQueries({ queryKey })} />
           </>
         ) : null
       }
@@ -441,6 +469,7 @@ export function SalesDraftDetailPage() {
             routeEntryGeneration={shell.routeEntryGeneration}
             salesOrderId={outcome.data.draft.id}
             lines={outcome.data.lines}
+            initialLabelQuery={carriedLabel ?? undefined}
           />
         ) : null
       }
@@ -531,6 +560,7 @@ export function SalesDraftDetailPage() {
 export function DraftView({
   detail,
   canOpenParty,
+  canOpenFutureAllocations = false,
   backLink,
   commands = null,
   statusAxes = null,
@@ -561,6 +591,8 @@ export function DraftView({
   readonly detail: DraftDetailWithParty
   /** The shell publishes the Cari card's own detail capability: only then is the party a link. */
   readonly canOpenParty: boolean
+  /** Inventory owns this route and publishes its read capability independently of Sales write rights. */
+  readonly canOpenFutureAllocations?: boolean
   readonly backLink: React.ReactNode
   readonly commands?: React.ReactNode
   /**
@@ -853,7 +885,10 @@ export function DraftView({
               <section className={styles.section} aria-labelledby="sales-lines-heading">
                 <h2 id="sales-lines-heading">{T.linesHeading}</h2>
                 {detail.lines.map((line) => (
-                  <LineView key={line.lineId} line={line} unitCodes={unitCodes} />
+                  <LineView key={line.lineId} line={line} unitCodes={unitCodes}
+                    futureAllocationLink={canOpenFutureAllocations ? (
+                      <Link to={inventoryFutureAllocationPath(draft.id, line.lineId)}>{FUTURE_ALLOCATION_TEXT.title}</Link>
+                    ) : null} />
                 ))}
                 {detail.removedLines === undefined ? null : <RemovedLinesView detail={detail} />}
                 {quantityRevision}
@@ -1313,7 +1348,11 @@ function RemovedLinesView({ detail }: { readonly detail: DraftDetail }) {
   )
 }
 
-function LineView({ line, unitCodes }: { readonly line: DraftLine; readonly unitCodes: ReadonlyMap<string, string> }) {
+function LineView({ line, unitCodes, futureAllocationLink }: {
+  readonly line: DraftLine
+  readonly unitCodes: ReadonlyMap<string, string>
+  readonly futureAllocationLink: React.ReactNode
+}) {
   const plan = unplannedQuantity(line, line.requestedDeliverySlices)
   const headingId = `sales-line-${line.lineId}`
   return (
@@ -1321,6 +1360,7 @@ function LineView({ line, unitCodes }: { readonly line: DraftLine; readonly unit
       <h3 id={headingId} className={styles.lineTitle}>
         {line.lineNo}. {line.productCode} — {line.productName}
       </h3>
+      {futureAllocationLink === null ? null : <p>{futureAllocationLink}</p>}
       {line.addedInRevision === undefined ? null : (
         <p className={styles.muted} data-testid={`sales-line-${line.lineNo}-added-in`}>{T.addedInRevision(line.addedInRevision)}</p>
       )}

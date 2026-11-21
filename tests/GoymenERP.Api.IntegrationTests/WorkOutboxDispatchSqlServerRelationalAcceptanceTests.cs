@@ -13,7 +13,7 @@ using Microsoft.Extensions.Options;
 
 namespace GoymenERP.Api.IntegrationTests;
 
-public sealed class WorkOutboxDispatchSqlServerRelationalAcceptanceTests
+public sealed partial class WorkOutboxDispatchSqlServerRelationalAcceptanceTests
 {
     private const string Source = "sales";
     private const string Event = "sales.invoice.finalized.v1";
@@ -69,6 +69,38 @@ public sealed class WorkOutboxDispatchSqlServerRelationalAcceptanceTests
 
             await using var other = Db(connectionString, TestCompanyIds.CompanyB);
             Assert.Equal(0, await other.OutboxDeliveries.CountAsync());
+        });
+    }
+
+    [SqlServerFact]
+    public async Task Inbox_dedup_key_refuses_the_same_consumer_message_from_another_source_in_real_SQL()
+    {
+        await WithDatabaseAsync(async connectionString =>
+        {
+            Assert.Equal("1", await ScalarAsync(connectionString, $"""
+                SELECT CAST([is_unique] AS int) FROM sys.indexes
+                WHERE [object_id] = OBJECT_ID(N'[work].[OutboxDeliveries]') AND [name] = N'{WorkDbContext.ConsumerMessageIndexName}'
+                """));
+
+            var message = Guid.NewGuid();
+            string Insert(Guid company, string source, string consumer) => $"""
+                INSERT INTO [work].[OutboxDeliveries]
+                ([CompanyId],[SourceName],[ConsumerName],[MessageId],[EventType],[SchemaVersion],[PayloadSha256],[Status],[AttemptCount],[FirstAttemptAtUtc],[LastAttemptAtUtc],[DeliveredAtUtc])
+                VALUES ('{company}','{source}','{consumer}','{message}','{Event}',1,'{new string('a', 64)}',1,1,SYSUTCDATETIME(),SYSUTCDATETIME(),SYSUTCDATETIME())
+                """;
+
+            await ExecAsync(connectionString, Insert(TestCompanyIds.CompanyA, "sales", "finance"));
+            var crossSource = await Assert.ThrowsAnyAsync<Exception>(
+                () => ExecAsync(connectionString, Insert(TestCompanyIds.CompanyA, "inventory", "finance")));
+            Assert.Equal(2601, Sql(crossSource).Number);
+
+            // The key is per company and per consumer: another consumer or another company records the same id.
+            await ExecAsync(connectionString, Insert(TestCompanyIds.CompanyA, "inventory", "audit"));
+            await ExecAsync(connectionString, Insert(TestCompanyIds.CompanyB, "inventory", "finance"));
+
+            await using var scoped = Db(connectionString, TestCompanyIds.CompanyA);
+            var rows = await scoped.OutboxDeliveries.OrderBy(r => r.ConsumerName).ToListAsync();
+            Assert.Equal(new[] { ("audit", "inventory"), ("finance", "sales") }, rows.Select(r => (r.ConsumerName, r.SourceName)));
         });
     }
 
@@ -159,6 +191,19 @@ public sealed class WorkOutboxDispatchSqlServerRelationalAcceptanceTests
 
         try
         {
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var lifecycle = Assert.IsType<OrganizationCompanyLifecycleReader>(
+                    scope.ServiceProvider.GetRequiredService<ICompanyLifecycleReadPortV1>());
+                foreach (var companyId in new[] { TestCompanyIds.CompanyA, TestCompanyIds.CompanyB })
+                {
+                    var company = Assert.IsType<CompanyLifecycleViewV1>(await lifecycle.ReadAsync(companyId));
+                    Assert.Equal(companyId, company.CompanyId);
+                    Assert.Equal(CompanyLifecycleStateV1.Active, company.State);
+                    Assert.True(company.IsActive);
+                    Assert.True(company.Version >= 1);
+                }
+            }
             await using var migrate = Db(connectionString, TestCompanyIds.CompanyA);
             await migrate.Database.MigrateAsync();
             await test(connectionString);
@@ -183,6 +228,10 @@ public sealed class WorkOutboxDispatchSqlServerRelationalAcceptanceTests
             services.AddScoped<ICompanyContext>(_ => new Tracking(new CompanyContext(), id => active = id));
             services.AddDbContext<WorkDbContext>(o => o.UseSqlServer(
                 connectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", WorkDbContext.Schema)));
+            services.AddDbContext<OrganizationDbContext>(o => o.UseSqlServer(
+                connectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", "organization")));
+            services.AddScoped<OrganizationBootstrapWriteScope>();
+            services.AddScoped<ICompanyLifecycleReadPortV1, OrganizationCompanyLifecycleReader>();
             services.AddSingleton<IOutboxSourceV1>(new Src(this));
             services.AddSingleton<IOutboxConsumerV1>(new Consumer(this));
             services.AddSingleton<IOutboxCompanyDirectoryV1>(new Dir());

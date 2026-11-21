@@ -12,6 +12,9 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { pendingApprovalKey, recallPendingApproval, releasePendingApproval, reservePendingApproval, type ApprovalSnapshot } from './pendingApprovalStore'
 import styles from './PurchaseOrderDetailPage.module.css'
 import { GoodsReceiptDetailRow } from './GoodsReceiptDetail'
+import { GoodsReceiptBatchPanel } from './GoodsReceiptBatchPanel'
+import { SupplierReturnPanel } from './SupplierReturnPanel'
+import { ReceiptAdjustmentWorkspace } from './ReceiptAdjustmentWorkspace'
 import { GoodsReceiptPanel } from './GoodsReceiptPanel'
 import { receiptAttemptBinding } from './goodsReceiptAttempt'
 import { GOODS_RECEIPT_TEXT } from './goodsReceiptText'
@@ -23,10 +26,15 @@ import { DocumentsPanel } from '../documents/DocumentsPanel'
 import { OWNER_KIND } from '../documents/contract'
 import { Button } from '../ui/Button'
 import { StatusIndicator } from '../ui/StatusIndicator'
+import { AllocationLinkPanel } from './AllocationLinkPanel'
 import { PurchaseOrderCancellationPanel } from './PurchaseOrderCancellationPanel'
+import { LineSchedulePanel } from './LineSchedulePanel'
+import { SupplierRevisionPanel } from './SupplierRevisionPanel'
 import { ORDER_CANCELLATION_TEXT, PURCHASE_ORDER_STATUS_LABEL } from './purchasingText'
 import { PURCHASE_ORDER_STATUS_TONE } from './purchaseOrderStatus'
 import type { PurchaseOrderCurrency, PurchaseOrderLine } from './contract'
+import { ADDITIONAL_COST_CAPABILITY, additionalCostPath } from './additionalCostContract'
+import { ADDITIONAL_COST_TEXT } from './additionalCostText'
 
 const HEADING_ID = 'purchase-order-detail-heading'
 
@@ -130,6 +138,8 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
   const actorId = shell.activeContext?.userId ?? null
   const canApprove = hasCapability(shell, PURCHASING_CAPABILITY.orderApprove)
   const canCancel = hasCapability(shell, PURCHASING_CAPABILITY.orderCancel)
+  // F-027 (UI-07, EK16 §2a): the line termin change control; the backend re-measures purchasing.orders.revise on every call.
+  const canEditSchedule = hasCapability(shell, PURCHASING_CAPABILITY.orderLineScheduleWrite)
   const canReadSourceRequest = hasCapability(shell, PURCHASING_CAPABILITY.requestDetail)
   const canOpenParty = hasCapability(shell, CAPABILITY.cariPartiesDetail)
   const storeKey = pendingApprovalKey(shell.sessionEpoch, actorId, companyId, orderId ?? '')
@@ -221,9 +231,12 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
         : T.approvalFailed(attempt.code ?? attempt.status)}</p>
       : null
   return frame(<>
+    {isCurrentDetail && hasCapability(shell, ADDITIONAL_COST_CAPABILITY.read)
+      ? <Link to={additionalCostPath('GoodsOrder', order.id)}>{ADDITIONAL_COST_TEXT.title}</Link> : null}
     <section className={styles.section} aria-labelledby="purchase-order-summary-heading" data-testid="purchase-order-summary">
       <h2 id="purchase-order-summary-heading">{T.summaryHeading}</h2>
       <dl className={styles.facts} data-testid="purchase-order-status-facts">
+        <div><dt>{T.documentNumber}</dt><dd>{order.documentNumber ?? T.documentNumberUnavailable}</dd></div>
         <div><dt>{T.orderId}</dt><dd className={styles.identifier}>{order.id}</dd></div>
         <div><dt>{T.version}</dt><dd>{order.version}</dd></div>
         <div><dt>{T.businessDate}</dt><dd><time dateTime={order.effectiveOn}>{formatBusinessDate(order.effectiveOn)}</time></dd></div>
@@ -256,6 +269,29 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
         </tr>)}
       </RecordTable>
     </section>
+    {/* F-027 (ALS-D94, ALS-D81): each line's current termin and its recorded revisions; the termin change control (UI-07) only
+        behind its child capability. */}
+    {isCurrentDetail && namespace !== null ? <div className={styles.section}><LineSchedulePanel
+      fenceKey={`${namespace}::${shell.routeEntryGeneration}`} companyId={companyId} order={order} lines={lines}
+      editor={canEditSchedule && actorId !== null
+        ? { sessionEpoch: shell.sessionEpoch, actorId, onSettled: () => query.refetch() }
+        : null} /></div> : null}
+    {/* F-027 (ALC-S16; KLN-D43): the order's bulk goods receipts, read only and loaded only when opened. */}
+    {isCurrentDetail && namespace !== null ? <div className={styles.section}><SupplierRevisionPanel
+      fenceKey={`${namespace}::${shell.routeEntryGeneration}`} companyId={companyId} order={order} lines={lines} actorId={actorId}
+      sessionEpoch={shell.sessionEpoch} canEdit={hasCapability(shell, PURCHASING_CAPABILITY.orderSupplierRevise)}
+      hasCurrency={state.data.currency !== null && state.data.currency !== undefined} onSettled={() => query.refetch()} /></div> : null}
+    {isCurrentDetail && namespace !== null ? <div className={styles.section}><GoodsReceiptBatchPanel
+      fenceKey={`${namespace}::${shell.routeEntryGeneration}`} companyId={companyId} orderId={order.id}
+      orderVersion={order.version} /></div> : null}
+    {/* B-19 (ALC-S5; SAT-D306, SAT-D393): the order's returns to supplier, read only and loaded only when opened. */}
+    {isCurrentDetail && namespace !== null ? <div className={styles.section}><SupplierReturnPanel
+      fenceKey={`${namespace}::${shell.routeEntryGeneration}`} companyId={companyId} orderId={order.id}
+      orderVersion={order.version} /></div> : null}
+    {isCurrentDetail && namespace !== null && receiptAttempt !== null ? <div className={styles.section}><ReceiptAdjustmentWorkspace
+      detail={state.data} binding={`${namespace}::${shell.routeEntryGeneration}`} attemptBinding={receiptAttempt}
+      canAdjust={hasCapability(shell, PURCHASE_GOODS_RECEIPT_CAPABILITY)} canReturn={hasCapability(shell, PURCHASING_CAPABILITY.supplierReturnRecord)}
+      canDecide={canApprove} onSettled={() => { void query.refetch() }} /></div> : null}
     {isCurrentDetail && cancellation !== null ? <section className={styles.section} aria-labelledby="purchase-order-cancellation-facts-heading" data-testid="purchase-order-cancellation-facts">
       <h2 id="purchase-order-cancellation-facts-heading">{ORDER_CANCELLATION_TEXT.cancellationHeading}</h2>
       <dl className={styles.facts}>
@@ -293,6 +329,11 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
     /> : null}
     {canApprove ? outcomeNotice : null}
     {canApprove && (order.status === 'Draft' || unresolved) ? <section className={styles.section}><h2>{T.approvalHeading}</h2><p>{T.approvalNote}</p>{attempt.phase === 'unknown' ? <p role="alert" className={styles.warning}>{T.approvalUnknown}</p> : null}<Button type="button" variant="primary" disabled={attempt.phase === 'submitting'} onClick={() => void sendApproval(attempt.phase === 'unknown' ? attempt.snapshot : undefined)}>{attempt.phase === 'submitting' ? T.approvalSending : attempt.phase === 'unknown' ? T.approvalRetry : T.approve}</Button></section> : null}
+    {isCurrentDetail && namespace !== null && actorId !== null
+      ? <div className={styles.section}><AllocationLinkPanel fenceKey={`${namespace}::${shell.routeEntryGeneration}`}
+          actorId={actorId} companyId={companyId} order={order} lines={lines} canCancel={canCancel}
+          onSettled={() => query.refetch()} /></div>
+      : null}
     {canCancel && isCurrentDetail && namespace !== null && actorId !== null
       ? <div className={styles.section}><PurchaseOrderCancellationPanel sessionEpoch={shell.sessionEpoch}
           fenceKey={`${namespace}::${shell.routeEntryGeneration}`} actorId={actorId} companyId={companyId} order={order}

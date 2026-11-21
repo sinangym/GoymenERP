@@ -1,16 +1,22 @@
+import { FinanceDocumentNumberFacts } from './FinanceDocumentNumberFacts'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useShellState } from '../shell/shellContext'
 import { isDateOnly } from './dateOnly'
 import { amountInputFromWire, parseAmountInput } from './decimalText'
 import { decodeReadResult, isBoundUuid, isOpaqueVersion, type ProfileReference } from './contract'
 import { useFinancePort } from './financePort'
+import { issueText, MANUAL_BANK_PAYMENT_SETTLEMENT_TEXT } from './financeText'
 import {
   decodeManualBankPaymentCommandResult,
   decodeManualBankPaymentPage,
   decodeManualBankPaymentView,
+  type ApproveManualBankPaymentRequest,
+  type RecordManualBankPaymentRequest,
   type ManualBankPaymentDraftSaveRequest,
   type ManualBankPaymentView,
 } from './manualBankPaymentContract'
 import { PaymentReversalPanel } from './PaymentReversalPanel'
+import { PaymentAllocationPanel } from './PaymentAllocationPanel'
 
 export interface ManualBankPaymentEntryContext {
   readonly partyId: string
@@ -32,6 +38,7 @@ function key(): string {
 function PaymentFacts({ payment }: { readonly payment: ManualBankPaymentView }) {
   return (
     <dl>
+      <FinanceDocumentNumberFacts number={payment.documentNumber} kind="voucher" recorded={payment.status === 'Recorded'} />
       <dt>Durum</dt><dd>{payment.status}</dd>
       <dt>Tutar</dt><dd>{payment.preparation.money.amount}</dd>
       <dt>İşlem tarihi</dt><dd>{payment.preparation.occurredOn}</dd>
@@ -183,7 +190,29 @@ export function ManualBankPaymentListPage({
   )
 }
 
-export function ManualBankPaymentDetailPage({
+type ManualBankPaymentDetailProps = CommonProps & {
+  readonly actorId: string
+  readonly paymentId: string
+  readonly canEdit: boolean
+  readonly canApprove: boolean
+  readonly canRecord: boolean
+  readonly canReversePropose?: boolean
+  readonly canReverseApprove?: boolean
+  readonly canReadAllocations?: boolean
+  readonly canWriteAllocations?: boolean
+}
+
+type PaymentSettlementAttempt =
+  | { readonly operation: 'approve'; readonly key: string; readonly request: ApproveManualBankPaymentRequest }
+  | { readonly operation: 'record'; readonly key: string; readonly request: RecordManualBankPaymentRequest }
+
+export function ManualBankPaymentDetailPage(props: ManualBankPaymentDetailProps) {
+  const sessionEpoch = useShellState().sessionEpoch
+  return <ManualBankPaymentDetailContent
+    key={JSON.stringify([sessionEpoch, props.companyId, props.actorId, props.paymentId])} {...props} />
+}
+
+function ManualBankPaymentDetailContent({
   companyId,
   actorId,
   paymentId,
@@ -192,16 +221,10 @@ export function ManualBankPaymentDetailPage({
   canRecord,
   canReversePropose = false,
   canReverseApprove = false,
+  canReadAllocations = false,
+  canWriteAllocations = false,
   onOpen,
-}: CommonProps & {
-  readonly actorId: string
-  readonly paymentId: string
-  readonly canEdit: boolean
-  readonly canApprove: boolean
-  readonly canRecord: boolean
-  readonly canReversePropose?: boolean
-  readonly canReverseApprove?: boolean
-}) {
+}: ManualBankPaymentDetailProps) {
   const port = useFinancePort()
   const [payment, setPayment] = useState<ManualBankPaymentView | null>(null)
   const [message, setMessage] = useState('Yükleniyor')
@@ -209,6 +232,16 @@ export function ManualBankPaymentDetailPage({
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false)
   const [unknownEdit, setUnknownEdit] = useState(false)
+  const [unknownSettlement, setUnknownSettlement] = useState(false)
+  const settlementAttempt = useRef<PaymentSettlementAttempt | null>(null)
+  const settlementInFlight = useRef(false)
+  const mounted = useRef(true)
+  const liveSettlement = useRef({ port, canApprove, canRecord })
+  liveSettlement.current = { port, canApprove, canRecord }
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
   const [amount, setAmount] = useState('')
   const [occurredOn, setOccurredOn] = useState('')
   const [valueOn, setValueOn] = useState('')
@@ -235,13 +268,13 @@ export function ManualBankPaymentDetailPage({
       setEditing(false)
       setUnknownEdit(false)
       editAttempt.current = null
-      setMessage('')
+      if (settlementAttempt.current === null) setMessage('')
     })
     return () => controller.abort()
   }, [companyId, paymentId, port])
 
   const beginEdit = () => {
-    if (payment === null || payment.status !== 'Draft' || !canEdit || busy) return
+    if (payment === null || payment.status !== 'Draft' || !canEdit || busy || settlementAttempt.current !== null) return
     setAmount(amountInputFromWire(payment.preparation.money.amount))
     setOccurredOn(payment.preparation.occurredOn)
     setValueOn(payment.preparation.valueOn ?? '')
@@ -257,7 +290,7 @@ export function ManualBankPaymentDetailPage({
 
   const saveEdit = async (event: FormEvent) => {
     event.preventDefault()
-    if (port === null || payment === null || payment.status !== 'Draft' || !canEdit || busy) return
+    if (port === null || payment === null || payment.status !== 'Draft' || !canEdit || busy || settlementAttempt.current !== null) return
 
     let attempt = editAttempt.current
     if (attempt === null) {
@@ -318,31 +351,58 @@ export function ManualBankPaymentDetailPage({
   }
 
   const settle = async (operation: 'approve' | 'record') => {
-    if (port === null || payment === null || busy
+    if (port === null || payment === null || busy || settlementInFlight.current
       || (operation === 'approve' && !canApprove)
       || (operation === 'record' && !canRecord)) return
+    let attempt = settlementAttempt.current
+    if (attempt !== null && attempt.operation !== operation) return
+    if (attempt === null) {
+      if (operation === 'approve' && payment.status !== 'Draft'
+        || operation === 'record' && (payment.status !== 'Approved' || !confirmed)) return
+      attempt = operation === 'approve'
+        ? { operation, key: key(), request: { paymentId, expectedVersion: payment.version } }
+        : { operation, key: key(), request: { paymentId, expectedVersion: payment.version, bankResultConfirmed: confirmed } }
+      settlementAttempt.current = attempt
+    }
+    settlementInFlight.current = true
     setBusy(true)
-    const reply = operation === 'approve'
-      ? await port.approveManualBankPayment({ companyId }, key(), { paymentId, expectedVersion: payment.version })
-      : await port.recordManualBankPayment({ companyId }, key(), {
-          paymentId,
-          expectedVersion: payment.version,
-          bankResultConfirmed: confirmed,
-        })
+    const reply = await (attempt.operation === 'approve'
+      ? port.approveManualBankPayment({ companyId }, attempt.key, attempt.request)
+      : port.recordManualBankPayment({ companyId }, attempt.key, attempt.request))
+      .catch(() => ({ kind: 'no-reply' } as const))
+    if (!mounted.current) return
+    settlementInFlight.current = false
     setBusy(false)
-    if (reply.kind === 'no-reply') {
-      setMessage('Sonuç bilinmiyor; yeni işlem göndermeden önce kayıt yeniden okunmalıdır.')
+    const live = liveSettlement.current
+    const permitted = operation === 'approve' ? live.canApprove : live.canRecord
+    // A late reply after permission/transport change does not settle the old attempt.
+    // Reauthorization of the same identity may retry its exact body and key.
+    if (live.port !== port || !permitted || reply.kind === 'no-reply') {
+      setUnknownSettlement(true)
+      setMessage(MANUAL_BANK_PAYMENT_SETTLEMENT_TEXT.unknown)
       return
     }
     const decoded = decodeManualBankPaymentCommandResult(reply.body, companyId)
-    if (!decoded.ok || decoded.value.outcome !== 'Succeeded' || decoded.value.resource.id !== paymentId) {
-      setMessage('İşlem tamamlanamadı.')
+    if (!decoded.ok || decoded.value.outcome === 'Succeeded'
+      && (decoded.value.resource.id !== paymentId
+        || decoded.value.resource.status !== (operation === 'approve' ? 'Approved' : 'Recorded'))) {
+      setUnknownSettlement(true)
+      setMessage(MANUAL_BANK_PAYMENT_SETTLEMENT_TEXT.unknown)
+      return
+    }
+    settlementAttempt.current = null
+    setUnknownSettlement(false)
+    if (decoded.value.outcome !== 'Succeeded') {
+      const balanceIssue = decoded.value.issues.find((issue) =>
+        issue.code === 'finance_treasury_balance_unavailable' || issue.code === 'finance_treasury_balance_insufficient')
+      setMessage(balanceIssue === undefined ? 'İşlem tamamlanamadı.' : issueText(balanceIssue.code))
       return
     }
     setPayment(decoded.value.resource)
     setMessage(operation === 'approve' ? 'Ödeme onaylandı.' : 'Giden ödeme kesin kaydedildi.')
   }
 
+  const pendingSettlement = settlementAttempt.current
   if (payment === null) return <section><h1>Giden banka ödemesi</h1><p role="status">{message}</p></section>
   return (
     <section>
@@ -376,15 +436,22 @@ export function ManualBankPaymentDetailPage({
         }}>Vazgeç</button>
       </form> : null}
       {!editing && canEdit && payment.status === 'Draft'
-        ? <button type="button" disabled={busy} onClick={beginEdit}>Düzenle</button> : null}
-      {!editing && canApprove && payment.status === 'Draft' && payment.preparedBy !== actorId
+        ? <button type="button" disabled={busy || pendingSettlement !== null} onClick={beginEdit}>Düzenle</button> : null}
+      {!editing && !unknownSettlement && canApprove && payment.status === 'Draft' && payment.preparedBy !== actorId
         ? <button type="button" disabled={busy} onClick={() => void settle('approve')}>Onayla</button> : null}
-      {canRecord && payment.status === 'Approved' ? <>
-        <label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />Banka sonucu gerçekleşti</label>
+      {!unknownSettlement && canRecord && payment.status === 'Approved' ? <>
+        <label><input type="checkbox" checked={confirmed} disabled={busy || pendingSettlement !== null} onChange={(event) => setConfirmed(event.target.checked)} />Banka sonucu gerçekleşti</label>
         <button type="button" disabled={busy || !confirmed} onClick={() => void settle('record')}>Kesin kaydet</button>
       </> : null}
+      {unknownSettlement && pendingSettlement !== null
+        && (pendingSettlement.operation === 'approve' ? canApprove : canRecord)
+        ? <button type="button" disabled={busy} onClick={() => void settle(pendingSettlement.operation)}>
+          {busy ? MANUAL_BANK_PAYMENT_SETTLEMENT_TEXT.busy : MANUAL_BANK_PAYMENT_SETTLEMENT_TEXT.retry}
+        </button> : null}
       {payment.status === 'Recorded'
         ? <button type="button" onClick={() => onOpen(payment.id)}>Kesin kaydı yeniden aç</button> : null}
+      {payment.status === 'Recorded' && canReadAllocations
+        ? <PaymentAllocationPanel paymentId={payment.id} canWrite={canWriteAllocations} /> : null}
       {payment.status === 'Recorded' && (canReversePropose || canReverseApprove)
         ? <PaymentReversalPanel payment={payment} canPropose={canReversePropose}
           canApprove={canReverseApprove} /> : null}

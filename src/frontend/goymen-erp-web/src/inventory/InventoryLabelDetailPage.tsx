@@ -19,16 +19,19 @@ import {
   INVENTORY_STOCK_COUNT_RECORD_CAPABILITY,
   INVENTORY_STOCK_SCRAP_APPROVE_CAPABILITY,
   INVENTORY_STOCK_SCRAP_RECORD_CAPABILITY,
+  inventoryLabelTracePath,
   inventoryOpeningDetailPath,
   movementTimelineEntryState,
 } from './capabilities'
-import { MOVEMENT_TIMELINE_TEXT } from './movementTimelineText'
+import { LABEL_TRACE_TEXT } from './labelTraceText'
+import { MOVEMENT_KIND_TEXT, MOVEMENT_TIMELINE_TEXT } from './movementTimelineText'
 import { fetchInventoryLabelDetail } from './labelDetailApi'
 import { LabelAllocationPanel } from './LabelAllocationPanel'
 import { LabelTransformationPanel } from './LabelTransformationPanel'
 import { LabelClassificationPanel } from './LabelClassificationPanel'
 import { StockCountPanel } from './StockCountPanel'
 import { StockScrapPanel } from './StockScrapPanel'
+import { LabelPrintPanel } from './LabelPrintPanel'
 import type { InventoryLabelDetailWithMovementTimeline } from './labelDetailContract'
 import { inventoryLabelDetailPath } from './labelDetailRoute'
 import {
@@ -39,18 +42,6 @@ import {
   type RowActionTarget,
 } from './stockRowActions'
 import styles from './inventory.module.css'
-
-const MOVEMENT_KIND_TEXT = {
-  Receipt: 'Giriş',
-  Issue: 'Çıkış',
-  Block: 'Blokaj',
-  Release: 'Serbest bırakma',
-  Return: 'İade',
-  CountAdjustment: 'Sayım farkı',
-  Scrap: 'Hurda çıkışı',
-  TransferDispatch: 'Transfer çıkışı',
-  TransferAccept: 'Transfer kabulü',
-} as const
 
 const DIRECTION_TEXT = { In: 'Giriş', Out: 'Çıkış' } as const
 
@@ -156,6 +147,8 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
       <div><p className={styles.eyebrow}>ST-02</p><h1>{identity.code}</h1></div>
       <span>{identity.documentStatus}</span>
     </header>
+    {canReadLabel && actorId !== null ? <LabelPrintPanel labelId={identity.labelId} companyId={companyId}
+      actorId={actorId} namespace={namespace} /> : null}
     {target !== null && !offered[target]
       ? <p role="status">İstenen işlem bu etikette sizin için açık değil; etiket bilgileri gösteriliyor.</p>
       : null}
@@ -220,6 +213,13 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
             {MOVEMENT_TIMELINE_TEXT.entryLink}
           </Link>{' '}
           <span>{MOVEMENT_TIMELINE_TEXT.entryNote}</span>
+        </p>
+        : null}
+      {canReadLabel
+        ? <p data-label-trace-entry="">
+          <Link to={inventoryLabelTracePath(identity.labelId, 'forward')}>{LABEL_TRACE_TEXT.entryForward}</Link>{' '}
+          <Link to={inventoryLabelTracePath(identity.labelId, 'backward')}>{LABEL_TRACE_TEXT.entryBackward}</Link>{' '}
+          <span>{LABEL_TRACE_TEXT.entryNote}</span>
         </p>
         : null}
     </section>

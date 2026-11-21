@@ -33,6 +33,11 @@ export const finalInstalments = (): Wire[] => [
 ]
 
 export const matchOf = (over: Wire = {}): Wire => ({
+  invoiceDate: '2026-11-01',
+  sourceProof: { companyId: '11111111-1111-4111-8111-111111111111', invoiceId: '22222222-2222-4222-8222-222222222222',
+    sourceKind: 'manual', version: '2', approvedAtUtc: '2026-11-02T09:00:00Z',
+    pdfDocumentId: '33333333-3333-4333-8333-333333333333', pdfDocumentVersionNo: 1, pdfSha256: 'a'.repeat(64),
+    sourceBatchId: null, sourceChecksum: null, hasPendingManual: false },
   officialInvoiceNo: 'GIB2026000000123',
   ettn: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
   invoiceAmount: '1180.40',

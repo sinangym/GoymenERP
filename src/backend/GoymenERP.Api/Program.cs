@@ -1,5 +1,8 @@
+using GoymenERP.Api.AccountingRuntime;
+using GoymenERP.Api.Ai;
 using GoymenERP.Api.Contracts;
 using GoymenERP.Api.DocumentsRuntime;
+using GoymenERP.Api.FinanceRuntime;
 using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.Errors;
 using GoymenERP.Api.LogisticsRuntime;
@@ -11,10 +14,12 @@ using GoymenERP.Api.Observability;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.OrganizationRuntime;
 using GoymenERP.Api.ProductRuntime;
+using GoymenERP.Api.SalesRuntime;
 using GoymenERP.Api.Security;
 using GoymenERP.Api.Shell;
 using GoymenERP.Api.Startup;
 using GoymenERP.Api.WorkRuntime;
+using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.OpenApi;
 using GoymenERP.BuildingBlocks.Observability;
@@ -23,6 +28,7 @@ using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Accounting.Infrastructure;
 using GoymenERP.Modules.Accounting.Infrastructure.Shell;
 using GoymenERP.Modules.Accounting.Application.Contracts;
+using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Audit.Infrastructure;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure;
@@ -55,12 +61,14 @@ using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Infrastructure;
 using GoymenERP.Modules.Sales.Infrastructure.Shell;
+using GoymenERP.Modules.SecurityEvents.Infrastructure;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using GoymenERP.Modules.Settings.Infrastructure;
 using GoymenERP.Modules.Settings.Infrastructure.Shell;
 using GoymenERP.Modules.Work.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 var isOpenApiDocumentGeneration = OpenApiDocumentGenerationMode.IsActive;
@@ -104,6 +112,9 @@ builder.Configuration.AddJsonFile(
     "Seed/identity-seed.json",
     optional: false,
     reloadOnChange: false);
+
+// F-032: diagnostic file log + OpenTelemetry; both off unless the Observability section turns them on.
+builder.AddErpObservability(isOpenApiDocumentGeneration);
 
 builder.Services.AddErpProblemDetails();
 builder.Services.AddErpOpenApi();
@@ -178,16 +189,23 @@ builder.Services.AddFinancePersistence(
 // This grants nothing. The port reads under the CALLER's own accounting.periods.read; an actor without
 // that name is refused with finance_period_rule_unavailable, and granting it is a human decision.
 builder.Services.AddScoped<IAccountingPeriodStatusPortV1, AccountingPeriodStatusPort>();
-builder.Services.AddScoped<IFinanceRecordPeriodRule, OccurredOnFinanceRecordPeriodRule>();
+builder.Services.AddScoped<IFinanceRecordPeriodRule, TransactionalOccurredOnFinanceRecordPeriodRule>();
+builder.Services.AddScoped<IAccountingPeriodCarryForwardPortV1, FinancePeriodCarryForwardPortV1>();
 builder.Services.AddFinanceServices();
 builder.Services.AddFinanceOfficialInvoiceImportHost();
+builder.Services.AddFinanceOfficialSalesInvoiceHost();
 builder.Services.AddSalesFinanceAdmissionHost();
+builder.Services.AddSalesFinanceCancellationHost();
+builder.Services.AddFinanceInvoiceAcceptanceHost();
 builder.Services.AddScoped<INativeApprovalReadAdapterV1, FinanceInvoiceImportPendingApprovalAdapterV1>();
 builder.Services.AddScoped<INativeApprovalReadAdapterV1, InventoryStockCountPendingApprovalAdapterV1>();
 builder.Services.AddScoped<INativeApprovalReadAdapterV1, InventoryStockScrapPendingApprovalAdapterV1>();
 builder.Services.AddScoped<INativeApprovalReadAdapterV1, SalesOrderDraftPendingApprovalAdapterV1>();
 builder.Services.AddScoped<NativeApprovalReadQueryV1>();
+builder.Services.AddScoped<NativeApprovalQueueReadQueryV1>();
 builder.Services.AddScoped<IFinancePartyAccountPort, CounterpartyFinancePartyAccountPort>();
+// B-17: the version bump with the account's roles (dual role) and supplier IBAN view; V1 stays for its consumers.
+builder.Services.AddScoped<IFinancePartyAccountPortV2, CounterpartyFinancePartyAccountPortV2>();
 builder.Services.AddScoped<DraftReadContextReader>();
 builder.Services.AddScoped<IFinanceDraftContextEndpointService, FinanceDraftContextEndpointService>();
 builder.Services.AddSingleton<IFinanceDraftReadBinding, ManualReceiptDraftReadBinding>();
@@ -199,10 +217,12 @@ builder.Services.AddScoped<ISettingsMoneyCandidateReaderV2, ApprovedSettingsPrer
 // SettingsSalesPolicyProviderV1 that adds the company's discount limit groups (SAT-D61…D64) to this catalog.
 builder.Services.AddScoped<ISettingsSalesPolicyProviderV1, ApprovedSettingsPrerequisiteProvider>();
 // SAT-D102: the Settings-owned e-Fatura scenario code list and default (SAT-D120 seeds the code list; the default
-// starts empty); read by Cari.
+// starts empty); read by Cari. AddSettingsModule replaces it with SettingsEInvoiceScenarioPolicyProviderV1 (F-029 S6), which
+// answers from this catalog until the company's baseline is transferred to the Settings table.
 builder.Services.AddScoped<ISettingsEInvoiceScenarioPolicyProviderV1, ApprovedSettingsPrerequisiteProvider>();
 // SAT-D25 / SAT-D39: the Settings-owned Sales quote policies (loss reason list, default validity); the reviewed catalog is
-// empty, so a loss is refused and no validity is suggested until Sinan enters the records.
+// empty, so a loss is refused and no validity is suggested until Sinan enters the records. AddSettingsModule replaces it
+// with SettingsSalesQuotePolicyProviderV1 (F-029 S5), which answers from this catalog until the baseline is transferred.
 builder.Services.AddScoped<ISettingsSalesQuotePolicyProviderV1, ApprovedSettingsSalesQuotePolicyProvider>();
 // PRD-UNIT-1: the company-independent unit identities of the approved catalog (immutable source data).
 builder.Services.AddSingleton<ISettingsUnitIdentityCatalogV1, ApprovedSettingsUnitIdentityCatalog>();
@@ -224,10 +244,19 @@ builder.Services.AddScoped<ISalesPartyAccountPortV1, CounterpartySalesPartyAccou
 builder.Services.AddScoped<ISalesPartyContactInformationPortV1, CounterpartySalesPartyAccountPortV1>();
 builder.Services.AddScoped<ISalesReferenceReadService>(CreateSalesReferenceReadService);
 builder.Services.AddAuditModule(builder.Configuration);
+builder.Services.AddSecurityEventsModule(builder.Configuration);
+// E8 and the AI provider key: secret store reader only; no secret value is configured here.
+builder.Services.AddErpSecretStore(builder.Configuration);
+// AI-3: READ-only AI runtime, off unless configured (Ai:Enabled); no owner tool is registered here.
+builder.Services.AddAiRuntime(builder.Configuration);
 builder.Services.AddSettingsModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
+// KIM-S19 (B-13): Finance's opening period reader answers from the Settings company policy registry. Finance registers its
+// fail-closed default with TryAddScoped, so the host replaces it here; any failure still answers "not available".
+builder.Services.Replace(ServiceDescriptor.Scoped<IFinanceOpeningPeriodReader, SettingsFinanceOpeningPeriodReader>());
+builder.Services.Replace(ServiceDescriptor.Scoped<IFinanceCollateralTypeCatalogReader, SettingsFinanceCollateralTypeCatalogReaderV1>());
 
 static ISalesReferenceReadService CreateSalesReferenceReadService(IServiceProvider services) =>
     new SalesReferenceReadHandler(
@@ -261,6 +290,7 @@ builder.Services.AddProductPriceListHost(
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
 builder.Services.AddProductPurchaseSelection(p => p.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
+builder.Services.AddProductLogisticsDocumentDisplay(p => p.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
 builder.Services.AddCounterpartyModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
@@ -279,13 +309,25 @@ builder.Services.AddInventoryModule(
 builder.Services.AddInventoryStockPositionCursor(
     builder.Configuration["Inventory:StockPositionCursorSigningKeyBase64"]);
 builder.Services.AddScoped<IInventoryStockProductFilterV1, InventoryStockProductFilterHost>();
+// STK-S30 (KLN-D39/D70): the Product owner's similarity facts behind label suggestions and the substitute check.
+builder.Services.AddScoped<IInventoryProductSimilarityFactsV1, InventoryProductSimilarityFactsHost>();
 builder.Services.AddScoped<IInventoryStockOwnerDisplaySourceV1, InventoryStockOwnerDisplayHost>();
+// STK-S25 (BS-1, SAT-D295): the Purchasing owner's supplier invoice rate behind the foreign-currency average cost.
+builder.Services.AddScoped<IInventoryPurchaseInvoiceCostRateSourceV1, InventoryPurchaseInvoiceCostRateHost>();
 builder.Services.AddInventoryMovementTimelineCursor(
     builder.Configuration["Inventory:StockPositionCursorSigningKeyBase64"]);
 builder.Services.AddInventoryParentRollReferences();
 builder.Services.AddInventoryPhysicalAllocationReads();
 // R19: the label genealogy writer/reader and the fenced split/merge command behind the published route.
 builder.Services.AddInventoryLabelGenealogy();
+// STK-S33 (KLN-D44/KLN-D41): the cross-module label trace under the label-detail permissions (no new permission). The host
+// adapters of the production, party and supplier-search owners replace the trace's not-answered defaults, so they are added
+// before the trace's TryAdd registrations; Logistics answers a shipment line's customer through its own read port.
+builder.Services.AddScoped<IInventoryLabelTraceProductionSourceV1, InventoryLabelTraceProductionHostSource>();
+builder.Services.AddScoped<IInventoryLabelTracePartySourceV1, InventoryLabelTracePartyHostSource>();
+builder.Services.AddScoped<IInventoryLabelTraceSupplierSearchSourceV1, InventoryLabelTraceSupplierSearchHostSource>();
+builder.Services.AddLogisticsShipmentCustomerRead();
+builder.Services.AddInventoryLabelTrace();
 // Label classification is an Inventory-owned, versioned command. Central registers only the reviewed
 // permission identity and binds the existing scoped store/command; this grants no actor access.
 builder.Services.AddScoped(_ => new InventoryLabelClassificationAuthorityV1(
@@ -297,8 +339,15 @@ builder.Services.AddScoped<IInventoryLabelClassificationCommandV1, InventoryLabe
 builder.Services.AddInventoryStockCounts();
 // ST-02 scrap write-off: the fenced record/decide commands and the label scrap read behind the published routes.
 builder.Services.AddInventoryStockScraps();
+// SAT-D304 / SAT-D372: the opening-stock cost submit/decide commands (giren ≠ onaylayan) behind the published routes.
+builder.Services.AddInventoryOpeningCosts();
 // D-05: read-only Inventory pending approvals composed into the existing Work inbox.
 builder.Services.AddInventoryPendingApprovalReads();
+// B-22a: the stock transfer plan/dispatch commands and the transfer read behind the published routes, with the
+// destination custody check over Organization's company-scoped location read (DEC-ORG-004). Dispatch moves stock
+// only after the Logistics outgoing-document proof answers CurrentEffective. Accept is not published here.
+builder.Services.AddInventoryTransfers();
+builder.Services.AddScoped<IInventoryTransferDestinationPortV1, OrganizationInventoryTransferDestinationPort>();
 // INV-OPEN-1 part 2: the opening command's host ports — Organization's company-scoped location module read
 // and Product's stock eligibility (the owners' contracts; no user read, no copy of either owner's rows).
 builder.Services.AddScoped<IInventoryLocationStatusPort, OrganizationInventoryLocationStatusPort>();
@@ -309,9 +358,16 @@ builder.Services.AddManufacturingModule(
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
 // MFG realization v1: the host composes the approved Manufacturing ports with their API-owned adapters.
+builder.Services.AddManufacturingCostRuntimeComposition();
 builder.Services.AddScoped<IManufacturingInventoryOutputAdmission, ManufacturingInventoryOutputAdmission>();
+builder.Services.AddScoped<IManufacturingInputOrderRateReadPortV1, ManufacturingSalesOrderInputRateReadPortV1>();
 builder.Services.AddScoped<IManufacturingInventoryInputIssuePortV1, ManufacturingInventoryInputIssueHost>();
-builder.Services.AddScoped<IManufacturingInventoryReturnOutputPortV1, ManufacturingInventoryReturnOutputHost>();
+// F-009 D3 (URT-S2): the output correction shares the return/output host and its one transaction per command.
+builder.Services.AddScoped<ManufacturingInventoryReturnOutputHost>();
+builder.Services.AddScoped<IManufacturingInventoryReturnOutputPortV1>(services =>
+    services.GetRequiredService<ManufacturingInventoryReturnOutputHost>());
+builder.Services.AddScoped<IManufacturingInventoryOutputCorrectionPortV1>(services =>
+    services.GetRequiredService<ManufacturingInventoryReturnOutputHost>());
 // Üretim U3-a (URT-D21, B-01): the plan approval / cancellation and the order closure commit with Inventory's
 // plan-input allocation or its release in one transaction.
 builder.Services.AddScoped<IManufacturingPlanAllocationPortV1, ManufacturingPlanAllocationHost>();
@@ -323,6 +379,13 @@ builder.Services.AddSalesModule(
 // A Sales draft read may disclose only the code/name of the Cari record already linked to that
 // authorized Sales result. The adapter grants no generic Cari read and has no public lookup route.
 builder.Services.AddScoped<ISalesPartyDisplaySourceV1, SalesPartyDisplayHost>();
+// F2 (SAT-D309, LOJ-D9): the subcontract service invoice reads the delivery weighing's net kg only through the Logistics
+// owner's F1 read; the adapter has no route, carries no authority and maps facts only.
+builder.Services.AddScoped<ISalesSubcontractDeliveryWeighingReadPortV1, SalesSubcontractDeliveryWeighingHost>();
+builder.Services.AddScoped<GoymenERP.Modules.Sales.Infrastructure.Persistence.ISalesSubcontractWeighingCommitReadPortV1, SalesSubcontractWeighingCommitReadHost>();
+// SAT-S13 (SAT-D343, SAT-D389): the dispatch screen and the invoice gate read a note's weighing difference only through the
+// Logistics owner's STK-S24 read; the adapter has no route, carries no authority and maps facts only.
+builder.Services.AddScoped<ISalesDispatchWeighingDifferenceReadPortV1, SalesDispatchWeighingDifferenceHost>();
 // MOD-08: the same read may name the people its approval and acceptance already identify by id, through Identity's
 // company-fenced user directory. The adapter has no route and passes only ids from the authorized record.
 builder.Services.AddScoped<ISalesUserDisplaySourceV1, SalesUserDisplayHost>();
@@ -332,10 +395,17 @@ builder.Services.AddScoped<ISalesOwnerCandidateSourceV1, SalesOwnerCandidateHost
 // the Settings limit administration reads people and their company memberships from the Identity owner, both through
 // central adapters (no module reads another's tables).
 builder.Services.AddScoped<ISalesDiscountLimitGroupSourceV1, SalesDiscountLimitGroupHost>();
+builder.Services.AddScoped<ISalesContractDiscountLimitSourceV1, SettingsSalesContractDiscountLimitHost>();
 builder.Services.AddScoped<ISettingsPersonDirectoryV1, SettingsPersonDirectoryHost>();
+// KIM-D39: the Settings segregation of duties owner reads "exactly one active user in the company" from the Identity owner
+// through this central adapter (Settings reads no Identity table).
+builder.Services.AddScoped<ISettingsCompanyActiveUsersV1, SettingsCompanyActiveUsersHost>();
 // SAT-D134/D139: the Settings line tax port reads the product's item type from the Product owner's company-scoped field
 // through this central adapter (Settings reads no Product table).
 builder.Services.AddScoped<ISettingsProductItemTypeSourceV1, SettingsProductItemTypeHost>();
+// URT-D89: the Settings work center capacity administration asks whether a work center exists in the server company through
+// this central adapter over the Organization owner's planning reference read (Settings reads no Organization table).
+builder.Services.AddScoped<ISettingsWorkCenterReferenceV1, SettingsWorkCenterReferenceHost>();
 builder.Services.AddScoped<ISalesDraftReadServiceV1, SalesDraftReadServiceV1>();
 // STK/T11: the host-owned allocation boundary consumes Sales only through its approved-line port and
 // hands the derived command to Inventory's writer after fresh company-wide authority fences.
@@ -348,6 +418,11 @@ builder.Services.AddScoped<ILogisticsCustomerReturnScopeV1, LogisticsCustomerRet
 builder.Services.AddScoped<ILogisticsCustomerReturnTransactionRunnerV1, LogisticsCustomerReturnTransactionRunner>();
 builder.Services.AddScoped<ILogisticsTransferOutgoingDocumentScopeV1, LogisticsTransferOutgoingDocumentScope>();
 builder.Services.AddScoped<IInventoryTransferOutgoingDocumentProofPortV1, InventoryTransferOutgoingDocumentProofAdapter>();
+// STK-S24: the weighing-difference fence and the read-only physical stock seam over Inventory. The Settings rate/band port
+// keeps Logistics's fail-closed default until Settings publishes those values.
+builder.Services.AddScoped<ILogisticsWeighingDifferenceScopeV1, LogisticsWeighingDifferenceScope>();
+builder.Services.AddScoped<IDispatchKilogramDocumentReadPortV1, DispatchKilogramDocumentReadPort>();
+builder.Services.AddScoped<ILogisticsWeighingDifferenceStockReadPortV1, InventoryWeighingDifferenceStockAdapter>();
 builder.Services.AddLogisticsModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
@@ -379,6 +454,29 @@ builder.Services.AddSingleton(new PurchasingServiceBindings(
 builder.Services.AddScoped<PurchaseGoodsReceiptHost>();
 builder.Services.AddScoped<IPurchaseGoodsReceiptTransactionV1>(provider => provider.GetRequiredService<PurchaseGoodsReceiptHost>());
 builder.Services.AddScoped<IPurchaseGoodsReceiptReadsV1>(provider => provider.GetRequiredService<PurchaseGoodsReceiptHost>());
+builder.Services.AddScoped<IPurchaseGoodsReceiptBatchTransactionV1, PurchaseGoodsReceiptBatchHost>();
+// ALC-S5 (B-19; SAT-D306): one transaction for the supplier return row and Inventory's exit at the original line cost.
+builder.Services.AddScoped<IPurchaseSupplierReturnTransactionV1, PurchaseSupplierReturnHost>();
+builder.Services.AddScoped<IPurchaseSupplierReturnCostSourceReadPortV1, PurchaseSupplierReturnCostSources>();
+// F-017 F17-1 (§3.4): Inventory's future allocation takes the purchase general line's lock through this binder (no module reference).
+builder.Services.AddScoped<IPurchaseLineSerializationLockBinderV1, PurchaseLineSerializationLockHostBinder>();
+// F-017 STOK F017-b: the sales order line lock (taken before the purchase line lock) and the Purchasing adapter of Inventory's
+// future supply source; both replace Inventory's fail-closed defaults. No route or permission (F017-b2).
+builder.Services.AddScoped<ISalesOrderLineSerializationLockBinderV1, SalesOrderLineSerializationLockHostBinder>();
+builder.Services.AddScoped<IInventoryFutureSupplySourceV1, InventoryFutureSupplyHostSource>();
+builder.Services.AddScoped<IInventoryFutureSupplyScheduleSourceV1, PurchasingOwnerInventoryFutureSupplyScheduleSource>();
+// X1 (KLN-D28 (9)): the approved sales order cancellation releases its lines' future supply allocations through Inventory's
+// release port in the cancellation's own transaction (sales line locks, then purchase line locks). No route or permission.
+builder.Services.AddScoped<ISalesOrderFutureAllocationReleaseParticipantV1, SalesFutureAllocationReleaseHostParticipant>();
+// SAT-S8 / KLN-D105: only the accepted reduced revision releases future demand, in the Sales command transaction.
+builder.Services.AddScoped<ISalesOrderFutureDemandReductionParticipantV1, SalesFutureDemandReductionHostParticipant>();
+builder.Services.AddScoped<ILogisticsSubcontractOrderReadPortV1, ManufacturingLogisticsSubcontractOrderReadPort>();
+// F-017 §3.5 F17-4 (ALS-D83/ALS-D85): Purchasing's link drop, drop-and-cancel and drop-and-close release through Inventory's
+// release port in Purchasing's own transaction (the order's purchase line locks are already held); the plain cancel/closure are
+// refused while an active allocation remains.
+builder.Services.AddScoped<IPurchaseFutureAllocationLinkParticipantV1, PurchasingFutureAllocationLinkHostParticipant>();
+// KLN-D42 (STK-S31): the Purchasing adapter of Inventory's shortage warning supply source (replaces the fail-closed default).
+builder.Services.AddScoped<IInventoryShortageSupplySourceV1, InventoryShortageSupplyHostSource>();
 builder.Services.AddPurchasingModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
@@ -392,6 +490,9 @@ builder.Services.AddAccountingModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
+// FIN-S13 (B-04): Accounting's sales invoice journal consumer (scoped, not with the dispatcher until Sales registers its outbox
+// source) and its host admission authority, fail-closed unless Accounting:InvoiceJournal:InboxAdmissionEnabled is true.
+builder.Services.AddAccountingInvoiceJournal(builder.Configuration);
 // B-24b / F-021: Work's module (desired-state store, outbox/inbox tables) is registered in the host. The ERP-000F
 // outbox dispatcher stays OFF unless Work:OutboxDispatcher:Enabled is true (production activation is a human gate);
 // event sources and consumers are registered by their owners.
@@ -400,10 +501,24 @@ builder.Services.AddWorkModule(
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
 builder.Services.AddWorkOutboxDispatcher(builder.Configuration);
+// STK-S27 (LOJ-D19): Logistics's definite-shipment outbox is the dispatcher source "logistics" (registered, not enabled).
+builder.Services.AddLogisticsDefiniteShipmentOutbox();
+// SAT-S10 (LOJ-D19, SAT-D285): the Sales usage mirror is the inbox consumer of that source (registered after it, not enabled).
+builder.Services.AddSalesRiskExceptionUsageInbox();
+builder.Services.AddCompanySetupMessaging();
+builder.Services.AddTrainCompletionOwnerBindings();
+builder.Services.AddInventorySubcontractAllocationRelease();
+builder.Services.AddPurchaseInvoiceImportHost();
+builder.Services.AddPurchaseInvoiceImportProductSearch();
+builder.Services.AddCompanyLifecycleAuthorizationGate();
+// SAT-D406 / SAT-D367: the Sales risk remainder's plan quantity, answered by the Logistics owner's planned-quantity read.
+builder.Services.AddSalesOrderPlannedQuantityReadAdapter();
 // ERP-000G / AT-065: the document vault (audit interceptor, the Cari party owner link; the development object store and
 // EICAR-only scanner only in Development/Testing; elsewhere the own-server store and Windows Defender scanner when both
 // are configured, otherwise uploads and downloads answer 503, fail-closed).
 builder.Services.AddDocumentsRuntime(builder.Configuration, builder.Environment);
+builder.Services.AddDocumentBrandingPdfRuntime();
+builder.Services.AddLogisticsSubcontractDeliveryRuntime();
 // AT-002 / ERP-000I: the global search composer and its module-owned sources (Cari, Product, Sales), after the modules.
 builder.Services.AddGlobalSearch();
 // Registered before the shell authority is chosen: the module table maps the provider set.
@@ -423,6 +538,7 @@ builder.Services.AddSingleton<IShellCapabilityProvider, AccountingShellCapabilit
 builder.Services.AddSingleton<IShellCapabilityProvider, IdentityShellCapabilityProvider>();
 // AT-018: Product's company-scoped U-05 price-list screens and edit/publish controls.
 builder.Services.AddSingleton<IShellCapabilityProvider, ProductPriceListShellCapabilityProvider>();
+builder.Services.AddSingleton<IShellCapabilityProvider, ProductPaintMembershipShellCapabilityProvider>();
 // SAT-D61…D70: Settings' discount limit screen (settings.sales-discount-limits.manage, granted to no role).
 builder.Services.AddSingleton<IShellCapabilityProvider, SettingsShellCapabilityProvider>();
 var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
@@ -468,33 +584,80 @@ if (databaseStartupMode == DatabaseStartupMode.ValidateOnly)
     app.UseMiddleware<DatabaseReadinessGateMiddleware>();
 }
 app.UseAuthentication();
+app.UseLocalAccountAntiforgery();
+// ID-2: a session whose credential still requires a password change reaches only the allow-listed endpoints.
+app.UseLocalAccountPasswordChangeFence();
 app.UseMiddleware<CompanyContextMiddleware>();
 app.UseAuthorization();
+// F023-2 / KIM-D10: an endpoint's own 401/403 (service fence) is recorded once as authz.denied.
+app.UseMiddleware<AuthorizationDenialResponseMiddleware>();
 
 app.MapErpHealthEndpoints();
 app.MapOrganizationEndpoints();
 app.MapIdentityEndpoints();
 app.MapAuditEndpoints();
+app.MapSecurityEventsEndpoints();
+app.MapAiEndpoints();
 app.MapCounterpartyEndpoints();
 app.MapProductEndpoints();
 app.MapProductPriceListEndpoints();
 app.MapProductItemTypeEndpoints();
+app.MapProductDimensionEndpoints();
+app.MapProductProfileWeightTableEndpoints();
+app.MapProductPackageStandardEndpoints();
+app.MapProductPaintMembershipEndpoints();
+app.MapProductCogsClassificationEndpoints();
 app.MapFinanceEndpoints();
+app.MapFinancePartyBalanceTransfersV1();
+app.MapFinanceCashExchangeBookValuesV1();
 app.MapFinanceOpenItemReadEndpoints();
 app.MapWorkApprovalEndpoints();
+app.MapWorkQueueEndpoints();
+app.MapWorkNotificationEndpoints();
 app.MapSalesEndpoints();
 app.MapSalesProductCandidateEndpoints();
 app.MapInventoryEndpoints();
+app.MapInventorySubcontractAllocationReleaseEndpoints();
+app.MapInventoryTransferPlanCandidateEndpoints();
+app.MapInventoryTransferReceiptDocumentEndpoints();
 app.MapManufacturingEndpoints();
 app.MapLogisticsEndpoints();
+app.MapLogisticsSubcontractDeliveryEndpoints();
+app.MapLogisticsPlanExcessEndpoints();
+app.MapLogisticsTransferDepartureEndpoints();
+app.MapLogisticsTransferOutgoingDocumentEndpoints();
+app.MapLogisticsWeighingDifferenceEndpoints();
+app.MapLogisticsDispatchPdfEndpoints();
 app.MapLogisticsCustomerReturnEndpoints();
 app.MapPurchasingEndpoints();
+app.MapPurchaseServiceOrderEndpointsV1();
+app.MapPurchaseAdditionalCostEndpointsV1();
 app.MapPurchasingProductCandidateEndpoints();
 app.MapAccountingEndpoints();
+app.MapAccountingSourceVouchersV1();
+app.MapAccountingInvoiceLineCogsEndpoints();
+app.MapAccountingPostingMappingWorkspaceV1();
+app.MapAccountingInventoryCostsV1();
 app.MapGlobalSearchEndpoints();
 app.MapDocumentEndpoints();
+app.MapDocumentBrandingEndpoints();
 app.MapSettingsEndpoints();
 app.MapSettingsTaxMasterEndpoints();
+app.MapSettingsSalesPolicyEndpoints();
+app.MapSettingsUnitConversionPolicyEndpoints();
+app.MapSettingsUnitProfileEndpoints();
+app.MapSettingsMoneyProfileEndpoints();
+app.MapSettingsSegregationOfDutiesPolicyEndpoints();
+app.MapSettingsCompanyPolicyEndpoints();
+app.MapSettingsFinancePolicyEndpoints();
+app.MapSettingsLoginRateLimitEndpoints();
+app.MapSettingsWorkCenterCapacityEndpoints();
+app.MapSettingsReferenceListEndpoints();
+app.MapSettingsPurchaseInvoiceVariancePolicyEndpoints();
+app.MapSettingsWarehouseTransferScaleEndpoints();
+app.MapSettingsCollateralTypeEndpoints();
+app.MapSettingsBankCsvMappingEndpoints();
+app.MapSettingsSalesQuoteAndEInvoicePolicyEndpoints();
 app.MapSettingsExchangeRateEndpoints();
 app.MapSettingsManufacturingProfileEndpoints();
 app.MapShellEndpoints();
@@ -507,6 +670,7 @@ if (!isOpenApiDocumentGeneration
     await app.Services.InitializeSettingsModuleAsync();
     await app.Services.InitializeIdentityModuleAsync();
     await app.Services.InitializeAuditModuleAsync();
+    await app.Services.InitializeSecurityEventsModuleAsync();
     await app.Services.InitializeIdempotencyModuleAsync();
     await app.Services.InitializeCounterpartyModuleAsync();
     // After Organization: Inventory's composite foreign keys reference its tables.
@@ -535,6 +699,22 @@ if (!isOpenApiDocumentGeneration
     await app.Services.InitializeDocumentsModuleAsync();
 }
 
+// ID-2/ID-2r operator commands (identity bootstrap-founder, identity recover-founder): run once and exit; the web host
+// is never started.
+if (IdentityCommandLine.IsIdentityCommand(args))
+{
+    return await IdentityCommandLine.RunAsync(
+        app.Services,
+        args,
+        new ConsoleFounderBootstrapConsole(Console.Out),
+        new ConsoleFounderRecoveryConsole(Console.Out, app.Environment.EnvironmentName),
+        Console.Out,
+        Console.Error,
+        CancellationToken.None,
+        operatorRecoveryConsole: new ConsoleLocalTwoFactorOperatorRecoveryConsoleV1(Console.Out, app.Environment.EnvironmentName));
+}
+
 await app.RunAsync();
+return IdentityCommandLine.ExitCompleted;
 
 public partial class Program;

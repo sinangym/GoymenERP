@@ -29,6 +29,8 @@ EXPECTED_VIEWPORTS = ["1600x900", "768x1024", "390x844", "640x900", "320x900"]
 REQUIRED_REAL_PATHS = {
     "/api/v1/identity/me",
     "/api/v1/organization/companies",
+    # KIM-S5 / KIM-D56: the authenticated shell reads the company setup link's availability.
+    "/api/v1/organization/company-setup/capabilities",
     "/api/v1/shell/capabilities",
     "/api/v1/counterparties",
 }

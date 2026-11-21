@@ -70,11 +70,16 @@ public sealed class ManufacturingOutputAboveInputClosureReportTests
         // Per roll: roll B's shortfall does not offset roll A, and roll B is not listed.
         var roll = Assert.Single(first.Rolls);
         Assert.Equal(new OutputAboveInputRollViewV1(RollA, new MassDifferenceViewV1("1000", "1015", "-15", false)), roll);
+        // URT-D52 (1): the cost of such a close gives no amount and reads the decided text.
+        var noAmount = new OutputAboveInputCostViewV1("Unreadable", "output_exceeds_input",
+            "hesaplanamadı — çıkan giren kg'dan fazla");
+        Assert.Equal(noAmount, first.Cost);
 
         var second = report.Closures[1];
         Assert.True(second.ClosedWithExceptionApproval);
         Assert.Equal(new OutputAboveInputRollViewV1(RollA, new MassDifferenceViewV1("1000", "1050", "-50", false)),
             Assert.Single(second.Rolls));
+        Assert.Equal(noAmount, second.Cost);
 
         // The default page and no cursor; the order read's grant measured once, for this company.
         Assert.Equal((50, (string?)null), Assert.Single(fixture.ClosedOrders.Calls));
@@ -223,6 +228,32 @@ public sealed class ManufacturingOutputAboveInputClosureReportTests
     }
 
     [Fact]
+    public async Task A_paint_close_is_listed_only_when_its_order_total_is_above_input()
+    {
+        // URT-D49 (1): paint has no main roll input, so its close is examined on the order total. Both orders have input A
+        // 10 kg above its own input; the first is 10 kg short in total (B 20 kg short) and is not listed, the second is
+        // 5 kg above input in total (B 5 kg short) and is listed with only input A.
+        var fixture = new Fixture();
+        var totalShort = OpenOrderOf(ManufacturingProcess.Paint, Company, RollA, RollB);
+        Realize(totalShort, RollA, 1_000m, 30m, 980m);
+        Realize(totalShort, RollB, 1_000m, 30m, 950m);
+        var totalAbove = OpenOrderOf(ManufacturingProcess.Paint, Company, RollA, RollB);
+        Realize(totalAbove, RollA, 1_000m, 30m, 980m);
+        Realize(totalAbove, RollB, 1_000m, 30m, 965m);
+        fixture.ClosedOrders.Orders.AddRange([StoredClose(totalShort), StoredClose(totalAbove)]);
+
+        var result = await fixture.Service.ListOutputAboveInputClosuresAsync(null, null, CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
+        Assert.Equal(2, result.Resource!.ExaminedOrderCount);
+        var closure = Assert.Single(result.Resource.Closures);
+        Assert.Equal((totalAbove.Id, "Paint"), (closure.OrderId, closure.Process));
+        Assert.Equal(new OutputAboveInputRollViewV1(RollA, new MassDifferenceViewV1("1000", "1010", "-10", false)),
+            Assert.Single(closure.Rolls));
+        Assert.Empty(fixture.Unexpected);
+    }
+
+    [Fact]
     public void The_closed_order_cursor_round_trips_only_for_its_company_and_its_own_ordering()
     {
         var id = Guid.Parse("77777777-7777-4777-8777-77777777e042");
@@ -257,11 +288,14 @@ public sealed class ManufacturingOutputAboveInputClosureReportTests
 
     private static Kilograms Kg(decimal value) => new(value);
 
-    private static ProductionOrder OpenOrder(Guid company, params Guid[] rolls)
+    private static ProductionOrder OpenOrder(Guid company, params Guid[] rolls) =>
+        OpenOrderOf(ManufacturingProcess.Slitting, company, rolls);
+
+    private static ProductionOrder OpenOrderOf(ManufacturingProcess process, Guid company, params Guid[] rolls)
     {
-        var plan = new ProductionPlan(Guid.NewGuid(), company, WorkCenter, ManufacturingProcess.Slitting,
+        var plan = new ProductionPlan(Guid.NewGuid(), company, WorkCenter, process,
             rolls.Select(roll => new PlannedInput(roll, Kg(10_000m))));
-        plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
+        plan.WithDueDate().Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
         return ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
     }
 
@@ -273,8 +307,9 @@ public sealed class ManufacturingOutputAboveInputClosureReportTests
     }
 
     /// <summary>The reviewed version-0 catalog: fire maximum 5 %, the earlier ± 2 % mass-balance tolerance.</summary>
-    private static ClosureTolerancePolicySnapshotV1 Catalog(Guid company) =>
-        new(company, Profile, 0, ManufacturingProcess.Slitting, 5m, true, new DateOnly(2026, 11, 1), null, CloseDay, 2m,
+    private static ClosureTolerancePolicySnapshotV1 Catalog(Guid company,
+        ManufacturingProcess process = ManufacturingProcess.Slitting) =>
+        new(company, Profile, 0, process, 5m, true, new DateOnly(2026, 11, 1), null, CloseDay, 2m,
             ClosureTolerancePolicySnapshotV1.CatalogSource);
 
     /// <summary>
@@ -283,7 +318,7 @@ public sealed class ManufacturingOutputAboveInputClosureReportTests
     /// </summary>
     private static ProductionOrder StoredClose(ProductionOrder open, bool withApproval = false)
     {
-        var catalog = Catalog(open.CompanyId);
+        var catalog = Catalog(open.CompanyId, open.Process);
         var approval = withApproval
             ? ClosureExceptionApprovalV1.Create(open.CompanyId, open.Id, Closer, "SENTETIK teyitli sapma", open.Version,
                 catalog.PolicyId, catalog.PolicyVersion, CloseAt)

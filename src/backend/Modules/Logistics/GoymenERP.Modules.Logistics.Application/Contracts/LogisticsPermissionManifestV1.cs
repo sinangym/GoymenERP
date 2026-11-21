@@ -20,12 +20,18 @@ public static class LogisticsPermissionManifestV1
     public const string ShipmentsRecord = "logistics.shipments.record";
     public const string DeliveriesRecord = "logistics.deliveries.record";
 
+    /// <summary>SAT-D417 / direct user 6963301286: approve a separate positive plan exception. Registration only; no role or maker exclusion.</summary>
+    public const string ShipmentPlanExcessApprove = LogisticsPlanExcessV1.ApprovePermission;
+
     /// <summary>
     /// AT-053: record the vehicle's manual weighbridge record on an issued instruction. Its own name, aliasing no
     /// other (master v3 §12.1 lists the Kantar kullanıcısı as its own role; the #66/5828506709 precedent). Registered
     /// centrally; no grant, role or maker-checker rule is chosen here.
     /// </summary>
     public const string WeighingsRecord = "logistics.weighings.record";
+
+    /// <summary>LOJ-D13 / SAT-D378: reasoned, append-only correction after shipment, with no active invoice claim. Registration only.</summary>
+    public const string WeighingsCorrect = "logistics.weighings.correct";
 
     /// <summary>
     /// AT-025: read the SALES section of the operations work list (L-01 Sevk Edilebilir Siparişler) — the approved sales order
@@ -75,7 +81,29 @@ public static class LogisticsPermissionManifestV1
     /// <summary>Approve or reject a pending customer return. The domain still requires a different actor.</summary>
     public const string CustomerReturnsDecision = "logistics.customer-returns.decision";
 
+    /// <summary>
+    /// STK-S24 (SAT-D319..D325, SAT-D340..D344): record a dispatch note's sales weighing difference. Its own name; registered
+    /// centrally, no grant or role is chosen here.
+    /// </summary>
+    public const string WeighingDifferencesRecord = "logistics.weighing-differences.record";
+
+    /// <summary>
+    /// STK-S24 (SAT-D320 (1), SAT-D321): approve a weighing difference at or above the rate. The decision names the Satış Müdürü;
+    /// the grant is a human gate. The domain refuses whoever entered the weighing or a shipment on the note.
+    /// </summary>
+    public const string WeighingDifferencesApprove = "logistics.weighing-differences.approve";
+
+    /// <summary>STK-S24: read weighing-difference records of the context company.</summary>
+    public const string WeighingDifferencesRead = "logistics.weighing-differences.read";
+
+    /// <summary>LOJ-D11 / KLN-D25: actual transfer exit records only; company-wide registration, no grant or Critical classification.</summary>
+    public const string TransferDeparturesRecord = LogisticsTransferDepartureV1.RecordPermission;
+    /// <summary>Read the actual internal transfer document; company-wide registration, no inferred instruction read or grant.</summary>
+    public const string TransferOutgoingDocumentsRead = LogisticsTransferOutgoingDocumentPermissionsV1.Read;
+
     public static readonly IReadOnlyList<string> Names =
-        [InstructionsCreate, InstructionsRead, LoadsRecord, ShipmentsRecord, DeliveriesRecord, WeighingsRecord, OperationsSalesWorkRead, OperationsPurchaseWorkRead,
-            DispatchNotesCreate, DispatchNotesApprove, DispatchNotesCancel, InstructionsCancel, CustomerReturnsRead, CustomerReturnsRequest, CustomerReturnsDecision];
+        [InstructionsCreate, InstructionsRead, LoadsRecord, ShipmentsRecord, DeliveriesRecord, WeighingsRecord, WeighingsCorrect, OperationsSalesWorkRead, OperationsPurchaseWorkRead,
+            DispatchNotesCreate, DispatchNotesApprove, DispatchNotesCancel, InstructionsCancel, CustomerReturnsRead, CustomerReturnsRequest, CustomerReturnsDecision,
+            WeighingDifferencesRecord, WeighingDifferencesApprove, WeighingDifferencesRead,
+            TransferDeparturesRecord, TransferOutgoingDocumentsRead, ShipmentPlanExcessApprove];
 }

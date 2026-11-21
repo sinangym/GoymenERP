@@ -7,6 +7,9 @@ using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
+using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
+using GoymenERP.Modules.Identity.Infrastructure.Persistence;
+using GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Organization.Domain.Sites;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
@@ -16,6 +19,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -39,7 +43,7 @@ public sealed class SqlServerRelationalAcceptanceTests
             var healthResponse = await healthClient.GetAsync("/health/live");
             Assert.Equal(HttpStatusCode.OK, healthResponse.StatusCode);
 
-            await AssertMigrationAndSeedAsync(factory.DatabaseConnectionString);
+            await AssertMigrationAndSeedAsync(factory);
             await AssertIdentityRelationalConstraintsAsync(factory.DatabaseConnectionString);
             await AssertTenantWriteGuardAsync(factory);
             await AssertCompositeForeignKeyAsync(factory.DatabaseConnectionString);
@@ -58,38 +62,24 @@ public sealed class SqlServerRelationalAcceptanceTests
         }
     }
 
-    private static async Task AssertMigrationAndSeedAsync(string connectionString)
+    private static async Task AssertMigrationAndSeedAsync(SqlServerRelationalApiFactory factory)
     {
-        await using var connection = new SqlConnection(connectionString);
+        await AssertOwnerMigrationHistoryAsync<OrganizationDbContext>(factory);
+        await AssertOwnerMigrationHistoryAsync<IdentityDbContext>(factory);
+        await AssertOwnerMigrationHistoryAsync<AuditDbContext>(factory);
+        await AssertOwnerMigrationHistoryAsync<CommandExecutionDbContext>(factory);
+        await using var connection = new SqlConnection(factory.DatabaseConnectionString);
         await connection.OpenAsync();
 
-        Assert.Equal(
-            4,
-            await ScalarAsync<int>(
-                connection,
-                "SELECT COUNT(*) FROM [organization].[__EFMigrationsHistory];"));
-        // Identity: initial + explicit Product assignments + #329 activate + DEC-CAR-003 deactivate/reactivate.
-        Assert.Equal(
-            4,
-            await ScalarAsync<int>(
-                connection,
-                "SELECT COUNT(*) FROM [identity].[__EFMigrationsHistory];"));
-        Assert.Equal(
-            2,
-            await ScalarAsync<int>(
-                connection,
-                "SELECT COUNT(*) FROM [audit].[__EFMigrationsHistory];"));
         Assert.Equal(1, await ScalarAsync<int>(connection,
             "SELECT COUNT(*) FROM [identity].[__EFMigrationsHistory] WHERE [MigrationId] = '20260912175120_AddExplicitProductAssignments';"));
         Assert.Equal(1, await ScalarAsync<int>(connection,
             "SELECT COUNT(*) FROM [audit].[__EFMigrationsHistory] WHERE [MigrationId] = '20260912173914_AddGlobalProductAuditSubject';"));
+        Assert.Equal(1, await ScalarAsync<int>(connection,
+            "SELECT COUNT(*) FROM [audit].[__EFMigrationsHistory] WHERE [MigrationId] = '20261115121446_AddAuditOutcomeQueryIndex';"));
         Assert.Equal(0, await ScalarAsync<int>(connection,
             "SELECT COUNT(*) FROM [identity].[ProductMasterAssignments];"));
-        Assert.Equal(
-            1,
-            await ScalarAsync<int>(
-                connection,
-                "SELECT COUNT(*) FROM [idempotency].[__EFMigrationsHistory];"));
+
         Assert.Equal(
             3,
             await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [organization].[Companies];"));
@@ -143,6 +133,19 @@ public sealed class SqlServerRelationalAcceptanceTests
             await ScalarAsync<int>(
                 connection,
                 "SELECT COUNT(*) FROM [idempotency].[CommandExecutions];"));
+    }
+
+    private static async Task AssertOwnerMigrationHistoryAsync<TContext>(SqlServerRelationalApiFactory factory)
+        where TContext : DbContext
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(TestCompanyIds.CompanyA);
+        var owner = scope.ServiceProvider.GetRequiredService<TContext>();
+        var expected = owner.Database.GetMigrations().OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        Assert.NotEmpty(expected);
+        var applied = (await owner.Database.GetAppliedMigrationsAsync())
+            .OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        Assert.Equal(expected, applied);
     }
 
     private static async Task AssertTopologyCountsAsync(
@@ -200,11 +203,11 @@ public sealed class SqlServerRelationalAcceptanceTests
             INSERT INTO [identity].[AccessGrantRequests]
                 ([Id], [RequestedByUserId], [TargetUserId], [RoleId], [CompanyId],
                  [RequiresSecondApproval], [Status], [RequestedAtUtc],
-                 [DecidedByUserId], [DecidedAtUtc], [Version])
+                 [DecidedByUserId], [DecidedAtUtc], [Version], [ApprovalMode])
             VALUES
                 (@Id, @RequesterId, @TargetId, @RoleId, @CompanyId,
                  1, N'Approved', SYSUTCDATETIME(),
-                 @RequesterId, SYSUTCDATETIME(), 1);
+                 @DeciderId, SYSUTCDATETIME(), 1, @ApprovalMode);
             """;
         selfApprovalInsert.Parameters.AddWithValue("@Id", Guid.NewGuid());
         selfApprovalInsert.Parameters.AddWithValue(
@@ -218,10 +221,60 @@ public sealed class SqlServerRelationalAcceptanceTests
             Guid.Parse("30000000-0000-0000-0000-000000000001"));
         selfApprovalInsert.Parameters.AddWithValue("@CompanyId", TestCompanyIds.CompanyA);
 
-        var selfApprovalException = await Assert.ThrowsAsync<SqlException>(
-            () => selfApprovalInsert.ExecuteNonQueryAsync());
+        selfApprovalInsert.Parameters.AddWithValue("@DeciderId", selfApprovalInsert.Parameters["@RequesterId"].Value);
+        selfApprovalInsert.Parameters.Add("@ApprovalMode", System.Data.SqlDbType.NVarChar, 32).Value = DBNull.Value;
+        // NULL mode must not turn either CHECK predicate into SQL UNKNOWN (which CHECK accepts).
+        foreach (var decider in new[]
+                 {
+                     (Guid)selfApprovalInsert.Parameters["@RequesterId"].Value,
+                     Guid.Parse("20000000-0000-0000-0000-000000000002")
+                 })
+        {
+            selfApprovalInsert.Parameters["@DeciderId"].Value = decider;
+            Assert.Equal(547, (await Assert.ThrowsAsync<SqlException>(
+                () => selfApprovalInsert.ExecuteNonQueryAsync())).Number);
+        }
+        var beforeGrantRows = await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [identity].[AccessGrantRequests]");
+        Assert.Equal(0, await ScalarAsync<int>(connection,
+            "SELECT COUNT(*) FROM [identity].[AccessGrantRequests] WHERE Status = N'Approved'"));
+        await using var nullModeDownGuard = connection.CreateCommand();
+        nullModeDownGuard.CommandText = Assert.IsType<SqlOperation>(
+            new RejectNullAccessGrantApprovalModes().DownOperations[0]).Sql;
+        await nullModeDownGuard.ExecuteNonQueryAsync();
 
-        Assert.Equal(547, selfApprovalException.Number);
+        selfApprovalInsert.Parameters["@ApprovalMode"].Value = "SecondApproval";
+        foreach (var decider in new[]
+                 {
+                     (Guid)selfApprovalInsert.Parameters["@RequesterId"].Value,
+                     (Guid)selfApprovalInsert.Parameters["@TargetId"].Value
+                 })
+        {
+            selfApprovalInsert.Parameters["@DeciderId"].Value = decider;
+            Assert.Equal(547, (await Assert.ThrowsAsync<SqlException>(
+                () => selfApprovalInsert.ExecuteNonQueryAsync())).Number);
+        }
+
+        // A valid, different-person historical approval makes the same real migration guard refuse.
+        // This rolls back the synthetic request; it does not create a RoleAssignment or apply a downgrade.
+        await using (var transaction = (SqlTransaction)await connection.BeginTransactionAsync())
+        {
+            selfApprovalInsert.Transaction = transaction;
+            nullModeDownGuard.Transaction = transaction;
+            selfApprovalInsert.Parameters["@DeciderId"].Value = Guid.Parse("20000000-0000-0000-0000-000000000002");
+            try
+            {
+                Assert.Equal(1, await selfApprovalInsert.ExecuteNonQueryAsync());
+                Assert.Equal(51798, (await Assert.ThrowsAsync<SqlException>(
+                    () => nullModeDownGuard.ExecuteNonQueryAsync())).Number);
+            }
+            finally
+            {
+                await transaction.RollbackAsync();
+                selfApprovalInsert.Transaction = null;
+                nullModeDownGuard.Transaction = null;
+            }
+        }
+        Assert.Equal(beforeGrantRows, await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [identity].[AccessGrantRequests]"));
     }
 
     private static async Task AssertTenantWriteGuardAsync(
@@ -1130,23 +1183,47 @@ internal sealed class SqlServerRelationalApiFactory : WebApplicationFactory<Prog
         Action<IServiceCollection>? configureServices = null,
         bool applyTestCompanyBTopologyTemplates = true,
         string? databaseName = null,
-        IReadOnlyDictionary<string, string?>? configurationOverrides = null)
+        IReadOnlyDictionary<string, string?>? configurationOverrides = null,
+        SqlServerTestDatabase? testDatabase = null)
     {
         _configureServices = configureServices;
         _applyTestCompanyBTopologyTemplates = applyTestCompanyBTopologyTemplates;
         _configurationOverrides = configurationOverrides
             ?? new Dictionary<string, string?>();
-        DatabaseName = databaseName ?? $"goymen_erp_ci_{Guid.NewGuid():N}";
-        var builder = new SqlConnectionStringBuilder(baseConnectionString)
-        {
-            InitialCatalog = DatabaseName,
-        };
-        _databaseConnectionString = builder.ConnectionString;
+        DatabaseName = databaseName ?? testDatabase?.Name ?? $"goymen_erp_ci_{Guid.NewGuid():N}";
+        _databaseConnectionString = testDatabase?.ConnectionForHost(baseConnectionString, DatabaseName)
+            ?? BuildDatabaseConnectionString(baseConnectionString, DatabaseName,
+            Environment.GetEnvironmentVariable("GOYMEN_ERP_TEST_SQLSERVER_DATA_DIRECTORY"));
     }
 
     public string DatabaseName { get; }
 
     public string DatabaseConnectionString => _databaseConnectionString;
+
+    internal static string BuildDatabaseConnectionString(string baseConnectionString, string databaseName,
+        string? localDataDirectory)
+    {
+        var connection = new SqlConnectionStringBuilder(baseConnectionString) { InitialCatalog = databaseName };
+        if (string.IsNullOrWhiteSpace(localDataDirectory)) return connection.ConnectionString;
+
+        // Opt-in local test storage only. EF Core creates both data/log files here and retains its RCSI setup.
+        // Never change the SQL instance defaults or attach an existing application database.
+        if (connection.DataSource is not ("localhost" or "." or "127.0.0.1" or "(local)")
+            || !Path.IsPathFullyQualified(localDataDirectory) || !Directory.Exists(localDataDirectory)
+            || !(databaseName.StartsWith("goymen_", StringComparison.Ordinal)
+                || databaseName.StartsWith("GoymenERP_", StringComparison.Ordinal))
+            || databaseName.Length > 128
+            || databaseName.Any(character => !char.IsAsciiLetterOrDigit(character) && character != '_')
+            || databaseName.Length < 33
+            || !Guid.TryParseExact(databaseName[^32..], "N", out _))
+            throw new InvalidOperationException("Local SQL test storage requires a local server, an existing absolute directory and a unique synthetic database name.");
+
+        var file = Path.Combine(Path.GetFullPath(localDataDirectory), databaseName + ".mdf");
+        if (File.Exists(file) || File.Exists(Path.Combine(Path.GetDirectoryName(file)!, databaseName + "_log.ldf")))
+            throw new InvalidOperationException("Local SQL test files must not already exist.");
+        connection.AttachDBFilename = file;
+        return connection.ConnectionString;
+    }
 
     protected override void ConfigureClient(HttpClient client)
     {

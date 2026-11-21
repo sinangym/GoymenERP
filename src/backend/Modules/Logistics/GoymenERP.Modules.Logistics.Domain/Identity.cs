@@ -53,6 +53,22 @@ public static class LogisticsRuleCodes
     public const string WeighingDirectionInconsistent = "logistics_weighing_direction_inconsistent";
     public const string WeighingUnitUnsupported = "logistics_weighing_unit_unsupported";
 
+    // LOJ-D1/D12: shipment kind of an instruction and the weighing order of a subcontract ("fason teslim") delivery.
+    public const string ShipmentKindRequired = "logistics_shipment_kind_required";
+    public const string ContractProcessingShipmentWithoutWeighing = "logistics_contract_processing_shipment_without_weighing";
+    public const string ContractProcessingLoadAfterWeighing = "logistics_contract_processing_load_after_weighing";
+
+    // LOJ-D13 reasoned weighing correction after the vehicle left (append-only; the original stays for the audit trail).
+    public const string WeighingNotRecorded = "logistics_weighing_not_recorded";
+    public const string WeighingCorrectionBeforeShipment = "logistics_weighing_correction_before_shipment";
+    public const string WeighingCorrectionReasonRequired = "logistics_weighing_correction_reason_required";
+    public const string DuplicateWeighingCorrectionId = "logistics_duplicate_weighing_correction_id";
+
+    // LOJ-D17 unload weighing after an instruction cancel: only a cancelled instruction with loaded goods takes one, once.
+    public const string InstructionNotCancelled = "logistics_instruction_not_cancelled";
+    public const string UnloadNothingLoaded = "logistics_unload_nothing_loaded";
+    public const string UnloadWeighingAlreadyRecorded = "logistics_unload_weighing_already_recorded";
+
     // AT-055 dispatch note: a definite shipment is on at most one non-cancelled dispatch note; approve / cancel / e-İrsaliye number.
     public const string ShipmentAlreadyDispatched = "logistics_shipment_already_dispatched";
     public const string DuplicateDispatchNoteId = "logistics_duplicate_dispatch_note_id";

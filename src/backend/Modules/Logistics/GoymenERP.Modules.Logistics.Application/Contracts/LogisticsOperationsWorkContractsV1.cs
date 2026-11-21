@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.Modules.Logistics.Application.Contracts;
 
 /// <summary>
@@ -38,7 +40,8 @@ public static class LogisticsOperationsWorkSectionsV1
 public sealed record LogisticsSalesWorkItemView(
     Guid OrderId, string DocumentNo, Guid LineId, int LineNo, Guid CustomerPartyId, string CustomerName,
     Guid ProductId, string ProductCode, string ProductName, Guid UnitId, string UnitCode,
-    string Ordered, string Instructed, string Loaded, string Shipped, string Delivered, DateOnly? RequestedDeliveryDate);
+    string Ordered, string Instructed, string Loaded, string Shipped, string Delivered, DateOnly? RequestedDeliveryDate,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ApprovedPlanExcess = null);
 
 public sealed record LogisticsSalesWorkPage(string Section, IReadOnlyList<LogisticsSalesWorkItemView> Items, string? NextCursor);
 
@@ -76,4 +79,4 @@ public interface ILogisticsOrderLineProgressReader
     Task<IReadOnlyList<LogisticsOrderLineProgress>> ReadAsync(IReadOnlyCollection<Guid> orderLineIds, CancellationToken cancellationToken = default);
 }
 
-public sealed record LogisticsOrderLineProgress(Guid OrderLineId, Guid UnitId, decimal Instructed, decimal Loaded, decimal Shipped, decimal Delivered);
+public sealed record LogisticsOrderLineProgress(Guid OrderLineId, Guid UnitId, decimal Instructed, decimal Loaded, decimal Shipped, decimal Delivered, decimal? ApprovedPlanExcess = null);

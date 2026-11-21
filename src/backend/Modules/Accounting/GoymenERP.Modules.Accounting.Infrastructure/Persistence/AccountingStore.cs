@@ -37,13 +37,14 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 /// delivery record and no audit event.</item>
 /// </list>
 /// </summary>
-public sealed class AccountingStore(
+public sealed partial class AccountingStore(
     AccountingDbContext dbContext,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
     TimeProvider timeProvider,
-    AccountingAmountScaleVerifier amounts) : IAccountingPeriodStore, IAccountingPostingStore, IAccountingCommandLog,
-    IAccountingNormalJournalDraftStore, IAccountingJournalReversalProposalStoreV1
+    AccountingAmountScaleVerifier amounts,
+    IAccountingPeriodCarryForwardPortV1? periodCarry = null) : IAccountingPeriodStore, IAccountingPostingStore, IAccountingCommandLog,
+    IAccountingNormalJournalDraftStore, IAccountingJournalReversalProposalStoreV1, IAccountingPeriodReopeningStoreV1
 {
     private const int Open = 1;
     private const int Resolved = 2;
@@ -158,31 +159,9 @@ public sealed class AccountingStore(
         return record;
     }
 
-    public async Task<AccountingPeriodRecord> ClosePeriodAsync(Guid periodId, long expectedVersion, Guid closedByUserId,
-        AccountingCommandMetadata metadata, CancellationToken cancellationToken = default)
-    {
-        RequireMetadata(metadata);
-        var companyId = RequireResolvedCompany();
-        var row = await dbContext.Periods.SingleOrDefaultAsync(candidate => candidate.Id == periodId, cancellationToken)
-            ?? throw Refused(AccountingStoreCodes.PeriodNotFound, "Bu şirketin böyle bir dönemi yok.");
-        RequireVersion(row, expectedVersion);
-        var period = RestorePeriod(row);
-        var before = PeriodAudit(period);
-        period.Close(closedByUserId, timeProvider.GetUtcNow());
-
-        var versionBefore = row.Version;
-        row.Status = (int)AccountingPeriodStatus.Closed;
-        row.ClosedByUserId = period.ClosedByUserId;
-        row.ClosedAtUtc = period.ClosedAtUtc;
-        row.Version = checked(versionBefore + 1);
-        row.UpdatedAtUtc = period.ClosedAtUtc!.Value;
-        Audit(metadata, companyId, PeriodEntityType, period.Id.ToString("D"), "accounting.period.closed.v1", "Close",
-            versionBefore, row.Version, before, PeriodAudit(period), "Muhasebe dönemi kapandı");
-        var record = new AccountingPeriodRecord(period, row.Version);
-        Complete(metadata, companyId, record);
-        await SaveAsync(cancellationToken);
-        return record;
-    }
+    public Task<AccountingPeriodRecord> ClosePeriodAsync(Guid periodId, long expectedVersion, Guid closedByUserId,
+        AccountingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        CloseWithCarryAsync(periodId, expectedVersion, closedByUserId, metadata, cancellationToken);
 
     public async Task<AccountingPeriodRecord?> FindPeriodAsync(Guid periodId, CancellationToken cancellationToken = default)
     {
@@ -406,6 +385,13 @@ public sealed class AccountingStore(
                 throw Refused(NormalJournalDraftStoreCodesV1.NotPending, "Normal fiş taslağı artık onay beklemiyor.");
             }
 
+            // Q9 is credit-specific. The generic normal journal approval policy remains unchanged.
+            if (row.PreparedByUserId == approvedByUserId && await dbContext.CreditMovementProposals.AsNoTracking()
+                    .AnyAsync(x => x.Id == row.SourceId, cancellationToken))
+                throw Refused(NormalJournalDraftStoreCodesV1.CreditSelfApproval,
+                    "Kredi fişini hazırlayan kişi aynı fişi onaylayamaz.");
+            await freshAuthorityFence(cancellationToken);
+
             var lineRows = await dbContext.NormalJournalDraftLines
                 .Where(line => line.DraftId == draftId)
                 .OrderBy(line => line.LineNumber)
@@ -605,6 +591,14 @@ public sealed class AccountingStore(
             }
 
             var before = RestoreReversalProposal(row);
+            // KLN-D17 remains applicable to the invoice's cancellation reversal. The general reversal
+            // maker/checker rule below also refuses the proposal's preparer; these are separate actors.
+            var ownCancelledInvoice = await dbContext.SourceDocumentVoucherDrafts.AsNoTracking().AnyAsync(voucher =>
+                voucher.Status == 2 && voucher.JournalId == before.SourceJournalId && voucher.SourceActorId == checkerId
+                && dbContext.SourceInvoiceCancellations.Any(cancellation => cancellation.SourceDocumentId == voucher.SourceDocumentId
+                    && cancellation.InvoiceId == voucher.InvoiceId && cancellation.FinalizedVersion == voucher.FinalizedVersion), cancellationToken);
+            if (ownCancelledInvoice)
+                throw new AccountingJournalReversalPolicyExceptionV1(AccountingJournalReversalPolicyCodesV1.MakerCheckerRequired, "checkerId");
             var reversalJournalId = Guid.NewGuid();
             var decidedAtUtc = timeProvider.GetUtcNow();
             var approved = AccountingJournalReversalPolicyV1.Approve(
@@ -909,7 +903,7 @@ public sealed class AccountingStore(
     }
 
     private static AccountingJournalReversalProposalRow ToReversalProposalRow(
-        AccountingJournalReversalProposalV1 proposal) => new()
+        AccountingJournalReversalProposalV1 proposal) => new AccountingJournalReversalProposalRow()
         {
             Id = proposal.ProposalId,
             CompanyId = proposal.CompanyId,
@@ -943,7 +937,7 @@ public sealed class AccountingStore(
         && stored.ProposedBy == requested.ProposedBy;
 
     private static AccountingJournalReversalProposalV1 RestoreReversalProposal(
-        AccountingJournalReversalProposalRow row) => new(
+        AccountingJournalReversalProposalRow row) => new AccountingJournalReversalProposalV1(
         row.Id,
         row.CompanyId,
         row.SourceJournalId,
@@ -1197,6 +1191,17 @@ public sealed class AccountingStore(
         {
             throw Refused(AccountingStoreCodes.ConcurrentChange,
                 "Kalıcı tekillik kuralı başka bir yazmanın lehine sonuçlandı; hiçbir şey kaydedilmedi.", exception);
+        }
+        catch (Exception exception) when (dbContext.Database.CurrentTransaction is null
+            && IsPeriodTransactionDeadlock(exception))
+        {
+            // A standalone save chosen as the deadlock victim (raw or EF-wrapped 1205), e.g. a posting that bumps the
+            // period version while a SERIALIZABLE close holds the period row: SQL Server rolled the implicit save back,
+            // so it is the same retryable lost race as a version conflict. Inside an explicit transaction the owner of
+            // that transaction decides (the period lifecycle maps it itself).
+            dbContext.ChangeTracker.Clear();
+            throw Refused(AccountingStoreCodes.ConcurrentChange,
+                "Aynı dönem ya da kayıt eşzamanlı bir işlemle çakıştı; hiçbir şey kaydedilmedi.", exception);
         }
     }
 

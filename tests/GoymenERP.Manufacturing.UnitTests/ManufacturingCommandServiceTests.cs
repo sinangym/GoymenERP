@@ -23,7 +23,7 @@ namespace GoymenERP.Manufacturing.UnitTests;
 /// the fresh authority fence and the envelope it builds, and the mapping of every refusal to one
 /// status. What SQL and the host do is proven by the relational HTTP acceptance tests.
 /// </summary>
-public sealed class ManufacturingCommandServiceTests
+public sealed partial class ManufacturingCommandServiceTests
 {
     private const string Permission = "manufacturing.facts.record";
     // ProductStockCandidateFixture creates draft v1 and activates it; c161e0e7 publishes that exact accepted v2.
@@ -98,7 +98,8 @@ public sealed class ManufacturingCommandServiceTests
         var result = await fixture.Service.DeclareInventoryOutputAsync(order.Id,
             new DeclareInventoryOutputRequestV1(outputId, order.Version, Roll, "8", "GoodProduct",
                 Product, "12", lotId, labelId, "LBL-OUT-1", "H-1", "C-1", ["quality-certificate"],
-                "Company", Company, "Company", Company, Location, "Free", movementId, "20", At.AddMinutes(1)),
+                "Company", Company, "Company", Company, Location, "Free", movementId, "20", At.AddMinutes(1),
+                OutputLine: new("ClassLine", null, null)),
             "output-inventory-1", Permission, CancellationToken.None);
 
         Assert.Equal((ManufacturingApiStatus.Ok, 3), (result.Status, result.Resource?.Version));
@@ -109,7 +110,8 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal(("Company", Company, "Company", Company, Location, "Free"),
             (command.OwnerKind, command.OwnerId, command.CustodianKind, command.CustodianId,
                 command.LocationId, command.InitialBlock));
-        Assert.Single(order.Outputs);
+        Assert.Equal(PlanOutputLineReference.ClassLine, command.OutputLine);
+        Assert.Equal(PlanOutputLineReference.ClassLine, Assert.Single(order.Outputs).OutputLine);
     }
 
     [Fact]
@@ -2329,15 +2331,17 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal((50, (string?)null, (OrderStatus?)null), Assert.Single(fixture.Store.ListCalls));
     }
 
-    [Fact]
-    public async Task The_list_passes_the_status_filter_and_the_cursor_it_was_given()
+    [Theory]
+    [InlineData("Closed", OrderStatus.Closed)]
+    [InlineData("Cancelled", OrderStatus.Cancelled)]
+    public async Task The_list_passes_the_status_filter_and_the_cursor_it_was_given(string status, OrderStatus expected)
     {
         var fixture = new Fixture();
 
-        var result = await fixture.Service.ListOrdersAsync(10, "cursor-1", "Closed", CancellationToken.None);
+        var result = await fixture.Service.ListOrdersAsync(10, "cursor-1", status, CancellationToken.None);
 
         Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
-        Assert.Equal((10, "cursor-1", (OrderStatus?)OrderStatus.Closed), Assert.Single(fixture.Store.ListCalls));
+        Assert.Equal((10, "cursor-1", (OrderStatus?)expected), Assert.Single(fixture.Store.ListCalls));
     }
 
     [Theory]
@@ -2345,7 +2349,7 @@ public sealed class ManufacturingCommandServiceTests
     [InlineData(101, null, "pageSize")]
     [InlineData(null, "open", "status")]
     [InlineData(null, "1", "status")]
-    [InlineData(null, "Cancelled", "status")]
+    [InlineData(null, "cancelled", "status")]
     public async Task A_list_request_outside_the_contract_is_invalid_and_the_store_is_not_asked(int? pageSize,
         string? status, string field)
     {
@@ -2444,6 +2448,34 @@ public sealed class ManufacturingCommandServiceTests
     }
 
     [Fact]
+    public async Task A_termin_before_the_business_day_is_refused_approval_before_any_owner_read_and_the_key_stays_unrecorded()
+    {
+        // URT-D70: the termin was entered while it was still ahead; by the server's Istanbul business day (At) it has
+        // passed. The approval answers 422 before Settings, the final fence or Inventory is asked and before the store's
+        // approval runs (this fake store would throw); nothing is recorded, so the user moves the termin and retries.
+        var fixture = new Fixture();
+        var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(Roll, new Kilograms(1000m))]);
+        plan.RecordPreparer(OtherActor.ToString("D"));
+        var enteredOn = DateOnly.FromDateTime(At.UtcDateTime).AddDays(-10);
+        plan.ChangeDueDate(plan.Version, plan.DueDateRevision, enteredOn.AddDays(1), orderClosed: false, enteredOn);
+        fixture.Store.Plans[plan.Id] = plan;
+
+        foreach (var _ in new[] { 1, 2 })
+        {
+            var result = await fixture.Service.ApprovePlanAsync(plan.Id, new ApprovePlanRequestV1(plan.Version), "key-1",
+                "manufacturing.plans.approve", CancellationToken.None);
+            Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingRuleCodes.DueDateInPast, false),
+                (result.Status, result.Code, result.IsReplay));
+        }
+
+        Assert.All(fixture.Calls, call => Assert.Equal("authority", call));
+        Assert.Empty(fixture.Store.Commands);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Equal((PlanStatus.Draft, 1L), (plan.Status, plan.Version));
+    }
+
+    [Fact]
     public async Task The_preparer_is_refused_rejection_before_any_owner_read_and_the_key_stays_unrecorded()
     {
         // Üretim U2-d (URT-D2), the rejection's twin of the approval test above: the preparer gets 422 before the
@@ -2522,7 +2554,7 @@ public sealed class ManufacturingCommandServiceTests
         var approved = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
             [new PlannedInput(Roll, new Kilograms(1000m))]);
         approved.RecordPreparer(OtherActor.ToString("D"));
-        approved.Approve(approved.Version, Guid.NewGuid(), new DateTimeOffset(2026, 11, 1, 8, 0, 0, TimeSpan.Zero));
+        approved.WithDueDate().Approve(approved.Version, Guid.NewGuid(), new DateTimeOffset(2026, 11, 1, 8, 0, 0, TimeSpan.Zero));
         fixture.Store.Plans[approved.Id] = approved;
         foreach (var expectedVersion in new[] { approved.Version - 1, approved.Version })
         {
@@ -2541,7 +2573,7 @@ public sealed class ManufacturingCommandServiceTests
         var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
             [new PlannedInput(Roll, new Kilograms(1000m))]);
         plan.RecordPreparer(OtherActor.ToString("D"));
-        plan.Approve(plan.Version, Guid.NewGuid(), new DateTimeOffset(2026, 11, 1, 8, 0, 0, TimeSpan.Zero));
+        plan.WithDueDate().Approve(plan.Version, Guid.NewGuid(), new DateTimeOffset(2026, 11, 1, 8, 0, 0, TimeSpan.Zero));
         fixture.Store.Plans[plan.Id] = plan;
         var version = plan.Version;
         var service = new ManufacturingCommandService(fixture.Store, fixture.Store, fixture.Store,
@@ -2730,6 +2762,268 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Empty(fixture.Store.Commands);
     }
 
+    private static readonly DateOnly DueDay = new(2026, 12, 31);
+
+    private static (Fixture Fixture, ProductionPlan Plan, ManufacturingCommandService Service) DueDateCase(
+        bool withDueDateStore = true)
+    {
+        var fixture = new Fixture();
+        var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(Roll, new Kilograms(1000m))]);
+        fixture.Store.Plans[plan.Id] = plan;
+        var service = new ManufacturingCommandService(fixture.Store, fixture.Store, fixture.Store,
+            new ManufacturingMassVerifier(fixture.Settings), fixture.Authority, fixture.CompanyContext, fixture.User,
+            fixture.Correlation, new FixedTime(), manufacturingTolerances: fixture.Settings,
+            planDueDates: withDueDateStore ? fixture.Store : null);
+        return (fixture, plan, service);
+    }
+
+    [Fact]
+    public async Task A_hand_entered_termin_is_stored_once_and_the_key_replays_the_answer()
+    {
+        // Üretim F-010a (URT-D29): the day the user typed is kept as it is; the plan's version stays, its termin revision
+        // moves; the same key answers the stored view without writing again.
+        var (fixture, plan, service) = DueDateCase();
+        var request = new ChangePlanDueDateRequestV1(1, 0, DueDay);
+
+        var first = await service.ChangePlanDueDateAsync(plan.Id, request, "key-1", "manufacturing.plans.write",
+            CancellationToken.None);
+        var replay = await service.ChangePlanDueDateAsync(plan.Id, request, "key-1", "manufacturing.plans.write",
+            CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Ok, false), (first.Status, first.IsReplay));
+        Assert.Equal((ManufacturingApiStatus.Ok, true), (replay.Status, replay.IsReplay));
+        var view = Assert.IsType<PlanViewV1>(first.Resource);
+        Assert.Equal((DueDay as DateOnly?, 1L, 1L), (view.RequestedDueDate, view.DueDateRevision, view.Version));
+        Assert.Equal(view.RequestedDueDate, replay.Resource!.RequestedDueDate);
+        Assert.Single(fixture.Store.Writes);
+        Assert.Single(fixture.Store.Commands);
+        Assert.Equal((1L, 1L), (plan.Version, plan.DueDateRevision));
+    }
+
+    [Fact]
+    public async Task The_same_key_with_another_day_is_refused_and_writes_nothing_more()
+    {
+        var (fixture, plan, service) = DueDateCase();
+        await service.ChangePlanDueDateAsync(plan.Id, new(1, 0, DueDay), "key-1", "manufacturing.plans.write",
+            CancellationToken.None);
+
+        var other = await service.ChangePlanDueDateAsync(plan.Id, new(1, 0, DueDay.AddDays(1)), "key-1",
+            "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingApiCodes.IdempotencyConflict),
+            (other.Status, other.Code));
+        Assert.Single(fixture.Store.Writes);
+        Assert.Equal(DueDay, plan.RequestedDueDate);
+    }
+
+    [Fact]
+    public async Task A_termin_is_removed_with_null_and_a_stale_termin_revision_is_409()
+    {
+        var (fixture, plan, service) = DueDateCase();
+        await service.ChangePlanDueDateAsync(plan.Id, new(1, 0, DueDay), "key-1", "manufacturing.plans.write",
+            CancellationToken.None);
+
+        var stale = await service.ChangePlanDueDateAsync(plan.Id, new(1, 0, null), "key-2",
+            "manufacturing.plans.write", CancellationToken.None);
+        var removed = await service.ChangePlanDueDateAsync(plan.Id, new(1, 1, null), "key-3",
+            "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingRuleCodes.PlanDueDateChanged),
+            (stale.Status, stale.Code));
+        Assert.Equal(ManufacturingApiStatus.Ok, removed.Status);
+        Assert.Null(removed.Resource!.RequestedDueDate);
+        Assert.Equal(2L, removed.Resource.DueDateRevision);
+        Assert.Equal(2, fixture.Store.Writes.Count);
+        Assert.Null(plan.RequestedDueDate);
+    }
+
+    [Fact]
+    public async Task A_closed_order_or_no_change_refuses_the_termin_with_422()
+    {
+        var (fixture, plan, service) = DueDateCase();
+
+        var noChange = await service.ChangePlanDueDateAsync(plan.Id, new(1, 0, null), "key-1",
+            "manufacturing.plans.write", CancellationToken.None);
+        fixture.Store.OrderClosed = true;
+        var closed = await service.ChangePlanDueDateAsync(plan.Id, new(1, 0, DueDay), "key-2",
+            "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingRuleCodes.PlanDueDateNoChange),
+            (noChange.Status, noChange.Code));
+        Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingRuleCodes.PlanDueDateOrderClosed),
+            (closed.Status, closed.Code));
+        Assert.Equal((null as DateOnly?, 0L), (plan.RequestedDueDate, plan.DueDateRevision));
+    }
+
+    [Fact]
+    public async Task Without_the_termin_store_the_termin_is_503_and_nothing_changes()
+    {
+        var (_, plan, service) = DueDateCase(withDueDateStore: false);
+
+        var result = await service.ChangePlanDueDateAsync(plan.Id, new(1, 0, DueDay), "key-1",
+            "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Unavailable, result.Status);
+        Assert.Equal(0L, plan.DueDateRevision);
+    }
+
+    [Fact]
+    public async Task A_malformed_termin_request_is_400_before_any_read()
+    {
+        var (fixture, plan, service) = DueDateCase();
+        var cases = new (ChangePlanDueDateRequestV1? Request, string Field)[]
+        {
+            (null, "expectedVersion"),
+            (new(0, 0, DueDay), "expectedVersion"),
+            (new(1, -1, DueDay), "expectedDueDateRevision"),
+            (new(1, 0, DateOnly.MinValue), "requestedDueDate"),
+        };
+
+        foreach (var (request, field) in cases)
+        {
+            var result = await service.ChangePlanDueDateAsync(plan.Id, request, "key-1", "manufacturing.plans.write",
+                CancellationToken.None);
+            Assert.Equal((ManufacturingApiStatus.Invalid, field), (result.Status, result.Field));
+        }
+
+        Assert.Empty(fixture.Calls);
+        Assert.Empty(fixture.Store.Commands);
+        Assert.Equal(0L, plan.DueDateRevision);
+    }
+
+    [Fact]
+    public async Task A_plan_termin_before_the_Istanbul_business_day_is_422_and_nothing_changes()
+    {
+        // URT-D66 (1): the server's clock gives today's Istanbul business day (2026-09-18); the client sends no "today".
+        var (fixture, plan, service) = DueDateCase();
+
+        var past = await service.ChangePlanDueDateAsync(plan.Id, new(1, 0, new DateOnly(2026, 9, 17)), "key-1",
+            "manufacturing.plans.write", CancellationToken.None);
+        var today = await service.ChangePlanDueDateAsync(plan.Id, new(1, 0, new DateOnly(2026, 9, 18)), "key-2",
+            "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingRuleCodes.DueDateInPast), (past.Status, past.Code));
+        Assert.Equal(ManufacturingApiStatus.Ok, today.Status);
+        Assert.Equal([new DateOnly(2026, 9, 18), new DateOnly(2026, 9, 18)], fixture.Store.BusinessDays);
+        Assert.Single(fixture.Store.Writes);
+    }
+
+    private static (Fixture Fixture, ManufacturingCommandService Service) OrderDueDateCase(bool withOrderDueDateStore = true)
+    {
+        var fixture = new Fixture();
+        var service = new ManufacturingCommandService(fixture.Store, fixture.Store, fixture.Store,
+            new ManufacturingMassVerifier(fixture.Settings), fixture.Authority, fixture.CompanyContext, fixture.User,
+            fixture.Correlation, new FixedTime(), manufacturingTolerances: fixture.Settings,
+            orderDueDates: withOrderDueDateStore ? fixture.Store : null);
+        return (fixture, service);
+    }
+
+    [Fact]
+    public async Task An_order_termin_change_is_stored_once_and_the_key_replays_the_answer()
+    {
+        // URT-D66 (3)/(4): the order opens with the plan's termin; the change moves the order's termin revision only.
+        var (fixture, service) = OrderDueDateCase();
+        var order = await fixture.ApprovedOrderAsync();
+        var version = order.Version;
+        var request = new ChangeOrderDueDateRequestV1(0, DueDay.AddDays(10));
+
+        var first = await service.ChangeOrderDueDateAsync(order.Id, request, "key-1", "manufacturing.orders.write",
+            CancellationToken.None);
+        var replay = await service.ChangeOrderDueDateAsync(order.Id, request, "key-1", "manufacturing.orders.write",
+            CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Ok, false), (first.Status, first.IsReplay));
+        Assert.Equal((ManufacturingApiStatus.Ok, true), (replay.Status, replay.IsReplay));
+        var view = Assert.IsType<OrderViewV1>(first.Resource);
+        Assert.Equal((DueDay.AddDays(10) as DateOnly?, 1L, DueDay as DateOnly?, true, version),
+            (view.DueDate, view.DueDateRevision, view.PlanDueDate, view.DueDateDiffersFromPlan, view.Version));
+        Assert.Equal(view.DueDate, replay.Resource!.DueDate);
+        Assert.Single(fixture.Store.Writes);
+        Assert.Single(fixture.Store.Commands);
+        Assert.Equal((1L, version), (order.DueDateRevision, order.Version));
+    }
+
+    [Fact]
+    public async Task A_stale_order_termin_revision_is_409_and_a_closed_order_no_change_or_past_day_is_422()
+    {
+        var (fixture, service) = OrderDueDateCase();
+        var order = await fixture.ApprovedOrderAsync();
+
+        var stale = await service.ChangeOrderDueDateAsync(order.Id, new(1, DueDay.AddDays(1)), "key-1",
+            "manufacturing.orders.write", CancellationToken.None);
+        var noChange = await service.ChangeOrderDueDateAsync(order.Id, new(0, DueDay), "key-2",
+            "manufacturing.orders.write", CancellationToken.None);
+        var past = await service.ChangeOrderDueDateAsync(order.Id, new(0, new DateOnly(2026, 9, 17)), "key-3",
+            "manufacturing.orders.write", CancellationToken.None);
+        var balanced = await fixture.BalancedOrderAsync();
+        balanced.Close(balanced.Version, Actor, At);
+        var closed = await service.ChangeOrderDueDateAsync(balanced.Id, new(0, DueDay.AddDays(1)), "key-4",
+            "manufacturing.orders.write", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingRuleCodes.OrderDueDateChanged),
+            (stale.Status, stale.Code));
+        Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingRuleCodes.OrderDueDateNoChange),
+            (noChange.Status, noChange.Code));
+        Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingRuleCodes.DueDateInPast),
+            (past.Status, past.Code));
+        Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingRuleCodes.OrderDueDateOrderClosed),
+            (closed.Status, closed.Code));
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Equal((DueDay as DateOnly?, 0L), (order.DueDate, order.DueDateRevision));
+    }
+
+    [Fact]
+    public async Task An_unknown_order_is_404_for_the_order_termin()
+    {
+        var (fixture, service) = OrderDueDateCase();
+
+        var result = await service.ChangeOrderDueDateAsync(Guid.NewGuid(), new(0, DueDay), "key-1",
+            "manufacturing.orders.write", CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.NotFound, result.Status);
+        Assert.Empty(fixture.Store.Writes);
+    }
+
+    [Fact]
+    public async Task Without_the_order_termin_store_the_order_termin_is_503_and_nothing_changes()
+    {
+        var (fixture, service) = OrderDueDateCase(withOrderDueDateStore: false);
+        var order = await fixture.ApprovedOrderAsync();
+
+        var result = await service.ChangeOrderDueDateAsync(order.Id, new(0, DueDay.AddDays(1)), "key-1",
+            "manufacturing.orders.write", CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Unavailable, result.Status);
+        Assert.Equal((DueDay as DateOnly?, 0L), (order.DueDate, order.DueDateRevision));
+        Assert.Empty(fixture.Store.Writes);
+    }
+
+    [Fact]
+    public async Task A_malformed_order_termin_request_is_400_before_any_read()
+    {
+        var (fixture, service) = OrderDueDateCase();
+        var order = await fixture.ApprovedOrderAsync();
+        var cases = new (Guid OrderId, ChangeOrderDueDateRequestV1? Request, string Field)[]
+        {
+            (order.Id, null, "expectedDueDateRevision"),
+            (Guid.Empty, new(0, DueDay.AddDays(1)), "expectedDueDateRevision"),
+            (order.Id, new(-1, DueDay.AddDays(1)), "expectedDueDateRevision"),
+            (order.Id, new(0, DateOnly.MinValue), "dueDate"),
+        };
+
+        foreach (var (orderId, request, field) in cases)
+        {
+            var result = await service.ChangeOrderDueDateAsync(orderId, request, "key-1", "manufacturing.orders.write",
+                CancellationToken.None);
+            Assert.Equal((ManufacturingApiStatus.Invalid, field), (result.Status, result.Field));
+        }
+
+        Assert.Empty(fixture.Calls);
+        Assert.Empty(fixture.Store.Commands);
+        Assert.Equal(0L, order.DueDateRevision);
+    }
+
     private static (Fixture Fixture, ProductionPlan Plan, SubcontractOrderPort Orders, ManufacturingCommandService Service)
         CustomerGoodsLinkCase(bool withOrderPort = true)
     {
@@ -2911,6 +3205,16 @@ public sealed class ManufacturingCommandServiceTests
     {
         public List<(Guid PlanId, ManufacturingPlanAllocationReleaseReasonV1 Reason)> Releases { get; } = [];
 
+        public List<Guid> ReleasedPlanWrites { get; } = [];
+
+        public async Task<T> WriteReleasedPlanAsync<T>(Guid planId, Func<CancellationToken, Task<T>> write,
+            ManufacturingCommandMetadata metadata, CancellationToken cancellationToken)
+        {
+            var written = await write(cancellationToken);
+            ReleasedPlanWrites.Add(planId);
+            return written;
+        }
+
         public Task<T> ApproveAndAllocateAsync<T>(Guid planId, IReadOnlyDictionary<Guid, long> labelVersions,
             Func<CancellationToken, Task<T>> approve, ManufacturingCommandMetadata metadata,
             CancellationToken cancellationToken) =>
@@ -2926,9 +3230,55 @@ public sealed class ManufacturingCommandServiceTests
         }
     }
 
+    [Fact]
+    public async Task Paint_save_and_preview_require_actual_owner_references_but_replay_does_not_replace_the_stored_snapshot()
+    {
+        var source = new PaintSelectionPort();
+        var fixture = new Fixture(paintSelections: source); fixture.WorkCenters.Kind = "Paint";
+        var selection = new PlanPaintSelectionV1(Guid.NewGuid(), "12", "3", "synthetic-source:3", Guid.NewGuid(), Guid.NewGuid(), "4", "5");
+        var request = Plan(LabelVersion) with { ProcessSpec = new(PaintSelection: selection) };
+        var preview = await fixture.Service.PreviewPlanAsync(new(WorkCenter, request.Inputs, request.Target,
+            ProcessSpec: request.ProcessSpec), ErpPermissions.ManufacturingPlansWrite, default);
+        Assert.Equal(ManufacturingApiStatus.Ok, preview.Status); Assert.Empty(fixture.Store.Writes);
+        var saved = await fixture.Service.SavePlanAsync(request, "paint-save", ErpPermissions.ManufacturingPlansWrite, default);
+        Assert.Equal(ManufacturingApiStatus.Created, saved.Status); Assert.Equal(selection, saved.Resource!.ProcessSpec!.PaintSelection);
+        var readsBeforeReplay = source.Reads; source.Outcome = ManufacturingPaintSelectionOutcomeV1.Unavailable;
+        var replay = await fixture.Service.SavePlanAsync(request, "paint-save", ErpPermissions.ManufacturingPlansWrite, default);
+        Assert.True(replay.IsReplay); Assert.Equal(readsBeforeReplay, source.Reads);
+        Assert.Equal(selection, replay.Resource!.ProcessSpec!.PaintSelection);
+        var unavailable = await fixture.Service.SavePlanAsync(request with { PlanId = Guid.NewGuid() }, "paint-unavailable", ErpPermissions.ManufacturingPlansWrite, default);
+        Assert.Equal(ManufacturingApiStatus.Unavailable, unavailable.Status); Assert.Single(fixture.Store.Plans);
+    }
+
+    [Fact]
+    public async Task Paint_free_text_is_not_a_product_membership_and_revoked_authority_after_owner_read_writes_nothing()
+    {
+        var source = new PaintSelectionPort(); var fixture = new Fixture(paintSelections: source); fixture.WorkCenters.Kind = "Paint";
+        var freeText = Plan(LabelVersion) with { ProcessSpec = new(PaintDescription: "Sentetik boya / tedarikçi notu") };
+        var refused = await fixture.Service.SavePlanAsync(freeText, "paint-free-text", ErpPermissions.ManufacturingPlansWrite, default);
+        Assert.Equal(ManufacturingPaintCodesV1.Required, refused.Code); Assert.Empty(fixture.Store.Writes); Assert.Equal(0, source.Reads);
+        source.DuringRead = () => fixture.Authority.Scope = PermissionScope.Denied;
+        var selection = new PlanPaintSelectionV1(Guid.NewGuid(), "12", "3", "synthetic-source:3", Guid.NewGuid(), Guid.NewGuid(), "4", "5");
+        var denied = await fixture.Service.SavePlanAsync(freeText with { ProcessSpec = new(PaintSelection: selection) },
+            "paint-revoked", ErpPermissions.ManufacturingPlansWrite, default);
+        Assert.Equal(ManufacturingApiStatus.Denied, denied.Status); Assert.Empty(fixture.Store.Writes);
+    }
+
+    private sealed class PaintSelectionPort : IManufacturingPaintSelectionSourceV1
+    {
+        public int Reads; public Action? DuringRead;
+        public ManufacturingPaintSelectionOutcomeV1 Outcome = ManufacturingPaintSelectionOutcomeV1.Available;
+        public Task<ManufacturingPaintSelectionAnswerV1> ValidateAsync(Guid companyId, PlanPaintSelectionV1 selection, CancellationToken cancellationToken)
+        { Reads++; DuringRead?.Invoke(); return Task.FromResult(new ManufacturingPaintSelectionAnswerV1(Outcome, companyId,
+            Outcome == ManufacturingPaintSelectionOutcomeV1.Available ? selection : null)); }
+        public Task<ManufacturingPaintCatalogV1> ListAsync(Guid companyId, string? query, CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
     private sealed class Fixture
     {
-        public Fixture(bool withWorkCenters = true, bool withPlanAllocations = true)
+        public Fixture(bool withWorkCenters = true, bool withPlanAllocations = true, bool withOutputCorrections = true,
+            IManufacturingPaintSelectionSourceV1? paintSelections = null,
+            ISettingsManufacturingParameterProviderV1? manufacturingParameters = null)
         {
             CompanyContext = new MutableCompanyContext(Company);
             var correlation = new CorrelationContext();
@@ -2941,13 +3291,16 @@ public sealed class ManufacturingCommandServiceTests
             PartyAccounts = new PartyAccountPort(Calls);
             InputIssues = new InputIssuePort(Store);
             ReturnOutputs = new ReturnOutputPort(Store);
+            OutputCorrections = new OutputCorrectionPort(Store);
             Correlation = correlation;
             Service = new ManufacturingCommandService(Store, Store, Store, new ManufacturingMassVerifier(Settings), Authority,
                 CompanyContext, User, correlation, new FixedTime(), ParentRolls, withWorkCenters ? WorkCenters : null,
                 InputIssues, ReturnOutputs, manufacturingTolerances: Settings,
                 planRevisions: Store,
                 productTechnicalSnapshots: ProductSnapshots, partyAccounts: PartyAccounts,
-                contextualParentRolls: ParentRolls, planAllocations: withPlanAllocations ? PlanAllocations : null);
+                contextualParentRolls: ParentRolls, planAllocations: withPlanAllocations ? PlanAllocations : null,
+                outputCorrections: withOutputCorrections ? OutputCorrections : null, paintSelections: paintSelections,
+                manufacturingParameters: manufacturingParameters);
         }
 
         public List<string> Calls { get; } = [];
@@ -2975,6 +3328,8 @@ public sealed class ManufacturingCommandServiceTests
         public InputIssuePort InputIssues { get; }
 
         public ReturnOutputPort ReturnOutputs { get; }
+
+        public OutputCorrectionPort OutputCorrections { get; }
 
         public User User { get; } = new();
 
@@ -3004,7 +3359,7 @@ public sealed class ManufacturingCommandServiceTests
         {
             var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
                 [new PlannedInput(Roll, new Kilograms(1000m))]);
-            plan.Approve(plan.Version, Actor, At);
+            plan.WithDueDate().Approve(plan.Version, Actor, At);
             var order = ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
             Store.Orders[order.Id] = order;
             await Task.CompletedTask;
@@ -3016,12 +3371,20 @@ public sealed class ManufacturingCommandServiceTests
     {
         public List<ManufacturingInventoryInputIssuePortCommandV1> Commands { get; } = [];
 
+        /// <summary>Inventory's refusal of the issue, thrown before anything is written (SAT-D318 tests).</summary>
+        public Func<ManufacturingCommandMetadata, Exception>? Refusal { get; set; }
+
         public Task<ManufacturingInventoryInputIssuePortResultV1> IssueAsync(
             ManufacturingInventoryInputIssuePortCommandV1 command,
             ManufacturingCommandMetadata metadata,
             CancellationToken cancellationToken)
         {
             Commands.Add(command);
+            if (Refusal is { } refusal)
+            {
+                throw refusal(metadata);
+            }
+
             var order = store.Orders[command.OrderId];
             order.IssueInput(command.ExpectedOrderVersion, command.IssueId, command.ParentLabelId,
                 command.Quantity, command.OccurredAtUtc);
@@ -3067,7 +3430,7 @@ public sealed class ManufacturingCommandServiceTests
             Outputs.Add(command);
             var order = store.Orders[command.OrderId];
             order.DeclareOutput(command.ExpectedOrderVersion, command.OutputId, command.ParentLabelId,
-                command.OutputClass, command.Quantity, command.OccurredAtUtc);
+                command.OutputClass, command.Quantity, command.OccurredAtUtc, command.OutputLine);
             Complete(store, metadata, order);
             return Task.FromResult(new ManufacturingInventoryOutputPortResultV1(
                 order.Version, command.ExpectedParentLabelVersion + 1, 1, false));
@@ -3198,6 +3561,10 @@ public sealed class ManufacturingCommandServiceTests
     private sealed class ParentRollPort(List<string> calls)
         : IInventoryParentRollValidationV1, IInventoryContextualParentRollReferencesV1
     {
+        public string PhysicalKg { get; set; } = "10000";
+        public string? UnblockedPhysicalKg { get; set; }
+        public string BlockedPhysicalKg { get; set; } = "0";
+
         public int Asked { get; private set; }
 
         public Exception? Exception { get; set; }
@@ -3222,7 +3589,8 @@ public sealed class ManufacturingCommandServiceTests
 
             return Task.FromResult(new InventoryParentRollReferenceV1(
                 Company, selection.LabelId, selection.ExpectedLabelVersion, "LBL-1", Guid.NewGuid(),
-                new InventoryLotV1(Guid.NewGuid(), null, null), null, null, "Complete", [], [], "10", "10", "0", [],
+                new InventoryLotV1(Guid.NewGuid(), null, null), null, null, "Complete", [], [],
+                PhysicalKg, UnblockedPhysicalKg ?? PhysicalKg, BlockedPhysicalKg, [],
                 DraftSelectable: true, DraftRefusalCode: null, ProductionUseRequiresRevalidation: true)
             { ProductVersion = AcceptedProductFixtureVersion });
         }
@@ -3243,7 +3611,8 @@ public sealed class ManufacturingCommandServiceTests
 
             return Task.FromResult(new InventoryParentRollReferenceV1(
                 Company, selection.LabelId, selection.ExpectedLabelVersion, "LBL-1", Guid.NewGuid(),
-                new InventoryLotV1(Guid.NewGuid(), null, null), null, null, "Complete", [], [], "10", "10", "0", [],
+                new InventoryLotV1(Guid.NewGuid(), null, null), null, null, "Complete", [], [],
+                PhysicalKg, UnblockedPhysicalKg ?? PhysicalKg, BlockedPhysicalKg, [],
                 DraftSelectable: true, DraftRefusalCode: null, ProductionUseRequiresRevalidation: true)
             { ProductVersion = AcceptedProductFixtureVersion });
         }
@@ -3406,7 +3775,8 @@ public sealed class ManufacturingCommandServiceTests
 
     /// <summary>An in-memory store with the store's contract: the company's records, the domain's rules.</summary>
     private sealed class FakeStore : IManufacturingPlanStore, IManufacturingPlanRevisionStore,
-        IManufacturingOrderStore, IManufacturingCommandLog, IManufacturingPlanSalesOrderLinkStore
+        IManufacturingOrderStore, IManufacturingCommandLog, IManufacturingPlanSalesOrderLinkStore,
+        IManufacturingPlanDueDateStore, IManufacturingOrderDueDateStore
     {
         /// <summary>Whether the plan's order is closed when the sales order link changes (U2-b).</summary>
         public bool OrderClosed { get; set; }
@@ -3423,6 +3793,38 @@ public sealed class ManufacturingCommandServiceTests
             Complete(metadata, plan);
             Writes.Add(metadata);
             return Task.FromResult(plan);
+        }
+
+        public Task<ProductionPlan> ChangeDueDateAsync(Guid planId, long expectedVersion, long expectedDueDateRevision,
+            DateOnly? dueDate, DateOnly businessToday, ManufacturingCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
+        {
+            Guard();
+            OnWrite?.Invoke(metadata);
+            var plan = Plans.GetValueOrDefault(planId)
+                ?? throw new ManufacturingStoreException(ManufacturingStoreCodes.PlanNotFound, "yok");
+            BusinessDays.Add(businessToday);
+            plan.ChangeDueDate(expectedVersion, expectedDueDateRevision, dueDate, OrderClosed, businessToday);
+            Complete(metadata, plan);
+            Writes.Add(metadata);
+            return Task.FromResult(plan);
+        }
+
+        /// <summary>The business days the service handed to the termin writes (URT-D66 (1)).</summary>
+        public List<DateOnly> BusinessDays { get; } = [];
+
+        public Task<ProductionOrder> ChangeOrderDueDateAsync(Guid orderId, long expectedDueDateRevision, DateOnly dueDate,
+            DateOnly businessToday, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            Guard();
+            OnWrite?.Invoke(metadata);
+            var order = Orders.GetValueOrDefault(orderId)
+                ?? throw new ManufacturingStoreException(ManufacturingStoreCodes.OrderNotFound, "yok");
+            BusinessDays.Add(businessToday);
+            order.ChangeDueDate(expectedDueDateRevision, dueDate, businessToday);
+            Complete(metadata, order);
+            Writes.Add(metadata);
+            return Task.FromResult(order);
         }
 
         public Dictionary<(string Command, string KeyHash), ManufacturingCommandRecord> Commands { get; } = [];
@@ -3528,8 +3930,17 @@ public sealed class ManufacturingCommandServiceTests
 
         public Task<ProductionPlan> RevisePlanAsync(Guid planId, long expectedVersion, Guid workCenterId,
             ManufacturingProcess workCenterProcess, IReadOnlyList<PlannedInput> inputs, ProductionTarget? target,
-            string reason, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+            string reason, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            Guard();
+            OnWrite?.Invoke(metadata);
+            var plan = Plans.GetValueOrDefault(planId)
+                ?? throw new ManufacturingStoreException(ManufacturingStoreCodes.PlanNotFound, "yok");
+            plan.Revise(expectedVersion, workCenterId, workCenterProcess, inputs, target);
+            Complete(metadata, plan);
+            Writes.Add(metadata);
+            return Task.FromResult(plan);
+        }
 
         public Task<IReadOnlyList<ManufacturingPlanRevision>?> ListPlanRevisionsAsync(Guid planId,
             CancellationToken cancellationToken = default)

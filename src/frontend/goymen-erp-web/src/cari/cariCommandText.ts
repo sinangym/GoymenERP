@@ -366,6 +366,39 @@ export const CARI_ACCOUNT_STATUS_TEXT = {
     deactivate: 'Şirket hesabı pasife alındı.',
     activate: 'Şirket hesabı aktifleştirildi.',
   },
+  /**
+   * ALS-D99 — the deactivation warning list. It warns, it never blocks: the actor sees what is still open (counts
+   * only, no amount) and confirms. A line that could not be checked is a warning too, never "nothing open".
+   */
+  warning: {
+    title: 'Pasife almadan önce kontrol',
+    loading: 'Açık bakiye ve açık belgeler kontrol ediliyor…',
+    clear: 'Bu şirkette açık bakiye veya açık belge görünmüyor.',
+    intro:
+      'Pasife alma engellenmez; ancak aşağıdaki durumları gördüğünüzü onaylamanız gerekir. Pasif hesapta yeni ' +
+      'işlem açılmaz, mevcut kayıtlar silinmez.',
+    kind: {
+      'finance-open-balance': 'Açık cari bakiye (Finans)',
+      'sales-open-documents': 'Açık satış belgeleri (Satış)',
+      'purchasing-open-documents': 'Açık satın alma belgeleri (Satın Alma)',
+    },
+    outcome: {
+      clear: 'Açık kayıt yok',
+      open: (count: number) => `${count} açık kayıt`,
+      unavailable: 'Kontrol edilemedi — ilgili modül şu an yanıt vermiyor ya da bağlantısı henüz yok',
+      denied: 'Bu bilgiyi görme yetkiniz yok',
+    },
+    acknowledge: 'Yukarıdaki uyarıları gördüm; hesabı yine de pasife almak istiyorum.',
+    acknowledgeRequired: 'Pasife almak için uyarıları gördüğünüzü onaylayın.',
+    failedTitle: 'Uyarı listesi okunamadı',
+    failedDetail:
+      'Açık bakiye ve belge kontrolü okunamadığı için pasife alma gönderilmez. Uyarıyı yeniden okuyun.',
+    forbidden: 'Uyarı listesini okuma yetkiniz yok; pasife alma gönderilmez.',
+    offline: 'Bağlantı yok; uyarı listesi bağlantı gelince yeniden okunabilir.',
+    retry: 'Uyarıyı yeniden oku',
+    changed:
+      'Uyarı listesi değişti; güncel listeyi inceleyip onayınızı yeniden verin.',
+  },
   /** Where the shared command texts describe another command's situation. */
   failure: {
     'not-found': {
@@ -452,6 +485,12 @@ export const CARI_COMMAND_TEXT = {
     unexpected: {
       title: 'İşlem tamamlanamadı',
       detail: 'Sunucu isteği reddetti; iş etkisi oluşmadı.',
+    },
+    'warning-acknowledgement-required': {
+      title: 'Uyarı onayı gerekli',
+      detail:
+        'Bu hesabın pasife alma uyarısı onay gerektiriyor; işlem uygulanmadı. Uyarı listesini inceleyip ' +
+        'onaylayın ve yeniden gönderin.',
     },
     'contract-not-ready': {
       title: 'Uyumlu istemci gerekli',

@@ -3,9 +3,14 @@ import { describe, expect, it } from 'vitest';
 import {
   OWNER_KIND,
   VERSION_PAGE_SIZE,
+  DOCUMENT_PROBLEM,
+  decodeDocumentLinkCandidates,
+  decodeDocumentLinkWrite,
   decodeDocumentList,
   decodeDocumentVersionPage,
   decodeDocumentVersionWrite,
+  linkCandidatesPath,
+  linkPath,
   versionContentPath,
   versionHistoryPath,
   versionsPath,
@@ -40,17 +45,22 @@ function purchaseOrderDocument(over: Record<string, unknown> = {}) {
 }
 
 describe('document owner contract', () => {
-  it('pins the canonical counterparty, inventory label, purchase-order and sales-order identities', () => {
+  it('pins every canonical document owner identity', () => {
     expect(OWNER_KIND).toEqual({
+      companyBranding: 'documents.company-branding',
       counterpartyParty: 'counterparty.party',
       inventoryMaterialLabel: 'inventory.material-label',
       purchasingPurchaseOrder: 'purchasing.purchase-order',
+      purchasingInvoiceImport: 'purchasing.invoice-import',
+      financeCashExchange: 'finance.cash-exchange',
       salesOrder: 'sales.order',
+      logisticsDispatchNote: 'logistics.dispatch-note',
+      financeOfficialSalesInvoice: 'finance.official-sales-invoice',
     });
   });
 
   it('accepts purchase-order rows only for the exact company, owner kind and owner id', () => {
-    const response = { items: [purchaseOrderDocument()], canUpload: true, limits: LIMITS };
+    const response = { items: [purchaseOrderDocument()], canUpload: true, limits: LIMITS, canLink: false };
     expect(decodeDocumentList(response, COMPANY, OWNER_KIND.purchasingPurchaseOrder, ORDER)?.items).toHaveLength(1);
     expect(decodeDocumentList(response, OTHER, OWNER_KIND.purchasingPurchaseOrder, ORDER)).toBeNull();
     expect(decodeDocumentList(response, COMPANY, OWNER_KIND.purchasingPurchaseOrder, OTHER)).toBeNull();
@@ -88,6 +98,12 @@ describe('document version contract (#677)', () => {
     expect(decodeDocumentVersionPage(page([], null), { ...bound, pageSize: 2, cursor: null })).toBeNull();
   });
 
+  it('accepts a downloadable system-generated version (KLN-D60)', () => {
+    const answer = { ...page([2], null), versions: [version(2, { scanState: 'SystemGenerated', downloadable: true })] };
+    const decoded = decodeDocumentVersionPage(answer, { ...bound, pageSize: 2, cursor: null });
+    expect(decoded?.versions.map((v) => [v.scanState, v.downloadable])).toEqual([['SystemGenerated', true]]);
+  });
+
   it.each([
     ['a missing nextCursor', { documentId: DOC, versions: [version(2), version(1)] }, null],
     ['another document id', page([2, 1], null, { documentId: OTHER }), null],
@@ -106,6 +122,7 @@ describe('document version contract (#677)', () => {
     ['a row at the asked cursor', page([5, 4], null), '5'],
     ['a row above the asked cursor', page([6, 4], null), '5'],
     ['a downloadable unscanned version', { ...page([2], null), versions: [version(2, { scanState: 'NotScanned' })] }, null],
+    ['an unknown scan state', { ...page([2], null), versions: [version(2, { scanState: 'Infected', downloadable: false })] }, null],
   ] as const)('refuses %s', (_name, answer, cursor) => {
     expect(decodeDocumentVersionPage(answer, { ...bound, pageSize: 2, cursor })).toBeNull();
   });
@@ -124,5 +141,78 @@ describe('document version contract (#677)', () => {
     expect(decodeDocumentVersionWrite({ document: version(2), originalCorrelationId: 'c-1' }, sent)).toBeNull();
     expect(decodeDocumentVersionWrite({ document: version(2), isReplay: false, originalCorrelationId: '' }, sent)).toBeNull();
     expect(decodeDocumentVersionWrite({ document: null, isReplay: false, originalCorrelationId: 'c-1' }, sent)).toBeNull();
+  });
+});
+
+describe('existing document link contract (KLN-D49/D50)', () => {
+  const DOC = purchaseOrderDocument().id;
+  const SHA = 'b'.repeat(64);
+  const PARTY = 'eeeeeeee-0000-4000-8000-000000000005';
+  const asked = { ownerKind: OWNER_KIND.purchasingPurchaseOrder, ownerId: ORDER, sha256: SHA, sizeBytes: 68 };
+  const candidate = (over: Record<string, unknown> = {}) => ({
+    documentId: DOC,
+    versionNo: 2,
+    fileName: 'Kantar-fisi.png',
+    contentType: 'image/png',
+    sizeBytes: 68,
+    uploadedAtUtc: '2026-10-09T09:00:00Z',
+    sourceOwnerKind: OWNER_KIND.counterpartyParty,
+    sourceOwnerId: PARTY,
+    ...over,
+  });
+  const answer = (items: readonly unknown[], over: Record<string, unknown> = {}) => ({
+    ownerKind: OWNER_KIND.purchasingPurchaseOrder,
+    ownerId: ORDER,
+    sha256: SHA,
+    items,
+    ...over,
+  });
+
+  it('pins the candidate and link routes and the stable link problem codes', () => {
+    expect(linkCandidatesPath(OWNER_KIND.purchasingPurchaseOrder, ORDER, SHA)).toBe(
+      `/documents/link-candidates?ownerKind=purchasing.purchase-order&ownerId=${ORDER}&sha256=${SHA}`,
+    );
+    expect(linkPath(DOC)).toBe(`/documents/${DOC}/links`);
+    expect(DOCUMENT_PROBLEM.alreadyLinked).toBe('document_already_linked');
+    expect(DOCUMENT_PROBLEM.linkNotAccepted).toBe('document_link_not_accepted');
+  });
+
+  it('requires canLink on the list answer', () => {
+    const response = { items: [], canUpload: true, limits: LIMITS, canLink: true };
+    expect(decodeDocumentList(response, COMPANY, OWNER_KIND.purchasingPurchaseOrder, ORDER)?.canLink).toBe(true);
+    expect(decodeDocumentList({ items: [], canUpload: true, limits: LIMITS }, COMPANY, OWNER_KIND.purchasingPurchaseOrder, ORDER)).toBeNull();
+    expect(decodeDocumentList({ ...response, canLink: 'yes' }, COMPANY, OWNER_KIND.purchasingPurchaseOrder, ORDER)).toBeNull();
+  });
+
+  it('accepts the candidates of the asked record and hash, empty included', () => {
+    expect(decodeDocumentLinkCandidates(answer([candidate()]), asked)?.items.map((c) => c.documentId)).toEqual([DOC]);
+    expect(decodeDocumentLinkCandidates(answer([]), asked)?.items).toEqual([]);
+  });
+
+  it.each([
+    ['another record', answer([candidate()], { ownerId: OTHER })],
+    ['another record kind', answer([candidate()], { ownerKind: OWNER_KIND.salesOrder })],
+    ['another hash', answer([candidate()], { sha256: 'c'.repeat(64) })],
+    ['a missing item list', { ownerKind: OWNER_KIND.purchasingPurchaseOrder, ownerId: ORDER, sha256: SHA }],
+    ['another file size', answer([candidate({ sizeBytes: 67 })])],
+    ['a repeated document', answer([candidate(), candidate()])],
+    ['the asked record as its own source', answer([candidate({ sourceOwnerKind: OWNER_KIND.purchasingPurchaseOrder, sourceOwnerId: ORDER })])],
+    ['a version below 1', answer([candidate({ versionNo: 0 })])],
+    ['a source id that is not a GUID', answer([candidate({ sourceOwnerId: 'party-1' })])],
+    ['a missing upload instant', answer([candidate({ uploadedAtUtc: undefined })])],
+  ] as const)('refuses candidates with %s', (_name, value) => {
+    expect(decodeDocumentLinkCandidates(value, asked)).toBeNull();
+  });
+
+  it('accepts a link answer only for the same document at the expected version under the linked record', () => {
+    const sent = { companyId: COMPANY, ownerKind: OWNER_KIND.purchasingPurchaseOrder, ownerId: ORDER, documentId: DOC, expectedCurrentVersion: 2 };
+    const write = { document: purchaseOrderDocument({ versionNo: 2 }), isReplay: false, originalCorrelationId: 'c-1' };
+    expect(decodeDocumentLinkWrite(write, sent)?.document.ownerId).toBe(ORDER);
+    expect(decodeDocumentLinkWrite({ ...write, isReplay: true }, sent)?.isReplay).toBe(true);
+    expect(decodeDocumentLinkWrite(write, { ...sent, expectedCurrentVersion: 1 })).toBeNull();
+    expect(decodeDocumentLinkWrite(write, { ...sent, ownerId: OTHER })).toBeNull();
+    expect(decodeDocumentLinkWrite(write, { ...sent, companyId: OTHER })).toBeNull();
+    expect(decodeDocumentLinkWrite(write, { ...sent, documentId: OTHER })).toBeNull();
+    expect(decodeDocumentLinkWrite({ document: write.document, originalCorrelationId: 'c-1' }, sent)).toBeNull();
   });
 });

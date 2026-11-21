@@ -76,6 +76,9 @@ public static class ProductRuntimeExtensions
         });
         services.AddScoped<ProductReader>();
         services.AddScoped<ProductService>();
+        services.AddScoped<ProductCogsClassificationRuntime>();
+        services.AddScoped<IProductCogsClassificationServiceV1>(p => p.GetRequiredService<ProductCogsClassificationRuntime>());
+        services.AddScoped<IProductCogsClassificationReadPortV1>(p => p.GetRequiredService<ProductCogsClassificationRuntime>());
         services.AddProductManufacturingTechnicalSnapshot(provider =>
             provider.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
         services.AddProductStockDisplayReferences(provider =>
@@ -220,7 +223,7 @@ internal sealed class UnconfiguredProductService : IProductService
 internal sealed class UnconfiguredProductImportService : IProductImportServiceV1
 {
     private static UnauthorizedAccessException Denied() =>
-        new("Explicit global Product import authority is unconfigured.");
+        new UnauthorizedAccessException("Explicit global Product import authority is unconfigured.");
 
     public Task<ProductImportPreviewV1> PreviewAsync(ReadOnlyMemory<byte> workbook,
         ProductImportColumnMappingV1 mapping, CancellationToken cancellationToken) => throw Denied();

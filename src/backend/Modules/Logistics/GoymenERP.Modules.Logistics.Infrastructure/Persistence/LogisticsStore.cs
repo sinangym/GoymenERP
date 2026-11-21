@@ -5,6 +5,7 @@ using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Logistics.Application.Contracts;
+using GoymenERP.Modules.Logistics.Application.Outbox;
 using GoymenERP.Modules.Logistics.Domain;
 using GoymenERP.Modules.Logistics.Domain.Loading;
 using GoymenERP.Modules.Logistics.Domain.Quantities;
@@ -23,8 +24,8 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 /// (no owner source yet): a blocked line is restored with one block at the end, and a line that was
 /// blocked and unblocked cannot be represented — LOG-5 stores the block source's events.
 /// </summary>
-public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext companyContext, IAuditEventCollector auditEvents, TimeProvider timeProvider)
-    : ILogisticsInstructionStore, ILogisticsAggregateLoadStoreV1
+public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext companyContext, IAuditEventCollector auditEvents, TimeProvider timeProvider)
+    : ILogisticsInstructionStore, ILogisticsAggregateLoadStoreV1, ILogisticsShipmentRiskGateStoreV1
 {
     private const string EntityType = "Logistics.LoadingInstruction";
     private const int ActorMaximumLength = 128;
@@ -36,9 +37,14 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
     private const decimal ColumnBound = 1_000_000_000_000_000m;
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
-    public async Task<LogisticsStoreResult> StoreInstructionAsync(LogisticsWriteEnvelope envelope, string requestHash, DateOnly effectiveOn,
+    public Task<LogisticsStoreResult> StoreInstructionAsync(LogisticsWriteEnvelope envelope, string requestHash, DateOnly effectiveOn,
         Func<LoadingInstruction> build, CancellationToken cancellationToken = default,
-        IReadOnlyList<LogisticsOrderLineAggregateLimit>? aggregateLimits = null)
+        IReadOnlyList<LogisticsOrderLineAggregateLimit>? aggregateLimits = null) =>
+        StoreInstructionCoreAsync(envelope, requestHash, effectiveOn, build, cancellationToken, aggregateLimits, null);
+
+    private async Task<LogisticsStoreResult> StoreInstructionCoreAsync(LogisticsWriteEnvelope envelope, string requestHash, DateOnly effectiveOn,
+        Func<LoadingInstruction> build, CancellationToken cancellationToken,
+        IReadOnlyList<LogisticsOrderLineAggregateLimit>? aggregateLimits, IReadOnlyDictionary<Guid, LogisticsSubcontractSourceV1>? sources)
     {
         ArgumentNullException.ThrowIfNull(build);
         RequireEnvelope(envelope);
@@ -70,6 +76,10 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             throw new ArgumentException("Yeni talimat satırlı bir taslaktır; payı olamaz.", nameof(build));
         }
 
+        if (instruction.IsContractProcessingDelivery != (sources is not null)
+            || sources is not null && (sources.Count != instruction.Lines.Count || instruction.Lines.Any(line => !sources.ContainsKey(line.Id))))
+            throw new InvalidOperationException("Fason talimatın her satırı gerçek owner kaynağıyla birlikte kaydedilir.");
+
         if (await dbContext.Instructions.AsNoTracking().AnyAsync(row => row.Id == instruction.Id, cancellationToken))
         {
             throw Refused(LogisticsStoreCodes.ConcurrentChange, "Bu talimat kimliği şirketin başka bir talimatında kullanılıyor.");
@@ -79,7 +89,14 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         await using IDbContextTransaction? aggregateTransaction = limits.Count > 0 && dbContext.Database.CurrentTransaction is null
             ? await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
             : null;
-        await RequireAggregateLimitsAsync(companyId, instruction, limits, cancellationToken);
+        try
+        {
+            await RequireAggregateLimitsAsync(companyId, instruction, limits, cancellationToken);
+        }
+        catch (Exception exception) when (IsDeadlockVictim(exception))
+        {
+            throw LostAggregateRead(exception);
+        }
 
         var now = timeProvider.GetUtcNow();
         dbContext.Instructions.Add(new LoadingInstructionRow
@@ -89,6 +106,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             CustomerPartyId = instruction.CustomerPartyId,
             CompanyAccountId = instruction.CompanyAccountId,
             Status = (int)instruction.Status,
+            ShipmentKind = (int)instruction.ShipmentKind,
             Version = instruction.Version,
             EffectiveOn = effectiveOn,
             CreatedAtUtc = instruction.CreatedAtUtc,
@@ -112,6 +130,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
                 UnitId = line.UnitId,
                 UnitIsKilogram = line.InstructedQuantity.Unit == QuantityUnit.Kilogram,
                 AllocationId = line.AllocationId,
+                SubcontractSourceJson = sources is not null ? JsonSerializer.Serialize(sources[line.Id], Json) : null,
                 Instructed = RequireFits(line.InstructedQuantity.Value),
                 Loaded = 0m,
                 Shipped = 0m,
@@ -208,7 +227,8 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         }
 
         var refusal = attempt.RefusalJson is null ? null : JsonSerializer.Deserialize<LogisticsTerminalRefusal>(attempt.RefusalJson, Json);
-        if (refusal is null || refusal.Status is < 400 or > 599 || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null)
+        if (refusal is null || refusal.Status is < 400 or > 599 || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null
+            || !LogisticsPhysicalStockRefusalDetailV1.IsValid(refusal.Status, refusal.Code, refusal.Detail))
         {
             throw new InvalidOperationException("Kayıtlı terminal ret okunamadı.");
         }
@@ -225,6 +245,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         RequireCommand(commandName);
         var companyId = RequireResolvedCompany();
         if (refusal.Status is < 400 or > 599 || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null
+            || !LogisticsPhysicalStockRefusalDetailV1.IsValid(refusal.Status, refusal.Code, refusal.Detail)
             || refusal.Errors.Any(error => error is null || string.IsNullOrWhiteSpace(error.Field) || string.IsNullOrWhiteSpace(error.Code)))
         {
             throw new ArgumentException("Terminal ret bir durum, bir kod ve tam alan hataları taşır.", nameof(refusal));
@@ -246,16 +267,45 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
     public async Task<LogisticsStoreResult?> MutateInstructionAsync(LogisticsWriteEnvelope envelope, string requestHash, string commandName,
         Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit,
         CancellationToken cancellationToken = default) =>
-        await MutateInstructionCoreAsync(envelope, requestHash, commandName, instructionId, mutate, audit, null, cancellationToken);
+        await MutateInstructionCoreAsync(envelope, requestHash, commandName, instructionId, mutate, audit, null, null, cancellationToken);
+
+    public async Task<LogisticsStoreResult?> MutateInstructionWithShipmentRiskGateAsync(LogisticsWriteEnvelope envelope, string requestHash,
+        string commandName, Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit,
+        LogisticsShipmentRiskGateFactsV1 gate, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(gate);
+        if (gate.ShipmentId == Guid.Empty || gate.SalesOrderId == Guid.Empty || gate.LoadingInstructionId != instructionId
+            || gate.RiskExceptionNo is < 1 || string.IsNullOrWhiteSpace(gate.Result) || string.IsNullOrWhiteSpace(gate.ExceptionStatus)
+            || string.IsNullOrWhiteSpace(gate.ContractVersion))
+        {
+            throw new ArgumentException("Risk kapısı olgusu bu talimatın kesin sevkini, siparişini ve sonucunu adlandırır.", nameof(gate));
+        }
+
+        return await MutateInstructionCoreAsync(envelope, requestHash, commandName, instructionId, mutate, audit, null, gate, cancellationToken);
+    }
 
     public async Task<LogisticsStoreResult?> MutateInstructionWithAggregateLoadLimitAsync(LogisticsWriteEnvelope envelope, string requestHash,
         string commandName, Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit,
-        LogisticsOrderLineAggregateLoadLimit aggregateLoadLimit, CancellationToken cancellationToken = default) =>
-        await MutateInstructionCoreAsync(envelope, requestHash, commandName, instructionId, mutate, audit, aggregateLoadLimit, cancellationToken);
+        LogisticsOrderLineAggregateLoadLimit aggregateLoadLimit, CancellationToken cancellationToken = default)
+    {
+        // The Serializable section's reads can be chosen as the deadlock victim before SaveAsync runs; the core's
+        // transaction is already disposed (rolled back) when this filter runs, so the loser gets the same refusal.
+        try
+        {
+            return await MutateInstructionCoreAsync(envelope, requestHash, commandName, instructionId, mutate, audit, aggregateLoadLimit, null,
+                cancellationToken);
+        }
+        catch (Exception exception) when (IsDeadlockVictim(exception))
+        {
+            throw LostAggregateRead(exception);
+        }
+    }
 
     private async Task<LogisticsStoreResult?> MutateInstructionCoreAsync(LogisticsWriteEnvelope envelope, string requestHash, string commandName,
         Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit,
-        LogisticsOrderLineAggregateLoadLimit? aggregateLoadLimit, CancellationToken cancellationToken)
+        LogisticsOrderLineAggregateLoadLimit? aggregateLoadLimit, LogisticsShipmentRiskGateFactsV1? shipmentRiskGate,
+        CancellationToken cancellationToken, IReadOnlyList<LogisticsShipmentRiskGateFactsV1>? subcontractGates = null,
+        int wholeShipmentCount = 0, IReadOnlyDictionary<Guid, IReadOnlyList<LogisticsPlanExcessUseV1>?>? planExcessUses = null)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
@@ -264,7 +314,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         RequireCommand(commandName);
         if (!LogisticsCommands.IsMutation(commandName))
         {
-            throw new ArgumentException("Yalnız yayımlama, pay, kantar tartımı ve irsaliye komutları bir talimatı değiştirir.", nameof(commandName));
+            throw new ArgumentException("Yalnız yayımlama, pay, kantar tartımı, indirme tartısı ve irsaliye komutları bir talimatı değiştirir.", nameof(commandName));
         }
 
         if (string.IsNullOrWhiteSpace(audit.EventType) || string.IsNullOrWhiteSpace(audit.Operation) || string.IsNullOrWhiteSpace(audit.Reason))
@@ -293,7 +343,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             return null;
         }
 
-        await using IDbContextTransaction? aggregateTransaction = aggregateLoadLimit is not null && dbContext.Database.CurrentTransaction is null
+        await using IDbContextTransaction? aggregateTransaction = (aggregateLoadLimit is not null || planExcessUses is not null) && dbContext.Database.CurrentTransaction is null
             ? await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
             : null;
 
@@ -308,12 +358,19 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         var shareRows = await dbContext.Shares.AsNoTracking().Where(share => share.InstructionId == instructionId).OrderBy(share => share.ShareNo)
             .ToListAsync(cancellationToken);
         var weighingRow = await dbContext.Weighings.AsNoTracking().SingleOrDefaultAsync(weighing => weighing.InstructionId == instructionId, cancellationToken);
+        var correctionRows = await dbContext.WeighingCorrections.AsNoTracking().Where(correction => correction.InstructionId == instructionId)
+            .OrderBy(correction => correction.Revision).ToListAsync(cancellationToken);
+        var unloadRow = await dbContext.UnloadWeighings.AsNoTracking().SingleOrDefaultAsync(unload => unload.InstructionId == instructionId, cancellationToken);
         // AT-055: the dispatch notes and their lines are tracked too — a lifecycle step writes its columns and releases lines in place.
         var noteRows = await dbContext.DispatchNotes.Where(note => note.InstructionId == instructionId).OrderBy(note => note.NoteNo)
             .ToListAsync(cancellationToken);
         var noteLineRows = await dbContext.DispatchNoteLines.Where(line => line.InstructionId == instructionId)
             .ToListAsync(cancellationToken);
-        var instruction = Restore(row, lineRows, shareRows, weighingRow, noteRows, noteLineRows);
+        await ValidatePlanExcessSnapshotAsync(lineRows, shareRows, cancellationToken);
+        var instruction = Restore(row, lineRows, shareRows, weighingRow, noteRows, noteLineRows, unloadRow, correctionRows);
+        if (wholeShipmentCount > 0 && (!instruction.IsContractProcessingDelivery || commandName != LogisticsSubcontractDeliveryV1.ShipCommand
+                || subcontractGates is null || subcontractGates.Count == 0 || shipmentRiskGate is not null))
+            throw new InvalidOperationException("Toplu sevk yalnız gerçek fason teslim komutudur.");
         if (aggregateLoadLimit is not null)
         {
             await RequireAggregateLoadLimitAsync(companyId, row.EffectiveOn, instruction, aggregateLoadLimit, cancellationToken);
@@ -322,27 +379,43 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         var before = MutationSnapshot(instruction, aggregateLoadLimit);
         var sharesBefore = instruction.Shares.Count;
         var weighingBefore = instruction.Weighing;
+        var correctionsBefore = instruction.WeighingCorrections.ToArray();
+        var unloadBefore = instruction.UnloadWeighing;
         var notesBefore = instruction.DispatchNotes.ToArray();
         var stepsBefore = instruction.DispatchSteps;
         var now = timeProvider.GetUtcNow();
         // The domain decides; a refusal leaves the tracked rows untouched (nothing below has run).
         mutate(instruction, now);
+        await AppendPlanExcessUsesAsync(companyId, instruction, lineRows, instruction.Shares.Skip(sharesBefore).ToArray(),
+            planExcessUses, actorId, envelope.CorrelationId, now, cancellationToken);
         var weighingAdded = weighingBefore is null && instruction.Weighing is not null;
+        var correctionAdded = instruction.WeighingCorrections.Count == correctionsBefore.Length + 1;
+        var unloadAdded = unloadBefore is null && instruction.UnloadWeighing is not null;
         var noteAdded = instruction.DispatchNotes.Count == notesBefore.Length + 1;
         var notesChanged = Enumerable.Range(0, Math.Min(notesBefore.Length, instruction.DispatchNotes.Count))
             .Where(index => !ReferenceEquals(notesBefore[index], instruction.DispatchNotes[index])).ToArray();
         var dispatchStep = noteAdded || notesChanged.Length > 0;
-        if (instruction.Version != versionBefore + 1 || instruction.Id != row.Id || instruction.CompanyId != companyId
-            || instruction.Shares.Count > sharesBefore + 1 || instruction.Lines.Count != lineRows.Count
+        var expectedSteps = wholeShipmentCount > 0 ? wholeShipmentCount : 1;
+        if (instruction.Version != versionBefore + expectedSteps || instruction.Id != row.Id || instruction.CompanyId != companyId
+            || instruction.Shares.Count > sharesBefore + expectedSteps || instruction.Lines.Count != lineRows.Count
+            || wholeShipmentCount > 0 && (instruction.Shares.Count != sharesBefore + wholeShipmentCount
+                || instruction.Shares.Skip(sharesBefore).Any(share => share.Kind != LoadingShareKind.Shipped)
+                || instruction.WeighingCorrections.Count != correctionsBefore.Length || weighingAdded || unloadAdded || dispatchStep)
             || (weighingBefore is not null && !ReferenceEquals(weighingBefore, instruction.Weighing))
+            || (instruction.WeighingCorrections.Count != correctionsBefore.Length && !correctionAdded)
+            || correctionsBefore.Where((correction, index) => !ReferenceEquals(correction, instruction.WeighingCorrections[index])).Any()
+            || (correctionAdded && (commandName != LogisticsCommands.CorrectWeighingV1 || instruction.Shares.Count != sharesBefore
+                || weighingAdded || unloadAdded || dispatchStep))
             || (weighingAdded && instruction.Shares.Count != sharesBefore)
+            || (unloadBefore is not null && !ReferenceEquals(unloadBefore, instruction.UnloadWeighing))
+            || (unloadAdded && (instruction.Shares.Count != sharesBefore || weighingAdded))
             || (instruction.DispatchNotes.Count != notesBefore.Length && !noteAdded)
             || (noteAdded && notesChanged.Length > 0) || notesChanged.Length > 1
             || instruction.DispatchSteps != stepsBefore + (dispatchStep ? 1 : 0)
-            || (dispatchStep && (instruction.Shares.Count != sharesBefore || weighingAdded)))
+            || (dispatchStep && (instruction.Shares.Count != sharesBefore || weighingAdded || unloadAdded)))
         {
             throw new InvalidOperationException(
-                "Bir komut tam olarak bir sürüm ilerletir ve en fazla bir pay, bir kantar tartımı ya da bir irsaliye adımı (taslak, onay, iptal, e-İrsaliye no) ekler.");
+                "Bir komut tam olarak bir sürüm ilerletir ve en fazla bir pay, bir kantar tartımı, bir indirme tartısı ya da bir irsaliye adımı (taslak, onay, iptal, e-İrsaliye no) ekler.");
         }
 
         if (noteAdded && await DispatchNoteIdTakenAsync(instruction.DispatchNotes[^1].DispatchNoteId, instruction.Id, cancellationToken))
@@ -351,6 +424,48 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             // one (recorded under the key), never a unique-key race answered as concurrent_change.
             dbContext.ChangeTracker.Clear();
             throw new LogisticsRuleException(LogisticsRuleCodes.DuplicateDispatchNoteId, "Bu irsaliye kimliği şirketin başka bir talimatında kullanılıyor.");
+        }
+
+        var appendedCorrectionId = correctionAdded ? instruction.WeighingCorrections[^1].CorrectionId : Guid.Empty;
+        if (correctionAdded && await dbContext.WeighingCorrections.AsNoTracking()
+            .AnyAsync(correction => correction.CorrectionId == appendedCorrectionId, cancellationToken))
+            throw new LogisticsRuleException(LogisticsRuleCodes.DuplicateWeighingCorrectionId, "Bu düzeltme kimliği şirketin başka bir tartımında kayıtlı.");
+
+        if (shipmentRiskGate is not null)
+        {
+            // STK-S27: the gate was read for exactly this definite shipment; any other outcome is a programming error.
+            if (instruction.Shares.Count != sharesBefore + 1 || instruction.Shares[^1] is not { Kind: LoadingShareKind.Shipped } gatedShare
+                || gatedShare.ShareId != shipmentRiskGate.ShipmentId
+                || instruction.Lines.Single(candidate => candidate.Id == gatedShare.LineId).Source.OrderId != shipmentRiskGate.SalesOrderId)
+            {
+                throw new InvalidOperationException("Risk kapısı olgusu yalnız okunduğu kesin sevkle birlikte kaydedilir.");
+            }
+
+            if (shipmentRiskGate.RiskExceptionNo is { } exceptionNo
+                && await dbContext.ShipmentRiskExceptionUses.AsNoTracking().AnyAsync(use => use.SalesOrderId == shipmentRiskGate.SalesOrderId
+                    && use.ExceptionNo == exceptionNo, cancellationToken))
+            {
+                // L-4 / SAT-D285 (1): single use. The same terminal refusal under the key, never a unique-key race answer.
+                dbContext.ChangeTracker.Clear();
+                throw new LogisticsRuleException(LogisticsShipmentRiskGateCodesV1.ExceptionUsed, LogisticsShipmentRiskGateTextsV1.ExceptionUsed);
+            }
+        }
+
+        if (subcontractGates is not null)
+        {
+            var added = instruction.Shares.Skip(sharesBefore).ToArray();
+            if (subcontractGates.Select(gate => gate.SalesOrderId).Distinct().Count() != subcontractGates.Count
+                || instruction.Lines.Where(line => added.Any(share => share.LineId == line.Id)).Select(line => line.Source.OrderId).Distinct().Count() != subcontractGates.Count)
+                throw new InvalidOperationException("Her fason siparişin tek gerçek risk kararı aynı sevke aittir.");
+            foreach (var gate in subcontractGates)
+            {
+                if (gate.LoadingInstructionId != instruction.Id || !added.Any(share => share.ShareId == gate.ShipmentId
+                    && instruction.Lines.Single(line => line.Id == share.LineId).Source.OrderId == gate.SalesOrderId))
+                    throw new InvalidOperationException("Risk kapısı aynı fason siparişin gerçek sevkine aittir.");
+                if (gate.RiskExceptionNo is { } number && await dbContext.ShipmentRiskExceptionUses.AsNoTracking()
+                    .AnyAsync(use => use.SalesOrderId == gate.SalesOrderId && use.ExceptionNo == number, cancellationToken))
+                    throw new LogisticsRuleException(LogisticsShipmentRiskGateCodesV1.ExceptionUsed, LogisticsShipmentRiskGateTextsV1.ExceptionUsed);
+            }
         }
 
         DispatchNoteDraft? changedNote = notesChanged.Length == 1 ? instruction.DispatchNotes[notesChanged[0]] : null;
@@ -384,14 +499,13 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             lineRow.IsBlocked = line.IsBlocked;
         }
 
-        if (instruction.Shares.Count == sharesBefore + 1)
+        foreach (var share in instruction.Shares.Skip(sharesBefore))
         {
-            var share = instruction.Shares[^1];
             dbContext.Shares.Add(new LoadingShareRow
             {
                 CompanyId = companyId,
                 InstructionId = instruction.Id,
-                ShareNo = sharesBefore + 1,
+                ShareNo = sharesBefore + 1 + instruction.Shares.Skip(sharesBefore).TakeWhile(candidate => candidate.ShareId != share.ShareId).Count(),
                 ShareId = share.ShareId,
                 LineId = share.LineId,
                 Kind = (int)share.Kind,
@@ -426,6 +540,30 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             });
         }
 
+        if (unloadAdded && instruction.UnloadWeighing is { } unload)
+        {
+            // LOJ-D17: appended once; the key (company, instruction) refuses a second unload record in SQL Server too. No stock row.
+            dbContext.UnloadWeighings.Add(new UnloadWeighingRow
+            {
+                CompanyId = companyId,
+                InstructionId = instruction.Id,
+                WeighingId = unload.WeighingId,
+                Direction = (int)unload.Direction,
+                FirstWeighingKg = RequireFits(unload.FirstWeighing.Value),
+                SecondWeighingKg = RequireFits(unload.SecondWeighing.Value),
+                NetKg = RequireFits(unload.Net.Value),
+                LoadedKgAtCancel = RequireFits(unload.LoadedAtCancel.Value),
+                DifferenceKg = unload.DifferenceKg < 0m ? -RequireFits(-unload.DifferenceKg) : RequireFits(unload.DifferenceKg),
+                RecordedBy = string.Equals(unload.RecordedBy, actorId, StringComparison.Ordinal)
+                    ? actorId
+                    : throw new InvalidOperationException("İndirme tartısını kaydeden, bu yazmanın aktörüdür."),
+                RecordedAtUtc = unload.RecordedAtUtc,
+            });
+        }
+
+        if (correctionAdded)
+            AppendWeighingCorrection(companyId, instruction, instruction.WeighingCorrections[^1], actorId);
+
         if (noteAdded)
         {
             AddDispatchNote(companyId, instruction, instruction.DispatchNotes[^1], notesBefore.Length + 1, actorId);
@@ -436,15 +574,29 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             WriteDispatchNoteStep(noteRows.Single(candidate => candidate.DispatchNoteId == changedNote.DispatchNoteId), changedNote, noteLineRows, actorId);
         }
 
+        if (shipmentRiskGate is not null)
+        {
+            AddShipmentRiskGateRows(companyId, instruction.Id, shipmentRiskGate, envelope, actorId, now);
+        }
+        foreach (var gate in subcontractGates ?? []) AddShipmentRiskGateRows(companyId, instruction.Id, gate, envelope, actorId, now);
+
         dbContext.Attempts.Add(Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, instruction.Id, now));
+        // LOJ-D17 (2): an unload difference is a warning written to the audit record, never a refusal.
+        var reason = unloadAdded && instruction.UnloadWeighing is { DifferenceWarning: true } && !string.IsNullOrWhiteSpace(audit.WarningReason)
+            ? audit.WarningReason
+            : audit.Reason;
         Audit(envelope, companyId, instruction.Id, audit.EventType, audit.Operation, versionBefore, instruction.Version, before,
-            MutationSnapshot(instruction, aggregateLoadLimit), audit.Reason);
+            WithPlanExcessUses(WithSubcontractRiskGates(WithShipmentRiskGate(MutationSnapshot(instruction, aggregateLoadLimit), shipmentRiskGate), subcontractGates)), reason);
         await SaveAsync(cancellationToken);
         if (aggregateTransaction is not null)
         {
             await aggregateTransaction.CommitAsync(cancellationToken);
         }
-        return new LogisticsStoreResult(new StoredLoadingInstruction(instruction, row.EffectiveOn), LogisticsWriteOutcome.Recorded, envelope.CorrelationId.Trim());
+        var shareActors = ShareActors(shareRows);
+        foreach (var share in instruction.Shares.Skip(sharesBefore)) shareActors[share.ShareId] = actorId;
+
+        return new LogisticsStoreResult(new StoredLoadingInstruction(instruction, row.EffectiveOn, shareActors), LogisticsWriteOutcome.Recorded,
+            envelope.CorrelationId.Trim());
     }
 
     /// <summary>
@@ -599,6 +751,79 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         where row.SourceOrderId == orderId && row.SourceOrderLineId == orderLineId && row.UnitId == unitId
             && owner.Status != (int)LoadingInstructionStatus.Cancelled
         select row;
+
+    /// <summary>
+    /// STK-S27: the consumed exception's single-use row (when an exception carried a stop) and the definite-shipment outbox event,
+    /// added to this write's save. The payload carries no amount (SAT-D162); the exception id is reserved and null.
+    /// </summary>
+    private void AddShipmentRiskGateRows(Guid companyId, Guid instructionId, LogisticsShipmentRiskGateFactsV1 gate,
+        LogisticsWriteEnvelope envelope, string actorId, DateTimeOffset now)
+    {
+        if (gate.RiskExceptionNo is { } exceptionNo)
+        {
+            dbContext.ShipmentRiskExceptionUses.Add(new ShipmentRiskExceptionUseRow
+            {
+                CompanyId = companyId,
+                SalesOrderId = gate.SalesOrderId,
+                ExceptionNo = exceptionNo,
+                ShipmentId = gate.ShipmentId,
+                InstructionId = instructionId,
+                RecordedBy = actorId,
+                RecordedAtUtc = now,
+            });
+        }
+
+        var payload = new LogisticsDefiniteShipmentEventV1(companyId, gate.ShipmentId, gate.SalesOrderId, instructionId, gate.RiskExceptionNo,
+            null);
+        dbContext.OutboxMessages.Add(new LogisticsOutboxMessageRow
+        {
+            EventId = Guid.NewGuid(),
+            CompanyId = companyId,
+            EventType = LogisticsDefiniteShipmentOutboxV1.RecordedEventType,
+            SchemaVersion = LogisticsDefiniteShipmentOutboxV1.Version,
+            SubjectId = gate.ShipmentId,
+            PayloadJson = JsonSerializer.Serialize(payload, Json),
+            OccurredAtUtc = now,
+            CorrelationId = envelope.CorrelationId.Trim(),
+            CausationId = string.IsNullOrWhiteSpace(envelope.CausationId) ? null : envelope.CausationId.Trim(),
+        });
+    }
+
+    /// <summary>STK-S27: the after-snapshot also names what the risk gate let through (result, reason, exception; no amount).</summary>
+    private static string WithShipmentRiskGate(string snapshot, LogisticsShipmentRiskGateFactsV1? gate)
+    {
+        if (gate is null)
+        {
+            return snapshot;
+        }
+
+        using var document = JsonDocument.Parse(snapshot);
+        return JsonSerializer.Serialize(new
+        {
+            snapshot = document.RootElement.Clone(),
+            shipmentRiskGate = new
+            {
+                gate.ShipmentId, gate.SalesOrderId, gate.LoadingInstructionId, gate.Result, gate.HoldReason, gate.ExceptionStatus,
+                gate.RiskExceptionNo, gate.ContractVersion,
+            },
+        }, Json);
+    }
+
+    private static string WithSubcontractRiskGates(string snapshot, IReadOnlyList<LogisticsShipmentRiskGateFactsV1>? gates)
+    {
+        if (gates is null) return snapshot;
+        using var document = JsonDocument.Parse(snapshot);
+        return JsonSerializer.Serialize(new { snapshot = document.RootElement.Clone(), shipmentRiskGates = gates }, Json);
+    }
+
+    private string WithPlanExcessUses(string snapshot)
+    {
+        var uses = dbContext.ChangeTracker.Entries<LogisticsPlanExcessUsageRow>().Where(entry => entry.State == EntityState.Added)
+            .Select(entry => entry.Entity).ToArray();
+        if (uses.Length == 0) return snapshot;
+        using var document = JsonDocument.Parse(snapshot);
+        return JsonSerializer.Serialize(new { snapshot = document.RootElement.Clone(), actualPlanExcessUses = uses }, Json);
+    }
 
     private static string MutationSnapshot(LoadingInstruction instruction, LogisticsOrderLineAggregateLoadLimit? limit)
     {
@@ -803,33 +1028,50 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         var lines = await dbContext.Lines.AsNoTracking().Where(line => ids.Contains(line.InstructionId)).ToListAsync(cancellationToken);
         var shares = await dbContext.Shares.AsNoTracking().Where(share => ids.Contains(share.InstructionId)).ToListAsync(cancellationToken);
         var weighings = await dbContext.Weighings.AsNoTracking().Where(weighing => ids.Contains(weighing.InstructionId)).ToListAsync(cancellationToken);
+        var corrections = await dbContext.WeighingCorrections.AsNoTracking().Where(correction => ids.Contains(correction.InstructionId)).ToListAsync(cancellationToken);
+        var unloads = await dbContext.UnloadWeighings.AsNoTracking().Where(unload => ids.Contains(unload.InstructionId)).ToListAsync(cancellationToken);
         var notes = await dbContext.DispatchNotes.AsNoTracking().Where(note => ids.Contains(note.InstructionId)).ToListAsync(cancellationToken);
         var noteLines = await dbContext.DispatchNoteLines.AsNoTracking().Where(line => ids.Contains(line.InstructionId)).ToListAsync(cancellationToken);
+        await ValidatePlanExcessSnapshotAsync(lines, shares, cancellationToken);
         return [.. rows.Select(row => new StoredLoadingInstruction(
             Restore(row, [.. lines.Where(line => line.InstructionId == row.Id).OrderBy(line => line.LineNo)],
                 [.. shares.Where(share => share.InstructionId == row.Id).OrderBy(share => share.ShareNo)],
                 weighings.SingleOrDefault(weighing => weighing.InstructionId == row.Id),
                 [.. notes.Where(note => note.InstructionId == row.Id).OrderBy(note => note.NoteNo)],
-                [.. noteLines.Where(line => line.InstructionId == row.Id)]),
-            row.EffectiveOn))];
+                [.. noteLines.Where(line => line.InstructionId == row.Id)],
+                unloads.SingleOrDefault(unload => unload.InstructionId == row.Id),
+                [.. corrections.Where(correction => correction.InstructionId == row.Id).OrderBy(correction => correction.Revision)]),
+            row.EffectiveOn,
+            ShareActors(shares.Where(share => share.InstructionId == row.Id))))];
     }
+
+    /// <summary>
+    /// F-020 ShippedBy column: the stored actor of each share by share id, read beside the domain record (the replay never needs
+    /// it). A share stored before the actor was kept has no actor and is left out; it is never back-filled or guessed.
+    /// </summary>
+    private static Dictionary<Guid, string> ShareActors(IEnumerable<LoadingShareRow> shareRows) =>
+        shareRows.Where(share => share.RecordedBy is not null).ToDictionary(share => share.ShareId, share => share.RecordedBy!);
 
     /// <summary>
     /// Rebuilds the instruction through the domain in recording order; the stored version and totals must be the ones the rebuild
     /// reaches. The weighbridge record (AT-053) is replayed after the shares it was recorded after, so the domain recalculates its
     /// net, loaded snapshot and difference; the stored ones must be the same. The dispatch-note drafts (AT-055) are replayed the
     /// same way, in their order, after the weighing of the same position; the domain rebuilds each line from its shipment, and the
-    /// stored lines must be the ones it reaches.
+    /// stored lines must be the ones it reaches. The unload weighing (LOJ-D17) is replayed last, after the cancel it follows, so the
+    /// domain recalculates its net, loaded-at-cancel and difference; the stored ones must be the same.
     /// </summary>
     private static LoadingInstruction Restore(LoadingInstructionRow row, IReadOnlyList<LoadingInstructionLineRow> lines, IReadOnlyList<LoadingShareRow> shares,
-        VehicleWeighingRow? weighing, IReadOnlyList<DispatchNoteRow> notes, IReadOnlyList<DispatchNoteLineRow> noteLines)
+        VehicleWeighingRow? weighing, IReadOnlyList<DispatchNoteRow> notes, IReadOnlyList<DispatchNoteLineRow> noteLines, UnloadWeighingRow? unload,
+        IReadOnlyList<VehicleWeighingCorrectionRow> corrections)
     {
-        var instruction = LoadingInstruction.Create(row.Id, row.CompanyId, row.CustomerPartyId, row.CompanyAccountId, row.CreatedAtUtc);
+        var instruction = LoadingInstruction.Create(row.Id, row.CompanyId, row.CustomerPartyId, row.CompanyAccountId, row.CreatedAtUtc,
+            (LoadingInstructionShipmentKind)row.ShipmentKind);
         foreach (var line in lines)
         {
             var unit = line.UnitIsKilogram ? QuantityUnit.Kilogram : QuantityUnit.Piece;
             instruction.AddLine(instruction.Version, line.LineId, new SourceOrderLineRef(line.SourceOrderId, line.SourceOrderLineId, line.SourceOrderRevision),
                 line.ProductId, line.UnitId, line.AllocationId, Quantity.Of(line.Instructed, unit), row.CreatedAtUtc);
+            instruction.Lines[^1].RestoreApprovedPlanExcessCapacity(Quantity.Of(line.ApprovedPlanExcess, unit));
         }
 
         // F-020: a Cancelled row was Draft or Issued when it was cancelled. A Draft cancel took exactly one step after the lines and
@@ -837,7 +1079,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         // cancels it last, after every share, weighing and dispatch-note step.
         var blockedCount = lines.Count(line => line.IsBlocked);
         var cancelledFromDraft = row.Status == (int)LoadingInstructionStatus.Cancelled
-            && shares.Count == 0 && weighing is null && notes.Count == 0
+            && shares.Count == 0 && weighing is null && notes.Count == 0 && unload is null
             && row.Version == instruction.Version + blockedCount + 1;
         if (row.Status == (int)LoadingInstructionStatus.Issued
             || (row.Status == (int)LoadingInstructionStatus.Cancelled && !cancelledFromDraft))
@@ -849,6 +1091,11 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         {
             throw new InvalidOperationException("Kayıtlı kantar tartımının pay sırası paylarla uyuşmuyor.");
         }
+
+        if (corrections.Count > 0 && (weighing is null || corrections.Where((correction, index) =>
+                correction.Revision != index + 2 || correction.SharesBefore < weighing.SharesBefore || correction.SharesBefore > shares.Count
+                || index > 0 && correction.SharesBefore < corrections[index - 1].SharesBefore).Any()))
+            throw new InvalidOperationException("Kayıtlı tartı düzeltme sırası özgün tartı ve paylarla uyuşmuyor.");
 
         if (notes.Where((note, index) => note.NoteNo != index + 1 || note.SharesBefore < 1 || note.SharesBefore > shares.Count
                 || (index > 0 && (note.SharesBefore < notes[index - 1].SharesBefore || note.CreatedStep <= notes[index - 1].CreatedStep))).Any()
@@ -869,6 +1116,9 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             {
                 RestoreWeighing(instruction, weighing);
             }
+
+            foreach (var correction in corrections.Where(correction => correction.SharesBefore == index))
+                RestoreWeighingCorrection(instruction, correction);
 
             while (nextStep < steps.Count && (steps[nextStep].Kind != DispatchStepKind.Create || steps[nextStep].Note.SharesBefore == index))
             {
@@ -921,6 +1171,12 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             }
 
             instruction.CancelInstruction(instruction.Version, row.CancelledBy, row.CancelReason, row.CancelledAtUtc.Value);
+        }
+
+        if (unload is not null)
+        {
+            // LOJ-D17: only a cancelled instruction takes one; the domain refuses it on any other row.
+            RestoreUnloadWeighing(instruction, unload);
         }
 
         if (instruction.Version != row.Version || instruction.Status != (LoadingInstructionStatus)row.Status
@@ -1062,6 +1318,17 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         }
     }
 
+    private static void RestoreUnloadWeighing(LoadingInstruction instruction, UnloadWeighingRow row)
+    {
+        var restored = instruction.RecordUnloadWeighing(instruction.Version, row.WeighingId, (WeighingDirection)row.Direction,
+            Quantity.Of(row.FirstWeighingKg, QuantityUnit.Kilogram), Quantity.Of(row.SecondWeighingKg, QuantityUnit.Kilogram), row.RecordedBy,
+            row.RecordedAtUtc);
+        if (restored.Net.Value != row.NetKg || restored.LoadedAtCancel.Value != row.LoadedKgAtCancel || restored.DifferenceKg != row.DifferenceKg)
+        {
+            throw new InvalidOperationException("Kayıtlı indirme tartısı yeniden hesaplanan net, yüklenen ve fark ile uyuşmuyor.");
+        }
+    }
+
     // ---- helpers --------------------------------------------------------------------------------
 
     private Task<LoadingAttemptRow?> FindAttemptAsync(string commandName, string keyHash, CancellationToken cancellationToken) =>
@@ -1101,11 +1368,13 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         JsonSerializer.Serialize(new
         {
             status = instruction.Status.ToString(),
+            shipmentKind = instruction.ShipmentKind.ToString(),
+            weighingCorrections = CorrectionSnapshot(instruction),
             version = instruction.Version,
             cancelledBy = instruction.CancelledBy, cancelReason = instruction.CancelReason,
             lines = instruction.Lines.Select(line => new
             {
-                lineId = line.Id, instructed = line.InstructedQuantity.Value, loaded = line.LoadedQuantity.Value,
+                lineId = line.Id, instructed = line.InstructedQuantity.Value, approvedPlanExcess = line.ApprovedPlanExcessQuantity.Value, loaded = line.LoadedQuantity.Value,
                 shipped = line.ShippedQuantity.Value, delivered = line.DeliveredQuantity.Value, blocked = line.IsBlocked,
             }),
             shares = instruction.Shares.Count,
@@ -1129,7 +1398,20 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
                     line.LineNo, line.ShipmentId, line.InstructionLineId, quantity = line.Quantity.Value,
                 }),
             }),
+            // LOJ-D17: the "indirme kaydı yok" mark and the unload weighing facts, its difference warning included.
+            unloadRecord = instruction.UnloadRecord.ToString(),
+            unloadWeighing = UnloadSnapshot(instruction),
         }, Json);
+
+    private static object? UnloadSnapshot(LoadingInstruction instruction) =>
+        instruction.UnloadWeighing is { } unload
+            ? new
+            {
+                weighingId = unload.WeighingId, direction = unload.Direction.ToString(), first = unload.FirstWeighing.Value,
+                second = unload.SecondWeighing.Value, net = unload.Net.Value, loadedAtCancel = unload.LoadedAtCancel.Value,
+                difference = unload.DifferenceKg, differenceWarning = unload.DifferenceWarning, recordedBy = unload.RecordedBy,
+            }
+            : null;
 
     private static string Snapshot(LoadingInstruction instruction, IReadOnlyList<LogisticsOrderLineAggregateLimit> aggregateLimits)
     {
@@ -1141,11 +1423,13 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         return JsonSerializer.Serialize(new
         {
             status = instruction.Status.ToString(),
+            shipmentKind = instruction.ShipmentKind.ToString(),
+            weighingCorrections = CorrectionSnapshot(instruction),
             version = instruction.Version,
             cancelledBy = instruction.CancelledBy, cancelReason = instruction.CancelReason,
             lines = instruction.Lines.Select(line => new
             {
-                lineId = line.Id, instructed = line.InstructedQuantity.Value, loaded = line.LoadedQuantity.Value,
+                lineId = line.Id, instructed = line.InstructedQuantity.Value, approvedPlanExcess = line.ApprovedPlanExcessQuantity.Value, loaded = line.LoadedQuantity.Value,
                 shipped = line.ShippedQuantity.Value, delivered = line.DeliveredQuantity.Value, blocked = line.IsBlocked,
             }),
             shares = instruction.Shares.Count,
@@ -1175,6 +1459,9 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
                     line.LineNo, line.ShipmentId, line.InstructionLineId, quantity = line.Quantity.Value,
                 }),
             }),
+            // LOJ-D17: the "indirme kaydı yok" mark and the unload weighing facts, its difference warning included.
+            unloadRecord = instruction.UnloadRecord.ToString(),
+            unloadWeighing = UnloadSnapshot(instruction),
         }, Json);
     }
 
@@ -1201,6 +1488,19 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             dbContext.ChangeTracker.Clear();
             throw Refused(LogisticsStoreCodes.ConcurrentChange, "Kalıcı tekillik kuralı başka bir yazmanın lehine sonuçlandı; hiçbir şey kaydedilmedi.", exception);
         }
+    }
+
+    /// <summary>
+    /// SQL 1205 raised by a read inside a Serializable aggregate section (SaveAsync maps its own 1205 and is left out);
+    /// SQL Server has already rolled the victim's transaction back.
+    /// </summary>
+    private static bool IsDeadlockVictim(Exception exception) =>
+        exception is not LogisticsStoreException && ContainsSqlException(exception, 1205);
+
+    private LogisticsStoreException LostAggregateRead(Exception exception)
+    {
+        dbContext.ChangeTracker.Clear();
+        return Refused(LogisticsStoreCodes.ConcurrentChange, "Aggregate okuma yarışı kaybedildi; hiçbir şey kaydedilmedi.", exception);
     }
 
     private static bool ContainsSqlException(Exception exception, int number)

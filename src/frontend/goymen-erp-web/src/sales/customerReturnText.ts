@@ -163,6 +163,26 @@ export const CUSTOMER_RETURN_TEXT = {
     approveHint: 'Hazırlayan ya da onaya gönderen kişi aynı iadeyi onaylayamaz ya da reddedemez; sunucu da reddeder.',
     financePortUnavailable:
       'Finans kaydı şu anda alınamıyor; iade kesinleşmedi. Finans bağlantısı açıldığında aynı işlemi tekrar deneyin.',
+    installments: {
+      heading: 'İadenin düşeceği taksitler',
+      loading: 'Asıl faturanın açık taksitleri yükleniyor…',
+      unavailable: 'Açık taksitler şu anda okunamıyor; iade kesinleştirilemez.',
+      retry: 'Taksitleri yeniden oku',
+      caption: 'Asıl faturanın açık taksitleri, vadesi en yakın olan önce.',
+      dueOn: 'Vade',
+      originalAmount: 'Taksit tutarı',
+      outstandingAmount: 'Kalan',
+      amount: 'İadeden düşülecek',
+      amountLabel: (dueOn: string) => `${dueOn} vadeli taksitten düşülecek tutar`,
+      returnAmount: 'İade tutarı',
+      appliedAmount: 'Taksitlere düşen',
+      advanceAmount: 'Müşteri avansı olarak kalan',
+      partialHint:
+        'Kısmi iade: tutarın hangi taksitlerden düşeceğini siz seçersiniz. Vadesi en yakın taksit önerildi; değiştirebilirsiniz. Toplamı finans doğrular.',
+      wholeHint: 'İade açık tutarın tamamını kapatıyor; taksit seçimi gerekmez.',
+      amountInvalid: 'Taksit tutarları sayı olmalı (ondalık ayırıcı virgül ya da nokta); en az bir taksite tutar girin.',
+      versionChanged: 'İade bu arada değişti; taksitler yeniden okunuyor.',
+    },
   },
 } as const
 
@@ -174,6 +194,7 @@ export const CUSTOMER_RETURN_PROBLEM_CODE = {
   documentInvalid: 'sales_customer_return_document_invalid',
   financePortUnavailable: 'sales_customer_return_finance_port_unavailable',
   financeRefused: 'sales_customer_return_finance_refused',
+  installmentsRequired: 'sales_customer_return_installments_required',
   invoiceNotFinalized: 'sales_customer_return_invoice_not_finalized',
   invoiceNotFound: 'sales_customer_return_invoice_not_found',
   lineNotOnInvoice: 'sales_customer_return_line_not_on_invoice',
@@ -195,6 +216,8 @@ const PROBLEM_TEXT: Readonly<Record<CustomerReturnProblemCode, string>> = {
   [CUSTOMER_RETURN_PROBLEM_CODE.documentInvalid]: 'Müşteri belge numarası ya da tarihi geçersiz.',
   [CUSTOMER_RETURN_PROBLEM_CODE.financePortUnavailable]: CUSTOMER_RETURN_TEXT.detail.financePortUnavailable,
   [CUSTOMER_RETURN_PROBLEM_CODE.financeRefused]: 'Finans iade kaydını kabul etmedi; iade kesinleşmedi.',
+  [CUSTOMER_RETURN_PROBLEM_CODE.installmentsRequired]:
+    'Kısmi iadede tutarın düşeceği taksitler seçilmelidir; taksitleri yeniden okuyup seçiminizi gönderin.',
   [CUSTOMER_RETURN_PROBLEM_CODE.invoiceNotFinalized]: 'Asıl satış faturası kesinleşmemiş; iade kaydedilemez.',
   [CUSTOMER_RETURN_PROBLEM_CODE.invoiceNotFound]: 'Asıl satış faturası bu şirkette bulunamadı.',
   [CUSTOMER_RETURN_PROBLEM_CODE.lineNotOnInvoice]: 'Seçilen satırlardan biri asıl faturada yok.',

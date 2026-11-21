@@ -1,4 +1,6 @@
+using System.Data;
 using System.Data.Common;
+using GoymenERP.Api.InventoryRuntime;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Logistics.Application.Contracts;
@@ -20,13 +22,26 @@ internal sealed class LogisticsRealizationTransactionRunner(
         CancellationToken cancellationToken = default) =>
         ExecuteAsync(companyId, operation, beforeCommit, cancellationToken);
 
-    public async Task<T> ExecuteDeliveryAsync<T>(Guid companyId,
+    public Task<T> ExecutePlanExcessShipmentAsync<T>(Guid companyId,
+        Func<ILogisticsShipmentStockV1, CancellationToken, Task<T>> operation,
+        Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken = default) =>
+        ExecuteAsync(companyId, operation, beforeCommit, cancellationToken, serializable: true);
+
+    public Task<T> ExecutePlanExcessAsync<T>(Guid companyId, Func<CancellationToken, Task<T>> operation,
+        Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken = default) =>
+        ExecuteDeliveryCoreAsync(companyId, operation, beforeCommit, cancellationToken, serializable: true);
+
+    public Task<T> ExecuteDeliveryAsync<T>(Guid companyId,
+        Func<CancellationToken, Task<T>> operation, Func<CancellationToken, Task> beforeCommit,
+        CancellationToken cancellationToken = default) => ExecuteDeliveryCoreAsync(companyId, operation, beforeCommit, cancellationToken, serializable: false);
+
+    private async Task<T> ExecuteDeliveryCoreAsync<T>(Guid companyId,
         Func<CancellationToken, Task<T>> operation,
         Func<CancellationToken, Task> beforeCommit,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken, bool serializable)
     {
         Require(companyId, operation, beforeCommit);
-        await using var transaction = await logistics.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await logistics.Database.BeginTransactionAsync(serializable ? IsolationLevel.Serializable : IsolationLevel.ReadCommitted, cancellationToken);
         try
         {
             var result = await operation(cancellationToken);
@@ -36,8 +51,9 @@ internal sealed class LogisticsRealizationTransactionRunner(
         }
         catch
         {
-            await RollBackAsync(transaction, cancellationToken);
+            var rolledBack = await RollBackAsync(transaction, CancellationToken.None);
             logistics.ChangeTracker.Clear();
+            if (!rolledBack && serializable) throw new LogisticsInstructionServiceException(503, LogisticsPlanExcessV1.Unavailable);
             throw;
         }
     }
@@ -45,10 +61,10 @@ internal sealed class LogisticsRealizationTransactionRunner(
     private async Task<T> ExecuteAsync<T>(Guid companyId,
         Func<ILogisticsShipmentStockV1, CancellationToken, Task<T>> operation,
         Func<CancellationToken, Task> beforeCommit,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool serializable = false)
     {
         Require(companyId, operation, beforeCommit);
-        await using var transaction = await logistics.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await logistics.Database.BeginTransactionAsync(serializable ? IsolationLevel.Serializable : IsolationLevel.ReadCommitted, cancellationToken);
         await using var stock = new ShipmentStock(
             logistics.Database.GetDbConnection(),
             transaction.GetDbTransaction(),
@@ -62,12 +78,38 @@ internal sealed class LogisticsRealizationTransactionRunner(
             await transaction.CommitAsync(cancellationToken);
             return result;
         }
-        catch
+        catch (Exception exception)
         {
-            await RollBackAsync(transaction, cancellationToken);
+            var rolledBack = await RollBackAsync(transaction, CancellationToken.None);
             logistics.ChangeTracker.Clear();
+            RequirePhysicalGuardRollback(rolledBack, exception);
+            var cause = stock.PhysicalRefusal ?? exception;
+            if (InventoryNegativeStockAttemptEvidenceException.FindEvidence(cause) is not null)
+            {
+                if (!rolledBack) throw new LogisticsInstructionServiceException(503, LogisticsRealizationCodesV1.Unavailable);
+                try { await InventoryNegativeStockAttemptRecording.AfterRollbackAsync(services, cause); }
+                catch (Exception) { throw new LogisticsInstructionServiceException(503, LogisticsRealizationCodesV1.Unavailable); }
+            }
             throw;
         }
+    }
+
+    private static bool IsPhysicalGuardConflict(InventoryDefiniteShipmentException error) => error.Status == 409
+        && error.Code == InventoryDefiniteShipmentCodesV1.ConcurrentChange
+        && error.InnerException is InventoryStoreException { Code: InventoryStoreCodes.ConcurrentChange };
+
+    internal static Exception MapShipmentRefusal(InventoryDefiniteShipmentException error) => IsPhysicalGuardConflict(error)
+        ? new LogisticsStoreException(LogisticsStoreCodes.ConcurrentChange,
+            "Fiziksel stok doğrulaması eşzamanlı değişti; sevk işlemi geri alınmalıdır.", error)
+        : new LogisticsInstructionServiceException(error.Status, error.Code, innerException: error,
+            detail: InventoryPhysicalStockRefusalProblem.Apply(error.Status, error, new Dictionary<string, object?>()));
+
+    internal static void RequirePhysicalGuardRollback(bool rolledBack, Exception error)
+    {
+        if (!rolledBack && error is LogisticsStoreException
+                { Code: LogisticsStoreCodes.ConcurrentChange, InnerException: InventoryDefiniteShipmentException physical }
+            && IsPhysicalGuardConflict(physical))
+            throw new LogisticsInstructionServiceException(503, LogisticsRealizationCodesV1.Unavailable);
     }
 
     private static void Require(Guid companyId, Delegate operation, Func<CancellationToken, Task> beforeCommit)
@@ -81,16 +123,14 @@ internal sealed class LogisticsRealizationTransactionRunner(
         ArgumentNullException.ThrowIfNull(beforeCommit);
     }
 
-    private static async Task RollBackAsync(IDbContextTransaction transaction, CancellationToken cancellationToken)
+    private static async Task<bool> RollBackAsync(IDbContextTransaction transaction, CancellationToken cancellationToken)
     {
         try
         {
             await transaction.RollbackAsync(cancellationToken);
+            return true;
         }
-        catch
-        {
-            // Preserve the operation failure; disposing the transaction remains mandatory.
-        }
+        catch { return false; }
     }
 
     private sealed class ShipmentStock(
@@ -101,6 +141,7 @@ internal sealed class LogisticsRealizationTransactionRunner(
         TimeProvider clock) : ILogisticsShipmentStockV1, IAsyncDisposable
     {
         private IInventoryDefiniteShipmentParticipantV1? participant;
+        public Exception? PhysicalRefusal { get; private set; }
 
         public async Task<LogisticsShipmentAllocationV1?> FindAllocationAsync(
             Guid salesOrderId,
@@ -219,7 +260,8 @@ internal sealed class LogisticsRealizationTransactionRunner(
             }
             catch (InventoryDefiniteShipmentException exception)
             {
-                throw new LogisticsInstructionServiceException(exception.Status, exception.Code);
+                PhysicalRefusal = exception;
+                throw MapShipmentRefusal(exception);
             }
         }
 

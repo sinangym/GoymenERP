@@ -88,7 +88,8 @@ public sealed record SalesOrderLinkedSupplyAnswerV1(
     Guid OrderId,
     string SupplyKind,
     IReadOnlyList<SalesOrderLinkedSupplyItemV1> OpenItems,
-    string? ReasonCode);
+    string? ReasonCode,
+    IReadOnlyList<SalesOrderLinkedSupplyItemV1>? HistoricalItems = null);
 
 /// <summary>
 /// The Sales-declared read a SUPPLY OWNER answers (S-1 Production U2-b / API-16; Purchasing MOD-03), registered by that owner's host

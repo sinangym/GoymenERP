@@ -1,3 +1,4 @@
+import { decodePaintSelection, type PlanPaintSelection } from './paintSelectionContract'
 /**
  * Wire contract of `GET /api/v1/manufacturing/orders/{orderId}` (`OrderViewV1`, MFG-API #313)
  * and of the fact commands' request bodies.
@@ -34,6 +35,21 @@ export const INVENTORY_OUTPUT_CLASSES = [
 
 export type InventoryOutputClass = (typeof INVENTORY_OUTPUT_CLASSES)[number]
 
+/**
+ * URT-S16 (URT-D43, BS-5, BS-14): the label classifications the operator may choose for a usable remnant. The label
+ * keeps this classification and carries the separate UsableRemnant production status; the server holds the fixed
+ * output class mapping and refuses anything else. Every other output class sends no choice.
+ */
+export const REMNANT_CLASSIFICATIONS = ['Standard', 'SecondQuality'] as const
+
+export type RemnantClassification = (typeof REMNANT_CLASSIFICATIONS)[number]
+
+/** BS-14: the screen preselects SecondQuality, the same default the server applies when no choice is sent. */
+export const DEFAULT_REMNANT_CLASSIFICATION: RemnantClassification = 'SecondQuality'
+
+/** URT-D43 (2): a new production output starts as a good product. */
+export const DEFAULT_OUTPUT_CLASS: InventoryOutputClass = 'GoodProduct'
+
 export interface ManufacturingOutputProductCandidate {
   readonly productId: string
   readonly productVersion: string
@@ -61,7 +77,7 @@ export interface ManufacturingOutputLocationCandidates {
   readonly searchWindowFull: boolean
 }
 
-export type OrderStatus = 'Open' | 'Closed'
+export type OrderStatus = 'Open' | 'Closed' | 'Cancelled'
 
 export interface RollBalance {
   readonly parentRollId: string
@@ -184,6 +200,7 @@ export interface PlanProcessSpecView {
   readonly targetThicknessMm: string | null
   readonly paintDescription: string | null
   readonly paintColorCode: string | null
+  readonly paintSelection?: PlanPaintSelection
 }
 
 /** Üretim U2-a: the cancellation of a plan (`PlanCancellationViewV1`). */
@@ -214,7 +231,16 @@ export interface PlanParameterSnapshotView {
  * The same shape the create and approve answers return — by construction on the server, not by
  * two projections kept in step — so a reopened plan and a just-created one decode identically.
  */
+export interface PlanReapprovalView {
+  readonly number: number
+  readonly reapprovedByUserId: string
+  readonly reapprovedAtUtc: string
+  readonly planVersion: number
+}
+
 export interface ProductionPlanView {
+  readonly requiresReapproval?: boolean
+  readonly reapprovals?: readonly PlanReapprovalView[]
   readonly planId: string
   readonly companyId: string
   readonly workCenterId: string
@@ -254,6 +280,13 @@ export interface ProductionPlanView {
   readonly salesOrderLink: PlanSalesOrderLinkView | null
   /** U2-b: how many times the link was set or removed; the next link request sends it back. 0 for legacy JSON. */
   readonly salesOrderLinkRevision: number
+  /**
+   * F-010a (URT-D29): the termin a user entered by hand, a calendar day (`yyyy-MM-dd`, no time); never computed. Null
+   * when none or legacy JSON.
+   */
+  readonly requestedDueDate: string | null
+  /** F-010a: how many times the termin was set, changed or removed; the next termin request sends it back. 0 for legacy JSON. */
+  readonly dueDateRevision: number
 }
 
 /** U2-b: the sales order line as Sales answered for it when the link was made, and who linked it, when (an id only). */
@@ -268,6 +301,32 @@ export interface PlanSalesOrderLinkView {
   readonly linkedAtUtc: string
 }
 
+export interface ManufacturingOutputLineReference {
+  readonly kind: 'SlitLine' | 'CutLine' | 'ClassLine'
+  readonly slitLineSequence: number | null
+  readonly cutLineId: string | null
+}
+
+export function outputLineKey(line: ManufacturingOutputLineReference): string {
+  return `${line.kind}:${line.slitLineSequence ?? line.cutLineId ?? ''}`
+}
+
+function decodeOutputLine(value: unknown): ManufacturingOutputLineReference | null {
+  if (!isObject(value) || !hasExactKeys(value, ['kind', 'slitLineSequence', 'cutLineId'])) return null
+  if (value.kind === 'ClassLine' && value.slitLineSequence === null && value.cutLineId === null)
+    return { kind: 'ClassLine', slitLineSequence: null, cutLineId: null }
+  if (value.kind === 'SlitLine' && typeof value.slitLineSequence === 'number'
+    && Number.isSafeInteger(value.slitLineSequence) && value.slitLineSequence > 0 && value.cutLineId === null)
+    return { kind: 'SlitLine', slitLineSequence: value.slitLineSequence, cutLineId: null }
+  if (value.kind === 'CutLine' && value.slitLineSequence === null && nonNilGuid(value.cutLineId) !== null)
+    return { kind: 'CutLine', slitLineSequence: null, cutLineId: value.cutLineId as string }
+  return null
+}
+
+export interface OrderReopeningHistory {
+  readonly closedOrderVersion: number; readonly closedByUserId: string; readonly closedAtUtc: string
+  readonly reopenedOrderVersion: number; readonly reopenedByUserId: string; readonly reopenedAtUtc: string; readonly reason: string
+}
 export interface ProductionOrderView {
   readonly orderId: string
   readonly companyId: string
@@ -284,6 +343,22 @@ export interface ProductionOrderView {
   readonly costStatus: 'NotCalculated'
   readonly closedByUserId: string | null
   readonly closedAtUtc: string | null
+  /**
+   * URT-D66 (3): the order's own termin, a calendar day (`yyyy-MM-dd`). Copied from the plan when the order opened and
+   * changed on the order alone afterwards. Null for an order opened before the copy existed, or legacy JSON.
+   */
+  readonly dueDate: string | null
+  /** URT-D66 (3): how many times the order's termin was changed; the next termin request sends it back. 0 for legacy JSON. */
+  readonly dueDateRevision: number
+  /** URT-D66 (4): the plan's termin as read with the order. Null when the plan has none, or legacy JSON. */
+  readonly planDueDate: string | null
+  /** URT-D66 (4): the server's "emir termini plandan farklı" flag; never computed here. False for legacy JSON. */
+  readonly dueDateDiffersFromPlan: boolean
+  readonly outputLines?: readonly ManufacturingOutputLineReference[]
+  readonly cancellationReason?: string | null
+  readonly cancelledByUserId?: string | null
+  readonly cancelledAtUtc?: string | null
+  readonly reopenings?: readonly OrderReopeningHistory[]
 }
 
 const GUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
@@ -333,7 +408,8 @@ function snapshotMeasure(value: unknown): string | null {
   return separator < 0 || decoded.length - separator - 1 <= 3 ? decoded : null
 }
 
-function calendarDate(value: unknown): value is string {
+/** A real calendar day `yyyy-MM-dd` (no time, not the default 0001-01-01). */
+export function calendarDate(value: unknown): value is string {
   if (typeof value !== 'string') return false
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
   if (match === null) return false
@@ -768,6 +844,17 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
       && body.salesOrderLinkRevision >= 0
       ? body.salesOrderLinkRevision
       : undefined
+  // F-010a (URT-D29): additive members; absent on legacy JSON.
+  const requestedDueDate = body.requestedDueDate === undefined || body.requestedDueDate === null
+    ? null
+    : calendarDate(body.requestedDueDate)
+      ? body.requestedDueDate
+      : undefined
+  const dueDateRevision = body.dueDateRevision === undefined
+    ? 0
+    : typeof body.dueDateRevision === 'number' && Number.isSafeInteger(body.dueDateRevision) && body.dueDateRevision >= 0
+      ? body.dueDateRevision
+      : undefined
   if (
     planId === null ||
     companyId === null ||
@@ -787,6 +874,8 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     preparedBy === undefined ||
     salesOrderLink === undefined ||
     salesOrderLinkRevision === undefined ||
+    requestedDueDate === undefined ||
+    dueDateRevision === undefined ||
     (body.calculation !== undefined && body.calculation !== null && calculation === null) ||
     typeof body.process !== 'string' ||
     (body.status !== 'Draft' && body.status !== 'Approved' && body.status !== 'Cancelled') ||
@@ -794,6 +883,19 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
   ) {
     return null
   }
+  const requiresReapproval = body.requiresReapproval === undefined ? false : body.requiresReapproval
+  const rawReapprovals = body.reapprovals === undefined || body.reapprovals === null ? [] : body.reapprovals
+  if (typeof requiresReapproval !== 'boolean' || !Array.isArray(rawReapprovals)) return null
+  const reapprovals: PlanReapprovalView[] = []
+  for (const raw of rawReapprovals) {
+    if (!isObject(raw) || !hasExactKeys(raw, ['number', 'reapprovedByUserId', 'reapprovedAtUtc', 'planVersion'])
+      || raw.number !== reapprovals.length + 1 || nonNilGuid(raw.reapprovedByUserId) === null
+      || typeof raw.reapprovedAtUtc !== 'string' || Number.isNaN(Date.parse(raw.reapprovedAtUtc))
+      || version(raw.planVersion) === null || (raw.planVersion as number) > planVersion
+      || (reapprovals.length > 0 && (raw.planVersion as number) <= reapprovals[reapprovals.length - 1].planVersion)) return null
+    reapprovals.push(raw as unknown as PlanReapprovalView)
+  }
+  if (requiresReapproval && (body.status !== 'Approved' || orderId !== null)) return null
   // CK_Plans_Approval: Draft has neither value; Approved has both; a Cancelled plan keeps both or neither.
   if ((approvedByUserId === null) !== (approvedAtUtc === null)) return null
   if (body.status === 'Draft' && approvedByUserId !== null) return null
@@ -804,6 +906,8 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
   if ((body.status === 'Cancelled') !== (cancellation !== null)) return null
   // CK_Plans_SalesOrderLinkRevision: a link exists only after at least one link change.
   if (salesOrderLink !== null && salesOrderLinkRevision === 0) return null
+  // CK_Plans_DueDateRevision: a termin exists only after at least one termin change.
+  if (requestedDueDate !== null && dueDateRevision === 0) return null
   const inputs: PlannedInput[] = []
   for (const raw of body.inputs) {
     const input = decodePlannedInput(raw)
@@ -848,6 +952,10 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     preparedBy,
     salesOrderLink,
     salesOrderLinkRevision,
+    requestedDueDate,
+    dueDateRevision,
+    requiresReapproval,
+    reapprovals,
   }
 }
 
@@ -925,7 +1033,9 @@ const PROCESS_SPEC_KEYS = [
  */
 export function decodePlanProcessSpec(value: unknown): PlanProcessSpecView | null | undefined {
   if (value === undefined || value === null) return null
-  if (!isObject(value) || !hasExactKeys(value, PROCESS_SPEC_KEYS)) return undefined
+  if (!isObject(value) || !hasExactKeys(value, Object.hasOwn(value, 'paintSelection') ? [...PROCESS_SPEC_KEYS, 'paintSelection'] : PROCESS_SPEC_KEYS)) return undefined
+  const selection = Object.hasOwn(value, 'paintSelection') ? decodePaintSelection(value.paintSelection) : undefined
+  if (Object.hasOwn(value, 'paintSelection') && selection === undefined) return undefined
   const count = (raw: unknown): number | null | undefined =>
     raw === null ? null : typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 1 ? raw : undefined
   const measure = (raw: unknown): string | null | undefined =>
@@ -947,8 +1057,8 @@ export function decodePlanProcessSpec(value: unknown): PlanProcessSpecView | nul
     paintColorCode: text(value.paintColorCode, 32),
   }
   const values = Object.values(spec)
-  if (values.some((member) => member === undefined) || values.every((member) => member === null)) return undefined
-  return spec as PlanProcessSpecView
+  if (values.some((member) => member === undefined) || selection === undefined && values.every((member) => member === null)) return undefined
+  return { ...spec, ...(selection === undefined ? {} : { paintSelection: selection }) } as PlanProcessSpecView
 }
 
 const REJECTION_KEYS = ['number', 'reason', 'rejectedByUserId', 'rejectedAtUtc', 'planVersion'] as const
@@ -998,6 +1108,19 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
       : typeof body.closedAtUtc === 'string' && !Number.isNaN(Date.parse(body.closedAtUtc))
         ? body.closedAtUtc
         : undefined
+  // URT-D66: additive members; absent on legacy JSON.
+  const dueDate = optionalCalendarDate(body.dueDate)
+  const planDueDate = optionalCalendarDate(body.planDueDate)
+  const dueDateRevision = body.dueDateRevision === undefined
+    ? 0
+    : typeof body.dueDateRevision === 'number' && Number.isSafeInteger(body.dueDateRevision) && body.dueDateRevision >= 0
+      ? body.dueDateRevision
+      : undefined
+  const dueDateDiffersFromPlan = body.dueDateDiffersFromPlan === undefined
+    ? false
+    : typeof body.dueDateDiffersFromPlan === 'boolean'
+      ? body.dueDateDiffersFromPlan
+      : undefined
   if (
     orderId === null ||
     companyId === null ||
@@ -1008,13 +1131,36 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
     remainingTarget === null ||
     closedByUserId === undefined ||
     closedAtUtc === undefined ||
+    dueDate === undefined ||
+    planDueDate === undefined ||
+    dueDateRevision === undefined ||
+    dueDateDiffersFromPlan === undefined ||
     typeof body.process !== 'string' ||
-    (body.status !== 'Open' && body.status !== 'Closed') ||
+    (body.status !== 'Open' && body.status !== 'Closed' && body.status !== 'Cancelled') ||
     body.costStatus !== 'NotCalculated' ||
     !Array.isArray(body.rolls)
   ) {
     return null
   }
+  const outputLines = body.outputLines === undefined || body.outputLines === null ? []
+    : Array.isArray(body.outputLines) ? body.outputLines.map(decodeOutputLine) : null
+  if (outputLines === null || outputLines.some((line) => line === null)
+    || new Set(outputLines.map((line) => outputLineKey(line!))).size !== outputLines.length) return null
+  // URT-D33: cancellation is retained and cannot be mistaken for an open order.
+  const cancellationReason = body.cancellationReason === undefined || body.cancellationReason === null
+    ? null : boundedSnapshotText(body.cancellationReason, 256) ? body.cancellationReason : undefined
+  const cancelledByUserId = body.cancelledByUserId === undefined ? null : nullableGuid(body.cancelledByUserId)
+  const cancelledAtUtc = body.cancelledAtUtc === undefined ? null : nullableInstant(body.cancelledAtUtc)
+  if (cancellationReason === undefined || cancelledByUserId === undefined || cancelledAtUtc === undefined) return null
+  const cancellationComplete = cancellationReason !== null && cancelledByUserId !== null && cancelledAtUtc !== null
+  if (body.status === 'Cancelled' ? !cancellationComplete || closedAtUtc !== null || closedByUserId !== null
+    : cancellationReason !== null || cancelledByUserId !== null || cancelledAtUtc !== null) return null
+  const reopenings = decodeOrderReopenings(body.reopenings, orderVersion)
+  if (reopenings === null) return null
+  // CK_Orders_DueDateRevision: a termin changed on the order always has a day.
+  if (dueDateRevision > 0 && dueDate === null) return null
+  // The flag is the server's, but it never contradicts the two days it was computed from.
+  if (dueDateDiffersFromPlan !== (dueDate !== null && dueDate !== planDueDate)) return null
   const rolls: RollBalance[] = []
   for (const raw of body.rolls) {
     const roll = decodeRoll(raw)
@@ -1035,7 +1181,39 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
     costStatus: 'NotCalculated',
     closedByUserId,
     closedAtUtc,
+    dueDate,
+    dueDateRevision,
+    planDueDate,
+    dueDateDiffersFromPlan,
+    outputLines: outputLines as ManufacturingOutputLineReference[],
+    cancellationReason,
+    cancelledByUserId,
+    cancelledAtUtc,
+    reopenings,
   }
+}
+
+function decodeOrderReopenings(value: unknown, orderVersion: number): OrderReopeningHistory[] | null {
+  if (value === undefined || value === null) return [] // Legacy ADR-011 answers had no reopening member.
+  if (!Array.isArray(value)) return null
+  const result: OrderReopeningHistory[] = []; let previousVersion = 0
+  for (const row of value) {
+    if (typeof row !== 'object' || row === null || Array.isArray(row)) return null
+    const v = row as Record<string, unknown>
+    if (!Number.isSafeInteger(v.closedOrderVersion) || (v.closedOrderVersion as number) < 2 || (v.closedOrderVersion as number) <= previousVersion
+      || v.reopenedOrderVersion !== (v.closedOrderVersion as number) + 1 || (v.reopenedOrderVersion as number) > orderVersion
+      || nullableGuid(v.closedByUserId) == null || nullableGuid(v.reopenedByUserId) == null
+      || nullableInstant(v.closedAtUtc) == null || nullableInstant(v.reopenedAtUtc) == null
+      || !boundedSnapshotText(v.reason, 256)) return null
+    result.push(v as unknown as OrderReopeningHistory); previousVersion = v.reopenedOrderVersion as number
+  }
+  return result
+}
+
+/** An absent or null member is null; anything but a calendar day is malformed (undefined). */
+function optionalCalendarDate(value: unknown): string | null | undefined {
+  if (value === undefined || value === null) return null
+  return calendarDate(value) ? value : undefined
 }
 
 /**
@@ -1081,6 +1259,7 @@ export type FactSnapshot =
       readonly kind: 'input-returns'
       readonly movementId: string
       readonly expectedParentLabelVersion: string
+      readonly sourceIssueMovementId?: string | null
     })
   | (FactSnapshotBase & {
       readonly kind: 'wip-measurements'
@@ -1097,11 +1276,15 @@ export type FactSnapshot =
       readonly movementId: string
       readonly expectedParentLabelVersion: string
       readonly outputClass: InventoryOutputClass
+      readonly outputLine?: ManufacturingOutputLineReference | null
+      /** Only for UsableRemnant (null otherwise); sent only with that class. */
+      readonly remnantClassification: RemnantClassification | null
       readonly productId: string
       readonly expectedProductVersion: string
       readonly lotId: string
       readonly labelId: string
-      readonly labelCode: string
+      /** URT-S21 (URT-D62): null lets the server give the output label the next number of the Ayarlar format. */
+      readonly labelCode: string | null
       readonly heatNumber: string | null
       readonly coilNumber: string | null
       readonly requiredDocuments: readonly string[]
@@ -1130,6 +1313,7 @@ export function factBody(snapshot: FactSnapshot): Record<string, unknown> {
       ...common,
       expectedParentLabelVersion: snapshot.expectedParentLabelVersion,
       movementId: snapshot.movementId,
+      ...(snapshot.sourceIssueMovementId == null ? {} : { sourceIssueMovementId: snapshot.sourceIssueMovementId }),
     }
   }
   if (snapshot.kind === 'outputs') {
@@ -1138,6 +1322,10 @@ export function factBody(snapshot: FactSnapshot): Record<string, unknown> {
       ...common,
       expectedParentLabelVersion: snapshot.expectedParentLabelVersion,
       outputClass: snapshot.outputClass,
+      ...(snapshot.outputLine == null ? {} : { outputLine: snapshot.outputLine }),
+      ...(snapshot.outputClass === 'UsableRemnant' && snapshot.remnantClassification !== null
+        ? { remnantClassification: snapshot.remnantClassification }
+        : {}),
       productId: snapshot.productId,
       expectedProductVersion: snapshot.expectedProductVersion,
       lotId: snapshot.lotId,
@@ -1156,6 +1344,133 @@ export function factBody(snapshot: FactSnapshot): Record<string, unknown> {
     }
   }
   return { factId: snapshot.factId, ...common }
+}
+
+// ---- SAT-D318: the input issue's physical-stock refusal (`ManufacturingStockShortfallViewV1`) ------------------
+
+/**
+ * SAT-D318 (owner decision of 2026-11-13): an input issue refused because it would take physical stock below zero
+ * names the refused issue, its parent label with the product, the stored place of the label's stock, the requested
+ * kilograms and, by the owner's answer SINAN-CEVAP (8) question 5 on Issue #66, the usable kilograms the issue could
+ * have taken there. It is an OPTIONAL member of that one 409 (`stockShortfall`): absent on every other code, on a
+ * replayed answer and from an older server. Reserved kilograms are not part of it, so the screen never shows or
+ * guesses one; the usable kilograms are shown as the server computed them, never recomputed here.
+ */
+export interface StockShortfallView {
+  readonly movementKind: 'Issue'
+  readonly sourceKind: 'manufacturing.input-issue'
+  /** The order the issue was posted to. */
+  readonly sourceId: string
+  /** The refused issue: the fact id the screen sent. */
+  readonly sourceLineId: string
+  /** The parent roll's label. */
+  readonly labelId: string
+  readonly productId: string
+  /** Where the label's stock lies; null when the label holds no stock anywhere. */
+  readonly locationId: string | null
+  /** The server's lossless invariant kilogram text (`KG_OUT`). */
+  readonly requestedKg: string
+  /**
+   * The usable kilograms the issue could have taken there, in the same text: the server's free physical kilograms
+   * less other demands' active reservations, never negative and always less than `requestedKg`.
+   */
+  readonly availableKg: string
+}
+
+const STOCK_SHORTFALL_FIELDS = [
+  'movementKind',
+  'sourceKind',
+  'sourceId',
+  'sourceLineId',
+  'labelId',
+  'productId',
+  'locationId',
+  'requestedKg',
+  'availableKg',
+] as const
+
+/** The input issue the screen sent: a shortfall is used only when it names exactly this issue. */
+export interface StockShortfallExpectation {
+  readonly orderId: string
+  readonly issueId: string
+  readonly labelId: string
+  /** The kilogram text the command sent (`KG_IN`); compared with the server's by value, never by spelling. */
+  readonly kg: string
+}
+
+/**
+ * Decodes `stockShortfall` against the issue the screen sent. A missing or extra member, a nil or malformed id,
+ * another movement or source kind, another order, issue or label, another quantity, or usable kilograms that are not
+ * less than the requested ones (that would be no shortfall) is null: the caller keeps the definite refusal without
+ * the detail, because a detail that does not name this issue, or contradicts itself, says nothing about it.
+ */
+export function decodeStockShortfall(
+  value: unknown,
+  expected: StockShortfallExpectation,
+): StockShortfallView | null {
+  if (!isObject(value) || !hasExactKeys(value, STOCK_SHORTFALL_FIELDS)) return null
+  if (value.movementKind !== 'Issue' || value.sourceKind !== 'manufacturing.input-issue') return null
+  const sourceId = nonNilGuid(value.sourceId)
+  const sourceLineId = nonNilGuid(value.sourceLineId)
+  const labelId = nonNilGuid(value.labelId)
+  const productId = nonNilGuid(value.productId)
+  const locationId = value.locationId === null ? null : nonNilGuid(value.locationId)
+  const requestedKg = kg(value.requestedKg)
+  const availableKg = kg(value.availableKg)
+  if (
+    sourceId === null ||
+    sourceLineId === null ||
+    labelId === null ||
+    productId === null ||
+    (value.locationId !== null && locationId === null) ||
+    requestedKg === null ||
+    requestedKg === '0' ||
+    availableKg === null ||
+    compareKg(availableKg, requestedKg) >= 0
+  ) {
+    return null
+  }
+  if (
+    !sameId(sourceId, expected.orderId) ||
+    !sameId(sourceLineId, expected.issueId) ||
+    !sameId(labelId, expected.labelId) ||
+    requestedKg !== canonicalKg(expected.kg)
+  ) {
+    return null
+  }
+  return {
+    movementKind: 'Issue',
+    sourceKind: 'manufacturing.input-issue',
+    sourceId,
+    sourceLineId,
+    labelId,
+    productId,
+    locationId,
+    requestedKg,
+    availableKg,
+  }
+}
+
+function sameId(left: string, right: string): boolean {
+  return left.toLowerCase() === right.toLowerCase()
+}
+
+/** Compares two of the server's kilogram texts (`KG_OUT`) by value, exactly: -1, 0 or 1, never through a float. */
+function compareKg(left: string, right: string): number {
+  const [leftInteger, leftFraction = ''] = left.split('.')
+  const [rightInteger, rightFraction = ''] = right.split('.')
+  const scale = Math.max(leftFraction.length, rightFraction.length)
+  const difference =
+    BigInt(leftInteger + leftFraction.padEnd(scale, '0')) - BigInt(rightInteger + rightFraction.padEnd(scale, '0'))
+  return difference < 0n ? -1 : difference > 0n ? 1 : 0
+}
+
+/** The server's `Text(decimal)` of the kilograms a command sent: 250.50, 250.5 and 250.500 are all "250.5". */
+function canonicalKg(value: string): string | null {
+  if (!KG_IN.test(value)) return null
+  if (!value.includes('.')) return value
+  const trimmed = value.replace(/0+$/, '')
+  return trimmed.endsWith('.') ? trimmed.slice(0, -1) : trimmed
 }
 
 // ---- GDC-BAL/1: `GET /api/v1/manufacturing/orders/{orderId}/mass-balance` (MassBalanceViewV1) ----------------
@@ -1328,7 +1643,7 @@ function decodeSummary(value: unknown): OrderSummary | null {
     createdAtUtc === null ||
     closedAtUtc === undefined ||
     typeof value.process !== 'string' ||
-    (value.status !== 'Open' && value.status !== 'Closed')
+    (value.status !== 'Open' && value.status !== 'Closed' && value.status !== 'Cancelled')
   ) {
     return null
   }
@@ -1380,10 +1695,84 @@ export interface CloseSnapshot {
   readonly exceptionReason?: string | null
 }
 
+/**
+ * URT-D66 (3): one order termin change, frozen once with its key. `expectedDueDateRevision` is the order's termin
+ * revision as this screen read it; the order's version is not sent (a termin is no fact of the order).
+ */
+export interface OrderDueDateSnapshot {
+  readonly idempotencyKey: string
+  readonly expectedDueDateRevision: number
+  /** A calendar day, `yyyy-MM-dd`; a termin is changed on the order, never removed. */
+  readonly dueDate: string
+}
+
+/** The request body exactly as `ChangeOrderDueDateRequestV1` names it. */
+export function orderDueDateBody(snapshot: OrderDueDateSnapshot): Record<string, unknown> {
+  return {
+    expectedDueDateRevision: snapshot.expectedDueDateRevision,
+    dueDate: snapshot.dueDate,
+  }
+}
+
 /** The request body exactly as `CloseOrderRequestV1` names it. */
 export function closeBody(snapshot: CloseSnapshot): Record<string, unknown> {
   return {
     expectedVersion: snapshot.expectedVersion,
     exceptionReason: snapshot.exceptionReason ?? null,
+  }
+}
+
+/**
+ * F-009 D3/D6 (API-25, UI-14): one output correction as the caller froze it. The reversal fact id, Inventory's
+ * reversal movement id and the key are minted once; re-sending the SAME snapshot sends all three unchanged, so the
+ * server answers it as the same command (ADR-011) and never takes the mass back twice. `outputId` is the declaration
+ * being corrected (the path's fact id); `labelId` / `expectedLabelVersion` are its output label as Inventory's detail
+ * read it. The kilograms stay text (Ö2); the server's kg profile decides the scale.
+ */
+export interface OutputCorrectionSnapshot {
+  readonly idempotencyKey: string
+  readonly outputId: string
+  readonly reversalId: string
+  readonly movementId: string
+  readonly expectedVersion: number
+  readonly labelId: string
+  /** Inventory's label version as its detail read sent it: a positive invariant integer text. */
+  readonly expectedLabelVersion: string
+  readonly kg: string
+  readonly reason: string
+  /** UTC instant (`…Z`) the user named for the correction. */
+  readonly occurredAtUtc: string
+}
+
+/** The request body exactly as `CorrectOutputRequestV1` names it; the declaration's id travels in the path. */
+export function outputCorrectionBody(snapshot: OutputCorrectionSnapshot): Record<string, unknown> {
+  return {
+    reversalId: snapshot.reversalId,
+    expectedVersion: snapshot.expectedVersion,
+    labelId: snapshot.labelId,
+    expectedLabelVersion: snapshot.expectedLabelVersion,
+    movementId: snapshot.movementId,
+    kg: snapshot.kg,
+    reason: snapshot.reason,
+    occurredAtUtc: snapshot.occurredAtUtc,
+  }
+}
+
+/**
+ * F-009 D5/D6 (URT-D33): one order cancel as the caller froze it — the order version this screen read, a required
+ * reason and the key. The cancel endpoint is URT-S4's; until its contract is merged this body is a draft
+ * (`expectedVersion`, `reason`) and the control that sends it is behind a capability no provider publishes.
+ */
+export interface OrderCancelSnapshot {
+  readonly idempotencyKey: string
+  readonly expectedVersion: number
+  readonly reason: string
+}
+
+/** The draft request body of the order cancel (URT-S4); see {@link OrderCancelSnapshot}. */
+export function orderCancelBody(snapshot: OrderCancelSnapshot): Record<string, unknown> {
+  return {
+    expectedVersion: snapshot.expectedVersion,
+    reason: snapshot.reason,
   }
 }

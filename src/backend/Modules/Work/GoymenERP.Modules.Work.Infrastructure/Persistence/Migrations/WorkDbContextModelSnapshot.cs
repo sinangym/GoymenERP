@@ -174,6 +174,9 @@ namespace GoymenERP.Modules.Work.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CompanyId", "EntityType", "EntityId", "OccurredAtUtc");
 
+                    b.HasIndex("CompanyId", "Outcome", "OccurredAtUtc", "Id")
+                        .IsDescending(false, false, true, true);
+
                     b.HasIndex("SubjectKind", "EntityType", "EntityId", "OccurredAtUtc", "Id");
 
                     b.ToTable("AuditEvents", "audit", t =>
@@ -275,6 +278,171 @@ namespace GoymenERP.Modules.Work.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_WorkSnapshots_State", "[HighestObservationOrdinal] >= 1 AND [HighestEvidenceId] <> '00000000-0000-0000-0000-000000000000' AND (([HighestAvailability] = 1 AND [HighestDesiredState] IS NOT NULL AND [HighestDesiredState] IN (1,2) AND [EffectiveObservationOrdinal] IS NOT NULL AND [EffectiveObservationOrdinal] = [HighestObservationOrdinal] AND [EffectiveDesiredState] IS NOT NULL AND [EffectiveDesiredState] = [HighestDesiredState] AND [EffectiveEvidenceId] IS NOT NULL AND [EffectiveEvidenceId] = [HighestEvidenceId] AND [EffectivePayloadSha256] IS NOT NULL AND [EffectivePayloadSha256] = [HighestPayloadSha256]) OR ([HighestAvailability] = 2 AND [HighestDesiredState] IS NULL AND (([EffectiveObservationOrdinal] IS NULL AND [EffectiveDesiredState] IS NULL AND [EffectiveEvidenceId] IS NULL AND [EffectivePayloadSha256] IS NULL) OR ([EffectiveObservationOrdinal] IS NOT NULL AND [EffectiveObservationOrdinal] >= 1 AND [EffectiveObservationOrdinal] < [HighestObservationOrdinal] AND [EffectiveDesiredState] IS NOT NULL AND [EffectiveDesiredState] IN (1,2) AND [EffectiveEvidenceId] IS NOT NULL AND [EffectiveEvidenceId] <> '00000000-0000-0000-0000-000000000000' AND [EffectivePayloadSha256] IS NOT NULL))))");
 
                             t.HasCheckConstraint("CK_WorkSnapshots_Version", "[Version] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkNotificationInboxRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SourceName")
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(160)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("PayloadSha256")
+                        .IsRequired()
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .IsFixedLength();
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("SchemaVersion")
+                        .HasColumnType("int");
+
+                    b.HasKey("CompanyId", "SourceName", "EventId");
+
+                    b.ToTable("NotificationInbox", "work", t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkNotificationInbox_Hash", "DATALENGTH([PayloadSha256]) = 64 AND [PayloadSha256] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%'");
+
+                            t.HasCheckConstraint("CK_WorkNotificationInbox_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [EventId] <> '00000000-0000-0000-0000-000000000000' AND [SchemaVersion] >= 1 AND LEN([SourceName]) > 0 AND LEN([EventType]) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkNotificationPassivationRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("NotificationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ActiveDays")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("PassivatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PolicyVersion")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)");
+
+                    b.HasKey("CompanyId", "NotificationId");
+
+                    b.ToTable("NotificationPassivations", "work", t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkNotificationPassivations_Policy", "[ActiveDays] >= 0 AND LEN([PolicyVersion]) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkNotificationRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CausationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<long?>("ObservedPurchaseOrderVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("ObservedSalesOrderVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("PurchaseOrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("PurchaseOrderLineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ReasonCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("ReasonText")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<Guid>("RecipientUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("SalesOrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("SalesOrderLineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SourceEntityId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SourceName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("SourceVersion")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "RecipientUserId", "RecordedAtUtc", "Id");
+
+                    b.HasIndex("CompanyId", "SourceName", "EventId", "RecipientUserId", "SalesOrderId", "SalesOrderLineId", "PurchaseOrderId", "PurchaseOrderLineId")
+                        .IsUnique();
+
+                    b.ToTable("Notifications", "work", t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkNotifications_Evidence", "LEN([SourceVersion]) > 0 AND LEN([ReasonCode]) > 0 AND LEN([ReasonText]) > 0 AND LEN([CorrelationId]) > 0");
+
+                            t.HasCheckConstraint("CK_WorkNotifications_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [RecipientUserId] <> '00000000-0000-0000-0000-000000000000' AND [SourceEntityId] <> '00000000-0000-0000-0000-000000000000' AND [Kind] IN (1, 2)");
+
+                            t.HasCheckConstraint("CK_WorkNotifications_Target", "([SalesOrderId] IS NOT NULL AND [SalesOrderLineId] IS NOT NULL AND [ObservedSalesOrderVersion] IS NOT NULL AND [SalesOrderId] <> '00000000-0000-0000-0000-000000000000' AND [SalesOrderLineId] <> '00000000-0000-0000-0000-000000000000' AND [ObservedSalesOrderVersion] >= 1 AND [PurchaseOrderId] IS NULL AND [PurchaseOrderLineId] IS NULL AND [ObservedPurchaseOrderVersion] IS NULL) OR ([Kind] = 2 AND [PurchaseOrderId] IS NOT NULL AND [PurchaseOrderLineId] IS NOT NULL AND [ObservedPurchaseOrderVersion] IS NOT NULL AND [PurchaseOrderId] <> '00000000-0000-0000-0000-000000000000' AND [PurchaseOrderLineId] <> '00000000-0000-0000-0000-000000000000' AND [ObservedPurchaseOrderVersion] >= 1 AND [SalesOrderId] IS NULL AND [SalesOrderLineId] IS NULL AND [ObservedSalesOrderVersion] IS NULL)");
                         });
                 });
 
@@ -398,6 +566,10 @@ namespace GoymenERP.Modules.Work.Infrastructure.Persistence.Migrations
 
                     b.HasKey("CompanyId", "SourceName", "ConsumerName", "MessageId");
 
+                    b.HasIndex("CompanyId", "ConsumerName", "MessageId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_WorkOutboxDeliveries_ConsumerMessage");
+
                     b.HasIndex("CompanyId", "Status", "LastAttemptAtUtc")
                         .HasDatabaseName("IX_WorkOutboxDeliveries_Open")
                         .HasFilter("[Status] <> 1");
@@ -520,6 +692,33 @@ namespace GoymenERP.Modules.Work.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Work.Infrastructure.Persistence.OrganizationCompanyReference", null)
                         .WithMany()
                         .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkNotificationInboxRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Work.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkNotificationPassivationRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkNotificationRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "NotificationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkNotificationRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkNotificationInboxRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "SourceName", "EventId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

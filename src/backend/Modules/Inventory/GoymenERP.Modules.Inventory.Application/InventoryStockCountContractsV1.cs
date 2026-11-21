@@ -64,7 +64,8 @@ public sealed record InventoryStockCountDecisionViewV1(
     string Decision,
     DateTimeOffset DecidedAtUtc,
     string Reason,
-    Guid? AdjustmentMovementId);
+    Guid? AdjustmentMovementId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? CostStatus = null);
 
 /// <summary>
 /// One count: the counted position as stored when counted, the book kg the counter saw at that label version,
@@ -184,6 +185,12 @@ public static class InventoryStockCountCodesV1
     /// <summary>The label does not hold stock in exactly one stored position (none, or free and blocked parts).</summary>
     public const string PositionConflict = "inventory_stock_count_position_conflict";
 
+    /// <summary>
+    /// SAT-D384: the label was consumed by a split, merge or manufacturing transformation ("dönüştürüldü → yeni
+    /// etiket"). Only the active last label is counted; the consumed one never enters a count difference.
+    /// </summary>
+    public const string LabelConverted = "inventory_stock_count_label_converted";
+
     /// <summary>The count id is already stored with other content.</summary>
     public const string CountConflict = "inventory_stock_count_conflict";
 
@@ -204,6 +211,7 @@ public static class InventoryStockCountCodesV1
 
     public const string ConcurrentChange = "inventory_concurrent_change";
     public const string Unavailable = "inventory_stock_count_unavailable";
+    public const string CostNotCalculated = "inventory_stock_count_cost_not_calculated";
 }
 
 /// <summary>
@@ -226,6 +234,7 @@ public static class InventoryStockCountHttpCodesV1
         InventoryStockCountCodesV1.IdempotencyConflict,
         InventoryStockCountCodesV1.LabelVersionConflict,
         InventoryStockCountCodesV1.PositionConflict,
+        InventoryStockCountCodesV1.LabelConverted,
         InventoryStockCountCodesV1.CountConflict,
         InventoryStockCountCodesV1.ConcurrentChange);
 
@@ -245,6 +254,7 @@ public static class InventoryStockCountHttpCodesV1
     public static IReadOnlySet<string> Status503Codes { get; } = Set(
         InventoryStockCountCodesV1.PermissionUnregistered,
         InventoryStockCountCodesV1.Unavailable,
+        InventoryStockCountCodesV1.CostNotCalculated,
         InventoryScaleCodes.ProfileUnusable,
         "settings_provider_unavailable",
         SettingsPrerequisiteCodesV1.UnitProfileNotFound,

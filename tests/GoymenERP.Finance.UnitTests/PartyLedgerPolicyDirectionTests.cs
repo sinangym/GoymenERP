@@ -28,6 +28,16 @@ public sealed class PartyLedgerPolicyDirectionTests
     }
 
     [Fact]
+    public void An_opening_takes_its_direction_side_and_its_reversal_the_reverse_side()
+    {
+        // FIN-S9 (FNS-D84, FNS-D85): the opening row and its reversal row, each its own row.
+        Assert.Equal(PartyLedgerSide.Debit, PartyLedgerPolicy.SideOf(PartyLedgerEntryKind.OpeningBalanceDebit));
+        Assert.Equal(PartyLedgerSide.Credit, PartyLedgerPolicy.SideOf(PartyLedgerEntryKind.OpeningBalanceCredit));
+        Assert.Equal(PartyLedgerSide.Credit, PartyLedgerPolicy.SideOf(PartyLedgerEntryKind.OpeningBalanceDebitReversal));
+        Assert.Equal(PartyLedgerSide.Debit, PartyLedgerPolicy.SideOf(PartyLedgerEntryKind.OpeningBalanceCreditReversal));
+    }
+
+    [Fact]
     public void A_party_that_is_customer_and_supplier_keeps_both_rows_and_a_balance_of_the_difference()
     {
         var at = new DateTimeOffset(2026, 11, 2, 9, 0, 0, TimeSpan.Zero);

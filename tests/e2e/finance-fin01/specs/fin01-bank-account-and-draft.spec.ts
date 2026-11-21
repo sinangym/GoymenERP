@@ -572,7 +572,8 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     await page.goto(`/finans/tahsilatlar/${recordedSourceId}`)
     await expect(page.getByText('Kesin kaynak kaydı.', { exact: false })).toBeVisible({ timeout: 30_000 })
     await page.getByRole('button', { name: 'Ters kayıt öner', exact: true }).click()
-    await page.getByLabel('Ters kayıt işlem tarihi', { exact: true }).fill('2026-09-13')
+    // #66 round 20: the reversal may not precede the receipt (09-18); it is dated the next day.
+    await page.getByLabel('Ters kayıt işlem tarihi', { exact: true }).fill('2026-09-19')
     await page.getByLabel('Gerekçe', { exact: true }).fill('SENTETIK FIN-T06 correction')
     const post = page.waitForRequest((request) => REVERSAL_PROPOSAL_RE.test(request.url()) && request.method() === 'POST')
     const answer = page.waitForResponse((response) => REVERSAL_PROPOSAL_RE.test(response.url()) && response.request().method() === 'POST')
@@ -581,7 +582,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     expect(sent.postDataJSON()).toEqual({
       sourceId: recordedSourceId,
       expectedVersion: '2',
-      occurredOn: '2026-09-13',
+      occurredOn: '2026-09-19',
       reason: 'SENTETIK FIN-T06 correction',
     })
     expect((await answer).status()).toBe(200)
@@ -1055,7 +1056,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
   test('FIN01-07 the proposer reads the customer ledger from zero, opens a row source, comes back and reopens it', async ({ page, context }) => {
     // Every fact below was recorded by the cases above on this database, for the seed customer and in TRY: the
     // payment (FIN01-02E, 875.25 on 09-18), the receipt (FIN01-03, 1250.50 on 09-18) and its reversal (FIN01-03C, its
-    // own row dated 09-13), the POS gross (FIN01-05, 1000.00) and the cheque collection (FIN01-06, 1500.00). Drafts,
+    // own row dated 09-19), the POS gross (FIN01-05, 1000.00) and the cheque collection (FIN01-06, 1500.00). Drafts,
     // the portfolio receipt and the dishonoured cheque have no money event, so they are no rows.
     const rewritten = await asActor(context, env.seed.proposerActor)
     const answered = watchAnswers(page)
@@ -1070,7 +1071,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
 
     // Start on the second day so this explicit range can never equal the screen's clock-derived
     // "this month through today" default (which was exactly 09-01..09-30 on the 30 September run).
-    // Every recorded FIN01 fact starts on 09-13, so the same five rows and totals remain in scope.
+    // Every recorded FIN01 fact lies in 09-18..09-19, so the same five rows and totals remain in scope.
     await page.getByLabel('Başlangıç tarihi', { exact: true }).fill('2026-09-02')
     await page.getByLabel('Bitiş tarihi', { exact: true }).fill('2026-09-30')
     const answer = page.waitForResponse((response) => PARTY_LEDGER_RE.test(response.url())
@@ -1097,15 +1098,15 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     expect(lira).toHaveLength(1)
     const rows = lira[0].entries
     expect(rows.map((row) => row.kind)).toEqual([
-      'ManualReceiptReversal', 'ManualBankPayment', 'ManualReceipt', 'ManualReceipt', 'CustomerInstrumentCollection',
+      'ManualBankPayment', 'ManualReceipt', 'ManualReceipt', 'CustomerInstrumentCollection', 'ManualReceiptReversal',
     ])
     expect(rows.map((row) => `${row.runningBalance.amount.money?.amount} ${row.runningBalance.side}`)).toEqual([
-      '1250.50 Debit', '2125.75 Debit', '875.25 Debit', '124.75 Credit', '1624.75 Credit',
+      '875.25 Debit', '375.25 Credit', '1375.25 Credit', '2875.25 Credit', '1624.75 Credit',
     ])
     // The reversal is its own row and names the receipt it reverses; each fact appears once (no replay copy).
-    expect(rows[0]).toMatchObject({ sourceId: reversalSourceId, reversesSourceId: recordedSourceId })
+    expect(rows[4]).toMatchObject({ sourceId: reversalSourceId, reversesSourceId: recordedSourceId })
     expect(rows.filter((row) => row.sourceId === recordedSourceId)).toHaveLength(1)
-    expect(rows[1].sourceId).toBe(manualPaymentId)
+    expect(rows[0].sourceId).toBe(manualPaymentId)
     expect([lira[0].debitTotal.money?.amount, lira[0].creditTotal.money?.amount]).toEqual(['2125.75', '3750.50'])
     expect(lira[0].closingBalance).toMatchObject({ side: 'Credit', amount: { money: { amount: '1624.75' } } })
 
@@ -1136,12 +1137,13 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     await expect(page.getByRole('heading', { level: 1, name: 'Cari ekstre', exact: true })).toBeVisible({ timeout: 30_000 })
     await expect(closing).toHaveText('1.624,75 (A)', { timeout: 30_000 })
 
-    // A narrower range carries nothing in (OPEN-018): the 09-13 reversal is outside it and the balance starts at zero.
-    await page.getByLabel('Başlangıç tarihi', { exact: true }).fill('2026-09-14')
+    // A narrower range carries nothing in (OPEN-018): the 09-18 facts are outside it, only the 09-19 reversal is
+    // in scope and the balance starts at zero.
+    await page.getByLabel('Başlangıç tarihi', { exact: true }).fill('2026-09-19')
     await page.getByRole('button', { name: 'Ekstreyi göster', exact: true }).click()
-    await expect(page).toHaveURL(/ekstreBaslangic=2026-09-14&ekstreBitis=2026-09-30/)
-    await expect(page.locator('[data-ledger-entry]')).toHaveCount(4, { timeout: 30_000 })
-    await expect(closing).toHaveText('2.875,25 (A)')
+    await expect(page).toHaveURL(/ekstreBaslangic=2026-09-19&ekstreBitis=2026-09-30/)
+    await expect(page.locator('[data-ledger-entry]')).toHaveCount(1, { timeout: 30_000 })
+    await expect(closing).toHaveText('1.250,50 (B)')
     expectEveryAnswerRewritten(answered, rewritten)
   })
 
@@ -1188,7 +1190,8 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     })
 
     await page.getByRole('button', { name: 'Ters kayıt öner', exact: true }).click()
-    await page.getByLabel('Ters kayıt işlem tarihi', { exact: true }).fill('2026-09-14')
+    // #66 round 20: not before the receipt (09-19).
+    await page.getByLabel('Ters kayıt işlem tarihi', { exact: true }).fill('2026-09-20')
     await page.getByLabel('Gerekçe', { exact: true }).fill('SENTETIK FIN01 rejection candidate')
     const proposalPost = page.waitForRequest((request) =>
       REVERSAL_PROPOSAL_RE.test(request.url()) && request.method() === 'POST')
@@ -1198,7 +1201,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     expect((await proposalPost).postDataJSON()).toEqual({
       sourceId: rejectedReceiptSourceId,
       expectedVersion: '2',
-      occurredOn: '2026-09-14',
+      occurredOn: '2026-09-20',
       reason: 'SENTETIK FIN01 rejection candidate',
     })
     const proposed = await proposalAnswer

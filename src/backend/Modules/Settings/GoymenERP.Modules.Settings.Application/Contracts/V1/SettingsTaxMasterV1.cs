@@ -372,6 +372,17 @@ public interface ISettingsTaxMasterAdministrationV1
     /// <summary>SAT-D158: withdraw a buyer situation list version before it takes effect.</summary>
     Task<TaxMasterCommandResultV1> WithdrawBuyerSituationListAsync(long listVersion, WithdrawTaxCodeListRequestV1 request,
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+
+    /// <summary>SAT-D181: the VAT rate and withholding ratio lists (the same authority as <see cref="GetAsync"/>).</summary>
+    Task<TaxRateListsViewV1> GetRateListsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>SAT-D181: publish a whole rate list version of <paramref name="listKind"/> (<see cref="TaxRateListKindsV1"/>).</summary>
+    Task<TaxMasterCommandResultV1> PublishRateListAsync(string listKind, PublishTaxRateListRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+
+    /// <summary>SAT-D181: withdraw a rate list version before it takes effect.</summary>
+    Task<TaxMasterCommandResultV1> WithdrawRateListAsync(string listKind, long listVersion, WithdrawTaxCodeListRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Whether a tax value was found. <c>Unresolved</c> is "kaynak yok": never 0, never a guessed default.</summary>
@@ -512,6 +523,11 @@ public sealed record SettingsWithholdingThresholdResolutionV1(
 /// </summary>
 public interface ISettingsLineTaxResolverV1
 {
+    /// <summary>SAT-D381/ALS-D105: the separate actual side default, with the same buyer/code calculator; never an item-type fallback.</summary>
+    Task<SettingsTaxDefaultResolutionV1> GetSubcontractDefaultAsync(SubcontractTaxSideV1 side, Guid productId,
+        string buyerSituation, DateOnly on, string? exemptionCode = null, CancellationToken cancellationToken = default) =>
+        throw new SettingsPrerequisiteException(TaxMasterProblemCodesV1.ProviderUnavailable);
+
     /// <summary>
     /// The default tax for the product's item type (the Product owner answers the type) for the order's buyer situation code
     /// (SAT-D140/D158; a malformed code is <c>settings_tax_master_request_invalid</c>, one the list in force does not carry is

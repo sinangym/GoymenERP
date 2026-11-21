@@ -15,6 +15,21 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
 {
     private const string PreFiscalMigration =
         "20260827174140_AddSqlRowVersionConcurrency";
+    // Exact Organization migration identities at this fixture's head, in application order.
+    private static readonly string[] ExpectedOrganizationMigrations =
+    [
+        "20260827125758_InitialOrganization",
+        "20260827174140_AddSqlRowVersionConcurrency",
+        "20260831142045_AddCompanyFiscalRuntimeSeed",
+        "20261013155012_AddLocationOperatorParty",
+        "20261114220943_AddWorkCenterCalendar",
+        "20261115145301_AddCompanyTaxIdChangeRequests",
+        "20261115153652_AllowWorkCenterOvernightShifts",
+        "20261115200655_ClearPlaceholderCompanyVkn",
+        "20261116111056_StageCompanyTaxIdCorrections",
+        "20261116185536_AddCompanySetupLifecycleAndMessaging",
+        "20261116205304_AddAuthorizedCompanyOpening",
+    ];
     private const string GdcLegalName =
         "Göymen Demir Çelik İnş. San. ve Tic. Ltd. Şti.";
     private const string GspLegalName =
@@ -22,6 +37,9 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
     private const string GinLegalName = "Göymen İnşaat";
     private const string GdcVkn = "4100046586";
     private const string GspVkn = "4101507252";
+    // KIM-D35 + KIM-D41/KIM-D48: the stand-in value the fiscal migration once wrote for the placeholder company. It is
+    // not a VKN; the StageCompanyTaxIdCorrections migration stages a pending correction for it and the company keeps the
+    // value until an approver applies that correction.
     private const string GinPlaceholderVkn = "1111111111";
 
     private static readonly Guid LegacySiteId = Guid.Parse(
@@ -80,6 +98,25 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
             await connection.OpenAsync();
 
             AssertApprovedCompanyRows(await ReadCompanyRowsAsync(connection));
+            // Fresh GIN is seeded after migrations with no VKN; there is no legacy stand-in to stage.
+            Assert.Equal(
+                0,
+                await ScalarAsync<int>(
+                    connection,
+                    """
+                    SELECT COUNT(*)
+                    FROM [organization].[CompanyTaxIdCorrections] AS [t]
+                    INNER JOIN [organization].[Companies] AS [c] ON [c].[Id] = [t].[CompanyId]
+                    WHERE [c].[Code] = N'GIN'
+                      AND [t].[Status] = N'Pending'
+                      AND [t].[StagedVkn] = N'1111111111'
+                      AND [t].[CorrectedVkn] IS NULL;
+                    """));
+            Assert.Equal(
+                0,
+                await ScalarAsync<int>(
+                    connection,
+                    "SELECT COUNT(*) FROM [organization].[CompanyTaxIdCorrections];"));
             await AssertProductionTopologyAsync(connection);
             await AssertFiscalConstraintsAsync(connection);
             await AssertDirectoryDoesNotExposeFiscalDataAsync(factory);
@@ -129,11 +166,7 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
             await AssertLegacyForeignKeysAsync(connection);
             await AssertLegacyGspDeterministicTopologyRetiredAsync(connection);
             await AssertCustomGspTopologyRemainsActiveAsync(connection);
-            Assert.Equal(
-                4,
-                await ScalarAsync<int>(
-                    connection,
-                    "SELECT COUNT(*) FROM [organization].[__EFMigrationsHistory];"));
+            await AssertAppliedOrganizationMigrationsAsync(connection);
         }
         finally
         {
@@ -265,15 +298,12 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
                 TestCompanyIds.CompanyC,
                 "GIN",
                 GinLegalName,
-                GinPlaceholderVkn,
+                vkn: GinPlaceholderVkn,
                 isPlaceholder: true,
                 invoiceCapable: false);
+            // 11 -> 12 by fiscal normalization. KIM-D48 stages the VKN correction; only approval changes the company.
             Assert.Equal(12, company.Version);
-            Assert.Equal(
-                4,
-                await ScalarAsync<int>(
-                    verification,
-                    "SELECT COUNT(*) FROM [organization].[__EFMigrationsHistory];"));
+            await AssertAppliedOrganizationMigrationsAsync(verification);
         }
         finally
         {
@@ -424,6 +454,22 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
             new SqlParameter("@LocationId", LegacyLocationId),
             new SqlParameter("@WorkCenterId", LegacyWorkCenterId));
         await InsertLegacyGspTopologyAsync(connection);
+    }
+
+    private static async Task AssertAppliedOrganizationMigrationsAsync(SqlConnection connection)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT [MigrationId] FROM [organization].[__EFMigrationsHistory] ORDER BY [MigrationId];";
+        await using var reader = await command.ExecuteReaderAsync();
+        var migrations = new List<string>();
+        while (await reader.ReadAsync())
+        {
+            migrations.Add(reader.GetString(0));
+        }
+
+        Assert.Equal(11, migrations.Count);
+        Assert.Equal(ExpectedOrganizationMigrations, migrations);
     }
 
     private static async Task MigrateOrganizationDatabaseAsync(
@@ -840,7 +886,7 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
                 TestCompanyIds.CompanyC,
                 "GIN",
                 GinLegalName,
-                GinPlaceholderVkn,
+                vkn: null,
                 isPlaceholder: true,
                 invoiceCapable: false),
             company => AssertCompany(
@@ -858,7 +904,7 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
         Guid id,
         string code,
         string legalName,
-        string vkn,
+        string? vkn,
         bool isPlaceholder,
         bool invoiceCapable)
     {
@@ -890,7 +936,7 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
                 reader.GetGuid(0),
                 reader.GetString(1),
                 reader.GetString(2),
-                reader.GetString(3),
+                reader.IsDBNull(3) ? null : reader.GetString(3),
                 reader.GetBoolean(4),
                 reader.GetBoolean(5),
                 reader.GetBoolean(6),
@@ -963,7 +1009,7 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
         Guid Id,
         string Code,
         string LegalName,
-        string Vkn,
+        string? Vkn,
         bool IsPlaceholder,
         bool InvoiceCapable,
         bool IsActive,

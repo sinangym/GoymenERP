@@ -25,7 +25,8 @@ public sealed class SqlProductMasterAuthorizationService(IdentityDbContext datab
         if (subject != GroupSharedMasterKind.Product || operation is not
             (GroupSharedMasterOperation.Read or GroupSharedMasterOperation.DraftCreate
                 or GroupSharedMasterOperation.DraftBasicEdit or GroupSharedMasterOperation.Activate
-                or GroupSharedMasterOperation.Deactivate or GroupSharedMasterOperation.Reactivate)
+                or GroupSharedMasterOperation.Deactivate or GroupSharedMasterOperation.Reactivate
+                or GroupSharedMasterOperation.SetCogsClassification)
             || issuer is null || issuer.LocalUserId == Guid.Empty || issuer.ExternalIdentityId == Guid.Empty
             || !currentUser.IsAuthenticated || !companyContext.IsResolved
             || !Guid.TryParse(currentUser.UserId, out var actorId) || actorId == Guid.Empty)
@@ -44,6 +45,7 @@ public sealed class SqlProductMasterAuthorizationService(IdentityDbContext datab
             GroupSharedMasterOperation.Activate => ProductMasterOperation.Activate,
             GroupSharedMasterOperation.Deactivate => ProductMasterOperation.Deactivate,
             GroupSharedMasterOperation.Reactivate => ProductMasterOperation.Reactivate,
+            GroupSharedMasterOperation.SetCogsClassification => ProductMasterOperation.SetCogsClassification,
             _ => throw new InvalidOperationException("A Product master operation without its own grant mapping."),
         };
         var now = (clock ?? TimeProvider.System).GetUtcNow();
@@ -80,6 +82,13 @@ public sealed class SqlProductMasterAuthorizationService(IdentityDbContext datab
                 MemberRoleId = memberRole.Id, MemberRoleVersion = memberRole.Version,
                 scope.ScopeType, scope.ScopeId,
             }).ToListAsync(cancellationToken);
+        // The awaited owner query can outlive the request's actor or origin. A grant for the captured identity
+        // must never be released as authority for a subsequently selected actor/company, including operation 7.
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!currentUser.IsAuthenticated || !companyContext.IsResolved || companyContext.CompanyId != origin
+            || !Guid.TryParse(currentUser.UserId, out var releasedActor) || releasedActor != actorId
+            || !currentUser.CanAccessCompany(origin))
+            return GroupSharedMasterAuthorizationSnapshot.Denied(subject, operation);
         if (rows.Count == 0 || rows.Any(row => row.RowVersion.Length != 8)
             || rows.Select(row => row.GrantId).Distinct().Count() != 1
             // SQL role-code collation can be insensitive. Enforce the canonical code as

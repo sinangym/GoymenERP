@@ -11,17 +11,38 @@ public enum AverageCostMovementKind
     /// <summary>A production receipt: never part of the purchase average (SAT-D258).</summary>
     ProductionReceipt = 3,
 
-    /// <summary>OPEN-INV-AVGCOST-RETURN (NEEDS-SINAN): a sales or purchase return.</summary>
+    /// <summary>
+    /// A return the core cannot classify (neither <see cref="CustomerReturn"/> nor <see cref="PurchaseReturn"/>): it stays
+    /// unreadable (<see cref="AverageCostUnreadableReason.Return"/>), nothing is guessed.
+    /// </summary>
     Return = 4,
+
+    /// <summary>
+    /// SAT-D303: a customer return enters as the reversal of the original issue, at the original issue's unit cost
+    /// (<see cref="AverageCostMovement.UnitCostPerStockKg"/>; KLN-D64), and blends like a receipt. Without that cost the
+    /// position is unreadable (<see cref="AverageCostUnreadableReason.Return"/>).
+    /// </summary>
+    CustomerReturn = 5,
+
+    /// <summary>
+    /// SAT-D306: a purchase return leaves at the original purchase line's base-currency unit cost
+    /// (<see cref="AverageCostMovement.UnitCostPerStockKg"/>), not at the current average, and the remaining average is
+    /// recalculated. Without that cost the position is unreadable (<see cref="AverageCostUnreadableReason.Return"/>).
+    /// </summary>
+    PurchaseReturn = 6,
 }
 
 /// <summary>
 /// One physical movement on a position, as the cost core sees it. <see cref="StockOnHandBeforeKg"/> is Inventory's own
 /// physical stock of the position before the movement; the core refuses to blend a quantity the ledger never costed.
 /// </summary>
-/// <param name="UnitCostPerStockKg">Purchase receipts only: the base-currency cost of one stock kilogram.</param>
+/// <param name="UnitCostPerStockKg">The base-currency cost of one stock kilogram: the purchase price for a purchase receipt
+/// (required), the original issue's unit cost for a customer return and the original purchase line's unit cost for a
+/// purchase return (null when that original cost is unavailable). Ignored for an issue or a production receipt.</param>
 /// <param name="UnitCostIsPerStockKg">False when the purchase price is not per stock kilogram (unit conversion is OPEN).</param>
-/// <param name="IsBaseCurrency">False for a foreign-currency cost (rate and date are OPEN).</param>
+/// <param name="IsBaseCurrency">False for a foreign-currency cost whose TL value is not known yet (BS-1: the supplier invoice's
+/// official rate is not recorded); the core answers <see cref="AverageCostUnreadableReason.ForeignCurrency"/>. A converted cost
+/// enters as a base-currency cost.</param>
 /// <param name="AdditionalCostPerStockKg">Purchase receipts only: freight, customs or other additional cost per stock kilogram,
 /// kept apart from <paramref name="UnitCostPerStockKg"/>. SAT-D302 (1): it never enters the v1 average. Keeping it apart in
 /// its own field is the implementation reading of that decision (reversible); it is carried so the later setting

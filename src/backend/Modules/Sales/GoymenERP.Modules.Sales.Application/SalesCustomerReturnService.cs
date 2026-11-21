@@ -19,9 +19,14 @@ namespace GoymenERP.Modules.Sales.Application;
 /// shipment must be its shipment; amounts are the calculator's against the finalised returns of the invoice (SAT-D292).</item>
 /// <item><b>Submit</b> (<c>sales.returns.write</c>), <b>approve</b> (<c>sales.returns.approve</c>, never the preparer or the
 /// submitter, SAT-D290 (3)).</item>
-/// <item><b>Finalise</b> (<c>sales.returns.finalize</c>): without a Finance reversal port nothing is read or written (503,
-/// SAT-D294); with one, the return is recomputed against the finalised returns of now, offered to Finance under its own id as the
-/// admission identity, and committed only when Finance admitted it.</item>
+/// <item><b>Finalise</b> (<c>sales.returns.finalize</c>): without the Finance acceptance port nothing is read or written (503,
+/// SAT-D294); with it, the return is recomputed against the finalised returns of now, offered to Finance (API-11 v2) under its own
+/// id as the acceptance identity and the command's own key, and committed only when Finance admitted it. The commit writes the
+/// <c>sales.return-invoice.finalized.v1</c> outbox event in the same save. FNS-D81: a partial return carries the installments the
+/// user chose; finalising one without a selection is refused (<c>sales_customer_return_installments_required</c>) instead of
+/// letting Finance apply its automatic nearest-due order (FNS-D54).</item>
+/// <item><b>Installments</b> (<c>sales.returns.finalize</c>): the approved return's original invoice installments and Finance's
+/// nearest-due prefill (FNS-D81), read through the same port; nothing is written.</item>
 /// </list>
 /// No stock movement is written and no other module's table is touched (SAT-D293 (2)).
 /// </summary>
@@ -40,6 +45,12 @@ public sealed class SalesCustomerReturnService(
     private const string ApprovePermission = SalesPermissionManifestV1.ReturnsApprove;
     private const string FinalizePermission = SalesPermissionManifestV1.ReturnsFinalize;
     private const string PriceReadPermission = SalesPermissionManifestV1.OrdersPriceRead;
+
+    /// <summary>The prefix of Finance's stable installment selection refusals (FNS-D44), answered on the <c>allocations</c> field.</summary>
+    private const string FinanceAllocationReasonPrefix = "finance_customer_return_allocation_";
+
+    /// <summary>Technical bound (not a policy): the longest Finance reason code passed through to the caller.</summary>
+    private const int MaximumReasonCodeLength = 128;
 
     private static readonly SalesDraftStateAudit CreatedAudit =
         new("sales.customer-return.created.v1", "CreateCustomerReturn", "Müşteri iade faturası kaydedildi");
@@ -145,17 +156,18 @@ public sealed class SalesCustomerReturnService(
             withReason: true);
 
     public async Task<SalesCustomerReturnCommandResult> FinalizeCustomerReturnAsync(Guid customerReturnId,
-        SalesDraftStateCommandRequest request, SalesCommandMetadata metadata, CancellationToken cancellationToken = default)
+        FinalizeSalesCustomerReturnRequest request, SalesCommandMetadata metadata, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(metadata);
         var scope = await RequireAsync(FinalizePermission, cancellationToken);
-        var expectedVersion = ExpectedVersion(request);
+        var expectedVersion = ExpectedVersion(new SalesDraftStateCommandRequest(request.ExpectedVersion));
+        var allocations = Validate(request);
 
-        // SAT-D294: the receivable effect is never skipped; without the Finance reversal port nothing is read, offered or written.
+        // SAT-D294: the receivable effect is never skipped; without the Finance acceptance port nothing is read, offered or written.
         var port = finance ?? throw new SalesDraftServiceException(503, SalesCustomerReturnProblemCodesV1.FinancePortUnavailable);
         const string commandName = SalesCustomerReturnCommands.FinalizeV1;
-        var requestHash = SalesCustomerReturnHash.Compute(commandName, customerReturnId, request);
+        var requestHash = SalesCustomerReturnHash.ComputeFinalize(customerReturnId, request);
         var envelope = Envelope(scope, metadata, FinalizePermission);
         var replay = await FindReplayAsync(scope, envelope, requestHash, commandName, cancellationToken, FinalizePermission);
         if (replay is not null)
@@ -187,11 +199,24 @@ public sealed class SalesCustomerReturnService(
             return refusal;
         }
 
+        var invoiceVersion = InvoiceVersion(invoice);
+        if (allocations is null)
+        {
+            // FNS-D81: Finance's automatic nearest-due order (FNS-D54) is never applied to a Sales return. Without a selection
+            // the return is finalised only when Finance answers that no selection applies (the whole outstanding amount).
+            var prefill = await InstallmentsAsync(scope, port, target, invoiceVersion, cancellationToken);
+            if (prefill.SelectionAllowed)
+            {
+                throw new SalesDraftServiceException(422, SalesCustomerReturnProblemCodesV1.InstallmentsRequired,
+                    [new("allocations", SalesCustomerReturnProblemCodesV1.InstallmentsRequired)]);
+            }
+        }
+
         await RequireStillAsync(scope, FinalizePermission, cancellationToken);
         SalesCustomerReturnFinanceAnswerV1 answer;
         try
         {
-            answer = await port.OfferAsync(Offer(target, metadata), cancellationToken);
+            answer = await port.OfferAsync(Offer(scope, target, invoiceVersion, allocations, metadata), cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -206,9 +231,8 @@ public sealed class SalesCustomerReturnService(
 
         if (answer.Outcome != SalesCustomerReturnFinanceOutcomeV1.Admitted)
         {
-            // Not recorded: Finance may admit the same return later (its own reason is not interpreted here).
-            throw new SalesDraftServiceException(422, SalesCustomerReturnProblemCodesV1.FinanceRefused,
-                [new("finance", SalesCustomerReturnProblemCodesV1.FinanceRefused)]);
+            // Not recorded: Finance may admit the same return later (a corrected selection, a retry after its own race).
+            throw Finance(answer.Outcome, answer.ReasonCode);
         }
 
         SalesCustomerReturnStoreResult? result = null;
@@ -222,6 +246,97 @@ public sealed class SalesCustomerReturnService(
 
         return result is null ? throw new SalesDraftServiceException(404, "not_found") : Result(result);
     }
+
+    public async Task<SalesCustomerReturnInstallmentsResponse> GetCustomerReturnInstallmentsAsync(Guid customerReturnId,
+        CancellationToken cancellationToken = default)
+    {
+        var scope = await RequireAsync(FinalizePermission, cancellationToken);
+        var port = finance ?? throw new SalesDraftServiceException(503, SalesCustomerReturnProblemCodesV1.FinancePortUnavailable);
+        if (customerReturnId == Guid.Empty)
+        {
+            throw new SalesDraftServiceException(404, "not_found");
+        }
+
+        var target = await StoreAsync(scope, () => returns.FindCustomerReturnAsync(customerReturnId, cancellationToken), cancellationToken,
+            FinalizePermission) ?? throw new SalesDraftServiceException(404, "not_found");
+        if (target.State != SalesCustomerReturnState.Approved)
+        {
+            // Only an approved return is finalised; the prefill of any other state would be a question nobody can act on.
+            throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.StateConflict, [new("state", SalesRuleCodes.StateConflict)]);
+        }
+
+        var invoice = await StoreAsync(scope, () => invoices.FindInvoiceAsync(target.Header.OriginalInvoiceId, cancellationToken),
+            cancellationToken, FinalizePermission) ?? throw new SalesDraftServiceException(503, "service_unavailable");
+        var answer = await InstallmentsAsync(scope, port, target, InvoiceVersion(invoice), cancellationToken);
+        return new SalesCustomerReturnInstallmentsResponse(
+            target.Id,
+            target.Version.ToString(CultureInfo.InvariantCulture),
+            ReturnAmount(target),
+            answer.SelectionAllowed,
+            answer.AppliedAmount!,
+            answer.AdvanceAmount!,
+            [.. answer.Installments.Select(item => new SalesCustomerReturnInstallmentView(item.OpenItemId, item.DueOn, item.OriginalAmount,
+                item.OutstandingAmount, item.PrefillAmount))]);
+    }
+
+    /// <summary>
+    /// Finance's installment read under the fence: a refusal or an unusable answer is mapped and never answered as a prefill; the
+    /// fence is measured again after the await.
+    /// </summary>
+    private async Task<SalesCustomerReturnInstallmentAnswerV1> InstallmentsAsync(Scope scope, ISalesCustomerReturnFinancePortV1 port,
+        SalesCustomerReturn target, string invoiceVersion, CancellationToken cancellationToken)
+    {
+        await RequireStillAsync(scope, FinalizePermission, cancellationToken);
+        SalesCustomerReturnInstallmentAnswerV1 answer;
+        try
+        {
+            answer = await port.ReadInstallmentsAsync(new SalesCustomerReturnInstallmentQueryV1(scope.CompanyId, scope.ActorId,
+                correlation.CorrelationId, correlation.CausationId, target.Id, target.Header.OriginalInvoiceId, invoiceVersion,
+                ReturnAmount(target)), cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            throw new SalesDraftServiceException(503, "service_unavailable");
+        }
+
+        await RequireStillAsync(scope, FinalizePermission, cancellationToken);
+        if (answer is null || !Enum.IsDefined(answer.Outcome))
+        {
+            throw new SalesDraftServiceException(503, "service_unavailable");
+        }
+
+        if (answer.Outcome != SalesCustomerReturnFinanceOutcomeV1.Admitted)
+        {
+            throw Finance(answer.Outcome, answer.ReasonCode);
+        }
+
+        if (answer.Installments is null || answer.AppliedAmount is null || answer.AdvanceAmount is null
+            || answer.Installments.Any(item => item is null || item.OpenItemId == Guid.Empty || item.OriginalAmount is null
+                || item.OutstandingAmount is null || item.PrefillAmount is null))
+        {
+            throw new SalesDraftServiceException(503, "service_unavailable");
+        }
+
+        return answer;
+    }
+
+    /// <summary>
+    /// Finance's refusal as the caller's problem (never recorded under the key): an installment selection refusal names the
+    /// selection with Finance's own stable code; any other refusal is <c>sales_customer_return_finance_refused</c>.
+    /// </summary>
+    private static SalesDraftServiceException Finance(SalesCustomerReturnFinanceOutcomeV1 outcome, string? reasonCode) => outcome switch
+    {
+        SalesCustomerReturnFinanceOutcomeV1.Refused when reasonCode is not null
+            && reasonCode.StartsWith(FinanceAllocationReasonPrefix, StringComparison.Ordinal)
+            && reasonCode.Length <= MaximumReasonCodeLength
+            => new SalesDraftServiceException(422, SalesCustomerReturnProblemCodesV1.FinanceRefused, [new("allocations", reasonCode)]),
+        SalesCustomerReturnFinanceOutcomeV1.Refused => new SalesDraftServiceException(422, SalesCustomerReturnProblemCodesV1.FinanceRefused,
+            [new("finance", SalesCustomerReturnProblemCodesV1.FinanceRefused)]),
+        SalesCustomerReturnFinanceOutcomeV1.KeyConflict => new SalesDraftServiceException(409, SalesDraftProblemCodesV1.SameKeyPayloadMismatch),
+        SalesCustomerReturnFinanceOutcomeV1.Retry => new SalesDraftServiceException(409, SalesDraftProblemCodesV1.ConcurrentChange),
+        SalesCustomerReturnFinanceOutcomeV1.Denied => new SalesDraftServiceException(403, "forbidden"),
+        _ => new SalesDraftServiceException(503, "service_unavailable"),
+    };
 
     public async Task<SalesCustomerReturnView> GetCustomerReturnAsync(Guid customerReturnId, CancellationToken cancellationToken = default)
     {
@@ -401,6 +516,23 @@ public sealed class SalesCustomerReturnService(
         }
     }
 
+    /// <summary>The finalisation body the reader let through, measured again for a direct caller: a malformed field is a 400.</summary>
+    private static IReadOnlyList<SalesCustomerReturnFinanceAllocationV1>? Validate(FinalizeSalesCustomerReturnRequest request)
+    {
+        try
+        {
+            SalesCustomerReturnJson.RequireFinalize(request);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            throw new SalesDraftServiceException(400, "validation_failed", [new("allocations", "validation_failed")]);
+        }
+
+        return request.Allocations is null
+            ? null
+            : [.. request.Allocations.Select(item => new SalesCustomerReturnFinanceAllocationV1(item.OpenItemId, item.Amount))];
+    }
+
     private static long ExpectedVersion(SalesDraftStateCommandRequest request) =>
         long.TryParse(request.ExpectedVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var expectedVersion)
         && expectedVersion >= 1
@@ -460,18 +592,40 @@ public sealed class SalesCustomerReturnService(
     private static SalesDraftServiceException Duplicate() => new(409, SalesCustomerReturnProblemCodesV1.DocumentDuplicate,
         [new("customerDocumentNo", SalesCustomerReturnProblemCodesV1.DocumentDuplicate)]);
 
-    private SalesCustomerReturnFinanceOfferV1 Offer(SalesCustomerReturn item, SalesCommandMetadata metadata) => new(
-        item.CompanyId,
+    /// <summary>
+    /// The acceptance offer: the command's own actor, correlation and key (Finance replays the same key, payload and actor), the
+    /// return at the version being finalised, the admitted original invoice version and the user's selection. The business date is
+    /// the finalisation's Istanbul day (SAT-D294 as implemented; see the slice notes for the open question on a retry across days).
+    /// </summary>
+    private SalesCustomerReturnFinanceOfferV1 Offer(Scope scope, SalesCustomerReturn item, string invoiceVersion,
+        IReadOnlyList<SalesCustomerReturnFinanceAllocationV1>? allocations, SalesCommandMetadata metadata) => new(
+        scope.CompanyId,
+        scope.ActorId,
+        metadata.CorrelationId,
+        metadata.CausationId,
+        metadata.IdempotencyKey,
         item.Id,
+        item.Version.ToString(CultureInfo.InvariantCulture),
         item.Header.OriginalInvoiceId,
+        invoiceVersion,
         item.Header.PartyId,
         item.Header.CompanyAccountId,
         item.Header.CurrencyId,
-        Text(item.Totals.LineTotal.Amount, item.Header.AmountScale),
+        ReturnAmount(item),
         item.Header.FunctionalCurrencyId,
         item.FunctionalTotals is { } functional ? Text(functional.LineTotal.Amount, item.Header.FunctionalScale!.Value) : null,
         Day(timeProvider.GetUtcNow()),
-        metadata.CorrelationId);
+        allocations);
+
+    /// <summary>The return amount Finance is told: the sum of the line totals at the invoice currency's scale (SAT-D292).</summary>
+    private static string ReturnAmount(SalesCustomerReturn item) => Text(item.Totals.LineTotal.Amount, item.Header.AmountScale);
+
+    /// <summary>
+    /// The original invoice's version Finance admitted: the version the finalisation recorded (later bookkeeping on the invoice
+    /// never changes what Finance knows); an invoice without the finalisation facts answers its own version and Finance refuses it.
+    /// </summary>
+    private static string InvoiceVersion(SalesInvoice invoice) =>
+        (invoice.Finalization?.FinalizedVersion ?? invoice.Version).ToString(CultureInfo.InvariantCulture);
 
     private static SalesCustomerReturn Copy(SalesCustomerReturn item) => SalesCustomerReturn.Restore(item.Id, item.CompanyId, item.Header,
         item.ShipmentId, item.CustomerDocumentNo, item.CustomerDocumentDate, item.State, item.Facts, item.CreatedBy, item.CreatedAtUtc,

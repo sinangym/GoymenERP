@@ -59,6 +59,9 @@ import {
   LEDGER_FORBIDDEN,
   LEDGER_FROM,
   LEDGER_NO_CARRY_FORWARD,
+  LEDGER_PERIOD_CARRY,
+  LEDGER_OPENING_BALANCE,
+  LEDGER_CARRY_SOURCE,
   LEDGER_NOTICE,
   LEDGER_PER_CURRENCY,
   LEDGER_RANGE_INVALID,
@@ -71,6 +74,7 @@ import {
   OPEN_COLLECTION_RECEIPT,
   OPEN_INSTRUMENT,
   OPEN_ITEM_NO_SCREEN,
+  OPENING_BALANCE_SOURCE,
   OPEN_ORIGINAL,
   OPEN_PAYMENT,
   OPEN_REVERSED_PAYMENT,
@@ -153,6 +157,11 @@ function SourceLinks({ entry }: { readonly entry: PartyLedgerEntry }) {
     case 'OpenItemCancellation':
     case 'PayableOpenItemCancellation':
       return <span>{`${OPEN_ITEM_NO_SCREEN} · ${reference(entry.documentId ?? entry.sourceId)}`}</span>
+    case 'OpeningBalanceDebit':
+    case 'OpeningBalanceCredit':
+    case 'OpeningBalanceDebitReversal':
+    case 'OpeningBalanceCreditReversal':
+      return <span>{`${OPENING_BALANCE_SOURCE} · ${reference(entry.sourceId)}`}</span>
   }
 }
 
@@ -173,6 +182,10 @@ function CurrencyTable({ currency, codes }: { readonly currency: PartyLedgerCurr
         </tr>
       </thead>
       <tbody>
+        {currency.openingBalance ? <tr data-ledger-opening>
+          <th scope="row" colSpan={6}>{LEDGER_OPENING_BALANCE}</th>
+          <td data-amount-kind={amountShown(currency.openingBalance.amount).kind}>{balanceText(currency.openingBalance)}</td>
+        </tr> : null}
         {currency.entries.map((entry) => (
           <tr key={`${entry.kind}:${entry.entryId}`} data-ledger-entry={entry.entryId} data-ledger-kind={entry.kind}>
             <td>{dayText(entry.occurredOn)}</td>
@@ -223,11 +236,15 @@ function LedgerBody({
   if (answer.kind === 'refused') {
     return <p role="alert">{answer.refusal === 'TooManyEntries' ? LEDGER_TOO_MANY : LEDGER_REFUSED_INVALID}</p>
   }
-  if (answer.ledger.currencies.length === 0) return <p role="status">{LEDGER_EMPTY}</p>
   return (
     <WithCurrencyCodes>
       {(codes) => (
         <div className={styles.ledger}>
+          <p className={styles.notice} data-ledger-carry-forward={answer.ledger.carryForward}>
+            <strong>{answer.ledger.periodCarry ? LEDGER_PERIOD_CARRY : LEDGER_NO_CARRY_FORWARD}</strong>
+            {answer.ledger.periodCarry ? <span>{` ${LEDGER_CARRY_SOURCE} · ${dayText(answer.ledger.periodCarry.sourceEndsOn)} · ${reference(answer.ledger.periodCarry.voucherId)}`}</span> : null}
+          </p>
+          {answer.ledger.currencies.length === 0 ? <p role="status">{LEDGER_EMPTY}</p> : null}
           {answer.ledger.currencies.map((currency) => (
             <CurrencyTable key={currency.currencyId} currency={currency} codes={codes} />
           ))}
@@ -340,7 +357,6 @@ export function PartyLedger({
       <p className={styles.hint}>{accountReference(partyId, companyAccountId)}</p>
       <BalanceSummary partyId={partyId} companyAccountId={companyAccountId} />
       <p className={styles.notice}>{LEDGER_NOTICE}</p>
-      <p className={styles.notice} data-ledger-carry-forward="NoneOpen018"><strong>{LEDGER_NO_CARRY_FORWARD}</strong></p>
       <p className={styles.notice}>{LEDGER_PER_CURRENCY}</p>
       <form className={styles.actions} aria-label={LEDGER_TITLE} onSubmit={submit}>
         <div className={styles.field}>

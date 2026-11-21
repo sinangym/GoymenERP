@@ -1,5 +1,6 @@
 using System.Globalization;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
+using GoymenERP.Modules.Inventory.Domain.Allocations;
 
 namespace GoymenERP.Modules.Inventory.Application;
 
@@ -82,10 +83,61 @@ public sealed record InventoryManufacturingPlanAllocationResultV1(
     bool IsReplay,
     string OriginalCorrelationId);
 
+/// <summary>
+/// URT-D21/22, SAT-D336: the allocation OWNER'S refusal-time measurement after label version and planned ownership were
+/// verified on exactly one Free position. This is advisory error detail, never an allocation or a durable attempt record.
+/// No detail is fabricated when that position/ownership cannot be established. The host decides disclosure under its own
+/// authorization; consumers display the canonical kg strings without recomputing availability or the missing quantity.
+/// </summary>
+public sealed record InventoryManufacturingPlanAllocationShortfallV1
+{
+    public InventoryManufacturingPlanAllocationShortfallV1(Guid companyId, Guid planId, Guid labelId, Guid productId,
+        string labelVersion, Kilograms requestedKg, Kilograms freePhysicalKg, Kilograms reservedKg, int freePositionCount)
+    {
+        if (companyId == Guid.Empty || planId == Guid.Empty || labelId == Guid.Empty || productId == Guid.Empty)
+            throw new ArgumentException("Allocation shortfall identities must be present.");
+        if (!long.TryParse(labelVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var version) || version < 1
+            || version.ToString(CultureInfo.InvariantCulture) != labelVersion)
+            throw new ArgumentException("Allocation shortfall requires the observed label version.", nameof(labelVersion));
+        if (freePositionCount != 1) throw new ArgumentOutOfRangeException(nameof(freePositionCount));
+        var available = StockAllocation.Unreserved(freePhysicalKg, reservedKg);
+        if (requestedKg <= available) throw new ArgumentOutOfRangeException(nameof(requestedKg));
+        CompanyId = companyId;
+        PlanId = planId;
+        LabelId = labelId;
+        ProductId = productId;
+        LabelVersion = labelVersion;
+        RequestedKg = InventoryManufacturingPlanAllocationContractV1.Format(requestedKg.Value);
+        FreePhysicalKg = InventoryManufacturingPlanAllocationContractV1.Format(freePhysicalKg.Value);
+        ReservedKg = InventoryManufacturingPlanAllocationContractV1.Format(reservedKg.Value);
+        AvailableKg = InventoryManufacturingPlanAllocationContractV1.Format(available.Value);
+        MissingKg = InventoryManufacturingPlanAllocationContractV1.Format(requestedKg.Value - available.Value);
+        FreePositionCount = freePositionCount;
+    }
+
+    public Guid CompanyId { get; }
+    public Guid PlanId { get; }
+    public Guid LabelId { get; }
+    public Guid ProductId { get; }
+    public string LabelVersion { get; }
+    public string RequestedKg { get; }
+    public string FreePhysicalKg { get; }
+    public string ReservedKg { get; }
+    public string AvailableKg { get; }
+    public string MissingKg { get; }
+    public int FreePositionCount { get; }
+}
+
 public enum InventoryManufacturingPlanReleaseReasonV1
 {
     PlanCancelled = 1,
     OrderClosed = 2,
+
+    /// <summary>
+    /// F-009 D1 (URT-D31): the production order was cancelled. Cancelling releases the order's remaining active plan
+    /// allocations; it is a reason distinct from closing so the label history says why the reservation ended.
+    /// </summary>
+    OrderCancelled = 3,
 }
 
 public sealed record InventoryManufacturingPlanReleaseRequestV1(
@@ -148,6 +200,7 @@ public static class InventoryManufacturingPlanAllocationContractV1
     {
         InventoryManufacturingPlanReleaseReasonV1.PlanCancelled => "manufacturing.plan-cancelled",
         InventoryManufacturingPlanReleaseReasonV1.OrderClosed => "manufacturing.order-closed",
+        InventoryManufacturingPlanReleaseReasonV1.OrderCancelled => "manufacturing.order-cancelled",
         _ => throw new ArgumentOutOfRangeException(nameof(reason)),
     };
 

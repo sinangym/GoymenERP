@@ -6,6 +6,7 @@ using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -155,10 +156,21 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration(
         }
     }
 
-    private Task<CommandExecution?> FindExecutionAsync(string commandName, string keyHash, CancellationToken cancellationToken) =>
-        database.CommandExecutions.AsNoTracking()
-            .SingleOrDefaultAsync(execution => execution.CommandName == commandName && execution.IdempotencyKeyHash == keyHash,
-                cancellationToken);
+    private async Task<CommandExecution?> FindExecutionAsync(string commandName, string keyHash, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await database.CommandExecutions.AsNoTracking()
+                .SingleOrDefaultAsync(execution => execution.CommandName == commandName && execution.IdempotencyKeyHash == keyHash,
+                    cancellationToken);
+        }
+        catch (Exception exception) when (exception is SqlException
+            or InvalidOperationException { InnerException: SqlException })
+        {
+            // Covers direct and EF-wrapped receipt reads, including reads inside a save-race catch.
+            throw new SettingsPrerequisiteException(SalesDiscountLimitProblemCodesV1.ProviderUnavailable);
+        }
+    }
 
     /// <summary>The stored terminal answer for the same actor and body; anything else under the key is 409 (never stored).</summary>
     private static SettingsCommandResultV1 Replay(CommandExecution execution, string requestHash, SettingsCommandMetadataV1 metadata)
@@ -211,16 +223,24 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration(
             await database.SaveChangesAsync(cancellationToken);
             return new SettingsCommandResultV1(answer, false, metadata.CorrelationId);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
+            || exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
         {
             database.ChangeTracker.Clear();
             var winner = await FindExecutionAsync(commandName, keyHash, cancellationToken);
             if (winner is null)
             {
-                throw;
+                throw new SettingsPrerequisiteException(SalesDiscountLimitProblemCodesV1.ProviderUnavailable);
             }
 
             return Replay(winner, requestHash, metadata);
+        }
+        catch (Exception exception) when (exception is DbUpdateException or SqlException
+            or InvalidOperationException { InnerException: DbUpdateException or SqlException })
+        {
+            // A provider failure is not a terminal business refusal and never consumes the retry key.
+            database.ChangeTracker.Clear();
+            throw new SettingsPrerequisiteException(SalesDiscountLimitProblemCodesV1.ProviderUnavailable);
         }
     }
 
@@ -239,7 +259,8 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration(
             await database.SaveChangesAsync(cancellationToken);
             return new SettingsCommandResultV1(answer, false, metadata.CorrelationId);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
+            || exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
         {
             database.ChangeTracker.Clear();
             var winner = await FindExecutionAsync(commandName, keyHash, cancellationToken);
@@ -250,6 +271,13 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration(
 
             var refusal = await onConflict(cancellationToken);
             return await StoreRefusalAsync(commandName, refusal, keyHash, requestHash, metadata, cancellationToken);
+        }
+        catch (Exception exception) when (exception is DbUpdateException or SqlException
+            or InvalidOperationException { InnerException: DbUpdateException or SqlException })
+        {
+            // A provider failure is not a terminal business refusal and never consumes the retry key.
+            database.ChangeTracker.Clear();
+            throw new SettingsPrerequisiteException(SalesDiscountLimitProblemCodesV1.ProviderUnavailable);
         }
     }
 

@@ -157,7 +157,8 @@ public sealed record SalesOrderDraftSourcePlanResponse(
     IReadOnlyList<SalesDraftSourcePlanLineV1> Lines);
 
 /// <summary>One supply kind (<see cref="SalesLinkedSupplyKindsV1"/>) and its status (<see cref="SalesCancellationImpactStatusesV1"/>).</summary>
-public sealed record SalesDraftSourcePlanLinkedSupplyV1(string Kind, string Status);
+public sealed record SalesDraftSourcePlanLinkedSupplyV1(string Kind, string Status,
+    IReadOnlyList<Guid>? CancelledOrderIds = null);
 
 /// <summary>
 /// One active line of the plan read: its quantity (line unit), the locked part (shipped total; null when the delivery owner is

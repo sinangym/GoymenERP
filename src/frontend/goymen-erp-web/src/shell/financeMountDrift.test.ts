@@ -28,6 +28,12 @@ import {
 } from '../finance/officialInvoiceImportRoutes'
 
 const ROUTED = [
+  [CAPABILITY.financeExchangeBookValuesPrepare, FINANCE_CAPABILITY.exchangeBookValuesPrepare, FINANCE_ROUTE.exchangeBookValuesPrepare],
+  [CAPABILITY.financeExchangeBookValuesApprove, FINANCE_CAPABILITY.exchangeBookValuesApprove, FINANCE_ROUTE.exchangeBookValuesApprove],
+  [CAPABILITY.financePartyBalanceTransfers, FINANCE_CAPABILITY.partyBalanceTransfers, FINANCE_ROUTE.partyBalanceTransfers],
+  [CAPABILITY.financeCreditsWorkspace, FINANCE_CAPABILITY.creditsWorkspace, FINANCE_ROUTE.creditsWorkspace],
+  [CAPABILITY.financeOfficialInvoicesRecord, FINANCE_CAPABILITY.officialInvoicesRecord, FINANCE_ROUTE.officialInvoicesRecord],
+  [CAPABILITY.financeOfficialInvoicesApprove, FINANCE_CAPABILITY.officialInvoicesApprove, FINANCE_ROUTE.officialInvoicesApprove],
   [CAPABILITY.financeReceiptsList, FINANCE_CAPABILITY.receiptsList, FINANCE_ROUTE.receiptsList],
   [CAPABILITY.financeReceiptsDraft, FINANCE_CAPABILITY.receiptsDraft, FINANCE_ROUTE.receiptsDraft],
   [CAPABILITY.financeReceiptsDetail, FINANCE_CAPABILITY.receiptsDetail, FINANCE_ROUTE.receiptsDetail],
@@ -55,6 +61,12 @@ const ROUTED = [
     FINANCE_ROUTE.manualBankPaymentsCreate],
   [CAPABILITY.financeManualBankPaymentsDetail, FINANCE_CAPABILITY.manualBankPaymentsDetail,
     FINANCE_ROUTE.manualBankPaymentsDetail],
+  [CAPABILITY.financeExpensePaymentsWorkspace, FINANCE_CAPABILITY.expensePaymentsWorkspace,
+    FINANCE_ROUTE.expensePayments],
+  [CAPABILITY.financeCashTransfersWorkspace, FINANCE_CAPABILITY.cashTransfersWorkspace, FINANCE_ROUTE.cashTransfers],
+  [CAPABILITY.financeCreditLimitsList, FINANCE_CAPABILITY.creditLimitsList, FINANCE_ROUTE.creditLimitsList],
+  [CAPABILITY.financeCollateralsList, FINANCE_CAPABILITY.collateralsList, FINANCE_ROUTE.collateralsList],
+  [CAPABILITY.financeOpeningBalancesList, FINANCE_CAPABILITY.openingBalancesList, FINANCE_ROUTE.openingBalancesList],
 ] as const
 
 /**
@@ -69,6 +81,9 @@ const ROUTED = [
  * this test loudly instead of being quietly appended to a filter.
  */
 const CONTROLS: readonly string[] = [
+  FINANCE_CAPABILITY.creditsPropose,
+  FINANCE_CAPABILITY.creditsApprove,
+  FINANCE_CAPABILITY.officialInvoicesWithdraw,
   FINANCE_CAPABILITY.bankAccountsApprove,
   FINANCE_CAPABILITY.receiptsRecord,
   FINANCE_CAPABILITY.receiptsReversePropose,
@@ -76,6 +91,15 @@ const CONTROLS: readonly string[] = [
   FINANCE_CAPABILITY.manualBankPaymentsRecord,
   FINANCE_CAPABILITY.manualBankPaymentsReversePropose,
   FINANCE_CAPABILITY.manualBankPaymentsReverseApprove,
+  FINANCE_CAPABILITY.expensePaymentsDraft,
+  FINANCE_CAPABILITY.expensePaymentsApprove,
+  FINANCE_CAPABILITY.expensePaymentsRecord,
+  FINANCE_CAPABILITY.cashTransfersCommit,
+  FINANCE_CAPABILITY.creditLimitsPropose,
+  FINANCE_CAPABILITY.creditLimitsApprove,
+  FINANCE_CAPABILITY.collateralsRecord,
+  FINANCE_CAPABILITY.openingBalancesPropose,
+  FINANCE_CAPABILITY.openingBalancesApprove,
   FINANCE_CAPABILITY.allocationsWrite,
 ]
 
@@ -157,6 +181,12 @@ describe('shell ↔ Finance lane capability ids', () => {
     const labels: Record<string, string> = {}
     for (const [shellId] of ROUTED) labels[shellId] = CAPABILITY_NAV_LABEL[shellId as CapabilityId]
     expect(labels).toEqual({
+      'finance.cash-exchange-book-values.prepare': 'Döviz defter değeri hazırla',
+      'finance.cash-exchange-book-values.approve': 'Döviz defter değeri onayları',
+      'finance.party-balance-transfers.record': 'Cari Bakiye Devri',
+      'finance.credits.workspace': 'Krediler',
+      'finance.official-sales-invoices.record': 'Resmî satış faturaları',
+      'finance.official-sales-invoices.approve': 'Resmî satış faturası onayları',
       'finance.receipts.list': 'Tahsilat Taslakları',
       'finance.receipts.draft': '',
       'finance.receipts.detail': '',
@@ -174,6 +204,11 @@ describe('shell ↔ Finance lane capability ids', () => {
       'finance.manual-bank-payments.list': 'Giden Ödemeler',
       'finance.manual-bank-payments.create': '',
       'finance.manual-bank-payments.detail': '',
+      'finance.expense-payments.workspace': 'Masraf Ödemeleri',
+      'finance.cash-transfers.workspace': 'Virman ve Döviz Bozdurma',
+      'finance.credit-limits.list': 'Kredi Limitleri',
+      'finance.collaterals.list': 'Müşteri Teminatları',
+      'finance.opening-balances.list': 'Açılış Bakiyeleri',
     })
   })
 })

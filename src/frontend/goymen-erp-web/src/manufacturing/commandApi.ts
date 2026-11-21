@@ -20,10 +20,28 @@
  *  - a 5xx (for example 503 when the company's kilogram source is unavailable) says
  *    nothing about our command; it is UNKNOWN, and re-sending the SAME snapshot is safe:
  *    the server answers the same key as the same command (ADR-011) and the same fact id
- *    as the same fact (R3).
+ *    as the same fact (R3);
+ *  - SAT-D318: an input issue's 409 `inventory_manufacturing_physical_stock_insufficient`
+ *    may carry the optional `stockShortfall` member naming the refused issue, its parent
+ *    label and the place. Its absence, or a member that does not name exactly this issue,
+ *    changes nothing: the refusal stays the same definite refusal.
  */
 
-import { closeBody, factBody, type CloseSnapshot, type FactSnapshot } from './contract'
+import {
+  closeBody,
+  decodeStockShortfall,
+  factBody,
+  orderCancelBody,
+  orderDueDateBody,
+  outputCorrectionBody,
+  type CloseSnapshot,
+  type FactSnapshot,
+  type OrderCancelSnapshot,
+  type OrderDueDateSnapshot,
+  type OutputCorrectionSnapshot,
+  type StockShortfallExpectation,
+  type StockShortfallView,
+} from './contract'
 import { MANUFACTURING_BASE, devHeaders } from './api'
 
 /** A DEFINITE refusal: the command did not take effect, and the server said why. */
@@ -54,8 +72,12 @@ export type FactFailure =
   | { readonly kind: 'label-version-conflict' }
   /** 409 `manufacturing_*_id_conflict` — this fact id already names other content. */
   | { readonly kind: 'id-conflict'; readonly code: string }
-  /** 409/422 — a domain, Inventory or kilogram-profile rule refused it, by its stable code. */
-  | { readonly kind: 'rule'; readonly code: string }
+  /**
+   * 409/422 — a domain, Inventory or kilogram-profile rule refused it, by its stable code.
+   * `stockShortfall` (SAT-D318) is present only on a fresh physical-stock refusal of an input
+   * issue that names exactly the issue the screen sent.
+   */
+  | { readonly kind: 'rule'; readonly code: string; readonly stockShortfall?: StockShortfallView }
   | { readonly kind: 'unsupported-media' }
 
 /** The outcome is UNKNOWN: the command may or may not have been applied. */
@@ -99,12 +121,40 @@ function versionField(body: unknown, name: string): number | null {
   return Number.isSafeInteger(value) ? value : null
 }
 
+const PHYSICAL_STOCK_INSUFFICIENT = 'inventory_manufacturing_physical_stock_insufficient'
+export const ORDER_DUE_DATE_CHANGED = 'manufacturing_order_due_date_changed'
+
+/**
+ * SAT-D318: the physical-stock refusal of an input issue may name its shortfall. The member is
+ * read only on a fresh answer to an input issue and only when it names exactly that issue. When
+ * it is absent or malformed, names another issue, or comes on a replayed answer (the server never
+ * stores this refusal, so a replayed detail is not this attempt's), the result is the same definite
+ * refusal without the detail. A detail we cannot read never turns a definite refusal into UNKNOWN.
+ */
+function physicalStockRefusal(
+  body: unknown,
+  replayed: boolean,
+  shortfallFor: StockShortfallExpectation | null,
+): FactFailure {
+  const plain: FactFailure = { kind: 'rule', code: PHYSICAL_STOCK_INSUFFICIENT }
+  if (replayed || shortfallFor === null || typeof body !== 'object' || body === null || Array.isArray(body)) {
+    return plain
+  }
+  const shortfall = decodeStockShortfall((body as Record<string, unknown>).stockShortfall, shortfallFor)
+  return shortfall === null ? plain : { kind: 'rule', code: PHYSICAL_STOCK_INSUFFICIENT, stockShortfall: shortfall }
+}
+
 /**
  * A described status becomes a definite refusal; anything the contract does not
  * describe — including a 409/422 whose code never arrived — is null and becomes UNKNOWN,
  * because an answer we cannot read is not evidence that the command did not apply.
  */
-function classifyFailure(status: number, body: unknown, replayed: boolean): FactFailure | null {
+function classifyFailure(
+  status: number,
+  body: unknown,
+  replayed: boolean,
+  shortfallFor: StockShortfallExpectation | null,
+): FactFailure | null {
   if (status === 400) return { kind: 'validation', field: stringField(body, 'field') }
   if (status === 401) return { kind: 'unauthenticated' }
   if (status === 403) return { kind: 'forbidden' }
@@ -131,6 +181,12 @@ function classifyFailure(status: number, body: unknown, replayed: boolean): Fact
       return { kind: 'label-version-conflict' }
     }
     if (/^manufacturing_[a-z_]+_id_conflict$/.test(code)) return { kind: 'id-conflict', code }
+    // URT-D66 (3): the order's termin moved since this screen read it; the screen reads the order again.
+    if (code === ORDER_DUE_DATE_CHANGED) return { kind: 'rule', code }
+    if (code === PHYSICAL_STOCK_INSUFFICIENT) return physicalStockRefusal(body, replayed, shortfallFor)
+    // F-009 D3 (API-25): the output correction's 409 set — the physical reason Inventory gave for not taking the mass
+    // back under its label fence (shipped, transferred, allocated, …), mapped to Manufacturing codes by the server.
+    if (/^manufacturing_output_correction_[a-z_]+$/.test(code)) return { kind: 'rule', code }
     if (/^inventory_manufacturing_[a-z_]+$/.test(code)) return { kind: 'rule', code }
     return null
   }
@@ -154,6 +210,10 @@ export function recordFact(
     snapshot.idempotencyKey,
     factBody(snapshot),
     signal,
+    // SAT-D318: only an input issue's refusal names a shortfall, and only for exactly this issue.
+    snapshot.kind === 'input-issues'
+      ? { orderId, issueId: snapshot.factId, labelId: snapshot.parentRollId, kg: snapshot.kg }
+      : null,
   )
 }
 
@@ -180,12 +240,76 @@ export function closeOrder(
   )
 }
 
+/**
+ * URT-D66 (3): changes the order's own termin — `POST …/orders/{orderId}/due-date` with the termin revision the screen
+ * read. The plan's termin does not move. The same command discipline as the close: 200 is the order with its new termin
+ * (a replay is the first change's stored answer), 409 `manufacturing_order_due_date_changed` means the termin moved since
+ * the read, a 422 names the rule (a past day, a closed order, no change), and a 5xx is UNKNOWN.
+ */
+export function changeOrderDueDate(
+  companyId: string,
+  orderId: string,
+  snapshot: OrderDueDateSnapshot,
+  signal?: AbortSignal,
+): Promise<FactOutcome> {
+  return sendCommand(
+    companyId,
+    `${MANUFACTURING_BASE}/orders/${encodeURIComponent(orderId)}/due-date`,
+    snapshot.idempotencyKey,
+    orderDueDateBody(snapshot),
+    signal,
+  )
+}
+
+/**
+ * F-009 D3/D6 (API-25, UI-14): corrects one output declaration — `POST …/orders/{orderId}/facts/{outputId}/correction`
+ * under `manufacturing.facts.correct`. An append-only reversal: nothing is deleted, and Inventory records its
+ * `manufacturing.output-reversal` movement in the same transaction. The same command discipline as a fact: 200 is the
+ * order as the correction first saw it (a replay repeats it), 409 names a version, label-version or idempotency
+ * conflict or the physical reason the mass cannot be taken back, 422 names the domain rule, and a 5xx is UNKNOWN.
+ */
+export function correctOutput(
+  companyId: string,
+  orderId: string,
+  snapshot: OutputCorrectionSnapshot,
+  signal?: AbortSignal,
+): Promise<FactOutcome> {
+  return sendCommand(
+    companyId,
+    `${MANUFACTURING_BASE}/orders/${encodeURIComponent(orderId)}/facts/${encodeURIComponent(snapshot.outputId)}/correction`,
+    snapshot.idempotencyKey,
+    outputCorrectionBody(snapshot),
+    signal,
+  )
+}
+
+/**
+ * F-009 D5/D6 (URT-D33): cancels an order with nothing left on it, through URT-S4's `POST …/orders/{orderId}/cancellation`
+ * with `{expectedVersion, reason}`. The screen draws no control for it until the shell provider publishes its capability.
+ * The same outcomes as the close.
+ */
+export function cancelOrder(
+  companyId: string,
+  orderId: string,
+  snapshot: OrderCancelSnapshot,
+  signal?: AbortSignal,
+): Promise<FactOutcome> {
+  return sendCommand(
+    companyId,
+    `${MANUFACTURING_BASE}/orders/${encodeURIComponent(orderId)}/cancellation`,
+    snapshot.idempotencyKey,
+    orderCancelBody(snapshot),
+    signal,
+  )
+}
+
 async function sendCommand(
   companyId: string,
   url: string,
   idempotencyKey: string,
   body: Record<string, unknown>,
   signal?: AbortSignal,
+  shortfallFor: StockShortfallExpectation | null = null,
 ): Promise<FactOutcome> {
   let response: Response
   try {
@@ -228,7 +352,7 @@ async function sendCommand(
   } catch {
     parsed = null
   }
-  const failure = classifyFailure(response.status, parsed, replayed)
+  const failure = classifyFailure(response.status, parsed, replayed, shortfallFor)
   if (failure === null) {
     return { type: 'unknown', unknown: { kind: 'undecodable', status: response.status } }
   }

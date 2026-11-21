@@ -77,9 +77,9 @@ public sealed class SalesDraftSqlServerRelationalAcceptanceTests
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Sales.OrderDraft' AND CorrelationId = N'SENTETIK-second-correlation'"));
         // The sales schema is EXACTLY the set of tables the Sales model maps into it, beside its own migration history —
-        // the claim is exhaustive in both directions: no table the model does not know (no approval, shipment, invoice or
-        // receipt table: those are other owners' records), and no mapped table missing. The model's set is itself pinned
-        // by name (K3 Head B adds the two archived-revision tables), so neither side can grow unnoticed. Ordinal and
+        // the claim is exhaustive in both directions: no table the model does not know and no mapped table missing.
+        // Physical stock and money movements remain in their owner modules. The model's set is itself pinned
+        // by name, including the train's contract, margin, lifecycle and cancellation evidence, so neither side can grow unnoticed. Ordinal and
         // BIN2 order agree ("DraftR…" before "Drafts", "_" after the letters).
         string[] mapped;
         await using (var model = run.Context(CompanyA))
@@ -93,7 +93,7 @@ public sealed class SalesDraftSqlServerRelationalAcceptanceTests
                 .ToArray();
         }
 
-        Assert.Equal(["CustomerReturnAttempts", "CustomerReturns", "DocumentCounters", "DraftAttempts", "DraftCancellations", "DraftCustomerRejections", "DraftDeliveryScheduleDates", "DraftDeliverySchedules", "DraftDeliverySlices", "DraftForceClosures", "DraftLineClosures", "DraftLines", "DraftNumbers", "DraftOverDeliveryApprovals", "DraftRemainderChanges", "DraftRemainderDecisions", "DraftRevisionHeaders", "DraftRevisionLines", "DraftRevisions", "DraftSourcePlanLines", "DraftUserClosures", "Drafts", "InvoiceAttempts", "InvoiceFinalizations", "InvoiceLines", "InvoiceMatches", "Invoices", "OutboxMessages", "QuoteAttempts", "QuoteExpiryApprovals", "QuoteLines", "QuoteRequests", "QuoteRevisions", "Quotes", "RequestAttempts", "RequestLines", "Requests", "ShipmentRiskExceptionAttempts", "ShipmentRiskExceptions", "__EFMigrationsHistory"], mapped);
+        Assert.Equal(["ContractAttempts", "Contracts", "CustomerReturnAttempts", "CustomerReturns", "DocumentCounters", "DraftAttempts", "DraftCancellations", "DraftCustomerRejections", "DraftDeliveryScheduleDates", "DraftDeliverySchedules", "DraftDeliverySlices", "DraftForceClosures", "DraftLineClosures", "DraftLines", "DraftMarginCosts", "DraftNumbers", "DraftOverDeliveryApprovals", "DraftRemainderChanges", "DraftRemainderDecisions", "DraftRevisionHeaders", "DraftRevisionLines", "DraftRevisions", "DraftRiskWarnings", "DraftSourcePlanLines", "DraftUserClosures", "Drafts", "InvoiceAttempts", "InvoiceFinalizations", "InvoiceLines", "InvoiceMatches", "Invoices", "OfficialInvoiceCancellationAttempts", "OfficialInvoiceCancellationDeliveries", "OfficialInvoiceCancellations", "OfficialInvoiceClaims", "OutboxMessages", "QuoteAttempts", "QuoteExpiryApprovals", "QuoteLines", "QuoteRequests", "QuoteRevisions", "Quotes", "RequestAttempts", "RequestLines", "Requests", "ShipmentRiskExceptionAttempts", "ShipmentRiskExceptionUsages", "ShipmentRiskExceptions", "SubcontractInvoiceCommandAttempts", "SubcontractInvoiceLifecycles", "SubcontractServiceInvoiceAttempts", "SubcontractServiceInvoiceLines", "SubcontractServiceInvoices", "__EFMigrationsHistory"], mapped);
         Assert.Equal(string.Join(',', mapped), await run.ScalarAsync<string>(
             "SELECT STRING_AGG(name, ',') WITHIN GROUP (ORDER BY name COLLATE Latin1_General_BIN2) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'sales')"));
         // ADR-011 §2: the raw key is not a column; the attempt row holds the command name, the key hash and the actor.
@@ -475,7 +475,8 @@ public sealed class SalesDraftSqlServerRelationalAcceptanceTests
         public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
             InterceptionResult<int> result, CancellationToken cancellationToken = default)
         {
-            barrier.SignalAndWait(TimeSpan.FromSeconds(30));
+            if (!barrier.SignalAndWait(TimeSpan.FromSeconds(30), cancellationToken))
+                throw new TimeoutException("Concurrent save barrier timed out before both writers arrived.");
             return ValueTask.FromResult(result);
         }
     }

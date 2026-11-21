@@ -222,7 +222,7 @@ public sealed class LogisticsOperationsWorkServiceTests
         string[] purchase = [.. typeof(LogisticsPurchaseWorkItemView).GetProperties().Select(property => property.Name)];
         Assert.Equal(
             ["OrderId", "DocumentNo", "LineId", "LineNo", "CustomerPartyId", "CustomerName", "ProductId", "ProductCode", "ProductName", "UnitId",
-                "UnitCode", "Ordered", "Instructed", "Loaded", "Shipped", "Delivered", "RequestedDeliveryDate"],
+                "UnitCode", "Ordered", "Instructed", "Loaded", "Shipped", "Delivered", "RequestedDeliveryDate", "ApprovedPlanExcess"],
             sales);
         Assert.Equal(
             ["OrderId", "OrderEffectiveOn", "LineId", "LineNo", "Kind", "SupplierPartyId", "SupplierName", "ProductId", "UnitId", "Committed",
@@ -283,6 +283,17 @@ public sealed class LogisticsOperationsWorkServiceTests
     [InlineData("1000", "1000")]
     public void A_total_is_shown_in_its_canonical_exact_text(string stored, string shown) =>
         Assert.Equal(shown, LogisticsOperationsWorkService.Text(decimal.Parse(stored, System.Globalization.CultureInfo.InvariantCulture)));
+
+    [Fact]
+    public async Task A_work_row_keeps_plan_100_and_accepts_120_only_with_owner_approved_extra_20()
+    {
+        var world = new World(); world.Progress.Fault = "approved-extra";
+        var page = await world.Service().GetSalesWorkAsync(new());
+        var row = Assert.Single(page.Items, item => item.LineId == SalesLine);
+        Assert.Equal(("100", "120", "120", "20"), (row.Instructed, row.Loaded, row.Shipped, row.ApprovedPlanExcess));
+        world.Progress.Fault = "unproven-extra";
+        Assert.Equal(503, (await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().GetSalesWorkAsync(new()))).Status);
+    }
 
     private static (int Status, string Code) Code(LogisticsInstructionServiceException exception) => (exception.Status, exception.Code);
 
@@ -401,6 +412,8 @@ public sealed class LogisticsOperationsWorkServiceTests
             LastIds = [.. orderLineIds];
             IReadOnlyList<LogisticsOrderLineProgress> answer = Fault switch
             {
+                "approved-extra" => [new LogisticsOrderLineProgress(SalesLine, KgUnit, 100m, 120m, 120m, 0m, 20m)],
+                "unproven-extra" => [new LogisticsOrderLineProgress(SalesLine, KgUnit, 100m, 120m, 120m, 0m)],
                 "other-unit" => [new LogisticsOrderLineProgress(SalesLine, Guid.NewGuid(), 10m, 0m, 0m, 0m)],
                 "foreign-line" => [new LogisticsOrderLineProgress(Guid.NewGuid(), KgUnit, 10m, 0m, 0m, 0m)],
                 "delivered-above-shipped" => [new LogisticsOrderLineProgress(SalesLine, KgUnit, 10m, 8m, 4m, 5m)],

@@ -181,10 +181,11 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
                 dbContext.ChangeTracker.Clear();
                 concurrentChange = exception;
             }
-            catch
+            catch (Exception exception)
             {
                 await transaction.RollbackAsync(CancellationToken.None);
                 dbContext.ChangeTracker.Clear();
+                await RecordPhysicalRefusalAfterRollbackAsync(exception);
                 throw;
             }
         }
@@ -265,6 +266,15 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
                 Guid? movementId = null;
                 if (decisionCode == DecisionApproved)
                 {
+                    try
+                    {
+                        await LockPhysicalValidationAsync(cancellationToken);
+                    }
+                    catch (InventoryStoreException exception) when (exception.Code == InventoryStoreCodes.ConcurrentChange)
+                    {
+                        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+                        throw StockScrapError(409, InventoryStockScrapCodesV1.ConcurrentChange, exception);
+                    }
                     var label = await dbContext.Labels
                         .SingleOrDefaultAsync(row => row.Id == scrapRow.LabelId, cancellationToken);
                     await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
@@ -360,10 +370,11 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
                 dbContext.ChangeTracker.Clear();
                 concurrentChange = exception;
             }
-            catch
+            catch (Exception exception)
             {
                 await transaction.RollbackAsync(CancellationToken.None);
                 dbContext.ChangeTracker.Clear();
+                await RecordPhysicalRefusalAfterRollbackAsync(exception);
                 throw;
             }
         }

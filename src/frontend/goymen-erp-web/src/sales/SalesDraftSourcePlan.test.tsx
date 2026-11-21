@@ -81,6 +81,19 @@ function openPlan(linkedSupply?: unknown, recordedAt: string | null = null) {
 }
 
 describe('API-11 order source plan (SAT-D252..SAT-D255)', () => {
+  it('shows a cancelled production order as retained history while the open link is none', async () => {
+    const cancelled = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab'
+    installFetch({ capabilities: WITH_PLAN, onDetail: () => json(detail()),
+      onSourcePlan: () => openPlan([
+        { kind: 'Production', status: 'None', cancelledOrderIds: [cancelled] },
+        { kind: 'Purchasing', status: 'None', cancelledOrderIds: [] },
+      ])(),
+    })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    expect((await screen.findByTestId('sales-source-plan-cancelled-order')).textContent).toContain(cancelled)
+    expect(screen.queryByTestId('sales-source-plan-linked-present')).toBeNull()
+  })
+
   it('shows the server figures and records the touched line with the exact body and a fresh key', async () => {
     let recorded = false
     const harness = installFetch({

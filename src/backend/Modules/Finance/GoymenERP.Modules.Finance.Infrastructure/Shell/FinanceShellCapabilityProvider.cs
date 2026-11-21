@@ -43,11 +43,61 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 /// propose under <c>finance.manual-bank-payment.reverse.propose</c> and approve / reject under
 /// <c>finance.manual-bank-payment.reverse.approve</c>. The approver must be another user (service and database).
 /// </para>
+/// <para>
+/// <b>1.9 (FNS-D25, API-25):</b> the payment not tied to a party opens at <c>/finans/masraf-odemeleri</c> under
+/// <c>finance.expense-payment.draft.read</c>; preparing, approving (another user) and the final record are controls
+/// of that workspace under their own narrow names. The record also needs the Accounting period read, like every
+/// Finance record.
+/// </para>
+/// <para>
+/// <b>1.10 (F-018 L1; FNS-D27 / FNS-D27a / FNS-D46; one step, FNS-D56 / FNS-D57(3)):</b> the company accounts'
+/// credit limits open at <c>/finans/kredi-limitleri</c> under <c>finance.credit-limits.read</c>. Proposing (FNS-D27a)
+/// and approving (a one-step set, change or removal, or the decision of another person's proposal, FNS-D27) are two
+/// controls of that route under their own narrow names. The approve name is Critical in the manifest (FNS-D46), which
+/// changes no route rule; no role or user receives any of these names here.
+/// </para>
+/// <para>
+/// <b>1.11 (FNS-D24, API-32/34):</b> a transfer between two treasury accounts (same currency, or a currency exchange
+/// at one rate recorded as a single transaction) opens at <c>/finans/virman</c> under
+/// <c>finance.cash-transfers.read</c>; the commit is a control of that workspace under
+/// <c>finance.cash-transfers.commit</c> and, like every Finance record, the Accounting period read. No role or user
+/// receives either name here.
+/// </para>
+/// <para>
+/// <b>1.12 (F-018 L2; FNS-D57 / FNS-D31 / FNS-D58, API-85b):</b> the company accounts' customer collaterals open at
+/// <c>/finans/teminatlar</c> under <c>finance.collaterals.read</c>; recording, changing and releasing (one step, no
+/// approval, FNS-D57) is one control of that route under <c>finance.collaterals.record</c>. Neither name is Critical and no
+/// role or user receives either name here (the persona distribution is open).
+/// </para>
+/// <para>
+/// <b>1.13 (FIN-S9; FNS-D23):</b> the cash, bank and party opening balances open at <c>/finans/acilis-bakiyeleri</c>
+/// under <c>finance.opening-balances.read</c>; proposing (the specialist) and approving or rejecting (a manager other than
+/// the proposer, service and database) are two controls of that route under their own narrow names. The screen shows
+/// only a notice while the Settings opening period is not open. No name is Critical and no role or user receives any of
+/// these names here.
+/// </para>
 /// </summary>
 public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
-    public const string OwnerContractVersion = "1.8";
+    public const string OwnerContractVersion = "1.17";
+    public const string ExchangeBookValuePrepareCapabilityId = "finance.cash-exchange-book-values.prepare";
+    public const string ExchangeBookValueApproveCapabilityId = "finance.cash-exchange-book-values.approve";
+    public const string ExchangeBookValuePreparePath = "/finans/doviz-defter-degeri-hazirla";
+    public const string ExchangeBookValueApprovePath = "/finans/doviz-defter-degeri-onaylari";
+    public const string PartyBalanceTransferCapabilityId = "finance.party-balance-transfers.record";
+    public const string PartyBalanceTransferPath = "/finans/cari-bakiye-devri";
+    public const string OfficialInvoiceRecordCapabilityId = "finance.official-sales-invoices.record";
+    public const string OfficialInvoiceApproveCapabilityId = "finance.official-sales-invoices.approve";
+    public const string OfficialInvoiceWithdrawCapabilityId = "finance.official-sales-invoices.withdraw";
+    public const string OfficialInvoiceRecordPath = "/finans/resmi-satis-faturalari";
+    public const string OfficialInvoiceApprovePath = "/finans/resmi-satis-faturasi-onaylari";
+    public const string CreditAccountsCapabilityId = "finance.credits.workspace";
+    public const string CreditAccountsRouteId = "finance.credits.workspace";
+    public const string CreditAccountsRoutePath = "/finans/krediler";
+    public const string CreditAccountsScreenId = "F-47-CREDITS";
+    public const string CreditAccountsProposeCapabilityId = "finance.credits.propose";
+    public const string CreditAccountsApproveCapabilityId = "finance.credits.approve";
     public const string ReceiptListScreenId = "F-02";
     public const string ReceiptDraftScreenId = "F-02-NEW";
     public const string ReceiptDetailScreenId = "F-02-DETAIL";
@@ -107,6 +157,13 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
     public const string ManualBankPaymentRecordCapabilityId = "finance.manual-bank-payments.record";
     public const string ManualBankPaymentReverseProposeCapabilityId = "finance.manual-bank-payments.reverse.propose";
     public const string ManualBankPaymentReverseApproveCapabilityId = "finance.manual-bank-payments.reverse.approve";
+    public const string ExpensePaymentWorkspaceScreenId = "F-25-EXPENSE-PAYMENTS";
+    public const string ExpensePaymentWorkspaceCapabilityId = "finance.expense-payments.workspace";
+    public const string ExpensePaymentWorkspaceRouteId = "finance.expense-payments.workspace";
+    public const string ExpensePaymentWorkspaceRoutePath = "/finans/masraf-odemeleri";
+    public const string ExpensePaymentDraftCapabilityId = "finance.expense-payments.draft";
+    public const string ExpensePaymentApproveCapabilityId = "finance.expense-payments.approve";
+    public const string ExpensePaymentRecordCapabilityId = "finance.expense-payments.record";
     public const string AllocationListScreenId = "F-03";
     public const string AllocationListCapabilityId = "finance.allocations.list";
     public const string AllocationListRouteId = "finance.allocations.list";
@@ -129,6 +186,28 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
     public const string PartyLedgerCariCapabilityId = "finance.party-ledger.cari";
     public const string PartyLedgerCariRouteId = "finance.party-ledger.cari";
     public const string PartyLedgerCariRoutePath = "/cari/hesap-takibi";
+    public const string CreditLimitListScreenId = "F-18-CREDIT-LIMITS";
+    public const string CreditLimitListCapabilityId = "finance.credit-limits.list";
+    public const string CreditLimitListRouteId = "finance.credit-limits.list";
+    public const string CreditLimitListRoutePath = "/finans/kredi-limitleri";
+    public const string CreditLimitProposeCapabilityId = "finance.credit-limits.propose";
+    public const string CreditLimitApproveCapabilityId = "finance.credit-limits.approve";
+    public const string CollateralListScreenId = "F-18-COLLATERALS";
+    public const string CollateralListCapabilityId = "finance.collaterals.list";
+    public const string CollateralListRouteId = "finance.collaterals.list";
+    public const string CollateralListRoutePath = "/finans/teminatlar";
+    public const string CollateralRecordCapabilityId = "finance.collaterals.record";
+    public const string OpeningBalanceListScreenId = "F-23-OPENING-BALANCES";
+    public const string OpeningBalanceListCapabilityId = "finance.opening-balances.list";
+    public const string OpeningBalanceListRouteId = "finance.opening-balances.list";
+    public const string OpeningBalanceListRoutePath = "/finans/acilis-bakiyeleri";
+    public const string OpeningBalanceProposeCapabilityId = "finance.opening-balances.propose";
+    public const string OpeningBalanceApproveCapabilityId = "finance.opening-balances.approve";
+    public const string CashTransferWorkspaceScreenId = "F-32-CASH-TRANSFERS";
+    public const string CashTransferWorkspaceCapabilityId = "finance.cash-transfers.workspace";
+    public const string CashTransferWorkspaceRouteId = "finance.cash-transfers.workspace";
+    public const string CashTransferWorkspaceRoutePath = "/finans/virman";
+    public const string CashTransferCommitCapabilityId = "finance.cash-transfers.commit";
 
     public string Owner => OwnerId;
 
@@ -144,8 +223,50 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
             ManualBankPaymentDetailRouteId, ManualBankPaymentDetailRoutePath, ManualBankPaymentDetailScreenId,
             ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
             [FinancePermissionNames.ManualBankPaymentDraftRead]);
+        var expensePayments = Declaration(ExpensePaymentWorkspaceCapabilityId, ExpensePaymentWorkspaceRouteId,
+            ExpensePaymentWorkspaceRoutePath, ExpensePaymentWorkspaceScreenId, ShellCapabilityRoutePrecedence.Static,
+            [FinancePermissionNames.ExpensePaymentDraftRead]);
+        var cashTransfers = Declaration(CashTransferWorkspaceCapabilityId, CashTransferWorkspaceRouteId,
+            CashTransferWorkspaceRoutePath, CashTransferWorkspaceScreenId, ShellCapabilityRoutePrecedence.Static,
+            [FinancePermissionNames.CashTransferRead]);
+        var creditLimits = Declaration(CreditLimitListCapabilityId, CreditLimitListRouteId, CreditLimitListRoutePath,
+            CreditLimitListScreenId, ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCreditLimitsRead]);
+        var collaterals = Declaration(CollateralListCapabilityId, CollateralListRouteId, CollateralListRoutePath,
+            CollateralListScreenId, ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCollateralsRead]);
+        var openingBalances = Declaration(OpeningBalanceListCapabilityId, OpeningBalanceListRouteId,
+            OpeningBalanceListRoutePath, OpeningBalanceListScreenId, ShellCapabilityRoutePrecedence.Static,
+            [ErpPermissions.FinanceOpeningBalancesRead]);
+        var credits = Declaration(CreditAccountsCapabilityId, CreditAccountsRouteId, CreditAccountsRoutePath,
+            CreditAccountsScreenId, ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCreditsRead])
+            with { ImplementationAvailable = false };
+        var officialRecord = Declaration(OfficialInvoiceRecordCapabilityId, OfficialInvoiceRecordCapabilityId,
+            OfficialInvoiceRecordPath, "F-005-OFFICIAL", ShellCapabilityRoutePrecedence.Static,
+            [FinanceOfficialSalesInvoicePermissionNamesV1.Record]) with { ImplementationAvailable = false };
         return
         [
+            // Separate entries express either existing Accounting purpose without adding a Finance read grant.
+            // Their staged status is retained until their own acceptance evidence is reviewed.
+            Declaration(ExchangeBookValuePrepareCapabilityId, ExchangeBookValuePrepareCapabilityId,
+                ExchangeBookValuePreparePath, "F-32-EXCHANGE-BOOK-PREPARE", ShellCapabilityRoutePrecedence.Static,
+                [ErpPermissions.AccountingNormalJournalDraftCreate]) with { ImplementationAvailable = false },
+            Declaration(ExchangeBookValueApproveCapabilityId, ExchangeBookValueApproveCapabilityId,
+                ExchangeBookValueApprovePath, "F-32-EXCHANGE-BOOK-APPROVE", ShellCapabilityRoutePrecedence.Static,
+                [ErpPermissions.AccountingNormalJournalDraftApprove]) with { ImplementationAvailable = false },
+            Declaration(PartyBalanceTransferCapabilityId, PartyBalanceTransferCapabilityId, PartyBalanceTransferPath,
+                "F-32-PARTY-BALANCE-TRANSFER", ShellCapabilityRoutePrecedence.Static,
+                [FinancePartyBalanceTransferPermissionsV1.Record, FinancePermissionNames.PartyLedgerRead,
+                    FinancePermissionNames.PartyLedgerAmountRead]) with { ImplementationAvailable = false },
+            officialRecord,
+            Declaration(OfficialInvoiceApproveCapabilityId, OfficialInvoiceApproveCapabilityId, OfficialInvoiceApprovePath,
+                "F-005-OFFICIAL-APPROVAL", ShellCapabilityRoutePrecedence.Static,
+                [FinanceOfficialSalesInvoicePermissionNamesV1.Approve]) with { ImplementationAvailable = false },
+            officialRecord with { CapabilityId = OfficialInvoiceWithdrawCapabilityId, ParentCapabilityId = OfficialInvoiceRecordCapabilityId,
+                RequiredPermissions = [FinanceOfficialSalesInvoicePermissionNamesV1.Record, FinanceOfficialSalesInvoicePermissionNamesV1.Withdraw] },
+            credits,
+            credits with { CapabilityId = CreditAccountsProposeCapabilityId, ParentCapabilityId = CreditAccountsCapabilityId,
+                RequiredPermissions = [ErpPermissions.FinanceCreditsRead, ErpPermissions.FinanceCreditsPropose] },
+            credits with { CapabilityId = CreditAccountsApproveCapabilityId, ParentCapabilityId = CreditAccountsCapabilityId,
+                RequiredPermissions = [ErpPermissions.FinanceCreditsRead, ErpPermissions.FinanceCreditsApprove] },
             Declaration(ReceiptListCapabilityId, ReceiptListRouteId, ReceiptListRoutePath, ReceiptListScreenId,
                 ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.DraftRead]),
             Declaration(ReceiptDraftCapabilityId, ReceiptDraftRouteId, ReceiptDraftRoutePath, ReceiptDraftScreenId,
@@ -232,6 +353,33 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
                     ErpPermissions.AccountingPeriodsRead,
                 ],
             },
+            // FNS-D25: the workspace lists; each command is a control of it under its own narrow name.
+            expensePayments,
+            expensePayments with
+            {
+                CapabilityId = ExpensePaymentDraftCapabilityId,
+                ParentCapabilityId = ExpensePaymentWorkspaceCapabilityId,
+                RequiredPermissions =
+                    [FinancePermissionNames.ExpensePaymentDraftRead, FinancePermissionNames.ExpensePaymentDraftSave],
+            },
+            expensePayments with
+            {
+                CapabilityId = ExpensePaymentApproveCapabilityId,
+                ParentCapabilityId = ExpensePaymentWorkspaceCapabilityId,
+                RequiredPermissions =
+                    [FinancePermissionNames.ExpensePaymentDraftRead, FinancePermissionNames.ExpensePaymentApprove],
+            },
+            expensePayments with
+            {
+                CapabilityId = ExpensePaymentRecordCapabilityId,
+                ParentCapabilityId = ExpensePaymentWorkspaceCapabilityId,
+                RequiredPermissions =
+                [
+                    FinancePermissionNames.ExpensePaymentDraftRead,
+                    FinancePermissionNames.ExpensePaymentRecord,
+                    ErpPermissions.AccountingPeriodsRead,
+                ],
+            },
             Declaration(AllocationListCapabilityId, AllocationListRouteId, AllocationListRoutePath,
                 AllocationListScreenId, ShellCapabilityRoutePrecedence.Static,
                 [FinancePermissionNames.AllocationRead]),
@@ -258,6 +406,58 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
             Declaration(PartyLedgerCariCapabilityId, PartyLedgerCariRouteId, PartyLedgerCariRoutePath,
                 PartyLedgerCariScreenId, ShellCapabilityRoutePrecedence.Static,
                 [FinancePermissionNames.PartyLedgerRead]),
+            // 1.10 (FNS-D27 / FNS-D27a; one step, FNS-D56 / FNS-D57(3)): an approver changes a limit in one step or
+            // decides another person's proposal (the server and the database refuse a self-decision of a proposal).
+            creditLimits,
+            creditLimits with
+            {
+                CapabilityId = CreditLimitProposeCapabilityId,
+                ParentCapabilityId = CreditLimitListCapabilityId,
+                RequiredPermissions = [ErpPermissions.FinanceCreditLimitsRead, ErpPermissions.FinanceCreditLimitsPropose],
+            },
+            creditLimits with
+            {
+                CapabilityId = CreditLimitApproveCapabilityId,
+                ParentCapabilityId = CreditLimitListCapabilityId,
+                RequiredPermissions = [ErpPermissions.FinanceCreditLimitsRead, ErpPermissions.FinanceCreditLimitsApprove],
+            },
+            // 1.12 (FNS-D57): one step; recording, changing and releasing are one control under the record name.
+            collaterals,
+            collaterals with
+            {
+                CapabilityId = CollateralRecordCapabilityId,
+                ParentCapabilityId = CollateralListCapabilityId,
+                RequiredPermissions = [ErpPermissions.FinanceCollateralsRead, ErpPermissions.FinanceCollateralsRecord],
+            },
+            // 1.13 (FNS-D23): the specialist proposes; a manager other than the proposer approves or rejects.
+            openingBalances,
+            openingBalances with
+            {
+                CapabilityId = OpeningBalanceProposeCapabilityId,
+                ParentCapabilityId = OpeningBalanceListCapabilityId,
+                RequiredPermissions =
+                    [ErpPermissions.FinanceOpeningBalancesRead, ErpPermissions.FinanceOpeningBalancesPropose],
+            },
+            openingBalances with
+            {
+                CapabilityId = OpeningBalanceApproveCapabilityId,
+                ParentCapabilityId = OpeningBalanceListCapabilityId,
+                RequiredPermissions =
+                    [ErpPermissions.FinanceOpeningBalancesRead, ErpPermissions.FinanceOpeningBalancesApprove],
+            },
+            // 1.11 (FNS-D24): one transaction per transfer; the commit also needs the Accounting period read.
+            cashTransfers,
+            cashTransfers with
+            {
+                CapabilityId = CashTransferCommitCapabilityId,
+                ParentCapabilityId = CashTransferWorkspaceCapabilityId,
+                RequiredPermissions =
+                [
+                    FinancePermissionNames.CashTransferRead,
+                    FinancePermissionNames.CashTransferCommit,
+                    ErpPermissions.AccountingPeriodsRead,
+                ],
+            },
         ];
     }
 

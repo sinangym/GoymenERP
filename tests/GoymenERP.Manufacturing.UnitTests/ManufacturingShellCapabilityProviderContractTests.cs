@@ -9,7 +9,7 @@ namespace GoymenERP.Manufacturing.UnitTests;
 /// routes — the order screen/list and plan create/detail/list — two controls on the order screen and three on plan
 /// detail. All ten consumed ids and all routes stay pinned to <c>src/manufacturing/capabilities.ts</c>, so frontend drift
 /// is red here.
-/// company-wide scope, and <c>ImplementationAvailable: true</c> on all of them. Each control is its
+/// company-wide scope, and available implementations except the explicitly staged URT-D106 reorder control. Each control is its
 /// parent with only its id, parent and permissions changed, so the registry's control rule (same route,
 /// context and scope; the parent's permissions kept; never available under a staged parent) holds by
 /// construction.
@@ -25,8 +25,8 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
         var provider = new ManufacturingShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
 
-        Assert.Equal(("MANUFACTURING", "1.6"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(12, declarations.Count);
+        Assert.Equal(("MANUFACTURING", "1.13"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(20, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -35,7 +35,7 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
                 (ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide),
                 (declaration.ContextRequirement, declaration.ScopeRequirement));
             Assert.Null(declaration.GlobalProductOperation);
-            Assert.True(declaration.ImplementationAvailable);
+            Assert.Equal(declaration.CapabilityId != ManufacturingShellCapabilityProvider.ReopenCapabilityId, declaration.ImplementationAvailable);
         }
 
         var exceptionApproval = Assert.Single(declarations,
@@ -87,11 +87,36 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
         Assert.Null(planList.ParentCapabilityId);
         Assert.Equal([ErpPermissions.ManufacturingPlansRead], planList.RequiredPermissions);
 
+        // URT-S13: the monthly scrap price screen is its own static route on its own read permission; the entry is a control
+        // adding the write permission. Neither is a plan or order permission.
+        var scrapPrices = Assert.Single(declarations, item => item.CapabilityId == "manufacturing.scrap-prices.list");
+        Assert.Equal(
+            ("manufacturing.scrap-price-list", "/uretim/hurda-fiyatlari", "MFG-SCRAP-PRICES",
+                ShellCapabilityRoutePrecedence.Static),
+            (scrapPrices.RouteId, scrapPrices.RoutePath, scrapPrices.ScreenId, scrapPrices.RoutePrecedence));
+        Assert.Null(scrapPrices.ParentCapabilityId);
+        Assert.Equal([ErpPermissions.ManufacturingScrapPricesRead], scrapPrices.RequiredPermissions);
+        AssertControl(declarations, scrapPrices, "manufacturing.scrap-prices.record",
+            [ErpPermissions.ManufacturingScrapPricesRead, ErpPermissions.ManufacturingScrapPricesWrite]);
+
         // The controls: the same route as the order screen, its permission plus their own.
+        AssertControl(declarations, detail, "manufacturing.orders.output-correction",
+            [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingFactsCorrect]);
+        AssertControl(declarations, detail, "manufacturing.orders.cancel",
+            [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersCancel]);
+        AssertControl(declarations, detail with { ImplementationAvailable = false }, "manufacturing.orders.reopen",
+            [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersReopen, ErpPermissions.AccountingPeriodsRead]);
         AssertControl(declarations, detail, "manufacturing.orders.facts",
             [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingFactsRecord]);
         AssertControl(declarations, detail, "manufacturing.orders.close",
             [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersClose]);
+        // URT-S23 (URT-D66 (5)): the order's own termin on the order edit permission — neither the close nor recording a
+        // fact confers it.
+        AssertControl(declarations, detail, "manufacturing.orders.due-date",
+            [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersWrite]);
+        // URT-S19 (B-27, API-42): the cost trace on its own report grant — the order read alone does not confer it.
+        AssertControl(declarations, detail, "manufacturing.orders.cost-trace",
+            [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingReportsRead]);
         AssertControl(declarations, planDetail, "manufacturing.plans.approve",
             [ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingPlansApprove]);
         AssertControl(declarations, planDetail, "manufacturing.plans.order-create",

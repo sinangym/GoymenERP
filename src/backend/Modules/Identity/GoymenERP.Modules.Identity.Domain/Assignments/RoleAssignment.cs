@@ -58,6 +58,11 @@ public sealed class RoleAssignment
 
     public DateTimeOffset CreatedAtUtc { get; private set; }
 
+    /// <summary>Who revoked the assignment; set exactly when <see cref="Status"/> is Revoked by a person.</summary>
+    public Guid? RevokedByUserId { get; private set; }
+
+    public DateTimeOffset? RevokedAtUtc { get; private set; }
+
     public long Version { get; private set; }
 
     public IReadOnlyCollection<RoleAssignmentScope> Scopes => _scopes.AsReadOnly();
@@ -76,6 +81,28 @@ public sealed class RoleAssignment
         }
 
         _scopes.Add(new RoleAssignmentScope(Id, CompanyId, scopeType, scopeId));
+    }
+
+    /// <summary>
+    /// Spec section ID-3 / KIM-D15: revocation is one step, for a Critical role too. Only an active assignment can be
+    /// revoked; a revoked or expired one stays as it is (no second record of the same change).
+    /// </summary>
+    public void Revoke(Guid revokedByUserId, DateTimeOffset revokedAtUtc)
+    {
+        if (revokedByUserId == Guid.Empty)
+        {
+            throw new ArgumentException("Geri alan kullanıcı kimliği boş olamaz.", nameof(revokedByUserId));
+        }
+
+        if (Status != RoleAssignmentStatus.Active)
+        {
+            throw new InvalidOperationException("Yalnız etkin rol ataması geri alınabilir.");
+        }
+
+        Status = RoleAssignmentStatus.Revoked;
+        RevokedByUserId = revokedByUserId;
+        RevokedAtUtc = revokedAtUtc;
+        Version++;
     }
 
     public bool IsEffectiveAt(DateTimeOffset instant)

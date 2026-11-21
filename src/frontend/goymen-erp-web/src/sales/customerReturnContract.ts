@@ -7,7 +7,8 @@
  *   POST /api/v1/sales/customer-returns                   → 201 SalesCustomerReturnView (Draft)
  *   POST /api/v1/sales/customer-returns/{id}/submission   → 200 SalesCustomerReturnView (PendingApproval)
  *   POST /api/v1/sales/customer-returns/{id}/approval     → 200 SalesCustomerReturnView (Approved)
- *   POST /api/v1/sales/customer-returns/{id}/finalization → 200 SalesCustomerReturnView (Finalized)
+ *   GET  /api/v1/sales/customer-returns/{id}/installments → SalesCustomerReturnInstallmentsResponse (Approved; FNS-D81)
+ *   POST /api/v1/sales/customer-returns/{id}/finalization → 200 SalesCustomerReturnView (Finalized; `allocations` when partial)
  *   POST /api/v1/sales/customer-returns/{id}/rejection    → 200 SalesCustomerReturnView (Rejected; SAT-D290 (2, 3))
  *   POST /api/v1/sales/customer-returns/{id}/cancellation → 200 SalesCustomerReturnView (Cancelled; SAT-D290 (2))
  *
@@ -22,6 +23,9 @@ import { isDateOnly, isReferenceId, isVersionString } from './wirePrimitives'
 
 export const SALES_CUSTOMER_RETURNS_PATH = '/sales/customer-returns'
 export const salesCustomerReturnApiPath = (id: string) => `${SALES_CUSTOMER_RETURNS_PATH}/${encodeURIComponent(id)}`
+
+/** FNS-D81: the outstanding installments of the original invoice an approved return may reduce, with Finance's prefill. */
+export const salesCustomerReturnInstallmentsPath = (id: string) => `${salesCustomerReturnApiPath(id)}/installments`
 
 export function salesCustomerReturnsListPath(invoiceId: string | null): string {
   if (invoiceId === null) return SALES_CUSTOMER_RETURNS_PATH
@@ -518,5 +522,104 @@ export function decodeCustomerReturnView(value: unknown, returnId: string): Cust
     cancellationReason: o.cancellationReason as string | null,
     updatedAtUtc: o.updatedAtUtc,
     lines,
+  }
+}
+
+/** One outstanding installment of the original invoice (nearest due first) and the part Finance's prefill puts on it. */
+export interface CustomerReturnInstallment {
+  readonly openItemId: string
+  readonly dueOn: string
+  readonly originalAmount: string
+  readonly outstandingAmount: string
+  readonly prefillAmount: string
+}
+
+/**
+ * FNS-D81: the installment read of an approved return. `selectionAllowed` is true exactly when the return is partial — the
+ * finalization then carries the user's selection; Finance's automatic order (FNS-D54) is never applied for the user.
+ */
+export interface CustomerReturnInstallments {
+  readonly customerReturnId: string
+  readonly version: string
+  readonly amount: string
+  readonly selectionAllowed: boolean
+  readonly appliedAmount: string
+  readonly advanceAmount: string
+  readonly installments: readonly CustomerReturnInstallment[]
+}
+
+export const CUSTOMER_RETURN_INSTALLMENTS_FIELDS = [
+  'customerReturnId',
+  'version',
+  'amount',
+  'selectionAllowed',
+  'appliedAmount',
+  'advanceAmount',
+  'installments',
+] as const
+
+export const CUSTOMER_RETURN_INSTALLMENT_FIELDS = [
+  'openItemId',
+  'dueOn',
+  'originalAmount',
+  'outstandingAmount',
+  'prefillAmount',
+] as const
+
+function decodeInstallment(value: unknown): CustomerReturnInstallment | null {
+  const o = exact(value, CUSTOMER_RETURN_INSTALLMENT_FIELDS)
+  if (
+    o === null
+    || !isReferenceId(o.openItemId)
+    || !isDateOnly(o.dueOn)
+    || !isAmount(o.originalAmount)
+    || !isAmount(o.outstandingAmount)
+    || !isAmount(o.prefillAmount)
+  ) {
+    return null
+  }
+  return {
+    openItemId: o.openItemId,
+    dueOn: o.dueOn,
+    originalAmount: o.originalAmount,
+    outstandingAmount: o.outstandingAmount,
+    prefillAmount: o.prefillAmount,
+  }
+}
+
+/** The installment read of exactly `returnId`; another id, a repeated installment or a stray member is `null`. */
+export function decodeCustomerReturnInstallments(value: unknown, returnId: string): CustomerReturnInstallments | null {
+  const o = exact(value, CUSTOMER_RETURN_INSTALLMENTS_FIELDS)
+  if (
+    o === null
+    || !isReferenceId(o.customerReturnId)
+    || o.customerReturnId.toLowerCase() !== returnId.toLowerCase()
+    || !isVersionString(o.version)
+    || !isAmount(o.amount)
+    || typeof o.selectionAllowed !== 'boolean'
+    || !isAmount(o.appliedAmount)
+    || !isAmount(o.advanceAmount)
+    || !Array.isArray(o.installments)
+    // A selection needs something to select.
+    || (o.selectionAllowed && o.installments.length === 0)
+  ) {
+    return null
+  }
+  const installments: CustomerReturnInstallment[] = []
+  const seen = new Set<string>()
+  for (const entry of o.installments) {
+    const installment = decodeInstallment(entry)
+    if (installment === null || seen.has(installment.openItemId.toLowerCase())) return null
+    seen.add(installment.openItemId.toLowerCase())
+    installments.push(installment)
+  }
+  return {
+    customerReturnId: o.customerReturnId,
+    version: o.version,
+    amount: o.amount,
+    selectionAllowed: o.selectionAllowed,
+    appliedAmount: o.appliedAmount,
+    advanceAmount: o.advanceAmount,
+    installments,
   }
 }

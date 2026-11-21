@@ -161,10 +161,15 @@ internal sealed class InventoryMovementTimelineService(
                 || !Enum.TryParse<BlockState>(line.Block, out var block) || !Enum.IsDefined(block)
                 || !CanonicalQuantity(line.QuantityKg)
                 || kind is StockMovementKind.Receipt or StockMovementKind.Return or StockMovementKind.TransferAccept
+                    or StockMovementKind.TransferDispatchCancellation or StockMovementKind.TransferReceiptOverage
                     && direction != StockDirection.In
                 || kind == StockMovementKind.Issue && (direction != StockDirection.Out || block == BlockState.Blocked)
                 || kind == StockMovementKind.TransferDispatch && direction != StockDirection.Out
-                || kind == StockMovementKind.Scrap && direction != StockDirection.Out)
+                || kind == StockMovementKind.Scrap && direction != StockDirection.Out
+                || kind == StockMovementKind.TransferReceiptShortage && direction != StockDirection.Out
+                || kind == StockMovementKind.SupplierReturnExit && direction != StockDirection.Out
+                || kind == StockMovementKind.ManufacturingOutputReversal
+                    && (direction != StockDirection.Out || block == BlockState.Blocked))
             {
                 return false;
             }
@@ -172,8 +177,11 @@ internal sealed class InventoryMovementTimelineService(
 
         if (!movement.Lines.Select(line => line.Sequence).SequenceEqual(
                 movement.Lines.Select(line => line.Sequence).Order())
-            || ((kind is StockMovementKind.Scrap or StockMovementKind.CountAdjustment)
-                && movement.Lines.Count != 1))
+            || ((kind is StockMovementKind.Scrap or StockMovementKind.CountAdjustment
+                    or StockMovementKind.ManufacturingOutputReversal or StockMovementKind.TransferReceiptShortage
+                    or StockMovementKind.TransferReceiptOverage or StockMovementKind.SupplierReturnExit)
+                && movement.Lines.Count != 1)
+            || (kind == StockMovementKind.TransferTransitLoss && movement.Lines.Count % 2 != 0))
         {
             return false;
         }

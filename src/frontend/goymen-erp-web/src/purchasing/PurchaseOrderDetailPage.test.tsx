@@ -110,6 +110,7 @@ vi.mock('@tanstack/react-query', () => ({
   }),
 }))
 
+vi.mock('./AllocationLinkPanel', () => ({ AllocationLinkPanel: () => null }))
 vi.mock('./api', () => ({ fetchPurchaseOrder: vi.fn() }))
 
 vi.mock('./approvalApi', () => ({

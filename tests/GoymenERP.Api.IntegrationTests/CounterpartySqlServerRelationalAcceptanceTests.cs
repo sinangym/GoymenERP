@@ -1,8 +1,12 @@
 using System.Data;
 using System.Net;
 using System.Text.Json;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
+using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -34,11 +38,7 @@ public sealed class CounterpartySqlServerRelationalAcceptanceTests
             await using var connection = new SqlConnection(factory.DatabaseConnectionString);
             await connection.OpenAsync();
 
-            Assert.Equal(
-                7,
-                await ScalarAsync<int>(
-                    connection,
-                    "SELECT COUNT(*) FROM [counterparty].[__EFMigrationsHistory];"));
+            await AssertOwnerMigrationHistoryAsync(factory);
             Assert.Equal(
                 0,
                 await ScalarAsync<int>(
@@ -114,6 +114,24 @@ public sealed class CounterpartySqlServerRelationalAcceptanceTests
             await factory.DisposeAsync();
             await DropDatabaseAsync(baseConnectionString, factory.DatabaseName);
         }
+    }
+
+    private static async Task AssertOwnerMigrationHistoryAsync(
+        SqlServerRelationalApiFactory factory)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var companyContext = scope.ServiceProvider.GetRequiredService<ICompanyContext>();
+        companyContext.Set(TestCompanyIds.CompanyA);
+        var dbContext = scope.ServiceProvider.GetRequiredService<CounterpartyDbContext>();
+        // Compare exact owner identities against real SQL history, not a stale count.
+        var expected = dbContext.Database.GetMigrations()
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        Assert.NotEmpty(expected);
+        var applied = (await dbContext.Database.GetAppliedMigrationsAsync())
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(expected, applied);
     }
 
     private static async Task AssertInvalidPartyCodeRejectedAsync(SqlConnection connection)

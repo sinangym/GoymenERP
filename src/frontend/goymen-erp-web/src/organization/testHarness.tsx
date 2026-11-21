@@ -49,7 +49,7 @@ export const IDENTITY = {
   displayName: 'Kullanıcı A',
   email: null,
   allowedCompanyIds: [COMPANY_A, COMPANY_B],
-  authenticationSessionBinding: null,
+  mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: null,
 }
 
 export const DIRECTORY = [
@@ -150,6 +150,40 @@ export function workCenterDetail(
 ) {
   return { ...workCenter(id, locationId, code, name, overrides), version: overrides.version ?? 1 }
 }
+
+/** The URT-D11 default weekday shift, in the calendar read's JSON shape. */
+const DEFAULT_WEEKDAY_SHIFTS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map((day) => ({
+  day,
+  start: '08:00',
+  end: '16:00',
+}))
+
+/**
+ * A synthetic B-15 calendar read (`WorkCenterCalendarDetail`). Without overrides it is what the server answers for a
+ * work centre with no saved calendar: the URT-D11 default at version 0.
+ */
+export function workCenterCalendar(
+  workCenterId: string,
+  overrides: {
+    source?: string
+    version?: number
+    timeZoneId?: string
+    shifts?: readonly { day: string; start: string; end: string }[]
+    closedDates?: readonly string[]
+  } = {},
+) {
+  return {
+    workCenterId,
+    source: overrides.source ?? 'Default',
+    version: overrides.version ?? 0,
+    timeZoneId: overrides.timeZoneId ?? 'Europe/Istanbul',
+    shifts: overrides.shifts ?? DEFAULT_WEEKDAY_SHIFTS,
+    closedDates: overrides.closedDates ?? [],
+  }
+}
+
+/** `…/organization/work-centers/{id}/calendar` — the B-15 section's own read and command. */
+export const WORK_CENTER_CALENDAR_RE = /\/organization\/work-centers\/([^/?]+)\/calendar$/
 
 export function site(id: string, code: string, name: string, type = 'Factory', isActive = true) {
   return { id, code, name, type, isActive }
@@ -270,6 +304,15 @@ export interface HarnessOptions {
     url: string,
     init: RequestInit | undefined,
   ) => Response | Promise<Response> | undefined
+  /**
+   * B-15 calendar responder for `…/work-centers/{id}/calendar` (read and command). Return undefined to fall through
+   * to a 404. Without it, every work-centre card's calendar read is answered with the URT-D11 default (version 0), so
+   * a card test that is not about the calendar sees a ready section rather than its own card body or a 404.
+   */
+  readonly calendar?: (
+    url: string,
+    init: RequestInit | undefined,
+  ) => Response | Promise<Response> | undefined
 }
 
 /**
@@ -317,6 +360,12 @@ export function installFetch(options: HarnessOptions = {}): RecordedRequest[] {
           generation,
           capabilities,
         })
+      }
+
+      const calendarMatch = WORK_CENTER_CALENDAR_RE.exec(url)
+      if (calendarMatch !== null) {
+        if (options.calendar !== undefined) return options.calendar(url, init) ?? problem(404)
+        if ((init?.method ?? 'GET') === 'GET') return json(workCenterCalendar(decodeURIComponent(calendarMatch[1])))
       }
 
       return options.respond?.(url, init) ?? problem(404)

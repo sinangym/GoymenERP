@@ -23,6 +23,9 @@ namespace GoymenERP.Api.Endpoints;
 /// <item>SAT-D158 (EK21): <c>GET …/buyer-situations</c> · <c>POST …/buyer-situations/versions</c> ·
 /// <c>POST …/buyer-situations/versions/{listVersion}/withdrawal</c> (204) — the buyer situation list over the reviewed catalog;
 /// the main read carries it too.</item>
+/// <item>SAT-D181 (EK26, F-029 S9): <c>GET …/rate-lists</c> · <c>POST …/rate-lists/{listKind}/versions</c> ·
+/// <c>POST …/rate-lists/{listKind}/versions/{listVersion}/withdrawal</c> (204) — the VAT rate / withholding ratio lists,
+/// empty until entered (SAT-D148); a withholding ratio's GİB code must be in the withholding code list in force.</item>
 /// </list>
 /// Commands: one Idempotency-Key (stored terminal answers replay with <c>Idempotency-Replayed</c>), the version as decimal
 /// text, a mandatory reason (≤ 4000). Another company's record is the same code-less 404 as an unknown one.
@@ -296,6 +299,81 @@ public static class SettingsTaxMasterEndpoints
             .RequireCompanyContext()
             .RequireAuthorization(SettingsTaxMasterPermissionManifestV1.TaxMasterManage)
             .WithName("WithdrawSettingsTaxBuyerSituationListV1")
+            .WithIdempotencyContract(StatusCodes.Status204NoContent, StatusCodes.Status404NotFound,
+                StatusCodes.Status409Conflict)
+            .Accepts<WithdrawTaxCodeListRequestV1>("application/json")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesErpBadRequest(CommandBadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(
+                TaxMasterProblemCodesV1.IdempotencyConflict,
+                TaxMasterProblemCodesV1.VersionConflict,
+                TaxMasterProblemCodesV1.RecordInEffect,
+                TaxMasterProblemCodesV1.RecordWithdrawn)
+            .ProducesErpServiceUnavailable(TaxMasterProblemCodesV1.ProviderUnavailable)
+            .ProducesErpAuthenticatedProblems();
+
+        // SAT-D181 (EK26, F-029 S9): the effective-dated VAT rate / withholding ratio lists, starting empty (SAT-D148).
+        group.MapGet("/rate-lists", async (
+                HttpContext httpContext,
+                ISettingsTaxMasterAdministrationV1 service,
+                CancellationToken cancellationToken) =>
+            await ReadAsync(httpContext, () => service.GetRateListsAsync(cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(SettingsTaxMasterPermissionManifestV1.TaxMasterManage)
+            .WithName("GetSettingsTaxRateListsV1")
+            .Produces<TaxRateListsViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(TaxMasterProblemCodesV1.RequestInvalid)
+            .ProducesErpServiceUnavailable(TaxMasterProblemCodesV1.ProviderUnavailable)
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/rate-lists/{listKind}/versions", async (
+                string listKind,
+                PublishTaxRateListRequestV1 request,
+                ISettingsTaxMasterAdministrationV1 service,
+                ICurrentUser currentUser,
+                ICompanyContext companyContext,
+                ICorrelationContext correlationContext,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await CommandAsync(httpContext, currentUser, companyContext, correlationContext,
+                metadata => service.PublishRateListAsync(listKind, request, metadata, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(SettingsTaxMasterPermissionManifestV1.TaxMasterManage)
+            .WithName("PublishSettingsTaxRateListV1")
+            .WithIdempotencyContract(StatusCodes.Status204NoContent, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<PublishTaxRateListRequestV1>("application/json")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesErpBadRequest(CommandBadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(
+                TaxMasterProblemCodesV1.IdempotencyConflict,
+                TaxMasterProblemCodesV1.VersionConflict)
+            .ProducesErpUnprocessableEntity(
+                TaxMasterProblemCodesV1.EffectiveFromPast,
+                TaxMasterProblemCodesV1.WithholdingCodeUnknown)
+            .ProducesErpServiceUnavailable(TaxMasterProblemCodesV1.ProviderUnavailable)
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/rate-lists/{listKind}/versions/{listVersion:long}/withdrawal", async (
+                string listKind,
+                long listVersion,
+                WithdrawTaxCodeListRequestV1 request,
+                ISettingsTaxMasterAdministrationV1 service,
+                ICurrentUser currentUser,
+                ICompanyContext companyContext,
+                ICorrelationContext correlationContext,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await CommandAsync(httpContext, currentUser, companyContext, correlationContext,
+                metadata => service.WithdrawRateListAsync(listKind, listVersion, request, metadata, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(SettingsTaxMasterPermissionManifestV1.TaxMasterManage)
+            .WithName("WithdrawSettingsTaxRateListV1")
             .WithIdempotencyContract(StatusCodes.Status204NoContent, StatusCodes.Status404NotFound,
                 StatusCodes.Status409Conflict)
             .Accepts<WithdrawTaxCodeListRequestV1>("application/json")

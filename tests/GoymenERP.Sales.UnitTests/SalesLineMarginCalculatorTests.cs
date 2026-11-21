@@ -153,6 +153,46 @@ public sealed class SalesLineMarginCalculatorTests
             SalesLineMarginCalculator.Calculate(new SalesLineMarginInput(null, Kg, 1m, Tl, SalesLineMarginCost.SourceMissing)));
     }
 
+    [Theory]
+    // SAT-D426 golden (author-computed, exact): foreign net sale × the rate frozen at approval = TL net; then the TL steps.
+    // foreign net, frozen rate, quantity, TL unit cost, amount (0,01 TL), percent (0,01)
+    [InlineData("1000.00", "34.5678", "10", "3000", "4567.80", "13.21")]
+    [InlineData("1234.56", "34.56789012", "12.345", "3100.1234", "4405.11", "10.32")]
+    [InlineData("500.00", "34.5678", "10", "2000", "-2716.10", "-15.71")]
+    public void A_foreign_sale_is_converted_exactly_at_the_rate_frozen_at_approval_SAT_D426(string net, string rate,
+        string quantity, string unitCost, string amount, string percent)
+    {
+        static decimal D(string text) => decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
+        var margin = SalesLineMarginCalculator.Calculate(new SalesLineMarginInput(Money.Of(D(net), OtherCurrency, 2), Kg, D(quantity),
+            Tl, SalesLineMarginCost.Of(D(unitCost), Tl, Kg), ExchangeRate.Of(OtherCurrency, Tl, D(rate))));
+
+        Assert.Equal(SalesLineMarginState.Computed, margin.State);
+        Assert.Equal((D(amount), Tl), (margin.Amount!.Value.Amount, margin.Amount.Value.CurrencyId));
+        Assert.Equal(D(percent), margin.Percent);
+    }
+
+    [Fact]
+    public void A_foreign_sale_without_its_own_frozen_rate_stays_unavailable_and_a_TL_sale_ignores_any_rate_SAT_D426()
+    {
+        var cost = SalesLineMarginCost.Of(5m, Tl, Kg);
+        var third = Guid.Parse("7c7c7c7c-7c7c-4c7c-8c7c-7c7c7c7c7c7c");
+        // No rate, a rate from another currency, a rate into another currency: never estimated.
+        AssertUnavailable(SalesLineMarginUnavailableReason.CurrencyConversionUndecided, SalesLineMarginCalculator.Calculate(
+            new SalesLineMarginInput(Money.Of(100m, OtherCurrency, 2), Kg, 1m, Tl, cost)));
+        AssertUnavailable(SalesLineMarginUnavailableReason.CurrencyConversionUndecided, SalesLineMarginCalculator.Calculate(
+            new SalesLineMarginInput(Money.Of(100m, OtherCurrency, 2), Kg, 1m, Tl, cost, ExchangeRate.Of(third, Tl, 30m))));
+        AssertUnavailable(SalesLineMarginUnavailableReason.CurrencyConversionUndecided, SalesLineMarginCalculator.Calculate(
+            new SalesLineMarginInput(Money.Of(100m, OtherCurrency, 2), Kg, 1m, Tl, cost, ExchangeRate.Of(OtherCurrency, third, 30m))));
+        // A foreign cost is still not converted (BS-1), even with a sale rate.
+        AssertUnavailable(SalesLineMarginUnavailableReason.CurrencyConversionUndecided, SalesLineMarginCalculator.Calculate(
+            new SalesLineMarginInput(Money.Of(100m, OtherCurrency, 2), Kg, 1m, Tl, SalesLineMarginCost.Of(5m, OtherCurrency, Kg),
+                ExchangeRate.Of(OtherCurrency, Tl, 30m))));
+        // A TL sale is computed as before; a rate passed along is not applied.
+        var tl = SalesLineMarginCalculator.Calculate(new SalesLineMarginInput(Money.Of(100m, Tl, 2), Kg, 1m, Tl, cost,
+            ExchangeRate.Of(OtherCurrency, Tl, 30m)));
+        Assert.Equal((95m, 95m), (tl.Amount!.Value.Amount, tl.Percent));
+    }
+
     [Fact]
     public void A_margin_that_System_Decimal_cannot_hold_exactly_is_out_of_range_never_rounded_or_a_crash()
     {

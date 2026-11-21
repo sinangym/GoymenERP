@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import styles from './Finance.module.css'
+import { OFFICIAL_INVOICE_IMPORT_TEXT, officialInvoiceIssueLine } from './officialInvoiceImportText'
 
 export interface OfficialInvoiceImportSourceSelection {
   readonly batchId: string
@@ -53,6 +54,19 @@ export interface OfficialInvoiceAppliedBatch {
   readonly batchVersion: string
   readonly batchChecksum: string
   readonly openItems: readonly OfficialInvoiceOpenItem[]
+  readonly officialDocuments?: readonly OfficialInvoiceDocument[]
+}
+
+export interface OfficialInvoiceDocument {
+  readonly sourceDocumentId: string
+  readonly officialNo: string
+  readonly ettn: string
+  readonly invoiceDate: string | null
+  readonly payableFunctionalAmount: string | null
+  readonly hasPendingManual: boolean
+  readonly approvedManualInvoiceId: string | null
+  readonly effectivePayableFunctionalAmount: string | null
+  readonly differentFields: readonly string[]
 }
 
 export type OfficialInvoiceApplyReply =
@@ -333,6 +347,7 @@ function OfficialInvoiceImportPanelState({
         Yalnız seçilen onaylı kaynak önizlenir. Önizleme kayıt değildir; açık kalemler yetkili uygulama
         tamamlandıktan sonra Finans'tan yeniden okunur.
       </p>
+      <p className={styles.notice}>{OFFICIAL_INVOICE_IMPORT_TEXT.identityHint}</p>
       <dl>
         <dt>Onaylı kaynak</dt>
         <dd>{source.displayName}</dd>
@@ -377,7 +392,7 @@ function OfficialInvoiceImportPanelState({
           <p>Dosya uygulanmadı.</p>
           {current.issues.map((issue, index) => (
             <p key={`${issue.rowNumber}-${issue.field}-${issue.code}-${index}`}>
-              Satır {issue.rowNumber}, {issue.field}: {issue.code}
+              Satır {issue.rowNumber}, {officialInvoiceIssueLine(issue.field, issue.code)}
             </p>
           ))}
         </div>
@@ -394,6 +409,17 @@ function OfficialInvoiceImportPanelState({
         <article className={styles.command} aria-label="Kaydedilmiş Finans açık kalemleri">
           <h2>Kaydedilmiş açık kalemler</h2>
           <p>{current.batch.openItems.length} açık kalem Finans'tan yeniden okundu.</p>
+          {(current.batch.officialDocuments ?? []).map((document) => (
+            <section key={document.sourceDocumentId} aria-label={document.officialNo}>
+              <h3>{document.officialNo}</h3>
+              <p>{OFFICIAL_INVOICE_IMPORT_TEXT.invoiceDate}: {document.invoiceDate ?? OFFICIAL_INVOICE_IMPORT_TEXT.unknown}</p>
+              <p>{OFFICIAL_INVOICE_IMPORT_TEXT.importedTl}: {document.payableFunctionalAmount ?? OFFICIAL_INVOICE_IMPORT_TEXT.notCalculated}</p>
+              <p>{OFFICIAL_INVOICE_IMPORT_TEXT.effectiveTl}: {document.effectivePayableFunctionalAmount ?? OFFICIAL_INVOICE_IMPORT_TEXT.notCalculated}</p>
+              {document.hasPendingManual ? <p>{OFFICIAL_INVOICE_IMPORT_TEXT.pendingManual}</p> : null}
+              {document.approvedManualInvoiceId !== null ? <p>{OFFICIAL_INVOICE_IMPORT_TEXT.manualWins}</p> : null}
+              {document.differentFields.length > 0 ? <p role="status">{OFFICIAL_INVOICE_IMPORT_TEXT.differences}: {document.differentFields.join(', ')}</p> : null}
+            </section>
+          ))}
           <ul>
             {current.batch.openItems.map((item) => (
               <li key={item.id}>

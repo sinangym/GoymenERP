@@ -13,6 +13,16 @@ namespace GoymenERP.Modules.Settings.Application.Contracts.V1;
 /// </summary>
 public static class SettingsUnitIdentitiesV1
 {
-    /// <summary>Kilogram. The only unit with an approved profile today (GDC, Ö1/Ö2; GSP and GIN, SAT-D18).</summary>
+    /// <summary>Kilogram; existing approved company profiles are unchanged.</summary>
     public static readonly Guid Kilogram = Guid.Parse("c5ef643e-a6e8-51f3-89f2-8e68b00cb983");
+    /// <summary>Metric tonne (Master §28.1). UUIDv5 name "unit:tonne"; identity only, no company profile.</summary>
+    public static readonly Guid Tonne = Guid.Parse("ab3cea5c-850e-515f-8de5-16f192ad7771");
+    /// <summary>Metre (ALS-D43/D51). UUIDv5 name "unit:metre"; identity only, no company profile.</summary>
+    public static readonly Guid Metre = Guid.Parse("564b68b4-02a8-5e72-af2a-4f5cb9b91702");
+    /// <summary>Piece (ALS-D43/D51). UUIDv5 name "unit:piece"; identity only, no company profile.</summary>
+    public static readonly Guid Piece = Guid.Parse("5e0cbe45-61cc-541a-834a-366355de36e5");
+
+    public static IReadOnlyList<UnitIdentityV1> Standard { get; } = Array.AsReadOnly<UnitIdentityV1>(
+    [new(Kilogram, "kg", "weight", true), new(Tonne, "t", "weight", false),
+        new(Metre, "m", "length", false), new(Piece, "adet", "count", false)]);
 }

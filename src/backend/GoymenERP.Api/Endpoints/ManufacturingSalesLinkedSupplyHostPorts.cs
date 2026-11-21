@@ -28,7 +28,7 @@ public sealed class ManufacturingSalesOrderLinkedSupplyReadPort(IManufacturingSa
         ArgumentNullException.ThrowIfNull(query);
         try
         {
-            var items = await manufacturing.ListOpenForSalesOrderAsync(query.CompanyId, query.OrderId, query.OrderLineIds,
+            var items = await manufacturing.ListLinkedForSalesOrderAsync(query.CompanyId, query.OrderId, query.OrderLineIds,
                 cancellationToken);
             if (items is null || items.Any(item => item is null || item.CompanyId != query.CompanyId || item.PlanId == Guid.Empty
                     || item.SalesOrderLineId == Guid.Empty || string.IsNullOrWhiteSpace(item.PlanStatus)
@@ -50,13 +50,16 @@ public sealed class ManufacturingSalesOrderLinkedSupplyReadPort(IManufacturingSa
                 return Unreadable(query);
             }
 
-            return Answer(SalesCancellationImpactStatusesV1.Present, query,
-                [.. items.Select(item => new SalesOrderLinkedSupplyItemV1(
-                    item.OrderId ?? item.PlanId, null,
-                    item.OrderId is null ? SalesLinkedSupplyDocumentTypesV1.ProductionPlan : SalesLinkedSupplyDocumentTypesV1.ProductionOrder,
-                    null, item.SalesOrderLineId, item.OrderStatus ?? item.PlanStatus, null, null,
-                    item.PlannedKg.ToString(CultureInfo.InvariantCulture),
-                    item.ActualKg?.ToString(CultureInfo.InvariantCulture)))], null);
+            var open = items.Where(item => item.OrderStatus != "Cancelled").Select(Map).ToArray();
+            var history = items.Where(item => item.OrderStatus == "Cancelled").Select(Map).ToArray();
+            return Answer(open.Length == 0 ? SalesCancellationImpactStatusesV1.None : SalesCancellationImpactStatusesV1.Present,
+                query, open, null) with { HistoricalItems = history };
+
+            static SalesOrderLinkedSupplyItemV1 Map(ManufacturingSalesOrderSupplyItemV1 item) => new(
+                item.OrderId ?? item.PlanId, null,
+                item.OrderId is null ? SalesLinkedSupplyDocumentTypesV1.ProductionPlan : SalesLinkedSupplyDocumentTypesV1.ProductionOrder,
+                null, item.SalesOrderLineId, item.OrderStatus ?? item.PlanStatus, null, null,
+                item.PlannedKg.ToString(CultureInfo.InvariantCulture), item.ActualKg?.ToString(CultureInfo.InvariantCulture));
         }
         catch (OperationCanceledException)
         {

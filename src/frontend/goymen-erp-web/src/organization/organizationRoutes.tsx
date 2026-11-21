@@ -26,6 +26,7 @@ import { OrganizationSettingsPage } from './OrganizationSettingsPage'
 import { LocationDetailPage } from './LocationDetailPage'
 import { WorkCenterListPage } from './WorkCenterListPage'
 import { WorkCenterDetailPage } from './WorkCenterDetailPage'
+import { CompanyTaxIdPage } from './CompanyTaxIdPage'
 
 export const organizationRoutes: RouteObject[] = [
   {
@@ -46,6 +47,15 @@ export const organizationRoutes: RouteObject[] = [
     element: (
       <CapabilityRoute capability={ORGANIZATION_CAPABILITY.workCentersList}>
         <WorkCenterListPage />
+      </CapabilityRoute>
+    ),
+  },
+  {
+    // ORG-05 (KIM-S23). Static, and ahead of the parameterized routes for the same reason.
+    path: ORGANIZATION_ROUTE[ORGANIZATION_CAPABILITY.companyTaxId].slice(1),
+    element: (
+      <CapabilityRoute capability={ORGANIZATION_CAPABILITY.companyTaxId}>
+        <CompanyTaxIdPage />
       </CapabilityRoute>
     ),
   },

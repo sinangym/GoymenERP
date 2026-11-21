@@ -15,6 +15,8 @@ import { SalesInvoiceFinalizationPanel } from './SalesInvoiceFinalization'
 import { INVOICE_FINALIZATION_TEXT as F } from './invoiceText'
 import { INVOICE_MATCH_PROBLEM_TEXT, INVOICE_MATCH_TEXT as T } from './invoiceMatchText'
 import { invoiceMatchNotice, validateMatchForm } from './invoiceMatch'
+import { MatchSourceFacts } from './SalesInvoiceMatchPanel'
+import { decodeSalesInvoiceDetail } from './invoiceFinalizationContract'
 import { INVOICE_ID, invoiceDetail, matchOf } from './invoiceTestData'
 
 const boundary = vi.hoisted(() => ({ capture: vi.fn(() => ({ token: 1 })), report: vi.fn() }))
@@ -459,4 +461,19 @@ describe('UI-64b match helpers', () => {
   it('says nothing before an attempt', () => {
     expect(invoiceMatchNotice({ phase: 'idle' })).toBeNull()
   })
+})
+
+
+it('shows frozen official source date and the pending manual notice, and labels legacy absence', () => {
+  const proof = { companyId: COMPANY, invoiceId: INVOICE_ID, sourceKind: 'approved-import', version: '3',
+    approvedAtUtc: '2026-11-02T09:00:00Z', pdfDocumentId: null, pdfDocumentVersionNo: null, pdfSha256: null,
+    sourceBatchId: '33333333-3333-4333-8333-333333333333', sourceChecksum: 'c'.repeat(64), hasPendingManual: true }
+  const detail = decodeSalesInvoiceDetail(invoiceDetail({ match: matchOf({ invoiceDate: '2026-10-30', sourceProof: proof }) }), INVOICE_ID)!
+  const view = render(<dl><MatchSourceFacts match={detail.match!} /></dl>)
+  expect(screen.getByText('2026-10-30')).toBeTruthy()
+  expect(screen.getByText(T.sourceImport)).toBeTruthy()
+  expect(screen.getByRole('status').textContent).toBe(T.pendingManual)
+  view.rerender(<dl><MatchSourceFacts match={{ ...detail.match!, invoiceDate: null, sourceProof: null }} /></dl>)
+  expect(screen.getByText(T.sourceMissing)).toBeTruthy()
+  expect(screen.queryByText('2026-10-30')).toBeNull()
 })

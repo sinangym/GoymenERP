@@ -10,6 +10,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import { SUBCONTRACT_CAPABILITY } from '../logistics/subcontractDeliveryContract'
 import { matchPath } from 'react-router'
 import { CAPABILITY, CAPABILITY_ROUTE, CAPABILITY_NAV_LABEL } from './capabilities'
 import {
@@ -26,8 +27,10 @@ describe('shell ↔ Logistics lane capability ids', () => {
     expect(CAPABILITY.logisticsInstructionsDetail).toBe(LOGISTICS_CAPABILITY.instructionsDetail)
     expect(CAPABILITY.logisticsOperationsSales).toBe(LOGISTICS_CAPABILITY.operationsSales)
     expect(CAPABILITY.logisticsOperationsPurchase).toBe(LOGISTICS_CAPABILITY.operationsPurchase)
+    expect(CAPABILITY.logisticsTransferDepartures).toBe(LOGISTICS_CAPABILITY.transferDepartures)
+    expect(CAPABILITY.logisticsPlanExcessApprove).toBe(LOGISTICS_CAPABILITY.planExcessApprove)
     const shellIds = (Object.values(CAPABILITY) as string[]).filter((id) => id.startsWith('logistics.'))
-    expect([...shellIds].sort()).toEqual([...(Object.values(LOGISTICS_CAPABILITY) as string[])].sort())
+    expect([...shellIds].sort()).toEqual([...Object.values(LOGISTICS_CAPABILITY).filter((id) => id !== LOGISTICS_CAPABILITY.planExcessPrepare), ...Object.values(SUBCONTRACT_CAPABILITY)].sort())
   })
 
   it('agrees with the lane on every route, value by value', () => {
@@ -36,6 +39,10 @@ describe('shell ↔ Logistics lane capability ids', () => {
     expect(CAPABILITY_ROUTE[CAPABILITY.logisticsInstructionsDetail]).toBe(LOGISTICS_ROUTE.detail)
     expect(CAPABILITY_ROUTE[CAPABILITY.logisticsOperationsSales]).toBe(LOGISTICS_ROUTE.operationsSales)
     expect(CAPABILITY_ROUTE[CAPABILITY.logisticsOperationsPurchase]).toBe(LOGISTICS_ROUTE.operationsPurchase)
+    expect(CAPABILITY_ROUTE[CAPABILITY.logisticsTransferDepartures]).toBe(LOGISTICS_ROUTE.transferDepartures)
+    expect(CAPABILITY_ROUTE[CAPABILITY.logisticsPlanExcessApprove]).toBe(LOGISTICS_ROUTE.planExcessApprove)
+    expect(Object.values(CAPABILITY)).not.toContain(LOGISTICS_CAPABILITY.planExcessPrepare)
+    expect(Object.values(LOGISTICS_ROUTE)).not.toContain(LOGISTICS_CAPABILITY.planExcessPrepare)
   })
 
   it('matches the lane’s own link helper, and the static create route is never an instruction id', () => {
@@ -47,7 +54,7 @@ describe('shell ↔ Logistics lane capability ids', () => {
   })
 
   it('gives the list the lane’s nav label, and neither the create screen nor the detail one', () => {
-    for (const id of Object.values(LOGISTICS_CAPABILITY)) {
+    for (const id of Object.values(LOGISTICS_CAPABILITY).filter((id) => id !== LOGISTICS_CAPABILITY.planExcessPrepare)) {
       const shellId = (Object.values(CAPABILITY) as string[]).find((value) => value === id)!
       expect(CAPABILITY_NAV_LABEL[shellId as keyof typeof CAPABILITY_NAV_LABEL]).toBe(LOGISTICS_NAV_LABEL[id])
     }

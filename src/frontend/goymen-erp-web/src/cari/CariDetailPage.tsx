@@ -1,10 +1,15 @@
 /**
  * C-03 Cari 360 — authorized core summary.
  *
- * Scope is the accepted spec §5.1 and nothing beyond it. Deliberately absent, and
- * forbidden by `mockTruthForbidden`: balance, risk, credit limit, open items,
- * orders, stock, bank/tax/registry, timeline, CRM, AI. A tab or a card whose owner
- * API does not exist is not rendered empty — it is not rendered.
+ * Scope is the accepted spec §5.1 and nothing beyond it. Deliberately absent from the
+ * card's own read, and forbidden by `mockTruthForbidden`: balance, risk, credit limit,
+ * open items, orders, stock, bank/tax/registry, timeline, CRM, AI. A tab or a card whose
+ * owner API does not exist is not rendered empty — it is not rendered.
+ *
+ * ALC-S13: the Cari 360 tabs (Satış, Alış, Finans) below are NOT the card's read. Each is
+ * its owner module's own port (Sales' open-order report, Purchasing's supplier-filtered
+ * order list, Finance's party-account view), offered only under that owner's capability
+ * and read only when the user opens the tab. Cari computes nothing in them.
  *
  * Documents are no longer on that list: AT-065 gave them an owner API (the document
  * vault). The panel below is the vault's, answered by the server under the vault's
@@ -31,6 +36,10 @@ import { CARI_CONTROL_CAPABILITY, targetIsActive } from './accountStatusContract
 import { AccountStatusControl, AccountStatusRecoveryNotice } from './AccountStatusControl'
 import { CariCompanyRelationships } from './CariCompanyRelationships'
 import { CariTaxIdentityPanel } from './CariTaxIdentityPanel'
+import { CariTradeNamePanel } from './CariTradeNamePanel'
+import { CariLegalNamePanel } from './CariLegalNamePanel'
+import { CariMergePanel } from './CariMergePanel'
+import { CariIdentityHistoryPanel, IDENTITY_HISTORY_QUERY_KIND } from './CariIdentityHistoryPanel'
 import { CariCustomerGroupPanel } from './CariCustomerGroupPanel'
 import { CariEDocumentPanel } from './CariEDocumentPanel'
 import {
@@ -42,6 +51,8 @@ import {
 import { DocumentsPanel } from '../documents/DocumentsPanel'
 import { OWNER_KIND } from '../documents/contract'
 import { FINANCE_ROUTE, partyLedgerPath } from '../finance/capabilities'
+import { CreditPanel } from '../finance/CreditPanel'
+import { Cari360Tabs } from './Cari360Tabs'
 import { useAccountStatusFlow, type AccountStatusApplied } from './useAccountStatusFlow'
 import type { CounterpartyDetail } from './detailContract'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
@@ -63,6 +74,14 @@ const KIND_LABEL: Record<number, string> = {
   [PARTY_KIND.LegalEntity]: 'Tüzel kişi',
   [PARTY_KIND.NaturalPerson]: 'Gerçek kişi',
 }
+
+/** The side reads that show the party's names (the legal name panel and the trade name panel). */
+// The identity history shows the dated legal name too, so a names change refreshes it as well (KLN-D38).
+const NAMES_QUERY_KINDS = new Set<string>([
+  'counterparty-legal-name',
+  'counterparty-trade-name',
+  IDENTITY_HISTORY_QUERY_KIND,
+])
 
 /**
  * Remounted on every context change, exactly like the list (#147 P1-2). A detail
@@ -217,6 +236,22 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
     [namespace, queryClient, readCount],
   )
   const onBeginNewAttempt = useCallback(() => setSaved(null), [])
+  // Both names panels show the legal name and fence on the same PARTY version, so a change in either one refreshes the
+  // card's own read and the other panel's read (F-027, ALS-D111/ALS-D97).
+  const onNamesChanged = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: detailQueryKey })
+    void queryClient.invalidateQueries({
+      predicate: (q) =>
+        q.queryKey[0] === namespace && typeof q.queryKey[1] === 'string' && NAMES_QUERY_KINDS.has(q.queryKey[1]),
+    })
+  }, [detailQueryKey, namespace, queryClient])
+  // A recorded succession makes THIS cari's account passive in the selected company (KLN-D38), so every cached read of
+  // this context (the detail, its account facts and the list rows) is dropped and read again.
+  const onSucceeded = useCallback(() => {
+    if (namespace !== null) {
+      void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === namespace })
+    }
+  }, [namespace, queryClient])
   const readOutcomeType = query.data?.type ?? null
   const fetchStatus = query.fetchStatus
   useEffect(() => {
@@ -380,12 +415,56 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
         </dl>
         {/* AT-009: the party's VKN/TCKN (one per party, like the facts above), its duplicate warning in THIS
             company, and the maker-checker change. Its own read, bound to the selected company. */}
+        {/* ALS-D111 + ALS-D113: the official legal name, changed by maker-checker (one person proposes, another
+            approves; the name changes only on approval). Its own read, bound to the selected company. */}
+        {namespace !== null && activeCompanyId !== null ? (
+          <CariLegalNamePanel
+            partyId={detail.id}
+            companyId={activeCompanyId}
+            namespace={namespace}
+            contractContext={contractContext}
+            onChanged={onNamesChanged}
+          />
+        ) : null}
+        {/* F-027 / C-02: the trade name edited in place (ALS-D97); the legal name is shown there read-only. Its own
+            read, bound to the selected company. */}
+        {namespace !== null && activeCompanyId !== null ? (
+          <CariTradeNamePanel
+            partyId={detail.id}
+            companyId={activeCompanyId}
+            namespace={namespace}
+            contractContext={contractContext}
+            onChanged={onNamesChanged}
+          />
+        ) : null}
         {namespace !== null && activeCompanyId !== null ? (
           <CariTaxIdentityPanel
             partyId={detail.id}
             companyId={activeCompanyId}
             namespace={namespace}
             contractContext={contractContext}
+          />
+        ) : null}
+        {/* F-027 / EK-18 #76-#77: same-VKN duplicates merged into this card by the group manager's approval (no
+            unmerge). Its own read, bound to the selected company. */}
+        {namespace !== null && activeCompanyId !== null ? (
+          <CariMergePanel
+            partyId={detail.id}
+            companyId={activeCompanyId}
+            namespace={namespace}
+            contractContext={contractContext}
+            onChanged={onNamesChanged}
+          />
+        ) : null}
+        {/* F-027 / KLN-D38: the dated VKN/TCKN, legal name and e-belge status, and the succession of a NEW legal person
+            (the old cari becomes passive; no balance moves here). Its own read, bound to the selected company. */}
+        {namespace !== null && activeCompanyId !== null ? (
+          <CariIdentityHistoryPanel
+            partyId={detail.id}
+            companyId={activeCompanyId}
+            namespace={namespace}
+            contractContext={contractContext}
+            onSucceeded={onSucceeded}
           />
         ) : null}
       </section>
@@ -442,6 +521,18 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
             companyId={activeCompanyId}
             namespace={namespace}
             contractContext={contractContext}
+          />
+        ) : null}
+        {/* F018 §L3: Finance's credit limit and collateral figures of this account. Read only; Finance owns them. */}
+        {namespace !== null && activeCompanyId !== null && account.companyId === activeCompanyId &&
+        (hasCapability(shell, CAPABILITY.financeCreditLimitsList) || hasCapability(shell, CAPABILITY.financeCollateralsList)) ? (
+          <CreditPanel
+            partyId={detail.id}
+            companyAccountId={account.id}
+            companyId={activeCompanyId}
+            namespace={namespace}
+            canOpenCreditLimits={hasCapability(shell, CAPABILITY.financeCreditLimitsList)}
+            canOpenCollaterals={hasCapability(shell, CAPABILITY.financeCollateralsList)}
           />
         ) : null}
         {canEditContact ? (
@@ -534,6 +625,26 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
           />
         ) : null}
       </section>
+
+      {/**
+        * ALC-S13: the Cari 360 tabs, each its owner module's answer for this account in the
+        * active company. Offered only for the account read for that company, and only with at
+        * least one owner capability; no tab reads anything until it is opened.
+        */}
+      {namespace !== null && activeCompanyId !== null && account.companyId === activeCompanyId &&
+      (hasCapability(shell, CAPABILITY.salesReportsView) || hasCapability(shell, CAPABILITY.purchasingOrdersList) ||
+        hasCapability(shell, CAPABILITY.financePartyLedgerCari)) ? (
+        <Cari360Tabs
+          partyId={detail.id}
+          companyAccountId={account.id}
+          companyId={activeCompanyId}
+          namespace={namespace}
+          canViewSales={hasCapability(shell, CAPABILITY.salesReportsView)}
+          canListPurchaseOrders={hasCapability(shell, CAPABILITY.purchasingOrdersList)}
+          canOpenPurchaseOrder={hasCapability(shell, CAPABILITY.purchasingOrdersDetail)}
+          canViewFinance={hasCapability(shell, CAPABILITY.financePartyLedgerCari)}
+        />
+      ) : null}
 
       {/**
         * AT-065: this card's documents in the active company. The vault answers the list only

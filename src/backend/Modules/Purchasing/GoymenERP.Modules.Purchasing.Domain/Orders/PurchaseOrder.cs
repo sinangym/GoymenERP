@@ -10,7 +10,7 @@ public enum PurchaseOrderStatus
 
     /// <summary>
     /// A1-3 (plan API-10, No.161 §2): an approved order whose not-yet-accepted remainder was cancelled in full — on every line,
-    /// even after a partial acceptance. Terminal: no acceptance, breakdown or second cancellation follows; the accepted shares stay.
+    /// even after a partial acceptance. Only the ALS-D92 receipt adjustment can revive it; ordinary acceptance and breakdown stay closed.
     /// </summary>
     Cancelled = 3,
 }
@@ -31,7 +31,7 @@ public enum PurchaseOrderStatus
 /// layer's verifier checks them against the Settings profile before a line is added.
 /// </para>
 /// </summary>
-public sealed class PurchaseOrder
+public sealed partial class PurchaseOrder
 {
     private readonly List<PurchaseOrderLine> lines = [];
     private readonly List<PurchaseAcceptanceShare> acceptances = [];
@@ -56,7 +56,7 @@ public sealed class PurchaseOrder
 
     public Guid Id { get; }
     public Guid CompanyId { get; }
-    public Guid SupplierPartyId { get; }
+    public Guid SupplierPartyId { get; private set; }
     public Guid? SourceRequestId { get; }
     public PurchaseOrderStatus Status { get; private set; } = PurchaseOrderStatus.Draft;
 
@@ -80,9 +80,19 @@ public sealed class PurchaseOrder
     /// not recorded; it is not invented).
     /// </summary>
     public PurchaseOrderApproval? Approval { get; private set; }
+    public long? ApprovalVersion { get; private set; }
 
     /// <summary>A1-3 (No.161 §2): who cancelled the unaccepted remainder, when and why; null until <see cref="Cancel"/>.</summary>
     public PurchaseOrderCancellation? Cancellation { get; private set; }
+
+    /// <summary>
+    /// ALC-SC33 (FNS-D79/D80/D83): the exchange rate written on a foreign-currency order as a number, or null (no currency, the
+    /// functional currency, or no default could be resolved at opening). Changed only while Draft; locked at approval.
+    /// </summary>
+    public PurchaseOrderExchangeRate? ExchangeRate { get; private set; }
+
+    /// <summary>ALC-SC33 (FNS-D91): the last recorded rate assignment or change (old rate, new rate, who, when, why); null while none.</summary>
+    public PurchaseOrderExchangeRateChange? LastExchangeRateChange { get; private set; }
 
     public DateTimeOffset CreatedAtUtc { get; }
     public DateTimeOffset UpdatedAtUtc { get; private set; }
@@ -210,6 +220,7 @@ public sealed class PurchaseOrder
         RequireVersion(expectedVersion);
         var actor = RequireActor(approvedBy, nameof(approvedBy));
         RequireStatus(PurchaseOrderStatus.Draft, PurchasingRuleCodes.OrderNotDraft, "Yalnız taslak sipariş onaylanabilir.");
+        RequireSupplierRevisionPrices();
         if (lines.Count == 0)
         {
             throw new PurchasingRuleException(PurchasingRuleCodes.OrderWithoutLines, "Satırsız sipariş onaylanamaz.");
@@ -228,8 +239,83 @@ public sealed class PurchaseOrder
         }
 
         Approval = new PurchaseOrderApproval(actor, now.ToUniversalTime());
+        ApprovalVersion = checked(Version + 1);
         Status = PurchaseOrderStatus.Approved;
         Touch(now);
+    }
+
+    /// <summary>
+    /// ALC-SC33 (FNS-D80): approval of an order whose currency is not <paramref name="functionalCurrencyId"/> needs a recorded rate
+    /// into the functional currency (<see cref="PurchasingRuleCodes.OrderExchangeRateRequired"/>); every other rule is
+    /// <see cref="Approve(long, string, DateTimeOffset)"/>'s. The rate is locked from here on (<see cref="SetExchangeRate"/>).
+    /// </summary>
+    public void Approve(long expectedVersion, string approvedBy, DateTimeOffset now, Guid functionalCurrencyId)
+    {
+        RequireVersion(expectedVersion);
+        var functional = Identity.Require(functionalCurrencyId, nameof(functionalCurrencyId));
+        if (Status == PurchaseOrderStatus.Draft && Money is { } money && money.CurrencyId != functional
+            && (ExchangeRate is null || ExchangeRate.TargetCurrencyId != functional))
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.OrderExchangeRateRequired,
+                "Döviz cinsinden siparişin kuru yok; kur girilmeden sipariş onaylanamaz.");
+        }
+
+        Approve(expectedVersion, approvedBy, now);
+    }
+
+    /// <summary>
+    /// ALC-SC33 (FNS-D79): the automatic default rate an order is opened with — the Settings resolver's SAT-D54/D170 answer for the
+    /// order's business day. Assigned once, on a Draft order with a foreign currency and no rate yet; it is part of the opening and
+    /// does not move the version.
+    /// </summary>
+    public void AssignDefaultExchangeRate(PurchaseOrderExchangeRate rate, string recordedBy, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(rate);
+        var actor = RequireActor(recordedBy, nameof(recordedBy));
+        RequireStatus(PurchaseOrderStatus.Draft, PurchasingRuleCodes.OrderExchangeRateLocked, "Onaylanmış siparişin kuru değişmez.");
+        if (ExchangeRate is not null || rate.Source != PurchaseOrderExchangeRateSource.Automatic)
+        {
+            throw new InvalidOperationException("Siparişin otomatik kuru yalnız açılışta ve bir kez atanır.");
+        }
+
+        RequireRateApplies(rate);
+        ExchangeRate = rate;
+        LastExchangeRateChange = new PurchaseOrderExchangeRateChange(null, rate, actor, now.ToUniversalTime(), null);
+    }
+
+    /// <summary>
+    /// ALC-SC33 (FNS-D79/D80/D91): the preparer's change of the rate before approval. The rate is locked once the order is approved
+    /// or cancelled (<see cref="PurchasingRuleCodes.OrderExchangeRateLocked"/>; a revision with re-approval is not built). The
+    /// optional reason is recorded with the old and the new rate.
+    /// </summary>
+    public void SetExchangeRate(long expectedVersion, PurchaseOrderExchangeRate rate, string changedBy, string? reason, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        ArgumentNullException.ThrowIfNull(rate);
+        var actor = RequireActor(changedBy, nameof(changedBy));
+        RequireStatus(PurchaseOrderStatus.Draft, PurchasingRuleCodes.OrderExchangeRateLocked,
+            "Sipariş kuru onayda kilitlenir; onaydan sonra kur yalnız yeniden onaylı revizyonla değişir.");
+        RequireRateApplies(rate);
+        var trimmed = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        if (trimmed is { Length: > MaximumReasonLength })
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.OrderExchangeRateReasonTooLong,
+                $"Kur değişikliği gerekçesi en fazla {MaximumReasonLength} karakterdir; fazlası kesilmez, reddedilir.");
+        }
+
+        var previous = ExchangeRate;
+        ExchangeRate = rate;
+        LastExchangeRateChange = new PurchaseOrderExchangeRateChange(previous, rate, actor, now.ToUniversalTime(), trimmed);
+        Touch(now);
+    }
+
+    private void RequireRateApplies(PurchaseOrderExchangeRate rate)
+    {
+        if (Money is not { } money || money.CurrencyId == rate.TargetCurrencyId)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.OrderExchangeRateNotApplicable,
+                "Para birimi olmayan veya kur hedefiyle aynı para birimindeki siparişe kur yazılmaz.");
+        }
     }
 
     /// <summary>
@@ -392,7 +478,79 @@ public sealed class PurchaseOrder
         }
 
         Cancellation = new PurchaseOrderCancellation(actor, now.ToUniversalTime(), reason);
+        cancellationHistory.Add(new(checked(Version + 1), Cancellation));
         Status = PurchaseOrderStatus.Cancelled;
+        Touch(now);
+    }
+
+    /// <summary>
+    /// API-11 (ALIS_F017 v1 §3.6, ALS-D10/D12/D87; plan API-11 "iptalden ayrı eksen"): closes the not-yet-accepted remainder of one
+    /// GENERAL line of an APPROVED order (eksik teslim kapanışı). The general line's remaining and every one of its technical slices'
+    /// remaining become their closed share, so the line's future supply (and its allocatable amount, §2) is zero; the accepted
+    /// shares, the cancelled shares, the delivery schedule and the source request binding stay as they are. Nothing physical or
+    /// financial happens here. The reason is required, never defaulted or cut (ALS-D12; the ALS-D10 in-tolerance suggestion needs
+    /// the tolerance band, which is not decided: OPEN-004 / API-95, so no closure is reason-optional).
+    /// <para>
+    /// Refusals: a cancelled order is <see cref="PurchasingRuleCodes.OrderCancelled"/>; a Draft order is
+    /// <see cref="PurchasingRuleCodes.LineNotClosable"/>; a technical slice is <see cref="PurchasingRuleCodes.LineClosureOnTechnicalLine"/>
+    /// (its general line is closed instead); an already closed line is <see cref="PurchasingRuleCodes.LineAlreadyClosed"/>; a line with
+    /// nothing left (fully accepted) is <see cref="PurchasingRuleCodes.LineNothingToClose"/> (fail-closed: a closure that closes
+    /// nothing is not recorded). Who may close is the service's permission, not this record's.
+    /// </para>
+    /// </summary>
+    public void CloseLine(long expectedVersion, Guid lineId, string closedBy, string? reason, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(closedBy, nameof(closedBy));
+        var line = RequireClosureTarget(lineId, PurchasingRuleCodes.LineNotClosable, "Yalnız onaylı siparişin satırı kapatılır.");
+        if (line.IsClosed)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.LineAlreadyClosed, "Satır zaten kapalı.");
+        }
+
+        RequireClosureReason(reason, PurchasingRuleCodes.LineClosureReasonRequired, "Satır kapanışı gerekçe ister.",
+            PurchasingRuleCodes.LineClosureReasonTooLong, "Kapanış gerekçesi");
+        var slices = TechnicalSlicesOf(line.Id);
+        if (line.RemainingQuantity.IsZero && slices.All(slice => slice.RemainingQuantity.IsZero))
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.LineNothingToClose,
+                "Satırın kabul edilmemiş kalanı yok; kapatılacak miktar bulunmuyor.");
+        }
+
+        line.CloseRemainder(new PurchaseOrderLineClosure(actor, now.ToUniversalTime(), reason!));
+        foreach (var slice in slices)
+        {
+            slice.CloseRemainder(null);
+        }
+
+        Touch(now);
+    }
+
+    /// <summary>
+    /// API-11 reopening (ALS-D10; ALIS_F017 v1 §3.6): returns a closed GENERAL line's closed share — its own and its technical
+    /// slices' — to the remainder, so the opened remainder is future supply (and allocatable) again. Future allocations released by
+    /// the closure do not come back (author reading, closed direction; ALS-D93 is its revival counterpart). The reason is required,
+    /// never defaulted or cut. Refusals mirror <see cref="CloseLine"/>; a line that is not closed is
+    /// <see cref="PurchasingRuleCodes.LineNotClosed"/>.
+    /// </summary>
+    public void ReopenLine(long expectedVersion, Guid lineId, string reopenedBy, string? reason, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(reopenedBy, nameof(reopenedBy));
+        var line = RequireClosureTarget(lineId, PurchasingRuleCodes.LineNotClosable, "Yalnız onaylı siparişin satırı yeniden açılır.");
+        if (!line.IsClosed)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.LineNotClosed, "Satır kapalı değil; yeniden açılacak kapanış yok.");
+        }
+
+        RequireClosureReason(reason, PurchasingRuleCodes.LineReopenReasonRequired, "Satırın yeniden açılması gerekçe ister.",
+            PurchasingRuleCodes.LineReopenReasonTooLong, "Yeniden açma gerekçesi");
+        line.Reopen(new PurchaseOrderLineClosureChange(false, actor, now.ToUniversalTime(), reason!));
+        foreach (var slice in TechnicalSlicesOf(line.Id))
+        {
+            slice.Reopen(null);
+        }
+
         Touch(now);
     }
 
@@ -497,7 +655,8 @@ public sealed class PurchaseOrder
     /// </summary>
     private static void RequireReceivedPortionKept(PurchaseOrderLine line, IReadOnlyList<PurchaseOrderDeliverySlice> next)
     {
-        var received = line.AcceptedQuantity;
+        // A definitive supplier return remains fulfilled commitment; it does not unlock received schedule portions.
+        var received = line.AcceptedQuantity.Add(line.DefinitiveReturnQuantity);
         var current = line.DeliverySchedule;
         var covered = Quantity.Zero(received.Unit);
         for (var index = 0; index < current.Count && received.IsGreaterThan(covered); index++)
@@ -654,6 +813,42 @@ public sealed class PurchaseOrder
         lines.Where(line => line.Quantity.Unit == unit)
             .Aggregate(Quantity.Zero(unit), (sum, line) => sum.Add(line.RemainingQuantity));
 
+    private PurchaseOrderLine RequireClosureTarget(Guid lineId, string notApprovedCode, string notApprovedMessage)
+    {
+        if (Status == PurchaseOrderStatus.Cancelled)
+        {
+            // Fail-closed (ALIS_F017 v1 §2: the Cancelled / API-11 closed intersection): a cancelled order's lines are neither closed
+            // nor reopened here; reviving them is the API-44/API-60 slice's (§3.8, ALS-D92).
+            throw new PurchasingRuleException(PurchasingRuleCodes.OrderCancelled, "Kalanı iptal edilmiş siparişin satırı kapatılmaz veya açılmaz.");
+        }
+
+        RequireStatus(PurchaseOrderStatus.Approved, notApprovedCode, notApprovedMessage);
+        var line = FindLine(lineId);
+        if (line.Kind != PurchaseOrderLineKind.General)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.LineClosureOnTechnicalLine,
+                "Teknik kırılım satırı ayrı kapatılmaz veya açılmaz; bağlı olduğu genel satır kullanılır.");
+        }
+
+        return line;
+    }
+
+    private static void RequireClosureReason(string? reason, string requiredCode, string requiredMessage, string tooLongCode, string label)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            throw new PurchasingRuleException(requiredCode, requiredMessage);
+        }
+
+        if (reason.Length > MaximumReasonLength)
+        {
+            throw new PurchasingRuleException(tooLongCode, $"{label} en fazla {MaximumReasonLength} karakterdir; fazlası kesilmez, reddedilir.");
+        }
+    }
+
+    private List<PurchaseOrderLine> TechnicalSlicesOf(Guid generalLineId) =>
+        lines.Where(candidate => candidate.Kind == PurchaseOrderLineKind.Technical && candidate.ParentLineId == generalLineId).ToList();
+
     private PurchaseOrderLine FindLine(Guid lineId) =>
         lines.FirstOrDefault(line => line.Id == lineId)
         ?? throw new PurchasingRuleException(PurchasingRuleCodes.LineNotFound, "Sipariş satırı bulunamadı.");
@@ -709,6 +904,12 @@ public sealed record PurchaseOrderApproval(string ApprovedBy, DateTimeOffset App
 
 /// <summary>A1-3 (No.161 §2): the recorded cancellation of an order's unaccepted remainder — who, when and why.</summary>
 public sealed record PurchaseOrderCancellation(string CancelledBy, DateTimeOffset CancelledAtUtc, string Reason);
+
+/// <summary>API-11 (ALS-D10/D12): the recorded closure of a general line's unaccepted remainder — who, when and why.</summary>
+public sealed record PurchaseOrderLineClosure(string ClosedBy, DateTimeOffset ClosedAtUtc, string Reason);
+
+/// <summary>API-11 (ALS-D10/D12): one recorded closure (<paramref name="Closed"/> true) or reopening (false) of a general line.</summary>
+public sealed record PurchaseOrderLineClosureChange(bool Closed, string RecordedBy, DateTimeOffset RecordedAtUtc, string Reason);
 
 /// <summary>One recorded acceptance share. Not a receipt document and not a stock movement.</summary>
 public sealed record PurchaseAcceptanceShare(Guid AcceptanceId, Guid LineId, Quantity Quantity, DateTimeOffset RecordedAtUtc);

@@ -29,6 +29,11 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     private static readonly Guid RollB = Guid.Parse("5a1d2c3b-4a59-4687-9a0b-1c2d3e4f5a72");
     private static readonly DateTimeOffset At = new(2026, 9, 18, 9, 0, 0, TimeSpan.Zero);
 
+    // URT-D66: the Istanbul business day of At (the store takes it from the caller, never from a client) and the termin an
+    // approved plan holds in these tests.
+    private static readonly DateOnly TerminToday = new(2026, 9, 18);
+    private static readonly DateOnly TerminDay = new(2026, 12, 31);
+
     [SqlServerFact]
     public async Task Accepted_inventory_label_versions_are_durable_in_the_plan_and_order_snapshot()
     {
@@ -51,6 +56,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             var conflict = await Assert.ThrowsAsync<ManufacturingStoreException>(
                 () => store.Plans.SavePlanAsync(changedVersion, Metadata(run)));
             Assert.Equal(ManufacturingStoreCodes.PlanIdConflict, conflict.Code);
+            await store.DueDates.ChangeDueDateAsync(plan.Id, 1, 0, TerminDay, TerminToday, Metadata(run));
             await store.Plans.ApprovePlanAsync(plan.Id, 1, run.Approver, At, Metadata(run));
             await store.Orders.CreateOrderAsync(orderId, plan.Id, Metadata(run));
         }
@@ -82,6 +88,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             + "AND EntityId = @id", ("@id", orderId.ToString("D")))));
 
         const string beforeLabelVersions = "20260924150000_ExpandManufacturingProcesses";
+        await run.ForgetTerminsBeforeRollbackAsync();
         var error = await Assert.ThrowsAsync<SqlException>(
             () => context.GetService<IMigrator>().MigrateAsync(beforeLabelVersions));
         Assert.Equal(51047, error.Number);
@@ -110,6 +117,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using (var context = run.Context(CompanyA))
         {
             var migrator = context.GetService<IMigrator>();
+            await run.ForgetTerminsBeforeRollbackAsync();
             await run.ForgetPlanPreparersBeforeRollbackAsync();
             await migrator.MigrateAsync(beforeLabelVersions);
             Assert.Equal(beforeLabelVersions, (await context.Database.GetAppliedMigrationsAsync()).Last());
@@ -195,9 +203,9 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         Assert.Equal(6, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Facts"));
         Assert.Equal(8L, await run.ScalarAsync<long>("SELECT Version FROM manufacturing.Orders WHERE Id = @id", ("@id", orderId)));
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT Status FROM manufacturing.Orders WHERE Id = @id", ("@id", orderId)));
-        // One audit event per stored write: plan created, approved, order created, six facts, the
-        // close. None for the replays or the refusals.
-        Assert.Equal(10, await run.ScalarAsync<int>(
+        // One audit event per stored write: plan created, its termin entered (URT-D66), approved, order created, six
+        // facts, the close. None for the replays or the refusals.
+        Assert.Equal(11, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @c", ("@c", run.Correlation)));
     }
 
@@ -211,6 +219,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using (var context = run.Context(CompanyA))
         {
             var migrator = context.GetService<IMigrator>();
+            await run.ForgetTerminsBeforeRollbackAsync();
             await migrator.MigrateAsync(beforeClosureDecision);
             Assert.Equal(0, await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM sys.tables WHERE [name] = N'OrderClosureDecisions' "
@@ -333,6 +342,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         // Once a decision exists, Down is an explicit forward-fix gate and leaves both data and migration intact.
         await using (var context = run.Context(CompanyA))
         {
+            await run.ForgetTerminsBeforeRollbackAsync();
             var error = await Assert.ThrowsAsync<SqlException>(
                 () => context.GetService<IMigrator>().MigrateAsync(beforeClosureDecision));
             // U1-b: the newest migration refuses first (51186) — the decision carries its tolerance source.
@@ -596,6 +606,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using (var context = run.Context(CompanyA))
         {
             var migrator = context.GetService<IMigrator>();
+            await run.ForgetTerminsBeforeRollbackAsync();
             await run.ForgetPlanPreparersBeforeRollbackAsync();
             await migrator.MigrateAsync(beforeSpecs);
             Assert.Equal(beforeSpecs, (await context.Database.GetAppliedMigrationsAsync()).Last());
@@ -613,6 +624,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using (var context = run.Context(CompanyA))
         {
             await run.ForgetPlanPreparersBeforeRollbackAsync();
+            await run.ForgetTerminsBeforeRollbackAsync();
             var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(beforeSpecs));
             Assert.Equal(51047, error.Number);
             Assert.EndsWith("_AddPlanSlittingSpecs", (await context.Database.GetAppliedMigrationsAsync()).Last(),
@@ -625,13 +637,16 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 
     /// <summary>
     /// DEC-PRDCT-001's discriminator expansion is reversible while all durable facts still use the
-    /// original Slitting value. Existing plan/order rows survive both Down and the following Up.
+    /// original Slitting value. Empty schema travels Down/Up; populated rows prove the historical guard is harmless.
     /// </summary>
     [SqlServerFact]
     public async Task The_process_constraint_migration_rolls_back_and_reapplies_while_only_slitting_is_stored()
     {
         await using var run = await Run.StartAsync();
         const string beforeProcesses = "20260919130000_AddPlanSlittingSpecs";
+        await using var historyContext = run.Context(CompanyA);
+        var expectedHistory = historyContext.Database.GetMigrations().ToArray();
+        Assert.Equal(expectedHistory, (await historyContext.Database.GetAppliedMigrationsAsync()).ToArray());
         var expandedPlanConstraint = await run.ScalarAsync<string>(
             "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Plans_Enums' "
             + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Plans]')");
@@ -652,22 +667,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
                 "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Orders_Enums' "
                 + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Orders]')"));
             await context.Database.MigrateAsync();
-            // U2-b plan sales order links are newest, then U3-a plan input allocations, U2-d plan preparer, U2-b1 plan process specs, U2-a plan lifecycle and U1-b plan parameter snapshots; technical length snapshots, cut lines and the prior
-            // technical/plan-revision chain remain ordered.
-            var reapplied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.EndsWith("_AddManufacturingPlanSalesOrderLinks", reapplied[^1], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanInputAllocations", reapplied[^2], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanPreparer", reapplied[^3], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanProcessSpecs", reapplied[^4], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanLifecycle", reapplied[^5], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanParameterSnapshots", reapplied[^6], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanTechnicalLengthSnapshots", reapplied[^7], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanCutLines", reapplied[^8], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingCommercialContexts", reapplied[^9], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanTechnicalSnapshots", reapplied[^10], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingOrderClosureDecision", reapplied[^11], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanRevisions", reapplied[^12], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingInputLabelVersions", reapplied[^13], StringComparison.Ordinal);
+            Assert.Equal(expectedHistory, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
             Assert.Equal(expandedPlanConstraint, await run.ScalarAsync<string>(
                 "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Plans_Enums' "
                 + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Plans]')"));
@@ -676,31 +676,26 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
                 + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Orders]')"));
         }
 
-        // Slitting-only durable rows also survive the round trip unchanged.
+        // Slitting rows permit this historical guard without deleting newer termin or preparer facts.
         var (plan, orderId) = await run.ApprovedOrderAsync(CompanyA);
         await using (var context = run.Context(CompanyA))
         {
-            var migrator = context.GetService<IMigrator>();
-            await migrator.MigrateAsync(beforeProcesses);
-            Assert.Equal(beforeProcesses, (await context.Database.GetAppliedMigrationsAsync()).Last());
-            Assert.Equal((1, 1),
-                (await run.ScalarAsync<int>("SELECT Process FROM manufacturing.Plans WHERE Id = @id", ("@id", plan.Id)),
-                    await run.ScalarAsync<int>("SELECT Process FROM manufacturing.Orders WHERE Id = @id", ("@id", orderId))));
-            await context.Database.MigrateAsync();
-            var reapplied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.EndsWith("_AddManufacturingPlanSalesOrderLinks", reapplied[^1], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanInputAllocations", reapplied[^2], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanPreparer", reapplied[^3], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanProcessSpecs", reapplied[^4], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanLifecycle", reapplied[^5], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanParameterSnapshots", reapplied[^6], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanTechnicalLengthSnapshots", reapplied[^7], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanCutLines", reapplied[^8], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingCommercialContexts", reapplied[^9], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanTechnicalSnapshots", reapplied[^10], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingOrderClosureDecision", reapplied[^11], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingPlanRevisions", reapplied[^12], StringComparison.Ordinal);
-            Assert.EndsWith("_AddManufacturingInputLabelVersions", reapplied[^13], StringComparison.Ordinal);
+            var appliedBefore = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            string[] proofQueries =
+            [
+                "SELECT * FROM manufacturing.Plans ORDER BY Id FOR JSON PATH",
+                "SELECT * FROM manufacturing.Orders ORDER BY Id FOR JSON PATH",
+                "SELECT * FROM manufacturing.PlanRevisions ORDER BY CompanyId, PlanId, RevisionNo FOR JSON PATH",
+                "SELECT * FROM audit.AuditEvents ORDER BY Id FOR JSON PATH",
+                "SELECT name, definition, is_disabled, is_not_trusted FROM sys.check_constraints WHERE schema_id = SCHEMA_ID(N'manufacturing') ORDER BY name FOR JSON PATH",
+            ];
+            var proofBefore = await Task.WhenAll(proofQueries.Select(query => run.ScalarAsync<string>(query)));
+            var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(
+                new GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations.ExpandManufacturingProcesses().DownOperations[0]).Sql;
+            await context.Database.ExecuteSqlRawAsync(guard);
+            Assert.Equal(expectedHistory, appliedBefore);
+            Assert.Equal(appliedBefore, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
+            Assert.Equal(proofBefore, await Task.WhenAll(proofQueries.Select(query => run.ScalarAsync<string>(query))));
         }
 
         Assert.Equal((1, 1),
@@ -716,7 +711,6 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     public async Task The_process_constraint_migration_refuses_down_before_mutation_for_each_non_slitting_table()
     {
         await using var run = await Run.StartAsync();
-        const string beforeProcesses = "20260919130000_AddPlanSlittingSpecs";
         const string processMigration = "20260924150000_ExpandManufacturingProcesses";
         var workCenter = await run.WorkCenterOfKindAsync(CompanyA, "ColdRolling");
         var plan = NewPlan(CompanyA, workCenter, ManufacturingProcess.ColdRolling);
@@ -727,7 +721,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             await store.Plans.SavePlanAsync(plan, Metadata(run));
         }
 
-        // The constraints as the process migration leaves them (U2-a's later Status 3 is undone on the way down).
+        // Preserve the current complete schema; exercise only the target migration's first refusal guard.
         string planConstraint = string.Empty, orderConstraint = string.Empty;
         async Task CaptureConstraintsAsync()
         {
@@ -742,12 +736,24 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         async Task AssertDownRefusedBeforeMutation()
         {
             await using var context = run.Context(CompanyA);
-            await run.ForgetPlanPreparersBeforeRollbackAsync();
-            var error = await Assert.ThrowsAsync<SqlException>(
-                () => context.GetService<IMigrator>().MigrateAsync(beforeProcesses));
+            var appliedBefore = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            Assert.Equal(context.Database.GetMigrations().ToArray(), appliedBefore);
+            Assert.Contains(processMigration, appliedBefore);
+            string[] proofQueries =
+            [
+                "SELECT * FROM manufacturing.Plans ORDER BY Id FOR JSON PATH",
+                "SELECT * FROM manufacturing.Orders ORDER BY Id FOR JSON PATH",
+                "SELECT * FROM manufacturing.PlanRevisions ORDER BY CompanyId, PlanId, RevisionNo FOR JSON PATH",
+                "SELECT * FROM audit.AuditEvents ORDER BY Id FOR JSON PATH",
+                "SELECT name, definition, is_disabled, is_not_trusted FROM sys.check_constraints WHERE schema_id = SCHEMA_ID(N'manufacturing') ORDER BY name FOR JSON PATH",
+            ];
+            var proofBefore = await Task.WhenAll(proofQueries.Select(query => run.ScalarAsync<string>(query)));
+            var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(
+                new GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations.ExpandManufacturingProcesses().DownOperations[0]).Sql;
+            var error = await Assert.ThrowsAsync<SqlException>(() => context.Database.ExecuteSqlRawAsync(guard));
             Assert.Equal(51047, error.Number);
-            Assert.EndsWith("_ExpandManufacturingProcesses", (await context.Database.GetAppliedMigrationsAsync()).Last(),
-                StringComparison.Ordinal);
+            Assert.Equal(appliedBefore, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
+            Assert.Equal(proofBefore, await Task.WhenAll(proofQueries.Select(query => run.ScalarAsync<string>(query))));
             Assert.Equal(planConstraint, await run.ScalarAsync<string>(
                 "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Plans_Enums' "
                 + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Plans]')"));
@@ -756,29 +762,16 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
                 + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Orders]')"));
         }
 
-        async Task MoveToProcessMigrationAsync()
-        {
-            await using var context = run.Context(CompanyA);
-            await run.ForgetPlanPreparersBeforeRollbackAsync();
-            await context.GetService<IMigrator>().MigrateAsync(processMigration);
-            Assert.Equal(processMigration, (await context.Database.GetAppliedMigrationsAsync()).Last());
-            await CaptureConstraintsAsync();
-        }
-
         // Plans alone block the downgrade.
-        await MoveToProcessMigrationAsync();
+        await CaptureConstraintsAsync();
         await AssertDownRefusedBeforeMutation();
         Assert.Equal(ManufacturingProcess.ColdRolling, (ManufacturingProcess)await run.ScalarAsync<int>(
             "SELECT Process FROM manufacturing.Plans WHERE Id = @id", ("@id", plan.Id)));
 
         // Then isolate the Orders predicate: create the matching order and make only its snapshot non-Slitting.
-        await using (var context = run.Context(CompanyA))
-        {
-            await context.Database.MigrateAsync();
-        }
-
         await using (var store = run.Store(CompanyA))
         {
+            await store.DueDates.ChangeDueDateAsync(plan.Id, 1, 0, TerminDay, TerminToday, Metadata(run));
             await store.Plans.ApprovePlanAsync(plan.Id, 1, run.Approver, At, Metadata(run));
             await store.Orders.CreateOrderAsync(orderId, plan.Id, Metadata(run));
         }
@@ -789,14 +782,12 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
                 $"UPDATE [manufacturing].[Plans] SET [Process] = 1 WHERE [Id] = {plan.Id}");
         }
 
-        await MoveToProcessMigrationAsync();
+        await CaptureConstraintsAsync();
         await AssertDownRefusedBeforeMutation();
         Assert.Equal((1, (int)ManufacturingProcess.ColdRolling),
             (await run.ScalarAsync<int>("SELECT Process FROM manufacturing.Plans WHERE Id = @id", ("@id", plan.Id)),
                 await run.ScalarAsync<int>("SELECT Process FROM manufacturing.Orders WHERE Id = @id", ("@id", orderId))));
 
-        await using var restored = run.Context(CompanyA);
-        await restored.Database.MigrateAsync();
     }
 
     /// <summary>A plan with the §28.4 golden slit lines and a winding target, on one roll of 28.750 kg.</summary>
@@ -849,23 +840,39 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
             var factory = new SqlServerRelationalApiFactory(baseConnectionString);
             var run = new Run(baseConnectionString, factory);
-            // The host migrates and seeds Organization, Audit and the rest; Manufacturing's own
-            // migration runs after it, as its foreign keys need Organization's tables.
-            using var client = factory.CreateClient();
-            using var health = await client.GetAsync("/health/live");
-            health.EnsureSuccessStatusCode();
-            await using var context = run.Context(CompanyA);
-            await context.Database.MigrateAsync();
-            return run;
+            try
+            {
+                // The host migrates and seeds Organization, Audit and the rest; Manufacturing's own
+                // migration runs after it, as its foreign keys need Organization's tables.
+                using var client = factory.CreateClient();
+                using var health = await client.GetAsync("/health/live");
+                health.EnsureSuccessStatusCode();
+                await using var context = run.Context(CompanyA);
+                await context.Database.MigrateAsync();
+                return run;
+            }
+            catch
+            {
+                // A failed initializer never transfers ownership to the caller's await using.
+                // Preserve its original exception and stack even if disposable test cleanup also fails.
+                try { await run.DisposeAsync(); }
+                catch { }
+                throw;
+            }
         }
 
-        /// <summary>A stored plan of the company's first work center, approved, and an order from it.</summary>
+        /// <summary>
+        /// A stored plan of the company's first work center with its termin (<see cref="TerminDay"/>), approved, and an
+        /// order from it (which copies the termin).
+        /// </summary>
         public async Task<(ProductionPlan Plan, Guid OrderId)> ApprovedOrderAsync(Guid company)
         {
             var plan = NewPlan(company, await WorkCenterOfAsync(company));
             var orderId = Guid.NewGuid();
             await using var store = Store(company);
             await store.Plans.SavePlanAsync(plan, Metadata(this));
+            // URT-D66 (2): a plan without a termin is not approved; the termin does not move the plan version.
+            await store.DueDates.ChangeDueDateAsync(plan.Id, 1, 0, TerminDay, TerminToday, Metadata(this));
             var approved = await store.Plans.ApprovePlanAsync(plan.Id, 1, Approver, At, Metadata(this));
             await store.Orders.CreateOrderAsync(orderId, plan.Id, Metadata(this));
             return (approved, orderId);
@@ -919,6 +926,19 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             "IF COL_LENGTH(N'manufacturing.Plans', N'CreatedBy') IS NOT NULL "
             + "EXEC(N'UPDATE manufacturing.Plans SET CreatedBy = NULL'); SELECT 1");
 
+        /// <summary>
+        /// URT-D66: an approved plan holds a termin (a plan without one is not approved) and its order copies it, so the
+        /// order termin migration's Down (51466) and the plan termin migration's Down (51281) refuse while either is held.
+        /// A test that rolls back to an EARLIER migration under test first makes its rows rows stored before the termin
+        /// (none held, revision 0), so the rollback reaches the migration it tests; the termin guards themselves are tested
+        /// in the DueDate and OrderDueDate parts.
+        /// </summary>
+        public Task<int> ForgetTerminsBeforeRollbackAsync() => ScalarAsync<int>(
+            "IF COL_LENGTH(N'manufacturing.Orders', N'DueDateRevision') IS NOT NULL "
+            + "EXEC(N'UPDATE manufacturing.Orders SET DueDate = NULL, DueDateRevision = 0'); "
+            + "IF COL_LENGTH(N'manufacturing.Plans', N'DueDateRevision') IS NOT NULL "
+            + "EXEC(N'UPDATE manufacturing.Plans SET RequestedDueDate = NULL, DueDateRevision = 0'); SELECT 1");
+
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)
         {
             await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
@@ -952,11 +972,21 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 
     private sealed class StoreScope(ManufacturingDbContext dbContext, ManufacturingStore store) : IAsyncDisposable
     {
+        public ManufacturingDbContext Context => dbContext;
         public IManufacturingPlanStore Plans => store;
         public IManufacturingOrderStore Orders => store;
         public IManufacturingPlanRevisionStore Revisions => store;
         public IManufacturingPlanLifecycleStore Lifecycle => store;
         public IManufacturingPlanSalesOrderLinkStore SalesOrderLinks => store;
+        public IManufacturingPlanDueDateStore DueDates => store;
+        public IManufacturingOrderDueDateStore OrderDueDates => store;
+
+        // F-009 D2: the output reversal and the line-bound declaration are on the concrete store only (no endpoint yet).
+        public ManufacturingStore Corrections => store;
+
+        // URT-S13: the monthly scrap price store and the cost's read port of one month's price.
+        public IManufacturingMonthlyScrapPriceStore ScrapPrices => store;
+        public IManufacturingMonthlyScrapPriceReaderV1 ScrapPriceReader => store;
 
         public ValueTask DisposeAsync() => dbContext.DisposeAsync();
     }
@@ -967,7 +997,8 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
             InterceptionResult<int> result, CancellationToken cancellationToken = default)
         {
-            barrier.SignalAndWait(TimeSpan.FromSeconds(30));
+            if (!barrier.SignalAndWait(TimeSpan.FromSeconds(30), cancellationToken))
+                throw new TimeoutException("Concurrent save barrier timed out before both writers arrived.");
             return ValueTask.FromResult(result);
         }
     }

@@ -271,6 +271,71 @@ describe('references', () => {
   })
 })
 
+/**
+ * P03.2: the accepted cut-sheet card (#729) stores nominal `thickness-mm`, `width-mm` and `length-mm`. The reopened card
+ * names them in Turkish and shows the stored digits; the raw key is never the visible name.
+ */
+describe('nominal measures of a cut sheet (P03.2)', () => {
+  const TEMPLATE = '81000000-0000-4000-8000-000000000003'
+  const cutSheetCard = (attributes: Record<string, unknown>, missingFields: string[] = []) => productCard({
+    product: productCore({ completeness: { evaluation: missingFields.length === 0 ? 'Complete' : 'Incomplete', missingFields } }),
+    references: references({ templateId: TEMPLATE, templateVersion: '1', attributes }),
+  })
+  const termValue = (term: string) => screen.getByText(term, { selector: 'dt' }).nextElementSibling?.textContent
+
+  it('names thickness, width and length in Turkish and shows the stored digits without rounding', async () => {
+    installFetch({
+      capabilities: DETAIL_ONLY,
+      onCard: () => json(cutSheetCard({ 'thickness-mm': 3, 'width-mm': 1500.5, 'length-mm': 2500.125 })),
+    })
+    renderProductApp(PATH)
+
+    await cardVisible()
+    // The same names as the edit form; the value is exactly the stored digits.
+    expect([termValue('Nominal kalınlık (mm)'), termValue('Nominal en (mm)'), termValue('Nominal boy (mm)')])
+      .toEqual(['3', '1500.5', '2500.125'])
+    for (const key of ['thickness-mm', 'width-mm', 'length-mm'])
+      expect(screen.queryByText(key, { selector: 'dt' })).toBeNull()
+  })
+
+  it('keeps a nominal length published as decimal text exactly as that text', async () => {
+    installFetch({
+      capabilities: DETAIL_ONLY,
+      onCard: () => json(cutSheetCard({ 'thickness-mm': '3', 'width-mm': '1500', 'length-mm': '2500.120' })),
+    })
+    renderProductApp(PATH)
+
+    await cardVisible()
+    expect(termValue('Nominal boy (mm)')).toBe('2500.120')
+  })
+
+  it('names a missing nominal length in Turkish instead of its field path', async () => {
+    installFetch({
+      capabilities: DETAIL_ONLY,
+      onCard: () => json(cutSheetCard({ 'thickness-mm': 3, 'width-mm': 1500 }, ['references.attributes.length-mm', 'references.units.stock'])),
+    })
+    renderProductApp(PATH)
+
+    await cardVisible()
+    const missing = within(screen.getByTestId('product-missing-fields')).getAllByRole('listitem').map((item) => item.textContent)
+    expect(missing).toEqual(['Nominal boy', 'references.units.stock'])
+    // A card without a stored length shows no length row and no invented value.
+    expect(screen.queryByText(/Nominal boy/, { selector: 'dt' })).toBeNull()
+  })
+
+  it('shows a coil card’s two measures only: no length is added to a roll or strip', async () => {
+    installFetch({
+      capabilities: DETAIL_ONLY,
+      onCard: () => json(cutSheetCard({ 'thickness-mm': 1.5, 'width-mm': 1250 })),
+    })
+    renderProductApp(PATH)
+
+    await cardVisible()
+    expect([termValue('Nominal kalınlık (mm)'), termValue('Nominal en (mm)')]).toEqual(['1.5', '1250'])
+    expect(screen.queryByText(/Nominal boy/, { selector: 'dt' })).toBeNull()
+  })
+})
+
 describe('master vs label boundary', () => {
   it('says the card holds only the tracking POLICY reference', async () => {
     installFetch({ capabilities: DETAIL_ONLY })

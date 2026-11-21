@@ -51,7 +51,11 @@ public static class SalesModuleExtensions
         });
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<SalesStore>();
+        services.AddScoped<ISalesOfficialInvoiceCancellationStoreV1>(p => p.GetRequiredService<SalesStore>());
+        services.TryAddScoped<ISalesOfficialCancellationEvidenceReadPortV1, UnavailableSalesOfficialCancellationEvidenceReadPortV1>();
+        services.AddScoped<ISalesOfficialInvoiceCancellationServiceV1, SalesOfficialInvoiceCancellationServiceV1>();
         services.AddScoped<ISalesOrderDraftStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        services.AddScoped<ISalesOrderInvoicedQuantityReadPortV1, SalesOrderInvoicedQuantityReadPortV1>();
         // API-20 / API-21: the sales request store is the same Sales store (one context, one attempt table).
         services.AddScoped<ISalesRequestStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         // API-22…24: the sales quote store is the same Sales store (the conversion writes the order in the quote's one save).
@@ -79,6 +83,7 @@ public static class SalesModuleExtensions
         // and loading consumers, over the same company-filtered store. Registered here, in the module
         // (no host file), so that a consumer module reads Sales only through this port.
         services.AddScoped<ISalesOrderLineReferencePortV1, SalesOrderLineReferencePort>();
+        services.AddScoped<ISalesOrderCostRateSourceReadPortV1, SalesOrderCostRateSourceReadPortV1>();
         // S-3 / SAT-D175 (EK25): the Sales-owned subcontract service order read port for the Production consumer (URT-D22), over
         // the same company-filtered store; the Production lane binds its consumer to it.
         services.AddScoped<ISalesSubcontractServiceOrderReadPortV1, SalesSubcontractServiceOrderReadPort>();
@@ -86,12 +91,24 @@ public static class SalesModuleExtensions
         // (registered by that module), the Sales store's own order references and the Cari party display (host adapter).
         services.TryAddSingleton(new SalesDispatchReadBindings());
         services.AddScoped<ISalesOrderDispatchReferenceReader, SalesOrderDispatchReferenceReader>();
+        services.AddScoped<ISalesLineResponsibleReadPortV1, SalesLineResponsibleReadPort>();
         services.AddScoped<ISalesDispatchReadService>(CreateDispatchReadService);
+        // SAT-S13: the same read service answers one note's weighing difference (the Logistics owner's read through the host adapter).
+        services.AddScoped<ISalesDispatchWeighingDifferenceReadService>(CreateDispatchReadService);
         // S5 API-32 (Fatura çekirdeği 1): the invoice draft over the Sales store, the Logistics shares and the Settings rate.
         services.AddScoped<ISalesInvoiceStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         services.AddScoped<ISalesInvoiceService>(CreateInvoiceService);
+        // F2 (SAT-D309/D312, LOJ-D9/D12): the subcontract service invoice draft over the Sales store; the delivery weighing read is
+        // the host's adapter of the Logistics owner's net-weight port. Without it the create is 503, never an assumed quantity.
+        services.AddScoped<ISalesSubcontractServiceInvoiceStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        services.AddScoped<ISalesSubcontractServiceInvoiceService>(CreateInvoiceService);
+        services.AddScoped<ISalesSubcontractInvoiceLifecycleStoreV1>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        services.AddScoped<ISalesSubcontractInvoiceLifecycleServiceV1>(CreateInvoiceService);
+        services.AddScoped<ISalesSubcontractInvoiceListStoreV1>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        services.AddScoped<ISalesSubcontractInvoiceListServiceV1>(CreateInvoiceService);
         // API-35 (SAT-D229): the tolerance policy defaults to the decided 0.05 TL; the Ayarlar link is deferred (SAT-D209). The official
-        // invoice read port is the Finance owner's (not composed yet): without it the match is 503, never an assumed document.
+        // invoice read port is the Finance owner's and Finance's AddFinanceServices registers it (FIN-S6, SAT-S1); Sales never registers a
+        // default, so a host without Finance answers the match with 503, never an assumed document.
         services.TryAddSingleton(new SalesInvoiceMatchTolerancePolicy());
         services.TryAddSingleton<ISalesInvoiceDiagnosticsV1>(serviceProvider => new SalesInvoiceDiagnostics(
             serviceProvider.GetService<ILoggerFactory>()?.CreateLogger<SalesInvoiceDiagnostics>()));
@@ -105,12 +122,38 @@ public static class SalesModuleExtensions
         services.AddScoped<ISalesOrderRiskOutcomeSource>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         services.AddScoped<ISalesRiskExceptionService>(CreateRiskExceptionService);
         services.AddScoped<ISalesShipmentRiskExceptionReadPortV1, SalesShipmentRiskExceptionReadPort>();
+        // LOJ-D19 (SAT-D285): the usage mirror of the Logistics definite-shipment events over the Sales store, and its inbox
+        // consumer. The host hands the consumer to the Work dispatcher (SAT-S10, AddSalesRiskExceptionUsageInbox) after the Logistics
+        // outbox source; this module does not reference Work's infrastructure. The dispatcher itself stays off (a human gate).
+        services.AddScoped<ISalesRiskExceptionUsageStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        services.AddScoped<SalesLogisticsShipmentInboxConsumer>();
+        // F-018 / plan S2 (FNS-D30, SAT-D310): the shipment risk gate read for the Logistics gate — the same deterministic risk
+        // evaluation as a company-scoped system read, with the shipment's risk exception embedded. Read-only; amount-free.
+        services.AddScoped<ISalesShipmentRiskGateSource>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
+        services.AddScoped<ISalesShipmentRiskGateReadPortV1, SalesShipmentRiskGateReadPort>();
         // API-40 (SAT-D288…SAT-D294): the customer return invoice over the Sales store and the invoice store. The Finance reversal
         // port is the Finance owner's and is NOT composed here: without it the finalisation is 503 before any read (SAT-D294).
         services.AddScoped<ISalesCustomerReturnStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         services.AddScoped<ISalesCustomerReturnService>(CreateCustomerReturnService);
+        // S-11 (SAT-D28, NS-13, SAT-D346): the sales contract over the Sales store. The discount limit source is the Settings
+        // owner's and is NOT composed here: without it no limit is defined and every discount goes to approval (SAT-D346).
+        services.AddScoped<ISalesContractStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        services.AddScoped<ISalesContractService>(CreateContractService);
         return services;
     }
+
+    // Named for the same architecture guard as the factories below: the company context is resolved, never registered.
+    // A missing discount limit source stays null: "sınır tanımlı değil", every discount goes to approval (SAT-D346).
+    private static SalesContractService CreateContractService(IServiceProvider serviceProvider) => new SalesContractService(
+        serviceProvider.GetRequiredService<ICompanyContext>(),
+        serviceProvider.GetRequiredService<ICurrentUser>(),
+        serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
+        serviceProvider.GetRequiredService<ICorrelationContext>(),
+        serviceProvider.GetRequiredService<ISalesContractStore>(),
+        serviceProvider.GetRequiredService<ISalesPartyAccountPortV1>(),
+        serviceProvider.GetRequiredService<ISettingsPrerequisiteProvider>(),
+        serviceProvider.GetRequiredService<TimeProvider>(),
+        serviceProvider.GetService<ISalesContractDiscountLimitSourceV1>());
 
     // Named for the same architecture guard as the factories below: the company context is resolved, never registered.
     // A missing Finance port stays null: the finalisation fails closed, never a silent admission.
@@ -161,7 +204,13 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISalesOfficialInvoiceReadPortV1>(),
         serviceProvider.GetRequiredService<SalesInvoiceMatchTolerancePolicy>(),
         serviceProvider.GetService<ISalesFinanceAdmissionPortV1>(),
-        serviceProvider.GetService<ISalesInvoiceDiagnosticsV1>());
+        serviceProvider.GetService<ISalesInvoiceDiagnosticsV1>(),
+        serviceProvider.GetService<ISalesSubcontractServiceInvoiceStore>(),
+        serviceProvider.GetService<ISalesSubcontractDeliveryWeighingReadPortV1>(),
+        // SAT-S13 (SAT-D389 / SAT-D319 (6)): absent, every share waits with weighing_difference_unavailable — never invoiced unread.
+        serviceProvider.GetService<ISalesDispatchWeighingDifferenceReadPortV1>(),
+        serviceProvider.GetService<ISalesSubcontractInvoiceLifecycleStoreV1>(),
+        serviceProvider.GetService<ISalesSubcontractInvoiceListStoreV1>());
 
     // Named for the same architecture guard as the draft service factory below: the company context is resolved, never registered.
     // A missing owner port (Logistics or Cari not composed) stays null and the read answers 503, never an empty list.
@@ -175,7 +224,9 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISalesDispatchNoteReadPortV1>(),
         serviceProvider.GetService<ISalesInvoiceableShipmentReadPortV1>(),
         // SAT-D90 / SAT-D101: the Settings rate-day port for the invoice-group rate (absent: unresolved, never a guess).
-        serviceProvider.GetService<ISettingsExchangeRateResolverV1>());
+        serviceProvider.GetService<ISettingsExchangeRateResolverV1>(),
+        // SAT-S13: the weighing-difference seam (absent: 503, never a zero).
+        serviceProvider.GetService<ISalesDispatchWeighingDifferenceReadPortV1>());
 
     // Built in a named factory so that no registration statement of this module names the company
     // context: the host's scoped ICompanyContext is resolved here, never registered (architecture guard).
@@ -257,7 +308,29 @@ public static class SalesModuleExtensions
         serviceProvider.GetServices<ISalesOrderLinkedSupplyReadPortV1>(),
         // SAT-D219 (EK38): the declarations of the supply owners that RECORD links to Sales order lines (Purchasing #998, Production #1085): a recorded kind
         // without an adapter is Unreadable, and only a kind nobody records is "no source".
-        serviceProvider.GetServices<ISalesOrderLinkedSupplyRecorderV1>());
+        serviceProvider.GetServices<ISalesOrderLinkedSupplyRecorderV1>(),
+        // API-06 / plan S0 (DEC-FIN-007 second stage): Sales' own invoice records (which shares a FINALIZED invoice took) and the
+        // Logistics owner's posted shipment shares; without the latter "shipped, not invoiced" is "Unavailable", never zero.
+        serviceProvider.GetService<ISalesInvoiceStore>(),
+        serviceProvider.GetService<ISalesInvoiceableShipmentReadPortV1>(),
+        // F-017 STOK §5.1 (STK-S16): the allocation owner's read WITH its kind (Inventory: physical kg and future supply in the
+        // purchase unit). Only the cancellation impact read asks it (the preview, the cancel, and the header revision's customer or
+        // currency check); until it is registered that category is unreadable and the command is refused, never decided on an
+        // assumed "no future allocation". Every other caller keeps V1 (physical).
+        serviceProvider.GetService<ISalesOrderAllocationReadPortV2>(),
+        // X1 (KLN-D28): the host participant that releases a cancelled order's future supply allocations through Inventory's
+        // release port in the cancellation's own transaction. Until it is registered a future allocation keeps blocking the
+        // cancellation (fail-closed); it is never released outside the Sales transaction.
+        serviceProvider.GetService<ISalesOrderFutureAllocationReleaseParticipantV1>(),
+        // SAT-D406 / SAT-D367: the risk remainder's plan quantity (issued, not yet shipped loading instructions), bound by the host to
+        // the Logistics owner's read; until it is, the "approved, not shipped" remainder is "Unavailable", never an assumed zero.
+        serviceProvider.GetService<ISalesOrderPlannedQuantityReadPortV1>(),
+        // SAT-D268..274 / URT-D67: the Inventory owner's currency-proven company-wide cost read.
+        // Missing evidence remains an unavailable margin snapshot; it never becomes zero cost.
+        // SAT-S8 / KLN-D105: the accepted reduced revision uses the host's participant in the Sales transaction.
+        futureDemandReduction: serviceProvider.GetService<ISalesOrderFutureDemandReductionParticipantV1>(),
+        marginCosts: serviceProvider.GetService<ISalesMarginCostReadPortV1>(),
+        invoicedQuantities: serviceProvider.GetService<ISalesOrderInvoicedQuantityReadPortV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(

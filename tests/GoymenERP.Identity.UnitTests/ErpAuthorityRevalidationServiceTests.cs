@@ -53,6 +53,31 @@ public sealed class ErpAuthorityRevalidationServiceTests
     }
 
     [Fact]
+    public async Task A_user_deactivated_during_the_request_loses_authority_even_when_the_assignment_remains()
+    {
+        var actor = Guid.NewGuid();
+        var company = Guid.NewGuid();
+        await using var dbContext = CreateDbContext();
+        Grant(dbContext, actor, company, Permission);
+        await dbContext.SaveChangesAsync();
+        var reads = new CountingObserver();
+        var service = Service(dbContext, actor, company, reads);
+
+        Assert.True(await service.HasPermissionAsync(Permission, company));
+        var user = await dbContext.Users.SingleAsync(x => x.Id == actor);
+        user.Deactivate(DateTimeOffset.UtcNow);
+        await dbContext.SaveChangesAsync();
+        Assert.Single(await dbContext.RoleAssignments.ToListAsync());
+        Assert.True(await service.HasPermissionAsync(Permission, company));
+
+        Assert.False((await service.RevalidatePermissionScopeAsync(Permission, company)).IsGranted);
+        Assert.Equal(2, reads.Count);
+        Assert.False(await service.HasPermissionAsync(Permission, company));
+        Assert.Equal(2, reads.Count);
+        Assert.False(await Service(dbContext, actor, company).HasPermissionAsync(Permission, company));
+    }
+
+    [Fact]
     public async Task A_grant_that_stands_is_answered_the_same_way_by_both_ports()
     {
         var actor = Guid.NewGuid();

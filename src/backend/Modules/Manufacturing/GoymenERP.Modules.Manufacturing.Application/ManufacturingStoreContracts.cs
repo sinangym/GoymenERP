@@ -81,6 +81,9 @@ public static class ManufacturingStoreCodes
     /// <summary>This company has no such order (another company's order is not found either).</summary>
     public const string OrderNotFound = "manufacturing_order_not_found";
 
+    /// <summary>URT-D72: this company has no scrap price for the month to correct (another company's is not found either).</summary>
+    public const string ScrapPriceNotFound = "manufacturing_scrap_price_not_found";
+
     /// <summary>
     /// The plan names a work center that is not one of this company's (Organization's composite key
     /// refused it). Nothing was stored.
@@ -105,6 +108,9 @@ public static class ManufacturingStoreCodes
     /// </summary>
     public const string ConcurrentChange = "manufacturing_concurrent_change";
 
+    /// <summary>The recognized output's real transfer must be undone by its own owner flow before reopening.</summary>
+    public const string CostTransferReversalRequired = "manufacturing_cost_transfer_reversal_required";
+
     /// <summary>MFG-PLAN-EDIT: the longest revision reason (trimmed) the stored column keeps; a longer one is refused.</summary>
     public const int PlanRevisionReasonMaximumLength = 256;
 
@@ -116,6 +122,37 @@ public static class ManufacturingStoreCodes
     /// listed: a cursor is never guessed and never silently restarted at the first page.
     /// </summary>
     public const string ListCursorInvalid = "manufacturing_list_cursor_invalid";
+
+    /// <summary>
+    /// URT-S20 (URT-D63): an output's lineage edges cannot be recorded as given — the output is not a declaration of this
+    /// order, an id is empty, or the share calculator cannot read the inputs. Nothing of this write is stored.
+    /// </summary>
+    public const string LineageInvalid = "manufacturing_lineage_invalid";
+
+    /// <summary>
+    /// URT-S21 (URT-D62): the output was declared without a label code and Ayarlar holds no output label number format,
+    /// so no independent number can be given. Nothing of this write is stored; the operator enters a code or the format
+    /// is entered in Ayarlar. A number is never invented.
+    /// </summary>
+    public const string OutputLabelCodeRequired = "manufacturing_output_label_code_required";
+
+    /// <summary>
+    /// URT-S21 (URT-D62): the output label number format read from Ayarlar is not usable (it must hold exactly one
+    /// <c>{n}</c> and nothing that is not printable). Nothing of this write is stored.
+    /// </summary>
+    public const string OutputLabelCodeFormatInvalid = "manufacturing_output_label_code_format_invalid";
+
+    /// <summary>
+    /// URT-S21 (URT-D62): the entered output label code is already taken in the company, or no free number of the Ayarlar
+    /// format was found within the attempt bound. A code is never renamed silently; nothing of this write is stored.
+    /// </summary>
+    public const string OutputLabelCodeConflict = "manufacturing_output_label_code_conflict";
+
+    /// <summary>
+    /// URT-SC36 (URT-D98): an output label code was entered for a new output while Ayarlar defines an output label number
+    /// format; the code then comes only from the format and manual entry is refused. Nothing of this write is stored.
+    /// </summary>
+    public const string OutputLabelCodeEntryNotAllowed = "manufacturing_output_label_code_entry_not_allowed";
 }
 
 /// <summary>
@@ -395,5 +432,32 @@ public interface IManufacturingOrderStore
     /// outside the store's bound is an <see cref="ArgumentOutOfRangeException"/>.
     /// </summary>
     Task<ManufacturingOrderPage> ListOrdersAsync(int pageSize, string? cursor, OrderStatus? status,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// URT-SC33 (URT-D86, URT-D97, URT-D99): the queue of one work center as stored — every queued plan's ordering key and
+/// kg — and the target plan's own entry, so the caller can place the target (a draft where it would stand once
+/// approved). The order and the remaining kg are the domain's (<c>ProductionWorkCenterQueueOrderV1</c>).
+/// </summary>
+public sealed record ManufacturingWorkCenterQueue(IReadOnlyList<ProductionQueueEntryV1> Queued,
+    ProductionQueueEntryV1 Target, bool TargetIsQueued = true, long QueueRevision = 0, IReadOnlyList<Guid>? StoredOrder = null);
+
+/// <summary>
+/// URT-SC33 (URT-D86): reads the queue of a work center for the termin suggestion. A port of its own, beside
+/// <see cref="IManufacturingPlanStore"/>, so the plan store's existing implementations are not widened (the plan-list
+/// pattern); the one store implements it. The queue rule (reversible, reported in the slice): the server-resolved
+/// company's APPROVED plans whose current work center is <c>workCenterId</c>, whose production order is not closed (no
+/// order yet, or an open one). Drafts and cancelled plans are not queued. Each entry carries (reversible, reported):
+/// the termin — the order's termin when the plan has an order, otherwise the plan's requested termin; the priority score
+/// — zero until the first score is stored (URT-D103); the plan's creation moment; the current planned input kg
+/// (newest revision when revised); and the processed kg — the kg declared as output on the plan's order (every output
+/// class, process loss included) net of output reversals. The target entry carries the same real quantities, with
+/// <c>TargetIsQueued</c> distinguishing a draft preview from work actually queued. A target of another company or unknown id is
+/// <c>PlanNotFound</c>. Read only.
+/// </summary>
+public interface IManufacturingWorkCenterQueueStore
+{
+    Task<ManufacturingWorkCenterQueue> ReadWorkCenterQueueAsync(Guid workCenterId, Guid targetPlanId,
         CancellationToken cancellationToken = default);
 }

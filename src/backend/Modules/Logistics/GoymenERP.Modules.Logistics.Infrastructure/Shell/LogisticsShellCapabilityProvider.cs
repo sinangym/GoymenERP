@@ -25,11 +25,20 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Shell;
 /// Kabulü" (the purchase section: approved purchase order lines waiting for goods receipt). Each has its own route and its
 /// own read name, so an actor sees a section only with that section's grant; neither implies the other.
 /// </para>
+/// <para>1.5 adds the S3 customer-owned subcontract delivery screens and action purposes.
+/// Those eight declarations remain staged until their own acceptance evidence; the previously
+/// published ordinary-delivery declarations retain their existing status.</para>
 /// </summary>
-public sealed class LogisticsShellCapabilityProvider : IShellCapabilityProvider
+public sealed partial class LogisticsShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "LOGISTICS";
-    public const string OwnerContractVersion = "1.3";
+    // SAT-D417: two new staged plan-excess purposes; all prior availability remains unchanged.
+    public const string OwnerContractVersion = "1.6";
+    public const string TransferDeparturesCapabilityId = LogisticsPermissionManifestV1.TransferDeparturesRecord;
+    public const string PlanExcessPrepareCapabilityId = "logistics.shipments.plan-excess.prepare";
+    public const string PlanExcessApproveCapabilityId = "logistics.shipments.plan-excess.approve";
+    public const string PlanExcessApproveRoutePath = "/lojistik/plan-ustu-sevk-onay";
+    public const string PlanExcessApproveScreenId = "L-PLAN-EXCESS-APPROVE";
 
     public const string ListCapabilityId = "logistics.instructions.list";
     public const string ListRoutePath = "/lojistik/yukleme-talimatlari";
@@ -59,6 +68,20 @@ public sealed class LogisticsShellCapabilityProvider : IShellCapabilityProvider
 
     public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
     [
+        .. SubcontractDeliveryDeclarations(),
+        new ShellCapabilityDeclaration(PlanExcessPrepareCapabilityId, DetailCapabilityId, DetailRoutePath, DetailScreenId,
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.LoadsRecord],
+            ImplementationAvailable: false, ParentCapabilityId: DetailCapabilityId),
+        new ShellCapabilityDeclaration(PlanExcessApproveCapabilityId, PlanExcessApproveCapabilityId,
+            PlanExcessApproveRoutePath, PlanExcessApproveScreenId, ShellCapabilityRoutePrecedence.Static,
+            ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
+            [ErpPermissions.LogisticsShipmentPlanExcessApprove], ImplementationAvailable: false),
+        new ShellCapabilityDeclaration(TransferDeparturesCapabilityId, TransferDeparturesCapabilityId,
+            "/lojistik/transfer-cikislari", "STK-S8-DEPARTURE", ShellCapabilityRoutePrecedence.Static,
+            ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
+            [LogisticsPermissionManifestV1.TransferDeparturesRecord], ImplementationAvailable: true),
         new ShellCapabilityDeclaration(ListCapabilityId, ListCapabilityId, ListRoutePath, ListScreenId,
             ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
             ShellCapabilityScopeRequirement.CompanyWide, [LogisticsPermissionManifestV1.InstructionsRead], ImplementationAvailable: true),

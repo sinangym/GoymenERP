@@ -35,6 +35,16 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
     [InlineData(PurchasingPermissionManifestV1.OrdersCancel, ErpPermissions.PurchasingOrdersCancel)]
     [InlineData(PurchasingPermissionManifestV1.OrdersPriceRead, ErpPermissions.PurchasingOrdersPriceRead)]
     [InlineData(PurchasingPermissionManifestV1.OrdersRevise, ErpPermissions.PurchasingOrdersRevise)]
+    [InlineData(PurchasingPermissionManifestV1.OrdersClose, ErpPermissions.PurchasingOrdersClose)]
+    [InlineData(PurchasingPermissionManifestV1.GoodsReceiptsApproveVariance, ErpPermissions.PurchasingGoodsReceiptsApproveVariance)]
+    [InlineData(PurchasingPermissionManifestV1.GoodsReceiptsApproveOverdelivery, ErpPermissions.PurchasingGoodsReceiptsApproveOverdelivery)]
+    [InlineData(PurchasingPermissionManifestV1.FutureAllocationRelease, ErpPermissions.PurchasingFutureAllocationRelease)]
+    [InlineData(PurchasingPermissionManifestV1.SupplierReturnsRecord, ErpPermissions.PurchasingSupplierReturnsRecord)]
+    [InlineData(PurchaseIncomingInvoicePermissionNamesV1.Read, ErpPermissions.PurchasingInvoicesRead)]
+    [InlineData(PurchaseIncomingInvoicePermissionNamesV1.Import, ErpPermissions.PurchasingInvoicesImport)]
+    [InlineData(PurchaseIncomingInvoicePermissionNamesV1.Match, ErpPermissions.PurchasingInvoicesMatch)]
+    [InlineData(PurchaseIncomingInvoicePermissionNamesV1.ApproveVariance, ErpPermissions.PurchasingInvoicesApproveVariance)]
+    [InlineData(PurchaseIncomingInvoicePermissionNamesV1.Finalize, ErpPermissions.PurchasingInvoicesFinalize)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);
@@ -84,24 +94,46 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         var purchasing = registry.Registrations
             .Where(item => item.Owner == PurchasingShellCapabilityProvider.OwnerId)
             .ToArray();
-        Assert.Equal(12, purchasing.Length);
+        Assert.Equal(29, purchasing.Length);
         string[] published =
         [
+            PurchasingShellCapabilityProvider.AdditionalCostReadCapabilityId,
+            PurchasingShellCapabilityProvider.AdditionalCostRecordCapabilityId,
             PurchasingShellCapabilityProvider.GoodsReceiptCapabilityId,
             PurchasingShellCapabilityProvider.ApproveCapabilityId,
             PurchasingShellCapabilityProvider.CancelCapabilityId,
             PurchasingShellCapabilityProvider.CreateCapabilityId,
             PurchasingShellCapabilityProvider.DetailCapabilityId,
+            PurchasingShellCapabilityProvider.LineScheduleCapabilityId,
             PurchasingShellCapabilityProvider.ListCapabilityId,
+            PurchasingShellCapabilityProvider.SupplierRevisionCapabilityId,
             PurchasingShellCapabilityProvider.RequestApproveCapabilityId,
             PurchasingShellCapabilityProvider.RequestCreateCapabilityId,
             PurchasingShellCapabilityProvider.RequestDetailCapabilityId,
             PurchasingShellCapabilityProvider.RequestListCapabilityId,
             PurchasingShellCapabilityProvider.RequestSubmitCapabilityId,
             PurchasingShellCapabilityProvider.RequestWithdrawCapabilityId,
+            PurchasingShellCapabilityProvider.ServiceOrderAcceptCapabilityId,
+            PurchasingShellCapabilityProvider.ServiceOrderApproveCapabilityId,
+            PurchasingShellCapabilityProvider.ServiceOrderCreateCapabilityId,
+            PurchasingShellCapabilityProvider.ServiceOrderDetailCapabilityId,
+            PurchasingShellCapabilityProvider.ServiceOrderListCapabilityId,
+            PurchasingShellCapabilityProvider.ServiceOrderRevisePricesCapabilityId,
+            PurchasingShellCapabilityProvider.SupplierReturnCapabilityId,
         ];
         Assert.Equal(published, purchasing.Where(item => item.Declaration.ImplementationAvailable)
             .Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
+        string[] staged = [PurchasingShellCapabilityProvider.InvoiceApproveVarianceCapabilityId,
+            PurchasingShellCapabilityProvider.InvoiceDetailCapabilityId, PurchasingShellCapabilityProvider.InvoiceFinalizeCapabilityId,
+            PurchasingShellCapabilityProvider.InvoiceImportCapabilityId,
+            PurchasingShellCapabilityProvider.InvoiceListCapabilityId, PurchasingShellCapabilityProvider.InvoiceMatchCapabilityId];
+        Assert.Equal(staged, purchasing.Where(item => !item.Declaration.ImplementationAvailable)
+            .Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
+        Assert.All(purchasing.Where(item => !item.Declaration.ImplementationAvailable), item =>
+        {
+            Assert.Contains(PurchaseIncomingInvoicePermissionNamesV1.Read, item.Declaration.RequiredPermissions);
+            Assert.Contains(PurchasingPermissionManifestV1.OrdersPriceRead, item.Declaration.RequiredPermissions);
+        });
 
         var create = Assert.Single(purchasing,
             item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.CreateCapabilityId);
@@ -127,6 +159,11 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         Assert.Equal(
             [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.GoodsReceiptsRecord],
             goodsReceipt.RequiredPermissions);
+        var supplierReturn = Assert.Single(purchasing,
+            item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.SupplierReturnCapabilityId).Declaration;
+        Assert.Equal(detail.CapabilityId, supplierReturn.ParentCapabilityId);
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.SupplierReturnsRecord],
+            supplierReturn.RequiredPermissions);
 
         var requestDetail = Assert.Single(purchasing,
             item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.RequestDetailCapabilityId).Declaration;
@@ -163,6 +200,15 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         Assert.Equal(detail.ContextRequirement, cancel.ContextRequirement);
         Assert.Equal(detail.ScopeRequirement, cancel.ScopeRequirement);
         Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersCancel], cancel.RequiredPermissions);
+
+        // F-027 (UI-07, EK16 §2a; ALS-D94): the line delivery schedule control is a child of the order detail measured with the revise name.
+        var lineSchedule = Assert.Single(purchasing,
+            item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.LineScheduleCapabilityId).Declaration;
+        Assert.Equal(detail.CapabilityId, lineSchedule.ParentCapabilityId);
+        Assert.Equal(detail.RoutePath, lineSchedule.RoutePath);
+        Assert.Equal(detail.ContextRequirement, lineSchedule.ContextRequirement);
+        Assert.Equal(detail.ScopeRequirement, lineSchedule.ScopeRequirement);
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersRevise], lineSchedule.RequiredPermissions);
     }
 
     [Fact]

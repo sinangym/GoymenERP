@@ -18,6 +18,7 @@ import {
   decodeOrder,
   decodeOrderList,
   decodePlan,
+  decodeStockShortfall,
   decodeTechnicalSnapshot,
   FACT_KINDS,
   OUTPUT_CLASSES,
@@ -31,6 +32,7 @@ import {
   cutToLengthSpec,
   massBalance,
   order,
+  ORDER,
   orderList,
   orderSummary,
   parameterSnapshot,
@@ -43,6 +45,7 @@ import {
   revisionInput,
   roll,
   ROLL_1,
+  stockShortfall,
   technicalSnapshot,
 } from './testHarness'
 
@@ -128,11 +131,17 @@ function requestSchemaName(pathName: string): string {
 describe('Manufacturing port ↔ canonical OpenAPI', () => {
   it('reads exactly the properties OrderViewV1 and its parts declare, all required', () => {
     const rollView = { ...roll(ROLL_1), commercialContext: null }
-    expect(Object.keys(order()).sort()).toEqual(names('OrderViewV1'))
+    expect(Object.keys(order({ cancellationReason: null, cancelledAtUtc: null, cancelledByUserId: null,
+      dueDate: null, dueDateDiffersFromPlan: false, dueDateRevision: 0, outputLines: [], planDueDate: null,
+      reopenings: [] })).sort()).toEqual(names('OrderViewV1'))
     expect(Object.keys(rollView).sort()).toEqual(names('RollBalanceViewV1'))
     expect(Object.keys(order().remainingTarget).sort()).toEqual(names('RemainingTargetViewV1'))
     expect(['basis', 'kg']).toEqual(names('TargetViewV1'))
-    for (const name of ['OrderViewV1', 'RemainingTargetViewV1', 'TargetViewV1']) {
+    expect([...(schema('OrderViewV1').required ?? [])].sort()).toEqual([
+      'closedAtUtc', 'closedByUserId', 'companyId', 'costStatus', 'orderId', 'planId', 'process',
+      'remainingTarget', 'rolls', 'status', 'target', 'version', 'workCenterId',
+    ])
+    for (const name of ['RemainingTargetViewV1', 'TargetViewV1']) {
       expect([...(schema(name).required ?? [])].sort()).toEqual(names(name))
     }
     expect([...(schema('RollBalanceViewV1').required ?? [])].sort()).toEqual(
@@ -144,16 +153,20 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
 
   it('reads exactly the current PlanViewV1 properties and keeps additive legacy projections optional', () => {
     const inputView = { ...plannedInput(ROLL_1), commercialContext: null }
-    expect(Object.keys(plan()).sort()).toEqual(names('PlanViewV1'))
+    expect(Object.keys(plan({ requiresReapproval: false, reapprovals: [] })).sort()).toEqual(names('PlanViewV1'))
     expect(Object.keys(inputView).sort()).toEqual(names('PlannedInputViewV1'))
     expect([...(schema('PlanViewV1').required ?? [])].sort()).toEqual(
       names('PlanViewV1').filter(
         (name) => name !== 'calculation' && name !== 'slittingSpec' && name !== CUT_TO_LENGTH
           && name !== 'parameterSnapshot' && name !== LINE_SPEED && name !== 'orderId' && name !== 'rejections'
           && name !== 'cancellation' && name !== PROCESS_SPEC && name !== 'preparedBy'
-          && name !== 'salesOrderLink' && name !== 'salesOrderLinkRevision',
+          && name !== 'salesOrderLink' && name !== 'salesOrderLinkRevision'
+          && name !== 'requestedDueDate' && name !== 'dueDateRevision'
+          && name !== 'requiresReapproval' && name !== 'reapprovals',
       ),
     )
+    // F-010a (URT-D29): the termin is an optional nullable calendar day, never required.
+    expect(schema('PlanViewV1').properties?.requestedDueDate).toMatchObject({ format: 'date' })
     // U2-d (URT-D2): the preparer is an optional nullable actor id, never required.
     expect(schema('PlanViewV1').properties?.preparedBy).toEqual({ type: ['null', 'string'] })
     // U2-b / API-16: the sales order link is optional and additive; its view has exactly the eight members the decoder reads.
@@ -234,7 +247,7 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
       expect(schema(name).properties, name).toHaveProperty(PROCESS_SPEC)
       expect(schema(name).required ?? [], name).not.toContain(PROCESS_SPEC)
     }
-    const processSpecNames = ['packageCount', 'paintColorCode', 'paintDescription', 'perimeterMm', 'pieceLengthMm',
+    const processSpecNames = ['packageCount', 'paintColorCode', 'paintDescription', 'paintSelection', 'perimeterMm', 'pieceLengthMm',
       'piecesPerPackage', 'targetThicknessMm', 'unitKg']
     expect(names('PlanProcessSpecRequestV1')).toEqual(processSpecNames)
     expect(names('PlanProcessSpecViewV1')).toEqual(processSpecNames)
@@ -268,6 +281,7 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
           'parentRollId',
           'returnId',
         ],
+        optional: ['sourceIssueMovementId'],
       },
       {
         kind: 'outputs',
@@ -296,16 +310,60 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
           'productId',
           'requiredDocuments',
         ],
+        // URT-S16 (BS-14): the usable remnant's label classification is an additive optional member.
+        optional: ['outputLine', 'remnantClassification'],
       },
     ] as const
 
     for (const request of requests) {
+      const optional: readonly string[] = 'optional' in request ? request.optional : []
       expect(requestSchemaName(`${base}/${request.kind}`), request.kind).toBe(request.schemaName)
-      expect(names(request.schemaName), request.schemaName).toEqual([...request.properties].sort())
+      expect(names(request.schemaName), request.schemaName).toEqual([...request.properties, ...optional].sort())
       expect([...(schema(request.schemaName).required ?? [])].sort(), request.schemaName).toEqual(
         [...request.properties].sort(),
       )
     }
+    expect(schema('DeclareInventoryOutputRequestV1').properties?.remnantClassification)
+      .toMatchObject({ type: ['null', 'string'] })
+  })
+
+  it('reads the SAT-D318 stock shortfall exactly as declared: an optional member of the input issue 409 only', () => {
+    const name = 'ManufacturingStockShortfallViewV1'
+    const problemName = 'ManufacturingInputIssueConflictProblemContract'
+    const issueId = 'f0000000-0000-4000-8000-000000000001'
+    const fixture = stockShortfall(issueId, '900.5', '480.25')
+    expect(Object.keys(fixture).sort()).toEqual(names(name))
+    expect([...(schema(name).required ?? [])].sort()).toEqual(names(name))
+    // SINAN-CEVAP (8) question 5: the usable kilograms are declared beside the requested ones; reserved stay out.
+    expect(names(name)).toContain('availableKg')
+    expect(names(name)).not.toContain('reservedKg')
+    expect(names(name)).not.toContain('freePhysicalKg')
+    expect(schema(name).properties?.locationId).toEqual({ type: ['null', 'string'], format: 'uuid' })
+    expect(schema(name).properties?.requestedKg).toEqual({ type: 'string' })
+    expect(schema(name).properties?.availableKg).toEqual({ type: 'string' })
+    // Optional and nullable: absent on every other code, on a replay and from an older server.
+    expect(schema(problemName).properties?.stockShortfall).toEqual({
+      oneOf: [{ type: 'null' }, { $ref: `#/components/schemas/${name}` }],
+    })
+    expect(schema(problemName).required ?? []).not.toContain('stockShortfall')
+    const root = MANUFACTURING_BASE.replace(/^.*\/api\/v1/, '/api/v1')
+    const conflict = (document.paths[`${root}/orders/{orderId}/input-issues`]?.post as
+      | {
+          readonly responses?: Record<string, {
+            readonly content?: Record<string, { readonly schema?: { readonly $ref?: string } }>
+            readonly 'x-erp-problem-codes'?: readonly string[]
+          }>
+        }
+      | undefined)?.responses?.['409']
+    expect(conflict?.content?.['application/problem+json']?.schema?.$ref).toBe(`#/components/schemas/${problemName}`)
+    expect(conflict?.['x-erp-problem-codes']).toContain('inventory_manufacturing_physical_stock_insufficient')
+    // The other realization routes keep the shared problem: only the input issue names a shortfall.
+    for (const kind of ['input-returns', 'outputs']) {
+      expect(JSON.stringify(document.paths[`${root}/orders/{orderId}/${kind}`]), kind).not.toContain(problemName)
+    }
+    expect(decodeStockShortfall(fixture, { orderId: ORDER, issueId, labelId: ROLL_1, kg: '900.5' })).toEqual(fixture)
+    expect(decodeStockShortfall(stockShortfall(issueId, '900.5', '0', { locationId: null }),
+      { orderId: ORDER, issueId, labelId: ROLL_1, kg: '900.5' })?.locationId).toBeNull()
   })
 
   it('calls routes the API declares: the order read, the plan read and one POST per fact kind', () => {
@@ -478,6 +536,9 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     expect(operation?.operationId).toBe('ListManufacturingPlanRevisionsV1')
     expect((document.paths[`${plans}/{planId}/revision`]?.post as { readonly operationId?: string } | undefined)
       ?.operationId).toBe('ReviseManufacturingPlanV1')
+    // F-010a (URT-D29): the termin command the detail screen sends.
+    expect((document.paths[`${plans}/{planId}/due-date`]?.post as { readonly operationId?: string } | undefined)
+      ?.operationId).toBe('ChangeManufacturingPlanDueDateV1')
   })
 
   it('reads exactly the properties CapturedPlanTechnicalSnapshotViewV1 declares, lengthMm required and nullable text', () => {

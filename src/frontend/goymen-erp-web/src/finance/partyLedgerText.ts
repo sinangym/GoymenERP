@@ -10,9 +10,12 @@ export const LEDGER_OPEN_HINT = 'Bu cari hesabın kesinleşmiş finans kayıtlar
 export const LEDGER_NOTICE =
   'Yalnız kesinleşmiş kayıtlar: fatura taksitleri (açık kalem), tahsilatlar, ters kayıtlar, çek/senet tahsilleri ve '
   + 'ödemeler. Taslaklar ve dağıtımlar (kapama) satır değildir; dağıtım bakiyeyi değiştirmez.'
-/** OPEN-018: carry-forward is an open decision — say so, never imply an opening balance. */
 export const LEDGER_NO_CARRY_FORWARD =
-  'Devir yok (OPEN-018): bakiye seçilen aralığın ilk gününde sıfırdan başlar; aralıktan önceki kayıtlar taşınmaz.'
+  'Bu aralık için geçerli dönem devir fişi yok: bakiye sıfırdan başlar; önceki kayıtlar taşınmaz.'
+export const LEDGER_PERIOD_CARRY =
+  'Aralık başlangıç bakiyesi kesinleşmiş dönem devir fişi ve aralık öncesi kayıtlarından gelir; yeni hareket değildir.'
+export const LEDGER_OPENING_BALANCE = 'Aralık başlangıç bakiyesi'
+export const LEDGER_CARRY_SOURCE = 'Dönem devir fişi'
 export const LEDGER_PER_CURRENCY = 'Her para birimi ayrı gösterilir; tutarlar çevrilmez ve toplanmaz.'
 export const LEDGER_FROM = 'Başlangıç tarihi'
 export const LEDGER_TO = 'Bitiş tarihi'
@@ -49,6 +52,12 @@ export const KIND_LABEL: Readonly<Record<PartyLedgerEntryKind, string>> = {
   OpenItemCancellation: 'Satış faturası iptali (ters kayıt)',
   PayableOpenItemCancellation: 'Alış faturası iptali (ters kayıt)',
   ManualBankPaymentReversal: 'Ödeme ters kaydı',
+  OpeningBalanceDebit: 'Açılış bakiyesi (borç)',
+  OpeningBalanceCredit: 'Açılış bakiyesi (alacak)',
+  OpeningBalanceDebitReversal: 'Açılış bakiyesi ters kaydı (borç açılışının)',
+  OpeningBalanceCreditReversal: 'Açılış bakiyesi ters kaydı (alacak açılışının)',
+  BalanceTransferDebit: 'Cari bakiye devir fişi (borç)',
+  BalanceTransferCredit: 'Cari bakiye devir fişi (alacak)',
 }
 
 /** Borçlu / alacaklı from the company's view of the party's account. */
@@ -69,6 +78,8 @@ export const OPEN_PAYMENT = 'Ödemeyi aç'
 export const OPEN_REVERSED_PAYMENT = 'Ters kaydedilen ödemeyi aç'
 /** An admitted open item has no detail screen yet: its official document is shown by reference only. */
 export const OPEN_ITEM_NO_SCREEN = 'Resmî belge (ayrıntı ekranı yok)'
+/** An opening and its reversal are read on the opening balances screen; the row names the opening by reference. */
+export const OPENING_BALANCE_SOURCE = 'Açılış bakiyesi'
 
 export function reference(id: string): string {
   return `ref. …${id.slice(-8)}`

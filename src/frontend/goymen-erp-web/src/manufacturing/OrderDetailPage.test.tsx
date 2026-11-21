@@ -18,6 +18,7 @@ import {
   READER_CAPABILITIES,
   RECORDER_CAPABILITIES,
   ROLL_1,
+  SHORTFALL_LOCATION,
   installFetch,
   json,
   massBalance,
@@ -27,6 +28,7 @@ import {
   requestsFor,
   roll,
   rollBalance,
+  stockShortfall,
   unavailable,
   type RecordedRequest,
 } from './testHarness'
@@ -133,7 +135,8 @@ interface Scenario {
 function stub(
   options: {
     reads?: Array<() => Response>
-    commands?: Array<() => Response>
+    /** A command responder may read the request it answers (e.g. to echo the fact id it carried). */
+    commands?: Array<(init?: RequestInit) => Response>
     capabilities?: readonly string[] | (() => readonly string[])
     /** GDC-BAL/1 reads (BAL slice 2), answered on their own so they never consume an order read. */
     balances?: Array<() => Response>
@@ -194,8 +197,9 @@ function stub(
       if ((init?.method ?? 'GET') === 'POST') {
         const respond = commands[Math.min(commandIndex, commands.length - 1)]
         commandIndex += 1
-        return respond()
+        return respond(init)
       }
+      if (new URL(url, 'http://localhost').pathname !== `/api/v1/manufacturing/orders/${ORDER}`) return undefined
       const respond = reads[Math.min(readIndex, reads.length - 1)]
       readIndex += 1
       return respond()
@@ -229,7 +233,8 @@ async function openOutputSelectors(
 
 const posts = (recorded: RecordedRequest[]) => requestsFor(recorded, '/manufacturing/orders/', 'POST')
 const reads = (recorded: RecordedRequest[]) =>
-  requestsFor(recorded, `/manufacturing/orders/${ORDER}`, 'GET').filter((request) => !request.url.endsWith('/mass-balance'))
+  requestsFor(recorded, `/manufacturing/orders/${ORDER}`, 'GET').filter((request) =>
+    new URL(request.url, 'http://localhost').pathname === `/api/v1/manufacturing/orders/${ORDER}`)
 const balanceReads = (recorded: RecordedRequest[]) => requestsFor(recorded, `/manufacturing/orders/${ORDER}/mass-balance`, 'GET')
 const labelReads = (recorded: RecordedRequest[]) => requestsFor(recorded, `/inventory/labels/${ROLL_1}/detail`, 'GET')
 const productReads = (recorded: RecordedRequest[]) =>
@@ -418,6 +423,26 @@ describe('mass balance panel (GDC-BAL/1)', () => {
 })
 
 describe('fact forms', () => {
+  it('requires an explicit server-backed plan output line and switches class lines with the output class', async () => {
+    const user = userEvent.setup()
+    stub({ capabilities: INVENTORY_RECORDER_CAPABILITIES, reads: [() => json(order({ outputLines: [
+      { kind: 'SlitLine', slitLineSequence: 1, cutLineId: null },
+      { kind: 'SlitLine', slitLineSequence: 2, cutLineId: null },
+      { kind: 'ClassLine', slitLineSequence: null, cutLineId: null },
+    ] }))] })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await user.click(screen.getByLabelText('Üretim çıktısı'))
+    const line = screen.getByLabelText('Plan çıktı satırı')
+    expect((line as HTMLSelectElement).value).toBe('')
+    expect(within(line).getByRole('option', { name: 'Dilme satırı 2' })).toBeTruthy()
+    await user.selectOptions(line, 'SlitLine:2')
+    await user.selectOptions(screen.getByLabelText('Çıktı sınıfı'), 'Scrap')
+    expect((screen.getByLabelText('Plan çıktı satırı') as HTMLSelectElement).value).toBe('')
+    expect(screen.queryByRole('option', { name: 'Dilme satırı 2' })).toBeNull()
+    expect(within(screen.getByLabelText('Plan çıktı satırı')).getByRole('option', { name: 'Çıktı sınıfı satırı' })).toBeTruthy()
+  })
+
   it('names each control by its label alone: no option or help text in the accessible name', async () => {
     // The mfg browser gate (run 35436388761) found a wrapping <label> folding the roll options into the
     // select's name. A role query with a string name is an exact match, so any folded text fails here.
@@ -579,6 +604,29 @@ describe('fact forms', () => {
     expect(within(row).getByText('50')).toBeTruthy()
   })
 
+  it('selects only this orders real issue movement for a return and freezes the trace across an ambiguous resend', async () => {
+    const user = userEvent.setup(); const foreign = 'e0000000-0000-4000-8000-000000000099'
+    const { recorded } = stub({ capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      labels: [() => json(labelDetail('8', '750', COMPANY_A, COMPANY_A, 'Company', 'Company', [
+        issueMovement(), issueMovement('Company', COMPANY_A, 'Company', COMPANY_A, { movementId: foreign, sourceId: COMPANY_B }),
+      ], true))], commands: [() => problem(503), () => json(order({ version: 2 }))] })
+    renderAt(PATH); await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await fillFact(user, { kind: 'Kullanılmayan girdi iadesi', kg: '2' })
+    await screen.findByTestId('parent-label-state')
+    const select = screen.getByLabelText('İadenin kaynak sarf hareketi')
+    await waitFor(() => expect(within(select).getByRole('option', { name: new RegExp(ISSUE_MOVEMENT) })).toBeTruthy())
+    expect(within(select).queryByRole('option', { name: new RegExp(foreign) })).toBeNull()
+    await user.selectOptions(select, ISSUE_MOVEMENT)
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+    await screen.findByRole('button', { name: 'Aynı olguyu yeniden gönder' })
+    expect((select as HTMLSelectElement).disabled).toBe(true)
+    await user.click(screen.getByRole('button', { name: 'Aynı olguyu yeniden gönder' }))
+    await waitFor(() => expect(posts(recorded)).toHaveLength(2))
+    expect(posts(recorded)[0].body).toHaveProperty('sourceIssueMovementId', ISSUE_MOVEMENT)
+    expect(posts(recorded)[1].body).toEqual(posts(recorded)[0].body)
+    expect(posts(recorded)[1].headers['Idempotency-Key']).toBe(posts(recorded)[0].headers['Idempotency-Key'])
+  })
+
   it('selects server-backed Product and Organization facts and records one company-owned output atomically', async () => {
     const user = userEvent.setup()
     const { recorded } = stub({
@@ -611,10 +659,13 @@ describe('fact forms', () => {
     await waitFor(() => expect(productReads(recorded)).toHaveLength(1))
     await waitFor(() => expect(locationReads(recorded)).toHaveLength(1))
 
+    // URT-D43 (2): a new output starts as a good product; only a usable remnant asks for a label classification.
+    expect((screen.getByLabelText('Çıktı sınıfı') as HTMLSelectElement).value).toBe('GoodProduct')
+    expect(screen.queryByLabelText('Artık etiket sınıfı')).toBeNull()
     await user.selectOptions(screen.getByLabelText('Çıktı sınıfı'), 'GoodProduct')
     await user.selectOptions(screen.getByLabelText('Ürün'), PRODUCT)
     await user.selectOptions(screen.getByLabelText('Lokasyon'), LOCATION)
-    await user.type(screen.getByLabelText('Yeni etiket kodu'), 'OUT-40')
+    await user.type(screen.getByLabelText('Yeni etiket kodu (opsiyonel)'), 'OUT-40')
     await user.type(screen.getByLabelText('Rulo no (opsiyonel)'), 'COIL-40')
     await user.type(screen.getByLabelText('Belge referansları (satır başına)'), 'CERT-1{enter}CERT-2')
     await user.selectOptions(screen.getByLabelText('İlk stok durumu'), 'Blocked')
@@ -654,11 +705,88 @@ describe('fact forms', () => {
     expect(new Set(ids).size).toBe(4)
     expect(ids.every((id) => /^[0-9a-f-]{36}$/.test(id))).toBe(true)
     expect(output.body).not.toHaveProperty('companyId')
+    expect(output.body).not.toHaveProperty('remnantClassification')
     const selectedEffectiveOn = new URL(productReads(recorded)[0].url, 'http://local.test')
       .searchParams.get('effectiveOn')
     expect(selectedEffectiveOn).toBe((output.body as { occurredAtUtc: string }).occurredAtUtc.slice(0, 10))
     await waitFor(() => expect(reads(recorded)).toHaveLength(2))
     await waitFor(() => expect(labelReads(recorded)).toHaveLength(2))
+  })
+
+  it.each([
+    { chosen: null, sent: 'SecondQuality' },
+    { chosen: 'Standard', sent: 'Standard' },
+  ] as const)('sends a usable remnant with its label classification ($sent; chosen: $chosen)', async ({ chosen, sent }) => {
+    // URT-S16 (BS-5, BS-14): the remnant keeps the chosen classification, second quality preselected; the server
+    // adds the separate UsableRemnant production status.
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      labels: [() => json(labelDetail('8', '900')), () => json(labelDetail('9', '900'))],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+
+    await user.click(screen.getByLabelText('Üretim çıktısı'))
+    await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
+    await user.type(screen.getByLabelText('Zaman'), '2026-09-25T00:30')
+    await waitFor(() => expect(labelReads(recorded)).toHaveLength(1))
+    await screen.findByRole('option', { name: /PRD-12/ })
+    await screen.findByRole('option', { name: /HOL-1/ })
+
+    expect(screen.queryByLabelText('Artık etiket sınıfı')).toBeNull()
+    await user.selectOptions(screen.getByLabelText('Çıktı sınıfı'), 'UsableRemnant')
+    const remnant = screen.getByLabelText('Artık etiket sınıfı') as HTMLSelectElement
+    expect(remnant.value).toBe('SecondQuality')
+    expect([...remnant.options].map((option) => [option.value, option.textContent]))
+      .toEqual([['Standard', 'Standart'], ['SecondQuality', 'İkinci kalite']])
+    if (chosen !== null) await user.selectOptions(remnant, chosen)
+    await user.selectOptions(screen.getByLabelText('Ürün'), PRODUCT)
+    await user.selectOptions(screen.getByLabelText('Lokasyon'), LOCATION)
+    await user.type(screen.getByLabelText('Yeni etiket kodu (opsiyonel)'), 'REM-40')
+    await user.selectOptions(screen.getByLabelText('İlk stok durumu'), 'Free')
+    await user.type(screen.getByLabelText('Kütle (kg)'), '40')
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    await waitFor(() => expect(posts(recorded)).toHaveLength(1))
+    expect(posts(recorded)[0].body).toMatchObject({
+      outputClass: 'UsableRemnant',
+      remnantClassification: sent,
+      labelCode: 'REM-40',
+    })
+  })
+
+  it('sends an output without a label code as null so the server numbers it from Ayarlar', async () => {
+    // URT-S21 (URT-D62): the output label code is optional; empty or blank is sent as null, never as the input roll.
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      labels: [() => json(labelDetail('8', '900')), () => json(labelDetail('9', '900'))],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+
+    await user.click(screen.getByLabelText('Üretim çıktısı'))
+    await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
+    await user.type(screen.getByLabelText('Zaman'), '2026-09-25T00:30')
+    await waitFor(() => expect(labelReads(recorded)).toHaveLength(1))
+    await screen.findByRole('option', { name: /PRD-12/ })
+    await screen.findByRole('option', { name: /HOL-1/ })
+
+    const labelCode = screen.getByLabelText('Yeni etiket kodu (opsiyonel)')
+    expect(labelCode.getAttribute('aria-describedby')).toBe('mfg-output-label-code-help')
+    expect(document.getElementById('mfg-output-label-code-help')?.textContent).toContain('Ayarlar')
+    await user.selectOptions(screen.getByLabelText('Ürün'), PRODUCT)
+    await user.selectOptions(screen.getByLabelText('Lokasyon'), LOCATION)
+    await user.type(labelCode, '   ')
+    await user.selectOptions(screen.getByLabelText('İlk stok durumu'), 'Free')
+    await user.type(screen.getByLabelText('Kütle (kg)'), '40')
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    await waitFor(() => expect(posts(recorded)).toHaveLength(1))
+    const body = posts(recorded)[0].body as Record<string, unknown>
+    expect(body).toHaveProperty('labelCode', null)
+    expect(body.labelCode).not.toBe(ROLL_1)
   })
 
   it('freezes customer/fason owner and custodian from this order input issue into the output command', async () => {
@@ -684,7 +812,7 @@ describe('fact forms', () => {
     await user.selectOptions(screen.getByLabelText('Çıktı sınıfı'), 'GoodProduct')
     await user.selectOptions(screen.getByLabelText('Ürün'), PRODUCT)
     await user.selectOptions(screen.getByLabelText('Lokasyon'), LOCATION)
-    await user.type(screen.getByLabelText('Yeni etiket kodu'), 'FASON-OUT-40')
+    await user.type(screen.getByLabelText('Yeni etiket kodu (opsiyonel)'), 'FASON-OUT-40')
     await user.selectOptions(screen.getByLabelText('İlk stok durumu'), 'Free')
     await user.type(screen.getByLabelText('Kütle (kg)'), '40')
 
@@ -1016,6 +1144,50 @@ describe('fact forms', () => {
 
     await user.click(screen.getByRole('button', { name: 'Kaydet' }))
     expect(await screen.findByText('İşlem reddedildi (manufacturing_new_rule).')).toBeTruthy()
+  })
+
+  it('names the refused input issue, its parent label, the place and the usable and requested kg on a physical-stock refusal (SAT-D318)', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      commands: [
+        (init) => {
+          // The server names the issue it refused: echo the fact id the screen sent.
+          const sent = JSON.parse(String(init?.body)) as { issueId: string }
+          return problem(409, {
+            code: 'inventory_manufacturing_physical_stock_insufficient',
+            stockShortfall: stockShortfall(sent.issueId, '500', '480'),
+          })
+        },
+      ],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await fillFact(user, { kg: '500' })
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    const alert = await screen.findByText(/fiziksel stok sıfırın altına düşürülemez/)
+    const [post] = posts(recorded)
+    const issueId = (post.body as { issueId: string }).issueId
+    expect(alert.textContent).toContain(`olgu ${issueId}`)
+    expect(alert.textContent).toContain(`Ana rulo etiketi: ${ROLL_1}.`)
+    expect(alert.textContent).toContain(`Konum: ${SHORTFALL_LOCATION}.`)
+    // SINAN-CEVAP (8) question 5, in the owner's example words: the usable and the requested kg together.
+    expect(alert.textContent).toContain('Etikette kullanılabilir 480 kg var, 500 kg istendi.')
+    // Reserved kilograms stay in the server: the sentence states no other stock figure.
+    expect(alert.textContent).not.toMatch(/mevcut|rezerve|serbest/i)
+    expect(alert.closest('[data-outcome="failed"]')?.getAttribute('data-failure')).toBe('rule')
+  })
+
+  it('keeps the plain physical-stock refusal when the 409 carries no shortfall detail', async () => {
+    const user = userEvent.setup()
+    stub({ commands: [() => problem(409, { code: 'inventory_manufacturing_physical_stock_insufficient' })] })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await fillFact(user)
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    expect(await screen.findByText('Ana ruloda istenen kütle kadar serbest fiziksel stok yok.')).toBeTruthy()
+    expect(screen.queryByText(/fiziksel stok sıfırın altına düşürülemez/)).toBeNull()
   })
 
   it('closes the forms on a closed order', async () => {

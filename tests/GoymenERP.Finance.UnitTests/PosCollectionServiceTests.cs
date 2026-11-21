@@ -278,7 +278,7 @@ public sealed class PosCollectionServiceTests
             var service = new ReceiptDraftService(context, companyContext, new User(actor, company),
                 permissions ?? new AllowAll(), new BankReader(), new PartyPort(), new SettingsPort(), collector,
                 new FinanceReceiptDraftBinding(Operation), Envelope(FinancePermissionNames.DraftSave), TimeProvider.System,
-                Envelope(FinancePermissionNames.Record), new OpenPeriod());
+                Envelope(FinancePermissionNames.Record), new OpenPeriod(), documentNumbers: new SyntheticFinanceRecordNumbers());
             return new Scope<IManualReceiptService>(context, service, Finance(company, actor));
         }
 

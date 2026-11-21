@@ -9,8 +9,9 @@
  *
  * A row's document number opens the existing invoice detail — `SalesInvoiceFinalizationPanel` (API-36, the same read under the
  * same two names) — below the list, addressed by `?fatura=<id>` so the selection survives a reload and the back button. The
- * panel is mounted with `canControl` false: no `sales.invoices.finalize` control is published yet, exactly as on the order's
- * "Faturalar" tab. A `fatura` value that is not a reference id is ignored.
+ * panel's controls follow the Sales shell 1.27 invoice controls (`sales.invoices.write` / `approve` / `match` / `finalize`),
+ * exactly as on the order's "Faturalar" tab; the server re-measures every command. A `fatura` value that is not a reference id
+ * is ignored.
  *
  * The detail read needs the price name too, so a WITHHELD row's document number is plain text with a hint and opens nothing. The
  * disclosure is decided per caller, not per row: once the loaded rows show the amounts withheld from this user, ANY `fatura`
@@ -25,12 +26,18 @@ import type { SalesInvoiceSummary } from './invoiceListContract'
 import { INVOICE_LIST_TEXT } from './invoiceListText'
 import { INVOICE_STATE_TEXT } from './invoiceText'
 import { SalesInvoiceFinalizationPanel } from './SalesInvoiceFinalization'
+import {
+  SALES_INVOICE_APPROVE_CAPABILITY,
+  SALES_INVOICE_FINALIZE_CAPABILITY,
+  SALES_INVOICE_MATCH_CAPABILITY,
+  SALES_INVOICE_WRITE_CAPABILITY,
+} from './capabilities'
 import { PoolContinuation, PoolPartyCell } from './SalesPoolShared'
 import { usePoolPages } from './usePoolPages'
 import { formatBusinessDate, formatInstant } from './format'
 import { isReferenceId } from './wirePrimitives'
 import { useShellState } from '../shell/shellContext'
-import { contextKey, contextKeyString } from '../shell/shellState'
+import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
 import { Button } from '../ui/Button'
 import { DataTable, type DataTableColumn } from '../ui/DataTable'
@@ -101,7 +108,13 @@ function InvoiceList({ namespace }: { readonly namespace: string | null }) {
           companyId={companyId}
           namespace={namespace}
           entryGeneration={shell.routeEntryGeneration}
-          canControl={false}
+          canControl={hasCapability(shell, SALES_INVOICE_FINALIZE_CAPABILITY)}
+          canWrite={hasCapability(shell, SALES_INVOICE_WRITE_CAPABILITY)}
+          canApprove={hasCapability(shell, SALES_INVOICE_APPROVE_CAPABILITY)}
+          canMatch={hasCapability(shell, SALES_INVOICE_MATCH_CAPABILITY)}
+          canApproveDifference={
+            hasCapability(shell, SALES_INVOICE_MATCH_CAPABILITY) && hasCapability(shell, SALES_INVOICE_APPROVE_CAPABILITY)
+          }
           onRecorded={list.retryFirst}
         />
       </section>

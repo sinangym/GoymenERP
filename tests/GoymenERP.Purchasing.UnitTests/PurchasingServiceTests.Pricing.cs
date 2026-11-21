@@ -13,7 +13,8 @@ namespace GoymenERP.Purchasing.UnitTests;
 /// </summary>
 public sealed partial class PurchasingServiceTests
 {
-    private static readonly Guid Lira = Guid.Parse("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+    // ALC-SC33 (FNS-D80): the functional currency identity, so an approved priced order needs no exchange rate.
+    private static readonly Guid Lira = SettingsCurrencyIdentitiesV1.TurkishLira;
     private static readonly Guid LiraProfile = Guid.Parse("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
 
     [Fact]

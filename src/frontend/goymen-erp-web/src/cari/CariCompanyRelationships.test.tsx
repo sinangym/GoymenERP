@@ -31,7 +31,7 @@ const IDENTITY = {
   displayName: 'Kullanıcı A',
   email: null,
   allowedCompanyIds: [A_ID, B_ID],
-  authenticationSessionBinding: null,
+  mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: null,
 }
 const COMPANY_A = { id: A_ID, code: 'GDC', legalName: 'Göymen Demir Çelik', isPlaceholder: false }
 const COMPANY_B = { id: B_ID, code: 'GSP', legalName: 'Göymen Sac Profil', isPlaceholder: false }
@@ -109,16 +109,10 @@ function installFetch(config: Config = {}) {
       throw new Error(`unexpected fetch: ${url}`)
     }),
   )
-  // The card's AT-009 VKN/TCKN block, SAT-D57 customer group panel and SAT-D102 e-belge panel read their own
-  // sub-resources; they are not the card read these cases count.
+  // Tax, name, identity history and account panels read their own sub-resources.
+  // Only the exact party endpoint is the company-bound or group card read counted here.
   const partyCalls = () =>
-    calls.filter(
-      (c) =>
-        c.url.includes(`/counterparties/${PARTY}`) &&
-        !c.url.includes('/tax-identity') &&
-        !c.url.includes('/company-account/customer-group') &&
-        !c.url.includes('/company-account/e-document'),
-    )
+    calls.filter((c) => new URL(c.url, 'https://synthetic.invalid').pathname === `/api/v1/counterparties/${PARTY}`)
   return { calls, partyCalls, groupCalls: () => partyCalls().filter((c) => c.companyId === null) }
 }
 

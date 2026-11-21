@@ -1,3 +1,4 @@
+import { SalesOfficialInvoiceCancellationPanel } from './SalesOfficialInvoiceCancellationPage'
 /**
  * API-09 / API-36 (PR #986): the S-04 "Faturalar" tab — the order's invoices (`GET …/drafts/{id}/invoices`, under the draft
  * read) — and, per invoice, the finalization panel (`GET /sales/invoices/{id}`, under the invoice read and the price read).
@@ -5,18 +6,24 @@
  *  - Every amount, date, percentage and instalment is the server's text, in the server's order. The screen never adds, splits,
  *    rounds or compares an amount, a tolerance or a threshold (AGENTS.md: "Fiyat/formül/toleransı ekran içinde yeniden yazma").
  *  - The Finance stage (bekliyor / gönderildi / kabul / red) is read from the server's ledger facts only (`financeStage`).
- *  - The finalize / re-send controls show only when the server's state allows them AND the caller may use them. The shell
- *    publishes no capability for `sales.invoices.finalize` yet, so the routed tab mounts the panel with `canControl` false and
- *    says so neutrally (NEEDS-SINAN). No new capability, permission or grant is introduced here.
+ *  - The finalize / re-send controls show only when the server's state allows them AND the caller holds the Sales shell 1.27
+ *    `sales.invoices.finalize` control (SAT-D249: a normal permission); without it the panel says so neutrally.
  *  - UI-64 (API-33): a draft's submit / approve / reject / cancel controls (`SalesInvoiceDraftActions`) follow the
- *    `sales.invoices.write` / `sales.invoices.approve` control ids, which the shell does not publish yet — so they fail closed.
- *  - Open policies are said neutrally, never decided: the dead end after Finance's authority refusal (`refused:denied`) and the
- *    automatic background re-send (NEEDS-SINAN).
+ *    `sales.invoices.write` / `sales.invoices.approve` controls, the official match form `sales.invoices.match` (an excess also
+ *    needs `sales.invoices.approve`, SAT-D106). Each fails closed without its capability; the server re-measures every call.
+ *  - After Finance's authority refusal (`refused:denied`) a user holding the finalize control re-sends the same invoice
+ *    (SAT-D427); nothing is re-sent in the background (SAT-D428). The server re-measures the authority on every re-send.
  *  - 401/403 go to the shell's auth boundary; the screen does not change the session or the authority itself.
  */
 import { useId, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { SALES_CAPABILITY, SALES_INVOICE_APPROVE_CAPABILITY, SALES_INVOICE_WRITE_CAPABILITY } from './capabilities'
+import {
+  SALES_CAPABILITY,
+  SALES_INVOICE_APPROVE_CAPABILITY,
+  SALES_INVOICE_FINALIZE_CAPABILITY,
+  SALES_INVOICE_MATCH_CAPABILITY,
+  SALES_INVOICE_WRITE_CAPABILITY,
+} from './capabilities'
 import { fetchDraftInvoices, fetchSalesInvoice } from './invoiceApi'
 import {
   FINANCE_STAGE,
@@ -36,7 +43,7 @@ import {
 import { useInvoiceDraftCommand } from './invoiceDraft'
 import { InvoiceDecisionFacts, InvoiceDraftAttemptNotice, SalesInvoiceDraftActions } from './SalesInvoiceDraftActions'
 import { isOutcomeStillUnknown } from './orderAttempt'
-import { MatchTaxFacts, SalesInvoiceMatchPanel } from './SalesInvoiceMatchPanel'
+import { MatchSourceFacts, MatchTaxFacts, SalesInvoiceMatchPanel } from './SalesInvoiceMatchPanel'
 import { INVOICE_MATCH_TEXT as M } from './invoiceMatchText'
 import { formatBusinessDate, formatInstant } from './format'
 import {
@@ -144,9 +151,13 @@ export function SalesOrderInvoices({
             companyId={companyId}
             namespace={namespace}
             entryGeneration={entryGeneration}
-            canControl={false}
+            canControl={hasCapability(shell, SALES_INVOICE_FINALIZE_CAPABILITY)}
             canWrite={hasCapability(shell, SALES_INVOICE_WRITE_CAPABILITY)}
             canApprove={hasCapability(shell, SALES_INVOICE_APPROVE_CAPABILITY)}
+            canMatch={hasCapability(shell, SALES_INVOICE_MATCH_CAPABILITY)}
+            canApproveDifference={
+              hasCapability(shell, SALES_INVOICE_MATCH_CAPABILITY) && hasCapability(shell, SALES_INVOICE_APPROVE_CAPABILITY)
+            }
             onRecorded={() => void query.refetch()}
           />
         ) : null}
@@ -263,6 +274,7 @@ export function SalesInvoiceFinalizationPanel({
       <InstalmentTable detail={detail} />
       <AttemptNotice controller={controller} />
       <Controls detail={detail} canControl={canControl} controller={controller} />
+      <SalesOfficialInvoiceCancellationPanel kind="Normal" invoiceId={invoiceId} companyId={companyId} version={detail.version} state={detail.state} onRecorded={refresh} />
     </section>
   )
 }
@@ -282,6 +294,7 @@ function MatchFacts({ detail }: { readonly detail: SalesInvoiceDetail }) {
           <div><dt>{T.officialAmount}</dt><dd className={styles.numericValue}>{match.officialAmount}</dd></div>
           <div><dt>{T.difference}</dt><dd className={styles.numericValue} data-testid="sales-invoice-match-difference">{match.difference}</dd></div>
           <div><dt>{T.tolerance}</dt><dd className={styles.numericValue}>{match.tolerance}</dd></div>
+          <MatchSourceFacts match={match} />
           <MatchTaxFacts match={match} testIdPrefix="sales-invoice-match" />
           <div><dt>{T.matchedBy}</dt><dd>{match.matchedBy}</dd></div>
           <div><dt>{T.matchedAt}</dt><dd>{formatInstant(match.matchedAtUtc)}</dd></div>

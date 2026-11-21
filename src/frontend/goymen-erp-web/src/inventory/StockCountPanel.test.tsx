@@ -104,6 +104,18 @@ afterEach(() => {
 })
 
 describe('StockCountPanel on the label detail', () => {
+  it('shows the recorded uncalculated surplus warning without showing a price or amount', async () => {
+    api.counts.mockResolvedValue({ type: 'ok-single', data: { labelId: LABEL, windowFull: false, items: [view({
+      countedKg: '1251.5', differenceKg: '1', status: 'Approved', decision: {
+        decision: 'Approved', decidedAtUtc: '2026-09-27T09:00:00Z', reason: 'Uygun',
+        adjustmentMovementId: MOVEMENT, costStatus: 'NotCalculated',
+      },
+    })] } })
+    mount(); await panel()
+    expect(await screen.findByText('Sayım fazlası kaydedildi; ortalama maliyet hesaplanamadı.')).toBeTruthy()
+    expect(screen.queryByText(/birim maliyet|TL\/kg/i)).toBeNull()
+  })
+
   it('is absent without either server-advertised count capability', async () => {
     scenario.canRecord = false; mount()
     await screen.findByRole('heading', { name: 'LBL-100' })

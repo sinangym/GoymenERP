@@ -63,6 +63,12 @@ public sealed partial class SalesInvoice
                 "Resmî belgeyle eşleşmede fark bulunduğundan fatura, fark çözülene kadar kesinleştirilemez.");
         }
 
+        if (!Match.HasCompleteSourceProof(CompanyId))
+        {
+            throw new SalesRuleException(SalesRuleCodes.InvoiceMatchSourceProofRequired,
+                "Resmî fatura tarihi ve onaylı kaynak kanıtı eksik; fatura kesinleştirilemez.");
+        }
+
         var payable = FunctionalTotals?.Payable;
 
         var split = SalesInvoiceInstalmentCalculator.FunctionalAmounts(instalments, Header.Rate, Header.CurrencyId, payable);
@@ -114,7 +120,8 @@ public sealed partial class SalesInvoice
         var payable = FunctionalTotals?.Payable.Amount;
         var admitted = facts.FinanceStatus == SalesInvoiceFinanceStatus.Admitted;
         var split = facts.Plan.Where(item => item.FunctionalAmount is not null).Sum(item => item.FunctionalAmount!.Value);
-        if (State != SalesInvoiceState.Finalized || Finalization is not null || Match is null || facts.FinalizedVersion != Version
+        if (State is not (SalesInvoiceState.Finalized or SalesInvoiceState.OfficiallyCancelled) || Finalization is not null || Match is null
+            || facts.FinalizedVersion != (State == SalesInvoiceState.OfficiallyCancelled ? Version - 1 : Version)
             || facts.AttemptCount < 0 || facts.Plan.Count != instalments.Count || admitted != facts.AdmittedAtUtc.HasValue
             || (facts.AttemptCount == 0) != (facts.LastAttemptAtUtc is null) || (admitted && facts.AttemptCount == 0)
             || (payable is null ? facts.Plan.Any(item => item.FunctionalAmount is not null) : split != payable)

@@ -25,7 +25,7 @@ public static partial class ErpOpenApiContract
         if (activationValidation)
             builder.Produces<ProductRuntimeProblemContract>(422, "application/problem+json");
         if (primitiveBinding) builder.AllowsEmptyErpBadRequestBody();
-        builder.Add(endpoint => endpoint.Metadata.Add(new ProductRuntimeContractMetadata()));
+        builder.Add(endpoint => endpoint.Metadata.Add(new ProductRuntimeContractMetadata(mutation)));
         return builder;
     }
 
@@ -33,7 +33,9 @@ public static partial class ErpOpenApiContract
         OpenApiOperationTransformerContext context, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!context.Description.ActionDescriptor.EndpointMetadata.OfType<ProductRuntimeContractMetadata>().Any())
+        var productContract = context.Description.ActionDescriptor.EndpointMetadata
+            .OfType<ProductRuntimeContractMetadata>().SingleOrDefault();
+        if (productContract is null)
             return Task.CompletedTask;
         operation.Description = "Explicit server-resolved global Product authority is required for this operation. "
             + "X-Company-Id selects the authorized origin, not a Product owner. Company roles alone grant no global access. "
@@ -68,9 +70,12 @@ public static partial class ErpOpenApiContract
                     : [ErpProblemCodes.CompanyContextInvalid, ErpProblemCodes.CorrelationMetadataInvalid, "validation_failed"],
                 "401" => ["authentication_required"],
                 "404" => ["not_found"],
-                "409" => versioned ? ["idempotency_conflict", "lifecycle_conflict", "version_conflict"] : ["idempotency_conflict"],
+                "409" => !productContract.Mutation ? ["organization.company.setup_pending"]
+                    : versioned ? ["idempotency_conflict", "lifecycle_conflict", "organization.company.setup_pending", "version_conflict"]
+                    : ["idempotency_conflict", "organization.company.setup_pending"],
                 "500" => ["internal_error"],
-                "503" => ["product_write_contention"],
+                "503" => productContract.Mutation ? ["product_write_contention", ErpProblemCodes.ServiceUnavailable]
+                    : [ErpProblemCodes.ServiceUnavailable],
                 "422" => ["validation_failed"],
                 _ => [],
             };
@@ -82,10 +87,15 @@ public static partial class ErpOpenApiContract
             }
             if (status == "403") writable.Description = "Denied without a Product body; handler or company-boundary errors may omit code. "
                 + "A company membership is not a global Product assignment.";
-            if (status == "409") writable.Description = "No partial write. Version conflicts expose lossless string expectedVersion/currentVersion "
-                + "at the problem root, not the company V1 numeric conflict object. Replay conflicts disclose no stored Product body.";
-            if (status == "503") writable.Description = "Bounded database contention exhausted; no successful terminal was established. "
-                + "Recover using the same idempotency key, never manufacture a new logical command.";
+            if (status == "409") writable.Description = productContract.Mutation
+                ? "No partial write. Version conflicts expose lossless string expectedVersion/currentVersion "
+                    + "at the problem root, not the company V1 numeric conflict object. Replay conflicts disclose no stored Product body. "
+                    + "Company setup may be refused before the handler with organization.company.setup_pending."
+                : "Company setup is pending; the company boundary refuses this read before the Product handler.";
+            if (status == "503") writable.Description = productContract.Mutation
+                ? "Bounded database contention exhausted, or the company lifecycle could not be read before the handler. "
+                    + "No successful terminal was established. Recover using the same idempotency key."
+                : "The company lifecycle could not be read before the handler; the platform returns service_unavailable.";
         }
         return Task.CompletedTask;
     }
@@ -170,7 +180,7 @@ public static partial class ErpOpenApiContract
         },
     };
 
-    private sealed record ProductRuntimeContractMetadata;
+    private sealed record ProductRuntimeContractMetadata(bool Mutation);
 }
 
 // Documentation only. Runtime still uses the existing module Results.Problem

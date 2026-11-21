@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using GoymenERP.Api.Security;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Application.Contracts;
@@ -199,6 +200,8 @@ public sealed class CompanyDirectoryAcceptanceTests(GoymenErpApiFactory factory)
     private async Task SetCompanyActiveAsync(Guid companyId, bool isActive)
     {
         await using var scope = factory.Services.CreateAsyncScope();
+        // KIM-S23: the organization context only lets the resolved active company's own row change.
+        scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(companyId);
         var dbContext = scope.ServiceProvider.GetRequiredService<OrganizationDbContext>();
         var company = await dbContext.Companies.SingleAsync(x => x.Id == companyId);
         dbContext.Entry(company).Property(x => x.IsActive).CurrentValue = isActive;

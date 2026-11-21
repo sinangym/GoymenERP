@@ -305,6 +305,7 @@ public sealed class FinanceCustomerInstrumentApiSqlServerRelationalAcceptanceTes
                     sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", FinanceDbContext.Schema))
                 .Options, companyContext);
             await context.Database.MigrateAsync();
+            await FinanceDocumentNumbersSqlFixture.PrepareAsync(factory.Services, CompanyA, CompanyB);
             return run;
         }
 

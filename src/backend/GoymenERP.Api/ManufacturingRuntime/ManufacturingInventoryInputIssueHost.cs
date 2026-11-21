@@ -3,6 +3,7 @@ using System.Globalization;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
@@ -26,7 +27,8 @@ internal sealed class ManufacturingInventoryInputIssueHost(
     IErpAuthorityRevalidationService authority,
     ISettingsPrerequisiteProvider settings,
     Func<ManufacturingInventoryIssueStage, CancellationToken, Task>? observer = null,
-    IInventoryLabelDetailsV1? labelDetails = null)
+    IInventoryLabelDetailsV1? labelDetails = null,
+    IInventoryNegativeStockAttemptRecorderV1? negativeStockAttempts = null)
     : IManufacturingInventoryInputIssuePortV1
 {
     async Task<ManufacturingInventoryInputIssuePortResultV1> IManufacturingInventoryInputIssuePortV1.IssueAsync(
@@ -49,7 +51,7 @@ internal sealed class ManufacturingInventoryInputIssueHost(
         }
         catch (InventoryManufacturingRealizationException exception)
         {
-            throw PortRefusal(exception.Status, exception.Code);
+            throw PortRefusal(exception.Status, exception.Code, StockShortfall(exception, command));
         }
         catch (ManufacturingInventoryInputIssueHostException exception)
         {
@@ -228,6 +230,16 @@ internal sealed class ManufacturingInventoryInputIssueHost(
             }
 
             manufacturing.ChangeTracker.Clear();
+            if (!committed && InventoryNegativeStockAttemptEvidenceException.FindEvidence(exception) is not null)
+            {
+                try
+                {
+                    if (negativeStockAttempts is null) throw new InvalidOperationException("Physical refusal recorder is unavailable.");
+                    await negativeStockAttempts.RecordAfterRollbackAsync(exception, CancellationToken.None);
+                }
+                catch (Exception recording) { throw InventoryManufacturingRealizationException.Refused(503,
+                    InventoryManufacturingRealizationCodesV1.Unavailable, recording); }
+            }
             throw;
         }
         finally
@@ -318,7 +330,7 @@ internal sealed class ManufacturingInventoryInputIssueHost(
     }
 
     private static InventoryCommandMetadata InventoryMetadata(ManufacturingCommandMetadata metadata,
-        Guid companyId, ManufacturingInventoryInputIssueCommand command) => new(
+        Guid companyId, ManufacturingInventoryInputIssueCommand command) => new InventoryCommandMetadata(
         metadata.ActorId,
         metadata.PermissionCode,
         metadata.RoleCodes,
@@ -331,14 +343,51 @@ internal sealed class ManufacturingInventoryInputIssueHost(
         metadata.ClientIpAddress,
         metadata.UserAgent);
 
-    private static ManufacturingInventoryRealizationPortException PortRefusal(int status, string code) =>
-        new(status switch
+    /// <summary>
+    /// SAT-D318: carries Inventory's shortfall only on its physical-stock conflict and only when it names exactly this
+    /// input issue: the order, the issue fact, the parent label and the requested kilograms. Inventory's usable
+    /// kilograms are carried as computed there, never recomputed here. Anything else, or a detail that cannot be
+    /// carried, leaves the refusal plain; its status and code stay the reason either way.
+    /// </summary>
+    internal static ManufacturingInventoryStockShortfallV1? StockShortfall(
+        InventoryManufacturingRealizationException refusal, ManufacturingInventoryInputIssuePortCommandV1 command)
+    {
+        if (refusal.Status != StatusCodes.Status409Conflict
+            || !string.Equals(refusal.Code, InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient,
+                StringComparison.Ordinal)
+            || refusal.StockShortfall is not { } shortfall
+            || shortfall.MovementKind != StockMovementKind.Issue
+            || !string.Equals(shortfall.SourceKind, InventoryManufacturingRealizationContractV1.InputIssueSourceKind,
+                StringComparison.Ordinal)
+            || shortfall.SourceId != command.OrderId || shortfall.SourceLineId != command.IssueId
+            || shortfall.LabelId != command.ParentLabelId || shortfall.RequestedKg.Value != command.Quantity.Value)
+        {
+            return null;
+        }
+
+        try
+        {
+            return new ManufacturingInventoryStockShortfallV1(shortfall.MovementKind.ToString(), shortfall.SourceKind,
+                shortfall.SourceId, shortfall.SourceLineId, shortfall.LabelId, shortfall.ProductId,
+                shortfall.LocationId, new Kilograms(shortfall.RequestedKg.Value),
+                new Kilograms(shortfall.AvailableKg.Value), new Kilograms(shortfall.FreePhysicalKg.Value),
+                shortfall.ReservedKg is { } reserved ? new Kilograms(reserved.Value) : null);
+        }
+        catch (Exception exception) when (exception is ArgumentException or ManufacturingRuleException)
+        {
+            return null;
+        }
+    }
+
+    private static ManufacturingInventoryRealizationPortException PortRefusal(int status, string code,
+        ManufacturingInventoryStockShortfallV1? stockShortfall = null) =>
+        new ManufacturingInventoryRealizationPortException(status switch
         {
             StatusCodes.Status400BadRequest => ManufacturingApiStatus.Invalid,
             StatusCodes.Status404NotFound => ManufacturingApiStatus.NotFound,
             StatusCodes.Status409Conflict => ManufacturingApiStatus.Conflict,
             _ => ManufacturingApiStatus.Unavailable,
-        }, code);
+        }, code, stockShortfall: stockShortfall);
 }
 
 internal sealed record ManufacturingInventoryInputIssueCommand(

@@ -48,7 +48,7 @@ function row(ownerKind: string, ownerId: string, over: Partial<DocumentRow> = {}
 
 const orderDoc = (over: Partial<DocumentRow> = {}) => row(OWNER_KIND.salesOrder, DRAFT, over)
 const customerDoc = (over: Partial<DocumentRow> = {}) => row(OWNER_KIND.counterpartyParty, PARTY, over)
-const list = (items: readonly DocumentRow[], canUpload = false) => json({ items, canUpload, limits: LIMITS })
+const list = (items: readonly DocumentRow[], canUpload = false) => json({ items, canUpload, limits: LIMITS, canLink: false })
 
 const ownerOf = (url: string) => new URLSearchParams(url.slice(url.indexOf('?') + 1)).get('ownerKind')
 

@@ -7,6 +7,8 @@ namespace GoymenERP.Inventory.UnitTests;
 /// <summary>
 /// B-03 (API-22/27, DEC-PRDCT-007, URT-D14): the V2 output declaration maps the Manufacturing output class to an
 /// Inventory label classification and refuses a class without a stockable label before any read or write.
+/// STK-S9 (BS-5/BS-14): a usable remnant takes the operator's Standard/SecondQuality choice (default SecondQuality)
+/// and the separate UsableRemnant production status.
 /// </summary>
 public sealed class InventoryManufacturingRealizationContractV2Tests
 {
@@ -22,15 +24,72 @@ public sealed class InventoryManufacturingRealizationContractV2Tests
         Assert.True(InventoryManufacturingOutputClassificationV2.TryMap(outputClass, out var mapped));
         Assert.Equal(expected, mapped);
 
-        var (quantity, classification) = InventoryManufacturingRealizationContractV2.Validate(
+        var (quantity, classification, productionStatus) = InventoryManufacturingRealizationContractV2.Validate(
             Output() with { OutputClass = outputClass }, Metadata(), Company);
         Assert.Equal(8.5m, quantity.Value);
         Assert.Equal(expected, classification);
+        Assert.Null(productionStatus);
+    }
+
+    [Fact]
+    public void A_usable_remnant_defaults_to_second_quality_and_carries_the_usable_remnant_production_status()
+    {
+        Assert.False(InventoryManufacturingOutputClassificationV2.TryMap(
+            InventoryManufacturingOutputClassificationV2.UsableRemnant, out _));
+        Assert.Equal(InventoryLabelClassificationV1.SecondQuality,
+            InventoryManufacturingOutputClassificationV2.DefaultRemnantClassification);
+
+        var (quantity, classification, productionStatus) = InventoryManufacturingRealizationContractV2.Validate(
+            Output() with { OutputClass = "UsableRemnant" }, Metadata(), Company);
+        Assert.Equal(8.5m, quantity.Value);
+        Assert.Equal((InventoryLabelClassificationV1.SecondQuality, InventoryLabelProductionStatusV1.UsableRemnant),
+            (classification, productionStatus));
+    }
+
+    [Theory]
+    [InlineData(InventoryLabelClassificationV1.Standard)]
+    [InlineData(InventoryLabelClassificationV1.SecondQuality)]
+    public void A_usable_remnant_takes_the_operator_s_standard_or_second_quality_choice(
+        InventoryLabelClassificationV1 selected)
+    {
+        var (_, classification, productionStatus) = InventoryManufacturingRealizationContractV2.Validate(
+            Output() with { OutputClass = "UsableRemnant", RemnantClassification = selected }, Metadata(), Company);
+        Assert.Equal((selected, InventoryLabelProductionStatusV1.UsableRemnant), (classification, productionStatus));
+    }
+
+    [Theory]
+    [InlineData("UsableRemnant", InventoryLabelClassificationV1.Scrap)]
+    [InlineData("UsableRemnant", (InventoryLabelClassificationV1)99)]
+    [InlineData("GoodProduct", InventoryLabelClassificationV1.Standard)]
+    [InlineData("SecondQuality", InventoryLabelClassificationV1.SecondQuality)]
+    [InlineData("Scrap", InventoryLabelClassificationV1.SecondQuality)]
+    public void A_remnant_classification_outside_standard_or_second_quality_or_on_another_class_is_refused(
+        string outputClass, InventoryLabelClassificationV1 selected)
+    {
+        var error = Assert.Throws<InventoryManufacturingRealizationException>(() =>
+            InventoryManufacturingRealizationContractV2.Validate(
+                Output() with { OutputClass = outputClass, RemnantClassification = selected }, Metadata(), Company));
+        Assert.Equal((400, InventoryManufacturingRealizationCodesV2.RemnantClassificationInvalid),
+            (error.Status, error.Code));
+    }
+
+    [Fact]
+    public void Process_loss_stays_refused_even_with_a_remnant_classification()
+    {
+        var error = Assert.Throws<InventoryManufacturingRealizationException>(() =>
+            InventoryManufacturingRealizationContractV2.Validate(
+                Output() with
+                {
+                    OutputClass = "ProcessLoss",
+                    RemnantClassification = InventoryLabelClassificationV1.SecondQuality,
+                },
+                Metadata(), Company));
+        Assert.Equal((400, InventoryManufacturingRealizationCodesV2.OutputClassNotStockable),
+            (error.Status, error.Code));
     }
 
     [Theory]
     [InlineData("ProcessLoss")]
-    [InlineData("UsableRemnant")]
     [InlineData("COIL")]
     [InlineData("goodproduct")]
     [InlineData("Standard")]
@@ -79,6 +138,14 @@ public sealed class InventoryManufacturingRealizationContractV2Tests
         Assert.True(InventoryManufacturingRealizationCodesV2.IsDefined(409,
             InventoryManufacturingRealizationCodesV1.ParentInputNotIssued));
         Assert.False(InventoryManufacturingRealizationCodesV2.IsDefined(422, "invented"));
+        Assert.Equal("inventory_manufacturing_remnant_classification_invalid",
+            InventoryManufacturingRealizationCodesV2.RemnantClassificationInvalid);
+        Assert.True(InventoryManufacturingRealizationCodesV2.IsDefined(400,
+            InventoryManufacturingRealizationCodesV2.RemnantClassificationInvalid));
+        Assert.False(InventoryManufacturingRealizationCodesV2.IsDefined(409,
+            InventoryManufacturingRealizationCodesV2.RemnantClassificationInvalid));
+        Assert.False(InventoryManufacturingRealizationCodesV1.IsDefined(400,
+            InventoryManufacturingRealizationCodesV2.RemnantClassificationInvalid));
 
         Assert.Throws<InvalidOperationException>(() => InventoryManufacturingRealizationException.Refused(400,
             InventoryManufacturingRealizationCodesV2.OutputClassNotStockable));
@@ -116,8 +183,12 @@ public sealed class InventoryManufacturingRealizationContractV2Tests
     {
         var v2 = Output() with { OutputClass = "Scrap" };
         var v1 = v2.ToV1();
-        Assert.Equal(typeof(InventoryManufacturingOutputRequestV1).GetProperties().Length,
+        // STK-S9: the only V2-only request field is the BS-14 remnant classification; it never reaches the V1 core.
+        Assert.Equal(typeof(InventoryManufacturingOutputRequestV1).GetProperties().Length + 1,
             typeof(InventoryManufacturingOutputRequestV2).GetProperties().Length);
+        Assert.Null(typeof(InventoryManufacturingOutputRequestV1).GetProperty(
+            nameof(InventoryManufacturingOutputRequestV2.RemnantClassification)));
+        Assert.Null(v2.RemnantClassification);
         foreach (var property in typeof(InventoryManufacturingOutputRequestV1).GetProperties())
         {
             Assert.Equal(property.GetValue(v1),

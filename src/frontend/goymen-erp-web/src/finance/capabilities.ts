@@ -13,6 +13,13 @@
  */
 
 export const FINANCE_CAPABILITY = {
+  partyBalanceTransfers: 'finance.party-balance-transfers.record',
+  officialInvoicesRecord: 'finance.official-sales-invoices.record',
+  officialInvoicesApprove: 'finance.official-sales-invoices.approve',
+  officialInvoicesWithdraw: 'finance.official-sales-invoices.withdraw',
+  creditsWorkspace: 'finance.credits.workspace',
+  creditsPropose: 'finance.credits.propose',
+  creditsApprove: 'finance.credits.approve',
   /** F-02 Tahsilat / Ödeme — the company's manual-receipt drafts. */
   receiptsList: 'finance.receipts.list',
   /** F-02 — a new manual-receipt draft (entered from a Cari account). */
@@ -46,6 +53,20 @@ export const FINANCE_CAPABILITY = {
   manualBankPaymentsReversePropose: 'finance.manual-bank-payments.reverse.propose',
   /** API-23: approve or reject a pending payment reversal (another user than the proposer). */
   manualBankPaymentsReverseApprove: 'finance.manual-bank-payments.reverse.approve',
+  /** FNS-D25 (API-25): the payment not tied to a party — list, preparation, approval and record on one workspace. */
+  expensePaymentsWorkspace: 'finance.expense-payments.workspace',
+  /** FNS-D25: prepare or replace a draft (control of the workspace). */
+  expensePaymentsDraft: 'finance.expense-payments.draft',
+  /** FNS-D25: approve another user's draft (control of the workspace; the server refuses a self-approval). */
+  expensePaymentsApprove: 'finance.expense-payments.approve',
+  /** FNS-D25: the final, explicitly confirmed record — the money fact (control of the workspace). */
+  expensePaymentsRecord: 'finance.expense-payments.record',
+  /** FNS-D24 (API-32/34): the transfer between two treasury accounts and the currency exchange — one workspace. */
+  cashTransfersWorkspace: 'finance.cash-transfers.workspace',
+  /** FNS-D24: the explicitly confirmed transfer record — the money fact (control of the workspace). */
+  cashTransfersCommit: 'finance.cash-transfers.commit',
+  exchangeBookValuesPrepare: 'finance.cash-exchange-book-values.prepare',
+  exchangeBookValuesApprove: 'finance.cash-exchange-book-values.approve',
   officialInvoiceImportUpload: 'finance.official-invoice-import.upload',
   officialInvoiceImportApprove: 'finance.official-invoice-import.approve',
   allocationsList: 'finance.allocations.list',
@@ -58,11 +79,31 @@ export const FINANCE_CAPABILITY = {
   partyLedgerAccounting: 'finance.party-ledger.accounting',
   /** B-05 (KLN-D3, C-04) Cari > Cari Hesap Takibi — the same party-ledger read, entered from Cari. */
   partyLedgerCari: 'finance.party-ledger.cari',
+  /** F-018 L1 Kredi Limitleri — the company accounts' credit limits, under `finance.credit-limits.read`. */
+  creditLimitsList: 'finance.credit-limits.list',
+  /** FNS-D27a: propose a set, change or removal (control of the list; nothing changes until an approver decides it). */
+  creditLimitsPropose: 'finance.credit-limits.propose',
+  /** FNS-D27 / FNS-D46: set or remove a limit in one step, or decide a proposal (control of the list; FNS-D56 / FNS-D57(3)). */
+  creditLimitsApprove: 'finance.credit-limits.approve',
+  /** F-018 L2 Müşteri Teminatları — an account's received collaterals, under `finance.collaterals.read`. */
+  collateralsList: 'finance.collaterals.list',
+  /** FNS-D57: record, change or release a collateral in one step (control of the list; no approval). */
+  collateralsRecord: 'finance.collaterals.record',
+  /** FIN-S9 (FNS-D23) Açılış Bakiyeleri — under `finance.opening-balances.read`; shown only while the period is open. */
+  openingBalancesList: 'finance.opening-balances.list',
+  /** FNS-D23: a specialist proposes an opening balance (control of the list). */
+  openingBalancesPropose: 'finance.opening-balances.propose',
+  /** FNS-D23: a manager approves or rejects a proposal, never their own (control of the list). */
+  openingBalancesApprove: 'finance.opening-balances.approve',
 } as const
 
 export type FinanceCapabilityId = (typeof FINANCE_CAPABILITY)[keyof typeof FINANCE_CAPABILITY]
 
 export const FINANCE_ROUTE = {
+  partyBalanceTransfers: '/finans/cari-bakiye-devri',
+  officialInvoicesRecord: '/finans/resmi-satis-faturalari',
+  officialInvoicesApprove: '/finans/resmi-satis-faturasi-onaylari',
+  creditsWorkspace: '/finans/krediler',
   receiptsList: '/finans/tahsilatlar',
   // Static before the parameter route: `yeni` must never be read as a source id.
   receiptsDraft: '/finans/tahsilatlar/yeni',
@@ -74,6 +115,10 @@ export const FINANCE_ROUTE = {
   manualBankPaymentsList: '/finans/odemeler',
   manualBankPaymentsCreate: '/finans/odemeler/yeni',
   manualBankPaymentsDetail: '/finans/odemeler/:paymentId',
+  expensePayments: '/finans/masraf-odemeleri',
+  cashTransfers: '/finans/virman',
+  exchangeBookValuesPrepare: '/finans/doviz-defter-degeri-hazirla',
+  exchangeBookValuesApprove: '/finans/doviz-defter-degeri-onaylari',
   officialInvoiceImportUpload: '/finans/onayli-fatura-taksit-kaynagi-yukle',
   officialInvoiceImportApprove: '/finans/resmi-fatura-aktarim-onaylari',
   allocationsList: '/finans/dagitimlar',
@@ -81,6 +126,9 @@ export const FINANCE_ROUTE = {
   openItemsDetail: '/finans/acik-kalemler/:openItemId',
   partyLedgerAccounting: '/muhasebe/cari-hesaplar',
   partyLedgerCari: '/cari/hesap-takibi',
+  creditLimitsList: '/finans/kredi-limitleri',
+  collateralsList: '/finans/teminatlar',
+  openingBalancesList: '/finans/acilis-bakiyeleri',
 } as const
 
 export const receiptDetailPath = (sourceId: string) => `/finans/tahsilatlar/${encodeURIComponent(sourceId)}`

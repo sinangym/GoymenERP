@@ -68,3 +68,20 @@ there. Until that binding lands, the route remains fail-closed.
 Component/DOM tests use a recording port and real pending promises (SENTETIK/NOT_ENV); HTTP mapping
 tests use a stubbed `fetch`. They are not API, SQL or browser evidence. Provider 1.1 still requires the
 central authority integration and fresh labelled acceptance evidence.
+
+## F-018 L1 credit-limit route (provider 1.10; FNS-D45 / FNS-D46)
+
+Mounted in the same change as the provider (the FNS-D25 precedent): `src/shell/capabilities.ts`, `navigation.ts` and
+`financeMountDrift.test.ts` carry one new route id; the two controls are classified as controls.
+
+| Capability id | Route | Required permissions |
+|---|---|---|
+| `finance.credit-limits.list` | `/finans/kredi-limitleri` (nav "Kredi Limitleri") | `finance.credit-limits.read` |
+| `finance.credit-limits.propose` (control) | — | read + `finance.credit-limits.propose` |
+| `finance.credit-limits.approve` (control) | — | read + `finance.credit-limits.approve` (Critical, FNS-D46) |
+
+FNS-D56 / FNS-D57(3): the approve control again also sets or removes a limit in one step (FNS-D27); the FNS-D45
+second-person rule no longer applies to credit limits. The ids, routes and permissions above are unchanged.
+
+Startup stays fail-closed until the central owner re-derives the reviewed `ShellCapabilityRegistryAuthorities`
+revision for Finance 1.10. No permission is granted to a role by this change.

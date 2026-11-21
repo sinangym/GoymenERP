@@ -18,6 +18,7 @@ internal sealed class LoadingInstructionRow : ILogisticsTenantRow
     public Guid CustomerPartyId { get; set; }
     public Guid CompanyAccountId { get; set; }
     public int Status { get; set; }
+    public int ShipmentKind { get; set; } = 1;
     public long Version { get; set; }
     public byte[] RowVersion { get; set; } = [];
 
@@ -47,7 +48,9 @@ internal sealed class LoadingInstructionLineRow : ILogisticsTenantRow
     public Guid UnitId { get; set; }
     public bool UnitIsKilogram { get; set; }
     public Guid? AllocationId { get; set; }
+    public string? SubcontractSourceJson { get; set; }
     public decimal Instructed { get; set; }
+    public decimal ApprovedPlanExcess { get; set; }
     public decimal Loaded { get; set; }
     public decimal Shipped { get; set; }
     public decimal Delivered { get; set; }
@@ -86,6 +89,7 @@ internal sealed class LoadingAttemptRow : ILogisticsTenantRow
     public int Outcome { get; set; }
     public Guid? InstructionId { get; set; }
     public string? RefusalJson { get; set; }
+    public string? ResultJson { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
 }
@@ -178,6 +182,25 @@ internal sealed class VehicleWeighingRow : ILogisticsTenantRow
     public decimal LoadedKgAtWeighing { get; set; }
     public decimal DifferenceKg { get; set; }
     public int SharesBefore { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+}
+
+/// <summary>
+/// LOJ-D17: the unload weighing of a cancelled instruction, one per instruction, append-only. It holds the weighbridge facts, the
+/// kilograms loaded when the instruction was cancelled and the signed difference; it books no stock movement.
+/// </summary>
+internal sealed class UnloadWeighingRow : ILogisticsTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid InstructionId { get; set; }
+    public Guid WeighingId { get; set; }
+    public int Direction { get; set; }
+    public decimal FirstWeighingKg { get; set; }
+    public decimal SecondWeighingKg { get; set; }
+    public decimal NetKg { get; set; }
+    public decimal LoadedKgAtCancel { get; set; }
+    public decimal DifferenceKg { get; set; }
     public string RecordedBy { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
 }

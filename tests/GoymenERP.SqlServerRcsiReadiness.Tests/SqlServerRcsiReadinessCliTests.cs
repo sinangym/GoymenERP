@@ -966,7 +966,10 @@ public sealed class SqlServerRcsiReadinessCliTests : IDisposable
         var linkedPayloadRoot = Path.Combine(linkContainer, "linked-payload");
         try
         {
-            Directory.CreateSymbolicLink(linkedPayloadRoot, isolatedPayload.PayloadRoot);
+            await CreatePayloadReparseAncestor(linkContainer, linkedPayloadRoot, isolatedPayload.PayloadRoot);
+            Assert.True((File.GetAttributes(linkedPayloadRoot) & FileAttributes.ReparsePoint) != 0);
+            Assert.Equal(Path.GetFullPath(isolatedPayload.PayloadRoot),
+                new DirectoryInfo(linkedPayloadRoot).ResolveLinkTarget(returnFinalTarget: true)!.FullName);
             var directory = CreateTemporaryDirectory();
             try
             {
@@ -1286,6 +1289,54 @@ public sealed class SqlServerRcsiReadinessCliTests : IDisposable
         var path = Path.Combine(Path.GetTempPath(), $"goymen-rcsi-{Guid.NewGuid():N}");
         Directory.CreateDirectory(path);
         return path;
+    }
+
+    private static async Task CreatePayloadReparseAncestor(string container, string link, string target)
+    {
+        // Both roots are disposable fixture directories. Never redirect a link or cleanup outside them.
+        var temporaryRoot = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        Assert.StartsWith(temporaryRoot, Path.GetFullPath(container), comparison);
+        Assert.StartsWith(temporaryRoot, Path.GetFullPath(target), comparison);
+        Assert.Equal(Path.GetFullPath(container), Path.GetDirectoryName(Path.GetFullPath(link)));
+        Assert.False(Directory.Exists(link));
+        Assert.True(Directory.Exists(target));
+        if (!OperatingSystem.IsWindows())
+        {
+            Directory.CreateSymbolicLink(link, target);
+            return;
+        }
+
+        // A directory junction exercises the same ancestor ReparsePoint boundary without symlink privilege.
+        var script = Path.Combine(container, "create-junction.ps1");
+        await File.WriteAllTextAsync(script,
+            "param([string]$LinkPath, [string]$TargetPath)\n$ErrorActionPreference = 'Stop'\n"
+            + "New-Item -ItemType Junction -Path $LinkPath -Target $TargetPath | Out-Null\n");
+        var start = new ProcessStartInfo(GetPowerShellPath())
+        {
+            UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+        foreach (var argument in new[] { "-NoLogo", "-NoProfile", "-NonInteractive", "-File", script,
+                     "-LinkPath", link, "-TargetPath", target })
+            start.ArgumentList.Add(argument);
+        using var process = new Process { StartInfo = start };
+        Assert.True(process.Start());
+        var output = process.StandardOutput.ReadToEndAsync();
+        var error = process.StandardError.ReadToEndAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        try
+        {
+            await process.WaitForExitAsync(timeout.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            throw;
+        }
+        await Task.WhenAll(output, error);
+        Assert.Equal(0, process.ExitCode);
     }
 
     private static string ComputeFileSha256(string path)

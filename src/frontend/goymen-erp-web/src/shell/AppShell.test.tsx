@@ -33,7 +33,7 @@ function identity(userId = USER_A, authenticationSessionBinding: string | null =
     displayName: userId === USER_A ? 'Kullanıcı A' : 'Kullanıcı B',
     email: 'test@example.com',
     allowedCompanyIds: [A_ID, B_ID],
-    authenticationSessionBinding,
+    mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding,
   }
 }
 const DIRECTORY = [
@@ -603,10 +603,10 @@ describe('M01.3 server session binding', () => {
 
   it.each([
     ['missing', () => { const { authenticationSessionBinding: _omitted, ...rest } = identity(); return rest }],
-    ['a number', () => ({ ...identity(), authenticationSessionBinding: 42 })],
-    ['an empty string', () => ({ ...identity(), authenticationSessionBinding: '' })],
-    ['whitespace only', () => ({ ...identity(), authenticationSessionBinding: '   ' })],
-    ['an object', () => ({ ...identity(), authenticationSessionBinding: { v: 1 } })],
+    ['a number', () => ({ ...identity(), mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: 42 })],
+    ['an empty string', () => ({ ...identity(), mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: '' })],
+    ['whitespace only', () => ({ ...identity(), mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: '   ' })],
+    ['an object', () => ({ ...identity(), mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: { v: 1 } })],
   ])('an identity whose binding is %s is malformed: no context is committed and nothing is read as null', async (_case, body) => {
     const fetchMock = installFetch({ identity: () => json(body()) })
     const seen: Seen[] = []

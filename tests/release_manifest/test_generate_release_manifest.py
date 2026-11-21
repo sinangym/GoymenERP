@@ -81,7 +81,7 @@ class ReleaseManifestTests(unittest.TestCase):
     def test_recovery_inventory_is_reproduced_and_bound_to_exact_blobs(self) -> None:
         recovery = self.manifest["recoveryInventory"]
         self.assertEqual(
-            {"dbContexts": 18, "migrations": 163, "durableStores": 32},
+            {"dbContexts": 19, "migrations": 347, "durableStores": 66},
             recovery["counts"],
         )
         self.assertEqual(
@@ -203,7 +203,7 @@ class ReleaseManifestTests(unittest.TestCase):
             }.issubset(configuration["backendKeys"])
         )
         self.assertEqual(
-            ["VITE_API_BASE_URL", "VITE_BOOTSTRAP_IDENTITY_ENABLED", "VITE_DEV_USER"],
+            ["VITE_API_BASE_URL", "VITE_AUTH_MODE", "VITE_BOOTSTRAP_IDENTITY_ENABLED", "VITE_DEV_USER"],
             configuration["frontendKeys"],
         )
         encoded = generator.canonical_json(self.manifest)
@@ -241,7 +241,7 @@ class ReleaseManifestTests(unittest.TestCase):
         expected = [
             "Accounting", "Audit", "Counterparty", "Documents", "Finance",
             "Idempotency", "Identity", "Inventory", "Logistics", "Manufacturing",
-            "Organization", "Product", "Purchasing", "Sales", "Settings", "Work",
+            "Organization", "Product", "Purchasing", "Sales", "SecurityEvents", "Settings", "Work",
         ]
         self.assertEqual(expected, [item["id"] for item in self.manifest["features"]])
         for feature in self.manifest["features"]:

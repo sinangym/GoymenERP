@@ -22,7 +22,9 @@ public sealed class ReversalProposalService(
     IFinanceReversalAllocationGate allocationGate,
     IAuditEventCollector auditEvents,
     FinanceReversalEnvelopes envelopes,
-    TimeProvider timeProvider) : IReversalProposalService
+    TimeProvider timeProvider,
+    IFinanceTreasuryBalanceGuard? balanceGuard = null,
+    IAuditTransactionWriterV1? auditOwner = null) : IReversalProposalService
 {
     public const string ProposeCommand = "finance.receipt-reversal.propose";
     public const string ApproveCommand = "finance.receipt-reversal.approve";
@@ -106,6 +108,21 @@ public sealed class ReversalProposalService(
         ArgumentNullException.ThrowIfNull(metadata);
         ArgumentNullException.ThrowIfNull(request);
         if (await StartAsync(context, metadata, FinanceAction.ApproveReversal, request.ProposalId, cancellationToken)
+            is { } denied) return denied;
+        return await FinanceTreasuryTransaction.ExecuteAsync(dbContext,
+            () => ApproveTreasuryCoreAsync(context, metadata, request, cancellationToken),
+            async () => await FenceAsync(context, FinanceAction.ApproveReversal, request.ProposalId, cancellationToken)
+                ?? Refused(context, CommandOutcome.Unavailable, Issue("treasuryAccountId", TreasuryBalanceAnswer.UnavailableCode)), auditOwner, cancellationToken);
+    }
+
+    private async Task<ReversalProposalCommandResult> ApproveTreasuryCoreAsync(
+        FinanceContext context, CommandMetadata metadata, ApproveReversalRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(request);
+        if (await StartAsync(context, metadata, FinanceAction.ApproveReversal, request.ProposalId, cancellationToken)
             is { } refused)
         {
             return refused;
@@ -141,6 +158,9 @@ public sealed class ReversalProposalService(
             return Refused(context, CommandOutcome.Denied, Issue("approval", "finance_approver_is_proposer"));
         }
 
+        try { ReversalProposalPolicy.ValidateApproval(original, proposal, request, context.ActorId); }
+        catch (ReversalPolicyException exception) { return PolicyRefusal(context, exception); }
+
         var allocation = await allocationGate.CheckAsync(context, original.Id, cancellationToken);
         if (await FenceAsync(context, FinanceAction.ApproveReversal, proposal.Id, cancellationToken) is { } afterAllocation)
         {
@@ -169,6 +189,36 @@ public sealed class ReversalProposalService(
             return Refused(context, CommandOutcome.ValidationFailed,
                 Issue("occurredOn", period.Code ?? "finance_period_rule_unavailable"));
         }
+
+        // Reversing an inflow is an outgoing treasury movement too. POS reverses its
+        // bank net, not the customer's gross. FNS-D87 has no overdraft exception.
+        var originalEvent = await dbContext.MoneyEvents.AsNoTracking().SingleOrDefaultAsync(
+            row => row.SourceId == original.Id && row.Kind == MoneyEventKinds.ManualBankReceiptRecorded,
+            cancellationToken);
+        if (await FenceAsync(context, FinanceAction.ApproveReversal, proposal.Id, cancellationToken) is { } afterEvent)
+            return afterEvent;
+        if (originalEvent is null || originalEvent.CompanyId != context.CompanyId
+            || originalEvent.TreasuryAccountId != original.TreasuryAccountId
+            || originalEvent.CurrencyId != original.CurrencyId)
+            return Refused(context, CommandOutcome.Unavailable,
+                Issue("treasuryAccountId", TreasuryBalanceAnswer.UnavailableCode));
+        TreasuryBalanceAnswer? balance;
+        try
+        {
+            balance = await (balanceGuard ?? new UnavailableTreasuryBalanceGuard()).CheckOutgoingAsync(context,
+                ExpensePaymentSourceKind.Bank, original.TreasuryAccountId,
+                new MoneyText(originalEvent.PosBankNetAmountText ?? originalEvent.AmountText, original.CurrencyId),
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException) { balance = null; }
+        if (await FenceAsync(context, FinanceAction.ApproveReversal, proposal.Id, cancellationToken) is { } afterBalance)
+            return afterBalance;
+        if (balance is null || balance.Outcome == TreasuryBalanceOutcome.Unavailable)
+            return Refused(context, CommandOutcome.Unavailable,
+                Issue("treasuryAccountId", TreasuryBalanceAnswer.UnavailableCode));
+        if (balance.Outcome != TreasuryBalanceOutcome.Sufficient)
+            return Refused(context, CommandOutcome.ValidationFailed,
+                Issue("money.amount", TreasuryBalanceAnswer.InsufficientCode));
 
         var sourceAllocationState = await dbContext.SourceAllocationStates.SingleOrDefaultAsync(
             row => row.SourceId == original.Id, cancellationToken);
@@ -217,6 +267,7 @@ public sealed class ReversalProposalService(
             sourceAllocationState.UpdatedAtUtc = now;
         }
 
+        await FinancePartyBalanceAssignment.ClearAsync(dbContext, FinanceBalanceAssignmentKinds.Receipt, original.Id, cancellationToken);
         dbContext.ReceiptDrafts.Add(rows.Source);
         dbContext.MoneyEvents.Add(rows.Event);
         var succeeded = Succeeded(context, proposal);
@@ -460,6 +511,7 @@ public sealed class ReversalProposalService(
         catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
             || exception.InnerException is SqlException { Number: 2601 or 2627 })
         {
+            if (FinanceTreasuryTransaction.RequiresFullRollback(dbContext)) throw;
             dbContext.ChangeTracker.Clear();
             return await PriorAsync(context, metadata, action, command, payloadHash, cancellationToken)
                 ?? Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
@@ -519,6 +571,8 @@ public sealed class ReversalProposalService(
                 Issue("sourceId", "finance_source_not_recorded")),
             ReversalPolicyFailure.ProposalNotPending => Refused(context, CommandOutcome.ValidationFailed,
                 Issue("proposalId", "finance_reversal_proposal_not_pending")),
+            ReversalPolicyFailure.OccursBeforeSource => Refused(context, CommandOutcome.ValidationFailed,
+                Issue("occurredOn", "finance_reversal_before_receipt")),
             _ => Refused(context, CommandOutcome.ValidationFailed, Issue("request", "invalid_request")),
         };
 

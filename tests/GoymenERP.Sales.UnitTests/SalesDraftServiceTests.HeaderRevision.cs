@@ -276,7 +276,7 @@ public sealed partial class SalesDraftServiceTests
     [Fact]
     public async Task A_stale_version_a_pending_order_and_no_change_are_refused_and_only_the_409s_are_recorded()
     {
-        var world = new World();
+        var world = new World { FutureAllocations = new FakeFutureAllocations(order => new(Company, order, [])) };
         var approved = await ApprovedAsync(world);
         world.ResetOwnerCalls();
 
@@ -334,6 +334,8 @@ public sealed partial class SalesDraftServiceTests
     {
         var world = new World();
         world.SalesOwners!.Eligible.Add(Owner);
+        // SAT-D373: the header revision of an approved order asks the kind-aware allocation owner (composed with the owners).
+        Owners(world);
         var approved = await ApprovedAsync(world);
         await world.Service().ReviseHeaderAsync(approved.Draft.Id, HeaderRevision("4", NetDays(30), Owner), Metadata("k-terms"));
 

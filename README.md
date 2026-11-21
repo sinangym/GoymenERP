@@ -2,9 +2,12 @@
 
 Göymen ERP’nin bağımsız, modüler monolit uygulama repository’si.
 
-Bu dal ERP-000A+B temelinin üzerine ERP-000C kimlik ve yetki iskeletini uygular. Satış,
-stok, üretim, finans, seçilmiş production SSO sağlayıcısı, gerçek AI, Mikro/e-fatura ve
-R-06/R-07 rapor oluşturucu henüz uygulanmamıştır.
+Tren-1 dalında Organizasyon, Kimlik, Ayarlar, Cari, Ürün, Satış, Alış, Stok, Lojistik,
+Üretim, Finans, Muhasebe ve platform modüllerinin kaynak uygulamaları geliştiriliyor.
+Kalan dilimler ve bağımlılıklar [tren-1 planında](docs/handoffs/TREN1_DEVIR/KALAN_PLAN.json),
+dalga bazındaki kaynak ve doğrulama durumu [devir raporlarında](docs/handoffs/TREN1_DEVIR/durum/)
+izlenir. Derleme, test, gerçek SQL, tarayıcı, CI ve bağımsız K3 inceleme kanıtları ayrı kaydedilir;
+kodun bulunması kullanıcı akışının kabul edildiği veya production'ın açıldığı anlamına gelmez.
 
 ## Uygulanan kapsam
 
@@ -102,8 +105,10 @@ tarafı aktif rol atamalarından üretilen şirket kapsamına karşı kontrol ed
 gönderdiği ID tek başına yetki vermez. Organization sorguları ayrıca şirket/tesis/
 lokasyon/iş merkezi ABAC kapsamıyla filtrelenir. Mutating command istekleri ayrıca
 `Idempotency-Key` ister; `X-Correlation-Id`
-gelmezse sunucu üretir. Kalıcı idempotency kaydı ve audit pipeline sonraki platform
-görevinde tamamlanacaktır.
+gelmezse sunucu üretir. Kalıcı idempotency kaydı ve denetim olayları ilgili modül
+store'ları ile Idempotency/Audit sözleşmelerinde uygulanır. Güncel head'in doğrulama
+kapsamı [kabul matrisindeki](docs/acceptance/ACCEPTANCE_MATRIX.csv) kanıt notlarıyla ve
+tren-1 dalga raporlarıyla birlikte okunmalıdır.
 
 ## Doğrulama komutları
 
@@ -134,6 +139,17 @@ dotnet test tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.
 Bağlantı değişkeni yoksa bu özel test standart yerel test koşusunda açıkça `Skipped`
 görünür; CI’daki `SQL Server relational acceptance` işi değişkeni zorunlu tanımlar ve
 testi atlamadan çalıştırır.
+
+Yerel testlerde SQL Server'ın varsayılan veri diskinden farklı bir konum gerekirse,
+`GOYMEN_ERP_TEST_SQLSERVER_DATA_DIRECTORY` yalnız test sürecinde, önceden hazırlanmış
+mutlak bir test dizinine ayarlanabilir. Bu seçenek `SqlServerRelationalApiFactory`
+kullanan yeni ve benzersiz test veritabanlarında EF Core'un `AttachDBFilename`
+desteğini kullanır; veri ve log dosyaları seçilen dizinde oluşturulur. Sunucunun
+genel dosya konumu, TLS ayarı ve mevcut veritabanları değiştirilmez. Dizin erişimi
+önceden doğrulanmalıdır. Yalnız localhost bağlantıları ve sentetik benzersiz adlar
+kabul edilir; mevcut dosyalar üzerine yazılmaz. Elle `CREATE DATABASE` sınayan
+diğer fixture'lar bu seçenekten etkilenmez. Bu yerel tanı koşumu, exact-head CI ve
+gerçek SQL kabulünün yerine geçmez.
 
 Idempotent SQL migration betiği:
 

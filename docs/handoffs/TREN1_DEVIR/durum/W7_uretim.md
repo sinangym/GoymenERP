@@ -1,0 +1,45 @@
+# W7 üretim kaynak raporu
+
+Bu rapor kaynak durumunu belirtir. Gerçek SQL, HTTP test koşumu, Vitest, browser ve CI kabulü **NOT_RUN**.
+Grant/rol ataması, production aktivasyonu ve açık karar durumları değiştirilmedi.
+
+| Dilim | Durum | Commit | Bu dalganın sonucu ve kalan |
+|---|---|---|---|
+| URT-S4 | PARTIAL | `c6dfbfb16`, `7d154e5af`, `746325489` | Planın kendi etiketleri için gerçek Inventory free/disposition okumalarıyla fiziksel/blokeli/ayrılmış/serbest/eksik kg, ürün ve etiket sürümü tablosu; iptal edilmiş emir nesilleri; şirket/plan/sürüm değişince eski cevap gösterilmez. Taze ayırma reddi ürün/etiket/istenen/ayrılabilir/eksik kg bilgisi typed API ve onay/yeniden onay UI zincirine bağlandı. Refusal ayrıntısı kaydedilmez, tekrar cevabında taşınmaz; null ayrıntı için miktar uydurulmaz. Inventory owner commitinin host eşlemesi ve merkezi OpenAPI şeması entegrasyon sahibinde; bunlar bağlanmadan uçtan uca DONE değildir. |
+| URT-S5 | PARTIAL | `c6dfbfb16` üzerine mevcut W6 yeniden hesap akışı | Yeni etiket seçimi mevcut yeniden hesap/önizleme/onay akışındadır; güncel miktarlar artık gerçek owner okumalarından görünür. Genel ilk kayıt/taslak revizyon AT-044 üst sınırında fiziksel/serbest bakiye ve çoklu pozisyon seçimi sorusu `#1189/6924674469` bekleniyor; yeni politika eklenmedi. Yeniden onaydaki mevcut Free kg/tek serbest pozisyon ve all-or-nothing kontrolü korunur. |
+| URT-SC33 | PARTIAL | `53e95474e`, `11ebaf78e`, `a78561df6`, `ee0b14c2b` | Gerçek Settings şirket çalışma-günü tamponu tüketilir; iş merkezi tamponu şirket değerinin yerine geçer. Provider yokluğu/arıza/yabancı veya bozuk cevap 503; sessiz sıfır yok. Gerekçeli append-only öncelik puanı, expected plan version + priority revision, audit/idempotency ve gerçek kuyruk HTTP/UI yolu yazıldı. Aynı Version/RowVersion çiti için parent metadata UPDATE açıkça modified işaretlenir. Termin → yüksek öncelik → oluşturulma zamanı → tam eşitlikte plan kimliği sırası korunur. Gerçek kalan kg ve sıfıra sıkıştırılmış, engellemeyen “planı aştı” alanı ekrandadır. Manuel taşıma politikası sorusu `#1189/6924287172` beklenir; `manufacturing.plans.reorder` staged/yalnız kayıt kalır. |
+| URT-S8 | READY / teknik sonraki dilim | — | Henüz yeniden açma komutu yazılmadı. Mevcut Muhasebe dönem portu kullanılacak; maliyet nesli geçmişi ve Inventory ters/yeni maliyet etkisiyle birlikte tamamlanmalı. Eksik teknik owner uygulamaları aşağıdadır; yeni insan kararı diye işaretlenmedi. |
+| URT-SC32 | PARTIAL | W6 kaynak incelemesi üzerine | URT-D82'nin ayrı USD hareketli ortalama defteri ve çıkış-anı USD maliyet damgası gerçek owner yüzeyine bağlanmadı. Geçerli TL ortalamasından sonradan USD değeri türetilmedi. |
+| URT-SC36 | PARTIAL | W6 `b91ec0fec` korunur | URT-D108/D109 iade sınırı ve boya emir-toplamı golden kaynakları vardır. Kur önceliği calculator'ı gerçek hareket-anı maliyet kaynağına bağlanmamıştır; ilk kabul kuru portu tek başına stamped maliyet yerine kullanılmadı. |
+
+## Migration ve teknik seçim
+
+- `20261116184005_AddManufacturingPlanPriorities`: `dotnet ef` ile üretildi; Designer ve snapshot birlikte kaydedildi.
+- Up yalnız `manufacturing.PlanPriorityVersions` DDL'sidir. Down ilk SQL işlemi, kayıt varsa **THROW 51943** ile veri kaybetmeden reddeder; boş tablo geri alınabilir.
+- Puan türü signed Int32, kayıtsız puan sıfırdır; bu geri alınabilir teknik gösterimdir. Yeni işletme önceliği veya manuel sıra üstünlüğü seçilmedi.
+- Yeni izin açılmadı. Puan değişimi URT-D103 gereği mevcut `manufacturing.plans.approve` ile yapılır.
+
+## Doğrulama
+
+- `a78561df6` kaynak durumunda Api, Manufacturing.UnitTests ve Api.IntegrationTests derlemeleri: **exit 0, 0 uyarı / 0 hata**. OpenAPI build üretimi kapalı, tek .NET node ve shared compilation kapalı kullanıldı.
+- `7d154e5af`, `ee0b14c2b`, `746325489` takip kaynakları bu derlemeden sonradır: **BUILD_NOT_RUN**; entegrasyon sahibinin sonraki derleme sırasındadır.
+- Bu çalışma alanında frontend bağımlılık dizini bulunmadığı için yerel TSC başlatılamadı: **NOT_RUN**; bağımlılık kurulmadı. Merkezi `tsc -b` gerekir.
+- Test kaynakları: priority revision/replay/yetki/tenant, EF append-only model ve 51943 guard, gerçek SQL kuyruk önceliği ve Down, priority HTTP wire/replay, bozuk/default tampon, advisory scope fence, refusal DTO/JSON dışlama, eski Free okumasından sonra gerçek ret+rollback, yabancı şirkette ayrıntısız 404, aynı iptal sonrası iki yeniden onayda tek yeni allocation generation, Vitest decoder/unknown aynı anahtar/overplan ekranı.
+- Test runtime, SQL migration uygulaması, browser ve CI **NOT_RUN**. Merkezi pin/relational/grup envanterleri entegrasyon sahibindedir.
+
+## S8 / SC36 / SC32 için kaynakla doğrulanmış owner işleri
+
+Merkezi entegrasyon tamamlayıcısı: Inventory'nin kısa düşüm snapshot'ı başarılı rollback
+sonrasında yalnız aynı CompanyId/PlanId için Manufacturing typed DTO'suna bağlandı.
+409 OpenAPI gövdesinin `planAllocationShortfall` alanı onay/yeniden onayda opsiyoneldir;
+saklanan cevap/replay onu taşımaz. SQL decimal ölçeğindeki `400.000` gibi değerler owner'da
+mevcut kg biçimleyicisiyle `400` kanonik metnine çevrilir; yeni yuvarlama seçilmez.
+Host kaynak testleri yabancı şirket/plan ve eski ayrıntısız cevabı gizler. Api.IntegrationTests
+birleşik kaynak derlemesi exit 0; gerçek SQL/Vitest/browser koşumları NOT_RUN.
+
+1. **Inventory hareket-anı maliyet damgası.** `InventoryManufacturingRealizationParticipant.cs` Issue/Return/Output hareketlerini hâlâ `CostResult.NotCalculated` ile oluşturur. Inventory Application'da üretim issue movement kimliğinden damgalı TL maliyeti, kaynağının sürümü ve döviz/USD bilgilerini veren bir owner okuma portu yoktur. `IInventoryCompanyWideAverageCostReadPortV1` güncel ortalamayı okur; geçmiş hareket damgasının yerine konamaz. Teknik iş: owner transaction'ında stamp + dar company/order/movement read sözleşmesi, aynı kaynak kimliklerine bağlı iade ve çıkış kayıtları. Bu yeni işletme kararı değildir.
+2. **Manufacturing gerçek maliyet source'u.** `ManufacturingScrapCostDistributionPortV1.cs` içindeki `IManufacturingScrapCostDistributionSourceV1` için somut provider/DI kaydı yoktur. V1/V2 portları ve calculator'ları vardır. Provider, Manufacturing'in net olgu/etiketlerini, damgalı Inventory issue maliyetlerini, mevcut aylık hurda fiyatını ve Settings'in hurdanın maliyete katılma ayarını birleştirmelidir. Settings Application'da bu son ayara ait typed gerçek read provider bulunamadı; kilitli SAT-D305 ayarının owner uygulaması gereklidir. Kur kaynağı için FNS-D73/D77/D78/D83 ve URT-D105 önceliği geçerlidir; `IInventoryFirstReceiptExchangeRateReadPortV1` yalnız bu zincirin bir girdisidir. Açıklama amaçlı eski “sipariş yoksa daima hesaplanamadı” yorumları yeni kararlara göre hizalanmalıdır.
+3. **S8 yeniden açma ve maliyet nesilleri.** `ProductionOrder` yeniden açma/önceki kapanış geçmişi restore yolunu içermez. `ManufacturingStore.CloseOrderWithPolicyAsync` kapanış kararını saklar ama maliyet generation'ı yaratmaz. URT-D32/D36/D56 gereği append-only reopen/closure-cost history, ikinci kapanışta yeni hesap ve eski sonuç için ters+yenisi Inventory'de aynı host transaction'ında gerekir. `IAccountingPeriodStatusPortV1.GetStatusAsync` ve gerçek `AccountingPeriodStatusPort` kaydı `Program.cs` içinde zaten vardır; yeni dönem portuna gerek yoktur. Spec §4.6 kapanışın şirket iş-gününü sorar; Denied/None/NotOpen/Unavailable ayrımları korunmalıdır. `InventoryManufacturingOutputReversalParticipantV1` mevcut V1 açık emrin maliyetsiz Receipt tersidir; kapanmış maliyet generation'ını kendi giriş maliyetiyle tersleyip yenisini geçiren enlisted owner seam'i ayrı teknik uygulamadır. Source-only durum geçişiyle DONE denmemelidir.
+4. **SC32 USD defteri.** URT-D82 TL'den ayrı USD hareketli ortalaması ve çıkış anı USD damgası ister; `AverageCostLedgerRow` bugün yalnız tek base-currency average taşır. Inventory owner ayrı USD ledger/snapshot ve unreadable cevabını kurmalı; TL ana maliyeti etkilenmemeli, Satış SMM/stok rapor kapsamı genişletilmemelidir. Teknik tablo/sürüm/port seçimi yeni insan kararı istemez; grant ve kapsam genişlemesi ayrı insan kapısıdır.
+
+Önerilen sıra: Inventory stamp ve maliyet generation owner kontratları → gerçek Manufacturing source provider → S8 reopen/yeniden kapanış geçmişi ve aynı işlemde ters+yeni maliyet → SC32 USD owner gösterimi. Manuel sıra ve AT-044 soruları bu teknik zincirden ayrı kalır.

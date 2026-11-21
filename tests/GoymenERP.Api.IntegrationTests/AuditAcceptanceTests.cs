@@ -1,10 +1,13 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Organization.Application.Contracts;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -220,6 +223,79 @@ public sealed class AuditAcceptanceTests(GoymenErpApiFactory factory)
         Assert.Equal(location, after);
     }
 
+    // F023-5a: the optional outcome filter narrows the same company-scoped keyset; company B never sees
+    // company A's refused attempts, and only the two stored outcomes are accepted (exact, ordinal).
+    [Fact]
+    public async Task AuditRead_OutcomeFilter_ReturnsOnlyThatOutcomeWithinTheSelectedCompany()
+    {
+        var correlationId = await CreateAuditedChangeAsync(
+            TestUsers.CompanyA,
+            TestCompanyIds.CompanyA,
+            "OSM-H5");
+        await RecordRefusedAttemptAsync(TestCompanyIds.CompanyA, correlationId);
+        await RecordRefusedAttemptAsync(TestCompanyIds.CompanyA, correlationId);
+        await RecordRefusedAttemptAsync(TestCompanyIds.CompanyB, correlationId);
+        using var companyAClient = factory.CreateClientFor(TestUsers.GroupAdmin, TestCompanyIds.CompanyA);
+        using var companyBClient = factory.CreateClientFor(TestUsers.GroupAdmin, TestCompanyIds.CompanyB);
+        var filter = $"correlationId={correlationId}";
+
+        var all = await ReadPageAsync(companyAClient, $"/api/v1/audit/events?{filter}");
+        Assert.Equal(3, all.Items.Count);
+        var refused = await ReadPageAsync(companyAClient, $"/api/v1/audit/events?{filter}&outcome=Refused");
+        Assert.Equal(2, refused.Items.Count);
+        Assert.All(refused.Items, item =>
+        {
+            Assert.Equal(AuditOutcomes.Refused, item.Outcome);
+            Assert.Equal(TestCompanyIds.CompanyA, item.CompanyId);
+        });
+        var succeeded = await ReadPageAsync(companyAClient, $"/api/v1/audit/events?{filter}&outcome=Succeeded");
+        var succeededItem = Assert.Single(succeeded.Items);
+        Assert.Equal(AuditOutcomes.Succeeded, succeededItem.Outcome);
+        Assert.Equal(TestCompanyIds.CompanyA, succeededItem.CompanyId);
+        var trimmed = await ReadPageAsync(
+            companyAClient,
+            $"/api/v1/audit/events?{filter}&outcome={Uri.EscapeDataString(" Refused ")}");
+        Assert.Equal(
+            refused.Items.Select(item => item.Id).ToArray(),
+            trimmed.Items.Select(item => item.Id).ToArray());
+
+        // The keyset cursor stays valid under the same filter and walks only refused rows.
+        var firstPage = await ReadPageAsync(
+            companyAClient,
+            $"/api/v1/audit/events?{filter}&outcome=Refused&pageSize=1");
+        var firstItem = Assert.Single(firstPage.Items);
+        Assert.NotNull(firstPage.NextCursor);
+        var secondPage = await ReadPageAsync(
+            companyAClient,
+            $"/api/v1/audit/events?{filter}&outcome=Refused&pageSize=1&cursor={Uri.EscapeDataString(firstPage.NextCursor)}");
+        var secondItem = Assert.Single(secondPage.Items);
+        Assert.Null(secondPage.NextCursor);
+        Assert.Equal(AuditOutcomes.Refused, secondItem.Outcome);
+        Assert.Equal(
+            refused.Items.Select(item => item.Id).ToArray(),
+            new[] { firstItem.Id, secondItem.Id });
+
+        // Acceptance 4: company B reading Refused sees only its own row, none of company A's.
+        var companyBRefused = await ReadPageAsync(companyBClient, $"/api/v1/audit/events?{filter}&outcome=Refused");
+        var companyBItem = Assert.Single(companyBRefused.Items);
+        Assert.Equal(TestCompanyIds.CompanyB, companyBItem.CompanyId);
+        Assert.Equal(AuditOutcomes.Refused, companyBItem.Outcome);
+        Assert.DoesNotContain(companyBItem.Id, all.Items.Select(item => item.Id));
+
+        foreach (var invalid in new[] { "refused", "REFUSED", "Denied", new string('R', 33) })
+        {
+            using var response = await companyAClient.GetAsync(
+                $"/api/v1/audit/events?{filter}&outcome={Uri.EscapeDataString(invalid)}");
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+            var body = await response.Content.ReadAsStringAsync();
+            using var problem = JsonDocument.Parse(body);
+            Assert.False(problem.RootElement.TryGetProperty("code", out _));
+            Assert.False(problem.RootElement.TryGetProperty("items", out _));
+            Assert.DoesNotContain(correlationId, body, StringComparison.Ordinal);
+        }
+    }
+
     private async Task<string> CreateAuditedChangeAsync(
         string userId,
         Guid companyId,
@@ -238,6 +314,40 @@ public sealed class AuditAcceptanceTests(GoymenErpApiFactory factory)
                 "Audit şirket kapsamı testi"));
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         return correlationId;
+    }
+
+    private static async Task<AuditEventPage> ReadPageAsync(HttpClient client, string path)
+    {
+        using var response = await client.GetAsync(path);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return Assert.IsType<AuditEventPage>(await response.Content.ReadFromJsonAsync<AuditEventPage>());
+    }
+
+    private async Task RecordRefusedAttemptAsync(Guid companyId, string correlationId)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(companyId);
+        var result = await scope.ServiceProvider.GetRequiredService<IRefusedAttemptRecorderV1>()
+            .RecordStandaloneAsync(new RefusedAttemptV1
+            {
+                CompanyId = companyId,
+                CommandName = "purchasing.purchase-request.approve.v1",
+                Operation = "Approve",
+                TargetType = "Purchasing.PurchaseRequest",
+                TargetId = Guid.NewGuid().ToString("D"),
+                ExpectedVersion = 3,
+                ActorType = AuditActorTypes.User,
+                ActorId = "f023-5a-outcome-filter-test",
+                PermissionCode = "purchasing.requests.approve",
+                RoleCodes = ["role-a"],
+                HttpStatus = StatusCodes.Status409Conflict,
+                ProblemCode = "approval_state_changed",
+                RefusalClass = RefusedAttemptClassesV1.BusinessRule,
+                CorrelationId = correlationId,
+                SourceChannel = SourceChannels.Web,
+                IdempotencyKey = $"idem-{Guid.NewGuid():N}",
+            });
+        Assert.True(result.Recorded, result.FailureKind);
     }
 
     private WebApplicationFactory<Program> CreateAuditHost(SequencedAuditAuthority authority) =>

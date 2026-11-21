@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { AUDIT_ITEM_FIELDS, decodeAuditEventPage } from './contract'
-import { COMPANY_A, COMPANY_B, auditEvent, page } from './testHarness'
+import { COMPANY_A, COMPANY_B, auditEvent, page, refusalJson, refusedAuditEvent } from './testHarness'
 
 describe('audit event page decoder (OpenAPI AuditEventPage / AuditEventItem)', () => {
   it('decodes an exact page and drops client IP and user agent from the decoded item', () => {
@@ -64,6 +64,9 @@ describe('audit event page decoder (OpenAPI AuditEventPage / AuditEventItem)', (
       { causationId: 7 },
       { schemaVersion: '1' },
       { integrityHash: null },
+      { outcome: 'Failed' },
+      { outcome: 'refused' },
+      { outcome: null },
     ]
     for (const override of cases) {
       expect(decodeAuditEventPage(page([auditEvent(override)]), COMPANY_A), JSON.stringify(override)).toBeNull()
@@ -74,5 +77,68 @@ describe('audit event page decoder (OpenAPI AuditEventPage / AuditEventItem)', (
     expect(decodeAuditEventPage(page([auditEvent(), auditEvent({ companyId: COMPANY_B })]), COMPANY_A)).toBeNull()
     const repeated = auditEvent()
     expect(decodeAuditEventPage(page([repeated, { ...repeated }]), COMPANY_A)).toBeNull()
+  })
+
+  it('decodes the refusal payload of a refused row and leaves a succeeded row without one', () => {
+    const refused = refusedAuditEvent({
+      afterJson: refusalJson({
+        httpStatus: 400,
+        problemCode: 'validation_failed',
+        refusalClass: 'Validation',
+        fieldErrors: [{ field: 'lines[0].quantity', code: 'out_of_range' }],
+      }),
+    })
+    const decoded = decodeAuditEventPage(page([refused, auditEvent()]), COMPANY_A)
+    expect(decoded?.items[0].outcome).toBe('Refused')
+    expect(decoded?.items[0].refusal).toEqual({
+      kind: 'detail',
+      httpStatus: 400,
+      problemCode: 'validation_failed',
+      refusalClass: 'Validation',
+      fieldErrors: [{ field: 'lines[0].quantity', code: 'out_of_range' }],
+    })
+    expect(decoded?.items[1].outcome).toBe('Succeeded')
+    expect(decoded?.items[1].refusal).toBeNull()
+  })
+
+  it('rejects the whole page when a refused row carries no valid refusal payload', () => {
+    for (const afterJson of ['{"status":"Approved"}', 'not json', refusalJson({ httpStatus: 403 })]) {
+      expect(decodeAuditEventPage(page([auditEvent(), refusedAuditEvent({ afterJson })]), COMPANY_A), afterJson).toBeNull()
+    }
+  })
+
+  it('rejects a row of the other outcome when the read asked for one outcome', () => {
+    const refused = refusedAuditEvent()
+    expect(decodeAuditEventPage(page([refused]), COMPANY_A, 'Refused')?.items).toHaveLength(1)
+    expect(decodeAuditEventPage(page([refused, auditEvent()]), COMPANY_A, 'Refused')).toBeNull()
+    expect(decodeAuditEventPage(page([auditEvent(), refused]), COMPANY_A, 'Succeeded')).toBeNull()
+  })
+})
+
+
+describe('KIM-S7 typed System recovery audit permission', () => {
+  const system = () => auditEvent({ actorType: 'System', actorId: 'identity.recover-founder', entityType: 'Identity.User', entityId: COMPANY_A,
+    eventType: 'identity.founder.recovered', operation: 'RecoverFounder', permissionCode: null, roleCodes: [], sourceChannel: 'System',
+    aiInvolvement: 'None', aiContextJson: null, clientIpAddress: null, userAgent: null, schemaVersion: 1,
+    approvalContextJson: JSON.stringify({ kind: 'IdentityFounderRecoveryV1', operatingSystemUser: 'SENTETIK-os', machineName: 'SENTETIK-machine' }) })
+  it('accepts only the closed successful CLI variant with its operator evidence', () => {
+    expect(decodeAuditEventPage(page([system()]), COMPANY_A)?.items[0].permissionCode).toBeNull()
+    for (const extra of [{ actorType: 'User' }, { actorType: 'Ai' }, { actorType: 'Integration' }, { actorId: 'SENTETIK-other' }, { operation: 'Other' }, { sourceChannel: 'Web' }, { roleCodes: ['Admin'] }, { approvalContextJson: '{}' }, { approvalContextJson: null }, { eventType: 'identity.founder.password_reset' }])
+      expect(decodeAuditEventPage(page([{ ...system(), ...extra }]), COMPANY_A)).toBeNull()
+    expect(decodeAuditEventPage(page([auditEvent({ permissionCode: null })]), COMPANY_A)).toBeNull()
+  })
+})
+
+describe('KIM-S8 typed authenticated self credential audit', () => {
+  const self = () => auditEvent({ actorType: 'User', actorId: COMPANY_A, entityId: COMPANY_A, entityType: 'Identity.LocalCredential',
+    eventType: 'identity.local-credentials.two-factor-enabled.v1', operation: 'EnableTwoFactor', entityVersionBefore: 0, entityVersionAfter: 1,
+    permissionCode: null, roleCodes: [], sourceChannel: 'Web', aiInvolvement: 'None', aiContextJson: null, clientIpAddress: null, userAgent: null,
+    approvalContextJson: JSON.stringify({ kind: 'IdentityLocalCredentialSelfServiceV1', method: 'TOTP' }) })
+  it('accepts the self transition and rejects target substitution, invented authority, malformed evidence and versions', () => {
+    expect(decodeAuditEventPage(page([self()]), COMPANY_A)?.items[0].permissionCode).toBeNull()
+    for (const extra of [{ entityId: COMPANY_B }, { actorType: 'System' }, { actorType: 'Ai' }, { roleCodes: ['Admin'] },
+      { eventType: 'identity.local-credentials.two-factor-disabled.v1' }, { operation: 'ResetPassword' }, { entityVersionAfter: 2 },
+      { entityVersionBefore: null }, { approvalContextJson: '{}' }, { sourceChannel: 'System' }, { outcome: 'Refused' }])
+      expect(decodeAuditEventPage(page([{ ...self(), ...extra }]), COMPANY_A)).toBeNull()
   })
 })

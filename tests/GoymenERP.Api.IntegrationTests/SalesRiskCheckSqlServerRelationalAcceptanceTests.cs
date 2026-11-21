@@ -36,9 +36,10 @@ namespace GoymenERP.Api.IntegrationTests;
 /// Open receivables come from Finance open items ADMITTED through the real <see cref="FinanceOpenItemSourceAdmissionService"/>
 /// (approved official invoice installments) and are read by Sales only through the Finance-owned
 /// <see cref="ISalesPartyRiskReadPortV1"/>; the approved-unshipped remainder from approved priced orders stored through the real
-/// Sales store and a shipment recorded through the real Logistics store (AT-024 port). "Shipped but not invoiced" (S5), the credit
-/// limit and collateral have no owner record on main, and an order amount enters VAT-included (SAT-D46), which is API-03's: the
-/// result is "Unavailable" with every reason — never "Within". The local (TL) totals are reported (SAT-D53). The read
+/// Sales store and a shipment recorded through the real Logistics store (AT-024 port). "Shipped but not invoiced" (plan S0) is the
+/// same order's definite shipped quantity priced by the same approved basis, so it shares the remainder's missing VAT-included
+/// amount (SAT-D46, API-03's); its "invoiced, awaiting Finance" sub-row (SAT-D311) follows it. The credit limit and collateral have
+/// no owner record on main: the result is "Unavailable" with every reason — never "Within". The local (TL) totals are reported (SAT-D53). The read
 /// writes nothing in any module; another company's receivables never reach the check and another company cannot read it (404);
 /// without the draft read it is 403; without the price read every amount is withheld.
 /// <para>
@@ -103,21 +104,24 @@ public sealed partial class SalesRiskCheckSqlServerRelationalAcceptanceTests
             local.GetProperty("grossRisk").ValueKind, local.GetProperty("grossRiskWithThisOrder").ValueKind));
         Assert.Equal(JsonValueKind.Null, check.GetProperty("inLimitCurrency").ValueKind);
         Assert.Equal(
-            [("ShippedNotInvoiced", "invoicing_owner_missing"), ("ApprovedUnshippedRemainder", "vat_inclusive_amount_unavailable"),
-                ("CreditLimit", "finance_credit_limit_owner_missing")],
+            [("ShippedNotInvoiced", "vat_inclusive_amount_unavailable"), ("ApprovedUnshippedRemainder", "vat_inclusive_amount_unavailable"),
+                ("CreditLimit", "finance_credit_limit_not_set")],
             check.GetProperty("reasons").EnumerateArray().Select(reason => (reason.GetProperty("component").GetString(), reason.GetProperty("code").GetString())));
         Assert.Equal(
             [
                 ("OpenReceivables", "finance.open-items", "Available", "IncludingTax", "2001.00", null),
-                ("ShippedNotInvoiced", "sales.invoicing", "NoSource", null, null, "invoicing_owner_missing"),
+                ("ShippedNotInvoiced", "sales.unbilled-shipments", "Unavailable", null, null, "vat_inclusive_amount_unavailable"),
                 ("ApprovedUnshippedRemainder", "sales.approved-order-remainders", "Unavailable", null, null, "vat_inclusive_amount_unavailable"),
+                ("InvoicedAwaitingFinance", "sales.finalized-invoices", "Unavailable", null, null, "vat_inclusive_amount_unavailable"),
             ],
             check.GetProperty("components").EnumerateArray().Select(Figure));
         // SAT-D48: the checked order is approved — already in the remainder, it adds nothing.
         Assert.Equal(("ThisOrder", "sales.this-order", "Available", "IncludingTax", "", null), Figure(check.GetProperty("thisOrder")));
-        Assert.Equal(("CreditLimit", "finance.party-credit-limit", "NoSource", null, null, "finance_credit_limit_owner_missing"),
+        Assert.Equal(("CreditLimit", "finance.party-credit-limit", "NoSource", null, null, "finance_credit_limit_not_set"),
             Figure(check.GetProperty("creditLimit")));
-        Assert.Equal(("Collateral", "finance.party-collateral", "NoSource", null, null, "finance_collateral_owner_missing"),
+        // API-85b: the Finance collateral master answers; no collateral is held, so the weighted collateral is a recorded zero
+        // (an empty list, no tax basis), and it is still no input of the gross risk.
+        Assert.Equal(("Collateral", "finance.party-collateral", "Available", null, "", null),
             Figure(check.GetProperty("collateral")));
 
         // The read writes nothing in any module (no attempt, audit, command, share or version effect).
@@ -179,24 +183,25 @@ public sealed partial class SalesRiskCheckSqlServerRelationalAcceptanceTests
             Assert.True(missing.Headers.CacheControl is { Private: true, NoStore: true });
         }
 
-        // Company A: B's 5000.00 is invisible — a recorded zero; the order's 2 kg is unshipped (VAT-included amount: API-03's).
+        // Company A: B's 5000.00 is invisible — a recorded zero; SAT-D406: the order's 2 kg is on no issued loading instruction, so
+        // nothing of it is planned — the remainder is a recorded zero too.
         var readerOfA = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead,
             SalesPermissionManifestV1.OrdersPriceRead);
         using var clientOfA = run.Client(readerOfA, CompanyA);
         var check = await run.RiskCheckAsync(clientOfA, path);
         var components = check.GetProperty("components").EnumerateArray().Select(Figure).ToArray();
         Assert.Equal(("OpenReceivables", "finance.open-items", "Available", "IncludingTax", "", null), components[0]);
-        Assert.Equal(("ApprovedUnshippedRemainder", "sales.approved-order-remainders", "Unavailable", null, null, "vat_inclusive_amount_unavailable"),
+        Assert.Equal(("ApprovedUnshippedRemainder", "sales.approved-order-remainders", "Available", "IncludingTax", "", null),
             components[2]);
         Assert.Equal("Unavailable", check.GetProperty("result").GetString());
     }
 
     /// <summary>
     /// K3-REVIEW-B P2-1, SAT-D115 / SAT-D166 (EK23): Rev.0 (1.25 kg) approved and accepted, partly shipped through the real
-    /// Logistics store; Rev.1 changes the quantity, is approved, and the customer rejects it. The risk's approved unshipped
-    /// remainder is the ACCEPTED Rev.0's, rebuilt from SQL: 1 of 1.25 kg shipped leaves 0.25 kg priced — unavailable (its VAT has
-    /// no source), never a recorded zero (the rejected 1 kg would leave nothing); 1.25 kg shipped leaves nothing of Rev.0 — a
-    /// recorded zero (the rejected 2 kg would leave 0.75 kg).
+    /// Logistics store; Rev.1 changes the quantity, is approved, and the customer rejects it. SAT-D406: the remainder's quantity is
+    /// the issued instruction's open plan, valued by the ACCEPTED Rev.0's basis rebuilt from SQL: 1 of an instructed 1.25 kg
+    /// shipped leaves 0.25 kg planned and priced — unavailable (its VAT has no source), never a recorded zero; 1.25 kg instructed
+    /// and shipped leaves nothing planned — a recorded zero.
     /// </summary>
     [SqlServerFact]
     public async Task SAT_D166_after_a_customer_rejection_the_remainder_is_the_accepted_revisions_on_real_sql()
@@ -205,15 +210,15 @@ public sealed partial class SalesRiskCheckSqlServerRelationalAcceptanceTests
         var reader = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead,
             SalesPermissionManifestV1.OrdersPriceRead);
         using var client = run.Client(reader, CompanyA);
-        foreach (var (prefix, rejectedQuantity, shipped, state, reason) in new (string, string, decimal, string, string?)[]
+        foreach (var (prefix, rejectedQuantity, instructed, shipped, state, reason) in new (string, string, decimal, decimal, string, string?)[]
                  {
-                     ("rj-down", "1", 1m, "Unavailable", "vat_inclusive_amount_unavailable"),
-                     ("rj-up", "2", 1.25m, "Available", null),
+                     ("rj-down", "1", 1.25m, 1m, "Unavailable", "vat_inclusive_amount_unavailable"),
+                     ("rj-up", "2", 1.25m, 1.25m, "Available", null),
                  })
         {
             var customer = new Customer(Guid.NewGuid(), Guid.NewGuid());
             var approved = await run.ApprovedDraftAsync(CompanyA, customer, prefix, "1.25", acceptanceRequired: true);
-            await run.ShippedInstructionAsync(CompanyA, approved, prefix, instructed: shipped, shipped: shipped);
+            await run.ShippedInstructionAsync(CompanyA, approved, prefix, instructed: instructed, shipped: shipped);
             var rejected = await run.CustomerRejectedAsync(CompanyA, approved, prefix, rejectedQuantity);
             Assert.Equal((10L, 1, 0, rejectedQuantity), (rejected.Version, rejected.Revision, rejected.CustomerAcceptedFallback!.Revision,
                 Assert.Single(rejected.Lines).QuantityText));

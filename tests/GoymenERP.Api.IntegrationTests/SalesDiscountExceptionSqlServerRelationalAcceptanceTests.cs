@@ -88,7 +88,7 @@ public sealed class SalesDiscountExceptionSqlServerRelationalAcceptanceTests
         Assert.Equal(("Visible", "PurchaseCostOnly", "Preview"), (visible.GetProperty("disclosure").GetString(),
             visible.GetProperty("costBasis").GetString(), visible.GetProperty("kind").GetString()));
         var lineMargin = Assert.Single(visible.GetProperty("lines").EnumerateArray());
-        Assert.Equal((lineId, Assert.Single(draft.Lines).LineNo, "Unavailable", "CostSourceMissing"), (lineMargin.GetProperty("lineId").GetGuid(),
+        Assert.Equal((lineId, Assert.Single(draft.Lines).LineNo, "Unavailable", "CostNoSource"), (lineMargin.GetProperty("lineId").GetGuid(),
             lineMargin.GetProperty("lineNo").GetInt32(), lineMargin.GetProperty("state").GetString(),
             lineMargin.GetProperty("unavailableReason").GetString()));
         Assert.All(new[] { "amount", "currencyId", "percent", "percentUnavailableReason" },

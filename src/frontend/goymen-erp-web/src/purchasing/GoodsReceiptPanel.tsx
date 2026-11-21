@@ -165,9 +165,23 @@ function ReceiptLine({ binding, attemptBinding, detail, line, onRecorded }: Prop
     {phase === 'done' && answer !== null ? <p role="status" className={styles.success}>
       {answer.isReplay ? T.replayed : T.saved} {answer.receipt.labelCode}: {answer.receipt.initialBlock === 'Free' ? T.initialFree : T.initialBlocked}
     </p> : null}
+    {phase === 'done' && answer !== null && answer.futureSupplyReleases.length > 0
+      ? <div className={styles.warningCard} role="alert" data-testid={`${id}-future-supply-released`}>
+        <p><strong>{T.futureSupplyReleasedHeading}</strong></p>
+        <p>{T.futureSupplyReleasedNote}</p>
+        <ul>{answer.futureSupplyReleases.map((release) => <li key={release.futureAllocationId}>
+          {T.futureSupplyReleasedItem(release.releasedQuantity, T.futureSupplyReleaseReason[release.failureCode])}</li>)}</ul>
+      </div> : null}
     {active && options.data?.type !== 'ok-single' ? <StateBlock subject={T.location}
       state={options.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(options.data)} onRetry={() => void options.refetch()} /> : null}
     {options.data?.type === 'ok-single' && options.data.data.searchWindowFull ? <p>{T.limited}</p> : null}
+    {active && options.data?.type === 'ok-single' ? <aside className={styles.note} aria-label={T.futureSupplyHeading}
+      data-testid={`${id}-future-supply-summary`}>
+      <h4>{T.futureSupplyHeading}</h4>
+      <p>{options.data.data.futureSupply.activeAllocatedQuantity === '0' ? T.futureSupplyNone
+        : T.futureSupplyAllocated(options.data.data.futureSupply.activeAllocatedQuantity)}</p>
+      <p>{T.futureSupplyAdvisory}</p>
+    </aside> : null}
     {active && options.data?.type === 'ok-single' && locations.length === 0 ? <p>{T.noLocation}</p> : null}
     <form className={styles.createForm} onSubmit={submit} noValidate>
       <fieldset disabled={!active || pending !== null || phase === 'sending'}><legend>{T.heading}</legend>

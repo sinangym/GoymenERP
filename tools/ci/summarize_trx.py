@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Produce a bounded, secret-free JSON summary from VSTest TRX results."""
+"""Summarize observed VSTest TRX results, without certifying job completeness."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 import re
 import sys
+import subprocess
+import time
 from xml.parsers import expat
 
 
@@ -68,6 +70,9 @@ DIAGNOSTIC_CODES = frozenset(
         "product_price_list_startup_sql_2627",
         "product_price_list_startup_sql_2714",
         "product_price_list_startup_unknown",
+        "finance_command_startup_health",
+        "finance_command_startup_migrate",
+        "finance_command_startup_document_numbers",
         "mfg_customer_arrange",
         "mfg_customer_issue",
         "mfg_customer_return",
@@ -97,7 +102,192 @@ DIAGNOSTIC_CODES = frozenset(
         "product_technical_release_rollback_reapply",
     }
 ).union(FINANCE_WORK_LEGACY_DIAGNOSTIC_CODES)
-FailureKey = tuple[str | None, str, str | None]
+# TRX files cannot establish discovery equivalence, verifier success, or whether
+# subsequent batches ran. These additive fields deliberately never certify a job.
+TRX_EVIDENCE_SCOPE = {
+    "evidenceScope": "observed_trx_results_only",
+    "groupCompleteness": "unknown",
+    "jobAcceptance": "not_evaluated",
+}
+# This is a closed numeric projection, never a SQL message or a root-cause claim.
+SQL_PROVIDER_HEADER = "Microsoft.Data.SqlClient.SqlException (0x80131904)"
+SQL_ERROR_NUMBERS = frozenset({"468", "207", "208", "547", "2601", "2627", "2714", "1776", "1205", "-2", "4060", "18456"})
+SQL_ERROR_RECORD = re.compile(
+    r"(?m)^Error Number:(-?(?:0|[1-9][0-9]{0,9})),State:(0|[1-9][0-9]{0,2}),Class:(0|[1-9][0-9]{0,2})[ \t]*\r?$"
+)
+ASSERTION_KINDS = frozenset({
+    "Equal", "NotEqual", "Single", "Empty", "NotEmpty", "Contains", "DoesNotContain",
+    "Throws", "ThrowsAny", "True", "False", "Null", "NotNull", "Same", "NotSame",
+    "IsType", "IsNotType", "IsAssignableFrom", "Collection", "All", "InRange",
+    "NotInRange", "Equivalent", "Fail", "Multiple", "StartsWith", "EndsWith",
+    "Matches", "DoesNotMatch", "StrictEqual", "NotStrictEqual",
+})
+ASSERTION_HEADER = re.compile(r"(?m)^Assert\.([A-Za-z]+)\(\) Failure(?=:|$)")
+EXCEPTION_KINDS = {
+    "System.InvalidOperationException": "invalid_operation",
+    "System.ArgumentException": "argument",
+    "System.ArgumentNullException": "argument_null",
+    "System.ArgumentOutOfRangeException": "argument_out_of_range",
+    "System.NullReferenceException": "null_reference",
+    "System.ObjectDisposedException": "object_disposed",
+    "System.TimeoutException": "timeout",
+    "System.IO.IOException": "io",
+    "System.IO.InvalidDataException": "invalid_data",
+    "System.FormatException": "format",
+    "System.OverflowException": "overflow",
+    "System.NotSupportedException": "not_supported",
+    "System.UnauthorizedAccessException": "unauthorized_access",
+    "System.OperationCanceledException": "operation_canceled",
+    "System.Threading.Tasks.TaskCanceledException": "task_canceled",
+    "System.Collections.Generic.KeyNotFoundException": "key_not_found",
+    "Microsoft.EntityFrameworkCore.DbUpdateException": "ef_db_update",
+    "Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException": "ef_db_update_concurrency",
+    "Microsoft.Data.SqlClient.SqlException": "sql_client",
+    "Xunit.Sdk.XunitException": "xunit_assertion",
+    **{"Xunit.Sdk." + kind + "Exception": "xunit_" + kind.lower() for kind in ASSERTION_KINDS},
+}
+EXCEPTION_HEADER = re.compile(
+    r"^(?:---> )?([A-Za-z_][A-Za-z0-9_.+`]{0,255}Exception)(?: \(0x[0-9A-Fa-f]{8}\))?[ \t]*:"
+)
+FailureKey = tuple[str | None, str, str | None, str | None, str | None, int | None, str | None, str | None, str | None]
+
+
+def closed_exception_kind(message: str) -> str | None:
+    first = next((line.strip() for line in message.splitlines() if line.strip()), "")
+    header = EXCEPTION_HEADER.match(first)
+    return EXCEPTION_KINDS.get(header[1], "unknown") if header is not None else None
+
+
+def closed_assertion_kind(message: str) -> str | None:
+    if not re.search(r"(?m)^Assert\.", message):
+        return None
+    candidates = ASSERTION_HEADER.findall(message)
+    if len(candidates) != 1 or candidates[0] not in ASSERTION_KINDS:
+        return "unknown"
+    return candidates[0]
+
+
+def matching_source_frame(stack: str, test_fqn: str | None) -> tuple[int | None, str | None]:
+    """Project untrusted TRX line metadata, never a path or unverified helper name."""
+    if test_fqn is None:
+        return None, None
+    frame_tail = r"\([^()\r\n]*\) in [^\r\n]+:line ([1-9][0-9]{0,5})[ \t]*\r?$"
+    exact_prefix = r"(?m)^[ \t]*at " + re.escape(test_fqn)
+    exact_count = len(re.findall(exact_prefix + r"\(", stack))
+    if exact_count:
+        candidates = re.findall(exact_prefix + frame_tail, stack)
+        if exact_count == 1 and len(candidates) == 1:
+            return int(candidates[0]), "exact_test_method"
+        return None, None
+    class_name, _ = test_fqn.rsplit(".", 1)
+    helper_prefix = r"(?m)^[ \t]*at " + re.escape(class_name) + r"\."
+    # Count even malformed/noncanonical same-class frames before considering one.
+    class_count = len(re.findall(helper_prefix, stack))
+    candidates = re.findall(helper_prefix + r"([A-Za-z_][A-Za-z0-9_]*)" + frame_tail, stack)
+    if (
+        1 <= class_count <= 8
+        and len(candidates) == class_count
+        and len(set(candidates)) == len(candidates)
+    ):
+        # Stack order localizes the nearest frame; this is not source validation.
+        return int(candidates[0][1]), "same_test_class_helper"
+    return None, None
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+MAX_SOURCE_FILE_BYTES = 4 * 1024 * 1024
+MAX_SOURCE_PATH_LOOKUPS = 128
+MAX_REPOSITORY_FRAMES = 8
+SOURCE_PATH_PATTERN = re.compile(r"^(?:src/backend|tests)/[A-Za-z0-9_./-]+\.cs$")
+REPOSITORY_FRAME = re.compile(
+    r"(?m)^[ \t]*at [^\r\n]+? in ([^\r\n]+\.cs):line ([1-9][0-9]{0,5})[ \t]*\r?$"
+)
+
+
+class RepositorySourceResolver:
+    """Validate public tracked paths; projected locations remain untrusted TRX metadata."""
+
+    def __init__(self) -> None:
+        self.root = REPOSITORY_ROOT.resolve()
+        self.line_counts: dict[str, int | None] = {}
+        self.lookup_seconds = 0.0
+
+    def _line_count(self, relative: str) -> int | None:
+        if relative in self.line_counts:
+            return self.line_counts[relative]
+        if len(self.line_counts) >= MAX_SOURCE_PATH_LOOKUPS or self.lookup_seconds >= 5.0:
+            return None
+        self.line_counts[relative] = None
+        started = time.monotonic()
+        try:
+            candidate = self.root / relative
+            resolved = candidate.resolve(strict=True)
+            if not resolved.is_relative_to(self.root) or not resolved.is_file():
+                return None
+            before = resolved.stat()
+            if before.st_size > MAX_SOURCE_FILE_BYTES:
+                return None
+            membership = subprocess.run(
+                ["git", "ls-files", "--error-unmatch", "--", ":(top,literal)" + relative],
+                cwd=self.root, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                timeout=max(0.001, min(2.0, 5.0 - self.lookup_seconds)), check=False,
+            )
+            if membership.returncode != 0:
+                return None
+            size = 0
+            lines = 0
+            last = b""
+            with resolved.open("rb") as source:
+                while chunk := source.read(64 * 1024):
+                    size += len(chunk)
+                    if size > MAX_SOURCE_FILE_BYTES:
+                        return None
+                    lines += chunk.count(b"\n")
+                    last = chunk[-1:]
+            after = resolved.stat()
+            if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns) or candidate.resolve(strict=True) != resolved:
+                return None
+            self.line_counts[relative] = lines + (1 if last and last != b"\n" else 0)
+            return self.line_counts[relative]
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+            return None
+        finally:
+            self.lookup_seconds += time.monotonic() - started
+
+    def frame(self, stack: str) -> tuple[str, int] | None:
+        if len(stack) > MAX_DIAGNOSTIC_SCAN_CHARS:
+            return None
+        frames = REPOSITORY_FRAME.findall(stack)
+        if len(frames) > MAX_REPOSITORY_FRAMES:
+            return None
+        for path, line_text in frames:
+            normalized = path.replace("\\", "/")
+            if any(part in (".", "..") for part in normalized.split("/")):
+                continue
+            roots = list(re.finditer(r"(?:^|/)((?:src/backend|tests)/)", normalized))
+            if len(roots) != 1:
+                continue
+            relative = normalized[roots[0].start(1):]
+            if not SOURCE_PATH_PATTERN.fullmatch(relative):
+                continue
+            line_count = self._line_count(relative)
+            line = int(line_text)
+            if line_count is not None and 1 <= line <= line_count:
+                return relative, line
+        return None
+
+
+def closed_sql_error_code(message: str) -> str | None:
+    """Project a provider record only; all unreviewed/ambiguous values stay closed."""
+    if SQL_PROVIDER_HEADER not in message:
+        return None
+    records = list(SQL_ERROR_RECORD.finditer(message))
+    if message.count(SQL_PROVIDER_HEADER) != 1 or message.count("Error Number:") != 1 or len(records) != 1:
+        return "sql_error_unknown"
+    number, state, severity = records[0].groups()
+    if number not in SQL_ERROR_NUMBERS or int(state) > 255 or int(severity) > 255:
+        return "sql_error_unknown"
+    return "sql_error_timeout" if number == "-2" else "sql_error_" + number
 
 
 class SummaryInputFailure(RuntimeError):
@@ -269,8 +459,9 @@ class ClosedDiagnosticMarkerScanner:
 
 
 class ResultCollector:
-    def __init__(self, methods: dict[str, str]) -> None:
+    def __init__(self, methods: dict[str, str], repository_sources: RepositorySourceResolver | None = None) -> None:
         self.methods = methods
+        self.repository_sources = repository_sources or RepositorySourceResolver()
         self.totals: Counter[str] = Counter()
         self.failures: Counter[FailureKey] = Counter()
         self.result_depth: int | None = None
@@ -279,6 +470,8 @@ class ResultCollector:
         self.error_info_depth: int | None = None
         self.message_depth: int | None = None
         self.message_scanner: ClosedDiagnosticMarkerScanner | None = None
+        self.message_parts: list[str] = []
+        self.message_has_unexpected_child = False
         self.message_chars = 0
         self.message_overflow = False
         self.stdout_depth: int | None = None
@@ -286,6 +479,20 @@ class ResultCollector:
         self.stdout_chars = 0
         self.stdout_overflow = False
         self.stdout_has_unexpected_child = False
+        self.exception_kind: str | None = None
+        self.assertion_kind: str | None = None
+        self.stack_depth: int | None = None
+        self.stack_parts: list[str] = []
+        self.stack_chars = 0
+        self.stack_rejected = False
+        self.message_count = 0
+        self.message_source_frame: tuple[str, int] | None = None
+        self.stack_source_frame: tuple[str, int] | None = None
+        self.source_path: str | None = None
+        self.source_line: int | None = None
+        self.source_frame_scope: str | None = None
+        self.stack_count = 0
+        self.sql_error_code: str | None = None
         self.diagnostic_code: str | None = None
         self.diagnostic_ambiguous = False
 
@@ -311,8 +518,26 @@ class ResultCollector:
             self.stdout_chars = 0
             self.stdout_overflow = False
             self.stdout_has_unexpected_child = False
+            self.exception_kind = None
+            self.assertion_kind = None
+            self.stack_depth = None
+            self.stack_parts = []
+            self.stack_chars = 0
+            self.stack_rejected = False
+            self.message_count = 0
+            self.message_source_frame = None
+            self.stack_source_frame = None
+            self.source_path = None
+            self.source_line = None
+            self.source_frame_scope = None
+            self.stack_count = 0
+            self.sql_error_code = None
             self.diagnostic_code = None
             self.diagnostic_ambiguous = False
+        elif self.stack_depth is not None and _depth > self.stack_depth:
+            self.stack_rejected = True
+        elif self.message_depth is not None and _depth > self.message_depth:
+            self.message_has_unexpected_child = True
         elif self.stdout_depth is not None and _depth > self.stdout_depth:
             self.stdout_has_unexpected_child = True
         elif (
@@ -340,16 +565,41 @@ class ResultCollector:
         elif (
             self.failure_identity is not None
             and self.error_info_depth is not None
+            and name == "StackTrace"
+            and _depth == self.error_info_depth + 1
+        ):
+            self.stack_depth = _depth
+            self.stack_parts = []
+            self.stack_chars = 0
+            self.stack_rejected = False
+            self.stack_count += 1
+        elif (
+            self.failure_identity is not None
+            and self.error_info_depth is not None
             and name == "Message"
             and _depth == self.error_info_depth + 1
         ):
+            self.message_count += 1
             self.message_depth = _depth
             self.message_scanner = ClosedDiagnosticMarkerScanner()
+            self.message_parts = []
+            self.message_has_unexpected_child = False
             self.message_chars = 0
             self.message_overflow = False
 
     def end(self, name: str, depth: int) -> None:
-        if name == "StdOut" and depth == self.stdout_depth:
+        if name == "StackTrace" and depth == self.stack_depth:
+            self.stack_source_frame = None
+            self.source_line = None
+            self.source_frame_scope = None
+            if not self.stack_rejected and self.stack_count == 1 and self.failure_identity is not None:
+                stack = "".join(self.stack_parts)
+                self.source_line, self.source_frame_scope = matching_source_frame(stack, self.failure_identity[0])
+                self.stack_source_frame = self.repository_sources.frame(stack)
+            self.stack_depth = None
+            self.stack_parts = []
+            self.stack_chars = 0
+        elif name == "StdOut" and depth == self.stdout_depth:
             code = None
             if (
                 not self.stdout_overflow
@@ -375,10 +625,11 @@ class ResultCollector:
             self.stdout_has_unexpected_child = False
         elif name == "Message" and depth == self.message_depth:
             code = None
-            if not self.message_overflow and self.message_scanner is not None:
+            if not self.message_overflow and not self.message_has_unexpected_child and self.message_scanner is not None:
                 code = self.message_scanner.finish()
             if (
                 self.message_overflow
+                or self.message_has_unexpected_child
                 or code in FINANCE_WORK_LEGACY_DIAGNOSTIC_CODES
                 or (
                     self.message_scanner is not None
@@ -388,6 +639,25 @@ class ResultCollector:
                 self._reject_diagnostic()
             else:
                 self._accept_diagnostic(code)
+            kind = None
+            if not self.message_overflow and not self.message_has_unexpected_child:
+                message = "".join(self.message_parts)
+                if self.message_count == 1:
+                    self.message_source_frame = self.repository_sources.frame(message)
+                kind = closed_assertion_kind(message)
+                exception = closed_exception_kind(message)
+                if exception is not None:
+                    self.exception_kind = exception if self.exception_kind is None else "unknown"
+            if kind is not None:
+                self.assertion_kind = kind if self.assertion_kind is None else "unknown"
+            if not self.message_overflow and not self.message_has_unexpected_child:
+                sql_code = closed_sql_error_code("".join(self.message_parts))
+                if sql_code is not None:
+                    self.sql_error_code = sql_code if self.sql_error_code is None else "sql_error_unknown"
+            if self.message_count != 1 or self.message_overflow or self.message_has_unexpected_child:
+                self.message_source_frame = None
+            self.message_parts = []
+            self.message_has_unexpected_child = False
             self.message_depth = None
             self.message_scanner = None
             self.message_chars = 0
@@ -405,7 +675,14 @@ class ResultCollector:
                     and test_fqn != FINANCE_WORK_LEGACY_TEST_FQN
                 ):
                     diagnostic = None
-                self.failures[(test_fqn, category, diagnostic)] += 1
+                # Inner exception Message frames precede the outer wrapper stack.
+                if self.message_source_frame is not None:
+                    self.source_path, self.source_line = self.message_source_frame
+                    self.source_frame_scope = "repository_message_frame"
+                elif self.stack_source_frame is not None:
+                    self.source_path, self.source_line = self.stack_source_frame
+                    self.source_frame_scope = "repository_source"
+                self.failures[(test_fqn, category, diagnostic, self.sql_error_code, self.assertion_kind, self.source_line, self.exception_kind, self.source_frame_scope, self.source_path)] += 1
             self.result_depth = None
             self.failure_identity = None
             self.output_depth = None
@@ -423,6 +700,18 @@ class ResultCollector:
             self.diagnostic_ambiguous = False
 
     def data(self, text: str) -> None:
+        if self.stack_depth is not None:
+            remaining = MAX_DIAGNOSTIC_SCAN_CHARS - self.stack_chars
+            if remaining <= 0:
+                if text:
+                    self.stack_rejected = True
+                return
+            if remaining < len(text):
+                self.stack_rejected = True
+            if text:
+                self.stack_parts.append(text[:remaining])
+            self.stack_chars += min(len(text), remaining)
+            return
         if self.stdout_scanner is not None:
             remaining = MAX_DIAGNOSTIC_SCAN_CHARS - self.stdout_chars
             if remaining <= 0:
@@ -440,6 +729,7 @@ class ResultCollector:
                 if text:
                     self.message_overflow = True
                 return
+            self.message_parts.append(text[:remaining])
             consumed = self.message_scanner.feed(text, remaining)
             self.message_chars += consumed
             if consumed < len(text):
@@ -481,14 +771,14 @@ def trx_input_size(path: Path) -> int:
 
 
 def parse_trx(
-    path: Path, input_byte_count: int | None = None
+    path: Path, input_byte_count: int | None = None, repository_sources: RepositorySourceResolver | None = None
 ) -> tuple[Counter[str], Counter[FailureKey]]:
     if input_byte_count is None:
         input_byte_count = trx_input_size(path)
     try:
         definitions = DefinitionCollector()
         stream_xml(path, definitions)
-        results = ResultCollector(definitions.methods)
+        results = ResultCollector(definitions.methods, repository_sources)
         stream_xml(path, results)
     except (RejectedXml, expat.ExpatError, OSError) as exception:
         raise SummaryInputFailure(
@@ -535,9 +825,10 @@ def build_summary(
 
     totals: Counter[str] = Counter()
     failures: Counter[FailureKey] = Counter()
+    repository_sources = RepositorySourceResolver()
     for path, input_byte_count in zip(trx_paths, input_sizes, strict=True):
         try:
-            file_totals, file_failures = parse_trx(path, input_byte_count)
+            file_totals, file_failures = parse_trx(path, input_byte_count, repository_sources)
         except SummaryInputFailure as failure:
             raise SummaryInputFailure(
                 failure.category, len(trx_paths), failure.input_byte_count
@@ -546,24 +837,31 @@ def build_summary(
         failures.update(file_failures)
 
     unresolved_failure_count = sum(
-        count for (test_fqn, _, _), count in failures.items() if test_fqn is None
+        count for (test_fqn, _, _, _, _, _, _, _, _), count in failures.items() if test_fqn is None
     )
     safe_groups = sorted(
         (
             {
                 **{"testFqn": test_fqn, "category": category, "count": count},
                 **({"diagnosticCode": diagnostic_code} if diagnostic_code is not None else {}),
+                **({"sqlErrorCode": sql_error_code} if sql_error_code is not None else {}),
+                **({"assertionKind": assertion_kind} if assertion_kind is not None else {}),
+                **({"exceptionKind": exception_kind} if exception_kind is not None else {}),
+                **({"sourceLine": source_line} if source_line is not None else {}),
+                **({"sourceFrameScope": source_frame_scope} if source_frame_scope is not None else {}),
+                **({"sourcePath": source_path} if source_path is not None else {}),
             }
-            for (test_fqn, category, diagnostic_code), count in failures.items()
+            for (test_fqn, category, diagnostic_code, sql_error_code, assertion_kind, source_line, exception_kind, source_frame_scope, source_path), count in failures.items()
             if test_fqn is not None
         ),
         key=lambda item: (
-            str(item["testFqn"]), str(item["category"]), str(item.get("diagnosticCode", ""))
+            str(item["testFqn"]), str(item["category"]), str(item.get("diagnosticCode", "")), str(item.get("sqlErrorCode", "")), str(item.get("assertionKind", "")), int(item.get("sourceLine", 0)), str(item.get("exceptionKind", "")), str(item.get("sourceFrameScope", "")), str(item.get("sourcePath", ""))
         ),
     )
     reported_groups = safe_groups[:failure_group_limit]
     return {
         "schemaVersion": 2,
+        **TRX_EVIDENCE_SCOPE,
         "sourceHead": source_head.lower(),
         "testedCommit": tested_commit.lower(),
         "job": job,
@@ -590,6 +888,7 @@ def build_failure_summary(
 ) -> dict[str, object]:
     return {
         "schemaVersion": 2,
+        **TRX_EVIDENCE_SCOPE,
         "sourceHead": source_head.lower(),
         "testedCommit": tested_commit.lower(),
         "job": job,
@@ -651,7 +950,9 @@ def produce(args: argparse.Namespace) -> int:
             ),
         )
         print(
-            f"CI_SAFE_TEST_SUMMARY: FAIL category={failure.category}",
+            f"CI_SAFE_TEST_SUMMARY: FAIL category={failure.category} "
+            "scope=observed_trx_results_only groupCompleteness=unknown "
+            "jobAcceptance=not_evaluated",
             file=sys.stderr,
         )
         return 1
@@ -660,7 +961,9 @@ def produce(args: argparse.Namespace) -> int:
     print(
         "CI_SAFE_TEST_SUMMARY: "
         f"job={args.job} phase={args.phase} total={summary['totals']['total']} "
-        f"failed={summary['totals']['failed']} skipped={summary['totals']['skipped']}"
+        f"failed={summary['totals']['failed']} skipped={summary['totals']['skipped']} "
+        "scope=observed_trx_results_only groupCompleteness=unknown "
+        "jobAcceptance=not_evaluated"
     )
     return 0
 

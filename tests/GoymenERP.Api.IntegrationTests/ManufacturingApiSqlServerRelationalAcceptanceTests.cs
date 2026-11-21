@@ -1,3 +1,5 @@
+using System.IO.Compression;
+using System.Text;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -7,6 +9,9 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
+using GoymenERP.Modules.Counterparty.Domain.Accounts;
+using GoymenERP.Modules.Counterparty.Domain.Parties;
+using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Domain.Users;
@@ -24,6 +29,7 @@ using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
+using GoymenERP.Modules.Organization.Infrastructure.Seeding;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
@@ -120,14 +126,45 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             ("@c", CompanyA), ("@ids", JsonSerializer.Serialize(locationIds))));
     }
 
+    private static async Task<string> SafeProcessApprovalProblemCodeAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            await using var body = await response.Content.ReadAsStreamAsync();
+            var buffer = new byte[16 * 1024 + 1];
+            var count = await body.ReadAtLeastAsync(buffer, buffer.Length, throwOnEndOfStream: false);
+            if (count > 16 * 1024) return "unknown";
+            using var document = JsonDocument.Parse(buffer.AsMemory(0, count));
+            if (document.RootElement.ValueKind != JsonValueKind.Object
+                || !document.RootElement.TryGetProperty("code", out var code)
+                || code.ValueKind != JsonValueKind.String) return "unknown";
+            return code.GetString() switch
+            {
+                ManufacturingPaintCodesV1.Required => ManufacturingPaintCodesV1.Required,
+                ManufacturingPaintCodesV1.Ineligible => ManufacturingPaintCodesV1.Ineligible,
+                ManufacturingPaintCodesV1.VersionConflict => ManufacturingPaintCodesV1.VersionConflict,
+                ManufacturingPaintCodesV1.Unavailable => ManufacturingPaintCodesV1.Unavailable,
+                ManufacturingRuleCodes.PlanSelfApproval => ManufacturingRuleCodes.PlanSelfApproval,
+                ManufacturingRuleCodes.DueDateInPast => ManufacturingRuleCodes.DueDateInPast,
+                ManufacturingRuleCodes.PlanDueDateRequired => ManufacturingRuleCodes.PlanDueDateRequired,
+                _ => "unknown",
+            };
+        }
+        catch (JsonException) { return "unknown"; }
+    }
+
     [SqlServerFact]
     public async Task Each_locked_organization_process_persists_reopens_and_snapshots_into_its_order()
     {
         await using var run = await Run.StartAsync();
         var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA,
-            [.. AllWrites, ErpPermissions.ManufacturingPlansRead]);
+            [.. AllWrites, ErpPermissions.ManufacturingPlansRead, ErpPermissions.CounterpartyPartiesRead,
+                ProductPaintMembershipPermissionsV1.Manage]);
         using var client = run.ClientFor(user, CompanyA);
         var roll = await run.StockedLabelAsync("SYN-MFG-WORK-CENTER-PLAN");
+        var paint = await run.PaintSelectionAsync(client);
+        var approver = await run.ApproverAsync(CompanyA);
+        await run.GrantAsync(TestUsers.SiteAuditReader, CompanyA, [ErpPermissions.CounterpartyPartiesRead]);
 
         foreach (var process in new[]
         {
@@ -142,7 +179,8 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             var workCenter = await run.WorkCenterOfKindAsync(CompanyA, kind);
             // U3-a: each approval allocates 100 kg of the roll and moves its label version; each plan names the current one.
             var request = new SavePlanRequestV1(Guid.NewGuid(), workCenter,
-                [new PlannedInputRequestV1(roll.Id, "100", await run.CurrentLabelVersionAsync(roll.Id))], null);
+                [new PlannedInputRequestV1(roll.Id, "100", await run.CurrentLabelVersionAsync(roll.Id))], null,
+                ProcessSpec: process == ManufacturingProcess.Paint ? new PlanProcessSpecRequestV1(PaintSelection: paint) : null);
             var response = await client.PostWithKeyAsync($"{Base}/plans", request);
             Assert.Equal(HttpStatusCode.Created, response.StatusCode);
             var created = (await response.Content.ReadFromJsonAsync<PlanViewV1>())!;
@@ -154,9 +192,13 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             Assert.Equal((created.PlanId, workCenter, kind),
                 (reopened.PlanId, reopened.WorkCenterId, reopened.Process));
 
-            var approval = await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{created.PlanId:D}/approval",
+            await run.EnterTerminAsync(created.PlanId);
+            var approval = await approver.PostWithKeyAsync($"{Base}/plans/{created.PlanId:D}/approval",
                 new ApprovePlanRequestV1(created.Version));
-            Assert.Equal(HttpStatusCode.OK, approval.StatusCode);
+            var approvalProblemCode = approval.StatusCode == HttpStatusCode.OK
+                ? "not_applicable" : await SafeProcessApprovalProblemCodeAsync(approval);
+            Assert.True(approval.StatusCode == HttpStatusCode.OK,
+                $"Expected HTTP 200; actual HTTP {(int)approval.StatusCode}; process={process}; public problem code={approvalProblemCode}.");
             var orderId = Guid.NewGuid();
             var orderResponse = await client.PostWithKeyAsync($"{Base}/orders",
                 new CreateOrderRequestV1(orderId, created.PlanId));
@@ -202,6 +244,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         Assert.Equal(correlation, replay.Headers.GetValues("Idempotency-Original-Correlation-Id").Single());
 
         // U2-d (URT-D2): another user than the preparer approves, under its own correlation.
+        await run.EnterTerminAsync(plan.PlanId);
         var approver = await run.ApproverAsync(CompanyA);
         var approverCorrelation = approver.DefaultRequestHeaders.GetValues("X-Correlation-Id").Single();
         var approved = await approver.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval", new ApprovePlanRequestV1(1));
@@ -235,13 +278,32 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         Assert.Equal(("GoodOutputMass", "900", "900", "0"), (detail.RemainingTarget.Basis, detail.RemainingTarget.TargetKg,
             detail.RemainingTarget.AchievedKg, detail.RemainingTarget.RemainingKg));
 
-        // One plan, one order, three facts; five audit events under the caller's correlation (no replay event) and the
-        // approval under the approver's.
+        // One plan, one order and three facts. Output also records its independent label code and lineage;
+        // every caller event appears exactly once, with approval under the other user's correlation.
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Plans"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Orders"));
         Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Facts"));
-        Assert.Equal(5, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType LIKE N'Manufacturing.%' AND CorrelationId = @c",
-            ("@c", correlation)));
+        Assert.Equal(new[]
+        {
+            "manufacturing.input.issued.v1",
+            "manufacturing.order.created.v1",
+            "manufacturing.output.declared.v1",
+            "manufacturing.output.label-code.recorded.v1",
+            "manufacturing.output.lineage.recorded.v1",
+            "manufacturing.plan.created.v1",
+            "manufacturing.wip.measured.v1",
+        }, await run.ManufacturingAuditEventTypesAsync(CompanyA, correlation));
+        Assert.NotNull(plan.PreparedBy);
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            """
+            SELECT COUNT(*) FROM audit.AuditEvents
+            WHERE CompanyId = @company AND CorrelationId = @c AND EntityType LIKE N'Manufacturing.%'
+              AND (ActorId <> @actor
+                OR EntityType <> CASE WHEN EventType = N'manufacturing.plan.created.v1'
+                    THEN N'Manufacturing.ProductionPlan' ELSE N'Manufacturing.ProductionOrder' END
+                OR EntityId <> CASE WHEN EventType = N'manufacturing.plan.created.v1' THEN @plan ELSE @order END);
+            """, ("@company", CompanyA), ("@c", correlation), ("@actor", plan.PreparedBy!),
+            ("@plan", plan.PlanId.ToString("D")), ("@order", orderId.ToString("D"))));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.plan.approved.v1' AND CorrelationId = @c",
             ("@c", approverCorrelation)));
@@ -392,6 +454,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             Assert.Equal(("Draft", 1L, "1000.12"), (view.Status, view.Version, Assert.Single(view.Inputs).PlannedKg));
 
             // The read answers from STORAGE: approving through another command changes what it returns.
+            await run.EnterTerminAsync(created.PlanId);
             Assert.Equal(HttpStatusCode.OK,
                 (await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{created.PlanId}/approval", new ApprovePlanRequestV1(1)))
                     .StatusCode);
@@ -441,7 +504,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public async Task Another_companys_order_is_not_found_and_the_company_comes_only_from_the_context()
     {
-        await using var run = await Run.StartAsync();
+        await using var run = await Run.StartAsync(seedUnservedCompany: true);
         var userA = await run.GrantAsync(TestUsers.CompanyA, CompanyA, AllWrites);
         var userB = await run.GrantAsync(TestUsers.CompanyB, CompanyB, AllWrites);
         var (orderId, roll) = await run.OpenOrderAsync(userA);
@@ -687,6 +750,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
 
         // The approval replays from the log: a lost answer retried is 200, not a version conflict. U2-d: another user
         // than the preparer approves.
+        await run.EnterTerminAsync(plan.PlanId);
         var approver = await run.ApproverAsync(CompanyA);
         var approverCorrelation = approver.DefaultRequestHeaders.GetValues("X-Correlation-Id").Single();
         var approved = await approver.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval", new ApprovePlanRequestV1(1), "approve-1");
@@ -736,7 +800,8 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         async Task<HttpResponseMessage> AttemptAsync()
         {
             using var client = run.ClientFor(userA, CompanyA);
-            start.SignalAndWait(TimeSpan.FromSeconds(30));
+            if (!start.SignalAndWait(TimeSpan.FromSeconds(30)))
+                throw new TimeoutException("Concurrent HTTP start barrier timed out before both attempts arrived.");
             return await client.PostWithKeyAsync($"{Base}/orders/{orderId}/input-issues", fact, "race-1");
         }
 
@@ -1129,6 +1194,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             Assert.Equal(commandsBefore, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Commands"));
 
             // The status filter follows the stored status: the approved plan leaves the draft list.
+            await run.EnterTerminAsync(first.PlanId);
             Assert.Equal(HttpStatusCode.OK, (await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{first.PlanId}/approval",
                 new ApprovePlanRequestV1(1))).StatusCode);
             var drafts = (await client.GetFromJsonAsync<PlanListViewV1>($"{Base}/plans?status=Draft"))!;
@@ -1236,7 +1302,8 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         public SqlServerRelationalApiFactory Factory { get; }
         public DateOnly UtcToday => DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
 
-        public static async Task<Run> StartAsync(bool useSqlSettings = false, DateTimeOffset? clockAt = null)
+        public static async Task<Run> StartAsync(bool useSqlSettings = false, DateTimeOffset? clockAt = null,
+            bool seedUnservedCompany = false)
         {
             var baseConnectionString = Environment.GetEnvironmentVariable(
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
@@ -1250,6 +1317,17 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             TimeProvider clock = useSqlSettings ? new FixedTimeProvider(clockAt ?? At) : TimeProvider.System;
             var factory = new SqlServerRelationalApiFactory(baseConnectionString, services =>
             {
+                if (seedUnservedCompany)
+                {
+                    // A real active Organization root is required before the Settings-unavailable boundary.
+                    // This disposable company has no kg source, invoice capability or topology templates.
+                    services.PostConfigure<OrganizationSeedOptions>(options => options.Companies.Add(new SeedCompany
+                    {
+                        Id = NoSettingsSourceCompany, Code = "SENTETIK-MFG-NO-SETTINGS",
+                        LegalName = "SENTETIK manufacturing Settings boundary", IsPlaceholder = true,
+                        InvoiceCapable = false, ApplyTopologyTemplates = false,
+                    }));
+                }
                 services.RemoveAll<ProductRuntimeOptions>();
                 services.AddSingleton(new ProductRuntimeOptions(databaseConnectionString,
                     new ProductPilotIssuerBinding(Guid.NewGuid(), Guid.NewGuid()), new byte[32]));
@@ -1473,7 +1551,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         /// A real company-A Inventory label with a physical position. The version is read after the owner
         /// store completes its writes so each Manufacturing request carries the exact owner version.
         /// </summary>
-        public async Task<ParentRollFixture> StockedLabelAsync(string code)
+        public async Task<ParentRollFixture> StockedLabelAsync(string code, bool costed = false)
         {
             var location = await ScalarAsync<Guid>(
                 "SELECT TOP (1) Id FROM organization.Locations WHERE CompanyId = @c ORDER BY Id", ("@c", CompanyA));
@@ -1485,10 +1563,20 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             var writer = Guid.NewGuid();
             await using var scope = InventoryStore(writer);
             await scope.Store.SaveLotAsync(new MaterialLot(Lot, CompanyA, productId), [label], InventoryMetadata(writer));
-            await scope.Store.RecordMovementAsync(
-                InventoryMovement(new StockMovementLine(position, StockDirection.In,
-                    GoymenERP.Modules.Inventory.Domain.Quantities.Kilograms.Positive(1000.125m))),
-                InventoryMetadata(writer));
+            var movement = InventoryMovement(new StockMovementLine(position, StockDirection.In,
+                GoymenERP.Modules.Inventory.Domain.Quantities.Kilograms.Positive(1000.125m)));
+            if (costed)
+            {
+                // Explicit disposable receipt-price fixture only. The real owner writes both cost pools and immutable
+                // issue stamps; no Manufacturing source or calculator is replaced by a successful fake.
+                var acceptance = Guid.NewGuid();
+                movement = new StockMovement(movement.Id, CompanyA, StockMovementKind.Receipt, At,
+                    new StockSourceReference(InventoryGoodsReceiptContractV1.SourceKind, acceptance), movement.Lines);
+                scope.Store.UseReceiptCost(movement.Id, new(CompanyA, acceptance, Guid.NewGuid(), Guid.NewGuid(),
+                    null, null, 10m, 2m, new(InventoryIssueCostCurrencyStatusV1.FunctionalCurrency, null, null, null,
+                        "SYNTHETIC-manufacturing-functional-currency-v1", null), "SYNTHETIC-manufacturing-receipt-price-v1", "{}", null, null));
+            }
+            await scope.Store.RecordMovementAsync(movement, InventoryMetadata(writer));
             var version = await ScalarAsync<long>(
                 "SELECT Version FROM inventory.Labels WHERE CompanyId = @c AND Id = @id",
                 ("@c", CompanyA), ("@id", label.Id));
@@ -1500,16 +1588,43 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             (await ScalarAsync<long>("SELECT Version FROM inventory.Labels WHERE Id = @id", ("@id", labelId)))
                 .ToString(System.Globalization.CultureInfo.InvariantCulture);
 
+        /// <summary>
+        /// SAT-D318: a quality block of a <see cref="StockedLabelAsync"/> label through Inventory's owner store. These
+        /// kilograms leave Free stock for Blocked stock at the same place, whatever the label's allocations hold.
+        /// </summary>
+        public async Task BlockAsync(Guid labelId, decimal kilograms)
+        {
+            var location = await ScalarAsync<Guid>(
+                "SELECT TOP (1) Id FROM organization.Locations WHERE CompanyId = @c ORDER BY Id", ("@c", CompanyA));
+            var code = await ScalarAsync<string>(
+                "SELECT Code FROM inventory.Labels WHERE CompanyId = @c AND Id = @id", ("@c", CompanyA), ("@id", labelId));
+            var label = new MaterialLabel(labelId, CompanyA, code, ProductFixture.ProductId, Lot,
+                ProductFixture.ProductVersion);
+            var free = new StockPosition(CompanyA, new StockOwner(StockPartyKind.Company, CompanyA),
+                new StockCustodian(StockPartyKind.Company, CompanyA), location, label, BlockState.Free);
+            var quantity = GoymenERP.Modules.Inventory.Domain.Quantities.Kilograms.Positive(kilograms);
+            var writer = Guid.NewGuid();
+            await using var scope = InventoryStore(writer);
+            Assert.Equal(InventoryWriteOutcome.Recorded, await scope.Store.RecordMovementAsync(
+                new StockMovement(Guid.NewGuid(), CompanyA, StockMovementKind.Block, At,
+                    new StockSourceReference("synthetic.manufacturing.block", Guid.NewGuid()),
+                    [new StockMovementLine(free, StockDirection.Out, quantity),
+                        new StockMovementLine(free.WithBlock(BlockState.Blocked), StockDirection.In, quantity)]),
+                InventoryMetadata(writer)));
+        }
+
         /// <summary>An approved plan of one roll and its open order in company A, through the API.</summary>
         public async Task<(Guid OrderId, Guid Roll)> OpenOrderAsync(
             string user,
-            ManufacturingProcess process = ManufacturingProcess.Slitting)
+            ManufacturingProcess process = ManufacturingProcess.Slitting,
+            bool costedInput = false)
         {
             using var client = ClientFor(user, CompanyA);
-            var roll = await StockedLabelAsync($"SYN-MFG-ORDER-{Guid.NewGuid():N}");
+            var roll = await StockedLabelAsync($"SYN-MFG-ORDER-{Guid.NewGuid():N}", costedInput);
             var plan = new SavePlanRequestV1(Guid.NewGuid(), await WorkCenterOfKindAsync(CompanyA, process.ToString()),
                 [new PlannedInputRequestV1(roll.Id, "1000", roll.Version)], null);
             Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/plans", plan)).StatusCode);
+            await EnterTerminAsync(plan.PlanId);
             Assert.Equal(HttpStatusCode.OK, (await (await ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval",
                 new ApprovePlanRequestV1(1))).StatusCode);
             var orderId = Guid.NewGuid();
@@ -1630,6 +1745,62 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
                 .EnsureAsync(CancellationToken.None);
         }
 
+        /// <summary>Real Product Excel membership and real Cari supplier records; no replacement paint source.</summary>
+        public async Task<PlanPaintSelectionV1> PaintSelectionAsync(HttpClient client)
+        {
+            var content = Convert.ToBase64String(PaintMembershipWorkbook(ProductFixture.Code));
+            const string memberships = "/api/v1/product-paint-memberships";
+            using var validated = await client.PostWithKeyAsync(memberships + "/imports/validate",
+                new ValidateProductPaintMembershipImportV1("synthetic-paint.xlsx", content, null));
+            Assert.Equal(HttpStatusCode.OK, validated.StatusCode);
+            var preview = (await validated.Content.ReadFromJsonAsync<ProductPaintMembershipImportPreviewV1>())!;
+            Assert.True(preview.Ready);
+            Assert.Equal(ProductFixture.ProductId, Assert.Single(preview.Rows).ProductId);
+            using var imported = await client.PostWithKeyAsync(memberships + "/imports",
+                new ApplyProductPaintMembershipImportV1(preview.Version, "synthetic-paint.xlsx", content,
+                    preview.ProductCodeColumn, preview.FileSha256, preview.PreviewToken, "Synthetic paint source", "Synthetic explicit membership"));
+            Assert.Equal(HttpStatusCode.OK, imported.StatusCode);
+            var member = Assert.Single((await imported.Content.ReadFromJsonAsync<ProductPaintMembershipMutationV1>())!.ChangedEntries);
+            Assert.Equal(ProductFixture.ProductId, member.ProductId);
+
+            // Seed the disposable fixture through the Cari owner's own domain/model, then let the REAL supplier reader validate it.
+            await using var scope = Factory.Services.CreateAsyncScope();
+            scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
+            var counterparties = scope.ServiceProvider.GetRequiredService<CounterpartyDbContext>();
+            var supplier = new Party(Guid.NewGuid(), PartyCode.FromSequence(900001), PartyKind.LegalEntity, "Synthetic paint supplier");
+            var account = new CompanyPartyAccount(Guid.NewGuid(), CompanyA, supplier.Id, PartyRole.Supplier);
+            counterparties.Parties.Add(supplier);
+            counterparties.CompanyPartyAccounts.Add(account);
+            await counterparties.SaveChangesAsync();
+            return new PlanPaintSelectionV1(member.ProductId, member.ProductVersion, member.MembershipVersion,
+                member.SourceVersion, supplier.Id, account.Id,
+                supplier.Version.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                account.Version.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        private static byte[] PaintMembershipWorkbook(string productCode)
+        {
+            using var stream = new MemoryStream();
+            using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+            {
+                void Entry(string path, string xml)
+                {
+                    var entry = archive.CreateEntry(path);
+                    entry.LastWriteTime = new DateTimeOffset(1980, 1, 1, 0, 0, 0, TimeSpan.Zero);
+                    using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(false));
+                    writer.Write(xml);
+                }
+                Entry("[Content_Types].xml", "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"xml\" ContentType=\"application/xml\"/></Types>");
+                Entry("xl/workbook.xml", "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><sheets><sheet name=\"Paint\" sheetId=\"1\" r:id=\"rId1\"/></sheets></workbook>");
+                Entry("xl/_rels/workbook.xml.rels", "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/></Relationships>");
+                Entry("xl/worksheets/sheet1.xml", "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>"
+                    + "<row r=\"1\"><c r=\"A1\" t=\"inlineStr\"><is><t>" + ProductPaintMembershipLimitsV1.DefaultProductCodeColumn + "</t></is></c></row>"
+                    + "<row r=\"2\"><c r=\"A2\" t=\"inlineStr\"><is><t>" + System.Security.SecurityElement.Escape(productCode)
+                    + "</t></is></c></row></sheetData></worksheet>");
+            }
+            return stream.ToArray();
+        }
+
         public ProductStockCandidateFixtureOutput ProductFixture { get; private set; } = null!;
 
         private InventoryStoreScope InventoryStore(Guid writer)
@@ -1652,6 +1823,29 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         private static StockMovement InventoryMovement(params StockMovementLine[] lines) =>
             new(Guid.NewGuid(), CompanyA, StockMovementKind.Receipt, At,
                 new StockSourceReference("synthetic.manufacturing.parent-roll", Guid.NewGuid()), lines);
+
+        public async Task<string[]> ManufacturingAuditEventTypesAsync(Guid companyId, string correlationId)
+        {
+            await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
+            await connection.OpenAsync();
+            await using var command = new SqlCommand(
+                """
+                SELECT EventType FROM audit.AuditEvents
+                WHERE CompanyId = @company AND CorrelationId = @correlation
+                  AND EntityType LIKE N'Manufacturing.%'
+                ORDER BY EventType COLLATE Latin1_General_100_BIN2;
+                """, connection);
+            command.Parameters.AddWithValue("@company", companyId);
+            command.Parameters.AddWithValue("@correlation", correlationId);
+            await using var reader = await command.ExecuteReaderAsync();
+            var eventTypes = new List<string>();
+            while (await reader.ReadAsync())
+            {
+                eventTypes.Add(reader.GetString(0));
+            }
+
+            return eventTypes.ToArray();
+        }
 
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)
         {
@@ -1678,6 +1872,17 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
 
             return await command.ExecuteNonQueryAsync();
         }
+
+        /// <summary>
+        /// URT-D66 (2): a plan without a termin is not approved. A fixture shortcut for the facts here, which are about
+        /// what follows the approval: the draft plan's row takes a termin (revision 1) as the termin command would leave it,
+        /// without that command's audit event or command record, so those facts' counts stay theirs. The plan version does
+        /// not move (the termin never moves it). The termin command itself is proven at the store and in its own facts.
+        /// </summary>
+        public async Task EnterTerminAsync(Guid planId) => Assert.Equal(1, await ExecuteAsync(
+            "UPDATE manufacturing.Plans SET RequestedDueDate = CONVERT(date, @day, 23), DueDateRevision = 1 "
+            + "WHERE Id = @plan AND DueDateRevision = 0",
+            ("@day", "2026-12-31"), ("@plan", planId)));
 
         public Task<int> InsertToleranceAsync(
             Guid companyId,

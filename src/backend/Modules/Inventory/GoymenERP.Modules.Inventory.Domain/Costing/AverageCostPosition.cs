@@ -49,7 +49,11 @@ public enum AverageCostUnreadableReason
     /// <summary>OPEN-INV-AVGCOST-UNIT-CONVERSION (NEEDS-SINAN): the cost is not per stock kilogram.</summary>
     UnitConversion = 2,
 
-    /// <summary>OPEN-INV-AVGCOST-FX (NEEDS-SINAN): rate and date for a foreign-currency cost are not decided.</summary>
+    /// <summary>
+    /// BS-1: a foreign-currency purchase cost whose TL value is not known yet. TL converts only with the supplier invoice's
+    /// official rate; until the invoice is recorded the TL cost is Unavailable (no provisional rate, no correction movement).
+    /// Sticky like every reason: how a later invoice reopens the position is not decided here.
+    /// </summary>
     ForeignCurrency = 3,
 
     /// <summary>
@@ -58,7 +62,11 @@ public enum AverageCostUnreadableReason
     /// </summary>
     LandedOrAdditionalCost = 4,
 
-    /// <summary>OPEN-INV-AVGCOST-RETURN (NEEDS-SINAN): effect of sales and purchase returns.</summary>
+    /// <summary>
+    /// A return whose cost effect cannot be read: an unclassified return, a customer or purchase return without its
+    /// original unit cost (SAT-D303, SAT-D306 (b)), or a purchase return that would leave a cost difference whose posting
+    /// is not specified (SAT-D306 (c), fail-closed). The persisted number stays 5.
+    /// </summary>
     Return = 5,
 
     /// <summary>OPEN-INV-AVGCOST-MIXED-SOURCE (NEEDS-SINAN, SAT-D258): produced stock is not part of the purchase average.</summary>

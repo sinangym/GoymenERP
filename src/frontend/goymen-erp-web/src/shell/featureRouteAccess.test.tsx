@@ -44,7 +44,7 @@ const USER = '11111111-1111-1111-1111-111111111111'
 const DIRECTORY = [{ id: COMPANY, code: 'GDC', legalName: 'Göymen A', isPlaceholder: false }]
 
 /** Business endpoints of the lanes: an ungranted route must reach none of them. */
-const BUSINESS_PATHS = ['/api/v1/products', '/api/v1/organization/sites', '/api/v1/organization/locations', '/api/v1/work/approvals']
+const BUSINESS_PATHS = ['/api/v1/products', '/api/v1/organization/sites', '/api/v1/organization/locations', '/api/v1/work/approvals', '/api/v1/work/queue']
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -61,7 +61,7 @@ function installFetch(granted: readonly string[]): string[] {
       const url = String(input)
       calls.push(url)
       if (url.includes('/identity/me'))
-        return json({ userId: USER, displayName: 'Kullanıcı A', email: null, allowedCompanyIds: [COMPANY], authenticationSessionBinding: null })
+        return json({ userId: USER, displayName: 'Kullanıcı A', email: null, allowedCompanyIds: [COMPANY], mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: null })
       if (url.includes('/organization/companies')) return json(DIRECTORY)
       if (url.includes('/shell/capabilities'))
         return json({

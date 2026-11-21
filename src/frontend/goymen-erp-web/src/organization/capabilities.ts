@@ -32,6 +32,7 @@
  *   organization.sites.read        <- organization.sites.read
  *   organization.work-centers.list <- organization.work-centers.read
  *   organization.work-centers.detail <- organization.work-centers.read (ORG-04, the row's own read)
+ *   organization.company.tax-id    <- organization.context.read (ORG-05; the VKN itself needs a tax-id name)
  *
  * Reading a location and being allowed to deactivate it are DIFFERENT authorities on
  * the server — the endpoints carry different `RequireAuthorization` attributes — so
@@ -116,6 +117,8 @@ export const ORGANIZATION_CAPABILITY = {
    *   organization.locations.edit      <- locations.read + organization.locations.write (ORG-02)
    *   organization.work-centers.create <- work-centers.read + locations.read + organization.work-centers.write (ORG-03)
    *   organization.work-centers.edit   <- work-centers.read + organization.work-centers.write (ORG-04)
+   *   organization.work-centers.calendar.edit
+   *                                    <- work-centers.read + organization.work-centers.calendar.write (B-15)
    *
    * The create controls also need the list they pick a parent from (sites for a location, locations for a work
    * centre), which is why those reads are part of their grant.
@@ -125,6 +128,22 @@ export const ORGANIZATION_CAPABILITY = {
   locationEdit: 'organization.locations.edit',
   workCenterCreate: 'organization.work-centers.create',
   workCenterEdit: 'organization.work-centers.edit',
+  /**
+   * B-15 — the work centre's shift/calendar edit on the ORG-04 card. A control, like the master edit, on its own
+   * write permission: the calendar READ is part of the card and needs only the card's grant.
+   */
+  workCenterCalendarEdit: 'organization.work-centers.calendar.edit',
+  /**
+   * ORG-05 (KIM-S23, KIM-D28) — the active company's VKN and its change requests.
+   * Route `/ayarlar/organizasyon/sirket-vergi-no`.
+   *
+   * The ROUTE stands on `organization.context.read`. That is deliberate: the VKN is not part of the plain read, so the
+   * server answers the screen's GET with 403 unless the caller holds `organization.company.tax-id.request` or
+   * `organization.company.tax-id.approve`, and the response carries the viewer's own `canRequest` / `canApprove` /
+   * `isRequesterOfPending`. The screen hides what those flags say would be refused; it never derives them, and the
+   * server still decides every command (hazırlayan ≠ onaylayan is enforced there).
+   */
+  companyTaxId: 'organization.company.tax-id',
 } as const
 
 export type OrganizationCapabilityId =
@@ -136,6 +155,7 @@ export const ORGANIZATION_ROUTE: Record<string, string> = {
   [ORGANIZATION_CAPABILITY.locationDetail]: '/ayarlar/organizasyon/lokasyon/:locationId',
   [ORGANIZATION_CAPABILITY.workCentersList]: '/ayarlar/organizasyon/is-merkezleri',
   [ORGANIZATION_CAPABILITY.workCenterDetail]: '/ayarlar/organizasyon/is-merkezleri/:workCenterId',
+  [ORGANIZATION_CAPABILITY.companyTaxId]: '/ayarlar/organizasyon/sirket-vergi-no',
 }
 
 /**
@@ -151,6 +171,8 @@ export const ORGANIZATION_NAV_LABEL: Record<string, string> = {
   [ORGANIZATION_CAPABILITY.locationDetail]: '',
   [ORGANIZATION_CAPABILITY.workCentersList]: 'İş Merkezleri',
   [ORGANIZATION_CAPABILITY.workCenterDetail]: '',
+  // ORG-05 gets its own entry: it stands on the context read, not on ORG-01's locations read, so no list links to it.
+  [ORGANIZATION_CAPABILITY.companyTaxId]: 'Şirket Vergi Numarası',
 }
 
 /** Concrete path to one location's card. */

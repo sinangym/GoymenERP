@@ -34,7 +34,7 @@ export const PRICE_LIST_TEXT = {
   vatExcluded: 'KDV hariç',
   validFrom: 'Geçerlilik başlangıcı',
   validThrough: 'Geçerlilik bitişi (boş: bir sonraki sürüme kadar)',
-  contextNote: 'Bu sürümde yalnız satış kanalı ve KDV hariç fiyat açılır; alış/ortak kanal ve KDV dahil liste karar bekliyor.',
+  contextNote: 'Fiyat listeleri satış kanalı ve KDV hariç fiyatla tutulur; alış/ortak kanal ve KDV dahil liste bu sürümde yoktur.',
   save: 'Kaydet',
   saving: 'Kaydediliyor…',
 

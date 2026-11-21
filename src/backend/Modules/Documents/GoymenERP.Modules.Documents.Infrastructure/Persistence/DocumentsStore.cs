@@ -17,13 +17,17 @@ namespace GoymenERP.Modules.Documents.Infrastructure.Persistence;
 /// A unique-key race is answered afresh: the same key answers the winner's document; a concurrent upload of the same
 /// content in the same company re-reads the blob the winner stored and saves again, once. Reads are of the context
 /// company only (the tenant filter). Nothing is updated or deleted.
+/// B-26: a document may carry more than one owner link. The first (earliest) link is the upload's and stays the primary one;
+/// a later link is ONE save of the link row, the recorded attempt and the audit event, never a second document or blob.
 /// </summary>
-public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext companyContext, IAuditEventCollector auditEvents)
+public sealed partial class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext companyContext, IAuditEventCollector auditEvents)
     : IDocumentStore
 {
     private const string EntityType = "Documents.Document";
     private const string UploadedEventType = "documents.document.uploaded.v1";
+    private const string GeneratedEventType = "documents.document.generated.v1";
     private const string VersionAppendedEventType = "documents.document.version-appended.v1";
+    private const string LinkedEventType = "documents.document.linked.v1";
     private const int ActorMaximumLength = 128;
     private const int KeyMaximumLength = 200;
     private const int SaveRounds = 2;
@@ -55,8 +59,34 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
         return attempt is null ? null : await ReplayVersionAsync(attempt, envelope, requestHash, documentId, resultVersionNo, cancellationToken);
     }
 
-    public async Task<DocumentStoreResult> StoreUploadAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
-        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+    public async Task<DocumentStoreResult?> FindLinkReplayAsync(DocumentWriteEnvelope envelope, string requestHash, Guid documentId,
+        CancellationToken cancellationToken = default)
+    {
+        RequireEnvelope(envelope);
+        RequireHash(requestHash);
+        RequireResolvedCompany();
+        if (documentId == Guid.Empty)
+        {
+            throw new ArgumentException("Bağlanacak belge geçerli olmalıdır.", nameof(documentId));
+        }
+
+        var attempt = await FindAttemptAsync(DocumentCommands.LinkV1, IdempotencyKeyHash(envelope.IdempotencyKey), cancellationToken);
+        return attempt is null ? null : await ReplayLinkAsync(attempt, envelope, requestHash, documentId, cancellationToken);
+    }
+
+    public Task<DocumentStoreResult> StoreUploadAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
+        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default) =>
+        StoreUploadCoreAsync(envelope, requestHash, upload, beforeWrite, null, cancellationToken);
+
+    public Task<DocumentStoreResult> StoreUploadWithAdmissionAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
+        Func<CancellationToken, Task> beforeWrite, Func<CancellationToken, Task> beforeNewWrite, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(beforeNewWrite);
+        return StoreUploadCoreAsync(envelope, requestHash, upload, beforeWrite, beforeNewWrite, cancellationToken);
+    }
+
+    private async Task<DocumentStoreResult> StoreUploadCoreAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
+        Func<CancellationToken, Task> beforeWrite, Func<CancellationToken, Task>? beforeNewWrite, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(upload);
         ArgumentNullException.ThrowIfNull(beforeWrite);
@@ -64,13 +94,15 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
         RequireHash(requestHash);
         var companyId = RequireResolvedCompany();
         RequireUpload(upload, companyId);
+        // F-026 (PLT-S9): a generated PDF (a template snapshot is present) is the same single save under its own command.
+        var commandName = upload.Template is null ? DocumentCommands.UploadV1 : DocumentCommands.StoreGeneratedV1;
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
         var actorId = envelope.ActorId.Trim();
         var correlationId = envelope.CorrelationId.Trim();
 
         for (var round = 1; ; round++)
         {
-            var attempt = await FindAttemptAsync(DocumentCommands.UploadV1, keyHash, cancellationToken);
+            var attempt = await FindAttemptAsync(commandName, keyHash, cancellationToken);
             if (attempt is not null)
             {
                 var replay = await ReplayAsync(attempt, envelope, requestHash, cancellationToken);
@@ -83,6 +115,8 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
                 throw Refused(DocumentStoreCodes.ConcurrentChange, "Bu belge kimliği şirketin başka bir belgesinde kullanılıyor.");
             }
 
+            await RequirePublicationAsync(upload.Template?.Publication, companyId, cancellationToken);
+
             var blob = await dbContext.Blobs.AsNoTracking().SingleOrDefaultAsync(row => row.Sha256 == upload.Sha256, cancellationToken);
             if (blob is not null && (blob.SizeBytes != upload.SizeBytes || blob.ContentKind != (int)upload.Kind.Kind
                      || !string.Equals(blob.ObjectKey, upload.ObjectKey, StringComparison.Ordinal))
@@ -94,6 +128,7 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
 
             var earlierVersions = await dbContext.Versions.AsNoTracking().CountAsync(row => row.Sha256 == upload.Sha256, cancellationToken);
             await beforeWrite(cancellationToken);
+            if (beforeNewWrite is not null) await beforeNewWrite(cancellationToken);
             if (blob is null)
             {
                 dbContext.Blobs.Add(new ContentBlobRow
@@ -121,6 +156,8 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
                 CompanyId = companyId,
                 DocumentId = upload.DocumentId,
                 VersionNo = 1,
+                TemplatePublicationId = upload.Template?.Publication?.PublicationId,
+                TemplatePublicationJson = upload.Template?.Publication is { } publication ? JsonSerializer.Serialize(publication) : null,
                 FileName = upload.FileName.Value,
                 Sha256 = upload.Sha256,
                 ScanState = (int)upload.ScanState,
@@ -137,11 +174,12 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
                 OwnerId = upload.Owner.OwnerId,
                 LinkedBy = actorId,
                 LinkedAtUtc = upload.UploadedAtUtc,
+                IsPrimary = true,
             });
             dbContext.Attempts.Add(new DocumentAttemptRow
             {
                 CompanyId = companyId,
-                CommandName = DocumentCommands.UploadV1,
+                CommandName = commandName,
                 IdempotencyKeyHash = keyHash,
                 RequestHash = requestHash,
                 ActorId = actorId,
@@ -174,8 +212,21 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
         }
     }
 
-    public async Task<DocumentStoreResult> StoreVersionAsync(DocumentWriteEnvelope envelope, string requestHash, int expectedCurrentVersion,
-        NewDocumentVersion version, Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+    public Task<DocumentStoreResult> StoreVersionAsync(DocumentWriteEnvelope envelope, string requestHash, int expectedCurrentVersion,
+        NewDocumentVersion version, Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default) =>
+        StoreVersionCoreAsync(envelope, requestHash, expectedCurrentVersion, version, beforeWrite, null, cancellationToken);
+
+    public Task<DocumentStoreResult> StoreVersionWithAdmissionAsync(DocumentWriteEnvelope envelope, string requestHash, int expectedCurrentVersion,
+        NewDocumentVersion version, Func<CancellationToken, Task> beforeWrite, Func<CancellationToken, Task> beforeNewWrite,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(beforeNewWrite);
+        return StoreVersionCoreAsync(envelope, requestHash, expectedCurrentVersion, version, beforeWrite, beforeNewWrite, cancellationToken);
+    }
+
+    private async Task<DocumentStoreResult> StoreVersionCoreAsync(DocumentWriteEnvelope envelope, string requestHash, int expectedCurrentVersion,
+        NewDocumentVersion version, Func<CancellationToken, Task> beforeWrite, Func<CancellationToken, Task>? beforeNewWrite,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(version);
         ArgumentNullException.ThrowIfNull(beforeWrite);
@@ -222,6 +273,7 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
             }
 
             await beforeWrite(cancellationToken);
+            if (beforeNewWrite is not null) await beforeNewWrite(cancellationToken);
             if (blob is null)
             {
                 dbContext.Blobs.Add(new ContentBlobRow
@@ -283,6 +335,104 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
         }
     }
 
+    public async Task<DocumentStoreResult> StoreLinkAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentLink link,
+        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(link);
+        ArgumentNullException.ThrowIfNull(beforeWrite);
+        RequireEnvelope(envelope);
+        RequireHash(requestHash);
+        var companyId = RequireResolvedCompany();
+        RequireLink(link);
+        var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
+        var actorId = envelope.ActorId.Trim();
+        var correlationId = envelope.CorrelationId.Trim();
+
+        for (var round = 1; ; round++)
+        {
+            var attempt = await FindAttemptAsync(DocumentCommands.LinkV1, keyHash, cancellationToken);
+            if (attempt is not null)
+            {
+                var replay = await ReplayLinkAsync(attempt, envelope, requestHash, link.DocumentId, cancellationToken);
+                await beforeWrite(cancellationToken);
+                return replay;
+            }
+
+            var current = await FindDocumentAsync(link.DocumentId, cancellationToken);
+            if (current is null)
+            {
+                throw Refused(DocumentStoreCodes.ConcurrentChange, "Bağlanacak belge artık bulunamıyor.");
+            }
+
+            if (current.VersionNo != link.ExpectedCurrentVersion)
+            {
+                throw Refused(DocumentStoreCodes.ConcurrentChange, "Belgenin güncel sürümü beklenen sürüm değildir.");
+            }
+
+            var existing = current.OwnerLinks;
+            if (existing.Any(candidate => string.Equals(candidate.OwnerKind, link.Owner.Kind, StringComparison.Ordinal)
+                    && candidate.OwnerId == link.Owner.OwnerId))
+            {
+                throw Refused(DocumentStoreCodes.AlreadyLinked, "Belge bu kayda zaten bağlıdır.");
+            }
+
+            // The upload's link is the primary one (KLN-D49 (4), marked by IsPrimary) and stays the earliest: a later link is
+            // never primary and is stamped strictly after every link the document already carries, even when the clock reads
+            // the same instant.
+            var latestLinkedAt = await dbContext.Links.AsNoTracking()
+                .Where(row => row.DocumentId == link.DocumentId)
+                .MaxAsync(row => (DateTimeOffset?)row.LinkedAtUtc, cancellationToken);
+            var linkedAtUtc = latestLinkedAt.HasValue && link.LinkedAtUtc <= latestLinkedAt.Value
+                ? latestLinkedAt.Value.AddTicks(1)
+                : link.LinkedAtUtc;
+
+            await beforeWrite(cancellationToken);
+            dbContext.Links.Add(new DocumentLinkRow
+            {
+                CompanyId = companyId,
+                DocumentId = link.DocumentId,
+                OwnerKind = link.Owner.Kind,
+                OwnerId = link.Owner.OwnerId,
+                LinkedBy = actorId,
+                LinkedAtUtc = linkedAtUtc,
+                IsPrimary = false,
+            });
+            dbContext.Attempts.Add(new DocumentAttemptRow
+            {
+                CompanyId = companyId,
+                CommandName = DocumentCommands.LinkV1,
+                IdempotencyKeyHash = keyHash,
+                RequestHash = requestHash,
+                ActorId = actorId,
+                DocumentId = link.DocumentId,
+                CorrelationId = correlationId,
+                RecordedAtUtc = link.LinkedAtUtc,
+            });
+            AuditLink(envelope, companyId, link, existing.Count);
+            try
+            {
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
+            {
+                // The attempt key or the same owner link lost a race. Nothing of this round was saved; the next round re-reads:
+                // the same key answers the winner, the same link is document_already_linked.
+                dbContext.ChangeTracker.Clear();
+                if (round >= SaveRounds)
+                {
+                    throw Refused(DocumentStoreCodes.ConcurrentChange,
+                        "Bağlantı veya idempotency anahtarı başka bir yazmanın lehine sonuçlandı; ikinci etki oluşmadı.", exception);
+                }
+
+                continue;
+            }
+
+            var stored = await FindDocumentAsync(link.DocumentId, cancellationToken)
+                ?? throw new InvalidOperationException("Bağlanan belge okunamadı.");
+            return new DocumentStoreResult(stored, false, correlationId);
+        }
+    }
+
     public async Task<StoredDocument?> FindDocumentAsync(Guid documentId, CancellationToken cancellationToken = default)
     {
         RequireResolvedCompany();
@@ -292,13 +442,7 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
         }
 
         var rows = await Latest().Where(row => row.Id == documentId).ToListAsync(cancellationToken);
-        return rows.Count switch
-        {
-            0 => null,
-            1 => Map(rows[0]),
-            // One owner link per document in this slice; a second would be a new, reviewed access rule (DEC-DOC-002).
-            _ => throw new InvalidOperationException("Belgenin birden fazla kayıt bağlantısı bu sürümde desteklenmez."),
-        };
+        return Single(await AttachAsync(rows, cancellationToken));
     }
 
     public async Task<StoredDocument?> FindDocumentVersionAsync(Guid documentId, int versionNo,
@@ -311,12 +455,7 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
         }
 
         var rows = await Versions().Where(row => row.Id == documentId && row.VersionNo == versionNo).ToListAsync(cancellationToken);
-        return rows.Count switch
-        {
-            0 => null,
-            1 => Map(rows[0]),
-            _ => throw new InvalidOperationException("Belgenin birden fazla kayıt bağlantısı bu sürümde desteklenmez."),
-        };
+        return Single(await AttachAsync(rows, cancellationToken));
     }
 
     public async Task<IReadOnlyList<StoredDocument>> ListVersionsAsync(Guid documentId, int limit, int? beforeVersionNo,
@@ -332,7 +471,7 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
         var rows = await Versions().Where(row => row.Id == documentId
                 && (!beforeVersionNo.HasValue || row.VersionNo < beforeVersionNo.Value))
             .OrderByDescending(row => row.VersionNo).Take(limit).ToListAsync(cancellationToken);
-        return [.. rows.Select(Map)];
+        return await AttachAsync(rows, cancellationToken);
     }
 
     public async Task<IReadOnlyList<StoredDocument>> ListByOwnerAsync(string ownerKind, Guid ownerId, int limit,
@@ -342,12 +481,13 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
         RequireResolvedCompany();
         var rows = await Latest()
-            .Where(row => row.OwnerKind == ownerKind && row.OwnerId == ownerId)
+            .Where(row => dbContext.Links.Any(link => link.CompanyId == row.CompanyId && link.DocumentId == row.Id
+                && link.OwnerKind == ownerKind && link.OwnerId == ownerId))
             .OrderByDescending(row => row.UploadedAtUtc)
             .ThenByDescending(row => row.Id)
             .Take(limit)
             .ToListAsync(cancellationToken);
-        return [.. rows.Select(Map)];
+        return await AttachAsync(rows, cancellationToken);
     }
 
     public async Task<IReadOnlyList<StoredDocument>> FindByContentAsync(string sha256, Guid excludingDocumentId, int limit,
@@ -366,29 +506,29 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
             .ThenByDescending(row => row.Id)
             .Take(limit)
             .ToListAsync(cancellationToken);
-        return [.. rows.Select(Map)];
+        return await AttachAsync(rows, cancellationToken);
     }
 
     // ---- reads ----------------------------------------------------------------------------------
 
-    /// <summary>Every document of the context company with its latest version, that version's blob and its owner link.</summary>
+    /// <summary>
+    /// Every linked document of the context company with its latest version and that version's blob. The owner links are
+    /// attached afterwards (<see cref="AttachAsync"/>): one row per document, however many links it carries.
+    /// </summary>
     private IQueryable<LatestDocumentRow> Latest() =>
         from document in dbContext.Documents.AsNoTracking()
         join version in dbContext.Versions.AsNoTracking()
             on new { document.CompanyId, DocumentId = document.Id } equals new { version.CompanyId, version.DocumentId }
         join blob in dbContext.Blobs.AsNoTracking()
             on new { version.CompanyId, version.Sha256 } equals new { blob.CompanyId, blob.Sha256 }
-        join link in dbContext.Links.AsNoTracking()
-            on new { document.CompanyId, DocumentId = document.Id } equals new { link.CompanyId, link.DocumentId }
         where version.VersionNo == dbContext.Versions
             .Where(candidate => candidate.CompanyId == document.CompanyId && candidate.DocumentId == document.Id)
             .Max(candidate => candidate.VersionNo)
+            && dbContext.Links.Any(link => link.CompanyId == document.CompanyId && link.DocumentId == document.Id)
         select new LatestDocumentRow
         {
             Id = document.Id,
             CompanyId = document.CompanyId,
-            OwnerKind = link.OwnerKind,
-            OwnerId = link.OwnerId,
             VersionNo = version.VersionNo,
             FileName = version.FileName,
             ContentKind = blob.ContentKind,
@@ -399,6 +539,7 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
             ScannerId = version.ScannerId,
             UploadedBy = version.UploadedBy,
             UploadedAtUtc = version.UploadedAtUtc,
+            TemplatePublicationJson = version.TemplatePublicationJson,
         };
 
     private IQueryable<LatestDocumentRow> Versions() =>
@@ -407,14 +548,11 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
             on new { document.CompanyId, DocumentId = document.Id } equals new { version.CompanyId, version.DocumentId }
         join blob in dbContext.Blobs.AsNoTracking()
             on new { version.CompanyId, version.Sha256 } equals new { blob.CompanyId, blob.Sha256 }
-        join link in dbContext.Links.AsNoTracking()
-            on new { document.CompanyId, DocumentId = document.Id } equals new { link.CompanyId, link.DocumentId }
+        where dbContext.Links.Any(link => link.CompanyId == document.CompanyId && link.DocumentId == document.Id)
         select new LatestDocumentRow
         {
             Id = document.Id,
             CompanyId = document.CompanyId,
-            OwnerKind = link.OwnerKind,
-            OwnerId = link.OwnerId,
             VersionNo = version.VersionNo,
             FileName = version.FileName,
             ContentKind = blob.ContentKind,
@@ -425,11 +563,60 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
             ScannerId = version.ScannerId,
             UploadedBy = version.UploadedBy,
             UploadedAtUtc = version.UploadedAtUtc,
+            TemplatePublicationJson = version.TemplatePublicationJson,
         };
 
-    private static StoredDocument Map(LatestDocumentRow row) =>
-        new StoredDocument(row.Id, row.CompanyId, row.OwnerKind, row.OwnerId, row.VersionNo, row.FileName, (DocumentFileKind)row.ContentKind, row.SizeBytes,
-            row.Sha256, row.ObjectKey, (DocumentScanState)row.ScanState, row.ScannerId, row.UploadedBy, row.UploadedAtUtc);
+    /// <summary>
+    /// Attaches every owner link of the read documents, the primary link first (KLN-D49 (4); the upload's link), then the
+    /// rest earliest first, keeping the rows' order. A row whose document lost every link meanwhile is not answered.
+    /// </summary>
+    private async Task<IReadOnlyList<StoredDocument>> AttachAsync(List<LatestDocumentRow> rows, CancellationToken cancellationToken)
+    {
+        if (rows.Count == 0)
+        {
+            return [];
+        }
+
+        var documentIds = rows.Select(row => row.Id).Distinct().ToList();
+        var links = await dbContext.Links.AsNoTracking()
+            .Where(link => documentIds.Contains(link.DocumentId))
+            .Select(link => new { link.CompanyId, link.DocumentId, link.OwnerKind, link.OwnerId, link.LinkedAtUtc, link.IsPrimary })
+            .ToListAsync(cancellationToken);
+        var byDocument = links
+            .GroupBy(link => (link.CompanyId, link.DocumentId))
+            .ToDictionary(group => group.Key, group => (IReadOnlyList<StoredDocumentLink>)
+            [
+                .. group.OrderByDescending(link => link.IsPrimary)
+                    .ThenBy(link => link.LinkedAtUtc)
+                    .ThenBy(link => link.OwnerKind, StringComparer.Ordinal)
+                    .ThenBy(link => link.OwnerId)
+                    .Select(link => new StoredDocumentLink(link.OwnerKind, link.OwnerId)),
+            ]);
+
+        var documents = new List<StoredDocument>(rows.Count);
+        foreach (var row in rows)
+        {
+            if (byDocument.TryGetValue((row.CompanyId, row.Id), out var owned) && owned.Count > 0)
+            {
+                documents.Add(Map(row, owned));
+            }
+        }
+
+        return documents;
+    }
+
+    private static StoredDocument? Single(IReadOnlyList<StoredDocument> documents) => documents.Count switch
+    {
+        0 => null,
+        1 => documents[0],
+        _ => throw new InvalidOperationException("Bir belge kimliği için birden fazla satır okundu."),
+    };
+
+    private static StoredDocument Map(LatestDocumentRow row, IReadOnlyList<StoredDocumentLink> links) =>
+        new StoredDocument(row.Id, row.CompanyId, links[0].OwnerKind, links[0].OwnerId, row.VersionNo, row.FileName, (DocumentFileKind)row.ContentKind,
+            row.SizeBytes, row.Sha256, row.ObjectKey, (DocumentScanState)row.ScanState, row.ScannerId, row.UploadedBy, row.UploadedAtUtc, links,
+            row.TemplatePublicationJson is null ? null : JsonSerializer.Deserialize<GeneratedDocumentPublicationSnapshot>(row.TemplatePublicationJson)
+                ?? throw new InvalidOperationException("Stored template publication is unreadable."));
 
     private Task<DocumentAttemptRow?> FindAttemptAsync(string commandName, string keyHash, CancellationToken cancellationToken) =>
         dbContext.Attempts.AsNoTracking().SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash,
@@ -466,9 +653,32 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
         return new DocumentStoreResult(stored, true, attempt.CorrelationId);
     }
 
+    private async Task<DocumentStoreResult> ReplayLinkAsync(DocumentAttemptRow attempt, DocumentWriteEnvelope envelope, string requestHash,
+        Guid documentId, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(attempt.ActorId, envelope.ActorId.Trim(), StringComparison.Ordinal)
+            || !string.Equals(attempt.RequestHash, requestHash, StringComparison.Ordinal)
+            || attempt.DocumentId != documentId)
+        {
+            throw Refused(DocumentStoreCodes.SameKeyPayloadMismatch, "Aynı Idempotency-Key başka bir istekle geldi; ilk cevap bu isteğe verilmez.");
+        }
+
+        // A link does not create a version: the replay answers the document as it reads now, with the recorded correlation.
+        var stored = await FindDocumentAsync(documentId, cancellationToken)
+            ?? throw new InvalidOperationException("Kayıtlı bağlantı denemesinin belgesi bulunamadı.");
+        return new DocumentStoreResult(stored, true, attempt.CorrelationId);
+    }
+
     // ---- audit ----------------------------------------------------------------------------------
 
-    private void Audit(DocumentWriteEnvelope envelope, Guid companyId, NewDocumentUpload upload, int earlierVersions) =>
+    private void Audit(DocumentWriteEnvelope envelope, Guid companyId, NewDocumentUpload upload, int earlierVersions)
+    {
+        if (upload.Template is { } template)
+        {
+            AuditGenerated(envelope, companyId, upload, earlierVersions, template);
+            return;
+        }
+
         auditEvents.Enqueue(new AuditEventDraft(companyId, UploadedEventType, EntityType, upload.DocumentId.ToString("D"), "Upload", null, 1,
             AuditActorTypes.User, envelope.ActorId, envelope.PermissionCode, envelope.RoleCodes, "{}", JsonSerializer.Serialize(new
             {
@@ -485,6 +695,37 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
                 sameContentEarlierVersions = earlierVersions,
             }, Json), "Belge yüklendi", ApprovalContextJson: null, AuditAiInvolvement.None, AiContextJson: null, envelope.SourceChannel,
             envelope.ClientIpAddress, envelope.UserAgent, envelope.CorrelationId, envelope.CausationId, envelope.IdempotencyKey));
+    }
+
+    /// <summary>
+    /// F-026 (PLT-S9): the generated PDF's audit event carries the template snapshot (DEC-DOC-010). KLN-D59: it is
+    /// written in the initiating user's name with the producing command and that command's permission (the envelope's
+    /// permission), so the record says who, through which command, stored which document. KLN-D60: a system-generated
+    /// PDF is marked as such (no scanner).
+    /// </summary>
+    private void AuditGenerated(DocumentWriteEnvelope envelope, Guid companyId, NewDocumentUpload upload, int earlierVersions,
+        GeneratedDocumentTemplate template) =>
+        auditEvents.Enqueue(new AuditEventDraft(companyId, GeneratedEventType, EntityType, upload.DocumentId.ToString("D"), "StoreGenerated",
+            null, 1, AuditActorTypes.User, envelope.ActorId, envelope.PermissionCode, envelope.RoleCodes, "{}", AddPublicationSnapshot(JsonSerializer.Serialize(new
+            {
+                ownerKind = upload.Owner.Kind,
+                ownerId = upload.Owner.OwnerId,
+                versionNo = 1,
+                fileName = upload.FileName.Value,
+                contentType = upload.Kind.ContentType,
+                sizeBytes = upload.SizeBytes,
+                sha256 = upload.Sha256,
+                scanState = upload.ScanState.ToString(),
+                scannerId = upload.ScannerId,
+                sameContentEarlierVersions = earlierVersions,
+                templateCode = template.Code,
+                templateVersion = template.Version,
+                producerCommand = upload.ProducerCommand,
+                producerPermission = envelope.PermissionCode,
+                systemGenerated = upload.ScanState == DocumentScanState.SystemGenerated,
+            }, Json), template.Publication), "Üretilen belge kasaya kaydedildi", ApprovalContextJson: null, AuditAiInvolvement.None, AiContextJson: null,
+            envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent, envelope.CorrelationId, envelope.CausationId,
+            envelope.IdempotencyKey));
 
     private void AuditVersion(DocumentWriteEnvelope envelope, Guid companyId, NewDocumentVersion version, int expectedVersion, int resultVersion) =>
         auditEvents.Enqueue(new AuditEventDraft(companyId, VersionAppendedEventType, EntityType, version.DocumentId.ToString("D"), "AppendVersion",
@@ -503,6 +744,19 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
             envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent, envelope.CorrelationId, envelope.CausationId,
             envelope.IdempotencyKey));
 
+    private void AuditLink(DocumentWriteEnvelope envelope, Guid companyId, NewDocumentLink link, int earlierLinks) =>
+        auditEvents.Enqueue(new AuditEventDraft(companyId, LinkedEventType, EntityType, link.DocumentId.ToString("D"), "Link",
+            link.ExpectedCurrentVersion, link.ExpectedCurrentVersion, AuditActorTypes.User, envelope.ActorId, envelope.PermissionCode,
+            envelope.RoleCodes, "{}", JsonSerializer.Serialize(new
+            {
+                ownerKind = link.Owner.Kind,
+                ownerId = link.Owner.OwnerId,
+                versionNo = link.ExpectedCurrentVersion,
+                earlierLinks,
+            }, Json), "Belge başka bir kayda bağlandı", ApprovalContextJson: null, AuditAiInvolvement.None, AiContextJson: null,
+            envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent, envelope.CorrelationId, envelope.CausationId,
+            envelope.IdempotencyKey));
+
     // ---- guards ---------------------------------------------------------------------------------
 
     private Guid RequireResolvedCompany() =>
@@ -514,7 +768,11 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
     {
         if (upload.DocumentId == Guid.Empty || upload.SizeBytes < 1 || !DocumentContentHash.IsWellFormed(upload.Sha256)
             || upload.Owner is null || upload.FileName is null || upload.Kind is null
-            || !Enum.IsDefined(upload.ScanState) || (upload.ScanState == DocumentScanState.Clean) != !string.IsNullOrWhiteSpace(upload.ScannerId))
+            || !Enum.IsDefined(upload.ScanState) || (upload.ScanState == DocumentScanState.Clean) != !string.IsNullOrWhiteSpace(upload.ScannerId)
+            || (upload.Template is not null && upload.Kind.Kind != DocumentFileKind.Pdf)
+            // KLN-D59/KLN-D60: the producer's command travels with the template, and only a generated PDF may skip the scan.
+            || (upload.Template is null) != string.IsNullOrWhiteSpace(upload.ProducerCommand)
+            || (upload.ScanState == DocumentScanState.SystemGenerated && upload.Template is null))
         {
             throw new ArgumentException("Belge yüklemesi eksik veya tutarsız.", nameof(upload));
         }
@@ -529,6 +787,7 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
     {
         if (version.DocumentId == Guid.Empty || version.SizeBytes < 1 || !DocumentContentHash.IsWellFormed(version.Sha256)
             || version.FileName is null || version.Kind is null || !Enum.IsDefined(version.ScanState)
+            || version.ScanState == DocumentScanState.SystemGenerated
             || (version.ScanState == DocumentScanState.Clean) != !string.IsNullOrWhiteSpace(version.ScannerId))
         {
             throw new ArgumentException("Belge sürümü eksik veya tutarsız.", nameof(version));
@@ -537,6 +796,15 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
         if (!string.Equals(version.ObjectKey, DocumentObjectKeys.For(companyId, version.Sha256), StringComparison.Ordinal))
         {
             throw Refused(DocumentStoreCodes.CompanyContextMismatch, "Nesne anahtarı aktif şirketin içerik anahtarı değil.");
+        }
+    }
+
+    private static void RequireLink(NewDocumentLink link)
+    {
+        if (link.DocumentId == Guid.Empty || link.ExpectedCurrentVersion < 1 || link.Owner is null
+            || string.IsNullOrWhiteSpace(link.Owner.Kind) || link.Owner.OwnerId == Guid.Empty)
+        {
+            throw new ArgumentException("Belge bağlantısı eksik veya tutarsız.", nameof(link));
         }
     }
 
@@ -584,13 +852,10 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
     /// <summary>A member-initialized projection (so the query composes over it); never tracked, never written.</summary>
     private sealed class LatestDocumentRow
     {
+        public string? TemplatePublicationJson { get; init; }
         public Guid Id { get; init; }
 
         public Guid CompanyId { get; init; }
-
-        public string OwnerKind { get; init; } = string.Empty;
-
-        public Guid OwnerId { get; init; }
 
         public int VersionNo { get; init; }
 

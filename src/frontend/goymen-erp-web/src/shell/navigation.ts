@@ -29,6 +29,15 @@ import type { PriceListCapabilityId } from '../product/priceLists/capabilities'
  */
 /** Exported for `navEntryPointInvariant.test.ts`: the nav list and the label table must agree. */
 export const NAV_CAPABILITIES: readonly CapabilityId[] = [
+  'finance.credits.workspace',
+  'finance.official-sales-invoices.record',
+  'finance.official-sales-invoices.approve',
+  'accounting.manufacturing-cost-differences.prepare',
+  'accounting.manufacturing-cost-differences.approve',
+  'accounting.invoice-line-cogs.prepare',
+  'accounting.invoice-line-cogs.approve',
+  'identity.users.manage',
+  'paint-memberships.manage',
   'cari.parties.list',
   /**
    * `cariPartiesCreate` is deliberately ABSENT, and it is the one removal here that is a decision
@@ -51,11 +60,19 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
    */
   'product.items.list',
   'finance.manual-bank-payments.list',
+  'finance.expense-payments.workspace',
+  'finance.cash-transfers.workspace',
+  'finance.cash-exchange-book-values.prepare',
+  'finance.cash-exchange-book-values.approve',
+  'finance.credit-limits.list',
+  'finance.collaterals.list',
+  'finance.opening-balances.list',
   'finance.allocations.list',
   'finance.open-items.list',
   // B-05 (KLN-D3): the party ledger opens from Muhasebe and from Cari; both are Finance's read of one sub-ledger.
   'finance.party-ledger.accounting',
   'finance.party-ledger.cari',
+  'finance.party-balance-transfers.record',
   /**
    * Listed together with the route that serves it, on purpose: a nav entry whose route
    * is not mounted is a link to the not-found block. It still renders only where the
@@ -71,6 +88,11 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
    * Nothing else renders only where the server granted it, as ever.
    */
   'organization.work-centers.list',
+  /**
+   * ORG-05 (KIM-S23). A sidebar entry because nothing else links to it: the screen stands on the plain context read,
+   * not on ORG-01's locations read, so it cannot hang off that list.
+   */
+  'organization.company.tax-id',
   /** S-02 is the single Sales work-list entry. Create lives inside that list; detail opens from a row. */
   'sales.drafts.list',
   /** UI-60 / UI-61: the two read-only Sales lists of the dispatch/invoice flow (S-07, S-08), each on its own grant. */
@@ -78,6 +100,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'sales.invoice-candidates.list',
   /** UI-63: the read-only S-09 invoice list, on the invoice read plus the price read. */
   'sales.invoices.list',
+  'sales.invoices.official-cancellation',
   /** UI-80: the read-only Sales reports screen, on its own grant. */
   'sales.reports.view',
   /** UI-70b S-10: the customer return list, on the return read plus the price read; create and detail are reached from it. */
@@ -115,8 +138,21 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'accounting.periods.list',
   'accounting.journals.list',
   'accounting.posting-queues',
+  'accounting.source-vouchers.list',
+  'accounting.posting-mappings.read',
+  'accounting.invoiced-shipment-costs.prepare',
+  'accounting.invoiced-shipment-costs.approve',
+  'accounting.invoiced-shipment-costs.reverse',
+  'accounting.invoiced-shipment-costs.reverse-approve',
+  'accounting.purchase-cost-differences.prepare',
+  'accounting.purchase-cost-differences.approve',
   'inventory.opening-stock.record',
   'inventory.stock-positions.list',
+  'inventory.subcontract-allocations.release-unused',
+  'inventory.stock-transfer.write',
+  'inventory.stock-transfer.overage-approve',
+  'inventory.stock-transfer.loss-record',
+  'inventory.stock-transfer.loss-approve',
   /**
    * Listed together with the routes that serve them (LOG-4b). Each renders only where the server's
    * snapshot carries the capability (staged until the l04 suite); the detail is reached from a row.
@@ -126,9 +162,12 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   // the same accessible name to one route is what l04's strict-mode violation found, and a screen
   // reader announces it twice.
   'logistics.instructions.list',
+  'logistics.subcontract-deliveries.list',
   // AT-025: the operations work list's two separate sections, each shown only to an actor holding its own grant.
   'logistics.operations-work.sales',
   'logistics.operations-work.purchase',
+  'logistics.shipments.plan-excess.approve',
+  'logistics.transfer-departures.record',
   /**
    * P-01 and P-03 are Purchasing's two list entries. Their create actions live inside their lists
    * under K5, and each detail is reached from a row. Submit and approve are controls inside their
@@ -136,6 +175,8 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
    */
   'purchasing.requests.list',
   'purchasing.orders.list',
+  'purchasing.invoices.list',
+  'purchasing.service-orders.list',
   /**
    * SY-01 read subset, listed with the route that serves it. It renders only where the server granted
    * `identity.assignments.read` company-wide; the role card is reached from a row.
@@ -147,6 +188,45 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'settings.sales-discount-limits.manage',
   /** MOD-03: the Settings tax master screen, drawn only where the server granted its one name. */
   'settings.tax-master.manage',
+  /** F-025 / B-11: the Settings exchange rate screen, drawn only where the server granted its read name. */
+  'settings.exchange-rates.read',
+  /** F-029 S4b (SAT-D5): the Settings delivery tolerance screen, drawn only where the server granted its one name. */
+  'settings.sales-delivery-tolerances.manage',
+  /** F-029 S4b (SAT-D6): the Settings approval amount threshold screen, drawn only where the server granted its one name. */
+  'settings.sales-approval-thresholds.manage',
+  /** KIM-D34: the Settings login attempt limit screen, drawn only where the server granted its one name. */
+  'settings.login-rate-limit.manage',
+  /** F-004, KIM-D37: the Settings unit conversion policy screen, drawn only where the server granted its one name. */
+  'settings.unit-conversion-policies.manage',
+  /** F-029 S1/S2 (URN-D2): the Settings unit profile screen, drawn only where the server granted its one name. */
+  'settings.unit-profiles.manage',
+  'settings.money-profiles.manage',
+  'settings.sales-contract-discount-limit.manage',
+  'settings.collateral-types.manage',
+  'settings.finance-opening-period.manage',
+  'settings.manufacturing-scrap-cost.manage',
+  'settings.notification-retention.manage',
+  'settings.document-number-series.manage',
+  'settings.finance-policies.prepare',
+  'settings.cash-count-difference-policies.prepare',
+  'settings.bank-institutions.prepare',
+  'settings.collateral-rate-policies.prepare',
+  'settings.purchase-invoice-variance-policies.manage',
+  'settings.warehouse-transfer-scale.manage',
+  'settings.sales-subcontract-tax-default.manage',
+  'settings.purchasing-subcontract-tax-default.manage',
+  'documents.company-branding.manage',
+  'documents.templates.sales.prepare',
+  'documents.templates.inventory.prepare',
+  'documents.templates.logistics.prepare',
+  'settings.manufacturing-parameter-profiles.read',
+  'settings.manufacturing-tolerance-profiles.read',
+  /** URT-D89: the Settings work center capacity screen, drawn only where the server granted its one name. */
+  'settings.work-center-capacities.manage',
+  /** API-98, KIM-D49: the Settings expense and service type lists, drawn only where the server granted its one name. */
+  'settings.reference-lists.manage',
+  /** B-14, KIM-D51: the Settings paint color and scrap kind lists, drawn only where the server granted its one name. */
+  'settings.production-reference-lists.manage',
 ]
 
 /** Nav label per capability. Only rendered when the server granted the capability. */
@@ -181,6 +261,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'organization.work-centers.list': 'İş Merkezleri',
   // ORG-04: reached from a work-centre row, never from the sidebar; Organization keeps two entries.
   'organization.work-centers.detail': '',
+  // ORG-05: its only entry point is the sidebar.
+  'organization.company.tax-id': 'Şirket Vergi Numarası',
   'sales.drafts.list': 'Satış Siparişleri',
   // K5: creation is reached through the list's authorised action, never a parallel sidebar entry.
   'sales.drafts.create': '',
@@ -189,6 +271,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'sales.dispatches.list': 'Sevkiyat / İrsaliyeler',
   'sales.invoice-candidates.list': 'Faturaya Hazır',
   'sales.invoices.list': 'Satış faturaları',
+  'sales.invoices.official-cancellation': 'Resmî fatura iptal kaydı',
   'sales.reports.view': 'Satış raporları',
   'sales.customer-returns.list': 'Müşteri iadeleri',
   // UI-70b: create and detail are reached from the return list, never from the sidebar.
@@ -205,6 +288,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'manufacturing.plans.detail': '',
   // MFG-PLAN-LIST: reached from the order list and plan detail, so the sidebar keeps ONE Manufacturing entry.
   'manufacturing.plans.list': '',
+  // URT-S13: the monthly scrap prices are reached from the order list, so the sidebar keeps ONE Manufacturing entry.
+  'manufacturing.scrap-prices.list': '',
   'finance.receipts.list': 'Tahsilat Taslakları',
   'finance.customer-instruments.list': 'Müşteri Çekleri ve Senetleri',
   'finance.official-invoice-import.upload': 'Onaylı fatura taksit kaynağı yükle',
@@ -214,6 +299,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'finance.open-items.detail': '',
   'finance.party-ledger.accounting': 'Cari Hesaplar',
   'finance.party-ledger.cari': 'Cari Hesap Takibi',
+  'finance.party-balance-transfers.record': 'Cari Bakiye Devri',
   'finance.receipts.reverse.approve': 'Ters Kayıt Onayları',
   'finance.bank-accounts.list': 'Banka Hesapları',
   // None of these three: the new draft is entered from a Cari account, the detail from a list row and
@@ -224,21 +310,83 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'finance.manual-bank-payments.list': 'Giden Ödemeler',
   'finance.manual-bank-payments.create': '',
   'finance.manual-bank-payments.detail': '',
+  'finance.expense-payments.workspace': 'Masraf Ödemeleri',
+  'finance.cash-transfers.workspace': 'Virman ve Döviz Bozdurma',
+  'finance.cash-exchange-book-values.prepare': 'Döviz defter değeri hazırla',
+  'finance.cash-exchange-book-values.approve': 'Döviz defter değeri onayları',
+  'finance.credit-limits.list': 'Kredi Limitleri',
+  'finance.collaterals.list': 'Müşteri Teminatları',
+  'finance.opening-balances.list': 'Açılış Bakiyeleri',
+  'finance.credits.workspace': 'Krediler',
+  'finance.official-sales-invoices.record': 'Resmî satış faturaları',
+  'finance.official-sales-invoices.approve': 'Resmî satış faturası onayları',
+  'accounting.manufacturing-cost-differences.prepare': 'Üretim maliyet farkları',
+  'accounting.manufacturing-cost-differences.approve': 'Üretim maliyet farkı onayları',
+  'accounting.invoice-line-cogs.prepare': 'Fatura satırı muhasebe düzeltmesi',
+  'accounting.invoice-line-cogs.approve': 'Fatura satırı düzeltme onayı',
+  'identity.users.manage': 'Kullanıcı yönetimi',
+  'paint-memberships.manage': 'Boya ürünleri',
   'accounting.periods.list': 'Muhasebe Dönemleri',
   'accounting.journals.list': 'Muhasebe Fişleri',
   'accounting.posting-queues': 'Muhasebe Kontrol',
   // Staged until the actual M-06 browser acceptance; no sidebar publication yet.
   'accounting.trial-balance': '',
+  'accounting.source-vouchers.list': 'Kaynak fişler',
+  'accounting.posting-mappings.read': 'SMM hesap eşlemeleri',
+  'accounting.invoiced-shipment-costs.prepare': 'Sevk SMM hazırlama',
+  'accounting.invoiced-shipment-costs.approve': 'Sevk SMM onayı',
+  'accounting.invoiced-shipment-costs.reverse': 'Sevk SMM ters kayıt önerileri',
+  'accounting.invoiced-shipment-costs.reverse-approve': 'Sevk SMM ters kayıt onayı',
+  'accounting.purchase-cost-differences.prepare': 'Alış maliyeti farkı hazırlama',
+  'accounting.purchase-cost-differences.approve': 'Alış maliyeti farkı onayı',
   // NAV-OPENING-01: the one-time opening count is set-up work, drawn under Ayarlar (see NAV_GROUPS). Same route,
   // same capability; only the sidebar place and its wording changed.
   'inventory.opening-stock.record': 'Açılış stokları',
   'inventory.stock-positions.list': 'Stok / Malzeme Pozisyonu',
+  'inventory.subcontract-allocations.release-unused': 'Kullanılmayan fason ayırmayı bırak',
+  'inventory.stock-transfer.write': 'Depo transferi planlama',
+  'inventory.stock-transfer.overage-approve': 'Transfer fazla kabul onayları',
+  'inventory.stock-transfer.loss-record': 'Transfer kayıp talepleri',
+  'inventory.stock-transfer.loss-approve': 'Transfer kayıp onayları',
   'identity.assignments.list': 'Kullanıcılar ve yetkiler',
   // The role card is opened from a row of the access list, never from the sidebar.
   'identity.roles.detail': '',
   'identity.audit.list': 'Denetim kaydı',
   'settings.sales-discount-limits.manage': 'İskonto limitleri',
+  'settings.purchase-invoice-variance-policies.manage': 'Alış faturası fark toleransı',
+  'settings.warehouse-transfer-scale.manage': 'Depo transfer tartısı',
+  'settings.sales-subcontract-tax-default.manage': 'Satış fason vergi varsayılanı',
+  'settings.purchasing-subcontract-tax-default.manage': 'Alış fason vergi varsayılanı',
+  'documents.company-branding.manage': 'Şirket logosu ve anteti',
+  'documents.templates.sales.prepare': 'Satış belge şablonu',
+  'documents.templates.sales.publish': '',
+  'documents.templates.inventory.prepare': 'Stok etiket şablonu',
+  'documents.templates.inventory.publish': '',
+  'documents.templates.logistics.prepare': 'Lojistik belge şablonu',
+  'documents.templates.logistics.publish': '',
   'settings.tax-master.manage': 'Vergi (KDV / tevkifat)',
+  'settings.exchange-rates.read': 'Kurlar',
+  'settings.sales-delivery-tolerances.manage': 'Teslim toleransı',
+  'settings.sales-approval-thresholds.manage': 'Onay tutar eşikleri',
+  'settings.login-rate-limit.manage': 'Giriş deneme sınırı',
+  'settings.unit-conversion-policies.manage': 'Birim çevrim politikası',
+  'settings.unit-profiles.manage': 'Birim profilleri',
+  'settings.money-profiles.manage': 'Para profilleri',
+  'settings.sales-contract-discount-limit.manage': 'Sözleşme iskonto sınırı',
+  'settings.collateral-types.manage': 'Teminat türleri ve oranları',
+  'settings.finance-opening-period.manage': 'Finans açılış dönemi',
+  'settings.manufacturing-scrap-cost.manage': 'Fire maliyete katılımı',
+  'settings.notification-retention.manage': 'Bildirim etkinlik süresi',
+  'settings.document-number-series.manage': 'Belge numara serileri',
+  'settings.finance-policies.prepare': 'Finans onay politikaları',
+  'settings.cash-count-difference-policies.prepare': 'Kasa sayım fark politikaları',
+  'settings.bank-institutions.prepare': 'Banka kurumları',
+  'settings.collateral-rate-policies.prepare': 'Teminat oran politikaları',
+  'settings.manufacturing-parameter-profiles.read': 'Üretim parametre profilleri',
+  'settings.manufacturing-tolerance-profiles.read': 'Üretim tolerans profilleri',
+  'settings.work-center-capacities.manage': 'İş merkezi kapasitesi',
+  'settings.reference-lists.manage': 'Masraf ve hizmet tipleri',
+  'settings.production-reference-lists.manage': 'Boya rengi ve hurda türü',
   // Not these two: a period is proposed from the M-07 list and a journal opened from a row.
   'accounting.periods.propose': '',
   'accounting.journals.detail': '',
@@ -246,6 +394,14 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'accounting.normal-journal-drafts.detail': '',
   'accounting.normal-journal-drafts.approve': '',
   'logistics.instructions.list': 'Yükleme Talimatları',
+  'logistics.subcontract-deliveries.list': 'Fason teslimler',
+  'logistics.subcontract-deliveries.create': '',
+  'logistics.subcontract-deliveries.detail': '',
+  'logistics.subcontract-deliveries.issue': '',
+  'logistics.subcontract-deliveries.load': '',
+  'logistics.subcontract-deliveries.weigh': '',
+  'logistics.subcontract-deliveries.ship': '',
+  'logistics.subcontract-deliveries.weighing-correct': '',
   // Neither of these two: the new-instruction screen is reached from the L-02 list's own primary
   // link (one entry point per creation route, the Finance and Accounting precedent), and an
   // instruction is opened from a list row — never from the sidebar.
@@ -254,11 +410,19 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // AT-025: one sidebar entry per section, because each section is its own grant.
   'logistics.operations-work.sales': 'Operasyon işleri — Satış',
   'logistics.operations-work.purchase': 'Operasyon işleri — Satın alma',
+  'logistics.shipments.plan-excess.approve': 'Plan üstü sevk onayı',
+  'logistics.transfer-departures.record': 'Transfer çıkışları',
   'purchasing.requests.list': 'Satın alma talepleri',
   // K5: create is reached through the list's single action; detail is reached from a row.
   'purchasing.requests.create': '',
   'purchasing.requests.detail': '',
   'purchasing.orders.list': 'Satın alma siparişleri',
+  'purchasing.invoices.list': 'Alış faturaları',
+  'purchasing.invoices.detail': '',
+  'purchasing.additional-costs.read': '',
+  'purchasing.service-orders.list': 'Hizmet ve fason alışları',
+  'purchasing.service-orders.create': '',
+  'purchasing.service-orders.detail': '',
   // P-04 is staged and, once published, is reached from the list. The detail is reached from a row.
   'purchasing.orders.create': '',
   'purchasing.orders.detail': '',
@@ -272,6 +436,14 @@ export type PriceListNavEntry = Extract<PriceListCapabilityId, 'price-lists.list
 
 /** Anything a sidebar group may hold: a shell capability from `NAV_CAPABILITIES`, or the price list. */
 export type NavEntryId = CapabilityId | PriceListNavEntry
+
+/** One workspace entry per module; either existing action capability can open its fresh route gate.
+ * The page and its owner API separately authorize preparation and publication. */
+export const NAV_PURPOSE_CAPABILITIES: Readonly<Partial<Record<NavEntryId, readonly CapabilityId[]>>> = {
+  'documents.templates.sales.prepare': ['documents.templates.sales.prepare', 'documents.templates.sales.publish'],
+  'documents.templates.inventory.prepare': ['documents.templates.inventory.prepare', 'documents.templates.inventory.publish'],
+  'documents.templates.logistics.prepare': ['documents.templates.logistics.prepare', 'documents.templates.logistics.publish'],
+}
 
 export type NavGroupId =
   | 'sales'
@@ -318,9 +490,9 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   {
     id: 'sales',
     label: 'Satış',
-    entries: ['sales.requests.list', 'sales.quotes.list', 'sales.drafts.list', 'sales.dispatches.list', 'sales.invoice-candidates.list', 'sales.invoices.list', 'sales.customer-returns.list', 'sales.reports.view', 'price-lists.list'],
+    entries: ['sales.requests.list', 'sales.quotes.list', 'sales.drafts.list', 'sales.dispatches.list', 'sales.invoice-candidates.list', 'sales.invoices.list', 'sales.invoices.official-cancellation', 'sales.customer-returns.list', 'sales.reports.view', 'price-lists.list'],
   },
-  { id: 'purchasing', label: 'Satın Alma', entries: ['purchasing.requests.list', 'purchasing.orders.list'] },
+  { id: 'purchasing', label: 'Satın Alma', entries: ['purchasing.requests.list', 'purchasing.orders.list', 'purchasing.service-orders.list', 'purchasing.invoices.list'] },
   { id: 'manufacturing', label: 'Üretim', entries: ['manufacturing.orders.list'] },
   {
     id: 'stock-logistics',
@@ -331,20 +503,39 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     label: 'Stok & Lojistik',
     entries: [
       'inventory.stock-positions.list',
+      'inventory.subcontract-allocations.release-unused',
+      'inventory.stock-transfer.write',
+      'inventory.stock-transfer.overage-approve',
+      'inventory.stock-transfer.loss-record',
+      'inventory.stock-transfer.loss-approve',
       'logistics.operations-work.sales',
       'logistics.instructions.list',
+      'logistics.subcontract-deliveries.list',
       'logistics.operations-work.purchase',
+      'logistics.shipments.plan-excess.approve',
+      'logistics.transfer-departures.record',
     ],
   },
-  { id: 'product', label: 'Ürün & Hizmet', entries: ['product.items.list'] },
+  { id: 'product', label: 'Ürün & Hizmet', entries: ['product.items.list', 'paint-memberships.manage'] },
   { id: 'cari', label: 'Cari', entries: ['cari.parties.list', 'cari.accounts.link', 'finance.party-ledger.cari'] },
   {
     id: 'finance',
     label: 'Finans & Hazine',
     entries: [
+      'finance.credits.workspace',
+      'finance.party-balance-transfers.record',
+      'finance.official-sales-invoices.record',
+      'finance.official-sales-invoices.approve',
       'finance.receipts.list',
       'finance.manual-bank-payments.list',
+      'finance.expense-payments.workspace',
+      'finance.cash-transfers.workspace',
+      'finance.cash-exchange-book-values.prepare',
+      'finance.cash-exchange-book-values.approve',
       'finance.bank-accounts.list',
+      'finance.credit-limits.list',
+      'finance.collaterals.list',
+      'finance.opening-balances.list',
       'finance.customer-instruments.list',
       'finance.open-items.list',
       'finance.allocations.list',
@@ -356,7 +547,9 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   {
     id: 'accounting',
     label: 'Muhasebe',
-    entries: ['accounting.journals.list', 'accounting.periods.list', 'accounting.posting-queues', 'finance.party-ledger.accounting'],
+    entries: ['accounting.journals.list', 'accounting.periods.list', 'accounting.posting-queues', 'accounting.source-vouchers.list', 'accounting.posting-mappings.read', 'accounting.invoiced-shipment-costs.prepare', 'accounting.invoiced-shipment-costs.approve', 'accounting.invoiced-shipment-costs.reverse', 'accounting.invoiced-shipment-costs.reverse-approve', 'accounting.purchase-cost-differences.prepare', 'accounting.purchase-cost-differences.approve', 'finance.party-ledger.accounting',
+      'accounting.manufacturing-cost-differences.prepare', 'accounting.manufacturing-cost-differences.approve',
+      'accounting.invoice-line-cogs.prepare', 'accounting.invoice-line-cogs.approve'],
   },
   {
     id: 'settings',
@@ -373,11 +566,50 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     entries: [
       'organization.sites.list',
       'organization.work-centers.list',
+      // URT-D89: the work center capacity follows the work centers it belongs to inside Ana Veriler.
+      'settings.work-center-capacities.manage',
+      'organization.company.tax-id',
+      // F-004, KIM-D37: the unit conversion policy sits before the rates (KLN-D2 order: organization, units, rates).
+      'settings.unit-conversion-policies.manage',
+      // F-029 S1/S2: the unit profiles follow the unit conversion policy, still before the rates.
+      'settings.unit-profiles.manage',
+      'settings.money-profiles.manage',
+      'settings.purchase-invoice-variance-policies.manage',
+      'settings.warehouse-transfer-scale.manage',
+      'settings.sales-subcontract-tax-default.manage',
+      'settings.purchasing-subcontract-tax-default.manage',
+      'documents.company-branding.manage',
+      'documents.templates.sales.prepare',
+      'documents.templates.inventory.prepare',
+      'documents.templates.logistics.prepare',
+      'settings.sales-contract-discount-limit.manage',
+  'settings.collateral-types.manage',
+  'settings.finance-opening-period.manage',
+  'settings.manufacturing-scrap-cost.manage',
+  'settings.notification-retention.manage',
+      'settings.document-number-series.manage',
+      'settings.finance-policies.prepare',
+      'settings.cash-count-difference-policies.prepare',
+      'settings.bank-institutions.prepare',
+      'settings.collateral-rate-policies.prepare',
+      'settings.manufacturing-parameter-profiles.read',
+      'settings.manufacturing-tolerance-profiles.read',
+      // API-98, B-14 (KIM-D49, KIM-D51): the company reference lists are master data, after the units and before the rates.
+      'settings.reference-lists.manage',
+      'settings.production-reference-lists.manage',
+      // F-025 / B-11: rates follow the organization entries inside Ana Veriler (KLN-D2 order: organization, units, rates).
+      'settings.exchange-rates.read',
       'settings.sales-discount-limits.manage',
       'settings.tax-master.manage',
+      // F-029 S4b: the sales policy screens follow the other Sales-facing Settings entries (discount limits, tax).
+      'settings.sales-delivery-tolerances.manage',
+      'settings.sales-approval-thresholds.manage',
       'identity.assignments.list',
+      'identity.users.manage',
       // UI-K02: the audit log follows the access list inside the Sistem Yönetimi section (KLN-D2 names it there).
       'identity.audit.list',
+      // KIM-D34: the group-wide login attempt limit is a sign-in security setting inside Sistem Yönetimi.
+      'settings.login-rate-limit.manage',
       'inventory.opening-stock.record',
     ],
     subheadings: {

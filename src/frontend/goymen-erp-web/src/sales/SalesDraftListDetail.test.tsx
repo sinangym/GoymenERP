@@ -10,6 +10,8 @@ import listResponseRaw from './examples/list-response.json?raw'
 import detailResponseRaw from './examples/detail-response.json?raw'
 import { SALES_CAPABILITY } from './capabilities'
 import { CAPABILITY } from '../shell/capabilities'
+import { INVENTORY_FUTURE_ALLOCATION_READ_CAPABILITY, inventoryFutureAllocationPath } from '../inventory/capabilities'
+import { FUTURE_ALLOCATION_TEXT } from '../inventory/futureAllocationText'
 import type { UseContactInformation } from './referenceSource'
 import { ORDER_DETAIL_TEXT, ORDER_DRAFT_TEXT, ORDER_LIST_TEXT } from './salesText'
 import { formatInstant } from './format'
@@ -124,6 +126,20 @@ describe('S-02 list', () => {
 })
 
 describe('S-04 detail', () => {
+  it.each([false, true])('opens the Inventory demand-line route only with its independent read capability: %s', async (allowed) => {
+    installFetch({ capabilities: allowed ? [...ALL_SALES, INVENTORY_FUTURE_ALLOCATION_READ_CAPABILITY] : ALL_SALES,
+      onDetail: () => json(detailResponseRaw) })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    const line = await screen.findByTestId('sales-line-1')
+    const link = within(line).queryByRole('link', { name: FUTURE_ALLOCATION_TEXT.title })
+    if (allowed) {
+      const raw = JSON.parse(detailResponseRaw)
+      expect(link?.getAttribute('href')).toBe(inventoryFutureAllocationPath(DRAFT, raw.lines[0].lineId))
+    } else {
+      expect(link).toBeNull()
+    }
+  })
+
   it('renders the 360 summary as separate status facts and keeps long Cari, line due date and price in the normal layout flow', async () => {
     const longParty = {
       legalName: 'KARADENİZ ÇELİK DÖKÜM MAKİNA İMALAT SANAYİ VE DIŞ TİCARET ANONİM ŞİRKETİ',
@@ -604,6 +620,35 @@ describe('SALES-DS-01: the S-02 list on GOY-DS-001', () => {
       { companyId: COMPANY_A, cursor: null, approvalState: 'Approved' },
     ])
     expect(screen.getByText(ORDER_LIST_TEXT.end)).toBeTruthy()
+  })
+
+  it('opened from a stock label row, starts on approved orders and carries the label code into the order allocation tab (KLN-D117)', async () => {
+    stubViewport(false)
+    const fetch = installFetch({
+      onList: (url) => {
+        const params = new URL(url, 'http://x').searchParams
+        return json({ items: params.get('approvalState') === 'Approved' ? [draftRow(9, { approvalState: 'Approved' })] : [draftRow(1)], nextCursor: null })
+      },
+    })
+    renderSalesApp('/satis/siparisler?tahsisEtiketi=ETK-001')
+    const link = await screen.findByRole('link', { name: 'SO-2026-0009' })
+    expect(link.getAttribute('href')).toBe(`/satis/siparisler/${ids(9)}?sekme=tahsis&etiket=ETK-001`)
+    expect(screen.getByTestId('sales-allocation-label-context').textContent).toBe(ORDER_LIST_TEXT.allocationLabelContext('ETK-001'))
+    expect(listReads(fetch)).toEqual([{ companyId: COMPANY_A, cursor: null, approvalState: 'Approved' }])
+    // The user may still lift the narrowing; the label stays carried.
+    await userEvent.selectOptions(screen.getByLabelText(ORDER_LIST_TEXT.filter), '')
+    const other = await screen.findByRole('link', { name: 'SO-2026-0001' })
+    expect(other.getAttribute('href')).toBe(`/satis/siparisler/${ids(1)}?sekme=tahsis&etiket=ETK-001`)
+  })
+
+  it('ignores an unusable carried label code and lists as usual', async () => {
+    stubViewport(false)
+    const fetch = installFetch({ onList: () => json({ items: [draftRow(1)], nextCursor: null }) })
+    renderSalesApp(`/satis/siparisler?tahsisEtiketi=${encodeURIComponent('   ')}`)
+    const link = await screen.findByRole('link', { name: 'SO-2026-0001' })
+    expect(link.getAttribute('href')).toBe(`/satis/siparisler/${ids(1)}`)
+    expect(screen.queryByTestId('sales-allocation-label-context')).toBeNull()
+    expect(listReads(fetch)).toEqual([{ companyId: COMPANY_A, cursor: null, approvalState: null }])
   })
 
   it('on a phone each draft is one labelled card with the same facts; the long Cari is whole and there is no table', async () => {

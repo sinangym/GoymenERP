@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using GoymenERP.Api.Endpoints;
+using GoymenERP.Api.Errors;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -15,7 +16,8 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <see cref="ISalesCustomerReturnService"/> (no database): the decision body is strict and carries an optional reason, a step
 /// route refuses a reason member (400 before the service), the metadata and media type answer before the service, a replay carries
 /// the replay headers (a replayed self-rejection refusal too), and 403 / 404 stay code-less. The service's own rules are
-/// unit-tested; the store is the SQL Server class. SENTETIK / NOT_ENV.
+/// unit-tested; the store is the SQL Server class. SAT-S2: the finalisation body carries the user's installment selection
+/// strictly (FNS-D81) and the installment read answers Finance's prefill. SENTETIK / NOT_ENV.
 /// </summary>
 public sealed class SalesCustomerReturnHttpAcceptanceTests(GoymenErpApiFactory factory) : IClassFixture<GoymenErpApiFactory>
 {
@@ -167,6 +169,123 @@ public sealed class SalesCustomerReturnHttpAcceptanceTests(GoymenErpApiFactory f
     }
 
     [Fact]
+    public async Task A_finalization_passes_the_users_installment_selection_and_an_absent_selection_stays_absent()
+    {
+        var returnId = Guid.NewGuid();
+        var openItem = Guid.NewGuid();
+        var service = new StubCustomerReturnService
+        {
+            Decide = (_, id) => Task.FromResult(new SalesCustomerReturnCommandResult(View(id), false, "SENTETIK-corr-final")),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using (var selected = await client.SendAsync(Post(returnId, "finalization",
+            $"{{\"expectedVersion\":\"3\",\"allocations\":[{{\"openItemId\":\"{openItem:D}\",\"amount\":\"12.00\"}}]}}", "SENTETIK-final")))
+        {
+            Assert.Equal(HttpStatusCode.OK, selected.StatusCode);
+        }
+
+        using (var whole = await client.SendAsync(Post(returnId, "finalization", "{\"expectedVersion\":\"3\"}", "SENTETIK-final-whole")))
+        {
+            Assert.Equal(HttpStatusCode.OK, whole.StatusCode);
+        }
+
+        Assert.Equal([$"finalize:{returnId:D}:3:{openItem:D}=12.00", $"finalize:{returnId:D}:3:-"], service.Bodies);
+    }
+
+    [Theory]
+    [InlineData("{\"expectedVersion\":\"3\",\"allocations\":[]}")]
+    [InlineData("{\"expectedVersion\":\"3\",\"allocations\":[{\"openItemId\":\"00000000-0000-0000-0000-000000000000\",\"amount\":\"1\"}]}")]
+    [InlineData("{\"expectedVersion\":\"3\",\"allocations\":[{\"openItemId\":\"6b0f4f43-2a8f-4b55-9d1c-6a3e3f1c2b01\",\"amount\":\"0\"}]}")]
+    [InlineData("{\"expectedVersion\":\"3\",\"allocations\":[{\"openItemId\":\"6b0f4f43-2a8f-4b55-9d1c-6a3e3f1c2b01\",\"amount\":\"-1\"}]}")]
+    [InlineData("{\"expectedVersion\":\"3\",\"allocations\":[{\"openItemId\":\"6b0f4f43-2a8f-4b55-9d1c-6a3e3f1c2b01\",\"amount\":\"1,5\"}]}")]
+    [InlineData("{\"expectedVersion\":\"3\",\"allocations\":[{\"openItemId\":\"6b0f4f43-2a8f-4b55-9d1c-6a3e3f1c2b01\"}]}")]
+    [InlineData("{\"expectedVersion\":\"3\",\"allocations\":[{\"openItemId\":\"6b0f4f43-2a8f-4b55-9d1c-6a3e3f1c2b01\",\"amount\":\"1\",\"x\":1}]}")]
+    [InlineData("{\"expectedVersion\":\"3\",\"allocations\":[{\"openItemId\":\"6b0f4f43-2a8f-4b55-9d1c-6a3e3f1c2b01\",\"amount\":\"1\"},"
+        + "{\"openItemId\":\"6b0f4f43-2a8f-4b55-9d1c-6a3e3f1c2b01\",\"amount\":\"2\"}]}")]
+    [InlineData("{\"expectedVersion\":\"3\",\"allocations\":null,\"reason\":\"x\"}")]
+    public async Task A_finalization_with_a_malformed_installment_selection_answers_400_before_the_service(string json)
+    {
+        var service = new StubCustomerReturnService();
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using var response = await client.SendAsync(Post(Guid.NewGuid(), "finalization", json, "SENTETIK-bad-selection"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("validation_failed", body.RootElement.GetProperty("code").GetString());
+        Assert.Empty(service.Bodies);
+    }
+
+    [Fact]
+    public async Task The_installment_read_answers_Finances_prefill_and_refuses_a_query_string_before_the_service()
+    {
+        var returnId = Guid.NewGuid();
+        var openItem = Guid.NewGuid();
+        var service = new StubCustomerReturnService
+        {
+            Installments = id => Task.FromResult(new SalesCustomerReturnInstallmentsResponse(id, "3", "12.00", true, "12.00", "0.00",
+                [new SalesCustomerReturnInstallmentView(openItem, new DateOnly(2026, 12, 1), "20.00", "20.00", "12.00")])),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using (var response = await client.GetAsync($"{SalesEndpoints.CustomerReturnsPath}/{returnId:D}/installments"))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.True(response.Headers.CacheControl is { NoStore: true, Private: true });
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.True(body.RootElement.GetProperty("selectionAllowed").GetBoolean());
+            var installment = Assert.Single(body.RootElement.GetProperty("installments").EnumerateArray());
+            Assert.Equal((openItem, "2026-12-01", "12.00"), (installment.GetProperty("openItemId").GetGuid(),
+                installment.GetProperty("dueOn").GetString(), installment.GetProperty("prefillAmount").GetString()));
+        }
+
+        using (var query = await client.GetAsync($"{SalesEndpoints.CustomerReturnsPath}/{returnId:D}/installments?amount=1"))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, query.StatusCode);
+        }
+
+        Assert.Equal([$"installments:{returnId:D}"], service.Bodies);
+    }
+
+    [Theory]
+    [InlineData(503, SalesCustomerReturnProblemCodesV1.FinancePortUnavailable, true)]
+    [InlineData(422, SalesCustomerReturnProblemCodesV1.FinanceRefused, true)]
+    [InlineData(409, "state_conflict", true)]
+    [InlineData(403, "forbidden", false)]
+    [InlineData(404, "not_found", false)]
+    public async Task An_installment_read_refusal_keeps_business_codes_and_redacts_platform_failures(int status, string code, bool coded)
+    {
+        var service = new StubCustomerReturnService { Installments = _ => throw new SalesDraftServiceException(status, code) };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync($"{SalesEndpoints.CustomerReturnsPath}/{Guid.NewGuid():D}/installments");
+
+        Assert.Equal(status, (int)response.StatusCode);
+        if (status == 503)
+        {
+            // The platform writer keeps Finance unavailable fail-closed without exposing its internal provider code.
+            var text = await response.Content.ReadAsStringAsync();
+            using var body = JsonDocument.Parse(text);
+            Assert.Equal(ErpProblemCodes.ServiceUnavailable, body.RootElement.GetProperty("code").GetString());
+            Assert.DoesNotContain(code, text, StringComparison.Ordinal);
+        }
+        else if (coded)
+        {
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal(code, body.RootElement.GetProperty("code").GetString());
+        }
+        else if (code != "forbidden")
+        {
+            Assert.DoesNotContain(code, await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public async Task A_recorded_self_rejection_answered_again_under_the_same_key_is_the_same_409_with_the_replay_headers()
     {
         var service = new StubCustomerReturnService
@@ -244,8 +363,25 @@ public sealed class SalesCustomerReturnHttpAcceptanceTests(GoymenErpApiFactory f
         public Task<SalesCustomerReturnCommandResult> ApproveCustomerReturnAsync(Guid customerReturnId, SalesDraftStateCommandRequest request,
             SalesCommandMetadata metadata, CancellationToken cancellationToken = default) => Record("approve", customerReturnId, request);
 
-        public Task<SalesCustomerReturnCommandResult> FinalizeCustomerReturnAsync(Guid customerReturnId, SalesDraftStateCommandRequest request,
-            SalesCommandMetadata metadata, CancellationToken cancellationToken = default) => Record("finalize", customerReturnId, request);
+        public Task<SalesCustomerReturnCommandResult> FinalizeCustomerReturnAsync(Guid customerReturnId,
+            FinalizeSalesCustomerReturnRequest request, SalesCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            var allocations = request.Allocations is null
+                ? "-"
+                : string.Join(",", request.Allocations.Select(allocation => $"{allocation.OpenItemId:D}={allocation.Amount}"));
+            Bodies.Add($"finalize:{customerReturnId:D}:{request.ExpectedVersion}:{allocations}");
+            return Decide("finalize", customerReturnId);
+        }
+
+        public Func<Guid, Task<SalesCustomerReturnInstallmentsResponse>> Installments { get; set; } =
+            _ => throw new InvalidOperationException("The service must not be called.");
+
+        public Task<SalesCustomerReturnInstallmentsResponse> GetCustomerReturnInstallmentsAsync(Guid customerReturnId,
+            CancellationToken cancellationToken = default)
+        {
+            Bodies.Add($"installments:{customerReturnId:D}");
+            return Installments(customerReturnId);
+        }
 
         private Task<SalesCustomerReturnCommandResult> Record(string command, Guid customerReturnId, SalesDraftStateCommandRequest request)
         {

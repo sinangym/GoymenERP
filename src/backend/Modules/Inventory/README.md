@@ -400,7 +400,9 @@ approver may be different people), DEC-SET-001 (no threshold in code; a missing 
 
 | Rule | Where | Held by |
 |---|---|---|
-| A count names one stocked label at the version the counter saw, with exactly one stored non-zero position (a label with free AND blocked parts, or none, is `inventory_stock_count_position_conflict`); book = that position's kg, difference = counted − book | `StockCount`, `InventoryStore.RecordStockCountAsync` | domain + store |
+| A count names one label at the version the counter saw, with exactly one stored non-zero position (a label with free AND blocked parts is `inventory_stock_count_position_conflict`); book = that position's kg, difference = counted − book | `StockCount`, `InventoryStore.RecordStockCountAsync` | domain + store |
+| **SAT-D330 (STK-S22): a label the system shows at 0 is countable.** With no stocked position, the count is taken at the zero balance row the label was last emptied at: its only stored row, or — when it was moved before — the one zero row named by the label's last movement (book = 0). A label never stocked (no balance row), a label a split/merge/manufacturing transformation consumed (its kg live on in its outputs; a surplus would count the same steel twice) and several candidate rows stay `inventory_stock_count_position_conflict`. An approved surplus puts the label back in stock through the same `CountAdjustment`. `CK_StockCounts_State` allows `BookKg >= 0` (`AllowInventoryZeroBookStockCounts`; its `Down` refuses (THROW 51748) while a zero-book count exists, forward fix) | `CountedPositionAsync`, `InventoryDbContext.StockCountStateCheck` | store + SQL |
+| **SAT-D329:** a movement the ledger refuses (negative physical stock — an over-issue, a stopped transaction) leaves the label's kg and version untouched, so the label is never locked by it: the next issue, and a count at the unchanged version, go through | `StockLedger.Apply` (refuses before any write) | ledger + SQL test |
 | A reason is mandatory (≤ 1000, trimmed); counted kg is canonical, ≥ 0, ≤ 3 decimals and on the company's approved kg profile at the count date | `ParseStockCount`, `InventoryKilogramScale` | store (400) |
 | Recording changes no stock and bumps no label version; a zero difference closes at once (`NoDifference`) | `InventoryStore.StockCounts.cs` | store |
 | The difference is final only after a decision under `inventory.stock-count.approve`; recording needs `inventory.stock-count.record`; both company-wide, measured fresh twice before the single owner transaction | `InventoryStockCountCommandService` | command (403/503) |
@@ -419,8 +421,17 @@ approver may be different people), DEC-SET-001 (no threshold in code; a missing 
   time (DEC-SET-001 snapshot), not a code constant.
 - `INV-R21-REASON-LIST-01`: no closed reason list is decided (DEC-STK-007 names "sebep" only); the reason is free
   text. A closed list, if decided, is an additive `ReasonCode` beside the text.
-- Out of this slice: counting a label with no stored stock ("found stock"), a whole-location count sheet, transfer
-  (R20, INV-R20-R21-01 Q1) and cost/valuation of the adjustment (OPEN-008).
+- Out of this slice: a whole-location count sheet and transfer (R20, INV-R20-R21-01 Q1).
+- **Cost of the adjustment (SAT-D331, SAT-D334; STK-S22 partial):** the pure rule is `StockCountCostCalculator`
+  (domain). A surplus is valued at the location/product moving-average cost and leaves the average unchanged; a
+  position at zero stock uses its last average (SAT-D296); an unreadable or never-recorded position leaves the cost
+  "hesaplanamadı" while the surplus is still added — for every surplus, not only a label shown at 0. A shortage is
+  valued at the current average; an unreadable or never-recorded average stops the deduction ("hesaplanamadı").
+  SAT-D331 (5) makes this wait for the average-cost ledger to be wired to stock movements, which no slice has done
+  yet: until then the approval posts its `CountAdjustment` with cost `NotCalculated` (as before) and does not apply the
+  shortage stop, because every position would read "no source" and every shortage would be refused. Wiring the rule
+  into `DecideStockCountAsync` (read port `IInventoryAverageCostReadPortV1`, base currency for `CostResult.Known`) is
+  the follow-up of that ledger wiring.
 
 **Central publication (coordinator):** register `inventory.stock-count.record` and `inventory.stock-count.approve`
 (company-wide) in `ErpPermissions`; `builder.Services.AddInventoryStockCounts();` and `app.MapInventoryStockCountEndpoints();`
@@ -520,9 +531,152 @@ awaited proof and must consume an owner implementation that reads that snapshot 
 I02.1 remains separate: the accepted partial-acceptance invariant does not by itself decide per-line quantity grain.
 No quantity, migration or stock-effect wiring is introduced by this contract-only slice.
 
+### B-22a — dispatch bound to the Logistics outgoing-document proof
+
+The host now wires `AddInventoryTransfers()` with the destination adapter (`OrganizationInventoryTransferDestinationPort`:
+an external location's custodian must be its operator party, an internal location's custodian the company itself —
+DEC-ORG-004; an unreadable owner answers 503) and maps plan, dispatch and get-by-id (accept is B-22b).
+`inventory.stock-transfer.write` is registered centrally; no grant is added. The dispatch request names the outgoing
+document only by `outgoingDocumentId` and `expectedOutgoingDocumentVersion` (canonical positive integer text); the
+stored kind is the fixed `logistics.transfer-outgoing-document`. Inside the permission fence the service replays the
+key first, reads the transfer, then asks `IInventoryTransferOutgoingDocumentProofPortV1` with the transfer's complete
+ordered line set (full-label v1). Only `CurrentEffective` moves stock; the store re-checks the proved binding against the
+stored company, transfer, requested version and ordered lines and stores `DocumentVersion` on the dispatch row.
+
+| Proof outcome | Answer | Recorded for the key |
+|---|---|---|
+| `Missing` | 422 `inventory_transfer_outgoing_document_not_found` | no |
+| `BindingMismatch` | 422 `inventory_transfer_outgoing_document_binding_mismatch` | no |
+| `Draft` | 409 `inventory_transfer_outgoing_document_not_final` | yes (terminal, audited) |
+| `Cancelled` | 409 `inventory_transfer_outgoing_document_cancelled` | yes |
+| `Reversed` | 409 `inventory_transfer_outgoing_document_reversed` | yes |
+| `Stale` | 409 `inventory_transfer_outgoing_document_version_conflict` | yes |
+| `Unavailable`, no proof port, port error | 503 (code-less) | no |
+
+Migration `AddInventoryTransferDispatchDocumentVersion` adds nullable `TransferDispatches.DocumentVersion` with
+`CK_TransferDispatches_DocumentVersion`; its `Down` refuses (THROW 51272) while a proved dispatch row exists (forward
+fix). Not decided here and left fail-closed: reversing an accepted transfer, planned/actual difference or tolerance
+resolution, and subcontract-order binding. Dispatch cancellation is B-22b below.
+
+### B-22b — dispatch cancellation, "kantardan geçer" setting and departure moment (STK-S5)
+
+Refs: KLN-D20, KLN-D25 (6)/(7), KLN-D27, LOJ-D10, LOJ-D11.
+
+- **Command.** `POST /api/v1/inventory/transfers/{transferId}/cancel-dispatch` with `expectedTransferVersion`
+  (canonical positive integer text), `cancelledAtUtc` (UTC, not before the dispatch) and `reason` (trimmed, 1-500,
+  no control characters). Fenced by the service on the new `inventory.stock-transfer.cancel` (registered centrally,
+  company-wide only; no grant, role or Critical is added). Same idempotency/replay/audit boundary as dispatch.
+- **Effect.** Only a fully in-transit transfer (no accepted line) is cancelled. One kind 11
+  `TransferDispatchCancellation` movement brings every dispatched bucket back to its exact source bucket (In), the
+  labels return to the source position with a version bump, the transfer and every line become `DispatchCancelled`,
+  and one `TransferDispatchCancellations` row stores the movement, the reason and the owner confirmation versions.
+  The dispatch row and its kind 8 movement are never changed (append-only, KLN-D20: one reverse record, no copy).
+- **Source warehouse setting (LOJ-D11).** Dispatch reads the Settings-owned value through
+  `IInventoryTransferSourceScaleSettingPortV1` and stores it on `TransferDispatches.SourceScaleSettingAtDispatch`
+  (1 Off, 2 On, 3 Unreadable). An absent port, failing read or undefined answer is stored as Unreadable, never as a
+  chosen value. Dispatches recorded before this migration get Off (the column default; KLN-D27 (7)). Inventory does
+  not own or choose the setting; the port is unregistered until the Settings owner ships it.
+- **Window (pure rule `InventoryTransferCancelWindow`).** Stored and current settings plus a fresh owner reading of
+  the e-İrsaliye link, GİB send, exit weighing and vehicle exit (`IInventoryTransferDispatchCancelGatePortV1.ReadAsync`)
+  give Open, Closed (basis and moment) or Unreadable. Not linked and the more-closed setting Off: closed at dispatch.
+  Not linked and On: open until exit weighing or vehicle exit, needs a Logistics "no exit and none later"
+  confirmation. Linked: open until the GİB send, needs an e-İrsaliye cancel confirmation; if either setting is On or
+  unreadable, the earliest of the three departure facts closes it and both confirmations are needed (KLN-D27).
+- **Answers.** A closed window persists `TransferDispatchCancelClosures` once (first closure is final, never
+  reopened, KLN-D25 (7)(g)/KLN-D27 (5)) and records the terminal 409 `inventory_transfer_cancel_window_closed` under
+  the key. An unreadable reading is 409 `inventory_transfer_cancel_window_unreadable` and a missing required owner
+  confirmation 409 `inventory_transfer_cancel_confirmation_missing`; both are not recorded (the key may retry). An
+  open window asks `ConfirmAsync` only for the parts it needs and re-evaluates the confirmation-time facts before
+  writing. No gate port, a failing read or a malformed answer is a code-less 503.
+- **Migration.** `AddInventoryTransferDispatchCancellation` adds the column (default Off) with
+  `CK_TransferDispatches_SourceScaleSetting`, both tables, widens `CK_Transfers_State` to status 5 and
+  `CK_Movements_Kind` to 11. Its `Down` refuses (THROW 51823) while a kind 11 movement, a cancellation or closure row,
+  a non-Off stored setting or a cancelled transfer exists (forward fix).
+- **Not decided here (NEEDS-SINAN, fail-closed):** the cost golden of the reverse movement (transfers post no cost
+  today), whether an unreadable reading should ever be persisted, whether dispatch should refuse an unreadable
+  setting, and the disposition snapshot bucket of a cancellation (counted as other inbound kg today). The real
+  Settings and Logistics/e-İrsaliye producers are those owners' integration work.
+
+### STK-S7 — reverse transfer of an accepted transfer (KLN-D22)
+
+- **Rule:** an accepted transfer is never cancelled. `POST /api/v1/inventory/transfers/{transferId}/reverse` plans a NEW
+  transfer from the original destination (location and custodian) back to the original source, under
+  `inventory.stock-transfer.write` (no new permission name). The reason (max 500, no control characters) and the link to
+  the original transfer and to each accepted original line are mandatory; `inventory.TransferReversals` and
+  `inventory.TransferReversalLines` hold that link. The reverse transfer moves stock only through the ordinary dispatch
+  and acceptance commands; planning writes no balance, movement or average cost row.
+- **Refusals:** original not PartiallyAccepted/Accepted/Closed → 409 `inventory_transfer_reverse_original_not_accepted`;
+  an original line that was not accepted → 409 `_line_not_accepted`; a receipt excess still waiting for its decision →
+  409 `_overage_pending`; a line already being brought back by a dispatched, not cancelled reverse transfer → 409
+  `_line_already_reversed` (an undispatched reverse plan is inert and does not block); missing reason → 422
+  `_reason_required`; the original source no longer an active destination → 422 `inventory_transfer_destination_*`.
+- **Idempotency:** command row `inventory.transfer.reverse.v1`; the same key or the same reverse transfer id with the
+  same payload replays the stored result, a different payload is 409 `inventory_transfer_idempotency_conflict`. Audit
+  `Inventory.Transfer` (Reverse, `inventory.transfer.reverse-planned.v1`).
+- **Read:** `GET /api/v1/inventory/transfers/{transferId}/reversal-facts` (balances read) answers the link this transfer
+  reverses and the reverse transfers that point at it, with their status.
+- **Migration:** `AddInventoryTransferReversals` creates the two link tables. Its `Down` refuses (THROW 51722) while any
+  link row exists, then drops (forward fix).
+- **Not covered:** returning a pending label by reverse transfer (KLN-D23 (2)(b)).
+
+### STK-SC34-a — receipt follow-ups (KLN-D90, KLN-D91, KLN-D92, KLN-D97, KLN-D98)
+
+- **Shortage cost (KLN-D90).** `AverageCostCalculator.ValueTransferReceiptShortage` values the KLN-D21 fire at the
+  dispatch unit cost, never the moving average at receipt; an unknown or zero dispatch cost has no value, and the
+  value is left unrounded for the Finance accounting-entry spec. Transfers post nothing to the cost ledger yet
+  (KLN-D64 (2)) and the dispatch unit cost is not stored, so no movement path calls the rule; no accounting entry is
+  written until ledger posting opens (account mapping is NEEDS-SPEC, Finance).
+- **Multi-block label (KLN-D91).** A label dispatched in more than one block/lot bucket is received only with its full
+  dispatched kilograms; any difference is 409 `inventory_transfer_receipt_multi_block_full_only` (replaces
+  `inventory_transfer_receipt_split_undecided`), checked before the excess-reason rules, never split over buckets.
+- **Personas (KLN-D92).** `inventory.stock-transfer.loss-record`: Depo Sorumlusu; `overage-approve` and `loss-approve`:
+  Stok/Depo Müdürü and Genel Müdür. A declaration for the grant-time human gate, not a grant: no role, no user, no
+  seed. Maker≠approver stays enforced by the service.
+- **Renewed loss request (KLN-D97).** Loss requests and decisions are numbered per line (`RequestNumber`, from 1). A
+  rejected request stays as it was; `RequestLoss` on the same line opens the next number (not before the rejection,
+  maker≠approver and audit as before). An undecided request blocks a second one (409
+  `inventory_transfer_loss_already_requested`; one undecided request per line is the reversible implementation reading
+  of KLN-D97); an approved one is terminal. `DecideLoss` takes an optional `requestNumber` (absent = 1, so a stale
+  decision never lands on a newer request; the hash includes it only when sent, so old keys still replay). A line is
+  written off at most once (filtered unique index on `[Decision] = 1`). The overage side is not renewed here: a
+  corrected overage request needs a permission and a quantity bound that are not decided (NEEDS-SINAN).
+- **Cancel while a loss request is pending (KLN-D98).** `cancel-dispatch` answers 409
+  `inventory_transfer_cancel_loss_request_pending` before any owner is asked, and the writer re-checks it in its own
+  transaction; the cancel never withdraws the request. An approved write-off still answers
+  `inventory_transfer_state_conflict`. A withdraw command does not exist yet (its permission is NEEDS-SINAN).
+- **Migration.** `AddInventoryTransferLossRequestNumbers` adds `RequestNumber` (existing rows 1) to both loss tables,
+  widens both keys, adds `CK_TransferLossRequests_RequestNumber` and the one-approval-per-line filtered unique index.
+  Its `Down` refuses (THROW 51811) while a renewed request or its decision exists (forward fix).
+
+### STK-SC36-b — overage re-request, loss withdrawal (KLN-D107, KLN-D108) and the first-receipt rate port (FNS-D77/D78)
+
+- **Overage re-request (KLN-D107).** `POST .../lines/{lineId}/receive/overage-renewal` (`inventory.stock-transfer.write`)
+  records a corrected re-request of a rejected receipt excess. The receipt's own excess is request 1; re-requests are
+  numbered from 2 (`TransferOverageRenewals`, `CK_TransferOverageRenewals_RequestNumber`). It follows only a rejection of
+  the line's latest request and never predates it (409 `inventory_transfer_state_conflict`); an undecided request
+  answers 409 `inventory_transfer_overage_already_requested`; more than the declared excess is 422
+  `inventory_transfer_overage_renewal_exceeds_declared`. `DecideOverage` takes an optional `requestNumber` (absent = 1)
+  under `overage-approve`; neither the receiver nor the re-requester decides a re-request (409 self-approval). A line's
+  excess is approved at most once (filtered unique index on `[Decision] = 1`). A re-request changes no stock and no
+  transfer version; audit `inventory.transfer.overage-renewed.v1`.
+- **Loss withdrawal (KLN-D108).** `POST .../lines/{lineId}/loss-withdrawal` (`inventory.stock-transfer.loss-record`)
+  withdraws an undecided loss request by number (`TransferLossWithdrawals`). A decided request answers 409
+  `inventory_transfer_already_decided`, an unknown one `inventory_transfer_state_conflict`. A withdrawn request is never
+  decided (409 `inventory_transfer_loss_withdrawn`) and no longer blocks `cancel-dispatch`. Stock and version do not
+  change; audit `inventory.transfer.loss-withdrawn.v1`. A new request after a withdrawal takes the line's next number like
+  a KLN-D97 renewal (reversible implementation reading; whether that is wanted is NEEDS-SINAN).
+- **First-receipt rate port (FNS-D77/D78).** `IInventoryFirstReceiptExchangeRateReadPortV1` answers, per label, the
+  approved rate stored on the goods acceptance where the material first entered stock (split lineage followed to a single
+  parent; merge/manufacturing is `first_receipt_lineage_ambiguous`). No goods receipt records a rate yet, so the port is
+  dry: a goods-acceptance first entry answers `Unavailable` / `first_receipt_rate_not_recorded` and the caller shows
+  "hesaplanamadı" (FNS-D83). It never falls back to an invoice, bulletin or current rate. Company-scoped, read-only.
+- **Migration.** `AddInventoryTransferOverageRenewalsAndLossWithdrawals` adds `RequestNumber` (existing rows 1) to
+  `TransferOverageDecisions`, widens its key, adds the one-approval filtered index and creates both tables. Its `Down`
+  refuses (THROW 51836) while a re-request, a decision on one or a withdrawal exists (forward fix).
+
 ## Movement kinds and rollback signal (reference)
 
-`StockMovementKind` (stored as `inventory.Movements.Kind`, `CK_Movements_Kind` = `[Kind] BETWEEN 1 AND 9`):
+`StockMovementKind` (stored as `inventory.Movements.Kind`, `CK_Movements_Kind` = `[Kind] BETWEEN 1 AND 11`):
 
 | Kind | Value | Written by | Lines |
 |---|---|---|---|
@@ -535,6 +689,8 @@ No quantity, migration or stock-effect wiring is introduced by this contract-onl
 | `Scrap` | 7 | an approved scrap write-off (ST-02, `AddInventoryStockScraps`); free or blocked | one Out |
 | `TransferDispatch` | 8 | one INV-R20 transfer dispatch; every source bucket leaves stock atomically | Out |
 | `TransferAccept` | 9 | one accepted INV-R20 line; the captured buckets enter the validated target | In |
+| `ManufacturingOutputReversal` | 10 | the reversal of a manufacturing output receipt (F-009 D1, `AddInventoryManufacturingOutputReversal`); free unallocated kg at the output position only, no cost | one Out |
+| `TransferDispatchCancellation` | 11 | the cancellation of one in-transit INV-R20 dispatch (B-22b, `AddInventoryTransferDispatchCancellation`); every dispatched bucket back to its exact source bucket | In |
 
 A new kind widens `CK_Movements_Kind` in its own migration and its `Down` narrows it back only when no row of that kind
 exists. An allocation change, a split/merge and a label version bump write NO movement.
@@ -558,12 +714,68 @@ Refs: DEC-PRDCT-003, DEC-PRDCT-007, URT-D8, URT-D14.
   read returns kind `Manufacturing` without the split/merge kg balance check (scrap and loss make the totals differ).
 - **Participant V2:** `IInventoryManufacturingRealizationParticipantV2` keeps the V1 issue/return shapes. Its output
   maps the output class before any read or write: `GoodProduct` -> `Standard`, `SecondQuality` -> `SecondQuality`,
-  `Scrap` -> `Scrap`. `ProcessLoss`, `UsableRemnant` (fail-closed until its production status field is decided, BS-5)
-  and any other token are refused with `400 inventory_manufacturing_output_class_not_stockable`. The label is created
-  classified, and the result echoes both the output class and the classification. V1 stays unchanged until the
-  Manufacturing consumer moves to V2 in its own slice.
+  `Scrap` -> `Scrap` (URT-D43). `ProcessLoss` and any other token are refused with
+  `400 inventory_manufacturing_output_class_not_stockable`. The label is created classified, and the result echoes
+  both the output class and the classification. V1 stays unchanged until the Manufacturing consumer moves to V2 in its
+  own slice.
+- **Usable remnant (STK-S9, BS-5/BS-14):** `UsableRemnant` is stockable. Its classification is the operator's choice
+  sent as `RemnantClassification` (`Standard` or `SecondQuality`; null means the production default `SecondQuality`).
+  `Scrap`, an undefined value, or a `RemnantClassification` on any other output class is refused with
+  `400 inventory_manufacturing_remnant_classification_invalid` before any read or write. The label also carries the
+  separate production status `UsableRemnant` (`inventory.Labels.ProductionStatus` = 1, null for every other label);
+  the result echoes it as `ProductionStatus`. It is descriptive only (no movement, block, disposal or sellability
+  effect; sellability stays with DEC-PRDCT-007), written once at label creation and not in the label's modifiable
+  columns, so a later manual reclassification keeps it. Split/merge outputs inherit it by KLN-D46 (in force per KLN-D63
+  and KLN-D86, which voids the SC21 "inheritance stays open" wording): every split child of a remnant label is
+  `UsableRemnant`; a merge result is `UsableRemnant` only when every source is, and null for mixed sources
+  (`InventoryLabelTransformation.InheritedProductionStatus`, read from the stored sources). A non-remnant output
+  hashes its idempotency payload exactly as before; a remnant output also binds the effective classification. The
+  field is not on the HTTP label reads yet.
 - **Migration:** `WidenInventoryLabelTransformationKindToManufacturing` widens `CK_LabelTransformations_Kind` to
   `IN (1, 2, 3)`. Its `Down` refuses (THROW 51262) while any kind 3 row exists (forward fix).
+  `AddInventoryLabelProductionStatus` adds nullable `Labels.ProductionStatus` with `CK_Labels_ProductionStatus`
+  (`IS NULL OR IN (1)`); its `Down` refuses (THROW 51291) while any label carries a production status (forward fix).
+
+## Manufacturing output reversal, label disposition and Free kg ports (F-009 D1/D5, STK-S20)
+
+Refs: `docs/delivery/URETIM_EMRI_DUZELTME_ANALIZ_v1.md` §5 D1 and §6; URT-D28, URT-D31 (correction is a new linked
+movement, never an edit of the old one), URT-D34 (Free kg read before allocation).
+
+- **Reversal participant:** `InventoryManufacturingRealizationParticipant` also implements
+  `IInventoryManufacturingOutputReversalParticipantV1.StageOutputReversalAsync`, enlisted in Manufacturing's open
+  transaction like the issue/output/return stages. It writes exactly one `ManufacturingOutputReversal` (10) movement:
+  one Out line at the output receipt's original position, Free block, source kind `manufacturing.output-reversal`,
+  source id = order, source line = Manufacturing's reversal fact id. The old `Receipt` stays unchanged; net output =
+  receipt − reversals. Command name `inventory.manufacturing-output-reversal.stage.v1`; idempotency replay, payload
+  conflict, label expected version (bumped by the movement) and the single audit/command save follow the participant's
+  existing skeleton.
+- **Decision source inside the transaction:** the reversal re-reads the label's disposition with the same pure
+  computation the read port shows (`InventoryLabelDispositionReader`), under the label version fence. Stored figures
+  that do not reconcile are refused 503 `Unavailable` (fail-closed). A request for another order/output than the
+  label's output origin is 404 `InvalidReference`.
+- **Refusals (all 409, `InventoryManufacturingOutputReversalCodesV1`):** `exceeds_produced` (earlier reversals +
+  this one > received kg) first; then, when the kg are not free and unallocated at the output position, the first
+  reason in this fixed order: `shipped` (net of customer return), `issued_to_manufacturing` (net of manufacturing
+  return), `transferred`, `allocated`, `blocked`, otherwise `not_free` (scrap, count, …). Every reason blocks alike; the
+  order is a reversible presentation choice. Releasing the hold is the owning module's own command. The V1 realization
+  code set is unchanged; the reversal-only codes live only in the reversal contract.
+- **No average-cost impact:** a manufacturing receipt is recorded without cost (`CostResult.NotCalculated`) and never
+  enters the average while its order is open (§4.8), so the reversal is also `NotCalculated` and touches no
+  `AverageCostLedger` row.
+- **`IInventoryLabelDispositionReadPortV1`:** `Get(CompanyId, LabelId)` → Value / NotFound / Unreadable. Value carries
+  the label version, `InStock`/`OutOfStock`, the output origin (order, output, receipt movement, produced, reversed,
+  free-unallocated and blocked kg at the output position; null for a non-output label) and gross kg per business reason
+  (shipped, customer-returned, manufacturing issued/returned, transfer dispatched/accepted, scrapped, count in/out,
+  other in/out), physical, blocked and allocated kg. A company other than the resolved one reads as NotFound. It is
+  never the decision source (TOCTOU) and carries no authority.
+- **`IInventoryFreeQuantityReadPortV1`:** `Get(CompanyId, LabelId)` → `FreeKg` (Free balance minus active allocations,
+  summed over Free positions), `FreePositionCount` and the label version. Same status, company and side-effect rules.
+- **`OrderCancelled = 3`:** `InventoryManufacturingPlanReleaseReasonV1` gains `OrderCancelled` (wire code
+  `manufacturing.order-cancelled`) for Manufacturing's cancel path (URT-S4).
+- **Migration:** `AddInventoryManufacturingOutputReversal` widens `CK_Movements_Kind` to `BETWEEN 1 AND 10`. Its `Down`
+  refuses (THROW 51420) while any kind 10 movement exists, then narrows the check back (forward fix).
+- **Not here:** no permission, grant or role (the participant and the ports carry no authority; Manufacturing fences its
+  own command), no HTTP endpoint and no OpenAPI change. The frontend movement-kind decoders do not know kind 10 yet.
 
 ## Average purchase cost ledger and read port V1 (SAT-D262..D267, slice 1)
 
@@ -600,7 +812,82 @@ Decision: `docs/decisions/SINAN_KARARLARI_2026-11-10_SATIS_EK52.md`. Inventory o
   nothing writes the ledger in this slice and the port answers NoSource. No permission or grant is added; the port carries
   no authority (the Sales caller fences around it).
 
+## Future supply allocation (F-017 F017-b, STOK_F017 §3.2/§4, KLN-D26)
+
+- **Tables:** `inventory.FutureSupplyAllocations` (one allocation of a Sales order line's demand onto an approved purchase
+  order line; Active 1 / Consumed 2 / Released 3; quantities `decimal(18,3)`, refused never rounded beyond three decimals)
+  and `inventory.FutureSupplyLines` (the per purchase line ledger: `ActiveAllocated <= AllocatableSnapshot`, the snapshot
+  being the allocatable amount read under the lock). Checks: `CK_FutureSupplyAllocations_Identity/_Kinds/_Quantity/_Release`
+  and `CK_FutureSupplyLines_Ledger`; the allocation's FK to its ledger row is `Restrict`. Both tables carry `CompanyId` and
+  the company query filter.
+- **Writer (F017-b2 / STK-S17):** replay → transaction → Sales line lock, then
+  purchase line lock → fence → demand and supply reads → product match → ledger reserve (insufficient 409, other rule
+  422) → demand cap → allocation + command attempt + audit + outbox in one save. The Sales line lock
+  (`goymen:sales-order-line:{company:N}:{line:N}`, `sp_getapplock` Exclusive/Transaction) is a host adapter until Sales
+  owns it.
+- **User API:** POST `/api/v1/inventory/future-allocations` creates; POST `/{allocationId}/release` explicitly releases.
+  Both require `inventory.future-allocation.write`; GET
+  `/api/v1/inventory/sales-orders/{salesOrderId}/lines/{salesOrderLineId}/future-allocations` requires
+  `inventory.future-allocation.read` and returns a bounded 100-row window. The two names are registered only,
+  company-wide, absent from Critical and shipped grants. The module derives actor and roles from fresh authority,
+  fences the write under the locks, and revalidates successful and refused replays. Future allocations remain separate
+  from physical stock. F017-c, purchase cancellation protection and Sales reduction are an integration prerequisite;
+  the draft train does not authorize a production activation.
+- **Ports:** `IInventoryFutureAllocationReadPortV1` (active allocated sum in the purchase unit; Unreadable when the ledger
+  disagrees with Σ active remaining, never the ledger's figure) and `IInventoryFutureAllocationReleasePortV1` (a session
+  on the caller's open connection and transaction; the caller commits; no Inventory idempotency row). Defaults are
+  fail-closed until the host replaces them (identity-only unit conversion, purchase source unavailable).
+- **Migration:** `AddInventoryFutureSupplyAllocations` creates both tables. Its `Down` refuses (THROW 51460) while any
+  allocation or ledger row exists, then drops (forward fix).
+- **Open (NEEDS-SINAN):** the demand open quantity definition (ordered − shipped, cancelled → 0), unit conversion beyond
+  the identity, and the release reason code list are the author's reading or format-only; no grant is added.
+
+## Future supply conversion at goods receipt (F-017 F017-c, STOK_F017 §3.5, ALS-D84/D89)
+
+- **Order (ALS-D84):** the goods receipt host stages the purchase acceptance, then the Inventory label
+  (`IInventoryGoodsReceiptParticipantV1`, unchanged), then enlists `IInventoryGoodsReceiptFutureSupplyPortV1` on the same
+  connection and transaction and converts. The purchase line lock is the receipt's own lock (re-entrant, same
+  transaction); `IPurchaseGoodsReceiptTransactionV1` and the participant contract do not change. No route, OpenAPI entry or
+  permission is added; only the receipt host calls the port after its own permission check.
+- **Consumption order:** the host's optional `AllocationOrder` (F17-3) first, then the manual sequence, the Sales line due
+  date, the creation time and the id (`InventoryFutureSupplyConsumptionOrderV1`). A repeated or unknown id refuses 422
+  (`inventory_future_allocation_order_invalid`) and the receipt rolls back.
+- **Converted share:** the allocation is consumed by the share (Active → Consumed when nothing remains), the ledger
+  returns the share, a physical `sales.order-line` allocation is created on the received label's Free position and
+  `inventory.FutureSupplyConversions` links the two (Outcome 1). Audit `Inventory.FutureSupplyAllocation` (Convert) and
+  `Inventory.StockAllocation` (Create); outbox `inventory.future-allocation.converted.v1`. A share that takes the whole
+  accepted quantity becomes the label's measured kilograms; a partial share needs the central kg conversion.
+- **Link failure (§3.5):** label not Free, owner not the company, unit conversion unavailable, Sales line not approved,
+  product mismatch or not enough unheld Free kg → the whole remainder is released with `acceptance-link-failed` (reason
+  text names the link), released event + audit, link row Outcome 2. The receipt and the label stay.
+- **Idempotency:** one `inventory.future-allocation.convert-on-receipt.v1` command row keyed by the receipt's key; a
+  replay receipt answers the stored result and writes nothing. A receipt line with no active allocation writes nothing.
+- **Migration:** `AddInventoryFutureSupplyConversions` creates the link table (`CK_FutureSupplyConversions_Identity`,
+  `_Outcome`; unique per acceptance + future allocation and per physical allocation). Its `Down` refuses (THROW 51711)
+  while any link row exists, then drops (forward fix).
+- **Open (NEEDS-SINAN):** releasing the whole remainder on a link failure, treating not enough unheld kg as a link failure,
+  and the partial non-kg share without a central conversion source (released) are the author's reading.
+
+## Receipt reversal history (STK-S19, F017-e, ALS-D86/D91/D92, 7B)
+
+- `IInventoryGoodsReceiptReversalParticipantV1` borrows the host transaction. Purchasing is flushed first; its post-write source must use that same connection and transaction. The host owns Sales-line locks in ascending order, then the full purchase-line union, fresh subset validation, authority and commit/rollback.
+- Original receipt and conversion rows remain immutable. A separate reversal ledger records exact original conversion shares, reopened amounts, overflow released with `acceptance-reversed-no-supply`, and unheld amounts. Prior released shares never return; closed Sales demand or an inactive physical hold does not reopen a future allocation. Physical and purchase-unit quantities remain separate facts.
+- `AddInventoryGoodsReceiptReversals` adds two company-scoped history tables, same-company original links, and movement kind 16 for a pure acceptance undo. Down first refuses with **THROW 51950** while either history table or a kind-16 movement exists; empty storage rolls back freely (forward fix).
+- Evidence: unit/model and real-SQL fact sources are present. Runtime tests are **NOT_RUN**; the complete Purchasing undo/correction and supplier-return host chain remains required before this slice can be called usable.
+
 ## dependency_wait
+
+## Immutable movement cost and Manufacturing generations (SC36 / URT-D67 / URT-D79)
+
+- `AddInventoryMovementCostProvenance` is EF-generated. Its Down first refuses with **THROW 51959** while any new stamp, independent-currency ledger, pending entry, recognition or generation/history row exists (forward fix). It never backfills old movement prices.
+- New movement stamps preserve the actual event-time TL/USD and original currency proof. Canonical invariant decimal text plus strict SQL checks preserve all System.Decimal digits without database rounding; public owner fields remain decimals. Moving averages still use the existing 4-decimal calculator.
+- A borrowed-transaction `InventoryManufacturingCostGenerationParticipant` records Pending/Unreadable without a new physical-close prerequisite; actual recognition preserves authoritative label amounts and the exact before/after average-pool effect. Reopening reverses that actual immutable effect. Average rounding differences are provenance, never an automatic accounting posting.
+- Missing balances are not assumed sold: only actual net definite shipment proves the consumed SMM proposal. Unresolved transit/downstream lineage remains explicitly unreadable. USD is production display only. Accounting proposal acceptance, open-period/date selection, different approver and dispatcher activation remain separate owner/human gates.
+- Sources include model/unit and real-SQL rollback, replay, precision/reversal and Down-guard facts. Final Inventory and API integration test-project compilation is exit 0; runtime tests/SQL/browser/CI are **NOT_RUN**. Committed outbox source and all physical-return cost propagation are still pending.
+
+## Existing central dependencies
+
+- `AddInventoryExactCostPools` preserves the private priced mass as canonical exact ratios, with the existing average at 4dp. Recognition keeps nullable 3dp projections plus exact ratio provenance; no physical kg is rounded into a new quantity. Down first refuses with **THROW 51968** while a private pool or exact recognition mass exists (forward fix). Old movement stamps remain unchanged. Split/merge, partial issues, original partial returns and late Manufacturing recognition have source tests; runtime is **NOT_RUN**.
 
 - **Central registration (CARİ, same branch, sequential):** the tenant guard's reviewed inventory (this DbContext's fingerprint, the design-time factory and the initializer's `Migrate`/`EnsureCreated` branch); the module-dependency allowlist edge `Inventory.Infrastructure → Audit.Infrastructure` (ADR-009); the `Api.IntegrationTests` project reference to Inventory; and the relational verifier's BROAD list and counts for `InventorySqlServerRelationalAcceptanceTests`.
 - **INV-3 central follow-up (CARİ):** re-pin the tenant guard fingerprints of `InventoryDbContext.cs` and `InventoryStore.cs`, which changed here (no new raw SQL; the SqlClient use is unchanged); add the four new names of `InventorySqlServerRelationalAcceptanceTests` to the relational verifier's BROAD list and counts.
@@ -613,3 +900,39 @@ dotnet test tests/GoymenERP.Inventory.UnitTests/GoymenERP.Inventory.UnitTests.cs
 # real SQL (needs GOYMEN_ERP_TEST_SQLSERVER_CONNECTION; the CI relational job runs it)
 dotnet test tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj --filter FullyQualifiedName~InventorySqlServerRelationalAcceptanceTests
 ```
+
+## Immutable first-entry FX (STK-SC36-b, FNS-D103/D104)
+
+- `AddInventoryFirstEntryExchangeRateProof` is EF-generated (`20261117010119`). Nullable receipt-time snapshots and exact issue-rate ratios are append-only with the original movement cost stamp. Its first Down operation refuses with **THROW 51972** while either new proof exists (forward fix); no old movement, price or FX is backfilled.
+- The actual Purchasing proof borrows the receipt transaction. Its approved order rate wins; only an explicitly unspecified rate permits the actual entry-business-day TCMB selling answer. An unreadable order owner never becomes a day-rate fallback. Functional currency is a distinct no-conversion fact, never a fabricated rate of one. This first-entry snapshot does not replace the official supplier-invoice FX used by the TL stock-cost pool.
+- The owner reader follows bounded immutable split/merge lineage. Merges preserve exact kg-weighted rates, actual receipt components and material shares. Non-terminating quotients retain canonical ratios; no intermediate rate is rounded. A missing input rate or different directed currency pair stays unreadable. Manufacturing remains a new-material boundary. Cached subtrees retain their height, so graph limits apply on every path.
+- Source includes host/codec/calculator/model and seven real-SQL facts for original capture, invoice-FX separation, merge/split/diamond provenance, missing/pair refusal, rollback, depth and Down guards. Runtime unit/SQL/browser/CI evidence is **NOT_RUN**. Manufacturing order/non-order priority still needs the actual first-entry port bound at its owning consumer; a registered owner reader alone is not a complete user flow.
+
+
+## Negative physical stock attempts (STK-S21 / SAT-D328,D336..339)
+
+- `AddInventoryNegativeStockAttempts` (`20261117091723`, Down guard **51986**) adds append-only genuine outbound refusal history and immutable corrective-count resolutions. It never writes the refused movement or permanently locks a label. Existing stock-report permissions expose the company-filtered bounded history screen; no new permission, grant, retention deletion or Work task is activated.
+- `AddInventoryNegativeStockCountBoundaries` (`20261117095345`, Down guard **51988**) adds the transaction-owned Inventory validation mutex and immutable product/location approved-count boundary proof, plus nullable legacy observations. Physical validation, count approval and fresh post-rollback recording use one company mutex after any host Sales then Purchasing locks. A delayed attempt is resolved only by a real matching later approved count, never by time or current-stock inference. The borrowed guard context owns neither connection nor transaction and flushes only its own technical row. Both Down guards precede every destructive operation and require a reviewed forward fix while protected history/proof exists; neither migration backfills old facts.
+- Same-key company/actor/payload binding, independent attempt+Audit atomicity, count-wide resolution, count/rollback races, stale reused contexts and borrowed transaction behavior have unit/contract/real-SQL test sources. Runtime .NET/SQL/Vitest/browser/CI is **NOT_RUN**. The coordinator owns generated contracts, recovery/release and relational/group inventories; context construction and the company-wide lock are explicit final K3 review surfaces.
+
+## Original shipment TL cost evidence (STK-SC36-a dependency)
+
+- `IInventoryShipmentCostReadPortV1` reads one company/shipment/movement through its genuine Issue, original command result and definite-shipment outbox envelope. It returns the immutable TL cost stamp and factual line/label/product/loading-instruction identities. It does not read today's average, invoice price, current Product accounting class or USD to reconstruct historical TL.
+- An `Available` factual read can carry an explicitly `Unavailable` legacy TL stamp. Consumers must validate their own fresh user authority, actual Logistics document binding and exact TL/accounting admission. Rational evidence is preserved when a finite scalar/amount cannot represent it; no rounding or financial effect is introduced by this read.
+- The actual provider is module-registered. No HTTP endpoint, permission, schema change, proposal producer or SMM trigger is added. Source tests include original-stamp immutability after a later receipt, missing TL despite an actual USD stamp, tenant isolation and corrupt/unknown envelope refusal. Runtime unit/SQL/browser/CI remains **NOT_RUN**; the consuming financial workflow and pending trigger decision remain separate.
+
+## Transfer planning and target receipt documents (STK-S8, B-22, KLN-D23/D24/D107/D108)
+
+- Planning uses actual authorized label versions and actual active Organization destinations, including the external operator identity where applicable. Command-purpose transfer candidates and reads require only the existing permission for dispatch, receipt, overage decision, loss request or loss decision; they do not infer a stock-report grant. Both candidate and document continuation cursors are signed and bound to company, actor and purpose.
+- `AddInventoryTransferReceiptDocuments` (`20261117122205`) is EF-generated. It adds company-scoped append-only draft and effective receipt-document versions with same-company transfer and predecessor foreign keys. Its first Down operation refuses with **THROW 51999** while any document history exists, before dropping the table. There is no price, stock, old-document or permission backfill.
+- Draft creation and explicit finalization keep the expected transfer version, genuine lines, date, kilograms and overage reasons. The physical receipt validates that exact effective document version and line in its own transaction. The document write and its Audit owner record are atomic; the original actor/company/payload-bound replay remains immutable. Null optional document-version fields are omitted from old request hashes and JSON.
+- The actual frontend covers planning, explicit draft/finalization, receipt, overage decision/renewal and loss request/decision/withdrawal. Unknown outcomes retain the original frozen intent and key. Read-only stock lists are independently capability-gated, so command-only authority does not require a report grant. Generic record references are not accepted as owner proof.
+- Source compilation is exit 0 for API, Inventory/Counterparty/Organization UnitTests and Api.IntegrationTests; runtime unit/SQL/Vitest/browser/CI and database update are **NOT_RUN**. Genuine linked GIB send evidence is still unavailable and its path remains 503. That missing owner and runtime acceptance keep STK-S8 **PARTIAL**; source and compilation alone do not establish an operational transfer workflow.
+
+STK-S3 source checkpoint: EF-generated `20261117140912_AddInventorySubcontractDeliverySources` adds immutable company-scoped customer-delivery allocation evidence and a distinct subcontract demand kind. Down first refuses with THROW 51934 before evidence loss or constraint narrowing. Borrowed reserve/ship participant source is present; real Sales/Manufacturing proof composition and the Logistics host are still unfinished. No normal Sales definite-shipment or SMM event is emitted by this participant. This is PARTIAL; runtime/SQL NOT_RUN.
+
+### Late purchase invoice cost source (STK-SC36-a/b, SAT-D385/D404/D413)
+
+`20261117165518_AddPurchaseInvoiceCostApplications` is EF-generated and adds append-only invoice application and acceptance-share effect proofs. Company/invoice and company/admission identities are unique; the same Serializable transaction caps all invoiced shares against the immutable accepted quantity and updates only the current original-location TL cost pool. Original receipt and issue stamps and physical movements are unchanged. Actual Purchasing finalized-event document, receipt and quantity proofs are required; missing legacy evidence, mismatched invoice/matched quantity and unknown first receipt cost remain explicit refusals.
+
+Down first refuses with **THROW 51926** while either proof table contains rows. Database UPDATE/DELETE guards use **51927** (application) and **51928** (receipt effect); the immutable child FK also prevents parent deletion. Two Up trigger SQL operations and one Down guard require K3 review; no guard allowlist has been broadened. Exact unabsorbed position differences are persisted once in `inventory.purchase-invoice-cost-difference.proposed.v1`; they are not rounded into or treated as a posted journal. Accounting source proposal, first recognition decisions, central composition/pins and real SQL acceptance remain separate work. Runtime/SQL **NOT_RUN**.

@@ -5,6 +5,9 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  DEFAULT_OUTPUT_CLASS,
+  DEFAULT_REMNANT_CLASSIFICATION,
+  REMNANT_CLASSIFICATIONS,
   closeBody,
   decodeCutToLengthSpec,
   decodeMassBalance,
@@ -38,6 +41,25 @@ import {
 } from './testHarness'
 
 describe('decodeOrder', () => {
+  it('keeps exact plan output line choices and rejects malformed or duplicate references', () => {
+    const line = { kind: 'SlitLine', slitLineSequence: 2, cutLineId: null }
+    expect(decodeOrder(order({ outputLines: [line] }))?.outputLines).toEqual([line])
+    expect(decodeOrder(order({ outputLines: [line, line] }))).toBeNull()
+    expect(decodeOrder(order({ outputLines: [{ ...line, cutLineId: ORDER }] }))).toBeNull()
+    expect(decodeOrder(order({ outputLines: [{ kind: 'ClassLine', slitLineSequence: null, cutLineId: null }] })))
+      .not.toBeNull()
+  })
+
+  it('accepts retained cancellation metadata and rejects an incomplete cancellation', () => {
+    const cancelled = order({ status: 'Cancelled', cancellationReason: 'SENTETIK iptal',
+      cancelledByUserId: APPROVER, cancelledAtUtc: '2026-11-16T10:00:00Z' })
+    expect(decodeOrder(cancelled)?.status).toBe('Cancelled')
+    expect(decodeOrder({ ...cancelled, cancelledAtUtc: null })).toBeNull()
+    expect(decodeOrder({ ...cancelled, status: 'Open' })).toBeNull()
+    expect(decodeOrderList(orderList([orderSummary({ status: 'Cancelled' })]))?.orders[0].status)
+      .toBe('Cancelled')
+  })
+
   it('keeps every kilogram as the server wrote it, the signed difference included', () => {
     const decoded = decodeOrder(
       order({ rolls: [roll(ROLL_1, { issuedKg: '1000.125', unexplainedKg: '-2.5', isFullyAccounted: false })] }),
@@ -179,6 +201,13 @@ describe('factBody', () => {
     })
   })
 
+  it('keeps a legacy null return source absent and freezes an explicit source movement without substituting the fact id', () => {
+    const snapshot: FactSnapshot = { ...base, kind: 'input-returns', expectedParentLabelVersion: '8' }
+    expect(factBody(snapshot)).not.toHaveProperty('sourceIssueMovementId')
+    expect(factBody({ ...snapshot, sourceIssueMovementId: null })).not.toHaveProperty('sourceIssueMovementId')
+    expect(factBody({ ...snapshot, sourceIssueMovementId: ORDER })).toHaveProperty('sourceIssueMovementId', ORDER)
+  })
+
   it('keeps WIP on RecordFactRequestV1 without an Inventory movement', () => {
     expect(factBody({
       ...base,
@@ -215,6 +244,8 @@ describe('factBody', () => {
       kind: 'outputs',
       expectedParentLabelVersion: '8',
       outputClass: 'GoodProduct',
+      outputLine: { kind: 'ClassLine', slitLineSequence: null, cutLineId: null },
+      remnantClassification: null,
       productId: 'a0000000-0000-4000-8000-000000000001',
       expectedProductVersion: '12',
       lotId: 'a0000000-0000-4000-8000-000000000002',
@@ -235,6 +266,7 @@ describe('factBody', () => {
       parentRollId: ROLL_1,
       expectedParentLabelVersion: '8',
       outputClass: 'GoodProduct',
+      outputLine: { kind: 'ClassLine', slitLineSequence: null, cutLineId: null },
       productId: 'a0000000-0000-4000-8000-000000000001',
       expectedProductVersion: '12',
       lotId: 'a0000000-0000-4000-8000-000000000002',
@@ -253,6 +285,41 @@ describe('factBody', () => {
       kg: '10.5',
       occurredAtUtc: '2026-09-18T09:00:00.000Z',
     })
+  })
+
+  it('sends the remnant label classification only with a usable remnant (URT-S16, BS-14)', () => {
+    const output: FactSnapshot = {
+      ...base,
+      kind: 'outputs',
+      expectedParentLabelVersion: '8',
+      outputClass: 'UsableRemnant',
+      remnantClassification: 'Standard',
+      productId: 'a0000000-0000-4000-8000-000000000001',
+      expectedProductVersion: '12',
+      lotId: 'a0000000-0000-4000-8000-000000000002',
+      labelId: 'a0000000-0000-4000-8000-000000000003',
+      labelCode: 'REM-1',
+      heatNumber: null,
+      coilNumber: null,
+      requiredDocuments: [],
+      ownerKind: 'Company',
+      ownerId: 'a0000000-0000-4000-8000-000000000004',
+      custodianKind: 'Company',
+      custodianId: 'a0000000-0000-4000-8000-000000000004',
+      locationId: 'a0000000-0000-4000-8000-000000000005',
+      initialBlock: 'Free',
+    }
+    expect(factBody(output)).toMatchObject({ outputClass: 'UsableRemnant', remnantClassification: 'Standard' })
+    expect(factBody({ ...output, remnantClassification: 'SecondQuality' }))
+      .toMatchObject({ remnantClassification: 'SecondQuality' })
+    // A missing choice or any other class sends no member: the server applies its own fixed mapping.
+    expect(factBody({ ...output, remnantClassification: null })).not.toHaveProperty('remnantClassification')
+    for (const outputClass of ['GoodProduct', 'SecondQuality', 'Scrap'] as const) {
+      expect(factBody({ ...output, outputClass }), outputClass).not.toHaveProperty('remnantClassification')
+    }
+    expect(DEFAULT_REMNANT_CLASSIFICATION).toBe('SecondQuality')
+    expect(DEFAULT_OUTPUT_CLASS).toBe('GoodProduct')
+    expect([...REMNANT_CLASSIFICATIONS]).toEqual(['Standard', 'SecondQuality'])
   })
 })
 
@@ -316,7 +383,7 @@ describe('decodeOrderList', () => {
     ['a cursor that is neither text nor null', orderList([orderSummary()], 7 as unknown as string)],
     ['an empty cursor', orderList([orderSummary()], '')],
     ['an id that is not a guid', orderList([orderSummary({ orderId: 'nope' })])],
-    ['a status the contract does not have', orderList([orderSummary({ status: 'Cancelled' })])],
+    ['a status the contract does not have', orderList([orderSummary({ status: 'UnknownStatus' })])],
     ['a kilogram that is not the server’s text', orderList([orderSummary({ plannedInputKg: '1,5' })])],
     ['a negative roll count', orderList([orderSummary({ plannedRollCount: -1 })])],
     ['a version of zero', orderList([orderSummary({ version: 0 })])],
@@ -560,6 +627,30 @@ describe('decodePlan', () => {
     }
   })
 
+  it('reads the F-010a hand-entered termin as a calendar day with its revision and refuses any other shape', () => {
+    const dated = decodePlan(plan({ requestedDueDate: '2026-12-31', dueDateRevision: 1 }))
+    expect(dated).toMatchObject({ requestedDueDate: '2026-12-31', dueDateRevision: 1 })
+    // Legacy JSON without the members is no termin; a removed termin keeps its revision.
+    const legacy: Record<string, unknown> = plan()
+    delete legacy.requestedDueDate
+    delete legacy.dueDateRevision
+    expect(decodePlan(legacy)).toMatchObject({ requestedDueDate: null, dueDateRevision: 0 })
+    expect(decodePlan(plan({ requestedDueDate: null, dueDateRevision: 3 }))).toMatchObject({
+      requestedDueDate: null,
+      dueDateRevision: 3,
+    })
+    // A termin never comes with revision 0 (CK_Plans_DueDateRevision), nor a broken revision.
+    expect(decodePlan(plan({ requestedDueDate: '2026-12-31', dueDateRevision: 0 }))).toBeNull()
+    for (const revision of [-1, 1.5, '1', null]) {
+      expect(decodePlan(plan({ dueDateRevision: revision }))).toBeNull()
+    }
+    // Only a real calendar day without a time: never a timestamp, an impossible day or the default day.
+    for (const day of ['2026-12-31T00:00:00', '2026-02-29', '2026-13-01', '31.12.2026', '0001-01-01', '', 20261231]) {
+      expect(decodePlan(plan({ requestedDueDate: day, dueDateRevision: 1 }))).toBeNull()
+    }
+    expect(decodePlan(plan({ requestedDueDate: '2028-02-29', dueDateRevision: 1 }))?.requestedDueDate).toBe('2028-02-29')
+  })
+
   it.each([
     ['an empty line list', { lines: [], windingTargetKg: null }],
     ['a zero width', { lines: [{ bandWidthMm: '0', count: 1 }], windingTargetKg: null }],
@@ -785,5 +876,21 @@ describe('decodePlan', () => {
     ['an instant that is not a time', plan({ status: 'Approved', approvedByUserId: APPROVER, approvedAtUtc: 'dün' })],
   ])('fails closed on %s', (_case, body) => {
     expect(decodePlan(body)).toBeNull()
+  })
+})
+
+
+describe('plan reapproval history', () => {
+  it('keeps the first approval and decodes pending reapproval and append-only approval history', () => {
+    const body = plan({ status: 'Approved', version: 5, orderId: null, requiresReapproval: true,
+      approvedByUserId: APPROVER, approvedAtUtc: '2026-11-01T08:00:00Z',
+      reapprovals: [{ number: 1, reapprovedByUserId: APPROVER, reapprovedAtUtc: '2026-11-05T08:00:00Z', planVersion: 4 }] })
+    const decoded = decodePlan(body)
+    expect(decoded?.requiresReapproval).toBe(true)
+    expect(decoded?.approvedAtUtc).toBe('2026-11-01T08:00:00Z')
+    expect(decoded?.reapprovals?.[0].planVersion).toBe(4)
+    expect(decodePlan({ ...body, status: 'Draft' })).toBeNull()
+    expect(decodePlan({ ...body, reapprovals: [{ number: 1, reapprovedByUserId: APPROVER,
+      reapprovedAtUtc: '2026-11-05T08:00:00Z', planVersion: 6 }] })).toBeNull()
   })
 })

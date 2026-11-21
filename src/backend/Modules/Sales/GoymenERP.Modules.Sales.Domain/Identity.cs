@@ -430,6 +430,7 @@ public static class SalesRuleCodes
 
     /// <summary>API-36 (SAT-D229): the recorded match carries a difference; which amount Finance opens is undecided, so it fails closed.</summary>
     public const string InvoiceMatchDifferenceOpen = "sales_invoice_match_difference_open";
+    public const string InvoiceMatchSourceProofRequired = "sales_invoice_match_source_proof_required";
 
     /// <summary>API-36 (SAT-D227, SAT-D233): the TL split of the instalments leaves the last instalment negative or zero, or has no TL total.</summary>
     public const string InvoiceInstalmentFunctionalInvalid = "sales_invoice_instalment_functional_invalid";
@@ -496,6 +497,63 @@ public static class SalesRuleCodes
 
     /// <summary>API-40: a return carries no lines, too many lines or a line twice.</summary>
     public const string CustomerReturnLinesInvalid = "sales_customer_return_lines_invalid";
+
+    /// <summary>S-11 (SAT-D28): the contract's validity window is not ordered (the last day precedes the first).</summary>
+    public const string ContractValidityInvalid = "sales_contract_validity_invalid";
+
+    /// <summary>
+    /// S-11 (NS-13): the payment plan has no installment or too many, an amount is not positive or does not fit the money
+    /// profile's scale, or the due dates are not in order.
+    /// </summary>
+    public const string ContractInstallmentsInvalid = "sales_contract_installments_invalid";
+
+    /// <summary>
+    /// S-11 (NS-13): a discount rule has no label, a duplicate label of its kind, a rate outside (0, 100] or too many decimals,
+    /// or the contract carries more than one total discount or too many rules.
+    /// </summary>
+    public const string ContractDiscountInvalid = "sales_contract_discount_invalid";
+
+    /// <summary>S-11 (SAT-D28): the clauses exceed their bound (never cut).</summary>
+    public const string ContractClausesTooLong = "sales_contract_clauses_too_long";
+
+    /// <summary>S-11 (NS-13): the contract's creator tried to approve or reject its own discount (maker≠checker).</summary>
+    public const string ContractSelfDecision = "sales_contract_self_decision";
+
+    /// <summary>S-11 (NS-13): a discount rejection carries no reason.</summary>
+    public const string ContractReasonRequired = "sales_contract_reason_required";
+
+    /// <summary>S-11 (NS-13): a discount rejection reason exceeds its bound (never cut).</summary>
+    public const string ContractReasonTooLong = "sales_contract_reason_too_long";
+
+    /// <summary>
+    /// KLN-D89: the delivery weighing a subcontract invoice line names was not answered consistently by the Logistics owner
+    /// (no source, unreadable, or a net kg that is not a positive kilogram value); the kg ratio is not computed.
+    /// </summary>
+    public const string SubcontractNetKgUnavailable = "sales_subcontract_net_kg_unavailable";
+
+    /// <summary>
+    /// KLN-D89 (fail closed): a subcontract invoice line has no weighing of its own (none, or one weighing serving several order
+    /// lines); no rule was chosen for it, so the kg ratio stops instead of using declared or shipment-share kilograms.
+    /// </summary>
+    public const string SubcontractLineNotWeighed = "sales_subcontract_line_not_weighed";
+
+    /// <summary>
+    /// SAT-D376 (fail closed): a line served by a shared delivery weighing has no readable positive theoretical kg, so the
+    /// weighing's net kg is not split.
+    /// </summary>
+    public const string SubcontractTheoreticalKgUnavailable = "sales_subcontract_theoretical_kg_unavailable";
+
+    /// <summary>
+    /// SAT-D376/D402: a line's whole-kg share of a shared weighing would be zero or negative after rounding and the residue; such
+    /// a line is never billed as zero.
+    /// </summary>
+    public const string SubcontractShareNotPositive = "sales_subcontract_share_not_positive";
+
+    /// <summary>
+    /// KLN-D100: the approved customer returns of a line exceed its delivered total; no correction rule covers that, so the open
+    /// quantity is not computed.
+    /// </summary>
+    public const string OpenQuantityReturnAboveDelivered = "sales_open_quantity_return_above_delivered";
 
     /// <summary>
     /// A line-level guard fired although the aggregate had already checked the same bound. The

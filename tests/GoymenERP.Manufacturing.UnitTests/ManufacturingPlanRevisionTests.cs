@@ -60,7 +60,7 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
         Assert.Equal(ManufacturingProcess.Slitting, plan.Process);
 
         // The next step reads the edited plan: approval, then an order whose own snapshot is the revised content.
-        plan.Approve(plan.Version, Actor, At);
+        plan.WithDueDate().Approve(plan.Version, Actor, At);
         var order = ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
         Assert.Equal((OtherLine, 3L), (order.WorkCenterId, plan.Version));
         Assert.Equal([(RollB, 800m, (long?)4), (RollA, 150.5m, (long?)3)],
@@ -84,7 +84,7 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
     public void An_approved_plan_is_never_revised_because_it_has_a_downstream_decision()
     {
         var plan = Draft();
-        plan.Approve(1, Actor, At);
+        plan.WithDueDate().Approve(1, Actor, At);
 
         var refused = Assert.Throws<ManufacturingRuleException>(() =>
             plan.Revise(2, WorkCenter, ManufacturingProcess.Slitting, Inputs(RollA, 5m), null));
@@ -95,16 +95,17 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void A_plan_with_a_slitting_spec_is_not_revised_while_its_coil_balance_is_open()
+    public void A_draft_with_a_slitting_spec_can_change_its_inputs_and_keeps_its_original_cut_definition()
     {
+        var spec = new SlittingSpec([new SlitLine(150m, 4)]);
         var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
-            Inputs(RollA, 1000m), null, new SlittingSpec([new SlitLine(150m, 4)]));
+            Inputs(RollA, 1000m), null, spec);
 
-        var refused = Assert.Throws<ManufacturingRuleException>(() =>
-            plan.Revise(1, WorkCenter, ManufacturingProcess.Slitting, Inputs(RollA, 900m), null));
+        plan.Revise(1, WorkCenter, ManufacturingProcess.Slitting, Inputs(RollB, 900m), null);
 
-        Assert.Equal(ManufacturingRuleCodes.PlanSlittingSpecFixed, refused.Code);
-        AssertUnchanged(plan);
+        Assert.Equal((2L, 1, PlanStatus.Draft), (plan.Version, plan.RevisionCount, plan.Status));
+        Assert.Equal(RollB, Assert.Single(plan.Inputs).ParentRollId);
+        Assert.Same(spec, plan.Spec);
     }
 
     [Fact]
@@ -314,6 +315,117 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
         }
     }
 
+    public static TheoryData<string> LinkedCustomerGoodsRevisions() => ["subcontract-order", "normal-order", "other-party", "no-port"];
+
+    [Theory]
+    [MemberData(nameof(LinkedCustomerGoodsRevisions))]
+    public async Task A_linked_plan_revised_to_customer_goods_is_saved_only_under_that_customers_subcontract_order(string variant)
+    {
+        // U5-b / API-36: a plan linked while it held company stock cannot take the same customer's goods through a Draft
+        // revision unless the linked order is that customer's subcontract service order; Sales is read again here.
+        var orders = new SubcontractOrderPort(new List<string>());
+        orders.Outcome = variant switch
+        {
+            "normal-order" => ManufacturingSubcontractServiceOrderOutcomeV1.NotSubcontractService,
+            _ => ManufacturingSubcontractServiceOrderOutcomeV1.Found,
+        };
+        if (variant == "other-party")
+        {
+            orders.Answered = orders.Order with { CustomerPartyId = Guid.NewGuid() };
+        }
+
+        var fixture = new Fixture(subcontractOrders: variant == "no-port" ? null : orders);
+        var plan = fixture.StoreDraft();
+        plan.ChangeSalesOrderLink(1, 0, new PlanSalesOrderLink(SalesOrder, SalesOrderLine, Party, PartyAccount,
+            Guid.NewGuid(), 0, Actor.ToString("D"), At), orderClosed: false);
+        fixture.PartyAccounts.Account = new CounterpartyManufacturingPartyAccountV1(
+            Party, PartyAccount, Company, true, true, false, true, "party-v1", "account-v1");
+        var request = Request(1, OtherLine, "800", "7") with
+        {
+            Inputs = [new PlannedInputRequestV1(RollA, "800", "7",
+                new PlanCommercialContextRequestV1(Party, PartyAccount, "party-v1", "account-v1"))],
+        };
+
+        var result = await fixture.Service.RevisePlanAsync(plan.Id, request, "linked-customer-goods", Permission,
+            CancellationToken.None);
+
+        var stored = fixture.Store.Plans[plan.Id];
+        switch (variant)
+        {
+            case "subcontract-order":
+                Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
+                Assert.Equal(1, orders.Asked);
+                Assert.Equal(Party, Assert.Single(stored.Inputs).CommercialContext!.PartyId);
+                Assert.Single(fixture.Store.Writes);
+                break;
+            case "no-port":
+                Assert.Equal((ManufacturingApiStatus.Unavailable, ManufacturingRuleCodes.PlanSalesOrderLineUnavailable),
+                    (result.Status, result.Code));
+                Assert.Null(Assert.Single(stored.Inputs).CommercialContext);
+                Assert.Empty(fixture.Store.Writes);
+                break;
+            default:
+                Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingRuleCodes.PlanCustomerGoodsRequireSubcontractOrder),
+                    (result.Status, result.Code));
+                Assert.Equal(1, orders.Asked);
+                Assert.Null(Assert.Single(stored.Inputs).CommercialContext);
+                Assert.Equal(1L, stored.Version);
+                Assert.Empty(fixture.Store.Writes);
+                break;
+        }
+    }
+
+    [Fact]
+    public async Task A_revision_of_an_unlinked_plan_or_one_without_customer_goods_never_asks_for_a_subcontract_order()
+    {
+        var orders = new SubcontractOrderPort(new List<string>());
+        var unlinked = new Fixture(subcontractOrders: orders);
+        var unlinkedPlan = unlinked.StoreDraft();
+        unlinked.PartyAccounts.Account = new CounterpartyManufacturingPartyAccountV1(
+            Party, PartyAccount, Company, true, true, false, true, "party-v1", "account-v1");
+        var customerGoods = Request(1, OtherLine, "800", "7") with
+        {
+            Inputs = [new PlannedInputRequestV1(RollA, "800", "7",
+                new PlanCommercialContextRequestV1(Party, PartyAccount, "party-v1", "account-v1"))],
+        };
+        Assert.Equal(ManufacturingApiStatus.Ok, (await unlinked.Service.RevisePlanAsync(unlinkedPlan.Id, customerGoods,
+            "unlinked", Permission, CancellationToken.None)).Status);
+
+        var companyStock = new Fixture(subcontractOrders: orders);
+        var linkedPlan = companyStock.StoreDraft();
+        linkedPlan.ChangeSalesOrderLink(1, 0, new PlanSalesOrderLink(SalesOrder, SalesOrderLine, Party, PartyAccount,
+            Guid.NewGuid(), 0, Actor.ToString("D"), At), orderClosed: false);
+        Assert.Equal(ManufacturingApiStatus.Ok, (await companyStock.Service.RevisePlanAsync(linkedPlan.Id,
+            Request(1, OtherLine, "900", "7"), "company-stock", Permission, CancellationToken.None)).Status);
+
+        Assert.Equal(0, orders.Asked);
+    }
+
+    private static readonly Guid SalesOrder = Guid.Parse("50000000-0000-0000-0000-00000000b001");
+    private static readonly Guid SalesOrderLine = Guid.Parse("50000000-0000-0000-0000-00000000b002");
+
+    private sealed class SubcontractOrderPort(List<string> calls) : IManufacturingSubcontractServiceOrderPortV1
+    {
+        public ManufacturingSubcontractServiceOrderV1 Order { get; } =
+            new(Company, SalesOrder, Party, PartyAccount, true, true, true, [SalesOrderLine]);
+
+        public ManufacturingSubcontractServiceOrderV1? Answered { get; set; }
+
+        public ManufacturingSubcontractServiceOrderOutcomeV1 Outcome { get; set; } =
+            ManufacturingSubcontractServiceOrderOutcomeV1.Found;
+
+        public int Asked { get; private set; }
+
+        public Task<ManufacturingSubcontractServiceOrderAnswerV1> GetAsync(Guid salesOrderId,
+            CancellationToken cancellationToken = default)
+        {
+            Asked++;
+            calls.Add("subcontract-order");
+            var order = Outcome == ManufacturingSubcontractServiceOrderOutcomeV1.Found ? Answered ?? Order : null;
+            return Task.FromResult(new ManufacturingSubcontractServiceOrderAnswerV1(Outcome, order));
+        }
+    }
+
     [Fact]
     public async Task A_revision_captures_a_numerically_exact_trailing_zero_measure_and_refuses_a_real_fourth_decimal()
     {
@@ -435,7 +547,7 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
     {
         var fixture = new Fixture();
         var plan = fixture.StoreDraft();
-        plan.Approve(1, Actor, At);
+        plan.WithDueDate().Approve(1, Actor, At);
 
         var result = await fixture.Service.RevisePlanAsync(plan.Id, Request(2, WorkCenter, "900", "7"), "key-1",
             Permission, CancellationToken.None);
@@ -774,7 +886,7 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
 
     private sealed class Fixture
     {
-        public Fixture(bool withRevisions = true)
+        public Fixture(bool withRevisions = true, IManufacturingSubcontractServiceOrderPortV1? subcontractOrders = null)
         {
             var company = new CompanyContext();
             company.Set(Company);
@@ -789,7 +901,8 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
             Service = new ManufacturingCommandService(Store, Store, Store, new ManufacturingMassVerifier(new SettingsPort(Calls)),
                 Authority, company, User, correlation, new FixedTime(), ParentRolls, WorkCenters,
                 planRevisions: withRevisions ? Store : null, productTechnicalSnapshots: ProductSnapshots,
-                partyAccounts: PartyAccounts, contextualParentRolls: ParentRolls);
+                partyAccounts: PartyAccounts, contextualParentRolls: ParentRolls,
+                subcontractServiceOrders: subcontractOrders);
         }
 
         public List<string> Calls { get; } = [];
@@ -861,6 +974,10 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
     private sealed class ParentRollPort(List<string> calls)
         : IInventoryParentRollValidationV1, IInventoryContextualParentRollReferencesV1
     {
+        public string PhysicalKg { get; set; } = "10000";
+        public string? UnblockedPhysicalKg { get; set; }
+        public string BlockedPhysicalKg { get; set; } = "0";
+
         public Exception? Exception { get; set; }
 
         public List<InventoryParentRollSelectionV1> Selections { get; } = [];
@@ -879,7 +996,8 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
 
             return Task.FromResult(new InventoryParentRollReferenceV1(
                 Company, selection.LabelId, selection.ExpectedLabelVersion, "LBL-1", Guid.NewGuid(),
-                new InventoryLotV1(Guid.NewGuid(), null, null), null, null, "Complete", [], [], "10", "10", "0", [],
+                new InventoryLotV1(Guid.NewGuid(), null, null), null, null, "Complete", [], [],
+                PhysicalKg, UnblockedPhysicalKg ?? PhysicalKg, BlockedPhysicalKg, [],
                 DraftSelectable: true, DraftRefusalCode: null, ProductionUseRequiresRevalidation: true)
             { ProductVersion = AcceptedProductFixtureVersion });
         }
@@ -899,7 +1017,8 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
 
             return Task.FromResult(new InventoryParentRollReferenceV1(
                 Company, selection.LabelId, selection.ExpectedLabelVersion, "LBL-1", Guid.NewGuid(),
-                new InventoryLotV1(Guid.NewGuid(), null, null), null, null, "Complete", [], [], "10", "10", "0", [],
+                new InventoryLotV1(Guid.NewGuid(), null, null), null, null, "Complete", [], [],
+                PhysicalKg, UnblockedPhysicalKg ?? PhysicalKg, BlockedPhysicalKg, [],
                 DraftSelectable: true, DraftRefusalCode: null, ProductionUseRequiresRevalidation: true)
             { ProductVersion = AcceptedProductFixtureVersion });
         }

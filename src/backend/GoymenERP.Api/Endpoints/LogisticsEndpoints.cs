@@ -21,7 +21,7 @@ namespace GoymenERP.Api.Endpoints;
 /// the same headers (§7). Problems carry <c>code</c>, <c>correlationId</c> and field <c>errors</c>;
 /// platform 401/403/404 and every 503 stay code-less. Definite shipment and delivery use the line-scoped routes mapped below (D3, LOG-5).
 /// </summary>
-public static class LogisticsEndpoints
+public static partial class LogisticsEndpoints
 {
     public const string InstructionsPath = LogisticsApiV1.InstructionsPath;
     private const string IdempotencyHeaderName = LogisticsApiV1.IdempotencyHeader;
@@ -202,6 +202,7 @@ public static class LogisticsEndpoints
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(LogisticsProblemCodesV1.VersionConflict, LogisticsProblemCodesV1.InstructionState,
                 LogisticsProblemCodesV1.LoadExceedsInstructed, LogisticsProblemCodesV1.LineBlocked, LogisticsProblemCodesV1.DuplicateShare,
+                LogisticsPlanExcessV1.ApprovalRequired, LogisticsPlanExcessV1.Conflict,
                 LogisticsProblemCodesV1.SameKeyPayloadMismatch, LogisticsProblemCodesV1.ConcurrentChange)
             .ProducesErpUnprocessableEntity("validation_failed", LogisticsProblemCodesV1.UnsupportedUnit)
             .ProducesErpServiceUnavailable()
@@ -289,6 +290,29 @@ public static class LogisticsEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // LOJ-D17: the manual unload weighing (indirme tartısı) of a cancelled instruction with loaded goods — one per instruction; the
+        // backend calculates the net and the signed difference to the kilograms loaded at the cancel. A difference is a warning in the
+        // response and the audit record, never a refusal; no stock movement is booked. No weighbridge hardware is integrated.
+        group.MapPost("/{id:guid}/unload-weighings", (Guid id, HttpContext httpContext, [FromServices] ILogisticsInstructionService service,
+                ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            MutateAsync(httpContext, correlation, LogisticsJson.ReadRecordUnloadWeighing,
+                (body, metadata) => service.RecordUnloadWeighingAsync(id, body, metadata, cancellationToken), cancellationToken))
+            .WithName("RecordLoadingInstructionUnloadWeighingV1")
+            .WithIdempotencyContract(LogisticsApiV1.MutationStatus, StatusCodes.Status409Conflict)
+            .Accepts<RecordUnloadWeighingRequest>("application/json")
+            .Produces<LoadingInstructionResponse>(LogisticsApiV1.MutationStatus)
+            .ProducesErpBadRequest("validation_failed", LogisticsProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(LogisticsProblemCodesV1.VersionConflict, LogisticsProblemCodesV1.InstructionState,
+                LogisticsProblemCodesV1.UnloadWeighingAlreadyRecorded, LogisticsProblemCodesV1.SameKeyPayloadMismatch,
+                LogisticsProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed", LogisticsProblemCodesV1.WeighingDirectionInconsistent,
+                LogisticsProblemCodesV1.UnsupportedUnit)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         group.MapPost("/{id:guid}/dispatch-notes/{dispatchNoteId:guid}/cancel", (Guid id, Guid dispatchNoteId, HttpContext httpContext,
                 [FromServices] ILogisticsInstructionService service, ICorrelationContext correlation, CancellationToken cancellationToken) =>
             MutateAsync(httpContext, correlation, LogisticsJson.ReadCancelDispatchNote,
@@ -344,6 +368,7 @@ public static class LogisticsEndpoints
             .ProducesErpConflict(LogisticsProblemCodesV1.VersionConflict, LogisticsProblemCodesV1.InstructionState,
                 LogisticsProblemCodesV1.LineBlocked, LogisticsProblemCodesV1.DuplicateShare,
                 LogisticsRealizationCodesV1.AllocationSourceMismatch, LogisticsRealizationCodesV1.ShipmentExceedsLoaded,
+                LogisticsPlanExcessV1.ApprovalRequired, LogisticsPlanExcessV1.Conflict,
                 // SAT-D103 / SAT-D111 (K3-REVIEW-A P1-1 b): the Sales order line is no longer approved / no longer this source,
                 // or the shipment would take the line's total shipped above the Sales owner's current loading limit.
                 LogisticsProblemCodesV1.OrderLineState, LogisticsProblemCodesV1.OrderLineAggregateLimitExceeded,
@@ -352,7 +377,11 @@ public static class LogisticsEndpoints
                 InventoryDefiniteShipmentCodesV1.AllocationState, InventoryDefiniteShipmentCodesV1.AllocationLabelMismatch,
                 InventoryDefiniteShipmentCodesV1.AllocationInsufficient, InventoryDefiniteShipmentCodesV1.LabelNotReleasable,
                 InventoryDefiniteShipmentCodesV1.PhysicalStockInsufficient, InventoryDefiniteShipmentCodesV1.OwnerNotCompany,
-                InventoryDefiniteShipmentCodesV1.IdempotencyConflict, InventoryDefiniteShipmentCodesV1.ConcurrentChange)
+                InventoryDefiniteShipmentCodesV1.IdempotencyConflict, InventoryDefiniteShipmentCodesV1.ConcurrentChange,
+                // STK-S27 (L-1..L-7, FNS-D30, SAT-D310, SAT-D285): the customer risk gate's terminal stops; a gate that
+                // cannot be read is a code-less 503 that records nothing.
+                LogisticsShipmentRiskGateCodesV1.OverLimit, LogisticsShipmentRiskGateCodesV1.CreditLimitNotSet,
+                LogisticsShipmentRiskGateCodesV1.RiskUnavailable, LogisticsShipmentRiskGateCodesV1.ExceptionUsed)
             .ProducesErpUnprocessableEntity("validation_failed", LogisticsProblemCodesV1.UnsupportedUnit)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
@@ -575,7 +604,8 @@ public static class LogisticsEndpoints
             extensions["errors"] = exception.Errors;
         }
 
-        return Results.Problem(statusCode: exception.Status, extensions: extensions);
+        var detail = InventoryRuntime.InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, extensions, exception.Detail);
+        return Results.Problem(statusCode: exception.Status, detail: detail, extensions: extensions);
     }
 
     private static IResult Problem(int statusCode, string code, ICorrelationContext correlation) => Results.Problem(statusCode: statusCode,

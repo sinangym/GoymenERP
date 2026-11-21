@@ -33,6 +33,27 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task A_cancelled_production_order_is_visible_in_source_history_without_blocking_cancellation()
+    {
+        var world = new World();
+        var approved = await ApprovedAsync(world);
+        Owners(world);
+        var cancelled = Guid.NewGuid();
+        var line = approved.Lines[0].LineId;
+        world.LinkedSupplies.Add(new FakeLinkedSupply(SalesLinkedSupplyKindsV1.Production, (query, kind) =>
+            Answer(query, kind) with { HistoricalItems = [new(cancelled, null,
+                SalesLinkedSupplyDocumentTypesV1.ProductionOrder, null, line, "Cancelled", null, null, "1000", null)] }));
+
+        var preview = await world.Service().GetCancellationImpactAsync(approved.Draft.Id);
+        Assert.True(preview.Cancellable);
+        Assert.Equal(SalesCancellationImpactStatusesV1.None,
+            Status(preview, SalesCancellationImpactSourcesV1.LinkedProduction));
+        var plan = await world.Service().GetSourcePlanAsync(approved.Draft.Id);
+        Assert.Equal([cancelled], plan.LinkedSupply.Single(item => item.Kind == SalesLinkedSupplyKindsV1.Production)
+            .CancelledOrderIds);
+    }
+
+    [Fact]
     public async Task An_owner_answering_no_open_link_is_none_and_the_order_cancels()
     {
         var world = new World();
@@ -51,7 +72,7 @@ public sealed partial class SalesDraftServiceTests
         // Each owner is asked for the order in the server company, all lines; the cancel name is measured after each owner too.
         Assert.Equal([new SalesOrderLinkedSupplyQueryV1(Company, approved.Draft.Id, null)], production.Asked);
         Assert.Equal([new SalesOrderLinkedSupplyQueryV1(Company, approved.Draft.Id, null)], purchasing.Asked);
-        Assert.Equal(6, world.Authority.Measured.Count);
+        Assert.Equal(7, world.Authority.Measured.Count);
         var cancelled = await world.Service().CancelDraftAsync(approved.Draft.Id,
             new SalesDraftCancelRequest("4", "SENTETIK", preview.ImpactToken), Metadata("k-linked-none"));
         Assert.Equal("Cancelled", cancelled.Detail.Draft.State);
@@ -167,7 +188,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal("sales.order-linked-supply.v1", SalesOrderLinkedSupplyContractV1.Name);
         Assert.Equal(["Production", "Purchasing"], SalesLinkedSupplyKindsV1.All);
         Assert.Equal(["CompanyId", "OrderId", "OrderLineIds"], Shape<SalesOrderLinkedSupplyQueryV1>());
-        Assert.Equal(["Status", "CompanyId", "OrderId", "SupplyKind", "OpenItems", "ReasonCode"], Shape<SalesOrderLinkedSupplyAnswerV1>());
+        Assert.Equal(["Status", "CompanyId", "OrderId", "SupplyKind", "OpenItems", "ReasonCode", "HistoricalItems"], Shape<SalesOrderLinkedSupplyAnswerV1>());
         Assert.Equal(["SupplyId", "SupplyLineId", "DocumentType", "DocumentNumber", "OrderLineId", "Status", "OpenQuantity",
                 "OpenQuantityUnitId", "PlannedKg", "ActualKg"],
             Shape<SalesOrderLinkedSupplyItemV1>());

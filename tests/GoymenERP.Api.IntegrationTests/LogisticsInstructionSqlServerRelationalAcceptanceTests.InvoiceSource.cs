@@ -1,4 +1,6 @@
 using GoymenERP.Modules.Logistics.Application.Contracts;
+using GoymenERP.Modules.Logistics.Application;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Logistics.Domain.Loading;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -85,10 +87,32 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         {
             source = Assert.IsType<StoredApprovedDispatchInvoiceSource>(
                 await freshReader.Store.FindApprovedDispatchInvoiceSourceAsync(noteId));
+            var proofCompany = new CompanyContext();
+            proofCompany.Set(CompanyA);
+            var proofReader = new LogisticsInvoicedShipmentProofReadPortV1(proofCompany, freshReader.Store);
+            var first = await proofReader.GetAsync(CompanyA, noteId, 1, firstShipment);
+            Assert.Equal(LogisticsInvoicedShipmentProofOutcomeV1.Found, first.Outcome);
+            Assert.Equal((firstInstructionLine, owners.Order, firstOrderLine, firstProduct, 3m),
+                (first.Proof!.InstructionLineId, first.Proof.SalesOrderId, first.Proof.SalesOrderLineId,
+                    first.Proof.ProductId, first.Proof.DispatchQuantity));
+            var second = await proofReader.GetAsync(CompanyA, noteId, 2, secondShipment);
+            Assert.Equal(LogisticsInvoicedShipmentProofOutcomeV1.Found, second.Outcome);
+            Assert.Equal((secondInstructionLine, secondOrder, secondOrderLine, secondProduct, 3, 4.5m),
+                (second.Proof!.InstructionLineId, second.Proof.SalesOrderId, second.Proof.SalesOrderLineId,
+                    second.Proof.ProductId, second.Proof.SourceOrderRevision, second.Proof.DispatchQuantity));
+            Assert.Equal(stored.Instruction.Version.ToString(System.Globalization.CultureInfo.InvariantCulture), second.Proof.SourceVersion);
+            Assert.Equal(LogisticsInvoicedShipmentProofOutcomeV1.NotFound,
+                (await proofReader.GetAsync(CompanyA, noteId, 1, secondShipment)).Outcome);
         }
         await using (var approvedForeignReader = run.Store(CompanyB))
         {
             Assert.Null(await approvedForeignReader.Store.FindApprovedDispatchInvoiceSourceAsync(noteId));
+            var proofCompany = new CompanyContext();
+            proofCompany.Set(CompanyB);
+            var foreign = await new LogisticsInvoicedShipmentProofReadPortV1(proofCompany, approvedForeignReader.Store)
+                .GetAsync(CompanyB, noteId, 1, firstShipment);
+            Assert.Equal(LogisticsInvoicedShipmentProofOutcomeV1.NotFound, foreign.Outcome);
+            Assert.Null(foreign.Proof);
         }
 
         Assert.Equal((CompanyA, noteId, instruction.Id, stored.Instruction.Version, owners.Party, owners.Account, "IRS-000001", (string?)null),
@@ -113,6 +137,11 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         await using (var cancelledReader = run.Store(CompanyA))
         {
             Assert.Null(await cancelledReader.Store.FindApprovedDispatchInvoiceSourceAsync(noteId));
+            var proofCompany = new CompanyContext();
+            proofCompany.Set(CompanyA);
+            Assert.Equal(LogisticsInvoicedShipmentProofOutcomeV1.NotFound,
+                (await new LogisticsInvoicedShipmentProofReadPortV1(proofCompany, cancelledReader.Store)
+                    .GetAsync(CompanyA, noteId, 1, firstShipment)).Outcome);
         }
 
         async Task<(int Balances, int Movements, int Commands, int Outbox)> InventorySnapshotAsync() =>

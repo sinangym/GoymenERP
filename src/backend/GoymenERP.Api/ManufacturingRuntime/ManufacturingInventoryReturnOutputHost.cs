@@ -7,6 +7,7 @@ using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
+using GoymenERP.Modules.Manufacturing.Domain.Lineage;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
@@ -20,6 +21,10 @@ namespace GoymenERP.Api.ManufacturingRuntime;
 /// Internal predecessor for input-return and output-declaration command surfaces. Manufacturing
 /// and Inventory stage one matching fact/effect pair in the Manufacturing-owned SQL transaction.
 /// It publishes no route and chooses no output identity, position or ownership policy.
+/// URT-S21 (URT-D62): the output label's own code is given in the same transaction, after the output fact and before
+/// Inventory opens the label — the entered code, otherwise the next number of the company's Ayarlar output label format
+/// (<paramref name="labelCodePolicy"/>; unregistered means "not entered" and an output then needs an entered code).
+/// <paramref name="labelCodeRegister"/> is Inventory's optional read of codes already used by stock labels.
 /// </summary>
 internal sealed class ManufacturingInventoryReturnOutputHost(
     ManufacturingDbContext manufacturing,
@@ -28,8 +33,12 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
     IErpAuthorityRevalidationService authority,
     ISettingsPrerequisiteProvider settings,
     IManufacturingInventoryOutputAdmission outputAdmission,
-    Func<ManufacturingInventoryReturnOutputStage, CancellationToken, Task>? observer = null)
-    : IManufacturingInventoryReturnOutputPortV1
+    Func<ManufacturingInventoryReturnOutputStage, CancellationToken, Task>? observer = null,
+    IManufacturingOutputLabelCodePolicyReadPortV1? labelCodePolicy = null,
+    IManufacturingLabelCodeRegisterReadPortV1? labelCodeRegister = null,
+    IInventoryLabelDispositionReadPortV1? labelDispositions = null,
+    IInventoryNegativeStockAttemptRecorderV1? negativeStockAttempts = null)
+    : IManufacturingInventoryReturnOutputPortV1, IManufacturingInventoryOutputCorrectionPortV1
 {
     async Task<ManufacturingInventoryInputReturnPortResultV1> IManufacturingInventoryReturnOutputPortV1.ReturnAsync(
         ManufacturingInventoryInputReturnPortCommandV1 command,
@@ -46,7 +55,7 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
                 command.ExpectedParentLabelVersion,
                 command.MovementId,
                 command.Quantity,
-                command.OccurredAtUtc), metadata, cancellationToken);
+                command.OccurredAtUtc, command.SourceIssueMovementId), metadata, cancellationToken);
             return new ManufacturingInventoryInputReturnPortResultV1(
                 result.OrderVersion, result.ParentLabelVersion, result.IsReplay);
         }
@@ -98,6 +107,15 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
                 ManufacturingApiStatus.Invalid, ManufacturingApiCodes.RequestInvalid, "initialBlock");
         }
 
+        // URT-S16 (URT-D43, BS-14): a class with no stock label, or a remnant classification the fixed mapping does not
+        // allow, is refused before any read or write.
+        if (!ManufacturingOutputClassMappingV1.TryMap(command.OutputClass, command.RemnantClassification, out _))
+        {
+            throw new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Invalid, ManufacturingApiCodes.RequestInvalid,
+                command.RemnantClassification is null ? "outputClass" : "remnantClassification");
+        }
+
         try
         {
             var result = await DeclareOutputAsync(new ManufacturingInventoryOutputCommand(
@@ -123,13 +141,32 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
                 initialBlock,
                 command.MovementId,
                 command.Quantity,
-                command.OccurredAtUtc), metadata, cancellationToken);
+                command.OccurredAtUtc,
+                command.RemnantClassification, command.OutputLine), metadata, cancellationToken);
             return new ManufacturingInventoryOutputPortResultV1(
                 result.OrderVersion, result.ParentLabelVersion, result.LabelVersion, result.IsReplay);
         }
         catch (InventoryManufacturingRealizationException exception)
+            when (exception.Code is InventoryManufacturingRealizationCodesV2.OutputClassNotStockable
+                or InventoryManufacturingRealizationCodesV2.RemnantClassificationInvalid)
+        {
+            // URT-S16: the Manufacturing mapping refuses these first; should Inventory still refuse the class, the
+            // command keeps the declared Manufacturing 400 contract and names the field.
+            throw new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Invalid, ManufacturingApiCodes.RequestInvalid,
+                exception.Code == InventoryManufacturingRealizationCodesV2.OutputClassNotStockable
+                    ? "outputClass"
+                    : "remnantClassification");
+        }
+        catch (InventoryManufacturingRealizationException exception)
         {
             throw PortRefusal(exception.Status, exception.Code);
+        }
+        catch (ManufacturingStoreException exception)
+            when (OutputLabelCodeRefusal(exception) is { } refusal)
+        {
+            // URT-S21 (URT-D62): the output label code refusals keep their own code and name the field.
+            throw refusal;
         }
         catch (ManufacturingInventoryReturnOutputHostException exception)
         {
@@ -147,6 +184,209 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
             throw new ManufacturingInventoryRealizationPortException(
                 ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied);
         }
+    }
+
+    async Task<ManufacturingInventoryOutputCorrectionPortResultV1>
+        IManufacturingInventoryOutputCorrectionPortV1.CorrectOutputAsync(
+            ManufacturingInventoryOutputCorrectionPortCommandV1 command,
+            ManufacturingCommandMetadata metadata,
+            CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await CorrectOutputAsync(command, metadata, cancellationToken);
+            return new ManufacturingInventoryOutputCorrectionPortResultV1(
+                result.OrderVersion, result.LabelVersion, result.IsReplay);
+        }
+        catch (InventoryManufacturingRealizationException exception)
+        {
+            throw OutputCorrectionRefusal(exception.Status, exception.Code);
+        }
+        catch (ManufacturingInventoryReturnOutputHostException exception)
+        {
+            throw new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Conflict, exception.Code);
+        }
+        catch (ManufacturingInventoryReturnOutputRecoveryException)
+        {
+            throw new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Unavailable,
+                InventoryManufacturingRealizationCodesV1.Unavailable);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            throw new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied);
+        }
+    }
+
+    /// <summary>
+    /// F-009 D3 (API-25, URT-S2): records the output reversal and Inventory's <c>manufacturing.output-reversal</c>
+    /// movement in one Manufacturing-owned transaction. The label disposition read first only proves that the label is
+    /// this output's own (an unknown label, or another order's or output's label, is "not found"); it is never the
+    /// decision source. Inventory decides under the label version fence, inside the transaction, whether the mass can
+    /// still leave the output position, and its refusal rolls the Manufacturing fact back.
+    /// </summary>
+    public async Task<ManufacturingInventoryOutputCorrectionResult> CorrectOutputAsync(
+        ManufacturingInventoryOutputCorrectionPortCommandV1 command,
+        ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(metadata);
+        var companyId = RequireCompany();
+        RequireCorrection(command, metadata);
+        await RequireAuthorityAsync(companyId, ErpPermissions.ManufacturingFactsCorrect, cancellationToken);
+        await RequireOwnOutputLabelAsync(companyId, command, cancellationToken);
+
+        await using var transaction = await manufacturing.Database.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted, cancellationToken);
+        var committed = false;
+        try
+        {
+            var manufacturingOutcome = await orders.ReverseOutputAsync(
+                command.OrderId, command.ExpectedOrderVersion, command.ReversalId, command.OutputId,
+                command.Quantity, command.Reason, command.OccurredAtUtc, metadata, cancellationToken);
+            var stored = await orders.FindOrderAsync(command.OrderId, cancellationToken) ?? throw Incomplete();
+            if (stored.OutputReversals.All(reversal =>
+                    reversal.ReversalId != command.ReversalId || reversal.OutputId != command.OutputId))
+            {
+                throw Incomplete();
+            }
+
+            var realizationOrderVersion = checked(command.ExpectedOrderVersion + 1);
+            RequireRecordedVersion(manufacturingOutcome, stored.Version, realizationOrderVersion);
+
+            var request = new InventoryManufacturingOutputReversalRequestV1(
+                companyId,
+                command.OrderId,
+                command.OutputId,
+                command.ReversalId,
+                realizationOrderVersion.ToString(CultureInfo.InvariantCulture),
+                command.LabelId,
+                command.ExpectedLabelVersion.ToString(CultureInfo.InvariantCulture),
+                command.MovementId,
+                Quantity(command.Quantity),
+                command.OccurredAtUtc);
+            var inventoryMetadata = OutputCorrectionInventoryMetadata(metadata, companyId, command.OrderId, command.ReversalId);
+            var connection = manufacturing.Database.GetDbConnection();
+            var databaseTransaction = transaction.GetDbTransaction();
+            await using var inventory = await InventoryManufacturingRealizationParticipant.EnlistAsync(
+                connection, databaseTransaction, companyId, settings, cancellationToken,
+                onStaged: token => OnInventoryStagedAsync(
+                    manufacturingOutcome, ManufacturingInventoryReturnOutputStage.OutputCorrectionInventoryStaged,
+                    token));
+            var inventoryResult = await inventory.StageOutputReversalAsync(request, inventoryMetadata, cancellationToken);
+            RequireOutcomeParity(manufacturingOutcome, inventoryResult.IsReplay);
+
+            if (inventoryResult.CompanyId != companyId
+                || inventoryResult.ManufacturingOrderId != command.OrderId
+                || inventoryResult.OutputId != command.OutputId
+                || inventoryResult.ReversalId != command.ReversalId
+                || inventoryResult.ManufacturingOrderVersion != request.ManufacturingOrderVersionAfter
+                || inventoryResult.LabelId != command.LabelId
+                || inventoryResult.MovementId != command.MovementId
+                || inventoryResult.ReversedReceiptMovementId == Guid.Empty
+                || inventoryResult.QuantityKg != request.QuantityKg
+                || !PositiveVersion(inventoryResult.LabelVersion, out var labelVersion))
+            {
+                throw Incomplete();
+            }
+
+            await BeforeCommitAsync(companyId, ErpPermissions.ManufacturingFactsCorrect, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            committed = true;
+            return new ManufacturingInventoryOutputCorrectionResult(
+                command.OrderId, command.OutputId, command.ReversalId, realizationOrderVersion, command.LabelId,
+                labelVersion, command.MovementId, inventoryResult.ReversedReceiptMovementId, command.Quantity,
+                manufacturingOutcome == ManufacturingWriteOutcome.Replayed);
+        }
+        catch (Exception exception)
+        {
+            await RollbackOrThrowAsync(transaction, exception, committed);
+            throw;
+        }
+        finally
+        {
+            manufacturing.ChangeTracker.Clear();
+        }
+    }
+
+    /// <summary>
+    /// A pre-check only (TOCTOU-safe because Inventory re-checks under the label version fence): the label must be
+    /// a manufacturing output label of exactly this order and output. Without the read port nothing is corrected.
+    /// </summary>
+    private async Task RequireOwnOutputLabelAsync(Guid companyId,
+        ManufacturingInventoryOutputCorrectionPortCommandV1 command, CancellationToken cancellationToken)
+    {
+        if (labelDispositions is null)
+        {
+            throw new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Unavailable, InventoryManufacturingRealizationCodesV1.Unavailable);
+        }
+
+        var read = await labelDispositions.GetAsync(companyId, command.LabelId, cancellationToken);
+        switch (read.Status)
+        {
+            case InventoryLabelDispositionStatusV1.Value
+                when read.Disposition is { Output: { } origin } disposition
+                    && disposition.CompanyId == companyId
+                    && disposition.LabelId == command.LabelId
+                    && origin.ManufacturingOrderId == command.OrderId
+                    && origin.OutputId == command.OutputId:
+                return;
+            case InventoryLabelDispositionStatusV1.Unreadable:
+                throw new ManufacturingInventoryRealizationPortException(
+                    ManufacturingApiStatus.Conflict, ManufacturingOutputCorrectionCodesV1.LabelUnreadable);
+            default:
+                throw new ManufacturingInventoryRealizationPortException(
+                    ManufacturingApiStatus.NotFound, InventoryManufacturingRealizationCodesV1.InvalidReference);
+        }
+    }
+
+    private static void RequireCorrection(
+        ManufacturingInventoryOutputCorrectionPortCommandV1 command, ManufacturingCommandMetadata metadata)
+    {
+        if (command.OrderId == Guid.Empty || command.OutputId == Guid.Empty || command.ReversalId == Guid.Empty
+            || command.LabelId == Guid.Empty || command.MovementId == Guid.Empty
+            || command.ReversalId == command.MovementId || command.ReversalId == command.OutputId
+            || command.ExpectedOrderVersion <= 0 || command.ExpectedLabelVersion <= 0
+            || command.Reason is null || command.OccurredAtUtc.Offset != TimeSpan.Zero
+            || !string.Equals(metadata.PermissionCode, ErpPermissions.ManufacturingFactsCorrect,
+                StringComparison.Ordinal))
+        {
+            throw new ArgumentException("The Manufacturing output correction command is incomplete.", nameof(command));
+        }
+    }
+
+    /// <summary>
+    /// Inventory's closed reversal refusal set: each reversal-only code becomes the Manufacturing correction code that
+    /// names the same reason; a V1 realization code keeps the shared mapping; any code outside the set fails closed as
+    /// unavailable rather than being passed on as a reason Inventory never declared.
+    /// </summary>
+    private static ManufacturingInventoryRealizationPortException OutputCorrectionRefusal(int status, string code)
+    {
+        if (!InventoryManufacturingOutputReversalCodesV1.IsDefined(status, code))
+        {
+            return new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Unavailable, InventoryManufacturingRealizationCodesV1.Unavailable);
+        }
+
+        var mapped = code switch
+        {
+            InventoryManufacturingOutputReversalCodesV1.ExceedsProduced => ManufacturingOutputCorrectionCodesV1.ExceedsProduced,
+            InventoryManufacturingOutputReversalCodesV1.Shipped => ManufacturingOutputCorrectionCodesV1.Shipped,
+            InventoryManufacturingOutputReversalCodesV1.IssuedToManufacturing =>
+                ManufacturingOutputCorrectionCodesV1.IssuedToManufacturing,
+            InventoryManufacturingOutputReversalCodesV1.Transferred => ManufacturingOutputCorrectionCodesV1.Transferred,
+            InventoryManufacturingOutputReversalCodesV1.Allocated => ManufacturingOutputCorrectionCodesV1.Allocated,
+            InventoryManufacturingOutputReversalCodesV1.Blocked => ManufacturingOutputCorrectionCodesV1.Blocked,
+            InventoryManufacturingOutputReversalCodesV1.NotFree => ManufacturingOutputCorrectionCodesV1.NotFree,
+            _ => null,
+        };
+        return mapped is not null && status == StatusCodes.Status409Conflict
+            ? new ManufacturingInventoryRealizationPortException(ManufacturingApiStatus.Conflict, mapped)
+            : PortRefusal(status, code);
     }
 
     public async Task<ManufacturingInventoryInputReturnResult> ReturnAsync(
@@ -181,7 +421,7 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
                 command.ExpectedParentLabelVersion.ToString(CultureInfo.InvariantCulture),
                 command.MovementId,
                 Quantity(command.Quantity),
-                command.OccurredAtUtc);
+                command.OccurredAtUtc, command.SourceIssueMovementId);
             var inventoryMetadata = InventoryMetadata(metadata, companyId, command.OrderId, command.ReturnId,
                 "manufacturing-input-return");
             var connection = manufacturing.Database.GetDbConnection();
@@ -232,9 +472,10 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
         ArgumentNullException.ThrowIfNull(command);
         ArgumentNullException.ThrowIfNull(metadata);
         var companyId = RequireCompany();
-        RequireOutput(command, metadata);
+        var expectedLabel = RequireOutput(command, metadata);
         await RequireAuthorityAsync(companyId, cancellationToken);
         await outputAdmission.ValidateAsync(companyId, command, cancellationToken);
+        var labelCodeFormat = await ReadOutputLabelCodeFormatAsync(companyId, cancellationToken);
 
         await using var transaction = await manufacturing.Database.BeginTransactionAsync(
             IsolationLevel.ReadCommitted, cancellationToken);
@@ -243,24 +484,32 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
         {
             var manufacturingOutcome = await orders.DeclareOutputAsync(
                 command.OrderId, command.ExpectedOrderVersion, command.OutputId, command.ParentLabelId,
-                command.OutputClass, command.Quantity, command.OccurredAtUtc, metadata, cancellationToken);
+                command.OutputClass, command.Quantity, command.OccurredAtUtc, command.OutputLine, metadata, cancellationToken);
             var stored = await RequireStoredOrderAsync(command.OrderId, command.ParentLabelId, cancellationToken);
             var realizationOrderVersion = checked(command.ExpectedOrderVersion + 1);
             RequireRecordedVersion(manufacturingOutcome, stored.Version, realizationOrderVersion);
 
-            var request = new InventoryManufacturingOutputRequestV1(
+            // URT-S21 (URT-D62): the output label takes its own code here — never an input label's number; the input
+            // labels stay the lineage edges recorded below.
+            var labelCode = await AssignOutputLabelCodeAsync(
+                companyId, command, labelCodeFormat, manufacturingOutcome, metadata, cancellationToken);
+
+            // URT-S16 (URT-D43, BS-5, BS-14): the V2 output declaration opens the label with the classification of the
+            // fixed Manufacturing mapping and, for a usable remnant, the operator's classification (sent explicitly,
+            // the default resolved here) and the UsableRemnant production status.
+            var request = new InventoryManufacturingOutputRequestV2(
                 companyId,
                 command.OrderId,
                 command.OutputId,
                 realizationOrderVersion.ToString(CultureInfo.InvariantCulture),
                 command.ParentLabelId,
                 command.ExpectedParentLabelVersion.ToString(CultureInfo.InvariantCulture),
-                command.OutputClass.ToString(),
+                expectedLabel.InventoryOutputClass,
                 command.ProductId,
                 command.ExpectedProductVersion,
                 command.LotId,
                 command.LabelId,
-                command.LabelCode,
+                labelCode.LabelCode,
                 command.HeatNumber,
                 command.CoilNumber,
                 command.RequiredDocuments,
@@ -272,7 +521,10 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
                 command.InitialBlock,
                 command.MovementId,
                 Quantity(command.Quantity),
-                command.OccurredAtUtc);
+                command.OccurredAtUtc,
+                expectedLabel.ProductionStatus is null
+                    ? null
+                    : (InventoryLabelClassificationV1?)expectedLabel.Classification);
             // Inventory command identities are capped at 128 characters. The explicit company/order/output
             // grain already makes this participant key unique; keep the operation token short enough that the
             // complete deterministic identity remains inside that owner contract.
@@ -293,6 +545,8 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
                 || inventoryResult.ManufacturingOrderVersion != request.ManufacturingOrderVersionAfter
                 || inventoryResult.ParentLabelId != command.ParentLabelId
                 || inventoryResult.OutputClass != request.OutputClass
+                || inventoryResult.Classification != expectedLabel.Classification
+                || inventoryResult.ProductionStatus != expectedLabel.ProductionStatus
                 || inventoryResult.ProductId != command.ProductId
                 || inventoryResult.ProductVersion != command.ExpectedProductVersion
                 || inventoryResult.LotId != command.LotId
@@ -304,6 +558,12 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
             {
                 throw Incomplete();
             }
+
+            // URT-S20 (URT-D62, URT-D63): the output label's lineage edges — every input label Inventory staged for the
+            // output's genealogy, with its consumed kg — are recorded in Manufacturing in this same transaction, from
+            // Inventory's port answer (Manufacturing never writes Inventory's label tables). A replayed output replays
+            // its stored edges; a different answer for the same output refuses and rolls back both owners.
+            await RecordOutputLineageAsync(command, inventoryResult, manufacturingOutcome, metadata, cancellationToken);
 
             if (observer is not null)
             {
@@ -318,7 +578,7 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
                 command.OrderId, command.OutputId, realizationOrderVersion, command.ParentLabelId,
                 parentLabelVersion, command.ProductId, command.ExpectedProductVersion, command.LotId,
                 command.LabelId, labelVersion, command.MovementId, command.Quantity,
-                manufacturingOutcome == ManufacturingWriteOutcome.Replayed);
+                manufacturingOutcome == ManufacturingWriteOutcome.Replayed, labelCode.LabelCode);
         }
         catch (Exception exception)
         {
@@ -328,6 +588,116 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
         finally
         {
             manufacturing.ChangeTracker.Clear();
+        }
+    }
+
+    private async Task<string?> ReadOutputLabelCodeFormatAsync(Guid companyId, CancellationToken cancellationToken)
+    {
+        if (labelCodePolicy is null)
+        {
+            return ManufacturingOutputLabelCodePolicyV1.NotSet.GeneratedLabelCodeFormat;
+        }
+
+        ManufacturingOutputLabelCodePolicyV1? policy;
+        try
+        {
+            policy = await labelCodePolicy.ReadAsync(companyId, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            throw new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Unavailable, InventoryManufacturingRealizationCodesV1.Unavailable);
+        }
+
+        // An unreadable Ayarlar answer fails closed; it never falls back to a format of Manufacturing's own.
+        if (policy is null)
+        {
+            throw new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Unavailable, InventoryManufacturingRealizationCodesV1.Unavailable);
+        }
+
+        return policy.GeneratedLabelCodeFormat;
+    }
+
+    private async Task<ManufacturingOutputLabelCodeV1> AssignOutputLabelCodeAsync(
+        Guid companyId,
+        ManufacturingInventoryOutputCommand command,
+        string? labelCodeFormat,
+        ManufacturingWriteOutcome manufacturingOutcome,
+        ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken)
+    {
+        Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? registered =
+            labelCodeRegister is null
+                ? null
+                : (codes, token) => labelCodeRegister.RegisteredAsync(companyId, codes, token);
+        ManufacturingOutputLabelCodeV1 assigned;
+        try
+        {
+            assigned = await orders.AssignOutputLabelCodeAsync(
+                command.OrderId, command.OutputId, command.LabelId, command.LabelCode, labelCodeFormat, registered,
+                manufacturingOutcome == ManufacturingWriteOutcome.Replayed, metadata, cancellationToken);
+        }
+        catch (ManufacturingStoreException exception)
+            when (exception.Code == ManufacturingStoreCodes.LineageInvalid)
+        {
+            // The output fact this transaction just recorded or replayed is not readable, or the register answered
+            // nothing: an incomplete realization, both owners roll back.
+            throw Incomplete();
+        }
+
+        if (assigned.OutputId != command.OutputId || assigned.LabelId != command.LabelId
+            || !ProductionOutputLabelCodes.IsValidCode(assigned.LabelCode))
+        {
+            throw Incomplete();
+        }
+
+        return assigned;
+    }
+
+    private static ManufacturingInventoryRealizationPortException? OutputLabelCodeRefusal(
+        ManufacturingStoreException exception) =>
+        exception.Code switch
+        {
+            ManufacturingStoreCodes.OutputLabelCodeRequired => new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Unprocessable, exception.Code, "labelCode"),
+            ManufacturingStoreCodes.OutputLabelCodeFormatInvalid => new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Unprocessable, exception.Code),
+            ManufacturingStoreCodes.OutputLabelCodeConflict => new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Conflict, exception.Code, "labelCode"),
+            ManufacturingStoreCodes.OutputLabelCodeEntryNotAllowed => new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Unprocessable, exception.Code, "labelCode"),
+            _ => null,
+        };
+
+    private async Task RecordOutputLineageAsync(
+        ManufacturingInventoryOutputCommand command,
+        InventoryManufacturingOutputResultV2 inventoryResult,
+        ManufacturingWriteOutcome manufacturingOutcome,
+        ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken)
+    {
+        var inputs = LineageInputs(inventoryResult.GenealogyInputs, command.LabelId);
+        try
+        {
+            await orders.RecordOutputLineageAsync(
+                command.OrderId, command.OutputId, command.LabelId, inventoryResult.GenealogyTransformationId, inputs,
+                manufacturingOutcome == ManufacturingWriteOutcome.Replayed, metadata, cancellationToken);
+        }
+        catch (ManufacturingStoreException exception)
+            when (exception.Code == ManufacturingStoreCodes.LineageInvalid)
+        {
+            // Inventory's genealogy answer the share calculator cannot read is an incomplete realization, not a
+            // caller error: both owners roll back.
+            throw Incomplete();
         }
     }
 
@@ -359,14 +729,17 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
         }
     }
 
-    private async Task BeforeCommitAsync(Guid companyId, CancellationToken cancellationToken)
+    private Task BeforeCommitAsync(Guid companyId, CancellationToken cancellationToken) =>
+        BeforeCommitAsync(companyId, ErpPermissions.ManufacturingFactsRecord, cancellationToken);
+
+    private async Task BeforeCommitAsync(Guid companyId, string permission, CancellationToken cancellationToken)
     {
         if (observer is not null)
         {
             await observer(ManufacturingInventoryReturnOutputStage.BeforeCommit, cancellationToken);
         }
 
-        await RequireAuthorityAsync(companyId, cancellationToken);
+        await RequireAuthorityAsync(companyId, permission, cancellationToken);
     }
 
     private static void RequireRecordedVersion(
@@ -391,6 +764,47 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
 
     private static string Quantity(Kilograms value) =>
         value.Value.ToString("0.###", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// URT-S20: Inventory's genealogy inputs as the share calculator's inputs. A missing list or input, an empty or
+    /// self-referencing label id, or a kg Manufacturing cannot read exactly (more than three decimals, negative, not a
+    /// number) is an incomplete realization: the transaction rolls back, nothing is cut or guessed.
+    /// </summary>
+    private static IReadOnlyList<ProductionLineageShareInput> LineageInputs(
+        IReadOnlyList<InventoryManufacturingGenealogyInputV2>? genealogyInputs, Guid outputLabelId)
+    {
+        if (genealogyInputs is null || genealogyInputs.Count == 0)
+        {
+            throw Incomplete();
+        }
+
+        var inputs = new List<ProductionLineageShareInput>(genealogyInputs.Count);
+        foreach (var input in genealogyInputs)
+        {
+            if (input is null || input.LabelId == Guid.Empty || input.LabelId == outputLabelId
+                || !decimal.TryParse(input.QuantityKg, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture,
+                    out var quantity))
+            {
+                throw Incomplete();
+            }
+
+            try
+            {
+                inputs.Add(new ProductionLineageShareInput(input.LabelId, new Kilograms(quantity)));
+            }
+            catch (ManufacturingRuleException)
+            {
+                throw Incomplete();
+            }
+        }
+
+        return inputs;
+    }
+
+    // Three full Guid:N identities plus this disjoint prefix fit Inventory's 128-character key contract.
+    internal static InventoryCommandMetadata OutputCorrectionInventoryMetadata(
+        ManufacturingCommandMetadata metadata, Guid companyId, Guid orderId, Guid reversalId) =>
+        InventoryMetadata(metadata, companyId, orderId, reversalId, "mfg-output-correction");
 
     private static InventoryCommandMetadata InventoryMetadata(
         ManufacturingCommandMetadata metadata,
@@ -418,10 +832,12 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
         return companyContext.CompanyId;
     }
 
-    private async Task RequireAuthorityAsync(Guid companyId, CancellationToken cancellationToken)
+    private Task RequireAuthorityAsync(Guid companyId, CancellationToken cancellationToken) =>
+        RequireAuthorityAsync(companyId, ErpPermissions.ManufacturingFactsRecord, cancellationToken);
+
+    private async Task RequireAuthorityAsync(Guid companyId, string permission, CancellationToken cancellationToken)
     {
-        var scope = await authority.RevalidatePermissionScopeAsync(
-            ErpPermissions.ManufacturingFactsRecord, companyId, cancellationToken);
+        var scope = await authority.RevalidatePermissionScopeAsync(permission, companyId, cancellationToken);
         if (!scope.IsGranted || !scope.IsCompanyWide || !companyContext.IsResolved
             || companyContext.CompanyId != companyId)
         {
@@ -442,7 +858,7 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
         }
     }
 
-    private static void RequireOutput(
+    private static ManufacturingOutputLabelV1 RequireOutput(
         ManufacturingInventoryOutputCommand command, ManufacturingCommandMetadata metadata)
     {
         if (command.OrderId == Guid.Empty || command.OutputId == Guid.Empty || command.ParentLabelId == Guid.Empty
@@ -458,6 +874,16 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
         {
             throw new ArgumentException("The Manufacturing output command is incomplete.", nameof(command));
         }
+
+        // URT-S16 (URT-D43): fail-closed when the class has no stock label or the remnant classification is not one
+        // the fixed mapping allows.
+        if (!ManufacturingOutputClassMappingV1.TryMap(command.OutputClass, command.RemnantClassification,
+                out var label))
+        {
+            throw new ArgumentException("The Manufacturing output class has no stock label.", nameof(command));
+        }
+
+        return label;
     }
 
     private async Task RollbackOrThrowAsync(
@@ -477,6 +903,16 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
             manufacturing.ChangeTracker.Clear();
             throw new ManufacturingInventoryReturnOutputRecoveryException(attempt, rollback);
         }
+        if (InventoryNegativeStockAttemptEvidenceException.FindEvidence(attempt) is not null)
+        {
+            try
+            {
+                if (negativeStockAttempts is null) throw new InvalidOperationException("Physical refusal recorder is unavailable.");
+                await negativeStockAttempts.RecordAfterRollbackAsync(attempt, CancellationToken.None);
+            }
+            catch (Exception recording) { throw InventoryManufacturingRealizationException.Refused(503,
+                InventoryManufacturingRealizationCodesV1.Unavailable, recording); }
+        }
     }
 
     private static ManufacturingInventoryReturnOutputHostException Incomplete() =>
@@ -484,7 +920,7 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
             ManufacturingInventoryReturnOutputHostCodes.IncompleteRealization);
 
     private static ManufacturingInventoryRealizationPortException PortRefusal(int status, string code) =>
-        new(status switch
+        new ManufacturingInventoryRealizationPortException(status switch
         {
             StatusCodes.Status400BadRequest => ManufacturingApiStatus.Invalid,
             StatusCodes.Status404NotFound => ManufacturingApiStatus.NotFound,
@@ -511,7 +947,7 @@ internal sealed record ManufacturingInventoryInputReturnCommand(
     long ExpectedParentLabelVersion,
     Guid MovementId,
     Kilograms Quantity,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc, Guid? SourceIssueMovementId = null);
 
 internal sealed record ManufacturingInventoryOutputCommand(
     Guid OrderId,
@@ -524,7 +960,7 @@ internal sealed record ManufacturingInventoryOutputCommand(
     string ExpectedProductVersion,
     Guid LotId,
     Guid LabelId,
-    string LabelCode,
+    string? LabelCode,
     string? HeatNumber,
     string? CoilNumber,
     IReadOnlyList<string> RequiredDocuments,
@@ -536,7 +972,9 @@ internal sealed record ManufacturingInventoryOutputCommand(
     BlockState InitialBlock,
     Guid MovementId,
     Kilograms Quantity,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    InventoryLabelClassificationV1? RemnantClassification = null,
+    PlanOutputLineReference? OutputLine = null);
 
 internal sealed record ManufacturingInventoryInputReturnResult(
     Guid OrderId,
@@ -545,6 +983,18 @@ internal sealed record ManufacturingInventoryInputReturnResult(
     Guid ParentLabelId,
     long ParentLabelVersion,
     Guid MovementId,
+    Kilograms Quantity,
+    bool IsReplay);
+
+internal sealed record ManufacturingInventoryOutputCorrectionResult(
+    Guid OrderId,
+    Guid OutputId,
+    Guid ReversalId,
+    long OrderVersion,
+    Guid LabelId,
+    long LabelVersion,
+    Guid MovementId,
+    Guid ReversedReceiptMovementId,
     Kilograms Quantity,
     bool IsReplay);
 
@@ -561,13 +1011,15 @@ internal sealed record ManufacturingInventoryOutputResult(
     long LabelVersion,
     Guid MovementId,
     Kilograms Quantity,
-    bool IsReplay);
+    bool IsReplay,
+    string LabelCode);
 
 internal enum ManufacturingInventoryReturnOutputStage
 {
     ReturnInventoryStaged = 1,
     OutputInventoryStaged = 2,
     BeforeCommit = 3,
+    OutputCorrectionInventoryStaged = 4,
 }
 
 internal static class ManufacturingInventoryReturnOutputHostCodes

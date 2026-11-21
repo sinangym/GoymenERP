@@ -3,6 +3,7 @@ import hashlib
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import tempfile
 import textwrap
@@ -19,6 +20,14 @@ import validate_c01_e2e_contract as validator  # noqa: E402
 
 COMMIT = "a" * 40
 PROJECT = "goymen-c01-100-1"
+COMPANY_SETUP_CAPABILITIES_PATH = "/api/v1/organization/company-setup/capabilities"
+EXPECTED_REAL_PATHS = {
+    "/api/v1/identity/me",
+    "/api/v1/organization/companies",
+    COMPANY_SETUP_CAPABILITIES_PATH,
+    "/api/v1/shell/capabilities",
+    "/api/v1/counterparties",
+}
 
 
 def valid_compose():
@@ -488,8 +497,17 @@ class ComposeContractTests(unittest.TestCase):
 
             def gate(head, base):
                 git("checkout", "-q", "--detach", head)
+                # Windows resolves an unqualified bash through System32 before PATH.
+                # Keep this Git fixture in Git Bash; Linux keeps its existing shell.
+                bash = "bash"
+                if os.name == "nt":
+                    git_binary = shutil.which("git")
+                    self.assertIsNotNone(git_binary)
+                    git_bash = pathlib.Path(git_binary).resolve().parent.parent / "bin" / "bash.exe"
+                    self.assertTrue(git_bash.is_file(), "Git Bash is required for the Git fixture")
+                    bash = str(git_bash)
                 return subprocess.run(
-                    ["bash", "-c", script],
+                    [bash, "-c", script],
                     cwd=repository, capture_output=True, text=True,
                     env={**environment, "EXPECTED_HEAD_SHA": head, "EXPECTED_BASE_SHA": base},
                 )
@@ -706,7 +724,7 @@ def valid_evidence():
 def valid_network():
     requests = [
         {"method": "GET", "path": path, "ordinal": index + 1, "outcome": "real-200", "retryOrdinal": 0}
-        for index, path in enumerate(sorted(validator.REQUIRED_REAL_PATHS))
+        for index, path in enumerate(sorted(EXPECTED_REAL_PATHS))
     ]
     for outcome in sorted(validator.REQUIRED_FAULT_OUTCOMES):
         requests.append(
@@ -757,6 +775,80 @@ class EvidenceContractTests(unittest.TestCase):
 
     def test_valid_evidence_passes(self):
         self.validate()
+
+    def test_network_requires_exactly_the_five_shell_and_counterparty_reads(self):
+        self.assertEqual(validator.REQUIRED_REAL_PATHS, EXPECTED_REAL_PATHS)
+
+    def test_each_required_real_path_must_be_present(self):
+        for path in sorted(EXPECTED_REAL_PATHS):
+            with self.subTest(path=path):
+                network = valid_network()
+                network["requests"] = [
+                    request for request in network["requests"] if request["path"] != path
+                ]
+                for ordinal, request in enumerate(network["requests"], start=1):
+                    request["ordinal"] = ordinal
+                with self.assertRaisesRegex(validator.ContractError, "required real API paths are missing"):
+                    self.validate(network=network)
+
+    def test_company_setup_sibling_and_nested_paths_fail_closed(self):
+        for path in (
+            "/api/v1/organization/company-setup/pending",
+            COMPANY_SETUP_CAPABILITIES_PATH + "/extra",
+            COMPANY_SETUP_CAPABILITIES_PATH + "-other",
+        ):
+            with self.subTest(path=path):
+                network = valid_network()
+                request = next(item for item in network["requests"] if item["path"] == COMPANY_SETUP_CAPABILITIES_PATH)
+                request["path"] = path
+                with self.assertRaisesRegex(validator.ContractError, "outside the C-01 allowlist"):
+                    self.validate(network=network)
+
+    def test_each_required_real_path_refuses_post(self):
+        for path in sorted(EXPECTED_REAL_PATHS):
+            with self.subTest(path=path):
+                network = valid_network()
+                request = next(item for item in network["requests"] if item["path"] == path)
+                request["method"] = "POST"
+                with self.assertRaisesRegex(validator.ContractError, "read-only"):
+                    self.validate(network=network)
+
+    def test_company_setup_read_requires_real_success_and_cannot_carry_counterparty_faults(self):
+        outcomes = {"real-401", "real-403"} | validator.REQUIRED_FAULT_OUTCOMES
+        for outcome in sorted(outcomes):
+            with self.subTest(outcome=outcome):
+                network = valid_network()
+                request = next(item for item in network["requests"] if item["path"] == COMPANY_SETUP_CAPABILITIES_PATH)
+                request["outcome"] = outcome
+                request["retryOrdinal"] = 1 if outcome == "retry-200" else 0
+                expected = "Counterparty read endpoint" if outcome in validator.REQUIRED_FAULT_OUTCOMES else "successful real bootstrap read"
+                with self.assertRaisesRegex(validator.ContractError, expected):
+                    self.validate(network=network)
+
+    def test_network_company_authority_and_redaction_fences_remain_required(self):
+        for key, value, message in (
+            ("testedCommit", "b" * 40, "testedCommit mismatch"),
+            ("authorizedCompanyId", "00000000-0000-0000-0000-000000000000", "company mismatch"),
+            ("foreignRecordAbsent", False, "foreign record absence"),
+            ("redacted", False, "must be redacted"),
+        ):
+            with self.subTest(key=key):
+                network = valid_network()
+                network[key] = value
+                with self.assertRaisesRegex(validator.ContractError, message):
+                    self.validate(network=network)
+
+    def test_company_setup_read_refuses_query_and_raw_authorization_fields(self):
+        for key, value, message in (
+            ("path", COMPANY_SETUP_CAPABILITIES_PATH + "?companyId=synthetic", "query-redacted"),
+            ("authorization", "SENTETIK-REDACTION-PROBE", "keys mismatch"),
+        ):
+            with self.subTest(key=key):
+                network = valid_network()
+                request = next(item for item in network["requests"] if item["path"] == COMPANY_SETUP_CAPABILITIES_PATH)
+                request[key] = value
+                with self.assertRaisesRegex(validator.ContractError, message):
+                    self.validate(network=network)
 
     def test_skip_fails(self):
         evidence = copy.deepcopy(valid_evidence())

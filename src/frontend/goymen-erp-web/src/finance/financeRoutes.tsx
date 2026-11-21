@@ -39,9 +39,21 @@ import {
 import { ManualBankPaymentStartPage, type ManualBankPaymentEntryContext } from './ManualBankPaymentStartPage'
 import { CustomerInstrumentPortfolioPage } from './CustomerInstrumentPortfolioPage'
 import { PartyLedgerWorkspacePage } from './PartyLedgerWorkspacePage'
+import { PartyBalanceTransferPage } from './PartyBalanceTransferPage'
 import { WORKSPACE_NEEDS_COMPANY, WORKSPACE_TITLE_ACCOUNTING, WORKSPACE_TITLE_CARI } from './partyLedgerText'
 import { AllocationPage } from './AllocationPages'
 import { OpenItemDetailPage, OpenItemListPage } from './OpenItemReadPage'
+import { ExpensePaymentPage } from './ExpensePaymentPage'
+import { CreditLimitPage } from './CreditLimitPage'
+import { CreditAccountsPage } from './CreditAccountsPage'
+import { OfficialSalesInvoicesPage } from './OfficialSalesInvoicesPage'
+import { CollateralPage } from './CollateralPage'
+import { OpeningBalancePage } from './OpeningBalancePage'
+import { EXPENSE_PAYMENT_TEXT } from './expensePaymentText'
+import { CashTransferPage } from './CashTransferPage'
+import { CashExchangeBookValuePage } from './CashExchangeBookValuePage'
+import { BOOK_VALUE_TEXT } from './cashExchangeBookValueText'
+import { CASH_TRANSFER_TEXT } from './cashTransferText'
 import {
   ManualBankPaymentCreatePage,
   ManualBankPaymentDetailPage,
@@ -69,12 +81,78 @@ function usePaymentContext() {
   return { ...context, companyId: context.companyId }
 }
 
-/** B-05: the party-ledger workspace on one of its two routes; it needs a single active company. */
-function PartyLedgerWorkspaceRoute({ base, title }: { readonly base: string; readonly title: string }) {
+/**
+ * B-05: the party-ledger workspace on one of its two routes; it needs a single active company. M-03's open-account
+ * panels (`openAccounts`) are Muhasebe > Cari Hesaplar's.
+ */
+function PartyLedgerWorkspaceRoute({ base, title, openAccounts = false }: {
+  readonly base: string
+  readonly title: string
+  readonly openAccounts?: boolean
+}) {
   const context = usePaymentContext()
   return context === null
     ? <StateBlock state={{ kind: 'not-found' }} subject={WORKSPACE_NEEDS_COMPANY} />
-    : <PartyLedgerWorkspacePage companyId={context.companyId} base={base} title={title} />
+    : <PartyLedgerWorkspacePage companyId={context.companyId} base={base} title={title} openAccounts={openAccounts} />
+}
+
+/** F-25 (FNS-D25): the expense-payment workspace; it needs a single active company. Each control has its own gate. */
+function ExpensePaymentRoute() {
+  const context = usePaymentContext()
+  const shell = useShellState()
+  if (context === null) return <StateBlock state={{ kind: 'not-found' }} subject={EXPENSE_PAYMENT_TEXT.subject} />
+  return <ExpensePaymentPage companyId={context.companyId} actorId={context.userId}
+    canDraft={hasCapability(shell, FINANCE_CAPABILITY.expensePaymentsDraft)}
+    canApprove={hasCapability(shell, FINANCE_CAPABILITY.expensePaymentsApprove)}
+    canRecord={hasCapability(shell, FINANCE_CAPABILITY.expensePaymentsRecord)} />
+}
+
+/** F-32 (FNS-D24): transfers and currency exchanges; it needs a single active company. The commit has its own gate. */
+function CashTransferRoute() {
+  const context = usePaymentContext()
+  const shell = useShellState()
+  if (context === null) return <StateBlock state={{ kind: 'not-found' }} subject={CASH_TRANSFER_TEXT.subject} />
+  return <CashTransferPage companyId={context.companyId} actorId={context.userId}
+    canCommit={hasCapability(shell, FINANCE_CAPABILITY.cashTransfersCommit)} />
+}
+
+function CashExchangeBookValueRoute() {
+  const context = usePaymentContext()
+  const shell = useShellState()
+  if (context === null) return <StateBlock state={{ kind: 'not-found' }} subject={BOOK_VALUE_TEXT.subject} />
+  return <CashExchangeBookValuePage companyId={context.companyId} actorId={context.userId}
+    canPrepare={hasCapability(shell, FINANCE_CAPABILITY.exchangeBookValuesPrepare)}
+    canApprove={hasCapability(shell, FINANCE_CAPABILITY.exchangeBookValuesApprove)} />
+}
+
+/**
+ * F-018 L1 (FNS-D27 / FNS-D27a; one step, FNS-D56 / FNS-D57(3)): the credit-limit list. Proposing and deciding are controls of it, each behind its own capability;
+ * the screen itself refuses to work without a single active company and the server checks every command anyway.
+ */
+function CreditLimitRoute() {
+  const shell = useShellState()
+  return <CreditLimitPage canPropose={hasCapability(shell, FINANCE_CAPABILITY.creditLimitsPropose)}
+    canApprove={hasCapability(shell, FINANCE_CAPABILITY.creditLimitsApprove)} />
+}
+
+/**
+ * F-018 L2 (FNS-D57 / FNS-D31 / FNS-D58): an account's received collaterals. Recording, changing and releasing are one
+ * control behind `finance.collaterals.record` (one step, no approval); the server checks every command anyway.
+ */
+function CollateralRoute() {
+  const shell = useShellState()
+  return <CollateralPage canRecord={hasCapability(shell, FINANCE_CAPABILITY.collateralsRecord)} />
+}
+
+/**
+ * FIN-S9 (FNS-D23): opening balances while the Settings opening period is open. Proposing and deciding are controls; the
+ * server checks every command and refuses a proposer's own decision anyway.
+ */
+function OpeningBalanceRoute() {
+  const shell = useShellState()
+  return <OpeningBalancePage
+    canPropose={hasCapability(shell, FINANCE_CAPABILITY.openingBalancesPropose)}
+    canApprove={hasCapability(shell, FINANCE_CAPABILITY.openingBalancesApprove)} />
 }
 
 function ManualBankPaymentListRoute() {
@@ -146,6 +224,8 @@ function ManualBankPaymentDetailRoute() {
     canRecord={hasCapability(shell, FINANCE_CAPABILITY.manualBankPaymentsRecord)}
     canReversePropose={hasCapability(shell, FINANCE_CAPABILITY.manualBankPaymentsReversePropose)}
     canReverseApprove={hasCapability(shell, FINANCE_CAPABILITY.manualBankPaymentsReverseApprove)}
+    canReadAllocations={hasCapability(shell, FINANCE_CAPABILITY.allocationsList)}
+    canWriteAllocations={hasCapability(shell, FINANCE_CAPABILITY.allocationsWrite)}
     onOpen={(id) => navigate(manualBankPaymentDetailPath(id))} />
 }
 
@@ -165,7 +245,16 @@ function OfficialInvoiceImportApprovalsRoute() {
           attemptContext={transport.context} />
 }
 
+function PartyBalanceTransferRoute() {
+  const shell = useShellState()
+  return <PartyBalanceTransferPage canRecord={hasCapability(shell, FINANCE_CAPABILITY.partyBalanceTransfers)} />
+}
+
 export const financeRoutes: RouteObject[] = [
+  { path: FINANCE_ROUTE.partyBalanceTransfers.slice(1), element: gate(FINANCE_CAPABILITY.partyBalanceTransfers, <PartyBalanceTransferRoute />) },
+  { path: FINANCE_ROUTE.creditsWorkspace.slice(1), element: gate(FINANCE_CAPABILITY.creditsWorkspace, <CreditAccountsPage />) },
+  { path: FINANCE_ROUTE.officialInvoicesRecord.slice(1), element: gate(FINANCE_CAPABILITY.officialInvoicesRecord, <OfficialSalesInvoicesPage />) },
+  { path: FINANCE_ROUTE.officialInvoicesApprove.slice(1), element: gate(FINANCE_CAPABILITY.officialInvoicesApprove, <OfficialSalesInvoicesPage />) },
   {
     path: FINANCE_ROUTE.customerInstrumentsList.slice(1),
     element: gate(FINANCE_CAPABILITY.customerInstrumentsList, <CustomerInstrumentPortfolioPage />),
@@ -208,6 +297,34 @@ export const financeRoutes: RouteObject[] = [
     path: FINANCE_ROUTE.allocationsList.slice(1),
     element: gate(FINANCE_CAPABILITY.allocationsList, <AllocationPage />),
   },
+  {
+    path: FINANCE_ROUTE.expensePayments.slice(1),
+    element: gate(FINANCE_CAPABILITY.expensePaymentsWorkspace, <ExpensePaymentRoute />),
+  },
+  {
+    path: FINANCE_ROUTE.cashTransfers.slice(1),
+    element: gate(FINANCE_CAPABILITY.cashTransfersWorkspace, <CashTransferRoute />),
+  },
+  {
+    path: FINANCE_ROUTE.exchangeBookValuesPrepare.slice(1),
+    element: gate(FINANCE_CAPABILITY.exchangeBookValuesPrepare, <CashExchangeBookValueRoute />),
+  },
+  {
+    path: FINANCE_ROUTE.exchangeBookValuesApprove.slice(1),
+    element: gate(FINANCE_CAPABILITY.exchangeBookValuesApprove, <CashExchangeBookValueRoute />),
+  },
+  {
+    path: FINANCE_ROUTE.creditLimitsList.slice(1),
+    element: gate(FINANCE_CAPABILITY.creditLimitsList, <CreditLimitRoute />),
+  },
+  {
+    path: FINANCE_ROUTE.collateralsList.slice(1),
+    element: gate(FINANCE_CAPABILITY.collateralsList, <CollateralRoute />),
+  },
+  {
+    path: FINANCE_ROUTE.openingBalancesList.slice(1),
+    element: gate(FINANCE_CAPABILITY.openingBalancesList, <OpeningBalanceRoute />),
+  },
   { path: FINANCE_ROUTE.openItemsList.slice(1), element: gate(FINANCE_CAPABILITY.openItemsList, <OpenItemListPage />) },
   {
     path: FINANCE_ROUTE.openItemsDetail.slice(1),
@@ -217,7 +334,8 @@ export const financeRoutes: RouteObject[] = [
   {
     path: FINANCE_ROUTE.partyLedgerAccounting.slice(1),
     element: gate(FINANCE_CAPABILITY.partyLedgerAccounting,
-      <PartyLedgerWorkspaceRoute base={FINANCE_ROUTE.partyLedgerAccounting} title={WORKSPACE_TITLE_ACCOUNTING} />),
+      <PartyLedgerWorkspaceRoute base={FINANCE_ROUTE.partyLedgerAccounting} title={WORKSPACE_TITLE_ACCOUNTING}
+        openAccounts />),
   },
   {
     path: FINANCE_ROUTE.partyLedgerCari.slice(1),

@@ -49,7 +49,9 @@ public sealed partial class SalesDraftService
         var revisionDay = added.Count > 0 ? ServerBusinessDay() : default;
 
         // SAT-D151: a price, a discount or a tax change on an added line needs the separate price-write name of the same actor.
-        var priced = added.SelectMany((line, index) => PricedFields(line, $"added[{index}]")).ToList();
+        var allPriced = added.SelectMany((line, index) => PricedFields(line, $"added[{index}]")).ToList();
+        var taxFields = allPriced.Where(x => x.Field.EndsWith(".taxOverride", StringComparison.Ordinal)).ToList();
+        var priced = allPriced.Except(taxFields).ToList();
         if (priced.Count > 0)
         {
             await RequirePriceWriteAsync(scope, priced, cancellationToken);
@@ -89,6 +91,11 @@ public sealed partial class SalesDraftService
                     // The domain's own preconditions first: a stale, cancelled, pending or withdrawn order asks no owner.
                     draft.RequireQuantityRevisable(expectedVersion, request.Reason);
                     subcontract = draft.IsSubcontractService;
+                    if (taxFields.Count > 0)
+                    {
+                        if (subcontract) scope = await WithSubcontractTaxAuthorityAsync(scope, writeCancellationToken);
+                        else await RequirePriceWriteAsync(scope, taxFields, writeCancellationToken);
+                    }
                     if (removed.Count > 0)
                     {
                         await RequireRemovedLinesUnshippedAsync(scope, permission, draft, removed, writeCancellationToken);
@@ -102,6 +109,7 @@ public sealed partial class SalesDraftService
                     {
                         await RequirePriceWriteAsync(scope, priced, writeCancellationToken);
                     }
+                    if (!subcontract && taxFields.Count > 0) await RequirePriceWriteAsync(scope, taxFields, writeCancellationToken);
                 }, cancellationToken);
         }
         catch (SalesVersionConflictException exception)
@@ -278,7 +286,7 @@ public sealed partial class SalesDraftService
                     requested.WithholdingRatioCode)
                 : null;
             var tax = await ResolveLineTaxAsync(scope, permission, line.ProductId, buyer, change, businessDate, cancellationToken, lists,
-                $"added[{index}].taxOverride");
+                $"added[{index}].taxOverride", draft.IsSubcontractService);
             inputs[index] = inputs[index] with { Tax = tax };
         }
 

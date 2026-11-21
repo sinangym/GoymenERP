@@ -14,8 +14,8 @@ namespace GoymenERP.Modules.Product.Infrastructure.Shell;
 /// company role. The central registry pins these ids, routes and operations and refuses anything
 /// else (owner <c>PRODUCT</c>, single-company context and any granted scope). Approval, deactivation and
 /// reactivation are child controls of the detail screen, not other routes; each is its own operation.</item>
-/// <item><b>No new permission name.</b> The operations are the ones the Product runtime already
-/// enforces on every API call; publishing a capability decides nothing the API does not.</item>
+/// <item><b>No assignment.</b> The operations are the ones the Product runtime enforces on every API call;
+/// SAT-D422's explicit COGS operation and registered audit name do not give a company role global authority.</item>
 /// <item><b>Unconfigured runtime shows nothing.</b> Without the Product runtime's issuer
 /// configuration there is no Product authority service, so no actor is granted any of these.</item>
 /// </list>
@@ -25,7 +25,7 @@ namespace GoymenERP.Modules.Product.Infrastructure.Shell;
 public sealed class ProductShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "PRODUCT";
-    public const string OwnerContractVersion = "1.2";
+    public const string OwnerContractVersion = "1.3";
 
     public const string ListCapabilityId = "product.items.list";
     public const string DetailCapabilityId = "product.items.detail";
@@ -34,6 +34,7 @@ public sealed class ProductShellCapabilityProvider : IShellCapabilityProvider
     public const string ActivateCapabilityId = "product.items.activate";
     public const string DeactivateCapabilityId = "product.items.deactivate";
     public const string ReactivateCapabilityId = "product.items.reactivate";
+    public const string SetCogsClassificationCapabilityId = "product.items.set-cogs-classification";
 
     public string Owner => OwnerId;
 
@@ -70,6 +71,12 @@ public sealed class ProductShellCapabilityProvider : IShellCapabilityProvider
                 CapabilityId = ReactivateCapabilityId,
                 ParentCapabilityId = DetailCapabilityId,
                 GlobalProductOperation = GroupSharedMasterOperation.Reactivate,
+            },
+            detail with
+            {
+                CapabilityId = SetCogsClassificationCapabilityId,
+                ParentCapabilityId = DetailCapabilityId,
+                GlobalProductOperation = GroupSharedMasterOperation.SetCogsClassification,
             },
         ];
     }

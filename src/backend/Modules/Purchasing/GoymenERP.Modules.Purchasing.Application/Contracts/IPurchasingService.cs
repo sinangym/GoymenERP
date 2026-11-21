@@ -54,10 +54,53 @@ public interface IPurchasingService
     Task<PurchaseOrderResponse> SetOrderLineScheduleAsync(Guid orderId, Guid lineId, SetPurchaseOrderLineScheduleRequest request,
         PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// API-11 (ALS-D10/ALS-D12): closes an Approved order's general line under <c>purchasing.orders.close</c> — its (and its technical
+    /// slices') whole not-yet-accepted remainder becomes <c>closed</c>, with a reason; the accepted shares and the ordered quantity stay.
+    /// </summary>
+    Task<PurchaseOrderResponse> CloseOrderLineAsync(Guid orderId, Guid lineId, ClosePurchaseOrderLineRequest request,
+        PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default);
+
+    /// <summary>API-11 (ALS-D12): reopens a closed general line of an Approved order under <c>purchasing.orders.close</c>, with a reason.</summary>
+    Task<PurchaseOrderResponse> ReopenOrderLineAsync(Guid orderId, Guid lineId, ReopenPurchaseOrderLineRequest request,
+        PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// ALC-SC33 (FNS-D79/D80/D83/D91): changes a Draft foreign-currency order's rate before approval under the order preparer's
+    /// permission; refused once the order is approved (the rate is locked). The old rate, the new rate and the reason go to the audit.
+    /// </summary>
+    Task<PurchaseOrderResponse> ChangeOrderExchangeRateAsync(Guid orderId, ChangePurchaseOrderExchangeRateRequest request,
+        PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default);
+
+    /// <summary>ALC-SC33: the rate recorded on the order under the order read; reads only, never recomputes.</summary>
+    Task<PurchaseOrderExchangeRateView> GetOrderExchangeRateAsync(Guid orderId, CancellationToken cancellationToken = default);
+
     /// <summary>A1-3 (plan API-10): the cancellation's impact preview under <c>purchasing.orders.cancel</c>; reads only.</summary>
     Task<PurchaseOrderCancelImpactView> GetOrderCancelImpactAsync(Guid orderId, CancellationToken cancellationToken = default);
 
+    /// <summary>F-017 F17-4: the order's active future allocations from the Inventory owner, under <c>purchasing.future-allocation.release</c>.</summary>
+    Task<PurchaseOrderFutureAllocationLinksView> GetOrderFutureAllocationsAsync(Guid orderId, CancellationToken cancellationToken = default);
+
+    /// <summary>ALS-D83: drops one future allocation link (<c>purchasing-link-dropped</c>); the order version does not change.</summary>
+    Task<PurchaseFutureAllocationReleaseResponse> ReleaseOrderFutureAllocationAsync(Guid orderId, Guid allocationId,
+        ReleasePurchaseFutureAllocationRequest request, PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default);
+
+    /// <summary>ALS-D85: cancels the order's remainder together with the confirmed allocations, under both names.</summary>
+    Task<PurchaseOrderResponse> CancelOrderWithAllocationReleaseAsync(Guid orderId, CancelPurchaseOrderWithAllocationReleaseRequest request,
+        PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default);
+
+    /// <summary>F-017 §3.6: closes a general line's remainder together with its confirmed allocations, under both names.</summary>
+    Task<PurchaseOrderResponse> CloseOrderLineWithAllocationReleaseAsync(Guid orderId, Guid lineId,
+        ClosePurchaseOrderLineWithAllocationReleaseRequest request, PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default);
+
     Task<PurchaseOrderDetailView> GetOrderDetailAsync(Guid orderId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// ALS-D94 / ALS-D81 (F-027): a line's delivery schedule history under the read name — every recorded revision, oldest first;
+    /// reads only. An unknown order or line is 404.
+    /// </summary>
+    Task<PurchaseOrderLineScheduleHistoryView> GetOrderLineScheduleHistoryAsync(Guid orderId, Guid lineId,
+        CancellationToken cancellationToken = default);
 
     /// <summary>A2a-2 (API-20): the order's totals under the read name; amounts only with the price read (PRS-02).</summary>
     Task<PurchaseOrderTotalsView> GetOrderTotalsAsync(Guid orderId, CancellationToken cancellationToken = default);

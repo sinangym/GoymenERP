@@ -16,6 +16,8 @@ import { InstructionListPage } from './InstructionListPage'
 import { InstructionCreatePage } from './InstructionCreatePage'
 import { InstructionDetailPage } from './InstructionDetailPage'
 import { OperationsWorkPage } from './OperationsWorkPage'
+import { TransferDeparturePage } from './TransferDeparturePage'
+import { PlanExcessApprovalPage } from './PlanExcessApprovalPage'
 
 function gate(capability: LogisticsCapabilityId, children: ReactNode) {
   // The cast goes once the shell owner adds the three ids to `src/shell/capabilities.ts` (the mount handoff).
@@ -23,6 +25,8 @@ function gate(capability: LogisticsCapabilityId, children: ReactNode) {
 }
 
 export const logisticsRoutes: RouteObject[] = [
+  { path: LOGISTICS_ROUTE.planExcessApprove.slice(1), element: gate(LOGISTICS_CAPABILITY.planExcessApprove, <PlanExcessApprovalPage />) },
+  { path: LOGISTICS_ROUTE.transferDepartures.slice(1), element: gate(LOGISTICS_CAPABILITY.transferDepartures, <TransferDeparturePage />) },
   { path: LOGISTICS_ROUTE.list.slice(1), element: gate(LOGISTICS_CAPABILITY.instructionsList, <InstructionListPage />) },
   // Static `yeni` before `:instructionId`, so it is never read as a record id.
   { path: LOGISTICS_ROUTE.create.slice(1), element: gate(LOGISTICS_CAPABILITY.instructionsCreate, <InstructionCreatePage />) },

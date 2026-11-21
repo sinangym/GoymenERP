@@ -5,14 +5,20 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+from collections import Counter, deque
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
+import time
+import uuid
 import xml.etree.ElementTree as ET
 
 
@@ -459,7 +465,183 @@ def trx_logger(trx_path: Path) -> str:
     return f"trx;LogFileName={trx_path.name}"
 
 
-def run_checked(arguments: list[str], repository_root: Path) -> subprocess.CompletedProcess[str]:
+TEST_EXECUTION_TIMEOUT_SECONDS = 2400
+# User decision 2026-11-18: one broad-shard budget; each native process remains capped at 2400s.
+SQL_SHARD_EXECUTION_TIMEOUT_SECONDS = 10800
+MAX_PROGRESS_LINE_BYTES = 8192
+MAX_PROGRESS_EVENTS = 4096
+PROGRESS_FQN = r"GoymenERP\.Api\.IntegrationTests\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+"
+RESULT_PROGRESS = re.compile(
+    rf"^\s*(Passed|Failed|Skipped) ({PROGRESS_FQN})(?:\(.*\))? "
+    r"\[((?:< )?\d+(?:\.\d+)? (?:ms|s|m|h)(?: \d+(?:\.\d+)? (?:ms|s|m|h))*)\]\s*$"
+)
+LONG_RUNNING_PROGRESS = re.compile(
+    rf"^\s*(?:\[xUnit\.net [0-9:.]+\]\s*)?(?:GoymenERP\.Api\.IntegrationTests:\s*)?"
+    rf"\[Long Running Test\] '({PROGRESS_FQN})(?:\(.*\))?', Elapsed: (\d{{2}}:[0-5]\d:[0-5]\d)\s*$"
+)
+
+
+class TestProgress:
+    """Bounded, lossy diagnostic projection, never an input to the acceptance gate."""
+
+    def __init__(self) -> None:
+        self.pending = bytearray()
+        self.discard_line = False
+        self.events = 0
+        self.allowed = frozenset(BROAD_EXPECTED_TESTS) | frozenset(EXPECTED_TESTS)
+
+    def feed(self, chunk: bytes, *, final: bool = False) -> None:
+        parts = chunk.split(b"\n")
+        for index, part in enumerate(parts):
+            if len(self.pending) + len(part) > MAX_PROGRESS_LINE_BYTES:
+                self.pending.clear()
+                self.discard_line = True
+            if not self.discard_line:
+                self.pending.extend(part)
+            if index < len(parts) - 1 or final:
+                if not self.discard_line:
+                    self.report(self.pending.decode("utf-8", errors="replace"))
+                self.pending.clear()
+                self.discard_line = False
+
+    def report(self, line: str) -> None:
+        if self.events >= MAX_PROGRESS_EVENTS:
+            return
+        match = RESULT_PROGRESS.fullmatch(line)
+        if match:
+            outcome, name, duration = match.groups()
+            seconds = sum(
+                float(value) * {"ms": .001, "s": 1, "m": 60, "h": 3600}[unit]
+                for value, unit in re.findall(r"(\d+(?:\.\d+)?) (ms|s|m|h)", duration)
+            )
+        else:
+            match = LONG_RUNNING_PROGRESS.fullmatch(line)
+            if not match:
+                return
+            name, duration = match.groups()
+            hours, minutes, seconds_part = map(int, duration.split(":"))
+            seconds = hours * 3600 + minutes * 60 + seconds_part
+            outcome = "long-running"
+        if name in self.allowed and math.isfinite(seconds):
+            # Display names may contain theory arguments. Only the checked-in method name escapes.
+            print(f"SQL-DIAGNOSTIC phase=test-execution fqn={name} "
+                  f"outcome={outcome} duration_seconds={seconds:.3f}", flush=True)
+            self.events += 1
+
+
+def stop_test_process(process: subprocess.Popen[bytes]) -> None:
+    """Kill the POSIX group (Windows tree best effort), then reap the direct child silently."""
+    try:
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                check=False, timeout=10,
+            )
+        else:
+            os.killpg(process.pid, signal.SIGKILL)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    try:
+        process.kill()
+    except OSError:
+        pass
+    process.wait(timeout=10)
+
+
+class NativeTestFailure(RuntimeError):
+    """The actual test process failed; its exit code is never inferred from text."""
+
+    def __init__(self, exit_code: int) -> None:
+        self.exit_code = exit_code
+        super().__init__(f"RCSI acceptance command exited with native code {exit_code}.")
+
+
+def run_test_checked(
+    arguments: list[str], repository_root: Path, *, execution_deadline: float | None = None,
+) -> subprocess.CompletedProcess[str]:
+    # Cap this process and its pipe completion by the remaining shard budget; progress never renews either.
+    started = time.monotonic()
+    deadline = started + TEST_EXECUTION_TIMEOUT_SECONDS
+    if execution_deadline is not None:
+        deadline = min(deadline, execution_deadline)
+        if deadline <= started:
+            raise RuntimeError("SQL Server relational execution exhausted its global deadline.")
+    deadline_kind = (
+        "global" if execution_deadline is not None and execution_deadline <= started + TEST_EXECUTION_TIMEOUT_SECONDS
+        else "process"
+    )
+    effective_budget_seconds = deadline - started
+    progress = TestProgress()
+    reader_errors: list[type[BaseException]] = []
+    print("SQL-DIAGNOSTIC phase=test-execution outcome=started duration_seconds=0.000", flush=True)
+    process = subprocess.Popen(
+        arguments, cwd=repository_root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        bufsize=0, start_new_session=os.name != "nt",
+    )
+    assert process.stdout is not None
+
+    def read_output() -> None:
+        try:
+            while chunk := process.stdout.read(4096):
+                progress.feed(chunk)
+            progress.feed(b"", final=True)
+        except Exception as exception:
+            reader_errors.append(type(exception))
+
+    reader = threading.Thread(target=read_output, daemon=True)
+    reader_started = False
+    try:
+        reader.start()
+        reader_started = True
+        returncode = process.wait(timeout=max(0, deadline - time.monotonic()))
+        if returncode != 0:
+            # A failed runner may leave a descendant holding the pipe. Keep its native failure;
+            # do not replace it with an output-drain timeout.
+            raise NativeTestFailure(returncode)
+        reader.join(timeout=max(0, deadline - time.monotonic()))
+        if reader.is_alive():
+            raise subprocess.TimeoutExpired(arguments, effective_budget_seconds)
+        if reader_errors:
+            raise RuntimeError("RCSI acceptance test output could not be read.")
+    except BaseException as exception:
+        # Cleanup must not replace the timeout/native error that caused acceptance to fail.
+        try:
+            stop_test_process(process)
+        except (OSError, subprocess.SubprocessError):
+            pass
+        if reader_started:
+            reader.join(timeout=10)
+        if isinstance(exception, subprocess.TimeoutExpired):
+            print(f"SQL-DIAGNOSTIC phase=test-execution outcome=timeout "
+                  f"duration_seconds={time.monotonic() - started:.3f} "
+                  f"deadline={deadline_kind} effective_budget_seconds={effective_budget_seconds:.3f}", flush=True)
+            raise RuntimeError(
+                f"SQL Server relational test execution timed out: deadline={deadline_kind} "
+                f"effective_budget_seconds={effective_budget_seconds:.3f}."
+            ) from exception
+        print(f"SQL-DIAGNOSTIC phase=test-execution outcome=failed "
+              f"duration_seconds={time.monotonic() - started:.3f}", flush=True)
+        raise
+    finally:
+        if not reader.is_alive():
+            process.stdout.close()
+    print(f"SQL-DIAGNOSTIC phase=test-execution outcome=completed "
+          f"duration_seconds={time.monotonic() - started:.3f}", flush=True)
+    # Raw test output is deliberately not replayed: live diagnostics are already safely projected.
+    return subprocess.CompletedProcess(arguments, returncode, stdout="", stderr="")
+
+
+def run_checked(
+    arguments: list[str], repository_root: Path, *, execution_deadline: float | None = None,
+) -> subprocess.CompletedProcess[str]:
+    if "--no-build" in arguments and "--results-directory" in arguments:
+        if execution_deadline is None:
+            return run_test_checked(arguments, repository_root)
+        return run_test_checked(arguments, repository_root, execution_deadline=execution_deadline)
+    remaining = 2400 if execution_deadline is None else execution_deadline - time.monotonic()
+    if remaining <= 0:
+        raise RuntimeError("SQL Server relational execution exhausted its global deadline.")
     result = subprocess.run(
         arguments,
         cwd=repository_root,
@@ -471,7 +653,7 @@ def run_checked(arguments: list[str], repository_root: Path) -> subprocess.Compl
         # The broad suite grew past 20 minutes (17m22s at #512, 19m19s at #513, a timeout at #514). Only the
         # wall-clock limit changes; every listed test and the 0-skip / exact-inventory rules stay (user decision
         # 2026-09-29).
-        timeout=2400,
+        timeout=min(2400, remaining),
     )
     if result.returncode != 0:
         sys.stdout.write(result.stdout)
@@ -482,7 +664,7 @@ def run_checked(arguments: list[str], repository_root: Path) -> subprocess.Compl
     return result
 
 
-def run_bootstrap_preflight(repository_root: Path) -> None:
+def run_bootstrap_preflight(repository_root: Path, *, execution_deadline: float | None = None) -> None:
     run_checked(
         [
             sys.executable,
@@ -492,7 +674,190 @@ def run_bootstrap_preflight(repository_root: Path) -> None:
             "tools/validate_dotnet_bootstrap_integrity.py",
         ],
         repository_root,
+        **({"execution_deadline": execution_deadline} if execution_deadline is not None else {}),
     )
+
+
+# Keep every theory's executions in one process. Splitting methods changes process/static
+# lifetime: this diagnostic-oriented runner change remains subject to independent K3 review.
+# Round-robin class queues retain xUnit's opportunity to run independent classes together.
+# The goal is earlier completed TRX diagnostics, not a promise of a green or faster SQL run.
+SQL_BATCH_MAX_METHODS = 8
+SQL_BATCH_MAX_EXECUTIONS = 16
+
+
+def plan_sql_batches(expected: dict[str, int]) -> tuple[dict[str, int], ...]:
+    if not expected or any(
+        not INVENTORY_TEST_NAME.fullmatch(name)
+        or type(count) is not int or count <= 0
+        for name, count in expected.items()
+    ):
+        raise RuntimeError("SQL batches require a nonempty canonical relational execution inventory.")
+    queues: dict[str, deque[tuple[str, int]]] = {}
+    for name, count in sorted(expected.items()):
+        queues.setdefault(name.rsplit(".", 1)[0], deque()).append((name, count))
+    ordered: list[tuple[str, int]] = []
+    while queues:
+        # Each pass selects at most one method from every remaining class. Never start
+        # concurrent runner processes or split a theory to create this opportunity.
+        for class_name in sorted(queues):
+            ordered.append(queues[class_name].popleft())
+            if not queues[class_name]:
+                del queues[class_name]
+    batches: list[dict[str, int]] = []
+    current: dict[str, int] = {}
+    for name, count in ordered:
+        if current and (len(current) >= SQL_BATCH_MAX_METHODS
+                        or sum(current.values()) + count > SQL_BATCH_MAX_EXECUTIONS):
+            batches.append(current)
+            current = {}
+        current[name] = count
+    if current:
+        batches.append(current)
+    union = {name: count for batch in batches for name, count in batch.items()}
+    if union != expected or sum(len(batch) for batch in batches) != len(expected):
+        raise RuntimeError("SQL batch plan must partition the exact execution inventory.")
+    return tuple(batches)
+
+
+def verify_sql_batch_trx(
+    path: Path, expected: dict[str, int], seen_execution_ids: set[str], *,
+    diagnostic_only: bool = False,
+) -> dict[str, int]:
+    if path.is_symlink() or not path.is_file():
+        raise RuntimeError("SQL batch TRX must be a normal output file, not a symlink.")
+    if not diagnostic_only:
+        verify_trx(path, sum(expected.values()))
+    try:
+        root = ET.parse(path).getroot()
+    except (ET.ParseError, OSError) as exception:
+        raise RuntimeError("SQL batch TRX could not be parsed.") from exception
+    failed_results = 0
+    definitions: dict[str, str] = {}
+    for element in root.iter():
+        if element.tag.rsplit("}", 1)[-1] != "UnitTest":
+            continue
+        test_id = element.attrib.get("id", "")
+        methods = [node for node in element.iter() if node.tag.rsplit("}", 1)[-1] == "TestMethod"]
+        if not test_id or len(test_id) > 128 or test_id in definitions or len(methods) != 1:
+            raise RuntimeError("SQL batch TRX must contain unique mapped test definitions.")
+        method = methods[0]
+        name = method.attrib.get("className", "") + "." + method.attrib.get("name", "")
+        if name not in expected:
+            raise RuntimeError("SQL batch TRX definition is outside its exact selected methods.")
+        definitions[test_id] = name
+    executed: Counter[str] = Counter()
+    batch_ids: set[str] = set()
+    used_test_ids: set[str] = set()
+    for element in root.iter():
+        if element.tag.rsplit("}", 1)[-1] != "UnitTestResult":
+            continue
+        test_id = element.attrib.get("testId", "")
+        execution_id = element.attrib.get("executionId", "")
+        if test_id not in definitions:
+            raise RuntimeError("SQL batch TRX result lacks an exact test definition identity.")
+        try:
+            identity = uuid.UUID(execution_id)
+        except (ValueError, AttributeError) as exception:
+            raise RuntimeError("SQL batch TRX execution identities must be canonical nonzero UUIDs.") from exception
+        canonical_id = str(identity)
+        if not identity.int or execution_id.lower() != canonical_id:
+            raise RuntimeError("SQL batch TRX execution identities must be canonical nonzero UUIDs.")
+        if canonical_id in batch_ids or canonical_id in seen_execution_ids:
+            raise RuntimeError("SQL batch TRX execution identities must be unique.")
+        outcome = element.attrib.get("outcome")
+        if diagnostic_only and outcome == "Failed":
+            failed_results += 1
+        elif outcome != "Passed":
+            raise RuntimeError("SQL batch TRX requires passed results or explicit diagnostic-only test failures; skipped=0.")
+        batch_ids.add(canonical_id)
+        used_test_ids.add(test_id)
+        executed[definitions[test_id]] += 1
+    if used_test_ids != set(definitions):
+        raise RuntimeError("SQL batch TRX must use every selected test definition identity.")
+    if dict(executed) != expected:
+        raise RuntimeError("SQL batch TRX execution multiplicity must equal its exact selected inventory.")
+    if diagnostic_only:
+        # Native exit 1 alone proves neither complete test execution nor test-only failure.
+        # This branch can retain diagnostic coverage, but can never certify acceptance.
+        summaries = [element for element in root.iter() if element.tag.rsplit("}", 1)[-1] == "ResultSummary"]
+        counters = [element for element in root.iter() if element.tag.rsplit("}", 1)[-1] == "Counters"]
+        if (not failed_results or len(summaries) != 1
+                or summaries[0].attrib.get("outcome") != "Failed" or len(counters) != 1):
+            raise RuntimeError("Diagnostic SQL TRX requires one failed summary and complete failed test results.")
+        total = sum(expected.values())
+        required = {"total": total, "executed": total, "passed": total - failed_results,
+                    "failed": failed_results, "error": 0, "timeout": 0, "aborted": 0,
+                    "inconclusive": 0, "notExecuted": 0}
+        try:
+            actual = {name: int(counters[0].attrib.get(name, "")) for name in required}
+        except ValueError as exception:
+            raise RuntimeError("Diagnostic SQL TRX counters must be exact integers.") from exception
+        if actual != required:
+            raise RuntimeError("Diagnostic SQL TRX counters must equal its complete exact execution results.")
+        try:
+            other_counters = [int(value) for name, value in counters[0].attrib.items()
+                              if name not in required]
+        except ValueError as exception:
+            raise RuntimeError("Diagnostic SQL TRX additional counters must be integer zero.") from exception
+        if any(other_counters):
+            raise RuntimeError("Diagnostic SQL TRX additional counters must be integer zero.")
+        # RunInfo metadata cannot certify a run, and does not veto diagnostic coverage
+        # once native 1 and every exact failed/passed result have been validated above.
+        # Even RunInfo errors leave the first native failure sticky: no acceptance proof
+        # can be produced after this branch. Malformed/incomplete results still fail fast.
+    seen_execution_ids.update(batch_ids)
+    return dict(executed)
+
+
+def run_sql_batches(
+    repository_root: Path, trx_path: Path, expected: dict[str, int],
+) -> dict[str, int]:
+    batches = plan_sql_batches(expected)
+    paths = tuple(trx_path.with_name(f"{trx_path.stem}.batch-{index:04d}.trx")
+                  for index in range(1, len(batches) + 1))
+    if (any(path.exists() or path.is_symlink() for path in paths)
+            or any(trx_path.parent.glob(f"{trx_path.stem}.batch-*.trx"))):
+        raise RuntimeError("SQL batch TRX outputs must be fresh; existing evidence cannot be reused.")
+    deadline = time.monotonic() + SQL_SHARD_EXECUTION_TIMEOUT_SECONDS
+    executed: dict[str, int] = {}
+    seen_execution_ids: set[str] = set()
+    first_test_failure: NativeTestFailure | None = None
+    for batch, path in zip(batches, paths, strict=True):
+        if time.monotonic() >= deadline:
+            raise RuntimeError("SQL Server relational execution exhausted its global deadline.")
+        run_bootstrap_preflight(repository_root, execution_deadline=deadline)
+        # A failed native process still leaves its completed TRX for the always-running
+        # privacy-safe summary step. Do not delete it or convert the failure into a proof.
+        try:
+            run_checked([
+                "dotnet", "test", PROJECT, "-noAutoResponse", "--configuration", "Release",
+                "--no-build", "--no-restore", "--filter",
+                "|".join(f"FullyQualifiedName={name}" for name in batch),
+                "--results-directory", str(path.parent), "--logger", trx_logger(path),
+                "--logger", "console;verbosity=detailed", "--",
+                "xUnit.DiagnosticMessages=true", "xUnit.LongRunningTestSeconds=60",
+            ], repository_root, execution_deadline=deadline)
+        except NativeTestFailure as failure:
+            if failure.exit_code != 1:
+                raise
+            actual = verify_sql_batch_trx(path, batch, seen_execution_ids, diagnostic_only=True)
+            # Keep the first real failure sticky. Further batches run once, solely for
+            # diagnostics under the same deadline; no retry, exclusion or failure proof.
+            if first_test_failure is None:
+                first_test_failure = failure
+        else:
+            actual = verify_sql_batch_trx(path, batch, seen_execution_ids)
+        if set(executed) & set(actual):
+            raise RuntimeError("SQL batch methods must not overlap.")
+        executed.update(actual)
+        if time.monotonic() >= deadline:
+            raise RuntimeError("SQL Server relational execution exhausted its global deadline.")
+    if executed != expected:
+        raise RuntimeError("SQL batches must retain the exact complete execution inventory.")
+    if first_test_failure is not None:
+        raise first_test_failure
+    return executed
 
 
 def main() -> int:
@@ -609,43 +974,56 @@ def main() -> int:
             results_directory = trx_path.parent
             results_directory.mkdir(parents=True, exist_ok=True)
             trx_path.unlink(missing_ok=True)
-        run_bootstrap_preflight(repository_root)
-        run_result = run_checked(
-            [
-                "dotnet",
-                "test",
-                PROJECT,
-                "-noAutoResponse",
-                "--configuration",
-                "Release",
-                "--no-build",
-                "--no-restore",
-                "--filter",
-                filter_value,
-                "--results-directory",
-                str(results_directory),
-                "--logger",
-                trx_logger(trx_path),
-            ],
-            repository_root,
-        )
-        sys.stdout.write(run_result.stdout)
-        sys.stderr.write(run_result.stderr)
-        verify_trx(trx_path, expected_total)
-        if filter_value == BROAD_FILTER:
-            report = verify_broad_trx_results(trx_path, discovered)
-        elif args.shard:
-            verify_shard_trx_results(trx_path, args.shard)
-            assert proof_path is not None
-            proof = expected_shard_proof(args.shard, args.source_head, args.tested_commit)
-            temporary_proof = proof_path.with_suffix(".tmp")
-            temporary_proof.write_text(
-                json.dumps(proof, sort_keys=True, separators=(",", ":")) + "\n",
-                encoding="utf-8",
+        if args.rcsi:
+            run_bootstrap_preflight(repository_root)
+            run_result = run_checked(
+                [
+                    "dotnet",
+                    "test",
+                    PROJECT,
+                    "-noAutoResponse",
+                    "--configuration",
+                    "Release",
+                    "--no-build",
+                    "--no-restore",
+                    "--filter",
+                    filter_value,
+                    "--results-directory",
+                    str(results_directory),
+                    "--logger",
+                    trx_logger(trx_path),
+                    "--logger",
+                    "console;verbosity=detailed",
+                    "--",
+                    "xUnit.DiagnosticMessages=true",
+                    "xUnit.LongRunningTestSeconds=60",
+                ],
+                repository_root,
             )
-            temporary_proof.replace(proof_path)
-        else:
+            sys.stdout.write(run_result.stdout)
+            sys.stderr.write(run_result.stderr)
             verify_rcsi_trx_results(trx_path)
+        else:
+            expected = BROAD_EXECUTIONS if args.broad else shard_executions(args.shard)
+            executed = run_sql_batches(repository_root, trx_path, expected)
+            if args.broad:
+                for module in INVENTORY_MODULES:
+                    tests = BROAD_INVENTORY[module]
+                    report.append(
+                        f"SQLSERVER_RELATIONAL_ACCEPTANCE module={module} tests={len(tests)} "
+                        f"discovered={sum(1 for name in discovered if module_of(name) == module)} "
+                        f"executions={sum(tests.values())} "
+                        f"executed={sum(executed.get(name, 0) for name in tests)}"
+                    )
+            else:
+                assert proof_path is not None
+                proof = expected_shard_proof(args.shard, args.source_head, args.tested_commit)
+                temporary_proof = proof_path.with_suffix(".tmp")
+                temporary_proof.write_text(
+                    json.dumps(proof, sort_keys=True, separators=(",", ":")) + "\n",
+                    encoding="utf-8",
+                )
+                temporary_proof.replace(proof_path)
 
     for line in report:
         print(line)

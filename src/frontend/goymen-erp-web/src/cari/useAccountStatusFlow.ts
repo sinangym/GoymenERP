@@ -28,15 +28,30 @@ import {
   type ReasonProblem,
 } from './accountStatusContract'
 import type { CounterpartyDetail } from './detailContract'
+import { fetchDeactivationWarning } from './deactivationWarningApi'
+import type { DeactivationWarningView } from './deactivationWarning'
 
 export const CARI_ACCOUNT_STATUS_DIRTY_SCOPE = 'cari.account-status'
 
-/** The frozen payload of one attempt — the three things the server's fingerprint sees. */
+/** The frozen payload of one attempt — the things the server's fingerprint sees. */
 export interface AccountStatusAttemptPayload {
   readonly expectedVersion: string
   readonly isActive: boolean
   readonly reason: string
+  /** ALS-D99: sent (as true) only when the warning required acknowledgement and the actor gave it. */
+  readonly exposureWarningAcknowledged: boolean
 }
+
+/**
+ * ALS-D99 — the deactivation warning of the open window. Read when a DEACTIVATE window opens (and again when it is
+ * re-seated or the server refused for a missing acknowledgement). Submit stays closed until it is `ready`; a failed
+ * read never reads as "nothing open".
+ */
+export type DeactivationWarningState =
+  | { readonly status: 'not-needed' }
+  | { readonly status: 'loading' }
+  | { readonly status: 'ready'; readonly view: DeactivationWarningView }
+  | { readonly status: 'failed'; readonly reason: 'forbidden' | 'offline' | 'failed' }
 
 export interface AccountStatusApplied {
   readonly intent: AccountStatusIntent
@@ -100,6 +115,16 @@ export interface AccountStatusFlow {
   readonly locked: boolean
   readonly contractReady: boolean
   readonly summaryFocusRequest: number
+  readonly warning: DeactivationWarningState
+  readonly acknowledged: boolean
+  /** The actor tried to submit without the acknowledgement the warning requires. */
+  readonly acknowledgementMissing: boolean
+  /** The server refused for a missing acknowledgement; the warning was re-read and must be reviewed again. */
+  readonly warningChanged: boolean
+  /** Whether the warning lets the submit go out (always true for an activation). */
+  readonly warningSatisfied: boolean
+  readonly setAcknowledged: (value: boolean) => void
+  readonly retryWarning: () => void
   readonly open: () => void
   readonly setReason: (value: string) => void
   readonly submit: () => void
@@ -143,6 +168,18 @@ export function useAccountStatusFlow({
    */
   const [refresh, setRefresh] = useState<{ readonly baseline: number } | null>(null)
   const [refreshedNote, setRefreshedNote] = useState(false)
+  const [warningLoad, setWarningLoad] = useState<{
+    readonly key: string
+    readonly state: DeactivationWarningState
+  } | null>(null)
+  const [warningSeq, setWarningSeq] = useState(0)
+  /**
+   * The acknowledgement is bound to the warning it was given for (its key): a re-seat on a new version or a re-read
+   * produces a new warning, and an acknowledgement of the old list does not carry over to it.
+   */
+  const [acknowledgedFor, setAcknowledgedFor] = useState<string | null>(null)
+  const [acknowledgementMissing, setAcknowledgementMissing] = useState(false)
+  const [warningChanged, setWarningChanged] = useState(false)
 
   const operation = `counterparty.account-status:${partyId}`
   const submitting = attempt.state.phase === 'submitting'
@@ -156,6 +193,26 @@ export function useAccountStatusFlow({
     dialog !== null && detail !== null && refresh === null && detail.account.version !== dialog.openedOnVersion
   const problem = reasonProblem(reason)
 
+  /**
+   * The warning belongs to the window it was read for: the intent, the fence it was opened on, the company and the
+   * explicit re-read counter. A load answered for another key is not this window's warning and reads as loading.
+   */
+  const warningKey =
+    dialog === null || dialog.intent !== 'deactivate' || companyId === null
+      ? null
+      : JSON.stringify([partyId, companyId, dialog.openedOnVersion, warningSeq])
+  const warning: DeactivationWarningState =
+    dialog === null || dialog.intent !== 'deactivate'
+      ? { status: 'not-needed' }
+      : warningLoad !== null && warningLoad.key === warningKey
+        ? warningLoad.state
+        : { status: 'loading' }
+  const acknowledged = warningKey !== null && acknowledgedFor === warningKey
+  const acknowledgementRequired = warning.status === 'ready' && warning.view.acknowledgementRequired
+  const warningSatisfied =
+    warning.status === 'not-needed' || (warning.status === 'ready' && (!acknowledgementRequired || acknowledged))
+  const sendAcknowledgement = acknowledgementRequired && acknowledged
+
   const draftPayload: AccountStatusAttemptPayload | null =
     dialog === null || problem !== null
       ? null
@@ -163,6 +220,7 @@ export function useAccountStatusFlow({
           expectedVersion: dialog.openedOnVersion,
           isActive: targetIsActive(dialog.intent),
           reason: buildAccountStatusPayload(dialog.intent, reason)?.reason ?? '',
+          exposureWarningAcknowledged: dialog.intent === 'deactivate' && sendAcknowledgement,
         }
   const repeatsUnresolved =
     draftPayload !== null && repeatsUnresolvedAttempt(attempt.state, operation, draftPayload)
@@ -224,6 +282,47 @@ export function useAccountStatusFlow({
   }, [refresh, detail, readCount, frozen, attempt.revalidating])
 
   useEffect(() => {
+    if (warningKey === null || companyId === null) return
+    const key = warningKey
+    const controller = new AbortController()
+    void fetchDeactivationWarning(partyId, companyId, controller.signal).then(
+      (outcome) => {
+        if (outcome.type === 'aborted' || controller.signal.aborted) return
+        const state: DeactivationWarningState =
+          outcome.type === 'ok'
+            ? { status: 'ready', view: outcome.data }
+            : outcome.type === 'offline'
+              ? { status: 'failed', reason: 'offline' }
+              : outcome.type === 'http' && outcome.status === 403
+                ? { status: 'failed', reason: 'forbidden' }
+                : { status: 'failed', reason: 'failed' }
+        setWarningLoad({ key, state })
+      },
+      () => {
+        if (!controller.signal.aborted) setWarningLoad({ key, state: { status: 'failed', reason: 'failed' } })
+      },
+    )
+    return () => controller.abort()
+  }, [warningKey, partyId, companyId])
+
+  /**
+   * The server refused because the warning needed an acknowledgement the request did not carry (it moved since it was
+   * read). Nothing changed. The failed attempt is closed, the acknowledgement is withdrawn and the warning is read
+   * again, so the actor confirms what is open NOW — the next send is a new attempt.
+   */
+  const warningRefusalKeyRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (failed === null || failed.failure !== 'warning-acknowledgement-required') return
+    if (warningRefusalKeyRef.current === failed.snapshot.key) return
+    warningRefusalKeyRef.current = failed.snapshot.key
+    // oxlint-disable-next-line react/set-state-in-effect -- reconciles a definite server refusal, once per snapshot
+    setAcknowledgedFor(null)
+    setWarningChanged(true)
+    setWarningSeq((count) => count + 1)
+    attempt.abandon()
+  }, [failed, attempt])
+
+  useEffect(() => {
     if (summaryFocusRequest === 0) return
     summaryRef.current?.focus()
   }, [summaryFocusRequest, summaryRef])
@@ -248,6 +347,10 @@ export function useAccountStatusFlow({
     setCloseConfirm(null)
     setRefresh(null)
     setRefreshedNote(false)
+    setAcknowledgedFor(null)
+    setAcknowledgementMissing(false)
+    setWarningChanged(false)
+    setWarningSeq((count) => count + 1)
     setDialog({
       intent: intentFor(detail.account.isActive),
       openedOnVersion: detail.account.version,
@@ -257,6 +360,9 @@ export function useAccountStatusFlow({
 
   const closeNow = useCallback(() => {
     setDialog(null)
+    setAcknowledgedFor(null)
+    setAcknowledgementMissing(false)
+    setWarningChanged(false)
     setReasonState('')
     setShowErrors(false)
     setCloseConfirm(null)
@@ -295,8 +401,18 @@ export function useAccountStatusFlow({
       setSummaryFocusRequest((count) => count + 1)
       return
     }
-    const payload = buildAccountStatusPayload(dialog.intent, reason)
+    // ALS-D99: a deactivation goes out only on a READ warning, acknowledged when it requires it. Not a key either.
+    if (!warningSatisfied) {
+      if (warning.status === 'ready') {
+        setAcknowledgementMissing(true)
+        setSummaryFocusRequest((count) => count + 1)
+      }
+      return
+    }
+    const payload = buildAccountStatusPayload(dialog.intent, reason, sendAcknowledgement)
     if (payload === null) return
+    setAcknowledgementMissing(false)
+    setWarningChanged(false)
     setShowErrors(false)
     setRefreshedNote(false)
     const expectedVersion = dialog.openedOnVersion
@@ -311,7 +427,12 @@ export function useAccountStatusFlow({
       )
     const result = attempt.submit(
       operation,
-      { expectedVersion, isActive: payload.isActive, reason: payload.reason },
+      {
+        expectedVersion,
+        isActive: payload.isActive,
+        reason: payload.reason,
+        exposureWarningAcknowledged: payload.exposureWarningAcknowledged === true,
+      },
       send,
     )
     if (result === 'unchanged') unresolvedRef.current?.focus()
@@ -325,11 +446,28 @@ export function useAccountStatusFlow({
     companyId,
     namespace,
     problem,
+    warningSatisfied,
+    warning.status,
+    sendAcknowledgement,
     reason,
     partyId,
     operation,
     unresolvedRef,
   ])
+
+  const setAcknowledged = useCallback(
+    (value: boolean) => {
+      // Only a warning that is on screen can be acknowledged; a loading or failed one cannot.
+      setAcknowledgedFor(value && warning.status === 'ready' ? warningKey : null)
+      if (value) setAcknowledgementMissing(false)
+    },
+    [warning.status, warningKey],
+  )
+
+  const retryWarning = useCallback(() => {
+    setAcknowledgedFor(null)
+    setWarningSeq((count) => count + 1)
+  }, [])
 
   /**
    * The same-key retry's precondition: a fresh, authorized, acknowledged read in THIS
@@ -401,6 +539,13 @@ export function useAccountStatusFlow({
     locked: unknown,
     contractReady,
     summaryFocusRequest,
+    warning,
+    acknowledged,
+    acknowledgementMissing,
+    warningChanged,
+    warningSatisfied,
+    setAcknowledged,
+    retryWarning,
     open,
     setReason,
     submit,

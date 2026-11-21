@@ -206,3 +206,16 @@ describe('DEC-FIN-014 customer POS collection detail', () => {
     expect(decoded.ok && decoded.value.pos).toEqual({ commissionBearer: 'Customer', commission: redacted, bankNet: redacted })
   })
 })
+
+
+describe('Q7 recorded receipt number source binding', () => {
+  it('accepts only a recorded source whose displayed number agrees with its immutable proof', () => {
+    const documentNumber = { number: 'MAK-2026-000001', formatVersion: '1' }
+    const receipt = sourceDetail(A, { source: { stage: 'Recorded', sourceNumber: documentNumber.number }, recordedAtUtc: '2026-11-17T09:00:00Z' })
+    expect(decodeSourceDetail({ ...receipt, documentNumber }, A).ok).toBe(true)
+    expect(decodeSourceDetail({ ...receipt, documentNumber: { ...documentNumber, number: 'MAK-2026-000002' } }, A).ok).toBe(false)
+    expect(decodeSourceDetail({ ...receipt, documentNumber: null }, A).ok).toBe(false)
+    expect(decodeSourceDetail({ ...sourceDetail(A), documentNumber }, A).ok).toBe(false)
+    expect(decodeSourceDetail(sourceDetail(A), A).ok).toBe(true)
+  })
+})

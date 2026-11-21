@@ -69,10 +69,10 @@ public sealed partial class SalesDraftServiceTests
                 (SalesCancellationImpactSourcesV1.UnmatchedAdvances, SalesCancellationImpactStatusesV1.NoSource),
             ],
             preview.Sources.Select(source => (source.Source, source.Status)));
-        Assert.Equal(new SalesDraftCancellationImpactLineV1(line.LineId, 1, KgUnit, "1.25", 0, "0", 0, "0", "0", "0", "0"), Assert.Single(preview.Lines));
+        Assert.Equal(new SalesDraftCancellationImpactLineV1(line.LineId, 1, KgUnit, "1.25", 0, "0", 0, "0", "0", "0", "0", 0), Assert.Single(preview.Lines));
         Assert.Matches("^[0-9a-f]{64}$", preview.ImpactToken);
-        // Read-only, under the cancel name only: before, after the draft, after each owner.
-        Assert.Equal([CancelPermission, CancelPermission, CancelPermission, CancelPermission], world.Authority.Measured);
+        // Read-only, under the cancel name only: before, after the draft, after each owner (and after the kind-aware allocation read).
+        Assert.Equal([CancelPermission, CancelPermission, CancelPermission, CancelPermission, CancelPermission], world.Authority.Measured);
         Assert.Equal([approved.Draft.Id], allocations.Asked);
         Assert.Equal([approved.Draft.Id], loadings.Asked);
         Assert.Equal(2, world.Store.Transitions.Count);
@@ -271,7 +271,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal([SalesCancellationImpactStatusesV1.Unreadable, SalesCancellationImpactStatusesV1.Unreadable,
                 SalesCancellationImpactStatusesV1.Unreadable],
             preview.Sources.Where(source => !NoSourceCategories.Contains(source.Source)).Select(source => source.Status));
-        Assert.Equal(new SalesDraftCancellationImpactLineV1(approved.Lines[0].LineId, 1, KgUnit, "1.25", null, null, null, null, null, null, null),
+        Assert.Equal(new SalesDraftCancellationImpactLineV1(approved.Lines[0].LineId, 1, KgUnit, "1.25", null, null, null, null, null, null, null, null),
             preview.Lines[0]);
         var unavailable = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CancelDraftAsync(approved.Draft.Id,
             new SalesDraftCancelRequest("4", "neden", preview.ImpactToken), Metadata("k-cancel")));
@@ -448,6 +448,7 @@ public sealed partial class SalesDraftServiceTests
         // Still readable as history: the detail, the list (its lifecycle column says Cancelled) and the delivery progress.
         Assert.Equal("Cancelled", Assert.Single((await world.Service().GetDraftListAsync(new SalesOrderDraftListQuery())).Items, item => item.Id == approved.Draft.Id).State);
         world.Deliveries = new FakeDeliveries(order => new(Company, order, []));
+        world.CustomerReturns = NoCustomerReturns();
         Assert.Equal("1.25", Assert.Single((await world.Service().GetDraftDeliveryProgressAsync(approved.Draft.Id)).Lines).Remaining);
     }
 

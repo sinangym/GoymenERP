@@ -3,6 +3,7 @@ export type PurchaseOrderStatus = 'Draft' | 'Approved' | 'Cancelled'
 export type PurchaseOrderLineKind = 'General' | 'Technical'
 
 export interface PurchaseOrderSummary {
+  readonly documentNumber?: string
   readonly id: string
   readonly companyId: string
   readonly status: PurchaseOrderStatus
@@ -441,8 +442,9 @@ export function supplierDisplayOf(order: PurchaseOrderSummary): PurchasingSuppli
  */
 function decodeReadSummary(value: unknown): PurchaseOrderReadSummary | null {
   const source = record(value)
-  const listed = source !== null && exact(source, [...SUMMARY_FIELDS, 'supplierDisplay', 'pricePending'])
-  if (source === null || (!listed && !exact(source, [...SUMMARY_FIELDS, 'supplierDisplay']))) return null
+  const fields = source !== null && Object.hasOwn(source, 'documentNumber') ? [...SUMMARY_FIELDS, 'documentNumber'] : SUMMARY_FIELDS
+  const listed = source !== null && exact(source, [...fields, 'supplierDisplay', 'pricePending'])
+  if (source === null || (!listed && !exact(source, [...fields, 'supplierDisplay']))) return null
   if (listed && typeof source.pricePending !== 'boolean') return null
   const { supplierDisplay, pricePending, ...legacy } = source
   const summary = decodeSummary(legacy)
@@ -457,7 +459,9 @@ function decodeSummary(value: unknown): PurchaseOrderSummary | null {
   const source = record(value)
   if (
     source === null ||
-    !exact(source, SUMMARY_FIELDS) ||
+    !exact(source, Object.hasOwn(source, 'documentNumber') ? [...SUMMARY_FIELDS, 'documentNumber'] : SUMMARY_FIELDS) ||
+    (Object.hasOwn(source, 'documentNumber') && (typeof source.documentNumber !== 'string' || source.documentNumber.length > 64
+      || !/^[A-Z0-9]+-\d{4}-\d+$/.test(source.documentNumber) || /[\u0000-\u001f\u007f]/.test(source.documentNumber))) ||
     !guid(source.id) || !guid(source.companyId) || !status(source.status) || !canonicalVersion(source.version) ||
     !guid(source.supplierPartyId) || !guid(source.companyAccountId) || !nullableGuid(source.sourceRequestId) ||
     !dateOnly(source.effectiveOn) || !instant(source.createdAtUtc) || !instant(source.updatedAtUtc) ||
@@ -529,6 +533,15 @@ function deliverySchedule(value: unknown): value is readonly PurchaseOrderDelive
     return true
   })
 }
+
+/**
+ * F-027 (ALS-D94): the line schedule history decoder (`lineScheduleContract.ts`) measures identities, versions, instants and each
+ * revision's slices with exactly these rules, so a history slice is never accepted under a looser rule than the detail's.
+ */
+export const isPurchasingGuid = guid
+export const isPurchasingVersion = canonicalVersion
+export const isPurchasingInstant = instant
+export const isPurchaseOrderDeliverySchedule = deliverySchedule
 
 /**
  * A line before A1-3 (no `cancelled`), after it (`cancelled` a canonical decimal), after A2a-1 (`cancelled` and `price`, null or

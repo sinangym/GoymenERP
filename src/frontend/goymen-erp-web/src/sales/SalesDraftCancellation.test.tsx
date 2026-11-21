@@ -46,7 +46,7 @@ const SOURCES = [
   'logistics.loading-without-dispatch-note', 'invoicing.uninvoiced-dispatch-notes', 'finance.unmatched-advances',
 ]
 
-function impact(options: { allocations?: string; loading?: string; count?: number | null; cancellable?: boolean; token?: string } = {}): Body {
+function impact(options: { allocations?: string; loading?: string; count?: number | null; future?: number; cancellable?: boolean; token?: string } = {}): Body {
   const allocations = options.allocations ?? 'None'
   const loading = options.loading ?? 'None'
   const allocationNull = allocations === 'Unreadable'
@@ -65,6 +65,7 @@ function impact(options: { allocations?: string; loading?: string; count?: numbe
       activeAllocations: allocationNull ? null : (options.count ?? 0), allocatedKg: allocationNull ? null : (options.count ? '250' : '0'),
       loadingInstructionLines: loadingNull ? null : 0, instructed: loadingNull ? null : '0', loaded: loadingNull ? null : '0',
       shipped: loadingNull ? null : '0', delivered: loadingNull ? null : '0',
+      futureSupplyAllocations: allocationNull ? null : (options.future ?? 0),
     }],
   }
 }
@@ -158,6 +159,23 @@ describe('S-04 cancellation of an approved order (DEC-SAL-005, AT-007)', () => {
     expect(cancelCalls(harness.calls)).toHaveLength(0)
   })
 
+  it('shows a future supply allocation per line as released by the cancellation, not as a blocker (KLN-D28)', async () => {
+    installFetch({
+      capabilities: WITH_CANCEL,
+      onDetail: () => json(detail()),
+      onCancellationImpact: () => json(impact({ future: 2 })),
+    })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+
+    fireEvent.click(await screen.findByTestId('sales-cancellation-open'))
+    await screen.findByTestId('sales-cancellation-impact')
+    expect(screen.getByTestId('sales-cancellation-line-1-future-supply').textContent).toBe('2')
+    expect(screen.getByTestId('sales-cancellation-line-1-allocations').textContent).toBe('0')
+    expect(screen.getByTestId('sales-cancellation-future-supply-note').textContent).toBe(T.futureSupplyNote)
+    expect(screen.queryByTestId('sales-cancellation-blocked')).toBeNull()
+    expect(screen.getByTestId('sales-cancellation-submit')).toBeTruthy()
+  })
+
   it('never shows an unreadable owner as 0 and offers no command', async () => {
     installFetch({
       capabilities: WITH_CANCEL,
@@ -170,6 +188,7 @@ describe('S-04 cancellation of an approved order (DEC-SAL-005, AT-007)', () => {
     await screen.findByTestId('sales-cancellation-blocked')
     expect(screen.getByTestId('sales-cancellation-line-1-allocations').textContent).toBe(T.unreadable)
     expect(screen.getByTestId('sales-cancellation-line-1-loading').textContent).toBe(T.unreadable)
+    expect(screen.getByTestId('sales-cancellation-line-1-future-supply').textContent).toBe(T.unreadable)
     expect(screen.queryByTestId('sales-cancellation-submit')).toBeNull()
   })
 
@@ -245,6 +264,16 @@ describe('cancellation wire decoders', () => {
     const nullForReadable = impact()
     nullForReadable.lines[0].allocatedKg = null
     expect(decodeCancellationImpact(nullForReadable, approvedDetail())).toBeNull()
+    // The future supply count follows the allocation owner: a count when read, null only when unreadable, never fractional.
+    expect(decodeCancellationImpact(impact({ future: 3 }), approvedDetail())?.lines[0].futureSupplyAllocations).toBe(3)
+    expect(decodeCancellationImpact(impact({ allocations: 'Unreadable' }), approvedDetail())?.lines[0].futureSupplyAllocations).toBeNull()
+    const futureNullForReadable = impact()
+    futureNullForReadable.lines[0].futureSupplyAllocations = null
+    expect(decodeCancellationImpact(futureNullForReadable, approvedDetail())).toBeNull()
+    expect(decodeCancellationImpact(impact({ future: 1.5 }), approvedDetail())).toBeNull()
+    const futureMissing = impact()
+    delete futureMissing.lines[0].futureSupplyAllocations
+    expect(decodeCancellationImpact(futureMissing, approvedDetail())).toBeNull()
     // Another version, another category order or a malformed token is not this preview.
     expect(decodeCancellationImpact({ ...impact(), draftVersion: '5' }, approvedDetail())).toBeNull()
     expect(decodeCancellationImpact({ ...impact(), sources: [...impact().sources].reverse() }, approvedDetail())).toBeNull()

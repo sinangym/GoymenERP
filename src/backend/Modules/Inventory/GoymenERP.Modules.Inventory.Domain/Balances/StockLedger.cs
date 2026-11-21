@@ -110,8 +110,9 @@ public sealed class StockLedger
         // Check every line against the resulting balance BEFORE changing anything: a movement
         // either applies whole or not at all.
         var next = new Dictionary<StockPosition, decimal>();
-        foreach (var line in movement.Lines)
+        for (var lineIndex = 0; lineIndex < movement.Lines.Count; lineIndex++)
         {
+            var line = movement.Lines[lineIndex];
             var current = next.TryGetValue(line.Position, out var pending)
                 ? pending
                 : balances.GetValueOrDefault(line.Position);
@@ -119,8 +120,10 @@ public sealed class StockLedger
             var result = current + delta;
             if (result < 0m)
             {
+                // SAT-D318: the refusal names the failing line and what its bucket held just before it.
                 throw new InventoryRuleException(
-                    InventoryRuleCodes.NegativePhysicalStock,
+                    new StockShortfall(movement.Kind, movement.Source, line.Position, line.Quantity,
+                        Kilograms.Of(current), lineIndex + 1),
                     "Hareket fiziksel stoğu sıfırın altına düşürür; negatif stok yoktur.");
             }
 

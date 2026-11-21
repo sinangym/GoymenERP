@@ -54,6 +54,7 @@ public static class SalesDraftCommands
 
     /// <summary>K3 Head B: POST /api/v1/sales/drafts/{id}/commercial-revision — the commercial fields of every line replaced; an approved draft is archived and advances a revision.</summary>
     public const string ReviseCommercialV1 = "sales.order-draft.revise-commercial.v1";
+    public const string ReviseSubcontractTaxV1 = "sales.order-draft.subcontract-tax-revise.v1";
 
     /// <summary>Reasoned maker-checker approval of every current below-floor commercial snapshot.</summary>
     public const string ApprovePriceFloorExceptionsV1 = "sales.order-draft.approve-price-floor-exceptions.v1";
@@ -249,11 +250,30 @@ public interface ISalesOrderDraftStore
     /// A same-key attempt already stored answers <see cref="SalesDraftWriteOutcome.Replayed"/> with the
     /// draft as it is now; another content or actor is <see cref="SalesDraftStoreCodes.SameKeyPayloadMismatch"/>;
     /// a lost race (attempt key, draft version) is <see cref="SalesDraftStoreCodes.ConcurrentChange"/>
-    /// with nothing stored.
+    /// with nothing stored. F-018 / plan S1: a non-null <paramref name="riskWarning"/> appends the order's limit warning and its
+    /// audit event (<see cref="SalesOrderRiskWarnings.RecordedEventType"/>, no amount) in the SAME save; a replay writes none.
     /// </summary>
     Task<SalesDraftStateResult?> UpdateDraftStateAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
         Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default, SalesOrderRiskAssessment? riskWarning = null);
+
+    /// <summary>KLN-D105: validates the domain transition first, then calls the owner participant inside this store's
+    /// SQL transaction before the single save/commit. The old customer-accepted revision is captured before the transition
+    /// replaces its acceptance fact. A refusal rolls back owner writes and leaves Sales unchanged; replay calls no participant.
+    /// Unsupported stores fail closed. The callback runs before EF rows/audit/attempts are staged.</summary>
+    Task<SalesDraftStateResult?> UpdateDraftStateWithTransactionAsync(SalesDraftWriteEnvelope envelope,
+        string requestHash, string commandName, Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate,
+        SalesDraftStateAudit audit,
+        Func<SalesOrderDraft, int?, System.Data.IDbTransaction, CancellationToken, Task> withinTransaction,
+        CancellationToken cancellationToken = default, SalesOrderRiskAssessment? riskWarning = null) =>
+        throw new SalesFutureAllocationReleaseException(503, "service_unavailable", terminal: false);
+
+    /// <summary>
+    /// F-018 / plan S1: the limit warnings recorded on the company's draft, newest first and at most
+    /// <see cref="SalesDraftRiskWarningsApiV1.MaximumListed"/> + 1 (so the caller knows whether more exist; append-only, no
+    /// amount). Another company's draft, or none, is null (never 403).
+    /// </summary>
+    Task<IReadOnlyList<SalesOrderRiskWarningRecord>?> ListDraftRiskWarningsAsync(Guid draftId, CancellationToken cancellationToken = default);
 
     /// <summary>The company's stored draft, or null (another company's draft is null too, never 403).</summary>
     /// <summary>
@@ -289,10 +309,16 @@ public interface ISalesOrderDraftStore
     /// cancellation row (who, when, why, the revision, the version produced, the impact the user confirmed) and moves the
     /// header's lifecycle state and version together with the attempt record and the audit event — or nothing at all. No
     /// line, revision, schedule or approval column changes. The command name must be <see cref="SalesDraftCommands.CancelV1"/>.
+    /// X1 (KLN-D28): when <paramref name="withinTransaction"/> is given, the store opens ONE transaction on its own connection after
+    /// <paramref name="beforeWrite"/>, runs it (the owners' work that must commit with the cancellation, e.g. the release of the
+    /// lines' future supply allocations), then the mutation and the save, and commits; any refusal rolls everything back. A store
+    /// that cannot open such a transaction refuses (fail-closed) rather than cancelling without it.
     /// </summary>
     Task<SalesDraftStateResult?> CancelDraftAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
         Guid draftId, Func<SalesOrderDraft, CancellationImpactSnapshot, DateTimeOffset, CancellationFacts> mutate, SalesDraftStateAudit audit,
-        Func<SalesOrderDraft, CancellationToken, Task<CancellationImpactSnapshot>> beforeWrite, CancellationToken cancellationToken = default);
+        Func<SalesOrderDraft, CancellationToken, Task<CancellationImpactSnapshot>> beforeWrite,
+        Func<SalesOrderDraft, System.Data.IDbTransaction, CancellationToken, Task>? withinTransaction = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// No 30 / SAT-D12: the force-closure of an approved order, one save — the cancellation's key rules and shape (§3/§4/§7/§8).
@@ -466,6 +492,9 @@ public interface ISalesOrderDraftStore
 /// </summary>
 public static class SalesDraftRequestHash
 {
+    public static string Compute(string commandName, Guid draftId, SalesSubcontractTaxRevisionV1 request) =>
+        Hash(JsonSerializer.Serialize(new { command = commandName, draftId, request }, SalesDraftJson.Options));
+
     public static string Compute(CreateSalesOrderDraftRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -673,3 +702,19 @@ public sealed record SalesSourcePlanWriteInput(SourcePlanInput Plan, IReadOnlyLi
 
 /// <summary>One open linked supply item a source plan confirmation covered (the audit's picture; nothing else is derived from it).</summary>
 public sealed record SalesSourcePlanLinkedItem(string Kind, string DocumentType, Guid SupplyId, Guid? SupplyLineId, Guid? OrderLineId);
+
+/// <summary>
+/// F-018 / plan S1 (ASSUMPTION-SAT-RISK-1): one recorded limit warning of an order — the command that recorded it, the order's
+/// revision and its version after that command, who and when (UTC and business day), the outcome, the category and the risk read
+/// contract. No amount.
+/// </summary>
+public sealed record SalesOrderRiskWarningRecord(
+    int Revision,
+    long DraftVersion,
+    string Command,
+    SalesOrderRiskWarningOutcome Outcome,
+    SalesOrderRiskWarningCategory Category,
+    string RecordedBy,
+    DateTimeOffset RecordedAtUtc,
+    DateOnly CheckBusinessDay,
+    string RiskSourceContract);

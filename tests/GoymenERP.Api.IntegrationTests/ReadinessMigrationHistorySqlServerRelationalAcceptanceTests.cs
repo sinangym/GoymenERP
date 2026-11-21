@@ -13,6 +13,8 @@ namespace GoymenERP.Api.IntegrationTests;
 /// </summary>
 public sealed class ReadinessMigrationHistorySqlServerRelationalAcceptanceTests
 {
+    // xUnit creates one suite instance per test; ownership never crosses test cases.
+    private readonly Dictionary<string, SqlServerTestDatabase> databases = new(StringComparer.Ordinal);
     // F-022: the Settings and Documents contexts are migrated by the host, so a drifted history must keep the host not ready.
     [SqlServerFact]
     public async Task ValidateOnly_SettingsAndDocumentsHistoryDriftFailsClosedWithoutRepair()
@@ -108,7 +110,7 @@ public sealed class ReadinessMigrationHistorySqlServerRelationalAcceptanceTests
         }
     }
 
-    private static async Task<HttpStatusCode> ReadValidateOnlyReadinessAsync(
+    private async Task<HttpStatusCode> ReadValidateOnlyReadinessAsync(
         string baseConnectionString,
         string databaseName)
     {
@@ -118,7 +120,7 @@ public sealed class ReadinessMigrationHistorySqlServerRelationalAcceptanceTests
         return ready.StatusCode;
     }
 
-    private static async Task<HttpStatusCode> ReadProductRuntimeValidateOnlyReadinessAsync(
+    private async Task<HttpStatusCode> ReadProductRuntimeValidateOnlyReadinessAsync(
         string baseConnectionString,
         string databaseName,
         string databaseConnectionString)
@@ -133,7 +135,7 @@ public sealed class ReadinessMigrationHistorySqlServerRelationalAcceptanceTests
         return ready.StatusCode;
     }
 
-    private static SqlServerRelationalApiFactory CreateProductRuntimeFactory(
+    private SqlServerRelationalApiFactory CreateProductRuntimeFactory(
         string baseConnectionString,
         string databaseName,
         string databaseConnectionString,
@@ -149,6 +151,7 @@ public sealed class ReadinessMigrationHistorySqlServerRelationalAcceptanceTests
                     new byte[32]));
             },
             databaseName: databaseName,
+            testDatabase: databases[databaseName],
             configurationOverrides: validateOnly
                 ? new Dictionary<string, string?> { ["DatabaseStartup:Mode"] = "ValidateOnly" }
                 : null);
@@ -225,41 +228,42 @@ public sealed class ReadinessMigrationHistorySqlServerRelationalAcceptanceTests
         Environment.GetEnvironmentVariable(
             SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
 
-    private static string NewDatabaseName(string prefix) => $"{prefix}_{Guid.NewGuid():N}";
+    private string NewDatabaseName(string prefix)
+    {
+        var name = $"{prefix}_{Guid.NewGuid():N}";
+        databases.Add(name, new SqlServerTestDatabase(GetBaseConnectionString(), name,
+            Environment.GetEnvironmentVariable("GOYMEN_ERP_TEST_SQLSERVER_DATA_DIRECTORY")));
+        return name;
+    }
 
     private static string QuoteIdentifier(string identifier) =>
         $"[{identifier.Replace("]", "]]", StringComparison.Ordinal)}]";
 
     private static string BuildDatabaseConnectionString(string baseConnectionString, string databaseName) =>
-        new SqlConnectionStringBuilder(baseConnectionString) { InitialCatalog = databaseName }.ConnectionString;
+        new SqlConnectionStringBuilder(baseConnectionString) { InitialCatalog = databaseName, AttachDBFilename = string.Empty }.ConnectionString;
 
-    private static SqlServerRelationalApiFactory CreateValidateOnlyFactory(
+    private SqlServerRelationalApiFactory CreateValidateOnlyFactory(
         string baseConnectionString,
         string databaseName) =>
         new(
             baseConnectionString,
             databaseName: databaseName,
+            testDatabase: databases[databaseName],
             configurationOverrides: new Dictionary<string, string?> { ["DatabaseStartup:Mode"] = "ValidateOnly" });
 
-    private static async Task InitializeDatabaseAsync(string baseConnectionString, string databaseName)
+    private async Task InitializeDatabaseAsync(string baseConnectionString, string databaseName)
     {
-        await using var factory = new SqlServerRelationalApiFactory(baseConnectionString, databaseName: databaseName);
+        await using var factory = new SqlServerRelationalApiFactory(baseConnectionString, databaseName: databaseName, testDatabase: databases[databaseName]);
         using var client = factory.CreateClient();
         using var live = await client.GetAsync("/health/live");
         Assert.Equal(HttpStatusCode.OK, live.StatusCode);
     }
 
-    private static async Task CreateDatabaseAsync(string baseConnectionString, string databaseName)
+    private async Task CreateDatabaseAsync(string baseConnectionString, string databaseName)
     {
         try
         {
-            await using var connection = await OpenMasterConnectionAsync(baseConnectionString);
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"""
-                CREATE DATABASE {QuoteIdentifier(databaseName)};
-                ALTER DATABASE {QuoteIdentifier(databaseName)} SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE;
-                """;
-            await command.ExecuteNonQueryAsync();
+            await databases[databaseName].CreateAsync(rcsiEnabled: true);
             ClearDatabasePool(baseConnectionString, databaseName);
         }
         catch
@@ -277,19 +281,9 @@ public sealed class ReadinessMigrationHistorySqlServerRelationalAcceptanceTests
         }
     }
 
-    private static async Task DropDatabaseAsync(string baseConnectionString, string databaseName)
+    private async Task DropDatabaseAsync(string baseConnectionString, string databaseName)
     {
-        await using var connection = await OpenMasterConnectionAsync(baseConnectionString);
-        await using var command = connection.CreateCommand();
-        command.CommandText = $"""
-            IF DB_ID(@DatabaseName) IS NOT NULL
-            BEGIN
-                ALTER DATABASE {QuoteIdentifier(databaseName)} SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
-                DROP DATABASE {QuoteIdentifier(databaseName)};
-            END;
-            """;
-        command.Parameters.Add(new SqlParameter("@DatabaseName", databaseName));
-        await command.ExecuteNonQueryAsync();
+        await databases[databaseName].DropAsync();
         ClearDatabasePool(baseConnectionString, databaseName);
     }
 
@@ -300,11 +294,5 @@ public sealed class ReadinessMigrationHistorySqlServerRelationalAcceptanceTests
         SqlConnection.ClearPool(poolKey);
     }
 
-    private static async Task<SqlConnection> OpenMasterConnectionAsync(string baseConnectionString)
-    {
-        var connection = new SqlConnection(
-            new SqlConnectionStringBuilder(baseConnectionString) { InitialCatalog = "master" }.ConnectionString);
-        await connection.OpenAsync();
-        return connection;
-    }
+
 }

@@ -174,6 +174,9 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CompanyId", "EntityType", "EntityId", "OccurredAtUtc");
 
+                    b.HasIndex("CompanyId", "Outcome", "OccurredAtUtc", "Id")
+                        .IsDescending(false, false, true, true);
+
                     b.HasIndex("SubjectKind", "EntityType", "EntityId", "OccurredAtUtc", "Id");
 
                     b.ToTable("AuditEvents", "audit", t =>
@@ -289,6 +292,16 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
                         .HasMaxLength(250)
                         .HasColumnType("nvarchar(250)");
 
+                    b.Property<string>("LifecycleState")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasDefaultValue("Active");
+
+                    b.Property<Guid?>("OpenedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .IsRequired()
@@ -311,11 +324,295 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
                     b.HasIndex("Code")
                         .IsUnique();
 
+                    b.HasIndex("Vkn")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Companies_Vkn")
+                        .HasFilter("[Vkn] IS NOT NULL");
+
                     b.ToTable("Companies", "organization", t =>
                         {
+                            t.HasCheckConstraint("CK_Companies_Lifecycle", "[LifecycleState] IN (N'Active', N'SetupPending') AND ([OpenedByUserId] IS NULL OR [OpenedByUserId] <> '00000000-0000-0000-0000-000000000000') AND ([LifecycleState] <> N'SetupPending' OR [OpenedByUserId] IS NOT NULL)");
+
                             t.HasCheckConstraint("CK_Companies_Placeholder_InvoiceDisabled", "[InvoiceCapable] = 0 OR ([IsPlaceholder] = 0 AND [Vkn] IS NOT NULL)");
 
                             t.HasCheckConstraint("CK_Companies_Vkn_Format", "[Vkn] IS NULL OR (LEN([Vkn]) = 10 AND [Vkn] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9]%')");
+
+                            t.HasCheckConstraint("CK_Companies_Vkn_RequiredUnlessPlaceholder", "[IsPlaceholder] = 1 OR [Vkn] IS NOT NULL");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.Companies.CompanyTaxIdChangeRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("CompanyVersionAtRequest")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CurrentVkn")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<DateTimeOffset?>("DecidedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DecidedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("DecisionNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("ProposedVkn")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTimeOffset>("RequestedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RequestedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_CompanyTaxIdChangeRequests_CompanyId_Pending")
+                        .HasFilter("[Status] = N'Pending'");
+
+                    b.HasIndex("CompanyId", "RequestedAtUtc");
+
+                    b.ToTable("CompanyTaxIdChangeRequests", "organization", t =>
+                        {
+                            t.HasCheckConstraint("CK_CompanyTaxIdChangeRequests_CurrentVkn", "[CurrentVkn] IS NULL OR (LEN([CurrentVkn]) = 10 AND [CurrentVkn] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9]%')");
+
+                            t.HasCheckConstraint("CK_CompanyTaxIdChangeRequests_Decision", "([Status] = N'Pending' AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionNote] IS NULL) OR ([Status] <> N'Pending' AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_CompanyTaxIdChangeRequests_DistinctVkn", "[CurrentVkn] IS NULL OR [CurrentVkn] <> [ProposedVkn]");
+
+                            t.HasCheckConstraint("CK_CompanyTaxIdChangeRequests_MakerChecker", "[DecidedBy] IS NULL OR [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [RequestedBy] COLLATE Latin1_General_100_BIN2");
+
+                            t.HasCheckConstraint("CK_CompanyTaxIdChangeRequests_ProposedVkn", "LEN([ProposedVkn]) = 10 AND [ProposedVkn] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9]%'");
+
+                            t.HasCheckConstraint("CK_CompanyTaxIdChangeRequests_Status", "[Status] IN (N'Pending', N'Approved', N'Rejected')");
+
+                            t.HasCheckConstraint("CK_CompanyTaxIdChangeRequests_Version", "[Version] >= 1 AND [CompanyVersionAtRequest] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.Companies.CompanyTaxIdCorrection", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("AppliedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("AppliedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("CompanyVersionAtStaging")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CorrectedVkn")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("StagedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("StagedVkn")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_CompanyTaxIdCorrections_CompanyId_Pending")
+                        .HasFilter("[Status] = N'Pending'");
+
+                    b.HasIndex("CompanyId", "StagedAtUtc");
+
+                    b.ToTable("CompanyTaxIdCorrections", "organization", t =>
+                        {
+                            t.HasCheckConstraint("CK_CompanyTaxIdCorrections_Applied", "([Status] = N'Pending' AND [AppliedBy] IS NULL AND [AppliedAtUtc] IS NULL) OR ([Status] = N'Applied' AND [AppliedBy] IS NOT NULL AND [AppliedAtUtc] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_CompanyTaxIdCorrections_CorrectedVkn", "[CorrectedVkn] IS NULL OR (LEN([CorrectedVkn]) = 10 AND [CorrectedVkn] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9]%' AND [CorrectedVkn] <> [StagedVkn])");
+
+                            t.HasCheckConstraint("CK_CompanyTaxIdCorrections_StagedVkn", "LEN([StagedVkn]) = 10 AND [StagedVkn] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9]%'");
+
+                            t.HasCheckConstraint("CK_CompanyTaxIdCorrections_Status", "[Status] IN (N'Pending', N'Applied')");
+
+                            t.HasCheckConstraint("CK_CompanyTaxIdCorrections_Version", "[Version] >= 1 AND [CompanyVersionAtStaging] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.CompanySetup.CompanyOpeningExecution", b =>
+                {
+                    b.Property<string>("IdempotencyKeyHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength()
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("OriginalCorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength()
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ResponseJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("StatusCode")
+                        .HasColumnType("int");
+
+                    b.HasKey("IdempotencyKeyHash");
+
+                    b.HasIndex("CompanyId", "RecordedAtUtc");
+
+                    b.ToTable("CompanyOpeningExecutions", "organization", t =>
+                        {
+                            t.HasCheckConstraint("CK_CompanyOpeningExecutions_Shape", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ActorUserId] <> '00000000-0000-0000-0000-000000000000' AND [StatusCode] IN (201,409) AND ISJSON([ResponseJson]) = 1 AND LEN([IdempotencyKeyHash]) = 64 AND [IdempotencyKeyHash] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9A-F]%' AND LEN([RequestHash]) = 64 AND [RequestHash] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9A-F]%' AND LEN([OriginalCorrelationId]) > 0 AND DATEPART(TZOFFSET,[RecordedAtUtc]) = 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.CompanySetup.CompanySetupInboxReceipt", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength();
+
+                    b.Property<DateTimeOffset>("ProcessedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("CompanyId", "EventId");
+
+                    b.ToTable("CompanySetupInboxReceipts", "organization", t =>
+                        {
+                            t.HasCheckConstraint("CK_CompanySetupInbox_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [EventId] <> '00000000-0000-0000-0000-000000000000' AND LEN([PayloadHash]) = 64 AND [PayloadHash] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9A-F]%'");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.CompanySetup.OrganizationCompanySetupOutboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CausationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<byte[]>("Position")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "Position");
+
+                    b.ToTable("CompanySetupOutboxMessages", "organization", t =>
+                        {
+                            t.HasCheckConstraint("CK_CompanySetupOutbox_Payload", "ISJSON([PayloadJson]) = 1");
                         });
                 });
 
@@ -484,8 +781,6 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasAlternateKey("CompanyId", "Id");
-
                     b.HasIndex("CompanyId", "Code")
                         .IsUnique();
 
@@ -494,6 +789,128 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
                     b.HasIndex("CompanyId", "LocationId");
 
                     b.ToTable("WorkCenters", "organization");
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.WorkCenters.WorkCenterCalendar", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("WorkCenterId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "WorkCenterId")
+                        .IsUnique();
+
+                    b.ToTable("WorkCenterCalendars", "organization", t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkCenterCalendars_Version", "[Version] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.WorkCenters.WorkCenterCalendarClosedDateRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CalendarId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
+
+                    b.Property<long>("Revision")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "CalendarId", "Revision", "Date")
+                        .IsUnique();
+
+                    b.ToTable("WorkCenterCalendarClosedDates", "organization", t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkCenterCalendarClosedDates_Revision", "[Revision] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.WorkCenters.WorkCenterCalendarShiftRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CalendarId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Day")
+                        .HasColumnType("int");
+
+                    b.Property<TimeOnly>("EndTime")
+                        .HasColumnType("time(0)");
+
+                    b.Property<long>("Revision")
+                        .HasColumnType("bigint");
+
+                    b.Property<TimeOnly>("StartTime")
+                        .HasColumnType("time(0)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "CalendarId", "Revision", "Day", "StartTime")
+                        .IsUnique();
+
+                    b.ToTable("WorkCenterCalendarShifts", "organization", t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkCenterCalendarShifts_Day", "[Day] BETWEEN 0 AND 6");
+
+                            t.HasCheckConstraint("CK_WorkCenterCalendarShifts_Revision", "[Revision] >= 1");
+
+                            t.HasCheckConstraint("CK_WorkCenterCalendarShifts_Window", "[StartTime] <> [EndTime]");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.Companies.CompanyTaxIdChangeRequest", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Organization.Domain.Companies.Company", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.Companies.CompanyTaxIdCorrection", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Organization.Domain.Companies.Company", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.Locations.Location", b =>
@@ -520,6 +937,36 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Organization.Domain.Locations.Location", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "LocationId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.WorkCenters.WorkCenterCalendar", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Organization.Domain.WorkCenters.WorkCenter", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "WorkCenterId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.WorkCenters.WorkCenterCalendarClosedDateRecord", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Organization.Domain.WorkCenters.WorkCenterCalendar", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "CalendarId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.WorkCenters.WorkCenterCalendarShiftRecord", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Organization.Domain.WorkCenters.WorkCenterCalendar", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "CalendarId")
                         .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();

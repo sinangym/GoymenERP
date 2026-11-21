@@ -18,7 +18,7 @@ namespace GoymenERP.Api.Endpoints;
 /// again against fresh authority before it is stored. Another company's period or journal is the same
 /// code-less 404 as an unknown id. No voucher is created, approved or reversed here (ACC-V1).
 /// </summary>
-public static class AccountingEndpoints
+public static partial class AccountingEndpoints
 {
     private const string IdempotencyHeaderName = "Idempotency-Key";
     private const int MaximumIdempotencyKeyLength = 128;
@@ -47,6 +47,7 @@ public static class AccountingEndpoints
         AccountingStoreCodes.PeriodPreparerConflict,
         AccountingStoreCodes.PeriodOverlap,
         AccountingStoreCodes.ConcurrentChange,
+        "accounting_period_reopening_exists",
     ];
 
     private static readonly string[] NormalJournalConflictCodes =
@@ -137,11 +138,16 @@ public static class AccountingEndpoints
         AccountingErrorCodes.PeriodInvalid,
         AccountingErrorCodes.InvalidReference,
         AccountingStoreCodes.ValueDoesNotFit,
+        "accounting_period_carry_target_not_open",
+        "accounting_period_closure_proof_required",
+        "accounting_period_not_closed",
+        "accounting_period_reopening_already_approved",
     ];
 
     private static readonly string[] NormalJournalUnprocessableCodes =
     [
         .. PeriodUnprocessableCodes,
+        NormalJournalDraftPreparationCodesV1.SourceAmountMismatch,
         AccountingErrorCodes.CompanyMismatch,
         AccountingErrorCodes.JournalTooFewLines,
         AccountingErrorCodes.JournalLineInvalid,
@@ -155,6 +161,10 @@ public static class AccountingEndpoints
         var group = endpoints.MapGroup("/api/v1/accounting")
             .RequireAuthorization()
             .WithTags("Accounting");
+
+        MapManufacturingCostDifferences(group);
+        MapFinanceJournalSources(group);
+        MapPeriodLifecycle(group);
 
         group.MapGet("/periods", async (
                 int? pageSize,
@@ -285,6 +295,22 @@ public static class AccountingEndpoints
             .RequireAuthorization(AccountingPermissionManifestV1.JournalsRead)
             .WithName("GetAccountingTrialBalanceV1")
             .Produces<TrialBalanceReportV1>(StatusCodes.Status200OK)
+            .WithReadProblems(notFound: false);
+
+        // FIN-S16 (M-05 Hesap Planı): the active approved account plan, read-only, under its own narrow name.
+        // No active catalog is a 200 with a null source and no accounts (the screen's "no active plan" state).
+        group.MapGet("/account-plan", async (
+                AccountPlanReadServiceV1 service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.ReadActiveAsync(cancellationToken), null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(AccountPlanPermissionNamesV1.Read)
+            .WithName("GetAccountingAccountPlanV1")
+            .Produces<AccountPlanViewV1>(StatusCodes.Status200OK)
             .WithReadProblems(notFound: false);
 
         group.MapPost("/approved-source-catalog/packages", PrepareApprovedSourceCatalogAsync)

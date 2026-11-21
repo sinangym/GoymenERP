@@ -19,7 +19,7 @@ namespace GoymenERP.Accounting.UnitTests;
 /// command log on one in-memory Accounting database per test. What SQL Server enforces itself (the single active
 /// version index, the maker-checker check, the Down guard) is proven by the relational acceptance tests.
 /// </summary>
-public sealed class AccountingPostingAccountMappingLifecycleV1Tests
+public sealed partial class AccountingPostingAccountMappingLifecycleV1Tests
 {
     private static readonly Guid Preparer = Guid.Parse("b0400000-0000-4000-8000-000000000001");
     private static readonly Guid Checker = Guid.Parse("b0400000-0000-4000-8000-000000000002");
@@ -347,6 +347,22 @@ public sealed class AccountingPostingAccountMappingLifecycleV1Tests
     }
 
     [Fact]
+    public async Task A_mapping_provider_failure_is_unavailable_and_does_not_record_a_conflict()
+    {
+        var context = new CompanyContext(); context.Set(Guid.NewGuid());
+        var commands = new RecordingLog();
+        var service = new AccountingPostingAccountMappingServiceV1(
+            new FailingStore(AccountingStoreCodes.ProviderUnavailable), commands, new GrantingAuthority(All), context,
+            new FixedUser(Preparer, context.CompanyId), new FixedCorrelation("provider-failure"), new FixedTimeProvider(Now));
+
+        var result = await service.PrepareAsync(Request(0), "provider-failure");
+
+        Assert.Equal(AccountingApiStatus.Unavailable, result.Status);
+        Assert.Null(result.Resource);
+        Assert.Equal(0, commands.Records);
+    }
+
+    [Fact]
     public async Task The_service_refuses_a_record_of_another_company_even_if_the_store_returned_one()
     {
         var context = new CompanyContext();
@@ -531,7 +547,7 @@ public sealed class AccountingPostingAccountMappingLifecycleV1Tests
             Task.FromResult(Scope(Interlocked.Increment(ref calls) < deniedFromCall));
     }
 
-    private sealed class FailingStore : IAccountingPostingAccountMappingStoreV1
+    private sealed class FailingStore(string code = "synthetic_unknown_store_answer") : IAccountingPostingAccountMappingStoreV1
     {
         public Task<AccountingPostingAccountMappingRecordV1?> ReadAsync(long mappingVersion,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
@@ -543,7 +559,7 @@ public sealed class AccountingPostingAccountMappingLifecycleV1Tests
             DateOnly effectiveFrom, IReadOnlyList<AccountingPostingAccountMappingDraftRowV1> rows, Guid preparedByUserId,
             DateTimeOffset preparedAtUtc, Func<CancellationToken, Task> freshAuthorityFence,
             AccountingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
-            throw new AccountingStoreException("synthetic_unknown_store_answer", "Synthetic.");
+            throw new AccountingStoreException(code, "Synthetic.");
 
         public Task<AccountingPostingAccountMappingRecordV1> ActivateAsync(long mappingVersion, long expectedVersion,
             long expectedActiveMappingVersion, Guid activatedByUserId, DateTimeOffset activatedAtUtc,

@@ -27,6 +27,20 @@ function wire(overrides: Record<string, unknown> = {}): Record<string, unknown> 
 }
 
 describe('stock count contract', () => {
+  it('shows only the frozen price-free cost status and preserves legacy absent status', () => {
+    const decision = { decision: 'Approved', decidedAtUtc: '2026-09-27T09:00:00Z', reason: 'Uygun', adjustmentMovementId: MOVEMENT }
+    const surplus = (extra: Record<string, unknown>) => wire({ countedKg: '101', differenceKg: '1', status: 'Approved', decision: { ...decision, ...extra } })
+    expect(decodeStockCountView(surplus({}))?.decision?.costStatus).toBeUndefined()
+    for (const costStatus of ['Known', 'NotCalculated', 'Unavailable']) {
+      expect(decodeStockCountView(surplus({ costStatus }))?.decision?.costStatus).toBe(costStatus)
+    }
+    for (const costStatus of [null, 'Zero', 0, {}, []]) expect(decodeStockCountView(surplus({ costStatus }))).toBeNull()
+    expect(decodeStockCountView(surplus({ costStatus: 'Known', amount: '123' }))).toBeNull()
+    expect(decodeStockCountView(wire({ status: 'Approved', decision: { ...decision, costStatus: 'NotCalculated' } }))).toBeNull()
+    expect(decodeStockCountView(wire({ status: 'Rejected', decision: { ...decision, decision: 'Rejected', adjustmentMovementId: null, costStatus: 'Known' } }))).toBeNull()
+    expect(stockCountRefusalText(503, 'inventory_stock_count_cost_not_calculated'))
+      .toBe('Ortalama maliyet hesaplanamadı; sayım eksiği uygulanmadı.')
+  })
   it('computes counted − book as canonical signed kilograms', () => {
     expect(differenceKilograms('100', '97.5')).toBe('-2.5')
     expect(differenceKilograms('1250.5', '1250.5')).toBe('0')
@@ -83,5 +97,12 @@ describe('stock count contract', () => {
     expect(stockCountRefusalText(409, 'inventory_stock_count_stale')).toMatch(/yeniden sayın/)
     expect(stockCountRefusalText(409, 'inventory_stock_count_allocation_conflict')).toMatch(/tahsis/)
     expect(stockCountRefusalText(403, null)).toMatch(/yetkiniz yok/)
+  })
+
+  it('warns that a label consumed by a split, merge or production is converted and sends the counter to the new label (SAT-D384)', () => {
+    const text = stockCountRefusalText(409, 'inventory_stock_count_label_converted')
+    expect(text).toMatch(/dönüştürüldü → yeni etiket/)
+    expect(text).toMatch(/sayım farkına girmez/)
+    expect(text).not.toBe(stockCountRefusalText(409, 'inventory_stock_count_position_conflict'))
   })
 })

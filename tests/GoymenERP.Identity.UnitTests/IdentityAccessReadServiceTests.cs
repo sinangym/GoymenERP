@@ -105,6 +105,8 @@ public sealed class IdentityAccessReadServiceTests
         Assert.Equal(["AUDITOR", "OPERATOR", "RETIRED"], byRole.Keys.Order(StringComparer.Ordinal));
 
         var operatorAssignment = byRole["OPERATOR"];
+        Assert.Equal(db.RoleAssignments.Local.Single(assignment => assignment.Id == operatorAssignment.AssignmentId).Version
+            .ToString(System.Globalization.CultureInfo.InvariantCulture), operatorAssignment.Version);
         Assert.Equal(IdentityAccessValidity.Effective, operatorAssignment.Validity);
         Assert.Equal("Active", operatorAssignment.Status);
         Assert.Equal(seeded.Operator, operatorAssignment.RoleId);
@@ -215,6 +217,9 @@ public sealed class IdentityAccessReadServiceTests
         await db.SaveChangesAsync();
 
         var inA = (await Service(db, CompanyA).GetRolesAsync()).ToDictionary(role => role.Code);
+        Assert.True(inA["AUDITOR"].IsCritical);
+        Assert.False(inA["OPERATOR"].IsCritical);
+        Assert.False(inA["UNUSED"].IsCritical);
         Assert.Equal((2, 2, 2), (inA["OPERATOR"].PermissionCount, inA["OPERATOR"].HolderCount,
             inA["OPERATOR"].EffectiveHolderCount));
         Assert.Equal((1, 1, 0), (inA["AUDITOR"].PermissionCount, inA["AUDITOR"].HolderCount,
@@ -246,14 +251,16 @@ public sealed class IdentityAccessReadServiceTests
     }
 
     [Fact]
-    public void The_shell_provider_declares_two_access_screens_and_the_audit_list_each_on_its_one_read_name_and_no_control()
+    public void The_shell_provider_keeps_the_read_routes_and_gates_each_ID4_control_on_read_plus_its_command_name()
     {
         var provider = new IdentityShellCapabilityProvider();
-        var declarations = provider.GetDeclarations();
+        var all = provider.GetDeclarations();
+        var declarations = all.Where(declaration => declaration.ParentCapabilityId is null).ToArray();
 
-        Assert.Equal("1.1", provider.ContractVersion);
+        Assert.Equal("1.3", provider.ContractVersion);
         Assert.Equal(
             [
+                ("identity.users.manage", "/ayarlar/kullanicilar", "SY-01-USERS"),
                 ("identity.assignments.list", "/ayarlar/kullanicilar-ve-yetkiler", "SY-01"),
                 ("identity.roles.detail", "/ayarlar/kullanicilar-ve-yetkiler/roller/:roleId", "SY-02"),
                 ("identity.audit.list", "/ayarlar/denetim-kaydi", "SY-07"),
@@ -262,6 +269,7 @@ public sealed class IdentityAccessReadServiceTests
                 (declaration.CapabilityId, declaration.RoutePath, declaration.ScreenId)));
         Assert.Equal(
             [
+                [ErpPermissions.IdentityUsersManage],
                 [IdentityPermissionManifestV1.AssignmentsRead],
                 [IdentityPermissionManifestV1.AssignmentsRead],
                 [ErpPermissions.IdentityAuditRead],
@@ -279,6 +287,12 @@ public sealed class IdentityAccessReadServiceTests
             Assert.Equal(GoymenERP.BuildingBlocks.Shell.ShellCapabilityContextRequirement.SingleCompany,
                 declaration.ContextRequirement);
         });
+        foreach (var permission in new[] { IdentityPermissionManifestV1.RolesManage, IdentityPermissionManifestV1.AccessApprove })
+        {
+            var control = Assert.Single(all, declaration => declaration.CapabilityId == permission);
+            Assert.Equal(IdentityShellCapabilityProvider.AccessListCapabilityId, control.ParentCapabilityId);
+            Assert.Equal([IdentityPermissionManifestV1.AssignmentsRead, permission], control.RequiredPermissions);
+        }
     }
 
     private static Seeded Seed(IdentityDbContext db)

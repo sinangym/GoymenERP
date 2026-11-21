@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { decodeInventoryStockPositions } from './contract'
-import { decodeStockDisplayPage, decodeStockLocationDisplayPage, decodeStockOwnerDisplayPage } from './stockDisplayContract'
+import {
+  decodeStockDisplayPage,
+  decodeStockLengthDisplayPage,
+  decodeStockLocationDisplayPage,
+  decodeStockOwnerDisplayPage,
+} from './stockDisplayContract'
 
 /**
  * Fixtures are the #597 producer's own values (contract pin d821e6b8):
@@ -435,6 +440,97 @@ describe('decodeStockOwnerDisplayPage — #664 3.0 page', () => {
     expect(decodeStockDisplayPage(v3)).toBeNull()
     // The older decoders still read their own shapes, unchanged.
     expect(decodeStockLocationDisplayPage(v2)).not.toBeNull()
+    expect(decodeStockDisplayPage(page())).not.toBeNull()
+  })
+})
+
+/**
+ * P03.2: the `4.0` page (#738, `X-ERP-Inventory-Stock-Display: 4.0`, `InventoryStockPositionLengthPageV4`). Every `3.0`
+ * member and rule stays as it is; only the Product display's technical block (`ProductStockNominalTechnicalV2`) adds the
+ * required-nullable nominal `lengthMm`. Null is the published absence (a coil, a strip): it is never `0`, a lot
+ * measurement or a cut-line length.
+ */
+describe('decodeStockLengthDisplayPage — #738 4.0 page', () => {
+  const location = () => ({ locationId: LOCATION, locationCode: 'HOL-1', locationName: 'Hol 1 · Boy kesme' })
+  const technical4 = (lengthMm: unknown) => ({ ...productDisplay().technical, lengthMm })
+  const display4 = (lengthMm: unknown = null) => ({ ...productDisplay(), technical: technical4(lengthMm) })
+  const row4 = (overrides: Record<string, unknown> = {}) =>
+    ({ ...row(), locationDisplay: location(), ownerDisplay: null, productDisplay: display4(), ...overrides })
+  const page4 = (items: unknown[] = [row4()], overrides: Record<string, unknown> = {}) =>
+    ({ items, searchWindowFull: false, nextCursor: null, ...overrides })
+  const lengthOf = (lengthMm: unknown) =>
+    decodeStockLengthDisplayPage(page4([row4({ productDisplay: display4(lengthMm) })]))?.items[0].productDisplay.technical?.lengthMm
+
+  it('decodes the 4.0 row: every 3.0 member as the 3.0 decoder reads it, plus the nominal length', () => {
+    const decoded = decodeStockLengthDisplayPage(page4())
+    const { productDisplay: decodedDisplay, ...rest } = decoded!.items[0]
+    const v3 = decodeStockOwnerDisplayPage(page4([row4({ productDisplay: productDisplay() })]))!.items[0]
+    const { productDisplay: v3Display, ...v3Rest } = v3
+    expect(rest).toEqual(v3Rest)
+    expect(decodedDisplay).toEqual({ ...v3Display, technical: { ...v3Display.technical, lengthMm: null } })
+    expect(decodeStockLengthDisplayPage(page4([], { nextCursor: 'opaque' }))?.nextCursor).toBe('opaque')
+  })
+
+  it('keeps the nominal length as the published decimal text, never rounded or re-written', () => {
+    expect(lengthOf('2500.125')).toBe('2500.125')
+    // The host serializes the decimal as a JSON number; it prints back to the same digits.
+    expect(lengthOf(2500.125)).toBe('2500.125')
+    expect(lengthOf(6000)).toBe('6000')
+    expect(lengthOf('6000.000')).toBe('6000.000')
+  })
+
+  it('keeps an explicit null as absence: not 0, not a guess', () => {
+    expect(lengthOf(null)).toBeNull()
+    const decoded = decodeStockLengthDisplayPage(page4())!.items[0].productDisplay.technical
+    expect(decoded).toMatchObject({ thicknessMm: '1.5', widthMm: '1250', lengthMm: null })
+  })
+
+  it('keeps a null technical block null, with its errors for the owner', () => {
+    const blocked = { ...productDisplay(), technical: null, errors: [{ field: 'references.templateId', code: 'family_template_mismatch' }] }
+    const decoded = decodeStockLengthDisplayPage(page4([row4({ productDisplay: blocked })]))
+    expect(decoded?.items[0].productDisplay.technical).toBeNull()
+    expect(decoded?.items[0].productDisplay.errors).toEqual(blocked.errors)
+  })
+
+  it.each([
+    ['a missing lengthMm key (the 3.0 technical shape)', () => productDisplay()],
+    ['an undefined lengthMm', () => ({ ...productDisplay(), technical: technical4(undefined) })],
+    ['a boolean', () => display4(true)],
+    ['an object', () => display4({ value: '2500.125' })],
+    ['an empty text', () => display4('')],
+    ['a decimal comma', () => display4('2500,125')],
+    ['a unit suffix', () => display4('2500 mm')],
+    ['surrounding whitespace', () => display4(' 2500 ')],
+    ['an exponent', () => display4('2.5e3')],
+    ['a leading zero', () => display4('02500')],
+    ['a non-finite number', () => display4(Number.POSITIVE_INFINITY)],
+    ['an extra technical member', () => ({ ...display4('2500.125'), technical: { ...technical4('2500.125'), nominalLengthMm: '2500.125' } })],
+  ])('refuses the whole page for %s', (_, make) => {
+    const bad = row4({ labelId: '22222222-2222-4222-8222-222222222223', productDisplay: make() })
+    expect(decodeStockLengthDisplayPage(page4([bad]))).toBeNull()
+    // One bad row refuses the page: a good row beside it is not shown either.
+    expect(decodeStockLengthDisplayPage(page4([row4(), bad]))).toBeNull()
+  })
+
+  it('applies every 3.0, 2.0 and 1.0 rule to a 4.0 row', () => {
+    expect(decodeStockLengthDisplayPage(page4([row4({ availableKg: '6' })]))).toBeNull()
+    expect(decodeStockLengthDisplayPage(page4([row4({ locationDisplay: null })]))).toBeNull()
+    expect(decodeStockLengthDisplayPage(page4([row4({ ownerDisplay: { partyId: COMPANY, code: 'X', legalName: 'X', tradeName: null } })]))).toBeNull()
+    expect(decodeStockLengthDisplayPage(page4([row4({ productDisplay: { ...display4(), expectedProductVersion: '8' } })]))).toBeNull()
+    expect(decodeStockLengthDisplayPage(page4([row4({ extra: true })]))).toBeNull()
+    expect(decodeStockLengthDisplayPage(page4([row4(), row4()]))).toBeNull()
+  })
+
+  it('keeps the four shapes apart: no decoder accepts another version\'s row', () => {
+    const v4 = page4()
+    const v3 = page4([row4({ productDisplay: productDisplay() })])
+    expect(decodeStockLengthDisplayPage(v3)).toBeNull()
+    expect(decodeStockLengthDisplayPage(page())).toBeNull()
+    expect(decodeStockOwnerDisplayPage(v4)).toBeNull()
+    expect(decodeStockLocationDisplayPage(v4)).toBeNull()
+    expect(decodeStockDisplayPage(v4)).toBeNull()
+    // The older decoders still read their own shapes, unchanged.
+    expect(decodeStockOwnerDisplayPage(v3)).not.toBeNull()
     expect(decodeStockDisplayPage(page())).not.toBeNull()
   })
 })

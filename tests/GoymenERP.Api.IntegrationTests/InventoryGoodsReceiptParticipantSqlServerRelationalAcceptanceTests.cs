@@ -2,6 +2,7 @@ using System.Data.Common;
 using System.Security.Cryptography;
 using System.Text;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Inventory.Application;
@@ -271,7 +272,11 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             .Options;
         await using var context = new PurchasingDbContext(options, company);
         await context.Database.MigrateAsync();
-        var store = new PurchasingStore(context, company, audit, TimeProvider.System);
+        var actor = new FixedCurrentUser(run.Actor, CompanyA);
+        var authority = new GoodsReceiptPurchaseNumberAuthority();
+        await using var numbers = new PurchaseDocumentNumberSqlTestOwner(run.Factory.Services, CompanyA, actor, authority);
+        await numbers.ConfigurePurchaseSeriesAsync(CompanyA, run.Actor.ToString("D"));
+        var store = new PurchasingStore(context, company, audit, TimeProvider.System, numbers.Numbers, actor, authority);
         var orderId = Guid.NewGuid();
         var lineId = Guid.NewGuid();
         var order = PurchaseOrder.Create(orderId, CompanyA, GoodsReceiptSupplier, GoodsReceiptTime);
@@ -279,7 +284,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Quantity.Of(10m, QuantityUnit.Kilogram), sourceRequestLineId: null, GoodsReceiptTime);
         await store.StoreOrderAsync(
             GoodsReceiptPurchaseEnvelope(run, $"goods-receipt-seed-create-{Guid.NewGuid():N}",
-                $"goods-receipt-seed-create-{Guid.NewGuid():N}"),
+                $"goods-receipt-seed-create-{Guid.NewGuid():N}") with { PermissionCode = ErpPermissions.PurchasingOrdersCreate },
             GoodsReceiptHash($"goods-receipt-seed-create-{orderId:N}"),
             GoodsReceiptAccount,
             DateOnly.FromDateTime(GoodsReceiptTime.UtcDateTime),
@@ -296,6 +301,24 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.NotNull(approved);
         Assert.Equal(3L, approved.Order.Order.Version);
         return new GoodsReceiptAcceptanceSeed(orderId, lineId, approved.Order.Order.Version);
+    }
+
+    // Only this direct-store seed's authority is synthetic; Settings numbering and its SQL/Audit owner stay real.
+    // The receipt host's registered identity and authorization services are not replaced.
+    private sealed class GoodsReceiptPurchaseNumberAuthority : IErpAuthorityRevalidationService
+    {
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var allowed = companyId == CompanyA && permission is
+                ErpPermissions.PurchasingOrdersCreate or ErpPermissions.PurchasingOrdersCancel or
+                SettingsDocumentNumberSeriesPermissionsV1.Manage;
+            return Task.FromResult(allowed
+                ? new PermissionScope(true, true, new HashSet<string> { "SENTETIK-PURCHASING" },
+                    new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>())
+                : PermissionScope.Denied);
+        }
     }
 
     private static async Task<InventoryGoodsReceiptSourceV1?> ReadGoodsReceiptSourceAsync(

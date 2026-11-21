@@ -419,6 +419,8 @@ public sealed partial class SalesDraftServiceTests
         public FakeDispatchNotes Notes { get; } = new();
         public FakeInvoiceableShipments Shipments { get; } = new();
         public FakeOrderReferences Orders { get; } = new();
+        public FakeWeighingDifferences Weighings { get; } = new();
+        public bool NoWeighings { get; set; }
         public bool NoNotes { get; set; }
         public bool NoShipments { get; set; }
         public bool NoDisplays { get; set; }
@@ -429,7 +431,8 @@ public sealed partial class SalesDraftServiceTests
             var company = new CompanyContext();
             company.Set(Company);
             return new SalesDispatchReadService(company, User, Authority, new SalesDispatchReadBindings(DispatchRead, InvoiceRead), Orders,
-                NoDisplays ? null : Displays, NoNotes ? null : Notes, NoShipments ? null : Shipments, ExchangeRates);
+                NoDisplays ? null : Displays, NoNotes ? null : Notes, NoShipments ? null : Shipments, ExchangeRates,
+                NoWeighings ? null : Weighings);
         }
 
         public SalesOrderDispatchReference AddOrder(string documentNo, Guid party, Guid account, Guid currency,
@@ -472,6 +475,7 @@ public sealed partial class SalesDraftServiceTests
 
     private sealed class FakeInvoiceableShipments : ISalesInvoiceableShipmentReadPortV1
     {
+        public SalesInvoiceableShipmentAnswerV1? LastAnswer { get; private set; }
         public Func<SalesInvoiceableShipmentQueryV1, SalesInvoiceableShipmentAnswerV1> Answer { get; set; } =
             _ => new(SalesDispatchReadOutcomeV1.Found, Company, [], false, SalesInvoicedStateSourceV1.NoSource);
         public List<SalesInvoiceableShipmentQueryV1> Asked { get; } = [];
@@ -480,7 +484,8 @@ public sealed partial class SalesDraftServiceTests
             CancellationToken cancellationToken = default)
         {
             Asked.Add(query);
-            return Task.FromResult(Answer(query));
+            LastAnswer = Answer(query);
+            return Task.FromResult(LastAnswer);
         }
     }
 

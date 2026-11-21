@@ -32,6 +32,14 @@ public static class ManufacturingRuleCodes
     public const string InputAlreadyIssued = "manufacturing_input_already_issued";
     public const string ReturnAlreadyRecorded = "manufacturing_return_already_recorded";
     public const string ReturnExceedsIssued = "manufacturing_return_exceeds_issued";
+
+    /// <summary>
+    /// F-009 D4 (analysis §4.4): the return would exceed the input still unconsumed — issued minus returned minus the
+    /// net output minus the latest WIP reading, on the parent roll for a roll-based process and on the order total for
+    /// a process without a main roll input (URT-D49). The outputs are reversed or the WIP re-measured first.
+    /// </summary>
+    public const string ReturnExceedsUnconsumed = "manufacturing_return_exceeds_unconsumed";
+
     public const string OutputAlreadyDeclared = "manufacturing_output_already_declared";
     public const string WipAlreadyMeasured = "manufacturing_wip_already_measured";
     public const string WipMeasurementNotLatest = "manufacturing_wip_measurement_not_latest";
@@ -109,6 +117,41 @@ public static class ManufacturingRuleCodes
     public const string PlanSalesOrderLinkNoChange = "manufacturing_plan_sales_order_link_no_change";
 
     /// <summary>
+    /// Üretim F-010a (URT-D29): the plan's termin moved since the caller read it (its termin revision differs); the caller
+    /// reads the plan again. Answered as a conflict.
+    /// </summary>
+    public const string PlanDueDateChanged = "manufacturing_plan_due_date_changed";
+
+    /// <summary>Üretim F-010a (URT-D29): the plan's order is closed; its termin no longer changes.</summary>
+    public const string PlanDueDateOrderClosed = "manufacturing_plan_due_date_order_closed";
+
+    /// <summary>Üretim F-010a (URT-D29): the request sets the termin the plan already has (or removes an absent one).</summary>
+    public const string PlanDueDateNoChange = "manufacturing_plan_due_date_no_change";
+
+    /// <summary>
+    /// URT-D66 (1): the termin is earlier than the company's business day (the Europe/Istanbul date of the server's clock).
+    /// Held on the plan and on the production order alike.
+    /// </summary>
+    public const string DueDateInPast = "manufacturing_due_date_in_past";
+
+    /// <summary>
+    /// URT-D66 (2): a plan without a termin is not approved; an approved plan's termin is changed but not removed.
+    /// </summary>
+    public const string PlanDueDateRequired = "manufacturing_plan_due_date_required";
+
+    /// <summary>
+    /// URT-D66 (3): the order's termin moved since the caller read it (its termin revision differs); the caller reads the
+    /// order again. Answered as a conflict.
+    /// </summary>
+    public const string OrderDueDateChanged = "manufacturing_order_due_date_changed";
+
+    /// <summary>URT-D66 (3): the order is closed; its termin no longer changes.</summary>
+    public const string OrderDueDateOrderClosed = "manufacturing_order_due_date_order_closed";
+
+    /// <summary>URT-D66 (3): the request sets the termin the order already has.</summary>
+    public const string OrderDueDateNoChange = "manufacturing_order_due_date_no_change";
+
+    /// <summary>
     /// Üretim U2-b / API-16: the plan's customer-owned inputs belong to a different party than the sales order line's
     /// customer; the link (or a revision under a link) is refused.
     /// </summary>
@@ -142,6 +185,111 @@ public static class ManufacturingRuleCodes
     /// Product snapshot captured for that roll). Refused, never cut to the coil.
     /// </summary>
     public const string PlanNetWidthExceedsParent = "manufacturing_plan_net_width_exceeds_parent";
+
+    /// <summary>F-009 D2: the output a reversal names was never declared on this order.</summary>
+    public const string OutputNotDeclared = "manufacturing_output_not_declared";
+
+    /// <summary>
+    /// F-009 D2 (URT-D30, analysis §3): the output declaration carries no plan output line ("satırsız", stored before
+    /// D2), so the line bound of its correction cannot be derived. Refused fail-closed; no line is assigned to it here.
+    /// </summary>
+    public const string OutputLineMissing = "manufacturing_output_line_missing";
+
+    /// <summary>
+    /// F-009 D2 (URT-D30, ASSUMPTION-URT-F009-1): the plan output line a declaration names is not one of the order's
+    /// plan output lines, or does not fit the output class (only a good product binds to a plan line; every other
+    /// class, and a good product of a plan without output lines, binds to its class line).
+    /// </summary>
+    public const string OutputLineNotInPlan = "manufacturing_output_line_not_in_plan";
+
+    /// <summary>F-009 D2: this output reversal id was already recorded.</summary>
+    public const string OutputReversalAlreadyRecorded = "manufacturing_output_reversal_already_recorded";
+
+    /// <summary>
+    /// F-009 D2 (analysis §4.3): the reversals of one output declaration would add up to more than the declared mass;
+    /// its net output never goes below zero.
+    /// </summary>
+    public const string OutputReversalExceedsDeclared = "manufacturing_output_reversal_exceeds_declared";
+
+    /// <summary>
+    /// URT-D53: a weighing correction names an output that is not weighed (the declared process loss has no weighing
+    /// and no label), so there is no weighing to correct.
+    /// </summary>
+    public const string WeighingCorrectionNotWeighed = "manufacturing_weighing_correction_not_weighed";
+
+    /// <summary>
+    /// URT-D53 ("fazla tartılmış çıkışın düzeltilmesi"): the correct weighing is not below the output's net recorded mass.
+    /// Only an over-weighed output is corrected here; a correction upwards is not decided and is refused, never applied.
+    /// </summary>
+    public const string WeighingCorrectionNotLower = "manufacturing_weighing_correction_not_lower";
+
+    /// <summary>
+    /// URT-D53 (2): the second person must approve. The approver (or rejecter) of a weighing correction is the person who
+    /// proposed it; refused, whatever permissions that person holds.
+    /// </summary>
+    public const string WeighingCorrectionSamePerson = "manufacturing_weighing_correction_same_person";
+
+    /// <summary>URT-D53: the weighing correction was already approved or rejected; a decided correction is final.</summary>
+    public const string WeighingCorrectionNotProposed = "manufacturing_weighing_correction_not_proposed";
+
+    /// <summary>
+    /// URT-D53: the output's net mass, or the order the correction belongs to, is not what the correction was proposed
+    /// on (another correction or reversal reached it first). The correction is not applied on facts its proposer and
+    /// approver did not see.
+    /// </summary>
+    public const string WeighingCorrectionOutputChanged = "manufacturing_weighing_correction_output_changed";
+
+    /// <summary>
+    /// URT-S13 (URT-D47, URT-D65): the company already has a scrap price for this month. A first entry never replaces a
+    /// recorded month; the answer is a conflict and the month is corrected with a new version instead (URT-D72).
+    /// </summary>
+    public const string ScrapPriceAlreadyRecorded = "manufacturing_scrap_price_already_recorded";
+
+    /// <summary>
+    /// URT-D73: a scrap price is entered (first entry or correction) for the current or a past month only; a month after
+    /// the Europe/Istanbul business day of the entry is refused.
+    /// </summary>
+    public const string ScrapPriceFutureMonth = "manufacturing_scrap_price_future_month";
+
+    /// <summary>URT-S13: a scrap price carries at most four decimals (its decimal(18,4) column); a fifth is refused, not rounded.</summary>
+    public const string ScrapPricePrecisionExceeded = "manufacturing_scrap_price_precision_exceeded";
+
+    /// <summary>URT-D72: a correction with the month's effective price again opens no new version; it is refused.</summary>
+    public const string ScrapPriceUnchanged = "manufacturing_scrap_price_unchanged";
+
+    /// <summary>
+    /// F-009 D5 (URT-D33): the order still carries a net effect — a net output, a net issued input or a measured WIP —
+    /// so it is not cancelled. The user reverses each output (D2), returns every issued kg and clears the WIP first;
+    /// a cancellation undoes nothing by itself.
+    /// </summary>
+    public const string OrderCancelHasNetEffect = "manufacturing_order_cancel_has_net_effect";
+
+    /// <summary>F-009 D5: the order is cancelled; it is kept (never deleted) and takes no further fact or decision.</summary>
+    public const string OrderCancelled = "manufacturing_order_cancelled";
+
+    /// <summary>
+    /// F-009 D5 (URT-D34): the plan's order was cancelled and its allocation released; a new order opens only after the
+    /// plan's minimal re-approval allocates its inputs again.
+    /// </summary>
+    public const string PlanReapprovalRequired = "manufacturing_plan_reapproval_required";
+
+    /// <summary>
+    /// F-009 D5 (URT-D34): the re-approval applies only to an approved plan whose order was cancelled and that holds no
+    /// allocation of its own; any other approved plan is not re-approved.
+    /// </summary>
+    public const string PlanReapprovalNotRequired = "manufacturing_plan_reapproval_not_required";
+
+    /// <summary>
+    /// F-009 D5 (URT-D39): the Settings parameter profile in force now is not the one the plan's approval captured (or
+    /// the approval captured none); the minimal re-approval does not re-capture parameters.
+    /// </summary>
+    public const string PlanReapprovalSettingsChanged = "manufacturing_plan_reapproval_settings_changed";
+
+    /// <summary>
+    /// F-009 D5 (URT-D35): a re-approval names, per planned input, the label to allocate; until D5b only the plan's own
+    /// label is accepted, and a missing or another label is refused.
+    /// </summary>
+    public const string PlanReapprovalLabelMismatch = "manufacturing_plan_reapproval_label_mismatch";
 
     /// <summary>
     /// A stored plan or order does not rebuild under the rules that wrote it (MFG-5): a close trace

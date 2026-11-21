@@ -20,8 +20,9 @@ import { OrderListPage } from './OrderListPage'
 import { PlanCreatePage } from './PlanCreatePage'
 import { PlanDetailPage } from './PlanDetailPage'
 import { PlanListPage } from './PlanListPage'
+import { ScrapPriceListPage } from './ScrapPriceListPage'
 
-/** The five routed ids are declared in the shell's `CAPABILITY` table, so no cast is needed. */
+/** The six routed ids are declared in the shell's `CAPABILITY` table, so no cast is needed. */
 function gate(capability: CapabilityId & ManufacturingCapabilityId, children: ReactNode) {
   return <CapabilityRoute capability={capability}>{children}</CapabilityRoute>
 }
@@ -35,6 +36,11 @@ export const manufacturingRoutes: RouteObject[] = [
     // MFG-PLAN-LIST: `/uretim/planlar` is its own static segment, never read as `/uretim/plan/:planId`.
     path: MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.planList].slice(1),
     element: gate(MANUFACTURING_CAPABILITY.planList, <PlanListPage />),
+  },
+  {
+    // URT-S13: the monthly scrap prices; entering a month is a control inside it, not a route.
+    path: MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.scrapPriceList].slice(1),
+    element: gate(MANUFACTURING_CAPABILITY.scrapPriceList, <ScrapPriceListPage />),
   },
   {
     path: MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.planDetail].slice(1),

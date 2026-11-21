@@ -32,12 +32,17 @@ public static class ProductStockDisplayRuntimeRegistration
             runtimeEnabled(provider) && provider.GetService<IProductFamilyDefinitionSourceV2>() is not null
                 ? provider.GetRequiredService<ProductStockDisplayReferenceService>()
                 : new UnavailableProductStockDisplayReferences());
+        services.AddScoped<IProductStockSimilarityFactsV1>(provider =>
+            runtimeEnabled(provider) && provider.GetService<IProductFamilyDefinitionSourceV2>() is not null
+                ? provider.GetRequiredService<ProductStockDisplayReferenceService>()
+                : new UnavailableProductStockDisplayReferences());
         return services;
     }
 }
 
 internal sealed class UnavailableProductStockDisplayReferences
-    : IProductStockDisplayReferencesV1, IProductStockDisplayReferencesV2, IProductStockTechnicalMatcherV1, IProductStockFamilyOptionsV1
+    : IProductStockDisplayReferencesV1, IProductStockDisplayReferencesV2, IProductStockTechnicalMatcherV1, IProductStockFamilyOptionsV1,
+        IProductStockSimilarityFactsV1
 {
     public Task<ProductStockFamilyOptionsV1> ReadFamilyOptionsAsync(CancellationToken cancellationToken = default)
     {
@@ -70,6 +75,15 @@ internal sealed class UnavailableProductStockDisplayReferences
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromException<ProductStockTechnicalMatchBatchV1>(
+            new ProductOperationException("product_runtime_unconfigured", 503));
+    }
+
+    public Task<ProductStockSimilarityBatchV1> ReadSimilarityAsync(
+        ProductStockSimilarityQueryV1 query,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromException<ProductStockSimilarityBatchV1>(
             new ProductOperationException("product_runtime_unconfigured", 503));
     }
 }

@@ -356,6 +356,13 @@ public sealed partial class SalesDraftServiceTests
                 new SalesInvoiceableShipmentV1(Guid.NewGuid(), "IRS-2026-000001", null, Approved, Party, Account, 1, ShipmentId, Shipped,
                     order.Draft.Id, order.Lines[0].LineId, Product, KgUnit, 1.25m),
             ], false, SalesInvoicedStateSourceV1.NoSource);
+            Weighings.Answer = note =>
+            {
+                var lines = Shipments.LastAnswer!.Shares.Where(share => share.DispatchNoteId == note)
+                    .Select(share => new SalesDispatchKilogramLineV1(share.NoteLineNo, share.ShipmentId, share.ProductId, share.Quantity, share.Quantity)).ToArray();
+                var recorded = WeighingRecorded(note, theoretical: lines.Sum(line => line.TheoreticalKg), scale: lines.Sum(line => line.Kilograms));
+                return recorded with { Value = recorded.Value! with { KilogramAllocation = new(lines) } };
+            };
         }
 
         public World World { get; }
@@ -370,6 +377,10 @@ public sealed partial class SalesDraftServiceTests
         public SalesInvoiceMatchTolerancePolicy? Tolerance { get; set; }
         public ISalesFinanceAdmissionPortV1? Finance { get; set; }
         public ISalesInvoiceDiagnosticsV1? Diagnostics { get; set; }
+
+        /// <summary>SAT-S13: the weighing-difference seam; by default every note is recorded with no difference (passes).</summary>
+        public FakeWeighingDifferences Weighings { get; } = new();
+        public bool NoWeighings { get; set; }
 
         /// <summary>An invoice world around an order the caller has put in the state under test.</summary>
         public static InvoiceWorld Around(World world, SalesOrderDraftDetailView order) => new(world, order);
@@ -404,7 +415,8 @@ public sealed partial class SalesDraftServiceTests
             var company = new CompanyContext();
             company.Set(Company);
             return new SalesInvoiceService(company, World.User, World.Authority, new FixedCorrelation(), Invoices, World.Store, World.Settings,
-                World.Clock, NoShipments ? null : Shipments, Rates, NoOfficial ? null : Official, Tolerance, Finance, Diagnostics);
+                World.Clock, NoShipments ? null : Shipments, Rates, NoOfficial ? null : Official, Tolerance, Finance, Diagnostics,
+                weighingDifferences: NoWeighings ? null : Weighings);
         }
     }
 
@@ -539,7 +551,8 @@ public sealed partial class SalesDraftServiceTests
         public void Has(decimal functionalAmount, Guid? customer = null, Guid? currency = null, string no = "GIB2026000000001",
             decimal? vat = null, decimal? withholding = null) =>
             Answer = new(SalesOfficialInvoiceOutcomeV1.Found, new SalesOfficialInvoiceFacts(no, OfficialEttn, customer ?? Party,
-                currency ?? Currency, functionalAmount, functionalAmount, vat ?? Vat, withholding ?? Withholding));
+                currency ?? Currency, functionalAmount, functionalAmount, vat ?? Vat, withholding ?? Withholding, new DateOnly(2026, 11, 14),
+                new(Company, Guid.NewGuid(), "manual", "2", DateTimeOffset.UnixEpoch, Guid.NewGuid(), 1, new string('a', 64), null, null, false)));
     }
 
     private static MatchSalesInvoiceRequest MatchRequest(string version = "3", bool approve = false, string? reason = null,
@@ -717,6 +730,24 @@ public sealed partial class SalesDraftServiceTests
         Assert.Contains(refused.Errors, error => error.Field == field);
         Assert.Equal(0, invoicing.Invoices.MatchCalls);
         Assert.DoesNotContain("k-inv-mismatch", invoicing.Invoices.StateAttempts.Keys);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Missing_or_foreign_official_source_evidence_is_503_before_the_match_attempt(bool foreign)
+    {
+        var (invoicing, id, _) = await ApprovedInvoiceAsync();
+        invoicing.Official.Has(invoicing.Invoices.Stored[id].PayableFunctionalAmount);
+        var facts = invoicing.Official.Answer.Invoice!;
+        invoicing.Official.Answer = new(SalesOfficialInvoiceOutcomeV1.Found, foreign
+            ? facts with { SourceProof = facts.SourceProof! with { CompanyId = Guid.NewGuid() } }
+            : facts with { InvoiceDate = null });
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().MatchInvoiceAsync(id, MatchRequest(), Metadata("k-inv-proof")));
+        Assert.Equal((503, SalesInvoiceProblemCodesV1.OfficialInvoiceProviderUnavailable), Status(refused));
+        Assert.Equal(0, invoicing.Invoices.MatchCalls);
+        Assert.DoesNotContain("k-inv-proof", invoicing.Invoices.StateAttempts.Keys);
     }
 
     [Fact]
@@ -949,6 +980,19 @@ public sealed partial class SalesDraftServiceTests
             CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlySet<Guid>>(shipmentIds.Where(id => Invoiced.Contains(id)
                 || Stored.Values.Any(invoice => invoice.Lines.Any(line => line.Share.ShipmentId == id))).ToHashSet());
+
+        public int FinalizedReads { get; private set; }
+
+        /// <summary>Shipments a finalized invoice took, set directly (the risk check's tests need no full invoice for it).</summary>
+        public HashSet<Guid> FinalizedShipments { get; } = [];
+
+        public Task<IReadOnlySet<Guid>> FindFinalizedInvoiceShipmentsAsync(IReadOnlyCollection<Guid> shipmentIds,
+            CancellationToken cancellationToken = default)
+        {
+            FinalizedReads++;
+            return Task.FromResult<IReadOnlySet<Guid>>(shipmentIds.Where(id => FinalizedShipments.Contains(id) || Stored.Values.Any(invoice =>
+                invoice.State == SalesInvoiceState.Finalized && invoice.Lines.Any(line => line.Share.ShipmentId == id))).ToHashSet());
+        }
 
         private SalesInvoiceStoreResult? Replay(SalesDraftWriteEnvelope envelope, string requestHash)
         {

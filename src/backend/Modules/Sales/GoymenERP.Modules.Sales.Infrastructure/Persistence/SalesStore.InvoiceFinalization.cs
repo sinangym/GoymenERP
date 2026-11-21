@@ -207,34 +207,87 @@ public sealed partial class SalesStore
             envelope.CausationId,
             envelope.IdempotencyKey);
 
-    /// <summary>The <c>sales.invoice.finalized.v1</c> outbox payload (versioned contract; see the contract test).</summary>
-    internal static string FinalizedPayload(SalesInvoice invoice, SalesInvoiceFinalization finalization) => JsonSerializer.Serialize(new
+    /// <summary>
+    /// The <c>sales.invoice.finalized.v1</c> outbox payload (versioned contract; see the contract test). SAT-S1 (F-005 D2) appends,
+    /// after the original keys and without changing them, what the Accounting consumer needs for the draft voucher (KLN-D6…D14,
+    /// KLN-D19): the company, the draft's server business day, the locked rate's day and functional currency, the net / VAT /
+    /// withholding totals in the invoice currency and in TL, and the frozen lines with their own amounts (the TL line amounts are the
+    /// calculator's, already rounded per line with the VAT group remainder, SAT-D223) and the tax snapshot's item type, buyer situation
+    /// and codes. Every amount is the ONE invoice calculator's frozen value; the consumer never recomputes it. A TL invoice has no rate
+    /// and its functional fields are null: its invoice-currency amounts are the TL amounts.
+    /// </summary>
+    internal static string FinalizedPayload(SalesInvoice invoice, SalesInvoiceFinalization finalization)
     {
-        invoiceId = invoice.Id,
-        invoice.DocumentNo,
-        version = invoice.Version,
-        finalization.AdmissionId,
-        invoice.Header.PartyId,
-        invoice.Header.CompanyAccountId,
-        invoice.Header.CurrencyId,
-        rate = invoice.Header.Rate?.Rate,
-        payable = invoice.Totals.Payable.Amount,
-        functionalPayable = invoice.FunctionalTotals?.Payable.Amount,
-        match = invoice.Match is null ? null : new
+        var totals = invoice.Totals;
+        var functionalTotals = invoice.FunctionalTotals;
+        return JsonSerializer.Serialize(new
         {
-            invoice.Match.OfficialNo,
-            invoice.Match.Ettn,
-            invoice.Match.OfficialFunctionalAmount,
-            invoice.Match.Difference,
-        },
-        instalments = finalization.Plan.Select(item => new
-        {
-            item.OpenItemId,
-            item.InstallmentId,
-            item.SequenceNo,
-            item.DueDate,
-            item.Amount,
-            item.FunctionalAmount,
-        }).ToArray(),
-    }, Json);
+            invoiceId = invoice.Id,
+            invoice.DocumentNo,
+            version = invoice.Version,
+            finalization.AdmissionId,
+            invoice.Header.PartyId,
+            invoice.Header.CompanyAccountId,
+            invoice.Header.CurrencyId,
+            rate = invoice.Header.Rate?.Rate,
+            payable = totals.Payable.Amount,
+            functionalPayable = functionalTotals?.Payable.Amount,
+            match = invoice.Match is null ? null : new
+            {
+                invoice.Match.OfficialNo,
+                invoice.Match.Ettn,
+                invoice.Match.OfficialFunctionalAmount,
+                invoice.Match.Difference,
+                invoice.Match.InvoiceDate,
+                invoice.Match.SourceProof,
+            },
+            instalments = finalization.Plan.Select(item => new
+            {
+                item.OpenItemId,
+                item.InstallmentId,
+                item.SequenceNo,
+                item.DueDate,
+                item.Amount,
+                item.FunctionalAmount,
+            }).ToArray(),
+            invoice.CompanyId,
+            invoice.Header.BusinessDate,
+            invoiceDate = invoice.Match!.InvoiceDate,
+            officialInvoiceNo = invoice.Match.OfficialNo,
+            finalization.FinalizedBy,
+            rateDay = invoice.Header.Rate?.RateDay,
+            functionalCurrencyId = invoice.Header.Rate?.FunctionalCurrencyId,
+            net = totals.Net.Amount,
+            vat = totals.Vat.Amount,
+            withholding = totals.Withholding.Amount,
+            functionalNet = functionalTotals?.Net.Amount,
+            functionalVat = functionalTotals?.Vat.Amount,
+            functionalWithholding = functionalTotals?.Withholding.Amount,
+            lines = invoice.Lines.OrderBy(line => line.LineNo).Select(line => new
+            {
+                lineId = line.Id,
+                line.LineNo,
+                line.Share.ProductId,
+                line.Share.UnitId,
+                line.Share.Quantity,
+                line.Share.Tax.ItemType,
+                line.Share.Tax.BuyerSituation,
+                line.VatPercent,
+                line.WithholdingShare,
+                line.Share.Tax.ExemptionCode,
+                line.Share.Tax.WithholdingCode,
+                net = line.Amounts.Net.Amount,
+                vat = line.Amounts.Vat.Amount,
+                withholding = line.Amounts.Withholding.Amount,
+                payable = line.Amounts.Payable.Amount,
+                functionalNet = line.Functional?.Amounts.Net.Amount,
+                functionalVat = line.Functional?.Amounts.Vat.Amount,
+                functionalWithholding = line.Functional?.Amounts.Withholding.Amount,
+                functionalPayable = line.Functional?.Amounts.Payable.Amount,
+                shipmentSource = new SalesInvoiceShipmentSourceV1(line.Share.ShipmentId, line.Share.DispatchNoteId,
+                    line.Share.NoteLineNo, line.Share.SalesOrderId, line.Share.SalesOrderLineId, line.Share.PriceBasisRevision,
+                    line.Share.ProductId, line.Share.UnitId, line.Share.QuantityText),
+            }).ToArray(),
+        }, Json);
+    }
 }

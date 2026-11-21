@@ -56,9 +56,30 @@ public sealed class ProductReader(ProductReadStore store, ProductCursorCodec cur
             var hasMore = rows.Count > ProductDuplicateRules.MaximumCandidates;
             var groups = await store.ReadCodeGroupsAsync(context, cancellationToken);
             var names = groups.ToDictionary(group => group.Id, group => group.Name);
-            var views = rows.Take(ProductDuplicateRules.MaximumCandidates).Select(row => ProductDraftView.FromProduct(
-                row.RestoreProduct(), new(names.GetValueOrDefault(row.GroupId), null, null, null))).ToArray();
-            return new ProductDuplicateCandidates(ProductDuplicateRules.ExactName, query.Name!, views, hasMore);
+            ProductDraftView View(ProductStoredRecord row) => ProductDraftView.FromProduct(
+                row.RestoreProduct(), new(names.GetValueOrDefault(row.GroupId), null, null, null));
+            var views = rows.Take(ProductDuplicateRules.MaximumCandidates).Select(View).ToArray();
+
+            // URN-D25: only a saved card has technical values to compare; an unsaved name check has none.
+            var technical = new List<ProductStoredRecord>();
+            if (query.ExcludeProductId is Guid cardId
+                && await store.ReadByIdAsync(context, cardId, cancellationToken) is { FamilyId: Guid familyId } card)
+            {
+                var definition = await store.ReadFamilyDefinitionAsync(context, cancellationToken);
+                if (ProductTechnicalDuplicateKeyV1.Of(familyId, card.RestoreReferences(), definition) is { } key)
+                {
+                    foreach (var member in await store.ReadActiveFamilyMembersAsync(context, familyId, cardId, cancellationToken))
+                    {
+                        if (ProductTechnicalDuplicateKeyV1.Of(member.FamilyId, member.RestoreReferences(), definition) == key)
+                            technical.Add(member);
+                        if (technical.Count > ProductDuplicateRules.MaximumCandidates) break;
+                    }
+                }
+            }
+
+            return new ProductDuplicateCandidates(ProductDuplicateRules.ExactName, query.Name!, views, hasMore,
+                technical.Take(ProductDuplicateRules.MaximumCandidates).Select(View).ToArray(),
+                technical.Count > ProductDuplicateRules.MaximumCandidates);
         }, cancellationToken);
 
     public Task<IReadOnlyList<ProductCodeGroup>> GetCodeGroupsAsync(CancellationToken cancellationToken) =>

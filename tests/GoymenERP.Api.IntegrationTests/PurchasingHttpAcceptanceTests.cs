@@ -12,7 +12,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>The purchasing routes' wire contract over a stub service (the Sales / Logistics HTTP acceptance pattern): metadata, statuses, headers, code boundary.</summary>
-public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) : IClassFixture<GoymenErpApiFactory>
+public sealed partial class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) : IClassFixture<GoymenErpApiFactory>
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid PurchaseOrderId = Guid.Parse("10000000-0000-0000-0000-000000000001");
@@ -1069,6 +1069,66 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
     }
 
     [Fact]
+    public async Task The_schedule_history_route_answers_every_revision_privately_and_refuses_a_query_before_the_service()
+    {
+        // F-027 (ALS-D94, ALS-D81): GET …/lines/{lineId}/schedule-history reads only; each revision carries its order version, its
+        // recorder and time and its slices; an unknown query is a 400 before the service; 403 / 404 / 503 stay code-less.
+        var id = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var firstSlice = Guid.NewGuid();
+        var service = new StubService
+        {
+            ScheduleHistory = (orderId, line) => Task.FromResult(new PurchaseOrderLineScheduleHistoryView(orderId, line, "5",
+            [
+                new PurchaseOrderLineScheduleRevisionView("3", "synthetic-actor", DateTimeOffset.UnixEpoch,
+                    [new PurchaseOrderDeliverySliceView(firstSlice, 1, "10", new DateOnly(2026, 12, 1))]),
+                new PurchaseOrderLineScheduleRevisionView("5", "synthetic-actor", DateTimeOffset.UnixEpoch.AddDays(1),
+                [
+                    new PurchaseOrderDeliverySliceView(firstSlice, 1, "4", new DateOnly(2026, 12, 1)),
+                    new PurchaseOrderDeliverySliceView(Guid.NewGuid(), 2, "6", new DateOnly(2027, 1, 15)),
+                ]),
+            ])),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        var path = $"{PurchasingApiV1.OrdersPath}/{id:D}/lines/{lineId:D}/schedule-history";
+
+        using (var response = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            AssertPrivateNoStore(response);
+            var history = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal((id.ToString("D"), lineId.ToString("D"), "5"), (history.GetProperty("orderId").GetString(),
+                history.GetProperty("lineId").GetString(), history.GetProperty("orderVersion").GetString()));
+            var revisions = history.GetProperty("revisions");
+            Assert.Equal(2, revisions.GetArrayLength());
+            Assert.Equal(("3", "synthetic-actor"), (revisions[0].GetProperty("orderVersion").GetString(),
+                revisions[0].GetProperty("recordedBy").GetString()));
+            Assert.Equal(JsonValueKind.String, revisions[0].GetProperty("recordedAtUtc").ValueKind);
+            Assert.Equal(("6", "2027-01-15", 2), (revisions[1].GetProperty("slices")[1].GetProperty("quantity").GetString(),
+                revisions[1].GetProperty("slices")[1].GetProperty("deliveryDate").GetString(),
+                revisions[1].GetProperty("slices")[1].GetProperty("sliceNo").GetInt32()));
+        }
+
+        var calls = service.Calls;
+        using (var response = await client.GetAsync($"{path}?version=3"))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        Assert.Equal(calls, service.Calls);
+        foreach (var (status, code) in new[] { (403, "forbidden"), (404, "not_found"), (503, "service_unavailable") })
+        {
+            service.ScheduleHistory = (_, _) => throw new PurchasingServiceException(status, code);
+            using var response = await client.GetAsync(path);
+            Assert.Equal((HttpStatusCode)status, response.StatusCode);
+            var payload = await response.Content.ReadAsStringAsync();
+            Assert.DoesNotContain(lineId.ToString("D"), payload, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("revisions", payload, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public async Task The_totals_route_answers_the_owners_view_privately_and_refuses_a_query_before_the_service()
     {
         // A2a-2 (plan API-20): GET …/totals reads only; withholding is "NotComputable" (unreadable share, ALS-D78) and its amounts null; an unknown query
@@ -1230,6 +1290,140 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         return request;
     }
 
+    [Fact]
+    public async Task A_general_line_is_closed_and_reopened_over_its_own_routes_with_a_strict_body_and_replayed_terminal_refusals()
+    {
+        // API-11 (ALS-D10/D12, ALIS_F017 v1 §3.6): POST …/lines/{lineId}/closure answers 200 with the order, the line's closed
+        // remainder and its recorded closure; …/reopening returns it. A terminal refusal (409, §7) replays with the first attempt's
+        // headers; a malformed body never reaches the service; a blank reason is the domain's 422 on the reason field.
+        var id = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var closedAt = new DateTimeOffset(2026, 11, 14, 9, 0, 0, TimeSpan.Zero);
+        (Guid Order, Guid Line, ClosePurchaseOrderLineRequest Body)? closeSeen = null;
+        (Guid Order, Guid Line, ReopenPurchaseOrderLineRequest Body)? reopenSeen = null;
+        var service = new StubService
+        {
+            CloseLine = (orderId, line, body) =>
+            {
+                closeSeen = (orderId, line, body);
+                var detail = OrderDetail(orderId, "Approved", "5");
+                return Task.FromResult(new PurchaseOrderResponse(detail with
+                {
+                    Lines = [detail.Lines[0] with
+                    {
+                        Accepted = "2", Remaining = "0", Closed = "4",
+                        Closure = new PurchaseOrderLineClosureView("SENTETIK-kapatan", closedAt, body.Reason),
+                    }],
+                }, false, "SENTETIK-corr-close"));
+            },
+            ReopenLine = (orderId, line, body) =>
+            {
+                reopenSeen = (orderId, line, body);
+                var detail = OrderDetail(orderId, "Approved", "6");
+                return Task.FromResult(new PurchaseOrderResponse(detail with
+                {
+                    Lines = [detail.Lines[0] with { Accepted = "2", Remaining = "4" }],
+                }, false, "SENTETIK-corr-reopen"));
+            },
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        var closurePath = $"{PurchasingApiV1.OrdersPath}/{id:D}/lines/{lineId:D}/closure";
+        var reopeningPath = $"{PurchasingApiV1.OrdersPath}/{id:D}/lines/{lineId:D}/reopening";
+
+        using (var response = await client.SendAsync(Post(closurePath, "SENTETIK-line-close",
+                   """{"expectedVersion":"4","reason":"SENTETIK tedarikçi kalanı gönderemiyor"}""")))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.False(response.Headers.Contains("Idempotency-Replayed"));
+            AssertPrivateNoStore(response);
+            var detail = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail");
+            Assert.Equal(("Approved", "5"), (detail.GetProperty("order").GetProperty("status").GetString(), detail.GetProperty("order").GetProperty("version").GetString()));
+            var line = detail.GetProperty("lines")[0];
+            Assert.Equal(("2", "4", "0", "0"),
+                (line.GetProperty("accepted").GetString(), line.GetProperty("closed").GetString(), line.GetProperty("cancelled").GetString(),
+                    line.GetProperty("remaining").GetString()));
+            Assert.Equal("SENTETIK-kapatan", line.GetProperty("closure").GetProperty("closedBy").GetString());
+            Assert.Equal("SENTETIK tedarikçi kalanı gönderemiyor", line.GetProperty("closure").GetProperty("reason").GetString());
+        }
+
+        Assert.Equal((id, lineId, "4", "SENTETIK tedarikçi kalanı gönderemiyor"),
+            (closeSeen!.Value.Order, closeSeen.Value.Line, closeSeen.Value.Body.ExpectedVersion, closeSeen.Value.Body.Reason));
+
+        using (var response = await client.SendAsync(Post(reopeningPath, "SENTETIK-line-reopen",
+                   """{"expectedVersion":"5","reason":"SENTETIK tedarikçi kalanı gönderecek"}""")))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var line = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetProperty("lines")[0];
+            Assert.Equal(("0", "4"), (line.GetProperty("closed").GetString(), line.GetProperty("remaining").GetString()));
+            Assert.Equal(JsonValueKind.Null, line.GetProperty("closure").ValueKind);
+        }
+
+        Assert.Equal((id, lineId, "5"), (reopenSeen!.Value.Order, reopenSeen.Value.Line, reopenSeen.Value.Body.ExpectedVersion));
+        var calls = service.Calls;
+        foreach (var path in new[] { closurePath, reopeningPath })
+        {
+            foreach (var body in new[]
+                     {
+                         """{"expectedVersion":"4"}""",
+                         """{"expectedVersion":"4","reason":null}""",
+                         """{"expectedVersion":"0","reason":"x"}""",
+                         """{"expectedVersion":4,"reason":"x"}""",
+                         """{"expectedVersion":"4","reason":"x","quantity":"1"}""",
+                         """{"expectedVersion":"4","reason":"x","closed":true}""",
+                     })
+            {
+                using var response = await client.SendAsync(Post(path, $"SENTETIK-bad-{Guid.NewGuid():N}", body));
+                Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            }
+
+            using var missingKey = new HttpRequestMessage(HttpMethod.Post, path)
+            {
+                Content = new StringContent("""{"expectedVersion":"4","reason":"x"}""", Encoding.UTF8, "application/json"),
+            };
+            using var missingKeyResponse = await client.SendAsync(missingKey);
+            Assert.Equal(HttpStatusCode.BadRequest, missingKeyResponse.StatusCode);
+        }
+
+        Assert.Equal(calls, service.Calls);
+
+        service.CloseLine = (_, _, _) => throw new PurchasingServiceException(409, PurchasingProblemCodesV1.LineNothingToClose,
+            [new("line", "purchasing_line_nothing_to_close")], isReplay: true, originalCorrelationId: "SENTETIK-first-close");
+        using (var response = await client.SendAsync(Post(closurePath, "SENTETIK-line-close-full", """{"expectedVersion":"4","reason":"SENTETIK"}""")))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            Assert.Equal("true", Assert.Single(response.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-first-close", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+            Assert.Equal(PurchasingProblemCodesV1.LineNothingToClose, (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        service.ReopenLine = (_, _, _) => throw new PurchasingServiceException(409, PurchasingProblemCodesV1.LineClosureState,
+            [new("line", "purchasing_line_not_closed")]);
+        using (var response = await client.SendAsync(Post(reopeningPath, "SENTETIK-line-reopen-open", """{"expectedVersion":"4","reason":"SENTETIK"}""")))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(PurchasingProblemCodesV1.LineClosureState, problem.GetProperty("code").GetString());
+            Assert.Equal("purchasing_line_not_closed", problem.GetProperty("errors")[0].GetProperty("code").GetString());
+        }
+
+        service.CloseLine = (_, _, _) => throw new PurchasingServiceException(422, PurchasingProblemCodesV1.LineClosureReasonRequired,
+            [new("reason", "purchasing_line_closure_reason_required")]);
+        using (var response = await client.SendAsync(Post(closurePath, "SENTETIK-line-close-blank", """{"expectedVersion":"4","reason":" "}""")))
+        {
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+            var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(PurchasingProblemCodesV1.LineClosureReasonRequired, problem.GetProperty("code").GetString());
+            Assert.Equal("reason", problem.GetProperty("errors")[0].GetProperty("field").GetString());
+        }
+
+        service.CloseLine = (_, _, _) => throw new PurchasingServiceException(404, "not_found");
+        using (var response = await client.SendAsync(Post(closurePath, "SENTETIK-line-close-missing", """{"expectedVersion":"4","reason":"SENTETIK"}""")))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        }
+    }
+
     private static PurchaseOrderDetailView OrderDetail(Guid id, string status = "Draft", string version = "2") => new(
         new PurchaseOrderSummaryView(id, CompanyA, status, version, Guid.NewGuid(), Guid.NewGuid(), null, new DateOnly(2026, 9, 19), DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, 1),
         [new PurchaseOrderLineView(Guid.NewGuid(), 1, "General", null, null, Guid.NewGuid(), "7", Guid.NewGuid(), "6", "0", "6", "0", "6")]);
@@ -1304,7 +1498,13 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         public Func<Guid, Task<PurchaseOrderCancelImpactView>> CancelImpact { get; set; } = _ => throw new InvalidOperationException("not expected");
         public Func<Guid, Guid, SetPurchaseOrderLineScheduleRequest, Task<PurchaseOrderResponse>> SetLineSchedule { get; set; }
             = (_, _, _) => throw new InvalidOperationException("not expected");
+        public Func<Guid, Guid, ClosePurchaseOrderLineRequest, Task<PurchaseOrderResponse>> CloseLine { get; set; }
+            = (_, _, _) => throw new InvalidOperationException("not expected");
+        public Func<Guid, Guid, ReopenPurchaseOrderLineRequest, Task<PurchaseOrderResponse>> ReopenLine { get; set; }
+            = (_, _, _) => throw new InvalidOperationException("not expected");
         public Func<Guid, Task<PurchaseOrderTotalsView>> Totals { get; set; } = _ => throw new InvalidOperationException("not expected");
+        public Func<Guid, Guid, Task<PurchaseOrderLineScheduleHistoryView>> ScheduleHistory { get; set; }
+            = (_, _) => throw new InvalidOperationException("not expected");
         public Func<Guid, Task<PurchaseOrderDetailView>> GetOrder { get; set; } = _ => throw new InvalidOperationException("not expected");
         public Func<Guid, Guid, Task<PurchaseGoodsReceiptQuantityComparisonV1>> Comparison { get; set; }
             = (_, _) => throw new InvalidOperationException("not expected");
@@ -1422,10 +1622,45 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
             return SetLineSchedule(orderId, lineId, request);
         }
 
+        public Task<PurchaseOrderResponse> CloseOrderLineAsync(Guid orderId, Guid lineId, ClosePurchaseOrderLineRequest request,
+            PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return CloseLine(orderId, lineId, request);
+        }
+
+        public Task<PurchaseOrderResponse> ChangeOrderExchangeRateAsync(Guid orderId, ChangePurchaseOrderExchangeRateRequest request,
+            PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PurchaseOrderExchangeRateView> GetOrderExchangeRateAsync(Guid orderId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public Task<PurchaseOrderFutureAllocationLinksView> GetOrderFutureAllocationsAsync(Guid orderId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public Task<PurchaseFutureAllocationReleaseResponse> ReleaseOrderFutureAllocationAsync(Guid orderId, Guid allocationId,
+            ReleasePurchaseFutureAllocationRequest request, PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public Task<PurchaseOrderResponse> CancelOrderWithAllocationReleaseAsync(Guid orderId, CancelPurchaseOrderWithAllocationReleaseRequest request,
+            PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PurchaseOrderResponse> CloseOrderLineWithAllocationReleaseAsync(Guid orderId, Guid lineId,
+            ClosePurchaseOrderLineWithAllocationReleaseRequest request, PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public Task<PurchaseOrderResponse> ReopenOrderLineAsync(Guid orderId, Guid lineId, ReopenPurchaseOrderLineRequest request,
+            PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return ReopenLine(orderId, lineId, request);
+        }
+
         public Task<PurchaseOrderTotalsView> GetOrderTotalsAsync(Guid orderId, CancellationToken cancellationToken = default)
         {
             Calls++;
             return Totals(orderId);
+        }
+
+        public Task<PurchaseOrderLineScheduleHistoryView> GetOrderLineScheduleHistoryAsync(Guid orderId, Guid lineId,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return ScheduleHistory(orderId, lineId);
         }
 
         public Task<PurchaseOrderListResponse> GetOrderListAsync(PurchaseOrderListQuery query, CancellationToken cancellationToken = default) =>

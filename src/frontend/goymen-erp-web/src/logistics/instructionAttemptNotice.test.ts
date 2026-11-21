@@ -16,9 +16,21 @@ const failed = (code: string | null, status = 409, unresolvedSince?: 'network-er
 })
 
 describe('command notices on the detail', () => {
+  it('shows the owner kg sentence and retains the unresolved retry warning after a refused retry', () => {
+    const detail = 'Sistemde 1.25 kg var, 2.125 kg istendi.'
+    const state: AttemptState<unknown, R> = { phase: 'failed', snapshot, failure: 'conflict',
+      problem: { ...problem('inventory_negative_physical_stock'), detail }, unresolvedSince: 'network-error' }
+    const notice = commandNotice(state)
+    expect(notice?.message).toContain(detail)
+    expect(notice?.message).toContain(INSTRUCTION_DETAIL_TEXT.command.refusedAfterUnknown)
+    expect(notice).toMatchObject({ tone: 'unknown', actions: ['retry', 'abandon'] })
+    expect(commandNotice({ ...state, problem: { ...state.problem!, status: 403 }, failure: 'forbidden' })?.message)
+      .not.toContain(detail)
+  })
   it.each([
     LOGISTICS_PROBLEM_CODE.versionConflict,
     LOGISTICS_PROBLEM_CODE.instructionState,
+    LOGISTICS_PROBLEM_CODE.instructionShipped,
     LOGISTICS_PROBLEM_CODE.loadExceedsInstructed,
     LOGISTICS_PROBLEM_CODE.lineBlocked,
     LOGISTICS_PROBLEM_CODE.duplicateShare,
@@ -59,6 +71,7 @@ describe('command notices on the detail', () => {
     for (const code of [
       LOGISTICS_PROBLEM_CODE.versionConflict,
       LOGISTICS_PROBLEM_CODE.instructionState,
+      LOGISTICS_PROBLEM_CODE.instructionShipped,
       LOGISTICS_PROBLEM_CODE.loadExceedsInstructed,
       LOGISTICS_PROBLEM_CODE.lineBlocked,
       LOGISTICS_PROBLEM_CODE.duplicateShare,

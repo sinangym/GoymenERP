@@ -1,3 +1,4 @@
+using System.Data.Common;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
@@ -210,12 +211,14 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     {
         // #293 ORG P3-1: a whole and a line movement of one source and kind would count the same
         // quantity twice. The store refuses it with its own code; SQL refuses it without the store.
+        // Source-kind comparison follows the database collation. Keep a genuine case variant
+        // without Turkish i/I so this grain/duplicate proof does not select a culture policy.
         await using var run = await Run.StartAsync();
         var location = await run.LocationOfAsync(CompanyA);
         var labels = Enumerable.Range(1, 5).Select(number => NewLabel(CompanyA, $"SYN-GRAIN-{number}")).ToArray();
-        var whole = new StockSourceReference("purchase.receipt", Guid.NewGuid());
+        var whole = new StockSourceReference("source.test", Guid.NewGuid());
         var lined = Guid.NewGuid();
-        var firstLine = new StockSourceReference("purchase.receipt", lined, Guid.NewGuid());
+        var firstLine = new StockSourceReference("source.test", lined, Guid.NewGuid());
         StockMovement Receive(StockSourceReference source, int label) =>
             Movement(CompanyA, StockMovementKind.Receipt, source, In(Position(CompanyA, location, labels[label], BlockState.Free), 10m));
 
@@ -228,17 +231,17 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
             Assert.Equal(InventoryWriteOutcome.Recorded, await a.Movements.RecordMovementAsync(Receive(whole, 0), Metadata(run)));
             Assert.Equal(InventoryStoreCodes.SourceGrainMismatch, (await Assert.ThrowsAsync<InventoryStoreException>(
-                () => a.Movements.RecordMovementAsync(Receive(new StockSourceReference("purchase.receipt", whole.Id, Guid.NewGuid()), 1),
+                () => a.Movements.RecordMovementAsync(Receive(new StockSourceReference("source.test", whole.Id, Guid.NewGuid()), 1),
                     Metadata(run)))).Code);
 
             Assert.Equal(InventoryWriteOutcome.Recorded, await a.Movements.RecordMovementAsync(Receive(firstLine, 1), Metadata(run)));
             Assert.Equal(InventoryWriteOutcome.Recorded, await a.Movements.RecordMovementAsync(
-                Receive(new StockSourceReference("purchase.receipt", lined, Guid.NewGuid()), 2), Metadata(run)));
+                Receive(new StockSourceReference("source.test", lined, Guid.NewGuid()), 2), Metadata(run)));
             // The same line again (the line index's path), and the whole source after its lines.
             Assert.Equal(InventoryStoreCodes.DuplicateSource, (await Assert.ThrowsAsync<InventoryStoreException>(
                 () => a.Movements.RecordMovementAsync(Receive(firstLine, 3), Metadata(run)))).Code);
             Assert.Equal(InventoryStoreCodes.SourceGrainMismatch, (await Assert.ThrowsAsync<InventoryStoreException>(
-                () => a.Movements.RecordMovementAsync(Receive(new StockSourceReference("PURCHASE.RECEIPT", lined), 3),
+                () => a.Movements.RecordMovementAsync(Receive(new StockSourceReference("SOURCE.TEST", lined), 3),
                     Metadata(run)))).Code);
         }
 
@@ -246,15 +249,15 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var rawCases = new (StockSourceReference Source, int Grain, string Constraint, int Number)[]
         {
             // A line movement of the source answered whole: its grain row says whole.
-            (new StockSourceReference("purchase.receipt", whole.Id, Guid.NewGuid()), 2,
+            (new StockSourceReference("source.test", whole.Id, Guid.NewGuid()), 2,
                 "FK_Movements_SourceGrains_CompanyId_Kind_SourceKind_SourceId_SourceGrain", 547),
             // A whole movement of the source answered by lines.
-            (new StockSourceReference("purchase.receipt", lined), 1,
+            (new StockSourceReference("source.test", lined), 1,
                 "FK_Movements_SourceGrains_CompanyId_Kind_SourceKind_SourceId_SourceGrain", 547),
             // The same source line twice.
             (firstLine, 2, "UX_Movements_SourceLine", 2601),
             // A grain that contradicts the movement's own line (the grain row exists, only the check fails).
-            (new StockSourceReference("purchase.receipt", whole.Id, Guid.NewGuid()), 1, "CK_Movements_SourceGrain", 547),
+            (new StockSourceReference("source.test", whole.Id, Guid.NewGuid()), 1, "CK_Movements_SourceGrain", 547),
         };
         foreach (var (source, grain, constraint, number) in rawCases)
         {
@@ -273,7 +276,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             {
                 CompanyId = CompanyA,
                 Kind = (int)StockMovementKind.Receipt,
-                SourceKind = "Purchase.Receipt",
+                SourceKind = "Source.Test",
                 SourceId = whole.Id,
                 Grain = (int)StockSourceGrain.Line,
             });
@@ -305,13 +308,14 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             In(Position(CompanyA, location, first, BlockState.Free), 10m));
         var line = Movement(CompanyA, StockMovementKind.Receipt, new StockSourceReference("purchase.receipt", sourceId, Guid.NewGuid()),
             In(Position(CompanyA, location, second, BlockState.Free), 10m));
-        var barrier = new Barrier(2);
+        using var callers = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var rendezvous = new SourceGrainReadRendezvous(sourceId);
         async Task<object> WriteAsync(StockMovement movement)
         {
-            await using var writer = run.Store(CompanyA, new BarrierInterceptor(barrier));
+            await using var writer = run.Store(CompanyA, rendezvous);
             try
             {
-                return await writer.Movements.RecordMovementAsync(movement, Metadata(run));
+                return await writer.Movements.RecordMovementAsync(movement, Metadata(run), callers.Token);
             }
             catch (InventoryStoreException exception)
             {
@@ -319,7 +323,17 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             }
         }
 
-        var results = await Task.WhenAll(Task.Run(() => WriteAsync(whole)), Task.Run(() => WriteAsync(line)));
+        object[] results;
+        try
+        {
+            results = await Task.WhenAll(Task.Run(() => WriteAsync(whole)), Task.Run(() => WriteAsync(line)));
+        }
+        finally
+        {
+            rendezvous.Release();
+            callers.Cancel();
+        }
+        Assert.Equal(2, rendezvous.CompletedReads);
 
         Assert.Single(results, result => result is InventoryWriteOutcome.Recorded);
         Assert.Single(results, result => result is string code && code == InventoryStoreCodes.ConcurrentChange);
@@ -451,15 +465,29 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await a.Labels.SaveLabelAsync(label, Metadata(run));
         }
 
-        // Both writers read the label and its (empty) stock, then wait for each other at the save.
-        var barrier = new Barrier(2);
-        async Task<object> WriteAsync(decimal kilograms)
+        // Two stale caller units of work, rather than two fresh serialized receipts: each has real pending label work.
+        // The physical mutex refreshes only Unchanged entries and must preserve a caller's Modified snapshot.
+        await using var firstWriter = run.Store(CompanyA);
+        await using var secondWriter = run.Store(CompanyA);
+        var firstSnapshot = await firstWriter.DbContext.Labels.SingleAsync(row => row.Id == label.Id);
+        var secondSnapshot = await secondWriter.DbContext.Labels.SingleAsync(row => row.Id == label.Id);
+        var originalVersion = firstSnapshot.Version;
+        Assert.Equal(originalVersion, secondSnapshot.Version);
+        firstSnapshot.UpdatedAtUtc = firstSnapshot.UpdatedAtUtc.AddTicks(1);
+        secondSnapshot.UpdatedAtUtc = secondSnapshot.UpdatedAtUtc.AddTicks(2);
+        firstWriter.DbContext.ChangeTracker.DetectChanges();
+        secondWriter.DbContext.ChangeTracker.DetectChanges();
+        Assert.Equal(EntityState.Modified, firstWriter.DbContext.Entry(firstSnapshot).State);
+        Assert.Equal(EntityState.Modified, secondWriter.DbContext.Entry(secondSnapshot).State);
+        Assert.Equal(originalVersion, firstWriter.DbContext.Entry(firstSnapshot).Property(row => row.Version).OriginalValue);
+        Assert.Equal(originalVersion, secondWriter.DbContext.Entry(secondSnapshot).Property(row => row.Version).OriginalValue);
+        using var callers = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        async Task<object> WriteAsync(StoreScope writer, decimal kilograms)
         {
-            await using var writer = run.Store(CompanyA, new BarrierInterceptor(barrier));
             try
             {
                 return await writer.Movements.RecordMovementAsync(Movement(CompanyA, StockMovementKind.Receipt,
-                    In(Position(CompanyA, location, label, BlockState.Free), kilograms)), Metadata(run));
+                    In(Position(CompanyA, location, label, BlockState.Free), kilograms)), Metadata(run), callers.Token);
             }
             catch (InventoryStoreException exception)
             {
@@ -467,7 +495,13 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             }
         }
 
-        var results = await Task.WhenAll(Task.Run(() => WriteAsync(10m)), Task.Run(() => WriteAsync(20m)));
+        object[] results;
+        try
+        {
+            results = await Task.WhenAll(Task.Run(() => WriteAsync(firstWriter, 10m)),
+                Task.Run(() => WriteAsync(secondWriter, 20m)));
+        }
+        finally { callers.Cancel(); }
 
         Assert.Single(results, result => result is InventoryWriteOutcome.Recorded);
         Assert.Single(results, result => result is string code && code == InventoryStoreCodes.ConcurrentChange);
@@ -476,6 +510,11 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM inventory.Balances WHERE LabelId = @id", ("@id", label.Id)));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Inventory.StockMovement'"));
+        Assert.Equal(checked(originalVersion + 1), await run.ScalarAsync<long>(
+            "SELECT Version FROM inventory.Labels WHERE Id = @id", ("@id", label.Id)));
+        var winningKg = results[0] is InventoryWriteOutcome.Recorded ? 10m : 20m;
+        Assert.Equal(winningKg, await run.ScalarAsync<decimal>(
+            "SELECT SUM(QuantityKg) FROM inventory.Balances WHERE LabelId = @id", ("@id", label.Id)));
         await using (var a = run.Store(CompanyA))
         {
             var stored = await a.Movements.ReadMovementsAsync(label.Id);
@@ -1255,13 +1294,39 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         public ValueTask DisposeAsync() => dbContext.DisposeAsync();
     }
 
+    /// <summary>Both source-grain SQL reads finish before either caller takes the physical-validation mutex.</summary>
+    private sealed class SourceGrainReadRendezvous(Guid sourceId) : DbCommandInterceptor
+    {
+        private readonly TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int completedReads;
+        public int CompletedReads => Volatile.Read(ref completedReads);
+        public void Release() => ready.TrySetResult();
+
+        public override async ValueTask<DbDataReader> ReaderExecutedAsync(DbCommand command, CommandExecutedEventData eventData,
+            DbDataReader result, CancellationToken cancellationToken = default)
+        {
+            if (!command.CommandText.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)
+                || !command.CommandText.Contains("[inventory].[SourceGrains]", StringComparison.Ordinal)
+                || !command.Parameters.Cast<DbParameter>().Any(parameter => parameter.Value is Guid id && id == sourceId))
+                return result;
+            var arrivals = Interlocked.Increment(ref completedReads);
+            if (arrivals <= 2)
+            {
+                if (arrivals == 2) Release();
+                await ready.Task.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
+            }
+            return result;
+        }
+    }
+
     /// <summary>Holds each save until both writers have reached it, so both read the same stock first.</summary>
     private sealed class BarrierInterceptor(Barrier barrier) : SaveChangesInterceptor
     {
         public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
             InterceptionResult<int> result, CancellationToken cancellationToken = default)
         {
-            barrier.SignalAndWait(TimeSpan.FromSeconds(30));
+            if (!barrier.SignalAndWait(TimeSpan.FromSeconds(30), cancellationToken))
+                throw new TimeoutException("Concurrent save barrier timed out before both writers arrived.");
             return ValueTask.FromResult(result);
         }
     }

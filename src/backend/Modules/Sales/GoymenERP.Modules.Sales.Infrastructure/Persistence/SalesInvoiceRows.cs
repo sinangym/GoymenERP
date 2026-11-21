@@ -117,6 +117,8 @@ internal sealed class InvoiceMatchRow : ISalesTenantRow
     public Guid InvoiceId { get; set; }
     public string OfficialInvoiceNo { get; set; } = string.Empty;
     public string Ettn { get; set; } = string.Empty;
+    public DateOnly? OfficialInvoiceDate { get; set; }
+    public string? OfficialSourceProofJson { get; set; }
     public decimal InvoiceAmount { get; set; }
     public decimal OfficialAmount { get; set; }
     public decimal Difference { get; set; }
@@ -162,6 +164,7 @@ internal sealed class InvoiceFinalizationRow : ISalesTenantRow
 /// <summary>API-36: the transactional outbox of the Sales invoice events (append-only; consumers dedup by <see cref="Id"/>).</summary>
 internal sealed class SalesOutboxRow : ISalesTenantRow
 {
+    public ulong Position { get; set; }
     public Guid Id { get; set; }
     public Guid CompanyId { get; set; }
     public string EventType { get; set; } = string.Empty;
@@ -315,6 +318,8 @@ internal static class SalesInvoiceRows
             InvoiceId = invoiceId,
             OfficialInvoiceNo = facts.OfficialNo,
             Ettn = facts.Ettn,
+            OfficialInvoiceDate = facts.InvoiceDate,
+            OfficialSourceProofJson = facts.SourceProof is null ? null : JsonSerializer.Serialize(facts.SourceProof, Json),
             InvoiceAmount = facts.InvoiceFunctionalAmount,
             OfficialAmount = facts.OfficialFunctionalAmount,
             Difference = facts.Difference,
@@ -335,7 +340,23 @@ internal static class SalesInvoiceRows
 
     public static SalesInvoiceMatchFacts ToMatchFacts(InvoiceMatchRow row) => new SalesInvoiceMatchFacts(row.OfficialInvoiceNo, row.Ettn, row.InvoiceAmount,
         row.OfficialAmount, row.Difference, row.Tolerance, row.MatchedBy, row.MatchedAtUtc, row.DifferenceApprovedBy, row.DifferenceReason,
-        ToTaxMatchFacts(row));
+        ToTaxMatchFacts(row), row.OfficialInvoiceDate, ReadSourceProof(row));
+
+    private static SalesOfficialInvoiceSourceProofV1? ReadSourceProof(InvoiceMatchRow row)
+    {
+        if (row.OfficialSourceProofJson is null && row.OfficialInvoiceDate is null) return null;
+        try
+        {
+            var proof = row.OfficialSourceProofJson is null ? null
+                : JsonSerializer.Deserialize<SalesOfficialInvoiceSourceProofV1>(row.OfficialSourceProofJson, Json);
+            return row.OfficialInvoiceDate is { } date && date != default && proof?.IsValidFor(row.CompanyId) == true
+                ? proof : throw new InvalidOperationException("Kayıtlı resmî fatura kaynak kanıtı okunamadı.");
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidOperationException("Kayıtlı resmî fatura kaynak kanıtı okunamadı.", exception);
+        }
+    }
 
     private static SalesInvoiceTaxMatchFacts? ToTaxMatchFacts(InvoiceMatchRow row) =>
         row is { InvoiceVatAmount: { } invoiceVat, OfficialVatAmount: { } officialVat, VatDifference: { } vatDifference,

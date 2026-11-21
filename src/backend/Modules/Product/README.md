@@ -645,3 +645,131 @@ which never reached main and is removed.
 | Rollback | Migration `20261031195253_AddProductItemTypes` (`dotnet ef`): `Down` refuses with `THROW 51132` while any item type or command answer exists (forward fix). Forward-fix migration `20261101144030_MoveProductItemTypesToProductCard` (`dotnet ef`, SAT-D149): `Up` refuses with `THROW 51151` when one product has different item types in different companies (it never chooses), otherwise moves the agreed value (version 1, the latest change's actor/time/company) and drops `product.ProductItemTypes`; `Down` refuses with `THROW 51152` while any shared item type exists, and on an empty store restores the empty company-scoped table. |
 
 Not here: who besides `product.item-type.manage` holders reads the item type (EK20 open item); choosing the order's buyer situation (SAT-D140, Sales follow-up).
+
+## Product dimensions (BS-9, U-08 input)
+
+Source: `docs/decisions/SINAN_KARARLARI_2026-11-11*.md` BS-9/BS-17 and `SINAN_KARARLARI_2026-11-12_URUN_EK1.md` URN-D7..D9;
+candidate measures in `docs/delivery/URUN_BIRIM_CEVRIM_KATSAYI_ADAYLARI_v1.md`. A separate "Ebat/kalınlık" tab on the product
+card holds the section measures that the U-08 unit conversion reads. A product without a row has "kaynak yok" (no estimate).
+The density is the company Settings value (not stored on the card); galvanizing is not counted.
+
+| Concern | Rule |
+|---|---|
+| Owner and scope | Product, ONE row on the **shared** card keyed by `ProductId` (the SAT-D149 item-type pattern), in `ProductPriceListDbContext`: `product.ProductCardDimensions` (`SectionKind` `IN ('Sheet','Coil','RoundTube','Profile')`, millimetre measures `decimal(18,3)`, `KgPerMetre` `decimal(18,6)`, version, update facts with `UpdatedInCompanyId`); command answers in the company-scoped `product.ProductDimensionAttempts`. Written only through `ProductDimensionService` (DbContext write guard). |
+| Shape | Sheet: thickness, width, length. Coil: thickness, width. RoundTube: outer diameter, wall (2·wall ≤ OD), optional kg/m (table value). Profile: width, height, wall (2·wall ≤ width and ≤ height), kg/m required. Every other measure is null; every measure is > 0. Checked by `ProductDimensionShape` and the database check `CK_ProductCardDimensions_Shape`. URN-D8: inputs are never rounded — a value with more decimals than its column holds is refused (`product_dimension_measure_invalid`). |
+| Authority | ONE name, `product.dimension.manage` (`ProductDimensionPermissionsV1.Manage` = `ErpPermissions.ProductDimensionManage`): company-wide, not Critical, granted to NO role here (the grant is a human gate). A holder in ANY company changes the shared value. Measured fresh first and before the answer / save. |
+| Command | `PUT /api/v1/product-dimensions/{productId}` `{expectedVersion ("0" = none), sectionKind, thicknessMm, widthMm, lengthMm, heightMm, outerDiameterMm, wallThicknessMm, kgPerMetre, reason}`: Idempotency-Key (own attempts, same key + body replays, another body 409), stale version 409, unknown card code-less 404, shape/precision 400; ONE audit event `product.dimension.changed.v1` in the ACTING company with the whole reason; a no-op writes none. `GET` answers the shared row (version "0" and nulls while none) with `updatedInCompanyId`. |
+| Read port | `IProductDimensionReaderV1` (access only, no permission; never throws for a missing card or row) — for the U-08 conversion consumer (STK-S11). The calculator itself is unchanged here. |
+| Screen | `ProductDimensionPanel` on the product card: shows the measures or "girilmemiş (kaynak yok)", says the row is shared (and when the last change was made in another company), changes it with an explicit kind; without the permission the server answers 403 and the panel is hidden. |
+| Rollback | Migration `20261114194618_AddProductCardDimensions` (`dotnet ef`): `Down` refuses with `THROW 51290` while any dimension row or command answer exists (forward fix); an empty store rolls back freely. |
+
+Not here: who besides `product.dimension.manage` holders reads the measures; whether the shared (not per-company) row and the
+per-kind required measures are final (NEEDS-SINAN); overlap with flat-family template fields.
+
+### Section kinds and the kg/m table (STK-S37R, URN-D11…D16)
+
+Source: `SINAN_KARARLARI` URN-D11 (four kinds: Sac, Rulo, Yuvarlak boru, Profil) and URN-D13…D16. This supersedes the "kg/m
+required / typed on the card" rows above: **kg/m is never typed on the card**. It comes from the company's kg/m table, imported
+from a source-labelled file. A profile card needs a table row for its measures (otherwise 409
+`product_dimension_weight_source_missing`); a round tube's table value is optional. The card's `kgPerMetre` field is gone from
+the request; the view answers the table's `kgPerMetre`, `kgPerMetreSourceLabel` and `kgPerMetreTableVersion`.
+
+| Concern | Rule |
+|---|---|
+| Owner and scope | Product, company-scoped, in `ProductPriceListDbContext`: `product.ProductProfileWeightImports` (one insert-only version per import: source label, reason, file name, SHA-256, vault `DocumentId`, actor, time), `product.ProductProfileWeightLines` (`Profile` width/height/wall or `RoundTube` outer diameter/wall, kg/m; `UX_ProductProfileWeightLines_Measures` one row per measure pair of a version) and `product.ProductProfileWeightAttempts`. Insert-only (DbContext write guard). The newest version is current; no draft table is seeded (URN-D16). |
+| File | UTF-8 `.csv` (BOM allowed), header `sectionKind;widthMm;heightMm;outerDiameterMm;wallThicknessMm;kgPerMetre`, `;` separator, `.` decimal, at most 1 MiB and 5000 rows; values are never rounded. Matching is exact on the stored measures (NEEDS-SINAN: profile width/height orientation). |
+| Vault | URN-D13: the file goes to the Platform document vault under the user-upload rules through `IProductProfileWeightFileVaultV1`; only a stored, allowlisted, scan-clean file is imported. Until Platform offers an in-process user-upload port, the registered adapter answers Unavailable: the import is refused 503 `product_profile_weight_file_vault_unavailable` and nothing is stored (fail-closed; the same key can be retried). |
+| Authority | ONE name, `product.profile-weights.import` (`ErpPermissions.ProductProfileWeightsImport`): company-wide, not Critical, granted to NO role here (URN-D15; the grant is a human gate). |
+| Command | `GET /api/v1/product-profile-weight-tables/current` and `POST /api/v1/product-profile-weight-tables` `{expectedVersion, sourceLabel (mandatory, URN-D14), reason, fileName, contentBase64}`: Idempotency-Key, stale version 409, invalid file 400 with the row number; ONE audit event `product.profile-weights.imported.v1`. |
+| Rollback | Migration `AddProductProfileWeightImports` (`dotnet ef`): `Down` refuses with `THROW 51483` while any import or import answer exists, or while a profile card has no stored kg/m (the old shape check would not hold) — forward fix; an empty store rolls back freely. |
+
+### Section families (STK-SC33-b, KLN-D87)
+
+Source: SINAN-CEVAP 33 / KLN-D87 (every KLN-D48 family now; URN-D11's four kinds keep their fields). One rule table
+(`ProductDimensionShape.Rules`) feeds the 400 answer and `CK_ProductCardDimensions_Shape`, so they cannot drift.
+
+| Area | Rule |
+|---|---|
+| Kinds | `Sheet`, `Coil`, `RoundTube`, `Profile` (unchanged); long products `EqualAngle`, `UnequalAngle`, `FlatBar` (lama), `NarrowFlatBar` (silme), `RoundBar`, `SquareBar`, `HexBar`, `TeeBar` (length optional); `StructuralProfile` (`profileSeries` `UPN`/`NPI`/`IPE`/`HEA`/`HEB`/`HEM` + `profileSize`, length optional); `Rebar`, `WireRod`, `WeldedMesh` (wire diameter in `outerDiameterMm`, `meshSpacingMm`, width, length); `ChequeredSheet`, `PerforatedSheet`, `CorrugatedSheet` (sheet measures); `ErwTube` / `ErwProfile` (round tube / profile measures) and `PaintedErwTube` / `PaintedErwProfile` (plus `surfaceFinish`). |
+| Fields | Trailing optional request/view/read fields `profileSeries`, `profileSize`, `meshSpacingMm`, `surfaceFinish`; `CK_ProductCardDimensions_Texts` holds the series list, the size format (capitals, digits, dot) and a non-empty surface. A request with none of them hashes exactly as before (old keys replay). |
+| kg/m | URN-D16 extends to the ERW kinds: `ErwProfile`/`PaintedErwProfile` need the company table's `Profile` row (409 `product_dimension_weight_source_missing` otherwise); `ErwTube`/`PaintedErwTube` read the `RoundTube` row when present. `StructuralProfile` reads the table's `StructuralProfile` row of its series and size; without one it has no source. Long products, rebar, wire rod, mesh and sheet derivatives have NO kg/m source (a consumer that needs kg refuses, KLN-D66). NEEDS-SINAN: the source and version of the standard structural table (KLN-D87 does not choose it) and any kg/m source for the other new families. |
+| Table file | The V1 header stays valid; the extended header `…;kgPerMetre;profileSeries;profileSize` also takes `StructuralProfile` rows (every measure empty, series and size set). `ProductProfileWeightLines.WallThicknessMm` is nullable only for those rows. |
+| Snapshot V2 | `ProductManufacturingDimensionV2` carries the four fields as trailing optional members; the stored row is re-validated with the same shape. |
+| Rollback | Migration `AddProductSectionFamilies` (`dotnet ef`): `Down` refuses with `THROW 51737` while a card of a new kind (or with a new field) or a structural / wall-less weight line exists — forward fix; otherwise it restores the four-kind checks. |
+
+## Package standard (STK-S12, B-08 / BS-10)
+
+Source: `docs/delivery/KALAN_MODULLER_HAZIRLIK_PLANI_v1.md` B-08, `SINAN_KARARLARI_2026-11-11` BS-10, DEC-PRD-008 /
+D-PACKAGE=A, URT-D27 and AT-017. The pieces per package of a product is **not** a card attribute. It is the company's
+package standard table, versioned and read by the consumers as a suggestion that they snapshot. The table is first imported
+from an Excel file and then edited in the ERP. While no table or no entry exists, the read port answers `NoSource`. No value is
+guessed or seeded, and OPEN-007 stays open.
+
+| Concern | Rule |
+|---|---|
+| Owner and scope | Product, company-scoped, in `ProductPriceListDbContext`. `product.ProductPackageStandardVersions` holds one insert-only version per import or edit: `Import` (source label, file name, SHA-256, size) or `Edit` (the edited product), plus reason, actor, time and a deterministic `VersionId`. `product.ProductPackageStandardLines` holds the whole table of a version, one row per product, with pieces > 0. `product.ProductPackageStandardAttempts` holds the command answers. All three are insert-only (DbContext write guard). The newest version is current, and a past version never changes (AT-017). |
+| File | `.xlsx`, first worksheet, header row `Ürün kodu` / `Paket içi adet` (other columns are ignored). Each row has the product card code as text and the pieces as a positive whole number. A code appears once per file. Empty rows are ignored; formula cells refuse the file. Limits: at most 2 MiB and 5000 rows. The whole file is refused with the row numbers (at most 20 listed, the total always named), and nothing is stored. The file replaces the whole table. |
+| Authority | ONE name, `product.package-standards.manage` (`ErpPermissions.ProductPackageStandardsManage`), covers the screen, the import and the edit. It is company-wide, not Critical, and granted to NO role here; the grant is a human gate. |
+| Commands | `GET /api/v1/product-package-standards/current`; `POST /api/v1/product-package-standards/imports` `{expectedVersion, sourceLabel (mandatory), reason, fileName, contentBase64}`; `PUT /api/v1/product-package-standards/products/{productId}` `{expectedVersion, piecesPerPackage (null removes the entry), reason}`. Each takes an Idempotency-Key. A stale version is refused with 409. Setting the same value creates no version. Each new version writes ONE audit event (`product.package-standards.imported.v2` / `product.package-standards.entry-set.v2`, entity `Product.PackageStandardTable`). |
+| Read port | `IProductPackageStandardReaderV2.GetAsync(productId)` (consumed by Sales and Production) answers one of `Found` (pieces, `StandardVersion`, `StandardVersionId`, source kind and label), `NoSource`, `NotFound`, `Denied` (not a member of the company) or `Unavailable`. It checks access only; no permission is measured. The old `ProductPackageStandardStatusV2` placeholder of the price resolution is unchanged. |
+| Not implemented (NEEDS-SINAN) | The plant override of DEC-PRD-008 (SAT-D382: none). The customer exception, the approval and the kept files are STK-SC36-c below. |
+| Rollback | Migration `AddProductPackageStandards` (`dotnet ef`). `Down` refuses with `THROW 51492` while any version or command answer exists, so the fix is forward; an empty store rolls back freely. |
+| Screen | The product detail page has a `PackageImportPanel`. It shows the current table with its source, imports a file and edits the product's own entry. |
+
+### Customer override, approval and kept files (STK-SC36-c, SAT-D382 / SAT-D383 / SAT-D397 / SAT-D401)
+
+| Concern | Rule |
+|---|---|
+| Default and override | The product's entry is the default; a customer's entry for the same product overrides it (`product.ProductPackageStandardCustomerLines`, one row per customer and product in the same version, pieces > 0). No plant override. Setting an override needs the Cari owner's answer that the customer is an active account of this company (`IProductPackageStandardCustomerPortV3`, fail-closed 503 when it cannot answer); removing one does not. |
+| Approval | Every new version (import, product edit, customer edit) is proposed as `Pending` (`RequiresApproval`). It takes effect only once another person approves it with an effective date of today's Istanbul business day or later and never earlier than the latest approved date (`product.ProductPackageStandardDecisions`, insert-only, one decision per version). At most one version waits; a rejected version never takes effect. Versions written before this slice stay effective without a decision (`Legacy`). The version in effect on a date is the approved one with the latest effective date on or before it (the higher version on the same date). |
+| Authority | Edits and the file list measure `product.package-standards.manage`; the approver's view and decisions measure `product.package-standards.approve` (`ErpPermissions.ProductPackageStandardsApprove`, company-wide, not Critical, granted to NO role). The preparer may not decide (`ProductPackageStandardApprovalOptionsV3.Closed`; NEEDS-SINAN). |
+| Commands | `GET /approval-state` (manage), `GET /pending` (approve), `GET /imports`, `GET /imports/{importId}/report`, `PUT /customers/{customerId}/products/{productId}`, `POST /versions/{version}/approve` `{effectiveFrom, reason}`, `POST /versions/{version}/reject` `{reason}` under `/api/v1/product-package-standards`. Each command takes an Idempotency-Key; the proposal and the decision each write one audit event on `Product.PackageStandardTable` (`version-approved.v3` / `version-rejected.v3`). |
+| Kept files | Every import that reaches the row check is kept in `product.ProductPackageStandardImportFiles` with its full report: `Accepted` with its version, or `Refused` (row errors, a stale version, a waiting version) as the key's terminal answer with one audit event (`import-file-kept.v3`, entity `Product.PackageStandardImportFile`). A trigger refuses every UPDATE and DELETE (`THROW 51871`). No retention period, deletion or download exists (SAT-D397 / SAT-D401; retention, vault and scan stay NEEDS-SINAN). An inactive product is a row error in a file and a 409 in an edit. |
+| Read port | `IProductPackageStandardReaderV3.GetAsync(productId, customerId?, on)`: the customer's override if any, otherwise the product default, of the version in effect on the consumer's business date, with the entry scope and effective date. V2 reads the product default in effect today. |
+| Rollback | Migration `AddProductPackageStandardApprovalAndFiles` (`dotnet ef`). `Down` refuses with `THROW 51872` while a decision, an override, a kept file or a version that requires approval exists (forward fix); an empty store rolls back freely. |
+
+
+## Paint membership (STK-S13, BS-10 / URT-D25)
+
+The company imports the explicit paint-product list from a real `.xlsx` file, then maintains membership in ERP.
+No Product name, steel taxonomy, item type, supplier name or color text is interpreted as membership. No source is seeded.
+`IProductPaintMembershipReaderV1` answers the actual Product ID/version and the immutable membership version; an absent
+source is `NoSource`, a passive card is `Inactive`, and an unreadable owner is `Unavailable`. The consuming Manufacturing
+operation owns its own permission fence, asks the real Cari supplier owner, and uses the optional Settings PaintColor ID/version.
+
+- `product.paint-memberships.manage` is a registration-only company-wide name; no grant, role or Critical assignment.
+- `GET /api/v1/product-paint-memberships/current`; `POST /imports/validate`; `POST /imports`; `PUT /products/{productId}`.
+  Commands require expected versions, Idempotency-Key, actual actor/company, correlation/causation and a reason. The screen
+  capability is `paint-memberships.manage`, route `/boya-urunleri`, screen `STK-S13`. Runtime activation remains unchanged.
+- The first logical worksheet contains the user-mapped text product-code column (default `Ürün kodu`). Leading zeros and case
+  are preserved. Formula/macros/external links/DTD, duplicate codes or ambiguous headers are refused. At most 2 MiB / 5000 rows.
+  Every code must resolve to one actual active Product. Validation writes nothing. Apply parses the same bytes again and binds
+  SHA-256 + actor/company + Product versions + current table version to the preview token. Any row error refuses the whole file.
+- Import adds the explicitly named products and carries every absent member forward. ERP edits explicitly add or remove one
+  member only after a real first import. Inactive members remain visible to maintenance for explicit removal; consumers never
+  receive them as eligible paint products. A no-op stores its immutable answer without a new version or change event.
+- `PaintMembershipVersions`, `PaintMembershipLines` and `PaintMembershipAttempts` belong to `ProductPriceListDbContext`.
+  Full versions and original terminal answers are append-only; Product is read-only. A serializable SQL transaction preserves
+  the actual card/version and current membership set. The Audit owner borrows the same transaction after the Product save;
+  a failure or the final fresh-authority loss rolls back membership, attempt and Audit together. Source hash/name, reason and
+  before/after version remain in history; this slice invents no file-retention or approval policy.
+- Migration `AddProductPaintMemberships` is generated with EF; first Down guard **51975** protects all three stores before drops.
+  The model-only design-time factory does not enable a Product issuer or connect/apply SQL. It is a new context-construction
+  source requiring K3 review; no architecture allowlist is expanded merely to pass a guard.
+- Source checks include parser/unit/model, real-SQL lifecycle/replay/company/preview/card-version/audit rollback/final-fence/race/
+  Down facts, HTTP declarations and Vitest sources. Runtime tests, SQL, browser and CI remain **NOT_RUN** at this checkpoint.
+  Central Program mapping/provider registration, OpenAPI/registry/recovery/guard/relational/group pins are integrated centrally.
+
+
+### SAT-D419/D422 explicit COGS classification (W8)
+
+The global Product card now carries a separate explicit `TradeGoods` or `Manufactured` classification through the Product-owned append-only `product.CogsClassifications` extension. A known card without a recorded choice remains `NotSet`; lifecycle, tax item type, purchase, production and physical stock never infer a choice. Finance remains the owner of account mapping and Sales/Accounting of any finalized invoice correction. This command changes no amount, quantity, tax, movement or invoice.
+
+- Administration: `GET/PUT /api/v1/product-cogs-classifications/{productId}`. Read uses existing explicit global Product Read; write requires separate global `SetCogsClassification = 7`. `product.cogs-classifications.manage` is registered only; a company role or any existing Product operation cannot supply op7. No role/actor assignment, seed or Critical classification was added.
+- The operational `IProductCogsClassificationReadPortV1` returns actual Product/classification versions, kind, origin and source version under the authenticated resolved company. Its consuming command enforces its own permission; unavailable and an actual unset class remain distinct. It grants no global write.
+- Write checks the expected Product version and independent classification version in a serializable host transaction. Product history, canonical global Audit and the existing global Idempotency terminal commit or roll back together. Global keys remain subject/command/key hash; actor/origin are immutable binding evidence rather than extra key partitions. No-op creates no extra class revision/audit change; stale refusals and their restricted Audit draft are terminal in the same transaction. Original success/refusal replays stay immutable after subsequent class changes.
+- Product row version remains unchanged by the extension. The canonical event records that actual unchanged Product version; its snapshots carry the +1 classification revision. Both chains are validated, including prior kind/origin/time proof. Bounded same-clock owner reads sort the class revision before a page cut, rather than random event IDs.
+- EF-generated forward migrations: `20261117082903_AddProductCogsClassifications` (Down refuses with **51978** while any class history exists); `20261117082918_AddProductCogsClassificationAuthority` (Identity, **51979** while any op7 decision remains, including revoked); `20261117082927_AddProductCogsClassificationTerminals` (Idempotency, **51981** while a COGS terminal remains). Existing stores are not backfilled and historical commands retain their original key policy.
+- UI: the existing Product card contains the explicit class panel and a separate server-granted child control `product.items.set-cogs-classification` (PRODUCT owner version 1.3). It shows no inferred account, retains ambiguous command bodies/keys by API/session/actor/company/product and rejects former-context replies.
+
+Runtime SQL, unit tests, Vitest, browser, CI and final K3 reviews remain separate evidence. Central route mapping, registry admission/fingerprint, OpenAPI, recovery/release and relational/test-group inventories are coordinated at train integration. New private Product participant context construction and narrow canonical Audit operation changes remain K3 review surfaces; no query-filter bypass or guard allowlist was added.

@@ -16,7 +16,8 @@ namespace GoymenERP.Modules.Manufacturing.Domain.Orders;
 /// <item><see cref="MassBalanceDifferenceTolerancePercent"/> (URT-D6): the percent of a roll's unexplained shortfall
 /// accepted without approval; null = unknown (a version published before the field existed): a shortfall then keeps
 /// the earlier fail-closed answer (declare a fact). Since URT-D41 (2) it applies only to a shortfall: output above input
-/// on a roll is refused whatever the value (<see cref="ClosureAssessmentCodesV1.OutputExceedsInput"/>).</item>
+/// is refused whatever the value (<see cref="ClosureAssessmentCodesV1.OutputExceedsInput"/>; per roll, or on the order
+/// total for a process without a main roll input, URT-D49).</item>
 /// <item><see cref="WorkCenterId"/>: the line the version is scoped to; null for a process-wide version.</item>
 /// </list>
 /// </summary>
@@ -131,7 +132,9 @@ public static class ClosureAssessmentCodesV1
     /// <summary>
     /// URT-D41 (1)-(2), URT-D42 (1)-(2): on at least one planned parent roll the accounted output is above the issued
     /// input. Refused: the ± tolerance does not apply in this direction and there is no approval path, even when the
-    /// order as a whole is short.
+    /// order as a whole is short. URT-D49: for a process without a main roll input
+    /// (<see cref="ManufacturingProcessMainInputV1"/>) the comparison is the order total; the answer is the same. The
+    /// accounted output includes usable remnant, the latest WIP reading and the recorded corrections (URT-D48 (1)).
     /// </summary>
     public const string OutputExceedsInput = "manufacturing_closure_output_exceeds_input";
 
@@ -158,6 +161,14 @@ public sealed record RollClosureAssessmentV1(
 /// an explicit fire fact is still required; it is never an automatic output or permission to close.
 /// <see cref="ClosureDispositionV1.ApprovalRequired"/> likewise says only that the supplied percentage is outside the
 /// supplied policy. It is not an approval and names no approver or permission.
+/// <para>
+/// <see cref="OrderTotal"/> (URT-D68): for a process without a main roll input (paint) the shortfall tolerance and the
+/// fire percent are measured on the order total — Σ net issued kg against Σ accounted kg, Σ fire kg over Σ net issued
+/// kg — and this row carries that decision (its <see cref="RollClosureAssessmentV1.ParentRollId"/> is
+/// <see cref="Guid.Empty"/>: it is no roll). Each input row then carries only its own difference and, when the total is
+/// above input, the "output above input" refusal (URT-D49). Null for a roll-based process, which keeps every decision
+/// per parent roll (URT-D42 (1), URT-D69), and for a paint close stored under the earlier per-input rule.
+/// </para>
 /// </summary>
 public sealed record OrderClosureAssessmentV1(
     ClosureDispositionV1 Disposition,
@@ -165,7 +176,8 @@ public sealed record OrderClosureAssessmentV1(
     IReadOnlyList<RollClosureAssessmentV1> Rolls,
     string? Code,
     string? RefusedParameter,
-    IReadOnlyList<string> MissingParameters);
+    IReadOnlyList<string> MissingParameters,
+    RollClosureAssessmentV1? OrderTotal = null);
 
 /// <summary>
 /// OPEN-005 / Ö7 preparation: evaluates the existing BAL-003 facts roll by roll against an explicitly supplied
@@ -184,12 +196,17 @@ public static class OrderClosureAssessmentCalculatorV1
     /// <paramref name="replayingStoredClose"/> is true only while <see cref="ProductionOrder.Restore"/> replays a close
     /// that is already stored: URT-D42 (3) — "Kural yeni kapanışlara uygulanır" — so an order closed before URT-D41 with
     /// output above input is neither reopened nor made unreadable; it is listed by the read-only report instead.
+    /// <paramref name="paintScope"/> says where a process without a main roll input measures its shortfall tolerance and
+    /// fire percent: <see cref="PaintClosureScope.OrderTotal"/> (URT-D68, every new close) or
+    /// <see cref="PaintClosureScope.PerInput"/> (the rule before URT-D68, used only to replay a stored close written
+    /// under it). A roll-based process ignores it: it measures everything per parent roll (URT-D42 (1), URT-D69).
     /// </summary>
     internal static OrderClosureAssessmentV1 Assess(
         ProductionOrder order,
         ClosureTolerancePolicySnapshotV1 policy,
         IReadOnlyList<RollScrapPercentInputV1> scrapPercentInputs,
-        bool replayingStoredClose)
+        bool replayingStoredClose,
+        PaintClosureScope paintScope = PaintClosureScope.OrderTotal)
     {
         ArgumentNullException.ThrowIfNull(order);
         ArgumentNullException.ThrowIfNull(policy);
@@ -284,17 +301,123 @@ public static class OrderClosureAssessmentCalculatorV1
         }
 
         var supplied = inputs.ToDictionary(input => input.ParentRollId);
-        // URT-D42 (1): every planned parent roll is measured on its own; rolls never offset each other.
-        var rolls = order.PlannedInputs
-            .Select(input => AssessRoll(order.BalanceOf(input.ParentRollId), supplied.GetValueOrDefault(input.ParentRollId),
-                policy.MaximumFirePercent, policy.MassBalanceDifferenceTolerancePercent, replayingStoredClose))
-            .ToArray();
+        var balances = order.PlannedInputs.Select(input => order.BalanceOf(input.ParentRollId)).ToArray();
 
-        var disposition = rolls.Select(roll => roll.Disposition).OrderByDescending(Priority).First();
-        var firstProblem = rolls.FirstOrDefault(roll => roll.Disposition == disposition
+        // Where "output above input" is measured (URT-D41 (1), URT-D42 (1)-(2), URT-D49):
+        // - a roll-based process: every planned parent roll on its own; rolls never offset each other (URT-D42 (1),
+        //   URT-D49 (2));
+        // - a process without a main roll input: the order's total net issued kg against its total accounted kg
+        //   (URT-D49 (1)). When the total is above input, every input whose own account is above input carries the
+        //   refusal (the total cannot be negative without one); when it is not, no input is refused for it (URT-D49 (3):
+        //   the refusal itself is unchanged, only where it is measured).
+        // The output side is the whole BAL-003 accounted mass in both scopes (URT-D48 (1)). A stored close replays the rule
+        // it was written under (URT-D42 (3)).
+        var refuseOutputAboveInput = !replayingStoredClose
+            && (order.MeasuresOutputAboveInputPerRoll || OrderMassTotalV1.Of(balances).OutputExceedsInput);
+
+        // URT-D68: a process without a main roll input (paint) measures the shortfall tolerance and the fire percent on
+        // the order total, not per package: 3 × 1000 kg in with 60 kg scrap on one package is a 2 % fire on the order and
+        // closes without approval under a 2 % maximum. Out of tolerance on the total keeps the approval path
+        // (URT-D42 (2)). The roll-based processes keep the per-roll measurement (URT-D42 (1), URT-D69).
+        var measuresOnOrderTotal = !order.MeasuresOutputAboveInputPerRoll && paintScope == PaintClosureScope.OrderTotal;
+        RollClosureAssessmentV1[] rolls;
+        RollClosureAssessmentV1? orderTotal = null;
+        if (measuresOnOrderTotal)
+        {
+            rolls = balances
+                .Select(balance => AssessInputOfOrderTotal(balance, supplied.GetValueOrDefault(balance.ParentRollId),
+                    refuseOutputAboveInput))
+                .ToArray();
+            orderTotal = AssessRoll(TotalOf(balances), TotalOf(balances, supplied), policy.MaximumFirePercent,
+                policy.MassBalanceDifferenceTolerancePercent, refuseOutputAboveInput);
+        }
+        else
+        {
+            rolls = balances
+                .Select(balance => AssessRoll(balance, supplied.GetValueOrDefault(balance.ParentRollId),
+                    policy.MaximumFirePercent, policy.MassBalanceDifferenceTolerancePercent, refuseOutputAboveInput))
+                .ToArray();
+        }
+
+        // The input rows come first, so a refused input names the problem before the total does.
+        RollClosureAssessmentV1[] decisions = orderTotal is null ? rolls : [.. rolls, orderTotal];
+        var disposition = decisions.Select(roll => roll.Disposition).OrderByDescending(Priority).First();
+        var firstProblem = decisions.FirstOrDefault(roll => roll.Disposition == disposition
             && (roll.Code is not null || roll.MissingParameters.Count > 0));
         return new OrderClosureAssessmentV1(disposition, policy, rolls, firstProblem?.Code,
-            firstProblem?.RefusedParameter, firstProblem?.MissingParameters ?? []);
+            firstProblem?.RefusedParameter, firstProblem?.MissingParameters ?? [], orderTotal);
+    }
+
+    /// <summary>
+    /// URT-D68: one input of an order measured on its total. The input carries its own difference and, when the order
+    /// total is above input, the "output above input" refusal of an input whose own account is above input (URT-D49);
+    /// the tolerance and the fire percent are the order total's (<see cref="OrderClosureAssessmentV1.OrderTotal"/>).
+    /// The supplied BAL-004 operands are still checked against this input's own facts, so no input can offset another's
+    /// in the total.
+    /// </summary>
+    private static RollClosureAssessmentV1 AssessInputOfOrderTotal(
+        MassBalance balance,
+        RollScrapPercentInputV1? supplied,
+        bool refuseOutputAboveInput)
+    {
+        var difference = balance.Unexplained;
+        if (balance.OutputExceedsInput && refuseOutputAboveInput)
+        {
+            return Roll(balance.ParentRollId, ClosureDispositionV1.Refused, difference,
+                code: ClosureAssessmentCodesV1.OutputExceedsInput);
+        }
+
+        if (supplied?.Input.FireKg is { } fireKg
+            && fireKg != balance.OutputOf(OutputClass.Scrap).Value + balance.OutputOf(OutputClass.ProcessLoss).Value)
+        {
+            return Roll(balance.ParentRollId, ClosureDispositionV1.Refused, difference,
+                code: ClosureAssessmentCodesV1.FireMassMismatch, refusedParameter: "fireKg");
+        }
+
+        if (supplied?.Input.RawMaterialKg is { } rawMaterialKg && rawMaterialKg != balance.NetIssued.Value)
+        {
+            return Roll(balance.ParentRollId, ClosureDispositionV1.Refused, difference,
+                code: ClosureAssessmentCodesV1.NetIssuedMassMismatch, refusedParameter: "rawMaterialKg");
+        }
+
+        return Roll(balance.ParentRollId, ClosureDispositionV1.Balanced, difference);
+    }
+
+    /// <summary>
+    /// URT-D68: the order's inputs added category by category into one account (no roll: <see cref="Guid.Empty"/>), so
+    /// the order total runs through the same BAL-003 / BAL-004 path as a roll. Its BAL-003 difference equals
+    /// <see cref="OrderMassTotalV1"/>'s.
+    /// </summary>
+    private static MassBalance TotalOf(IReadOnlyCollection<MassBalance> balances)
+    {
+        Kilograms Sum(Func<MassBalance, Kilograms> mass) =>
+            balances.Aggregate(Kilograms.Zero, (sum, balance) => sum + mass(balance));
+
+        var outputs = Enum.GetValues<OutputClass>()
+            .ToDictionary(outputClass => outputClass, outputClass => Sum(balance => balance.OutputOf(outputClass)));
+        return new MassBalance(Guid.Empty, Sum(balance => balance.Issued), Sum(balance => balance.Returned), outputs,
+            Sum(balance => balance.WorkInProgress));
+    }
+
+    /// <summary>
+    /// URT-D68: the order total's BAL-004 operands — Σ fire kg over Σ raw material kg of the inputs. An input without
+    /// supplied operands leaves the total without them (the assessment answers "unavailable", nothing is guessed); an
+    /// unknown operand of one input leaves that operand unknown on the total.
+    /// </summary>
+    private static RollScrapPercentInputV1? TotalOf(IReadOnlyCollection<MassBalance> balances,
+        IReadOnlyDictionary<Guid, RollScrapPercentInputV1> supplied)
+    {
+        if (balances.Any(balance => !supplied.ContainsKey(balance.ParentRollId)))
+        {
+            return null;
+        }
+
+        var inputs = balances.Select(balance => supplied[balance.ParentRollId].Input).ToArray();
+        decimal? Sum(Func<ScrapPercentInputV1, decimal?> operand) =>
+            inputs.Any(input => operand(input) is null) ? null : inputs.Sum(input => operand(input)!.Value);
+
+        return new RollScrapPercentInputV1(Guid.Empty,
+            new ScrapPercentInputV1(Sum(input => input.FireKg), Sum(input => input.RawMaterialKg)));
     }
 
     private static RollClosureAssessmentV1 AssessRoll(
@@ -302,14 +425,15 @@ public static class OrderClosureAssessmentCalculatorV1
         RollScrapPercentInputV1? supplied,
         decimal maximumFirePercent,
         decimal? massBalanceTolerancePercent,
-        bool replayingStoredClose)
+        bool refuseOutputAboveInput)
     {
         var difference = balance.Unexplained;
 
-        // URT-D41 (1)-(2), URT-D42 (1)-(2): output above input on a planned parent roll refuses the close — the ±
-        // tolerance is not consulted in this direction and no approval can carry it, even when the order total is short.
-        // A stored close replays the rule it was written under (URT-D42 (3)).
-        if (balance.OutputExceedsInput && !replayingStoredClose)
+        // URT-D41 (1)-(2), URT-D42 (1)-(2): output above input refuses the close — the ± tolerance is not consulted in
+        // this direction and no approval can carry it. For a roll-based process this holds on each planned parent roll
+        // even when the order total is short; for a process without a main roll input it holds when the order total is
+        // above input (URT-D49). The caller decides the scope (<paramref name="refuseOutputAboveInput"/>).
+        if (balance.OutputExceedsInput && refuseOutputAboveInput)
         {
             return Roll(balance.ParentRollId, ClosureDispositionV1.Refused, difference,
                 code: ClosureAssessmentCodesV1.OutputExceedsInput);
@@ -321,9 +445,11 @@ public static class OrderClosureAssessmentCalculatorV1
         {
             // URT-D5/D6: the unexplained difference is measured against the roll's net issued mass and compared with the
             // tolerance. It stays its own category either way — within tolerance it is accepted as it is (never
-            // reclassified as fire or any output), outside it the close needs the exception approval. A new close
-            // reaches this point only with a shortfall (URT-D41 (2)); a replayed earlier close keeps the ± comparison
-            // it was written under.
+            // reclassified as fire or any output), outside it the close needs the exception approval. A new close of a
+            // roll-based process reaches this point only with a shortfall (URT-D41 (2)); a replayed earlier close keeps
+            // the ± comparison it was written under. The order total of a process without a main roll input (URT-D68)
+            // runs through here as one account; a paint close stored under the earlier per-input rule replays each input
+            // here with its own difference (URT-D49 measured only the refusal, URT-D68 moved the tolerance and fire).
             var percent = MassBalanceEngineV1.DifferencePercent(
                 new MassDifferencePercentInputV1(difference, balance.NetIssued.Value));
             if (percent.Outcome == EngineOutcome.Unavailable)
@@ -343,7 +469,9 @@ public static class OrderClosureAssessmentCalculatorV1
         }
         else if (difference < 0m)
         {
-            // Reached only by a replayed earlier close (the plus direction is refused above for a new one).
+            // Reached by a replayed earlier close, or by the order total of a process without a main roll input that is
+            // not above input when the order is replayed (URT-D68); a new close is refused above. Without a known
+            // mass-balance tolerance it is still not accepted silently.
             return Roll(balance.ParentRollId, ClosureDispositionV1.ReviewRequired, difference,
                 code: ClosureAssessmentCodesV1.NegativeDifferenceReview);
         }
@@ -438,4 +566,19 @@ public static class OrderClosureAssessmentCalculatorV1
         string code,
         string refusedParameter) =>
         new(disposition, policy, [], code, refusedParameter, []);
+}
+
+/// <summary>
+/// Where a process without a main roll input measures its shortfall tolerance and fire percent on close (URT-D68).
+/// </summary>
+internal enum PaintClosureScope
+{
+    /// <summary>URT-D68: on the order total. Every new close.</summary>
+    OrderTotal = 1,
+
+    /// <summary>
+    /// The rule before URT-D68: per input. Only for the replay of a stored close written under it (URT-D42 (3) — a rule
+    /// applies to new closes; a stored close stays readable).
+    /// </summary>
+    PerInput = 2,
 }

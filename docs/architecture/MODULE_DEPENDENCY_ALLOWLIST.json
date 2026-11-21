@@ -102,6 +102,12 @@
       "target": "src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/GoymenERP.Modules.Idempotency.Infrastructure.csproj",
       "adr": "docs/adr/ADR-011-idempotency-and-concurrency.md",
       "reason": "SAT-D61…D70: the command result, audit insert and Settings discount limit writes share one EF SaveChanges and SQL transaction."
+    },
+    {
+      "source": "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/GoymenERP.Modules.Identity.Infrastructure.csproj",
+      "target": "src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/GoymenERP.Modules.Idempotency.Infrastructure.csproj",
+      "adr": "docs/adr/ADR-011-idempotency-and-concurrency.md",
+      "reason": "ID-3 command result and Identity assignment share one EF SaveChanges; the Audit owner appends canonical events through its Application transaction port in the same SQL transaction."
     }
   ]
 }

@@ -52,6 +52,23 @@ public static class ProductHistoryProjector
             if (verified[i].VersionBefore != verified[i + 1].VersionAfter) throw Invalid();
         }
 
+        // Classification changes form their own +1 chain while preserving the card's actual Product version.
+        // Check both chains, including interleaved Product edits; a missing class revision must not disappear.
+        var classes=verified.Where(x=>x.Operation==ProductHistoryApiV1.SetCogsClassification).ToArray();
+        for(var i=0;i+1<classes.Length;i++)
+        {
+            using var newer=Parse(classes[i].BeforeJson);using var older=Parse(classes[i+1].AfterJson);
+            var before=ClassificationSnapshot(newer.RootElement,productId,classes[i].VersionAfter);
+            var after=ClassificationSnapshot(older.RootElement,productId,classes[i+1].VersionAfter);
+            if(before.Version!=after.Version || before.Kind!=after.Kind || before.ChangedInCompanyId!=after.ChangedInCompanyId
+                || before.UpdatedAtUtc!=after.UpdatedAtUtc)throw Invalid();
+        }
+        if(!truncated && classes.Length>0)
+        {
+            using var first=Parse(classes[^1].BeforeJson);
+            if(ClassificationSnapshot(first.RootElement,productId,classes[^1].VersionAfter).Version!=0)throw Invalid();
+        }
+
         // An UNCUT list reaches back to the creation event. Only the page cut may hide it,
         // and that case is reported separately as Truncated. A creation is version 1 by the
         // per-record rule above, so the operation is the whole test here.
@@ -69,6 +86,7 @@ public static class ProductHistoryProjector
         if (record.ProductId != productId || string.IsNullOrWhiteSpace(record.Reason) || record.VersionAfter < 1)
             throw Invalid();
 
+        if (record.Operation == ProductHistoryApiV1.SetCogsClassification) return ClassificationEntry(productId,record);
         using var after = Parse(record.AfterJson);
         RequireSnapshot(after.RootElement, productId, record.VersionAfter);
         var afterVersion = record.VersionAfter.ToString(CultureInfo.InvariantCulture);
@@ -111,6 +129,43 @@ public static class ProductHistoryProjector
             default:
                 throw Invalid();
         }
+    }
+
+    private static ProductHistoryEntryView ClassificationEntry(Guid productId,ProductAuditRecordV1 record)
+    {
+        if (record.VersionBefore is not >= 1 || record.VersionBefore != record.VersionAfter) throw Invalid();
+        using var before=Parse(record.BeforeJson);using var after=Parse(record.AfterJson);
+        var old=ClassificationSnapshot(before.RootElement,productId,record.VersionAfter);
+        var current=ClassificationSnapshot(after.RootElement,productId,record.VersionAfter);
+        if(old.Version==long.MaxValue || current.Version!=old.Version+1 || current.Kind is null || old.Kind==current.Kind
+            || current.CompanyId!=old.CompanyId || current.ChangedInCompanyId!=current.CompanyId)throw Invalid();
+        var version=record.VersionAfter.ToString(CultureInfo.InvariantCulture);
+        return new(record.EventId,record.Operation,record.OccurredAtUtc,version,version,record.Reason,["cogsClassification"]);
+    }
+    private static (long Version,int? Kind,Guid CompanyId,Guid? ChangedInCompanyId,DateTimeOffset? UpdatedAtUtc) ClassificationSnapshot(JsonElement element,Guid productId,long productVersion)
+    {
+        if(element.ValueKind!=JsonValueKind.Object)throw Invalid();
+        var expected=new HashSet<string>(["companyId","productId","productVersion","classificationVersion","classification",
+            "changedInCompanyId","updatedAtUtc","sourceVersion"],StringComparer.Ordinal);
+        var fields=element.EnumerateObject().ToArray();
+        if(fields.Length!=expected.Count || fields.Any(x=>!expected.Remove(x.Name)) || expected.Count!=0)throw Invalid();
+        if(!RequiredJsonField(element, "companyId").TryGetGuid(out var company)||company==Guid.Empty
+            || !RequiredJsonField(element, "productId").TryGetGuid(out var product)||product!=productId
+            || RequiredJsonField(element, "productVersion").ValueKind!=JsonValueKind.String
+            || RequiredJsonField(element, "productVersion").GetString()!=productVersion.ToString(CultureInfo.InvariantCulture)
+            || RequiredJsonField(element, "sourceVersion").GetString()!=ProductCogsClassificationContractsV1.SourceVersion)throw Invalid();
+        var versionText=RequiredJsonField(element, "classificationVersion");
+        if(versionText.ValueKind!=JsonValueKind.String || !long.TryParse(versionText.GetString(),NumberStyles.None,CultureInfo.InvariantCulture,out var version)
+            || version<0 || version.ToString(CultureInfo.InvariantCulture)!=versionText.GetString())throw Invalid();
+        var kind=RequiredJsonField(element, "classification");var origin=RequiredJsonField(element, "changedInCompanyId");var instant=RequiredJsonField(element, "updatedAtUtc");
+        if(version==0)
+        {
+            if(kind.ValueKind!=JsonValueKind.Null || origin.ValueKind!=JsonValueKind.Null || instant.ValueKind!=JsonValueKind.Null)throw Invalid();
+            return(0,null,company,null,null);
+        }
+        if(!kind.TryGetInt32(out var parsedKind)||parsedKind is not (1 or 2) || !origin.TryGetGuid(out var changed)||changed==Guid.Empty
+            || !instant.TryGetDateTimeOffset(out var at)||at.Offset!=TimeSpan.Zero)throw Invalid();
+        return(version,parsedKind,company,changed,at);
     }
 
     private static void RequireSnapshot(JsonElement card, Guid productId, long version)
@@ -162,4 +217,8 @@ public static class ProductHistoryProjector
     }
 
     private static InvalidOperationException Invalid() => new("A Product history event failed its integrity checks.");
+    // Required JSON lookup retains missing-key failure and never uses runtime reflection.
+    private static JsonElement RequiredJsonField(JsonElement value, string name) =>
+        value.TryGetProperty(name, out var field) ? field : throw new KeyNotFoundException();
+
 }

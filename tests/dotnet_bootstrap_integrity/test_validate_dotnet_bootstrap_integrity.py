@@ -806,7 +806,8 @@ class WorkflowOrderingTests(unittest.TestCase):
         verifier_source = (REPOSITORY_ROOT / "tools" / "verify_rcsi_relational_acceptance.py").read_text(
             encoding="utf-8"
         )
-        self.assertEqual(verifier_source.count('"-noAutoResponse"'), 2)
+        # Discovery, RCSI single-run, and broad/shard batch commands all retain the fence.
+        self.assertEqual(verifier_source.count('"-noAutoResponse"'), 3)
         for job_name in self.RELATIONAL_EXECUTION_JOBS:
             relational_restore = self.step_body(
                 self.job_body(job_name), "Restore relational test packages"
@@ -836,7 +837,8 @@ class WorkflowOrderingTests(unittest.TestCase):
         verifier_source = (REPOSITORY_ROOT / "tools" / "verify_rcsi_relational_acceptance.py").read_text(
             encoding="utf-8"
         )
-        self.assertEqual(verifier_source.count('"--no-restore"'), 2)
+        # Every one of the three native command templates uses only the locked restore above.
+        self.assertEqual(verifier_source.count('"--no-restore"'), 3)
         vulnerable_step = self.step_body(backend, "Check vulnerable dependencies")
         self.assertIn("--no-restore", vulnerable_step)
         self.assertIn("--configfile NuGet.Config", vulnerable_step)

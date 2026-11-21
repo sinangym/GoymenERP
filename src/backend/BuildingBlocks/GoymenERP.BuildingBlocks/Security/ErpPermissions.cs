@@ -2,6 +2,12 @@ namespace GoymenERP.BuildingBlocks.Security;
 
 public static class ErpPermissions
 {
+    /// <summary>KIM-D21/KIM-D56: Critical company-opening registration; group eligibility is explicit and human-owned, no grant.</summary>
+    public const string OrganizationCompaniesOpen = "organization.companies.open";
+
+    /// <summary>KIM-D56: explicit group first-Admin selection; registered only, no grant or new Critical classification.</summary>
+    public const string IdentityCompanyFirstAdminAssign = "identity.company-setup.first-admin.assign";
+
     public const string OrganizationContextRead = "organization.context.read";
     public const string OrganizationSitesRead = "organization.sites.read";
     public const string OrganizationLocationsRead = "organization.locations.read";
@@ -19,6 +25,27 @@ public static class ErpPermissions
     public const string OrganizationSitesWrite = "organization.sites.write";
     public const string OrganizationLocationsWrite = "organization.locations.write";
     public const string OrganizationWorkCentersWrite = "organization.work-centers.write";
+
+    /// <summary>
+    /// B-15 work-centre calendar master (URT-D11 "hat bazında değiştirilebilir"): PUT
+    /// /api/v1/organization/work-centers/{id}/calendar, the owner's OrganizationPermissionManifestV1 name. Scoped like
+    /// <see cref="OrganizationWorkCentersWrite"/> (site / location / work-centre). Not Critical. Registered, not granted:
+    /// which persona holds it is a human gate.
+    /// </summary>
+    public const string OrganizationWorkCenterCalendarsWrite = "organization.work-centers.calendar.write";
+
+    /// <summary>
+    /// KIM-D28 / DEC-ORG-005 company tax number (VKN): propose the resolved company's VKN or a change of it (the
+    /// maker), and approve or reject someone else's proposal (the checker) — the owner's
+    /// OrganizationCompanyTaxIdPermissionsV1 names. Registered, not granted: no role, seed or user receives them here (who
+    /// holds them is a human gate). Company-wide only: the company record has no narrower scope dimension. Not
+    /// Critical: whether the approve grant itself needs grant-time dual control is not decided (human gate). Holding
+    /// approve never lets the proposer decide their own request: that is the module's maker-checker rule, not a grant.
+    /// </summary>
+    public const string OrganizationCompanyTaxIdRequest = "organization.company.tax-id.request";
+
+    /// <inheritdoc cref="OrganizationCompanyTaxIdRequest"/>
+    public const string OrganizationCompanyTaxIdApprove = "organization.company.tax-id.approve";
 
     public const string CounterpartyPartiesRead = "counterparty.parties.read";
     public const string CounterpartyPartiesCreate = "counterparty.parties.create";
@@ -63,6 +90,51 @@ public static class ErpPermissions
     public const string CounterpartyAccountsEDocumentUpdate = "counterparty.accounts.e-document.update";
 
     /// <summary>
+    /// ALS-D111 + ALS-D113 (replacing the one-step ALS-D95/ALS-D110 name): propose a change of a Cari card's official
+    /// legal name (resmi/hukuki unvan); the name does not change until a different person approves — the Counterparty
+    /// owner's name (CounterpartyLegalNamePermissionsV1). Registered, not granted: no role, seed or user receives it here;
+    /// the decision names the accounting specialist persona and the grant is a human gate. Company-wide only, as every
+    /// Counterparty name. Not Critical. Deliberately not counterparty.parties.update.basic, so existing basic-edit grants
+    /// are not widened.
+    /// </summary>
+    public const string CounterpartiesLegalNamePropose = "counterparties.legal_name.propose";
+
+    /// <summary>
+    /// ALS-D111 + ALS-D113: approve or reject a proposed legal-name change (one approval is enough; never the proposer).
+    /// Registered, not granted: the decision names the accounting manager or the general manager persona and the grant
+    /// is a human gate. Company-wide only. Not Critical.
+    /// </summary>
+    public const string CounterpartiesLegalNameApprove = "counterparties.legal_name.approve";
+
+    /// <summary>
+    /// F-027 / EK-18 #76 (SINAN_KARARLARI_2026-10-21): approve the merge of a duplicate Cari party into a surviving party
+    /// at group level — the Counterparty owner's name (CounterpartyPartyMergePermissionsV1). Catalogue registration only:
+    /// no role, seed or user receives it here (the group-manager persona grant is a human gate). Company-wide only, and
+    /// the merge command measures it in every company that holds an account for either party. Not Critical (#76).
+    /// </summary>
+    public const string CounterpartyPartiesMergeApprove = "counterparty.parties.merge.approve";
+
+    /// <summary>
+    /// KLN-D38 (Sinan, 2026-11-14) rule 2: record that a new legal person succeeds a cari in the active company (the old
+    /// company account becomes passive and is linked predecessor → successor). The Counterparty owner's name
+    /// (CounterpartyPartySuccessionPermissionsV1). Registered, not granted: no role, seed or user receives it here; who
+    /// holds it is a human gate. Company-wide only, as every Counterparty name. Not Critical (no decision makes it so).
+    /// It moves no balance: the devir fişi is a separate approved Finance voucher.
+    /// </summary>
+    public const string CounterpartyPartiesSuccessionRecord = "counterparty.parties.succession.record";
+
+    /// <summary>
+    /// ALS-D100 (Sinan, 2026-11-15): deactivate one Cari card's account in every Göymen company in a single group-wide
+    /// command — the Counterparty owner's name (CounterpartyGroupDeactivationPermissionsV1). Separate from
+    /// counterparty.accounts.status.update, which keeps the per-company deactivation; the decision limits the group
+    /// command to the Genel Müdür and Admin personas and keeps it from the Muhasebe Müdürü, so the existing per-company
+    /// grants are not widened. Registered, not granted: no role, seed or user receives it here (human gate). Company-wide
+    /// only, as every Counterparty name; it is checked in the origin company and again in every target company. Not
+    /// Critical: no source makes it a grant-time dual-control duty.
+    /// </summary>
+    public const string CounterpartyPartiesGroupDeactivate = "counterparty.parties.group-deactivate";
+
+    /// <summary>
     /// The narrow operational product-selection read (K-1(a), Sinan's decision relayed in Business
     /// #66 5719251344; registration asked for in 5720016574 §3). Registering the name makes it
     /// KNOWN, not granted: no role and no user receives it here, and an actor without an explicit
@@ -90,6 +162,43 @@ public static class ErpPermissions
     /// Not Critical.
     /// </summary>
     public const string ProductItemTypeManage = "product.item-type.manage";
+
+    /// <summary>
+    /// BS-9 (Sinan, 2026-11-11, <c>SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md</c>): the Product owner's ONE name for reading and
+    /// setting the "Ebat/kalınlık" row (section kind and measures, the U-08 conversion input) of a product on the shared card
+    /// (<c>ProductDimensionPermissionsV1.Manage</c>). Registered, not granted: no role, seed or user receives it here; who
+    /// receives it is a human grant gate. Company-wide only. Not Critical.
+    /// </summary>
+    public const string ProductDimensionManage = "product.dimension.manage";
+
+    /// <summary>
+    /// URN-D15 (STK-S37R): the Product owner's ONE name for reading and importing the company-wide kg/m table of profiles and
+    /// round tubes (URN-D13/D16; the file is linked to the import record, every import source-labelled per URN-D14 and audited;
+    /// <c>ProductProfileWeightPermissionsV1.Import</c>). Registered, not granted: no role, seed or user receives it here; who
+    /// receives it is a human grant gate. Company-wide only. Not Critical.
+    /// </summary>
+    public const string ProductProfileWeightsImport = "product.profile-weights.import";
+
+    /// <summary>
+    /// B-08 / BS-10 (STK-S12): the Product owner's ONE name for reading the company's package standard table, importing it from
+    /// an Excel file and editing one product's entry (every version source-recorded and audited;
+    /// <c>ProductPackageStandardPermissionsV2.Manage</c>). The consumers' read port measures no permission. Registered, not
+    /// granted: no role, seed or user receives it here; who receives it is a human grant gate. Company-wide only. Not Critical.
+    /// </summary>
+    public const string ProductPackageStandardsManage = "product.package-standards.manage";
+
+    /// <summary>BS-10: explicit paint membership import and maintenance only. Name registration grants no role or actor.</summary>
+    public const string ProductPaintMembershipsManage = "product.paint-memberships.manage";
+
+    /// <summary>SAT-D422 global Product card classification name only; company roles never authorize its owner operation.</summary>
+    public const string ProductCogsClassificationsManage = "product.cogs-classifications.manage";
+
+    /// <summary>
+    /// SAT-D382 (STK-SC36-c): the Product owner's name for approving (from an effective date) or rejecting the package standard
+    /// version waiting for approval (<c>ProductPackageStandardPermissionsV3.Approve</c>). Registered, not granted: no role, seed
+    /// or user receives it here; who approves is a human grant gate. Company-wide only. Not Critical.
+    /// </summary>
+    public const string ProductPackageStandardsApprove = "product.package-standards.approve";
 
     /// <summary>
     /// T07(a) Inventory reads (#310): a label's view and its stock position by position. Registering
@@ -123,6 +232,18 @@ public static class ErpPermissions
     /// not Critical: no approved source adds grant-time dual control for this name.
     /// </summary>
     public const string InventoryPhysicalAllocationWrite = "inventory.physical-allocation.write";
+
+    /// <summary>
+    /// STK-S17 / F017-b2 spec §6: read future supply allocations separately from physical stock allocations.
+    /// Registered, not granted; company-wide only. No approved source adds Critical grant-time dual control.
+    /// </summary>
+    public const string InventoryFutureAllocationRead = "inventory.future-allocation.read";
+
+    /// <summary>
+    /// STK-S17 / KLN-D26: create or explicitly release a future supply allocation, without a second approval.
+    /// Registered, not granted; company-wide only. No role assignment, grant or Critical classification is added.
+    /// </summary>
+    public const string InventoryFutureAllocationWrite = "inventory.future-allocation.write";
 
     /// <summary>
     /// R19 / AT-038: record one same-company label split or merge (DEC-LBL-002/003), the Inventory owner's
@@ -171,6 +292,70 @@ public static class ErpPermissions
     public const string InventoryStockScrapApprove = "inventory.stock-scrap.approve";
 
     /// <summary>
+    /// B-22a stock transfer (user decisions 2026-10-14 K1/K2/K3/K6): plans a same-company label transfer and
+    /// dispatches it only against a final, current Logistics outgoing document. Registration grants nothing: no
+    /// seeded role or real user receives this command. Company-wide only because the transfer has no narrower
+    /// approved scope dimension. Not Critical: no approved source adds grant-time dual control.
+    /// </summary>
+    public const string InventoryStockTransferWrite = "inventory.stock-transfer.write";
+
+    /// <summary>
+    /// B-22b stock transfer dispatch cancellation (KLN-D20: a separate permission from the transfer write). Reverses a
+    /// not-yet-accepted dispatch with a new movement only while the KLN-D25/KLN-D27 window is open and the owner
+    /// confirmations are in hand. Registration grants nothing: no seeded role or real user receives this command.
+    /// Company-wide only because the transfer has no narrower approved scope dimension. Not Critical: no approved
+    /// source adds grant-time dual control.
+    /// </summary>
+    public const string InventoryStockTransferCancel = "inventory.stock-transfer.cancel";
+
+    /// <summary>
+    /// B-22c receipt excess approval (KLN-D24: an overage needs a reason and a maker≠approver approval before it enters
+    /// stock). A separate name from <see cref="InventoryStockTransferWrite"/> so the receiver and the approver can be
+    /// different people; the service also refuses the receiver's own approval. Registration grants nothing: no seeded
+    /// role or real user receives this command. Company-wide only because the transfer has no narrower approved scope
+    /// dimension. Not Critical: no approved source adds grant-time dual control. KLN-D92 persona: Stok/Depo Müdürü and
+    /// Genel Müdür, a declaration for the grant-time human gate, not a grant: no role, no user, no seed.
+    /// </summary>
+    public const string InventoryStockTransferOverageApprove = "inventory.stock-transfer.overage-approve";
+
+    /// <summary>
+    /// B-22c pending-label loss request (KLN-D23 (c): a pending label may be closed as a loss only with an explanation
+    /// and a maker≠approver approval). Records the explanation; it moves no stock. Registration grants nothing: no
+    /// seeded role or real user receives this command. Company-wide only because the transfer has no narrower approved
+    /// scope dimension. Not Critical: no approved source adds grant-time dual control. KLN-D92 persona: Depo Sorumlusu,
+    /// a declaration for the grant-time human gate, not a grant: no role, no user, no seed.
+    /// </summary>
+    public const string InventoryStockTransferLossRecord = "inventory.stock-transfer.loss-record";
+
+    /// <summary>
+    /// B-22c pending-label loss decision (KLN-D23 (c)): approve (write the line off as a transit loss) or reject one
+    /// recorded loss request. A separate name from <see cref="InventoryStockTransferLossRecord"/>; the service also
+    /// refuses the requester's own decision. Registration grants nothing: no seeded role or real user receives this
+    /// command. Company-wide only because the transfer has no narrower approved scope dimension. Not Critical: no
+    /// approved source adds grant-time dual control. KLN-D92 persona: Stok/Depo Müdürü and Genel Müdür, a declaration
+    /// for the grant-time human gate, not a grant: no role, no user, no seed.
+    /// </summary>
+    public const string InventoryStockTransferLossApprove = "inventory.stock-transfer.loss-approve";
+
+    /// <summary>
+    /// Opening-stock cost submission (SAT-D304 (1), SAT-D372): enter the unit cost of one location's uncosted opening
+    /// stock of one product, as a pending submission. It changes no cost ledger until another person approves it.
+    /// Registration grants nothing: no seeded role or real user receives this command. Company-wide only because the
+    /// cost ledger has no narrower approved scope dimension. Not Critical: no approved source adds grant-time dual
+    /// control.
+    /// </summary>
+    public const string InventoryOpeningCostSubmit = "inventory.opening-cost.submit";
+
+    /// <summary>
+    /// Opening-stock cost decision (SAT-D304 (1), SAT-D372): approve (open the average-cost position) or reject one
+    /// pending submission. A separate name from <see cref="InventoryOpeningCostSubmit"/>; the service also refuses the
+    /// submitter's own decision (giren ≠ onaylayan). Registration grants nothing: no seeded role or real user receives
+    /// this command. Company-wide only because the cost ledger has no narrower approved scope dimension. Not Critical:
+    /// no approved source adds grant-time dual control.
+    /// </summary>
+    public const string InventoryOpeningCostApprove = "inventory.opening-cost.approve";
+
+    /// <summary>
     /// Finance bank-account master (FS0, #312): names are the Finance owner's technical mapping
     /// (Business #254 5654539215). Registering them makes them KNOWN, not granted: no role and no
     /// user receives them here, and who holds which is a human gate. All three are company-wide
@@ -187,6 +372,80 @@ public static class ErpPermissions
     public const string FinanceBankAccountApprove = "finance.bank-account.approve";
 
     /// <summary>
+    /// Finance cash account (kasa) master (API-30): aligned with the bank-account master's names
+    /// (<c>finance.bank-account.*</c>). Registering them makes them KNOWN, not granted: no role and no user
+    /// receives them here, and who holds which is a human gate. All three are company-wide only: a cash
+    /// account belongs to the server-resolved company and has no site, location or work-center dimension.
+    /// Propose and approve are Critical, as the bank master's pair (user decision of 13 November 2026 on
+    /// Issue #66); read is not. Approval and rejection are maker-checker in the service and the database
+    /// regardless.
+    /// </summary>
+    public const string FinanceCashAccountRead = "finance.cash-account.read";
+    public const string FinanceCashAccountPropose = "finance.cash-account.propose";
+    public const string FinanceCashAccountApprove = "finance.cash-account.approve";
+
+    /// <summary>
+    /// Passivation and reactivation of a cash account (user decision of 13 November 2026 on Issue #66,
+    /// comment 6857269313): the same two-person flow as opening one. Each has its own propose/approve pair so
+    /// that who may passivate and who may reactivate stay separate grants (ASSUMPTION-API30-4); a rejection is
+    /// the other answer of the approve authority. Critical by that decision; company-wide only; granted to no
+    /// role and no user here (grant is a human gate).
+    /// </summary>
+    public const string FinanceCashAccountPassivationPropose = "finance.cash-account.passivation.propose";
+    public const string FinanceCashAccountPassivationApprove = "finance.cash-account.passivation.approve";
+    public const string FinanceCashAccountReactivationPropose = "finance.cash-account.reactivation.propose";
+    public const string FinanceCashAccountReactivationApprove = "finance.cash-account.reactivation.approve";
+
+    /// <summary>
+    /// Finance party credit limit master (API-85a; F018 plan §L1; FNS-D27/D27a, FNS-D56/D57(3)): read; propose
+    /// (FNS-D27a, a proposal awaiting another person's decision); approve (FNS-D27/D56, sets, changes or removes a
+    /// limit in one audited step, and approves or rejects a proposal; no threshold and no second approval).
+    /// Registering them makes them KNOWN, not granted: no role and no user receives them here, and who holds which
+    /// is a human gate. Company-wide only: a limit belongs to a company account of the server-resolved company.
+    /// Only approve is Critical (FNS-D46, the user's classification); read and propose are not. A proposer never
+    /// decides their own proposal, in the service and the database regardless.
+    /// </summary>
+    public const string FinanceCreditLimitsRead = "finance.credit-limits.read";
+    public const string FinanceCreditLimitsPropose = "finance.credit-limits.propose";
+    public const string FinanceCreditLimitsApprove = "finance.credit-limits.approve";
+
+    /// <summary>
+    /// Finance customer collateral (API-85b; F018 plan §L2; FNS-D57, FNS-D31, FNS-D58): read (a party's collaterals,
+    /// their history and the documented-instrument risk) and record (records, changes or releases a customer
+    /// collateral in one audited step, effective immediately; no proposer/approver and no threshold, FNS-D57).
+    /// Registering them makes them KNOWN, not granted: no role and no user receives them here, and who holds which
+    /// is a human gate (persona list FNS-D68). Company-wide only: a collateral belongs to a company account of the
+    /// server-resolved company. Not Critical.
+    /// </summary>
+    public const string FinanceCollateralsRead = "finance.collaterals.read";
+    public const string FinanceCollateralsRecord = "finance.collaterals.record";
+
+    /// <summary>
+    /// Finance opening balances (FIN-S9; FNS-D23): read (the cash, bank and party opening balances and the Settings
+    /// opening period state), propose (a Finance specialist enters an opening balance while the Settings opening period
+    /// is open) and approve (a Finance manager approves or rejects it; never its proposer, maker≠approver). Registering
+    /// them makes them KNOWN, not granted: no role and no user receives them here; who is the specialist or the manager
+    /// (persona → grant) is a human gate (FNS-D23 limits). Company-wide only. Not Critical.
+    /// </summary>
+    public const string FinanceOpeningBalancesRead = "finance.opening-balances.read";
+    public const string FinanceOpeningBalancesPropose = "finance.opening-balances.propose";
+    public const string FinanceOpeningBalancesApprove = "finance.opening-balances.approve";
+
+    /// <summary>
+    /// Finance credit accounts (FIN-SC47; FNS-D87, FNS-D88, FNS-D93, FNS-D94): read (the company's credit accounts and
+    /// their imported bank repayment plans), propose (enters a credit account of one of the four groups with the bank's
+    /// plan as given; a plan whose totals do not hold is refused) and approve (approves or rejects it; never its proposer,
+    /// maker≠checker). Registering them makes them KNOWN, not granted: no role and no user receives them here, and who
+    /// holds which is a human gate. Company-wide only: a credit account belongs to the server-resolved company.
+    /// FNS-D109 makes approve Critical; propose and read remain non-Critical. No grant or role is assigned here.
+    /// Unrelated to the party credit limit names
+    /// (finance.credit-limits.*).
+    /// </summary>
+    public const string FinanceCreditsRead = "finance.credits.read";
+    public const string FinanceCreditsPropose = "finance.credits.propose";
+    public const string FinanceCreditsApprove = "finance.credits.approve";
+
+    /// <summary>
     /// Finance official-invoice import commands. Registration makes the Finance owner's exact names
     /// measurable and grants nothing. Both are company-wide because the batch belongs to the
     /// server-resolved company and has no narrower scope dimension. They are not Critical; the
@@ -196,6 +455,30 @@ public static class ErpPermissions
 
     /// <inheritdoc cref="FinanceOfficialInvoiceImportUpload"/>
     public const string FinanceOfficialInvoiceImportApprove = "finance.official-invoice-import.approve";
+
+    /// <summary>
+    /// F-005 D1 (FNS-D17…FNS-D21): the manual official sales invoice record. Registered, not granted (FNS-D26: the
+    /// Finance and Accounting roles may later receive both; no role or seed receives either here, the grant is a
+    /// human gate). Both are company-wide because the record belongs to the server-resolved company
+    /// and has no narrower scope dimension. They are not Critical; the owner service and a database check enforce
+    /// recorder/approver separation per person (FNS-D26).
+    /// </summary>
+    public const string FinanceOfficialSalesInvoicesRecord = "finance.official-sales-invoices.record";
+
+    /// <summary>
+    /// F-005 D1 (FNS-D17…FNS-D21) and FNS-D39: approve a pending official sales invoice record, or reject it with a
+    /// written reason. Registered, not granted (same human gate as Record). Company-wide only. Not Critical; the owner
+    /// service and a database check keep the approver or rejecter different from the recorder (FNS-D26).
+    /// </summary>
+    public const string FinanceOfficialSalesInvoicesApprove = "finance.official-sales-invoices.approve";
+
+    /// <summary>
+    /// FNS-D39: the recorder withdraws their own pending official sales invoice record (nothing is deleted; its
+    /// number, ETTN and PDF become free). Registered, not granted: no role, seed or user receives it here; the grant
+    /// is a human gate. Company-wide only, like Record and Approve. Not Critical; "only the recorder" is a per-person
+    /// rule of the owner service and a database check, not of this catalogue.
+    /// </summary>
+    public const string FinanceOfficialSalesInvoicesWithdraw = "finance.official-sales-invoices.withdraw";
 
     /// <summary>
     /// Manufacturing API (MFG-API, #313): the owner's technical mapping of its routes (Business
@@ -220,6 +503,15 @@ public static class ErpPermissions
     public const string ManufacturingOrdersRead = "manufacturing.orders.read";
 
     /// <summary>
+    /// F-009 D3 (API-25, URT-S2): correcting a recorded output declaration — an append-only output reversal plus
+    /// Inventory's <c>manufacturing.output-reversal</c> movement. Its own name because recording a fact is not
+    /// correcting one (URETIM_EMRI_DUZELTME_ANALIZ D3 names it). Registered, not granted: no role and no user receives
+    /// it here; who may correct is a human gate. Company-wide only (the route filters by no work center, so a narrow
+    /// grant would fail open). Not Critical: whether a correction is a segregated duty is the same human gate.
+    /// </summary>
+    public const string ManufacturingFactsCorrect = "manufacturing.facts.correct";
+
+    /// <summary>
     /// The order's close (MFG-ORD, #66 5743488059): its own name, because recording a fact is not
     /// closing an order — a holder of <see cref="ManufacturingFactsRecord"/> does not thereby end the
     /// order's WIP. Registered, not granted, and company-wide only for the reason above (K-1). Not
@@ -237,12 +529,71 @@ public static class ErpPermissions
         "manufacturing.orders.close-exception.approve";
 
     /// <summary>
+    /// URT-D66 (5): editing an open production order — first the order's own termin (URT-D66 (3)), which the decision puts
+    /// under "the order edit permission" rather than a termin permission of its own. No order edit name existed before, so
+    /// this registers it. Its own name because editing an order is neither creating one, recording a fact nor closing it.
+    /// Registered, not granted: no role and no user receives it here; who edits an order is a human gate. Company-wide
+    /// only (K-1: the route filters by no work center). Not Critical. URT-D71 declares its holders: the same personas
+    /// that edit the plan (<see cref="ManufacturingPlansWrite"/>), company-wide. That is a declaration for the grant-time
+    /// human gate, not a grant: this file still gives the name to no role and no user.
+    /// </summary>
+    public const string ManufacturingOrdersWrite = "manufacturing.orders.write";
+
+    /// <summary>
+    /// F-009 D5 (URT-D33/D34): cancelling an open production order that left no net effect (every output reversed, every
+    /// issued kilogram returned, no WIP), with a reason; the order is kept as Cancelled, never deleted, and its plan is
+    /// released for re-approval. Its own name because cancelling an order is neither creating, editing nor closing one.
+    /// Registered, not granted: no role and no user receives it here; who cancels an order is a human gate. Company-wide
+    /// only (K-1: the route filters by no work center). Not Critical: no source names the cancel a segregated duty; if one
+    /// does, the flag is a human decision.
+    /// </summary>
+    public const string ManufacturingOrdersCancel = "manufacturing.orders.cancel";
+
+    /// <summary>URT-D32/D77/D85: reasoned reopening under the existing period and Inventory cost fences. Registration only; no role or user grant.</summary>
+    public const string ManufacturingOrdersReopen = "manufacturing.orders.reopen";
+
+    /// <summary>
     /// Üretim U2-a (API-11, plan v1 §5.2): cancelling a production plan — a Draft, or an approved plan that opened no
     /// order — with a reason; the plan is kept, never deleted. Its own name because cancelling a plan is neither writing
     /// nor approving one. Registered, not granted: no role and no user receives it here; the grant is a human gate.
     /// Company-wide only for the reason above (K-1: the route filters by no work center). Not Critical.
     /// </summary>
     public const string ManufacturingPlansCancel = "manufacturing.plans.cancel";
+
+    /// <summary>
+    /// URT-D106 supersedes URT-D101: moving a plan in the production queue has its own permission.
+    /// Registered, not granted; company-wide only. Critical classification and role assignments remain human gates.
+    /// </summary>
+    public const string ManufacturingPlansReorder = "manufacturing.plans.reorder";
+
+    /// <summary>
+    /// URT-S13 (SAT-D316 (3)-(4), URT-D47, URT-D65): reading the company's monthly scrap prices (TL per kg). Its own name
+    /// because a price list is neither a plan nor an order. Registered, not granted: no role and no user receives it here;
+    /// who sees the price (URT-D57 (1) "like Sales") is a human gate. Company-wide only for the reason above (the route
+    /// filters by no work center or site, so a narrow grant would fail open). Not Critical.
+    /// </summary>
+    public const string ManufacturingScrapPricesRead = "manufacturing.scrap-prices.read";
+
+    /// <summary>
+    /// URT-S13 (URT-D47, URT-D65): recording the company's scrap price of one month by hand. Its own name because entering
+    /// a price is not recording a production fact. Registered, not granted: who enters the price and under which approval
+    /// is not decided (URT-D57 (3) is an author reading), so no role and no user receives it here; the grant is a human
+    /// gate. Company-wide only (one effective price per company and month). Not Critical: whether it joins the grant-time
+    /// dual-control set is the same human gate. URT-D72: correcting a month's price with a new version and a reason is
+    /// under this same name.
+    /// </summary>
+    public const string ManufacturingScrapPricesWrite = "manufacturing.scrap-prices.write";
+
+    /// <summary>
+    /// URT-S19 (B-27, DEC-PRDCT-009, API-42): reading an order's cost trace — its lots, line, fire, subcontract owner,
+    /// sales-order link and fact moments, and the production cost port's answer. Its own name because the trace carries
+    /// cost data the order read does not (URETIM_HAZIRLIK_PLANI API-42 names it). Registered, not granted: no role and no
+    /// user receives it here. Company-wide only (the route filters by no work center or site, so a narrow grant would fail
+    /// open). Not Critical. URT-D90 (SINAN-CEVAP 34.16) declares its holders: the Üretim Müdürü, Üretim Planlama and
+    /// Genel Müdür personas, company-wide. That is a declaration for the grant-time human gate, not a grant: this file
+    /// still gives the name to no role and no user, and no seed carries it.
+    /// </summary>
+    public const string ManufacturingReportsRead = "manufacturing.reports.read";
 
     /// <summary>
     /// K4.4 (ORG): reading one production plan back. Its own name because approving a plan is not
@@ -335,6 +686,23 @@ public static class ErpPermissions
     public const string FinanceManualBankPaymentReverseApprove = "finance.manual-bank-payment.reverse.approve";
 
     /// <summary>
+    /// FNS-D25 (API-25): the payment not tied to a party — one expense item kept by identity and a mandatory
+    /// description. Company-wide, not Critical; registration grants nothing (grants are a human gate).
+    /// </summary>
+    public const string FinanceExpensePaymentDraftSave = "finance.expense-payment.draft.save";
+    public const string FinanceExpensePaymentDraftRead = "finance.expense-payment.draft.read";
+    public const string FinanceExpensePaymentApprove = "finance.expense-payment.approve";
+    public const string FinanceExpensePaymentRecord = "finance.expense-payment.record";
+
+    /// <summary>
+    /// FNS-D24 (API-32/34): the transfer between two treasury accounts of the company — a same-currency virman or a
+    /// currency exchange, each one record. Company-wide, not Critical; registration grants nothing (grants are a human
+    /// gate).
+    /// </summary>
+    public const string FinanceCashTransfersRead = "finance.cash-transfers.read";
+    public const string FinanceCashTransfersCommit = "finance.cash-transfers.commit";
+
+    /// <summary>
     /// DEC-FIN-016 customer cheque / promissory-note portfolio: the Finance owner's names
     /// (FinancePermissionNames, same strings). Registration makes them measurable; it grants nothing — the
     /// user's decision of 2026-09-27 gives them only to the disposable fin01 browser actor, and the real-user
@@ -358,6 +726,12 @@ public static class ErpPermissions
     /// </summary>
     public const string FinancePartyLedgerRead = "finance.party-ledger.read";
     public const string FinancePartyLedgerAmountRead = "finance.party-ledger.amount.read";
+
+    /// <summary>
+    /// FNS-SC32, KLN-D72/D76: separately authorized complete party balance transfer in the resolved company.
+    /// Registered, not granted. Company-wide only; no new Critical classification or seeded assignment.
+    /// </summary>
+    public const string FinancePartyBalanceTransfersRecord = "finance.party-balance-transfers.record";
 
     /// <summary>FI04 independent read and amount disclosure; registration grants no user or role access.</summary>
     public const string FinanceOpenItemsRead = "finance.open-items.read";
@@ -692,6 +1066,30 @@ public static class ErpPermissions
     public const string SalesReturnsFinalize = "sales.returns.finalize";
 
     /// <summary>
+    /// S-11 (SAT-D28, NS-13): read recorded sales contracts — payment plan, discount rules and clauses (Sales owner name
+    /// SalesPermissionManifestV1.ContractsRead, same string). Its own name: no order or invoice name confers it. Registered, not
+    /// granted: no seeded role and no real user receives it; the grant is a human gate. Company-wide only. Not Critical: a read
+    /// moves nothing.
+    /// </summary>
+    public const string SalesContractsRead = "sales.contracts.read";
+
+    /// <summary>
+    /// S-11 (SAT-D28, NS-13): record a sales contract with its installment payment plan and discount rules (Sales owner name
+    /// SalesPermissionManifestV1.ContractsWrite, same string). A discount above the configured limit (or any discount while no
+    /// limit is configured, SAT-D346) waits for an authorized approval. Registered, not granted (human gate). Company-wide only.
+    /// Not Critical: no Critical source names it; a user decision may change that.
+    /// </summary>
+    public const string SalesContractsWrite = "sales.contracts.write";
+
+    /// <summary>
+    /// S-11 (NS-13, SAT-D346): approve or reject a contract's discount that needs approval; the contract's creator is refused by
+    /// the Sales service (a service rule, not a catalogue rule). Sales owner name SalesPermissionManifestV1.ContractsDiscountApprove,
+    /// same string. Registered, not granted (human gate). Company-wide only. Not Critical: no Critical source names it; a user
+    /// decision may change that.
+    /// </summary>
+    public const string SalesContractsDiscountApprove = "sales.contracts.discount.approve";
+
+    /// <summary>
     /// DEC-SAL-002 / AT-023: revise an approved order's line quantities into a new revision that needs re-approval (Sales
     /// owner name SalesPermissionManifestV1.OrdersQuantityWrite). Its own name: create, approve, price, delivery-schedule
     /// and cancel names do not confer it. Registration grants nothing: its only grant (user decision 2026-09-28) is the
@@ -738,11 +1136,20 @@ public static class ErpPermissions
     /// <inheritdoc cref="LogisticsLoadingInstructionsCreate"/>
     public const string LogisticsShipmentsRecord = "logistics.shipments.record";
 
+    /// <summary>
+    /// SAT-D417, direct user answer transferred at #1189/6963301286: approve a separately recorded plan-excess share.
+    /// Company-wide registration only. The Sales manager assignment is a human grant; no role or Critical class is assigned.
+    /// This name does not confer load, shipment, general Logistics read or physical quantity override authority.
+    /// </summary>
+    public const string LogisticsShipmentPlanExcessApprove = "logistics.shipments.plan-excess.approve";
+
     /// <inheritdoc cref="LogisticsLoadingInstructionsCreate"/>
     public const string LogisticsDeliveriesRecord = "logistics.deliveries.record";
 
     /// <inheritdoc cref="LogisticsLoadingInstructionsCreate"/>
     public const string LogisticsWeighingsRecord = "logistics.weighings.record";
+    /// <summary>STK-S3 / LOJ-D13 / SAT-D378: registered reasoned weighing correction; no grant or Critical classification.</summary>
+    public const string LogisticsWeighingsCorrect = "logistics.weighings.correct";
 
     /// <summary>
     /// AT-055: prepare a dispatch-note (irsaliye) DRAFT from an issued instruction's definite shipments (LogisticsPermissionManifestV1;
@@ -767,6 +1174,10 @@ public static class ErpPermissions
     /// </summary>
     public const string LogisticsDispatchNotesCancel = "logistics.dispatch-notes.cancel";
 
+    /// <summary>STK-S8 owner names: registration only, company scoped; no grant or Critical classification.</summary>
+    public const string LogisticsTransferOutgoingDocumentsRead = "logistics.transfer-outgoing-documents.read";
+    public const string LogisticsTransferDeparturesRecord = "logistics.transfer-departures.record";
+
     /// <summary>
     /// F-020 (LOJ-D6..D8): cancel a loading instruction with a reason (LogisticsPermissionManifestV1) while no shipment is recorded —
     /// never a delete. Its own name. Registered, not granted (grant is a human gate). Company-wide only. Not Critical.
@@ -781,6 +1192,23 @@ public static class ErpPermissions
 
     /// <summary>Decides a pending customer return. Registered, not granted; company-wide only.</summary>
     public const string LogisticsCustomerReturnsDecision = "logistics.customer-returns.decision";
+
+    /// <summary>
+    /// STK-S24 (SAT-D319..D325, SAT-D340..D344): record a dispatch note's sales weighing difference (theoretical ↔ scale bands,
+    /// physical cover, the excess rule) — LogisticsPermissionManifestV1. Its own name. Registered, not granted (grant is a human
+    /// gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string LogisticsWeighingDifferencesRecord = "logistics.weighing-differences.record";
+
+    /// <summary>
+    /// STK-S24 (SAT-D320 (1), SAT-D321 (1)–(2)): approve a weighing difference at or above the rate. The decision names the Satış
+    /// Müdürü; who holds the name is a grant (human gate). The domain still refuses whoever entered the weighing or a shipment.
+    /// Registered, not granted. Company-wide only. Not Critical.
+    /// </summary>
+    public const string LogisticsWeighingDifferencesApprove = "logistics.weighing-differences.approve";
+
+    /// <summary>STK-S24: read weighing-difference records of the context company. Registered, not granted. Company-wide only. Not Critical.</summary>
+    public const string LogisticsWeighingDifferencesRead = "logistics.weighing-differences.read";
 
     /// <summary>
     /// AT-025: the operations work list's two SEPARATE section reads (LogisticsPermissionManifestV1) — the sales section (L-01) and
@@ -868,6 +1296,53 @@ public static class ErpPermissions
     public const string PurchasingOrdersRevise = "purchasing.orders.revise";
 
     /// <summary>
+    /// API-11 (ALIS_F017 v1 §3.6, ALS-D10/D12/D87; plan API-11 name): close the unaccepted remainder of an APPROVED purchase order's
+    /// general line (eksik teslim kapanışı) and reopen it. The Purchasing owner's name (PurchasingPermissionManifestV1.OrdersClose),
+    /// apart from entering, approving, receiving, cancelling and revising; none confers another. When future allocations exist on
+    /// the line, the release name is measured beside it (§3.5/§3.6, F17-4). Registered, not granted: no role, seed or user receives
+    /// it here (only SENTETIK browser-suite personas in disposable stacks); the persona card and any real grant stay a human gate.
+    /// Company-wide only. Not Critical.
+    /// </summary>
+    public const string PurchasingOrdersClose = "purchasing.orders.close";
+
+    /// <summary>
+    /// ALC-S16 (F-027, KLN-D45): approve or reject a bulk goods receipt whose total kg differs from the order line outside the Ayarlar
+    /// tolerance (or with no tolerance set). The Purchasing owner's name (PurchasingPermissionManifestV1.GoodsReceiptsApproveVariance),
+    /// apart from recording a receipt; neither confers the other, and the batch's preparer never decides it (hazırlayan ≠ onaylayan).
+    /// Registered, not granted: no role, seed or user receives it here; any real grant stays a human gate. Company-wide only. Not Critical.
+    /// </summary>
+    public const string PurchasingGoodsReceiptsApproveVariance = "purchasing.goods-receipts.approve-variance";
+
+    /// <summary>
+    /// ALS-D116, W5-5.1: overdelivery approval is independent of order approval and variance approval.
+    /// Company-wide, not Critical. Registered only; no persona, role or user receives a grant here.
+    /// </summary>
+    public const string PurchasingGoodsReceiptsApproveOverdelivery = "purchasing.goods-receipts.approve-overdelivery";
+
+    /// <summary>
+    /// ALC-S3 (F-017 F17-4, ALS-D83/D85): release a sales line's future supply allocation on a purchase line from the Purchasing
+    /// screen (bağ düşürme), and — together with the cancel or close name — release the linked allocations while cancelling an
+    /// order's remainder or closing a line. The Purchasing owner's name (PurchasingPermissionManifestV1.FutureAllocationRelease);
+    /// apart from cancelling and closing, neither confers the other. Registered, not granted: no role, seed or user receives it
+    /// here; any real grant stays a human gate. Company-wide only. Not Critical.
+    /// </summary>
+    public const string PurchasingFutureAllocationRelease = "purchasing.future-allocation.release";
+
+    /// <summary>
+    /// ALC-S5 (B-19; SAT-D306): records a return to supplier of one received label (stock leaves at the original purchase line's
+    /// unit cost). The cost exception decision is NOT this permission: it uses <see cref="PurchasingOrdersApprove"/> (SAT-D396).
+    /// Registered, not granted: no role, seed or user receives it here; any real grant stays a human gate. Company-wide only. Not Critical.
+    /// </summary>
+    public const string PurchasingSupplierReturnsRecord = "purchasing.supplier-returns.record";
+
+    /// <summary>ALS-D7/D8/D44/D64 incoming-invoice operation names. Registration only; no grant, role or activation.</summary>
+    public const string PurchasingInvoicesRead = "purchasing.invoices.read";
+    public const string PurchasingInvoicesImport = "purchasing.invoices.import";
+    public const string PurchasingInvoicesMatch = "purchasing.invoices.match";
+    public const string PurchasingInvoicesApproveVariance = "purchasing.invoices.approve-variance";
+    public const string PurchasingInvoicesFinalize = "purchasing.invoices.finalize";
+
+    /// <summary>
     /// ACC-V0a: the Accounting owner's names (AccountingPermissionManifestV1), the backend owners' technical mapping
     /// (Business #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Each read is its own
     /// narrow name and writing is apart from reading (Sinan #66 5738113623 §4); approving a period opening is for a
@@ -941,6 +1416,14 @@ public static class ErpPermissions
     public const string AccountingPostingMappingsActivate = "accounting.posting-mappings.activate";
 
     /// <summary>
+    /// FIN-S16 (M-05 Hesap Planı, KALAN_MODULLER_HAZIRLIK_PLANI_v1 M-05): the Accounting owner's narrow read of the
+    /// active approved account plan (code and name of each account). Its own name per #66 5738113623 §4 ("each read
+    /// is its own narrow name"). Registered, not granted: which persona reads the account plan is a human grant
+    /// decision. Company-wide only; not Critical.
+    /// </summary>
+    public const string AccountingAccountPlanRead = "accounting.account-plan.read";
+
+    /// <summary>
     /// SAT-D65/D68/D69/D70 (Sinan, 2026-10-27, <c>SINAN_KARARLARI_2026-10-27_SATIS_EK11.md</c>): ONE separate name for editing
     /// the Sales discount limit groups, their limits (fixed, or linked group + extra points) and the person → limit group
     /// bindings, and for reading them — the Settings owner's name (<c>SettingsPermissionManifestV1.SalesDiscountLimitsManage</c>).
@@ -957,6 +1440,124 @@ public static class ErpPermissions
     /// it here (a human grant gate). Company-wide only. Not Critical.
     /// </summary>
     public const string SettingsTaxMasterManage = "settings.tax-master.manage";
+
+    /// <summary>
+    /// F-029 S4b (URUN_F029 spec §5.4(1); URN-D2…D5): read the Sales delivery tolerance (SAT-D5) timeline, transfer its reviewed
+    /// compiled baseline once and record new versions (<c>SettingsSalesPolicyPermissionManifestV1.DeliveryToleranceManage</c>).
+    /// Registered, not granted: no role, seed or user receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsSalesDeliveryTolerancesManage = "settings.sales-delivery-tolerances.manage";
+
+    /// <summary>
+    /// F-029 S4b (URUN_F029 spec §5.4(1); URN-D2…D5): read the Sales order-approval amount thresholds (SAT-D6), transfer their
+    /// reviewed compiled baseline once and record new versions per currency
+    /// (<c>SettingsSalesPolicyPermissionManifestV1.ApprovalThresholdManage</c>). Registered, not granted: no role, seed or user
+    /// receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsSalesApprovalThresholdsManage = "settings.sales-approval-thresholds.manage";
+
+    /// <summary>
+    /// F-029 S5 (URUN_F029 spec §5.4(2); URN-D2…D5): read the Sales quote policies — the closed loss reason list (SAT-D25)
+    /// and the default quote validity (SAT-D39) — transfer their reviewed compiled baseline once and record new versions
+    /// (<c>SettingsSalesQuoteAndEInvoicePolicyPermissionManifestV1.SalesQuotePolicyManage</c>). Registered, not granted: no
+    /// role, seed or user receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsSalesQuotePoliciesManage = "settings.sales-quote-policies.manage";
+
+    /// <summary>ALS-D8/D15/D63: explicit company invoice-variance policy publication. Registered only; no grant or new Critical class.</summary>
+    public const string SettingsPurchaseInvoiceVariancePoliciesManage = "settings.purchase-invoice-variance-policies.manage";
+    public const string SettingsWarehouseTransferScaleManage = "settings.warehouse-transfer-scale.manage";
+
+    /// <summary>
+    /// F-029 S6 (URUN_F029 spec §5.4(2); URN-D2…D5): read the e-Fatura scenario policy — the scenario code list (SAT-D120)
+    /// and the default scenario (SAT-D102) — transfer its reviewed compiled baseline once and record new versions
+    /// (<c>SettingsSalesQuoteAndEInvoicePolicyPermissionManifestV1.EInvoiceScenarioManage</c>). Registered, not granted: no
+    /// role, seed or user receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsEInvoiceScenariosManage = "settings.einvoice-scenarios.manage";
+
+    /// <summary>
+    /// F-004 (BS-9/BS-13/BS-16/BS-17; URN-D7…D9): read the company's unit conversion policy timeline — the steel density, the
+    /// coefficient and document total decimals and rounding, the whole-unit rounding and the weighbridge tolerance with its
+    /// boundary and base — and record new versions (<c>SettingsUnitConversionPolicyPermissionManifestV1.Manage</c>).
+    /// Registered, not granted: no role, seed or user receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsUnitConversionPoliciesManage = "settings.unit-conversion-policies.manage";
+
+    /// <summary>
+    /// F-029 S1/S2 (URUN_F029 spec §5.4(4); URN-D2…D5): read the company's unit profile timeline (which unit the company may
+    /// use, from when, at what quantity scale), transfer the approved baseline once and record new versions
+    /// (<c>SettingsUnitProfilePermissionManifestV1.Manage</c>). Registered, not granted: no role, seed or user receives it here
+    /// (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsUnitProfilesManage = "settings.unit-profiles.manage";
+
+    /// <summary>URN-D2/D3 and KIM-D9: money profile administration; registration only, no grant.</summary>
+    public const string SettingsMoneyProfilesManage = "settings.money-profiles.manage";
+
+    /// <summary>
+    /// KIM-D34: read the group-wide login attempt limit timeline (attempts per window, window length, what a window counts per)
+    /// and record new versions (<c>SettingsLoginRateLimitPermissionManifestV1.Manage</c>). Registered, not granted: no role,
+    /// seed or user receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsLoginRateLimitManage = "settings.login-rate-limit.manage";
+
+    /// <summary>
+    /// URT-D89: read the company's work center capacity timelines (input kg/hour and the optional due-date safety buffer in
+    /// hours or days) and record new versions (<c>SettingsWorkCenterCapacityPermissionManifestV1.Manage</c>). Persona: the
+    /// production manager (a persona note only). Registered, not granted: no role, seed or user receives it here (a human
+    /// grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsWorkCenterCapacitiesManage = "settings.work-center-capacities.manage";
+
+    /// <summary>
+    /// FNS-D52: read the company's per-bank CSV column mappings of the bank statement import (XLSX and MT940 need none) and
+    /// record new versions (<c>SettingsBankCsvMappingPermissionManifestV1.Manage</c>). Registered, not granted: no role, seed
+    /// or user receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsBankCsvMappingsManage = "settings.bank-csv-mappings.manage";
+
+    /// <summary>
+    /// F-024 (NS-01): read the company's segregation of duties setting — whether the person who prepared a document may also
+    /// approve it (default: no; a company run by one person may relax it) — and record new versions
+    /// (<c>SettingsSegregationOfDutiesPolicyPermissionManifestV1.Manage</c>). Registered, not granted: no role, seed or user
+    /// receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsSegregationOfDutiesManage = "settings.segregation-of-duties.manage";
+
+    /// <summary>
+    /// KIM-S19 (B-13): read the company's Finance opening-balance period and record open/close versions
+    /// (<c>SettingsCompanyPolicyPermissionManifestV1.FinanceOpeningPeriodManage</c>). Registered, not granted: no role, seed or
+    /// user receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    // FNS-D70/FNS-D68/KLN-D109: registration only, human grant gate.
+    // SAT-D358/KLN-D109: separate setting, registered only; no persona is hardcoded or granted.
+    public const string SettingsSalesContractDiscountLimitManage = "settings.sales-contract-discount-limit.manage";
+
+    public const string SettingsCollateralTypesManage = "settings.collateral-types.manage";
+
+    public const string SettingsFinanceOpeningPeriodManage = "settings.finance-opening-period.manage";
+    /// <summary>SAT-D305 technical registry name only; real authorized manager grants remain human-owned.</summary>
+    public const string SettingsManufacturingScrapCostManage = "settings.manufacturing-scrap-cost.manage";
+    /// <summary>KLN-D114/D115: register notification passivation duration management, no grant or deletion authority.</summary>
+    public const string SettingsNotificationRetentionManage = "settings.notification-retention.manage";
+    public const string SettingsDocumentNumberSeriesManage = "settings.document-number-series.manage";
+
+    /// <summary>
+    /// KIM-S18 (KIM-D49/KIM-D51, API-98): read the company's purchasing reference lists (expense type, service type) and add,
+    /// rename, deactivate or reactivate their entries (<c>SettingsReferenceListPermissionManifestV1.PurchasingListsManage</c>).
+    /// The decided personas (KIM-D51: purchasing manager and administrator) are a persona note only. Registered, not granted:
+    /// no role, seed or user receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsReferenceListsManage = "settings.reference-lists.manage";
+
+    /// <summary>
+    /// KIM-S18 (B-14, URT-D8): read the company's production reference lists (paint color, scrap kind) and add, rename,
+    /// deactivate or reactivate their entries (<c>SettingsReferenceListPermissionManifestV1.ProductionListsManage</c>). Who edits
+    /// these lists is not decided (NEEDS-SINAN). Registered, not granted: no role, seed or user receives it here. Company-wide
+    /// only. Not Critical.
+    /// </summary>
+    public const string SettingsProductionReferenceListsManage = "settings.production-reference-lists.manage";
 
     /// <summary>
     /// DEC-FIN-010 / KUR_GUNU / EK24 SAT-D169…D172: the Settings exchange-rate record's names
@@ -987,6 +1588,22 @@ public static class ErpPermissions
     /// not granted: no role, seed or user receives them here (a human grant gate). Company-wide only. Not Critical.
     /// </summary>
     public const string SettingsManufacturingParameterProfilesRead = "settings.manufacturing-parameter-profiles.read";
+
+    /// <summary>
+    /// 2026-10-21 No133 / K16: generic policy names are registered, not granted. Company-wide only.
+    /// URN-D3/D4 govern the actual family lifecycle; registering approve does not add an approval step.
+    /// The publish-critical name is an additional authority name, not a new Critical classification.
+    /// </summary>
+    public const string SettingsPoliciesPrepare = "settings.policies.prepare";
+
+    /// <inheritdoc cref="SettingsPoliciesPrepare"/>
+    public const string SettingsPoliciesApprove = "settings.policies.approve";
+
+    /// <inheritdoc cref="SettingsPoliciesPrepare"/>
+    public const string SettingsPoliciesPublish = "settings.policies.publish";
+
+    /// <inheritdoc cref="SettingsPoliciesPrepare"/>
+    public const string SettingsPoliciesPublishCritical = "settings.policies.publish-critical";
 
     /// <inheritdoc cref="SettingsManufacturingParameterProfilesRead"/>
     public const string SettingsManufacturingParameterProfilesPrepare = "settings.manufacturing-parameter-profiles.prepare";
@@ -1026,6 +1643,22 @@ public static class ErpPermissions
     /// <inheritdoc cref="DocumentsFilesRead"/>
     public const string DocumentsFilesUpload = "documents.files.upload";
 
+    /// <summary>
+    /// B-26 (DEC-DOC-002): link an EXISTING document to one more owner record without a second upload. Measured ON TOP
+    /// of the owner's read of BOTH records (the document's and the new one's). Registered, not granted: no role, seed or
+    /// user receives it here (a grant is a human gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string DocumentsFilesLink = "documents.files.link";
+
+    /// <summary>STK-S29 / KLN-D33/D73/D109: company branding and separate module template duties. Registered only; no grant or Critical classification.</summary>
+    public const string DocumentsCompanyBrandingManage = "documents.company-branding.manage";
+    public const string DocumentsSalesTemplatePrepare = "documents.templates.sales.prepare";
+    public const string DocumentsSalesTemplatePublish = "documents.templates.sales.publish";
+    public const string DocumentsInventoryTemplatePrepare = "documents.templates.inventory.prepare";
+    public const string DocumentsInventoryTemplatePublish = "documents.templates.inventory.publish";
+    public const string DocumentsLogisticsTemplatePrepare = "documents.templates.logistics.prepare";
+    public const string DocumentsLogisticsTemplatePublish = "documents.templates.logistics.publish";
+
     public const string IdentityProfileRead = "identity.profile.read";
     public const string IdentityAccessRequest = "identity.access.request";
     public const string IdentityAccessApprove = "identity.access.approve";
@@ -1036,9 +1669,32 @@ public static class ErpPermissions
     /// company-wide only (user decision 2026-09-28); no seeded role holds it.
     /// </summary>
     public const string IdentityAssignmentsRead = "identity.assignments.read";
+    /// <summary>
+    /// KIM-D9 (user decision 2026-11-12): manage local user accounts (create, deactivate, reset a password) in the
+    /// company. Registered, not granted: no role, seed or user receives it here (a grant is a human gate). Company-wide
+    /// only. Not Critical: the account itself carries no permission; what it may do is decided by role assignment,
+    /// which stays under identity.roles.manage and identity.access.approve.
+    /// </summary>
+    public const string IdentityUsersManage = "identity.users.manage";
+    /// <summary>
+    /// ADR-SEC-001 section 5 read of the company's security event channel (security.SecurityEvents). Company-wide
+    /// only; platform rows need a separate platform permission. Critical (user decision 2026-11-11, Issue #66
+    /// comment 6810051185 item 19: held only by Sinan and the admin; any other holder needs Sinan's approval). No
+    /// seeded role holds it: applying the grant is a human gate.
+    /// </summary>
+    public const string PlatformSecurityEventsRead = "platform.security-events.read";
+    /// <summary>
+    /// AI-3 right-panel capability: may ask the READ-only AI runtime in the company context. AI-D8 keeps the name and
+    /// makes it company-wide (registered company-wide only, not critical). The decided starting holders are the admin
+    /// and general-manager personas, but no seeded role holds it: applying that grant is a human gate. Each owner READ
+    /// tool still requires its own permissions in addition to this capability, and the runtime itself stays off (AI-D6).
+    /// </summary>
+    public const string AiPanelUse = "ai.panel.use";
 
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(
         [
+            OrganizationCompaniesOpen,
+            IdentityCompanyFirstAdminAssign,
             OrganizationContextRead,
             OrganizationSitesRead,
             OrganizationLocationsRead,
@@ -1047,6 +1703,9 @@ public static class ErpPermissions
             OrganizationSitesWrite,
             OrganizationLocationsWrite,
             OrganizationWorkCentersWrite,
+            OrganizationWorkCenterCalendarsWrite,
+            OrganizationCompanyTaxIdRequest,
+            OrganizationCompanyTaxIdApprove,
             CounterpartyPartiesRead,
             CounterpartyPartiesCreate,
             CounterpartyPartiesUpdateBasic,
@@ -1057,11 +1716,22 @@ public static class ErpPermissions
             CounterpartyCustomerGroupsManage,
             CounterpartyAccountsCustomerGroupAssign,
             CounterpartyAccountsEDocumentUpdate,
+            CounterpartiesLegalNamePropose,
+            CounterpartiesLegalNameApprove,
+            CounterpartyPartiesMergeApprove,
+            CounterpartyPartiesSuccessionRecord,
+            CounterpartyPartiesGroupDeactivate,
             ProductOperationalSelectionRead,
             ProductPriceListsRead,
             ProductPriceListsWrite,
             ProductPriceListsPublish,
             ProductItemTypeManage,
+            ProductDimensionManage,
+            ProductProfileWeightsImport,
+            ProductPackageStandardsManage,
+            ProductPaintMembershipsManage,
+            ProductCogsClassificationsManage,
+            ProductPackageStandardsApprove,
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,
@@ -1099,38 +1769,65 @@ public static class ErpPermissions
             SalesReturnsWrite,
             SalesReturnsApprove,
             SalesReturnsFinalize,
+            SalesContractsRead,
+            SalesContractsWrite,
+            SalesContractsDiscountApprove,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
             ManufacturingFactsRecord,
             ManufacturingOrdersRead,
+            ManufacturingFactsCorrect,
             ManufacturingOrdersClose,
             ManufacturingOrdersCloseExceptionApprove,
+            ManufacturingOrdersWrite,
+            ManufacturingOrdersCancel,
+            ManufacturingOrdersReopen,
             ManufacturingPlansRead,
             ManufacturingPlansCancel,
+            ManufacturingPlansReorder,
+            ManufacturingScrapPricesRead,
+            ManufacturingScrapPricesWrite,
+            ManufacturingReportsRead,
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
             InventoryPhysicalAllocationWrite,
+            InventoryFutureAllocationRead,
+            InventoryFutureAllocationWrite,
             InventoryLabelTransformationRecord,
             InventoryLabelClassificationWrite,
             InventoryStockCountRecord,
             InventoryStockCountApprove,
             InventoryStockScrapRecord,
             InventoryStockScrapApprove,
+            InventoryStockTransferWrite,
+            InventoryStockTransferCancel,
+            InventoryStockTransferOverageApprove,
+            InventoryStockTransferLossRecord,
+            InventoryStockTransferLossApprove,
+            InventoryOpeningCostSubmit,
+            InventoryOpeningCostApprove,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
             LogisticsShipmentsRecord,
+            LogisticsShipmentPlanExcessApprove,
             LogisticsDeliveriesRecord,
             LogisticsWeighingsRecord,
+            LogisticsWeighingsCorrect,
             LogisticsDispatchNotesCreate,
             LogisticsDispatchNotesApprove,
             LogisticsDispatchNotesCancel,
+            LogisticsTransferOutgoingDocumentsRead,
+            LogisticsTransferDeparturesRecord,
             LogisticsLoadingInstructionsCancel,
             LogisticsCustomerReturnsRead,
             LogisticsCustomerReturnsRequest,
             LogisticsCustomerReturnsDecision,
+            LogisticsWeighingDifferencesRecord,
+            LogisticsWeighingDifferencesApprove,
+            LogisticsWeighingDifferencesRead,
             LogisticsOperationsSalesWorkRead,
             LogisticsOperationsPurchaseWorkRead,
             PurchasingOrdersCreate,
@@ -1142,6 +1839,16 @@ public static class ErpPermissions
             PurchasingOrdersCancel,
             PurchasingOrdersPriceRead,
             PurchasingOrdersRevise,
+            PurchasingOrdersClose,
+            PurchasingGoodsReceiptsApproveVariance,
+            PurchasingGoodsReceiptsApproveOverdelivery,
+            PurchasingFutureAllocationRelease,
+            PurchasingSupplierReturnsRecord,
+            PurchasingInvoicesRead,
+            PurchasingInvoicesImport,
+            PurchasingInvoicesMatch,
+            PurchasingInvoicesApproveVariance,
+            PurchasingInvoicesFinalize,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -1157,11 +1864,33 @@ public static class ErpPermissions
             AccountingPostingMappingsRead,
             AccountingPostingMappingsPrepare,
             AccountingPostingMappingsActivate,
+            AccountingAccountPlanRead,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
+            FinanceCashAccountRead,
+            FinanceCashAccountPropose,
+            FinanceCashAccountApprove,
+            FinanceCashAccountPassivationPropose,
+            FinanceCashAccountPassivationApprove,
+            FinanceCashAccountReactivationPropose,
+            FinanceCashAccountReactivationApprove,
+            FinanceCreditLimitsRead,
+            FinanceCreditLimitsPropose,
+            FinanceCreditLimitsApprove,
+            FinanceCollateralsRead,
+            FinanceCollateralsRecord,
+            FinanceOpeningBalancesRead,
+            FinanceOpeningBalancesPropose,
+            FinanceOpeningBalancesApprove,
+            FinanceCreditsRead,
+            FinanceCreditsPropose,
+            FinanceCreditsApprove,
             FinanceOfficialInvoiceImportUpload,
             FinanceOfficialInvoiceImportApprove,
+            FinanceOfficialSalesInvoicesRecord,
+            FinanceOfficialSalesInvoicesApprove,
+            FinanceOfficialSalesInvoicesWithdraw,
             FinanceManualReceiptDraftSave,
             FinanceManualReceiptDraftRead,
             FinanceManualReceiptAmountRead,
@@ -1174,6 +1903,12 @@ public static class ErpPermissions
         FinanceManualBankPaymentRecord,
         FinanceManualBankPaymentReversePropose,
         FinanceManualBankPaymentReverseApprove,
+        FinanceExpensePaymentDraftSave,
+        FinanceExpensePaymentDraftRead,
+        FinanceExpensePaymentApprove,
+        FinanceExpensePaymentRecord,
+        FinanceCashTransfersRead,
+        FinanceCashTransfersCommit,
         FinanceCustomerInstrumentRead,
         FinanceCustomerInstrumentAmountRead,
         FinanceCustomerInstrumentReceive,
@@ -1181,19 +1916,53 @@ public static class ErpPermissions
         FinanceCustomerInstrumentCollect,
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
+        FinancePartyBalanceTransfersRecord,
         FinanceOpenItemsRead,
         FinanceOpenItemsAmountRead,
         FinanceAllocationWrite,
         FinanceAllocationRead,
             DocumentsFilesRead,
             DocumentsFilesUpload,
+            DocumentsFilesLink,
+            DocumentsCompanyBrandingManage,
+            DocumentsSalesTemplatePrepare,
+            DocumentsSalesTemplatePublish,
+            DocumentsInventoryTemplatePrepare,
+            DocumentsInventoryTemplatePublish,
+            DocumentsLogisticsTemplatePrepare,
+            DocumentsLogisticsTemplatePublish,
             SettingsSalesDiscountLimitsManage,
             SettingsTaxMasterManage,
+            SettingsSalesDeliveryTolerancesManage,
+            SettingsSalesApprovalThresholdsManage,
+            SettingsSalesQuotePoliciesManage,
+            SettingsPurchaseInvoiceVariancePoliciesManage,
+            SettingsWarehouseTransferScaleManage,
+            SettingsEInvoiceScenariosManage,
+            SettingsUnitConversionPoliciesManage,
+            SettingsUnitProfilesManage,
+            SettingsMoneyProfilesManage,
+            SettingsLoginRateLimitManage,
+            SettingsWorkCenterCapacitiesManage,
+            SettingsBankCsvMappingsManage,
+            SettingsSegregationOfDutiesManage,
+            SettingsSalesContractDiscountLimitManage,
+            SettingsCollateralTypesManage,
+            SettingsFinanceOpeningPeriodManage,
+            SettingsManufacturingScrapCostManage,
+            SettingsNotificationRetentionManage,
+            SettingsDocumentNumberSeriesManage,
+            SettingsReferenceListsManage,
+            SettingsProductionReferenceListsManage,
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
             SettingsExchangeRatesImport,
             SettingsExchangeRatesHalfDayMark,
             SettingsManufacturingParameterProfilesRead,
+            SettingsPoliciesPrepare,
+            SettingsPoliciesApprove,
+            SettingsPoliciesPublish,
+            SettingsPoliciesPublishCritical,
             SettingsManufacturingParameterProfilesPrepare,
             SettingsManufacturingParameterProfilesApprove,
             SettingsManufacturingParameterProfilesPublish,
@@ -1207,17 +1976,30 @@ public static class ErpPermissions
             IdentityRolesManage,
             IdentityAuditRead,
             IdentityAssignmentsRead,
+            AiPanelUse,
+            IdentityUsersManage,
+            PlatformSecurityEventsRead,
         ],
         StringComparer.Ordinal);
 
     public static IReadOnlySet<string> Critical { get; } = new HashSet<string>(
         [
+            OrganizationCompaniesOpen,
             IdentityAccessApprove,
             IdentityRolesManage,
             IdentityAuditRead,
             IdentityAssignmentsRead,
+            PlatformSecurityEventsRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
+            FinanceCashAccountPropose,
+            FinanceCashAccountApprove,
+            FinanceCashAccountPassivationPropose,
+            FinanceCashAccountPassivationApprove,
+            FinanceCashAccountReactivationPropose,
+            FinanceCashAccountReactivationApprove,
+            FinanceCreditLimitsApprove,
+            FinanceCreditsApprove,
             CounterpartyPartiesTaxIdentityApprove,
         ],
         StringComparer.Ordinal);
@@ -1225,6 +2007,8 @@ public static class ErpPermissions
     public static IReadOnlySet<string> CompanyWideOnly { get; } = new HashSet<string>(
         [
             OrganizationSitesWrite,
+            OrganizationCompanyTaxIdRequest,
+            OrganizationCompanyTaxIdApprove,
             CounterpartyPartiesRead,
             CounterpartyPartiesCreate,
             CounterpartyPartiesUpdateBasic,
@@ -1235,11 +2019,21 @@ public static class ErpPermissions
             CounterpartyCustomerGroupsManage,
             CounterpartyAccountsCustomerGroupAssign,
             CounterpartyAccountsEDocumentUpdate,
+            CounterpartiesLegalNamePropose,
+            CounterpartiesLegalNameApprove,
+            CounterpartyPartiesMergeApprove,
+            CounterpartyPartiesSuccessionRecord,
+            CounterpartyPartiesGroupDeactivate,
             ProductOperationalSelectionRead,
             ProductPriceListsRead,
             ProductPriceListsWrite,
             ProductPriceListsPublish,
             ProductItemTypeManage,
+            ProductDimensionManage,
+            ProductProfileWeightsImport,
+            ProductPackageStandardsManage,
+            ProductPaintMembershipsManage,
+            ProductPackageStandardsApprove,
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,
@@ -1277,38 +2071,65 @@ public static class ErpPermissions
             SalesReturnsWrite,
             SalesReturnsApprove,
             SalesReturnsFinalize,
+            SalesContractsRead,
+            SalesContractsWrite,
+            SalesContractsDiscountApprove,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
             ManufacturingFactsRecord,
             ManufacturingOrdersRead,
+            ManufacturingFactsCorrect,
             ManufacturingOrdersClose,
             ManufacturingOrdersCloseExceptionApprove,
+            ManufacturingOrdersWrite,
+            ManufacturingOrdersCancel,
+            ManufacturingOrdersReopen,
             ManufacturingPlansRead,
             ManufacturingPlansCancel,
+            ManufacturingPlansReorder,
+            ManufacturingScrapPricesRead,
+            ManufacturingScrapPricesWrite,
+            ManufacturingReportsRead,
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
             InventoryPhysicalAllocationWrite,
+            InventoryFutureAllocationRead,
+            InventoryFutureAllocationWrite,
             InventoryLabelTransformationRecord,
             InventoryLabelClassificationWrite,
             InventoryStockCountRecord,
             InventoryStockCountApprove,
             InventoryStockScrapRecord,
             InventoryStockScrapApprove,
+            InventoryStockTransferWrite,
+            InventoryStockTransferCancel,
+            InventoryStockTransferOverageApprove,
+            InventoryStockTransferLossRecord,
+            InventoryStockTransferLossApprove,
+            InventoryOpeningCostSubmit,
+            InventoryOpeningCostApprove,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
             LogisticsShipmentsRecord,
+            LogisticsShipmentPlanExcessApprove,
             LogisticsDeliveriesRecord,
             LogisticsWeighingsRecord,
+            LogisticsWeighingsCorrect,
             LogisticsDispatchNotesCreate,
             LogisticsDispatchNotesApprove,
             LogisticsDispatchNotesCancel,
+            LogisticsTransferOutgoingDocumentsRead,
+            LogisticsTransferDeparturesRecord,
             LogisticsLoadingInstructionsCancel,
             LogisticsCustomerReturnsRead,
             LogisticsCustomerReturnsRequest,
             LogisticsCustomerReturnsDecision,
+            LogisticsWeighingDifferencesRecord,
+            LogisticsWeighingDifferencesApprove,
+            LogisticsWeighingDifferencesRead,
             LogisticsOperationsSalesWorkRead,
             LogisticsOperationsPurchaseWorkRead,
             PurchasingOrdersCreate,
@@ -1320,6 +2141,16 @@ public static class ErpPermissions
             PurchasingOrdersCancel,
             PurchasingOrdersPriceRead,
             PurchasingOrdersRevise,
+            PurchasingOrdersClose,
+            PurchasingGoodsReceiptsApproveVariance,
+            PurchasingGoodsReceiptsApproveOverdelivery,
+            PurchasingFutureAllocationRelease,
+            PurchasingSupplierReturnsRecord,
+            PurchasingInvoicesRead,
+            PurchasingInvoicesImport,
+            PurchasingInvoicesMatch,
+            PurchasingInvoicesApproveVariance,
+            PurchasingInvoicesFinalize,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -1335,11 +2166,33 @@ public static class ErpPermissions
             AccountingPostingMappingsRead,
             AccountingPostingMappingsPrepare,
             AccountingPostingMappingsActivate,
+            AccountingAccountPlanRead,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
+            FinanceCashAccountRead,
+            FinanceCashAccountPropose,
+            FinanceCashAccountApprove,
+            FinanceCashAccountPassivationPropose,
+            FinanceCashAccountPassivationApprove,
+            FinanceCashAccountReactivationPropose,
+            FinanceCashAccountReactivationApprove,
+            FinanceCreditLimitsRead,
+            FinanceCreditLimitsPropose,
+            FinanceCreditLimitsApprove,
+            FinanceCollateralsRead,
+            FinanceCollateralsRecord,
+            FinanceOpeningBalancesRead,
+            FinanceOpeningBalancesPropose,
+            FinanceOpeningBalancesApprove,
+            FinanceCreditsRead,
+            FinanceCreditsPropose,
+            FinanceCreditsApprove,
             FinanceOfficialInvoiceImportUpload,
             FinanceOfficialInvoiceImportApprove,
+            FinanceOfficialSalesInvoicesRecord,
+            FinanceOfficialSalesInvoicesApprove,
+            FinanceOfficialSalesInvoicesWithdraw,
             FinanceManualReceiptDraftSave,
             FinanceManualReceiptDraftRead,
             FinanceManualReceiptAmountRead,
@@ -1352,6 +2205,12 @@ public static class ErpPermissions
         FinanceManualBankPaymentRecord,
         FinanceManualBankPaymentReversePropose,
         FinanceManualBankPaymentReverseApprove,
+        FinanceExpensePaymentDraftSave,
+        FinanceExpensePaymentDraftRead,
+        FinanceExpensePaymentApprove,
+        FinanceExpensePaymentRecord,
+        FinanceCashTransfersRead,
+        FinanceCashTransfersCommit,
         FinanceCustomerInstrumentRead,
         FinanceCustomerInstrumentAmountRead,
         FinanceCustomerInstrumentReceive,
@@ -1359,19 +2218,53 @@ public static class ErpPermissions
         FinanceCustomerInstrumentCollect,
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
+        FinancePartyBalanceTransfersRecord,
         FinanceOpenItemsRead,
         FinanceOpenItemsAmountRead,
         FinanceAllocationWrite,
         FinanceAllocationRead,
             DocumentsFilesRead,
             DocumentsFilesUpload,
+            DocumentsFilesLink,
+            DocumentsCompanyBrandingManage,
+            DocumentsSalesTemplatePrepare,
+            DocumentsSalesTemplatePublish,
+            DocumentsInventoryTemplatePrepare,
+            DocumentsInventoryTemplatePublish,
+            DocumentsLogisticsTemplatePrepare,
+            DocumentsLogisticsTemplatePublish,
             SettingsSalesDiscountLimitsManage,
             SettingsTaxMasterManage,
+            SettingsSalesDeliveryTolerancesManage,
+            SettingsSalesApprovalThresholdsManage,
+            SettingsSalesQuotePoliciesManage,
+            SettingsPurchaseInvoiceVariancePoliciesManage,
+            SettingsWarehouseTransferScaleManage,
+            SettingsEInvoiceScenariosManage,
+            SettingsUnitConversionPoliciesManage,
+            SettingsUnitProfilesManage,
+            SettingsMoneyProfilesManage,
+            SettingsLoginRateLimitManage,
+            SettingsWorkCenterCapacitiesManage,
+            SettingsBankCsvMappingsManage,
+            SettingsSegregationOfDutiesManage,
+            SettingsSalesContractDiscountLimitManage,
+            SettingsCollateralTypesManage,
+            SettingsFinanceOpeningPeriodManage,
+            SettingsManufacturingScrapCostManage,
+            SettingsNotificationRetentionManage,
+            SettingsDocumentNumberSeriesManage,
+            SettingsReferenceListsManage,
+            SettingsProductionReferenceListsManage,
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
             SettingsExchangeRatesImport,
             SettingsExchangeRatesHalfDayMark,
             SettingsManufacturingParameterProfilesRead,
+            SettingsPoliciesPrepare,
+            SettingsPoliciesApprove,
+            SettingsPoliciesPublish,
+            SettingsPoliciesPublishCritical,
             SettingsManufacturingParameterProfilesPrepare,
             SettingsManufacturingParameterProfilesApprove,
             SettingsManufacturingParameterProfilesPublish,
@@ -1381,6 +2274,9 @@ public static class ErpPermissions
             SettingsManufacturingToleranceProfilesPublish,
             IdentityAuditRead,
             IdentityAssignmentsRead,
+            AiPanelUse,
+            IdentityUsersManage,
+            PlatformSecurityEventsRead,
         ],
         StringComparer.Ordinal);
 

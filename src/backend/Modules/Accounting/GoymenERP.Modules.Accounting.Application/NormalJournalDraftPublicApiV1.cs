@@ -29,7 +29,12 @@ public sealed record NormalJournalDraftServerSourceV1(
     Guid CurrencyId,
     string? SourceVersion = null,
     string? OwnerProfileId = null,
-    string? OwnerProfileVersion = null);
+    string? OwnerProfileVersion = null,
+    string? ExactSourceAmount = null,
+    IReadOnlyList<NormalJournalExactSourceLineV1>? ExactSourceLines = null);
+
+/// <summary>Server-owned amounts bound to the actual source and approved mapping keys, never supplied by a public command.</summary>
+public sealed record NormalJournalExactSourceLineV1(string MappingKey, string Side, string Amount);
 
 public interface INormalJournalDraftServerSourceProviderV1
 {
@@ -139,6 +144,27 @@ public sealed class NormalJournalDraftPublicServiceV1(
                 null, false, NormalJournalDraftPreparationCodesV1.VersionConflict);
         }
 
+        // B-28 recorded expense / same-currency transfer: the owner supplies the exact amount.
+        // A balanced draft still must not enlarge or shrink that economic fact. Sources without
+        // this explicit constraint retain their existing manual-journal behavior.
+        if (source.ExactSourceAmount is { } exact)
+        {
+            if (!NormalJournalDraftSourcePreparationV1.TryExactAmount(exact, out var sourceAmount))
+                return new(AccountingApiStatus.Unavailable, null, false, null);
+            if (request.Lines.Any(line => !NormalJournalDraftSourcePreparationV1.TryExactAmount(line.Amount, out _)))
+                return Unprocessable(NormalJournalDraftPreparationCodesV1.SourceAmountMismatch);
+            try
+            {
+                if (!NormalJournalExactSourceAmountsV1.TotalMatches(parsedLines.Where(x => x.Side == PostingSide.Debit).Select(x => x.Amount), sourceAmount)
+                    || !NormalJournalExactSourceAmountsV1.TotalMatches(parsedLines.Where(x => x.Side == PostingSide.Credit).Select(x => x.Amount), sourceAmount))
+                    return Unprocessable(NormalJournalDraftPreparationCodesV1.SourceAmountMismatch);
+            }
+            catch (OverflowException)
+            {
+                return Unprocessable(NormalJournalDraftPreparationCodesV1.SourceAmountMismatch);
+            }
+        }
+
         var proposed = new List<ProposedLine>(request.Lines.Count);
         foreach (var line in parsedLines)
         {
@@ -153,6 +179,9 @@ public sealed class NormalJournalDraftPublicServiceV1(
 
             proposed.Add(new ProposedLine(mappings[0].MappingKey, account, line.Side, line.Amount));
         }
+
+        if (source.ExactSourceLines is { } sourceLines && !NormalJournalExactSourceAmountsV1.Matches(sourceLines, proposed))
+            return Unprocessable(NormalJournalDraftPreparationCodesV1.SourceAmountMismatch);
 
         try
         {

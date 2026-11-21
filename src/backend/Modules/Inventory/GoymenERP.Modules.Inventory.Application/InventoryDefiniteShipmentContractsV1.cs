@@ -100,7 +100,7 @@ public static class InventoryDefiniteShipmentCodesV1
 
 public sealed class InventoryDefiniteShipmentException : Exception
 {
-    private InventoryDefiniteShipmentException(int status, string code) : base(code)
+    private InventoryDefiniteShipmentException(int status, string code, Exception? innerException = null) : base(code, innerException)
     {
         Status = status;
         Code = code;
@@ -109,10 +109,25 @@ public sealed class InventoryDefiniteShipmentException : Exception
     public int Status { get; }
     public string Code { get; }
 
-    public static InventoryDefiniteShipmentException Refused(int status, string code) =>
+    public static InventoryDefiniteShipmentException Refused(int status, string code, Exception? innerException = null) =>
         InventoryDefiniteShipmentCodesV1.IsDefined(status, code)
-            ? new(status, code)
+            ? new(status, code, innerException)
             : throw new InvalidOperationException("Inventory definite-shipment refusal is outside its closed contract.");
+
+    /// <summary>The separate subcontract command's closed refusals; the normal Sale refusal contract stays unchanged.</summary>
+    public static InventoryDefiniteShipmentException RefusedSubcontract(int status, string code, Exception? innerException = null) =>
+        InventoryDefiniteShipmentCodesV1.IsDefined(status, code) || (status, code) is
+            (400, InventorySubcontractDeliveryContractV1.Invalid) or
+            (404, InventorySubcontractDeliveryContractV1.SourceMismatch) or
+            (409, InventorySubcontractDeliveryContractV1.SourceMismatch) or
+            (409, InventorySubcontractDeliveryContractV1.OwnerMismatch) or
+            (409, InventoryAllocationCodesV1.InsufficientFreeStock) or
+            (409, GoymenERP.BuildingBlocks.Concurrency.SalesOrderLineSerializationLockContractV1.BusyCode) or
+            (503, InventorySubcontractDeliveryContractV1.SourceMismatch) or
+            (503, InventoryDefiniteShipmentCodesV1.PhysicalStockInsufficient) or
+            (503, InventorySubcontractDeliveryContractV1.Unavailable)
+            ? new(status, code, innerException)
+            : throw new InvalidOperationException("Inventory subcontract-delivery refusal is outside its closed contract.");
 }
 
 /// <summary>

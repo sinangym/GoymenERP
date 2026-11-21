@@ -14,16 +14,112 @@ using GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 using GoymenERP.Modules.Sales.Infrastructure.Shell;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using GoymenERP.Modules.Settings.Infrastructure.Shell;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
 /// SAT-D61…D70: the Settings provider (the discount limit screen) joins the full normal host as its last module, with
 /// one capability on the one non-Critical, company-wide limit name; MOD-03 (Settings 1.1) adds the tax master screen on its
-/// own non-Critical, company-wide name.
+/// own non-Critical, company-wide name; F-025 (Settings 1.2, B-11) adds the exchange rate screen on the read name with three
+/// command controls (correction, half-day mark, import — the import name also carries the re-verification); F-029 S4b
+/// (Settings 1.3, URN-D2/D3) adds the delivery tolerance and the approval amount threshold screens, each on its own
+/// non-Critical, company-wide name; KIM-D34/KIM-D37 (Settings 1.4) add the group-wide login attempt limit and the unit
+/// conversion policy screens, each on its own non-Critical, company-wide name; F-029 S1/S2 and URT-D89 (Settings 1.5) add the
+/// unit profile and the work center capacity screens, each on its own non-Critical, company-wide name; API-98/B-14 (Settings
+/// 1.6, KIM-D49/KIM-D51) add the purchasing and the production reference list screens, each on its own non-Critical,
+/// company-wide name granted to no role.
 /// </summary>
 public sealed class SettingsShellAuthorityTests
 {
+    [Fact]
+    public void Template_publishing_preserves_its_independent_permission_under_a_staged_workspace()
+    {
+        var provider = new SettingsShellCapabilityProvider();
+        _ = ShellCapabilityRegistry.ComputeCandidateRevision([provider]);
+        var declarations = provider.GetDeclarations();
+        foreach (var (prepare, publish) in new[]
+        {
+            (ErpPermissions.DocumentsSalesTemplatePrepare, ErpPermissions.DocumentsSalesTemplatePublish),
+            (ErpPermissions.DocumentsInventoryTemplatePrepare, ErpPermissions.DocumentsInventoryTemplatePublish),
+            (ErpPermissions.DocumentsLogisticsTemplatePrepare, ErpPermissions.DocumentsLogisticsTemplatePublish),
+        })
+        {
+            var preparation = Assert.Single(declarations, item => item.CapabilityId == prepare);
+            var publication = Assert.Single(declarations, item => item.CapabilityId == publish);
+            Assert.Equal([prepare], preparation.RequiredPermissions);
+            Assert.Equal([publish], publication.RequiredPermissions);
+            Assert.Equal(preparation.ParentCapabilityId, publication.ParentCapabilityId);
+            var workspace = Assert.Single(declarations, item => item.CapabilityId == preparation.ParentCapabilityId);
+            Assert.Null(workspace.ParentCapabilityId);
+            Assert.Empty(workspace.RequiredPermissions);
+            Assert.All(new[] { workspace, preparation, publication }, item => Assert.False(item.ImplementationAvailable));
+        }
+    }
+
+    [Fact]
+    public void Finance_policy_routes_use_registered_prepare_and_publish_purposes_without_enabling_staged_screens()
+    {
+        var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
+        var ids = new[]
+        {
+            SettingsShellCapabilityProvider.FinancePolicyPrepareCapabilityId,
+            SettingsShellCapabilityProvider.CashDifferencePolicyCapabilityId,
+            SettingsShellCapabilityProvider.BankInstitutionsCapabilityId,
+            SettingsShellCapabilityProvider.CollateralRatePolicyCapabilityId,
+        };
+        foreach (var id in ids)
+        {
+            var route = Assert.Single(declarations, candidate => candidate.CapabilityId == id);
+            Assert.Equal([ErpPermissions.SettingsPoliciesPrepare], route.RequiredPermissions);
+            Assert.Null(route.ParentCapabilityId);
+            Assert.False(route.ImplementationAvailable);
+            Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, route.ContextRequirement);
+            Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, route.ScopeRequirement);
+        }
+        var prepare = Assert.Single(declarations,
+            item => item.CapabilityId == SettingsShellCapabilityProvider.FinancePolicyPrepareCapabilityId);
+        foreach (var item in new[]
+        {
+            (SettingsShellCapabilityProvider.FinancePolicyPublishCapabilityId,
+                new[] { ErpPermissions.SettingsPoliciesPrepare, ErpPermissions.SettingsPoliciesPublish }),
+            (SettingsShellCapabilityProvider.FinancePolicyPublishCriticalCapabilityId,
+                new[] { ErpPermissions.SettingsPoliciesPrepare, ErpPermissions.SettingsPoliciesPublish,
+                    ErpPermissions.SettingsPoliciesPublishCritical }),
+        })
+        {
+            var control = Assert.Single(declarations, candidate => candidate.CapabilityId == item.Item1);
+            Assert.Equal(item.Item2, control.RequiredPermissions);
+            Assert.Equal(prepare.CapabilityId, control.ParentCapabilityId);
+            Assert.Equal((prepare.RoutePath, prepare.ScreenId), (control.RoutePath, control.ScreenId));
+            Assert.False(control.ImplementationAvailable);
+            Assert.DoesNotContain(ErpPermissions.SettingsPoliciesApprove, control.RequiredPermissions);
+        }
+    }
+
+    [Fact]
+    public void Subcontract_tax_screens_keep_existing_sales_and_purchasing_approval_authorities_separate()
+    {
+        var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
+        foreach (var item in new[]
+        {
+            (SettingsShellCapabilityProvider.SalesSubcontractTaxCapabilityId, SettingsShellCapabilityProvider.SalesSubcontractTaxRoutePath,
+                ErpPermissions.SalesOrdersApprove, ErpPermissions.PurchasingOrdersApprove),
+            (SettingsShellCapabilityProvider.PurchasingSubcontractTaxCapabilityId, SettingsShellCapabilityProvider.PurchasingSubcontractTaxRoutePath,
+                ErpPermissions.PurchasingOrdersApprove, ErpPermissions.SalesOrdersApprove),
+        })
+        {
+            var screen = Assert.Single(declarations, candidate => candidate.CapabilityId == item.Item1);
+            Assert.Equal(item.Item2, screen.RoutePath);
+            Assert.Equal([item.Item3], screen.RequiredPermissions);
+            Assert.DoesNotContain(item.Item4, screen.RequiredPermissions);
+            Assert.DoesNotContain(screen.CapabilityId, screen.RequiredPermissions);
+            Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, screen.ContextRequirement);
+            Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, screen.ScopeRequirement);
+            Assert.False(screen.ImplementationAvailable);
+        }
+    }
+
     [Fact]
     public void Normal_host_revision_matches_the_exact_integrated_provider_tuple_with_settings()
     {
@@ -53,6 +149,31 @@ public sealed class SettingsShellAuthorityTests
     }
 
     [Fact]
+    public void Actual_host_including_paint_memberships_uses_its_exact_provider_authority()
+    {
+        IShellCapabilityProvider[] providers =
+        [
+            new CounterpartyShellCapabilityProvider(), new OrganizationShellCapabilityProvider(),
+            new ProductShellCapabilityProvider(), new SalesShellCapabilityProvider(),
+            new FinanceShellCapabilityProvider(), new ManufacturingShellCapabilityProvider(),
+            new LogisticsShellCapabilityProvider(), new PurchasingShellCapabilityProvider(),
+            new AccountingShellCapabilityProvider(), new InventoryShellCapabilityProvider(),
+            new IdentityShellCapabilityProvider(), new ProductPriceListShellCapabilityProvider(),
+            new SettingsShellCapabilityProvider(), new ProductPaintMembershipShellCapabilityProvider(),
+        ];
+        var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
+        Assert.True(string.Equals(ShellCapabilityRegistryAuthorities.FullNormalHostWithSettingsAndPaintMemberships,
+            actual, StringComparison.Ordinal), $"Actual normal-host authority drifted. Actual: {actual}");
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+        foreach (var provider in providers)
+            services.AddSingleton(typeof(IShellCapabilityProvider), provider.GetType());
+        var configured = C01E2eShellCapabilityActivation.Configure(services,
+            new Microsoft.Extensions.Hosting.Internal.HostingEnvironment { EnvironmentName = "Testing" },
+            new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build());
+        Assert.Equal(actual, configured);
+    }
+
+    [Fact]
     public void The_screen_stands_on_the_one_limit_name_company_wide_in_one_company()
     {
         var declaration = Assert.Single(new SettingsShellCapabilityProvider().GetDeclarations(),
@@ -70,8 +191,8 @@ public sealed class SettingsShellAuthorityTests
     public void The_tax_master_screen_stands_on_the_one_tax_master_name_company_wide_in_one_company()
     {
         var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
-        Assert.Equal(2, declarations.Count);
-        Assert.Equal("1.1", new SettingsShellCapabilityProvider().ContractVersion);
+        Assert.Equal(47, declarations.Count);
+        Assert.Equal("1.18", new SettingsShellCapabilityProvider().ContractVersion);
         var declaration = Assert.Single(declarations,
             candidate => candidate.CapabilityId == SettingsShellCapabilityProvider.TaxMasterCapabilityId);
 
@@ -81,5 +202,87 @@ public sealed class SettingsShellAuthorityTests
         Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement);
         Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, declaration.ScopeRequirement);
         Assert.False(ErpPermissions.IsCritical(SettingsTaxMasterPermissionManifestV1.TaxMasterManage));
+    }
+
+    [Fact]
+    public void The_exchange_rate_screen_stands_on_the_read_name_with_three_command_controls()
+    {
+        var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
+        var screen = Assert.Single(declarations,
+            candidate => candidate.CapabilityId == SettingsShellCapabilityProvider.ExchangeRatesCapabilityId);
+
+        Assert.Equal(("settings.exchange-rates.read", "/ayarlar/kurlar", "AY-KUR-01"),
+            (screen.CapabilityId, screen.RoutePath, screen.ScreenId));
+        Assert.Equal([SettingsExchangeRatePermissionManifestV1.Read], screen.RequiredPermissions);
+        Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, screen.ContextRequirement);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, screen.ScopeRequirement);
+        Assert.Null(screen.ParentCapabilityId);
+
+        string[] commands =
+        [
+            SettingsExchangeRatePermissionManifestV1.Correct,
+            SettingsExchangeRatePermissionManifestV1.MarkHalfDay,
+            SettingsExchangeRatePermissionManifestV1.Import,
+        ];
+        foreach (var command in commands)
+        {
+            var control = Assert.Single(declarations, candidate => candidate.CapabilityId == command);
+            Assert.Equal(SettingsShellCapabilityProvider.ExchangeRatesCapabilityId, control.ParentCapabilityId);
+            Assert.Equal([SettingsExchangeRatePermissionManifestV1.Read, command], control.RequiredPermissions);
+            Assert.Equal((screen.RoutePath, screen.ScreenId), (control.RoutePath, control.ScreenId));
+            Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, control.ContextRequirement);
+            Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, control.ScopeRequirement);
+        }
+
+        foreach (var name in commands.Prepend(SettingsExchangeRatePermissionManifestV1.Read))
+        {
+            Assert.False(ErpPermissions.IsCritical(name));
+        }
+    }
+
+    [Fact]
+    public void The_sales_policy_screens_stand_each_on_its_one_name_company_wide_in_one_company()
+    {
+        var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
+        (string Id, string Path, string ScreenId, string Permission)[] screens =
+        [
+            ("settings.purchase-invoice-variance-policies.manage", "/ayarlar/alis-fatura-fark-toleransi", "AY-AFF-01",
+                SettingsPurchaseInvoiceVariancePolicyPermissionsV1.Manage),
+            ("settings.sales-delivery-tolerances.manage", "/ayarlar/teslim-toleransi", "AY-TSL-01",
+                SettingsSalesPolicyPermissionManifestV1.DeliveryToleranceManage),
+            ("settings.sales-approval-thresholds.manage", "/ayarlar/onay-esikleri", "AY-ONY-01",
+                SettingsSalesPolicyPermissionManifestV1.ApprovalThresholdManage),
+            ("settings.login-rate-limit.manage", "/ayarlar/giris-deneme-siniri", "AY-GDS-01",
+                SettingsLoginRateLimitPermissionManifestV1.Manage),
+            ("settings.unit-conversion-policies.manage", "/ayarlar/birim-cevrim-politikasi", "AY-BCP-01",
+                SettingsUnitConversionPolicyPermissionManifestV1.Manage),
+            ("settings.unit-profiles.manage", "/ayarlar/birim-profilleri", "AY-BRP-01",
+                SettingsUnitProfilePermissionManifestV1.Manage),
+            ("settings.work-center-capacities.manage", "/ayarlar/is-merkezi-kapasitesi", "AY-IMK-01",
+                SettingsWorkCenterCapacityPermissionManifestV1.Manage),
+            ("settings.reference-lists.manage", "/ayarlar/referans-listeleri", "AY-RFL-01",
+                SettingsReferenceListPermissionManifestV1.PurchasingListsManage),
+            ("settings.sales-contract-discount-limit.manage", "/ayarlar/sozlesme-iskonto-siniri", "AY-SIS-01",
+                SettingsSalesContractDiscountLimitPermissionsV1.Manage),
+            ("settings.collateral-types.manage", "/ayarlar/teminat-turleri", "AY-TMT-01",
+                SettingsCollateralTypePermissionsV1.Manage),
+            ("settings.production-reference-lists.manage", "/ayarlar/uretim-referans-listeleri", "AY-URL-01",
+                SettingsReferenceListPermissionManifestV1.ProductionListsManage),
+        ];
+
+        foreach (var expected in screens)
+        {
+            var declaration = Assert.Single(declarations, candidate => candidate.CapabilityId == expected.Id);
+            Assert.Equal((expected.Id, expected.Id, expected.Path, expected.ScreenId),
+                (declaration.CapabilityId, declaration.RouteId, declaration.RoutePath, declaration.ScreenId));
+            Assert.Equal([expected.Permission], declaration.RequiredPermissions);
+            Assert.Equal(ShellCapabilityRoutePrecedence.Static, declaration.RoutePrecedence);
+            Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement);
+            Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, declaration.ScopeRequirement);
+            Assert.Null(declaration.ParentCapabilityId);
+            Assert.True(declaration.ImplementationAvailable);
+            Assert.False(ErpPermissions.IsCritical(expected.Permission));
+            Assert.True(ErpPermissions.CompanyWideOnly.Contains(expected.Permission));
+        }
     }
 }

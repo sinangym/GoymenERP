@@ -2,7 +2,8 @@
  * UI-70b S-10 "Müşteri iade faturaları" in the real shell (`AppShell`, `CapabilityRoute`) against SENTETIK wire bodies pinned to
  * API-40. Component evidence, NOT_ENV: each route opens only on its own published id; every read and write is company-bound;
  * the list keeps the server order and narrows on the server; the create form sends the recorded body under a key and keeps the
- * key when the outcome is unknown; the commands re-read the return; the 503 of a missing Finance port (SAT-D294) says why.
+ * key when the outcome is unknown; the commands re-read the return; the 503 of a missing Finance port (SAT-D294) says why; a
+ * partial return's finalization carries the user's installment selection, prefilled from Finance's answer (FNS-D81).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
@@ -21,14 +22,18 @@ import {
   CANCELLATION_REASON,
   INVOICE_LINE_1,
   INVOICE_LINE_2,
+  OPEN_ITEM_1,
+  OPEN_ITEM_2,
   REJECTION_REASON,
   RETURN_2,
   RETURN_DOCUMENT_NO,
   RETURN_ID,
   SHIPMENT_2,
   finalizedInvoiceWithLines,
+  returnInstallments,
   returnSummary,
   returnView,
+  wholeReturnInstallments,
 } from './customerReturnTestData'
 import { ACCOUNT, COMPANY_A, CURRENCY, PARTY, installPoolFetch, json, type PoolCall } from './poolFixtures'
 import { POOL_TEXT } from './poolText'
@@ -44,6 +49,7 @@ type Wire = Record<string, unknown>
 const T = CUSTOMER_RETURN_TEXT
 const LIST_URL = '/api/v1/sales/customer-returns'
 const DETAIL_URL = `${LIST_URL}/${RETURN_ID}`
+const INSTALLMENTS_URL = `${DETAIL_URL}/installments`
 const INVOICES_URL = '/api/v1/sales/invoices?pageSize=50'
 const INVOICE_URL = `/api/v1/sales/invoices/${INVOICE_ID}`
 const READ = [SALES_CAPABILITY.customerReturnsList, SALES_CAPABILITY.customerReturnsDetail, SALES_CAPABILITY.customerReturnsCreate]
@@ -290,10 +296,16 @@ const COMMANDS = [
   SALES_CUSTOMER_RETURN_FINALIZE_CAPABILITY,
 ]
 
-function serveDetail(states: readonly string[], onCommand: (call: PoolCall) => Response, capabilities: readonly string[] = COMMANDS) {
+function serveDetail(
+  states: readonly string[],
+  onCommand: (call: PoolCall) => Response,
+  capabilities: readonly string[] = COMMANDS,
+  onInstallments: (call: PoolCall) => Response = () => json(returnInstallments()),
+) {
   let reads = 0
   return installPoolFetch((call) => {
     if (call.method === 'GET' && call.url === DETAIL_URL) return json(returnView(states[Math.min(reads++, states.length - 1)]))
+    if (call.method === 'GET' && call.url === INSTALLMENTS_URL) return onInstallments(call)
     if (call.method === 'POST' && call.url.startsWith(`${DETAIL_URL}/`)) return onCommand(call)
     return unexpected(call)
   }, capabilities)
@@ -339,10 +351,14 @@ describe('UI-70b S-10 detail and commands', () => {
 
   it('keeps the key on the 503 of a missing Finance port, says why and offers only the same send', async () => {
     const user = userEvent.setup()
-    const fetch = serveDetail(['Approved'], () =>
-      problem(503, { code: CUSTOMER_RETURN_PROBLEM_CODE.financePortUnavailable }),
+    const fetch = serveDetail(
+      ['Approved'],
+      () => problem(503, { code: CUSTOMER_RETURN_PROBLEM_CODE.financePortUnavailable }),
+      COMMANDS,
+      () => json(wholeReturnInstallments()),
     )
     renderPool(`/satis/iadeler/${RETURN_ID}`)
+    expect(await screen.findByText(T.detail.installments.wholeHint)).toBeTruthy()
     await user.click(await screen.findByRole('button', { name: T.detail.finalize }))
     const notice = await screen.findByTestId('customer-return-notice')
     expect(notice.textContent).toBe(T.detail.financePortUnavailable)
@@ -354,6 +370,119 @@ describe('UI-70b S-10 detail and commands', () => {
     expect(second.idempotencyKey).toBe(first.idempotencyKey)
     expect(second.body).toEqual({ expectedVersion: '3' })
     expect(screen.getByTestId('customer-return-state').textContent).toBe('Onaylandı')
+  })
+})
+
+describe('SAT-S2 finalization with the installment selection (FNS-D81)', () => {
+  const amountOf = (openItemId: string) => screen.getByTestId(`customer-return-installment-amount-${openItemId}`) as HTMLInputElement
+
+  it('prefills the nearest-due installment and sends only the non-zero amounts with the version it read', async () => {
+    const user = userEvent.setup()
+    const fetch = serveDetail(['Approved', 'Finalized'], () => json(returnView('Finalized')))
+    renderPool(`/satis/iadeler/${RETURN_ID}`)
+    expect(await screen.findByText(T.detail.installments.partialHint)).toBeTruthy()
+    expect(amountOf(OPEN_ITEM_1).value).toBe('240.00')
+    expect(amountOf(OPEN_ITEM_2).value).toBe('0')
+    await user.click(screen.getByRole('button', { name: T.detail.finalize }))
+    expect((await screen.findByTestId('customer-return-notice')).textContent).toBe(T.detail.completed.finalization)
+    const [post] = fetch.posts()
+    expect(post.url).toBe(`${DETAIL_URL}/finalization`)
+    expect(post.body).toEqual({ expectedVersion: '3', allocations: [{ openItemId: OPEN_ITEM_1, amount: '240' }] })
+    expect(post.companyId).toBe(COMPANY_A)
+    const read = fetch.calls.find((call) => call.url === INSTALLMENTS_URL)
+    expect(read?.companyId).toBe(COMPANY_A)
+  })
+
+  it('sends the selection the user changed, never Finance\'s automatic order', async () => {
+    const user = userEvent.setup()
+    const fetch = serveDetail(['Approved', 'Finalized'], () => json(returnView('Finalized')))
+    renderPool(`/satis/iadeler/${RETURN_ID}`)
+    await screen.findByText(T.detail.installments.partialHint)
+    await user.clear(amountOf(OPEN_ITEM_1))
+    await user.type(amountOf(OPEN_ITEM_1), '40')
+    await user.clear(amountOf(OPEN_ITEM_2))
+    await user.type(amountOf(OPEN_ITEM_2), '200,00')
+    await user.click(screen.getByRole('button', { name: T.detail.finalize }))
+    await waitFor(() => expect(fetch.posts()).toHaveLength(1))
+    expect(fetch.posts()[0].body).toEqual({
+      expectedVersion: '3',
+      allocations: [
+        { openItemId: OPEN_ITEM_1, amount: '40' },
+        { openItemId: OPEN_ITEM_2, amount: '200' },
+      ],
+    })
+  })
+
+  it('sends nothing while an amount is not a number or every amount is zero', async () => {
+    const user = userEvent.setup()
+    const fetch = serveDetail(['Approved'], unexpected)
+    renderPool(`/satis/iadeler/${RETURN_ID}`)
+    await screen.findByText(T.detail.installments.partialHint)
+    await user.clear(amountOf(OPEN_ITEM_1))
+    await user.type(amountOf(OPEN_ITEM_1), 'abc')
+    await user.click(screen.getByRole('button', { name: T.detail.finalize }))
+    expect((await screen.findByTestId('customer-return-installments-selection-error')).textContent)
+      .toBe(T.detail.installments.amountInvalid)
+    await user.clear(amountOf(OPEN_ITEM_1))
+    await user.type(amountOf(OPEN_ITEM_1), '0')
+    await user.click(screen.getByRole('button', { name: T.detail.finalize }))
+    expect(await screen.findByTestId('customer-return-installments-selection-error')).toBeTruthy()
+    expect(fetch.posts()).toHaveLength(0)
+  })
+
+  it('finalizes a whole return without an allocations member', async () => {
+    const user = userEvent.setup()
+    const fetch = serveDetail(['Approved', 'Finalized'], () => json(returnView('Finalized')), COMMANDS, () =>
+      json(wholeReturnInstallments()))
+    renderPool(`/satis/iadeler/${RETURN_ID}`)
+    expect(await screen.findByText(T.detail.installments.wholeHint)).toBeTruthy()
+    expect(screen.queryByTestId(`customer-return-installment-amount-${OPEN_ITEM_1}`)).toBeNull()
+    await user.click(screen.getByRole('button', { name: T.detail.finalize }))
+    await waitFor(() => expect(fetch.posts()).toHaveLength(1))
+    expect(fetch.posts()[0].body).toEqual({ expectedVersion: '3' })
+  })
+
+  it('keeps the finalization closed while the installments cannot be read and says why', async () => {
+    const user = userEvent.setup()
+    let reads = 0
+    const fetch = serveDetail(['Approved'], unexpected, COMMANDS, () => {
+      reads += 1
+      return reads === 1
+        ? problem(503, { code: CUSTOMER_RETURN_PROBLEM_CODE.financePortUnavailable })
+        : json(returnInstallments())
+    })
+    renderPool(`/satis/iadeler/${RETURN_ID}`)
+    const error = await screen.findByTestId('customer-return-installments-error')
+    expect(error.textContent).toContain(T.detail.financePortUnavailable)
+    expect((screen.getByRole('button', { name: T.detail.finalize }) as HTMLButtonElement).disabled).toBe(true)
+    await user.click(within(error).getByRole('button', { name: T.detail.installments.retry }))
+    expect(await screen.findByText(T.detail.installments.partialHint)).toBeTruthy()
+    expect((screen.getByRole('button', { name: T.detail.finalize }) as HTMLButtonElement).disabled).toBe(false)
+    expect(fetch.posts()).toHaveLength(0)
+  })
+
+  it('says why the server asked for a selection', async () => {
+    const user = userEvent.setup()
+    serveDetail(['Approved'], () =>
+      problem(422, {
+        code: CUSTOMER_RETURN_PROBLEM_CODE.installmentsRequired,
+        errors: [{ field: 'allocations', code: CUSTOMER_RETURN_PROBLEM_CODE.installmentsRequired }],
+      }),
+    )
+    renderPool(`/satis/iadeler/${RETURN_ID}`)
+    await screen.findByText(T.detail.installments.partialHint)
+    await user.click(screen.getByRole('button', { name: T.detail.finalize }))
+    expect((await screen.findByTestId('customer-return-notice')).textContent)
+      .toContain(customerReturnProblemText(CUSTOMER_RETURN_PROBLEM_CODE.installmentsRequired))
+    expect(screen.getByTestId('customer-return-state').textContent).toBe('Onaylandı')
+  })
+
+  it('reads no installments without the finalize id', async () => {
+    const fetch = serveDetail(['Approved'], unexpected, [SALES_CAPABILITY.customerReturnsDetail, SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY])
+    renderPool(`/satis/iadeler/${RETURN_ID}`)
+    await screen.findByTestId('customer-return-state')
+    expect(screen.queryByTestId('customer-return-installments')).toBeNull()
+    expect(fetch.calls.some((call) => call.url === INSTALLMENTS_URL)).toBe(false)
   })
 })
 

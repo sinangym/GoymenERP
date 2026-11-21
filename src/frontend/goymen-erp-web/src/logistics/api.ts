@@ -6,6 +6,7 @@
  *   GET  …/loading-instructions?pageSize&cursor&status     → LoadingInstructionListResponse
  *   GET  …/loading-instructions/{id}                       → LoadingInstructionDetailView
  *   POST …/loading-instructions/{id}/issue                 → 200 (Draft → Issued); replay 200 + header
+ *   POST …/loading-instructions/{id}/cancel                → 200 (F-020: Draft/Issued → Cancelled); replay 200 + header
  *   POST …/loading-instructions/{id}/lines/{lineId}/loads → 200 (a loaded share); replay 200 + header
  *   POST …/loading-instructions/{id}/weighings             → 200 (AT-053 weighbridge record); replay 200 + header
  *   POST …/loading-instructions/{id}/dispatch-notes        → 200 (AT-055 dispatch-note draft); replay 200 + header
@@ -34,8 +35,11 @@ import {
   decodeApprovedOrderLinePage,
   decodeSalesOrderDispatchNotes,
   DISPATCH_NOTE_STATUS,
+  INSTRUCTION_STATUS,
+  UNLOAD_RECORD,
   approveDispatchNotePath,
   cancelDispatchNotePath,
+  cancelInstructionPath,
   dispatchNotesPath,
   eDispatchNumberPath,
   decodeInstructionDetail,
@@ -46,9 +50,11 @@ import {
   issuePath,
   loadsPath,
   weighingsPath,
+  unloadWeighingsPath,
   type ApprovedOrderLinePage,
   type ApproveDispatchNoteRequest,
   type CancelDispatchNoteRequest,
+  type CancelInstructionRequest,
   type CreateDispatchNoteRequest,
   type DispatchNote,
   type SalesOrderDispatchNotes,
@@ -61,6 +67,7 @@ import {
   type IssueRequest,
   type RecordLoadRequest,
   type RecordWeighingRequest,
+  type RecordUnloadWeighingRequest,
 } from './contract'
 import type { CommandOutcome } from './instructionAttempt'
 import type { ViewOutcome } from '../shell/uiState'
@@ -78,6 +85,7 @@ import {
 } from './operationsWorkContract'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
+export { headers as logisticsHeaders }
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
 const DEV_IDENTITY_ENABLED = import.meta.env.DEV || import.meta.env.VITE_BOOTSTRAP_IDENTITY_ENABLED === 'true'
 
@@ -310,7 +318,7 @@ export interface CommandContext {
 async function sendTransition(
   path: string,
   payload: IssueRequest | RecordLoadRequest | RecordShipmentRequest | RecordDeliveryRequest | RecordWeighingRequest | CreateDispatchNoteRequest
-    | ApproveDispatchNoteRequest | CancelDispatchNoteRequest | SetEDispatchNumberRequest,
+    | ApproveDispatchNoteRequest | CancelDispatchNoteRequest | SetEDispatchNumberRequest | CancelInstructionRequest,
   context: CommandContext,
   signal: AbortSignal | undefined,
 ): Promise<CommandOutcome<InstructionMutation>> {
@@ -347,6 +355,21 @@ export function issueInstruction(
   signal?: AbortSignal,
 ): Promise<CommandOutcome<InstructionMutation>> {
   return sendTransition(issuePath(context.instructionId), payload, context, signal)
+}
+
+/**
+ * F-020 (LOJ-D6): cancel the instruction with a reason. The answer must carry THIS instruction Cancelled with exactly the reason
+ * sent; anything else is `malformed` (the cancel may be recorded, so the key is kept).
+ */
+export async function cancelInstruction(
+  payload: CancelInstructionRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<CommandOutcome<InstructionMutation>> {
+  const outcome = await sendTransition(cancelInstructionPath(context.instructionId), payload, context, signal)
+  if (outcome.type !== 'succeeded') return outcome
+  const { instruction } = outcome.data.detail
+  return instruction.status !== INSTRUCTION_STATUS.cancelled || instruction.cancelReason !== payload.reason ? { type: 'malformed' } : outcome
 }
 
 /** One loaded share on a line: the answer must be THIS instruction, and the share sent must be in it. */
@@ -409,6 +432,22 @@ export async function recordWeighing(payload: RecordWeighingRequest, context: Co
   const weighing = outcome.data.detail.weighing
   return weighing === null || weighing.weighingId !== payload.weighingId || weighing.direction !== payload.direction
     || weighing.firstWeighingKg !== payload.firstWeighingKg || weighing.secondWeighingKg !== payload.secondWeighingKg
+    ? { type: 'malformed' } : outcome
+}
+
+/**
+ * LOJ-D17: the manual unload weighing of a cancelled instruction. The answer must be THIS instruction carrying THE weighing sent
+ * (its id, direction and both weighings) and no longer marked "indirme kaydı yok"; the net, difference and warning are the
+ * backend's (the decoder only checks their identities).
+ */
+export async function recordUnloadWeighing(payload: RecordUnloadWeighingRequest, context: CommandContext,
+  signal?: AbortSignal): Promise<CommandOutcome<InstructionMutation>> {
+  const outcome = await sendTransition(unloadWeighingsPath(context.instructionId), payload, context, signal)
+  if (outcome.type !== 'succeeded') return outcome
+  const { instruction, unloadWeighing } = outcome.data.detail
+  return instruction.status !== INSTRUCTION_STATUS.cancelled || instruction.unloadRecord !== UNLOAD_RECORD.recorded
+    || unloadWeighing === null || unloadWeighing.weighingId !== payload.weighingId || unloadWeighing.direction !== payload.direction
+    || unloadWeighing.firstWeighingKg !== payload.firstWeighingKg || unloadWeighing.secondWeighingKg !== payload.secondWeighingKg
     ? { type: 'malformed' } : outcome
 }
 

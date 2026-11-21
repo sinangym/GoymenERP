@@ -18,7 +18,8 @@ public sealed record DocumentPdfRequest(
     IReadOnlyList<DocumentPdfBlock> Blocks,
     string FooterText,
     string PageLabelFormat,
-    string? Watermark = null);
+    string? Watermark = null,
+    DocumentPdfBranding? Branding = null);
 
 /// <summary>One block of a <see cref="DocumentPdfRequest"/>; the closed set below is the whole layout vocabulary.</summary>
 public abstract record DocumentPdfBlock;

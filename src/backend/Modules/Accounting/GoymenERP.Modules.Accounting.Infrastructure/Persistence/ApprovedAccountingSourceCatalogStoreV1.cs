@@ -5,6 +5,7 @@ using GoymenERP.Modules.Accounting.Domain;
 using GoymenERP.Modules.Accounting.Domain.Journals;
 using GoymenERP.Modules.Accounting.Domain.Posting;
 using GoymenERP.Modules.Audit.Application.Contracts;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
@@ -14,13 +15,13 @@ public sealed class ApprovedAccountingSourceCatalogStoreV1(
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
     TimeProvider timeProvider)
-    : IApprovedAccountingSourceCatalogStoreV1
+    : IApprovedAccountingSourceCatalogStoreV1, IApprovedNormalJournalSourceKindCatalogV1
 {
     private const int Prepared = (int)ApprovedAccountingSourceCatalogStatusV1.Prepared;
     private const int Active = (int)ApprovedAccountingSourceCatalogStatusV1.Active;
     private const int Superseded = (int)ApprovedAccountingSourceCatalogStatusV1.Superseded;
     private const string EntityType = "Accounting.ApprovedSourceCatalog";
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<ApprovedAccountingSourceCatalogRecordV1?> ReadAsync(
         Guid packageId,
@@ -244,6 +245,17 @@ public sealed class ApprovedAccountingSourceCatalogStoreV1(
             cancellationToken);
     }
 
+    public async Task<string?> ResolveKindAsync(Guid companyId, Guid sourceId, CancellationToken cancellationToken = default)
+    {
+        RequireCompany();
+        if (companyId != companyContext.CompanyId || sourceId == Guid.Empty) return null;
+        var row = await dbContext.ApprovedSourceCatalogs.AsNoTracking().SingleOrDefaultAsync(x => x.Status == Active, cancellationToken);
+        if (row is null) return null;
+        var kinds = Restore(row).Package.Bindings.Where(x => x.CompanyId == companyId && x.SourceId == sourceId)
+            .Select(x => x.SourceKind).Distinct(StringComparer.Ordinal).ToArray();
+        return kinds.Length == 1 && NormalJournalSourceKindsV1.IsSupported(kinds[0]) ? kinds[0] : null;
+    }
+
     private ApprovedAccountingSourceCatalogRecordV1 Restore(ApprovedAccountingSourceCatalogRow row)
     {
         var snapshot = JsonSerializer.Deserialize<PackageSnapshot>(row.PackageJson, Json)
@@ -295,10 +307,15 @@ public sealed class ApprovedAccountingSourceCatalogStoreV1(
             throw Refused(AccountingStoreCodes.ConcurrentChange,
                 "Another catalog write changed the same version first; nothing was stored.", exception);
         }
-        catch (DbUpdateException exception)
+        catch (DbUpdateException exception) when (exception.GetBaseException() is SqlException { Number: 2601 or 2627 or 1205 })
         {
             throw Refused(AccountingStoreCodes.ConcurrentChange,
                 "A durable catalog identity was won by another write; nothing was stored.", exception);
+        }
+        catch (DbUpdateException exception)
+        {
+            throw Refused(AccountingStoreCodes.ProviderUnavailable,
+                "The catalog write provider failed; no terminal command answer was stored.", exception);
         }
     }
 
@@ -360,7 +377,7 @@ public sealed class ApprovedAccountingSourceCatalogStoreV1(
     }
 
     private static AccountingStoreException Refused(string code, string message, Exception? inner = null) =>
-        new(code, message, inner);
+        new AccountingStoreException(code, message, inner);
 
     private static string AuditJson(ApprovedAccountingSourceCatalogRecordV1 record) =>
         JsonSerializer.Serialize(new
@@ -403,7 +420,7 @@ public sealed class ApprovedAccountingSourceCatalogStoreV1(
         IReadOnlyList<BindingSnapshot> Bindings)
     {
         public static PackageSnapshot From(ApprovedAccountingSourcePackageV1 package) =>
-            new(
+            new PackageSnapshot(
                 package.Mirror.SourceVersion,
                 package.Mirror.SourceSha256.ToUpperInvariant(),
                 [.. package.Mirror.Rows.Select(row => new AccountSnapshot(

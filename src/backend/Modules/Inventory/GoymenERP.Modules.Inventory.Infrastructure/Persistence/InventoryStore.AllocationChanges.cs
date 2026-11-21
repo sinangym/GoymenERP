@@ -118,7 +118,9 @@ public sealed partial class InventoryStore
             throw AllocationError(409, InventoryAllocationCodesV1.LabelVersionConflict);
         }
 
-        if (targetLabel.ProductId != request.ProductId)
+        // KLN-D39: resizing a substitute ("muadil") allocation keeps its verified label; a move always targets a label of
+        // the line's own product (a new substitute is a new confirmed create, re-verified against the tolerance).
+        if (targetLabel.ProductId != request.ProductId && !(row.IsSubstitute && !isMove))
         {
             throw AllocationError(422, InventoryAllocationCodesV1.InvalidReference);
         }

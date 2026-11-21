@@ -152,7 +152,7 @@ public static class AccountingCommandNames
 /// It decides no accounting, period or permission policy: no chart of accounts, no voucher, no reopen,
 /// no withdraw or reject of a proposal (NEEDS-BUSINESS #66 5742097485).
 /// </summary>
-public sealed class AccountingApiService(
+public sealed partial class AccountingApiService(
     IAccountingPeriodStore periods,
     IAccountingPostingStore postings,
     IAccountingCommandLog commands,
@@ -419,11 +419,16 @@ public sealed class AccountingApiService(
 
         var metadata = new AccountingCommandMetadata(actorId, permission,
             [.. scope.RoleCodes.Order(StringComparer.Ordinal)], correlation.CorrelationId, correlation.CausationId,
-            idempotencyKey, correlation.SourceChannel, correlation.ClientIpAddress, correlation.UserAgent, Complete);
+            idempotencyKey, correlation.SourceChannel, correlation.ClientIpAddress, correlation.UserAgent, Complete,
+            token => RequireStillAsync(scope, permission, token));
         AccountingApiResult<T> result;
         try
         {
             result = await write(metadata, actor);
+        }
+        catch (FreshAuthorityDeniedException)
+        {
+            return Denied<T>();
         }
         catch (AccountingVersionConflictException exception)
         {
@@ -462,6 +467,8 @@ public sealed class AccountingApiService(
                 // A not-found answer names no code: the same answer as for any unknown id or another company's.
                 AccountingStoreCodes.PeriodNotFound => NotFoundResult<T>(),
                 AccountingStoreCodes.CompanyContextMismatch => Denied<T>(),
+                "accounting_period_carry_source_unavailable" => new AccountingApiResult<T>(AccountingApiStatus.Unavailable, null, false, exception.Code),
+                "accounting_period_reopening_exists" => new AccountingApiResult<T>(AccountingApiStatus.Conflict, null, false, exception.Code),
                 AccountingStoreCodes.PeriodConflict or AccountingStoreCodes.PeriodPreparerConflict
                     or AccountingStoreCodes.PeriodOverlap =>
                     new AccountingApiResult<T>(AccountingApiStatus.Conflict, null, false, exception.Code),

@@ -1,10 +1,13 @@
 import type { ViewOutcome } from '../shell/uiState'
 import {
   PHYSICAL_ALLOCATIONS_PATH,
+  PHYSICAL_ALLOCATION_SUGGESTIONS_PATH,
+  decodeAllocationSuggestions,
   decodePhysicalAllocation,
   decodePhysicalAllocationPage,
   problemCode,
   type AllocationScope,
+  type AllocationSuggestions,
   type CreatePhysicalAllocationBody,
   type PhysicalAllocation,
   type PhysicalAllocationPage,
@@ -73,6 +76,28 @@ export async function fetchPhysicalAllocations(
   if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
   const page = decodePhysicalAllocationPage(raw.body, scope)
   return page === null ? { type: 'malformed' } : { type: 'ok-single', data: page }
+}
+
+/**
+ * KLN-D34/D39/D40: label suggestions for one approved Sales line. Read-only; nothing is reserved until the user
+ * confirms a suggestion through the create command, which the server re-checks.
+ */
+export async function fetchAllocationSuggestions(
+  scope: AllocationScope,
+  requestedKg: string | null,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<AllocationSuggestions>> {
+  const query = new URLSearchParams({ salesOrderId: scope.salesOrderId, salesOrderLineId: scope.salesOrderLineId })
+  // KLN-D99: with a quantity the server orders the line's labels closest to it first; without one, by label code.
+  if (requestedKg !== null) query.set('requestedKg', requestedKg)
+  const raw = await request(`${PHYSICAL_ALLOCATION_SUGGESTIONS_PATH}?${query}`, { headers: headers(scope.companyId) }, signal)
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'fence-stale' }
+    return { type: raw.failure === 'offline' ? 'offline' : 'network-error' }
+  }
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const suggestions = decodeAllocationSuggestions(raw.body, scope, requestedKg)
+  return suggestions === null ? { type: 'malformed' } : { type: 'ok-single', data: suggestions }
 }
 
 async function command<T>(

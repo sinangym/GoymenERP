@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
+using GoymenERP.Modules.Counterparty.Domain.Parties;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Seeding;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
@@ -41,8 +42,25 @@ public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
     {
         await using var test = new TaxTest();
         using var maker = test.Client();
-        var first = await CreateAsync(maker, "Birinci");
+        var first = await CreateAsync(maker, "Birinci Şirket");
         var second = await CreateAsync(maker, "İkinci Şube");
+        var repair = new GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations.RepairPartyIdentityRevisionTaxNumberFormat();
+        var downGuard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(repair.DownOperations[0]).Sql;
+        // With no tax history, the forward-fix Down guard does not block.
+        await test.ExecuteAsync(downGuard, first);
+        // A matching Unicode legal-name baseline is permitted too; only tax history
+        // is incompatible with restoring the former one-byte numeric constraint.
+        await test.ExecuteAsync("""
+            INSERT INTO [counterparty].[PartyIdentityRevisions]
+                ([Id], [PartyId], [Attribute], [Sequence], [Value], [EffectiveFrom], [Kind], [Reason],
+                 [SourceChangeRequestId], [RecordedByUserId], [RecordedInCompanyId], [RecordedAtUtc])
+            SELECT NEWID(), [Id], 2, [Version], [LegalName], NULL, 1, NULL,
+                   NULL, NULL, NULL, SYSDATETIMEOFFSET()
+            FROM [counterparty].[Parties] WHERE [Id]=@Party;
+            """, first);
+        Assert.Equal(1, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [counterparty].[PartyIdentityRevisions] WHERE [PartyId]=@Party AND [Attribute]=2 AND [Value] LIKE N'%Şirket%';", first));
+        await test.ExecuteAsync(downGuard, first);
 
         var empty = await ReadAsync(maker, PathFor(first));
         Assert.Equal(JsonValueKind.Null, empty.GetProperty("taxIdentityNumber").ValueKind);
@@ -83,6 +101,27 @@ public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
             Assert.Equal("2", view.GetProperty("version").GetString());
             Assert.Empty(view.GetProperty("duplicates").EnumerateArray());
         }
+
+        // The history Value column stays nvarchar for legal names: valid VKN digits
+        // occupy 20 bytes, not 10. The old varchar byte-length check rejected this save.
+        Assert.Equal(20, await test.ScalarAsync<int>(
+            "SELECT DATALENGTH([Value]) FROM [counterparty].[PartyIdentityRevisions] WHERE [PartyId]=@Party AND [Attribute]=1;", first));
+        Assert.Equal(10, await test.ScalarAsync<int>(
+            "SELECT LEN([Value]) FROM [counterparty].[PartyIdentityRevisions] WHERE [PartyId]=@Party AND [Attribute]=1;", first));
+        foreach (var invalidHistoryValue in new[] { "123456789", "123456789012", "1234567890 ", " 1234567890", "12345 7890", "１２３４５６７８９０", "١٢٣٤٥٦٧٨٩٠" })
+        {
+            var invalid = await Assert.ThrowsAsync<SqlException>(() =>
+                test.InsertTaxIdentityRevisionAsync(first, invalidHistoryValue));
+            Assert.Equal(547, invalid.Number);
+        }
+        var downRefused = await Assert.ThrowsAsync<SqlException>(() => test.ExecuteAsync(downGuard, first));
+        Assert.Equal(51799, downRefused.Number);
+        Assert.Equal(Vkn, await test.ScalarAsync<string>(
+            "SELECT [Value] FROM [counterparty].[PartyIdentityRevisions] WHERE [PartyId]=@Party AND [Attribute]=1;", first));
+        Assert.Equal(1, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [counterparty].[PartyIdentityRevisions] WHERE [PartyId]=@Party AND [Attribute]=1;", first));
+        Assert.Equal(1, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [counterparty].[PartyIdentityRevisions] WHERE [PartyId]=@Party AND [Attribute]=2 AND [Value] LIKE N'%Şirket%';", first));
 
         // The warning before saving the same number on the second card…
         var check = await CheckDuplicatesAsync(maker, second, Vkn);
@@ -489,9 +528,14 @@ public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
 
         await EnterAsync(maker, party, Vkn);
         var before = (await ReadAsync(maker, PathFor(party))).GetRawText();
-        var down = await Assert.ThrowsAsync<SqlException>(() =>
-            migrator.MigrateAsync("20260912003000_AddCompanyAccountContactInformation"));
+        var original = new GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations.AddPartyTaxIdentity();
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(original.DownOperations[0]).Sql;
+        var down = await Assert.ThrowsAsync<SqlException>(() => test.ExecuteAsync(guard, party));
         Assert.Equal(51059, down.Number);
+        // A full traversal stops first at the newer tax-history forward-fix barrier.
+        var newerFence = await Assert.ThrowsAsync<SqlException>(() =>
+            migrator.MigrateAsync("20260912003000_AddCompanyAccountContactInformation"));
+        Assert.Equal(51799, newerFence.Number);
         Assert.Equal(before, (await ReadAsync(maker, PathFor(party))).GetRawText());
     }
 
@@ -608,6 +652,25 @@ public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
             await connection.OpenAsync();
             await using var command = CreateCommand(connection, sql, party, eventType, commandName);
             return Assert.IsType<T>(await command.ExecuteScalarAsync());
+        }
+
+        public async Task InsertTaxIdentityRevisionAsync(Guid party, string value)
+        {
+            await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO [counterparty].[PartyIdentityRevisions]
+                    ([Id], [PartyId], [Attribute], [Sequence], [Value], [EffectiveFrom], [Kind], [Reason],
+                     [SourceChangeRequestId], [RecordedByUserId], [RecordedInCompanyId], [RecordedAtUtc])
+                VALUES
+                    (NEWID(), @Party, 1, 6000, @Value, NULL, 2, NULL,
+                     NULL, N'sql-identity-value-regression', @Company, SYSDATETIMEOFFSET());
+                """;
+            command.Parameters.AddWithValue("@Party", party);
+            command.Parameters.AddWithValue("@Company", TestCompanyIds.CompanyA);
+            command.Parameters.Add(new SqlParameter("@Value", System.Data.SqlDbType.NVarChar, PartyIdentityRevision.ValueMaximumLength) { Value = value });
+            await command.ExecuteNonQueryAsync();
         }
 
         public async Task ExecuteAsync(string sql, Guid party)
@@ -734,7 +797,8 @@ public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
                     entry.Entity.CommandName == "counterparty.party.tax-identity.enter.v1")
                 && Interlocked.Increment(ref _arrivals) <= 2)
             {
-                barrier.SignalAndWait(TimeSpan.FromSeconds(30), cancellationToken);
+                if (!barrier.SignalAndWait(TimeSpan.FromSeconds(30), cancellationToken))
+                    throw new TimeoutException("Concurrent save barrier timed out before both writers arrived.");
             }
 
             return ValueTask.FromResult(result);

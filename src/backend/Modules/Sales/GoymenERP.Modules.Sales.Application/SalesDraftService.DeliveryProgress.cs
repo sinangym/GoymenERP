@@ -1,5 +1,6 @@
 using System.Globalization;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Domain.Quantities;
 
@@ -7,7 +8,7 @@ namespace GoymenERP.Modules.Sales.Application;
 
 /// <summary>
 /// AT-024 ("Kısmi teslimat sipariş kalanını doğru tutar"): per order line the delivered and the remaining quantity, from
-/// the delivery owner's RECORDED deliveries (Logistics, through <see cref="ISalesOrderDeliveryReadPortV1"/>) — never from
+/// the delivery owner's RECORDED deliveries and approved physical returns (Logistics, through its typed owner ports) — never from
 /// another module's tables and never a stored Sales copy. Read-only: no attempt, audit or version effect in either module.
 /// <list type="bullet">
 /// <item><b>Fences</b> (the draft read's): the draft read name before anything is read, after the draft read and after
@@ -63,15 +64,55 @@ public sealed partial class SalesDraftService
             throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.DeliveryProviderUnavailable);
         }
 
-        return DeliveryProgress(scope, draft, answer);
+        // KLN-D100: an approved physical customer return corrects the delivered counter. A missing owner is
+        // not proof of zero returns; use the existing return reader and its exact company/line/unit validation.
+        var returnsOwner = customerReturns
+            ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.CustomerReturnProviderUnavailable);
+        SalesOrderCustomerReturnReadAnswerV1? returned;
+        try
+        {
+            returned = await GuardedAsync(scope, bindings.ReadPermission,
+                () => returnsOwner.ReadApprovedReturnsAsync(draft.Id, cancellationToken), cancellationToken);
+        }
+        catch (Exception exception) when (exception is not (OperationCanceledException or SalesDraftServiceException))
+        {
+            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.CustomerReturnProviderUnavailable);
+        }
+
+        var invoices = await ReadInvoicedQuantitiesAsync(scope, draft, cancellationToken);
+        return DeliveryProgress(scope, draft, answer, CustomerReturns(scope, draft, returned), invoices);
     }
 
     private static SalesOrderDraftDeliveryProgressResponse DeliveryProgress(Scope scope, SalesOrderDraft draft,
-        SalesOrderDeliveryReadAnswerV1? answer)
+        SalesOrderDeliveryReadAnswerV1? answer, SalesOrderDraftCustomerReturnsResponse approvedReturns,
+        (IReadOnlyDictionary<Guid, decimal> Quantities, string Version)? invoices)
     {
         var recorded = RecordedDeliveries(scope, draft, answer);
+        var returned = approvedReturns.Lines.ToDictionary(line => line.LineId);
         return new SalesOrderDraftDeliveryProgressResponse(draft.Version.ToString(CultureInfo.InvariantCulture),
-            [.. draft.Lines.OrderBy(line => line.LineNo).Select(line => LineProgress(line, recorded.GetValueOrDefault(line.Id)))]);
+            [.. draft.Lines.OrderBy(line => line.LineNo).Select(line =>
+            {
+                var totals = recorded.GetValueOrDefault(line.Id);
+                return LineProgress(line, totals, ShippedByOf(answer!, line.Id, totals.Shipped), returned[line.Id].ApprovedReturned,
+                    invoices?.Quantities.GetValueOrDefault(line.Id), invoices?.Version);
+            })]);
+    }
+
+    /// <summary>
+    /// F-006 (B-33; SAT-D216/SAT-D222): the shippers of the line's counted definite shipments, read with the over-delivery
+    /// approval's own rule (<see cref="Shippers"/>) so the screen and the approval never disagree on who shipped — ordinal and
+    /// distinct; empty when nothing is shipped; <c>null</c> when the owner does not name every shipper (shown as unknown, never
+    /// as a partial list, and never a malformed answer: a share recorded before the owner kept its actor is a valid order).
+    /// </summary>
+    private static IReadOnlyList<string>? ShippedByOf(SalesOrderDeliveryReadAnswerV1 answer, Guid lineId, decimal shipped)
+    {
+        if (shipped == 0m)
+        {
+            return [];
+        }
+
+        var named = Shippers(answer, lineId);
+        return named is null ? null : [.. named.Order(StringComparer.Ordinal)];
     }
 
     /// <summary>
@@ -127,7 +168,8 @@ public sealed partial class SalesDraftService
         return recorded;
     }
 
-    private static SalesDraftLineDeliveryProgressV1 LineProgress(SalesOrderDraftLine line, (decimal Shipped, decimal Delivered) recorded)
+    private static SalesDraftLineDeliveryProgressV1 LineProgress(SalesOrderDraftLine line, (decimal Shipped, decimal Delivered) recorded,
+        IReadOnlyList<string>? shippedBy, string approvedReturned, decimal? invoiced, string? invoiceSourceVersion)
     {
         var unit = line.Quantity.Unit;
         Quantity shipped;
@@ -143,11 +185,67 @@ public sealed partial class SalesDraftService
             throw DeliveryAnswerInvalid();
         }
 
-        var over = delivered.IsGreaterThan(line.Quantity);
-        var remaining = over ? Quantity.Zero(unit) : line.Quantity.Subtract(delivered);
-        var excess = over ? delivered.Subtract(line.Quantity) : Quantity.Zero(unit);
+        // KLN-D100 + KLN-D106: the one open-quantity rule (ordered − delivered, invoiced never deciding), where "delivered"
+        // counts at the shipment's stock-out approval — shipment and delivery are one counter and no customer POD is awaited. The
+        // owner's definite shipped total is therefore the delivered figure of the rule; its separate delivery record stays a
+        // displayed fact. ApprovedReturned is already the return owner's exact, validated quantity in this line's own unit.
+        SalesOrderLineOpenQuantity open;
+        try
+        {
+            var returned = Quantity.Of(decimal.Parse(approvedReturned, CultureInfo.InvariantCulture), unit);
+            open = SalesOrderLineOpenQuantity.Calculate(line.Quantity, shipped, returned,
+                invoiced is { } quantity ? Quantity.Of(quantity, unit) : null);
+        }
+        catch (SalesRuleException)
+        {
+            // Inconsistent owner snapshots, such as returns exceeding shipped kg, cannot yield a plausible remainder.
+            throw CustomerReturnAnswerInvalid();
+        }
         return new SalesDraftLineDeliveryProgressV1(line.Id, line.LineNo, line.OrderUnit.UnitId, line.QuantityText,
-            QuantityText(shipped), QuantityText(delivered), QuantityText(remaining), QuantityText(excess));
+            QuantityText(shipped), QuantityText(delivered), QuantityText(open.Open), QuantityText(open.Excess), shippedBy,
+            open.Invoiced is { } billed && open.DeliveredNotInvoiced is { } unbilled && invoiceSourceVersion is not null
+                ? new(QuantityText(billed), QuantityText(unbilled), invoiceSourceVersion) : null);
+    }
+
+    private async Task<(IReadOnlyDictionary<Guid, decimal> Quantities, string Version)?> ReadInvoicedQuantitiesAsync(
+        Scope scope, SalesOrderDraft draft, CancellationToken token)
+    {
+        if (invoicedQuantities is null) return null;
+        SalesOrderInvoicedQuantityReadV1? source;
+        try
+        {
+            source = await GuardedAsync(scope, bindings.ReadPermission,
+                () => invoicedQuantities.ReadAsync(scope.CompanyId, draft.Id,
+                    async ct => { await RequireStillAsync(scope, bindings.ReadPermission, ct); }, token), token);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (SalesDraftServiceException error) when (error.Status is 401 or 403) { throw; }
+        catch { await RequireStillAsync(scope, bindings.ReadPermission, token); return null; }
+        var prefix = ISalesOrderInvoicedQuantityReadPortV1.SourceVersionPrefix;
+        if (source is null || source.CompanyId != scope.CompanyId || source.SalesOrderId != draft.Id
+            || source.Outcome != SalesOrderInvoicedQuantityReadOutcomeV1.Available || source.Lines is null
+            || source.SourceVersion is not { } version || !version.StartsWith(prefix, StringComparison.Ordinal)
+            || version.Length != prefix.Length + 64 || !version[prefix.Length..].All(character =>
+                character is >= '0' and <= '9' or >= 'a' and <= 'f')) return null;
+        var actualLines = draft.AllLines.ToDictionary(line => line.Id);
+        var claims = new HashSet<(string, Guid, Guid)>();
+        var quantities = new Dictionary<Guid, decimal>();
+        try
+        {
+            foreach (var item in source.Lines)
+            {
+                if (item is null || item.InvoiceId == Guid.Empty || item.InvoiceLineId == Guid.Empty
+                    || item.InvoiceKind is not ("Normal" or "Subcontract") || item.SourceVersion is not { Length: 64 }
+                    || !item.SourceVersion.All(Uri.IsHexDigit) || !claims.Add((item.InvoiceKind, item.InvoiceId, item.InvoiceLineId))
+                    || !actualLines.TryGetValue(item.SalesOrderLineId, out var line) || item.UnitId != line.OrderUnit.UnitId
+                    || item.Quantity <= 0m) return null;
+                _ = Quantity.Of(item.Quantity, line.Quantity.Unit);
+                quantities[line.Id] = quantities.GetValueOrDefault(line.Id) + item.Quantity;
+                _ = Quantity.Of(quantities[line.Id], line.Quantity.Unit);
+            }
+        }
+        catch (Exception error) when (error is ArgumentException or OverflowException) { return null; }
+        return (quantities, version);
     }
 
     /// <summary>

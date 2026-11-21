@@ -29,6 +29,8 @@ export interface AllocationLabelPickerProps {
   readonly canOpenLabelHistory: boolean
   readonly selected: AllocationLabelChoice | null
   readonly onSelect: (choice: AllocationLabelChoice | null) => void
+  /** KLN-D117: a label code carried from a stock row, written into the search field; nothing is requested on mount. */
+  readonly initialQuery?: string
 }
 
 type SearchState =
@@ -56,10 +58,10 @@ function stateOf(outcome: ViewOutcome<InventoryStockPositions>): SearchState | n
  * filter, which the user can lift. All of it is view-only: Inventory re-applies the rules on the allocation command.
  */
 export function AllocationLabelPicker({
-  companyId, productId, lineId, disabled, canOpenLabelHistory, selected, onSelect,
+  companyId, productId, lineId, disabled, canOpenLabelHistory, selected, onSelect, initialQuery,
 }: AllocationLabelPickerProps) {
   const boundary = useAuthBoundary()
-  const [q, setQ] = useState('')
+  const [q, setQ] = useState(initialQuery ?? '')
   const [showZeroAvailable, setShowZeroAvailable] = useState(false)
   const [state, setState] = useState<SearchState>({ kind: 'idle' })
   const inFlight = useRef<AbortController | null>(null)

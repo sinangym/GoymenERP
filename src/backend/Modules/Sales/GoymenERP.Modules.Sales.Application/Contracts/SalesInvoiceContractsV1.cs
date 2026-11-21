@@ -257,6 +257,7 @@ public static class SalesInvoiceReasonCodesV1
     public const string MoneyProfileMismatch = "money_profile_mismatch";
     public const string RateUnresolved = "rate_unresolved";
     public const string RateMismatch = "rate_mismatch";
+    public const string UsdShipmentDayMismatch = "usd_shipment_day_mismatch";
     public const string DueTermsMissing = "due_terms_missing";
     public const string DueDatePending = "due_date_pending";
     public const string DueDateMismatch = "due_date_mismatch";
@@ -270,6 +271,21 @@ public static class SalesInvoiceReasonCodesV1
 
     /// <summary>SAT-D157: the payable amount cannot be split into the due plan's instalments.</summary>
     public const string DueAmountNotSplittable = "due_amount_not_splittable";
+
+    /// <summary>SAT-D389 / SAT-D405: the share's dispatch note has no weighing-difference record — it cannot be invoiced.</summary>
+    public const string WeighingDifferenceNotRecorded = "weighing_difference_not_recorded";
+
+    /// <summary>SAT-D319 (6): the note's weighing difference is above the rate and waits for its approval.</summary>
+    public const string WeighingDifferencePendingApproval = "weighing_difference_pending_approval";
+
+    /// <summary>
+    /// SAT-D320 (3) / SAT-D322 (1): the sale passes at the scale kilograms, but the owner's per-line scale kilograms are not readable
+    /// yet (the Logistics V1 read carries the note totals only) — the share waits rather than guess a split.
+    /// </summary>
+    public const string WeighingKgTransferPending = "weighing_kg_transfer_pending";
+
+    /// <summary>The Logistics weighing-difference owner is not composed, failed or answered inconsistently — never invoiced unread.</summary>
+    public const string WeighingDifferenceUnavailable = "weighing_difference_unavailable";
 }
 
 /// <summary>The invoice routes' problem codes beside the draft's (<see cref="SalesDraftProblemCodesV1"/>).</summary>
@@ -301,6 +317,7 @@ public static class SalesInvoiceProblemCodesV1
 
     /// <summary>409 (recorded): the recorded match carries a difference; finalisation stays blocked until it is resolved (SAT-D229).</summary>
     public const string MatchDifferenceOpen = SalesRuleCodes.InvoiceMatchDifferenceOpen;
+    public const string MatchSourceProofRequired = SalesRuleCodes.InvoiceMatchSourceProofRequired;
 
     /// <summary>422: the foreign-currency instalments cannot be converted to TL without a negative or zero last remainder (SAT-D227, SAT-D233).</summary>
     public const string InstalmentFunctionalInvalid = SalesRuleCodes.InvoiceInstalmentFunctionalInvalid;
@@ -550,6 +567,14 @@ public interface ISalesInvoiceStore
 
     /// <summary>The shipments among <paramref name="shipmentIds"/> already on an active invoice line of this company.</summary>
     Task<IReadOnlySet<Guid>> FindInvoicedShipmentsAsync(IReadOnlyCollection<Guid> shipmentIds, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// API-06 / plan S0 (a): the shipments among <paramref name="shipmentIds"/> on an active line of a FINALIZED invoice of this
+    /// company — the only moment a share leaves "shipped, not invoiced". A draft, pending, approved (not yet finalized), rejected or
+    /// cancelled invoice does not take it (a rejected or cancelled invoice has released its lines anyway).
+    /// </summary>
+    Task<IReadOnlySet<Guid>> FindFinalizedInvoiceShipmentsAsync(IReadOnlyCollection<Guid> shipmentIds,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// API-34: this company's FINALISED invoices whose finalisation instant is in [<paramref name="fromUtc"/>,

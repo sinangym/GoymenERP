@@ -22,6 +22,7 @@ import { AppShell } from '../shell/AppShell'
 import { SHELL_CAPABILITY_CONTRACT_VERSION } from '../shell/api'
 import { productRoutes } from './productRoutes'
 import { PRODUCT_CAPABILITY } from './capabilities'
+import { COGS_SOURCE } from './cogsClassification/contract'
 
 export const COMPANY_A = 'aaaaaaaa-0000-0000-0000-000000000001'
 export const COMPANY_B = 'bbbbbbbb-0000-0000-0000-000000000002'
@@ -51,7 +52,7 @@ const IDENTITY = {
   displayName: 'Kullanıcı A',
   email: null,
   allowedCompanyIds: [COMPANY_A, COMPANY_B],
-  authenticationSessionBinding: null,
+  mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: null,
 }
 
 const DIRECTORY = [
@@ -160,7 +161,7 @@ export function productHistory(over: Record<string, unknown> = {}) {
 
 /** `ProductDuplicateCandidates`: the exact-name rule, no other card by default. */
 export function duplicateCandidates(over: Record<string, unknown> = {}) {
-  return { rule: 'exactName', name: 'Sac', exactName: [], hasMore: false, ...over }
+  return { rule: 'exactName', name: 'Sac', exactName: [], hasMore: false, sameTechnical: [], sameTechnicalHasMore: false, ...over }
 }
 
 export interface RecordedCall {
@@ -201,6 +202,14 @@ export interface HarnessConfig {
   readonly onImportApply?: (attempt: number, body: FormData) => Response | Promise<Response>
   /** `GET/PUT /product-item-types/{id}` (SAT-D134); defaults to 403 — `product.item-type.manage` is granted to no role. */
   readonly onItemType?: (method: string, body: string | null) => Response | Promise<Response>
+  /** `GET/PUT /product-dimensions/{id}` (BS-9); defaults to 403 — `product.dimension.manage` is granted to no role. */
+  readonly onDimension?: (method: string, body: string | null) => Response | Promise<Response>
+  /** `GET/POST /product-profile-weight-tables` (URN-D13…D16); defaults to 403 — the import name is granted to no role. */
+  readonly onProfileWeights?: (method: string, body: string | null) => Response | Promise<Response>
+  /** `GET/POST/PUT /product-package-standards` (B-08/BS-10); defaults to 403 — the manage name is granted to no role. */
+  readonly onPackageStandards?: (method: string, body: string | null) => Response | Promise<Response>
+  /** Synthetic owner DTO only. GET is the existing global read; no COGS write grant is inferred. */
+  readonly onCogsClassification?: (method: string, body: string | null) => Response | Promise<Response>
 }
 
 /**
@@ -245,6 +254,18 @@ export function installFetch(config: HarnessConfig = {}) {
             PRODUCT_CAPABILITY.productsDetail,
           ],
       })
+    }
+    // Before `/products`: the edit route `/product-package-standards/products/{id}` contains that segment.
+    if (url.includes('/product-package-standards')) {
+      return (await config.onPackageStandards?.(method, body)) ?? json({}, 403)
+    }
+    if (url.includes('/product-cogs-classifications/')) {
+      const custom = await config.onCogsClassification?.(method, body)
+      if (custom !== undefined) return custom
+      if (method !== 'GET') return json({}, 403)
+      const productId = decodeURIComponent(url.split('/product-cogs-classifications/')[1].split(/[?#]/)[0])
+      return json({ companyId: headers['X-Company-Id'] ?? null, productId, productVersion: '7', classificationVersion: '0',
+        classification: null, changedInCompanyId: null, updatedAtUtc: null, sourceVersion: COGS_SOURCE })
     }
     if (url.includes('/products/code-groups')) {
       return (await config.onGroups?.()) ?? json(codeGroups())
@@ -317,6 +338,12 @@ export function installFetch(config: HarnessConfig = {}) {
     }
     if (url.includes('/product-item-types/')) {
       return (await config.onItemType?.(method, body)) ?? json({}, 403)
+    }
+    if (url.includes('/product-dimensions/')) {
+      return (await config.onDimension?.(method, body)) ?? json({}, 403)
+    }
+    if (url.includes('/product-profile-weight-tables')) {
+      return (await config.onProfileWeights?.(method, body)) ?? json({}, 403)
     }
     throw new Error(`unexpected fetch: ${url}`)
   })

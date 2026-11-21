@@ -384,6 +384,12 @@ public sealed class ApprovedAccountingSourceCatalogServiceV1(
                 : new AccountingApiResult<ApprovedAccountingSourceCatalogViewV1>(
                     AccountingApiStatus.Conflict, null, false, exception.Code);
         }
+        catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ProviderUnavailable)
+        {
+            // A provider outage is retryable data, not a persisted 422 or a fabricated concurrent winner.
+            if (!await AuthorizeCapturedAsync(permission, company, actor, cancellationToken)) return Denied();
+            return new AccountingApiResult<ApprovedAccountingSourceCatalogViewV1>(AccountingApiStatus.Unavailable, null, false, null);
+        }
         catch (AccountingStoreException exception)
         {
             result = exception.Code switch

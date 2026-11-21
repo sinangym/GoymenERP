@@ -25,7 +25,7 @@ public sealed class VersionFenceTests
     private static ProductionOrder Order()
     {
         var plan = DraftPlan();
-        plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
+        plan.WithDueDate().Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
         return ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
     }
 
@@ -36,19 +36,19 @@ public sealed class VersionFenceTests
         Assert.Equal(1, plan.Version);
 
         var stale = Assert.Throws<ManufacturingVersionConflictException>(
-            () => plan.Approve(plan.Version + 1, Planner, DateTimeOffset.UnixEpoch));
+            () => plan.WithDueDate().Approve(plan.Version + 1, Planner, DateTimeOffset.UnixEpoch));
 
         Assert.Equal((ManufacturingRuleCodes.VersionConflict, 2L, 1L), (stale.Code, stale.ExpectedVersion, stale.CurrentVersion));
         Assert.Equal(PlanStatus.Draft, plan.Status);
         Assert.Null(plan.ApprovedByUserId);
 
-        plan.Approve(1, Planner, DateTimeOffset.UnixEpoch);
+        plan.WithDueDate().Approve(1, Planner, DateTimeOffset.UnixEpoch);
         Assert.Equal((PlanStatus.Approved, 2L), (plan.Status, plan.Version));
 
         // A second approval with the CURRENT version reaches the rule; with the old one it is a conflict.
         Assert.Equal(ManufacturingRuleCodes.PlanNotDraft, Assert.Throws<ManufacturingRuleException>(
-            () => plan.Approve(2, Planner, DateTimeOffset.UnixEpoch)).Code);
-        Assert.Throws<ManufacturingVersionConflictException>(() => plan.Approve(1, Planner, DateTimeOffset.UnixEpoch));
+            () => plan.WithDueDate().Approve(2, Planner, DateTimeOffset.UnixEpoch)).Code);
+        Assert.Throws<ManufacturingVersionConflictException>(() => plan.WithDueDate().Approve(1, Planner, DateTimeOffset.UnixEpoch));
         Assert.Equal(2, plan.Version);
     }
 

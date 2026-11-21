@@ -64,6 +64,13 @@ public sealed class FinancePermissionPort(
         FinanceAction.ReadManualBankPayments => FinancePermissionNames.ManualBankPaymentDraftRead,
         FinanceAction.ApproveManualBankPayment => FinancePermissionNames.ManualBankPaymentApprove,
         FinanceAction.RecordManualBankPayment => FinancePermissionNames.ManualBankPaymentRecord,
+        FinanceAction.SaveExpensePaymentDraft => FinancePermissionNames.ExpensePaymentDraftSave,
+        FinanceAction.ReadExpensePayments => FinancePermissionNames.ExpensePaymentDraftRead,
+        FinanceAction.ApproveExpensePayment => FinancePermissionNames.ExpensePaymentApprove,
+        FinanceAction.RecordExpensePayment => FinancePermissionNames.ExpensePaymentRecord,
+        // FNS-D24: the transfer's own names; Unavailable (503) until the central registry knows them.
+        FinanceAction.ReadCashTransfers => FinancePermissionNames.CashTransferRead,
+        FinanceAction.CommitCashTransfer => FinancePermissionNames.CashTransferCommit,
         // API-23: the payment reversal's own names; Unavailable (503) until the central registry knows them.
         FinanceAction.ProposePaymentReversal => FinancePermissionNames.PaymentReversePropose,
         FinanceAction.ApprovePaymentReversal => FinancePermissionNames.PaymentReverseApprove,
@@ -77,6 +84,30 @@ public sealed class FinancePermissionPort(
         // The party ledger's own names; Unavailable (503) until the central registry knows them.
         FinanceAction.ReadPartyLedger => FinancePermissionNames.PartyLedgerRead,
         FinanceAction.ReadPartyLedgerAmount => FinancePermissionNames.PartyLedgerAmountRead,
+        // API-30: the cash account master's own names, registered centrally (company-wide; propose and approve Critical; no grant).
+        FinanceAction.ReadCashAccounts => ErpPermissions.FinanceCashAccountRead,
+        FinanceAction.ProposeCashAccount => ErpPermissions.FinanceCashAccountPropose,
+        FinanceAction.ApproveCashAccount => ErpPermissions.FinanceCashAccountApprove,
+        FinanceAction.ProposeCashAccountPassivation => ErpPermissions.FinanceCashAccountPassivationPropose,
+        FinanceAction.ApproveCashAccountPassivation => ErpPermissions.FinanceCashAccountPassivationApprove,
+        FinanceAction.ProposeCashAccountReactivation => ErpPermissions.FinanceCashAccountReactivationPropose,
+        FinanceAction.ApproveCashAccountReactivation => ErpPermissions.FinanceCashAccountReactivationApprove,
+        // API-85a: the credit limit master's own names, registered centrally (company-wide; only approve Critical, FNS-D46; no grant).
+        FinanceAction.ReadCreditLimits => ErpPermissions.FinanceCreditLimitsRead,
+        FinanceAction.ProposeCreditLimit => ErpPermissions.FinanceCreditLimitsPropose,
+        FinanceAction.ApproveCreditLimit => ErpPermissions.FinanceCreditLimitsApprove,
+        // API-85b: the customer collateral's own names, registered centrally (company-wide; not Critical; no grant).
+        FinanceAction.ReadCollaterals => ErpPermissions.FinanceCollateralsRead,
+        FinanceAction.RecordCollateral => ErpPermissions.FinanceCollateralsRecord,
+        // FIN-S9 (FNS-D23): the opening balance's own names (company-wide; not Critical; no grant).
+        FinanceAction.ReadOpeningBalances => ErpPermissions.FinanceOpeningBalancesRead,
+        FinanceAction.ProposeOpeningBalance => ErpPermissions.FinanceOpeningBalancesPropose,
+        FinanceAction.ApproveOpeningBalance => ErpPermissions.FinanceOpeningBalancesApprove,
+        // FIN-SC47 (FNS-D88): the credit account's own names (company-wide; not Critical; no grant).
+        FinanceAction.ReadCredits => ErpPermissions.FinanceCreditsRead,
+        FinanceAction.ProposeCredit => ErpPermissions.FinanceCreditsPropose,
+        FinanceAction.ApproveCredit => ErpPermissions.FinanceCreditsApprove,
+        FinanceAction.RecordPartyBalanceTransfer => FinancePartyBalanceTransferPermissionsV1.Record,
         _ => null,
     };
 

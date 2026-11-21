@@ -24,6 +24,13 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     private const string PlanPreparer = "20261107082508_AddManufacturingPlanPreparer";
     private const string PlanInputAllocations = "20261107145415_AddManufacturingPlanInputAllocations";
     private const string PlanSalesOrderLinks = "20261111183848_AddManufacturingPlanSalesOrderLinks";
+    private const string PlanDueDate = "20261114093512_AddManufacturingPlanDueDate";
+    private const string OutputReversals = "20261114204549_AddManufacturingOutputReversals";
+    private const string MonthlyScrapPrices = "20261115123405_AddManufacturingMonthlyScrapPrices";
+    private const string OrderDueDate = "20261115140512_AddManufacturingOrderDueDate";
+    private const string MonthlyScrapPriceVersions = "20261115174427_AddManufacturingMonthlyScrapPriceVersions";
+    private const string OutputLineageEdges = "20261115174432_AddManufacturingOutputLineageEdges";
+    private const string OutputLabelCodes = "20261115232234_AddManufacturingOutputLabelCodes";
 
     [SqlServerFact]
     public async Task The_technical_snapshot_migration_round_trips_while_only_legacy_inputs_exist()
@@ -41,6 +48,9 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using (var context = run.Context(CompanyA))
         {
             var migrator = context.GetService<IMigrator>();
+            var latestHistory = context.Database.GetMigrations().ToArray();
+            Assert.Equal(latestHistory, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
+            await run.ForgetTerminsBeforeRollbackAsync();
             await migrator.MigrateAsync(BeforeTechnicalSnapshots);
             Assert.Equal(BeforeTechnicalSnapshots, (await context.Database.GetAppliedMigrationsAsync()).Last());
             Assert.Equal(0, await run.ScalarAsync<int>(
@@ -50,17 +60,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 
             await context.Database.MigrateAsync();
             var reapplied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.Equal(PlanSalesOrderLinks, reapplied[^1]);
-            Assert.Equal(PlanInputAllocations, reapplied[^2]);
-            Assert.Equal(PlanPreparer, reapplied[^3]);
-            Assert.Equal(PlanProcessSpecs, reapplied[^4]);
-            Assert.Equal(PlanLifecycle, reapplied[^5]);
-            Assert.Equal(PlanParameterSnapshots, reapplied[^6]);
-            Assert.Equal(TechnicalLengthSnapshots, reapplied[^7]);
-            Assert.Equal(PlanCutLines, reapplied[^8]);
-            Assert.Equal(CommercialContexts, reapplied[^9]);
-            Assert.Equal(TechnicalSnapshots, reapplied[^10]);
-            Assert.Equal(BeforeTechnicalSnapshots, reapplied[^11]);
+            Assert.Equal(latestHistory, reapplied);
         }
 
         Assert.Equal(2, await run.ScalarAsync<int>(
@@ -93,9 +93,11 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using (var context = run.Context(CompanyA))
         {
             var migrator = context.GetService<IMigrator>();
+            await run.ForgetTerminsBeforeRollbackAsync();
             await run.ForgetPlanPreparersBeforeRollbackAsync();
             await migrator.MigrateAsync(TechnicalSnapshots);
             Assert.Equal(TechnicalSnapshots, (await context.Database.GetAppliedMigrationsAsync()).Last());
+            await run.ForgetTerminsBeforeRollbackAsync();
             var error = await Assert.ThrowsAsync<SqlException>(
                 () => migrator.MigrateAsync(BeforeTechnicalSnapshots));
             Assert.Equal(51047, error.Number);
@@ -129,8 +131,10 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using (var context = run.Context(CompanyA))
         {
             var migrator = context.GetService<IMigrator>();
+            await run.ForgetTerminsBeforeRollbackAsync();
             await migrator.MigrateAsync(TechnicalSnapshots);
             Assert.Equal(TechnicalSnapshots, (await context.Database.GetAppliedMigrationsAsync()).Last());
+            await run.ForgetTerminsBeforeRollbackAsync();
             var error = await Assert.ThrowsAsync<SqlException>(
                 () => migrator.MigrateAsync(BeforeTechnicalSnapshots));
             Assert.Equal(51047, error.Number);

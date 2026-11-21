@@ -16,6 +16,12 @@ export { REASON_MAX_LENGTH }
 
 export type StockCountStatus = 'NoDifference' | 'PendingApproval' | 'Approved' | 'Rejected'
 export type StockCountDecisionKind = 'Approve' | 'Reject'
+export type StockCountCostStatus = 'Known' | 'NotCalculated' | 'Unavailable'
+export const STOCK_COUNT_COST_TEXT: Readonly<Record<StockCountCostStatus, string>> = {
+  Known: 'Sayım farkının maliyet kaynağı kayıtlı.',
+  NotCalculated: 'Sayım fazlası kaydedildi; ortalama maliyet hesaplanamadı.',
+  Unavailable: 'Sayımın maliyet durumu okunamadı.',
+}
 
 export interface StockCountRequest {
   readonly countId: string
@@ -36,6 +42,7 @@ export interface StockCountDecisionView {
   readonly decidedAtUtc: string
   readonly reason: string
   readonly adjustmentMovementId: string | null
+  readonly costStatus?: StockCountCostStatus
 }
 
 export interface StockCountView {
@@ -120,7 +127,10 @@ export function differenceKilograms(bookKg: string, countedKg: string): string {
 
 function decodeDecision(value: unknown): StockCountDecisionView | null {
   const decision = record(value)
-  if (decision === null || !exact(decision, ['decision', 'decidedAtUtc', 'reason', 'adjustmentMovementId'])) return null
+  if (decision === null || !exact(decision, ['decision', 'decidedAtUtc', 'reason', 'adjustmentMovementId',
+    ...('costStatus' in decision ? ['costStatus'] : [])])) return null
+  if ('costStatus' in decision && (decision.decision !== 'Approved' ||
+    !['Known', 'NotCalculated', 'Unavailable'].includes(decision.costStatus as string))) return null
   if ((decision.decision !== 'Approved' && decision.decision !== 'Rejected') || !isUtcInstant(decision.decidedAtUtc) ||
     typeof decision.reason !== 'string' || decision.reason.trim().length === 0) return null
   const movement = decision.adjustmentMovementId
@@ -130,6 +140,7 @@ function decodeDecision(value: unknown): StockCountDecisionView | null {
     decidedAtUtc: decision.decidedAtUtc,
     reason: decision.reason,
     adjustmentMovementId: movement as string | null,
+    ...('costStatus' in decision ? { costStatus: decision.costStatus as StockCountCostStatus } : {}),
   }
 }
 
@@ -154,6 +165,7 @@ export function decodeStockCountView(value: unknown): StockCountView | null {
   if (signedToGrams(view.differenceKg) !== kilogramsToGrams(view.countedKg) - kilogramsToGrams(view.bookKg)) return null
   const decision = view.decision === null ? null : decodeDecision(view.decision)
   if (view.decision !== null && decision === null) return null
+  if (decision?.costStatus === 'NotCalculated' && view.differenceKg.startsWith('-')) return null
   const hasDifference = view.differenceKg !== '0'
   const consistent = view.status === 'NoDifference' ? !hasDifference && decision === null
     : view.status === 'PendingApproval' ? hasDifference && decision === null
@@ -232,6 +244,7 @@ export function describesDecision(
 export const STOCK_COUNT_DEFINITE_UNAVAILABLE_CODES: ReadonlySet<string> = new Set([
   'inventory_permission_unregistered',
   'inventory_stock_count_unavailable',
+  'inventory_stock_count_cost_not_calculated',
   'inventory_kg_profile_unusable',
   'settings_provider_unavailable',
   'settings_unit_profile_not_found',
@@ -248,6 +261,8 @@ const REFUSAL_TEXT: Readonly<Record<string, string>> = {
   inventory_stock_count_not_found: 'Sayım bu şirkette bulunamadı.',
   inventory_label_version_conflict: 'Etiket siz sayımı girerken değişti; defter miktarı artık farklı olabilir. Etiketi yeniden açıp tekrar sayın.',
   inventory_stock_count_position_conflict: 'Sayım için etiketin tek bir fiziksel pozisyonda stoğu olmalı.',
+  // SAT-D384: only the active last label is counted; a consumed label never enters a count difference.
+  inventory_stock_count_label_converted: 'Etiket dönüştürüldü → yeni etiket: bu etiket bölme, birleştirme veya üretimde tüketildi. Sayımı dönüşümden çıkan yeni etiket üzerinden yapın; bu etiket sayım farkına girmez, hiçbir şey kaydedilmedi.',
   inventory_stock_count_conflict: 'Bu sayım kimliği farklı bir içerikle kayıtlı.',
   inventory_stock_count_not_pending: 'Bu sayımda onaylanacak fark yok.',
   inventory_stock_count_already_decided: 'Bu sayım zaten başka bir kararla sonuçlandırılmış.',
@@ -259,6 +274,7 @@ const REFUSAL_TEXT: Readonly<Record<string, string>> = {
   forbidden: 'Bu şirkette bu sayım işlemi için yetkiniz yok.',
   inventory_permission_unregistered: 'Stok sayımı bu sunucuda henüz yayımlanmadı; hiçbir şey kaydedilmedi.',
   inventory_stock_count_unavailable: 'Sayımın kayıtlı durumu okunamadı; hiçbir şey kaydedilmedi.',
+  inventory_stock_count_cost_not_calculated: 'Ortalama maliyet hesaplanamadı; sayım eksiği uygulanmadı.',
   inventory_kg_profile_unusable: 'Şirketin onaylı kg profili bu tarih için kullanılamıyor; hiçbir şey kaydedilmedi.',
   unauthenticated: 'Oturum doğrulanamadı.',
 }

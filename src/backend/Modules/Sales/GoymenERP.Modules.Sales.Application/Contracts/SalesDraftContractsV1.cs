@@ -198,14 +198,10 @@ public sealed record SalesOrderDraftLinePricingResponse(string Version, IReadOnl
 public enum SalesMarginDisclosure { Visible, Withheld }
 
 /// <summary>
-/// SAT-D247 / SAT-D259 / SAT-D262…D267 (S-05): the line margins of the draft. <c>Withheld</c> ⇒ <c>costBasis</c>, <c>kind</c>
-/// and <c>lines</c> are null. <c>Visible</c> ⇒ <c>costBasis</c> = <c>PurchaseCostOnly</c> (the margin is the KDV hariç net sale
-/// after discount and before the maturity surcharge — the vade farkı is left out, SAT-D275 — minus the purchase cost only — no
-/// freight, overhead or financing; the unit cost is the company-wide, all-warehouse weighted
-/// moving-average purchase cost that Stok supplies through its versioned read port, never a manual entry — SAT-D272, orders
-/// carry no warehouse), <c>kind</c> = <c>Preview</c> (an estimate on the draft,
-/// not a booked result) and one entry per line. Until the Inventory cost source exists every line is <c>Unavailable</c> with
-/// <c>CostSourceMissing</c> (SAT-D265 (5)): an unknown cost is never a margin of zero.
+/// SAT-D250: withheld means every other field is null. The historical V1 costBasis literal PurchaseCostOnly is retained
+/// for wire compatibility; URT-D67 now includes finalized production cost in the Inventory-owned average. Neither Sales
+/// nor the UI computes that average. Preview uses a live read; Snapshot uses immutable internal-approval cost evidence.
+/// Missing currency/conversion/cost and the separate SAT-D265(5) golden acceptance are explicit unavailable reasons.
 /// </summary>
 public sealed record SalesDraftMarginV1(SalesMarginDisclosure Disclosure, string? CostBasis, string? Kind,
     IReadOnlyList<SalesDraftLineMarginV1>? Lines);
@@ -215,6 +211,7 @@ public static class SalesDraftMarginTextsV1
 {
     public const string PurchaseCostOnly = "PurchaseCostOnly";
     public const string Preview = "Preview";
+    public const string Snapshot = "Snapshot";
 }
 
 /// <summary>
@@ -457,6 +454,9 @@ public static class SalesDraftApiV1
 
     // MOD-01 / API-06: the read-only customer risk check (DEC-FIN-007 gross risk against the credit limit), under the draft read.
     public const string RiskCheckPath = "/api/v1/sales/drafts/{id}/risk-check";
+
+    // F-018 / plan S1: the order's recorded limit warnings at submit / approve (read-only, no amount), under the draft read.
+    public const string RiskWarningsPath = "/api/v1/sales/drafts/{id}/risk-warnings";
 
     // MOD-07: the order's current revision as a PDF attachment (application/pdf), under the draft-read authority; prices only
     // under the price read (otherwise the price-less variant). Rendered on request, stored nowhere.

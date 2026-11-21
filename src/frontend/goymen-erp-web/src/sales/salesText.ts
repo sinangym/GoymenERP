@@ -246,6 +246,8 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
     'İptal etkisi siz gördükten sonra değişti; iptal yapılmadı. Güncel etkiyi yeniden okuyun.',
   [SALES_PROBLEM_CODE.revisionBlocked]:
     'Siparişe bağlı kayıtlar var (tahsis, yükleme, satın alma ya da üretim); işlem yapılmadı. Kayıtlar kendi ekranlarında kapatıldıktan sonra yeniden deneyin.',
+  [SALES_PROBLEM_CODE.revisionFutureAllocationPresent]:
+    'Siparişe bağlı aktif ileri tarihli tahsis (gelecek tedarik ayırması) var; başlık değiştirilmedi. Tahsis kendi ekranında kaldırıldıktan sonra yeniden deneyin.',
   [SALES_PROBLEM_CODE.forceCloseBlocked]:
     'Siparişte açık tahsis ya da sevk edilmemiş yükleme var; sipariş kapatılmadı. Bunlar kendi ekranlarında kapatıldıktan sonra etkiyi yeniden okuyun.',
   [SALES_PROBLEM_CODE.forceCloseImpactChanged]:
@@ -289,6 +291,7 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
     'Sipariş tarihi bugünden önce olamaz; bugünü ya da ileri bir tarihi seçin. Bugün, sunucunun İstanbul saatine göre iş günüdür.',
   [SALES_PROBLEM_CODE.invoiceMatchRequired]:
     'Resmî e-fatura eşleşmesi kaydedilmeden fatura kesinleştirilemez.',
+  [SALES_PROBLEM_CODE.invoiceMatchSourceProofRequired]: 'Resmî fatura tarihi ve onaylı kaynak kanıtı eksik; bu eşleşmeyle kesinleştirme yapılamaz.',
   [SALES_PROBLEM_CODE.invoiceMatchDifferenceOpen]:
     'Resmî e-fatura ile ERP tutarı arasında fark açıkken fatura kesinleştirilemez.',
   [SALES_PROBLEM_CODE.invoiceInstalmentFunctionalInvalid]:
@@ -360,6 +363,9 @@ export const ORDER_LIST_TEXT = {
   subcontract: 'Fason',
   heading: 'Satış siparişi taslakları',
   newDraft: 'Yeni taslak',
+  /** KLN-D117: the list was opened from a stock label row to allocate that label. */
+  allocationLabelContext: (labelCode: string) =>
+    `${labelCode} etiketini tahsis etmek için onaylı bir sipariş açın; siparişin tahsis bölümünde etiket kodu aranmaya hazır gelir.`,
   caption: 'Seçili şirketteki sipariş taslakları, en yeni önce',
   documentNo: 'Belge no',
   /** The record-bound Cari, as the Cari owner publishes it for this Sales record. */
@@ -775,6 +781,9 @@ export const ORDER_DETAIL_TEXT = {
     loaded: 'Yüklenen',
     shipped: 'Sevk edilen',
     delivered: 'Teslim edilen',
+    futureSupplyAllocations: 'Gelecek tedarik ayırması (iptalde bırakılır)',
+    futureSupplyNote:
+      'Satırlara bağlı gelecek tedarik ayırmaları fiziksel tahsis değildir; iptal onaylandığında aynı işlemde bırakılır.',
     unreadable: 'okunamadı',
     blocked: 'Bu sipariş şu anda iptal edilemez. Engelleyen kayıtları kendi ekranlarında kapatın, sonra etkiyi yeniden okuyun.',
     reasonLabel: 'İptal nedeni (zorunlu)',
@@ -808,15 +817,25 @@ export const ORDER_DETAIL_TEXT = {
     heading: 'Teslimat durumu',
     note:
       'Sevk ve teslim miktarları Lojistik modülünde kaydedilen kesin sevk ve teslimlerden okunur; sipariş her açıldığında yeniden okunur. ' +
-      'Kalan = sipariş − teslim edilen. Eksik/fazla teslim toleransı henüz karara bağlanmadığı için satır kapanışı ya da uyarı gösterilmez.',
+      'Onaylı fiziksel iadeler teslim edilen miktarı düzeltir. Faturalanan ve teslim edilmiş fakat faturalanmamış miktarlar kesinleşmiş fatura kaynağından okunur; kaynak okunamazsa sayı gösterilmez. ' +
+      'Kalan = sipariş − net teslim edilen. Eksik/fazla teslim toleransı henüz karara bağlanmadığı için satır kapanışı ya da uyarı gösterilmez.',
     subject: 'teslimat durumu',
-    caption: 'Satır bazında sipariş, sevk, teslim ve kalan miktar',
+    caption: 'Satır bazında sipariş, sevk, teslim ve kalan miktar ile sevk eden',
     lineNo: 'Satır',
     ordered: 'Sipariş',
     shipped: 'Sevk edilen',
     delivered: 'Teslim edilen',
     remaining: 'Kalan',
     excess: 'Fazla teslim',
+    invoiced: 'Faturalanan',
+    deliveredNotInvoiced: 'Teslim edilmiş, faturalanmamış',
+    invoiceUnknown: 'Bilinmiyor',
+    /** SAT-S11 (B-33): who recorded the line's shipments, as Logistics names them. */
+    shippedBy: 'Sevk eden',
+    /** Something is shipped but not every shipment names its shipper. */
+    shippedByUnknown: 'Bilinmiyor',
+    /** Nothing is shipped on the line yet. */
+    shippedByNone: '—',
   },
   /** AT-055: the dispatch-note drafts of this order's shipments (Logistics owns them; linked, never copied). */
   dispatchNotes: {
@@ -1228,6 +1247,7 @@ export const SOURCE_PLAN_TEXT = {
     NoPlan: 'Henüz plan kaydedilmedi.',
   },
   linkedHeading: 'Bağlı belgeler',
+  cancelledProductionOrder: 'İptal edilen üretim emri:',
   linkedKind: { Production: 'Üretim', Purchasing: 'Satın alma' },
   linkedStatus: { None: 'yok', Present: 'açık belge var', Unreadable: 'okunamadı' },
   linkedUnreadable: 'Bağlı üretim ya da satın alma belgeleri okunamıyor; okunana kadar plan kaydedilemez (SAT-D254).',
@@ -1916,6 +1936,9 @@ export const HEADER_REVISION_TEXT = {
     sales_due_terms_amount_not_splittable: 'Tutar bu kadar taksite bölünemez; daha az taksit girin.',
     sales_header_revision_priced_lines:
       'Satırlarında fiyat olan siparişte cari hesap ve para birimi değiştirilemez; yanlışsa sipariş iptal edilip yeni sipariş açılır.',
+    // SAT-D373 (temporary, until the SAT-S8 transfer rule): an active future supply allocation locks the whole header.
+    sales_revision_future_allocation_present:
+      'Siparişe bağlı aktif ileri tarihli tahsis (gelecek tedarik ayırması) varken sipariş başlığı değiştirilemez; önce tahsis kendi ekranında kaldırılır.',
     sales_due_terms_required: 'Vade girilmeden sipariş onaylanamaz.',
     sales_revision_no_change: 'Başlıkta hiçbir değer değişmedi; onay boşuna düşürülmez.',
     owner_reference_invalid: 'Seçilen kayıt geçerli değil (pasif, bu cariye ait değil veya satış sorumlusu olamaz).',

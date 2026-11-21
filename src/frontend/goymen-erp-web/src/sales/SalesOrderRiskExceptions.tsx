@@ -10,8 +10,12 @@
  * Validity is the server's `isValidToday` for its Istanbul business date (SAT-D160), never computed here. A command whose outcome
  * is unknown (offline, network error, malformed answer, or a 502/503/504 gateway answer) keeps its key in memory and is retried
  * with the same key, never a new request. No amount is shown (SAT-D162).
+ *
+ * FNS-D30 / SAT-D310 / spec §S3: the section also names why the shipment is held (over the limit, no valid limit, or the risk
+ * could not be read) from the shared API-06 risk read, and offers the approver an optional shortcut to define the limit on the
+ * Cari card (`RiskExceptionHoldNotice`). The Logistics gate and the server decide the hold.
  */
-import { useId, useState } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchDraftRiskExceptions, sendRiskExceptionDecision, sendRiskExceptionRequest, type RiskExceptionMutation } from './api'
 import {
@@ -31,7 +35,11 @@ import {
   type RiskExceptionRequest,
 } from './riskException'
 import { RISK_EXCEPTION_TEXT as T } from './riskText'
+import { RiskExceptionHoldNotice, type CreditLimitShortcut } from './RiskExceptionHoldNotice'
+import { useDraftRiskCheck } from './useDraftRiskCheck'
 import { isReferenceId } from './wirePrimitives'
+import { FINANCE_CAPABILITY } from '../finance/capabilities'
+import { CAPABILITY, CAPABILITY_ROUTE } from '../shell/capabilities'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
@@ -61,6 +69,18 @@ export function SalesOrderRiskExceptions({ detail }: { readonly detail: DraftDet
   const canRequest = canRead && hasCapability(shell, SALES_RISK_EXCEPTION_REQUEST_CAPABILITY)
   const canDecide = canRead && hasCapability(shell, SALES_RISK_EXCEPTION_APPROVE_CAPABILITY)
   const actorId = shell.activeContext?.userId ?? null
+  // FNS-D30 (2): the limit shortcut is the approver's, and only where the Cari card's Finance panel and a credit-limit control
+  // (approve: one step, FNS-D27a (1); propose: a proposal only, FNS-D27a (2)) are published to the caller.
+  const canReachLimits = canDecide && hasCapability(shell, CAPABILITY.cariPartiesDetail)
+    && hasCapability(shell, FINANCE_CAPABILITY.creditLimitsList)
+  const shortcut: CreditLimitShortcut = !canReachLimits ? 'none'
+    : hasCapability(shell, FINANCE_CAPABILITY.creditLimitsApprove) ? 'approve'
+      : hasCapability(shell, FINANCE_CAPABILITY.creditLimitsPropose) ? 'propose' : 'none'
+  const cariHref = CAPABILITY_ROUTE[CAPABILITY.cariPartiesDetail].replace(':partyId', encodeURIComponent(detail.draft.partyId))
+  // The same key as the risk card: one open reads the risk once.
+  const risk = useDraftRiskCheck({
+    detail, namespace, routeEntryGeneration: shell.routeEntryGeneration, companyId, enabled: canRead,
+  })
   const boundary = useAuthBoundary()
   const query = useQuery({
     queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'sales-draft-risk-exceptions', detail.draft.id, detail.draft.version],
@@ -97,13 +117,16 @@ export function SalesOrderRiskExceptions({ detail }: { readonly detail: DraftDet
       actorId={actorId}
       send={send}
       onRecorded={() => void query.refetch()}
+      hold={
+        <RiskExceptionHoldNotice outcome={risk.data} shortcut={shortcut} cariHref={cariHref} onRetry={() => void risk.refetch()} />
+      }
     />
   )
 }
 
 /** The panel for one read outcome (undefined while loading). Exported so every outcome and action can be checked on its own. */
 export function OrderRiskExceptions({
-  outcome, canRequest, canDecide, actorId = null, send, onRecorded,
+  outcome, canRequest, canDecide, actorId = null, send, onRecorded, hold = null,
 }: {
   readonly outcome: ViewOutcome<readonly RiskException[]> | undefined
   readonly canRequest: boolean
@@ -112,6 +135,8 @@ export function OrderRiskExceptions({
   readonly actorId?: string | null
   readonly send: (action: PendingRiskExceptionAction) => Promise<OrderCommandOutcome<RiskExceptionMutation>>
   readonly onRecorded: () => void
+  /** FNS-D30: why the shipment is held and the approver's limit shortcut; shown whatever the exception list answered. */
+  readonly hold?: ReactNode
 }) {
   const headingId = useId()
   const [shipment, setShipment] = useState('')
@@ -304,6 +329,7 @@ export function OrderRiskExceptions({
     <section className={pages.section} aria-labelledby={headingId} aria-busy={outcome === undefined} data-testid="sales-risk-exceptions">
       <h2 id={headingId}>{T.heading}</h2>
       <p className={pages.muted}>{T.note}</p>
+      {hold}
       {body}
     </section>
   )

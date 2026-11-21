@@ -21,12 +21,39 @@ public sealed class SettingsSalesDiscountLimitPermissionRegistrationTests
         Assert.Single(ErpPermissions.All, name => name == SettingsPermissionManifestV1.SalesDiscountLimitsManage);
         Assert.True(ErpPermissions.RequiresCompanyWideScope(SettingsPermissionManifestV1.SalesDiscountLimitsManage));
         Assert.False(ErpPermissions.IsCritical(SettingsPermissionManifestV1.SalesDiscountLimitsManage));
-        // MOD-03 adds the tax master's own name beside it (SettingsTaxMasterPermissionRegistrationTests); Üretim U1-a adds the
-        // Manufacturing parameter / tolerance profile names (SettingsManufacturingProfilePermissionRegistrationTests); DEC-FIN-010
-        // the three exchange-rate record names (SettingsExchangeRateSourceTests).
-        Assert.Equal([SettingsExchangeRatePermissionManifestV1.Correct, SettingsExchangeRatePermissionManifestV1.MarkHalfDay,
-                SettingsExchangeRatePermissionManifestV1.Import, SettingsExchangeRatePermissionManifestV1.Read, SettingsPermissionManifestV1.SalesDiscountLimitsManage,
-                SettingsTaxMasterPermissionManifestV1.TaxMasterManage],
+        // Keep the exact non-Manufacturing registry inventory, including the approved F-029 and W6-W8 owners.
+        // Each owner's registration tests separately protect its literal, scope, classification and no-grant boundary.
+        Assert.Equal([
+                "settings.bank-csv-mappings.manage",
+                "settings.collateral-types.manage",
+                "settings.document-number-series.manage",
+                "settings.einvoice-scenarios.manage",
+                "settings.exchange-rates.correct",
+                "settings.exchange-rates.half-day.mark",
+                "settings.exchange-rates.import",
+                "settings.exchange-rates.read",
+                "settings.finance-opening-period.manage",
+                "settings.login-rate-limit.manage",
+                "settings.money-profiles.manage",
+                "settings.notification-retention.manage",
+                "settings.policies.approve",
+                "settings.policies.prepare",
+                "settings.policies.publish",
+                "settings.policies.publish-critical",
+                "settings.production-reference-lists.manage",
+                "settings.purchase-invoice-variance-policies.manage",
+                "settings.reference-lists.manage",
+                "settings.sales-approval-thresholds.manage",
+                "settings.sales-contract-discount-limit.manage",
+                "settings.sales-delivery-tolerances.manage",
+                "settings.sales-discount-limits.manage",
+                "settings.sales-quote-policies.manage",
+                "settings.segregation-of-duties.manage",
+                "settings.tax-master.manage",
+                "settings.unit-conversion-policies.manage",
+                "settings.unit-profiles.manage",
+                "settings.warehouse-transfer-scale.manage",
+                "settings.work-center-capacities.manage"],
             ErpPermissions.All.Where(name => name.StartsWith("settings.", StringComparison.Ordinal)
                     && !name.StartsWith("settings.manufacturing-", StringComparison.Ordinal))
                 .Order(StringComparer.Ordinal));

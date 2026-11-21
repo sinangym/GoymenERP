@@ -1,3 +1,6 @@
+import { PaintSelectionEditor } from './PaintSelectionEditor'
+import { PAINT_SELECTION_TEXT } from './paintSelectionText'
+import type { PlanProcessSpecView } from './contract'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useLocation } from 'react-router'
 import { fetchWorkCenters } from '../organization/api'
@@ -140,6 +143,7 @@ function PlanCreate({ namespace, preselect }: {
   const sessionBinding = shell.sessionBinding
   const storeKey = pendingPlanCreateKey(sessionBinding, actorId, companyId)
   const [attempt, setAttempt] = useState<Attempt>(() => initialAttempt(readPendingPlanCreate(storeKey), sessionBinding))
+  const [paintSpec, setPaintSpec] = useState<PlanProcessSpecView | null>(null)
   const [workCenters, setWorkCenters] = useState<ReadState<readonly WorkCenterSummary[]>>({ type: 'loading' })
   const [workCenterId, setWorkCenterId] = useState('')
   const [search, setSearch] = useState(preselect?.labelCode ?? '')
@@ -315,7 +319,7 @@ function PlanCreate({ namespace, preselect }: {
     : undefined
   const slittingActive = selectedWorkCenter?.kind === 'Slitting' && slittingEnabled
   const cutToLengthLine = selectedWorkCenter?.kind === 'CutToLength'
-  const previewInput = planPreviewInput(
+  const basePreviewInput = planPreviewInput(
     workCenterId,
     inputs.map(({ candidate, plannedKg }) => ({
       parentRollId: candidate.labelId,
@@ -333,6 +337,11 @@ function PlanCreate({ namespace, preselect }: {
     // Authored rows are validated before preview AND save; only a CutToLength line sends them.
     cutToLengthLine && cutLines.length > 0 ? cutToLengthDraftInput(cutLines) : null,
   )
+  const paintLine = selectedWorkCenter?.kind === 'Paint'
+  const previewInput = paintLine ? paintSpec?.paintSelection === undefined
+    ? { type: 'incomplete' as const, reasons: [PAINT_SELECTION_TEXT.required] }
+    : basePreviewInput.type === 'ready' ? { type: 'ready' as const, request: { ...basePreviewInput.request, processSpec: paintSpec } } : basePreviewInput
+    : basePreviewInput
   const preview = usePlanPreview(companyId, previewInput, authBoundary)
 
   function labelOf(parentRollId: string): string {
@@ -384,6 +393,7 @@ function PlanCreate({ namespace, preselect }: {
       })),
       target: targetBasis === '' ? null : { basis: targetBasis, kg: targetKg },
       slittingSpec: previewInput.request.slittingSpec ?? null,
+      ...(paintLine && paintSpec !== null ? { processSpec: paintSpec } : {}),
       // The same validated ordered definition the preview sent; omitted when no row was authored.
       ...(previewInput.request.cutToLengthSpec === undefined ? {} : { cutToLengthSpec: previewInput.request.cutToLengthSpec }),
     }
@@ -627,6 +637,7 @@ function PlanCreate({ namespace, preselect }: {
             <CutToLengthLinesEditor idPrefix="plan-create-cut" lines={cutLines} onChange={setCutLines} keepOne={false} />
           </fieldset>
         ) : null}
+        {paintLine ? <PaintSelectionEditor companyId={companyId} value={paintSpec} disabled={frozen} onChange={setPaintSpec} /> : null}
         <PlanPreviewPanel state={preview} labelOf={labelOf} workCenterLabel={workCenterLabel} />
         <div className={styles.actions}>
           <Button variant="primary" type="submit" disabled={frozen}>{attempt.phase === 'submitting' ? PLAN_CREATE_TEXT.saving : PLAN_CREATE_TEXT.save}</Button>

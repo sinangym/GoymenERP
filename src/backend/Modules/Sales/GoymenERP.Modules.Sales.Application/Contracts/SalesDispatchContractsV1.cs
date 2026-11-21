@@ -27,6 +27,9 @@ public static class SalesDispatchProblemCodesV1
 {
     /// <summary>503: the Logistics dispatch owner is not composed, refused or answered something malformed.</summary>
     public const string DispatchProviderUnavailable = "dispatch_provider_unavailable";
+
+    /// <summary>503 (SAT-S13): the Logistics weighing-difference owner is not composed, refused or answered something inconsistent.</summary>
+    public const string WeighingDifferenceProviderUnavailable = "weighing_difference_provider_unavailable";
 }
 
 /// <summary>

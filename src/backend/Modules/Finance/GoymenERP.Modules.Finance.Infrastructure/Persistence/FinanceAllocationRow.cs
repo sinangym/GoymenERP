@@ -14,6 +14,8 @@ internal sealed class FinanceAllocationRow : IFinanceTenantRow
     public Guid SourceId { get; set; }
     public Guid OpenItemId { get; set; }
     public Guid CurrencyId { get; set; }
+    public Guid? AllocationPartyId { get; set; }
+    public Guid? AllocationAccountId { get; set; }
     public string AmountText { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
     public int Status { get; set; }

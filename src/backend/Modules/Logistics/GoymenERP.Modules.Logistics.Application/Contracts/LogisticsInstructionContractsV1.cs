@@ -33,7 +33,8 @@ public sealed record IssueLoadingInstructionRequest(string ExpectedVersion);
 /// (<c>Measured</c> | <c>AllocatedFromVehicleWeight</c>). The load id is the client's (one load is one
 /// record); the quantity is exact text (Ö2).
 /// </summary>
-public sealed record RecordLoadRequest(string ExpectedVersion, Guid LoadId, string Quantity, string Measurement);
+public sealed record RecordLoadRequest(string ExpectedVersion, Guid LoadId, string Quantity, string Measurement,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<LogisticsPlanExcessUseV1>? PlanExcessUses = null);
 
 /// <summary>
 /// POST …/{id}/weighings (AT-053): the vehicle's manual weighbridge record for an issued instruction — the two
@@ -72,6 +73,15 @@ public sealed record CancelDispatchNoteRequest(string ExpectedVersion, string Re
 public sealed record CancelInstructionRequest(string ExpectedVersion, string Reason);
 
 /// <summary>
+/// POST …/{id}/unload-weighings (LOJ-D17): the manual unload weighing (indirme tartısı) of a cancelled instruction's vehicle — the
+/// two weighings as exact kilogram text in the order they were taken and the direction (<c>TareFirst</c> | <c>GrossFirst</c>). The
+/// weighing id is the client's (one unload record per instruction). No net, difference, threshold, operator or time is sent: the
+/// backend calculates and stamps them. It books no stock movement.
+/// </summary>
+public sealed record RecordUnloadWeighingRequest(string ExpectedVersion, Guid WeighingId, string Direction, string FirstWeighingKg,
+    string SecondWeighingKg);
+
+/// <summary>
 /// POST …/{id}/dispatch-notes/{dispatchNoteId}/e-dispatch-number (AT-055, user decision 2026-09-30): the official e-İrsaliye
 /// number of an approved note, entered by the user (a later integration writes the same field); the GİB shape
 /// (<see cref="LogisticsJson.EDispatchNumberPattern"/>), set once, unique per company, kept apart from the system number.
@@ -85,21 +95,29 @@ public sealed record SetEDispatchNumberRequest(string ExpectedVersion, string ED
 /// The cancellation facts (F-020, LOJ-D6..D8) are what the cancel command recorded: who cancelled
 /// (<paramref name="CancelledBy"/>, a user id like every actor on these views), when (UTC) and the trimmed reason.
 /// All three are null unless the instruction is Cancelled, and all three are set when it is. Nothing is ever deleted.
+/// <paramref name="UnloadRecord"/> (LOJ-D17 (3)) is "NotApplicable" | "Missing" | "Recorded": "Missing" is the "indirme kaydı
+/// yok" mark — cancelled, goods were loaded and no unload weighing is recorded (the cancel stays valid).
 /// </summary>
 public sealed record LoadingInstructionSummaryView(
     Guid Id, Guid CompanyId, string Status, string Version, Guid CustomerPartyId, Guid CompanyAccountId,
     DateOnly EffectiveOn, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, int LineCount,
-    string? CancelledBy, DateTimeOffset? CancelledAtUtc, string? CancelReason);
+    string? CancelledBy, DateTimeOffset? CancelledAtUtc, string? CancelReason, string UnloadRecord);
 
 /// <summary>The four shares of a line as exact text (§7.4), plus the derived remainders; the source order binding (D4).</summary>
 public sealed record LoadingInstructionLineView(
     Guid LineId, int LineNo, Guid SourceOrderId, Guid SourceOrderLineId, int SourceOrderRevision,
     Guid ProductId, Guid UnitId,
     string Instructed, string Loaded, string Shipped, string Delivered,
-    string RemainingToLoad, string LoadedNotShipped, string ShippedNotDelivered, bool IsBlocked);
+    string RemainingToLoad, string LoadedNotShipped, string ShippedNotDelivered, bool IsBlocked,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ApprovedPlanExcess = null);
 
+/// <summary>
+/// One recorded share of a line. <c>RecordedBy</c> is the server-side actor who recorded it (for a Shipped share,
+/// the person who made the shipment; F-020 ShippedBy column); null for a share stored before the actor was kept.
+/// </summary>
 public sealed record LoadingShareView(
-    Guid ShareId, Guid LineId, string Kind, string Quantity, string? Measurement, Guid? SourceShipmentId, DateTimeOffset RecordedAtUtc);
+    Guid ShareId, Guid LineId, string Kind, string Quantity, string? Measurement, Guid? SourceShipmentId, DateTimeOffset RecordedAtUtc,
+    string? RecordedBy);
 
 /// <summary>
 /// The instruction's manual weighbridge record (AT-053) as exact kilogram text: the two weighings as entered, the
@@ -110,6 +128,17 @@ public sealed record LoadingShareView(
 public sealed record LoadingInstructionWeighingView(
     Guid WeighingId, string Direction, string FirstWeighingKg, string SecondWeighingKg, string TareKg, string GrossKg, string NetKg,
     string LoadedKgAtWeighing, string DifferenceKg, string RecordedBy, DateTimeOffset RecordedAtUtc);
+
+/// <summary>
+/// The cancelled instruction's unload weighing (LOJ-D17) as exact kilogram text: the two weighings as entered, the direction,
+/// tare / gross / net (WGT-001, the backend's calculation), the kilograms loaded on the instruction when it was cancelled and the
+/// signed difference net − loaded (WGT-002; "-" when lighter). <paramref name="DifferenceWarning"/> is the backend's warning:
+/// with no threshold configured every non-zero difference warns; it never refused the record or the cancel.
+/// <paramref name="RecordedBy"/> is the operator's user id.
+/// </summary>
+public sealed record LoadingInstructionUnloadWeighingView(
+    Guid WeighingId, string Direction, string FirstWeighingKg, string SecondWeighingKg, string TareKg, string GrossKg, string NetKg,
+    string LoadedKgAtCancel, string DifferenceKg, bool DifferenceWarning, string RecordedBy, DateTimeOffset RecordedAtUtc);
 
 /// <summary>
 /// One line of a dispatch-note draft (AT-055): the definite shipment it documents, that shipment's instruction line and its
@@ -130,12 +159,14 @@ public sealed record DispatchNoteView(Guid DispatchNoteId, string Status, string
 
 /// <param name="Weighing">The manual weighbridge record, or null while none is recorded (always present on the wire).</param>
 /// <param name="DispatchNotes">The dispatch notes prepared from this instruction's shipments, oldest first, cancelled ones included (always present; empty when none).</param>
+/// <param name="UnloadWeighing">LOJ-D17: the unload weighing recorded after the cancel, or null while none is recorded (always present on the wire).</param>
 public sealed record LoadingInstructionDetailView(
     LoadingInstructionSummaryView Instruction,
     IReadOnlyList<LoadingInstructionLineView> Lines,
     IReadOnlyList<LoadingShareView> Shares,
     LoadingInstructionWeighingView? Weighing,
-    IReadOnlyList<DispatchNoteView> DispatchNotes);
+    IReadOnlyList<DispatchNoteView> DispatchNotes,
+    LoadingInstructionUnloadWeighingView? UnloadWeighing);
 
 /// <summary>
 /// AT-055, the Sales order view's link (S-04): the dispatch-note drafts that document shipments of one Sales order, with only
@@ -215,6 +246,9 @@ public static class LogisticsProblemCodesV1
     /// <summary>409, terminal (§7; AT-053): the instruction already has its weighbridge record; the correction rule is undecided, so a second is refused.</summary>
     public const string WeighingAlreadyRecorded = "logistics_weighing_already_recorded";
 
+    /// <summary>409, terminal (§7; LOJ-D17): the cancelled instruction already has its unload weighing; the correction rule is undecided, so a second is refused.</summary>
+    public const string UnloadWeighingAlreadyRecorded = "logistics_unload_weighing_already_recorded";
+
     /// <summary>422 (AT-053): the two weighings contradict the declared direction (the gross must be heavier than the tare).</summary>
     public const string WeighingDirectionInconsistent = "logistics_weighing_direction_inconsistent";
 
@@ -259,9 +293,11 @@ public static class LogisticsProblemCodesV1
 }
 
 public sealed class LogisticsInstructionServiceException(int status, string code,
-    IReadOnlyList<LogisticsFieldError>? errors = null, bool isReplay = false, string? originalCorrelationId = null)
-    : Exception($"{status} {code}")
+    IReadOnlyList<LogisticsFieldError>? errors = null, bool isReplay = false, string? originalCorrelationId = null,
+    Exception? innerException = null, string? detail = null)
+    : Exception($"{status} {code}", innerException)
 {
+    public string? Detail { get; } = detail;
     public int Status { get; } = status;
     public string Code { get; } = code;
     public IReadOnlyList<LogisticsFieldError> Errors { get; } = errors ?? [];
@@ -294,6 +330,9 @@ public static class LogisticsApiV1
 
     /// <summary>AT-053: the instruction's manual weighbridge record (one per instruction).</summary>
     public const string WeighingsPath = "/api/v1/logistics/loading-instructions/{id}/weighings";
+
+    /// <summary>LOJ-D17: the cancelled instruction's unload weighing (one per instruction; no stock movement).</summary>
+    public const string UnloadWeighingsPath = "/api/v1/logistics/loading-instructions/{id}/unload-weighings";
 
     /// <summary>AT-055: a dispatch-note draft from the instruction's definite shipments.</summary>
     public const string DispatchNotesPath = "/api/v1/logistics/loading-instructions/{id}/dispatch-notes";
@@ -402,6 +441,21 @@ public static class LogisticsJson
         if (request.WeighingId == Guid.Empty || request.Direction is not ("TareFirst" or "GrossFirst"))
         {
             throw new JsonException("Invalid weighing fields.");
+        }
+
+        RequireDecimalShape(request.FirstWeighingKg);
+        RequireDecimalShape(request.SecondWeighingKg);
+        return request;
+    }
+
+    public static RecordUnloadWeighingRequest ReadRecordUnloadWeighing(string json)
+    {
+        var request = JsonSerializer.Deserialize<RecordUnloadWeighingRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        RequireVersionShape(request.ExpectedVersion);
+        if (request.WeighingId == Guid.Empty || request.Direction is not ("TareFirst" or "GrossFirst"))
+        {
+            throw new JsonException("Invalid unload weighing fields.");
         }
 
         RequireDecimalShape(request.FirstWeighingKg);

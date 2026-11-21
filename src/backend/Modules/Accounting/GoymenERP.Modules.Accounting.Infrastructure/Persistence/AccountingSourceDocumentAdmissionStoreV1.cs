@@ -1,9 +1,11 @@
 using System.Globalization;
+using System.Data;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Accounting.Application.Contracts;
 using GoymenERP.Modules.Audit.Application.Contracts;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
@@ -37,6 +39,7 @@ public sealed class AccountingSourceDocumentAdmissionStoreV1(
         RequireCompany();
         ArgumentException.ThrowIfNullOrWhiteSpace(keyHash);
         ArgumentException.ThrowIfNullOrWhiteSpace(documentKind);
+        await RequireNotCancelled(documentKind, invoiceId, finalizedVersion, cancellationToken);
         var rows = await dbContext.SourceDocumentAdmissions.AsNoTracking()
             .Where(row => row.IdempotencyKeyHash == keyHash
                 || (row.DocumentKind == documentKind && row.InvoiceId == invoiceId && row.FinalizedVersion == finalizedVersion))
@@ -49,6 +52,48 @@ public sealed class AccountingSourceDocumentAdmissionStoreV1(
     public async Task<AccountingSourceDocumentAdmissionRecordV1> WriteAsync(
         AccountingSourceDocumentAdmissionWriteV1 write,
         CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(write);
+        RequireCompany();
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        try
+        {
+            await RequireNotCancelled(write.Request.DocumentKind, write.Request.InvoiceId, write.Request.FinalizedVersion, cancellationToken);
+            var result = await WriteCoreAsync(write, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return result;
+        }
+        catch (Exception exception) when (exception is SqlException { Number: 1205 }
+            || exception is DbUpdateException { InnerException: SqlException { Number: 1205 } }
+            || exception is AccountingStoreException { InnerException: DbUpdateException { InnerException: SqlException { Number: 1205 } } }
+            || exception is InvalidOperationException
+                { InnerException: DbUpdateException { InnerException: SqlException { Number: 1205 } } })
+        {
+            // SQL Server has already rolled back a deadlock victim; do not replace the retryable failure with a second rollback error.
+            dbContext.ChangeTracker.Clear();
+            throw new AccountingStoreException(AccountingStoreCodes.ConcurrentChange, "Source cancellation or admission won the concurrent transaction.");
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
+    private async Task RequireNotCancelled(string kind, Guid invoiceId, long version, CancellationToken cancellationToken)
+    {
+        var companyId = companyContext.CompanyId;
+        var cancelled = await dbContext.SourceInvoiceCancellations.AsNoTracking().AnyAsync(x => x.DocumentKind == kind
+            && x.InvoiceId == invoiceId && x.FinalizedVersion == version, cancellationToken);
+        if (!companyContext.IsResolved || companyContext.CompanyId != companyId)
+            throw new AccountingStoreException(AccountingStoreCodes.CompanyContextMismatch, "Şirket bağlamı değişti.");
+        if (cancelled) throw new AccountingStoreException(AccountingSourceDocumentAdmissionReasonsV1.SourceCancelled,
+            "Kaynak fatura iptal edilmiştir; gecikmiş kesinleştirme yeni fiş oluşturmaz.");
+    }
+
+    private async Task<AccountingSourceDocumentAdmissionRecordV1> WriteCoreAsync(
+        AccountingSourceDocumentAdmissionWriteV1 write, CancellationToken cancellationToken)
     {
         RequireCompany();
         ArgumentNullException.ThrowIfNull(write);
@@ -186,6 +231,7 @@ public sealed class AccountingSourceDocumentAdmissionStoreV1(
             PeriodId = periodId,
             MappingVersion = draft.MappingVersion,
             Status = DraftStatus,
+            OfficialInvoiceNo = request.OfficialInvoiceNo,
             DocumentNet = documentNet,
             DocumentVat = documentVat,
             DocumentWithholding = documentWithholding,

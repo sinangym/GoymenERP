@@ -32,6 +32,7 @@ public static class GroupSharedAuditEventFactory
             // The deactivation / reactivation (their event types are the Product owner's).
             GroupSharedMasterOperation.Deactivate => ("Deactivate", "product.card.deactivate"),
             GroupSharedMasterOperation.Reactivate => ("Reactivate", "product.card.reactivate"),
+            GroupSharedMasterOperation.SetCogsClassification => ("SetCogsClassification", "product.cogs-classifications.manage"),
             _ => throw new ArgumentException("Unsupported Product audit command.", nameof(draft)),
         };
         var envelope = new GroupSharedAuditEventEnvelope(Guid.NewGuid(),

@@ -144,6 +144,13 @@ export const CAPABILITY = {
    * list row, never from the sidebar.
    */
   organizationWorkCentersDetail: 'organization.work-centers.detail',
+  /**
+   * ORG-05 (KIM-S23, KIM-D28) the active company's VKN and its maker-checker change flow. Route
+   * `/ayarlar/organizasyon/sirket-vergi-no`, owner the Organization lane. The route stands on
+   * `organization.context.read`; the VKN itself is returned only to a holder of one of the two tax-id names, and
+   * the request/decide buttons follow the server's own viewer flags.
+   */
+  organizationCompanyTaxId: 'organization.company.tax-id',
   /** S-02 sales order draft list. Route `/satis/siparisler`, owner the Sales lane (SİPARİŞ). */
   salesDraftsList: 'sales.drafts.list',
   /** S-04 Sales order 360, one draft. Route `/satis/siparisler/:draftId`. A SEPARATE grant from the list. */
@@ -156,6 +163,7 @@ export const CAPABILITY = {
   salesInvoiceCandidatesList: 'sales.invoice-candidates.list',
   /** UI-63 S-09 Satış faturaları (API-32 list). Route `/satis/faturalar`. Granted on `sales.invoices.read` (SAT-D238: amounts withheld without `sales.orders.price.read`; Sales shell 1.20). */
   salesInvoicesList: 'sales.invoices.list',
+  salesOfficialInvoiceCancellation: 'sales.invoices.official-cancellation',
   /** UI-80 Satış raporları (API-41 / API-42). Route `/satis/raporlar`. Granted on its own `sales.reports.read`. */
   salesReportsView: 'sales.reports.view',
   /** UI-70b S-10 Müşteri iade faturaları (API-40 list). Route `/satis/iadeler`. Granted on `sales.returns.read` + `sales.orders.price.read` (Sales shell 1.25). */
@@ -187,6 +195,11 @@ export const CAPABILITY = {
   manufacturingPlansDetail: 'manufacturing.plans.detail',
   /** MFG-PLAN-LIST the company's saved plans. Route `/uretim/planlar`; reached from the order list and plan detail. */
   manufacturingPlansList: 'manufacturing.plans.list',
+  /**
+   * URT-S13 the company's monthly scrap prices (URT-D47, URT-D65). Route `/uretim/hurda-fiyatlari`; reached from the
+   * order list. Entering a month's price is the `manufacturing.scrap-prices.record` CONTROL inside it, not a route.
+   */
+  manufacturingScrapPricesList: 'manufacturing.scrap-prices.list',
   /** F-02 manual-receipt draft list. Route `/finans/tahsilatlar`, owner the Finance lane (FİNANS). */
   financeReceiptsList: 'finance.receipts.list',
   /** F-02 new draft, entered from a Cari account (`?partyId&companyAccountId`). Route `/finans/tahsilatlar/yeni`. */
@@ -223,6 +236,46 @@ export const CAPABILITY = {
   financeManualBankPaymentsCreate: 'finance.manual-bank-payments.create',
   /** R47 one manual outgoing bank payment. */
   financeManualBankPaymentsDetail: 'finance.manual-bank-payments.detail',
+  /**
+   * FNS-D25 (API-25) the payment not tied to a party (Masraf Ödemeleri). Its draft, approve and record are
+   * CONTROLS of this workspace, never routes.
+   */
+  financeExpensePaymentsWorkspace: 'finance.expense-payments.workspace',
+  /** FNS-D24 (API-32/34) Virman ve Döviz Bozdurma. Its commit is a CONTROL of this workspace, never a route. */
+  financeCashTransfersWorkspace: 'finance.cash-transfers.workspace',
+  financeExchangeBookValuesPrepare: 'finance.cash-exchange-book-values.prepare',
+  financeExchangeBookValuesApprove: 'finance.cash-exchange-book-values.approve',
+  /**
+   * F-018 L1 (FNS-D27 / FNS-D46; one step, FNS-D57(3)) Kredi Limitleri. Its propose and approve are CONTROLS of this list, never routes.
+   */
+  financeCreditLimitsList: 'finance.credit-limits.list',
+  /**
+   * F-018 L2 (FNS-D57 / FNS-D31 / FNS-D58) Müşteri Teminatları. Its record (record, change, release in one step) is a
+   * CONTROL of this list, never a route.
+   */
+  financeCollateralsList: 'finance.collaterals.list',
+  /**
+   * FIN-S9 (FNS-D23) Açılış Bakiyeleri. Its propose and approve are CONTROLS of this list, never routes.
+   */
+  financeOpeningBalancesList: 'finance.opening-balances.list',
+  financeCreditsWorkspace: 'finance.credits.workspace',
+  financePartyBalanceTransfers: 'finance.party-balance-transfers.record',
+  financeOfficialInvoicesRecord: 'finance.official-sales-invoices.record',
+  financeOfficialInvoicesApprove: 'finance.official-sales-invoices.approve',
+  accountingCostDifferencePrepare: 'accounting.manufacturing-cost-differences.prepare',
+  accountingCostDifferenceApprove: 'accounting.manufacturing-cost-differences.approve',
+  accountingInvoiceLineCogsPrepare: 'accounting.invoice-line-cogs.prepare',
+  accountingInvoiceLineCogsApprove: 'accounting.invoice-line-cogs.approve',
+  accountingSourceVouchers: 'accounting.source-vouchers.list',
+  accountingPostingMappingsRead: 'accounting.posting-mappings.read',
+  accountingInvoicedShipmentPrepare: 'accounting.invoiced-shipment-costs.prepare',
+  accountingInvoicedShipmentApprove: 'accounting.invoiced-shipment-costs.approve',
+  accountingInvoicedShipmentReverse: 'accounting.invoiced-shipment-costs.reverse',
+  accountingInvoicedShipmentReverseApprove: 'accounting.invoiced-shipment-costs.reverse-approve',
+  accountingPurchaseCostPrepare: 'accounting.purchase-cost-differences.prepare',
+  accountingPurchaseCostApprove: 'accounting.purchase-cost-differences.approve',
+  identityUsersManage: 'identity.users.manage',
+  productPaintMemberships: 'paint-memberships.manage',
   /** M-07 Muhasebe Dönemleri. Route `/muhasebe/donemler`, owner the Accounting lane (FİNANS). */
   accountingPeriodsList: 'accounting.periods.list',
   /** M-07 propose a period opening. Route `/muhasebe/donemler/yeni`. A SEPARATE grant from reading. */
@@ -249,6 +302,11 @@ export const CAPABILITY = {
   inventoryOpeningStockRecord: 'inventory.opening-stock.record',
   /** ST-01 bounded, company-scoped physical stock-position read. */
   inventoryStockPositionsList: 'inventory.stock-positions.list',
+  inventorySubcontractRelease: 'inventory.subcontract-allocations.release-unused',
+  inventoryTransferPlanning: 'inventory.stock-transfer.write',
+  inventoryTransferOverageApproval: 'inventory.stock-transfer.overage-approve',
+  inventoryTransferLossRequest: 'inventory.stock-transfer.loss-record',
+  inventoryTransferLossApproval: 'inventory.stock-transfer.loss-approve',
   /** SY-01 read subset "Kullanıcılar ve yetkiler". Route `/ayarlar/kullanicilar-ve-yetkiler`, owner Identity. Read-only. */
   identityAssignmentsList: 'identity.assignments.list',
   /** SY-02 read subset: one role's permissions and holders. Reached from a row, never the sidebar. */
@@ -265,6 +323,78 @@ export const CAPABILITY = {
   settingsSalesDiscountLimits: 'settings.sales-discount-limits.manage',
   /** MOD-03 Ayarlar > Vergi: the tax master. Route `/ayarlar/vergi`, owner Settings; one non-Critical name, granted to no role. */
   settingsTaxMaster: 'settings.tax-master.manage',
+  /**
+   * F-025 / B-11 Ayarlar > Ana Veriler > Kurlar: the exchange rate days, correction, half-day mark, reverification and
+   * import. Route `/ayarlar/kurlar`, owner Settings 1.2, on the read name; the three command controls are separate names
+   * (`settings/capabilities.ts` `SETTINGS_EXCHANGE_RATE_CONTROL`). Non-Critical, granted to no role here.
+   */
+  settingsExchangeRates: 'settings.exchange-rates.read',
+  /**
+   * F-029 S4b, SAT-D5 Ayarlar > Teslim toleransı: the delivery tolerance timeline (warn / approval / block percents),
+   * baseline transfer and new versions. Route `/ayarlar/teslim-toleransi`, owner Settings 1.3; one non-Critical name,
+   * granted to no role here.
+   */
+  settingsSalesDeliveryTolerance: 'settings.sales-delivery-tolerances.manage',
+  /**
+   * F-029 S4b, SAT-D6 Ayarlar > Onay tutar eşikleri: the approval amount thresholds per currency, baseline transfer and
+   * new versions. Route `/ayarlar/onay-esikleri`, owner Settings 1.3; one non-Critical name, granted to no role here.
+   */
+  settingsSalesApprovalThresholds: 'settings.sales-approval-thresholds.manage',
+  /**
+   * KIM-D34 Ayarlar > Giriş deneme sınırı: the group-wide login attempt limit and its versions. Route
+   * `/ayarlar/giris-deneme-siniri`, owner Settings 1.4; one non-Critical name, granted to no role here.
+   */
+  settingsLoginRateLimit: 'settings.login-rate-limit.manage',
+  /**
+   * F-004, KIM-D37 Ayarlar > Birim çevrim politikası: the company's density, rounding and weighbridge tolerance versions
+   * (no seed). Route `/ayarlar/birim-cevrim-politikasi`, owner Settings 1.4; one non-Critical name, granted to no role here.
+   */
+  settingsUnitConversionPolicy: 'settings.unit-conversion-policies.manage',
+  /**
+   * F-029 S1/S2, URN-D2…D5 Ayarlar > Birim profilleri: the company's unit profile versions (unit, scale, use) with the
+   * one-time baseline transfer. Route `/ayarlar/birim-profilleri`, owner Settings 1.5; one non-Critical name, granted to no role here.
+   */
+  settingsUnitProfiles: 'settings.unit-profiles.manage',
+  settingsMoneyProfiles: 'settings.money-profiles.manage',
+  settingsSalesContractDiscountLimit: 'settings.sales-contract-discount-limit.manage',
+  settingsCollateralTypes: 'settings.collateral-types.manage',
+  settingsFinanceOpeningPeriod: 'settings.finance-opening-period.manage',
+  settingsManufacturingScrapCost: 'settings.manufacturing-scrap-cost.manage',
+  settingsNotificationRetention: 'settings.notification-retention.manage',
+  settingsDocumentNumberSeries: 'settings.document-number-series.manage',
+  settingsFinancePolicies: 'settings.finance-policies.prepare',
+  settingsCashDifferencePolicies: 'settings.cash-count-difference-policies.prepare',
+  settingsBankInstitutions: 'settings.bank-institutions.prepare',
+  settingsCollateralRatePolicies: 'settings.collateral-rate-policies.prepare',
+  settingsManufacturingParameters: 'settings.manufacturing-parameter-profiles.read',
+  settingsManufacturingTolerances: 'settings.manufacturing-tolerance-profiles.read',
+  /**
+   * URT-D89 Ayarlar > İş merkezi kapasitesi: each work center's input capacity (kg/hour) and optional safety buffer
+   * versions (no seed). Route `/ayarlar/is-merkezi-kapasitesi`, owner Settings 1.5; one non-Critical name, granted to no
+   * role here.
+   */
+  settingsWorkCenterCapacity: 'settings.work-center-capacities.manage',
+  /**
+   * API-98, KIM-D49 Ayarlar > Masraf ve hizmet tipleri: the company's expense type and service type lists (no seed). Route
+   * `/ayarlar/referans-listeleri`, owner Settings 1.6; one non-Critical name, granted to no role here.
+   */
+  settingsPurchasingReferenceLists: 'settings.reference-lists.manage',
+  settingsPurchaseInvoiceVariance: 'settings.purchase-invoice-variance-policies.manage',
+  settingsWarehouseTransferScale: 'settings.warehouse-transfer-scale.manage',
+  settingsSalesSubcontractTax: 'settings.sales-subcontract-tax-default.manage',
+  settingsPurchasingSubcontractTax: 'settings.purchasing-subcontract-tax-default.manage',
+  documentsBrandingManage: 'documents.company-branding.manage',
+  documentsSalesTemplatePrepare: 'documents.templates.sales.prepare',
+  documentsSalesTemplatePublish: 'documents.templates.sales.publish',
+  documentsInventoryTemplatePrepare: 'documents.templates.inventory.prepare',
+  documentsInventoryTemplatePublish: 'documents.templates.inventory.publish',
+  documentsLogisticsTemplatePrepare: 'documents.templates.logistics.prepare',
+  documentsLogisticsTemplatePublish: 'documents.templates.logistics.publish',
+  /**
+   * B-14, KIM-D51 Ayarlar > Boya rengi ve hurda türü: the company's paint color and scrap kind lists (no seed). Route
+   * `/ayarlar/uretim-referans-listeleri`, owner Settings 1.6; one non-Critical name, granted to no role here.
+   */
+  settingsProductionReferenceLists: 'settings.production-reference-lists.manage',
   /** L-02 loading-instruction list. Route `/lojistik/yukleme-talimatlari`, owner the Sales/Logistics lane (SİPARİŞ). */
   logisticsInstructionsList: 'logistics.instructions.list',
   /** L-03 new loading instruction. Route `/lojistik/yukleme-talimatlari/yeni`. A SEPARATE grant from reading. */
@@ -275,6 +405,16 @@ export const CAPABILITY = {
   logisticsOperationsSales: 'logistics.operations-work.sales',
   /** AT-025 L-09 operations work — the PURCHASE section. Route `/lojistik/operasyon-isleri/satinalma`. Its own grant. */
   logisticsOperationsPurchase: 'logistics.operations-work.purchase',
+  logisticsPlanExcessApprove: 'logistics.shipments.plan-excess.approve',
+  logisticsTransferDepartures: 'logistics.transfer-departures.record',
+  logisticsSubcontractList: 'logistics.subcontract-deliveries.list',
+  logisticsSubcontractCreate: 'logistics.subcontract-deliveries.create',
+  logisticsSubcontractDetail: 'logistics.subcontract-deliveries.detail',
+  logisticsSubcontractIssue: 'logistics.subcontract-deliveries.issue',
+  logisticsSubcontractLoad: 'logistics.subcontract-deliveries.load',
+  logisticsSubcontractWeigh: 'logistics.subcontract-deliveries.weigh',
+  logisticsSubcontractShip: 'logistics.subcontract-deliveries.ship',
+  logisticsSubcontractCorrect: 'logistics.subcontract-deliveries.weighing-correct',
   /** P-01 purchase-request list. Route `/satinalma/talepler`, owner the Purchasing lane. */
   purchasingRequestsList: 'purchasing.requests.list',
   /** P-01 new request. Route `/satinalma/talepler/yeni`; reached from the list under K5. */
@@ -283,6 +423,12 @@ export const CAPABILITY = {
   purchasingRequestsDetail: 'purchasing.requests.detail',
   /** P-03 purchase-order list. Route `/satinalma/siparisler`, owner the Purchasing lane. */
   purchasingOrdersList: 'purchasing.orders.list',
+  purchasingInvoicesList: 'purchasing.invoices.list',
+  purchasingAdditionalCostsRead: 'purchasing.additional-costs.read',
+  purchasingInvoicesDetail: 'purchasing.invoices.detail',
+  purchasingServiceOrdersList: 'purchasing.service-orders.list',
+  purchasingServiceOrdersCreate: 'purchasing.service-orders.create',
+  purchasingServiceOrdersDetail: 'purchasing.service-orders.detail',
   /** P-04 new purchase order. Route `/satinalma/siparisler/yeni`; staged until a real Product candidate source exists. */
   purchasingOrdersCreate: 'purchasing.orders.create',
   /** P-03-DETAIL one purchase order. Route `/satinalma/siparisler/:orderId`. */
@@ -324,6 +470,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   // ORG-04: a parameter BELOW the static list. The list never matches the card and the card never matches
   // `lokasyon/:locationId`, whose static segment differs (#172 P1-2).
   [CAPABILITY.organizationWorkCentersDetail]: '/ayarlar/organizasyon/is-merkezleri/:workCenterId',
+  // ORG-05: a static sibling of the work-centre list; no url matches it and any other Organization route.
+  [CAPABILITY.organizationCompanyTaxId]: '/ayarlar/organizasyon/sirket-vergi-no',
   [CAPABILITY.salesDraftsList]: '/satis/siparisler',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a draft id.
   [CAPABILITY.salesDraftsCreate]: '/satis/siparisler/yeni',
@@ -333,6 +481,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.salesInvoiceCandidatesList]: '/satis/faturaya-hazir',
   // UI-63: another static Sales sibling, never a draft id.
   [CAPABILITY.salesInvoicesList]: '/satis/faturalar',
+  [CAPABILITY.salesOfficialInvoiceCancellation]: '/satis/fatura-resmi-iptal',
   // UI-80: another static Sales sibling, never a draft id.
   [CAPABILITY.salesReportsView]: '/satis/raporlar',
   // UI-70b: static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a return id.
@@ -350,6 +499,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.manufacturingPlansDetail]: '/uretim/plan/:planId',
   // Its own static segment: `planlar` is never read as `/uretim/plan/:planId`.
   [CAPABILITY.manufacturingPlansList]: '/uretim/planlar',
+  [CAPABILITY.manufacturingScrapPricesList]: '/uretim/hurda-fiyatlari',
   [CAPABILITY.financeReceiptsList]: '/finans/tahsilatlar',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a source id.
   [CAPABILITY.financeReceiptsDraft]: '/finans/tahsilatlar/yeni',
@@ -368,6 +518,31 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.financeManualBankPaymentsList]: '/finans/odemeler',
   [CAPABILITY.financeManualBankPaymentsCreate]: '/finans/odemeler/yeni',
   [CAPABILITY.financeManualBankPaymentsDetail]: '/finans/odemeler/:paymentId',
+  [CAPABILITY.financeExpensePaymentsWorkspace]: '/finans/masraf-odemeleri',
+  [CAPABILITY.financeCashTransfersWorkspace]: '/finans/virman',
+  [CAPABILITY.financeExchangeBookValuesPrepare]: '/finans/doviz-defter-degeri-hazirla',
+  [CAPABILITY.financeExchangeBookValuesApprove]: '/finans/doviz-defter-degeri-onaylari',
+  [CAPABILITY.financeCreditLimitsList]: '/finans/kredi-limitleri',
+  [CAPABILITY.financeCollateralsList]: '/finans/teminatlar',
+  [CAPABILITY.financeOpeningBalancesList]: '/finans/acilis-bakiyeleri',
+  [CAPABILITY.financeCreditsWorkspace]: '/finans/krediler',
+  [CAPABILITY.financePartyBalanceTransfers]: '/finans/cari-bakiye-devri',
+  [CAPABILITY.financeOfficialInvoicesRecord]: '/finans/resmi-satis-faturalari',
+  [CAPABILITY.financeOfficialInvoicesApprove]: '/finans/resmi-satis-faturasi-onaylari',
+  [CAPABILITY.accountingCostDifferencePrepare]: '/muhasebe/uretim-maliyet-farklari',
+  [CAPABILITY.accountingCostDifferenceApprove]: '/muhasebe/uretim-maliyet-farki-onay',
+  [CAPABILITY.accountingInvoiceLineCogsPrepare]: '/muhasebe/fatura-satiri-smm',
+  [CAPABILITY.accountingInvoiceLineCogsApprove]: '/muhasebe/fatura-satiri-smm-onay',
+  [CAPABILITY.accountingSourceVouchers]: '/muhasebe/kaynak-fisler',
+  [CAPABILITY.accountingPostingMappingsRead]: '/muhasebe/hesap-eslemeleri',
+  [CAPABILITY.accountingInvoicedShipmentPrepare]: '/muhasebe/sevk-smm-hazirla',
+  [CAPABILITY.accountingInvoicedShipmentApprove]: '/muhasebe/sevk-smm-onay',
+  [CAPABILITY.accountingInvoicedShipmentReverse]: '/muhasebe/sevk-smm-ters-kayit',
+  [CAPABILITY.accountingInvoicedShipmentReverseApprove]: '/muhasebe/sevk-smm-ters-kayit-onay',
+  [CAPABILITY.accountingPurchaseCostPrepare]: '/muhasebe/alis-maliyet-farki-hazirla',
+  [CAPABILITY.accountingPurchaseCostApprove]: '/muhasebe/alis-maliyet-farki-onay',
+  [CAPABILITY.identityUsersManage]: '/ayarlar/kullanicilar',
+  [CAPABILITY.productPaintMemberships]: '/boya-urunleri',
   [CAPABILITY.accountingPeriodsList]: '/muhasebe/donemler',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a period id.
   [CAPABILITY.accountingPeriodsPropose]: '/muhasebe/donemler/yeni',
@@ -380,22 +555,76 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.accountingTrialBalance]: '/muhasebe/mizan',
   [CAPABILITY.inventoryOpeningStockRecord]: '/stok/acilis',
   [CAPABILITY.inventoryStockPositionsList]: '/stok/pozisyonlar',
+  [CAPABILITY.inventorySubcontractRelease]: '/stok/fason-ayirma-birak',
+  [CAPABILITY.inventoryTransferPlanning]: '/stok/transferler/planla',
+  [CAPABILITY.inventoryTransferOverageApproval]: '/stok/transferler/fazla-kabul-onaylari',
+  [CAPABILITY.inventoryTransferLossRequest]: '/stok/transferler/kayip-talepleri',
+  [CAPABILITY.inventoryTransferLossApproval]: '/stok/transferler/kayip-onaylari',
   [CAPABILITY.identityAssignmentsList]: '/ayarlar/kullanicilar-ve-yetkiler',
   [CAPABILITY.identityRolesDetail]: '/ayarlar/kullanicilar-ve-yetkiler/roller/:roleId',
   [CAPABILITY.identityAuditList]: '/ayarlar/denetim-kaydi',
   [CAPABILITY.settingsSalesDiscountLimits]: '/ayarlar/iskonto-limitleri',
   [CAPABILITY.settingsTaxMaster]: '/ayarlar/vergi',
+  [CAPABILITY.settingsExchangeRates]: '/ayarlar/kurlar',
+  [CAPABILITY.settingsSalesDeliveryTolerance]: '/ayarlar/teslim-toleransi',
+  [CAPABILITY.settingsSalesApprovalThresholds]: '/ayarlar/onay-esikleri',
+  [CAPABILITY.settingsLoginRateLimit]: '/ayarlar/giris-deneme-siniri',
+  [CAPABILITY.settingsUnitConversionPolicy]: '/ayarlar/birim-cevrim-politikasi',
+  [CAPABILITY.settingsUnitProfiles]: '/ayarlar/birim-profilleri',
+  [CAPABILITY.settingsMoneyProfiles]: '/ayarlar/para-profilleri',
+  [CAPABILITY.settingsSalesContractDiscountLimit]: '/ayarlar/sozlesme-iskonto-siniri',
+  [CAPABILITY.settingsCollateralTypes]: '/ayarlar/teminat-turleri',
+  [CAPABILITY.settingsFinanceOpeningPeriod]: '/ayarlar/finans-acilis-donemi',
+  [CAPABILITY.settingsManufacturingScrapCost]: '/ayarlar/fire-maliyet-katilimi',
+  [CAPABILITY.settingsNotificationRetention]: '/ayarlar/bildirim-etkinlik-suresi',
+  [CAPABILITY.settingsDocumentNumberSeries]: '/ayarlar/belge-numara-serileri',
+  [CAPABILITY.settingsFinancePolicies]: '/ayarlar/finans-onay-politikalari',
+  [CAPABILITY.settingsCashDifferencePolicies]: '/ayarlar/kasa-sayim-fark-politikalari',
+  [CAPABILITY.settingsBankInstitutions]: '/ayarlar/banka-kurumlari',
+  [CAPABILITY.settingsCollateralRatePolicies]: '/ayarlar/teminat-oran-politikalari',
+  [CAPABILITY.settingsManufacturingParameters]: '/ayarlar/uretim-parametre-profilleri',
+  [CAPABILITY.settingsManufacturingTolerances]: '/ayarlar/uretim-tolerans-profilleri',
+  [CAPABILITY.settingsWorkCenterCapacity]: '/ayarlar/is-merkezi-kapasitesi',
+  [CAPABILITY.settingsPurchasingReferenceLists]: '/ayarlar/referans-listeleri',
+  [CAPABILITY.settingsPurchaseInvoiceVariance]: '/ayarlar/alis-fatura-fark-toleransi',
+  [CAPABILITY.settingsWarehouseTransferScale]: '/ayarlar/depo-transfer-tartisi',
+  [CAPABILITY.settingsSalesSubcontractTax]: '/ayarlar/satis-fason-vergi-varsayilani',
+  [CAPABILITY.settingsPurchasingSubcontractTax]: '/ayarlar/alis-fason-vergi-varsayilani',
+  [CAPABILITY.documentsBrandingManage]: '/ayarlar/belge-kimligi',
+  [CAPABILITY.documentsSalesTemplatePrepare]: '/ayarlar/belge-sablonlari/satis',
+  [CAPABILITY.documentsSalesTemplatePublish]: '/ayarlar/belge-sablonlari/satis',
+  [CAPABILITY.documentsInventoryTemplatePrepare]: '/ayarlar/belge-sablonlari/stok',
+  [CAPABILITY.documentsInventoryTemplatePublish]: '/ayarlar/belge-sablonlari/stok',
+  [CAPABILITY.documentsLogisticsTemplatePrepare]: '/ayarlar/belge-sablonlari/lojistik',
+  [CAPABILITY.documentsLogisticsTemplatePublish]: '/ayarlar/belge-sablonlari/lojistik',
+  [CAPABILITY.settingsProductionReferenceLists]: '/ayarlar/uretim-referans-listeleri',
   [CAPABILITY.logisticsInstructionsList]: '/lojistik/yukleme-talimatlari',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as an instruction id.
   [CAPABILITY.logisticsInstructionsCreate]: '/lojistik/yukleme-talimatlari/yeni',
   [CAPABILITY.logisticsInstructionsDetail]: '/lojistik/yukleme-talimatlari/:instructionId',
   [CAPABILITY.logisticsOperationsSales]: '/lojistik/operasyon-isleri/satis',
   [CAPABILITY.logisticsOperationsPurchase]: '/lojistik/operasyon-isleri/satinalma',
+  [CAPABILITY.logisticsPlanExcessApprove]: '/lojistik/plan-ustu-sevk-onay',
+  [CAPABILITY.logisticsTransferDepartures]: '/lojistik/transfer-cikislari',
+  [CAPABILITY.logisticsSubcontractList]: '/lojistik/fason-teslimler',
+  [CAPABILITY.logisticsSubcontractCreate]: '/lojistik/fason-teslimler/yeni',
+  [CAPABILITY.logisticsSubcontractDetail]: '/lojistik/fason-teslimler/:instructionId',
+  [CAPABILITY.logisticsSubcontractIssue]: '/lojistik/fason-teslimler/:instructionId',
+  [CAPABILITY.logisticsSubcontractLoad]: '/lojistik/fason-teslimler/:instructionId',
+  [CAPABILITY.logisticsSubcontractWeigh]: '/lojistik/fason-teslimler/:instructionId',
+  [CAPABILITY.logisticsSubcontractShip]: '/lojistik/fason-teslimler/:instructionId',
+  [CAPABILITY.logisticsSubcontractCorrect]: '/lojistik/fason-teslimler/:instructionId',
   [CAPABILITY.purchasingRequestsList]: '/satinalma/talepler',
   // K5 keeps creation inside the P-01 list. Static `yeni` must never be read as a request id.
   [CAPABILITY.purchasingRequestsCreate]: '/satinalma/talepler/yeni',
   [CAPABILITY.purchasingRequestsDetail]: '/satinalma/talepler/:requestId',
   [CAPABILITY.purchasingOrdersList]: '/satinalma/siparisler',
+  [CAPABILITY.purchasingInvoicesList]: '/satinalma/faturalar',
+  [CAPABILITY.purchasingAdditionalCostsRead]: '/satinalma/ek-masraflar/:sourceKind/:orderId',
+  [CAPABILITY.purchasingInvoicesDetail]: '/satinalma/faturalar/:invoiceId',
+  [CAPABILITY.purchasingServiceOrdersList]: '/satinalma/hizmet-siparisleri',
+  [CAPABILITY.purchasingServiceOrdersCreate]: '/satinalma/hizmet-siparisleri/yeni',
+  [CAPABILITY.purchasingServiceOrdersDetail]: '/satinalma/hizmet-siparisleri/:serviceOrderId',
   // Static before the parameter route: `yeni` must never be read as an order id. The route remains
   // mounted but unavailable while the owner declaration is staged.
   [CAPABILITY.purchasingOrdersCreate]: '/satinalma/siparisler/yeni',

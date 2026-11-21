@@ -57,6 +57,11 @@ describe('decoder', () => {
     expect(decodeDuplicateCandidates(duplicateCandidates({ name: '' }))).toBeNull()
     const row = other(PRODUCT_2, 'SAC-7')
     expect(decodeDuplicateCandidates(duplicateCandidates({ exactName: [row, row] }))).toBeNull()
+    // URN-D25: the same-technical list is part of the contract and fails closed like the name list.
+    expect(decodeDuplicateCandidates(duplicateCandidates({ sameTechnical: undefined }))).toBeNull()
+    expect(decodeDuplicateCandidates(duplicateCandidates({ sameTechnicalHasMore: 'no' }))).toBeNull()
+    expect(decodeDuplicateCandidates(duplicateCandidates({ sameTechnical: [row, row] }))).toBeNull()
+    expect(decodeDuplicateCandidates(duplicateCandidates({ sameTechnical: [row] }))?.sameTechnical).toHaveLength(1)
   })
 })
 
@@ -90,6 +95,24 @@ describe('Draft card', () => {
     await cardVisible()
     await screen.findByTestId('product-duplicate-candidates')
     expect(duplicateReads(calls).length).toBe(2)
+  })
+
+  it('lists the active cards with the same family, thickness, width, quality and coating as a separate warning (URN-D25)', async () => {
+    installFetch({
+      capabilities: [PRODUCT_CAPABILITY.productsDetail],
+      onDuplicates: () =>
+        json(duplicateCandidates({ name: 'Siyah sac', sameTechnical: [other(PRODUCT_2, 'SAC-7')], sameTechnicalHasMore: true })),
+    })
+    renderProductApp(DETAIL)
+    await cardVisible()
+
+    const technical = await screen.findByTestId('product-duplicate-technical-candidates')
+    expect(within(technical).getByRole('link', { name: 'SAC-7' }).getAttribute('href')).toBe(`/urun/${PRODUCT_2}`)
+    expect(screen.getByText('Aynı teknik ölçülere sahip aktif ürün kartları var')).toBeTruthy()
+    expect(screen.getByText(/daha fazla aktif kart var/)).toBeTruthy()
+    // No same-named card: the name list says so, the technical warning still shows.
+    expect(screen.queryByTestId('product-duplicate-candidates')).toBeNull()
+    expect(screen.getByText('Sunucu kontrolünde bu adla başka ürün kartı yok.')).toBeTruthy()
   })
 
   it('says plainly when no other card has the name, and when the check could not be made', async () => {

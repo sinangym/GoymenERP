@@ -38,20 +38,20 @@
       ],
       "properties": {
         "dbContexts": {
-          "const": 18
+          "const": 19
         },
         "migrations": {
-          "const": 163
+          "const": 347
         },
         "durableStores": {
-          "const": 32
+          "const": 66
         }
       }
     },
     "dbContexts": {
       "type": "array",
-      "minItems": 18,
-      "maxItems": 18,
+      "minItems": 19,
+      "maxItems": 19,
       "uniqueItems": true,
       "items": {
         "type": "object",
@@ -79,8 +79,8 @@
     },
     "migrations": {
       "type": "array",
-      "minItems": 163,
-      "maxItems": 163,
+      "minItems": 347,
+      "maxItems": 347,
       "uniqueItems": true,
       "items": {
         "type": "object",
@@ -220,8 +220,8 @@
     },
     "durableStores": {
       "type": "array",
-      "minItems": 32,
-      "maxItems": 32,
+      "minItems": 66,
+      "maxItems": 66,
       "uniqueItems": true,
       "items": {
         "type": "object",
@@ -245,12 +245,15 @@
           "module": {
             "enum": [
               "Accounting",
+              "Counterparty",
               "Documents",
               "Finance",
               "Idempotency",
+              "Identity",
               "Inventory",
               "Logistics",
               "Manufacturing",
+              "Organization",
               "Product",
               "Purchasing",
               "Sales",
@@ -283,7 +286,7 @@
           },
           "contracts": {
             "type": "array",
-            "maxItems": 2,
+            "maxItems": 3,
             "uniqueItems": true,
             "items": {
               "type": "string",
@@ -293,7 +296,7 @@
           "sourceFiles": {
             "type": "array",
             "minItems": 1,
-            "maxItems": 7,
+            "maxItems": 8,
             "uniqueItems": true,
             "items": {
               "type": "object",

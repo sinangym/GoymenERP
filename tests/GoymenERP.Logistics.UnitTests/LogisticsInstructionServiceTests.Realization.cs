@@ -343,6 +343,10 @@ public sealed partial class LogisticsInstructionServiceTests
 
     private sealed class FakeRealizationRunner : ILogisticsRealizationTransactionRunnerV1
     {
+        public Task<T> ExecutePlanExcessAsync<T>(Guid companyId, Func<CancellationToken, Task<T>> operation,
+            Func<CancellationToken, Task> beforeCommit, CancellationToken token = default) => ExecuteDeliveryAsync(companyId, operation, beforeCommit, token);
+        public Task<T> ExecutePlanExcessShipmentAsync<T>(Guid companyId, Func<ILogisticsShipmentStockV1, CancellationToken, Task<T>> operation,
+            Func<CancellationToken, Task> beforeCommit, CancellationToken token = default) => ExecuteShipmentAsync(companyId, operation, beforeCommit, token);
         public FakeShipmentStock Stock { get; } = new();
         public int ShipmentRuns { get; private set; }
         public int DeliveryRuns { get; private set; }

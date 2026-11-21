@@ -27,6 +27,9 @@ namespace GoymenERP.Modules.Sales.Application;
 /// <item><b>Waits, never guesses</b> — a tax blocker (SAT-D135/D147), an exemption document dated after the shipment (SAT-D186),
 /// a withholding line (the VUK 232 comparison is not decided), a missing price, rate or due date: 409 <c>invoice_not_ready</c>
 /// with every reason; nothing is recorded under the key, so the same key asks again once the cause is gone.</item>
+/// <item><b>Weighing difference</b> (SAT-S13) — each share's dispatch note must carry the Logistics weighing-difference record
+/// (SAT-D389), not pending approval (SAT-D319 (6)), and pass at the scale kilograms (SAT-D322 (1)); see
+/// <see cref="SalesDispatchWeighingInvoiceRule"/>.</item>
 /// </list>
 /// Amounts are <see cref="SalesInvoiceCalculator"/>'s only (SAT-D11/D75/D76, EK42 SAT-D223…D226).
 /// </summary>
@@ -44,7 +47,12 @@ public sealed partial class SalesInvoiceService(
     ISalesOfficialInvoiceReadPortV1? officialInvoices = null,
     SalesInvoiceMatchTolerancePolicy? matchTolerance = null,
     ISalesFinanceAdmissionPortV1? financeAdmission = null,
-    ISalesInvoiceDiagnosticsV1? diagnostics = null) : ISalesInvoiceService
+    ISalesInvoiceDiagnosticsV1? diagnostics = null,
+    ISalesSubcontractServiceInvoiceStore? subcontractInvoices = null,
+    ISalesSubcontractDeliveryWeighingReadPortV1? subcontractWeighings = null,
+    ISalesDispatchWeighingDifferenceReadPortV1? weighingDifferences = null,
+    ISalesSubcontractInvoiceLifecycleStoreV1? subcontractLifecycle = null,
+    ISalesSubcontractInvoiceListStoreV1? subcontractInvoiceList = null) : ISalesInvoiceService
 {
     private const string WritePermission = SalesPermissionManifestV1.InvoicesWrite;
     private const string ReadPermission = SalesPermissionManifestV1.InvoicesRead;
@@ -101,6 +109,9 @@ public sealed partial class SalesInvoiceService(
             }
         }
 
+        // SAT-S13 (SAT-D389 / SAT-D405, SAT-D319 (6), SAT-D322 (1)): every note of a ready share waits on its weighing difference.
+        var invoiceKilograms = await AddWeighingDifferenceWaitsAsync(scope, prepared, reasons, cancellationToken);
+
         if (reasons.Count == 0)
         {
             RequireOneInvoiceKey(prepared, reasons);
@@ -123,8 +134,8 @@ public sealed partial class SalesInvoiceService(
             first.Basis.MoneyProfileId, first.Basis.MoneyProfileVersion, first.Basis.MoneyScale, businessDate, rate);
         var inputs = prepared.Select(item => new SalesInvoiceShareInput(Guid.NewGuid(), item.Share.ShipmentId, item.Share.DispatchNoteId,
             item.Share.SystemNumber, item.Share.NoteLineNo, item.ShipmentDate, item.Share.SalesOrderId, item.Share.SalesOrderLineId,
-            item.Basis.Revision, item.Share.ProductId, item.Share.UnitId, item.Share.Quantity,
-            item.Share.Quantity.ToString(CultureInfo.InvariantCulture), item.Line.Commercial, item.Line.Tax!)).ToList();
+            item.Basis.Revision, item.Share.ProductId, item.Share.UnitId, invoiceKilograms[item.Share.ShipmentId],
+            invoiceKilograms[item.Share.ShipmentId].ToString(CultureInfo.InvariantCulture), item.Line.Commercial, item.Line.Tax!)).ToList();
         var invoiceId = Guid.NewGuid();
 
         await RequireStillAsync(scope, WritePermission, cancellationToken);
@@ -572,6 +583,14 @@ public sealed partial class SalesInvoiceService(
         var first = prepared[0];
         foreach (var item in prepared.Skip(1))
         {
+            // 2026-11-17 user answer, #1189 6943483644 (agent relay): USD shipments on different
+            // business days are invoiced separately even if both days resolve to an equal bulletin/rate.
+            if (first.Basis.CurrencyId == SettingsCurrencyIdentitiesV1.UnitedStatesDollar
+                && item.Basis.CurrencyId == first.Basis.CurrencyId && item.ShipmentDate != first.ShipmentDate)
+            {
+                reasons.Add(new(item.Field, SalesInvoiceReasonCodesV1.UsdShipmentDayMismatch));
+            }
+
             if (item.Basis.CurrencyId != first.Basis.CurrencyId)
             {
                 reasons.Add(new(item.Field, SalesInvoiceReasonCodesV1.CurrencyMismatch));

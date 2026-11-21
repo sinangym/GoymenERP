@@ -38,7 +38,7 @@ public sealed class OrderTargetAndCloseTests
     {
         var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
             inputs.Length == 0 ? new[] { new PlannedInput(MasterRoll, Kg(10_000m)) } : inputs, target);
-        plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
+        plan.WithDueDate().Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
         return ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
     }
 

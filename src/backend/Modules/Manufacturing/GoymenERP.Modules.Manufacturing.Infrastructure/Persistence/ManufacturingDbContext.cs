@@ -2,6 +2,9 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Application;
+using GoymenERP.Modules.Manufacturing.Domain.Common;
+using GoymenERP.Modules.Manufacturing.Domain.Costing;
+using GoymenERP.Modules.Manufacturing.Domain.Lineage;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using Microsoft.EntityFrameworkCore;
@@ -27,10 +30,25 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 /// </list>
 /// The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// </summary>
-public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbContext> options, ICompanyContext companyContext)
+public sealed partial class ManufacturingDbContext(DbContextOptions<ManufacturingDbContext> options, ICompanyContext companyContext)
     : DbContext(options)
 {
     public const string Schema = "manufacturing";
+    internal const string PlanPaintSelectionJsonCheck = "[PaintSelectionJson] IS NULL OR ISJSON([PaintSelectionJson]) = 1";
+
+    /// <summary>
+    /// Üretim F-010a (URT-D29): the termin revision is never negative and counts every stored termin (a termin was set at
+    /// least once).
+    /// </summary>
+    internal const string PlanDueDateRevisionCheck =
+        "[DueDateRevision] >= 0 AND ([RequestedDueDate] IS NULL OR [DueDateRevision] >= 1)";
+
+    /// <summary>
+    /// URT-D66 (3): an order's termin revision is never negative, and a termin changed on the order always keeps a day (an
+    /// order termin is changed, never removed). Revision 0 is the copy of the plan's termin, null on an older order.
+    /// </summary>
+    internal const string OrderDueDateRevisionCheck =
+        "[DueDateRevision] >= 0 AND ([DueDateRevision] = 0 OR [DueDate] IS NOT NULL)";
 
     private const string TechnicalSnapshotCheck =
         "([TechnicalProductId] IS NULL AND [TechnicalProductVersion] IS NULL "
@@ -93,6 +111,9 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
     /// <summary>Üretim U3-a: the Inventory allocations written for a plan's inputs at its approval (append-only).</summary>
     internal DbSet<PlanInputAllocationRow> PlanInputAllocations => Set<PlanInputAllocationRow>();
 
+    /// <summary>F-009 D5: the minimal re-approvals of plans released by a cancelled order (append-only).</summary>
+    internal DbSet<PlanReapprovalRow> PlanReapprovals => Set<PlanReapprovalRow>();
+
     /// <summary>Üretim U1-b: the parameter profile captured at plan approval (append-only).</summary>
     internal DbSet<PlanParameterSnapshotRow> PlanParameterSnapshots => Set<PlanParameterSnapshotRow>();
 
@@ -107,10 +128,128 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
 
     internal DbSet<FactRow> Facts => Set<FactRow>();
 
+    /// <summary>F-009 D2: output reversals, each linked to the output declaration it takes mass back from (append-only).</summary>
+    internal DbSet<OutputReversalRow> OutputReversals => Set<OutputReversalRow>();
+
+    /// <summary>URT-S13: the company's monthly scrap prices, one per calendar month (append-only).</summary>
+    internal DbSet<MonthlyScrapPriceRow> MonthlyScrapPrices => Set<MonthlyScrapPriceRow>();
+
+    /// <summary>URT-S20 (URT-D63): the input-label edges of declared outputs with their consumed kg (append-only).</summary>
+    internal DbSet<OutputLineageEdgeRow> OutputLineageEdges => Set<OutputLineageEdgeRow>();
+
+    internal DbSet<OutputLabelCodeRow> OutputLabelCodes => Set<OutputLabelCodeRow>();
+
     internal DbSet<CommandRow> Commands => Set<CommandRow>();
 
     /// <summary>Binary collation: an actor id compares exactly, as the command service compares it.</summary>
     public const string IdentityCollation = "Latin1_General_100_BIN2";
+
+    /// <summary>
+    /// F-009 D2 (URT-D30): a fact carries no plan output line (every fact but an output, and an output stored before
+    /// D2), or an output carries exactly one well-formed line — a slit line by its 1-based position, a cut line by its
+    /// id, or its class line; only a good product binds to a slit or cut line (ASSUMPTION-URT-F009-1).
+    /// </summary>
+    internal const string FactOutputLineCheck =
+        "([OutputLineKind] IS NULL AND [OutputLineSequence] IS NULL AND [OutputLineId] IS NULL) "
+        + "OR ([Kind] = 3 AND ("
+        + "([OutputLineKind] = 1 AND [OutputClass] = 1 AND [OutputLineSequence] >= 1 AND [OutputLineId] IS NULL) "
+        + "OR ([OutputLineKind] = 2 AND [OutputClass] = 1 AND [OutputLineSequence] IS NULL "
+        + "AND [OutputLineId] IS NOT NULL AND [OutputLineId] <> '00000000-0000-0000-0000-000000000000') "
+        + "OR ([OutputLineKind] = 3 AND [OutputLineSequence] IS NULL AND [OutputLineId] IS NULL)))";
+
+    /// <summary>
+    /// URT-S13, URT-D72: the unique index that holds one row per company, month and version (version 1 is the month's
+    /// first entry, each correction one more).
+    /// </summary>
+    internal const string MonthlyScrapPriceVersionIndex = "IX_MonthlyScrapPrices_CompanyId_Year_Month_Version";
+
+    /// <summary>F-009 D2: every id of an output reversal is set.</summary>
+    internal const string OutputReversalIdentityCheck =
+        "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [OrderId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [OutputId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [ParentRollId] <> '00000000-0000-0000-0000-000000000000'";
+
+    /// <summary>F-009 D2: a reversal names an output declaration (fact kind 3) and takes back a positive mass.</summary>
+    internal const string OutputReversalMassCheck = "[OutputKind] = 3 AND [MassKg] > 0";
+
+    /// <summary>F-009 D2: the reason, the recorder and the correlation are never blank.</summary>
+    internal const string OutputReversalTextCheck =
+        "LEN([Reason]) > 0 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0";
+
+    /// <summary>URT-S13: the price row and its company are set.</summary>
+    internal const string MonthlyScrapPriceIdentityCheck =
+        "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000'";
+
+    /// <summary>
+    /// URT-S13: a calendar month (year within the calendar the domain accepts, month 1-12) and a price above zero
+    /// (URT-D74 (1)); the domain refuses a zero or negative price first.
+    /// </summary>
+    internal const string MonthlyScrapPricePeriodCheck =
+        "[Year] >= 1 AND [Year] <= 9999 AND [Month] >= 1 AND [Month] <= 12 AND [TlPerKg] > 0";
+
+    /// <summary>URT-S13: the recorder and the correlation are never blank.</summary>
+    internal const string MonthlyScrapPriceTextCheck = "LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0";
+
+    /// <summary>
+    /// URT-D72: version 1 is the month's first entry and carries no reason; a correction (version 2 or more) always
+    /// carries a reason that is not blank.
+    /// </summary>
+    internal const string MonthlyScrapPriceVersionCheck =
+        "([Version] = 1 AND [Reason] IS NULL) OR ([Version] > 1 AND [Reason] IS NOT NULL AND LEN([Reason]) > 0)";
+
+    /// <summary>URT-S20: every id of a lineage edge is set, and an output label is never its own input.</summary>
+    internal const string OutputLineageEdgeIdentityCheck =
+        "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [OutputId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [InputLabelId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [OutputLabelId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [GenealogyTransformationId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [InputLabelId] <> [OutputLabelId]";
+
+    /// <summary>
+    /// URT-S20: an edge names an output declaration (fact kind 3), carries a positive consumed kg (without consumption
+    /// there is no edge) and the share calculator version it was checked with.
+    /// </summary>
+    internal const string OutputLineageEdgeMassCheck =
+        "[OutputKind] = 3 AND [ConsumedKg] > 0 AND [CalculatorVersion] >= 1";
+
+    /// <summary>URT-S20: the recorder and the correlation are never blank.</summary>
+    internal const string OutputLineageEdgeTextCheck = "LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0";
+
+    /// <summary>URT-S20: the forward-trace index (which outputs an input label went into).</summary>
+    internal const string OutputLineageEdgeInputIndex = "IX_OutputLineageEdges_CompanyId_InputLabelId";
+
+    /// <summary>URT-S20: the backward-trace index (which input labels an output label came from).</summary>
+    internal const string OutputLineageEdgeOutputLabelIndex = "IX_OutputLineageEdges_CompanyId_OutputLabelId";
+
+    /// <summary>URT-S21: every id of an output label code is set and it names an output declaration (kind 3).</summary>
+    internal const string OutputLabelCodeIdentityCheck =
+        "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [OutputId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [LabelId] <> '00000000-0000-0000-0000-000000000000' AND [OutputKind] = 3";
+
+    /// <summary>
+    /// URT-S21 (URT-D62): an entered code (1) carries no number and no format; a generated code (2) carries its positive
+    /// number and the Ayarlar format it was made with.
+    /// </summary>
+    internal const string OutputLabelCodeSourceCheck =
+        "([Source] = 1 AND [GeneratedNumber] IS NULL AND [Format] IS NULL) "
+        + "OR ([Source] = 2 AND [GeneratedNumber] IS NOT NULL AND [GeneratedNumber] > 0 "
+        + "AND [Format] IS NOT NULL AND LEN([Format]) > 0)";
+
+    /// <summary>URT-S21: the code, the recorder and the correlation are never blank.</summary>
+    internal const string OutputLabelCodeTextCheck =
+        "LEN([LabelCode]) > 0 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0";
+
+    /// <summary>URT-S21 (URT-D62): one output label code is given once in a company.</summary>
+    internal const string OutputLabelCodeCodeIndex = "IX_OutputLabelCodes_CompanyId_LabelCode";
+
+    /// <summary>URT-S21 (URT-D62): one generated output label number is given once in a company, never reused.</summary>
+    internal const string OutputLabelCodeNumberIndex = "IX_OutputLabelCodes_CompanyId_GeneratedNumber";
+
+    /// <summary>URT-S21: one output label code per output label.</summary>
+    internal const string OutputLabelCodeLabelIndex = "IX_OutputLabelCodes_CompanyId_LabelId";
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -123,12 +262,22 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         ConfigurePlanCutLines(modelBuilder);
         ConfigurePlanRevisions(modelBuilder);
         ConfigurePlanRejections(modelBuilder);
+        ConfigurePlanReapprovals(modelBuilder);
+        ConfigurePlanPriorityVersions(modelBuilder);
+        ConfigureManualQueues(modelBuilder);
+        ConfigureReopenings(modelBuilder);
+        ConfigureCostGenerations(modelBuilder);
+        ConfigureNonKgInputs(modelBuilder);
         ConfigurePlanInputAllocations(modelBuilder);
         ConfigurePlanParameterSnapshots(modelBuilder);
         ConfigureOrders(modelBuilder);
         ConfigureOrderInputs(modelBuilder);
         ConfigureOrderClosureDecisions(modelBuilder);
         ConfigureFacts(modelBuilder);
+        ConfigureOutputReversals(modelBuilder);
+        ConfigureMonthlyScrapPrices(modelBuilder);
+        ConfigureOutputLineageEdges(modelBuilder);
+        ConfigureOutputLabelCodes(modelBuilder);
         ConfigureCommands(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
@@ -195,9 +344,9 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
             table.HasCheckConstraint("CK_Plans_ProcessSpecProcess",
                 "([PackageCount] IS NULL AND [PiecesPerPackage] IS NULL AND [PieceLengthMm] IS NULL OR [Process] IN (3, 4)) "
                 + "AND ([UnitKg] IS NULL OR [Process] = 3) "
-                + "AND ([PerimeterMm] IS NULL AND [PaintDescription] IS NULL AND [PaintColorCode] IS NULL OR [Process] = 4) "
+                + "AND ([PerimeterMm] IS NULL AND [PaintDescription] IS NULL AND [PaintColorCode] IS NULL AND [PaintSelectionJson] IS NULL OR [Process] = 4) "
                 + "AND ([TargetThicknessMm] IS NULL OR [Process] = 2) "
-                + "AND ([Process] <> 4 OR [PaintDescription] IS NOT NULL OR ([PackageCount] IS NULL "
+                + "AND ([Process] <> 4 OR [PaintDescription] IS NOT NULL OR [PaintSelectionJson] IS NOT NULL OR ([PackageCount] IS NULL "
                 + "AND [PiecesPerPackage] IS NULL AND [PieceLengthMm] IS NULL AND [PerimeterMm] IS NULL "
                 + "AND [PaintColorCode] IS NULL))");
             // U2-d (URT-D2): the preparer, when kept, is a non-empty actor id.
@@ -219,6 +368,8 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                 + "AND [SalesOrderLinkedAtUtc] IS NOT NULL)");
             table.HasCheckConstraint("CK_Plans_SalesOrderLinkRevision",
                 "[SalesOrderLinkRevision] >= 0 AND ([SalesOrderLineId] IS NULL OR [SalesOrderLinkRevision] >= 1)");
+            // F-010a (URT-D29): every stored termin is counted by its revision.
+            table.HasCheckConstraint("CK_Plans_DueDateRevision", PlanDueDateRevisionCheck);
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
@@ -233,6 +384,8 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         entity.Property(x => x.CreatedBy).HasMaxLength(ProductionPlan.PreparedByMaximumLength);
         entity.Property(x => x.SalesOrderLinkedBy).HasMaxLength(PlanSalesOrderLink.LinkedByMaximumLength);
         entity.Property(x => x.SalesOrderLinkRevision).HasDefaultValue(0L);
+        entity.Property(x => x.RequestedDueDate).HasColumnType("date");
+        entity.Property(x => x.DueDateRevision).HasDefaultValue(0L);
         // U2-b / API-16: Sales' linked-supply read asks by (company, sales order).
         entity.HasIndex(x => new { x.CompanyId, x.SalesOrderId })
             .HasDatabaseName("IX_Plans_SalesOrder")
@@ -318,6 +471,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
             + "AND ([PerimeterMm] IS NULL OR [PerimeterMm] > 0) AND ([TargetThicknessMm] IS NULL OR [TargetThicknessMm] > 0) "
             + "AND ([PaintDescription] IS NULL OR LEN([PaintDescription]) > 0) "
             + "AND ([PaintColorCode] IS NULL OR LEN([PaintColorCode]) > 0)");
+        table.HasCheckConstraint($"CK_{tableName}_PaintSelection", PlanPaintSelectionJsonCheck);
     }
 
     private static void ProcessSpecColumns<TRow>(EntityTypeBuilder<TRow> entity)
@@ -329,6 +483,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         entity.Property(x => x.TargetThicknessMm).HasPrecision(18, 3);
         entity.Property(x => x.PaintDescription).HasMaxLength(PlanProcessSpec.PaintDescriptionMaximumLength);
         entity.Property(x => x.PaintColorCode).HasMaxLength(PlanProcessSpec.PaintColorCodeMaximumLength);
+        entity.Property(x => x.PaintSelectionJson).HasColumnType("nvarchar(max)");
     }
 
     /// <summary>
@@ -431,6 +586,31 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
     }
 
     /// <summary>
+    /// F-009 D5 (URT-D35/D39): a plan's minimal re-approvals, bound by (company, plan) like its rejections; numbered 1..n
+    /// per plan, each at its own plan version.
+    /// </summary>
+    private void ConfigurePlanReapprovals(ModelBuilder modelBuilder)
+    {
+        var reapproval = modelBuilder.Entity<PlanReapprovalRow>();
+        reapproval.ToTable("PlanReapprovals", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PlanReapprovals_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PlanId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ReapprovedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [ReapprovalNo] >= 1 "
+                + "AND [PlanVersion] >= 3");
+            table.HasCheckConstraint("CK_PlanReapprovals_Text", "LEN([CorrelationId]) > 0");
+        });
+        reapproval.HasKey(x => new { x.CompanyId, x.PlanId, x.ReapprovalNo });
+        reapproval.HasIndex(x => new { x.CompanyId, x.PlanId, x.PlanVersion }).IsUnique();
+        reapproval.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        reapproval.HasOne<PlanRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PlanId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        reapproval.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
     /// Üretim U3-a (URT-D21, B-01): one row per (company, plan, parent roll), written with the plan's approval in the same
     /// transaction as Inventory's allocation. Append-only: the write guard admits no column of the table.
     /// </summary>
@@ -446,7 +626,8 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
             table.HasCheckConstraint("CK_PlanInputAllocations_Values",
                 "[LabelVersionAfter] >= 1 AND [AllocatedKg] > 0 AND [PlanVersion] >= 2");
         });
-        allocation.HasKey(x => new { x.CompanyId, x.PlanId, x.ParentRollId });
+        // F-009 D5: one generation per approval or re-approval — the plan version names the generation.
+        allocation.HasKey(x => new { x.CompanyId, x.PlanId, x.PlanVersion, x.ParentRollId });
         allocation.HasIndex(x => new { x.CompanyId, x.AllocationId }).IsUnique();
         allocation.Property(x => x.AllocatedKg).HasPrecision(18, 3);
         allocation.HasOne<PlanRow>().WithMany()
@@ -490,22 +671,36 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [PlanId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [WorkCenterId] <> '00000000-0000-0000-0000-000000000000'");
-            table.HasCheckConstraint("CK_Orders_Enums", "[Process] IN (1, 2, 3, 4, 5) AND [Status] IN (1, 2)");
+            table.HasCheckConstraint("CK_Orders_Enums", "[Process] IN (1, 2, 3, 4, 5) AND [Status] IN (1, 2, 3)");
             table.HasCheckConstraint("CK_Orders_Target",
                 "([TargetBasis] IS NULL AND [TargetKg] IS NULL) OR ([TargetBasis] IN (1, 2) AND [TargetKg] > 0)");
             table.HasCheckConstraint("CK_Orders_Close",
                 "([Status] = 1 AND [ClosedByUserId] IS NULL AND [ClosedAtUtc] IS NULL) "
-                + "OR ([Status] = 2 AND [ClosedByUserId] IS NOT NULL AND [ClosedAtUtc] IS NOT NULL)");
+                + "OR ([Status] = 2 AND [ClosedByUserId] IS NOT NULL AND [ClosedAtUtc] IS NOT NULL) "
+                + "OR ([Status] = 3 AND [ClosedByUserId] IS NULL AND [ClosedAtUtc] IS NULL)");
+            // F-009 D5 (URT-D33/D34): a cancelled order carries its cancel trace and the plan version its release made.
+            table.HasCheckConstraint("CK_Orders_Cancel",
+                "([Status] = 3 AND [CancelledByUserId] IS NOT NULL "
+                + "AND [CancelledByUserId] <> '00000000-0000-0000-0000-000000000000' AND [CancelledAtUtc] IS NOT NULL "
+                + "AND [CancellationReason] IS NOT NULL AND LEN([CancellationReason]) > 0 "
+                + "AND [PlanVersionAfterCancel] IS NOT NULL AND [PlanVersionAfterCancel] >= 3) "
+                + "OR ([Status] <> 3 AND [CancelledByUserId] IS NULL AND [CancelledAtUtc] IS NULL "
+                + "AND [CancellationReason] IS NULL AND [PlanVersionAfterCancel] IS NULL)");
             table.HasCheckConstraint("CK_Orders_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_Orders_DueDateRevision", OrderDueDateRevisionCheck);
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
         entity.Property(x => x.Id).ValueGeneratedNever();
         entity.Property(x => x.TargetKg).HasPrecision(18, 3);
+        entity.Property(x => x.DueDate).HasColumnType("date");
+        entity.Property(x => x.DueDateRevision).HasDefaultValue(0L);
+        entity.Property(x => x.CancellationReason).HasMaxLength(ProductionOrder.CancellationReasonMaximumLength);
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.RowVersion).IsRowVersion();
         // U2-a (URT-D1): one plan opens exactly one order — held by SQL too, so racing writers cannot open two.
-        entity.HasIndex(x => new { x.CompanyId, x.PlanId }).IsUnique();
+        // F-009 D5 (URT-D34): a cancelled order no longer holds its plan; the plan may open one live order again.
+        entity.HasIndex(x => new { x.CompanyId, x.PlanId }).IsUnique().HasFilter("[Status] <> 3");
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<PlanRow>().WithMany()
@@ -625,7 +820,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                 + "AND [ApprovalPolicyVersion] IS NOT NULL AND [ApprovalPolicyVersion] = [PolicyVersion] "
                 + "AND [ApprovedAtUtc] IS NOT NULL)");
         });
-        entity.HasKey(x => new { x.CompanyId, x.OrderId });
+        entity.HasKey(x => new { x.CompanyId, x.OrderId, x.OrderVersion });
         entity.Property(x => x.MaximumFirePercent).HasMaxLength(64).IsUnicode(false).IsRequired();
         entity.Property(x => x.PolicySource).HasMaxLength(16).IsUnicode(false);
         entity.Property(x => x.MassBalanceDifferenceTolerancePercent).HasMaxLength(64).IsUnicode(false);
@@ -651,6 +846,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                 "([Kind] = 3 AND [OutputClass] IN (1, 2, 3, 4, 5) AND [CostStatus] IN (1, 2, 3)) "
                 + "OR ([Kind] <> 3 AND [OutputClass] IS NULL AND [CostStatus] IS NULL)");
             table.HasCheckConstraint("CK_Facts_Text", "LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_Facts_OutputLine", FactOutputLineCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.Kind, x.Id });
         entity.Property(x => x.MassKg).HasPrecision(18, 3);
@@ -658,6 +854,130 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         entity.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
         entity.HasIndex(x => new { x.CompanyId, x.OrderId });
+        OrderOf(entity);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// F-009 D2 (URT-D28, analysis §4.3): one row per output reversal, keyed by (company, id). It is bound by
+    /// (company, order) to its order and by (company, kind 3, output id) to the output declaration it reverses, so it
+    /// can never name another company's order or a fact that is not an output. The bound "reversals ≤ declaration" is
+    /// the domain's, held under the order's concurrency token.
+    /// </summary>
+    private void ConfigureOutputReversals(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<OutputReversalRow>();
+        entity.ToTable("OutputReversals", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OutputReversals_Identity", OutputReversalIdentityCheck);
+            table.HasCheckConstraint("CK_OutputReversals_Mass", OutputReversalMassCheck);
+            table.HasCheckConstraint("CK_OutputReversals_Text", OutputReversalTextCheck);
+        });
+        entity.HasKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.MassKg).HasPrecision(18, 3);
+        entity.Property(x => x.Reason).HasMaxLength(OutputReversal.ReasonMaximumLength).IsRequired();
+        entity.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        entity.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        entity.HasIndex(x => new { x.CompanyId, x.OrderId });
+        entity.HasOne<FactRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OutputKind, x.OutputId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Kind, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        OrderOf(entity);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// URT-S13 (URT-D47, URT-D65), URT-D72: the versions of a company's scrap price per (company, year, month), keyed by
+    /// (company, id). The unique index on (company, year, month, version) holds one row per version also against a
+    /// concurrent writer, so two first entries or two corrections of the same version never both land; the latest
+    /// version is the month's effective price. The row is append-only (the default write guard refuses any change or
+    /// delete): a correction adds a version, the old one stays.
+    /// </summary>
+    private void ConfigureMonthlyScrapPrices(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<MonthlyScrapPriceRow>();
+        entity.ToTable("MonthlyScrapPrices", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_MonthlyScrapPrices_Identity", MonthlyScrapPriceIdentityCheck);
+            table.HasCheckConstraint("CK_MonthlyScrapPrices_Period", MonthlyScrapPricePeriodCheck);
+            table.HasCheckConstraint("CK_MonthlyScrapPrices_Text", MonthlyScrapPriceTextCheck);
+            table.HasCheckConstraint("CK_MonthlyScrapPrices_Version", MonthlyScrapPriceVersionCheck);
+        });
+        entity.HasKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.TlPerKg).HasPrecision(18, ScrapPriceTlPerKg.Scale);
+        entity.Property(x => x.RecordedBy).HasMaxLength(MonthlyScrapPrice.RecordedByMaximumLength)
+            .UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.Reason).HasMaxLength(MonthlyScrapPrice.ReasonMaximumLength);
+        entity.HasIndex(x => new { x.CompanyId, x.Year, x.Month, x.Version })
+            .IsUnique()
+            .HasDatabaseName(MonthlyScrapPriceVersionIndex);
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// URT-S20 (URT-D62, URT-D63): one lineage edge per (company, output, input label). It is bound by (company, order) to
+    /// its order and by (company, kind 3, output id) to the output declaration it belongs to, so it can never name another
+    /// company's order or a fact that is not an output. The two trace indexes serve the backward (output label) and the
+    /// forward (input label) read. The row is append-only (the default write guard refuses any change or delete).
+    /// </summary>
+    private void ConfigureOutputLineageEdges(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<OutputLineageEdgeRow>();
+        entity.ToTable("OutputLineageEdges", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OutputLineageEdges_Identity", OutputLineageEdgeIdentityCheck);
+            table.HasCheckConstraint("CK_OutputLineageEdges_Mass", OutputLineageEdgeMassCheck);
+            table.HasCheckConstraint("CK_OutputLineageEdges_Text", OutputLineageEdgeTextCheck);
+        });
+        entity.HasKey(x => new { x.CompanyId, x.OutputId, x.InputLabelId });
+        entity.Property(x => x.ConsumedKg).HasPrecision(18, Kilograms.Scale);
+        entity.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        entity.HasIndex(x => new { x.CompanyId, x.InputLabelId }).HasDatabaseName(OutputLineageEdgeInputIndex);
+        entity.HasIndex(x => new { x.CompanyId, x.OutputLabelId }).HasDatabaseName(OutputLineageEdgeOutputLabelIndex);
+        entity.HasOne<FactRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OutputKind, x.OutputId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Kind, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        OrderOf(entity);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// URT-S21 (URT-D62): one own code per (company, output), bound by (company, order) to its order and by (company, kind 3,
+    /// output id) to its output declaration. The code is unique in the company, a generated number is unique in the company
+    /// (the running number is never given twice), and an output label carries one code. Append-only (the default write
+    /// guard refuses any change or delete).
+    /// </summary>
+    private void ConfigureOutputLabelCodes(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<OutputLabelCodeRow>();
+        entity.ToTable("OutputLabelCodes", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OutputLabelCodes_Identity", OutputLabelCodeIdentityCheck);
+            table.HasCheckConstraint("CK_OutputLabelCodes_Source", OutputLabelCodeSourceCheck);
+            table.HasCheckConstraint("CK_OutputLabelCodes_Text", OutputLabelCodeTextCheck);
+        });
+        entity.HasKey(x => new { x.CompanyId, x.OutputId });
+        entity.Property(x => x.LabelCode).HasMaxLength(ProductionOutputLabelCodes.MaximumCodeLength).IsRequired();
+        entity.Property(x => x.Format).HasMaxLength(ProductionOutputLabelCodes.MaximumFormatLength);
+        entity.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        entity.HasIndex(x => new { x.CompanyId, x.LabelCode }).IsUnique().HasDatabaseName(OutputLabelCodeCodeIndex);
+        entity.HasIndex(x => new { x.CompanyId, x.GeneratedNumber })
+            .IsUnique()
+            .HasFilter("[GeneratedNumber] IS NOT NULL")
+            .HasDatabaseName(OutputLabelCodeNumberIndex);
+        entity.HasIndex(x => new { x.CompanyId, x.LabelId }).IsUnique().HasDatabaseName(OutputLabelCodeLabelIndex);
+        entity.HasOne<FactRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OutputKind, x.OutputId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Kind, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
         OrderOf(entity);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
@@ -737,6 +1057,14 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
 
             if (entry.State == EntityState.Modified)
             {
+                // URT-D33/D34: cancellation facts may be written once, only on the initial Open → Cancelled transition.
+                var initialOrderCancellation = entry.Entity is OrderRow order
+                    && order.Status == (int)OrderStatus.Cancelled
+                    && entry.Property<int>(nameof(OrderRow.Status)).OriginalValue == (int)OrderStatus.Open
+                    && entry.Property<Guid?>(nameof(OrderRow.CancelledByUserId)).OriginalValue is null
+                    && entry.Property<DateTimeOffset?>(nameof(OrderRow.CancelledAtUtc)).OriginalValue is null
+                    && entry.Property<string?>(nameof(OrderRow.CancellationReason)).OriginalValue is null
+                    && entry.Property<long?>(nameof(OrderRow.PlanVersionAfterCancel)).OriginalValue is null;
                 string[] allowed = entry.Entity switch
                 {
                     // U2-a: the cancellation moves the status and sets its three columns; the content never changes.
@@ -748,9 +1076,17 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                         nameof(PlanRow.SalesCustomerPartyId), nameof(PlanRow.SalesCustomerAccountId),
                         nameof(PlanRow.SalesProductId), nameof(PlanRow.SalesOrderLineRevision),
                         nameof(PlanRow.SalesOrderLinkedBy), nameof(PlanRow.SalesOrderLinkedAtUtc),
-                        nameof(PlanRow.SalesOrderLinkRevision)],
+                        nameof(PlanRow.SalesOrderLinkRevision),
+                        // F-010a (URT-D29): the hand-entered termin and its own revision move together.
+                        nameof(PlanRow.RequestedDueDate), nameof(PlanRow.DueDateRevision)],
+                    OrderRow when initialOrderCancellation => [nameof(OrderRow.Status), nameof(OrderRow.ClosedByUserId), nameof(OrderRow.ClosedAtUtc),
+                        nameof(OrderRow.Version), nameof(OrderRow.UpdatedAtUtc), nameof(OrderRow.DueDate), nameof(OrderRow.DueDateRevision),
+                        nameof(OrderRow.CancelledByUserId), nameof(OrderRow.CancelledAtUtc),
+                        nameof(OrderRow.CancellationReason), nameof(OrderRow.PlanVersionAfterCancel)],
                     OrderRow => [nameof(OrderRow.Status), nameof(OrderRow.ClosedByUserId), nameof(OrderRow.ClosedAtUtc),
-                        nameof(OrderRow.Version), nameof(OrderRow.UpdatedAtUtc)],
+                        nameof(OrderRow.Version), nameof(OrderRow.UpdatedAtUtc),
+                        // URT-D66 (3): the order's termin and its own revision move together.
+                        nameof(OrderRow.DueDate), nameof(OrderRow.DueDateRevision)],
                     // MFG-PLAN-EDIT: a revision is APPEND-ONLY — it adds its rows and moves only the plan's version and
                     // update time (admitted above). Nothing of a recorded revision may change afterwards.
                     PlanRevisionRow => [],

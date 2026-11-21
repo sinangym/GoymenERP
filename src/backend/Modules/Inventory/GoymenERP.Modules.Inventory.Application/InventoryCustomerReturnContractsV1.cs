@@ -79,7 +79,7 @@ public static class InventoryCustomerReturnCodesV1
 
 public sealed class InventoryCustomerReturnException : Exception
 {
-    private InventoryCustomerReturnException(int status, string code) : base(code)
+    private InventoryCustomerReturnException(int status, string code, Exception? innerException = null) : base(code, innerException)
     {
         Status = status;
         Code = code;
@@ -88,9 +88,9 @@ public sealed class InventoryCustomerReturnException : Exception
     public int Status { get; }
     public string Code { get; }
 
-    public static InventoryCustomerReturnException Refused(int status, string code) =>
+    public static InventoryCustomerReturnException Refused(int status, string code, Exception? innerException = null) =>
         InventoryCustomerReturnCodesV1.IsDefined(status, code)
-            ? new(status, code)
+            ? new(status, code, innerException)
             : throw new InvalidOperationException("Inventory customer-return refusal is outside its closed contract.");
 }
 

@@ -1,0 +1,17 @@
+export const POSTING_MAPPING_TEXT = {
+  title: 'SMM hesap eşlemesi', subject: 'Muhasebe hesap eşlemeleri',
+  intro: 'Ticari mal ve mamul için hesaplar ürünün açık muhasebe sınıfıyla eşleşir. Yeni sürümü hazırlayandan farklı bir yetkili etkinleştirir.',
+  refresh: 'Yenile', unavailable: 'Etkin, onaylı hesap planı okunamıyor. Hesap veya eşleme oluşturulmadı.',
+  noActive: 'Etkin eşleme sürümü yok.', active: 'Etkin sürüm', prepared: 'Onay bekleyen sürümler', noPrepared: 'Onay bekleyen sürüm yok.',
+  trade: 'Ticari mal', manufactured: 'Mamul', account: 'Muhasebe hesabı', choose: 'Hesap seçin',
+  defaults: 'Plândaki 621 / 620 önerilerini doldur', missingDefault: 'Önerilen kod planda yoksa hesap seçilmez; alt hesap tahmin edilmez.',
+  effective: 'Geçerlilik başlangıcı', prepare: 'Yeni sürüm hazırla', activate: 'Bu sürümü etkinleştir',
+  self: 'Hazırladığınız sürümü siz etkinleştiremezsiniz.', retained: 'Diğer etkin eşleme satırları yeni sürümde aynen korunur.',
+  empty: 'SMM eşlemesi henüz seçilmemiş.', purpose: 'Amaç', key: 'Eşleme', version: 'Sürüm', date: 'Başlangıç',
+  unknown: 'İşlemin sonucu henüz bilinmiyor. Aynı içerik ve anahtarla tekrar sorgulayın.', retry: 'Aynı işlemi tekrar gönder',
+  refused: 'İşlem uygulanmadı. Güncel sürümü ve yetkinizi kontrol edin.', done: 'Eşleme işlemi kaydedildi.',
+  purposes: { 'sales-invoice': 'Satış faturası', 'purchase-invoice': 'Alış faturası', 'cost-of-goods-sold': 'Satılan malın maliyeti' } as Record<string, string>,
+  keys: { receivable: 'Alacak', revenue: 'Gelir', 'vat-output': 'Hesaplanan KDV', 'withholding-receivable': 'Tevkifat alacağı',
+    payable: 'Borç', inventory: 'Stok', 'vat-input': 'İndirilecek KDV', 'withholding-payable': 'Tevkifat borcu', expense: 'Gider',
+    'trade-goods': 'Ticari mal', manufactured: 'Mamul' } as Record<string, string>,
+} as const

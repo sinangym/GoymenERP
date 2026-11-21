@@ -26,7 +26,7 @@ public sealed class SlittingOrderTests
     private static ProductionOrder ApprovedOrder(params PlannedInput[] inputs)
     {
         var plan = DraftPlan(inputs);
-        plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
+        plan.WithDueDate().Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
         return ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
     }
 
@@ -34,7 +34,7 @@ public sealed class SlittingOrderTests
     public void Approving_a_plan_consumes_nothing()
     {
         var plan = DraftPlan();
-        plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
+        plan.WithDueDate().Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
         var order = ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
 
         Assert.Equal(PlanStatus.Approved, plan.Status);
@@ -57,9 +57,9 @@ public sealed class SlittingOrderTests
     public void A_plan_is_approved_once()
     {
         var plan = DraftPlan();
-        plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
+        plan.WithDueDate().Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
 
-        var error = Assert.Throws<ManufacturingRuleException>(() => plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch));
+        var error = Assert.Throws<ManufacturingRuleException>(() => plan.WithDueDate().Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch));
         Assert.Equal(ManufacturingRuleCodes.PlanNotDraft, error.Code);
     }
 
@@ -236,7 +236,7 @@ public sealed class SlittingOrderTests
     public void The_order_keeps_its_own_snapshot_of_the_planned_inputs()
     {
         var plan = DraftPlan(new PlannedInput(MasterRoll, Kg(10_000m)));
-        plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
+        plan.WithDueDate().Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
         var order = ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
 
         Assert.NotSame(plan.Inputs, order.PlannedInputs);

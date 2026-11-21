@@ -517,12 +517,21 @@ public sealed partial class PurchasingServiceTests
 
         /// <summary>A4b: the Sales approved-line port the service is composed with (null: not composed, Sales lines stay closed).</summary>
         public IPurchaseRequestSalesSourcePortV1? SalesSources { get; set; }
+        /// <summary>F-017 F17-4: the Inventory link participant the service is composed with (null: not composed).</summary>
+        public IPurchaseFutureAllocationLinkParticipantV1? AllocationLinks { get; set; }
+
         public PurchasingServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, RevisePermission: RevisePermission);
 
-        public PurchasingService Service(IPurchaseGoodsReceiptTransactionV1? receipts = null, IPurchaseGoodsReceiptReadsV1? reads = null)
+        public PurchasingService Service(IPurchaseGoodsReceiptTransactionV1? receipts = null, IPurchaseGoodsReceiptReadsV1? reads = null,
+            IPurchaseReceiptReversalTransactionV1? reversals = null, IPurchaseSupplierReturnStore? returns = null,
+            IPurchaseSupplierReturnInvoiceCostReadPortV1? returnCosts = null,
+            IPurchaseReceiptReversalBatchTransactionV1? reversalBatches = null,
+            IPurchaseSupplierReturnCostSourceReadPortV1? returnSources = null)
         {
             return new PurchasingService(Company, User, Authority, new FixedCorrelation(), Accounts, ProductsPublished ? Products : null,
-                new PurchaseUnitVerifier(Settings), Store, Bindings, TimeProvider.System, receipts, reads, MoneyOwner ?? Money, CandidateOwner ?? Money, LineTaxes, SalesSources);
+                new PurchaseUnitVerifier(Settings), Store, Bindings, TimeProvider.System, receipts, reads, MoneyOwner ?? Money, CandidateOwner ?? Money, LineTaxes, SalesSources,
+                allocationLinks: AllocationLinks, receiptReversals: reversals, returnStore: returns, returnInvoiceCosts: returnCosts,
+                receiptReversalBatches: reversalBatches, returnCostSources: returnSources);
         }
 
         /// <summary>Runs one call as the synthetic approver (not the request's preparer or submitter) and switches back.</summary>
@@ -583,6 +592,8 @@ public sealed partial class PurchasingServiceTests
         public int Calls { get; private set; }
         public string? LastPermission { get; private set; }
 
+        public List<string> Measured { get; } = [];
+
         /// <summary>A2a-1: names refused even while <see cref="Granted"/> (e.g. the price read, to see the Withheld answer).</summary>
         public HashSet<string> Denied { get; } = new(StringComparer.Ordinal);
 
@@ -590,6 +601,7 @@ public sealed partial class PurchasingServiceTests
         {
             Calls++;
             LastPermission = permission;
+            Measured.Add(permission);
             return Task.FromResult(new PermissionScope(Granted && !Denied.Contains(permission), true, new HashSet<string>(["ROLE-A"], StringComparer.Ordinal),
                 new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()));
         }
@@ -682,8 +694,18 @@ public sealed partial class PurchasingServiceTests
             throw new NotSupportedException();
     }
 
+    /// <summary>F-017 F17-4: a transaction token for the fake store's participants; nothing is committed anywhere.</summary>
+    private sealed class FakeDbTransaction : System.Data.IDbTransaction
+    {
+        public System.Data.IDbConnection? Connection => null;
+        public System.Data.IsolationLevel IsolationLevel => System.Data.IsolationLevel.ReadCommitted;
+        public void Commit() { }
+        public void Rollback() { }
+        public void Dispose() { }
+    }
+
     /// <summary>An in-memory store of the contract's replay rules; the Σ-shares rule is switched on by <see cref="OverSourced"/> (the real rule is the SQL store's).</summary>
-    private sealed class FakeStore : IPurchasingStore
+    private sealed partial class FakeStore : IPurchasingStore
     {
         private sealed record Attempt(string Actor, string Hash, StoredPurchaseRequest? Request, StoredPurchaseOrder? Order, PurchasingTerminalRefusal? Refusal, string Correlation);
 
@@ -814,7 +836,17 @@ public sealed partial class PurchasingServiceTests
                     [new PurchasingFieldError("sourceRequestId", "not_approved")]);
             }
 
-            mutate(stored.Order, TimeProvider.System.GetUtcNow());
+            var schedulesBefore = stored.Order.Lines.ToDictionary(line => line.Id, line => line.DeliverySchedule);
+            var now = TimeProvider.System.GetUtcNow();
+            mutate(stored.Order, now);
+            foreach (var line in stored.Order.Lines.Where(line => !ReferenceEquals(schedulesBefore[line.Id], line.DeliverySchedule)))
+            {
+                // F-027: like the SQL store, a schedule command appends the line's whole new set as a revision at the new version.
+                ScheduleRevisions.Add((orderId, line.Id, new StoredScheduleRevision(stored.Order.Version, envelope.ActorId, now,
+                    [.. line.DeliverySchedule.Select(slice => new StoredScheduleSlice(slice.SliceId, slice.SliceNo, slice.Quantity.Value,
+                        slice.DeliveryDate))])));
+            }
+
             _attempts[(commandName, envelope.IdempotencyKey)] = new Attempt(envelope.ActorId, requestHash, null, stored, null, envelope.CorrelationId);
             Envelopes.Add(envelope);
             Audits.Add(audit);
@@ -822,8 +854,77 @@ public sealed partial class PurchasingServiceTests
             return Task.FromResult<PurchasingOrderStoreResult?>(new PurchasingOrderStoreResult(stored, PurchasingWriteOutcome.Recorded, envelope.CorrelationId));
         }
 
+        /// <summary>F-017 F17-4: the transaction handed to participants (the fake has no database).</summary>
+        public System.Data.IDbTransaction Transaction { get; } = new FakeDbTransaction();
+
+        public List<(Guid OrderId, PurchasingMutationAudit Audit, PurchasingLinkAuditSnapshots Snapshots)> LinkDrops { get; } = [];
+
+        public async Task<PurchasingOrderStoreResult?> MutateOrderAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
+            Guid orderId, Action<PurchaseOrder, DateTimeOffset> mutate, Func<PurchaseOrder, System.Data.IDbTransaction, CancellationToken, Task> participant,
+            PurchasingMutationAudit audit, CancellationToken cancellationToken = default)
+        {
+            // The fake runs the participant before the in-memory transition (it cannot roll the order back); the replay answers first.
+            if (!_attempts.ContainsKey((commandName, envelope.IdempotencyKey))
+                && _orders.SingleOrDefault(candidate => candidate.Order.Id == orderId) is { } stored)
+            {
+                await participant(stored.Order, Transaction, cancellationToken);
+            }
+
+            return await MutateOrderAsync(envelope, requestHash, commandName, orderId, mutate, audit, cancellationToken);
+        }
+
+        public async Task<PurchasingOrderStoreResult?> ReleaseOrderFutureAllocationAsync(PurchasingWriteEnvelope envelope, string requestHash, Guid orderId,
+            Func<PurchaseOrder, System.Data.IDbTransaction, CancellationToken, Task<PurchasingLinkAuditSnapshots>> participant,
+            PurchasingMutationAudit audit, CancellationToken cancellationToken = default)
+        {
+            const string commandName = PurchasingCommands.OrderFutureAllocationReleaseV1;
+            if (_attempts.TryGetValue((commandName, envelope.IdempotencyKey), out var attempt))
+            {
+                Check(attempt, envelope, requestHash);
+                if (attempt.Order is null) throw new PurchasingStoreException(PurchasingStoreCodes.ConcurrentChange, "synthetic refusal under the key");
+                return new PurchasingOrderStoreResult(attempt.Order, PurchasingWriteOutcome.Replayed, attempt.Correlation);
+            }
+
+            var stored = _orders.SingleOrDefault(candidate => candidate.Order.Id == orderId);
+            if (stored is null) return null;
+            BeforeMutation?.Invoke();
+            var snapshots = await participant(stored.Order, Transaction, cancellationToken);
+            _attempts[(commandName, envelope.IdempotencyKey)] = new Attempt(envelope.ActorId, requestHash, null, stored, null, envelope.CorrelationId);
+            Envelopes.Add(envelope);
+            Audits.Add(audit);
+            LinkDrops.Add((orderId, audit, snapshots));
+            return new PurchasingOrderStoreResult(stored, PurchasingWriteOutcome.Recorded, envelope.CorrelationId);
+        }
+
+        public async Task<PurchasingOrderLinkRead<T>?> ReadOrderFutureAllocationsAsync<T>(Guid orderId,
+            Func<PurchaseOrder, System.Data.IDbTransaction, CancellationToken, Task<T>> read, CancellationToken cancellationToken = default)
+        {
+            var stored = _orders.SingleOrDefault(candidate => candidate.Order.Id == orderId);
+            return stored is null ? null : new PurchasingOrderLinkRead<T>(stored, await read(stored.Order, Transaction, cancellationToken));
+        }
+
         public Task<StoredPurchaseOrder?> FindOrderAsync(Guid orderId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_orders.SingleOrDefault(candidate => candidate.Order.Id == orderId));
+
+        /// <summary>F-027: the recorded schedule revisions per (order, line), in recording order; a test may add or replace entries.</summary>
+        public List<(Guid OrderId, Guid LineId, StoredScheduleRevision Revision)> ScheduleRevisions { get; } = [];
+
+        /// <summary>F-027: when set, the history read fails with it (the SQL store's inconsistent-revision refusal).</summary>
+        public Exception? ScheduleHistoryFault { get; set; }
+
+        public int ScheduleHistoryReads { get; private set; }
+
+        public Task<IReadOnlyList<StoredScheduleRevision>> ListLineScheduleRevisionsAsync(Guid orderId, Guid lineId,
+            CancellationToken cancellationToken = default)
+        {
+            ScheduleHistoryReads++;
+            return ScheduleHistoryFault is not null
+                ? Task.FromException<IReadOnlyList<StoredScheduleRevision>>(ScheduleHistoryFault)
+                : Task.FromResult<IReadOnlyList<StoredScheduleRevision>>([.. ScheduleRevisions
+                    .Where(item => item.OrderId == orderId && item.LineId == lineId)
+                    .Select(item => item.Revision)
+                    .OrderBy(revision => revision.OrderVersionAfter)]);
+        }
 
         public Task<PurchasingOrderPage> ListOrdersAsync(int pageSize, string? cursor, PurchaseOrderStatus? status = null, Guid? supplierPartyId = null,
             CancellationToken cancellationToken = default) =>

@@ -9,9 +9,19 @@
 import type { RouteObject } from 'react-router'
 import { CapabilityRoute } from '../shell/CapabilityRoute'
 import { ApprovalInboxDetailPage, ApprovalInboxPage } from './ApprovalInboxPages'
+import { WorkQueuePage } from './WorkQueuePage'
+import { NotificationsPage } from './NotificationsPage'
+import { NOTIFICATIONS_ROUTE } from './notificationContract'
 import { WORK_APPROVALS_CAPABILITIES, WORK_ROUTE } from './workText'
 
 export const workRoutes: RouteObject[] = [
+  // Personal recipient-only inbox; backend refreshes active membership and accepts no recipient override.
+  { path: NOTIFICATIONS_ROUTE.slice(1), element: <NotificationsPage /> },
+  // B-25: the one-list Work queue, behind the same owners' approve capabilities (declared before the detail route).
+  {
+    path: WORK_ROUTE.queue.slice(1),
+    element: <CapabilityRoute capability={WORK_APPROVALS_CAPABILITIES}><WorkQueuePage /></CapabilityRoute>,
+  },
   {
     path: WORK_ROUTE.approvals.slice(1),
     element: <CapabilityRoute capability={WORK_APPROVALS_CAPABILITIES}><ApprovalInboxPage /></CapabilityRoute>,

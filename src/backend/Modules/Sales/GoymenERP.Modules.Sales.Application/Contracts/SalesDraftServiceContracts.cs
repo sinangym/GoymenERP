@@ -310,6 +310,16 @@ public static class SalesDraftProblemCodesV1
     public const string RevisionImpactUnavailable = "revision_impact_unavailable";
 
     /// <summary>
+    /// 409 (SAT-D373, SINAN-CEVAP 34.20; STK-S16): the allocation owner holds at least one ACTIVE future supply allocation
+    /// ("ileri tarihli tahsis") against a line of the order, so no header revision of it is accepted — customer, currency, due
+    /// terms, sales owner or delivery references alike. The field <c>futureSupplyAllocations</c> carries the same code. Not
+    /// recorded (the owner moves): after the allocation is released in its own screen the user revises again. Temporary: it is
+    /// removed in a separate change once the SAT-S8 transfer rule is merged. An owner that cannot answer stays
+    /// <see cref="RevisionImpactUnavailable"/> (503, fail-closed).
+    /// </summary>
+    public const string RevisionFutureAllocationPresent = "sales_revision_future_allocation_present";
+
+    /// <summary>
     /// 503 (API-04): the Identity user directory (the sales owner's display and eligibility, SAT-D27) is not composed, cannot
     /// answer, or cannot confirm the person within one bounded search. The sales owner is not changed on an unverified person.
     /// </summary>

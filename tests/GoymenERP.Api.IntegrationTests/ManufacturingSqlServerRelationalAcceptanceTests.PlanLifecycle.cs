@@ -38,6 +38,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             Assert.Equal((4L, PlanStatus.Draft, 1), (stored.Version, stored.Status, stored.RevisionCount));
             Assert.Equal([(1, "bir", 2L), (2, "iki", 4L)],
                 stored.Rejections.Select(rejection => (rejection.Number, rejection.Reason, rejection.PlanVersion)));
+            await store.DueDates.ChangeDueDateAsync(plan.Id, 4, 0, TerminDay, TerminToday, Metadata(run));
             var approved = await store.Plans.ApprovePlanAsync(plan.Id, 4, run.Approver, At, Metadata(run));
             Assert.Equal(5L, approved.Version);
         }
@@ -65,6 +66,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using (var context = run.Context(CompanyA))
         {
             var migrator = context.GetService<IMigrator>();
+            await run.ForgetTerminsBeforeRollbackAsync();
             await migrator.MigrateAsync(BeforePlanLifecycle);
             Assert.Equal(BeforePlanLifecycle, (await context.Database.GetAppliedMigrationsAsync()).Last());
 
@@ -96,6 +98,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 
         await using (var context = run.Context(CompanyA))
         {
+            await run.ForgetTerminsBeforeRollbackAsync();
             var error = await Assert.ThrowsAsync<SqlException>(
                 () => context.GetService<IMigrator>().MigrateAsync(BeforePlanLifecycle));
             Assert.Equal(51187, error.Number);

@@ -3,6 +3,7 @@ using System.Data.Common;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
@@ -19,7 +20,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipantV1
 {
     private const decimal ColumnBound = 1_000_000_000_000_000m;
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     private readonly PurchasingDbContext _dbContext;
     private readonly AuditEventCollector _auditEvents;
     private readonly DbConnection _connection;
@@ -80,6 +81,27 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
         }
     }
 
+    public async Task<PurchaseAcceptanceReceiptTargetV1?> ResolveReceiptTargetAsync(Guid purchaseOrderId,
+        Guid purchaseOrderLineId, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        EnsureActiveTransaction();
+        cancellationToken.ThrowIfCancellationRequested();
+        if (purchaseOrderId == Guid.Empty || purchaseOrderLineId == Guid.Empty)
+            throw Refused(PurchaseAcceptanceParticipantCodes.InvalidRequest, 400, "Kabul hedefi sipariş ve satır kimliği ister.");
+
+        var version = await _dbContext.Orders.AsNoTracking().Where(row => row.Id == purchaseOrderId)
+            .Select(row => (long?)row.Version).SingleOrDefaultAsync(cancellationToken);
+        var general = await GeneralLineOfAsync(purchaseOrderId, purchaseOrderLineId, cancellationToken);
+        if (version is null || general is null) return null;
+        if (version <= 0 || !await _dbContext.OrderLines.AsNoTracking().AnyAsync(row => row.OrderId == purchaseOrderId
+                && row.LineId == general.Value && row.Kind == (int)PurchaseOrderLineKind.General && row.ParentLineId == null,
+                cancellationToken))
+            throw Refused(PurchaseAcceptanceParticipantCodes.Unavailable, 503, "Kabul hedefi okunamadı.");
+        return new PurchaseAcceptanceReceiptTargetV1(_companyId, purchaseOrderId, purchaseOrderLineId, general.Value,
+            version.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
     public async Task<PurchaseAcceptanceStageResultV1> StageAsync(
         PurchaseAcceptanceStageRequestV1 request,
         PurchasingWriteEnvelope envelope,
@@ -120,12 +142,36 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
 
             var replay = JsonSerializer.Deserialize<PurchaseAcceptanceStageResultV1>(existing.ResultJson, Json)
                 ?? throw Refused(PurchaseAcceptanceParticipantCodes.Unavailable, 503, "Kayıtlı kabul sonucu okunamadı.");
-            return replay with { IsReplay = true, OriginalCorrelationId = existing.CorrelationId };
+            var replayGeneralLineId = replay.PurchaseOrderGeneralLineId
+                ?? (await GeneralLineOfAsync(existing.OrderId, existing.LineId, cancellationToken)
+                    ?? throw Refused(PurchaseAcceptanceParticipantCodes.Unavailable, 503, "Kayıtlı kabul sonucu okunamadı."));
+            return replay with
+            {
+                IsReplay = true,
+                OriginalCorrelationId = existing.CorrelationId,
+                PurchaseOrderGeneralLineId = replayGeneralLineId,
+            };
         }
 
         if (await _dbContext.Acceptances.AsNoTracking().AnyAsync(row => row.AcceptanceId == request.AcceptanceId, cancellationToken))
         {
             throw Refused(PurchaseAcceptanceParticipantCodes.IdempotencyConflict, 409, "Kabul kimliği başka bir yazmada kullanıldı.");
+        }
+
+        // F-017 F17-1 (§3.4): the purchase GENERAL line's serialization lock is taken in the host transaction BEFORE the line is read,
+        // so the remaining amount this share is checked against cannot move under it (an Inventory future allocation or an order
+        // remainder cancel on the same general line waits for, or is refused by, this transaction). A technical slice locks its
+        // general line: the slice's share is counted there.
+        var generalLineId = await GeneralLineOfAsync(request.PurchaseOrderId, request.PurchaseOrderLineId, cancellationToken)
+            ?? throw Refused(PurchaseAcceptanceParticipantCodes.InvalidReference, 404, "Sipariş satırı bulunamadı.");
+        try
+        {
+            await PurchaseLineSerializationLock.Bind(_connection, _transaction, _companyId).AcquireAsync(generalLineId, cancellationToken);
+        }
+        catch (PurchaseLineBusyException exception)
+        {
+            throw Refused(PurchaseAcceptanceParticipantCodes.LineBusy, 409,
+                "Sipariş satırı başka bir işlem tarafından kilitli; kabul payı stage edilmedi.", exception);
         }
 
         var orderRow = await _dbContext.Orders.SingleOrDefaultAsync(row => row.Id == request.PurchaseOrderId, cancellationToken);
@@ -157,7 +203,16 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
         // A3 API-30: the delivery-schedule revisions are part of the order's version history; the rebuild replays them too.
         var sliceRows = await _dbContext.DeliverySlices.AsNoTracking().Where(row => row.OrderId == request.PurchaseOrderId)
             .ToListAsync(cancellationToken);
-        var order = PurchasingStore.RestoreOrder(orderRow, lineRows, acceptanceRows, sliceRows);
+        // API-11: line closures and reopenings are part of the version history too; a closed remainder takes no acceptance share.
+        var closureRows = await _dbContext.LineClosureEvents.AsNoTracking().Where(row => row.OrderId == request.PurchaseOrderId)
+            .OrderBy(row => row.OrderVersionAfter).ToListAsync(cancellationToken);
+        // ALC-SC33 (FNS-D79/D91): the order's rate changes are part of the version history too.
+        var rateRows = await _dbContext.ExchangeRateChanges.AsNoTracking().Where(row => row.OrderId == request.PurchaseOrderId)
+            .OrderBy(row => row.OrderVersionAfter).ToListAsync(cancellationToken);
+        var adjustmentRows = await _dbContext.ReceiptAdjustments.AsNoTracking().Where(row => row.OrderId == request.PurchaseOrderId).ToListAsync(cancellationToken);
+        var cancellationRows = await _dbContext.CancellationHistory.AsNoTracking().Where(row => row.OrderId == request.PurchaseOrderId).ToListAsync(cancellationToken);
+        var batchRows = await _dbContext.ReceiptAdjustmentBatches.AsNoTracking().Where(row => row.OrderId == request.PurchaseOrderId).ToListAsync(cancellationToken);
+        var order = PurchasingStore.RestoreOrder(orderRow, lineRows, acceptanceRows, sliceRows, closureRows, rateRows, adjustmentRows, cancellationRows, batchRows);
         if (order.Version != validated.ExpectedPurchaseOrderVersion)
         {
             throw Refused(PurchaseAcceptanceParticipantCodes.OrderVersionConflict, 409, "Sipariş sürümü değişti.");
@@ -202,7 +257,8 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
             PurchaseAcceptanceParticipantContractV1.FormatQuantity(validated.AcceptedQuantity),
             PurchaseAcceptanceParticipantContractV1.FormatQuantity(changedLine.RemainingQuantity.Value),
             false,
-            envelope.CorrelationId.Trim());
+            envelope.CorrelationId.Trim(),
+            generalLineId);
         _dbContext.Acceptances.Add(new PurchaseAcceptanceRow
         {
             AcceptanceId = request.AcceptanceId,
@@ -271,6 +327,29 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
         }
     }
 
+    /// <summary>
+    /// The general line of a purchase order line in the participant's company: the line itself when it is a general line, its parent
+    /// when it is a technical slice; null when no such line exists. Untracked; a stored line that cannot be read fails closed.
+    /// </summary>
+    private async Task<Guid?> GeneralLineOfAsync(Guid orderId, Guid lineId, CancellationToken cancellationToken)
+    {
+        var line = await _dbContext.OrderLines.AsNoTracking()
+            .Where(row => row.OrderId == orderId && row.LineId == lineId)
+            .Select(row => new { row.Kind, row.ParentLineId })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (line is null)
+        {
+            return null;
+        }
+
+        return line.Kind switch
+        {
+            (int)PurchaseOrderLineKind.General when line.ParentLineId is null => lineId,
+            (int)PurchaseOrderLineKind.Technical when line.ParentLineId is { } parent && parent != Guid.Empty => parent,
+            _ => throw Refused(PurchaseAcceptanceParticipantCodes.Unavailable, 503, "Kayıtlı sipariş satırı okunamadı."),
+        };
+    }
+
     private void EnsureActiveTransaction()
     {
         if (_connection.State != ConnectionState.Open || !ReferenceEquals(_transaction.Connection, _connection)
@@ -321,5 +400,5 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
     }
 
     private static PurchaseAcceptanceParticipantException Refused(string code, int status, string message, Exception? inner = null) =>
-        new(code, status, message, inner);
+        new PurchaseAcceptanceParticipantException(code, status, message, inner);
 }

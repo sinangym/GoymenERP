@@ -3,7 +3,7 @@ using GoymenERP.BuildingBlocks.Security;
 namespace GoymenERP.Identity.UnitTests;
 
 /// <summary>
-/// ERP-000G / AT-065: the document vault's two names are REGISTERED, not granted — known to the platform, company-wide
+/// ERP-000G / AT-065 (+ B-26 link): the document vault's names are REGISTERED, not granted — known to the platform, company-wide
 /// only, not critical, spelled exactly as the vault's manifest spells them, and carried by no role of the shipped seed.
 /// The grant is a human gate (the disposable c02 browser actors are the only holders). Same shape as the Logistics
 /// registration.
@@ -16,6 +16,14 @@ public sealed class DocumentsPermissionRegistrationTests
     {
         ErpPermissions.DocumentsFilesRead,
         ErpPermissions.DocumentsFilesUpload,
+        ErpPermissions.DocumentsFilesLink,
+        ErpPermissions.DocumentsCompanyBrandingManage,
+        ErpPermissions.DocumentsSalesTemplatePrepare,
+        ErpPermissions.DocumentsSalesTemplatePublish,
+        ErpPermissions.DocumentsInventoryTemplatePrepare,
+        ErpPermissions.DocumentsInventoryTemplatePublish,
+        ErpPermissions.DocumentsLogisticsTemplatePrepare,
+        ErpPermissions.DocumentsLogisticsTemplatePublish,
     };
 
     [Fact]
@@ -23,6 +31,7 @@ public sealed class DocumentsPermissionRegistrationTests
     {
         Assert.Equal("documents.files.read", ErpPermissions.DocumentsFilesRead);
         Assert.Equal("documents.files.upload", ErpPermissions.DocumentsFilesUpload);
+        Assert.Equal("documents.files.link", ErpPermissions.DocumentsFilesLink);
     }
 
     [Theory]

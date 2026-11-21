@@ -198,46 +198,89 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         var shipment = await RecordShipmentAsync(run, "SYN-CUSTOMER-RETURN-RACE", "40");
+        var before = await ReturnEffectsAsync(run, shipment.ShipmentRequest.LabelId);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var token = timeout.Token;
         var ready = 0;
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        async Task AtSave(CancellationToken cancellationToken)
-        {
-            if (Interlocked.Increment(ref ready) == 2)
+        var inputs = Enumerable.Range(0, 2).Select(_ => (
+            Request: ReturnRequest(shipment, "25"),
+            Metadata: Metadata(run) with
             {
-                release.TrySetResult();
-            }
+                IdempotencyKey = $"customer-return-race-{Guid.NewGuid():N}",
+                CorrelationId = $"customer-return-race-{Guid.NewGuid():N}",
+            })).ToArray();
 
-            await release.Task.WaitAsync(cancellationToken);
-        }
-
-        async Task<(InventoryCustomerReturnResultV1? Result, InventoryCustomerReturnException? Error)> AttemptAsync()
+        async Task<(InventoryCustomerReturnResultV1? Result, InventoryCustomerReturnException? Error)> AttemptAsync(
+            InventoryCustomerReturnRequestV1 request, InventoryCommandMetadata metadata)
         {
-            await using var connection = new SqlConnection(run.Factory.DatabaseConnectionString);
-            await connection.OpenAsync();
-            await using var transaction = await connection.BeginTransactionAsync();
-            await using var participant = await InventoryCustomerReturnParticipant.EnlistAsync(
-                connection, transaction, CompanyA, Settings(run, CompanyA), onStaged: AtSave);
             try
             {
-                var result = await participant.StageAsync(ReturnRequest(shipment, "25"), Metadata(run) with
+                await using var connection = new SqlConnection(run.Factory.DatabaseConnectionString);
+                await connection.OpenAsync(token);
+                await using var transaction = await connection.BeginTransactionAsync(token);
+                await using var participant = await InventoryCustomerReturnParticipant.EnlistAsync(
+                    connection, transaction, CompanyA, Settings(run, CompanyA), cancellationToken: token);
+                // Synchronize callers before StageAsync acquires its transaction-owned company mutex.
+                // A post-lock rendezvous cannot be reached by both callers while the first holds that lock.
+                if (Interlocked.Increment(ref ready) == 2)
+                    release.TrySetResult();
+                await release.Task.WaitAsync(token);
+                try
                 {
-                    IdempotencyKey = $"customer-return-race-{Guid.NewGuid():N}",
-                    CorrelationId = $"customer-return-race-{Guid.NewGuid():N}",
-                });
-                await transaction.CommitAsync();
-                return (result, null);
+                    var result = await participant.StageAsync(request, metadata, token);
+                    await transaction.CommitAsync(token);
+                    return (result, null);
+                }
+                catch (InventoryCustomerReturnException exception)
+                {
+                    await transaction.RollbackAsync(CancellationToken.None);
+                    return (null, exception);
+                }
             }
-            catch (InventoryCustomerReturnException exception)
+            finally
             {
-                await transaction.RollbackAsync();
-                return (null, exception);
+                // Setup or provider failure must also release the other caller; unexpected exceptions
+                // remain test failures rather than being fabricated into a domain refusal.
+                release.TrySetResult();
             }
         }
 
-        var attempts = await Task.WhenAll(AttemptAsync(), AttemptAsync());
-        Assert.Single(attempts, attempt => attempt.Result is not null);
+        (InventoryCustomerReturnResultV1? Result, InventoryCustomerReturnException? Error)[] attempts;
+        try
+        {
+            attempts = await Task.WhenAll(inputs.Select(input => AttemptAsync(input.Request, input.Metadata)));
+        }
+        finally
+        {
+            timeout.Cancel();
+            release.TrySetResult();
+        }
+        var winner = Assert.Single(attempts, attempt => attempt.Result is not null).Result!;
         var refused = Assert.Single(attempts, attempt => attempt.Error is not null).Error!;
-        Assert.Equal((409, InventoryCustomerReturnCodesV1.ConcurrentChange), (refused.Status, refused.Code));
+        Assert.Equal(409, refused.Status);
+        // The loser can observe the committed 25 kg under the mutex, or lose optimistic concurrency.
+        // Both are existing participant refusals; raw provider errors are deliberately not caught.
+        Assert.Contains(refused.Code, new[]
+        {
+            InventoryCustomerReturnCodesV1.ReturnExceedsShipment,
+            InventoryCustomerReturnCodesV1.ConcurrentChange,
+        });
+        var after = await ReturnEffectsAsync(run, shipment.ShipmentRequest.LabelId);
+        Assert.Equal(before with
+        {
+            LabelVersion = before.LabelVersion + 1,
+            BalanceKg = before.BalanceKg + 25m,
+            ReturnMovements = before.ReturnMovements + 1,
+            Commands = before.Commands + 1,
+            OutboxMessages = before.OutboxMessages + 1,
+            AuditEvents = before.AuditEvents + 1,
+        }, after);
+        var winningInput = inputs.Single(input => input.Request.CustomerReturnId == winner.CustomerReturnId);
+        var replay = await CommitReturnAsync(run, winningInput.Request, winningInput.Metadata);
+        Assert.True(replay.IsReplay);
+        Assert.Equal(winner, replay with { IsReplay = false });
+        Assert.Equal(after, await ReturnEffectsAsync(run, shipment.ShipmentRequest.LabelId));
         Assert.Equal(25m, await run.ScalarAsync<decimal>(
             """
             SELECT SUM(line.QuantityKg)

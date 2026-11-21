@@ -21,7 +21,12 @@
  * AT-055 adds the dispatch-note (irsaliye) DRAFT (DispatchNoteCommand.tsx): the drafts and their lines are shown to every
  * reader; the form offers the definite shipments not on a live note (a shipment is linked to at most one non-cancelled note);
  * each note can be approved (the server numbers it), cancelled with a reason (releasing its shipments) and given its e-İrsaliye no.
- * F-020 (LOJ-D6…D8): a cancelled instruction is read only — it shows who cancelled it, when and why, and offers no command.
+ * F-020 (LOJ-D6…D8): a Draft or Issued instruction with no recorded shipment can be cancelled with a reason; a cancelled instruction
+ * is read only — it shows who cancelled it, when and why, its weighing marked cancelled, and offers no command but one:
+ * LOJ-D17 (UnloadWeighingCommand.tsx): a cancelled instruction whose goods were loaded is marked "İndirme kaydı yok" until its
+ * manual unload weighing is recorded; the form is offered on exactly that instruction, and the recorded weighing (net, the
+ * kilograms loaded at the cancel and the signed difference, with the backend's warning) is shown to every reader. No stock
+ * movement and no allocation change follow from it (LOJ-D16).
  */
 
 import { useRef, useState } from 'react'
@@ -57,6 +62,10 @@ import {
 import { commandNotice, refusalMovesRecord } from './instructionAttemptNotice'
 import { recallInstructionAttempt, rememberInstructionAttempt } from './pendingInstructionAttempts'
 import { LOGISTICS_CAPABILITY, LOGISTICS_ROUTE } from './capabilities'
+import { PlanExcessPreparationPanel } from './PlanExcessPreparationPanel'
+import { PlanExcessUseEditor, planExcessUsePayload } from './PlanExcessUseEditor'
+import { PLAN_EXCESS_CAPABILITY, type PlanExcessUse } from './planExcessApi'
+import { PLAN_EXCESS_TEXT } from './planExcessText'
 import { INSTRUCTION_DETAIL_TEXT as T, INSTRUCTION_CREATE_TEXT, INSTRUCTION_STATUS_TEXT, MEASUREMENT_TEXT, SHARE_KIND_TEXT } from './logisticsText'
 import { classifyOutcome } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
@@ -68,6 +77,8 @@ import { RealizationCommands } from './RealizationCommands'
 import { WeighingFacts, WeighingForm } from './WeighingCommand'
 import { DispatchNoteFacts, DispatchNoteForm, DispatchNoteLifecycles } from './DispatchNoteCommand'
 import { CustomerReturnPanel } from './CustomerReturnPanel'
+import { InstructionCancelCommand } from './InstructionCancelCommand'
+import { UnloadWeighingFacts, UnloadWeighingForm } from './UnloadWeighingCommand'
 import {
   CUSTOMER_RETURN_CAPABILITY,
   abandonCustomerReturnAttempt,
@@ -131,21 +142,36 @@ export function InstructionDetailPage() {
       detail={detail}
       backLink={backLink}
       commands={
-        // F-020: no command applies to a cancelled instruction (the server refuses every one), so none is offered.
-        companyId === null || detail.instruction.status === INSTRUCTION_STATUS.cancelled ? null : (
+        // F-020: no command but the LOJ-D17 unload weighing applies to a cancelled instruction (the server refuses every other
+        // one), so none other is offered; the unload form renders nothing unless the instruction is marked "İndirme kaydı yok" or
+        // it holds the notice of its own attempt. The cancel
+        // section itself stays mounted at the same place (it renders nothing on a cancelled instruction unless it holds the notice
+        // of the command that cancelled it), so that notice survives the re-read that shows the instruction Cancelled.
+        companyId === null ? null : (
           <>
-            {/* Keyed by namespace + record only (the Sales detail's rule): a re-read after a recorded command must not remount the
-                section, or the notice of the command that caused the version step would vanish with it. */}
-            <IssueCommand key={`issue:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
-            <LoadForm key={`load:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
-            <WeighingForm key={`weighing:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
-            <RealizationCommands key={`realization:${namespace ?? ''}:${shell.routeEntryGeneration}:${detail.instruction.id}`}
-              shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
-            <CustomerReturns key={`customer-returns:${namespace ?? ''}:${shell.routeEntryGeneration}:${detail.instruction.id}`}
-              shell={shell} detail={detail} companyId={companyId} bindingBase={namespace ?? ''} onRecorded={reread} />
-            <DispatchNoteLifecycles key={`dispatch-note-lifecycle:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail}
+            {detail.instruction.status === INSTRUCTION_STATUS.cancelled ? null : (
+              <>
+                {/* Keyed by namespace + record only (the Sales detail's rule): a re-read after a recorded command must not remount the
+                    section, or the notice of the command that caused the version step would vanish with it. */}
+                <IssueCommand key={`issue:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
+                <LoadForm key={`load:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
+                {detail.instruction.status === INSTRUCTION_STATUS.issued && hasCapability(shell, PLAN_EXCESS_CAPABILITY.prepare)
+                  ? detail.lines.filter(line => !line.isBlocked).map(line => <PlanExcessPreparationPanel key={`plan-excess:${line.lineId}`} instructionId={detail.instruction.id}
+                    instructionVersion={detail.instruction.version} lineId={line.lineId} lineNo={line.lineNo} instructed={line.instructed} onRecorded={reread} />) : null}
+                <WeighingForm key={`weighing:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
+                <RealizationCommands key={`realization:${namespace ?? ''}:${shell.routeEntryGeneration}:${detail.instruction.id}`}
+                  shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
+                <CustomerReturns key={`customer-returns:${namespace ?? ''}:${shell.routeEntryGeneration}:${detail.instruction.id}`}
+                  shell={shell} detail={detail} companyId={companyId} bindingBase={namespace ?? ''} onRecorded={reread} />
+                <DispatchNoteLifecycles key={`dispatch-note-lifecycle:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail}
+                  companyId={companyId} onRecorded={reread} />
+                <DispatchNoteForm key={`dispatch-note:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId}
+                  onRecorded={reread} />
+              </>
+            )}
+            <UnloadWeighingForm key={`unload-weighing:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail}
               companyId={companyId} onRecorded={reread} />
-            <DispatchNoteForm key={`dispatch-note:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId}
+            <InstructionCancelCommand key={`cancel:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId}
               onRecorded={reread} />
           </>
         )
@@ -452,6 +478,7 @@ export function InstructionView({
                 <th scope="col" className={styles.numeric}>{T.remainingToLoad}</th>
                 <th scope="col" className={styles.numeric}>{T.loadedNotShipped}</th>
                 <th scope="col" className={styles.numeric}>{T.shippedNotDelivered}</th>
+                <th scope="col" className={styles.numeric}>{PLAN_EXCESS_TEXT.approvedCapacity}</th>
               </tr>
             </thead>
             <tbody>
@@ -480,6 +507,7 @@ export function InstructionView({
                   <td className={styles.numeric} data-testid={`logistics-line-${line.lineNo}-remaining`}>{line.remainingToLoad}</td>
                   <td className={styles.numeric} data-testid={`logistics-line-${line.lineNo}-loaded-not-shipped`}>{line.loadedNotShipped}</td>
                   <td className={styles.numeric} data-testid={`logistics-line-${line.lineNo}-shipped-not-delivered`}>{line.shippedNotDelivered}</td>
+                  <td className={styles.numeric}>{line.approvedPlanExcess ?? PLAN_EXCESS_TEXT.unavailable}</td>
                 </tr>
               ))}
             </tbody>
@@ -503,6 +531,7 @@ export function InstructionView({
                   <th scope="col" className={styles.numeric}>{T.shareQuantity}</th>
                   <th scope="col">{T.shareMeasurement}</th>
                   <th scope="col">{T.shareRecordedAt}</th>
+                  <th scope="col">{T.shareRecordedBy}</th>
                 </tr>
               </thead>
               <tbody>
@@ -513,6 +542,10 @@ export function InstructionView({
                     <td className={styles.numeric}>{share.quantity}</td>
                     <td>{share.measurement === null ? T.unknown : MEASUREMENT_TEXT[share.measurement]}</td>
                     <td>{formatInstant(share.recordedAtUtc)}</td>
+                    {/* F-020: the stored user id (no name lookup); an older share without one says so instead of guessing. */}
+                    <td className={styles.identifier} data-testid={`logistics-share-recorded-by-${share.shareId}`}>
+                      {share.recordedBy ?? T.unknown}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -521,7 +554,9 @@ export function InstructionView({
         )}
       </section>
 
-      <WeighingFacts weighing={detail.weighing} />
+      <WeighingFacts weighing={detail.weighing} cancelled={cancelled} />
+
+      <UnloadWeighingFacts detail={detail} />
 
       <DispatchNoteFacts detail={detail} />
 
@@ -673,6 +708,7 @@ function LoadForm({
   const [lineId, setLineId] = useState<string>(() => initial?.values.lineId ?? openLines[0]?.lineId ?? '')
   const [quantityText, setQuantityText] = useState(() => initial?.values.quantityText ?? '')
   const [measurement, setMeasurement] = useState<Measurement>(() => initial?.values.measurement ?? MEASUREMENT.measured)
+  const [planExcessUses, setPlanExcessUses] = useState<readonly PlanExcessUse[]>(() => initial?.attempt.phase !== 'idle' ? initial?.attempt.snapshot.payload.planExcessUses ?? [] : [])
   const [error, setError] = useState<string | null>(null)
   const [attempt, setAttempt] = useState<AttemptState<LoadPayload, InstructionMutation>>(() => initial?.attempt ?? { phase: 'idle' })
   const attemptRef = useRef(attempt)
@@ -715,6 +751,8 @@ function LoadForm({
     event.preventDefault()
     if (chosen === undefined) return
     const parsed = parseQuantityInput(quantityText)
+    const exceptionSelection = planExcessUsePayload(planExcessUses)
+    if (exceptionSelection === null) { setError(PLAN_EXCESS_TEXT.invalidUse); return }
     if (!parsed.ok) {
       setError(quantityError(parsed.error))
       return
@@ -735,6 +773,7 @@ function LoadForm({
       loadId: live !== null && live.payload.quantity === parsed.value && live.payload.measurement === measurement ? live.payload.loadId : generateClientId(),
       quantity: parsed.value,
       measurement,
+      ...exceptionSelection,
     }
     const decision = decideSubmit(
       current,
@@ -772,7 +811,7 @@ function LoadForm({
           <legend>{T.load.heading}</legend>
           <div className={styles.grid}>
             <label htmlFor="logistics-load-line">{T.load.line}</label>
-            <select id="logistics-load-line" value={lineId} onChange={(event) => setLineId(event.target.value)}>
+            <select id="logistics-load-line" value={lineId} onChange={(event) => { setLineId(event.target.value); setPlanExcessUses([]) }}>
               {lines.map((line) => (
                 <option key={line.lineId} value={line.lineId} disabled={line.isBlocked}>
                   {line.lineNo}. {T.remainingToLoad}: {line.remainingToLoad}
@@ -812,6 +851,7 @@ function LoadForm({
               ))}
             </select>
           </div>
+          {chosen === undefined ? null : <PlanExcessUseEditor instructionId={instruction.id} lineId={chosen.lineId} purpose="load" value={planExcessUses} onChange={setPlanExcessUses} disabled={frozen} />}
           <div className={styles.actions}>
             <button type="submit" className={styles.primaryButton} disabled={frozen || chosen === undefined || chosen.isBlocked} data-testid="logistics-load-button">
               {T.load.record}
