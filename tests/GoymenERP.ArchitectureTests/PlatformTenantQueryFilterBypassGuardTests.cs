@@ -682,7 +682,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // kept ordinal-sorted (5a014a10... -> cebac90b...).
                 // Re-fingerprinted for tren-1 W5 (integration): +1 fact(s) from the W5 team merges; value from guard_fingerprint.py (cebac90b… -> 8c3781c4…).
                 // Tren-1 W6: +6 source facts, ordinal-sorted; SQL execution NOT_RUN.
-                "defdb1fe6ab7a78087df79d1e8f1cd32b6bc35a0704071330e5b04a6237e98de",
+                // Tren-1 close (SAT-D426): +1 approval sale-rate fact, ordinal-sorted; value from guard_fingerprint.py (defdb1fe… -> 09f10457…).
+                "09f1045764845e3797c5ed330359c45fba0fd76f612d36640118d6554eb5d524",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -3054,7 +3055,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for tren-1 wave 2 trial integration (F-018 S1): the draft transition may append its limit warning in the same save;
                         // reviewed tokens unchanged (44b86f83... -> 07051578...).
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (07051578… -> 35298087…).
-                        "40e8cbe7e8b23c89ce388c314af2f106058d6ecadd156eb2d613b646a0716315",
+                        // Re-fingerprinted for SAT-D426: the margin snapshot restore also reads the frozen approval sale rate (three
+                        // nullable columns of the same filtered row); no SQL, connection or bypass added; SqlClient count unchanged.
+                        "af617fdcde42f7d4af7814a6fa04bb8260b6ff9c03b7bd3b54c31cfc744c7bee",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -6060,6 +6063,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261118050006_RepairSalesOfficialInvoiceCancellationActorCollation.cs"] =
                     new("5ff0aa6e239af9739c473066998325f2d95478ac7685782a3dcb89a7841dd6d0", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 2 }),
                 // Tren-1 W8; K3 review pending. Seven lexical Sql calls install three immutable cancellation evidence triggers51916/17/18 and alter four sales-only existing guards. Normal finalized6 to officially-cancelled7 requires exact same-company immutable cancellation fact; invoice line release is one same-owner UPDATE joined by CompanyId and InvoiceId. DownSql51919 blocks recorded cancellation history then restores old guard definitions. Reuses existing51223/24/32/51997 intentionally; no new cross-module write. 7 lexical Sql call(s).
+                // Tren-1 close SAT-D426; K3 review pending. Deployment-time Down refuses (52013) while a frozen approval sale rate exists
+                // (AddSalesMarginSaleRates is not rolled back, forward fix); Up is pure DDL (three nullable columns and one check).
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261121094747_AddSalesMarginSaleRates.cs"] =
+                    new("6f4dab7e47605e5cd608233e46a1c06231b0c1f4aedc0f7cef6e86a6f8c51c1f", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/SalesOfficialInvoiceCancellationGuards.cs"] =
                     new("11d2eb4d9eafee146372461936adffe7f64514fb463a500a16230ff1e26757ff", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 7 }),
                 // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Operator two-factor recovery security history exists; AddOperatorTwoFactorRecoverySecurityEvents requires a forward fix. 1 lexical Sql call(s).

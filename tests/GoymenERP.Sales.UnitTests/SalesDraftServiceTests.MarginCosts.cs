@@ -90,6 +90,53 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task SAT_D426_a_foreign_order_freezes_the_approval_day_rate_and_its_margin_is_computed_in_TL_from_it()
+    {
+        var source = new MarginCostSource { CostCurrency = SettingsCurrencyIdentitiesV1.TurkishLira, Cost = 3m };
+        var rates = new FakeExchangeRates(ExchangeRateResolutionStatesV1.Resolved, "34.5678");
+        var world = new World { MarginCosts = source, ExchangeRates = rates }.AllowDiscountsUpTo(10m);
+        var created = (await world.Service().CreateDraftAsync(Priced(), Metadata("fx-margin-create"))).Detail;
+        var draft = Assert.Single(world.Store.Drafts);
+        Assert.Equal("CurrencyConversionUndecided",
+            Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Margin.Lines!).UnavailableReason);
+
+        await ApproveDiscountChecksAsync(world, created.Draft.Id, draft.Version.ToString(), created.Lines[0].LineId);
+        await world.Service().SubmitDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-margin-submit"));
+        await world.Service().ApproveDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-margin-approve"));
+
+        var pin = Assert.Single(draft.MarginCosts);
+        Assert.Equal((Currency, 34.5678m), (pin.SaleRate!.CurrencyId, pin.SaleRate.Rate));
+        Assert.Contains(rates.Asked, asked => asked.Source == Currency && asked.Target == SettingsCurrencyIdentitiesV1.TurkishLira
+            && asked.Day == pin.SaleRate.RateDay);
+
+        // The margin uses the frozen rate: a later Settings rate changes nothing.
+        rates.Rate = "50";
+        var margin = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Margin.Lines!);
+        Assert.Null(margin.UnavailableReason);
+        Assert.NotNull(margin.Amount);
+        var again = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Margin.Lines!);
+        Assert.Equal(margin, again);
+    }
+
+    [Fact]
+    public async Task SAT_D426_an_unreadable_approval_day_rate_does_not_block_approval_and_leaves_the_margin_unavailable()
+    {
+        var source = new MarginCostSource { CostCurrency = SettingsCurrencyIdentitiesV1.TurkishLira, Cost = 3m };
+        var rates = new FakeExchangeRates("NotFound", null);
+        var world = new World { MarginCosts = source, ExchangeRates = rates }.AllowDiscountsUpTo(10m);
+        var created = (await world.Service().CreateDraftAsync(Priced(), Metadata("fx-missing-create"))).Detail;
+        var draft = Assert.Single(world.Store.Drafts);
+        await ApproveDiscountChecksAsync(world, created.Draft.Id, draft.Version.ToString(), created.Lines[0].LineId);
+        await world.Service().SubmitDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-missing-submit"));
+        await world.Service().ApproveDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-missing-approve"));
+
+        Assert.Equal(InternalApprovalState.Approved, draft.ApprovalState);
+        Assert.Null(Assert.Single(draft.MarginCosts).SaleRate);
+        Assert.Equal("CurrencyConversionUndecided",
+            Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Margin.Lines!).UnavailableReason);
+    }
+
+    [Fact]
     public async Task SAT_S12_reinstated_same_product_and_quantity_preserve_the_first_cost_and_do_not_repin()
     {
         var source = new MarginCostSource();

@@ -2285,7 +2285,10 @@ public sealed partial class SalesStore(
             foreach (var cost in marginCostRows.Where(item => item.DraftId == draft.Id).OrderBy(item => item.Revision))
                 draft.RestoreMarginCost(new SalesMarginCostSnapshot(cost.LineId, cost.Revision, cost.ProductId, cost.UnitId, cost.Quantity,
                     cost.CurrencyId, cost.CostPerUnit, cost.UnavailableReason is { } reason ? (SalesLineMarginUnavailableReason)reason : null,
-                    cost.SourceProof, cost.RecordedAtUtc));
+                    cost.SourceProof, cost.RecordedAtUtc,
+                    cost.SaleRateCurrencyId is { } saleCurrency && cost.SaleExchangeRate is { } saleRate && cost.SaleRateDay is { } saleDay
+                        ? new SalesMarginSaleRate(saleCurrency, saleRate, saleDay)
+                        : null));
 
             drafts.Add(draft);
         }

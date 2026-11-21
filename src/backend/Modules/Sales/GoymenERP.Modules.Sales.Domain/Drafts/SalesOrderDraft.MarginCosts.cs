@@ -1,13 +1,31 @@
 namespace GoymenERP.Modules.Sales.Domain.Drafts;
 
-/// <summary>SAT-D268–274: an append-only cost observed at internal approval, never a stock movement.</summary>
+/// <summary>
+/// SAT-D426: the rate the order froze at its internal approval from the sale currency into the functional currency — the Settings
+/// rate of the approval day (<paramref name="RateDay"/>) — kept with the line's approval snapshot and never re-read for display.
+/// </summary>
+public sealed record SalesMarginSaleRate(Guid CurrencyId, decimal Rate, DateOnly RateDay)
+{
+    /// <summary>The rate's stored precision (the column's scale).</summary>
+    public const int RateScale = 8;
+
+    public bool IsValid => CurrencyId != Guid.Empty && Rate > 0m && Rate <= 99999999.99999999m && RateDay != default
+        && decimal.Round(Rate, RateScale, MidpointRounding.AwayFromZero) == Rate;
+}
+
+/// <summary>
+/// SAT-D268–274: an append-only cost observed at internal approval, never a stock movement. SAT-D426: a foreign-currency order
+/// also freezes its sale rate here (<see cref="SaleRate"/>); a TL order, or an order whose rate could not be read, keeps none.
+/// </summary>
 public sealed record SalesMarginCostSnapshot(
     Guid LineId, int Revision, Guid ProductId, Guid UnitId, decimal Quantity,
     Guid? CurrencyId, decimal? CostPerUnit, SalesLineMarginUnavailableReason? UnavailableReason,
-    string SourceProof, DateTimeOffset RecordedAtUtc)
+    string SourceProof, DateTimeOffset RecordedAtUtc, SalesMarginSaleRate? SaleRate = null)
 {
     public void Validate()
     {
+        if (SaleRate is { IsValid: false })
+            throw new InvalidOperationException("Marj satış kuru anlık görüntüsü geçersiz.");
         if (LineId == Guid.Empty || ProductId == Guid.Empty || UnitId == Guid.Empty || Revision < 0 || Quantity <= 0
             || string.IsNullOrWhiteSpace(SourceProof) || SourceProof.Length > 65536
             || RecordedAtUtc == default

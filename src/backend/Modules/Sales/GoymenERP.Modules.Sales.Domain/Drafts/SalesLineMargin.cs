@@ -39,8 +39,9 @@ public enum SalesLineMarginUnavailableReason
     UnitConversionUndecided = 7,
 
     /// <summary>
-    /// The sale or the cost is not in the functional currency (TL); converting either is not decided (EK52 "Sınırlar"
-    /// <c>NEEDS-SINAN</c> for foreign-currency cost; the margin is a TL amount, SAT-D259 (2)).
+    /// The sale or the cost is not in the functional currency (TL) and cannot be converted: a foreign sale has no rate the order
+    /// recorded at its internal approval (SAT-D426: preview, or an order approved before rates were recorded), or the cost is
+    /// foreign (BS-1: the cost source answers TL or Unavailable). The margin is a TL amount, SAT-D259 (2).
     /// </summary>
     CurrencyConversionUndecided = 8,
 
@@ -150,8 +151,13 @@ public sealed record SalesLineMarginCost
 /// <param name="Quantity">The line quantity in the order unit (positive).</param>
 /// <param name="FunctionalCurrencyId">The company's functional currency (TL): the margin is a TL amount (SAT-D259 (2)). Data, not a code constant.</param>
 /// <param name="Cost">The line's purchase-only cost (SAT-D263) or the reason there is none.</param>
+/// <param name="SaleRate">
+/// SAT-D426: the rate the order froze at its internal approval from the sale currency into the functional currency (the Settings
+/// rate of the approval day). Used only when <paramref name="NetSale"/> is foreign; a missing rate, or one for another pair, leaves
+/// the margin unavailable. Never a rate read at display time.
+/// </param>
 public sealed record SalesLineMarginInput(Money? NetSale, Guid OrderUnitId, decimal Quantity, Guid FunctionalCurrencyId,
-    SalesLineMarginCost Cost);
+    SalesLineMarginCost Cost, ExchangeRate? SaleRate = null);
 
 /// <summary>
 /// One line's margin. <see cref="Amount"/> is in the functional currency at <see cref="SalesLineMarginCalculator.AmountScale"/>;
@@ -186,7 +192,9 @@ public sealed record SalesLineMargin(
 /// <item><b>Display</b>: the amount to 0,01 TL and the percent to 0,01 (SAT-D261 (1), SAT-D265 (3)), half away from zero — the
 /// existing <see cref="Money.Round"/> rule (SAT-D261 (2), SAT-D265 (4)); negative margins use the same rule.</item>
 /// </list>
-/// Fail-closed (SAT-D247, SAT-D262 (5)): any missing cost state, a sale or cost outside the functional currency, a cost unit other
+/// SAT-D426: a sale in another currency is first converted into the functional currency at the rate the order froze at its
+/// internal approval (net sale × rate, exact); the margin amount and percent then follow the same steps in TL.
+/// Fail-closed (SAT-D247, SAT-D262 (5)): any missing cost state, a foreign sale without its frozen rate, a foreign cost, a cost unit other
 /// than the order unit (EK52 <c>NEEDS-SINAN</c> conversions) or a value System.Decimal cannot hold exactly is "kullanılamıyor",
 /// never zero. Checks run in a fixed order: sale, sale currency, cost state, cost currency, cost unit, cost validity, range.
 /// SAT-D265 (5): the formula is not activated until its golden is in main; until the Inventory port exists the line-pricing read
@@ -224,7 +232,11 @@ public static class SalesLineMarginCalculator
             return SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.SalesAmountUnavailable);
         }
 
-        if (netSale.CurrencyId != input.FunctionalCurrencyId)
+        // SAT-D426: a foreign sale is converted at the rate the order froze at approval, exactly (SAT-D265 (1): no intermediate
+        // rounding); without that very rate the margin is unavailable, never estimated.
+        if (netSale.CurrencyId != input.FunctionalCurrencyId
+            && (input.SaleRate is not { } saleRate || saleRate.SourceCurrencyId != netSale.CurrencyId
+                || saleRate.TargetCurrencyId != input.FunctionalCurrencyId))
         {
             return SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.CurrencyConversionUndecided);
         }
@@ -251,7 +263,9 @@ public static class SalesLineMarginCalculator
             return SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.CostInvalid);
         }
 
-        var net = Exact.Of(netSale.Amount);
+        var net = netSale.CurrencyId == input.FunctionalCurrencyId
+            ? Exact.Of(netSale.Amount)
+            : Exact.Of(netSale.Amount).Multiply(Exact.Of(input.SaleRate!.Value.Rate));
         var margin = net.Subtract(Exact.Of(unitCost).Multiply(Exact.Of(input.Quantity)));
         if (!margin.RoundAwayFromZero(AmountScale).TryToDecimal(out var amount))
         {

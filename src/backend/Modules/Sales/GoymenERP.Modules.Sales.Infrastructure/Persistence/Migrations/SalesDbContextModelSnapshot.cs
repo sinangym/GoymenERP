@@ -1320,6 +1320,16 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("RecordedAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<decimal?>("SaleExchangeRate")
+                        .HasPrecision(16, 8)
+                        .HasColumnType("decimal(16,8)");
+
+                    b.Property<Guid?>("SaleRateCurrencyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly?>("SaleRateDay")
+                        .HasColumnType("date");
+
                     b.Property<string>("SourceProof")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -1339,6 +1349,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_DraftMarginCosts_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [UnitId] <> '00000000-0000-0000-0000-000000000000' AND [Revision] >= 0 AND [LineNo] >= 1 AND [Quantity] > 0");
 
                             t.HasCheckConstraint("CK_DraftMarginCosts_Proof", "ISJSON([SourceProof]) = 1 AND LEN([SourceProof]) BETWEEN 2 AND 65536");
+
+                            t.HasCheckConstraint("CK_DraftMarginCosts_SaleRate", "([SaleRateCurrencyId] IS NULL AND [SaleExchangeRate] IS NULL AND [SaleRateDay] IS NULL) OR ([SaleRateCurrencyId] IS NOT NULL AND [SaleRateCurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [SaleExchangeRate] IS NOT NULL AND [SaleExchangeRate] > 0 AND [SaleRateDay] IS NOT NULL)");
 
                             t.HasCheckConstraint("CK_DraftMarginCosts_Value", "([UnavailableReason] IS NULL AND [CurrencyId] IS NOT NULL AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [CostPerUnit] IS NOT NULL AND [CostPerUnit] >= 0) OR ([UnavailableReason] IS NOT NULL AND [UnavailableReason] IN (1,2,3,5,6,7,8,9,10,11,12,13,14) AND [CurrencyId] IS NULL AND [CostPerUnit] IS NULL)");
                         });

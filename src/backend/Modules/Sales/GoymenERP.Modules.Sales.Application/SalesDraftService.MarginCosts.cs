@@ -36,15 +36,59 @@ public sealed partial class SalesDraftService
         SalesOrderDraft draft, CancellationToken cancellationToken)
     {
         var costs = new List<SalesMarginCostSnapshot>();
+        SalesMarginSaleRate? saleRate = null;
+        var saleRateRead = false;
         foreach (var line in draft.Lines.OrderBy(item => item.LineNo))
         {
             var previous = LastMarginCost(draft, line.Id);
             // The same product/quantity reinstated after customer rejection keeps its original immutable cost.
             if (previous is not null && SameCostBasis(draft, line, previous)) continue;
             if (previous is null && LegacyApprovedCost(draft, line)) continue; // SAT-D273: no backfill.
-            costs.Add(await ReadMarginCostAsync(scope, permission, draft, line, cancellationToken));
+            if (!saleRateRead)
+            {
+                saleRate = await ReadSaleRateAsync(scope, permission, draft, cancellationToken);
+                saleRateRead = true;
+            }
+            costs.Add(await ReadMarginCostAsync(scope, permission, draft, line, cancellationToken) with { SaleRate = saleRate });
         }
         return costs;
+    }
+
+    /// <summary>
+    /// SAT-D426: a foreign-currency order freezes, at its internal approval, the Settings rate of the approval day (the server's
+    /// Europe/Istanbul business day) from its currency into TL. A TL order needs none. A rate the port cannot resolve, an absent
+    /// or failing port leaves no rate: the approval is not refused (it is a display figure) and the margin stays unavailable. A
+    /// lost authority stays a 403, as in the risk check.
+    /// </summary>
+    private async Task<SalesMarginSaleRate?> ReadSaleRateAsync(Scope scope, string? permission, SalesOrderDraft draft,
+        CancellationToken cancellationToken)
+    {
+        var local = SettingsCurrencyIdentitiesV1.TurkishLira;
+        var currency = draft.Header.CurrencyId;
+        if (currency == local || currency == Guid.Empty || exchangeRates is null) return null;
+        var day = ServerBusinessDay();
+        ExchangeRateResolutionV1 resolution;
+        try
+        {
+            resolution = await GuardedAsync(scope, permission,
+                () => exchangeRates.ResolveAsync(day, currency, local, cancellationToken), cancellationToken);
+        }
+        catch (SettingsPrerequisiteException exception) when (exception.Code == ExchangeRateProblemCodesV1.AccessDenied)
+        {
+            throw new SalesDraftServiceException(403, "forbidden");
+        }
+        catch (Exception exception) when (exception is not (OperationCanceledException or SalesDraftServiceException))
+        {
+            return null;
+        }
+
+        if (resolution.State != ExchangeRateResolutionStatesV1.Resolved || resolution.SourceCurrencyId != currency
+            || resolution.TargetCurrencyId != local || resolution.RateDay != day
+            || !decimal.TryParse(resolution.SellingRate, System.Globalization.NumberStyles.AllowDecimalPoint,
+                System.Globalization.CultureInfo.InvariantCulture, out var value))
+            return null;
+        var rate = new SalesMarginSaleRate(currency, value, day);
+        return rate.IsValid ? rate : null;
     }
 
     private async Task<SalesMarginCostSnapshot> ReadMarginCostAsync(Scope scope, string? permission,
@@ -123,12 +167,15 @@ public sealed partial class SalesDraftService
             draft.ApprovalState == InternalApprovalState.Approved ? SalesDraftMarginTextsV1.Snapshot : SalesDraftMarginTextsV1.Preview, lines);
     }
 
-    // SAT-D259 / BS-1: a restored snapshot is data, never the TL currency authority.
-    // Foreign sale conversion remains undecided; the actual owner supplies TL cost or Unavailable.
+    // SAT-D259 / BS-1: a restored snapshot is data, never the TL currency authority; the actual owner supplies TL cost or
+    // Unavailable. SAT-D426: a foreign sale is converted only at the rate the same approval snapshot froze.
     internal static SalesLineMargin CalculateMarginInTurkishLira(Money? netSale, Guid orderUnitId,
         decimal quantity, SalesMarginCostSnapshot cost) => cost.CostPerUnit == 0m
         ? SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.CostUnreadable)
         : SalesLineMarginCalculator.Calculate(new SalesLineMarginInput(
             netSale, orderUnitId, quantity, SettingsCurrencyIdentitiesV1.TurkishLira,
-            SalesLineMarginCost.Of(cost.CostPerUnit!.Value, cost.CurrencyId!.Value, cost.UnitId)));
+            SalesLineMarginCost.Of(cost.CostPerUnit!.Value, cost.CurrencyId!.Value, cost.UnitId),
+            cost.SaleRate is { } rate
+                ? ExchangeRate.Of(rate.CurrencyId, SettingsCurrencyIdentitiesV1.TurkishLira, rate.Rate)
+                : null));
 }

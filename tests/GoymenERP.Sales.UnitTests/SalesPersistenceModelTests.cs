@@ -68,6 +68,31 @@ public sealed partial class SalesPersistenceModelTests
     }
 
     [Fact]
+    public void Margin_snapshots_freeze_the_approval_sale_rate_as_all_or_nothing_with_forward_fix_52013()
+    {
+        // SAT-D426: the sale rate frozen at internal approval is three nullable columns that are set together.
+        using var context = Context();
+        var entity = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(DraftMarginCostRow))!;
+        var rate = entity.FindProperty(nameof(DraftMarginCostRow.SaleExchangeRate))!;
+        Assert.Equal((16, 8, true), (rate.GetPrecision(), rate.GetScale(), rate.IsNullable));
+        Assert.True(entity.FindProperty(nameof(DraftMarginCostRow.SaleRateCurrencyId))!.IsNullable);
+        Assert.True(entity.FindProperty(nameof(DraftMarginCostRow.SaleRateDay))!.IsNullable);
+        Assert.Contains(entity.GetCheckConstraints(), item => item.Name == "CK_DraftMarginCosts_SaleRate"
+            && item.Sql == SalesDbContext.MarginCostSaleRateConstraint);
+
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddSalesMarginSaleRates();
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var check = Assert.Single(migration.UpOperations
+            .OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>());
+        Assert.Equal(("sales", "DraftMarginCosts", "CK_DraftMarginCosts_SaleRate", SalesDbContext.MarginCostSaleRateConstraint),
+            (check.Schema, check.Table, check.Name, check.Sql));
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Contains("THROW 52013,", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[SaleRateCurrencyId] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Sales_outbox_cursor_is_generated_rowversion_with_company_index_and_guarded_down_51983()
     {
         using var context = Context();
@@ -219,8 +244,8 @@ public sealed partial class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesContracts", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddShipmentRiskExceptionUsages", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSubcontractServiceInvoices", StringComparison.Ordinal));
-        Assert.Equal(new[] { "AddSalesOutboxCommittedCursor", "AddSalesMarginCostSnapshots", "AddSubcontractInvoiceLifecycle", "AddSubcontractInvoiceClaimRange", "AddSubcontractInvoiceReplaySequence", "AddSalesOfficialInvoiceCancellation", "RepairSalesOfficialInvoiceCancellationActorCollation" },
-            context.Database.GetMigrations().TakeLast(7).Select(name => name[(name.IndexOf('_') + 1)..]));
+        Assert.Equal(new[] { "AddSalesOutboxCommittedCursor", "AddSalesMarginCostSnapshots", "AddSubcontractInvoiceLifecycle", "AddSubcontractInvoiceClaimRange", "AddSubcontractInvoiceReplaySequence", "AddSalesOfficialInvoiceCancellation", "RepairSalesOfficialInvoiceCancellationActorCollation", "AddSalesMarginSaleRates" },
+            context.Database.GetMigrations().TakeLast(8).Select(name => name[(name.IndexOf('_') + 1)..]));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
