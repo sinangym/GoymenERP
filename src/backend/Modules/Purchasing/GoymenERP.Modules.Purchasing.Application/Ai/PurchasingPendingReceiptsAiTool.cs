@@ -6,8 +6,11 @@ using System.Text.Json;
 namespace GoymenERP.Modules.Purchasing.Application.Ai;
 
 /// <summary>
-/// WP-A3b READ tool <c>purchasing.pending-receipts.v1</c> (bekleyen mal kabul): APPROVED purchase order lines that still
-/// wait for goods receipt, optionally for one supplier or product. Read ONLY through the Purchasing owner's open-line port
+/// WP-A3b READ tool <c>purchasing.pending-receipts.v1</c> (bekleyen mal kabul = açık alış siparişi): APPROVED purchase order
+/// lines that still wait for goods receipt, optionally for one supplier or product. KLN-D42
+/// (SINAN_KARARLARI_2026-11-14_IZLENEBILIRLIK.md) reads "açık alış siparişi" as exactly this set — the same owner port the
+/// shortage warning's supply side reads (<c>InventoryShortageSupplyHostSource</c>): a draft order is not open, a fully
+/// received line is not open. Read ONLY through the Purchasing owner's open-line port
 /// (<see cref="IPurchaseOpenLineReadPortV1.ListOpenApprovedLinesAsync"/>, AT-025: remaining = committed − accepted −
 /// cancelled − closed − returned, the owner's own number, never recomputed here). The port carries no authority, so the
 /// tool measures <c>purchasing.orders.read</c> company-wide before and after reading (the LOG-4 D6 shape).
@@ -30,6 +33,7 @@ public sealed class PurchasingPendingReceiptsAiTool(IPurchaseOpenLineReadPortV1 
     public const int PageSize = 100;
     public const int ScanLimit = 1000;
     public const string TargetKind = "purchasing.order-lines.pending-receipt";
+    public const string Definition = "KLN-D42";
     private static readonly string[] Fields = [LimitField, ProductIdField, SupplierPartyIdField];
     private static readonly string[] Permissions = [PurchasingPermissionManifestV1.OrdersRead];
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -45,7 +49,7 @@ public sealed class PurchasingPendingReceiptsAiTool(IPurchaseOpenLineReadPortV1 
         ownerCommandName: null,
         new AiContractRevisionV1(
             InputSchema: "purchasing.pending-receipts.v1/input@1",
-            OutputSchema: "purchasing.pending-receipts.v1/output@1",
+            OutputSchema: "purchasing.pending-receipts.v1/output@2",
             FieldPolicy: "purchasing.pending-receipts.v1/fields@1",
             LimitPolicy: "purchasing.pending-receipts.v1/limit-50-scan-1000@1",
             Catalogue: "contracts/ai/tool-catalog-v1.json",
@@ -144,6 +148,7 @@ public sealed class PurchasingPendingReceiptsAiTool(IPurchaseOpenLineReadPortV1 
             line.OrderId, line.OrderEffectiveOn, line.LineId, line.LineNo, line.Kind, line.SupplierPartyId, line.ProductId,
             line.UnitId, Format(line.CommittedText), Format(line.AcceptedText), Format(line.RemainingText))).ToArray();
         var content = new PurchasingPendingReceiptsContentV1(
+            Definition,
             supplierPartyId,
             productId,
             complete,
@@ -167,8 +172,12 @@ public sealed class PurchasingPendingReceiptsAiTool(IPurchaseOpenLineReadPortV1 
 /// <summary>One unit's lines and their exact remaining total; quantities of different units are never added.</summary>
 public sealed record PurchasingUnitTotalV1(Guid UnitId, int LineCount, string RemainingTotal);
 
-/// <summary>Counts and per-unit totals are null when <c>Complete</c> is false.</summary>
+/// <summary>
+/// Counts and per-unit totals are null when <c>Complete</c> is false. <c>Definition</c> names the decision behind "açık alış
+/// siparişi" (KLN-D42); <c>OrderCount</c> is the number of open purchase orders in that sense.
+/// </summary>
 public sealed record PurchasingPendingReceiptsContentV1(
+    string Definition,
     Guid? SupplierPartyId,
     Guid? ProductId,
     bool Complete,
