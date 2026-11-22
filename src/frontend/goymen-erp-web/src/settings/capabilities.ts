@@ -29,6 +29,10 @@ export const SETTINGS_CAPABILITY = {
    * `settings.ai-gateway.manage` (company-wide, not Critical, granted to no role here).
    */
   aiGateway: 'settings.ai-gateway.manage',
+  /** WP15 (1.16) AY-YST-01: the versioned legal deadline calendar (values wait for the financial advisor). */
+  legalDeadlineCalendar: 'settings.legal-deadline-calendar.manage',
+  /** WP15 (1.16) AY-YS-01: the upcoming legal deadline counters (Work deadline view). */
+  legalDeadlines: 'settings.legal-deadlines.read',
   documentNumberSeries: 'settings.document-number-series.manage',
   manufacturingParameters: 'settings.manufacturing-parameter-profiles.read',
   manufacturingTolerances: 'settings.manufacturing-tolerance-profiles.read',
@@ -136,6 +140,8 @@ export const SETTINGS_ROUTE: Record<SettingsCapabilityId, string> = {
   [SETTINGS_CAPABILITY.notificationRetention]: '/ayarlar/bildirim-etkinlik-suresi',
   [SETTINGS_CAPABILITY.workApprovalDuration]: '/ayarlar/onay-sureleri',
   [SETTINGS_CAPABILITY.aiGateway]: '/ayarlar/yapay-zeka-ag-gecidi',
+  [SETTINGS_CAPABILITY.legalDeadlineCalendar]: '/ayarlar/yasal-sure-takvimi',
+  [SETTINGS_CAPABILITY.legalDeadlines]: '/ayarlar/yasal-sureler',
   [SETTINGS_CAPABILITY.documentNumberSeries]: '/ayarlar/belge-numara-serileri',
   [SETTINGS_CAPABILITY.manufacturingParameters]: '/ayarlar/uretim-parametre-profilleri',
   [SETTINGS_CAPABILITY.manufacturingTolerances]: '/ayarlar/uretim-tolerans-profilleri',
@@ -169,6 +175,8 @@ export const SETTINGS_NAV_LABEL: Record<SettingsCapabilityId, string> = {
   [SETTINGS_CAPABILITY.notificationRetention]: 'Bildirim etkinlik süresi',
   [SETTINGS_CAPABILITY.workApprovalDuration]: 'Onay süreleri',
   [SETTINGS_CAPABILITY.aiGateway]: 'Yapay zekâ yönetimi',
+  [SETTINGS_CAPABILITY.legalDeadlineCalendar]: 'Yasal süre takvimi',
+  [SETTINGS_CAPABILITY.legalDeadlines]: 'Yaklaşan yasal süreler',
   [SETTINGS_CAPABILITY.documentNumberSeries]: 'Belge numara serileri',
   [SETTINGS_CAPABILITY.manufacturingParameters]: 'Üretim parametre profilleri',
   [SETTINGS_CAPABILITY.manufacturingTolerances]: 'Üretim tolerans profilleri',

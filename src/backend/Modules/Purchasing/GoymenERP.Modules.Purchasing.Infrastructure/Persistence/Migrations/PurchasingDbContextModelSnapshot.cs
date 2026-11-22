@@ -844,6 +844,9 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("InvoiceId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("CurrencyId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid>("DocumentId")
                         .HasColumnType("uniqueidentifier");
 
@@ -860,11 +863,18 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Ettn")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateOnly?>("InvoiceDate")
+                        .HasColumnType("date");
+
                     b.Property<string>("OfficialNumber")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)")
                         .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<decimal?>("PayableAmount")
+                        .HasPrecision(24, 6)
+                        .HasColumnType("decimal(24,6)");
 
                     b.Property<Guid>("SupplierPartyId")
                         .HasColumnType("uniqueidentifier");
@@ -874,11 +884,16 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                     b.HasIndex("CompanyId", "Ettn")
                         .IsUnique();
 
+                    b.HasIndex("CompanyId", "SupplierPartyId", "InvoiceDate")
+                        .HasDatabaseName("IX_IncomingInvoices_DuplicateDate");
+
                     b.HasIndex("CompanyId", "SupplierPartyId", "OfficialNumber")
                         .IsUnique();
 
                     b.ToTable("IncomingInvoices", "purchasing", t =>
                         {
+                            t.HasCheckConstraint("CK_IncomingInvoices_DuplicateFacts", "([InvoiceDate] IS NULL AND [CurrencyId] IS NULL AND [PayableAmount] IS NULL) OR ([InvoiceDate] IS NOT NULL AND [CurrencyId] IS NOT NULL AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [PayableAmount] IS NOT NULL)");
+
                             t.HasCheckConstraint("CK_IncomingInvoices_Source", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' AND [SupplierPartyId] <> '00000000-0000-0000-0000-000000000000' AND [Ettn] <> '00000000-0000-0000-0000-000000000000' AND [DocumentId] <> '00000000-0000-0000-0000-000000000000' AND [DocumentVersion] > 0 AND LEN([OfficialNumber]) > 0 AND LEN([DocumentSha256]) = 64");
                         });
                 });

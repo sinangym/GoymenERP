@@ -228,6 +228,7 @@ builder.Services.AddScoped<WorkInboxReadQueryV1>();
 builder.Services.AddScoped<GoymenERP.BuildingBlocks.Ai.IAiOwnerToolV1, GoymenERP.Api.WorkRuntime.Ai.WorkInboxAwaitingMeAiTool>();
 builder.Services.AddScoped<GoymenERP.BuildingBlocks.Ai.IAiOwnerToolV1, GoymenERP.Api.WorkRuntime.Ai.WorkOverdueApprovalsAiTool>();
 builder.Services.AddScoped<GoymenERP.BuildingBlocks.Ai.IAiOwnerToolV1, GoymenERP.Api.WorkRuntime.Ai.WorkMyTasksAiTool>();
+builder.Services.AddScoped<WorkDeadlineReadQueryV1>();
 builder.Services.AddScoped<IFinancePartyAccountPort, CounterpartyFinancePartyAccountPort>();
 // B-17: the version bump with the account's roles (dual role) and supplier IBAN view; V1 stays for its consumers.
 builder.Services.AddScoped<IFinancePartyAccountPortV2, CounterpartyFinancePartyAccountPortV2>();
@@ -669,6 +670,7 @@ app.MapWorkApprovalEndpoints();
 app.MapWorkQueueEndpoints();
 app.MapWorkInboxEndpoints();
 app.MapWorkApprovalRuleEndpoints();
+app.MapWorkDeadlineEndpoints();
 app.MapWorkNotificationEndpoints();
 app.MapWorkCollaborationEndpoints();
 app.MapWorkAssistantMemoryEndpoints();

@@ -47,7 +47,10 @@ public sealed partial class SettingsShellCapabilityProvider : IShellCapabilityPr
     // 1.21 (WP-A5, AI-20): the AI management screen is implemented, with one read-only control — the AI security event list
     // (ai.request.refused, ai.tool.called, ai.authz.denied) on the screen's name plus platform.security-events.read. Neither
     // name is granted to a role here.
-    public const string OwnerContractVersion = "1.21";
+    // 1.22 (WP15, 1.16; the tren-2 merge renumbers WP15's own 1.20 after WP-A1 1.20 and WP-A5 1.21): the legal deadline
+    // calendar screen (/ayarlar/yasal-sure-takvimi) on settings.legal-deadline-calendar.manage and the upcoming legal
+    // deadlines screen (/ayarlar/yasal-sureler) on settings.legal-deadlines.read. Neither is granted to a role.
+    public const string OwnerContractVersion = "1.22";
     public const string AiGatewayCapabilityId = SettingsAiGatewayPermissionsV1.Manage;
     public const string AiGatewayEventsCapabilityId = "settings.ai-gateway.events.read";
     // Technical screen ids, not additional ERP permissions. Latest ALS-D105 authority decision.
@@ -230,6 +233,14 @@ public sealed partial class SettingsShellCapabilityProvider : IShellCapabilityPr
                 ParentCapabilityId = AiGatewayCapabilityId,
                 RequiredPermissions = [SettingsAiGatewayPermissionsV1.Manage, ErpPermissions.PlatformSecurityEventsRead],
             },
+            new ShellCapabilityDeclaration(SettingsLegalDeadlinePermissionsV1.CalendarManage, SettingsLegalDeadlinePermissionsV1.CalendarManage,
+                "/ayarlar/yasal-sure-takvimi", "AY-YST-01", ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
+                [SettingsLegalDeadlinePermissionsV1.CalendarManage], ImplementationAvailable: true),
+            new ShellCapabilityDeclaration(SettingsLegalDeadlinePermissionsV1.DeadlinesRead, SettingsLegalDeadlinePermissionsV1.DeadlinesRead,
+                "/ayarlar/yasal-sureler", "AY-YS-01", ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
+                [SettingsLegalDeadlinePermissionsV1.DeadlinesRead], ImplementationAvailable: true),
             new ShellCapabilityDeclaration(SettingsDocumentNumberSeriesPermissionsV1.Manage, SettingsDocumentNumberSeriesPermissionsV1.Manage,
                 "/ayarlar/belge-numara-serileri", "AY-BNS-01", ShellCapabilityRoutePrecedence.Static,
                 ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,

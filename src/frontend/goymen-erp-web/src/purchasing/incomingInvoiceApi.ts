@@ -3,6 +3,7 @@ import { post } from './receiptAdjustmentApi'
 import { decodeIncomingInvoice, decodeInvoiceCommand, decodeInvoicePage, decodeInvoiceReceipts, decodeInvoiceAdditionalCosts,
   type IncomingInvoice, type IncomingInvoiceLine, type InvoiceCommand } from './incomingInvoiceContract'
 import type { ViewOutcome } from '../shell/uiState'
+import { decodeInvoiceDuplicateCheck } from './invoiceDuplicateContract'
 const base = `${API_BASE}/purchasing/invoices`
 async function read<T>(company: string, path: string, signal: AbortSignal, decode: (body: unknown) => T | null): Promise<ViewOutcome<T>> {
   try {
@@ -29,3 +30,6 @@ export const fetchInvoiceAdditionalCosts = (company: string, invoice: IncomingIn
 export const submitInvoiceCommand = (company: string, id: string, command: InvoiceCommand, key: string) =>
   post(company, `${base}/${encodeURIComponent(id)}/${command.action}`, command.request, key, 200,
     (body, replay) => decodeInvoiceCommand(body, company, id, replay))
+/** WP15 (1.16): the rule-based duplicate warning of a recorded invoice (read-only; never blocks). */
+export const fetchInvoiceDuplicates = (company: string, id: string, signal: AbortSignal) =>
+  read(company, `${base}/${encodeURIComponent(id)}/duplicates`, signal, (body) => decodeInvoiceDuplicateCheck(body, id))

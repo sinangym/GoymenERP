@@ -12,7 +12,11 @@ public sealed record PurchaseInvoiceImportAdmissionRequestV1(PurchaseInvoiceImpo
     string ExpectedInvoiceVersion, Guid SupplierPartyId, Guid CompanyAccountId,
     string ExpectedPartyVersion, string ExpectedAccountVersion, Guid CurrencyId,
     IReadOnlyList<PurchaseInvoiceImportLineMappingV1> Lines,
-    IReadOnlyList<PurchaseInvoiceImportInstallmentV1> Installments);
+    IReadOnlyList<PurchaseInvoiceImportInstallmentV1> Installments,
+    // ALS-D125 (WP15): the actor's reason to record despite a duplicate warning; required only when the rule matches.
+    // Left out of the request hash while null so earlier attempts replay unchanged.
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    string? DuplicateReason = null);
 
 /// <summary>Records immutable, owner-validated source facts. Matching, variance approval, finalization and Finance remain separate commands.</summary>
 public interface IPurchaseInvoiceImportAdmissionV1

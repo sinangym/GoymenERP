@@ -115,11 +115,15 @@ public static class SettingsModuleExtensions
         services.AddScoped<SettingsAiGatewayStoreV1>();
         services.AddScoped<ISettingsAiGatewayPolicyProviderV1>(provider => provider.GetRequiredService<SettingsAiGatewayStoreV1>());
         services.AddScoped<ISettingsAiBudgetLedgerV1>(provider => provider.GetRequiredService<SettingsAiGatewayStoreV1>());
+        services.AddScoped<ISettingsLegalDeadlineCalendarAdministrationV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyAdministration>());
         services.AddScoped<SettingsCompanyPolicyProviderV1>();
         services.AddScoped<ISettingsManufacturingScrapCostPolicyProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
         services.AddScoped<ISettingsNotificationRetentionPolicyProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
         services.AddScoped<ISettingsWorkApprovalDurationPolicyProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
         services.AddScoped<ISettingsWorkHolidayCalendarProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
+        services.AddScoped<ISettingsLegalDeadlineCalendarProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
+        // WP15 (1.16): legal deadline counters as a Work deadline source; grants nothing, writes nothing.
+        services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkDeadlineSourceV1, WorkDeadlines.SettingsLegalDeadlineWorkSourceV1>();
         services.AddScoped<ISettingsNotificationRetentionAutomationV1, SettingsNotificationRetentionAutomationV1>();
         services.AddScoped<ISettingsInventoryCostProfileReaderV1, SettingsInventoryCostProfileReaderV1>();
         services.AddScoped<ISettingsFinancePolicyProviderV1>(provider =>

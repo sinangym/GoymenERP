@@ -58,6 +58,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // WP-A5: Settings 1.21 implements the AI management screen and adds its read-only event list control; this row and the
     // Work row below re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // WP15: Settings 1.22 (merged after WP-A5 1.21) adds the legal deadline calendar and upcoming legal deadlines screens;
+    // re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision.
     internal const string FullNormalHostWithSettingsAndPaintMemberships = "sha256:1wxYz1JP2bVWgp6C2abAxSdzgsUc3sH7slkI8SRBS-0";
     // WP9: the actual host adds Work 1.0 (work.tasks.mine route + work.tasks.assign control); produced by
     // ShellCapabilityRegistry.ComputeCandidateRevision over the actual providers.
@@ -760,7 +762,7 @@ internal const string FullNormalHostWithProductPriceListsAndSalesReports =
 // WP-A1: Settings 1.20 re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision.
 // WP-A5: Settings 1.21 (AI management screen implemented + event list control) re-derived in place likewise.
 internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV11 =
-        "sha256:9AEm1RdSHaqwUPdVZ6Kh4NXWlBBi0jmvziUK6eU7k_4";
+        "sha256:9AEm1RdSHaqwUPdVZ6Kh4NXWlBBi0jmvziUK6eU7k_4"; // WP15: Settings 1.22, re-derived in place.
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";

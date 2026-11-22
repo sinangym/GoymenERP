@@ -364,6 +364,9 @@ export const CAPABILITY = {
   settingsWorkApprovalDuration: 'settings.work-approval-duration.manage',
   /** WP-A5 (AI-20): the AI management screen, owner Settings 1.21; one non-Critical name, granted to no role here. */
   settingsAiGateway: 'settings.ai-gateway.manage',
+  /** WP15 (1.16) AY-YST-01 / AY-YS-01: the legal deadline calendar and the upcoming legal deadlines. */
+  settingsLegalDeadlineCalendar: 'settings.legal-deadline-calendar.manage',
+  settingsLegalDeadlines: 'settings.legal-deadlines.read',
   settingsDocumentNumberSeries: 'settings.document-number-series.manage',
   settingsFinancePolicies: 'settings.finance-policies.prepare',
   settingsCashDifferencePolicies: 'settings.cash-count-difference-policies.prepare',
@@ -582,6 +585,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.settingsNotificationRetention]: '/ayarlar/bildirim-etkinlik-suresi',
   [CAPABILITY.settingsWorkApprovalDuration]: '/ayarlar/onay-sureleri',
   [CAPABILITY.settingsAiGateway]: '/ayarlar/yapay-zeka-ag-gecidi',
+  [CAPABILITY.settingsLegalDeadlineCalendar]: '/ayarlar/yasal-sure-takvimi',
+  [CAPABILITY.settingsLegalDeadlines]: '/ayarlar/yasal-sureler',
   [CAPABILITY.settingsDocumentNumberSeries]: '/ayarlar/belge-numara-serileri',
   [CAPABILITY.settingsFinancePolicies]: '/ayarlar/finans-onay-politikalari',
   [CAPABILITY.settingsCashDifferencePolicies]: '/ayarlar/kasa-sayim-fark-politikalari',

@@ -11,6 +11,9 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 
 public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
 {
+    /// <summary>The audit reason column holds 1000 characters; the fixed prefix leaves this much for the note.</summary>
+    internal const int IncomingInvoiceAuditNoteMaximumLength = 960;
+
     public async Task<PurchaseIncomingInvoiceSnapshot?> FindIncomingInvoiceAsync(Guid invoiceId, CancellationToken cancellationToken = default)
     {
         var company = RequireResolvedCompany();
@@ -69,10 +72,17 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
                 ?? throw new InvalidOperationException("Fatura ret kaydı okunamadı."), true, row.CorrelationId);
     }
 
-    public async Task<PurchasingIncomingInvoiceWriteResult> RecordIncomingInvoiceAsync(PurchaseIncomingInvoice invoice,
+    public Task<PurchasingIncomingInvoiceWriteResult> RecordIncomingInvoiceAsync(PurchaseIncomingInvoice invoice,
         PurchasingWriteEnvelope envelope, string requestHash, Func<CancellationToken, Task> requireStillAuthorized,
+        CancellationToken cancellationToken = default) =>
+        RecordIncomingInvoiceAsync(invoice, envelope, requestHash, requireStillAuthorized, null, cancellationToken);
+
+    public async Task<PurchasingIncomingInvoiceWriteResult> RecordIncomingInvoiceAsync(PurchaseIncomingInvoice invoice,
+        PurchasingWriteEnvelope envelope, string requestHash, Func<CancellationToken, Task> requireStillAuthorized, string? auditNote,
         CancellationToken cancellationToken = default)
     {
+        if (auditNote is not null && (string.IsNullOrWhiteSpace(auditNote) || auditNote.Length > IncomingInvoiceAuditNoteMaximumLength))
+            throw new ArgumentException("Denetim notu geçersiz.", nameof(auditNote));
         ArgumentNullException.ThrowIfNull(invoice); ArgumentNullException.ThrowIfNull(requireStillAuthorized);
         RequireInvoiceTransactionOwnership();
         await requireStillAuthorized(cancellationToken);
@@ -89,12 +99,14 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
         {
             CompanyId = company, InvoiceId = invoice.Id, SupplierPartyId = invoice.SupplierPartyId, Ettn = invoice.Source.Ettn,
             OfficialNumber = invoice.Source.OfficialNumber, DocumentId = invoice.Source.DocumentId, DocumentVersion = invoice.Source.DocumentVersion,
-            DocumentSha256 = invoice.Source.Sha256,
+            DocumentSha256 = invoice.Source.Sha256, InvoiceDate = invoice.Source.InvoiceDate, CurrencyId = invoice.CurrencyId,
+            PayableAmount = invoice.Amounts.Payable,
         });
         AddInvoiceRevision(snapshot, json, now);
         AddInvoiceAttempt(company, PurchaseIncomingInvoiceCommandsV1.Record, envelope, requestHash, json, null, now);
         Audit(envelope, company, "Purchasing.IncomingInvoice", invoice.Id, "purchasing.incoming-invoice.recorded.v1", "Record",
-            null, invoice.Version, "{}", json, "Resmî alış faturası içe aktarıldı");
+            null, invoice.Version, "{}", json,
+            auditNote is null ? "Resmî alış faturası içe aktarıldı" : "Resmî alış faturası içe aktarıldı; " + auditNote);
         await SaveAsync(cancellationToken);
         await RequireIncomingInvoiceCommitAsync(requireStillAuthorized, cancellationToken);
         await owned.CommitAsync(cancellationToken);

@@ -6278,6 +6278,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // head (WORK_AI_ORTAK_KURALLAR: pin'li dosyalar tek seferde üretilir); until then this entry fails closed.
                 ["src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/Persistence/Migrations/20261122202208_InitialAiKnowledgeApprovals.cs"] =
                     new("0000000000000000000000000000000000000000000000000000000000000000", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // WP15; K3 review pending. Down refuses (52280, WP15 range, used by no other migration) while a legal deadline calendar version exists; use a forward fix. 1 lexical Sql call(s).
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/20261122202227_AddLegalDeadlineCalendars.cs"] =
+                    new("a3ace220344a224f6553ff3ce87e07c187c09b376e6c4f0fa22d16f85e47ad85", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
             };
 
     private static readonly HashSet<string> ReviewedProjectSdks =

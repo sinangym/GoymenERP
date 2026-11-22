@@ -46,7 +46,9 @@ public static partial class PurchasingEndpoints
             MutateAsync(context, correlation, ReadImportAdmission,
                 async (request, metadata) => PurchaseIncomingInvoiceWireV1.Response(await service.RecordAsync(id, request, metadata, token)), token))
             .RequireAuthorization(PurchaseIncomingInvoicePermissionNamesV1.Import)
-            .WithName("RecordPurchaseInvoiceImportV1").Accepts<PurchaseInvoiceImportAdmissionRequestV1>("application/json"));
+            .WithName("RecordPurchaseInvoiceImportV1").Accepts<PurchaseInvoiceImportAdmissionRequestV1>("application/json")
+            // ALS-D125: a duplicate match without a reason (not stored; retry with duplicateReason).
+            .ProducesErpUnprocessableEntity(PurchaseInvoiceDuplicateBehaviorV1.ReasonRequired));
         InvoiceWorkspaceRead(group.MapGet("", async (int? pageIndex, HttpContext context, [FromServices] IPurchaseInvoiceImportV1 service,
             ICorrelationContext correlation, CancellationToken token) =>
         {

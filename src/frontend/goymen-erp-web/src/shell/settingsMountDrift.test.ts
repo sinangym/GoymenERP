@@ -156,6 +156,8 @@ describe('shell ↔ Settings discount limit screen contract (SAT-D61…D70)', ()
       [CAPABILITY.settingsNotificationRetention, SETTINGS_CAPABILITY.notificationRetention],
       [CAPABILITY.settingsWorkApprovalDuration, SETTINGS_CAPABILITY.workApprovalDuration],
       [CAPABILITY.settingsAiGateway, SETTINGS_CAPABILITY.aiGateway],
+      [CAPABILITY.settingsLegalDeadlineCalendar, SETTINGS_CAPABILITY.legalDeadlineCalendar],
+      [CAPABILITY.settingsLegalDeadlines, SETTINGS_CAPABILITY.legalDeadlines],
       [CAPABILITY.settingsDocumentNumberSeries, SETTINGS_CAPABILITY.documentNumberSeries],
       [CAPABILITY.settingsManufacturingParameters, SETTINGS_CAPABILITY.manufacturingParameters],
       [CAPABILITY.settingsManufacturingTolerances, SETTINGS_CAPABILITY.manufacturingTolerances],

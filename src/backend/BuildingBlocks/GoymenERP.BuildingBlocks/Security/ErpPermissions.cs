@@ -1587,6 +1587,16 @@ public static class ErpPermissions
     /// The budget value and the grant are human gates.
     /// </summary>
     public const string SettingsAiGatewayManage = "settings.ai-gateway.manage";
+    /// <summary>
+    /// WP15 (DALGA_PLANI_v2 1.16, YOL-D4 (c)): reads and records the company's legal deadline calendar versions. Registered, not
+    /// granted; company-wide only; not Critical.
+    /// </summary>
+    public const string SettingsLegalDeadlineCalendarManage = "settings.legal-deadline-calendar.manage";
+    /// <summary>
+    /// WP15 (1.16): sees the upcoming legal deadline counters in the Work view. Registered, not granted; company-wide only; not
+    /// Critical.
+    /// </summary>
+    public const string SettingsLegalDeadlinesRead = "settings.legal-deadlines.read";
     public const string SettingsDocumentNumberSeriesManage = "settings.document-number-series.manage";
 
     /// <summary>
@@ -2071,6 +2081,8 @@ public static class ErpPermissions
             SettingsNotificationRetentionManage,
             SettingsWorkApprovalDurationManage,
             SettingsAiGatewayManage,
+            SettingsLegalDeadlineCalendarManage,
+            SettingsLegalDeadlinesRead,
             SettingsDocumentNumberSeriesManage,
             SettingsReferenceListsManage,
             SettingsProductionReferenceListsManage,
@@ -2391,6 +2403,8 @@ public static class ErpPermissions
             SettingsNotificationRetentionManage,
             SettingsWorkApprovalDurationManage,
             SettingsAiGatewayManage,
+            SettingsLegalDeadlineCalendarManage,
+            SettingsLegalDeadlinesRead,
             SettingsDocumentNumberSeriesManage,
             SettingsReferenceListsManage,
             SettingsProductionReferenceListsManage,

@@ -16,6 +16,7 @@ import { useReceiptAdjustmentAttempt } from './useReceiptAdjustmentAttempt'
 import type { ImportPreviewRequest, SourceInvoice, SourceLine } from './invoiceImportContract'
 import type { InvoiceCommandResponse } from './incomingInvoiceContract'
 import { fetchImportMappingReferences, fetchImportProducts, recordInvoiceImport, resolveImportSupplier } from './invoiceImportAdmissionApi'
+import { DUPLICATE_REASON_MAXIMUM_LENGTH, DUPLICATE_REASON_REQUIRED, INVOICE_DUPLICATE_TEXT as D } from './invoiceDuplicateText'
 import { importAmount, type ImportLineMapping, type ImportInstallment, type ImportMappingReferences, type ImportProduct,
   type ImportReference, type ImportRecordSnapshot } from './invoiceImportAdmissionContract'
 import { INVOICE_IMPORT_TEXT as T } from './invoiceImportText'
@@ -54,6 +55,8 @@ function Admission(props: Props) {
   const [search, setSearch] = useState(''), [q, setQ] = useState(''), [supplier, setSupplier] = useState<PurchasingSupplierOption | null>(null)
   const [currency, setCurrency] = useState(''), [mapping, setMapping] = useState<Readonly<Record<string, ImportLineMapping | undefined>>>({})
   const [installments, setInstallments] = useState<readonly ImportInstallment[]>(() => plans(invoice)), [error, setError] = useState(false)
+  // ALS-D125: once the server warned about a similar invoice, recording needs the actor's reason (never blocked).
+  const [duplicateWarned, setDuplicateWarned] = useState(false), [duplicateReason, setDuplicateReason] = useState('')
   const refs = useRead(props, ['references'], signal => fetchImportMappingReferences(binding.company, id, source, invoice.invoiceDate, signal))
   const suppliers = useRead(props, ['suppliers', q, cursor], signal => fetchPurchasingSupplierOptions(binding.company, { q, cursor }, signal))
   const resolved = useRead(props, ['supplier', supplier], signal => resolveImportSupplier(binding.company, id, source,
@@ -74,13 +77,17 @@ function Admission(props: Props) {
     if (choices === null || actualSupplier === null || !choices.currencies.some(x => x.currencyId === currency) || lines.some(x => x === undefined)
       || installments.length === 0 || installments.some(x => !isDateOnly(x.dueOn) || !importAmount(x.amount)
         || foreign && installments.length > 1 && !importAmount(x.functionalAmount))) { setError(true); return }
+    const reason = duplicateReason.trim()
+    if (duplicateWarned && (reason.length === 0 || reason.length > DUPLICATE_REASON_MAXIMUM_LENGTH)) { setError(true); return }
     setError(false)
     attempt.submit({ facts: invoice, request: { source, expectedInvoiceVersion: '0', supplierPartyId: actualSupplier.supplierPartyId,
       companyAccountId: actualSupplier.companyAccountId, expectedPartyVersion: actualSupplier.partyVersion, expectedAccountVersion: actualSupplier.accountVersion,
       currencyId: currency, lines: lines as ImportLineMapping[], installments: installments.map((x, index) => ({ ...x, sequence: index + 1,
-        functionalAmount: foreign ? installments.length === 1 ? null : x.functionalAmount : null })) } })
+        functionalAmount: foreign ? installments.length === 1 ? null : x.functionalAmount : null })),
+      ...(duplicateWarned ? { duplicateReason: reason } : {}) } })
   }
   const outcome = attempt.outcome
+  if (!duplicateWarned && outcome?.type === 'failed' && outcome.status === 422 && outcome.code === DUPLICATE_REASON_REQUIRED) setDuplicateWarned(true)
   if (outcome?.type === 'applied') return <section className={styles.card} role="status"><h3>{T.recorded}</h3><p>{outcome.response.invoice.officialNumber}</p>
     <p>{T.recordedHint}</p>{hasCapability(shell, C.invoiceDetail) ? <Link to={`/satinalma/faturalar/${encodeURIComponent(outcome.response.invoice.id)}`}>{T.openRecorded}</Link> : null}</section>
   return <section className={styles.card} aria-label={T.admissionHeading}><h3>{T.admissionHeading}</h3><p>{T.admissionHint}</p>
@@ -115,9 +122,13 @@ function Admission(props: Props) {
       {!frozenSourceAmounts ? <><Button type="button" disabled={installments.length >= 2000} onClick={() => setInstallments(values => [...values,
         { id: crypto.randomUUID(), openItemId: crypto.randomUUID(), sequence: values.length + 1, dueOn: '', amount: '', functionalAmount: null }])}>{T.addPlan}</Button>
         {installments.length === 1 ? <Button type="button" onClick={() => setPlan(0, { amount: choices.payable })}>{T.useTotal}</Button> : null}</> : null}
+      {duplicateWarned ? <div data-testid="import-duplicate-warning"><p role="alert">{D.importWarning}</p>
+        <Field label={D.importReason}>{p => <textarea {...p} required maxLength={DUPLICATE_REASON_MAXIMUM_LENGTH} value={duplicateReason}
+          onChange={e => setDuplicateReason(e.target.value)} />}</Field>
+        {error && duplicateReason.trim().length === 0 ? <p role="alert">{D.importReasonRequired}</p> : null}</div> : null}
       {error ? <p role="alert">{T.admissionInvalid}</p> : null}<Button type="button" disabled={actualSupplier === null} onClick={submit}>{T.recordInvoice}</Button>
     </fieldset>}
-    {outcome?.type === 'failed' ? <><p role="alert">{T.rejected}</p><StateBlock subject={T.admissionHeading} state={classifyOutcome({ type: 'http', status: outcome.status })} /></> : null}
+    {outcome?.type === 'failed' && !(outcome.status === 422 && outcome.code === DUPLICATE_REASON_REQUIRED) ? <><p role="alert">{T.rejected}</p><StateBlock subject={T.admissionHeading} state={classifyOutcome({ type: 'http', status: outcome.status })} /></> : null}
     {outcome?.type === 'unknown' ? <StateBlock subject={T.admissionHeading} state={{ kind: outcome.reason === 'malformed' ? 'malformed-response' : outcome.reason }} /> : null}
     {attempt.locked ? <div role="status"><p>{attempt.sending ? T.recording : T.unknown}</p><p>{T.frozenImport}</p>
       <Button type="button" disabled={attempt.sending} onClick={attempt.retry}>{T.retry}</Button></div> : null}

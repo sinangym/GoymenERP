@@ -307,8 +307,9 @@ public sealed class PurchasingPersistenceModelTests
                 "20261120103531_AddPurchaseSupplierReturnCostAllocations", "20261122095454_AddPurchasePieceKilogramFacts",
                 "20261122122332_AddPurchaseSupplierReturnLineageSource",
                 "20261122141554_AddPurchaseGoodsReceiptBatchPieceFacts", "20261122142515_AddPurchaseSupplierReturnLineageParts",
+                "20261122200945_AddPurchaseIncomingInvoiceDuplicateFacts",
                 "20261122205751_AllowPurchaseSupplierReturnReplacement"],
-            context.Database.GetMigrations().TakeLast(27));
+            context.Database.GetMigrations().TakeLast(28));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var requests = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseRequestRow))!;
