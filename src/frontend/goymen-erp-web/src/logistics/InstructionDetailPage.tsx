@@ -139,6 +139,7 @@ export function InstructionDetailPage() {
   const reread = () => void queryClient.invalidateQueries({ queryKey })
   const detail = outcome.data
   return (
+    <>
     <InstructionView
       detail={detail}
       backLink={backLink}
@@ -174,12 +175,14 @@ export function InstructionDetailPage() {
               companyId={companyId} onRecorded={reread} />
             <InstructionCancelCommand key={`cancel:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId}
               onRecorded={reread} />
-            {/* WP9: the instruction's notes also carry its dispatch notes' (Logistics reads a dispatch note only through its instruction). */}
-            <RecordNotesSection recordType="loading-instruction" recordId={detail.instruction.id} />
           </>
         )
       }
     />
+    {/* WP9: collaboration, outside the instruction record (whose controls are its commands only). The instruction's notes
+        also carry its dispatch notes' — Logistics reads a dispatch note only through its instruction. */}
+    <RecordNotesSection recordType="loading-instruction" recordId={detail.instruction.id} />
+    </>
   )
 }
 
