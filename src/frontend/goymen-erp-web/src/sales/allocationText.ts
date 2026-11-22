@@ -103,4 +103,20 @@ export const ALLOCATION_TEXT = {
     `Muadil: seçilen etiket farklı bir ürüne ait (${product}). Kaydederseniz tahsis muadil olarak işaretlenir; Stok benzerliği kayıt anında yeniden doğrular.`,
   substituteNotSimilar: 'Seçilen muadil etiketin ürünü bu satırın ürününe Ayarlar’daki ölçü toleransı içinde benzemiyor ya da tolerans tanımlı değil. Tahsis kaydedilmedi.',
   unitConversionUnavailable: 'Sipariş birimi ile kilogram arasında tanımlı bir çevrim yok; tahsis sipariş miktarıyla karşılaştırılamadı. Tahsis kaydedilmedi.',
+  // KLN-D119 / SAT-D434: pieces beside kilograms. The counts are the server's; the screen adds or converts nothing.
+  pieces: (count: number) => `${count} adet`,
+  pieceCount: 'Tahsis adedi',
+  pieceCountRequiredHint: (unreserved: number) =>
+    `Bu etiket adetle izleniyor; tahsis edilecek adet zorunludur (tam sayı, en az 1, en çok ayrılabilir ${unreserved} adet).`,
+  pieceCountUnknownHint:
+    'Etiket adetle izleniyorsa tahsis edilecek adedi girin (tam sayı, en az 1); adetle izlenmeyen etikette boş bırakın. Stok kayıt anında doğrular.',
+  pieceCountValidation: 'Tahsis adedi sıfırdan büyük bir tam sayı olmalıdır.',
+  pieceCountMissing: 'Seçilen etiket adetle izleniyor; tahsis adedi zorunludur.',
+  pieceCountExceeds: (unreserved: number) => `Tahsis adedi etiketin ayrılabilir adedini (${unreserved}) aşamaz.`,
+  suggestionUnreservedPieces: 'Ayrılabilir adet',
+  labelSelectedPieces: (unreserved: number) => `ayrılabilir ${unreserved} adet`,
+  pieceCountRequired: 'Bu etiketin serbest stoku adetle izleniyor; tahsis adedi girilmeden tahsis kaydedilmez. Adedi girip yeniden deneyin.',
+  pieceCountNotTracked: 'Bu etiketin serbest stoku adetle izlenmiyor; adet gönderilemez. Adet alanını boş bırakıp yeniden deneyin. Tahsis kaydedilmedi.',
+  pieceCountInvalid: 'Tahsis adedi geçersiz: sıfırdan büyük bir tam sayı olmalı ve tahsis miktarıyla tutarlı olmalıdır. Tahsis kaydedilmedi.',
+  insufficientFreePieces: 'Etiketin serbest (tahsis edilmemiş) adedi bu tahsise yetmiyor; tahsisler yeniden okundu. Daha az adet girin ya da başka etiket seçin.',
 } as const

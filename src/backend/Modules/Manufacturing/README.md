@@ -569,6 +569,17 @@ Cost stays per kg (`ProductionReceiptCostCalculatorV1` unchanged). A correction 
 counted outputs (`OrderViewV1.OutputPieces`) with real kg/piece (BAL-006), deviation kg/piece and percent
 (`OutputPieceDeviationCalculatorV1`, ASSUMPTION-AK7-1 display scale); no threshold is applied (URT-D51 (5) open).
 Migration `20261122095554_AddManufacturingOutputPieces` (EF CLI) adds nullable columns and checks only, no backfill; Down
-first refuses with **THROW 52061** while a counted output or counted reversal exists (forward fix). Inventory's production
-output/reversal requests carry no piece field yet, so the output label's piece count is not set by this slice (open for the
-Inventory owner). SQL tests are written; runtime **NOT_RUN** locally.
+first refuses with **THROW 52061** while a counted output or counted reversal exists (forward fix). SQL tests are written;
+runtime **NOT_RUN** locally.
+
+AK-7b: the host (`ManufacturingInventoryReturnOutputHost`) hands the fact's pieces to Inventory in the same transaction —
+`InventoryManufacturingOutputRequestV2.PieceCount` opens the output label with pieces + weighed kg and
+`InventoryManufacturingOutputReversalRequestV1.PieceCount` takes the corrected pieces back from it; an uncounted output or
+correction sends none, so every earlier request and fact keeps its hash. The output product selector
+(`GET /api/v1/manufacturing/references/output-products`) answers each candidate's `pieceCounting`
+(`Counted` / `NotCounted` / `SourceMissing` / `Unavailable`) from the same Product owner port by the declaration's own rule
+(`ManufacturingOutputPieceCountingRuleV1`), so the form shows the piece field only for a counted product; the declaration
+still decides on the server. `SettingsHostWiringTests` proves the real host hands `ManufacturingCommandService` the port.
+Still closed: a production **input** issue/return from a piece-tracking label (Manufacturing sends no piece count for
+inputs, so Inventory refuses it fail-closed), and the deviation threshold (URT-D51 (5) open; ASSUMPTION-AK7-1 is a
+reversible display scale only).

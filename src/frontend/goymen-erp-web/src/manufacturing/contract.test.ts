@@ -330,6 +330,7 @@ describe('output selector contracts', () => {
     code: 'PRD-12',
     name: 'Galvaniz bant',
     stockUnitCode: 'kg',
+    pieceCounting: 'NotCounted',
   }
   const location = {
     locationId: 'a0000000-0000-4000-8000-000000000002',
@@ -345,6 +346,24 @@ describe('output selector contracts', () => {
       .toEqual({ items: [product], searchWindowFull: false })
     expect(decodeManufacturingOutputLocationCandidates({ items: [location], searchWindowFull: true }))
       .toEqual({ items: [location], searchWindowFull: true })
+  })
+
+  it.each(['Counted', 'NotCounted', 'SourceMissing', 'Unavailable'])('reads the piece counting %s as sent', (pieceCounting) => {
+    expect(decodeManufacturingOutputProductCandidates({ items: [{ ...product, pieceCounting }], searchWindowFull: false })
+      ?.items[0].pieceCounting).toBe(pieceCounting)
+  })
+
+  it.each([
+    ['another word', 'Maybe'], ['a differently cased word', 'counted'], ['null', null], ['a flag', true], ['a number', 1],
+    ['an empty text', ''],
+  ])('fails the whole list closed on a piece counting that is %s', (_name, pieceCounting) => {
+    expect(decodeManufacturingOutputProductCandidates({ items: [{ ...product, pieceCounting }], searchWindowFull: false }))
+      .toBeNull()
+  })
+
+  it('fails closed when the piece counting is missing', () => {
+    const { pieceCounting: _omitted, ...withoutCounting } = product
+    expect(decodeManufacturingOutputProductCandidates({ items: [withoutCounting], searchWindowFull: false })).toBeNull()
   })
 
   it('fails closed on duplicate ids, noncanonical versions and extra owner fields', () => {

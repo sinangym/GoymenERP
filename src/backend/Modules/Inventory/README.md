@@ -974,3 +974,24 @@ Down first refuses with **THROW 51926** while either proof table contains rows. 
   `TransferReceipts`, `TransferOverageRenewals` and `StockScraps` (pure DDL). Down first refuses with **THROW 52031** while
   any of them carries a piece count (forward fix). Real SQL acceptance:
   `InventorySqlServerRelationalAcceptanceTests.MovementPieceCounts.cs`, **NOT_RUN** locally.
+
+### AK-4b — pieces on the physical sales allocation (KLN-D119, SAT-D434)
+
+- A physical sales allocation of a piece-tracking label holds pieces next to its kilograms
+  (`StockAllocation.AllocatedPieces/RemainingPieces`, `Allocations.AllocatedPieces/RemainingPieces`). Create and change
+  take an optional `pieceCount`: required when the label's free stock (create, move target) or the allocation (resize)
+  tracks pieces (422 `inventory_allocation_piece_count_required`, fail-closed), refused on a kg-only label or allocation
+  (422 `inventory_allocation_piece_count_not_tracked`, no backfill). The pieces must fit the label's unreserved pieces
+  (409 `inventory_allocation_insufficient_free_pieces`) and — while every other active allocation of the position holds
+  pieces — run out together with the unreserved kilograms (422 `inventory_allocation_piece_count_invalid`).
+- The definite shipment consumes the allocation's pieces with its kilograms (`StockAllocation.Consume`): an allocation
+  that holds pieces needs the shipment's `PieceCount` (400 `inventory_definite_shipment_quantity_invalid` when missing or
+  when pieces and kilograms would not run out together; 409 `…allocation_insufficient` above the held pieces). Release and
+  the source side of a move free the held pieces. The allocation view carries `allocatedPieces`/`remainingPieces` only
+  when pieces are held, and a request without pieces keeps its stored idempotency hash.
+- Allocations written before AK-4b and those of other writers (future-supply conversion, Manufacturing plan input,
+  subcontract) stay piece-less; they behave exactly as before. The goods-receipt reversal hold release keeps a released
+  allocation's stored pieces untouched (only active allocations are deducted from a label's free pieces).
+- `20261122141220_AddInventoryAllocationPieces` adds the two nullable columns and `CK_Allocations_Pieces` (pure DDL). Down
+  first refuses with **THROW 52022** while any allocation carries pieces (forward fix). Real SQL acceptance:
+  `InventorySqlServerRelationalAcceptanceTests.AllocationPieces.cs`, **NOT_RUN** locally.

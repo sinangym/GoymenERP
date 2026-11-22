@@ -40,8 +40,70 @@ public static class ManufacturingOutputPieceCodesV1
     public const string SourceUnavailable = "manufacturing_output_piece_source_unavailable";
 }
 
+/// <summary>
+/// AK-7b (URT-D112): whether an output of a product is counted in pieces, as the Product owner's theoretical kg per piece
+/// read answers it. The output declaration and the output product selector both use
+/// <see cref="ManufacturingOutputPieceCountingRuleV1.Classify"/>, so the form knows beforehand what the command will ask.
+/// </summary>
+public static class ManufacturingOutputPieceCountingV1
+{
+    /// <summary>The card names the piece unit with a theoretical kg per piece: the output is declared with pieces + weighed kg.</summary>
+    public const string Counted = "Counted";
+
+    /// <summary>The card does not name the piece unit: the output carries kilograms only and a piece count is refused.</summary>
+    public const string NotCounted = "NotCounted";
+
+    /// <summary>The card names the piece unit but has no theoretical kg per piece source: the declaration is refused (fail-closed).</summary>
+    public const string SourceMissing = "SourceMissing";
+
+    /// <summary>The Product owner's read is not wired, unreadable or inconsistent: the declaration answers unavailable.</summary>
+    public const string Unavailable = "Unavailable";
+}
+
+public static class ManufacturingOutputPieceCountingRuleV1
+{
+    /// <summary>
+    /// The one reading of the Product owner's answer for (company, product, piece unit). Anything that is not the owner's
+    /// current-contract answer for exactly this company and product is <see cref="ManufacturingOutputPieceCountingV1.Unavailable"/>.
+    /// </summary>
+    public static string Classify(ProductTheoreticalKilogramsPerUnitAnswerV1? answer, Guid companyId, Guid productId)
+    {
+        if (answer is null || answer.ContractVersion != ProductTheoreticalKilogramsPerUnitContractV1.Version)
+        {
+            return ManufacturingOutputPieceCountingV1.Unavailable;
+        }
+
+        switch (answer.Outcome)
+        {
+            case ProductTheoreticalKilogramsPerUnitOutcomeV1.NoSource
+                when answer.Code == ProductTheoreticalKilogramsPerUnitCodesV1.UnitNotOnCard:
+                return ManufacturingOutputPieceCountingV1.NotCounted;
+            case ProductTheoreticalKilogramsPerUnitOutcomeV1.NoSource:
+            case ProductTheoreticalKilogramsPerUnitOutcomeV1.Refused:
+                return ManufacturingOutputPieceCountingV1.SourceMissing;
+            case ProductTheoreticalKilogramsPerUnitOutcomeV1.Found:
+                break;
+            default:
+                return ManufacturingOutputPieceCountingV1.Unavailable;
+        }
+
+        return answer is { KilogramsPerUnit: not null, Evidence: { } evidence }
+            && evidence.CompanyId == companyId && evidence.ProductId == productId
+            && evidence.UnitId == SettingsUnitIdentitiesV1.Piece && evidence.UnitKind == ProductPhysicalUnitKindV1.Piece
+                ? ManufacturingOutputPieceCountingV1.Counted
+                : ManufacturingOutputPieceCountingV1.Unavailable;
+    }
+}
+
 public sealed partial class ManufacturingCommandService
 {
+    /// <summary>
+    /// AK-7b: whether the host handed this service the Product owner's theoretical kg per piece read. Without it every
+    /// output declaration answers <see cref="ManufacturingOutputPieceCodesV1.SourceUnavailable"/>; the host-wiring test
+    /// reads this to prove the real composition binds it.
+    /// </summary>
+    internal bool HasProductKilogramsPerPiecePort => productKilogramsPerPiece is not null;
+
     /// <summary>
     /// AK-7 (URT-D112): asks the Product owner whether the output's product is counted in pieces and, when it is, captures
     /// the theoretical kg per piece with its source evidence. The piece unit is the Settings standard identity
@@ -68,36 +130,29 @@ public sealed partial class ManufacturingCommandService
         var companyId = companyContext.CompanyId;
         var answer = await productKilogramsPerPiece.ReadAsync(productId, SettingsUnitIdentitiesV1.Piece, effectiveOn,
             cancellationToken);
-        if (answer is null || answer.ContractVersion != ProductTheoreticalKilogramsPerUnitContractV1.Version
-            || !companyContext.IsResolved || companyContext.CompanyId != companyId)
+        if (!companyContext.IsResolved || companyContext.CompanyId != companyId)
         {
             return (null, PieceSourceUnavailable());
         }
 
-        switch (answer.Outcome)
+        switch (ManufacturingOutputPieceCountingRuleV1.Classify(answer, companyId, productId))
         {
-            case ProductTheoreticalKilogramsPerUnitOutcomeV1.NoSource
-                when answer.Code == ProductTheoreticalKilogramsPerUnitCodesV1.UnitNotOnCard:
+            case ManufacturingOutputPieceCountingV1.NotCounted:
                 return pieceCount is null
                     ? (null, null)
                     : throw new ManufacturingRuleException(ManufacturingRuleCodes.OutputPiecesNotApplicable,
                         "Bu ürün adetle izlenmiyor; çıktı adet taşımaz.");
-            case ProductTheoreticalKilogramsPerUnitOutcomeV1.NoSource:
-            case ProductTheoreticalKilogramsPerUnitOutcomeV1.Refused:
+            case ManufacturingOutputPieceCountingV1.SourceMissing:
                 return (null, new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unprocessable, null, false,
                     ManufacturingOutputPieceCodesV1.KilogramsPerPieceSourceMissing));
-            case ProductTheoreticalKilogramsPerUnitOutcomeV1.Found:
+            case ManufacturingOutputPieceCountingV1.Counted:
                 break;
             default:
                 return (null, PieceSourceUnavailable());
         }
 
-        if (answer is not { KilogramsPerUnit: { } kilogramsPerPiece, Evidence: { } evidence }
-            || evidence.CompanyId != companyId || evidence.ProductId != productId
-            || evidence.UnitId != SettingsUnitIdentitiesV1.Piece || evidence.UnitKind != ProductPhysicalUnitKindV1.Piece)
-        {
-            return (null, PieceSourceUnavailable());
-        }
+        var kilogramsPerPiece = answer.KilogramsPerUnit!.Value;
+        var evidence = answer.Evidence!;
 
         if (pieceCount is not { } count)
         {

@@ -38,6 +38,8 @@ export interface ShipmentAllocation {
   readonly allocationVersion: string
   readonly labelVersion: string
   readonly remainingKg: string
+  /** KLN-D119: the pieces the allocation still holds; absent when it holds none (a kg-only label). */
+  readonly remainingPieces?: number
   readonly status: 'Active' | 'Consumed' | 'Released'
 }
 
@@ -53,6 +55,9 @@ const guid = (value: unknown): value is string => typeof value === 'string'
   && value !== '00000000-0000-0000-0000-000000000000'
 const version = (value: unknown): value is string => typeof value === 'string' && /^[1-9][0-9]{0,18}$/.test(value)
 const decimal = (value: unknown): value is string => typeof value === 'string' && /^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,3})?$/.test(value)
+/** An optional piece member: absent is "no pieces"; present must be a whole number (never null, text or a fraction). */
+const optionalPieces = (value: unknown): value is number | undefined => value === undefined
+  || (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 2147483647)
 
 /**
  * An instruction does not publish ProductVersion. Do not invent it or import a Sales-private decoder.
@@ -74,12 +79,17 @@ export function decodeShipmentAllocations(value: unknown, companyId: string, lin
       || !version(allocation.version) || !version(item.labelVersion)
       || typeof allocation.demandProductVersion !== 'string' || allocation.demandProductVersion.trim().length === 0
       || !decimal(allocation.remainingKg) || !decimal(allocation.allocatedKg)
+      || !optionalPieces(allocation.allocatedPieces) || !optionalPieces(allocation.remainingPieces)
+      // KLN-D119: both piece figures or neither; the held pieces never exceed the allocated ones.
+      || (allocation.allocatedPieces === undefined) !== (allocation.remainingPieces === undefined)
+      || (allocation.allocatedPieces !== undefined && allocation.remainingPieces! > allocation.allocatedPieces)
       || (allocation.status !== 'Active' && allocation.status !== 'Consumed' && allocation.status !== 'Released')) return null
     const zero = /^0(?:\.0+)?$/.test(allocation.remainingKg)
     if (allocation.status === 'Active' ? zero : !zero) return null
     seen.add(allocation.allocationId)
     items.push({ allocationId: allocation.allocationId, labelId: allocation.labelId, allocationVersion: allocation.version,
-      labelVersion: item.labelVersion, remainingKg: allocation.remainingKg, status: allocation.status })
+      labelVersion: item.labelVersion, remainingKg: allocation.remainingKg, status: allocation.status,
+      ...(allocation.remainingPieces === undefined ? {} : { remainingPieces: allocation.remainingPieces }) })
   }
   return { items, searchWindowFull: source.searchWindowFull }
 }

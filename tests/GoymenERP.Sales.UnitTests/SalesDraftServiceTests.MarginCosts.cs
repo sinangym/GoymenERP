@@ -237,6 +237,61 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(reads, source.Reads);
     }
 
+    private static async Task<(World World, Guid DraftId)> ApprovedPieceOrderAsync(MarginCostSource source, string key)
+    {
+        // The world's order currency is a synthetic foreign one: its approval-day rate is frozen with the cost (SAT-D426).
+        var world = new World
+        {
+            MarginCosts = source, KilogramsPerUnit = new FakeKilogramsPerUnit { Figure = 12.345m },
+            ExchangeRates = new FakeExchangeRates(ExchangeRateResolutionStatesV1.Resolved, "34.5678"),
+        };
+        world.Settings.PieceUnits.Add(PieceUnit);
+        var priced = Priced(discount: null);
+        var request = priced with
+        {
+            Lines = [priced.Lines[0] with { OrderUnitId = PieceUnit, Quantity = "100", RequestedDeliverySlices = null,
+                UnitPrice = "10.00", PriceUnitId = PieceUnit }],
+        };
+        var created = (await world.Service().CreateDraftAsync(request, Metadata(key + "-create"))).Detail;
+        var version = await ApproveDiscountChecksAsync(world, created.Draft.Id, created.Draft.Version, created.Lines[0].LineId);
+        var submitted = await world.Service().SubmitDraftAsync(created.Draft.Id, Command(version), Metadata(key + "-submit"));
+        await world.Service().ApproveDraftAsync(created.Draft.Id, Command(submitted.Detail.Draft.Version), Metadata(key + "-approve"));
+        return (world, created.Draft.Id);
+    }
+
+    [Fact]
+    public async Task SAT_D438_golden_M08_an_approved_piece_line_reads_the_kg_cost_and_shows_the_margin_at_the_pinned_kg_per_unit()
+    {
+        // M08: 100 adet × 10,00 = 1 000,00 (foreign) at the frozen 34,5678 → 34 567,80 TL; c = 19,9936 TL/kg; k = 12,345 kg/adet
+        // pinned at approval → 9 885,70 TL, 28,60 %.
+        var source = new MarginCostSource { Cost = 19.9936m, CostCurrency = SettingsCurrencyIdentitiesV1.TurkishLira };
+        var (world, draftId) = await ApprovedPieceOrderAsync(source, "m08-piece");
+
+        var margin = Assert.Single((await world.Service().GetDraftLinePricingAsync(draftId)).Margin.Lines!);
+
+        Assert.Equal(("9885.70", "28.60", null), (margin.Amount, margin.Percent, margin.UnavailableReason));
+        // The cost is asked and pinned per kilogram, never per piece: no converted cost crosses the port (TM1).
+        Assert.All(source.AskedUnits, unit => Assert.Equal(SettingsUnitIdentitiesV1.Kilogram, unit));
+        var pin = Assert.Single(Assert.Single(world.Store.Drafts).MarginCosts);
+        Assert.Equal((SettingsUnitIdentitiesV1.Kilogram, (decimal?)19.9936m), (pin.UnitId, pin.CostPerUnit));
+    }
+
+    [Theory]
+    [InlineData(SalesLineMarginUnavailableReason.CostNoSource)]
+    [InlineData(SalesLineMarginUnavailableReason.CostUnreadable)]
+    [InlineData(SalesLineMarginUnavailableReason.ProducedItem)]
+    [InlineData(SalesLineMarginUnavailableReason.MixedSourceItem)]
+    public async Task SAT_D438_golden_M14_a_piece_line_keeps_the_cost_owners_reason_and_shows_no_figure(
+        SalesLineMarginUnavailableReason reason)
+    {
+        var source = new MarginCostSource { Reason = reason };
+        var (world, draftId) = await ApprovedPieceOrderAsync(source, "m14-" + reason);
+
+        var margin = Assert.Single((await world.Service().GetDraftLinePricingAsync(draftId)).Margin.Lines!);
+
+        Assert.Equal((null, null, reason.ToString()), (margin.Amount, margin.Percent, margin.UnavailableReason));
+    }
+
     private sealed class MarginCostSource : ISalesMarginCostReadPortV1
     {
         public int Reads { get; private set; }
@@ -245,10 +300,12 @@ public sealed partial class SalesDraftServiceTests
         public Guid? WrongCompany { get; set; }
         public Action? OnRead { get; set; }
         public SalesLineMarginUnavailableReason? Reason { get; set; }
+        public List<Guid> AskedUnits { get; } = [];
         public Task<SalesMarginCostReadAnswerV1> ReadAsync(Guid companyId, Guid productId, Guid unitId, DateOnly effectiveOn,
             CancellationToken cancellationToken = default)
         {
             Reads++;
+            AskedUnits.Add(unitId);
             OnRead?.Invoke();
             return Task.FromResult(new SalesMarginCostReadAnswerV1(1, WrongCompany ?? companyId, productId, unitId,
                 Reason is null ? CostCurrency : null, Reason is null ? Cost : null, Reason, "{\"syntheticOwnerVersion\":17}"));

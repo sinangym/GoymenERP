@@ -1109,6 +1109,14 @@ kg/unit, 3 decimals) and the scale kg carried by the weighing difference are sto
 (`TheoreticalKg`, `ActualKg`) and never change an amount; the invoice line guard trigger covers them. EF-generated
 `20261122101114_AddSalesPieceLineKilograms`: Down first refuses with **THROW 52051** while a pinned figure or invoice kg information
 exists (forward fix), then restores the previous trigger body. The kg price read (`GET /api/v1/sales/drafts/{id}/kilogram-prices`,
-invoice `kilogramPrices`) and the piece-line margin (kg cost x pinned kg/unit) stay closed behind `KilogramPriceGoldenAccepted` and
-`PieceMarginGoldenAccepted` (both `false`) until the independent golden `ADET_KG_FORMUL_GOLDEN_V1` is in main; their calculators
-are pinned to golden rows K01-K19 and M01-M12 by unit tests. Real-SQL acceptance is not run locally.
+invoice `kilogramPrices`) and the piece-line margin (kg cost x pinned kg/unit) are **open** since AK-4b/AK-7b:
+`KilogramPriceGoldenAccepted` and `PieceMarginGoldenAccepted` are `true` because the independent golden
+`ADET_KG_FORMUL_GOLDEN_V1` travels in the same train (PR #1201). Their calculators are pinned by row id to golden K01-K19
+(K07 out of scope, SAT-D443) and M01-M14 (M05/M15 out of scope); the closed path stays measured through the named switch
+parameters (`GetDraftKilogramPricesAsync(.., kilogramPriceOpen)`, `SalesInvoiceService.KilogramPrices(.., kilogramPriceOpen)`,
+`CalculateMarginInTurkishLira(.., pieceMarginOpen)`). A piece line's margin cost is read and pinned per kilogram (never a
+converted per-piece cost, TM1). N2 stays open: a document-level kg price is hidden while any line is not a kg-bearing goods
+line (K17/K18). The order realization counts only **finalised** invoices - one named rule,
+`SalesDraftService.EntersKilogramPriceRealization` (SAT-D452; a finalised invoice whose last Finance answer is a refusal
+stays out until a re-drive is admitted, SAT-D457); an invoice's own kg price block is shown on the document in every state. Real-SQL
+acceptance is not run locally.

@@ -784,10 +784,14 @@ public sealed partial class SalesInvoiceService(
     /// SAT-D436 / SAT-D439 (AK-5): an invoice with a piece line shows each line's theoretical and actual kg price and the document's
     /// (the shared calculator; document figures only while every line has that kg). Closed until the formula golden is in main.
     /// </summary>
-    internal static SalesInvoiceKilogramPricesV1? KilogramPrices(SalesInvoice invoice)
+    internal static SalesInvoiceKilogramPricesV1? KilogramPrices(SalesInvoice invoice) =>
+        KilogramPrices(invoice, SalesDraftService.KilogramPriceGoldenAccepted);
+
+    /// <summary>The same block with the AK-5 switch named, so the closed and the open path are both measured by tests.</summary>
+    internal static SalesInvoiceKilogramPricesV1? KilogramPrices(SalesInvoice invoice, bool kilogramPriceOpen)
     {
         if (!invoice.Lines.Any(line => line.Share.CarriesKilogramInformation)) return null;
-        if (!SalesDraftService.KilogramPriceGoldenAccepted)
+        if (!kilogramPriceOpen)
             return new SalesInvoiceKilogramPricesV1(SalesKilogramPriceStatesV1.FormulaGoldenPending);
         var lines = invoice.Lines.OrderBy(line => line.LineNo).Select(line =>
         {

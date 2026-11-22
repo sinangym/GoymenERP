@@ -172,7 +172,8 @@ internal sealed class InventoryAllocationSuggestionReader(
             kind,
             string.Equals(kind, InventoryAllocationSuggestionKindsV1.SimilarProduct, StringComparison.Ordinal),
             Kilograms.Of(label.UnreservedKg).ToString(),
-            maximumDeviationPercent);
+            maximumDeviationPercent,
+            label.UnreservedPieces);
 
     /// <summary>
     /// The labels with exactly one free position that is company-owned and company-held and still has unreserved
@@ -199,7 +200,7 @@ internal sealed class InventoryAllocationSuggestionReader(
                 select new FreePosition(
                     label.Id, label.Code, label.Version, label.ProductId, label.ProductVersion,
                     balance.OwnerKind, balance.OwnerId, balance.CustodianKind, balance.CustodianId,
-                    balance.LocationId, balance.QuantityKg))
+                    balance.LocationId, balance.QuantityKg, balance.PieceCount))
             .Take(InventoryAllocationSuggestionLimitsV1.MaximumScannedPositions + 1)
             .ToListAsync(cancellationToken);
 
@@ -229,24 +230,30 @@ internal sealed class InventoryAllocationSuggestionReader(
             .Where(row => row.CompanyId == companyId && labelIds.Contains(row.LabelId)
                 && row.Block == free && row.Status == active)
             .Select(row => new ActiveAllocation(row.LabelId, row.OwnerKind, row.OwnerId, row.CustodianKind,
-                row.CustodianId, row.LocationId, row.RemainingKg))
+                row.CustodianId, row.LocationId, row.RemainingKg, row.RemainingPieces))
             .ToListAsync(cancellationToken);
 
         var labels = new List<EligibleLabel>();
         foreach (var position in candidates)
         {
-            var reserved = allocations
+            var held = allocations
                 .Where(allocation => allocation.LabelId == position.LabelId
                     && allocation.OwnerKind == position.OwnerKind && allocation.OwnerId == position.OwnerId
                     && allocation.CustodianKind == position.CustodianKind
                     && allocation.CustodianId == position.CustodianId
                     && allocation.LocationId == position.LocationId)
-                .Sum(allocation => allocation.RemainingKg);
-            var unreserved = position.QuantityKg - reserved;
+                .ToList();
+            var unreserved = position.QuantityKg - held.Sum(allocation => allocation.RemainingKg);
             if (unreserved > 0m)
             {
+                // KLN-D119 (AK-4b): a piece-tracking label says how many pieces no active allocation holds (the create's own
+                // rule, StockAllocation.UnreservedPieces); a kg-only label says nothing.
+                int? unreservedPieces = position.PieceCount is { } pieces
+                    ? StockAllocation.UnreservedPieces(PieceCount.Of(pieces),
+                        PieceCount.Of(held.Sum(allocation => allocation.RemainingPieces ?? 0))).Value
+                    : null;
                 labels.Add(new EligibleLabel(position.LabelId, position.Code, position.Version, position.ProductId,
-                    position.ProductVersion, unreserved));
+                    position.ProductVersion, unreserved, unreservedPieces));
             }
         }
 
@@ -264,7 +271,8 @@ internal sealed class InventoryAllocationSuggestionReader(
         int CustodianKind,
         Guid CustodianId,
         Guid LocationId,
-        decimal QuantityKg);
+        decimal QuantityKg,
+        int? PieceCount);
 
     private sealed record ActiveAllocation(
         Guid LabelId,
@@ -273,7 +281,8 @@ internal sealed class InventoryAllocationSuggestionReader(
         int CustodianKind,
         Guid CustodianId,
         Guid LocationId,
-        decimal RemainingKg);
+        decimal RemainingKg,
+        int? RemainingPieces);
 
     private sealed record EligibleLabel(
         Guid LabelId,
@@ -281,7 +290,8 @@ internal sealed class InventoryAllocationSuggestionReader(
         long Version,
         Guid ProductId,
         string? ProductVersion,
-        decimal UnreservedKg);
+        decimal UnreservedKg,
+        int? UnreservedPieces);
 
     private sealed record EligibleWindow(IReadOnlyList<EligibleLabel> Labels, bool Truncated);
 }

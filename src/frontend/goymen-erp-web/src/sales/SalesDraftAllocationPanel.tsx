@@ -11,8 +11,10 @@ import {
 } from './allocationApi'
 import {
   CREATE_ALLOCATION_422_CODES,
+  CREATE_ALLOCATION_INSUFFICIENT_FREE_PIECES,
   isGuid,
   isPositiveVersion,
+  parseAllocationPieceCount,
   type AllocationScope,
   type CreatePhysicalAllocationBody,
   type PhysicalAllocation,
@@ -57,7 +59,22 @@ export function SalesDraftAllocationPanel(props: SalesDraftAllocationPanelProps)
   )
 }
 
+/**
+ * KLN-D119: what the form knows about the picked label's pieces. A suggestion says it (`tracked` with the unreserved
+ * count, or `none` for a kg-only label); a label-search pick carries no piece figure, so it is `unknown` and the
+ * server decides (`piece_count_required` / `piece_count_not_tracked`).
+ */
+type PieceMode = 'none' | 'tracked' | 'unknown'
+
+function pieceModeOf(choice: AllocationSuggestionChoice | null): PieceMode {
+  if (choice === null) return 'none'
+  if (choice.piecesKnown !== true) return 'unknown'
+  return choice.unreservedPieces === undefined ? 'none' : 'tracked'
+}
+
 function httpRefusalText(status: number, code: string | null): string {
+  // KLN-D119: fewer unreserved pieces than asked; the list was re-read like every other 409.
+  if (status === 409 && code === CREATE_ALLOCATION_INSUFFICIENT_FREE_PIECES) return T.insufficientFreePieces
   if (status === 409) return T.conflict
   if (status === 401 || status === 403) return T.forbidden
   // Definite refusal: the label's Free position is not both owned and held by the company.
@@ -66,6 +83,9 @@ function httpRefusalText(status: number, code: string | null): string {
   if (status === 422 && code === CREATE_ALLOCATION_422_CODES.substituteNotSimilar) return T.substituteNotSimilar
   // KLN-D66 (3): no central kilogram conversion for the order unit yet; the server refused instead of guessing a factor.
   if (status === 422 && code === CREATE_ALLOCATION_422_CODES.unitConversionUnavailable) return T.unitConversionUnavailable
+  if (status === 422 && code === CREATE_ALLOCATION_422_CODES.pieceCountRequired) return T.pieceCountRequired
+  if (status === 422 && code === CREATE_ALLOCATION_422_CODES.pieceCountNotTracked) return T.pieceCountNotTracked
+  if (status === 422 && code === CREATE_ALLOCATION_422_CODES.pieceCountInvalid) return T.pieceCountInvalid
   return T.failed
 }
 
@@ -91,7 +111,14 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
       return outcome
     },
   })
-  const [selectedLabel, setSelectedLabel] = useState<AllocationSuggestionChoice | null>(null)
+  const [selectedLabel, setSelectedLabelState] = useState<AllocationSuggestionChoice | null>(null)
+  const [pieceCount, setPieceCount] = useState('')
+  // A piece count belongs to the label it was typed for: another pick starts empty.
+  const setSelectedLabel = (choice: AllocationSuggestionChoice | null) => {
+    setSelectedLabelState(choice)
+    setPieceCount('')
+  }
+  const pieceMode = pieceModeOf(selectedLabel)
   // A recorded allocation or a version conflict makes the picked label's version stale: the picker is
   // remounted empty so the next allocation starts from a fresh Inventory read.
   const [pickerGeneration, setPickerGeneration] = useState(0)
@@ -139,6 +166,28 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
   }
 
   const sendCreate = async (body?: CreatePhysicalAllocationBody) => {
+    // KLN-D119: a tracked label needs a whole piece count within its unreserved pieces; a kg-only label sends none.
+    let pieces: number | null = null
+    if (body === undefined && pieceMode !== 'none') {
+      const typed = pieceCount.trim()
+      if (typed.length === 0) {
+        if (pieceMode === 'tracked') {
+          setNotice({ tone: 'error', text: T.pieceCountMissing })
+          return
+        }
+      } else {
+        pieces = parseAllocationPieceCount(typed)
+        if (pieces === null) {
+          setNotice({ tone: 'error', text: T.pieceCountValidation })
+          return
+        }
+        const unreserved = selectedLabel?.unreservedPieces
+        if (unreserved !== undefined && pieces > unreserved) {
+          setNotice({ tone: 'error', text: T.pieceCountExceeds(unreserved) })
+          return
+        }
+      }
+    }
     const candidate = body ?? {
       allocationId: globalThis.crypto.randomUUID(),
       salesOrderId,
@@ -150,6 +199,7 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
       reservedUntilUtc: null,
       // Only a confirmed similar-product suggestion carries the flag; a plain create keeps its original body.
       ...(selectedLabel?.isSubstitute === true ? { isSubstitute: true as const } : {}),
+      ...(pieces === null ? {} : { pieceCount: pieces }),
     }
     if (!isGuid(candidate.labelId) || !isPositiveVersion(candidate.expectedLabelVersion)
       || candidate.quantityKg.length === 0 || candidate.reason.length === 0) {
@@ -240,7 +290,19 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
                         {allocation.isSubstitute ? <>{' '}<span className={styles.badge}>{T.substituteBadge}</span></> : null}
                       </td>
                       <td>{allocation.status === 'Active' ? T.active : allocation.status === 'Consumed' ? T.consumed : T.released}</td>
-                      <td>{allocation.allocatedKg}</td><td>{allocation.remainingKg}</td><td>{allocation.version}</td>
+                      <td>
+                        {allocation.allocatedKg}
+                        {allocation.allocatedPieces === undefined ? null : (
+                          <>{' · '}<span data-testid={`sales-allocation-allocated-pieces-${allocation.allocationId}`}>{T.pieces(allocation.allocatedPieces)}</span></>
+                        )}
+                      </td>
+                      <td>
+                        {allocation.remainingKg}
+                        {allocation.remainingPieces === undefined ? null : (
+                          <>{' · '}<span data-testid={`sales-allocation-remaining-pieces-${allocation.allocationId}`}>{T.pieces(allocation.remainingPieces)}</span></>
+                        )}
+                      </td>
+                      <td>{allocation.version}</td>
                       <td>{allocation.status !== 'Active' ? null : pendingRelease !== null ? (
                         <Button type="button" variant="secondary" disabled={busy}
                           onClick={() => void sendRelease(allocation, pendingRelease.body)}>{T.retryRelease}</Button>
@@ -272,6 +334,21 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
           <div className={styles.grid}>
             <label htmlFor={`allocation-quantity-${line.lineId}`}>{T.quantity}</label>
             <input id={`allocation-quantity-${line.lineId}`} inputMode="decimal" value={quantityKg} onChange={(event) => setQuantityKg(event.target.value)} />
+            {pendingCreate === null && pieceMode !== 'none' ? (
+              <>
+                <label htmlFor={`allocation-piece-count-${line.lineId}`}>{T.pieceCount}</label>
+                <div>
+                  <input id={`allocation-piece-count-${line.lineId}`} type="text" inputMode="numeric" autoComplete="off"
+                    value={pieceCount} required={pieceMode === 'tracked'} aria-required={pieceMode === 'tracked'}
+                    aria-describedby={`allocation-piece-count-hint-${line.lineId}`}
+                    onChange={(event) => setPieceCount(event.target.value)} />
+                  <p id={`allocation-piece-count-hint-${line.lineId}`} className={styles.muted}>
+                    {pieceMode === 'tracked' && selectedLabel?.unreservedPieces !== undefined
+                      ? T.pieceCountRequiredHint(selectedLabel.unreservedPieces) : T.pieceCountUnknownHint}
+                  </p>
+                </div>
+              </>
+            ) : null}
             <label htmlFor={`allocation-reason-${line.lineId}`}>{T.reason}</label>
             <input id={`allocation-reason-${line.lineId}`} value={reason} onChange={(event) => setReason(event.target.value)} />
             <label htmlFor={`allocation-release-reason-${line.lineId}`}>{T.releaseReason}</label>

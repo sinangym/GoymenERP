@@ -155,7 +155,9 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
             allocation = StockAllocation.Restore(allocationRow.Id, position,
                 Kilograms.Positive(allocationRow.AllocatedKg),
                 Kilograms.Of(allocationRow.RemainingKg), allocationRow.Version,
-                (StockAllocationStatus)allocationRow.Status);
+                (StockAllocationStatus)allocationRow.Status,
+                allocationRow.AllocatedPieces is { } allocatedPieces ? PieceCount.Of(allocatedPieces) : null,
+                allocationRow.RemainingPieces is { } remainingPieces ? PieceCount.Of(remainingPieces) : null);
         }
         catch (Exception exception) when (exception is InventoryRuleException or ArgumentException)
         {
@@ -175,22 +177,6 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
         {
             throw Refused(409, InventoryDefiniteShipmentCodesV1.LabelNotReleasable);
         }
-        try
-        {
-            allocation.Consume(expectedAllocationVersion, request.LabelId, quantity);
-        }
-        catch (StockAllocationException exception)
-        {
-            throw exception.Failure switch
-            {
-                StockAllocationFailure.VersionConflict => Refused(409, InventoryDefiniteShipmentCodesV1.AllocationVersionConflict),
-                StockAllocationFailure.StateConflict => Refused(409, InventoryDefiniteShipmentCodesV1.AllocationState),
-                StockAllocationFailure.LabelMismatch => Refused(409, InventoryDefiniteShipmentCodesV1.AllocationLabelMismatch),
-                StockAllocationFailure.Insufficient => Refused(409, InventoryDefiniteShipmentCodesV1.AllocationInsufficient),
-                _ => Refused(503, InventoryDefiniteShipmentCodesV1.Unavailable),
-            };
-        }
-
         PieceCount? pieces;
         try
         {
@@ -199,6 +185,27 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
         catch (InventoryRuleException)
         {
             throw Refused(400, InventoryDefiniteShipmentCodesV1.InvalidQuantity);
+        }
+
+        try
+        {
+            // KLN-D119 / SAT-D434 (AK-4b): an allocation that holds pieces gives them up with its kilograms.
+            allocation.Consume(expectedAllocationVersion, request.LabelId, quantity, pieces);
+        }
+        catch (StockAllocationException exception)
+        {
+            throw exception.Failure switch
+            {
+                StockAllocationFailure.VersionConflict => Refused(409, InventoryDefiniteShipmentCodesV1.AllocationVersionConflict),
+                StockAllocationFailure.StateConflict => Refused(409, InventoryDefiniteShipmentCodesV1.AllocationState),
+                StockAllocationFailure.LabelMismatch => Refused(409, InventoryDefiniteShipmentCodesV1.AllocationLabelMismatch),
+                StockAllocationFailure.Insufficient or StockAllocationFailure.PiecesInsufficient =>
+                    Refused(409, InventoryDefiniteShipmentCodesV1.AllocationInsufficient),
+                // The allocation holds pieces and the shipment names none, or pieces and kilograms do not run out together.
+                StockAllocationFailure.PiecesRequired or StockAllocationFailure.PiecesInvalid =>
+                    Refused(400, InventoryDefiniteShipmentCodesV1.InvalidQuantity),
+                _ => Refused(503, InventoryDefiniteShipmentCodesV1.Unavailable),
+            };
         }
 
         var movement = new StockMovement(request.MovementId, companyId, StockMovementKind.Issue,
@@ -244,6 +251,7 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
         var versionBefore = allocationRow.Version;
         var remainingBefore = allocationRow.RemainingKg;
         allocationRow.RemainingKg = allocation.Remaining.Value;
+        allocationRow.RemainingPieces = allocation.RemainingPieces?.Value;
         allocationRow.Status = (int)allocation.Status;
         allocationRow.Version = allocation.Version;
         allocationRow.UpdatedAtUtc = clock.GetUtcNow();

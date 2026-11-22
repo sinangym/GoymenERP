@@ -374,6 +374,41 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
         Assert.False(fixture.Writer.CreateRequest!.IsSubstitute);
     }
 
+    [Fact]
+    public async Task The_piece_count_of_a_create_and_a_change_reaches_the_writer_and_an_absent_one_stays_absent()
+    {
+        // KLN-D119 / SAT-D434 (AK-4b): the host only forwards the count; the stock owner decides whether the label needs it.
+        var (countedCreate, countedChange, plainCreate, plainChange) = (Fixture(), Fixture(), Fixture(), Fixture());
+        await countedCreate.Service.CreateAsync(CreateRequest() with { PieceCount = 4 }, Metadata(), CancellationToken.None);
+        await countedChange.Service.ChangeAsync(Guid.NewGuid(), ChangeRequest() with { PieceCount = 2 }, Metadata(), CancellationToken.None);
+        await plainCreate.Service.CreateAsync(CreateRequest(), Metadata(), CancellationToken.None);
+        await plainChange.Service.ChangeAsync(Guid.NewGuid(), ChangeRequest(), Metadata(), CancellationToken.None);
+
+        Assert.Equal(((int?)4, (int?)2),
+            (countedCreate.Writer.CreateRequest!.PieceCount, countedChange.Writer.Change!.Value.Request.PieceCount));
+        Assert.Equal(((int?)null, (int?)null),
+            (plainCreate.Writer.CreateRequest!.PieceCount, plainChange.Writer.Change!.Value.Request.PieceCount));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task A_piece_count_below_one_is_400_before_the_sales_read(int pieceCount)
+    {
+        var fixture = Fixture();
+
+        var create = await Assert.ThrowsAsync<InventoryPhysicalAllocationHostException>(() =>
+            fixture.Service.CreateAsync(CreateRequest() with { PieceCount = pieceCount }, Metadata(), CancellationToken.None));
+        var change = await Assert.ThrowsAsync<InventoryPhysicalAllocationHostException>(() => fixture.Service.ChangeAsync(
+            Guid.NewGuid(), ChangeRequest() with { PieceCount = pieceCount }, Metadata(), CancellationToken.None));
+
+        Assert.Equal((StatusCodes.Status400BadRequest, InventoryAllocationCodesV1.ValidationFailed), (create.Status, create.Code));
+        Assert.Equal((StatusCodes.Status400BadRequest, InventoryAllocationCodesV1.ValidationFailed), (change.Status, change.Code));
+        Assert.Equal(0, fixture.OrderLines.Calls);
+        Assert.Null(fixture.Writer.CreateRequest);
+        Assert.Null(fixture.Writer.Change);
+    }
+
     private static ChangeInventoryPhysicalAllocationRequestV1 ChangeRequest() => new(
         "1", OrderId, LineId, Guid.NewGuid(), "2", "3", "SENTETIK change", null);
 

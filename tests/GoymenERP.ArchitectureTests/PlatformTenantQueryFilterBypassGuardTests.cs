@@ -392,7 +392,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for AK-2 (KLN-D119): +3 piece-count SQL facts, ordinal-sorted; value from guard_fingerprint.py (b1a5f100… -> 7cadf6ca…); SQL execution NOT_RUN.
                 // Re-fingerprinted for AK-2b (KLN-D119): +2 movement piece-count SQL facts, ordinal-sorted; value from guard_fingerprint.py (7cadf6ca… -> 6e29756c…); SQL execution NOT_RUN.
                 // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): +1 SQL fact, ordinal-sorted; SQL execution NOT_RUN; value from guard_fingerprint.py (6e29756c… -> 10cf1aea…).
-                "10cf1aea73a5edc63eb56776c0b2507f1cfe419e81383d4a8d87e40867d35bcb",
+                // Re-fingerprinted for AK-4b (KLN-D119): +3 allocation piece facts (create/change/release, definite shipment, 52022 Down guard), ordinal-sorted; SQL execution NOT_RUN (10cf1aea… -> 2d0b7ef5…).
+                "2d0b7ef5f820cadcb92524514c51546720f7cbc8ce0805fdbc47eecb00534076",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -461,7 +462,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Tren-1 W6: +7 source facts, ordinal-sorted; SQL execution NOT_RUN.
                 // Re-fingerprinted for tren-1 W7: source facts kept ordinal-sorted; SQL execution NOT_RUN.
                 // Re-fingerprinted for AK-7 (URT-D112): +1 output pieces Down-guard fact, ordinal-sorted (958218df… -> 0be0493b…); SQL execution NOT_RUN.
-                "0be0493be6386b731c2abdb771cacb2be40fac96a7faaaac47dd6a662c46ae52",
+                // Re-fingerprinted for AK-7b (URT-D112): +1 counted output host fact, ordinal-sorted; SQL execution NOT_RUN (0be0493b… -> a93a2623…).
+                "a93a26237c3df639242ef1e463c2c629c7afe24d8dbbffa5aa708a569379bb32",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -1064,7 +1066,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (d88129d1… -> 550ed6dc…).
                 // Re-fingerprinted for AK-2 (KLN-D119): nullable PieceCount columns and their checks on Balances, MovementLines, transformation inputs/outputs and StockCounts.
                 // Re-fingerprinted for AK-2b (KLN-D119): nullable piece columns and checks on TransferBuckets, TransferReceipts, TransferOverageRenewals and StockScraps (784574b9… -> 3f6624d9…).
-                "3f6624d985a1e97fd47f7d0b47d138ced116b14ae9447555109ddb8cf841824b",
+                // Re-fingerprinted for AK-4b (KLN-D119, SAT-D434): Allocations.AllocatedPieces/RemainingPieces with CK_Allocations_Pieces; no query filter or bypass change (3f6624d9… -> fb2fc9f9…).
+                "fb2fc9f9e3e4de1d937759e10313a50f4d7974be5b0adb4da0fa2ce460d6774d",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "f9d6ed01001b1cbfcb725a21daaae4c9f393564e804f1f1293ce9e3717128b04",
@@ -1649,7 +1652,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // Re-fingerprinted for B-01: a definite shipment refuses a non-Sales (plan-input) allocation; provider tokens unchanged.
                         // Re-fingerprinted for AK-2 (KLN-D119): optional piece count threaded through; same database API use.
-                        "8db571bdd9cf302ba08004f2964f948547a2e471319a513bb55fff26585a4dac",
+                        // Re-fingerprinted for AK-4b (KLN-D119): the shipment consumes the allocation's pieces with its kilograms (StockAllocation.Consume) and stores the remaining pieces; same borrowed transaction, no new database API (8db571bd… -> f73f2cb7…).
+                        "f73f2cb767ee6c3350bcdb1c0362219a57ddb465cc8a52905f16a4fa6a9d4706",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -1711,7 +1715,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for tren-1 W6: URT-S2: forward the explicit output-line reference to Inventory; reviewed API counts unchanged (656d12ae... -> 80abcca8...).
                         // W8 K3 review pending: bound correction fact key; same borrowed transaction/context/API counts.
                         // Re-fingerprinted for AK-7 (URT-D112): forward output/correction pieces to the Manufacturing store; same API counts (6231bb2c… -> 37329c38…).
-                        "37329c38e1075161ad56bb0b75ba4a06aea3bb91659b779e1ac05382a46ad177",
+                        // Re-fingerprinted for AK-7b (URT-D112, KLN-D119): the output declaration and the output correction hand the fact's piece count to the Inventory request (null for an uncounted output: same request hash); no new database API, same transaction and fences (37329c38… -> 1a624bf9…).
+                        "1a624bf9d4daa7f17a52f6662ad39179641418833016a4e601f4526787a83a3f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
@@ -1763,7 +1768,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.Allocations.cs"] =
                     new(
                         // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): the substitute allocation flag and the physical demand cap over the same filtered context (6ea71ce1… -> 6b96062b…).
-                        "6b96062b5d3965fc2eef46a23ed31eae1a49d8079fda9b7920b13194497cc349",
+                        // Re-fingerprinted for AK-4b (KLN-D119, SAT-D434): create reserves pieces on a piece-tracking label (required, refused on a kg-only label), release frees them; the piece count joins the payload hash only when given; same single save (6b96062b… -> bde39f7f…).
+                        "bde39f7fe7ab17c4e954f6902773c54ea1dc1a50b3391353a56e990d376e7be4",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1775,7 +1781,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.AllocationChanges.cs"] =
                     new(
                         // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): the substitute allocation flag over the same filtered context (7df810e1… -> 9249f5d0…).
-                        "9249f5d039065ffdd00b13c7d88bb51e9de4931ed14dd54ea46f3348158c006b",
+                        // Re-fingerprinted for AK-4b (KLN-D119): resize/move re-state the allocation's pieces against the position's unreserved pieces; the piece count joins the payload hash only when given; same single save (9249f5d0… -> 08ebf97a…).
+                        "08ebf97ac48652463bdf915e3026074d1e45d4aa458550f4cbe364685fd898f0",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2118,7 +2125,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "Persistence/InventoryAllocationSuggestionReader.cs"] =
                     new(
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (a02d01af… -> b53e0794…).
-                        "b53e07945ae6245aa65dd5b1729a39273d333ccef9187fa04212d3ef6e25eaf7",
+                        // Re-fingerprinted for AK-4b (KLN-D119): a suggestion carries the label's unreserved pieces (balance pieces less active allocation pieces); same company-filtered untracked reads, no new database API (b53e0794… -> d1871d15…).
+                        "d1871d15309b36be2fc701ab9247ca5cdcab3005a729b108471bc57042b0de94",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 // tren-1 wave 3 integration (stok_lojistik, F017-c future supply conversion): the Application port only names the owner's
                 // borrowed connection/transaction types (EnlistAsync); no provider call. Pending the owning team's K3 review.
@@ -6055,6 +6063,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // AK-2b (KLN-D119); K3 review pending. Down refuses (52031, used by no other migration) while any piece count is recorded on transfer buckets, transfer receipts, excess re-requests or stock scraps; AddInventoryMovementPieceCounts is not rolled back (forward fix). Up is pure DDL. 1 lexical Sql call(s).
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261122095820_AddInventoryMovementPieceCounts.cs"] =
                     new("fb9876e93f2481dd86752152cdec9f9ab9e5bc62f1b1850305a43b8edc09def5", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // AK-4b (KLN-D119, SAT-D434); K3 review pending. Down refuses (52022, used by no other migration) while any allocation carries reserved or remaining pieces; AddInventoryAllocationPieces is not rolled back (forward fix). Up is pure DDL. 1 lexical Sql call(s).
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20261122141220_AddInventoryAllocationPieces.cs"] =
+                    new("cae377b065f1bd7f1611c461957489a1ac559a8a3d681db043883287a7e931f5", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Dispatch kilogram source allocations exist; AddDispatchKilogramAllocations is not rolled back (forward fix). 1 lexical Sql call(s).
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261117010812_AddDispatchKilogramAllocations.cs"] =
                     new("67b9b0cab9569062490b2b4d77ed5ebb4f56fabed30129e1f7db48695c316bb5", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),

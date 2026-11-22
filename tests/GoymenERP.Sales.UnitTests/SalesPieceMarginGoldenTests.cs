@@ -9,8 +9,9 @@ namespace GoymenERP.Sales.UnitTests;
 /// <summary>
 /// SAT-D438 (AK-6): a piece line's margin = NetSale − c × k × quantity, exact; c is the kg cost (≤ 4 decimals, G16), k the kg/unit
 /// pinned at approval (SAT-D437); c × k is never rounded (TM1). Rows are the independent golden ADET_KG_FORMUL_GOLDEN_V1 M01–M12
-/// (row id in each case). The switch <see cref="SalesDraftService.PieceMarginGoldenAccepted"/> is closed until that golden is in
-/// main: closed, a piece line keeps <c>UnitConversionUndecided</c>.
+/// (row id in each case), M13 and M14. The switch <see cref="SalesDraftService.PieceMarginGoldenAccepted"/> is open (the golden
+/// travels in this train); the closed path is pinned through the named parameter: closed, a piece line keeps
+/// <c>UnitConversionUndecided</c> and its cost is read in the order unit as before AK-6.
 /// </summary>
 public sealed class SalesPieceMarginGoldenTests
 {
@@ -96,17 +97,35 @@ public sealed class SalesPieceMarginGoldenTests
     }
 
     [Fact]
-    public void AK6_the_piece_margin_switch_is_closed_and_keeps_the_piece_line_undecided()
+    public void SAT_D438_golden_M13_a_zero_kg_cost_is_unreadable_and_never_a_full_margin()
     {
-        Assert.False(SalesDraftService.PieceMarginGoldenAccepted);
+        var snapshot = new SalesMarginCostSnapshot(Guid.NewGuid(), 0, Guid.NewGuid(), Kg, 100m, Tl, 0m, null, "{}",
+            new DateTimeOffset(2026, 11, 22, 9, 0, 0, TimeSpan.Zero));
+
+        var margin = SalesDraftService.CalculateMarginInTurkishLira(Money.Of(25000m, Tl, 2), Piece, 100m, snapshot, 12.345m,
+            pieceMarginOpen: true);
+
+        Assert.Equal(SalesLineMarginUnavailableReason.CostUnreadable, margin.UnavailableReason);
+        Assert.Null(margin.Amount);
+        Assert.Null(margin.Percent);
+    }
+
+    [Fact]
+    public void AK6_closed_the_piece_margin_switch_keeps_the_piece_line_undecided_and_open_it_computes_golden_M01()
+    {
+        Assert.True(SalesDraftService.PieceMarginGoldenAccepted);
         var snapshot = new SalesMarginCostSnapshot(Guid.NewGuid(), 0, Guid.NewGuid(), Kg, 100m, Tl, 19.9936m, null, "{}",
             new DateTimeOffset(2026, 11, 22, 9, 0, 0, TimeSpan.Zero));
 
-        var closed = SalesDraftService.CalculateMarginInTurkishLira(Money.Of(25000m, Tl, 2), Piece, 100m, snapshot, 12.345m);
+        var closed = SalesDraftService.CalculateMarginInTurkishLira(Money.Of(25000m, Tl, 2), Piece, 100m, snapshot, 12.345m,
+            pieceMarginOpen: false);
         var open = SalesDraftService.CalculateMarginInTurkishLira(Money.Of(25000m, Tl, 2), Piece, 100m, snapshot, 12.345m,
             pieceMarginOpen: true);
 
+        var live = SalesDraftService.CalculateMarginInTurkishLira(Money.Of(25000m, Tl, 2), Piece, 100m, snapshot, 12.345m);
+
         Assert.Equal(SalesLineMarginUnavailableReason.UnitConversionUndecided, closed.UnavailableReason);
         Assert.Equal((317.90m, 1.27m), (open.Amount!.Value.Amount, open.Percent!.Value)); // golden M01
+        Assert.Equal(open, live);
     }
 }

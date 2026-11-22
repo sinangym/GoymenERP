@@ -31,7 +31,7 @@ public sealed partial class InventoryStore
         var companyId = companyContext.CompanyId;
         var parsed = ParseCreate(request);
         var keyHash = AllocationKeyHash(metadata.IdempotencyKey);
-        var payloadHash = CreatePayloadHash(request, parsed.ExpectedLabelVersion, parsed.Quantity);
+        var payloadHash = WithPieces(CreatePayloadHash(request, parsed.ExpectedLabelVersion, parsed.Quantity), request.PieceCount);
         if (await FindAllocationReplayAsync(CreatePhysicalAllocationCommand, keyHash, payloadHash, metadata.ActorId,
                 cancellationToken) is { } replay)
         {
@@ -65,17 +65,14 @@ public sealed partial class InventoryStore
             throw AllocationError(422, InventoryAllocationCodesV1.OwnerNotCompany);
         }
 
-        var activeAllocated = await dbContext.Allocations.AsNoTracking()
-            .Where(row => row.LabelId == label.Id
-                && row.OwnerKind == source.OwnerKind && row.OwnerId == source.OwnerId
-                && row.CustodianKind == source.CustodianKind && row.CustodianId == source.CustodianId
-                && row.LocationId == source.LocationId && row.Block == (int)BlockState.Free
-                && row.Status == (int)StockAllocationStatus.Active)
-            .SumAsync(row => (decimal?)row.RemainingKg, cancellationToken) ?? 0m;
-        if (parsed.Quantity.Value > source.QuantityKg - activeAllocated)
+        var active = await ActiveAllocatedAtAsync(source, exceptAllocationId: null, cancellationToken);
+        if (parsed.Quantity.Value > source.QuantityKg - active.Kilograms)
         {
             throw AllocationError(409, InventoryAllocationCodesV1.InsufficientFreeStock);
         }
+
+        // KLN-D119 / SAT-D434: a piece-tracking label is reserved with its pieces, a kg-only label never is.
+        var pieces = ReservablePieces(parsed.Quantity, request.PieceCount, source, active);
 
         var identity = new MaterialLabel(label.Id, label.CompanyId, label.Code, label.ProductId, label.LotId,
             label.ProductVersion);
@@ -83,7 +80,7 @@ public sealed partial class InventoryStore
             new StockOwner((StockPartyKind)source.OwnerKind, source.OwnerId),
             new StockCustodian((StockPartyKind)source.CustodianKind, source.CustodianId),
             source.LocationId, identity, BlockState.Free);
-        var allocation = StockAllocation.Create(request.AllocationId, position, parsed.Quantity);
+        var allocation = StockAllocation.Create(request.AllocationId, position, parsed.Quantity, pieces);
         var now = timeProvider.GetUtcNow();
         var row = new AllocationRow
         {
@@ -106,6 +103,8 @@ public sealed partial class InventoryStore
             IsSubstitute = request.IsSubstitute,
             AllocatedKg = allocation.Allocated.Value,
             RemainingKg = allocation.Remaining.Value,
+            AllocatedPieces = allocation.AllocatedPieces?.Value,
+            RemainingPieces = allocation.RemainingPieces?.Value,
             Status = (int)allocation.Status,
             Version = allocation.Version,
             CreatedAtUtc = now,
@@ -182,8 +181,7 @@ public sealed partial class InventoryStore
             new StockOwner((StockPartyKind)row.OwnerKind, row.OwnerId),
             new StockCustodian((StockPartyKind)row.CustodianKind, row.CustodianId),
             row.LocationId, identity, (BlockState)row.Block);
-        var allocation = StockAllocation.Restore(row.Id, position, Kilograms.Positive(row.AllocatedKg),
-            Kilograms.Of(row.RemainingKg), row.Version, (StockAllocationStatus)row.Status);
+        var allocation = Restore(row, position);
         try
         {
             allocation.Release(expectedVersion);
@@ -201,6 +199,8 @@ public sealed partial class InventoryStore
         var now = timeProvider.GetUtcNow();
         var before = AllocationView(row);
         row.RemainingKg = allocation.Remaining.Value;
+        // KLN-D119: the released pieces are free on the label again.
+        row.RemainingPieces = allocation.RemainingPieces?.Value;
         row.Status = (int)allocation.Status;
         row.Version = allocation.Version;
         row.UpdatedAtUtc = now;
@@ -278,6 +278,61 @@ public sealed partial class InventoryStore
     }
 
     /// <summary>
+    /// KLN-D119 (AK-4b): the piece count joins a stored hash only when given, so every request without pieces keeps exactly
+    /// the hash it had before the field existed (a retry of an earlier command still replays).
+    /// </summary>
+    private static string WithPieces(string kilogramHash, int? pieces) => pieces is { } count
+        ? AllocationPayloadHash(new { core = kilogramHash, pieceCount = count })
+        : kilogramHash;
+
+    /// <summary>The stored allocation with its pieces; a row that cannot be an allocation is the store's own fault (503).</summary>
+    private static StockAllocation Restore(AllocationRow row, StockPosition position) =>
+        StockAllocation.Restore(row.Id, position, Kilograms.Positive(row.AllocatedKg), Kilograms.Of(row.RemainingKg),
+            row.Version, (StockAllocationStatus)row.Status,
+            row.AllocatedPieces is { } allocated ? PieceCount.Of(allocated) : null,
+            row.RemainingPieces is { } remaining ? PieceCount.Of(remaining) : null);
+
+    /// <summary>
+    /// KLN-D119: the pieces a new reservation of <paramref name="quantity"/> kg takes from one Free position, by the
+    /// domain rule (<see cref="StockAllocation.ReservablePieces"/>); its refusals are the request's own answers.
+    /// </summary>
+    private static PieceCount? ReservablePieces(Kilograms quantity, int? requested, BalanceRow source,
+        ActiveAllocated active)
+    {
+        try
+        {
+            return StockAllocation.ReservablePieces(quantity, requested,
+                Kilograms.Of(Math.Max(0m, source.QuantityKg - active.Kilograms)),
+                source.PieceCount is { } physical ? PieceCount.Of(physical) : null,
+                PieceCount.Of(active.Pieces), active.EveryOneHoldsPieces);
+        }
+        catch (StockAllocationException exception)
+        {
+            throw PieceError(exception);
+        }
+    }
+
+    private static InventoryAllocationException PieceError(StockAllocationException exception) => exception.Failure switch
+    {
+        StockAllocationFailure.PiecesRequired => AllocationError(422, InventoryAllocationCodesV1.PieceCountRequired),
+        StockAllocationFailure.PiecesNotTracked => AllocationError(422, InventoryAllocationCodesV1.PieceCountNotTracked),
+        StockAllocationFailure.PiecesInsufficient => AllocationError(409, InventoryAllocationCodesV1.InsufficientFreePieces),
+        StockAllocationFailure.PiecesInvalid => AllocationError(422, InventoryAllocationCodesV1.PieceCountInvalid),
+        _ => AllocationError(503, InventoryAllocationCodesV1.InvalidReference, exception),
+    };
+
+    /// <summary>
+    /// The active reservations of one Free position: their kilograms, their pieces (an allocation without pieces holds
+    /// none) and whether every one of them holds pieces.
+    /// </summary>
+    private sealed record ActiveAllocated(decimal Kilograms, int Pieces, bool EveryOneHoldsPieces);
+
+    private async Task<ActiveAllocated> ActiveAllocatedAtAsync(BalanceRow position, Guid? exceptAllocationId,
+        CancellationToken cancellationToken) =>
+        await ActiveAllocatedAtAsync(position.LabelId, position.OwnerKind, position.OwnerId, position.CustodianKind,
+            position.CustodianId, position.LocationId, exceptAllocationId, cancellationToken);
+
+    /// <summary>
     /// KLN-D39/D40/D70: the label must be of the line's own product, or — only when the user confirmed a substitute
     /// ("muadil") — of another product that the server verifies is similar within the Settings tolerance. With no
     /// tolerance or no verifier the substitute is refused; the flag on the line's own product is refused too.
@@ -318,6 +373,7 @@ public sealed partial class InventoryStore
             || string.IsNullOrWhiteSpace(request.ProductVersion) || request.ProductVersion.Length > 128
             || string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 1000
             || request.ReservedUntilUtc is { } reservedUntil && reservedUntil.Offset != TimeSpan.Zero
+            || request.PieceCount is <= 0
             || !TryQuantity(request.QuantityKg, out var quantity))
         {
             throw AllocationError(400, InventoryAllocationCodesV1.ValidationFailed);
@@ -396,7 +452,9 @@ public sealed partial class InventoryStore
             row.ReservedUntilUtc,
             row.CreatedAtUtc,
             row.UpdatedAtUtc,
-            row.IsSubstitute);
+            row.IsSubstitute,
+            row.AllocatedPieces,
+            row.RemainingPieces);
     }
 
     private static string AllocationKeyHash(string key) =>

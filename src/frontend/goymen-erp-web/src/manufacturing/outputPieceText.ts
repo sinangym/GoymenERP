@@ -6,8 +6,15 @@
  */
 export const OUTPUT_PIECE_TEXT = {
   pieceCount: 'Adet',
-  pieceCountHelp:
-    'Adetli üründe zorunludur: sayılan adet ve tartılan kg birlikte kaydedilir. Adetle izlenmeyen üründe boş bırakın.',
+  pieceCountHelp: 'Bu ürün adetle izleniyor: sayılan adet zorunludur ve tartılan kg ile birlikte kaydedilir.',
+  pieceCountRequired: 'Bu ürün adetle izleniyor; çıktı adedi zorunludur. Adedi girin.',
+  sourceMissing:
+    'Bu ürünün kartı adet birimini taşıyor ama teorik kg/adet kaynağı yok (ölçü, ağırlık tablosu veya politika eksik ya ' +
+    'da çelişkili). Ürün kartı düzeltilmeden bu ürünün çıktısı kaydedilemez; başka ürün seçin ya da kartı düzelttirin.',
+  sourceMissingSubmit: 'Seçilen ürünün teorik kg/adet kaynağı yok; çıktı gönderilmedi. Ürün kartı düzeltilmelidir.',
+  unavailable:
+    'Bu ürünün adetle izlenip izlenmediği şu anda okunamadı; adet alanı gösterilmiyor. Çıktıyı gönderebilirsiniz: ' +
+    'kararı sunucu verir ve okuyamazsa kaydı geçici olarak reddeder.',
   pieceCountFormat: 'Adet, sıfırdan büyük bir tam sayı olmalıdır.',
   correctionPieceCount: 'Geri alınan adet',
   correctionPieceCountHelp: 'Adetli çıktıda zorunludur; yalnız kg düzeltiliyorsa 0 girin.',
