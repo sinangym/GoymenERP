@@ -1,5 +1,6 @@
 using System.Text.Json;
 using GoymenERP.Modules.Logistics.Application.Contracts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Logistics.UnitTests;
 
@@ -323,6 +324,34 @@ public sealed partial class LogisticsInstructionServiceTests
             Shipment() with { OccurredAtUtc = EventTime.ToOffset(TimeSpan.FromHours(3)) }, LogisticsJson.Options)));
         Assert.True(LogisticsCommands.IsMutation(LogisticsCommands.RecordShipmentV1));
         Assert.True(LogisticsCommands.IsMutation(LogisticsCommands.RecordDeliveryV1));
+    }
+
+    [Fact]
+    public async Task A_piece_shipment_beyond_the_int_piece_count_is_a_defined_422_with_no_mutation_and_no_stock_exit()
+    {
+        // K3-A P3: the label counts pieces in an int; a larger whole-piece quantity is refused as not fitting the column before
+        // the instruction is mutated or Inventory is asked — never an OverflowException (500) after the mutation.
+        var world = new World { Bindings = new(CreatePermission, ReadPermission, CreatePermission, CreatePermission, ReadPermission) };
+        world.Settings.Fault = "piece-identity";
+        world.OrderLines.OrderUnitId = SettingsUnitIdentitiesV1.Piece;
+        var runner = new FakeRealizationRunner();
+        var created = await world.Service().CreateInstructionAsync(new CreateLoadingInstructionRequest(Party, Account, Day,
+            [new LoadingInstructionLineRequest(Guid.NewGuid(), Order, OrderLine, SettingsUnitIdentitiesV1.Piece, "100")]), Metadata("piece-create"));
+        var id = created.Detail.Instruction.Id;
+        var line = created.Detail.Lines[0].LineId;
+        await world.Service().IssueInstructionAsync(id, new("2"), Metadata("piece-issue"));
+        await world.Service().RecordLoadAsync(id, line, new("3", Guid.NewGuid(), "40", "Measured", QuantityKg: "495"), Metadata("piece-load"));
+        var transitions = world.Store.Transitions.Count;
+
+        var refused = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service(runner).RecordShipmentAsync(id, line,
+            Shipment() with { Quantity = "3000000000", QuantityKg = "495" }, Metadata("piece-ship-overflow")));
+
+        Assert.Equal((422, "validation_failed"), (refused.Status, refused.Code));
+        var error = Assert.Single(refused.Errors);
+        Assert.Equal(("shipment.quantity", LogisticsStoreCodes.ValueDoesNotFit), (error.Field, error.Code));
+        Assert.Empty(runner.Stock.Requests);
+        Assert.Equal(transitions, world.Store.Transitions.Count);
+        Assert.Equal(0, runner.Commits);
     }
 
     private static RecordShipmentRequest Shipment() => new("4", Guid.NewGuid(), Allocation, "7", "11", Guid.NewGuid(), "2", EventTime);

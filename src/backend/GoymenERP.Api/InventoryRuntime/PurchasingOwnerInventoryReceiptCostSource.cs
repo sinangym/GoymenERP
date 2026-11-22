@@ -61,6 +61,9 @@ public sealed class PurchasingOwnerInventoryReceiptCostSource(IPurchaseReceiptCo
             ExactCostRatio originalRatio;
             if (weighedKilogramCost && !price.PriceUnitIsKilogram)
             {
+                // SAT-D443: only the PIECE unit is costed from its weighed kilograms in this train; metre and every other
+                // fractional commercial unit is not opened — no cost (fail-closed), never the weighed or the theoretical path.
+                if (price.PriceUnitId != SettingsUnitIdentitiesV1.Piece) return Unavailable("purchase_receipt_weighed_unit_not_piece");
                 // AK-3 (ALS-D119/ALS-D120): paid amount ÷ weighed kg, exact; no theoretical-kg fallback (TA3).
                 var weighedRatio = PurchaseReceiptWeighedCost.PerWeighedKilogram(price.MovingAverageUnitCost,
                     ParseQuantity(proof.AcceptedQuantity), proof.MeasuredQuantityKg is { } weighed ? ParseQuantity(weighed) : null);
