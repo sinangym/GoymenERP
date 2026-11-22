@@ -868,3 +868,50 @@ transaction includes Finance evidence, original receipt, approved outbox and the
 late authority loss or Audit failure rolls all of it back. No table in another module is written directly.
 Migration SQL, new entity construction and the owner Audit binding remain in the K3 review scope. Model/SQL/HTTP
 and UI test sources are written; runtime, DB apply, browser and CI remain **NOT_RUN**.
+
+## WP12 / DALGA_PLANI_v2 1.13: bank statement import and exact match suggestions (FNS-D13, FNS-D52) — Finance K3
+
+> **Two independent exact-head reviews (K3):** DB migration/constraint, permission registration, cross-module contracts
+> (vault owner kind, Settings mapping port) and money-adjacent matching. Code complete, **activation is a human gate**:
+> both permissions are registered and granted to nobody.
+
+**Flow.** `POST /api/v1/finance/bank-statement-imports` reserves an import (client-chosen `importId`, an **approved**
+Finance bank account, `Csv` with the Settings bank key or `Mt940` without one; `Xlsx` is refused, NEEDS-SINAN WP12-S2).
+The client uploads the file to the vault on owner kind `finance.bank-statement-import` (the only owner that accepts the
+FNS-D52 kinds; B-26 allowlist, content check and malware scan stay the vault's). `POST …/{importId}/parse` reads that
+exact vault version once. `GET …` lists the latest 100 imports (optional `bankAccountId`); `GET …/{importId}` returns the
+lines with fresh suggestions.
+
+**Parse rules.** CSV uses the bank's active `ISettingsBankCsvMappingProviderV1` mapping exactly (delimiter, skipped rows,
+header, separators, date pattern, amount layout, columns); no fallback mapping, no guessed column. MT940: `:25:` account
+(refused when it is a valid IBAN other than the account's approved IBAN), `:60F/M:` currency, `:61:` line (entry date =
+transaction date, else value date; `RC`/`RD` keep the direction they produce), `:86:` description. Any issue refuses the
+whole file (`finance_bank_statement_file_invalid` with up to 100 issues); nothing is stored. Text cells starting with
+`= + - @` are stored with a `'` prefix.
+
+**Duplicate protection.** Each line's SHA-256 fingerprint (dates, direction, exact amount without trailing fraction
+zeros, balance, currency, reference, description) plus its occurrence ordinal in the file is unique per bank account
+(`IX … (CompanyId, BankAccountId, Fingerprint, Occurrence)`): an overlapping later file stores only its new lines and
+counts the rest as duplicates; two identical lines in one file are both kept. The same file (SHA-256) twice for the
+account is refused.
+
+**Suggestions are a read; nothing is recorded (FNS-D13).** No tolerance or matching policy is decided, so only the exact
+rule applies: same bank account, same direction, exactly equal amount, the line's transaction date equal to the movement's
+date, and the line's single Turkish counterparty IBAN (valid ISO 13616, other than the own account's) equal to the
+movement's proven counterparty IBAN; exactly one movement must pass and no other line of the import may point at it.
+Candidates: recorded receipts (POS at bank net), party payments, recorded expense payments and transfer legs. Only a
+bank-to-bank transfer can prove a counterparty (the other account's approved IBAN); party receipts/payments and expense
+payments stay **Manual** (`CounterpartyNotComparable`, NEEDS-SINAN WP12-S1). Reversals, openings and credit legs are not
+candidates. A Manual line is the FNS-D13 "elle kaydedilmemiş hareket" warning: a person records it with Finance's
+existing receipt/payment/transfer commands. No movement, allocation or journal is created here.
+
+| Part | What |
+|---|---|
+| Permissions | `finance.bank-statements.import`, `finance.bank-statements.read` (company-wide, not Critical, no grant) |
+| Migration | `20261122201621_AddBankStatementImports`: `BankStatementImports`, `BankStatementLines`, `BankStatementCommands`; Down refuses with **THROW 52250** while any row exists (forward fix) |
+| Command skeleton | Fence before/after each await, Idempotency-Key replay (same actor + payload) before validation, expected version on Parse, one Serializable save of import + lines + command record + audit (`finance.bank-statement-import.reserved.v1` / `.parsed.v1`) |
+| Write guard | An import changes once, Reserved → Parsed with one version step; lines and command records are append-only |
+
+**Not in this package:** the screen and its shell capability (frontend), the XLSX column source (WP12-S2), the party
+IBAN source (WP12-S1), a stored "confirmed match" record. Pins (OpenAPI, guard fingerprint, relational fingerprint,
+recovery, release manifest) are produced at the tren-2 head. Real SQL facts are written and **NOT_RUN** locally.
