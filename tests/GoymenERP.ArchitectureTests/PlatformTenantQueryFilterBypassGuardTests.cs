@@ -2681,7 +2681,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (1069a748… -> 0e7a30b4…).
                         // Re-fingerprinted for Y-A1: one scoped registration of the Logistics-owned READ AI tool
                         // (logistics.pending-shipments.v1, DI-only); provider branch and token counts unchanged (3fbc504d… -> 4cb81c32…).
-                        "4cb81c3292056e2ba1bbcaea83fb3591c1189bbd640bd3f62ede92b929818171",
+                        // Re-fingerprinted for Y-A1 / AI-D35: the owner's shipment-state read port forwarded to the instruction
+                        // service (DI-only); provider branch and token counts unchanged (4cb81c32… -> 3cf5c91b…).
+                        "3cf5c91b6d842fe46116c30a52af373c2d49dffec04bc3738690fd66e75df29c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

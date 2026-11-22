@@ -134,7 +134,8 @@
                   "required": [
                     "status",
                     "count",
-                    "company"
+                    "company",
+                    "shipped"
                   ],
                   "properties": {
                     "status": {
@@ -152,6 +153,14 @@
                       "enum": [
                         "ayni",
                         "baska"
+                      ]
+                    },
+                    "shipped": {
+                      "enum": [
+                        "yok",
+                        "kismi",
+                        "tam",
+                        "bilinmiyor"
                       ]
                     }
                   }
@@ -201,6 +210,13 @@
               },
               "complete": {
                 "type": "boolean"
+              },
+              "fullyShippedExcludedCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
               }
             }
           }

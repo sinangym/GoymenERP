@@ -2593,6 +2593,7 @@
     "pendingCount": 0,
     "draftCount": 0,
     "issuedCount": 0,
+    "fullyShippedExcludedCount": 0,
     "listedCount": 0,
     "complete": true
    }
@@ -2616,12 +2617,14 @@
      {
       "status": "Draft",
       "count": 2,
-      "company": "ayni"
+      "company": "ayni",
+      "shipped": "yok"
      },
      {
       "status": "Issued",
       "count": 3,
-      "company": "ayni"
+      "company": "ayni",
+      "shipped": "yok"
      }
     ]
    },
@@ -2630,6 +2633,7 @@
     "pendingCount": 5,
     "draftCount": 2,
     "issuedCount": 3,
+    "fullyShippedExcludedCount": 0,
     "listedCount": 5,
     "complete": true
    }
@@ -2637,8 +2641,8 @@
   {
    "id": "EV-S-003",
    "category": "islem_sorgusu",
-   "question": "Bekleyenlere iptal edilenler dahil mi?",
-   "expected_answer_summary": "İptal edilenler sayılmaz; 1 bekleyen.",
+   "question": "Bekleyenlere iptal edilenler ve tamamen sevk edilenler dahil mi?",
+   "expected_answer_summary": "İptal edilenler ve tamamen sevk edilmiş talimatlar sayılmaz (AI-D35); 1 bekleyen.",
    "expected_source_ids": [],
    "expected_behavior": "arac_sonucu",
    "data_marker": "SENTETIK",
@@ -2653,12 +2657,20 @@
      {
       "status": "Draft",
       "count": 1,
-      "company": "ayni"
+      "company": "ayni",
+      "shipped": "yok"
      },
      {
       "status": "Cancelled",
       "count": 4,
-      "company": "ayni"
+      "company": "ayni",
+      "shipped": "yok"
+     },
+     {
+      "status": "Issued",
+      "count": 2,
+      "company": "ayni",
+      "shipped": "tam"
      }
     ]
    },
@@ -2667,6 +2679,7 @@
     "pendingCount": 1,
     "draftCount": 1,
     "issuedCount": 0,
+    "fullyShippedExcludedCount": 2,
     "listedCount": 1,
     "complete": true
    }
@@ -2692,12 +2705,14 @@
      {
       "status": "Draft",
       "count": 3,
-      "company": "ayni"
+      "company": "ayni",
+      "shipped": "yok"
      },
      {
       "status": "Issued",
       "count": 2,
-      "company": "ayni"
+      "company": "ayni",
+      "shipped": "yok"
      }
     ]
    },
@@ -2706,6 +2721,7 @@
     "pendingCount": 3,
     "draftCount": 3,
     "issuedCount": 0,
+    "fullyShippedExcludedCount": 0,
     "listedCount": 3,
     "complete": true
    }
@@ -2713,8 +2729,8 @@
   {
    "id": "EV-S-005",
    "category": "islem_sorgusu",
-   "question": "Yalnız yayımlanmış talimatları göster.",
-   "expected_answer_summary": "2 yayımlanmış talimat.",
+   "question": "Yalnız yayımlanmış ve sevki bitmemiş talimatları göster.",
+   "expected_answer_summary": "Kısmen sevk edilmiş talimat sayılır, tamamen sevk edilmiş sayılmaz; 2 yayımlanmış bekleyen.",
    "expected_source_ids": [],
    "expected_behavior": "arac_sonucu",
    "data_marker": "SENTETIK",
@@ -2731,12 +2747,20 @@
      {
       "status": "Draft",
       "count": 3,
-      "company": "ayni"
+      "company": "ayni",
+      "shipped": "yok"
      },
      {
       "status": "Issued",
       "count": 2,
-      "company": "ayni"
+      "company": "ayni",
+      "shipped": "kismi"
+     },
+     {
+      "status": "Issued",
+      "count": 1,
+      "company": "ayni",
+      "shipped": "tam"
      }
     ]
    },
@@ -2745,6 +2769,7 @@
     "pendingCount": 2,
     "draftCount": 0,
     "issuedCount": 2,
+    "fullyShippedExcludedCount": 1,
     "listedCount": 2,
     "complete": true
    }
@@ -2770,12 +2795,14 @@
      {
       "status": "Draft",
       "count": 4,
-      "company": "ayni"
+      "company": "ayni",
+      "shipped": "yok"
      },
      {
       "status": "Issued",
       "count": 4,
-      "company": "ayni"
+      "company": "ayni",
+      "shipped": "yok"
      }
     ]
    },
@@ -2784,6 +2811,7 @@
     "pendingCount": 8,
     "draftCount": 4,
     "issuedCount": 4,
+    "fullyShippedExcludedCount": 0,
     "listedCount": 5,
     "complete": true
    }
@@ -2807,7 +2835,8 @@
      {
       "status": "Issued",
       "count": 30,
-      "company": "ayni"
+      "company": "ayni",
+      "shipped": "yok"
      }
     ]
    },
@@ -2816,6 +2845,7 @@
     "pendingCount": 30,
     "draftCount": 0,
     "issuedCount": 30,
+    "fullyShippedExcludedCount": 0,
     "listedCount": 20,
     "complete": true
    }
@@ -2839,12 +2869,14 @@
      {
       "status": "Draft",
       "count": 150,
-      "company": "ayni"
+      "company": "ayni",
+      "shipped": "yok"
      },
      {
       "status": "Issued",
       "count": 120,
-      "company": "ayni"
+      "company": "ayni",
+      "shipped": "yok"
      }
     ]
    },
@@ -2853,6 +2885,7 @@
     "pendingCount": 270,
     "draftCount": 150,
     "issuedCount": 120,
+    "fullyShippedExcludedCount": 0,
     "listedCount": 20,
     "complete": true
    }
@@ -2876,7 +2909,8 @@
      {
       "status": "Draft",
       "count": 1001,
-      "company": "ayni"
+      "company": "ayni",
+      "shipped": "yok"
      }
     ]
    },
@@ -2885,6 +2919,7 @@
     "pendingCount": null,
     "draftCount": null,
     "issuedCount": null,
+    "fullyShippedExcludedCount": null,
     "listedCount": 20,
     "complete": false
    }
@@ -2908,7 +2943,8 @@
      {
       "status": "Draft",
       "count": 2,
-      "company": "ayni"
+      "company": "ayni",
+      "shipped": "yok"
      }
     ]
    },
@@ -2935,12 +2971,14 @@
      {
       "status": "Draft",
       "count": 1,
-      "company": "ayni"
+      "company": "ayni",
+      "shipped": "yok"
      },
      {
       "status": "Issued",
       "count": 1,
-      "company": "baska"
+      "company": "baska",
+      "shipped": "yok"
      }
     ]
    },
@@ -2969,7 +3007,8 @@
      {
       "status": "Draft",
       "count": 1,
-      "company": "ayni"
+      "company": "ayni",
+      "shipped": "yok"
      }
     ]
    },
@@ -2998,7 +3037,8 @@
      {
       "status": "Cancelled",
       "count": 1,
-      "company": "ayni"
+      "company": "ayni",
+      "shipped": "yok"
      }
     ]
    },
@@ -3101,24 +3141,41 @@
   {
    "id": "EV-S-018",
    "category": "islem_sorgusu",
-   "question": "Sınır metin olarak verilirse?",
-   "expected_answer_summary": "Sınır tamsayı olmalıdır.",
+   "question": "Sevk durumu bilinemeyen talimat varsa sayı nedir?",
+   "expected_answer_summary": "Sevk durumu bilinemeyen talimat var; kesin sayı verilmez, sonuç eksik işaretlenir (fail-closed).",
    "expected_source_ids": [],
-   "expected_behavior": "reddet",
+   "expected_behavior": "arac_sonucu",
    "data_marker": "SENTETIK",
    "expected_tool_call": {
     "toolId": "logistics.pending-shipments.v1",
     "version": "1",
-    "arguments": {
-     "limit": "5"
-    }
+    "arguments": {}
    },
    "fixture": {
     "permission": "verildi",
-    "instructions": []
+    "instructions": [
+     {
+      "status": "Draft",
+      "count": 1,
+      "company": "ayni",
+      "shipped": "yok"
+     },
+     {
+      "status": "Issued",
+      "count": 2,
+      "company": "ayni",
+      "shipped": "bilinmiyor"
+     }
+    ]
    },
    "expected_tool_result": {
-    "outcome": "invalid"
+    "outcome": "succeeded",
+    "pendingCount": null,
+    "draftCount": null,
+    "issuedCount": null,
+    "fullyShippedExcludedCount": null,
+    "listedCount": 1,
+    "complete": false
    }
   },
   {
@@ -3163,12 +3220,14 @@
      {
       "status": "Draft",
       "count": 51,
-      "company": "ayni"
+      "company": "ayni",
+      "shipped": "yok"
      },
      {
       "status": "Issued",
       "count": 50,
-      "company": "ayni"
+      "company": "ayni",
+      "shipped": "yok"
      }
     ]
    },
@@ -3177,6 +3236,7 @@
     "pendingCount": 101,
     "draftCount": 51,
     "issuedCount": 50,
+    "fullyShippedExcludedCount": 0,
     "listedCount": 50,
     "complete": true
    }

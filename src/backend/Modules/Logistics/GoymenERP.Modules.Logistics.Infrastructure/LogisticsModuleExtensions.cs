@@ -71,7 +71,9 @@ public static class LogisticsModuleExtensions
         // AT-025: the operations work list — two separate sections over the Sales and Purchasing owners' read ports (registered by
         // those modules) and Logistics's own recorded totals; each section measures its own name.
         services.AddScoped<ILogisticsOrderLineProgressReader, LogisticsOrderLineProgressReader>();
-        // Y-A1: the owner READ tool over the instruction list (registration only; Ai:AllowedTools admits it).
+        // Y-A1 / AI-D35: the owner's paged shipment-state read and the READ tool over it (registration only;
+        // Ai:AllowedTools admits the tool).
+        services.AddScoped<ILogisticsPendingShipmentReadV1>(serviceProvider => serviceProvider.GetRequiredService<LogisticsInstructionService>());
         services.AddScoped<IAiOwnerToolV1, LogisticsPendingShipmentsAiTool>();
         services.TryAddSingleton(new LogisticsOperationsWorkBindings());
         services.AddScoped<ILogisticsOperationsWorkService, LogisticsOperationsWorkService>();

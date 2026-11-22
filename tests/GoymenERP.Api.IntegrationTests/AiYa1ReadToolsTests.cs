@@ -19,7 +19,7 @@ namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
 /// Y-A1 READ tools over the AI-3 runtime, with no model, no network and no database: <c>decisions.lookup.v1</c> over the
-/// committed decision index and <c>logistics.pending-shipments.v1</c> over a SENTETIK Logistics owner list. The ask path
+/// committed decision index and <c>logistics.pending-shipments.v1</c> over a SENTETIK Logistics shipment-state read. The ask path
 /// runs in tool-plan mode (the deterministic fake provider plans exactly the hinted call). Registration is default-deny:
 /// without an <c>Ai:AllowedTools</c> entry the catalog admits nothing.
 /// </summary>
@@ -189,7 +189,8 @@ public sealed class AiYa1ReadToolsTests
     {
         var harness = new Harness();
         harness.Instructions.Add("Draft", 2);
-        harness.Instructions.Add("Issued", 3);
+        harness.Instructions.Add("Issued", 3, LogisticsShipmentStatesV1.PartiallyShipped);
+        harness.Instructions.Add("Issued", 6, LogisticsShipmentStatesV1.FullyShipped);
         harness.Instructions.Add("Cancelled", 4);
 
         var result = await harness.Service().AskAsync(Ask(LogisticsPendingShipmentsAiTool.ToolId, "{}"));
@@ -198,6 +199,7 @@ public sealed class AiYa1ReadToolsTests
         var toolResult = Assert.Single(result.Response!.ToolResults);
         using var content = JsonDocument.Parse(toolResult.ContentJson!);
         Assert.Equal(5, content.RootElement.GetProperty("pendingCount").GetInt32());
+        Assert.Equal(6, content.RootElement.GetProperty("fullyShippedExcludedCount").GetInt32());
         Assert.True(content.RootElement.GetProperty("complete").GetBoolean());
         Assert.Equal(Company, toolResult.Source!.TargetId);
     }
@@ -318,77 +320,37 @@ public sealed class AiYa1ReadToolsTests
         public override DateTimeOffset GetUtcNow() => now;
     }
 
-    /// <summary>A SENTETIK Logistics owner list: this company's rows only, pages of the asked size by exact status.</summary>
-    private sealed class ListOnlyInstructionService : ILogisticsInstructionService
+    /// <summary>A SENTETIK Logistics owner shipment-state read: this company's rows only, pages by exact status.</summary>
+    private sealed class ListOnlyInstructionService : ILogisticsPendingShipmentReadV1
     {
-        private readonly List<LoadingInstructionSummaryView> rows = [];
+        private readonly List<LogisticsPendingShipmentRowV1> rows = [];
 
-        public List<LoadingInstructionListQuery> Queries { get; } = [];
+        public List<LogisticsPendingShipmentPageQueryV1> Queries { get; } = [];
 
-        public void Add(string status, int count)
+        public void Add(string status, int count, string shipmentState = LogisticsShipmentStatesV1.NotShipped)
         {
             for (var index = 0; index < count; index++)
             {
                 var number = rows.Count + 1;
-                rows.Add(new LoadingInstructionSummaryView(
+                rows.Add(new LogisticsPendingShipmentRowV1(
                     new Guid($"00000000-0000-4000-8000-{number:D12}"), Company, status, $"rv-{number}",
-                    Guid.Parse("cccccccc-0000-4000-8000-0000000000e3"), Guid.Parse("dddddddd-0000-4000-8000-0000000000e4"),
-                    new DateOnly(2026, 11, 22), Now.AddMinutes(number), Now.AddMinutes(number), 1,
-                    null, null, null, "NotApplicable"));
+                    Guid.Parse("cccccccc-0000-4000-8000-0000000000e3"), new DateOnly(2026, 11, 22), Now.AddMinutes(number), 1,
+                    0, shipmentState));
             }
         }
 
-        public Task<LoadingInstructionListResponse> GetInstructionListAsync(LoadingInstructionListQuery query,
+        public Task<LogisticsPendingShipmentPageV1> GetPendingShipmentPageAsync(LogisticsPendingShipmentPageQueryV1 query,
             CancellationToken cancellationToken = default)
         {
             Queries.Add(query);
-            var matching = rows.Where(row => query.Status is null || row.Status == query.Status).ToArray();
+            var matching = rows.Where(row => row.Status == query.Status).ToArray();
             var start = query.Cursor is null ? 0 : int.Parse(query.Cursor, System.Globalization.CultureInfo.InvariantCulture);
             var page = matching.Skip(start).Take(query.PageSize).ToArray();
             var next = start + page.Length < matching.Length
                 ? (start + page.Length).ToString(System.Globalization.CultureInfo.InvariantCulture)
                 : null;
-            return Task.FromResult(new LoadingInstructionListResponse(page, next));
+            return Task.FromResult(new LogisticsPendingShipmentPageV1(page, next));
         }
-
-        public Task<LoadingInstructionResponse> CreateInstructionAsync(CreateLoadingInstructionRequest request, LogisticsCommandMetadata metadata,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public Task<LoadingInstructionResponse> IssueInstructionAsync(Guid instructionId, IssueLoadingInstructionRequest request,
-            LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public Task<LoadingInstructionResponse> RecordLoadAsync(Guid instructionId, Guid lineId, RecordLoadRequest request,
-            LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public Task<LoadingInstructionResponse> RecordWeighingAsync(Guid instructionId, RecordWeighingRequest request, LogisticsCommandMetadata metadata,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public Task<LoadingInstructionResponse> CreateDispatchNoteAsync(Guid instructionId, CreateDispatchNoteRequest request, LogisticsCommandMetadata metadata,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public Task<LoadingInstructionResponse> CancelInstructionAsync(Guid instructionId, CancelInstructionRequest request,
-            LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public Task<LoadingInstructionResponse> RecordUnloadWeighingAsync(Guid instructionId, RecordUnloadWeighingRequest request,
-            LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public Task<LoadingInstructionResponse> ApproveDispatchNoteAsync(Guid instructionId, Guid dispatchNoteId, ApproveDispatchNoteRequest request,
-            LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public Task<LoadingInstructionResponse> CancelDispatchNoteAsync(Guid instructionId, Guid dispatchNoteId, CancelDispatchNoteRequest request,
-            LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public Task<LoadingInstructionResponse> SetEDispatchNumberAsync(Guid instructionId, Guid dispatchNoteId, SetEDispatchNumberRequest request,
-            LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public Task<SalesOrderDispatchNotesView> GetSalesOrderDispatchNotesAsync(Guid salesOrderId, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public Task<LoadingInstructionDetailView> GetInstructionDetailAsync(Guid instructionId, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public Task<LogisticsApprovedOrderLinePage> GetApprovedOrderLinesAsync(LogisticsApprovedOrderLinesQuery query,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class FakeAuthority(params string[] granted) : IErpAuthorityRevalidationService, IErpAuthorizationService

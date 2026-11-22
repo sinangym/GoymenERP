@@ -1,15 +1,19 @@
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.Modules.Logistics.Application.Ai;
+using GoymenERP.Modules.Logistics.Application;
 using GoymenERP.Modules.Logistics.Application.Contracts;
+using GoymenERP.Modules.Logistics.Domain;
+using GoymenERP.Modules.Logistics.Domain.Loading;
 
 namespace GoymenERP.Logistics.UnitTests;
 
 /// <summary>
 /// Y-A1 <c>logistics.pending-shipments.v1</c>: the 20 SENTETIK pending-shipment scenarios of
-/// <c>contracts/ai/eval/eval-set-v1.json</c> run against the tool over a fake Logistics owner list service. The counts
-/// are exact and come only from the owner's pages; a permission refusal, another company's row or an owner failure
-/// releases nothing.
+/// <c>contracts/ai/eval/eval-set-v1.json</c> run against the tool over a fake Logistics owner shipment-state read. The
+/// counts are exact and come only from the owner's pages; AI-D35 leaves out fully shipped and cancelled instructions and
+/// counts partly shipped ones; an unknown shipment state withholds the counts; a permission refusal, another company's row
+/// or an owner failure releases nothing.
 /// </summary>
 public sealed class LogisticsPendingShipmentsAiToolTests
 {
@@ -17,6 +21,9 @@ public sealed class LogisticsPendingShipmentsAiToolTests
     private static readonly Guid Company = Guid.Parse("aaaaaaaa-0000-4000-8000-0000000000a1");
     private static readonly Guid OtherCompany = Guid.Parse("bbbbbbbb-0000-4000-8000-0000000000b2");
     private static readonly DateTimeOffset Now = new(2026, 11, 22, 8, 0, 0, TimeSpan.Zero);
+    private static readonly Guid KgUnit = Guid.Parse("55555555-5555-4555-8555-5555555555a5");
+
+    private static Quantity Kg(decimal value) => Quantity.Of(value, QuantityUnit.Kilogram);
 
     public static TheoryData<string> ScenarioIds()
     {
@@ -47,7 +54,14 @@ public sealed class LogisticsPendingShipmentsAiToolTests
         foreach (var group in fixture.GetProperty("instructions").EnumerateArray())
         {
             service.Add(group.GetProperty("status").GetString()!, group.GetProperty("count").GetInt32(),
-                group.GetProperty("company").GetString() == "ayni" ? Company : OtherCompany);
+                group.GetProperty("company").GetString() == "ayni" ? Company : OtherCompany,
+                group.GetProperty("shipped").GetString() switch
+                {
+                    "kismi" => LogisticsShipmentStatesV1.PartiallyShipped,
+                    "tam" => LogisticsShipmentStatesV1.FullyShipped,
+                    "bilinmiyor" => LogisticsShipmentStatesV1.Unknown,
+                    _ => LogisticsShipmentStatesV1.NotShipped,
+                });
         }
 
         var tool = new LogisticsPendingShipmentsAiTool(service, new FixedTime(Now));
@@ -71,7 +85,7 @@ public sealed class LogisticsPendingShipmentsAiToolTests
 
         using var content = JsonDocument.Parse(result.ContentJson!);
         var root = content.RootElement;
-        foreach (var name in new[] { "pendingCount", "draftCount", "issuedCount" })
+        foreach (var name in new[] { "pendingCount", "draftCount", "issuedCount", "fullyShippedExcludedCount" })
         {
             var wanted = expected.GetProperty(name);
             if (wanted.ValueKind == JsonValueKind.Null)
@@ -126,6 +140,80 @@ public sealed class LogisticsPendingShipmentsAiToolTests
         Assert.All(service.Queries, query => Assert.Equal(LogisticsPendingShipmentsAiTool.PageSize, query.PageSize));
     }
 
+    [Fact]
+    public async Task Fully_shipped_and_cancelled_instructions_are_left_out_and_partly_shipped_and_draft_ones_count()
+    {
+        var service = new FakeInstructionService("verildi");
+        service.Add("Draft", 1, Company);
+        service.Add("Issued", 2, Company, LogisticsShipmentStatesV1.PartiallyShipped);
+        service.Add("Issued", 3, Company, LogisticsShipmentStatesV1.FullyShipped);
+        service.Add("Cancelled", 4, Company);
+        var tool = new LogisticsPendingShipmentsAiTool(service, new FixedTime(Now));
+
+        var result = await tool.ReadAsync(new AiToolInputV1("{}"), Context());
+
+        using var content = JsonDocument.Parse(result.ContentJson!);
+        var root = content.RootElement;
+        Assert.Equal(3, root.GetProperty("pendingCount").GetInt32());
+        Assert.Equal(1, root.GetProperty("draftCount").GetInt32());
+        Assert.Equal(2, root.GetProperty("issuedCount").GetInt32());
+        Assert.Equal(3, root.GetProperty("fullyShippedExcludedCount").GetInt32());
+        Assert.DoesNotContain(root.GetProperty("items").EnumerateArray(),
+            item => item.GetProperty("shipmentState").GetString() == LogisticsShipmentStatesV1.FullyShipped);
+        Assert.Equal(new[] { "Draft", "Issued" }, service.Queries.Select(query => query.Status).Distinct().ToArray());
+    }
+
+    [Fact]
+    public async Task An_unknown_shipment_state_withholds_every_count_and_marks_the_answer_incomplete()
+    {
+        var service = new FakeInstructionService("verildi");
+        service.Add("Draft", 2, Company);
+        service.Add("Issued", 1, Company, LogisticsShipmentStatesV1.Unknown);
+        var tool = new LogisticsPendingShipmentsAiTool(service, new FixedTime(Now));
+
+        var result = await tool.ReadAsync(new AiToolInputV1("{}"), Context());
+
+        using var content = JsonDocument.Parse(result.ContentJson!);
+        var root = content.RootElement;
+        Assert.False(root.GetProperty("complete").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, root.GetProperty("pendingCount").ValueKind);
+        Assert.Equal(JsonValueKind.Null, root.GetProperty("fullyShippedExcludedCount").ValueKind);
+        Assert.Equal(2, root.GetProperty("listedCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task A_shipment_state_outside_the_owner_vocabulary_releases_nothing()
+    {
+        var service = new FakeInstructionService("verildi");
+        service.Add("Issued", 1, Company, "Shipped");
+        var tool = new LogisticsPendingShipmentsAiTool(service, new FixedTime(Now));
+
+        Assert.Equal(AiToolOutcomeV1.Unavailable, (await tool.ReadAsync(new AiToolInputV1("{}"), Context())).Outcome);
+    }
+
+    [Fact]
+    public void The_owner_calculation_tells_draft_partly_and_fully_shipped_instructions_apart()
+    {
+        var instruction = LoadingInstruction.Create(Guid.NewGuid(), Company, Guid.NewGuid(), Guid.NewGuid(), Now);
+        Assert.Equal((LogisticsShipmentStatesV1.Unknown, (int?)null), LogisticsShipmentStateV1.Of(instruction.Lines));
+
+        var a = instruction.AddLine(1, Guid.NewGuid(), new SourceOrderLineRef(Guid.NewGuid(), Guid.NewGuid(), 0), Guid.NewGuid(), KgUnit, null, Kg(10), Now);
+        var b = instruction.AddLine(2, Guid.NewGuid(), new SourceOrderLineRef(Guid.NewGuid(), Guid.NewGuid(), 0), Guid.NewGuid(), KgUnit, null, Kg(5), Now);
+        Assert.Equal((LogisticsShipmentStatesV1.NotShipped, (int?)0), LogisticsShipmentStateV1.Of(instruction.Lines));
+
+        instruction.Issue(3, Now);
+        instruction.RecordLoad(4, Guid.NewGuid(), a.Id, Kg(10), MeasurementKind.Measured, Now);
+        instruction.RecordLoad(5, Guid.NewGuid(), b.Id, Kg(5), MeasurementKind.Measured, Now);
+        instruction.MarkShipped(6, Guid.NewGuid(), a.Id, Kg(10), Now);
+        Assert.Equal((LogisticsShipmentStatesV1.PartiallyShipped, (int?)1), LogisticsShipmentStateV1.Of(instruction.Lines));
+
+        instruction.MarkShipped(7, Guid.NewGuid(), b.Id, Kg(2), Now);
+        Assert.Equal((LogisticsShipmentStatesV1.PartiallyShipped, (int?)1), LogisticsShipmentStateV1.Of(instruction.Lines));
+
+        instruction.MarkShipped(8, Guid.NewGuid(), b.Id, Kg(3), Now);
+        Assert.Equal((LogisticsShipmentStatesV1.FullyShipped, (int?)2), LogisticsShipmentStateV1.Of(instruction.Lines));
+    }
+
     private static AiServerContextV1 Context() => new(Company, "11111111-1111-4111-8111-111111111111", "v1.session-sentetik",
         $"company:{Company:D}", "roles:sentetik", "corr-sentetik", null, null, null);
 
@@ -155,27 +243,26 @@ public sealed class LogisticsPendingShipmentsAiToolTests
         public override DateTimeOffset GetUtcNow() => now;
     }
 
-    /// <summary>The owner's list contract only: pages of 100 by exact status, a cursor while more remain.</summary>
-    private sealed class FakeInstructionService(string permission) : ILogisticsInstructionService
+    /// <summary>The owner's shipment-state read only: pages of the asked size by exact status, a cursor while more remain.</summary>
+    private sealed class FakeInstructionService(string permission) : ILogisticsPendingShipmentReadV1
     {
-        private readonly List<LoadingInstructionSummaryView> rows = [];
+        private readonly List<LogisticsPendingShipmentRowV1> rows = [];
 
-        public List<LoadingInstructionListQuery> Queries { get; } = [];
+        public List<LogisticsPendingShipmentPageQueryV1> Queries { get; } = [];
 
-        public void Add(string status, int count, Guid company)
+        public void Add(string status, int count, Guid company, string shipmentState = LogisticsShipmentStatesV1.NotShipped)
         {
             for (var index = 0; index < count; index++)
             {
                 var number = rows.Count + 1;
-                rows.Add(new LoadingInstructionSummaryView(
+                rows.Add(new LogisticsPendingShipmentRowV1(
                     new Guid($"00000000-0000-4000-8000-{number:D12}"), company, status, $"rv-{number}",
-                    Guid.Parse("cccccccc-0000-4000-8000-0000000000c3"), Guid.Parse("dddddddd-0000-4000-8000-0000000000d4"),
-                    new DateOnly(2026, 11, 22), Now.AddMinutes(number), Now.AddMinutes(number), 1,
-                    null, null, null, "NotApplicable"));
+                    Guid.Parse("cccccccc-0000-4000-8000-0000000000c3"), new DateOnly(2026, 11, 22), Now.AddMinutes(number), 1,
+                    shipmentState == LogisticsShipmentStatesV1.Unknown ? null : 0, shipmentState));
             }
         }
 
-        public Task<LoadingInstructionListResponse> GetInstructionListAsync(LoadingInstructionListQuery query,
+        public Task<LogisticsPendingShipmentPageV1> GetPendingShipmentPageAsync(LogisticsPendingShipmentPageQueryV1 query,
             CancellationToken cancellationToken = default)
         {
             Queries.Add(query);
@@ -189,52 +276,13 @@ public sealed class LogisticsPendingShipmentsAiToolTests
                 throw new InvalidOperationException("SENTETIK owner failure");
             }
 
-            var matching = rows.Where(row => query.Status is null || row.Status == query.Status).ToArray();
+            var matching = rows.Where(row => row.Status == query.Status).ToArray();
             var start = query.Cursor is null ? 0 : int.Parse(query.Cursor, System.Globalization.CultureInfo.InvariantCulture);
             var page = matching.Skip(start).Take(query.PageSize).ToArray();
             var next = start + page.Length < matching.Length
                 ? (start + page.Length).ToString(System.Globalization.CultureInfo.InvariantCulture)
                 : null;
-            return Task.FromResult(new LoadingInstructionListResponse(page, next));
+            return Task.FromResult(new LogisticsPendingShipmentPageV1(page, next));
         }
-
-        public Task<LoadingInstructionResponse> CreateInstructionAsync(CreateLoadingInstructionRequest request, LogisticsCommandMetadata metadata,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public Task<LoadingInstructionResponse> IssueInstructionAsync(Guid instructionId, IssueLoadingInstructionRequest request,
-            LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public Task<LoadingInstructionResponse> RecordLoadAsync(Guid instructionId, Guid lineId, RecordLoadRequest request,
-            LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public Task<LoadingInstructionResponse> RecordWeighingAsync(Guid instructionId, RecordWeighingRequest request, LogisticsCommandMetadata metadata,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public Task<LoadingInstructionResponse> CreateDispatchNoteAsync(Guid instructionId, CreateDispatchNoteRequest request, LogisticsCommandMetadata metadata,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public Task<LoadingInstructionResponse> CancelInstructionAsync(Guid instructionId, CancelInstructionRequest request,
-            LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public Task<LoadingInstructionResponse> RecordUnloadWeighingAsync(Guid instructionId, RecordUnloadWeighingRequest request,
-            LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public Task<LoadingInstructionResponse> ApproveDispatchNoteAsync(Guid instructionId, Guid dispatchNoteId, ApproveDispatchNoteRequest request,
-            LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public Task<LoadingInstructionResponse> CancelDispatchNoteAsync(Guid instructionId, Guid dispatchNoteId, CancelDispatchNoteRequest request,
-            LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public Task<LoadingInstructionResponse> SetEDispatchNumberAsync(Guid instructionId, Guid dispatchNoteId, SetEDispatchNumberRequest request,
-            LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public Task<SalesOrderDispatchNotesView> GetSalesOrderDispatchNotesAsync(Guid salesOrderId, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public Task<LoadingInstructionDetailView> GetInstructionDetailAsync(Guid instructionId, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public Task<LogisticsApprovedOrderLinePage> GetApprovedOrderLinesAsync(LogisticsApprovedOrderLinesQuery query,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 }

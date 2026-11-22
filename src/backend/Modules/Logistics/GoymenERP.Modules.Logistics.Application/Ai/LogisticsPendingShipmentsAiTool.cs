@@ -9,17 +9,20 @@ namespace GoymenERP.Modules.Logistics.Application.Ai;
 /// <summary>
 /// Y-A1 READ tool <c>logistics.pending-shipments.v1</c> (AI-D32 "tek bir dar işlem sorgusu", DALGA_PLANI_v2 A.3): the
 /// company's loading instructions still waiting — counted and listed — read ONLY through the Logistics owner's own
-/// list service (<see cref="ILogisticsInstructionService.GetInstructionListAsync"/>), which measures
-/// <c>logistics.loading-instructions.read</c> for the server-side actor and company at every fence. No SQL, no table,
-/// no other module. Counts are exact integers over every page read; when the scan cap is reached the counts are
-/// withheld (null) and <c>complete</c> is false — never an estimate.
+/// paged read (<see cref="ILogisticsPendingShipmentReadV1.GetPendingShipmentPageAsync"/>), which measures
+/// <c>logistics.loading-instructions.read</c> for the server-side actor and company at every fence and gives each
+/// instruction's shipment state from its own lines (no detail read per instruction). No SQL, no table, no other module.
+/// Counts are exact integers over every page read; when the scan cap is reached, or any instruction's shipment state is
+/// unknown, the counts are withheld (null) and <c>complete</c> is false — never an estimate.
 /// <para>
 /// AI-D35 (SINAN_KARARLARI_2026-11-22_EK_SORULAR.md; closes ASSUMPTION-AI-PENDING-SHIPMENT-1): "bekleyen sevkiyat" = a
 /// loading instruction that is draft or issued and not turned into a definite shipment; dispatch-note states are not
-/// counted. Read here as the owner statuses <c>Draft</c> and <c>Issued</c> (cancelled excluded).
+/// counted. Read here as the owner statuses <c>Draft</c> and <c>Issued</c> whose shipment state is not
+/// <see cref="LogisticsShipmentStatesV1.FullyShipped"/>: a partly shipped instruction counts, a fully shipped or
+/// cancelled one does not.
 /// </para>
 /// </summary>
-public sealed class LogisticsPendingShipmentsAiTool(ILogisticsInstructionService instructions, TimeProvider timeProvider)
+public sealed class LogisticsPendingShipmentsAiTool(ILogisticsPendingShipmentReadV1 instructions, TimeProvider timeProvider)
     : IAiOwnerReadToolV1
 {
     public const string ToolId = "logistics.pending-shipments.v1";
@@ -51,10 +54,10 @@ public sealed class LogisticsPendingShipmentsAiTool(ILogisticsInstructionService
             InputSchema: "logistics.pending-shipments.v1/input@1",
             OutputSchema: "logistics.pending-shipments.v1/output@1",
             FieldPolicy: "logistics.pending-shipments.v1/fields@1",
-            LimitPolicy: "logistics.pending-shipments.v1/limit-50-scan-1000@1",
+            LimitPolicy: "logistics.pending-shipments.v1/limit-50-scan-1000@2",
             Catalogue: "contracts/ai/tool-catalog-v1.json",
             AuthorizationPolicy: "ai.panel.use+logistics.loading-instructions.read@1",
-            SourceContract: "ILogisticsInstructionService.GetInstructionListAsync@v1",
+            SourceContract: "ILogisticsPendingShipmentReadV1.GetPendingShipmentPageAsync@v1",
             RedactionPolicy: "logistics.pending-shipments.v1/no-free-text@1"));
 
     public async Task<AiReadResultV1> ReadAsync(AiToolInputV1 input, AiServerContextV1 context, CancellationToken cancellationToken = default)
@@ -68,7 +71,7 @@ public sealed class LogisticsPendingShipmentsAiTool(ILogisticsInstructionService
         }
 
         var statuses = status is null ? new[] { DraftStatus, IssuedStatus } : new[] { status };
-        var rows = new List<LoadingInstructionSummaryView>();
+        var rows = new List<LogisticsPendingShipmentRowV1>();
         var complete = true;
         try
         {
@@ -77,12 +80,13 @@ public sealed class LogisticsPendingShipmentsAiTool(ILogisticsInstructionService
                 string? cursor = null;
                 do
                 {
-                    var page = await instructions.GetInstructionListAsync(
-                        new LoadingInstructionListQuery(PageSize, cursor, wanted), cancellationToken);
+                    var page = await instructions.GetPendingShipmentPageAsync(
+                        new LogisticsPendingShipmentPageQueryV1(wanted, PageSize, cursor), cancellationToken);
                     foreach (var item in page.Items)
                     {
                         // The owner answered for another company or another status: release nothing (fail-closed).
-                        if (item.CompanyId != context.CompanyId || !string.Equals(item.Status, wanted, StringComparison.Ordinal))
+                        if (item.CompanyId != context.CompanyId || !string.Equals(item.Status, wanted, StringComparison.Ordinal)
+                            || !KnownStates.Contains(item.ShipmentState))
                         {
                             return new AiReadResultV1(AiToolOutcomeV1.Unavailable);
                         }
@@ -115,25 +119,37 @@ public sealed class LogisticsPendingShipmentsAiTool(ILogisticsInstructionService
             return new AiReadResultV1(AiToolOutcomeV1.Unavailable);
         }
 
-        if (rows.Select(row => row.Id).Distinct().Count() != rows.Count)
+        if (rows.Select(row => row.InstructionId).Distinct().Count() != rows.Count)
         {
             return new AiReadResultV1(AiToolOutcomeV1.Unavailable);
         }
 
         var ordered = rows
             .OrderBy(row => row.CreatedAtUtc)
-            .ThenBy(row => row.Id)
+            .ThenBy(row => row.InstructionId)
             .ToArray();
-        var draft = ordered.Count(row => row.Status == DraftStatus);
-        var issued = ordered.Count(row => row.Status == IssuedStatus);
-        var listed = ordered.Take(limit).Select(row => new PendingShipmentItemV1(
-            row.Id, row.Status, row.EffectiveOn, row.LineCount, row.CustomerPartyId, row.CreatedAtUtc, row.Version)).ToArray();
+        // An instruction whose shipment state cannot be told is neither counted nor dropped silently: fail-closed.
+        if (ordered.Any(row => row.ShipmentState == LogisticsShipmentStatesV1.Unknown))
+        {
+            complete = false;
+        }
+
+        var pending = ordered
+            .Where(row => row.ShipmentState is LogisticsShipmentStatesV1.NotShipped or LogisticsShipmentStatesV1.PartiallyShipped)
+            .ToArray();
+        var fullyShipped = ordered.Count(row => row.ShipmentState == LogisticsShipmentStatesV1.FullyShipped);
+        var draft = pending.Count(row => row.Status == DraftStatus);
+        var issued = pending.Count(row => row.Status == IssuedStatus);
+        var listed = pending.Take(limit).Select(row => new PendingShipmentItemV1(
+            row.InstructionId, row.Status, row.EffectiveOn, row.LineCount, row.CustomerPartyId, row.CreatedAtUtc, row.Version,
+            row.ShipmentState)).ToArray();
         var content = new PendingShipmentsContentV1(
             Definition,
             complete,
             complete ? draft + issued : null,
             complete ? draft : null,
             complete ? issued : null,
+            complete ? fullyShipped : null,
             listed.Length,
             listed);
         var source = new AiSourceV1(ToolId, ToolVersion, TargetKind, context.CompanyId, "Bekleyen yükleme talimatları",
@@ -141,9 +157,17 @@ public sealed class LogisticsPendingShipmentsAiTool(ILogisticsInstructionService
         return new AiReadResultV1(AiToolOutcomeV1.Succeeded, JsonSerializer.Serialize(content, Json), source);
     }
 
-    private static string VersionOf(IEnumerable<LoadingInstructionSummaryView> rows)
+    private static readonly HashSet<string> KnownStates = new(StringComparer.Ordinal)
     {
-        var text = string.Join('\n', rows.Select(row => $"{row.Id:D}:{row.Version}"));
+        LogisticsShipmentStatesV1.NotShipped,
+        LogisticsShipmentStatesV1.PartiallyShipped,
+        LogisticsShipmentStatesV1.FullyShipped,
+        LogisticsShipmentStatesV1.Unknown,
+    };
+
+    private static string VersionOf(IEnumerable<LogisticsPendingShipmentRowV1> rows)
+    {
+        var text = string.Join('\n', rows.Select(row => $"{row.InstructionId:D}:{row.Version}:{row.ShipmentState}"));
         return "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
     }
 
@@ -193,7 +217,8 @@ public sealed class LogisticsPendingShipmentsAiTool(ILogisticsInstructionService
 }
 
 /// <summary>
-/// The released fields only: no cancellation reason, actor or free text. Counts are null when <c>Complete</c> is false.
+/// The released fields only: no cancellation reason, actor or free text. Counts are null when <c>Complete</c> is false;
+/// <c>FullyShippedExcludedCount</c> says how many draft/issued instructions were left out as fully shipped (AI-D35).
 /// </summary>
 public sealed record PendingShipmentsContentV1(
     string Definition,
@@ -201,6 +226,7 @@ public sealed record PendingShipmentsContentV1(
     int? PendingCount,
     int? DraftCount,
     int? IssuedCount,
+    int? FullyShippedExcludedCount,
     int ListedCount,
     IReadOnlyList<PendingShipmentItemV1> Items);
 
@@ -211,4 +237,5 @@ public sealed record PendingShipmentItemV1(
     int LineCount,
     Guid CustomerPartyId,
     DateTimeOffset CreatedAtUtc,
-    string Version);
+    string Version,
+    string ShipmentState);

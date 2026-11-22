@@ -130,16 +130,23 @@ def _check_shipment_arithmetic(identity: str, item: dict[str, Any]) -> list[str]
     if result["outcome"] != "succeeded":
         return []
     status = item["expected_tool_call"]["arguments"].get("status")
-    rows = [row for row in item["fixture"]["instructions"] if row["company"] == "ayni"]
-    draft = sum(row["count"] for row in rows if row["status"] == "Draft" and status in (None, "Draft"))
-    issued = sum(row["count"] for row in rows if row["status"] == "Issued" and status in (None, "Issued"))
-    scanned = sum(row["count"] for row in rows if status is None or row["status"] == status)
-    complete = scanned <= 1000
+    # AI-D35: draft or issued instructions not turned into definite shipment; cancelled and fully shipped do not count;
+    # an unknown shipment state or the scan cap withholds the counts (fail-closed).
+    rows = [row for row in item["fixture"]["instructions"] if row["company"] == "ayni"
+            and row["status"] in ("Draft", "Issued") and status in (None, row["status"])]
+    scanned = sum(row["count"] for row in rows)
+    unknown = any(row["shipped"] == "bilinmiyor" for row in rows)
+    complete = scanned <= 1000 and not unknown
+    pending_rows = [row for row in rows if row["shipped"] in ("yok", "kismi")]
+    draft = sum(row["count"] for row in pending_rows if row["status"] == "Draft")
+    issued = sum(row["count"] for row in pending_rows if row["status"] == "Issued")
+    fully = sum(row["count"] for row in rows if row["shipped"] == "tam")
     limit = item["expected_tool_call"]["arguments"].get("limit", 20)
     expected = {
         "pendingCount": draft + issued if complete else None,
         "draftCount": draft if complete else None,
         "issuedCount": issued if complete else None,
+        "fullyShippedExcludedCount": fully if complete else None,
         "listedCount": min(limit, draft + issued),
         "complete": complete,
     }
