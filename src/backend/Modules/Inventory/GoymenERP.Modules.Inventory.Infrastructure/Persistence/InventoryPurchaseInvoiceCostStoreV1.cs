@@ -237,8 +237,9 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
             var root = document.RootElement;
             if ((root.TryGetProperty("invoicedKg", out var kilograms)
                     || root.TryGetProperty("receipt", out var receipt) && receipt.TryGetProperty("invoicedPhysicalKg", out kilograms))
-                && ExactCostRatio.TryParse(kilograms.GetProperty("numerator").GetString(), kilograms.GetProperty("denominator").GetString(),
-                    out var value) && value is { Sign: > 0 })
+                && kilograms.TryGetProperty("numerator", out var numerator)
+                && kilograms.TryGetProperty("denominator", out var denominator)
+                && ExactCostRatio.TryParse(numerator.GetString(), denominator.GetString(), out var value) && value is { Sign: > 0 })
                 return value;
         }
         catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException)

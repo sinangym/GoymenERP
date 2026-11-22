@@ -121,7 +121,7 @@ public sealed class InventorySupplierReturnLineageReader(InventoryDbContext db, 
         lineage.Roots.Select((root, index) => new SupplierReturnLineageShare(root.RootLabelId, index + 1, root.Share.Value())).ToArray();
 
     internal static InventorySupplierReturnReceiptStateV1 State(Guid companyId, InventorySupplierReturnReceiptStates.Facts facts) =>
-        new(companyId, facts.GoodsAcceptanceId, facts.ReceiptMovementId, facts.RootLabelId, facts.ReceivedAtUtc,
+        new InventorySupplierReturnReceiptStateV1(companyId, facts.GoodsAcceptanceId, facts.ReceiptMovementId, facts.RootLabelId, facts.ReceivedAtUtc,
             InventorySupplierReturnReceiptStates.Kg(facts.ReceivedKg),
             InventorySupplierReturnReceiptStates.Kg(facts.ReceivedKg - facts.ReturnedKg), facts.Cohorts is not null,
             facts.Cohorts is null ? null : InventoryExactCostRatioV1.From(facts.Cohorts.PendingKg),

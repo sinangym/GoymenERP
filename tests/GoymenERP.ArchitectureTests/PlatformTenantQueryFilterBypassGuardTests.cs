@@ -393,7 +393,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for AK-2b (KLN-D119): +2 movement piece-count SQL facts, ordinal-sorted; value from guard_fingerprint.py (7cadf6ca… -> 6e29756c…); SQL execution NOT_RUN.
                 // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): +1 SQL fact, ordinal-sorted; SQL execution NOT_RUN; value from guard_fingerprint.py (6e29756c… -> 10cf1aea…).
                 // Re-fingerprinted for AK-4b (KLN-D119): +3 allocation piece facts (create/change/release, definite shipment, 52022 Down guard), ordinal-sorted; SQL execution NOT_RUN (10cf1aea… -> 2d0b7ef5…).
-                "2d0b7ef5f820cadcb92524514c51546720f7cbc8ce0805fdbc47eecb00534076",
+                // Re-fingerprinted for the tren-1 piece/kg integration (AK-3b, AK-8b, golden EK1 switches): producer-measured (2d0b7ef5… -> 94908a78…); API counts checked by the guard; K3 review pending.
+                "94908a789fe0ef6e523db4da4a1967ef47b7ff2b6cb6764829891bf1444594af",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -2171,7 +2172,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (36116eed… -> 95e9ff7c…).
                         // Re-fingerprinted for AK-2b (KLN-D119): optional piece count on the exit line and its refusal mapping; tokens unchanged.
                         // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): gated source-label supplier return; value from guard_fingerprint.py (9d9a8a48… -> 7f5639e0…).
-                        "7f5639e001def30ac4a1cd9ab3e70763672252de34896f4ef2b7a221a54ffdbc",
+                        // Re-fingerprinted for the tren-1 piece/kg integration (AK-3b, AK-8b, golden EK1 switches): producer-measured (7f5639e0… -> 082f05cb…); API counts checked by the guard; K3 review pending.
+                        "082f05cbe1e601f8e7e5535328c0ffb46032da8ab8f932260c16b2d3820b2462",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         ["System.Data.Common"] = 1,
@@ -2270,7 +2272,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "PurchaseSupplierReturnHost.cs"] =
                     new(
                         // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): gated source-label supplier return; value from guard_fingerprint.py (a5539d29… -> b14781e0…).
-                        "b14781e057c00a68abba6adec33c6ee014139d6fd9b7e45aa479bc1fc2032c0d",
+                        // Re-fingerprinted for the tren-1 piece/kg integration (AK-3b, AK-8b, golden EK1 switches): producer-measured (b14781e0… -> e9ec4375…); API counts checked by the guard; K3 review pending.
+                        "e9ec43754c46c8d2ccee61c03585d8ec75a77607694aedd4a3827250a2035eb4",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         ["System.Data.Common"] = 1,
@@ -2335,7 +2338,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "PurchasingService.SupplierReturn.cs"] =
                     new(
                         // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): gated source-label supplier return; value from guard_fingerprint.py (7931129c… -> b7c4cb9f…).
-                        "b7c4cb9f982a728ee059c783b3baeb7108182db6febcfe0b286dc5100fe140c5",
+                        // Re-fingerprinted for the tren-1 piece/kg integration (AK-3b, AK-8b, golden EK1 switches): producer-measured (b7c4cb9f… -> 278b86ec…); API counts checked by the guard; K3 review pending.
+                        "278b86ecaeb3135db633cf7325ce7a96a2949f66e5d26a6d9d2f234b8906a1db",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         [".FindAsync"] = 3
@@ -2347,7 +2351,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // Re-fingerprinted for tren-1 W6: W5 correction: replace the unauthorized filter bypass with a company-bound collision lookup; reviewed API counts unchanged (e7e33daa... -> e9eab045...).
                         // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): gated source-label supplier return; value from guard_fingerprint.py (a933ab7d… -> b0571789…).
-                        "b05717899793bc7253d88e9a3ca3222dcf62ca1c9e83dd857b873cfe226aedb9",
+                        // Re-fingerprinted for the tren-1 piece/kg integration (AK-3b, AK-8b, golden EK1 switches): producer-measured (b0571789… -> 922748b2…); API counts checked by the guard; K3 review pending.
+                        "922748b200339f46faf2ea474565c518801fffbda744c052c4162bd920eb053f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         ["Microsoft.Data.SqlClient"] = 1
@@ -3305,7 +3310,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Purchasing adjustment, Inventory reversal and future allocation/lock participants; replay and result identities
                 // companybound; fresh authority before commits; all participants disposal scoped.
                 ["src/backend/GoymenERP.Api/PurchasingRuntime/PurchaseReceiptReversalHost.Batch.cs"] =
-                    new("156bb60418ceb9d8e2b4f7ae15d25ccf37e29230e8c6757e3b62977778b46787",
+                    // Re-fingerprinted for the tren-1 piece/kg integration (AK-3b, AK-8b, golden EK1 switches): producer-measured (156bb604… -> 67b8a3cf…); API counts checked by the guard; K3 review pending.
+                    new("67b8a3cf329de50b6f207645cca5f42f908386c9d4f4152f754b50589311ee5f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["DbConnection"] = 1,
@@ -3357,7 +3363,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // own records. The unused Common import is removed.
                 ["src/backend/GoymenERP.Api/PurchasingRuntime/PurchaseReceiptReversalHost.cs"] =
                     // Re-fingerprinted for AK-3 (KLN-D119): a piece line's supplier return hands its whole-piece undo quantity to the Inventory exit (422 when missing); same API counts; K3 review pending.
-                    new("f6b84f628ae5a77b6b99438c5fb2f710fdeb92317a17c37e595faa8631d6ad74",
+                    // Re-fingerprinted for the tren-1 piece/kg integration (AK-3b, AK-8b, golden EK1 switches): producer-measured (f6b84f62… -> b5fead69…); API counts checked by the guard; K3 review pending.
+                    new("b5fead694b8e193660b38003774bf348c9aaedf76b8ac1ffa25095a6b281d86d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["GetDbConnection"] = 1,
@@ -3550,7 +3557,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // movement facts through the injected InventoryDbContext with an explicit CompanyId predicate on every batch (AsNoTracking);
                 // no SQL handle, raw query, filter bypass or write.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventorySupplierReturnLineageReader.cs"] =
-                    new("6731f698209990a7da01a45bd5db5b1c2701147e649c32f95d7540affae00e97",
+                    // Re-fingerprinted for the tren-1 piece/kg integration (AK-3b, AK-8b, golden EK1 switches): producer-measured (6731f698… -> f442b01b…); API counts checked by the guard; K3 review pending.
+                    new("00d96b32fcf5cb65bd6ff7c0011fa17c5b4e8101a517638410916fc636ba95a6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -3639,7 +3647,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // predicates. Inventory alone writes immutable movement stamps and exact pools under its existing owner
                 // transaction. Known exact fractional projections retain the existing ledger-mismatch reason; real return failure unchanged.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.MovementCosting.cs"] =
-                    new("fef71e1e29ed194abb543c479f64d4ae82f898f365876bd935fa4099350bb482",
+                    // Re-fingerprinted for the tren-1 piece/kg integration (AK-3b, AK-8b, golden EK1 switches): producer-measured (fef71e1e… -> d78d029e…); API counts checked by the guard; K3 review pending.
+                    new("d78d029e2570735e5d00ca037005ad55c72c328b99aca20a125716d6ba31d0e7",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             [".Local"] = 3,
@@ -4119,6 +4128,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/"
                  + "20261122141554_AddPurchaseGoodsReceiptBatchPieceFacts.cs"] =
                     new("eb32c2a700bb3b1dba31e317253f9084f51503fe0212df5d0578a30be3a76028",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // AK-8b (SAT-D433/SAT-D442/SAT-D445); K3 review pending. EF-generated nullable lineage parts of a supplier return.
+                // Down refuses 52072 (used by no other migration) while a lineage-parts return exists; forward fix, nothing is discarded.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/"
+                 + "20261122142515_AddPurchaseSupplierReturnLineageParts.cs"] =
+                    new("e02c09260a2aa249f0665238ab0c3ad7d76aa609bd47582d7f85f0e3d393b503",
                         new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 // AK-8 (SAT-D433/SAT-D441/SAT-D445); K3 review pending. EF-generated nullable source label and mode of a supplier return.
                 // Down refuses 52071 while a source-label return exists; one deployment-time SQL guard, no runtime tenant bypass.
