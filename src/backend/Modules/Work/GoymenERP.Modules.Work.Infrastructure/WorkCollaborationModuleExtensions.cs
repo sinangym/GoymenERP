@@ -21,6 +21,9 @@ public static class WorkCollaborationModuleExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<IWorkCollaborationServiceV1, WorkCollaborationServiceV1>();
         services.AddScoped<IWorkCollaborationMaintenanceV1, WorkCollaborationMaintenanceV1>();
+        // YOL-D26: registered so the path exists; it refuses unless Work:NoteDisposal:Enabled is true AND the record owner
+        // confirms the disposal. Nothing calls it today (no record disposal job exists).
+        services.AddScoped<IWorkNoteDisposalV1, WorkNoteDisposalV1>();
         return services.AddWorkCollaborationScheduler(configuration);
     }
 }

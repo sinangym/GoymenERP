@@ -228,6 +228,9 @@ public sealed partial class WorkDbContext(
 
             if (entry.State == EntityState.Deleted)
             {
+                // YOL-D26: the only deletion Work knows is the note disposal path, open only inside its window (closed by
+                // default and refused unless the record owner confirms the record was disposed of).
+                if (noteDisposalWindowOpen && IsNoteDisposalRow(entry.Entity)) continue;
                 throw new InvalidOperationException("Work records cannot be deleted.");
             }
 

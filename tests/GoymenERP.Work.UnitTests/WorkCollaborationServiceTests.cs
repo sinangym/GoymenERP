@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 namespace GoymenERP.Work.UnitTests;
 
 /// <summary>SENTETIK data only. In-memory Work store; owners, directory and authority are test doubles.</summary>
-public sealed class WorkCollaborationServiceTests
+public sealed partial class WorkCollaborationServiceTests
 {
     private static readonly Guid Company = Guid.Parse("c0000000-0000-4000-8000-000000000001");
     private static readonly Guid OtherCompany = Guid.Parse("c0000000-0000-4000-8000-000000000002");
@@ -194,7 +194,7 @@ public sealed class WorkCollaborationServiceTests
     private static WorkCommandMetadataV1 Meta(string key, string? correlationId = null) =>
         new(key, correlationId ?? "corr-" + key, null);
 
-    private sealed class Harness
+    private sealed partial class Harness
     {
         private readonly string name = Guid.NewGuid().ToString("N");
         public FakeRecords Records { get; } = new();
@@ -231,11 +231,15 @@ public sealed class WorkCollaborationServiceTests
     {
         public Guid? Actor { get; set; }
         public bool Unavailable { get; set; }
+        public List<(WorkRecordTypeV1, Guid)> Checked { get; } = [];
 
-        public Task<WorkRecordAccessOutcomeV1> CheckCurrentActorAsync(Guid companyId, WorkRecordRefV1 record, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Unavailable ? WorkRecordAccessOutcomeV1.Unavailable
+        public Task<WorkRecordAccessOutcomeV1> CheckCurrentActorAsync(Guid companyId, WorkRecordRefV1 record, CancellationToken cancellationToken = default)
+        {
+            Checked.Add((record.Type, record.RecordId));
+            return Task.FromResult(Unavailable ? WorkRecordAccessOutcomeV1.Unavailable
                 : companyId == Company && record.RecordId == Draft && Actor is { } actor && actor != Outsider
                     ? WorkRecordAccessOutcomeV1.Readable : WorkRecordAccessOutcomeV1.NotReadable);
+        }
 
         public Task<WorkRecordAccessOutcomeV1> CheckUserAsync(Guid companyId, WorkRecordRefV1 record, Guid userId, CancellationToken cancellationToken = default) =>
             Task.FromResult(companyId == Company && (userId == Writer || userId == Reader)
