@@ -1,3 +1,5 @@
+using GoymenERP.BuildingBlocks.Ai;
+using GoymenERP.Modules.Manufacturing.Application.Ai;
 using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
@@ -84,6 +86,11 @@ public static class ManufacturingModuleExtensions
         // port are the host's registrations.
         services.AddScoped<ManufacturingMassVerifier>();
         services.AddScoped<ManufacturingCommandService>();
+        // WP-A3b: Manufacturing READ tools over the owner's own list/queue reads (registration only; Ai:AllowedTools admits a tool).
+        services.AddScoped<IManufacturingAiReadSourceV1, ManufacturingAiReadSourceV1>();
+        services.AddScoped<IAiOwnerToolV1, ManufacturingOrderStatusAiTool>();
+        services.AddScoped<IAiOwnerToolV1, ManufacturingPlanStatusAiTool>();
+        services.AddScoped<IAiOwnerToolV1, ManufacturingWorkCenterQueueAiTool>();
         // W1-A (AI-D31, AI-D32, YOL-D18): a read-only Work inbox source over Manufacturing's own plans waiting for approval.
         services.AddScoped<WorkInbox.ManufacturingWorkInboxFence>();
         services.AddScoped<IWorkInboxSourceV1, WorkInbox.ManufacturingPlanWorkInboxSourceV1>();

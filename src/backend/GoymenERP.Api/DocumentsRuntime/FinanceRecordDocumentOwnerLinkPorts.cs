@@ -132,3 +132,60 @@ public sealed class FinanceCustomerInstrumentDocumentOwnerLinkPort(
             : FinanceOwnerReadV1.Of(result.Outcome);
     }
 }
+
+/// <summary>
+/// WP12 / FNS-D52: <c>finance.bank-statement-import</c> through
+/// <see cref="IFinanceBankStatementImportServiceV1.CheckDocumentOwnerAsync"/>. The only owner that accepts the bank
+/// statement kinds (XLSX, MT940, CSV); a statement file belongs to its import alone, so no existing document is linked.
+/// </summary>
+public sealed class FinanceBankStatementImportDocumentOwnerLinkPort(
+    ICompanyContext companyContext,
+    ICurrentUser currentUser,
+    ICorrelationContext correlation,
+    IFinanceBankStatementImportServiceV1 imports) : IDocumentOwnerLinkPortV1
+{
+    public string Kind => DocumentOwnerLinkKindsV1.FinanceBankStatementImport;
+
+    public IReadOnlyCollection<GoymenERP.Modules.Documents.Domain.DocumentFileKind> AcceptedFileKinds =>
+        GoymenERP.Modules.Documents.Domain.DocumentContentPolicy.BankStatementImportKinds;
+
+    public async Task<DocumentOwnerAccessV1> CheckReadableAsync(Guid ownerId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (ownerId == Guid.Empty || !currentUser.IsAuthenticated || string.IsNullOrWhiteSpace(currentUser.UserId)
+            || !companyContext.IsResolved || companyContext.CompanyId == Guid.Empty
+            || !currentUser.CanAccessCompany(companyContext.CompanyId))
+        {
+            return DocumentOwnerAccessV1.Denied;
+        }
+
+        var companyId = companyContext.CompanyId;
+        var actorId = currentUser.UserId!;
+        try
+        {
+            var outcome = await imports.CheckDocumentOwnerAsync(
+                new FinanceContext(companyId, actorId, correlation.CorrelationId, correlation.CausationId), ownerId,
+                cancellationToken);
+            if (companyContext.CompanyId != companyId || !string.Equals(currentUser.UserId, actorId, StringComparison.Ordinal))
+            {
+                return DocumentOwnerAccessV1.Denied;
+            }
+
+            return outcome switch
+            {
+                ReadOutcome.Found => DocumentOwnerAccessV1.Readable,
+                ReadOutcome.NotFound => DocumentOwnerAccessV1.NotFound,
+                ReadOutcome.Denied => DocumentOwnerAccessV1.Denied,
+                _ => DocumentOwnerAccessV1.Unavailable,
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            return DocumentOwnerAccessV1.Unavailable;
+        }
+    }
+}

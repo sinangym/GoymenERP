@@ -1510,6 +1510,216 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceBankStatementCommandRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("KeyHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("CommandName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)");
+
+                    b.Property<Guid>("ImportId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("CompanyId", "KeyHash");
+
+                    b.ToTable("BankStatementCommands", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_BankStatementCommands_Evidence", "LEN([KeyHash]) = 64 AND LEN([PayloadHash]) = 64 AND LEN([CommandName]) > 0 AND LEN([ActorId]) > 0 AND [ImportId] <> '00000000-0000-0000-0000-000000000000' AND ISJSON([ResultJson]) = 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceBankStatementImportRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("BankAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BankKey")
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid?>("CsvMappingProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("CsvMappingProfileVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("DocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DocumentSha256")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<int?>("DocumentVersion")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DuplicateLineCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly?>("FirstTransactionOn")
+                        .HasColumnType("date");
+
+                    b.Property<int>("Format")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly?>("LastTransactionOn")
+                        .HasColumnType("date");
+
+                    b.Property<int>("LineCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("ParsedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ParsedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateTimeOffset>("ReservedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ReservedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<int>("State")
+                        .HasColumnType("int");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "BankAccountId", "DocumentSha256");
+
+                    b.HasIndex("CompanyId", "BankAccountId", "ReservedAtUtc");
+
+                    b.ToTable("BankStatementImports", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_BankStatementImports_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] <> '00000000-0000-0000-0000-000000000000' AND [Version] >= 1 AND [Format] IN (1,2,3) AND [State] IN (1,2) AND LEN([ReservedBy]) > 0 AND (([Format] = 1 AND [BankKey] IS NOT NULL AND LEN([BankKey]) > 0) OR ([Format] <> 1 AND [BankKey] IS NULL))");
+
+                            t.HasCheckConstraint("CK_BankStatementImports_State", "([State] = 1 AND [DocumentId] IS NULL AND [DocumentVersion] IS NULL AND [DocumentSha256] IS NULL AND [CsvMappingProfileId] IS NULL AND [CsvMappingProfileVersion] IS NULL AND [LineCount] = 0 AND [DuplicateLineCount] = 0 AND [FirstTransactionOn] IS NULL AND [LastTransactionOn] IS NULL AND [ParsedBy] IS NULL AND [ParsedAtUtc] IS NULL) OR ([State] = 2 AND [DocumentId] IS NOT NULL AND [DocumentId] <> '00000000-0000-0000-0000-000000000000' AND [DocumentVersion] >= 1 AND LEN([DocumentSha256]) = 64 AND [LineCount] >= 0 AND [DuplicateLineCount] >= 0 AND [LineCount] + [DuplicateLineCount] >= 1 AND [FirstTransactionOn] IS NOT NULL AND [LastTransactionOn] >= [FirstTransactionOn] AND LEN([ParsedBy]) > 0 AND [ParsedAtUtc] IS NOT NULL AND (([Format] = 1 AND [CsvMappingProfileId] IS NOT NULL AND [CsvMappingProfileVersion] >= 1) OR ([Format] <> 1 AND [CsvMappingProfileId] IS NULL AND [CsvMappingProfileVersion] IS NULL)))");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceBankStatementLineRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AmountText")
+                        .IsRequired()
+                        .HasColumnType("varchar(max)");
+
+                    b.Property<string>("BalanceText")
+                        .HasColumnType("varchar(max)");
+
+                    b.Property<Guid>("BankAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CounterpartyIban")
+                        .HasMaxLength(26)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(26)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("CurrencyText")
+                        .HasMaxLength(3)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(3)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("Direction")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("ImportId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("LineNumber")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Occurrence")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reference")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateOnly>("TransactionOn")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("ValueOn")
+                        .HasColumnType("date");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "ImportId", "LineNumber");
+
+                    b.HasIndex("CompanyId", "BankAccountId", "Fingerprint", "Occurrence")
+                        .IsUnique();
+
+                    b.ToTable("BankStatementLines", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_BankStatementLines_Content", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [ImportId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] <> '00000000-0000-0000-0000-000000000000' AND [LineNumber] >= 0 AND [Occurrence] >= 1 AND LEN([Fingerprint]) = 64 AND [Direction] IN (1,2) AND LEN([AmountText]) > 0 AND [AmountText] NOT LIKE '%[^0-9.]%' AND [AmountText] NOT LIKE '%.%.%' AND [AmountText] NOT LIKE '.%' AND [AmountText] NOT LIKE '%.' AND LEN([Description]) > 0 AND ([CounterpartyIban] IS NULL OR LEN([CounterpartyIban]) = 26)");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceCommandRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -4913,6 +5123,25 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("CompanyId", "SourceId")
                         .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceBankStatementImportRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.BankAccountRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "BankAccountId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceBankStatementLineRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceBankStatementImportRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "ImportId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

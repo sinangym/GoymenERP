@@ -1,14 +1,20 @@
 using System.Text.Json;
 using GoymenERP.Api.Ai;
 using GoymenERP.Api.Ai.Knowledge;
+using GoymenERP.Api.Ai.SecurityWatch;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Security.Events;
+using GoymenERP.Modules.Counterparty.Infrastructure.Ai;
 using GoymenERP.Modules.Logistics.Application.Ai;
 using GoymenERP.Modules.Logistics.Application.Contracts;
+using GoymenERP.Modules.SecurityEvents.Infrastructure.Ai;
+using GoymenERP.Modules.SecurityEvents.Infrastructure.Reading;
+using GoymenERP.Modules.Sales.Application.Ai;
+using GoymenERP.Modules.Sales.Application.Contracts;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
@@ -126,16 +132,31 @@ public sealed class AiYa1ReadToolsTests
     }
 
     [Fact]
-    public void The_tool_catalog_contract_matches_both_descriptors()
+    public void The_tool_catalog_contract_matches_every_registered_read_tool_descriptor()
     {
         using var catalog = JsonDocument.Parse(File.ReadAllText(Path.Combine(FindRepositoryRoot(), CatalogPath)));
+        // Y-A1 and WP-A3a: every catalogued tool has exactly one C# descriptor and the reverse (descriptors need no owner).
         var descriptors = new[]
         {
             DecisionTool().Descriptor,
             new LogisticsPendingShipmentsAiTool(new ListOnlyInstructionService(), new FixedTime(Now)).Descriptor,
-        };
+            // WP-C10
+            new SecurityEventsSummaryAiTool(new SecurityEventDigestReader(new DeniedSecurityEventQuery()), new FixedTime(Now)).Descriptor,
+            new SecurityTechWatchAiTool(new FixedDependencyScanReportSource(DependencyScanReadResultV1.NotConfigured),
+                new SecurityEventDigestReader(new DeniedSecurityEventQuery()), new FixedTime(Now)).Descriptor,
+            new LogisticsOrderDispatchNotesAiTool(null!, new FixedTime(Now)).Descriptor,
+            new LogisticsInstructionShipmentStatusAiTool(null!, new FixedTime(Now)).Descriptor,
+            new SalesPendingApprovalsAiTool(null!, new FixedTime(Now)).Descriptor,
+            new SalesQuoteStatusAiTool(null!, new FixedTime(Now)).Descriptor,
+            new SalesOrderStatusAiTool(null!, new FixedTime(Now)).Descriptor,
+            new CounterpartyPartyLookupAiTool(null!, new FixedTime(Now)).Descriptor,
+            new CounterpartyPartySummaryAiTool(null!, new FixedTime(Now)).Descriptor,
+            new CounterpartyRoleCountsAiTool(null!, new FixedTime(Now)).Descriptor,
+        }.Concat(AiWpa3bReadToolsTests.Descriptors()).ToArray();
+        Assert.Equal(descriptors.Length, descriptors.Select(descriptor => descriptor.ToolId).Distinct(StringComparer.Ordinal).Count());
         var entries = catalog.RootElement.GetProperty("tools").EnumerateArray().ToArray();
-        Assert.Equal(descriptors.Length, entries.Length);
+        // Every catalog entry is a reviewed descriptor: the two Y-A1 tools here and the WP-A3c tools checked in AiWpA3cReadToolsTests.
+        Assert.Equal(descriptors.Length + AiWpA3cReadToolsTests.CatalogDescriptors().Length, entries.Length);
         foreach (var descriptor in descriptors)
         {
             var entry = Assert.Single(entries, e => e.GetProperty("toolId").GetString() == descriptor.ToolId);
@@ -148,6 +169,11 @@ public sealed class AiYa1ReadToolsTests
             Assert.Equal(descriptor.FieldAllowlist,
                 entry.GetProperty("fieldAllowlist").EnumerateArray().Select(value => value.GetString()!).Order(StringComparer.Ordinal));
             Assert.Null(descriptor.OwnerCommandName);
+            if (entry.TryGetProperty("arguments", out var arguments))
+            {
+                Assert.Equal(descriptor.FieldAllowlist,
+                    arguments.EnumerateObject().Select(argument => argument.Name).Order(StringComparer.Ordinal));
+            }
         }
     }
 
@@ -236,6 +262,135 @@ public sealed class AiYa1ReadToolsTests
         Assert.Empty(scope.ServiceProvider.GetRequiredService<AiToolCatalog>().Descriptors);
     }
 
+    [Fact]
+    public async Task Tool_plan_mode_counts_sales_pending_approvals_through_the_sales_owner_read()
+    {
+        var owner = new PendingApprovalOwner(3);
+        var harness = new Harness(new SalesPendingApprovalsAiTool(owner, new FixedTime(Now)));
+
+        var result = await harness.Service().AskAsync(Ask(SalesPendingApprovalsAiTool.ToolId, "{\"limit\":2}"));
+
+        Assert.Equal(AiAskStatusV1.Answered, result.Status);
+        var toolResult = Assert.Single(result.Response!.ToolResults);
+        using var content = JsonDocument.Parse(toolResult.ContentJson!);
+        Assert.Equal(3, content.RootElement.GetProperty("pendingCount").GetInt32());
+        Assert.Equal(2, content.RootElement.GetProperty("listedCount").GetInt32());
+        Assert.True(content.RootElement.GetProperty("complete").GetBoolean());
+        Assert.Equal(Company, toolResult.Source!.TargetId);
+        Assert.All(owner.Contexts, context => Assert.Equal((Company, Actor.ToString("D")), (context.CompanyId, context.ActorId)));
+    }
+
+    [Fact]
+    public async Task Without_the_order_approve_permission_the_sales_approval_tool_is_refused_before_the_owner_is_read()
+    {
+        var owner = new PendingApprovalOwner(1);
+        var harness = new Harness(new SalesPendingApprovalsAiTool(owner, new FixedTime(Now)));
+        harness.Authority.Revoke(SalesPermissionManifestV1.OrdersApprove);
+
+        var result = await harness.Service().AskAsync(Ask(SalesPendingApprovalsAiTool.ToolId, "{}"));
+
+        Assert.Equal(AiAskStatusV1.Refused, result.Status);
+        var denied = Assert.Single(harness.Writer.Events);
+        Assert.Equal(SecurityEventTypesV1.AiAuthorizationDenied, denied.EventType);
+        Assert.Equal(SalesPermissionManifestV1.OrdersApprove, denied.PermissionCode);
+        Assert.Empty(owner.Contexts);
+    }
+
+    [Fact]
+    public async Task A_confidential_cari_lookup_is_refused_while_the_data_class_limit_is_internal_and_the_owner_is_not_read()
+    {
+        var owner = new CounterpartyOwner();
+        var harness = new Harness(new CounterpartyPartyLookupAiTool(owner, new FixedTime(Now)));
+
+        var result = await harness.Service().AskAsync(Ask(CounterpartyPartyLookupAiTool.ToolId, "{\"query\":\"SENTETIK\"}"));
+
+        Assert.Equal(AiAskStatusV1.Refused, result.Status);
+        Assert.Contains(harness.Writer.Events, e => e.EventType == SecurityEventTypesV1.AiRequestRefused
+                                                    && e.ReasonCode == SecurityEventReasonCodesV1.AiDataClassNotAllowed);
+        Assert.Equal(0, owner.Calls);
+    }
+
+    [Fact]
+    public void Every_wpa3a_read_tool_is_a_read_descriptor_and_an_empty_allowlist_admits_none_of_them()
+    {
+        IAiOwnerToolV1[] tools =
+        [
+            DecisionTool(),
+            new LogisticsPendingShipmentsAiTool(new ListOnlyInstructionService(), new FixedTime(Now)),
+            new LogisticsOrderDispatchNotesAiTool(null!, new FixedTime(Now)),
+            new LogisticsInstructionShipmentStatusAiTool(null!, new FixedTime(Now)),
+            new SalesPendingApprovalsAiTool(new PendingApprovalOwner(0), new FixedTime(Now)),
+            new SalesQuoteStatusAiTool(null!, new FixedTime(Now)),
+            new SalesOrderStatusAiTool(null!, new FixedTime(Now)),
+            new CounterpartyPartyLookupAiTool(new CounterpartyOwner(), new FixedTime(Now)),
+            new CounterpartyPartySummaryAiTool(new CounterpartyOwner(), new FixedTime(Now)),
+            new CounterpartyRoleCountsAiTool(new CounterpartyOwner(), new FixedTime(Now)),
+        ];
+        var empty = new AiRuntimeOptions
+        {
+            Enabled = false,
+            Provider = AiProviderKindsV1.Fake,
+            PolicyRef = "TEST-AI-POLICY",
+            PolicyVersion = 1,
+            MaxQuestionLength = 200,
+            MaxArgumentBytes = 256,
+            MaxToolCallsPerRequest = 1,
+            MaxDataClass = AiDataClassV1.Internal,
+            AllowedTools = [],
+        };
+
+        Assert.All(tools, tool =>
+        {
+            Assert.IsAssignableFrom<IAiOwnerReadToolV1>(tool);
+            Assert.Equal(AiToolRiskClassV1.Read, tool.Descriptor.Risk);
+            Assert.Null(tool.Descriptor.OwnerCommandName);
+        });
+        Assert.Empty(new AiToolCatalog(tools, Options.Create(empty)).Descriptors);
+    }
+
+    /// <summary>A SENTETIK Sales pending-approval read: one page of this company's revisions, the contexts it was asked with.</summary>
+    private sealed class PendingApprovalOwner(int count) : GoymenERP.Modules.Sales.Application.Contracts.ISalesOrderDraftPendingApprovalReadServiceV1
+    {
+        public List<GoymenERP.Modules.Sales.Application.Contracts.SalesOrderDraftPendingApprovalReadContextV1> Contexts { get; } = [];
+
+        public Task<GoymenERP.Modules.Sales.Application.Contracts.SalesOrderDraftPendingApprovalReadResultV1<GoymenERP.Modules.Sales.Application.Contracts.SalesOrderDraftPendingApprovalPageV1>> ListAsync(
+            GoymenERP.Modules.Sales.Application.Contracts.SalesOrderDraftPendingApprovalReadContextV1 context, string? cursor,
+            CancellationToken cancellationToken)
+        {
+            Contexts.Add(context);
+            var items = Enumerable.Range(1, count).Select(number => new GoymenERP.Modules.Sales.Application.Contracts.SalesOrderDraftPendingApprovalItemV1(
+                new Guid($"00000000-0000-4000-8000-{number:D12}"), Company, $"SENTETIK-SO-{number}", $"v{number}", "0", "actor-sentetik",
+                Now.AddMinutes(number), false)).ToArray();
+            return Task.FromResult(new GoymenERP.Modules.Sales.Application.Contracts.SalesOrderDraftPendingApprovalReadResultV1<GoymenERP.Modules.Sales.Application.Contracts.SalesOrderDraftPendingApprovalPageV1>(
+                GoymenERP.Modules.Sales.Application.Contracts.SalesOrderDraftPendingApprovalReadOutcomeV1.Found,
+                new GoymenERP.Modules.Sales.Application.Contracts.SalesOrderDraftPendingApprovalPageV1(Company, items, null)));
+        }
+
+        public Task<GoymenERP.Modules.Sales.Application.Contracts.SalesOrderDraftPendingApprovalReadResultV1<GoymenERP.Modules.Sales.Application.Contracts.SalesOrderDraftPendingApprovalDetailV1>> GetAsync(
+            GoymenERP.Modules.Sales.Application.Contracts.SalesOrderDraftPendingApprovalReadContextV1 context, Guid draftId,
+            CancellationToken cancellationToken) => throw new NotSupportedException("The tool reads the list only.");
+    }
+
+    /// <summary>A Cari owner read that only counts calls: the data-class refusal must stop before it.</summary>
+    private sealed class CounterpartyOwner : GoymenERP.Modules.Counterparty.Application.Contracts.ICounterpartyReadService
+    {
+        public int Calls { get; private set; }
+
+        public Task<GoymenERP.Modules.Counterparty.Application.Contracts.CounterpartyPageExecution> GetAuthorizedPageAsync(
+            GoymenERP.Modules.Counterparty.Application.Contracts.CounterpartyReadRequest request, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult(GoymenERP.Modules.Counterparty.Application.Contracts.CounterpartyPageExecution.ServiceUnavailable());
+        }
+
+        public Task<GoymenERP.Modules.Counterparty.Application.Contracts.CounterpartyDetailView?> GetAuthorizedPartyAsync(Guid partyId,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult<GoymenERP.Modules.Counterparty.Application.Contracts.CounterpartyDetailView?>(null);
+        }
+    }
+
     private static DecisionLookupAiTool DecisionTool() =>
         new(new FixedAiDecisionIndexSource(RepositoryIndex.Value), new FixedTime(Now));
 
@@ -263,25 +418,30 @@ public sealed class AiYa1ReadToolsTests
 
     private sealed class Harness
     {
-        private readonly AiRuntimeOptions options = new()
-        {
-            Enabled = true,
-            Provider = AiProviderKindsV1.Fake,
-            PolicyRef = "TEST-AI-POLICY",
-            PolicyVersion = 1,
-            MaxQuestionLength = 200,
-            MaxArgumentBytes = 256,
-            MaxToolCallsPerRequest = 1,
-            MaxDataClass = AiDataClassV1.Internal,
-            AllowedTools =
-            [
-                new AiAllowedToolOptions { ToolId = DecisionLookupAiTool.ToolId, Version = DecisionLookupAiTool.ToolVersion },
-                new AiAllowedToolOptions { ToolId = LogisticsPendingShipmentsAiTool.ToolId, Version = LogisticsPendingShipmentsAiTool.ToolVersion },
-            ],
-        };
+        private readonly AiRuntimeOptions options;
+        private readonly IAiOwnerToolV1[] extraTools;
 
-        public Harness()
+        /// <param name="extraTools">WP-A3a tools allowlisted next to the two Y-A1 tools for one test.</param>
+        public Harness(params IAiOwnerToolV1[] extraTools)
         {
+            this.extraTools = extraTools;
+            options = new AiRuntimeOptions
+            {
+                Enabled = true,
+                Provider = AiProviderKindsV1.Fake,
+                PolicyRef = "TEST-AI-POLICY",
+                PolicyVersion = 1,
+                MaxQuestionLength = 200,
+                MaxArgumentBytes = 256,
+                MaxToolCallsPerRequest = 1,
+                MaxDataClass = AiDataClassV1.Internal,
+                AllowedTools =
+                [
+                    new AiAllowedToolOptions { ToolId = DecisionLookupAiTool.ToolId, Version = DecisionLookupAiTool.ToolVersion },
+                    new AiAllowedToolOptions { ToolId = LogisticsPendingShipmentsAiTool.ToolId, Version = LogisticsPendingShipmentsAiTool.ToolVersion },
+                    .. extraTools.Select(tool => new AiAllowedToolOptions { ToolId = tool.Descriptor.ToolId, Version = tool.Descriptor.Version }),
+                ],
+            };
             CompanyScope.Set(Company);
             Correlation.Set("corr-ai-ya1-sentetik", null, SourceChannels.Web, null, null);
         }
@@ -289,7 +449,8 @@ public sealed class AiYa1ReadToolsTests
         public ListOnlyInstructionService Instructions { get; } = new();
         public RecordingWriter Writer { get; } = new();
         public FakeAuthority Authority { get; } = new(ErpPermissions.AiPanelUse, ErpPermissions.AiDecisionsRead,
-            LogisticsPermissionManifestV1.InstructionsRead);
+            LogisticsPermissionManifestV1.InstructionsRead, SalesPermissionManifestV1.DraftsRead,
+            SalesPermissionManifestV1.OrdersApprove, ErpPermissions.CounterpartyPartiesRead);
         public CompanyContext CompanyScope { get; } = new();
         public CorrelationContext Correlation { get; } = new();
 
@@ -299,6 +460,7 @@ public sealed class AiYa1ReadToolsTests
             [
                 DecisionTool(),
                 new LogisticsPendingShipmentsAiTool(Instructions, new FixedTime(Now)),
+                .. extraTools,
             ];
             return new AiAskService(
                 Options.Create(options),
@@ -318,6 +480,13 @@ public sealed class AiYa1ReadToolsTests
     private sealed class FixedTime(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class DeniedSecurityEventQuery : ISecurityEventQueryServiceV1
+    {
+        public Task<SecurityEventQueryResultV1> GetEventsAsync(int pageSize, string? cursor, string? eventType,
+            string? correlationId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(SecurityEventQueryResultV1.Denied);
     }
 
     /// <summary>A SENTETIK Logistics owner shipment-state read: this company's rows only, pages by exact status.</summary>

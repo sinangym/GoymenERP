@@ -1,0 +1,12 @@
+{
+ "format": "goymen.security.action-pin-baseline.v1",
+ "note": "Yalnız küçülebilen taban: bugün sürüm etiketiyle kullanılan resmi actions/* adımları. Yeni action veya yeni etiket tam commit SHA'sıyla sabitlenir. Bir girdi SHA'ya taşınınca buradan silinir (etiket→SHA geçişi ayrı, iki incelemeli .github değişikliğidir).",
+ "mutable_refs": [
+  "actions/checkout@v7",
+  "actions/download-artifact@v8",
+  "actions/setup-dotnet@v6",
+  "actions/setup-node@v7",
+  "actions/setup-python@v6",
+  "actions/upload-artifact@v7"
+ ]
+}

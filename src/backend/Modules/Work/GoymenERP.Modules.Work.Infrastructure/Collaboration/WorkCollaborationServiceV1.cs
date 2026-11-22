@@ -56,10 +56,14 @@ public sealed class WorkCollaborationServiceV1(
         var ids = page.Select(row => row.note.Id).ToArray();
         var mentions = await database.RecordNoteMentions.AsNoTracking()
             .Where(row => row.CompanyId == actor.CompanyId && ids.Contains(row.NoteId)).ToArrayAsync(cancellationToken);
-        var names = await NamesAsync(actor.CompanyId, page.Select(row => row.note.AuthorUserId), cancellationToken);
+        var reads = await database.RecordNoteReads.AsNoTracking()
+            .Where(row => row.CompanyId == actor.CompanyId && ids.Contains(row.NoteId)).ToArrayAsync(cancellationToken);
+        var names = await NamesAsync(actor.CompanyId, page.Select(row => row.note.AuthorUserId).Concat(reads.Select(read => read.ReaderUserId)),
+            cancellationToken);
         RequireStill(actor);
         var items = page.Select(row => View(row.note, names, mentions.Where(mention => mention.NoteId == row.note.Id)
-            .Select(mention => mention.MentionedUserId).Order().ToArray(), row.passive)).ToArray();
+            .Select(mention => mention.MentionedUserId).Order().ToArray(), row.passive,
+            reads.Where(read => read.NoteId == row.note.Id).ToArray(), actor.ActorUserId)).ToArray();
         return new WorkNotePageV1(actor.CompanyId, WorkRecordTypesV1.Wire(record.Type), record.RecordId, items,
             rows.Length > WorkCollaborationLimitsV1.PageSize);
     }
@@ -75,7 +79,7 @@ public sealed class WorkCollaborationServiceV1(
         var requestHash = Hash(WorkCollaborationCommandsV1.AddNote, recordType, recordId, request.Body,
             mentioned.Order().ToArray(), request.CorrectsNoteId);
         var replay = await FindReplayAsync(scope, metadata, WorkCollaborationCommandsV1.AddNote, requestHash, cancellationToken);
-        if (replay is not null) return new(await NoteViewAsync(scope.CompanyId, replay.TargetId, cancellationToken), true, replay.CorrelationId);
+        if (replay is not null) return new(await NoteViewAsync(scope, replay.TargetId, cancellationToken), true, replay.CorrelationId);
 
         var record = ParseRecord(recordType, recordId);
         if (string.IsNullOrWhiteSpace(request.Body) || request.Body.Length > WorkCollaborationLimitsV1.NoteBodyMaximumLength
@@ -119,8 +123,8 @@ public sealed class WorkCollaborationServiceV1(
                 correctsNoteId = request.CorrectsNoteId, bodyLength = request.Body.Length }, HashJson),
             "Kayda not eklendi.");
         var saved = await SaveAsync(scope, metadata, WorkCollaborationCommandsV1.AddNote, requestHash, cancellationToken);
-        if (saved is not null) return new(await NoteViewAsync(scope.CompanyId, saved.TargetId, cancellationToken), true, saved.CorrelationId);
-        return new(await NoteViewAsync(scope.CompanyId, note.Id, cancellationToken), false, metadata.CorrelationId);
+        if (saved is not null) return new(await NoteViewAsync(scope, saved.TargetId, cancellationToken), true, saved.CorrelationId);
+        return new(await NoteViewAsync(scope, note.Id, cancellationToken), false, metadata.CorrelationId);
     }
 
     public async Task<WorkNoteResponseV1> PassivateNoteAsync(Guid noteId, PassivateWorkNoteRequestV1 request,
@@ -132,7 +136,7 @@ public sealed class WorkCollaborationServiceV1(
         var scope = await RequirePermissionAsync(WorkPermissionManifestV1.NotesWrite, cancellationToken);
         var requestHash = Hash(WorkCollaborationCommandsV1.PassivateNote, noteId, request.Reason);
         var replay = await FindReplayAsync(scope, metadata, WorkCollaborationCommandsV1.PassivateNote, requestHash, cancellationToken);
-        if (replay is not null) return new(await NoteViewAsync(scope.CompanyId, replay.TargetId, cancellationToken), true, replay.CorrelationId);
+        if (replay is not null) return new(await NoteViewAsync(scope, replay.TargetId, cancellationToken), true, replay.CorrelationId);
         if (noteId == Guid.Empty) throw new WorkCollaborationException(404, "not_found");
         if (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > WorkCollaborationLimitsV1.ReasonMaximumLength)
             throw new WorkCollaborationException(422, WorkCollaborationProblemCodesV1.ValidationFailed);
@@ -156,8 +160,43 @@ public sealed class WorkCollaborationServiceV1(
         Audit(scope, metadata, "work.note.passivated.v1", "Work.RecordNote", noteId, "PassivateNote", 1, 2,
             JsonSerializer.Serialize(new { passive = false }, HashJson), JsonSerializer.Serialize(new { passive = true }, HashJson), request.Reason);
         var saved = await SaveAsync(scope, metadata, WorkCollaborationCommandsV1.PassivateNote, requestHash, cancellationToken);
-        if (saved is not null) return new(await NoteViewAsync(scope.CompanyId, saved.TargetId, cancellationToken), true, saved.CorrelationId);
-        return new(await NoteViewAsync(scope.CompanyId, noteId, cancellationToken), false, metadata.CorrelationId);
+        if (saved is not null) return new(await NoteViewAsync(scope, saved.TargetId, cancellationToken), true, saved.CorrelationId);
+        return new(await NoteViewAsync(scope, noteId, cancellationToken), false, metadata.CorrelationId);
+    }
+
+    /// <summary>
+    /// WP9 read receipt. Not a critical command (it changes no business state and causes no external effect): it is
+    /// idempotent by its key (note, reader) — the first read wins and every later call answers that first time — so it takes
+    /// no Idempotency-Key. Whoever can read the record can mark its note read; the author's own note is answered 409.
+    /// </summary>
+    public async Task<WorkNoteReadResponseV1> MarkNoteReadAsync(Guid noteId, CancellationToken cancellationToken = default)
+    {
+        var actor = RequireActor();
+        if (noteId == Guid.Empty) throw new WorkCollaborationException(404, "not_found");
+        var note = await database.RecordNotes.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.CompanyId == actor.CompanyId && row.Id == noteId, cancellationToken)
+            ?? throw new WorkCollaborationException(404, "not_found");
+        await RequireRecordReadableAsync(actor, new WorkRecordRefV1((WorkRecordTypeV1)note.RecordType, note.RecordId), cancellationToken);
+        await RequireMemberAsync(actor, cancellationToken);
+        if (note.AuthorUserId == actor.ActorUserId) throw new WorkCollaborationException(409, WorkCollaborationProblemCodesV1.NoteOwnRead);
+        var existing = await database.RecordNoteReads.AsNoTracking().SingleOrDefaultAsync(row =>
+            row.CompanyId == actor.CompanyId && row.NoteId == noteId && row.ReaderUserId == actor.ActorUserId, cancellationToken);
+        if (existing is not null) return new(noteId, existing.ReadAtUtc);
+        RequireStill(actor);
+        var now = time.GetUtcNow();
+        database.RecordNoteReads.Add(new WorkRecordNoteReadRow { CompanyId = actor.CompanyId, NoteId = noteId, ReaderUserId = actor.ActorUserId, ReadAtUtc = now });
+        try { await database.SaveChangesAsync(cancellationToken); }
+        catch (DbUpdateException)
+        {
+            database.ChangeTracker.Clear();
+            var winner = await database.RecordNoteReads.AsNoTracking().SingleOrDefaultAsync(row =>
+                row.CompanyId == actor.CompanyId && row.NoteId == noteId && row.ReaderUserId == actor.ActorUserId, cancellationToken);
+            if (winner is null) throw new WorkCollaborationException(503, "service_unavailable");
+            return new(noteId, winner.ReadAtUtc);
+        }
+        finally { database.ChangeTracker.Clear(); }
+
+        return new(noteId, now);
     }
 
     // ---- Tasks ---------------------------------------------------------------------------------------------------------
@@ -352,9 +391,15 @@ public sealed class WorkCollaborationServiceV1(
         return new(found.Id, now);
     }
 
+    /// <summary>
+    /// WP9 / D7: the picker answers only a caller who holds <c>work.tasks.assign</c> or <c>work.notes.write</c> company-wide
+    /// now (the two commands that name a person); anyone else gets 403 before the directory is asked. The answer carries the id
+    /// and display name of active members of the resolved company and nothing else.
+    /// </summary>
     public async Task<WorkPeoplePageV1> SearchPeopleAsync(string? query, CancellationToken cancellationToken = default)
     {
         var actor = RequireActor();
+        await RequireAnyPermissionAsync(actor, [WorkPermissionManifestV1.TasksAssign, WorkPermissionManifestV1.NotesWrite], cancellationToken);
         var trimmed = query?.Trim();
         if (trimmed?.Length > WorkCollaborationLimitsV1.PeopleQueryMaximumLength)
             throw new WorkCollaborationException(400, WorkCollaborationProblemCodesV1.ValidationFailed);
@@ -363,7 +408,8 @@ public sealed class WorkCollaborationServiceV1(
         return answer.Outcome switch
         {
             WorkPersonOutcomeV1.Found => new WorkPeoplePageV1(actor.CompanyId,
-                answer.People.Where(person => person.IsActiveInCompany).ToArray(), answer.HasMore),
+                answer.People.Where(person => person.IsActiveInCompany && person.UserId != Guid.Empty)
+                    .Select(person => new WorkPersonSummaryV1(person.UserId, person.DisplayName)).ToArray(), answer.HasMore),
             WorkPersonOutcomeV1.Denied => throw new WorkCollaborationException(403, "forbidden"),
             _ => throw new WorkCollaborationException(503, "service_unavailable"),
         };
@@ -447,6 +493,24 @@ public sealed class WorkCollaborationServiceV1(
         if (granted is not { IsGranted: true, IsCompanyWide: true }) throw new WorkCollaborationException(403, "forbidden");
         return new Scope(actor.CompanyId, actor.ActorId, actor.ActorUserId, permission,
             granted.RoleCodes.Order(StringComparer.Ordinal).ToArray());
+    }
+
+    private async Task RequireAnyPermissionAsync(Actor actor, IReadOnlyList<string> permissions, CancellationToken cancellationToken)
+    {
+        foreach (var permission in permissions)
+        {
+            if (!ErpPermissions.IsKnown(permission))
+                throw new WorkCollaborationException(503, WorkCollaborationProblemCodesV1.PermissionUnregistered);
+        }
+
+        foreach (var permission in permissions)
+        {
+            var granted = await authority.RevalidatePermissionScopeAsync(permission, actor.CompanyId, cancellationToken);
+            RequireStill(actor);
+            if (granted is { IsGranted: true, IsCompanyWide: true }) return;
+        }
+
+        throw new WorkCollaborationException(403, "forbidden");
     }
 
     private async Task RequireStillPermissionAsync(Scope scope, CancellationToken cancellationToken)
@@ -613,21 +677,30 @@ public sealed class WorkCollaborationServiceV1(
     }
 
     private static WorkNoteViewV1 View(WorkRecordNoteRow note, IReadOnlyDictionary<Guid, string> names, IReadOnlyList<Guid> mentions,
-        WorkRecordNotePassivationRow? passive) =>
-        new(note.Id, note.CompanyId, WorkRecordTypesV1.Wire((WorkRecordTypeV1)note.RecordType), note.RecordId, note.AuthorUserId,
-            names.TryGetValue(note.AuthorUserId, out var name) ? name : note.AuthorUserId.ToString("D"), note.Body, note.CorrectsNoteId,
-            mentions, note.CreatedAtUtc, passive?.PassivatedAtUtc, passive?.Reason);
-
-    private async Task<WorkNoteViewV1> NoteViewAsync(Guid companyId, Guid noteId, CancellationToken cancellationToken)
+        WorkRecordNotePassivationRow? passive, IReadOnlyList<WorkRecordNoteReadRow> reads, Guid viewer)
     {
+        string Name(Guid id) => names.TryGetValue(id, out var name) ? name : id.ToString("D");
+        var ordered = reads.OrderBy(read => read.ReadAtUtc).ThenBy(read => read.ReaderUserId).ToArray();
+        return new(note.Id, note.CompanyId, WorkRecordTypesV1.Wire((WorkRecordTypeV1)note.RecordType), note.RecordId, note.AuthorUserId,
+            Name(note.AuthorUserId), note.Body, note.CorrectsNoteId, mentions, note.CreatedAtUtc, passive?.PassivatedAtUtc, passive?.Reason,
+            ordered.FirstOrDefault(read => read.ReaderUserId == viewer)?.ReadAtUtc,
+            ordered.Take(WorkCollaborationLimitsV1.NoteReadsMaximumCount)
+                .Select(read => new WorkNoteReadV1(read.ReaderUserId, Name(read.ReaderUserId), read.ReadAtUtc)).ToArray());
+    }
+
+    private async Task<WorkNoteViewV1> NoteViewAsync(Actor actor, Guid noteId, CancellationToken cancellationToken)
+    {
+        var companyId = actor.CompanyId;
         var note = await database.RecordNotes.AsNoTracking().SingleOrDefaultAsync(row => row.CompanyId == companyId && row.Id == noteId, cancellationToken)
             ?? throw new WorkCollaborationException(503, "service_unavailable");
         var passive = await database.RecordNotePassivations.AsNoTracking()
             .SingleOrDefaultAsync(row => row.CompanyId == companyId && row.NoteId == noteId, cancellationToken);
         var mentions = await database.RecordNoteMentions.AsNoTracking().Where(row => row.CompanyId == companyId && row.NoteId == noteId)
             .Select(row => row.MentionedUserId).OrderBy(id => id).ToArrayAsync(cancellationToken);
-        var names = await NamesAsync(companyId, [note.AuthorUserId], cancellationToken);
-        return View(note, names, mentions, passive);
+        var reads = await database.RecordNoteReads.AsNoTracking().Where(row => row.CompanyId == companyId && row.NoteId == noteId)
+            .ToArrayAsync(cancellationToken);
+        var names = await NamesAsync(companyId, reads.Select(read => read.ReaderUserId).Append(note.AuthorUserId), cancellationToken);
+        return View(note, names, mentions, passive, reads, actor.ActorUserId);
     }
 
     private async Task<WorkTaskViewV1> TaskViewAsync(Actor actor, Guid taskId, CancellationToken cancellationToken)

@@ -108,6 +108,9 @@ public sealed class FinancePermissionPort(
         FinanceAction.ProposeCredit => ErpPermissions.FinanceCreditsPropose,
         FinanceAction.ApproveCredit => ErpPermissions.FinanceCreditsApprove,
         FinanceAction.RecordPartyBalanceTransfer => FinancePartyBalanceTransferPermissionsV1.Record,
+        // WP12 (FNS-D13/D52): the statement import's own names, registered centrally (company-wide; not Critical; no grant).
+        FinanceAction.ImportBankStatement => FinanceBankStatementPermissionsV1.Import,
+        FinanceAction.ReadBankStatements => FinanceBankStatementPermissionsV1.Read,
         _ => null,
     };
 

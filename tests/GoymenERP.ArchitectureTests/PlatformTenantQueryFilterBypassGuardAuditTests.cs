@@ -43,6 +43,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string WorkDbContextAuditEventPath =
         "src/backend/Modules/Work/"
         + "GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDbContext.cs";
+    // WP14: the report centre appends its export and saved-view audit events in the same save, under the same company filter.
+    private const string ReportingDbContextAuditEventPath =
+        "src/backend/Modules/Reporting/"
+        + "GoymenERP.Modules.Reporting.Infrastructure/Persistence/ReportingDbContext.cs";
     // SAT-D61…D70: Settings writes its discount limit audit events in the same save (one context per company of a
     // multi-company binding write, each with its own company context), under the same safe company filter.
     private const string SettingsDbContextAuditEventPath =
@@ -89,6 +93,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             [PurchasingDbContextAuditEventPath] = "PurchasingDbContext",
             [DocumentsDbContextAuditEventPath] = "DocumentsDbContext",
             [WorkDbContextAuditEventPath] = "WorkDbContext",
+            [ReportingDbContextAuditEventPath] = "ReportingDbContext",
             [SettingsDbContextAuditEventPath] = "SettingsDbContext",
         };
 
@@ -155,6 +160,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     [InlineData(PurchasingDbContextAuditEventPath)]
     [InlineData(DocumentsDbContextAuditEventPath)]
     [InlineData(WorkDbContextAuditEventPath)]
+    [InlineData(ReportingDbContextAuditEventPath)]
     public void Audit_event_context_inventory_is_receiver_name_independent(string sourcePath)
     {
         var repositoryRoot = FindRepositoryRoot();

@@ -1,9 +1,11 @@
+using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Finance.Contracts;
+using GoymenERP.Modules.Finance.Infrastructure.Ai;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Settings.Application;
@@ -160,6 +162,17 @@ public static class FinanceModuleExtensions
         // than guessing a period.
         services.TryAddSingleton<IFinanceRecordPeriodRule, UndecidedFinanceRecordPeriodRule>();
         services.AddScoped<IFinanceReversalAllocationGate, FinanceAllocationReversalGate>();
+        // WP-A3c: Finance READ tools for the AI catalog. Registration only makes them candidates of the default-deny
+        // catalog; Ai:AllowedTools stays empty, and each call still needs ai.panel.use plus the tool's own read grants.
+        services.AddScoped<IAiOwnerToolV1>(provider => new FinanceDueOpenItemsAiTool(
+            provider.GetRequiredService<IFinanceOpenItemReadServiceV1>(), provider.GetRequiredService<TimeProvider>(),
+            provider.GetService<ISettingsMoneyCandidateReader>()));
+        services.AddScoped<IAiOwnerToolV1>(provider => new FinanceDueCustomerInstrumentsAiTool(
+            provider.GetRequiredService<ICustomerInstrumentService>(), provider.GetRequiredService<TimeProvider>(),
+            provider.GetService<ISettingsMoneyCandidateReader>()));
+        services.AddScoped<IAiOwnerToolV1>(provider => new FinanceTreasuryAccountsAiTool(
+            provider.GetRequiredService<IFinanceBankAccountReader>(), provider.GetRequiredService<IFinanceCashAccountMaster>(),
+            provider.GetRequiredService<TimeProvider>(), provider.GetService<ISettingsMoneyCandidateReader>()));
         services.TryAddSingleton(TimeProvider.System);
         return services;
     }

@@ -1,4 +1,6 @@
+using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.Modules.Accounting.Application;
+using GoymenERP.Modules.Accounting.Application.Ai;
 using GoymenERP.Modules.Accounting.Application.Contracts;
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -107,6 +109,12 @@ public static class AccountingModuleExtensions
         services.AddScoped<IAccountingSourceInvoiceCancellationStoreV1, AccountingSourceInvoiceCancellationStoreV1>();
         services.AddScoped<IAccountingSourceInvoiceCancellationPortV1, AccountingSourceInvoiceCancellationServiceV1>();
         services.AddScoped<AccountingApiService>();
+        // WP-A3c: the narrow read view of the same authorized service, and the Accounting READ tools of the AI catalog.
+        // Registration only makes them candidates of the default-deny catalog; Ai:AllowedTools stays empty.
+        services.AddScoped<IAccountingOwnerReadV1>(provider => provider.GetRequiredService<AccountingApiService>());
+        services.AddScoped<IAiOwnerToolV1, AccountingPeriodStatusAiTool>();
+        services.AddScoped<IAiOwnerToolV1, AccountingPostingQueuesAiTool>();
+        services.AddScoped<IAiOwnerToolV1, AccountingPeriodJournalsAiTool>();
         services.AddScoped<IManufacturingCostDifferenceStoreV1, ManufacturingCostDifferenceStoreV1>();
         services.AddScoped<ManufacturingPostedCostAttributionStoreV1>();
         services.AddScoped<IPostedManufacturingShipmentCostReaderV1>(provider => provider.GetRequiredService<ManufacturingPostedCostAttributionStoreV1>());

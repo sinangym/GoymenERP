@@ -45,7 +45,6 @@ internal sealed class LogisticsDispatchNoteWorkInboxSourceV1 : IWorkInboxSourceV
 
     public string ApproverPermission => LogisticsPermissionManifestV1.DispatchNotesApprove;
 
-    public WorkApprovalDurationClassV1 DurationClass => WorkApprovalDurationClassV1.Hours;
 
     public async Task<WorkInboxSourceResultV1> ListPendingAsync(
         WorkInboxSourceContextV1 context,

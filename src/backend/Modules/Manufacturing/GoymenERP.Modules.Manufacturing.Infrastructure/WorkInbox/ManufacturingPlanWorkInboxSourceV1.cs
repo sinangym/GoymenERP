@@ -17,8 +17,10 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.WorkInbox;
 /// re-approvals (<c>ReapproveManufacturingPlanV1</c>, F-009 D5, URT-D35); it waits since the order's cancellation.</item>
 /// </list>
 /// Every pending plan of the company is returned, the caller's own included: Work hides a maker's own item. The maker is the
-/// preparer of the plan's current version as the domain names it — the last reviser, else the actor who saved the plan. A plan
-/// stored before preparers were kept (URT-D2, U2-d) and never revised has no preparer; it is left out (it names no maker).
+/// preparer of the plan's current version exactly as the domain names it (<c>ProductionPlan.PreparedBy</c>, WP1 D4) — the last
+/// reviser, else the actor who saved the plan — and Work compares it as the domain does (the same Guid in any text form,
+/// <c>WorkInboxRulesV1.SameUser</c>). A plan stored before preparers were kept (URT-D2, U2-d) and never revised has no preparer:
+/// the domain refuses no one as its preparer, so it is listed with no maker (<c>PreparedBy</c> null) rather than hidden.
 /// <para>
 /// No threshold, formula or tolerance makes a plan wait: every plan needs approval. The rules say which approval it waits for
 /// and which recorded condition the approval would refuse today (a rejection not yet answered by a revision, a missing termin);
@@ -62,7 +64,6 @@ internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkInboxSourceV1
 
     public string ApproverPermission => ManufacturingPermissionManifestV1.PlansApprove;
 
-    public WorkApprovalDurationClassV1 DurationClass => WorkApprovalDurationClassV1.Hours;
 
     public async Task<WorkInboxSourceResultV1> ListPendingAsync(
         WorkInboxSourceContextV1 context,
@@ -109,11 +110,6 @@ internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkInboxSourceV1
             {
                 // A record Manufacturing cannot read as its own invariants say: unavailable, never a partial list.
                 return WorkInboxSourceResultV1.Unavailable();
-            }
-
-            if (string.IsNullOrWhiteSpace(candidate.PreparedBy))
-            {
-                continue;
             }
 
             items.Add(Item(candidate));
@@ -251,7 +247,7 @@ internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkInboxSourceV1
             : [];
         return new WorkInboxItemV1(ModuleName, KindName, candidate.PlanId, ManufacturingWorkInboxFence.Id(candidate.PlanId),
             candidate.WaitingSinceUtc.ToUniversalTime(), ManufacturingWorkInboxFence.PlanLink(candidate.PlanId),
-            candidate.PreparedBy!.Trim(), rules, references);
+            string.IsNullOrWhiteSpace(candidate.PreparedBy) ? null : candidate.PreparedBy.Trim(), rules, references);
     }
 
     private sealed record Pending(

@@ -29,6 +29,7 @@ public static class DocumentsRuntimeExtensions
         services.AddScoped<IDocumentOwnerLinkPortV1, FinanceManualReceiptDocumentOwnerLinkPort>();
         services.AddScoped<IDocumentOwnerLinkPortV1, FinanceManualBankPaymentDocumentOwnerLinkPort>();
         services.AddScoped<IDocumentOwnerLinkPortV1, FinanceCustomerInstrumentDocumentOwnerLinkPort>();
+        services.AddScoped<IDocumentOwnerLinkPortV1, FinanceBankStatementImportDocumentOwnerLinkPort>();
         services.AddScoped<IDocumentOwnerLinkPortV1, ManufacturingPlanDocumentOwnerLinkPort>();
         services.AddScoped<IDocumentOwnerLinkPortV1, ManufacturingOrderDocumentOwnerLinkPort>();
         // WP13 (YOL-D11): the Sales signed approval checks its vault document through this host adapter (actor's own vault read).

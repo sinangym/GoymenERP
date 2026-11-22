@@ -1,3 +1,5 @@
+using GoymenERP.BuildingBlocks.Ai;
+using GoymenERP.Modules.Inventory.Application.Ai;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Inventory.Infrastructure.Shell;
@@ -132,6 +134,10 @@ public static class InventoryModuleExtensions
         services.TryAddSingleton<IInventoryAllocationAiSuggestionToolV1, DisabledInventoryAllocationAiSuggestionToolV1>();
         services.AddScoped<IInventorySubstituteProductVerifierV1, InventorySubstituteProductVerifier>();
         services.AddScoped<IInventoryAllocationSuggestionReaderV1, InventoryAllocationSuggestionReader>();
+        // WP-A3b: Inventory READ tools over the owner's own authorized reads (registration only; Ai:AllowedTools admits a tool).
+        services.AddScoped<IAiOwnerToolV1, InventoryStockPositionsAiTool>();
+        services.AddScoped<IAiOwnerToolV1, InventoryNegativeStockAttemptsAiTool>();
+        services.AddScoped<IAiOwnerToolV1, InventoryPendingStockCountsAiTool>();
         services.AddSingleton<IShellCapabilityProvider, InventoryShellCapabilityProvider>();
         return services;
     }

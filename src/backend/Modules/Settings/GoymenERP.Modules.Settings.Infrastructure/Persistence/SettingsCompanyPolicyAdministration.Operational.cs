@@ -67,7 +67,8 @@ internal sealed partial class SettingsCompanyPolicyAdministration : ISettingsOpe
         var (businessCompany, days) = await ReadHistoryAsync(WorkApprovalDurationBusinessDays, cancellationToken);
         if (company != businessCompany || hours.Concat(days).Any(row => row.WholeNumberValue is null or < 1))
             throw new SettingsPrerequisiteException(CompanyPolicyProblemCodesV1.ProfileInvalid);
-        return new(company, DurationView(hours), DurationView(days));
+        return new(company, DurationView(hours, SettingsWorkApprovalDurationLimitsV1.DecidedDefaultHours),
+            DurationView(days, SettingsWorkApprovalDurationLimitsV1.DecidedDefaultBusinessDays));
     }
     public Task<CompanyPolicyCommandResultV1> RecordWorkApprovalDurationHoursAsync(RecordWorkApprovalDurationRequestV1 request,
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default) =>
@@ -90,8 +91,9 @@ internal sealed partial class SettingsCompanyPolicyAdministration : ISettingsOpe
                 new Change(new { Value = value }, row => row is not null && row.WholeNumberValue == value, null,
                     row => row.WholeNumberValue = value, row => new { Value = value, PreviousValue = row?.WholeNumberValue }), cancellationToken);
     }
-    private static WorkApprovalDurationClassViewV1 DurationView(CompanyPolicyVersionRow[] rows) =>
-        new(rows.FirstOrDefault()?.WholeNumberValue, Text(rows.FirstOrDefault()?.Version ?? 0),
+    /// <summary>YOL-D18 (WP1 D3): without a recorded version the decided default is in force as version "0".</summary>
+    private static WorkApprovalDurationClassViewV1 DurationView(CompanyPolicyVersionRow[] rows, int decidedDefault) =>
+        new(rows.FirstOrDefault()?.WholeNumberValue ?? decidedDefault, Text(rows.FirstOrDefault()?.Version ?? 0),
             rows.Select(row => new WholeNumberCompanyPolicyVersionViewV1(Text(row.Version), row.WholeNumberValue!.Value,
                 row.RecordedBy, row.RecordedAtUtc, row.Reason)).ToArray());
 }

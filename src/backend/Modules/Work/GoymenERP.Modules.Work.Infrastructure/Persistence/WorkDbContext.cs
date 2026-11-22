@@ -37,6 +37,8 @@ public sealed partial class WorkDbContext(
         ConfigureNotifications(modelBuilder);
         ConfigureApprovalInbox(modelBuilder);
         ConfigureCollaboration(modelBuilder);
+        ConfigureApprovalRules(modelBuilder);
+        ConfigureAssistantMemory(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -228,15 +230,20 @@ public sealed partial class WorkDbContext(
 
             if (entry.State == EntityState.Deleted)
             {
+                // YOL-D26: the only deletion Work knows is the note disposal path, open only inside its window (closed by
+                // default and refused unless the record owner confirms the record was disposed of).
+                if (noteDisposalWindowOpen && IsNoteDisposalRow(entry.Entity)) continue;
                 throw new InvalidOperationException("Work records cannot be deleted.");
             }
 
             if (entry.Entity is WorkObservationInboxRow or WorkOutboxRow or WorkNotificationRow or WorkNotificationInboxRow or WorkNotificationPassivationRow
-                    or WorkApprovalInboxEventRow
+                    or WorkApprovalInboxEventRow or WorkApprovalRuleVersionRow
                 && entry.State != EntityState.Added)
             {
                 throw new InvalidOperationException("Work inbox and outbox records are append-only.");
             }
+
+            GuardAssistantMemoryWrite(entry);
 
             if (IsAppendOnlyCollaborationRow(entry.Entity) && entry.State != EntityState.Added)
             {

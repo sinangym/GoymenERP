@@ -44,8 +44,12 @@ public sealed class WorkCollaborationDomainTests
     [Fact]
     public void Record_type_wire_names_round_trip_and_unknown_names_refuse()
     {
-        Assert.Equal(new[] { "sales-order-draft", "purchase-order", "stock-label", "manufacturing-plan", "counterparty" },
+        // WP9 appended seven kinds after the first five (values 6..12); existing values never move.
+        Assert.Equal(new[] { "sales-order-draft", "purchase-order", "stock-label", "manufacturing-plan", "counterparty",
+                "sales-invoice", "loading-instruction", "purchase-incoming-invoice", "manufacturing-order", "finance-manual-receipt",
+                "finance-manual-bank-payment", "sales-quote" },
             WorkRecordTypesV1.WireNames);
+        Assert.Equal(Enumerable.Range(1, 12), WorkRecordTypesV1.StoredValues);
         foreach (var name in WorkRecordTypesV1.WireNames)
         {
             Assert.True(WorkRecordTypesV1.TryParse(name, out var type));
@@ -55,6 +59,7 @@ public sealed class WorkCollaborationDomainTests
         Assert.False(WorkRecordTypesV1.TryParse("Sales-Order-Draft", out _));
         Assert.False(WorkRecordTypesV1.TryParse(null, out _));
         Assert.False(WorkRecordTypesV1.IsKnown(0));
+        Assert.False(WorkRecordTypesV1.IsKnown(13));
     }
 
     [Fact]
@@ -81,9 +86,10 @@ public sealed class WorkCollaborationDomainTests
     }
 
     [Fact]
-    public void The_permission_manifest_spells_exactly_three_names()
+    public void The_permission_manifest_spells_exactly_the_four_Work_names()
     {
-        Assert.Equal(new[] { "work.notes.write", "work.tasks.assign", "work.tasks.complete" },
+        // WP-C6 adds work.assistant-memory.oversee (AI-D30) next to the three W1-C names.
+        Assert.Equal(new[] { "work.assistant-memory.oversee", "work.notes.write", "work.tasks.assign", "work.tasks.complete" },
             WorkPermissionManifestV1.Names.Order(StringComparer.Ordinal));
     }
 }

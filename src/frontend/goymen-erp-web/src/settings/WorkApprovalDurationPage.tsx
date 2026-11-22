@@ -1,9 +1,9 @@
 /**
  * AY-OS-01 `/ayarlar/onay-sureleri` (W1-A, YOL-D17/YOL-D18): the lengths of the two approval duration classes, each a
- * versioned company policy on `settings.work-approval-duration.manage`. The screen never preselects a value and never
- * assumes a default: a class that was never recorded stays "not recorded" (the inbox then says "Süre tanımlı değil").
- * Each new version is one command with an Idempotency-Key; an unknown outcome keeps the same key and payload.
- * YOL-D22 adds the yearly official holiday/eve calendar section (`WorkHolidayCalendarSection`).
+ * versioned company policy on `settings.work-approval-duration.manage`. WP1 D3: a class never recorded shows the server's
+ * decided YOL-D18 default (version 0); the editor never preselects a value. Each new version is one command with an
+ * Idempotency-Key; an unknown outcome keeps the same key and payload. YOL-D22 adds the yearly official holiday/eve calendar
+ * section (`WorkHolidayCalendarSection`); WP1 adds the read-only versioned approval rule table (`WorkApprovalRulesSection`).
  */
 
 import { useState, type FormEvent } from 'react'
@@ -26,6 +26,7 @@ import {
 } from './workApprovalDurationContract'
 import { WORK_APPROVAL_DURATION_TEXT as T } from './workApprovalDurationText'
 import { WorkHolidayCalendarSection } from './WorkHolidayCalendarSection'
+import { WorkApprovalRulesSection } from './WorkApprovalRulesSection'
 import styles from './settings.module.css'
 
 const unitOf = (key: WorkApprovalDurationClassKey) => key === 'hours' ? T.hoursUnit : T.businessDaysUnit
@@ -63,6 +64,9 @@ function Screen({ namespace }: { readonly namespace: string | null }) {
   return <Frame title={T.title} intro={T.intro}>
     {content}
     {ready && company !== null
+      ? <WorkApprovalRulesSection companyId={company} namespace={namespace} routeEntryGeneration={shell.routeEntryGeneration} />
+      : null}
+    {ready && company !== null
       ? <WorkHolidayCalendarSection companyId={company} namespace={namespace} routeEntryGeneration={shell.routeEntryGeneration} />
       : null}
   </Frame>
@@ -81,7 +85,7 @@ function ClassPolicy({ classKey, data, companyId, changed }: {
   return <section aria-labelledby={headingId} data-testid={`work-approval-duration-${classKey}`}>
     <h2 id={headingId}>{heading}</h2>
     <p role="status">{notice}</p>
-    <p>{T.current}: {valueText(classKey, data.value)}</p>
+    <p>{T.current}: {valueText(classKey, data.value)}{data.version === '0' ? ` (${T.decidedDefault})` : null}</p>
     {data.versions.length === 0 ? <p>{T.empty}</p> : <table className={styles.table}>
       <caption>{T.history(heading)}</caption>
       <thead><tr><th scope="col">{T.version}</th><th scope="col">{T.value}</th><th scope="col">{T.who}</th><th scope="col">{T.when}</th><th scope="col">{T.reason}</th></tr></thead>

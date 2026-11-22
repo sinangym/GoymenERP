@@ -1,17 +1,14 @@
 name: CI
 
 on:
-  # CIH-D5: prose that no CI job reads does not start this workflow. Only *.md files in four
-  # folders are ignored; the Markdown files a validator reads are re-included by name. The last
-  # matching pattern decides, and both events carry the same list. Pinned by
+  # CIH-D5: prose that no CI job reads does not start this workflow. Only *.md files in three
+  # folders are ignored; docs/decisions is not, because the AI decision index reads it (WP16/D1).
+  # The Markdown files a validator reads are re-included by name. The last matching pattern
+  # decides, and both events carry the same list. Pinned by
   # tests/ci_safe_trx_summary/test_workflow_path_filters.py.
   pull_request:
     paths:
       - '**'
-      - '!docs/decisions/**/*.md'
-      - 'docs/decisions/KARAR_SICILI.md'
-      - 'docs/decisions/ACIK_KARARLAR.md'
-      - 'docs/decisions/SINAN_KARARLARI_2026-08-31.md'
       - '!docs/delivery/**/*.md'
       - 'docs/delivery/DECISION_PACK.md'
       - '!docs/handoffs/**/*.md'
@@ -21,10 +18,6 @@ on:
       - main
     paths:
       - '**'
-      - '!docs/decisions/**/*.md'
-      - 'docs/decisions/KARAR_SICILI.md'
-      - 'docs/decisions/ACIK_KARARLAR.md'
-      - 'docs/decisions/SINAN_KARARLARI_2026-08-31.md'
       - '!docs/delivery/**/*.md'
       - 'docs/delivery/DECISION_PACK.md'
       - '!docs/handoffs/**/*.md'
@@ -61,6 +54,20 @@ jobs:
           python3 -I -S -B -m unittest discover -s tests/task_manifest_validator -p "test_*.py" -v
           python3 -I -S -B tools/validate_delivery_backlog.py
           python3 -I -S -B -m unittest discover -s tests/delivery_backlog_validator -p "test_*.py" -v
+
+      # WP16 / D1: the AI decision index (incl. its committed-index freshness check) and the eval set.
+      - name: AI knowledge base integrity preflight
+        run: |
+          python3 -I -S -B -m unittest discover -s tests/ai_decision_index -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/ai_eval_set -p "test_*.py" -v
+          python3 -I -S -B tools/evaluate_ai_eval_set.py
+
+      # WP16 / DALGA_PLANI_v2 1.18: offline, deterministic secret scan and GitHub Action pin audit.
+      - name: Deterministic security scan
+        run: |
+          python3 -I -S -B tools/security/credential_scan.py
+          python3 -I -S -B tools/security/audit_action_pins.py
+          python3 -I -S -B -m unittest discover -s tests/security_scan -p "test_*.py" -v
 
       - name: Restore tools and packages
         run: |

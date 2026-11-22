@@ -16,6 +16,7 @@ const OTHER = '10000000-0000-4000-8000-000000000002'
 const ITEM = 'd1000000-0000-4000-8000-000000000001'
 const KIND = 'finance.party-credit-limit.v1'
 const PERMISSION = 'finance.credit-limits.approve'
+const RULE_VERSION = `work.approval-rule:${KIND}:0`
 
 const defined = { class: 'BusinessDays', state: 'Defined', limit: 2, dueAtUtc: '2026-11-04T07:00:00+00:00', isOverdue: true, policyVersion: 'work.approval-duration-business-days:1', holidayCalendar: 'Defined' }
 const undefinedDuration = { class: 'BusinessDays', state: 'Undefined', limit: null, dueAtUtc: null, isOverdue: null, policyVersion: null, holidayCalendar: null }
@@ -23,11 +24,12 @@ const rule = { ruleCode: 'finance.credit-limit-change', threshold: '1000.5', act
 const reference = { role: 'party', label: 'SENTETIK Cari', recordId: 'e1000000-0000-4000-8000-000000000001', link: '/cari/e1000000-0000-4000-8000-000000000001' }
 const item = (overrides: Record<string, unknown> = {}) => ({
   module: 'finance', kind: KIND, itemId: ITEM, documentLabel: 'LIM-0001', link: `/finans/kredi-limitleri?oneri=${ITEM}`,
-  waitingSinceUtc: '2026-11-01T07:00:00+00:00', awaitingPermission: PERMISSION, duration: defined,
+  waitingSinceUtc: '2026-11-01T07:00:00+00:00', awaitingPermission: PERMISSION, duration: defined, ruleVersion: RULE_VERSION,
   explanation: { rules: [rule], references: [reference] }, ...overrides,
 })
 const source = (overrides: Record<string, unknown> = {}) => ({
-  module: 'finance', kind: KIND, awaitingPermission: PERMISSION, durationClass: 'BusinessDays', state: 'Ready', hasMore: false, ...overrides,
+  module: 'finance', kind: KIND, awaitingPermission: PERMISSION, durationClass: 'BusinessDays', ruleVersion: RULE_VERSION, state: 'Ready',
+  hasMore: false, ...overrides,
 })
 const inbox = (overrides: Record<string, unknown> = {}) => ({
   companyId: COMPANY, view: 'awaiting-my-decision', generatedAtUtc: '2026-11-05T07:00:00Z', items: [item()], sources: [source()], ...overrides,
@@ -40,6 +42,20 @@ describe('decodeWorkInbox', () => {
     expect(decoded?.items[0].explanation.rules[0]).toEqual(rule)
     expect(decoded?.items[0].duration).toEqual(defined)
     expect(decoded?.sources[0].state).toBe('Ready')
+  })
+
+  it('WP1: carries the rule version naming the item kind, equal on the item and its source', () => {
+    expect(decodeWorkInbox(inbox(), COMPANY)?.items[0].ruleVersion).toBe(RULE_VERSION)
+    const recorded = `work.approval-rule:${KIND}:3`
+    expect(decodeWorkInbox(inbox({ items: [item({ ruleVersion: recorded })], sources: [source({ ruleVersion: recorded })] }), COMPANY)
+      ?.sources[0].ruleVersion).toBe(recorded)
+    expect(decodeWorkInbox(inbox({ items: [item({ ruleVersion: recorded })] }), COMPANY)).toBeNull()
+    for (const bad of ['work.approval-rule:finance.other.v1:0', `work.approval-rule:${KIND}:01`, `work.approval-rule:${KIND}:-1`,
+      `work.approval-rule:${KIND}:`, 0, null]) {
+      expect(decodeWorkInbox(inbox({ items: [item({ ruleVersion: bad })], sources: [source({ ruleVersion: bad })] }), COMPANY)).toBeNull()
+    }
+    const { ruleVersion: _, ...missing } = item()
+    expect(decodeWorkInbox(inbox({ items: [missing] }), COMPANY)).toBeNull()
   })
 
   it('tolerates an unknown rule code and role of the item module (words are the screen\'s)', () => {

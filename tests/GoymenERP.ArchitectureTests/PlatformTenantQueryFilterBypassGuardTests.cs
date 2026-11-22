@@ -6027,6 +6027,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Explicit collateral bank proof exists; AddCollateralBankProof is not rolled back (forward fix). 1 lexical Sql call(s).
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261117220054_AddCollateralBankProof.cs"] =
                     new("90aa325edba4dc64deb81eb8cd6590b644e06b6b92aab408414fcf7e5df9248c", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // WP12 (tren-2); K3 review pending. Down refuses while bank statement imports, lines or command records exist; AddBankStatementImports is not rolled back (forward fix, THROW 52250). 1 lexical Sql call(s). Fingerprint pinned at the tren-2 head (not produced in the package).
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261122201621_AddBankStatementImports.cs"] =
+                    new("0000000000000000000000000000000000000000000000000000000000000000", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Explicit COGS classification evidence exists; AddProductCogsClassificationTerminals is not rolled back (forward fix). 1 lexical Sql call(s).
                 ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Persistence/Migrations/20261117082927_AddProductCogsClassificationTerminals.cs"] =
                     new("b56cc14affae99cd499f5f2f53c38d73c3ddabe749c7977bbea75b2db9a81549", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
@@ -6219,9 +6222,21 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // W1-A; K3 review pending. Down refuses (52080, used by no other migration) while Work approval inbox measurement events exist; use a forward fix. 1 lexical Sql call(s).
                 ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261122163006_AddWorkApprovalInboxEvents.cs"] =
                     new("c2a85a0761cb686b08ec9cfbb9d1cae09fd06fa6f25f190cd59a2b5c4d9e3dc8", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // WP9; K3 review pending. Down refuses (52170, WP9 range, used by no other migration) while note read receipts or notes, tasks or notifications on record kinds 6..12 exist; use a forward fix. 1 lexical Sql call(s).
+                ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261122200838_WidenWorkRecordTypesAndNoteReads.cs"] =
+                    new("8bedd8f941a95faa6dd0506081a2b36c6758b24ed2496e64b5f8bb7191d0ff24", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // WP-C6; K3 review pending. Down refuses (52210, WP-C range, used by no other migration) while Work assistant memory entries, closures or oversight views exist; use a forward fix. 1 lexical Sql call(s).
+                ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261122201440_AddWorkAssistantMemory.cs"] =
+                    new("c8b69576f8347846dbe40206bef8669e2c03fc2347a28c8e696795cdd176bd1a", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 // W1-A; K3 review pending. Down refuses (52084, Work range, used by no other migration) while work.approval-duration-* policy versions or holiday calendar versions exist; use a forward fix. 1 lexical Sql call(s).
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/20261122181548_AddWorkApprovalDurationPolicies.cs"] =
                     new("c2be1e8e212f794bb5a0c4ebdd3f98dcc805a559caa98c1a2fdc842ea0b53d18", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // WP1; K3 review pending. Down refuses (52100, WP1 range, used by no other migration) while Work approval rule versions exist; use a forward fix. 1 lexical Sql call(s).
+                ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261122201654_AddWorkApprovalRuleVersions.cs"] =
+                    new("a2a8e707b656198d8ed6c3c4d8f5c7858bfff957e702040d45731ed42df57542", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // WP14; K3 review pending. Down refuses (52270, WP14 range, used by no other migration) while report-centre export records, saved views or command attempts exist; use a forward fix. 1 lexical Sql call(s). Fingerprint re-pinned on the tren-2 head (GOV-D9).
+                ["src/backend/Modules/Reporting/GoymenERP.Modules.Reporting.Infrastructure/Persistence/Migrations/20261122201929_AddReportingCenter.cs"] =
+                    new("0000000000000000000000000000000000000000000000000000000000000000", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
             };
 
     private static readonly HashSet<string> ReviewedProjectSdks =

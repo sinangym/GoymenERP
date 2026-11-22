@@ -254,6 +254,224 @@ namespace GoymenERP.Modules.Work.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkApprovalRuleVersionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ApproverPermission")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("CausationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("DurationClass")
+                        .HasColumnType("int");
+
+                    b.Property<string>("EscalationPermission")
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(160)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("RecordedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "Kind", "Version")
+                        .IsUnique()
+                        .HasDatabaseName("UX_WorkApprovalRuleVersions_KindVersion");
+
+                    b.ToTable("ApprovalRuleVersions", "work", t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkApprovalRuleVersions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [RecordedByUserId] <> '00000000-0000-0000-0000-000000000000' AND LEN([Kind]) > 0 AND [Version] >= 1 AND [DurationClass] IN (1, 2) AND LEN([ApproverPermission]) > 0 AND ([EscalationPermission] IS NULL OR LEN([EscalationPermission]) > 0) AND LEN([Reason]) > 0 AND LEN([CorrelationId]) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkAssistantMemoryEntryRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("CausationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CloseReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("EndedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("EndedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("State")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "OwnerUserId", "State", "UpdatedAtUtc", "Id");
+
+                    b.ToTable("AssistantMemoryEntries", "work", t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkAssistantMemoryEntries_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [OwnerUserId] <> '00000000-0000-0000-0000-000000000000' AND [Kind] IN (1, 2) AND LEN([Body]) > 0 AND [Version] >= 1 AND LEN([CorrelationId]) > 0 AND [UpdatedAtUtc] >= [CreatedAtUtc] AND [ExpiresAtUtc] > [UpdatedAtUtc]");
+
+                            t.HasCheckConstraint("CK_WorkAssistantMemoryEntries_State", "([State] = 1 AND [EndedAtUtc] IS NULL AND [EndedByUserId] IS NULL AND [CloseReason] IS NULL) OR ([State] = 2 AND [EndedAtUtc] IS NOT NULL AND [EndedByUserId] = [OwnerUserId] AND [CloseReason] IS NULL AND [Version] >= 2) OR ([State] = 3 AND [EndedAtUtc] IS NOT NULL AND [EndedByUserId] IS NOT NULL AND [EndedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [CloseReason] IS NOT NULL AND LEN([CloseReason]) > 0 AND [Version] >= 2)");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkAssistantMemoryOversightViewRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("EntryCount")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("SubjectUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ViewedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("ViewerUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "SubjectUserId", "ViewedAtUtc", "Id");
+
+                    b.ToTable("AssistantMemoryOversightViews", "work", t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkAssistantMemoryOversightViews_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [ViewerUserId] <> '00000000-0000-0000-0000-000000000000' AND [SubjectUserId] <> '00000000-0000-0000-0000-000000000000' AND [EntryCount] >= 0 AND LEN([CorrelationId]) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkAssistantMemoryUserClosureRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SubjectUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ChangedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("ChangedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<bool>("IsClosed")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "SubjectUserId");
+
+                    b.ToTable("AssistantMemoryUserClosures", "work", t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkAssistantMemoryUserClosures_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SubjectUserId] <> '00000000-0000-0000-0000-000000000000' AND [ChangedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [Version] >= 1 AND LEN([Reason]) > 0 AND LEN([CorrelationId]) > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkCollaborationAttemptRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -509,7 +727,7 @@ namespace GoymenERP.Modules.Work.Infrastructure.Persistence.Migrations
 
                     b.ToTable("InboxNotifications", "work", t =>
                         {
-                            t.HasCheckConstraint("CK_WorkInboxNotifications_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [RecipientUserId] <> '00000000-0000-0000-0000-000000000000' AND [SourceId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CorrelationId]) > 0 AND (([Kind] = 1 AND [Class] = 1 AND [RecordType] IS NOT NULL AND [RecordId] IS NOT NULL AND [ActorUserId] IS NOT NULL) OR ([Kind] = 2 AND [Class] = 2 AND [ActorUserId] IS NOT NULL) OR ([Kind] = 3 AND [Class] = 1 AND [ActorUserId] IS NULL)) AND (([RecordType] IS NULL AND [RecordId] IS NULL) OR ([RecordType] IN (1, 2, 3, 4, 5) AND [RecordId] IS NOT NULL AND [RecordId] <> '00000000-0000-0000-0000-000000000000'))");
+                            t.HasCheckConstraint("CK_WorkInboxNotifications_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [RecipientUserId] <> '00000000-0000-0000-0000-000000000000' AND [SourceId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CorrelationId]) > 0 AND (([Kind] = 1 AND [Class] = 1 AND [RecordType] IS NOT NULL AND [RecordId] IS NOT NULL AND [ActorUserId] IS NOT NULL) OR ([Kind] = 2 AND [Class] = 2 AND [ActorUserId] IS NOT NULL) OR ([Kind] = 3 AND [Class] = 1 AND [ActorUserId] IS NULL)) AND (([RecordType] IS NULL AND [RecordId] IS NULL) OR ([RecordType] IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12) AND [RecordId] IS NOT NULL AND [RecordId] <> '00000000-0000-0000-0000-000000000000'))");
                         });
                 });
 
@@ -965,6 +1183,28 @@ namespace GoymenERP.Modules.Work.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkRecordNoteReadRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("NoteId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ReaderUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ReadAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("CompanyId", "NoteId", "ReaderUserId");
+
+                    b.ToTable("RecordNoteReads", "work", t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkRecordNoteReads_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [NoteId] <> '00000000-0000-0000-0000-000000000000' AND [ReaderUserId] <> '00000000-0000-0000-0000-000000000000'");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkRecordNoteRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -1010,7 +1250,7 @@ namespace GoymenERP.Modules.Work.Infrastructure.Persistence.Migrations
 
                     b.ToTable("RecordNotes", "work", t =>
                         {
-                            t.HasCheckConstraint("CK_WorkRecordNotes_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [RecordId] <> '00000000-0000-0000-0000-000000000000' AND [AuthorUserId] <> '00000000-0000-0000-0000-000000000000' AND [RecordType] IN (1, 2, 3, 4, 5) AND LEN([Body]) > 0 AND LEN([CorrelationId]) > 0 AND ([CorrectsNoteId] IS NULL OR ([CorrectsNoteId] <> '00000000-0000-0000-0000-000000000000' AND [CorrectsNoteId] <> [Id]))");
+                            t.HasCheckConstraint("CK_WorkRecordNotes_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [RecordId] <> '00000000-0000-0000-0000-000000000000' AND [AuthorUserId] <> '00000000-0000-0000-0000-000000000000' AND [RecordType] IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12) AND LEN([Body]) > 0 AND LEN([CorrelationId]) > 0 AND ([CorrectsNoteId] IS NULL OR ([CorrectsNoteId] <> '00000000-0000-0000-0000-000000000000' AND [CorrectsNoteId] <> [Id]))");
                         });
                 });
 
@@ -1080,13 +1320,49 @@ namespace GoymenERP.Modules.Work.Infrastructure.Persistence.Migrations
 
                     b.ToTable("Tasks", "work", t =>
                         {
-                            t.HasCheckConstraint("CK_WorkTasks_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [AssignerUserId] <> '00000000-0000-0000-0000-000000000000' AND [AssigneeUserId] <> '00000000-0000-0000-0000-000000000000' AND LEN([Title]) > 0 AND [Version] >= 1 AND (([RecordType] IS NULL AND [RecordId] IS NULL) OR ([RecordType] IN (1, 2, 3, 4, 5) AND [RecordId] IS NOT NULL AND [RecordId] <> '00000000-0000-0000-0000-000000000000'))");
+                            t.HasCheckConstraint("CK_WorkTasks_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [AssignerUserId] <> '00000000-0000-0000-0000-000000000000' AND [AssigneeUserId] <> '00000000-0000-0000-0000-000000000000' AND LEN([Title]) > 0 AND [Version] >= 1 AND (([RecordType] IS NULL AND [RecordId] IS NULL) OR ([RecordType] IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12) AND [RecordId] IS NOT NULL AND [RecordId] <> '00000000-0000-0000-0000-000000000000'))");
 
                             t.HasCheckConstraint("CK_WorkTasks_State", "([Status] = 1 AND [Version] = 1 AND [ClosedAtUtc] IS NULL AND [ClosedByUserId] IS NULL AND [CancelReason] IS NULL) OR ([Status] = 2 AND [Version] = 2 AND [ClosedAtUtc] IS NOT NULL AND [ClosedByUserId] = [AssigneeUserId] AND [CancelReason] IS NULL) OR ([Status] = 3 AND [Version] = 2 AND [ClosedAtUtc] IS NOT NULL AND [ClosedByUserId] = [AssignerUserId] AND [CancelReason] IS NOT NULL AND LEN([CancelReason]) > 0)");
                         });
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkApprovalInboxEventRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Work.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkApprovalRuleVersionRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Work.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkAssistantMemoryEntryRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Work.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkAssistantMemoryOversightViewRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Work.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkAssistantMemoryUserClosureRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Work.Infrastructure.Persistence.OrganizationCompanyReference", null)
                         .WithMany()
@@ -1240,6 +1516,15 @@ namespace GoymenERP.Modules.Work.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkRecordNotePassivationRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkRecordNoteRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "NoteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkRecordNoteReadRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkRecordNoteRow", null)
                         .WithMany()

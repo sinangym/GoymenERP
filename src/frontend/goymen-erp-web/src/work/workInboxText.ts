@@ -22,6 +22,11 @@ export const WORK_INBOX_KIND_TEXT: Readonly<Record<string, string>> = {
   'purchasing.goods-receipt-batch.v1': 'Mal kabul partisi',
   'finance.party-credit-limit.v1': 'Cari kredi limiti teklifi',
   'finance.manual-bank-payment.v1': 'Elle banka ödemesi',
+  // WP1 D5: the native D-05 kinds, now in the one inbox.
+  'finance.official-invoice-import.v1': 'Resmî fatura içe alma onayı',
+  'inventory.stock-count.v1': 'Stok sayım farkı onayı',
+  'inventory.stock-scrap.v1': 'Stok hurda çıkışı onayı',
+  'sales.order-draft.v1': 'Satış siparişi taslağı onayı',
 }
 
 export const WORK_INBOX_MODULE_TEXT: Readonly<Record<string, string>> = {
@@ -30,6 +35,7 @@ export const WORK_INBOX_MODULE_TEXT: Readonly<Record<string, string>> = {
   manufacturing: 'Üretim',
   purchasing: 'Satın alma',
   finance: 'Finans',
+  inventory: 'Stok',
 }
 
 /** Owner rule code → the sentence the explanation card shows. Codes of other modules are added as their sources land. */
@@ -72,6 +78,11 @@ export const WORK_INBOX_RULE_TEXT: Readonly<Record<string, string>> = {
   'manufacturing.plan-reapproval-after-order-cancel': 'Emri iptal edilen onaylı plan yeniden onay bekliyor',
   'manufacturing.plan-rejected-not-revised': 'Plan reddedildi ve henüz revize edilmedi',
   'manufacturing.plan-due-date-missing': 'Termin girilmemiş; plan onaylanamaz',
+  // Native D-05 kinds (WP1 D5)
+  'sales.order-draft-approval': 'Sipariş taslağı hazırlayandan farklı bir kişinin onayını bekliyor',
+  'finance.official-invoice-import-approval': 'Resmî fatura içe alma partisi onay bekliyor',
+  'inventory.stock-count-difference': 'Sayılan kg defter kaydından farklı (sayılan / fark)',
+  'inventory.stock-scrap-request': 'Hurda çıkışı talebi (hurda kg)',
 }
 
 /** Reference role → label in "Dayandığı kayıtlar". */
@@ -92,6 +103,8 @@ export const WORK_INBOX_ROLE_TEXT: Readonly<Record<string, string>> = {
   'loading-instruction': 'Yükleme talimatı',
   'dispatch-note': 'İrsaliye',
   'manufacturing-order': 'Üretim emri',
+  'inventory-label': 'Etiket',
+  location: 'Lokasyon',
 }
 
 /** The owners' approve permission names ("kimde bekliyor"). */
@@ -108,6 +121,10 @@ export const WORK_INBOX_PERMISSION_TEXT: Readonly<Record<string, string>> = {
   'purchasing.goods-receipts.approve-variance': 'Mal kabul fark onayı',
   'finance.credit-limits.approve': 'Cari kredi limiti onayı',
   'finance.manual-bank-payment.approve': 'Elle banka ödemesi onayı',
+  'finance.official-invoice-import.approve': 'Resmî fatura içe alma onayı',
+  'inventory.stock-count.approve': 'Stok sayım onayı',
+  'inventory.stock-scrap.approve': 'Stok hurda onayı',
+  'sales.orders.approve': 'Satış siparişi onayı',
 }
 
 export const inboxKindText = (kind: string): string => WORK_INBOX_KIND_TEXT[kind] ?? kind
@@ -207,8 +224,6 @@ export const WORK_INBOX_TEXT = {
   hasMore: (labels: readonly string[]) =>
     `Şu onay türlerinde listede gösterilenden fazla bekleyen kayıt var; tamamı sahip ekranda: ${labels.join(', ')}.`,
   emptyReadable: 'Okunabilen onay türlerinde kararınızı bekleyen kalem yok.',
-  /** The B-25 queue under the inbox items. */
-  legacyHeading: 'Diğer bağlı onay kaynakları',
 } as const
 
 /** The inbox URL's filter members (kept in the address for Back/Forward and sharing). */

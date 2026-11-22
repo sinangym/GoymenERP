@@ -10,6 +10,7 @@ export function refusalMessage(outcome: WorkCommandOutcome<unknown>): string {
     case 'work_corrected_note_invalid': return T.correctedInvalid
     case 'work_note_not_own': return T.notOwn
     case 'work_note_already_passive': return T.alreadyPassive
+    case 'work_note_own_read': return T.noteOwnRead
     case 'work_task_not_open': return T.taskNotOpen
     case 'work_task_not_assignee': return T.taskNotAssignee
     case 'version_conflict': return T.versionConflict

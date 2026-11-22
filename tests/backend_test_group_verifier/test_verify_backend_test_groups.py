@@ -35,7 +35,7 @@ def make_repository(root: Path) -> None:
         shutil.copyfile(source_root / relative, destination)
     shutil.copytree(source_root / "tools/relational_inventory", root / "tools/relational_inventory")
     projects = [path for group in VERIFIER.GROUP_PROJECTS.values() for path in group]
-    projects += [f"src/backend/Other{i:02d}/Other{i:02d}.csproj" for i in range(53)]
+    projects += [f"src/backend/Other{i:02d}/Other{i:02d}.csproj" for i in range(55)]
     solution = ["<Solution>", '  <Folder Name="/tests/">']
     for path in projects:
         project = root / path
@@ -250,10 +250,10 @@ class BackendGroupVerifierTests(unittest.TestCase):
         self.assertEqual(len(catalog_hash), 64)
         self.assertEqual(
             [len(VERIFIER.GROUP_PROJECTS[key]) for key in ("architecture", "api", "modules")],
-            [1, 1, 20],
+            [1, 1, 21],
         )
         self.assertEqual(
-            len({p for paths in VERIFIER.GROUP_PROJECTS.values() for p in paths}), 22
+            len({p for paths in VERIFIER.GROUP_PROJECTS.values() for p in paths}), 23
         )
 
     def test_missing_extra_duplicate_and_unclassified_project_fail_closed(self) -> None:
@@ -397,7 +397,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
         directory = self.proof_directory()
         self.assertEqual(
             self.aggregate(directory),
-            22,
+            23,
         )
         for build, workers in (("failure", "success"), ("success", "skipped")):
             with self.subTest(build=build, workers=workers):
@@ -416,7 +416,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
         path = self.produce_group("modules", directory, project, names, names)
         self.assertGreater(path.stat().st_size, 2 * 1024 * 1024)
         self.assertLessEqual(path.stat().st_size, VERIFIER.MAX_PROOF_BYTES)
-        self.assertEqual(self.aggregate(directory), len(names) + 21)
+        self.assertEqual(self.aggregate(directory), len(names) + 22)
         proof = json.loads(path.read_bytes())
         self.assertEqual(len(proof["projects"][0]["testCases"]), len(names))
         # A large proof still has to satisfy the same exact head and count gates.
@@ -451,7 +451,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
         original = path.read_bytes()
         limit = VERIFIER.MAX_PROOF_BYTES
         path.write_bytes(original + b" " * (limit - len(original)))
-        self.assertEqual(self.aggregate(directory), 22)
+        self.assertEqual(self.aggregate(directory), 23)
         with path.open("ab") as output:
             output.write(b" ")
         with self.assertRaisesRegex(RuntimeError, rf"modules is oversized.*{limit + 1} bytes; limit {limit}"):
@@ -765,7 +765,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
         path = directory / "ci-backend-test-group-proof-api" / "proof-api.json"
         path.unlink()
         path = self.produce_group("api", directory, project, [name], [name])
-        self.assertEqual(self.aggregate(directory), 22)
+        self.assertEqual(self.aggregate(directory), 23)
         proof = json.loads(path.read_text(encoding="utf-8"))
         row = proof["projects"][0]
         row["testCases"][0][2:4] = [0, 1]
@@ -781,7 +781,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
         path = directory / "ci-backend-test-group-proof-api" / "proof-api.json"
         path.unlink()
         path = self.produce_group("api", directory, project, [name], [name], skipped=True)
-        self.assertEqual(self.aggregate(directory), 22)
+        self.assertEqual(self.aggregate(directory), 23)
         original = path.read_text(encoding="utf-8")
         for foreign in (name + "Unknown", "GoymenERP.Api.IntegrationTests.OrdinaryTests.Required"):
             with self.subTest(foreign=foreign):
@@ -833,7 +833,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
         path = directory / "ci-backend-test-group-proof-modules" / "proof-modules.json"
         path.unlink()
         path = self.produce_group("modules", directory, project, expected, expected)
-        self.assertEqual(self.aggregate(directory), 25)
+        self.assertEqual(self.aggregate(directory), 26)
         original = path.read_text(encoding="utf-8")
         for count in (3, 5):
             with self.subTest(aggregate_count=count):
@@ -868,7 +868,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
                 directory = self.proof_directory(f"exact-{number}")
                 (directory / "ci-backend-test-group-proof-architecture/proof-architecture.json").unlink()
                 self.produce_group("architecture", directory, project, expected, expected)
-                self.assertEqual(self.aggregate(directory), 22)
+                self.assertEqual(self.aggregate(directory), 23)
 
     def test_structured_discovery_requires_one_complete_native_stream(self) -> None:
         project = VERIFIER.GROUP_PROJECTS["architecture"][0]
@@ -1021,7 +1021,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
         path = directory / "ci-backend-test-group-proof-architecture/proof-architecture.json"
         path.unlink()
         self.produce_group("architecture", directory, project, [name], [name])
-        self.assertEqual(self.aggregate(directory), 22)
+        self.assertEqual(self.aggregate(directory), 23)
         original = json.loads(path.read_text())
         for field in ("assemblyPath", "executorUri"):
             for replacement in (None, "/foreign/Other.dll"):
@@ -1099,7 +1099,7 @@ public sealed class DeferredFixtureTests
             path = directory / "ci-backend-test-group-proof-modules" / "proof-modules.json"
             path.unlink()
             path = self.produce_group("modules", directory, project, [name], expected)
-            self.assertEqual(self.aggregate(directory), 21 + len(expected))
+            self.assertEqual(self.aggregate(directory), 22 + len(expected))
             original = path.read_text(encoding="utf-8")
             for label, rows in mutations.items():
                 with self.subTest(theory=name, aggregate=label):

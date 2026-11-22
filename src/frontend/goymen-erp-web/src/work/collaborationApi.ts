@@ -9,10 +9,10 @@ import { readJson } from '../settings/discountLimitApi'
 import type { ViewOutcome } from '../shell/uiState'
 import {
   WORK_INBOX_PATH, WORK_LIMITS, WORK_MY_TASKS_PATH, WORK_PEOPLE_PATH, WORK_TASKS_PATH,
-  decodeWorkInboxPage, decodeWorkInboxRead, decodeWorkNote, decodeWorkNotePage, decodeWorkPeoplePage, decodeWorkTask, decodeWorkTaskPage,
+  decodeWorkInboxPage, decodeWorkInboxRead, decodeWorkNote, decodeWorkNotePage, decodeWorkNoteReadReceipt, workNoteReadPath, decodeWorkPeoplePage, decodeWorkTask, decodeWorkTaskPage,
   problemCode, workInboxReadPath, workNotePassivationPath, workRecordNotesPath, workRecordTasksPath, workTaskCancellationPath, workTaskCompletionPath,
   type WorkInboxClass, type WorkInboxPage, type WorkInboxRead, type WorkNote, type WorkNotePage, type WorkPeoplePage, type WorkRecordType,
-  type WorkTask, type WorkTaskPage,
+  type WorkTask, type WorkTaskPage, type WorkNoteReadReceipt,
 } from './collaborationContract'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
@@ -109,6 +109,10 @@ export const cancelTask = (companyId: string, key: string, taskId: string, expec
 /** Marking read is naturally idempotent on the server (the first read time is kept), so it carries no key. */
 export const markInboxRead = (companyId: string, id: string): Promise<WorkCommandOutcome<WorkInboxRead>> =>
   post(workInboxReadPath(id), companyId, null, null, 200, (raw) => decodeWorkInboxRead(raw, id))
+
+/** WP9 note read receipt: idempotent on the server by (note, reader) — the first read time is kept — so it carries no key. */
+export const markNoteRead = (companyId: string, noteId: string): Promise<WorkCommandOutcome<WorkNoteReadReceipt>> =>
+  post(workNoteReadPath(noteId), companyId, null, null, 200, (raw) => decodeWorkNoteReadReceipt(raw, noteId))
 
 /**
  * Pending idempotency keys survive a reload in sessionStorage, scoped to session epoch, actor, company and target, so an

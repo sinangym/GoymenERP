@@ -6,19 +6,23 @@ namespace GoymenERP.Modules.Work.Infrastructure.Persistence;
 public sealed partial class WorkDbContext
 {
     internal const string EmptyGuid = "'00000000-0000-0000-0000-000000000000'";
+    // WP9 widened 1..5 to 1..12 (WorkRecordTypesV1.StoredValues; a unit test keeps the two equal).
+    internal const string RecordTypeList = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12";
     internal const string RecordNoteCheck =
         "[CompanyId] <> " + EmptyGuid + " AND [Id] <> " + EmptyGuid + " AND [RecordId] <> " + EmptyGuid
-        + " AND [AuthorUserId] <> " + EmptyGuid + " AND [RecordType] IN (1, 2, 3, 4, 5) AND LEN([Body]) > 0"
+        + " AND [AuthorUserId] <> " + EmptyGuid + " AND [RecordType] IN (" + RecordTypeList + ") AND LEN([Body]) > 0"
         + " AND LEN([CorrelationId]) > 0 AND ([CorrectsNoteId] IS NULL OR ([CorrectsNoteId] <> " + EmptyGuid
         + " AND [CorrectsNoteId] <> [Id]))";
     internal const string RecordNoteMentionCheck =
         "[CompanyId] <> " + EmptyGuid + " AND [NoteId] <> " + EmptyGuid + " AND [MentionedUserId] <> " + EmptyGuid;
     internal const string RecordNotePassivationCheck =
         "[CompanyId] <> " + EmptyGuid + " AND [PassivatedByUserId] <> " + EmptyGuid + " AND LEN([Reason]) > 0";
+    internal const string RecordNoteReadCheck =
+        "[CompanyId] <> " + EmptyGuid + " AND [NoteId] <> " + EmptyGuid + " AND [ReaderUserId] <> " + EmptyGuid;
     internal const string TaskIdentityCheck =
         "[CompanyId] <> " + EmptyGuid + " AND [Id] <> " + EmptyGuid + " AND [AssignerUserId] <> " + EmptyGuid
         + " AND [AssigneeUserId] <> " + EmptyGuid + " AND LEN([Title]) > 0 AND [Version] >= 1"
-        + " AND (([RecordType] IS NULL AND [RecordId] IS NULL) OR ([RecordType] IN (1, 2, 3, 4, 5) AND [RecordId] IS NOT NULL"
+        + " AND (([RecordType] IS NULL AND [RecordId] IS NULL) OR ([RecordType] IN (" + RecordTypeList + ") AND [RecordId] IS NOT NULL"
         + " AND [RecordId] <> " + EmptyGuid + "))";
     internal const string TaskStateCheck =
         "([Status] = 1 AND [Version] = 1 AND [ClosedAtUtc] IS NULL AND [ClosedByUserId] IS NULL AND [CancelReason] IS NULL)"
@@ -31,7 +35,7 @@ public sealed partial class WorkDbContext
         + " AND (([Kind] = 1 AND [Class] = 1 AND [RecordType] IS NOT NULL AND [RecordId] IS NOT NULL AND [ActorUserId] IS NOT NULL)"
         + " OR ([Kind] = 2 AND [Class] = 2 AND [ActorUserId] IS NOT NULL)"
         + " OR ([Kind] = 3 AND [Class] = 1 AND [ActorUserId] IS NULL))"
-        + " AND (([RecordType] IS NULL AND [RecordId] IS NULL) OR ([RecordType] IN (1, 2, 3, 4, 5) AND [RecordId] IS NOT NULL"
+        + " AND (([RecordType] IS NULL AND [RecordId] IS NULL) OR ([RecordType] IN (" + RecordTypeList + ") AND [RecordId] IS NOT NULL"
         + " AND [RecordId] <> " + EmptyGuid + "))";
     internal const string InboxDigestCheck =
         "[CompanyId] <> " + EmptyGuid + " AND [Id] <> " + EmptyGuid + " AND [RecipientUserId] <> " + EmptyGuid
@@ -46,6 +50,7 @@ public sealed partial class WorkDbContext
     internal DbSet<WorkRecordNoteRow> RecordNotes => Set<WorkRecordNoteRow>();
     internal DbSet<WorkRecordNoteMentionRow> RecordNoteMentions => Set<WorkRecordNoteMentionRow>();
     internal DbSet<WorkRecordNotePassivationRow> RecordNotePassivations => Set<WorkRecordNotePassivationRow>();
+    internal DbSet<WorkRecordNoteReadRow> RecordNoteReads => Set<WorkRecordNoteReadRow>();
     internal DbSet<WorkTaskRow> Tasks => Set<WorkTaskRow>();
     internal DbSet<WorkInboxNotificationRow> InboxNotifications => Set<WorkInboxNotificationRow>();
     internal DbSet<WorkInboxNotificationReadRow> InboxNotificationReads => Set<WorkInboxNotificationReadRow>();
@@ -79,6 +84,12 @@ public sealed partial class WorkDbContext
         passive.Property(row => row.Reason).HasMaxLength(500).IsRequired();
         passive.HasOne<WorkRecordNoteRow>().WithMany().HasForeignKey(row => new { row.CompanyId, row.NoteId }).OnDelete(DeleteBehavior.Restrict);
         passive.HasQueryFilter(row => row.CompanyId == companyContext.CompanyId);
+
+        var noteRead = model.Entity<WorkRecordNoteReadRow>();
+        noteRead.ToTable("RecordNoteReads", Schema, table => table.HasCheckConstraint("CK_WorkRecordNoteReads_Identity", RecordNoteReadCheck));
+        noteRead.HasKey(row => new { row.CompanyId, row.NoteId, row.ReaderUserId });
+        noteRead.HasOne<WorkRecordNoteRow>().WithMany().HasForeignKey(row => new { row.CompanyId, row.NoteId }).OnDelete(DeleteBehavior.Restrict);
+        noteRead.HasQueryFilter(row => row.CompanyId == companyContext.CompanyId);
 
         var task = model.Entity<WorkTaskRow>();
         task.ToTable("Tasks", Schema, table =>
@@ -143,7 +154,30 @@ public sealed partial class WorkDbContext
         attempt.HasQueryFilter(row => row.CompanyId == companyContext.CompanyId);
     }
 
+    private bool noteDisposalWindowOpen;
+
+    /// <summary>
+    /// YOL-D26 disposal window: while open, the note family (the note, its mentions, passivation and read receipts, and the
+    /// mention notifications it caused with their reads and digest links) may be deleted; nothing else may. Only
+    /// <c>WorkNoteDisposalV1</c> opens it, and only after the configuration gate and the owner's disposal confirmation.
+    /// </summary>
+    internal IDisposable OpenNoteDisposalWindow()
+    {
+        if (noteDisposalWindowOpen) throw new InvalidOperationException("The note disposal window is already open.");
+        noteDisposalWindowOpen = true;
+        return new DisposalWindow(this);
+    }
+
+    private static bool IsNoteDisposalRow(object entity) => entity is WorkRecordNoteRow or WorkRecordNoteMentionRow
+        or WorkRecordNotePassivationRow or WorkRecordNoteReadRow or WorkInboxNotificationReadRow or WorkInboxDigestItemRow
+        || entity is WorkInboxNotificationRow { Kind: 1 };
+
+    private sealed class DisposalWindow(WorkDbContext owner) : IDisposable
+    {
+        public void Dispose() => owner.noteDisposalWindowOpen = false;
+    }
+
     private static bool IsAppendOnlyCollaborationRow(object entity) => entity is WorkRecordNoteRow or WorkRecordNoteMentionRow
-        or WorkRecordNotePassivationRow or WorkInboxNotificationRow or WorkInboxNotificationReadRow or WorkInboxDigestRow
+        or WorkRecordNotePassivationRow or WorkRecordNoteReadRow or WorkInboxNotificationRow or WorkInboxNotificationReadRow or WorkInboxDigestRow
         or WorkInboxDigestItemRow or WorkCollaborationAttemptRow;
 }

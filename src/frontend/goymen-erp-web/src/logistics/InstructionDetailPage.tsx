@@ -94,6 +94,7 @@ import {
   type FrozenCustomerReturnAttempt,
 } from './customerReturnApi'
 import type { ApproveCustomerReturnV1, RejectCustomerReturnV1, RequestCustomerReturnV1 } from './customerReturnContract'
+import { RecordNotesSection } from '../work/RecordNotesSection'
 
 export function InstructionDetailPage() {
   const shell = useShellState()
@@ -138,6 +139,7 @@ export function InstructionDetailPage() {
   const reread = () => void queryClient.invalidateQueries({ queryKey })
   const detail = outcome.data
   return (
+    <>
     <InstructionView
       detail={detail}
       backLink={backLink}
@@ -177,6 +179,10 @@ export function InstructionDetailPage() {
         )
       }
     />
+    {/* WP9: collaboration, outside the instruction record (whose controls are its commands only). The instruction's notes
+        also carry its dispatch notes' — Logistics reads a dispatch note only through its instruction. */}
+    <RecordNotesSection recordType="loading-instruction" recordId={detail.instruction.id} />
+    </>
   )
 }
 

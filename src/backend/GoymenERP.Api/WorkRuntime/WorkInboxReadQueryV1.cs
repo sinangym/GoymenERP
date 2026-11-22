@@ -4,6 +4,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using GoymenERP.Modules.Work.Domain;
+using GoymenERP.Modules.Work.Infrastructure.ApprovalRules;
 
 namespace GoymenERP.Api.WorkRuntime;
 
@@ -20,7 +21,8 @@ internal sealed record WorkInboxExplanationV1(
 
 /// <summary>
 /// One inbox item: kind, owner record and its screen, the permission it waits on ("kimde bekliyor"), since when, its
-/// duration and its explanation card. The decision is given on <see cref="Link"/> with the owner's own command.
+/// duration, the approval rule version that gave its duration class (<see cref="RuleVersion"/>, WP1) and its explanation
+/// card. The decision is given on <see cref="Link"/> with the owner's own command.
 /// </summary>
 internal sealed record WorkInboxPageItemV1(
     string Module,
@@ -31,14 +33,19 @@ internal sealed record WorkInboxPageItemV1(
     DateTimeOffset WaitingSinceUtc,
     string AwaitingPermission,
     WorkInboxDurationV1 Duration,
+    string RuleVersion,
     WorkInboxExplanationV1 Explanation);
 
-/// <summary>One source the caller may decide: its state in this answer and whether the owner holds more than shown.</summary>
+/// <summary>
+/// One source the caller may decide: its duration class and the rule version that gives it (WP1), its state in this answer
+/// and whether the owner holds more than shown.
+/// </summary>
 internal sealed record WorkInboxSourceStateV1(
     string Module,
     string Kind,
     string AwaitingPermission,
     string DurationClass,
+    string RuleVersion,
     string State,
     bool HasMore);
 
@@ -71,10 +78,14 @@ internal sealed record RecordWorkInboxEventRequestV1(
 internal sealed record WorkInboxEventRecordedV1(Guid ClientEventId, bool Replayed);
 
 /// <summary>
-/// W1-A Work inbox: reads every registered <see cref="IWorkInboxSourceV1"/> the caller may decide (permission checked
-/// by Work before asking and again by the owner), hides each record from its own maker (maker ≠ checker), attaches the
-/// Settings duration and the owner's deterministic explanation, and records Work's own measurement events. Work never
-/// reads or writes an owner table and never decides; no model or AI call is made.
+/// W1-A / WP1 Work inbox — one box (D5): reads every registered <see cref="IWorkInboxSourceV1"/> (the four native kinds
+/// included) the caller may decide. The permission is checked by Work before asking and again by the owner; a company-wide
+/// grant sees the whole company, and a site/location/work-center scoped grant sees only the records inside its scope of a
+/// source whose owner accepts scoped approvers (D11). Each record is hidden from every user the owner's own rule refuses
+/// as its decider (D4: the maker and the owner's further exclusions, YOL-D23: no one else). The duration class comes from
+/// the company's versioned approval rule table (WP1; never from the source), its length from Settings (YOL-D18 defaults),
+/// business days are counted in the business time zone (D6), and the owner's deterministic explanation is attached. Work
+/// records its own measurement events, never reads or writes an owner table and never decides; no model or AI call is made.
 /// </summary>
 internal sealed class WorkInboxReadQueryV1
 {
@@ -88,6 +99,8 @@ internal sealed class WorkInboxReadQueryV1
     private readonly ISettingsWorkApprovalDurationPolicyProviderV1 durations;
     private readonly ISettingsWorkHolidayCalendarProviderV1 holidayCalendars;
     private readonly IWorkApprovalInboxMeasurementsV1 measurements;
+    private readonly IWorkApprovalRuleReaderV1 rules;
+    private readonly IWorkBusinessTimeZoneSourceV1 timeZone;
     private readonly TimeProvider time;
     private readonly ILogger<WorkInboxReadQueryV1> logger;
     private readonly IReadOnlyList<IWorkInboxSourceV1> sources;
@@ -101,6 +114,8 @@ internal sealed class WorkInboxReadQueryV1
         ISettingsWorkApprovalDurationPolicyProviderV1 durations,
         ISettingsWorkHolidayCalendarProviderV1 holidayCalendars,
         IWorkApprovalInboxMeasurementsV1 measurements,
+        IWorkApprovalRuleReaderV1 rules,
+        IWorkBusinessTimeZoneSourceV1 timeZone,
         TimeProvider time,
         ILogger<WorkInboxReadQueryV1> logger,
         IEnumerable<IWorkInboxSourceV1> registered)
@@ -112,6 +127,8 @@ internal sealed class WorkInboxReadQueryV1
         this.durations = durations;
         this.holidayCalendars = holidayCalendars;
         this.measurements = measurements;
+        this.rules = rules;
+        this.timeZone = timeZone;
         this.time = time;
         this.logger = logger;
 
@@ -121,9 +138,7 @@ internal sealed class WorkInboxReadQueryV1
         {
             if (source is null
                 || !NativeApprovalQueueRulesV1.IsValidKind(source.Module, source.Kind)
-                || NativeApprovalKindsV1.IsKnown(source.Kind)
                 || !WorkInboxRulesV1.IsValidPermission(source.ApproverPermission)
-                || !Enum.IsDefined(source.DurationClass)
                 || !byKind.TryAdd(source.Kind, source))
             {
                 valid = false;
@@ -165,14 +180,26 @@ internal sealed class WorkInboxReadQueryV1
             }
         }
 
+        var resolved = await ReadRulesAsync(context, selected, cancellationToken);
+        if (!SameContext(context))
+        {
+            return new(WorkInboxReadOutcomeV1.Denied, null);
+        }
+        if (resolved is null)
+        {
+            // The rule table could not be read: no duration class is assumed, nothing is shown.
+            return new(WorkInboxReadOutcomeV1.Unavailable, null);
+        }
+
         SettingsWorkApprovalDurationPolicyV1? policy = null;
         var policyRead = false;
         var now = time.GetUtcNow();
-        var visible = new List<(IWorkInboxSourceV1 Source, WorkInboxItemV1 Item)>();
+        var visible = new List<(IWorkInboxSourceV1 Source, WorkApprovalRuleResolutionV1 Rule, WorkInboxItemV1 Item)>();
         var states = new List<WorkInboxSourceStateV1>();
         foreach (var source in selected)
         {
-            if (!await MayDecideAsync(source, context, cancellationToken))
+            var decision = await MayDecideAsync(source, context, cancellationToken);
+            if (!decision.Allowed)
             {
                 if (!SameContext(context))
                 {
@@ -181,10 +208,19 @@ internal sealed class WorkInboxReadQueryV1
                 continue;
             }
 
+            var rule = resolved[source.Kind];
+            if (!rule.ApproverPermissionMatches)
+            {
+                // The rule was recorded against another approver permission than the owner declares: fail closed.
+                states.Add(State(source, rule, SourceUnavailable, false));
+                continue;
+            }
+
+            var sourceContext = context with { GrantScope = decision.Scope };
             WorkInboxSourceResultV1 result;
             try
             {
-                result = await source.ListPendingAsync(context, NativeApprovalQueueRulesV1.MaxItemsPerSource, cancellationToken);
+                result = await source.ListPendingAsync(sourceContext, NativeApprovalQueueRulesV1.MaxItemsPerSource, cancellationToken);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
@@ -201,13 +237,14 @@ internal sealed class WorkInboxReadQueryV1
                 continue;
             }
             if (result is not { Outcome: NativeApprovalQueueOutcomeV1.Found }
-                || Accept(source, context, result) is not { } accepted)
+                || Accept(source, sourceContext, result) is not { } accepted)
             {
-                states.Add(State(source, SourceUnavailable, false));
+                states.Add(State(source, rule, SourceUnavailable, false));
                 continue;
             }
 
-            await ObserveAsync(context, source, accepted, !result.HasMore, cancellationToken);
+            // A scoped read sees only part of the company: it never closes another scope's cycle.
+            await ObserveAsync(context, source, accepted, !result.HasMore && decision.Scope is null, cancellationToken);
             if (!policyRead)
             {
                 policy = await ReadPolicyAsync(context, cancellationToken);
@@ -215,13 +252,12 @@ internal sealed class WorkInboxReadQueryV1
             }
             foreach (var item in accepted)
             {
-                // Maker ≠ checker also in the list: a record never waits on its own maker's decision.
-                if (!string.Equals(item.PreparedBy, context.UserId, StringComparison.Ordinal))
+                if (MayShow(item, context.UserId, decision.Scope))
                 {
-                    visible.Add((source, item));
+                    visible.Add((source, rule, item));
                 }
             }
-            states.Add(State(source, SourceReady, result.HasMore));
+            states.Add(State(source, rule, SourceReady, result.HasMore));
         }
         if (!SameContext(context))
         {
@@ -237,12 +273,15 @@ internal sealed class WorkInboxReadQueryV1
         }
 
         WorkInboxHolidaysV1? holidays = null;
+        var zone = timeZone.BusinessTimeZone;
         if (policy is { BusinessDays: > 0 } definedPolicy
-            && visible.Any(entry => entry.Source.DurationClass == WorkApprovalDurationClassV1.BusinessDays))
+            && zone is not null
+            && visible.Any(entry => entry.Rule.DurationClass == WorkApprovalDurationClassV1.BusinessDays))
         {
             holidays = await ReadHolidaysAsync(context, visible
-                .Where(entry => entry.Source.DurationClass == WorkApprovalDurationClassV1.BusinessDays)
-                .Select(entry => WorkInboxDurationCalculatorV1.CandidateYears(entry.Item.WaitingSinceUtc, definedPolicy.BusinessDays!.Value))
+                .Where(entry => entry.Rule.DurationClass == WorkApprovalDurationClassV1.BusinessDays)
+                .Select(entry => WorkInboxDurationCalculatorV1.CandidateYears(entry.Item.WaitingSinceUtc,
+                    definedPolicy.BusinessDays!.Value, zone))
                 .ToArray(), cancellationToken);
             if (!SameContext(context))
             {
@@ -257,7 +296,8 @@ internal sealed class WorkInboxReadQueryV1
                 entry.Item.Link,
                 entry.Item.WaitingSinceUtc,
                 entry.Source.ApproverPermission,
-                WorkInboxDurationCalculatorV1.Compute(entry.Source.DurationClass, policy, entry.Item.WaitingSinceUtc, now, holidays),
+                WorkInboxDurationCalculatorV1.Compute(entry.Rule.DurationClass, policy, entry.Item.WaitingSinceUtc, now, zone, holidays),
+                entry.Rule.VersionText,
                 new WorkInboxExplanationV1(entry.Item.Rules, entry.Item.References)))
             .ToArray();
         var ordered = items
@@ -301,15 +341,17 @@ internal sealed class WorkInboxReadQueryV1
         {
             return new(WorkInboxReadOutcomeV1.Invalid, null);
         }
-        if (!await MayDecideAsync(source, context, cancellationToken))
+        var decision = await MayDecideAsync(source, context, cancellationToken);
+        if (!decision.Allowed)
         {
             return new(WorkInboxReadOutcomeV1.Denied, null);
         }
 
+        var sourceContext = context with { GrantScope = decision.Scope };
         WorkInboxSourceResultV1 result;
         try
         {
-            result = await source.ListPendingAsync(context, NativeApprovalQueueRulesV1.MaxItemsPerSource, cancellationToken);
+            result = await source.ListPendingAsync(sourceContext, NativeApprovalQueueRulesV1.MaxItemsPerSource, cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -324,7 +366,7 @@ internal sealed class WorkInboxReadQueryV1
         {
             return new(WorkInboxReadOutcomeV1.Denied, null);
         }
-        if (result is not { Outcome: NativeApprovalQueueOutcomeV1.Found } || Accept(source, context, result) is not { } accepted)
+        if (result is not { Outcome: NativeApprovalQueueOutcomeV1.Found } || Accept(source, sourceContext, result) is not { } accepted)
         {
             return new(WorkInboxReadOutcomeV1.Unavailable, null);
         }
@@ -332,7 +374,7 @@ internal sealed class WorkInboxReadQueryV1
         var waitingSince = request.WaitingSinceUtc.ToUniversalTime();
         var visible = accepted.Any(item => item.ItemId == request.ItemId
             && item.WaitingSinceUtc == waitingSince
-            && !string.Equals(item.PreparedBy, context.UserId, StringComparison.Ordinal));
+            && MayShow(item, context.UserId, decision.Scope));
         if (!visible)
         {
             return new(WorkInboxReadOutcomeV1.NotFound, null);
@@ -370,7 +412,13 @@ internal sealed class WorkInboxReadQueryV1
         }
     }
 
-    private async Task<bool> MayDecideAsync(
+    private readonly record struct Decision(bool Allowed, WorkInboxGrantScopeV1? Scope);
+
+    /// <summary>
+    /// A company-wide grant may decide every record (no scope). A site/location/work-center scoped grant (D11) may decide only
+    /// the records inside its scope, and only of a source whose owner accepts scoped approvers; otherwise the source is not asked.
+    /// </summary>
+    private async Task<Decision> MayDecideAsync(
         IWorkInboxSourceV1 source,
         WorkInboxSourceContextV1 context,
         CancellationToken cancellationToken)
@@ -379,12 +427,54 @@ internal sealed class WorkInboxReadQueryV1
         {
             var scope = await authority.RevalidatePermissionScopeAsync(
                 source.ApproverPermission, context.CompanyId, cancellationToken);
-            return scope is { IsGranted: true, IsCompanyWide: true } && SameContext(context);
+            if (!SameContext(context) || scope is not { IsGranted: true })
+            {
+                return default;
+            }
+            if (scope.IsCompanyWide)
+            {
+                return new(true, null);
+            }
+            if (!source.AcceptsScopedApprovers
+                || scope.SiteIds.Count + scope.LocationIds.Count + scope.WorkCenterIds.Count == 0)
+            {
+                return default;
+            }
+            return new(true, new WorkInboxGrantScopeV1(
+                scope.SiteIds.ToHashSet(), scope.LocationIds.ToHashSet(), scope.WorkCenterIds.ToHashSet()));
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             logger.LogWarning(exception, "Work inbox permission check for {Kind} failed.", source.Kind);
-            return false;
+            return default;
+        }
+    }
+
+    /// <summary>
+    /// D4 / YOL-D23: an item is shown unless the owner's own rule refuses the caller as its decider (the maker or the
+    /// owner's further exclusions); D11: a scoped caller sees only items inside the grant's scope.
+    /// </summary>
+    internal static bool MayShow(WorkInboxItemV1 item, string userId, WorkInboxGrantScopeV1? grant) =>
+        !item.Excludes(userId) && (grant is null || grant.Covers(item.Scope));
+
+    private async Task<IReadOnlyDictionary<string, WorkApprovalRuleResolutionV1>?> ReadRulesAsync(
+        WorkInboxSourceContextV1 context,
+        IReadOnlyList<IWorkInboxSourceV1> selected,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var resolved = await rules.ResolveAsync(context.CompanyId, selected, cancellationToken);
+            return resolved is not null && selected.All(source => resolved.TryGetValue(source.Kind, out var rule)
+                    && string.Equals(rule.Kind, source.Kind, StringComparison.Ordinal)
+                    && Enum.IsDefined(rule.DurationClass))
+                ? resolved
+                : null;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogWarning(exception, "Work inbox could not read the approval rule table.");
+            return null;
         }
     }
 
@@ -462,8 +552,12 @@ internal sealed class WorkInboxReadQueryV1
         }
     }
 
-    private static WorkInboxSourceStateV1 State(IWorkInboxSourceV1 source, string state, bool hasMore) =>
-        new(source.Module, source.Kind, source.ApproverPermission, source.DurationClass.ToString(), state, hasMore);
+    private static WorkInboxSourceStateV1 State(
+        IWorkInboxSourceV1 source,
+        WorkApprovalRuleResolutionV1 rule,
+        string state,
+        bool hasMore) =>
+        new(source.Module, source.Kind, source.ApproverPermission, rule.DurationClass.ToString(), rule.VersionText, state, hasMore);
 
     internal static IReadOnlyList<WorkInboxItemV1>? Accept(
         IWorkInboxSourceV1 source,
@@ -490,7 +584,10 @@ internal sealed class WorkInboxReadQueryV1
                 || item.WaitingSinceUtc == default
                 || item.WaitingSinceUtc.Offset != TimeSpan.Zero
                 || !NativeApprovalQueueRulesV1.IsValidLink(item.Link)
-                || string.IsNullOrWhiteSpace(item.PreparedBy)
+                || item.PreparedBy is not null && string.IsNullOrWhiteSpace(item.PreparedBy)
+                || item.ExcludedDeciders is { } excluded
+                    && (excluded.Count > WorkInboxRulesV1.MaxExcludedDecidersPerItem || excluded.Any(string.IsNullOrWhiteSpace))
+                || !IsValidScope(source, context, item.Scope)
                 || item.Rules is not { Count: > 0 and <= WorkInboxRulesV1.MaxRulesPerItem }
                 || item.Rules.Any(rule => !WorkInboxRulesV1.IsValidRule(source.Module, rule))
                 || item.References is not { Count: <= WorkInboxRulesV1.MaxReferencesPerItem }
@@ -500,6 +597,21 @@ internal sealed class WorkInboxReadQueryV1
             }
         }
         return items;
+    }
+
+    /// <summary>
+    /// A scope names at least one non-empty key. A source asked for a scoped caller must put every item in a scope (an item
+    /// without one could never be shown to that caller and means the owner did not filter).
+    /// </summary>
+    private static bool IsValidScope(IWorkInboxSourceV1 source, WorkInboxSourceContextV1 context, WorkInboxItemScopeV1? scope)
+    {
+        if (scope is null)
+        {
+            return context.GrantScope is null;
+        }
+        return source.AcceptsScopedApprovers
+            && (scope.SiteId is not null || scope.LocationId is not null || scope.WorkCenterId is not null)
+            && scope.SiteId != Guid.Empty && scope.LocationId != Guid.Empty && scope.WorkCenterId != Guid.Empty;
     }
 
     private bool TryCapture(out WorkInboxSourceContextV1 context, out WorkInboxReadOutcomeV1 refusal)

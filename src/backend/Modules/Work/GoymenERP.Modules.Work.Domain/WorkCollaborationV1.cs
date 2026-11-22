@@ -13,6 +13,17 @@ public enum WorkRecordTypeV1
     StockLabel = 3,
     ManufacturingPlan = 4,
     Counterparty = 5,
+    // WP9 (AI-D20/AI-D23, DALGA_PLANI_v2 1.7): the other main record kinds. A dispatch note (irsaliye) has no read of its own
+    // in Logistics — it is a child of its loading instruction — so its notes are the instruction's. A goods receipt is not
+    // here: Purchasing reads it only by (order, acceptance), so its notes stay on the purchase order until the owner offers a
+    // read by the acceptance id alone.
+    SalesInvoice = 6,
+    LoadingInstruction = 7,
+    PurchaseIncomingInvoice = 8,
+    ManufacturingOrder = 9,
+    FinanceManualReceipt = 10,
+    FinanceManualBankPayment = 11,
+    SalesQuote = 12,
 }
 
 public static class WorkRecordTypesV1
@@ -24,7 +35,17 @@ public static class WorkRecordTypesV1
         (WorkRecordTypeV1.StockLabel, "stock-label"),
         (WorkRecordTypeV1.ManufacturingPlan, "manufacturing-plan"),
         (WorkRecordTypeV1.Counterparty, "counterparty"),
+        (WorkRecordTypeV1.SalesInvoice, "sales-invoice"),
+        (WorkRecordTypeV1.LoadingInstruction, "loading-instruction"),
+        (WorkRecordTypeV1.PurchaseIncomingInvoice, "purchase-incoming-invoice"),
+        (WorkRecordTypeV1.ManufacturingOrder, "manufacturing-order"),
+        (WorkRecordTypeV1.FinanceManualReceipt, "finance-manual-receipt"),
+        (WorkRecordTypeV1.FinanceManualBankPayment, "finance-manual-bank-payment"),
+        (WorkRecordTypeV1.SalesQuote, "sales-quote"),
     ];
+
+    /// <summary>The persisted values, as the check constraints list them.</summary>
+    public static IReadOnlyList<int> StoredValues { get; } = Names.Select(name => (int)name.Type).Order().ToArray();
 
     public static IReadOnlyList<string> WireNames { get; } = Names.Select(name => name.Wire).ToArray();
 
@@ -89,8 +110,18 @@ public sealed record WorkPersonV1(Guid UserId, string DisplayName, bool IsActive
 
 public sealed record WorkPeopleAnswerV1(WorkPersonOutcomeV1 Outcome, IReadOnlyList<WorkPersonV1> People, bool HasMore);
 
-/// <summary>The picker's wire answer: active people of the server-resolved company only.</summary>
-public sealed record WorkPeoplePageV1(Guid CompanyId, IReadOnlyList<WorkPersonV1> People, bool HasMore);
+/// <summary>
+/// WP9 / D7: one picker row on the wire — the person's id and display name and nothing else (no membership flag, no e-mail,
+/// no role). Only active members of the server-resolved company are ever listed.
+/// </summary>
+public sealed record WorkPersonSummaryV1(Guid UserId, string DisplayName);
+
+/// <summary>
+/// The picker's wire answer: active people of the server-resolved company only. WP9 / D7: the picker is a tool of the two
+/// commands that name a person (a mention, an assignee), so it answers only a caller who holds <c>work.tasks.assign</c> or
+/// <c>work.notes.write</c> company-wide now; anyone else gets the code-less 403.
+/// </summary>
+public sealed record WorkPeoplePageV1(Guid CompanyId, IReadOnlyList<WorkPersonSummaryV1> People, bool HasMore);
 
 /// <summary>Identity-backed directory for display names, the mention/assignee picker and "is this person a member here now".</summary>
 public interface IWorkPersonDirectoryV1
@@ -112,6 +143,7 @@ public static class WorkCollaborationLimitsV1
     public const int ReasonMaximumLength = 500;
     public const int PageSize = 100;
     public const int PeopleQueryMaximumLength = 100;
+    public const int NoteReadsMaximumCount = 100;
 }
 
 public static class WorkCollaborationCommandsV1
@@ -135,6 +167,7 @@ public static class WorkCollaborationProblemCodesV1
     public const string CorrectedNoteInvalid = "work_corrected_note_invalid";
     public const string NoteAlreadyPassive = "work_note_already_passive";
     public const string NoteNotOwn = "work_note_not_own";
+    public const string NoteOwnRead = "work_note_own_read";
     public const string TaskNotOpen = "work_task_not_open";
     public const string TaskNotAssignee = "work_task_not_assignee";
     public const string TaskNotAssigner = "work_task_not_assigner";
@@ -158,9 +191,19 @@ public sealed record AddWorkNoteRequestV1(string Body, IReadOnlyList<Guid>? Ment
 
 public sealed record PassivateWorkNoteRequestV1(string Reason);
 
+/// <summary>
+/// WP9 (DALGA_PLANI_v2 1.7 "okundu bilgisi"): <see cref="ReadByMeAtUtc"/> is when the caller marked the note read (null when
+/// not yet); <see cref="Reads"/> lists who has read it and when, oldest first — the author is never listed (writing a note is
+/// not reading it). Anyone who can read the record sees the same list: a read receipt says nothing the record's notes do not.
+/// </summary>
 public sealed record WorkNoteViewV1(Guid Id, Guid CompanyId, string RecordType, Guid RecordId, Guid AuthorUserId,
     string AuthorDisplayName, string Body, Guid? CorrectsNoteId, IReadOnlyList<Guid> MentionedUserIds,
-    DateTimeOffset CreatedAtUtc, DateTimeOffset? PassivatedAtUtc, string? PassivationReason);
+    DateTimeOffset CreatedAtUtc, DateTimeOffset? PassivatedAtUtc, string? PassivationReason,
+    DateTimeOffset? ReadByMeAtUtc, IReadOnlyList<WorkNoteReadV1> Reads);
+
+public sealed record WorkNoteReadV1(Guid UserId, string DisplayName, DateTimeOffset ReadAtUtc);
+
+public sealed record WorkNoteReadResponseV1(Guid NoteId, DateTimeOffset ReadAtUtc);
 
 public sealed record WorkNotePageV1(Guid CompanyId, string RecordType, Guid RecordId, IReadOnlyList<WorkNoteViewV1> Items, bool HasMore);
 
@@ -373,6 +416,7 @@ public interface IWorkCollaborationServiceV1
     Task<WorkNotePageV1> ListNotesAsync(string recordType, Guid recordId, bool includePassive, CancellationToken cancellationToken = default);
     Task<WorkNoteResponseV1> AddNoteAsync(string recordType, Guid recordId, AddWorkNoteRequestV1 request, WorkCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
     Task<WorkNoteResponseV1> PassivateNoteAsync(Guid noteId, PassivateWorkNoteRequestV1 request, WorkCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+    Task<WorkNoteReadResponseV1> MarkNoteReadAsync(Guid noteId, CancellationToken cancellationToken = default);
     Task<WorkTaskPageV1> ListMyTasksAsync(bool includeClosed, CancellationToken cancellationToken = default);
     Task<WorkTaskPageV1> ListRecordTasksAsync(string recordType, Guid recordId, CancellationToken cancellationToken = default);
     Task<WorkTaskResponseV1> CreateTaskAsync(CreateWorkTaskRequestV1 request, WorkCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
@@ -390,3 +434,49 @@ public interface IWorkCollaborationMaintenanceV1
 }
 
 public sealed record WorkCollaborationCycleV1(int OverdueNotifications, int DigestsReleased, int DigestItems, bool ScheduleAvailable);
+
+// ---- Note retention (YOL-D19, YOL-D26) -----------------------------------------------------------------------------------
+
+/// <summary>
+/// YOL-D26: a record-bound note (and its mentions, passivation, read receipts and the mention notifications it caused) is
+/// kept as long as the record it is bound to is kept, and is disposed of together with that record. Until the company's
+/// record disposal policy is in force the disposal path is CLOSED: today a note is never deleted, only passivated. The path
+/// exists in code so the day the policy is decided it is a configuration change, not a new write surface.
+/// </summary>
+public static class WorkNoteRetentionV1
+{
+    /// <summary>Configuration key; absent or anything but <c>true</c> keeps the path closed (fail-closed default).</summary>
+    public const string DisposalEnabledKey = "Work:NoteDisposal:Enabled";
+    public const string DisposalClosed = "work_note_disposal_closed";
+    public const string RecordDisposalNotConfirmed = "work_record_disposal_not_confirmed";
+}
+
+/// <summary>
+/// The record owner's statement that a record has been disposed of under the record disposal policy. No owner implements it
+/// yet (the policy is not in force), so the host composes a port that answers <see cref="WorkRecordDisposalOutcomeV1.Unavailable"/>
+/// for every record: even with the configuration key on, nothing is disposed of without the owner's word.
+/// </summary>
+public interface IWorkRecordDisposalPortV1
+{
+    Task<WorkRecordDisposalOutcomeV1> CheckDisposedAsync(Guid companyId, WorkRecordRefV1 record, CancellationToken cancellationToken = default);
+}
+
+public enum WorkRecordDisposalOutcomeV1
+{
+    Unavailable = 0,
+    NotDisposed = 1,
+    Disposed = 2,
+}
+
+public sealed record WorkNoteDisposalResultV1(Guid CompanyId, string RecordType, Guid RecordId, int NotesDisposed, int NotificationsDisposed);
+
+/// <summary>System work, not a user command: run by the future record disposal job for one record of the resolved company.</summary>
+public interface IWorkNoteDisposalV1
+{
+    Task<WorkNoteDisposalResultV1> DisposeRecordNotesAsync(WorkRecordRefV1 record, string correlationId, CancellationToken cancellationToken = default);
+}
+
+public sealed class WorkNoteDisposalException(string code) : Exception(code)
+{
+    public string Code { get; } = code;
+}

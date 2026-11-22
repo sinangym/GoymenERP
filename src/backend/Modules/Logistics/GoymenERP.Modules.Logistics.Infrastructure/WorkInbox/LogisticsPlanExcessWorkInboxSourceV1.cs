@@ -60,7 +60,6 @@ internal sealed class LogisticsPlanExcessWorkInboxSourceV1 : IWorkInboxSourceV1
 
     public string ApproverPermission => LogisticsPermissionManifestV1.ShipmentPlanExcessApprove;
 
-    public WorkApprovalDurationClassV1 DurationClass => WorkApprovalDurationClassV1.Hours;
 
     public async Task<WorkInboxSourceResultV1> ListPendingAsync(
         WorkInboxSourceContextV1 context,
