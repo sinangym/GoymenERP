@@ -176,6 +176,7 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
         ConfigureCreditLimits(modelBuilder);
         ConfigurePartyBalanceTransfers(modelBuilder);
         ConfigurePeriodCarry(modelBuilder);
+        ConfigureBankStatements(modelBuilder);
         ConfigureDocumentNumbers(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
