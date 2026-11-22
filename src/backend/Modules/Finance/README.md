@@ -851,7 +851,7 @@ operation refuses with **THROW 51911** while any of the four source tables carri
 legacy rows remain eligible for rollback. Credit money-event numbering is not inferred from this bounded decision.
 SQL/Unit/HTTP/UI acceptance sources are written; runtime remains **NOT_RUN**.
 
-### FIN-S14: document-backed source book value — FNS-D63 / Q10 / 6960684942
+### FIN-S14: document-backed source book value — FNS-D63 / Q10 / 6960684942 (GOV-D16)
 
 The TCMB leg references remain comparison evidence. An authorized Accounting preparer may separately attest the
 actual source-leg TL carrying value with a readable, pinned Documents version/hash; a different Accounting

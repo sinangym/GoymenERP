@@ -251,7 +251,7 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
     public const string InvoiceListRoutePath = "/satis/faturalar";
     public const string InvoiceListScreenId = "S-09";
 
-    // Q3/6957924089: a standalone price-free route uses only the existing finalize authority.
+    // Q3/6957924089 (GOV-D16): a standalone price-free route uses only the existing finalize authority.
     public const string OfficialCancellationCapabilityId = "sales.invoices.official-cancellation";
 
     /// <summary>1.27 (API-33, SAT-D202): prepare, submit and cancel an invoice draft — a control of the S-09 invoice list.</summary>

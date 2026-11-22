@@ -63,10 +63,9 @@ public sealed class FinanceInvoiceAcceptanceService(
     /// <summary>Stored amounts or item state the acceptance cannot read back safely: nothing is written.</summary>
     internal const string StoredStateNotUnderstoodCode = "finance_customer_return_state_not_understood";
     /// <summary>
-    /// KLN-D71 moves an item's whole open balance to the successor account (a <see cref="FinancePartyBalanceAssignmentRow"/>).
-    /// A return whose reduction would have to be split between the original account's own part and a successor's
-    /// assignment is refused: which account a return reduces after a transfer is not decided (NEEDS-SINAN). Nothing is
-    /// written.
+    /// FNS-D115 reduces the original account's remaining part first and then the successor's assignment (KLN-D71). An
+    /// item whose balance is held by more than one successor assignment has no decided order between them and is
+    /// refused. Nothing is written.
     /// </summary>
     internal const string TransferredBalanceSplitCode = "finance_customer_return_transferred_balance_split";
     private const int TokenMaximumLength = 128;
@@ -253,12 +252,12 @@ public sealed class FinanceInvoiceAcceptanceService(
     }
 
     /// <summary>
-    /// The party balance assignments the return's reductions must follow, so an item's outstanding amount never falls
-    /// below the part assigned to a successor account (the allocation positions would no longer read). An item without a
-    /// live assignment keeps its whole reduction on the original account. An item whose whole outstanding amount is held
-    /// by one successor (KLN-D71: the whole open balance moves) reduces that assignment by the same amount. Any other
-    /// shape would need a split between accounts and is refused (<see cref="TransferredBalanceSplitCode"/>); stored
-    /// assignments that do not read back are refused as not understood.
+    /// FNS-D115: the return's reduction of an item whose balance was partly transferred (KLN-D71) takes the original
+    /// account's remaining part first and only the rest from the successor's assignment, so the item's outstanding amount
+    /// never falls below the part assigned to a successor (the allocation positions keep reading). The advance stays with
+    /// the original party on the credit itself. Both parts change in the acceptance's single save; no second movement is
+    /// written. An item with more than one live successor assignment, when the rest is not zero, is refused
+    /// (<see cref="TransferredBalanceSplitCode"/>); stored assignments that do not read back are refused as not understood.
     /// </summary>
     private async Task<(IReadOnlyList<(FinancePartyBalanceAssignmentRow Assignment, FinanceExactDecimalText Reduced)>
         Reductions, ValidationIssue? Issue)> TransferredReductionsAsync(FinanceCustomerReturnPlan plan,
@@ -302,11 +301,16 @@ public sealed class FinanceInvoiceAcceptanceService(
                 continue;
             }
             var originalAvailable = FinanceAllocationPositions.Amount(positions[0].AvailableAmount);
-            if (!originalAvailable.IsZero || live.Length != 1)
+            if (reduced.CompareTo(originalAvailable) <= 0)
+            {
+                continue;
+            }
+            var rest = reduced.Subtract(originalAvailable);
+            if (live.Length != 1)
             {
                 return ([], new ValidationIssue("allocations", TransferredBalanceSplitCode));
             }
-            result.Add((live[0], reduced));
+            result.Add((live[0], rest));
         }
         return (result, null);
     }

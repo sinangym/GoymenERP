@@ -38,7 +38,7 @@ public sealed partial class SalesDraftService
 
     private static bool SameCostBasis(SalesOrderDraft draft, SalesOrderDraftLine line, SalesMarginCostSnapshot cost) =>
         cost.ProductId == line.Product.ProductId && cost.UnitId == CostUnitOf(line)
-        // SAT-D269 follow-up 6951607190: a quantity edit inside the same revision preserves the pinned unit cost.
+        // SAT-D269 follow-up 6951607190 (GOV-D16): a quantity edit inside the same revision preserves the pinned unit cost.
         // A genuine quantity revision still observes its own approval cost; no stock/accounting amount is rewritten.
         && (cost.Quantity == line.Quantity.Value || cost.Revision == draft.Revision);
 
@@ -166,7 +166,7 @@ public sealed partial class SalesDraftService
             result.Validate();
             using var proof = JsonDocument.Parse(result.SourceProof);
             if (proof.RootElement.ValueKind != JsonValueKind.Object) throw new JsonException();
-            // Direct user answer 6960913297: an unreadable zero cost never becomes a 100% margin.
+            // Direct user answer 6960913297 (GOV-D16): an unreadable zero cost never becomes a 100% margin.
             // Approval still pins an unavailable observation; it is not blocked by this display-only cost source.
             if (result.UnavailableReason is null && result.CostPerUnit == 0m)
                 return UnavailableCost(draft, line, SalesLineMarginUnavailableReason.CostUnreadable);
