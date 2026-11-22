@@ -6,8 +6,10 @@ import {
   GOODS_RECEIPT_BATCH_STATUS_TEXT,
   GOODS_RECEIPT_BATCH_TEXT as T,
   GOODS_RECEIPT_LABEL_CODE_SOURCE_TEXT,
+  GOODS_RECEIPT_PIECE_VARIANCE_TEXT,
   GOODS_RECEIPT_VARIANCE_TEXT,
 } from './goodsReceiptBatchText'
+import { PieceKilogramsComparison } from './PieceKilogramsComparison'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
@@ -71,19 +73,28 @@ const LABEL_COLUMNS = [
   { name: T.labelNo }, { name: T.labelCode }, { name: T.labelCodeSource }, { name: T.supplierLabelNumber },
   { name: T.measuredKg, numeric: true }, { name: T.heatNumber }, { name: T.coilNumber },
 ] as const
+/** AK-3b: a piece batch shows each label's piece count beside its weighed kg. */
+const PIECE_LABEL_COLUMNS = [
+  ...LABEL_COLUMNS.slice(0, 4), { name: T.pieceCount, numeric: true }, ...LABEL_COLUMNS.slice(4),
+] as const
 
 function BatchFacts({ batch, index }: { readonly batch: GoodsReceiptBatch; readonly index: number }) {
+  // AK-3b: the server marks a piece batch by its recorded comparison; its "expected" kg is the theoretical kg of the pieces, its
+  // difference is a warning only and it was never acknowledged or approved.
+  const piece = batch.pieceKilograms
+  const columns = piece === undefined ? LABEL_COLUMNS : PIECE_LABEL_COLUMNS
   return <article data-testid={`purchase-order-goods-receipt-batch-${index}`} data-status={batch.status}>
     <h3>{T.batchHeading(index)}</h3>
     <dl className={styles.facts}>
       <div><dt>{T.status}</dt><dd>{GOODS_RECEIPT_BATCH_STATUS_TEXT[batch.status] ?? batch.status}</dd></div>
       <div><dt>{T.version}</dt><dd>{batch.version}</dd></div>
-      <div><dt>{T.expectedKg}</dt><dd className={styles.number}>{batch.expectedQuantityKg}</dd></div>
+      <div><dt>{piece === undefined ? T.expectedKg : T.theoreticalKg}</dt><dd className={styles.number}>{batch.expectedQuantityKg}</dd></div>
       <div><dt>{T.receivedKg}</dt><dd className={styles.number}>{batch.receivedQuantityKg}</dd></div>
       <div><dt>{T.differenceKg}</dt><dd className={styles.number}>{batch.differenceKg}</dd></div>
-      <div><dt>{T.variance}</dt><dd>{GOODS_RECEIPT_VARIANCE_TEXT[batch.varianceOutcome] ?? batch.varianceOutcome}</dd></div>
+      <div><dt>{T.variance}</dt><dd>{(piece === undefined ? GOODS_RECEIPT_VARIANCE_TEXT : GOODS_RECEIPT_PIECE_VARIANCE_TEXT)[batch.varianceOutcome]
+        ?? batch.varianceOutcome}</dd></div>
       <div><dt>{T.tolerance}</dt><dd>{batch.tolerancePercent ?? T.toleranceNotSet}</dd></div>
-      <div><dt>{T.acknowledged}</dt><dd>{batch.varianceAcknowledged ? T.yes : T.no}</dd></div>
+      {piece === undefined ? <div><dt>{T.acknowledged}</dt><dd>{batch.varianceAcknowledged ? T.yes : T.no}</dd></div> : null}
       <div><dt>{T.occurredAtUtc}</dt><dd><time dateTime={batch.occurredAtUtc}>{batch.occurredAtUtc}</time></dd></div>
       <div><dt>{T.preparedBy}</dt><dd className={styles.identifier}>{batch.preparedBy}</dd></div>
       {batch.decidedBy !== null && batch.decidedAtUtc !== null ? <>
@@ -92,15 +103,20 @@ function BatchFacts({ batch, index }: { readonly batch: GoodsReceiptBatch; reado
       </> : null}
       {batch.decisionReason !== null ? <div><dt>{T.decisionReason}</dt><dd>{batch.decisionReason}</dd></div> : null}
     </dl>
+    {piece === undefined ? null : <>
+      <p>{T.pieceBatchNote}</p>
+      <PieceKilogramsComparison comparison={piece} testId={`purchase-order-goods-receipt-batch-${index}-piece-kilograms`} />
+    </>}
     <div className={styles.tableWrap}>
       <table className={styles.table} role="table" aria-label={T.labelsCaption(index)}>
-        <thead role="rowgroup"><tr role="row">{LABEL_COLUMNS.map((column) =>
+        <thead role="rowgroup"><tr role="row">{columns.map((column) =>
           <th key={column.name} role="columnheader" scope="col" className={'numeric' in column ? styles.number : undefined}>{column.name}</th>)}</tr></thead>
         <tbody role="rowgroup">{batch.labels.map((label) => <tr key={label.labelId} role="row">
           <td role="cell" data-label={T.labelNo}>{label.lineNo}</td>
           <td role="cell" data-label={T.labelCode} className={styles.identifier}>{label.labelCode}</td>
           <td role="cell" data-label={T.labelCodeSource}>{GOODS_RECEIPT_LABEL_CODE_SOURCE_TEXT[label.labelCodeSource] ?? label.labelCodeSource}</td>
           <td role="cell" data-label={T.supplierLabelNumber}>{label.supplierLabelNumber ?? T.none}</td>
+          {piece === undefined ? null : <td role="cell" data-label={T.pieceCount} className={styles.number}>{label.pieceCount}</td>}
           <td role="cell" data-label={T.measuredKg} className={styles.number}>{label.measuredQuantityKg}</td>
           <td role="cell" data-label={T.heatNumber}>{label.heatNumber ?? T.none}</td>
           <td role="cell" data-label={T.coilNumber}>{label.coilNumber ?? T.none}</td>

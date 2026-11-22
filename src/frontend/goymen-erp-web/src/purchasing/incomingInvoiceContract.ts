@@ -1,4 +1,4 @@
-import { isPurchasingGuid as guid, isPurchasingVersion as version } from './contract'
+import { decodePurchaseKgPrice, isPurchasingGuid as guid, isPurchasingVersion as version, type PurchaseKgPrice } from './contract'
 import { isDateOnly } from '../finance/dateOnly'
 
 export interface InvoiceAmounts { readonly net: string; readonly vat: string; readonly withholding: string; readonly payable: string }
@@ -8,6 +8,11 @@ export interface IncomingInvoiceLine {
   readonly amounts: InvoiceAmounts; readonly functionalAmounts: InvoiceAmounts | null
   readonly serviceTypeId?: string
   readonly expenseTypeId?: string
+  /**
+   * AK-3b (SAT-D436, SAT-D439): the line's kg price indicator in the INVOICE's currency, derived by the server from the invoice ↔
+   * receipt match; absent while the indicator is off and on a service or expense line. Information only, never recomputed.
+   */
+  readonly kgPrice?: PurchaseKgPrice
 }
 export interface IncomingInvoice {
   readonly id: string; readonly companyId: string; readonly version: string
@@ -19,6 +24,8 @@ export interface IncomingInvoice {
   readonly variances: readonly { readonly invoiceLineId: string; readonly kind: string; readonly expected: string; readonly actual: string }[]
   readonly varianceDecision: { readonly approvedBy: string; readonly reason: string; readonly approvedAtUtc: string } | null
   readonly finalizedVersion: string | null
+  /** AK-3b (SAT-D436): the document-level kg price indicator; hidden with a reason code while a service or expense line exists. */
+  readonly kgPrice?: PurchaseKgPrice
 }
 export interface InvoicePage { readonly pageIndex: number; readonly hasNext: boolean; readonly items: readonly IncomingInvoice[] }
 export interface InvoiceReceiptCandidate {
@@ -63,7 +70,8 @@ export function decodeIncomingInvoice(value: unknown, companyId: string, invoice
   const item = obj(value)
   if (item === null || !exact(item, ['id', 'companyId', 'version', 'status', 'supplierPartyId', 'companyAccountId', 'currencyId', 'functionalCurrencyId',
     'moneyScale', 'functionalScale', 'officialRate', 'officialNumber', 'ettn', 'invoiceDate', 'documentId', 'documentVersion', 'amounts',
-    'functionalAmounts', 'lines', 'variances', 'varianceDecision', 'finalizedVersion'])
+    'functionalAmounts', 'lines', 'variances', 'varianceDecision', 'finalizedVersion', ...(Object.hasOwn(item, 'kgPrice') ? ['kgPrice'] : [])])
+    || (Object.hasOwn(item, 'kgPrice') && decodePurchaseKgPrice(item.kgPrice) === null)
     || item.companyId !== companyId || !guid(item.id) || (invoiceId !== undefined && item.id !== invoiceId) || !version(item.version)
     || !['Recorded', 'Matched', 'FinancePending', 'FinanceAccepted'].includes(String(item.status))
     || ![item.supplierPartyId, item.companyAccountId, item.currencyId, item.functionalCurrencyId, item.ettn, item.documentId].every(guid)
@@ -78,7 +86,11 @@ export function decodeIncomingInvoice(value: unknown, companyId: string, invoice
   for (const raw of item.lines) {
     const line = obj(raw)
     if (line === null || !exact(line, ['id', 'lineNo', 'productId', 'unitId', 'quantity', 'itemType', 'linePurpose', 'vatPercent', 'amounts', 'functionalAmounts',
-      ...(Object.hasOwn(line, 'serviceTypeId') ? ['serviceTypeId'] : []), ...(Object.hasOwn(line, 'expenseTypeId') ? ['expenseTypeId'] : [])])
+      ...(Object.hasOwn(line, 'serviceTypeId') ? ['serviceTypeId'] : []), ...(Object.hasOwn(line, 'expenseTypeId') ? ['expenseTypeId'] : []),
+      ...(Object.hasOwn(line, 'kgPrice') ? ['kgPrice'] : [])])
+      // AK-3b: a kg price is exact or the whole invoice is refused; a service or expense line never carries one.
+      || (Object.hasOwn(line, 'kgPrice') && (decodePurchaseKgPrice(line.kgPrice) === null || Object.hasOwn(line, 'serviceTypeId')
+        || line.itemType === 'Expense' || line.linePurpose === 'expense' || line.linePurpose === 'service'))
       || !guid(line.id) || ids.has(line.id) || !positiveInt(line.lineNo) || numbers.has(line.lineNo as number)
       || (line.itemType === 'Expense' && line.linePurpose === 'expense'
         ? line.productId !== '00000000-0000-0000-0000-000000000000' || Object.hasOwn(line, 'serviceTypeId')

@@ -50,6 +50,33 @@ describe('Incoming invoice exact read contract (synthetic, NOT_ENV)', () => {
     expect(decodeInvoiceReceipts({ ...page, items: [{ ...page.items[0], availableQuantity: '0' }] }, invoice, line, 0)).toBeNull()
     expect(decodeInvoiceReceipts({ ...page, items: [page.items[0], page.items[0]] }, invoice, line, 0)).toBeNull()
   })
+  it('AK-3b: keeps a line and a document kg price exactly as sent and refuses a malformed or misplaced one', () => {
+    const invoice = incomingInvoiceFixture(), line = invoice.lines[0]
+    const kgPrice = { theoreticalKgPrice: '20.25', theoreticalUnavailable: null, realKgPrice: '19.99', realUnavailable: null }
+    const hidden = { theoreticalKgPrice: null, theoreticalUnavailable: 'NotAllLinesHaveKg', realKgPrice: null, realUnavailable: 'NotAllLinesHaveKg' }
+    const unweighed = { ...kgPrice, realKgPrice: null, realUnavailable: 'WeighedKgUnavailable' }
+    const priced = { ...invoice, kgPrice, lines: [{ ...line, kgPrice: unweighed }] }
+    expect(decodeIncomingInvoice(priced, invoice.companyId, invoice.id)).toEqual(priced)
+    expect(decodeIncomingInvoice({ ...invoice, kgPrice: hidden }, invoice.companyId)?.kgPrice).toEqual(hidden)
+    expect(decodeIncomingInvoice(invoice, invoice.companyId)?.kgPrice).toBeUndefined()
+    expect(decodeInvoicePage({ pageIndex: 0, hasNext: false, items: [priced] }, invoice.companyId, 0)?.items[0].lines[0].kgPrice).toEqual(unweighed)
+    const answer = { invoice: priced, isReplay: false, originalCorrelationId: 'SENTETIK-correlation', financeOutcome: null }
+    expect(decodeInvoiceCommand(answer, invoice.companyId, invoice.id, false)?.invoice.kgPrice).toEqual(kgPrice)
+    for (const broken of [null, { ...kgPrice, realUnavailable: 'Guessed' }, { ...kgPrice, theoreticalUnavailable: 'ZeroKg' },
+      { ...kgPrice, realKgPrice: null }, { ...kgPrice, realKgPrice: '19.990' }, { ...kgPrice, realKgPrice: 19.99 }, { ...kgPrice, cost: '1.00' },
+      (({ realUnavailable: _dropped, ...rest }) => rest)(kgPrice)]) {
+      expect(decodeIncomingInvoice({ ...invoice, kgPrice: broken }, invoice.companyId)).toBeNull()
+      expect(decodeIncomingInvoice({ ...invoice, lines: [{ ...line, kgPrice: broken }] }, invoice.companyId)).toBeNull()
+    }
+    const empty = '00000000-0000-0000-0000-000000000000'
+    const expense = { ...line, productId: empty, itemType: 'Expense', linePurpose: 'expense' }
+    const service = { ...line, productId: empty, itemType: 'Service', linePurpose: 'service', serviceTypeId: id(90) }
+    expect(decodeIncomingInvoice({ ...invoice, lines: [expense] }, invoice.companyId)).not.toBeNull()
+    expect(decodeIncomingInvoice({ ...invoice, lines: [{ ...expense, kgPrice }] }, invoice.companyId)).toBeNull()
+    expect(decodeIncomingInvoice({ ...invoice, lines: [{ ...service, kgPrice }] }, invoice.companyId)).toBeNull()
+    // A document with a service line hides its level with the reason; the line itself carries none.
+    expect(decodeIncomingInvoice({ ...invoice, kgPrice: hidden, lines: [service] }, invoice.companyId)?.kgPrice?.realUnavailable).toBe('NotAllLinesHaveKg')
+  })
   it('rejects duplicate invoice pages and mismatched replay envelopes', () => {
     const invoice = incomingInvoiceFixture(), answer = { invoice, isReplay: true, originalCorrelationId: 'synthetic-correlation', financeOutcome: null }
     expect(decodeInvoicePage({ pageIndex: 0, hasNext: false, items: [invoice, invoice] }, invoice.companyId, 0)).toBeNull()

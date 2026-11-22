@@ -13,9 +13,10 @@ import { useReceiptAdjustmentAttempt } from './useReceiptAdjustmentAttempt'
 import { fetchIncomingInvoice, fetchIncomingInvoices, fetchInvoiceReceipts, fetchInvoiceAdditionalCosts, submitInvoiceCommand } from './incomingInvoiceApi'
 import { invoiceQuantity, type IncomingInvoice, type IncomingInvoiceLine, type InvoiceCommand, type InvoiceCommandResponse,
   type InvoiceReceiptSelection, type InvoiceAdditionalCostSelection } from './incomingInvoiceContract'
-import { INCOMING_INVOICE_TEXT as T, INCOMING_INVOICE_STATUS as STATUS } from './incomingInvoiceText'
+import { INCOMING_INVOICE_PROBLEM_TEXT, INCOMING_INVOICE_TEXT as T, INCOMING_INVOICE_STATUS as STATUS } from './incomingInvoiceText'
+import { PURCHASE_KG_PRICE_UNAVAILABLE_TEXT } from './purchaseOrderDetailText'
 import { PURCHASING_CAPABILITY as C } from './capabilities'
-import { isPurchasingGuid } from './contract'
+import { isPurchasingGuid, type PurchaseKgPrice } from './contract'
 import { InvoiceImportPanel } from './InvoiceImportPanel'
 import styles from './IncomingInvoicePages.module.css'
 
@@ -40,6 +41,21 @@ function ReadState<T>({ data, loading, refresh }: { readonly data?: ViewOutcome<
   if (loading || data === undefined) return <StateBlock subject={T.heading} state={{ kind: 'initial-loading' }} />
   return data.type === 'ok-single' || data.type === 'ok' ? null
     : <StateBlock subject={T.heading} state={classifyOutcome(data)} onRetry={refresh} />
+}
+/**
+ * AK-3b (SAT-D436, SAT-D439): a kg price indicator exactly as the server answered it — the 2-decimal text with the invoice's own
+ * currency, or the reason of its code in words. Nothing is computed or converted here.
+ */
+function InvoiceKgPrice({ kgPrice, currencyId, heading, testId }: { readonly kgPrice: PurchaseKgPrice; readonly currencyId: string;
+  readonly heading: string; readonly testId: string }) {
+  const shown = (value: string | null, code: string | null, currency: string) => value !== null ? T.kgPricePerKg(value, currency)
+    : code === null ? T.kgPriceNone : PURCHASE_KG_PRICE_UNAVAILABLE_TEXT[code] ?? code
+  return <section aria-label={heading} data-testid={testId}><h4>{heading}</h4>
+    <WithCurrencyCodes>{(codes) => <dl className={styles.amounts}>
+      <dt>{T.theoreticalKgPrice}</dt><dd>{shown(kgPrice.theoreticalKgPrice, kgPrice.theoreticalUnavailable, currencyShown(currencyId, codes))}</dd>
+      <dt>{T.realKgPrice}</dt><dd>{shown(kgPrice.realKgPrice, kgPrice.realUnavailable, currencyShown(currencyId, codes))}</dd>
+    </dl>}</WithCurrencyCodes>
+  </section>
 }
 export function IncomingInvoiceListPage() {
   const binding = useBinding()
@@ -115,8 +131,12 @@ function InvoiceWorkspace({ binding, invoice }: { readonly binding: Binding; rea
       <dt>{T.withholding}</dt><dd>{invoice.amounts.withholding} {currencyShown(invoice.currencyId, codes)}</dd>
       <dt>{T.payable}</dt><dd>{invoice.amounts.payable} {currencyShown(invoice.currencyId, codes)}</dd>
     </dl>}</WithCurrencyCodes>
+    {invoice.kgPrice === undefined ? null : <InvoiceKgPrice kgPrice={invoice.kgPrice} currencyId={invoice.currencyId}
+      heading={T.kgPriceHeading} testId="incoming-invoice-kg-price" />}
     {invoice.lines.map((line) => <article key={line.id} className={styles.card}>
       <h3>{T.line} {line.lineNo}</h3><p>{T.quantity}: {line.quantity}</p>
+      {line.kgPrice === undefined ? null : <InvoiceKgPrice kgPrice={line.kgPrice} currencyId={invoice.currencyId}
+        heading={T.lineKgPriceHeading} testId={`incoming-invoice-line-${line.lineNo}-kg-price`} />}
       {invoice.status === 'Recorded' && canMatch ? line.linePurpose === 'expense'
         ? <ExpenseChoices binding={binding} invoice={invoice} line={line} selected={expenseSelected} locked={attempt.locked} onSelected={setExpenseSelected} />
         : <ReceiptChoices binding={binding} invoice={invoice} line={line} selected={selected} locked={attempt.locked} onSelected={setSelected} /> : null}
@@ -129,7 +149,8 @@ function InvoiceWorkspace({ binding, invoice }: { readonly binding: Binding; rea
     </section>}
     {error === null ? null : <p role="alert">{error}</p>}
     {answer?.type === 'applied' ? <p role="status">{T.saved}</p> : null}
-    {answer?.type === 'failed' ? <><p role="alert">{answer.status === 409 ? T.conflict : T.rejected}</p>
+    {answer?.type === 'failed' ? <><p role="alert">{answer.code !== null && Object.hasOwn(INCOMING_INVOICE_PROBLEM_TEXT, answer.code)
+      ? INCOMING_INVOICE_PROBLEM_TEXT[answer.code] : answer.status === 409 ? T.conflict : T.rejected}</p>
       {[401, 403, 404, 409].includes(answer.status) ? <StateBlock subject={T.detail} state={classifyOutcome({ type: 'http', status: answer.status })} /> : null}</> : null}
     {answer?.type === 'unknown' ? <StateBlock subject={T.detail} state={{ kind: answer.reason === 'malformed' ? 'malformed-response' : answer.reason }} /> : null}
     {attempt.locked ? <div role="status"><p>{attempt.sending ? T.sending : T.unknown}</p>

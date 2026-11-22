@@ -4,7 +4,8 @@ import { fetchGoodsReceiptOptions, fetchGoodsReceiptQuantityComparison, fetchGoo
 import { receiptQuantityInput, type GoodsReceipt, type GoodsReceiptRequest, type GoodsReceiptResponse } from './goodsReceiptContract'
 import { recallReceiptAttempt, receiptAttemptScope, receiptIdentity, reserveReceiptAttempt, settleReceiptAttempt, type ReceiptAttempt } from './goodsReceiptAttempt'
 import { GoodsReceiptQuantityComparison } from './GoodsReceiptQuantityComparison'
-import { GOODS_RECEIPT_TEXT as T } from './goodsReceiptText'
+import { PieceKilogramsComparison } from './PieceKilogramsComparison'
+import { GOODS_RECEIPT_PROBLEM_TEXT, GOODS_RECEIPT_TEXT as T } from './goodsReceiptText'
 import type { PurchaseOrderDetail, PurchaseOrderLine } from './contract'
 import { StateBlock } from '../shell/StateBlock'
 import { classifyOutcome } from '../shell/uiState'
@@ -85,6 +86,7 @@ function ReceiptLine({ binding, attemptBinding, detail, line, onRecorded }: Prop
   const [pending, setPending] = useState<ReceiptAttempt | null>(initial)
   const [phase, setPhase] = useState<'idle' | 'sending' | 'unknown' | 'failed' | 'done'>(initial === null ? 'idle' : 'unknown')
   const [answer, setAnswer] = useState<GoodsReceiptResponse | null>(null)
+  const [failureCode, setFailureCode] = useState<string | null>(null)
   const [locationId, setLocationId] = useState(initial?.payload.locationId ?? '')
   const [accepted, setAccepted] = useState(initial?.payload.acceptedQuantity ?? '')
   const [measured, setMeasured] = useState(initial?.payload.measuredQuantityKg ?? '')
@@ -134,6 +136,7 @@ function ReceiptLine({ binding, attemptBinding, detail, line, onRecorded }: Prop
       onRecorded()
       void options.refetch()
     } else {
+      setFailureCode(outcome.code)
       setPhase('failed')
       if (outcome.status === 409) { onRecorded(); void options.refetch() }
     }
@@ -161,10 +164,13 @@ function ReceiptLine({ binding, attemptBinding, detail, line, onRecorded }: Prop
     {phase === 'sending' ? <p role="status">{T.sending}</p> : null}
     {phase === 'unknown' && pending !== null ? <div className={styles.warningCard}><p role="alert">{T.unknown}</p>
       <Button type="button" onClick={() => void send(pending)}>{T.retry}</Button></div> : null}
-    {phase === 'failed' ? <p role="alert" className={styles.error}>{T.failed}</p> : null}
+    {phase === 'failed' ? <p role="alert" className={styles.error}>
+      {failureCode !== null && Object.hasOwn(GOODS_RECEIPT_PROBLEM_TEXT, failureCode) ? GOODS_RECEIPT_PROBLEM_TEXT[failureCode] : T.failed}</p> : null}
     {phase === 'done' && answer !== null ? <p role="status" className={styles.success}>
       {answer.isReplay ? T.replayed : T.saved} {answer.receipt.labelCode}: {answer.receipt.initialBlock === 'Free' ? T.initialFree : T.initialBlocked}
     </p> : null}
+    {phase === 'done' && answer?.pieceKilograms !== undefined
+      ? <PieceKilogramsComparison comparison={answer.pieceKilograms} testId={`${id}-piece-kilograms`} /> : null}
     {phase === 'done' && answer !== null && answer.futureSupplyReleases.length > 0
       ? <div className={styles.warningCard} role="alert" data-testid={`${id}-future-supply-released`}>
         <p><strong>{T.futureSupplyReleasedHeading}</strong></p>

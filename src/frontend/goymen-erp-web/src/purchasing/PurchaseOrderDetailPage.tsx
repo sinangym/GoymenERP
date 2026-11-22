@@ -32,7 +32,7 @@ import { LineSchedulePanel } from './LineSchedulePanel'
 import { SupplierRevisionPanel } from './SupplierRevisionPanel'
 import { ORDER_CANCELLATION_TEXT, PURCHASE_ORDER_STATUS_LABEL } from './purchasingText'
 import { PURCHASE_ORDER_STATUS_TONE } from './purchaseOrderStatus'
-import type { PurchaseOrderCurrency, PurchaseOrderLine } from './contract'
+import type { PurchaseKgPrice, PurchaseOrderCurrency, PurchaseOrderLine, PurchaseOrderRealization } from './contract'
 import { ADDITIONAL_COST_CAPABILITY, additionalCostPath } from './additionalCostContract'
 import { ADDITIONAL_COST_TEXT } from './additionalCostText'
 
@@ -141,6 +141,49 @@ function KgPriceCells({ line, currency }: { readonly line: PurchaseOrderLine; re
   </>
 }
 
+/** AK-3b (SAT-D436 TK6): drawn only when the server sent a realization (order read, prices visible). */
+const REALIZATION_COLUMNS = [
+  { name: T.realizationRow }, { name: T.invoicedQuantity, numeric: true }, { name: T.invoicedAmount, numeric: true },
+  { name: T.weighedKg, numeric: true }, { name: T.theoreticalKg, numeric: true }, { name: T.realizationDifferenceKg, numeric: true },
+  { name: T.deviationPercent, numeric: true }, { name: T.realKgPrice, numeric: true }, { name: T.theoreticalKgPrice, numeric: true },
+] as const
+
+/**
+ * AK-3b: one realization row — every figure the server's own text. A missing figure shows a reason in words: "Henüz
+ * faturalanmadı" when the server says nothing is invoiced, otherwise the text of the figure's own code (no weighed kg, no
+ * theoretical kg, amount unknown); a difference or deviation that follows from a missing kg is a dash. Nothing is computed.
+ */
+function RealizationRow({ label, testId, realization, kgPrice, currency, document }: {
+  readonly label: ReactNode
+  readonly testId: string
+  readonly realization: PurchaseOrderRealization
+  readonly kgPrice: PurchaseKgPrice | undefined
+  readonly currency: PurchaseOrderCurrency | null
+  readonly document?: boolean
+}) {
+  const notInvoiced = realization.realUnavailable === 'NotInvoiced' ? T.kgPriceUnavailable.NotInvoiced : null
+  const missing = (code: string | null) => notInvoiced ?? (code === null ? T.noDiscount : T.kgPriceUnavailable[code] ?? code)
+  const kg = (value: string | null, code: string | null) => value === null ? missing(code) : T.kgValue(value)
+  // The sign is the server's own, only written out for a positive figure; the digits are never touched.
+  const zero = (value: string) => /^-?0(?:\.0+)?$/.test(value)
+  const signed = (value: string) => value.startsWith('-') || zero(value) ? value : `+${value}`
+  const signedPercent = (value: string) => zero(value) ? T.percentValue(value)
+    : value.startsWith('-') ? `-${T.percentValue(value.slice(1))}` : `+${T.percentValue(value)}`
+  return <tr role="row" data-testid={testId}>
+    <Cell label={T.realizationRow}>{label}</Cell>
+    <Cell label={T.invoicedQuantity} numeric>{realization.invoicedQuantity ?? (document ? T.realizationPerLine : T.noDiscount)}</Cell>
+    <Cell label={T.invoicedAmount} numeric>{realization.invoicedAmount === null ? missing('AmountUnavailable')
+      : currency === null ? realization.invoicedAmount : T.money(realization.invoicedAmount, currency.currencyCode)}</Cell>
+    <Cell label={T.weighedKg} numeric>{kg(realization.weighedKg, 'WeighedKgUnavailable')}</Cell>
+    <Cell label={T.theoreticalKg} numeric>{kg(realization.theoreticalKg, 'TheoreticalKgUnavailable')}</Cell>
+    <Cell label={T.realizationDifferenceKg} numeric>{realization.differenceKg === null ? missing(null) : T.kgValue(signed(realization.differenceKg))}</Cell>
+    <Cell label={T.deviationPercent} numeric>{realization.deviationPercent === null ? missing(null) : signedPercent(realization.deviationPercent)}</Cell>
+    <Cell label={T.realKgPrice} numeric>{kgPriceText(realization.realKgPrice, realization.realUnavailable, currency)}</Cell>
+    <Cell label={T.theoreticalKgPrice} numeric>{kgPrice === undefined ? T.noDiscount
+      : kgPriceText(kgPrice.theoreticalKgPrice, kgPrice.theoreticalUnavailable, currency)}</Cell>
+  </tr>
+}
+
 const ACCEPTANCE_COLUMNS = [
   { name: T.acceptanceId }, { name: T.lineNo }, { name: T.quantity, numeric: true }, { name: T.recordedAtUtc },
 ] as const
@@ -245,6 +288,10 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
   // AK-5: the kg price columns only when the server sent the indicator on some line.
   const kgPricesShown = state.data.lines.some((line) => line.kgPrice !== undefined)
   const currency = state.data.currency ?? null
+  // AK-3b: the realization table only when the server sent one (order read, prices visible); absent = nothing is drawn.
+  const realizedLines = lines.filter((line) => line.realization !== undefined)
+  const documentRealization = state.data.realization
+  const realizationShown = pricesVisible && (realizedLines.length > 0 || documentRealization !== undefined)
   const isCurrentDetail = order.id === orderId && order.companyId === companyId
   const lineNoById = new Map(lines.map((line) => [line.lineId, line.lineNo] as const))
   const unresolved = attempt.phase === 'unknown' || attempt.phase === 'submitting'
@@ -300,6 +347,17 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
         <div><dt>{T.theoreticalKgPrice}</dt><dd>{kgPriceText(state.data.kgPrice.theoreticalKgPrice, state.data.kgPrice.theoreticalUnavailable, currency)}</dd></div>
         <div><dt>{T.realKgPrice}</dt><dd>{kgPriceText(state.data.kgPrice.realKgPrice, state.data.kgPrice.realUnavailable, currency)}</dd></div>
       </dl> : null}
+      {realizationShown ? <div data-testid="purchase-order-realization">
+        <h3>{T.realizationHeading}</h3>
+        <p>{T.realizationHint}</p>
+        <RecordTable label={T.realizationCaption} columns={REALIZATION_COLUMNS}>
+          {realizedLines.map((line) => line.realization === undefined ? null : <RealizationRow key={line.lineId}
+            testId={`purchase-order-realization-line-${line.lineNo}`} label={line.lineNo} realization={line.realization}
+            kgPrice={line.kgPrice} currency={currency} />)}
+          {documentRealization === undefined ? null : <RealizationRow testId="purchase-order-realization-document"
+            label={T.realizationDocumentRow} realization={documentRealization} kgPrice={state.data.kgPrice} currency={currency} document />}
+        </RecordTable>
+      </div> : null}
     </section>
     {/* F-027 (ALS-D94, ALS-D81): each line's current termin and its recorded revisions; the termin change control (UI-07) only
         behind its child capability. */}
