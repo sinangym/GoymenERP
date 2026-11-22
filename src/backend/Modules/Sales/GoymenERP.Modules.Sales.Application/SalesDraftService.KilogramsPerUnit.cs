@@ -30,6 +30,8 @@ public sealed partial class SalesDraftService
             if (answer is { Outcome: ProductTheoreticalKilogramsPerUnitOutcomeV1.Found, KilogramsPerUnit: { } figure, Evidence: { } evidence }
                 && evidence.CompanyId == scope.CompanyId && evidence.ProductId == line.Product.ProductId
                 && evidence.UnitId == line.OrderUnit.UnitId
+                // SAT-D443: the figure is pinned for a piece line only; a metre (or any other kind) answer is never a piece figure.
+                && evidence.UnitKind == ProductPhysicalUnitKindV1.Piece
                 && decimal.Round(figure, SalesLineKilogramsPerUnitSnapshot.KilogramsPerUnitScale, MidpointRounding.AwayFromZero) == figure
                 && figure <= SalesLineKilogramsPerUnitSnapshot.MaximumKilogramsPerUnit)
             {

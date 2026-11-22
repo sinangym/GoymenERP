@@ -2063,6 +2063,9 @@ public sealed partial class SalesDraftServiceTests
         /// <summary>AK-4: units the fake answers as the piece (adet) profile.</summary>
         public HashSet<Guid> PieceUnits { get; } = [];
 
+        /// <summary>SAT-D443: units the fake answers as a metre (length, scale 2) profile.</summary>
+        public HashSet<Guid> MetreUnits { get; } = [];
+
         public Task<UnitProfileV1> GetUnitProfileAsync(Guid unitId, DateOnly effectiveOn, CancellationToken cancellationToken = default)
         {
             Calls++;
@@ -2072,6 +2075,8 @@ public sealed partial class SalesDraftServiceTests
                 // AK-4: a unit named in PieceUnits answers the approved piece profile (count, scale 0).
                 _ when PieceUnits.Contains(unitId) => Task.FromResult(new UnitProfileV1(Company, unitId, "adet", "count", false,
                     new ProfileVersionV1(KgProfile, 4), 0, true, new DateOnly(2026, 9, 1), null)),
+                _ when MetreUnits.Contains(unitId) => Task.FromResult(new UnitProfileV1(Company, unitId, "m", "length", false,
+                    new ProfileVersionV1(KgProfile, 4), 2, true, new DateOnly(2026, 9, 1), null)),
                 _ => Task.FromResult(new UnitProfileV1(Fault == "unit-other-company" ? Guid.NewGuid() : Company, unitId, "kg", "weight", true,
                     new ProfileVersionV1(KgProfile, 4), 3, true, new DateOnly(2026, 9, 1), null)),
             };
