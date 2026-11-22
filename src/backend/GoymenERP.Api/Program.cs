@@ -505,6 +505,8 @@ builder.Services.AddWorkModule(
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
 builder.Services.AddWorkOutboxDispatcher(builder.Configuration);
+// W1-C: notes, mentions, tasks and the collaboration inbox; the scheduler stays off unless Work:CollaborationScheduler:Enabled.
+builder.Services.AddWorkCollaborationHostV1(builder.Configuration);
 // STK-S27 (LOJ-D19): Logistics's definite-shipment outbox is the dispatcher source "logistics" (registered, not enabled).
 builder.Services.AddLogisticsDefiniteShipmentOutbox();
 // SAT-S10 (LOJ-D19, SAT-D285): the Sales usage mirror is the inbox consumer of that source (registered after it, not enabled).
@@ -618,6 +620,7 @@ app.MapFinanceOpenItemReadEndpoints();
 app.MapWorkApprovalEndpoints();
 app.MapWorkQueueEndpoints();
 app.MapWorkNotificationEndpoints();
+app.MapWorkCollaborationEndpoints();
 app.MapSalesEndpoints();
 app.MapSalesProductCandidateEndpoints();
 app.MapInventoryEndpoints();

@@ -159,7 +159,7 @@ public sealed record WorkNoteViewV1(Guid Id, Guid CompanyId, string RecordType, 
     string AuthorDisplayName, string Body, Guid? CorrectsNoteId, IReadOnlyList<Guid> MentionedUserIds,
     DateTimeOffset CreatedAtUtc, DateTimeOffset? PassivatedAtUtc, string? PassivationReason);
 
-public sealed record WorkNotePageV1(Guid CompanyId, string RecordType, Guid RecordId, IReadOnlyList<WorkNoteViewV1> Items);
+public sealed record WorkNotePageV1(Guid CompanyId, string RecordType, Guid RecordId, IReadOnlyList<WorkNoteViewV1> Items, bool HasMore);
 
 public sealed record WorkNoteResponseV1(WorkNoteViewV1 Note, bool IsReplay, string OriginalCorrelationId);
 
