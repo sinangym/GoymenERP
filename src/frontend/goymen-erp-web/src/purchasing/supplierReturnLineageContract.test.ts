@@ -103,15 +103,6 @@ describe('supplier return decoder with a source label and per-receipt parts (AK-
     expect(decodeSupplierReturn(quantity({ supplierUnitPriceTry: '20.5', supplierAmountTry: '6150' }), COMPANY, ORDER)?.lineageParts?.[0].supplierUnitPriceTry).toBe('20.5')
     expect(decodeSupplierReturn(quantity({ supplierUnitPriceTry: '205', supplierPieceQuantity: 4, supplierAmountTry: '820' }), COMPANY, ORDER)).not.toBeNull()
     expect(decodeSupplierReturn(quantity({ supplierUnitPriceTry: '20.5' }), COMPANY, ORDER)).toBeNull()
-    const waiting = { costBasis: 'ManualCostWithException', status: 'PendingCostException' }
-    const difference = { costBasis: 'ManualCostWithException', supplierUnitPriceTry: '205', supplierPieceQuantity: 4, supplierAmountTry: '820',
-      stockExitAmountTry: '820.25', differenceTry: '0.25' }
-    expect(decodeSupplierReturn(quantity(difference, waiting), COMPANY, ORDER)?.lineageParts?.[0].differenceTry).toBe('0.25')
-    expect(decodeSupplierReturn(quantity({ ...difference, differenceTry: '-0.25' }, waiting), COMPANY, ORDER)).not.toBeNull()
-    expect(decodeSupplierReturn(quantity({ ...difference, differenceTry: '0' }, waiting), COMPANY, ORDER)).toBeNull()
-    expect(decodeSupplierReturn(quantity({ ...difference, costBasis: 'InvoiceUnitCost' }), COMPANY, ORDER)).toBeNull()
-    const { differenceTry: _difference, ...half } = difference
-    expect(decodeSupplierReturn(quantity(half, waiting), COMPANY, ORDER)).toBeNull()
     expect(decodeSupplierReturn(quantity({ supplierUnitPriceTry: '20.5', supplierAmountTry: '6150.505' }), COMPANY, ORDER)).toBeNull()
     expect(decodeSupplierReturn(quantity({ supplierUnitPriceTry: '20.50', supplierAmountTry: '6150' }), COMPANY, ORDER)).toBeNull()
     expect(decodeSupplierReturn(quantity({ supplierPieceQuantity: 0 }), COMPANY, ORDER)).toBeNull()

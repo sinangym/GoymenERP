@@ -133,8 +133,7 @@ internal sealed class PurchaseSupplierReturnHost(
                 // A quantity return (or an earlier single-receipt lineage return) carries at most one part: its explicit choice.
                 LineageSelection: request.LineageParts is { Count: 1 } single ? Selection(single[0]) : null,
                 ApprovedCostException: request.ApprovedCostException,
-                SupplierReturnAmountTry: request.SupplierReturnAmountTry?.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture),
-                ApprovedStockExitAmountTry: request.ApprovedStockExitAmountTry?.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)),
+                SupplierReturnAmountTry: request.SupplierReturnAmountTry?.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)),
                 Metadata(envelope), cancellationToken);
             return new PurchaseSupplierReturnExitResultV1(staged.InventoryMovementId, staged.LabelId, staged.QuantityKg, staged.IsReplay,
                 staged.OriginalUnitCostTryPerKg);

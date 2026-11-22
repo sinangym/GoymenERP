@@ -33,9 +33,6 @@ export interface SupplierReturnLineagePart {
   readonly supplierPieceQuantity?: number
   /** SAT-D453/SAT-D456: the kuruş-rounded amount the document bills; present exactly when the supplier price is. */
   readonly supplierAmountTry?: string
-  /** SAT-D460: the kuruş-rounded stock exit amount and its difference from the billed amount, recorded for approval. */
-  readonly stockExitAmountTry?: string
-  readonly differenceTry?: string
 }
 
 export interface SupplierReturnInvoicedPart {
@@ -108,7 +105,6 @@ type JsonObject = Record<string, unknown>
 
 const KG = /^(0|[1-9]\d{0,14})(\.\d{0,2}[1-9])?$/
 const COST = /^(0|[1-9]\d{0,13})(\.\d{0,3}[1-9])?$/
-const AMOUNT = /^(0|[1-9]\d{0,15})(\.\d?[1-9])?$/
 const CODE = /^[a-z0-9_.]{1,128}$/
 const MODES: readonly string[] = ['Lineage', 'Quantity']
 const SOURCES: readonly string[] = ['InvoiceUnitCost', 'ManualCostException', 'MovingAverage']
@@ -193,10 +189,8 @@ export function decodeSupplierReturnLineageParts(value: unknown, header: {
     const choicePresent = Object.hasOwn(source, 'pendingKg')
     const pricePresent = Object.hasOwn(source, 'supplierUnitPriceTry')
     const supplierPiecesPresent = Object.hasOwn(source, 'supplierPieceQuantity')
-    const differencePresent = Object.hasOwn(source, 'stockExitAmountTry')
     const fields = [...PART_FIELDS, ...(piecePresent ? ['pieceCount'] : []), ...(choicePresent ? ['pendingKg', 'invoiced'] : []),
-      ...(pricePresent ? ['supplierUnitPriceTry', 'supplierAmountTry'] : []), ...(supplierPiecesPresent ? ['supplierPieceQuantity'] : []),
-      ...(differencePresent ? ['stockExitAmountTry', 'differenceTry'] : [])]
+      ...(pricePresent ? ['supplierUnitPriceTry', 'supplierAmountTry'] : []), ...(supplierPiecesPresent ? ['supplierPieceQuantity'] : [])]
     if (!exact(source, fields) || !isPurchasingGuid(source.goodsAcceptanceId) || !isPurchasingGuid(source.purchaseOrderId)
       || !isPurchasingGuid(source.purchaseOrderLineId) || !isPurchasingGuid(source.returnLineId)
       || !isPurchasingGuid(source.inventoryMovementId) || !positiveKg(source.quantityKg)
@@ -207,13 +201,8 @@ export function decodeSupplierReturnLineageParts(value: unknown, header: {
       // SAT-D454/SAT-D455: a supplier price only on a quantity return and only while the price is visible; pieces are whole.
       || pricePresent && (header.lineageMode !== 'Quantity' || !header.priceVisible || typeof source.supplierUnitPriceTry !== 'string'
         || !COST.test(source.supplierUnitPriceTry) || source.supplierUnitPriceTry === '0'
-        || typeof source.supplierAmountTry !== 'string' || !AMOUNT.test(source.supplierAmountTry)
+        || typeof source.supplierAmountTry !== 'string' || !/^(0|[1-9]\d{0,15})(\.\d?[1-9])?$/.test(source.supplierAmountTry)
         || source.supplierAmountTry === '0')
-      // SAT-D460: a recorded difference comes with both amounts; it is a non-zero signed kuruş text and the part waits on approval.
-      || differencePresent && (!pricePresent || source.costBasis !== 'ManualCostWithException'
-        || typeof source.stockExitAmountTry !== 'string' || !AMOUNT.test(source.stockExitAmountTry) || source.stockExitAmountTry === '0'
-        || typeof source.differenceTry !== 'string' || !/^-?(0|[1-9]\d{0,15})(\.\d?[1-9])?$/.test(source.differenceTry)
-        || source.differenceTry === '0' || source.differenceTry === '-0')
       || supplierPiecesPresent && (!pricePresent || !count(source.supplierPieceQuantity)
         || source.supplierPieceQuantity < 1)) return null
     if (choicePresent) {

@@ -35,10 +35,7 @@ public sealed record PurchaseSupplierReturnLineagePartV1(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] decimal? SupplierUnitPriceTry = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? SupplierPieceQuantity = null,
     // SAT-D453/SAT-D456: the kuruş-rounded amount the document bills (quantity × the rounded net price).
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] decimal? SupplierAmountTry = null,
-    // SAT-D460: the kuruş-rounded stock exit amount whose difference from the billed amount waits for (or received) another
-    // person's approval. Present only on such a return; the difference is this minus SupplierAmountTry.
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] decimal? StockExitAmountTry = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] decimal? SupplierAmountTry = null);
 
 /// <summary>One receipt's part as it is shown; the unit cost is withheld without a fresh price-read grant (ALS-D70).</summary>
 public sealed record PurchaseSupplierReturnLineagePartViewV1(
@@ -49,9 +46,7 @@ public sealed record PurchaseSupplierReturnLineagePartViewV1(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseSupplierReturnInvoicedSelectionV1>? Invoiced = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SupplierUnitPriceTry = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? SupplierPieceQuantity = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SupplierAmountTry = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? StockExitAmountTry = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? DifferenceTry = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SupplierAmountTry = null);
 
 /// <summary>The order, order line and supplier a recorded goods acceptance counts on.</summary>
 public sealed record PurchaseSupplierReturnAcceptanceOwnerV1(Guid PurchaseOrderId, Guid PurchaseOrderLineId, Guid SupplierPartyId);
@@ -144,9 +139,6 @@ public static class PurchaseSupplierReturnLineagePartsV1
                 || part.SupplierPieceQuantity is not null && part.SupplierUnitPriceTry is null
                 || (part.SupplierAmountTry is null) != (part.SupplierUnitPriceTry is null)
                 || part.SupplierAmountTry is { } billed && (billed <= 0m || decimal.Round(billed, 2) != billed)
-                || part.StockExitAmountTry is { } stockExit && (stockExit <= 0m || decimal.Round(stockExit, 2) != stockExit
-                    || part.SupplierAmountTry is null || stockExit == part.SupplierAmountTry
-                    || part.CostBasis != PurchaseSupplierReturnCostBasis.ManualCostWithException)
                 || part.SupplierUnitPriceTry is not null && draft.LineageMode != PurchaseSupplierReturnLineageModeV1.Quantity)
             || parts.Select(part => part.GoodsAcceptanceId).Distinct().Count() != parts.Count
             || parts.Select(part => part.ReturnLineId).Distinct().Count() != parts.Count

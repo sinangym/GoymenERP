@@ -59,19 +59,9 @@ public interface IPurchaseSupplierReturnLineageReadPortV1
     Task<PurchaseSupplierReturnLineageV1> PlanAsync(Guid companyId, Guid labelId, string quantityKg, int? pieceCount,
         CancellationToken cancellationToken);
 
-    /// <summary>
-    /// SAT-D456/SAT-D460: the kuruş-rounded stock exit amount of <paramref name="quantityKg"/> of the label at its moving average
-    /// and that average; null when the average cannot be read. A host that does not answer leaves it unreadable.
-    /// </summary>
-    Task<PurchaseSupplierReturnStockAmountV1?> ReadStockAmountAsync(Guid companyId, Guid labelId, string quantityKg,
-        CancellationToken cancellationToken) => Task.FromResult<PurchaseSupplierReturnStockAmountV1?>(null);
-
     /// <summary>The open state of one goods receipt (the chosen receipt of a quantity return).</summary>
     Task<PurchaseSupplierReturnReceiptStateV1> ReadReceiptAsync(Guid companyId, Guid goodsAcceptanceId, CancellationToken cancellationToken);
 }
-
-/// <summary>The kuruş-rounded stock exit amount of a quantity return and the TL/kg moving average it leaves at.</summary>
-public sealed record PurchaseSupplierReturnStockAmountV1(decimal StockExitAmountTry, decimal AverageCostTryPerKg);
 
 /// <summary>The planned way a foreign-label return leaves stock.</summary>
 public sealed record PurchaseSupplierReturnLineagePlanV1(PurchaseSupplierReturnLineageModeV1 Mode);

@@ -83,9 +83,7 @@ public sealed partial class PurchasingService
                 // source are decided here, before anything is written. The receipt-label cost-source attribution does not apply.
                 var plan = await PlanReturnLineageAsync(scope, permission, returns, stored.Order, lineId, sourceLabelId,
                     request.GoodsAcceptanceId, request.QuantityKg, request.PieceCount, collectRefusal: false, cancellationToken);
-                var stockAmount = await ReadQuantityStockAmountAsync(scope, permission, plan, sourceLabelId, request.QuantityKg,
-                    cancellationToken);
-                lineage = DecideReturnLineage(plan, request, QuantityRulesAccepted, stockAmount);
+                lineage = DecideReturnLineage(plan, request, QuantityRulesAccepted);
             }
             else
             {
@@ -367,9 +365,7 @@ public sealed partial class PurchasingService
         // cost is sent (Inventory leaves at the average); on the approved exception path the manual cost is sent with it.
         var amountPart = draft.LineageMode == PurchaseSupplierReturnLineageModeV1.Quantity ? draft.LineageParts?[0] : null;
         var amount = amountPart?.SupplierAmountTry;
-        // SAT-D460: an approved amount difference names the stock exit amount that was approved instead of a manual cost.
-        var approvedStockExit = amountPart?.StockExitAmountTry;
-        var sendsCost = amount is null || draft.CostBasis == PurchaseSupplierReturnCostBasis.ManualCostWithException && approvedStockExit is null;
+        var sendsCost = amount is null || draft.CostBasis == PurchaseSupplierReturnCostBasis.ManualCostWithException;
         var result = await exit.StageExitAsync(new PurchaseSupplierReturnExitRequestV1(scope.CompanyId, draft.ReturnId, draft.ReturnLineId,
             draft.GoodsAcceptanceId, draft.InventoryMovementId, draft.SourceBlock, Kg(draft.QuantityKg),
             sendsCost ? UnitCostText(draft.UnitCostTryPerKg) : string.Empty,
@@ -377,8 +373,7 @@ public sealed partial class PurchasingService
             draft.UndoQuantity is { } undo ? Kg(undo) : null, draft.SourceLabelId, draft.LineageMode, draft.PieceCount, draft.LineageParts,
             // SAT-D393 on a quantity return: the stored manual cost reaches Inventory only through an approved exception.
             draft.LineageMode == PurchaseSupplierReturnLineageModeV1.Quantity
-                && draft.CostBasis == PurchaseSupplierReturnCostBasis.ManualCostWithException ? true : null, amount, approvedStockExit), envelope,
-            cancellationToken);
+                && draft.CostBasis == PurchaseSupplierReturnCostBasis.ManualCostWithException ? true : null, amount), envelope, cancellationToken);
         if (result is null || result.InventoryMovementId != draft.InventoryMovementId) throw ReturnUnavailable();
         return result;
     }
@@ -496,11 +491,7 @@ public sealed partial class PurchasingService
                 part.PurchaseOrderLineId, part.ReturnLineId, part.InventoryMovementId, Kg(part.QuantityKg), part.CostBasis.ToString(),
                 visible ? UnitCostText(part.UnitCostTryPerKg) : null, part.PieceCount, part.PendingKg, part.Invoiced,
                 visible && part.SupplierUnitPriceTry is { } supplierPrice ? UnitCostText(supplierPrice) : null, part.SupplierPieceQuantity,
-                visible && part.SupplierAmountTry is { } supplierAmount ? supplierAmount.ToString("0.##", CultureInfo.InvariantCulture) : null,
-                visible && part.StockExitAmountTry is { } stockExit ? stockExit.ToString("0.##", CultureInfo.InvariantCulture) : null,
-                // SAT-D456: the difference is the two kuruş-rounded amounts' difference, shown as recorded (may be negative).
-                visible && part is { StockExitAmountTry: { } exitAmount, SupplierAmountTry: { } billedAmount }
-                    ? (exitAmount - billedAmount).ToString("0.##", CultureInfo.InvariantCulture) : null)).ToArray())
+                visible && part.SupplierAmountTry is { } supplierAmount ? supplierAmount.ToString("0.##", CultureInfo.InvariantCulture) : null)).ToArray())
         {
             PriceDisclosure = visible ? PurchasingPriceDisclosureV1.Visible : PurchasingPriceDisclosureV1.Withheld,
         };

@@ -583,8 +583,7 @@ public sealed partial class PurchasingServiceTests
         var (world, order, returns, request, lineage) = await QuantityWorldAsync(new PurchaseOrderLinePriceRequest("205", PieceUnitId),
             averageReadable: true, pieceLine: true, tracksPieces: true);
         request = request with { PieceCount = 4 };
-        lineage.StockAmount = new(820m, 10.25m);
-        var exits = new ReturnExitHost { StagedAverage = "10.25" };
+        var exits = new ReturnExitHost { StagedAverage = "10.2531" };
         var service = world.Service(returns: returns, returnLineage: lineage, returnExits: exits, returnPolicy: QuantityRulesOpen);
 
         var missing = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
@@ -596,68 +595,9 @@ public sealed partial class PurchasingServiceTests
         Assert.Equal((422, PurchaseSupplierReturnCodesV1.PieceCountRequired), (missing.Status, missing.Code));
         Assert.Equal((422, PurchaseSupplierReturnCodesV1.QuantityPieceQuantityMismatch), (different.Status, different.Code));
         var part = Assert.Single(answer.Return.LineageParts!);
-        Assert.Equal(("Recorded", "80", 4, "205", 4, "820", "10.25"), (answer.Return.Status, part.QuantityKg, part.PieceCount, part.SupplierUnitPriceTry,
+        Assert.Equal(("Recorded", "80", 4, "205", 4, "820", "10.2531"), (answer.Return.Status, part.QuantityKg, part.PieceCount, part.SupplierUnitPriceTry,
             part.SupplierPieceQuantity, part.SupplierAmountTry, part.UnitCostTryPerKg));
         Assert.Equal((820m, "", 4), (Assert.Single(exits.Exits).SupplierReturnAmountTry, exits.Exits[0].UnitCostTryPerKg, exits.Exits[0].PieceCount));
-    }
-
-    [Fact]
-    public async Task SAT_D460_with_the_gate_open_a_piece_line_amount_difference_is_recorded_and_waits_for_another_persons_approval()
-    {
-        // 4 pieces × 205 TL = 820.00 TL billed; 80 kg at the 10.2531 average = 820.25 TL stock exit: difference 0.25 TL.
-        var (world, order, returns, request, lineage) = await QuantityWorldAsync(new PurchaseOrderLinePriceRequest("205", PieceUnitId),
-            averageReadable: true, pieceLine: true, tracksPieces: true);
-        request = request with { PieceCount = 4, SupplierPieceQuantity = 4 };
-        lineage.StockAmount = new(820.25m, 10.2531m);
-        var exits = new ReturnExitHost();
-        var service = world.Service(returns: returns, returnLineage: lineage, returnExits: exits, returnPolicy: QuantityRulesOpen);
-
-        var manual = await Assert.ThrowsAsync<PurchasingServiceException>(() => service.CreateSupplierReturnAsync(order,
-            request with { ManualUnitCostTryPerKg = "10.25" }, Metadata("d460-manual")));
-        var pending = await service.CreateSupplierReturnAsync(order, request, Metadata("d460"));
-        var part = Assert.Single(pending.Return.LineageParts!);
-        // Not a refusal: recorded with both amounts and their difference; nothing left stock yet.
-        Assert.Equal(("PendingCostException", "820", "820.25", "0.25", "10.2531", 0), (pending.Return.Status, part.SupplierAmountTry,
-            part.StockExitAmountTry, part.DifferenceTry, part.UnitCostTryPerKg, exits.Exits.Count));
-        var same = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
-            service.ApproveSupplierReturnCostExceptionAsync(order, request.ReturnId, new("1", null), Metadata("d460-self")));
-        var approved = await world.AsApprover(() =>
-            service.ApproveSupplierReturnCostExceptionAsync(order, request.ReturnId, new("1", null), Metadata("d460-approve")));
-
-        // SAT-D454: no manual cost while the average is readable.
-        Assert.Equal((409, PurchaseSupplierReturnCodesV1.QuantityAverageAvailable, 409), (manual.Status, manual.Code, same.Status));
-        var exit = Assert.Single(exits.Exits);
-        // The approved stock exit amount goes to Inventory, which proceeds only while the stock still leaves at exactly it.
-        Assert.Equal(("Recorded", "", true, 820m, 820.25m), (approved.Return.Status, exit.UnitCostTryPerKg, exit.ApprovedCostException,
-            exit.SupplierReturnAmountTry, exit.ApprovedStockExitAmountTry));
-    }
-
-    [Fact]
-    public async Task SAT_D460_with_the_gate_open_a_piece_line_return_whose_stock_amount_cannot_be_read_takes_the_manual_cost_path()
-    {
-        var (world, order, returns, request, lineage) = await QuantityWorldAsync(new PurchaseOrderLinePriceRequest("205", PieceUnitId),
-            averageReadable: true, pieceLine: true, tracksPieces: true);
-
-        var refusal = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service(returns: returns, returnLineage: lineage,
-            returnExits: new ReturnExitHost(), returnPolicy: QuantityRulesOpen)
-            .CreateSupplierReturnAsync(order, request with { PieceCount = 4, SupplierPieceQuantity = 4 }, Metadata("d460-unreadable")));
-
-        Assert.Equal((409, PurchaseSupplierReturnCodesV1.CostRequired, 0), (refusal.Status, refusal.Code, returns.NewWrites));
-    }
-
-    [Fact]
-    public async Task With_the_gate_open_a_kilogram_line_difference_is_still_Inventorys_SAT_D371_refusal_and_no_stock_amount_is_read()
-    {
-        var (world, order, returns, request, lineage) = await QuantityWorldAsync(new PurchaseOrderLinePriceRequest("20.5"), averageReadable: true);
-        lineage.StockAmount = new(1700m, 21.25m);
-        var exits = new ReturnExitHost { StagedAverage = "20.5" };
-
-        var answer = await world.Service(returns: returns, returnLineage: lineage, returnExits: exits, returnPolicy: QuantityRulesOpen)
-            .CreateSupplierReturnAsync(order, request, Metadata("kg-difference"));
-
-        // The kg line goes straight to Inventory with its billed amount and no approval; Inventory refuses a difference there.
-        Assert.Equal(("Recorded", 0, 1640m, (decimal?)null), (answer.Return.Status, lineage.StockAmountCalls,
-            Assert.Single(exits.Exits).SupplierReturnAmountTry, exits.Exits[0].ApprovedStockExitAmountTry));
     }
 
     [Fact]
@@ -815,16 +755,6 @@ public sealed partial class PurchasingServiceTests
         public bool AverageCostReadable { get; init; }
         public string FreeKg { get; init; } = "1000";
         public int Calls { get; private set; }
-        /// <summary>The cost-bearing stock amount the Inventory owner answers for SAT-D456/SAT-D460; null = average unreadable.</summary>
-        public PurchaseSupplierReturnStockAmountV1? StockAmount { get; set; }
-        public int StockAmountCalls { get; private set; }
-
-        public Task<PurchaseSupplierReturnStockAmountV1?> ReadStockAmountAsync(Guid companyId, Guid labelId, string quantityKg,
-            CancellationToken cancellationToken)
-        {
-            StockAmountCalls++;
-            return Task.FromResult(StockAmount);
-        }
 
         public Task<PurchaseSupplierReturnLineageV1> PlanAsync(Guid companyId, Guid labelId, string quantityKg, int? pieceCount,
             CancellationToken cancellationToken)

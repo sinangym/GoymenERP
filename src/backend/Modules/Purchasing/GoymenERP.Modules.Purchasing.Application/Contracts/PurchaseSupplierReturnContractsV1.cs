@@ -223,9 +223,7 @@ public sealed record PurchaseSupplierReturnExitRequestV1(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseSupplierReturnLineagePartV1>? LineageParts = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? ApprovedCostException = null,
     // SAT-D456 (behind the quantity-rules gate): the kuruş-rounded amount the document bills; Inventory measures the difference on it.
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] decimal? SupplierReturnAmountTry = null,
-    // SAT-D460: the stock exit amount whose difference another person approved; Inventory proceeds only while it still holds.
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] decimal? ApprovedStockExitAmountTry = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] decimal? SupplierReturnAmountTry = null);
 
 /// <summary><see cref="UnitCostTryPerKg"/>: the TL unit cost the exit actually left stock at (the moving average of an amount-measured quantity return).</summary>
 public sealed record PurchaseSupplierReturnExitResultV1(Guid InventoryMovementId, Guid LabelId, string QuantityKg, bool IsReplay,

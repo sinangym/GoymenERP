@@ -2256,7 +2256,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "PurchaseSupplierReturnHost.cs"] =
                     new(
                         // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): gated source-label supplier return; value from guard_fingerprint.py (a5539d29… -> b14781e0…).
-                        "7c2139d7483410696fa5e2d84226d70bfc4beb0758e46ac7a89201aeaeba81e9",
+                        "e9ec43754c46c8d2ccee61c03585d8ec75a77607694aedd4a3827250a2035eb4",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         ["System.Data.Common"] = 1,
@@ -2321,7 +2321,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "PurchasingService.SupplierReturn.cs"] =
                     new(
                         // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): gated source-label supplier return; value from guard_fingerprint.py (7931129c… -> b7c4cb9f…).
-                        "871755fde5a4fae9009acb6aeb262d74d14aa91a61b0fdcc221ef4f8b11853c2",
+                        "278b86ecaeb3135db633cf7325ce7a96a2949f66e5d26a6d9d2f234b8906a1db",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         [".FindAsync"] = 3
@@ -3535,7 +3535,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // movement facts through the injected InventoryDbContext with an explicit CompanyId predicate on every batch (AsNoTracking);
                 // no SQL handle, raw query, filter bypass or write.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventorySupplierReturnLineageReader.cs"] =
-                    new("2b89232143735d4f634d148c7d0cb0b9d3c50ff347a97b1935333ca19bbdd33d",
+                    new("6731f698209990a7da01a45bd5db5b1c2701147e649c32f95d7540affae00e97",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,

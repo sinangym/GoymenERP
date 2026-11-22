@@ -158,9 +158,7 @@ public sealed partial class InventorySupplierReturnExitParticipant
             if (request.SupplierReturnAmountTry is { } billedText)
             {
                 var average = await RequireQuantityReturnAmountAsync(exit, input, request.SourceBlock,
-                    request.ApprovedCostException == true, decimal.Parse(billedText, CultureInfo.InvariantCulture),
-                    request.ApprovedStockExitAmountTry is { } approvedText ? decimal.Parse(approvedText, CultureInfo.InvariantCulture) : null,
-                    token);
+                    request.ApprovedCostException == true, decimal.Parse(billedText, CultureInfo.InvariantCulture), token);
                 if (average is { } known) quantityAverageCosts[request.InventoryMovementId] = known;
             }
             else
@@ -208,20 +206,14 @@ public sealed partial class InventorySupplierReturnExitParticipant
     }
 
     /// <summary>
-    /// SAT-D456 / SAT-D460 (with SAT-D444): the caller names the kuruş-rounded amount its document bills. With a readable moving
-    /// average the stock leaves at that average (it is returned as the exit's unit cost) and the difference is the kuruş-rounded
-    /// exit amount minus the billed amount:
-    /// <list type="bullet">
-    /// <item>no approval named — any difference is refused here (SAT-D371): the caller records it and sends it to approval;</item>
-    /// <item>an approved stock exit amount named (SAT-D460: another person approved the recorded difference) — the exit proceeds
-    /// only while the stock still leaves at exactly that amount; a moved average is refused, never silently re-approved;</item>
-    /// <item>a manual cost named — refused: no manual cost while the average is readable (SAT-D454, SAT-D371/SAT-D410).</item>
-    /// </list>
-    /// With an unreadable average only a manual cost approved by another person (SAT-D393) lets the exit proceed, at that cost
-    /// (null is returned). The SAT-D306 (c) pool check still applies afterwards in every case (SAT-D410).
+    /// SAT-D456 (with SAT-D444): the caller names the kuruş-rounded amount its document bills. With a readable moving average the
+    /// stock leaves at that average and the difference is the kuruş-rounded exit amount minus the billed amount; any difference
+    /// is refused (SAT-D371; an approved exception does not bypass it, SAT-D410) and the average is returned as the exit's unit
+    /// cost. With an unreadable average only a manual cost approved by another person (SAT-D393) lets the exit proceed, at that
+    /// cost (null is returned); the SAT-D306 (c) pool check still applies afterwards.
     /// </summary>
     private async Task<decimal?> RequireQuantityReturnAmountAsync(ReceiptTrace exit, InventorySupplierReturnExitInput input,
-        BlockState block, bool approvedCostException, decimal billedAmountTry, decimal? approvedStockExitAmountTry, CancellationToken token)
+        BlockState block, bool approvedCostException, decimal billedAmountTry, CancellationToken token)
     {
         if (exit.OwnerKind != StockPartyKind.Company || exit.OwnerId != companyId)
         {
@@ -233,16 +225,16 @@ public sealed partial class InventorySupplierReturnExitParticipant
             source.Position.LocationId, token);
         if (average is not { } known)
         {
-            if (!approvedCostException || input.OriginalUnitCostTryPerKg is null || approvedStockExitAmountTry is not null)
+            if (!approvedCostException || input.OriginalUnitCostTryPerKg is null)
                 throw Refused(409, InventorySupplierReturnExitCodesV1.QuantityCostUnreadable);
             return null;
         }
 
-        if (input.OriginalUnitCostTryPerKg is not null)
+        // A manual cost has no place while the average is readable (SAT-D454); the caller sends none.
+        if (input.OriginalUnitCostTryPerKg is not null || approvedCostException)
             throw Refused(409, InventorySupplierReturnExitCodesV1.CostDifferenceUnposted);
-        var (stockExit, difference) = SupplierReturnLineageCalculator.QuantityReturnAmountDifference(input.Quantity.Value, known, billedAmountTry);
-        if (approvedStockExitAmountTry is { } approved ? !approvedCostException || stockExit != approved : approvedCostException || difference != 0m)
-            throw Refused(409, InventorySupplierReturnExitCodesV1.CostDifferenceUnposted);
+        var (_, difference) = SupplierReturnLineageCalculator.QuantityReturnAmountDifference(input.Quantity.Value, known, billedAmountTry);
+        if (difference != 0m) throw Refused(409, InventorySupplierReturnExitCodesV1.CostDifferenceUnposted);
         return known;
     }
 

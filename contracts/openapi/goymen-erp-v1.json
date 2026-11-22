@@ -294338,18 +294338,6 @@
               "null",
               "string"
             ]
-          },
-          "stockExitAmountTry": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "differenceTry": {
-            "type": [
-              "null",
-              "string"
-            ]
           }
         }
       },

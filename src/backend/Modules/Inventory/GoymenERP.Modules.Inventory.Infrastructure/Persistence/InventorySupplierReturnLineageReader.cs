@@ -97,42 +97,6 @@ public sealed class InventorySupplierReturnLineageReader(InventoryDbContext db, 
         }
     }
 
-    public async Task<InventorySupplierReturnStockAmountV1> ReadStockAmountAsync(Guid companyId, Guid labelId, string quantityKg,
-        CancellationToken cancellationToken = default)
-    {
-        if (!company.IsResolved || companyId == Guid.Empty || company.CompanyId != companyId || labelId == Guid.Empty)
-            throw Unreadable();
-        if (!decimal.TryParse(quantityKg, System.Globalization.NumberStyles.AllowDecimalPoint,
-                System.Globalization.CultureInfo.InvariantCulture, out var kg) || kg <= 0m
-            || InventorySupplierReturnReceiptStates.Kg(kg) != quantityKg)
-            throw InventorySupplierReturnExitException.Refused(400, InventorySupplierReturnExitCodesV1.InvalidQuantity);
-        try
-        {
-            var label = await db.Labels.AsNoTracking().Where(row => row.CompanyId == companyId && row.Id == labelId)
-                .Select(row => new { row.ProductId }).SingleOrDefaultAsync(cancellationToken) ?? throw Unreadable();
-            var stocked = await db.Balances.AsNoTracking()
-                .Where(row => row.CompanyId == companyId && row.LabelId == labelId && row.QuantityKg > 0m)
-                .Select(row => new { row.LocationId, row.OwnerKind, row.OwnerId }).ToListAsync(cancellationToken);
-            var locations = stocked.Select(row => row.LocationId).Distinct().ToArray();
-            decimal? average = locations.Length == 1
-                && stocked.All(row => row.OwnerKind == (int)StockPartyKind.Company && row.OwnerId == companyId)
-                ? await InventorySupplierReturnReceiptStates.ReadAverageAsync(db, companyId, label.ProductId, locations[0], cancellationToken)
-                : null;
-            if (average is not { } known) return new InventorySupplierReturnStockAmountV1(companyId, labelId, null, null);
-            // SAT-D456: the exit amount is rounded once to kuruş; the billed amount it is compared with is the document's.
-            var exit = ExactCostRatio.Of(kg).Multiply(known).Round(SupplierReturnLineageCalculator.AmountScale);
-            return new InventorySupplierReturnStockAmountV1(companyId, labelId,
-                exit.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture),
-                known.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture));
-        }
-        catch (Exception exception) when (exception is DbException or InvalidOperationException or ArgumentException
-            or OverflowException or DivideByZeroException)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            throw Unreadable();
-        }
-    }
-
     public async Task<InventorySupplierReturnReceiptStateV1> ReadReceiptAsync(Guid companyId, Guid goodsAcceptanceId,
         CancellationToken cancellationToken = default)
     {
