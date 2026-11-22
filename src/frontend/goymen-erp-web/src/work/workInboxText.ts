@@ -7,6 +7,12 @@
 
 import { CAPABILITY_NAV_LABEL } from '../shell/navigation'
 import { DURATION_CLASS_HOURS, type WorkInboxDurationClass } from './workInboxContract'
+import {
+  WP6_INBOX_KIND_TEXT,
+  WP6_INBOX_PERMISSION_TEXT,
+  WP6_INBOX_ROLE_TEXT,
+  WP6_INBOX_RULE_TEXT,
+} from './inboxKinds/inventoryText'
 
 /** Kind → Turkish name (one per connected owner source). */
 export const WORK_INBOX_KIND_TEXT: Readonly<Record<string, string>> = {
@@ -27,6 +33,7 @@ export const WORK_INBOX_KIND_TEXT: Readonly<Record<string, string>> = {
   'inventory.stock-count.v1': 'Stok sayım farkı onayı',
   'inventory.stock-scrap.v1': 'Stok hurda çıkışı onayı',
   'sales.order-draft.v1': 'Satış siparişi taslağı onayı',
+  ...WP6_INBOX_KIND_TEXT,
 }
 
 export const WORK_INBOX_MODULE_TEXT: Readonly<Record<string, string>> = {
@@ -83,6 +90,7 @@ export const WORK_INBOX_RULE_TEXT: Readonly<Record<string, string>> = {
   'finance.official-invoice-import-approval': 'Resmî fatura içe alma partisi onay bekliyor',
   'inventory.stock-count-difference': 'Sayılan kg defter kaydından farklı (sayılan / fark)',
   'inventory.stock-scrap-request': 'Hurda çıkışı talebi (hurda kg)',
+  ...WP6_INBOX_RULE_TEXT,
 }
 
 /** Reference role → label in "Dayandığı kayıtlar". */
@@ -105,6 +113,7 @@ export const WORK_INBOX_ROLE_TEXT: Readonly<Record<string, string>> = {
   'manufacturing-order': 'Üretim emri',
   'inventory-label': 'Etiket',
   location: 'Lokasyon',
+  ...WP6_INBOX_ROLE_TEXT,
 }
 
 /** The owners' approve permission names ("kimde bekliyor"). */
@@ -125,6 +134,7 @@ export const WORK_INBOX_PERMISSION_TEXT: Readonly<Record<string, string>> = {
   'inventory.stock-count.approve': 'Stok sayım onayı',
   'inventory.stock-scrap.approve': 'Stok hurda onayı',
   'sales.orders.approve': 'Satış siparişi onayı',
+  ...WP6_INBOX_PERMISSION_TEXT,
 }
 
 export const inboxKindText = (kind: string): string => WORK_INBOX_KIND_TEXT[kind] ?? kind
