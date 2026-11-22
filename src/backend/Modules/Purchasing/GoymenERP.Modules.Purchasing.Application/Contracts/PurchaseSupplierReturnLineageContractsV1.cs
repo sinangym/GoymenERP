@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Numerics;
+using GoymenERP.BuildingBlocks.Monetary;
 
 namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 
@@ -25,20 +26,33 @@ public enum PurchaseSupplierReturnLineageModeV1
     Quantity = 2,
 }
 
-/// <summary>One lineage root as Inventory answers it; <see cref="GoodsAcceptanceId"/> only for a purchase receipt root.</summary>
+/// <summary>
+/// One lineage root as Inventory answers it; <see cref="GoodsAcceptanceId"/> only for a purchase receipt root. Roots are answered
+/// in receipt order (SAT-D440/SAT-D442 ties). <see cref="Receipt"/> is the receipt's open state when the owner supplied it.
+/// </summary>
 public sealed record PurchaseSupplierReturnLineageRootV1(bool IsPurchaseReceipt, Guid? GoodsAcceptanceId, string ShareNumerator,
-    string ShareDenominator);
-
-/// <summary>A label's lineage roots (company-fenced); the shares add up to one.</summary>
-public sealed record PurchaseSupplierReturnLineageV1(Guid LabelId, IReadOnlyList<PurchaseSupplierReturnLineageRootV1> Roots);
+    string ShareDenominator, PurchaseSupplierReturnReceiptStateV1? Receipt = null);
 
 /// <summary>
-/// Reads a label's lineage from the Inventory owner (wired by the host). Purchasing never reads Inventory tables. An unreadable
-/// lineage is answered by throwing; a host without the port leaves foreign-label returns 503.
+/// A label's lineage roots (company-fenced); the shares add up to one. The stock facts are price-free:
+/// <see cref="AverageCostReadable"/> says whether the label's location/product moving average can be read (SAT-D444).
+/// </summary>
+public sealed record PurchaseSupplierReturnLineageV1(Guid LabelId, IReadOnlyList<PurchaseSupplierReturnLineageRootV1> Roots,
+    bool TracksPieces = false, string FreeKg = "0", string BlockedKg = "0", int? FreePieces = null, int? BlockedPieces = null,
+    bool AverageCostReadable = false);
+
+/// <summary>
+/// Reads a label's lineage plan and a receipt's open state from the Inventory owner (wired by the host). Purchasing never reads
+/// Inventory tables. An unreadable answer is given by throwing; a host without the port leaves foreign-label returns 503.
 /// </summary>
 public interface IPurchaseSupplierReturnLineageReadPortV1
 {
-    Task<PurchaseSupplierReturnLineageV1> ReadAsync(Guid companyId, Guid labelId, CancellationToken cancellationToken);
+    /// <summary>The lineage with what a return of <paramref name="quantityKg"/> / <paramref name="pieceCount"/> takes from each receipt.</summary>
+    Task<PurchaseSupplierReturnLineageV1> PlanAsync(Guid companyId, Guid labelId, string quantityKg, int? pieceCount,
+        CancellationToken cancellationToken);
+
+    /// <summary>The open state of one goods receipt (the chosen receipt of a quantity return).</summary>
+    Task<PurchaseSupplierReturnReceiptStateV1> ReadReceiptAsync(Guid companyId, Guid goodsAcceptanceId, CancellationToken cancellationToken);
 }
 
 /// <summary>The planned way a foreign-label return leaves stock.</summary>
@@ -46,9 +60,8 @@ public sealed record PurchaseSupplierReturnLineagePlanV1(PurchaseSupplierReturnL
 
 /// <summary>
 /// AK-8 planning rules (pure). SAT-D445: lineage distribution only when every root is a purchase receipt of the returning
-/// supplier; any other lineage is a quantity return from the chosen receipt. SAT-D433 with SAT-D440/D442 needs one exit per
-/// receipt in one atomic return; a single-receipt lineage (a split of that receipt) is one exit of the whole return, a
-/// multi-receipt lineage is not staged yet (503, never a partial or re-routed share).
+/// supplier; any other lineage is a quantity return from the chosen receipt. In a lineage return the named acceptance is the
+/// document's own receipt and must be one of the label's receipts; nothing is re-routed to another receipt.
 /// </summary>
 public static class PurchaseSupplierReturnLineagePlannerV1
 {
@@ -69,8 +82,7 @@ public static class PurchaseSupplierReturnLineagePlannerV1
             throw Unavailable();
         var onlySupplier = roots.All(root => root.IsPurchaseReceipt && supplierByAcceptance[root.GoodsAcceptanceId!.Value] == supplierId);
         if (!onlySupplier) return new(PurchaseSupplierReturnLineageModeV1.Quantity);
-        if (purchase.Length > 1) throw Unavailable();
-        if (purchase[0] != goodsAcceptanceId)
+        if (!purchase.Contains(goodsAcceptanceId))
             throw new PurchasingServiceException(409, PurchaseSupplierReturnCodesV1.LineageReceiptMismatch,
                 [new("goodsAcceptanceId", PurchaseSupplierReturnCodesV1.LineageReceiptMismatch)]);
         return new(PurchaseSupplierReturnLineageModeV1.Lineage);
@@ -91,5 +103,56 @@ public static class PurchaseSupplierReturnLineagePlannerV1
         }
 
         return numerator == denominator;
+    }
+}
+
+/// <summary>What one order line offers a quantity return as its price (the facts the rule needs, nothing else).</summary>
+public sealed record PurchaseSupplierReturnQuantityPriceLineV1(bool IsTurkishLira, bool IsKilogramLine, bool PricedPerOrderUnit,
+    decimal? UnitPrice, decimal? DiscountPercent = null, decimal? DiscountAmount = null);
+
+public enum PurchaseSupplierReturnQuantityPriceOutcomeV1
+{
+    Priced = 1,
+
+    /// <summary>409: not a priced kilogram line in TL (golden TI8 prices a kg order; a piece order's return quantity is not given).</summary>
+    NotAKilogramTryLine = 2,
+
+    /// <summary>
+    /// 422: the net price after the discount has more than four decimals (or does not fit TL/kg). The stock exit contract carries
+    /// four; how such a price is rounded is not decided, so it is never rounded here.
+    /// </summary>
+    NotRepresentable = 3,
+}
+
+public sealed record PurchaseSupplierReturnQuantityPriceV1(PurchaseSupplierReturnQuantityPriceOutcomeV1 Outcome, decimal? UnitPriceTryPerKg);
+
+/// <summary>
+/// SAT-D444 / SAT-D451, THE single rule point for "the chosen purchase order's unit price" of a quantity return. SAT-D451
+/// (Sinan, 2026-11-22, <c>docs/decisions/SINAN_KARARLARI_2026-11-22_WORK_AI_DALGALAR.md</c>): it is the chosen order line's NET
+/// unit price AFTER the discount; the maturity difference (deferral) is NOT included. The discount arithmetic is the shared
+/// <see cref="CommercialLinePriceCalculator"/> (exact, never rounded); no price formula is written here.
+/// </summary>
+public static class PurchaseSupplierReturnQuantityPriceRuleV1
+{
+    /// <summary>SAT-D451: net of the discount, without the deferral.</summary>
+    public const string DiscountedLinePriceDecision = "SAT-D451: net-after-discount, deferral-excluded";
+
+    private const int UnitCostScale = 4;
+    private const decimal UnitCostUpperBound = 100_000_000_000_000m;
+
+    public static PurchaseSupplierReturnQuantityPriceV1 Resolve(PurchaseSupplierReturnQuantityPriceLineV1 line)
+    {
+        ArgumentNullException.ThrowIfNull(line);
+        if (!line.IsTurkishLira || !line.IsKilogramLine || !line.PricedPerOrderUnit || line.UnitPrice is not { } gross || gross <= 0m)
+            return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.NotAKilogramTryLine, null);
+        decimal price;
+        try { price = CommercialLinePriceCalculator.NetUnitPrice(gross, line.DiscountPercent, line.DiscountAmount); }
+        catch (Exception exception) when (exception is ArgumentException or OverflowException or InvalidOperationException)
+        { return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.NotRepresentable, null); }
+        // A fully discounted line has no supplier price to bill a return at.
+        if (price <= 0m) return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.NotAKilogramTryLine, null);
+        if (price >= UnitCostUpperBound || decimal.Round(price, UnitCostScale) != price)
+            return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.NotRepresentable, null);
+        return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.Priced, price);
     }
 }

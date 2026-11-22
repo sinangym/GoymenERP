@@ -178841,6 +178841,7 @@
               "inventory_supplier_return_exit_exceeds_receipt",
               "inventory_supplier_return_exit_idempotency_conflict",
               "inventory_supplier_return_exit_lineage_mismatch",
+              "inventory_supplier_return_exit_quantity_cost_unreadable",
               "inventory_supplier_return_exit_receipt_not_recorded",
               "inventory_supplier_return_exit_stock_allocated",
               "inventory_supplier_return_exit_stock_not_available",
@@ -178944,6 +178945,296 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/purchasing/orders/{id}/goods-receipts/{acceptanceId}/supplier-return-lineage-preview": {
+      "get": {
+        "tags": [
+          "Purchasing"
+        ],
+        "operationId": "GetPurchaseSupplierReturnLineagePreviewV1",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "acceptanceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Company-Id",
+            "in": "header",
+            "description": "Selected company identifier for this company-scoped request.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          }
+        ],
+        "responses": {
+          "409": {
+            "description": "Conflict",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "organization.company.setup_pending",
+              "purchasing_supplier_return_lineage_receipt_mismatch"
+            ]
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "inventory_supplier_return_exit_quantity_profile_unavailable",
+              "inventory_supplier_return_exit_receipt_trace_invalid",
+              "inventory_supplier_return_exit_unavailable",
+              "purchasing_supplier_return_invoice_cost_invalid",
+              "purchasing_supplier_return_lineage_unavailable",
+              "purchasing_supplier_return_unavailable",
+              "service_unavailable"
+            ]
+          },
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurchaseSupplierReturnLineagePreviewV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "company_context_invalid",
+              "correlation_metadata_invalid",
+              "inventory_supplier_return_exit_cost_invalid",
+              "inventory_supplier_return_exit_invalid_request",
+              "inventory_supplier_return_exit_quantity_invalid",
+              "validation_failed"
+            ]
+          },
+          "404": {
+            "description": "Not Found",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "purchasing_supplier_return_piece_count_required"
+            ]
           },
           "401": {
             "description": "Unauthorized",
@@ -179151,6 +179442,7 @@
               "inventory_supplier_return_exit_exceeds_receipt",
               "inventory_supplier_return_exit_idempotency_conflict",
               "inventory_supplier_return_exit_lineage_mismatch",
+              "inventory_supplier_return_exit_quantity_cost_unreadable",
               "inventory_supplier_return_exit_receipt_not_recorded",
               "inventory_supplier_return_exit_stock_allocated",
               "inventory_supplier_return_exit_stock_not_available",
@@ -179162,7 +179454,12 @@
               "purchasing_supplier_return_cost_required",
               "purchasing_supplier_return_id_taken",
               "purchasing_supplier_return_invoice_cost_available",
+              "purchasing_supplier_return_lineage_parts_mismatch",
+              "purchasing_supplier_return_lineage_receipt_limit_exceeded",
               "purchasing_supplier_return_lineage_receipt_mismatch",
+              "purchasing_supplier_return_lineage_selection_required",
+              "purchasing_supplier_return_quantity_average_available",
+              "purchasing_supplier_return_quantity_manual_cost_difference",
               "same_key_payload_mismatch"
             ]
           },
@@ -179321,6 +179618,7 @@
             },
             "x-erp-problem-codes": [
               "purchasing_supplier_return_piece_count_required",
+              "purchasing_supplier_return_quantity_price_undecided",
               "purchasing_supplier_return_replacement_unsupported",
               "validation_failed"
             ]
@@ -179786,6 +180084,7 @@
               "inventory_supplier_return_exit_exceeds_receipt",
               "inventory_supplier_return_exit_idempotency_conflict",
               "inventory_supplier_return_exit_lineage_mismatch",
+              "inventory_supplier_return_exit_quantity_cost_unreadable",
               "inventory_supplier_return_exit_receipt_not_recorded",
               "inventory_supplier_return_exit_stock_allocated",
               "inventory_supplier_return_exit_stock_not_available",
@@ -179793,6 +180092,7 @@
               "purchasing_supplier_return_cost_allocation_exceeds_source",
               "purchasing_supplier_return_cost_allocation_required",
               "purchasing_supplier_return_cost_allocation_stale",
+              "purchasing_supplier_return_cost_required",
               "purchasing_supplier_return_maker_unknown",
               "purchasing_supplier_return_not_pending",
               "purchasing_supplier_return_same_actor",
@@ -180961,6 +181261,7 @@
             },
             "x-erp-problem-codes": [
               "inventory_goods_receipt_reversal_partial_quantity_not_representable",
+              "purchasing_receipt_adjustment_piece_count_required",
               "validation_failed"
             ]
           },
@@ -181333,6 +181634,7 @@
             },
             "x-erp-problem-codes": [
               "inventory_goods_receipt_reversal_partial_quantity_not_representable",
+              "purchasing_receipt_adjustment_piece_count_required",
               "validation_failed"
             ]
           },
@@ -256515,6 +256817,24 @@
               "string"
             ],
             "format": "uuid"
+          },
+          "pieceCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "lineageParts": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PurchaseSupplierReturnLineagePartRequestV1"
+            }
           }
         }
       },
@@ -293610,6 +293930,48 @@
           }
         }
       },
+      "PurchaseSupplierReturnInvoicedPartV1": {
+        "required": [
+          "sourceEventId",
+          "invoiceId",
+          "invoiceLineId",
+          "remainingKg"
+        ],
+        "type": "object",
+        "properties": {
+          "sourceEventId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "invoiceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "invoiceLineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "remainingKg": {
+            "type": "string"
+          }
+        }
+      },
+      "PurchaseSupplierReturnInvoicedSelectionV1": {
+        "required": [
+          "sourceEventId",
+          "quantityKg"
+        ],
+        "type": "object",
+        "properties": {
+          "sourceEventId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantityKg": {
+            "type": "string"
+          }
+        }
+      },
       "PurchaseSupplierReturnInvoicedSourceSelectionV1": {
         "required": [
           "sourceEventId",
@@ -293684,6 +294046,273 @@
           "wholePairAvailable": {
             "type": "boolean",
             "default": false
+          }
+        }
+      },
+      "PurchaseSupplierReturnLineagePartRequestV1": {
+        "required": [
+          "goodsAcceptanceId",
+          "returnLineId",
+          "inventoryMovementId"
+        ],
+        "type": "object",
+        "properties": {
+          "goodsAcceptanceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "returnLineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "inventoryMovementId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "pendingKg": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "invoiced": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PurchaseSupplierReturnInvoicedSelectionV1"
+            }
+          },
+          "manualUnitCostTryPerKg": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "PurchaseSupplierReturnLineagePartViewV1": {
+        "required": [
+          "goodsAcceptanceId",
+          "purchaseOrderId",
+          "purchaseOrderLineId",
+          "returnLineId",
+          "inventoryMovementId",
+          "quantityKg",
+          "costBasis",
+          "unitCostTryPerKg"
+        ],
+        "type": "object",
+        "properties": {
+          "goodsAcceptanceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "purchaseOrderId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "purchaseOrderLineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "returnLineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "inventoryMovementId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantityKg": {
+            "type": "string"
+          },
+          "costBasis": {
+            "type": "string"
+          },
+          "unitCostTryPerKg": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "pieceCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "pendingKg": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "invoiced": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PurchaseSupplierReturnInvoicedSelectionV1"
+            }
+          }
+        }
+      },
+      "PurchaseSupplierReturnLineagePreviewPartV1": {
+        "required": [
+          "goodsAcceptanceId",
+          "purchaseOrderId",
+          "purchaseOrderLineId",
+          "quantityKg",
+          "pieceCount",
+          "costSource",
+          "receivedKg",
+          "openKg",
+          "pendingRemainingKg",
+          "invoiced",
+          "selectionRequired"
+        ],
+        "type": "object",
+        "properties": {
+          "goodsAcceptanceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "purchaseOrderId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "purchaseOrderLineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantityKg": {
+            "type": "string"
+          },
+          "pieceCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "costSource": {
+            "type": "string"
+          },
+          "receivedKg": {
+            "type": "string"
+          },
+          "openKg": {
+            "type": "string"
+          },
+          "pendingRemainingKg": {
+            "type": "string"
+          },
+          "invoiced": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PurchaseSupplierReturnInvoicedPartV1"
+            }
+          },
+          "selectionRequired": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PurchaseSupplierReturnLineagePreviewV1": {
+        "required": [
+          "companyId",
+          "purchaseOrderId",
+          "goodsAcceptanceId",
+          "sourceLabelId",
+          "lineageMode",
+          "quantityKg",
+          "pieceCount",
+          "tracksPieces",
+          "freeKg",
+          "blockedKg",
+          "freePieces",
+          "blockedPieces",
+          "parts"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "purchaseOrderId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "goodsAcceptanceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceLabelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lineageMode": {
+            "type": "string"
+          },
+          "quantityKg": {
+            "type": "string"
+          },
+          "pieceCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "tracksPieces": {
+            "type": "boolean"
+          },
+          "freeKg": {
+            "type": "string"
+          },
+          "blockedKg": {
+            "type": "string"
+          },
+          "freePieces": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "blockedPieces": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "parts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PurchaseSupplierReturnLineagePreviewPartV1"
+            }
+          },
+          "refusal": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -293903,6 +294532,24 @@
               "null",
               "string"
             ]
+          },
+          "pieceCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "lineageParts": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PurchaseSupplierReturnLineagePartViewV1"
+            }
           },
           "priceDisclosure": {
             "type": "string"

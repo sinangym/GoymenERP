@@ -518,3 +518,19 @@ Down first refuses with `THROW 51815` while finalized invoice outbox history exi
 The migration does not dispatch an event, post a journal, grant access or activate production.
 Persistence-model and real SQL guard tests accompany the existing invoice finalization acceptance facts;
 final CI and independent K3 acceptance remain required.
+
+### AK-8b — atomic multi-receipt supplier return from another label (SAT-D433, SAT-D440–SAT-D445, K3-B2)
+
+`20261122142515_AddPurchaseSupplierReturnLineageParts` was generated with the pinned EF tool. It adds two nullable
+columns to `PurchaseSupplierReturns` — `LineagePartsJson` (the per-receipt parts of the ONE return document: receipt,
+order line, exit movement, kg, pieces, the preparer's invoiced / invoice-pending choice, cost basis and unit cost) and
+`PieceCount` — and `CK_PurchaseSupplierReturns_LineageParts` (both only with a source label). Earlier returns keep
+both null. Down first refuses with `THROW 52072` while any return carries parts or a piece count (forward fix); an
+empty store rolls back freely.
+
+A return that names a source label is planned from Inventory's read port (lineage, SAT-D440/SAT-D442 distribution,
+each receipt's open, invoiced and pending kilograms). Lineage mode writes one stock exit per receipt under one
+Inventory command in the host transaction; quantity mode (SAT-D441/SAT-D444) takes the whole return from the chosen
+receipt. `PurchaseSupplierReturnQuantityPriceRuleV1` is the single rule point of "the chosen order's unit price";
+SAT-D451: it is the net price after the discount, without the deferral; a net price with more than four decimals is refused 422 (never rounded). The migration grants no access and
+activates nothing; real-SQL acceptance is **NOT_RUN** and independent K3 acceptance remains required.

@@ -27,7 +27,8 @@ public static partial class PurchasingEndpoints
                 InventoryGoodsReceiptCodesV1.ConcurrentChange, InventoryGoodsReceiptReversalCodesV1.ConcurrentChange,
                 PurchasingProblemCodesV1.VersionConflict, PurchasingProblemCodesV1.ConcurrentChange, PurchasingStoreCodes.LineBusy,
                 "sales_order_line_busy", PurchaseAcceptanceParticipantCodes.ProductVersionConflict, PurchasingProblemCodesV1.SameKeyPayloadMismatch)
-            .ProducesErpUnprocessableEntity("validation_failed", InventoryGoodsReceiptReversalCodesV1.PartialQuantityNotRepresentable)
+            .ProducesErpUnprocessableEntity("validation_failed", InventoryGoodsReceiptReversalCodesV1.PartialQuantityNotRepresentable,
+                PurchaseReceiptAdjustmentCodesV1.PieceCountRequired)
             .ProducesErpServiceUnavailable(PurchaseReceiptAdjustmentCodesV1.Unavailable, InventoryGoodsReceiptReversalCodesV1.Unavailable,
                 InventoryGoodsReceiptReversalCodesV1.QuantityProfileUnavailable, PurchaseGoodsReceiptCodesV1.Unavailable,
                 InventoryGoodsReceiptCodesV1.Unavailable, InventoryGoodsReceiptCodesV1.QuantityProfileUnavailable)

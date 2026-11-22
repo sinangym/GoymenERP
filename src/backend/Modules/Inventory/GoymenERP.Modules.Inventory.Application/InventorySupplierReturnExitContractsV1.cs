@@ -17,6 +17,15 @@ public interface IInventorySupplierReturnExitParticipantV1 : IAsyncDisposable
         InventorySupplierReturnExitRequestV1 request,
         InventoryCommandMetadata metadata,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// AK-8b (SAT-D433): stages one exit per receipt of a multi-receipt lineage return under ONE command record. Inventory
+    /// re-derives the distribution from the lineage it owns (SAT-D440, SAT-D442) and refuses a request that differs from it.
+    /// </summary>
+    Task<InventorySupplierReturnLineageExitResultV1> StageLineageAsync(
+        InventorySupplierReturnLineageExitRequestV1 request,
+        InventoryCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -36,6 +45,9 @@ public interface IInventorySupplierReturnExitParticipantV1 : IAsyncDisposable
 /// label, and <c>LineageMode</c> says how (see <see cref="InventorySupplierReturnLineageModeV1"/>). Both are null on every earlier
 /// request, so the payload hash of an earlier key is unchanged. They are honoured only behind
 /// <c>SupplierReturnLineageGoldenV1.SupplierReturnLineageGoldenAccepted</c>; with the gate closed the earlier 503 stays.
+/// AK-8b: <c>LineageSelection</c> is the preparer's explicit invoiced/pending choice inside the named receipt (K3-B2) for a
+/// foreign-label exit; <c>ApprovedCostException</c> true says the unit cost is a manual cost approved by another person
+/// (SAT-D393) because the moving average of a quantity return could not be read. Both are null on every earlier request.
 /// </remarks>
 public sealed record InventorySupplierReturnExitRequestV1(
     Guid CompanyId,
@@ -58,7 +70,11 @@ public sealed record InventorySupplierReturnExitRequestV1(
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     Guid? SourceLabelId = null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-    InventorySupplierReturnLineageModeV1? LineageMode = null);
+    InventorySupplierReturnLineageModeV1? LineageMode = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    InventorySupplierReturnPartSelectionV1? LineageSelection = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    bool? ApprovedCostException = null);
 
 /// <summary>The exact Inventory identities staged by one supplier-return exit.</summary>
 public sealed record InventorySupplierReturnExitResultV1(
@@ -110,6 +126,13 @@ public static class InventorySupplierReturnExitCodesV1
     /// label of another product or owner). Nothing is moved to another receipt.
     /// </summary>
     public const string LineageMismatch = "inventory_supplier_return_exit_lineage_mismatch";
+
+    /// <summary>
+    /// AK-8b (SAT-D441/SAT-D444) 409: a quantity return's stock value (the location/product moving average, or the chosen
+    /// receipt's own cost) cannot be read and the request carries no approved manual cost. The SAT-D393 exception path applies;
+    /// no value is written without that approval.
+    /// </summary>
+    public const string QuantityCostUnreadable = "inventory_supplier_return_exit_quantity_cost_unreadable";
     public const string IdempotencyConflict = "inventory_supplier_return_exit_idempotency_conflict";
     public const string ConcurrentChange = "inventory_supplier_return_exit_concurrent_change";
     public const string QuantityProfileUnavailable = "inventory_supplier_return_exit_quantity_profile_unavailable";
@@ -119,7 +142,7 @@ public static class InventorySupplierReturnExitCodesV1
     public static IReadOnlySet<string> Status404Codes { get; } = Set(InvalidReference);
     public static IReadOnlySet<string> Status409Codes { get; } = Set(
         ReceiptNotRecorded, ExitExceedsReceipt, StockNotAvailable, StockAllocated, CostDifferenceUnposted, CostAllocationRequired,
-        IdempotencyConflict, ConcurrentChange, LineageMismatch);
+        IdempotencyConflict, ConcurrentChange, LineageMismatch, QuantityCostUnreadable);
     public static IReadOnlySet<string> Status503Codes { get; } = Set(
         ReceiptTraceInvalid, QuantityProfileUnavailable, Unavailable);
 
@@ -161,6 +184,8 @@ public static class InventorySupplierReturnExitContractV1
 {
     public const string SourceKind = "purchasing.supplier-return";
     public const string CommandName = "inventory.supplier-return-exit.stage.v1";
+    public const string LineageCommandName = "inventory.supplier-return-lineage-exit.stage.v1";
+    public const int MaximumLineageParts = 64;
     private const int IdentityMaximumLength = 128;
     private const int NumberMaximumLength = 40;
 

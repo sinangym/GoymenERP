@@ -24,7 +24,9 @@ public sealed record CreatePurchaseSupplierReturnV1(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExpectedPurchaseOrderVersion = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? UndoQuantity = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseSupplierReturnCostAllocationV1? CostAllocation = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? SourceLabelId = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? SourceLabelId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? PieceCount = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseSupplierReturnLineagePartRequestV1>? LineageParts = null);
 
 /// <summary>An approval or a rejection of a pending cost exception; a rejection needs a reason.</summary>
 public sealed record DecidePurchaseSupplierReturnV1(string ExpectedVersion, string? Reason,
@@ -40,7 +42,9 @@ public sealed record PurchaseSupplierReturnViewV1(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseSupplierReturnCostAllocationV1? CostAllocation = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseSupplierReturnInvoiceSourceLabelV1>? CostAllocationSources = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? SourceLabelId = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? LineageMode = null)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? LineageMode = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? PieceCount = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseSupplierReturnLineagePartViewV1>? LineageParts = null)
 {
     /// <summary>ALS-D70: without a fresh price-read grant the unit cost is null and disclosure is Withheld.</summary>
     public string PriceDisclosure { get; init; } = PurchasingPriceDisclosureV1.Withheld;
@@ -63,6 +67,11 @@ public interface IPurchaseSupplierReturnServiceV1
     Task<PurchaseSupplierReturnCostSourcesV1> GetSupplierReturnCostSourcesAsync(Guid orderId, Guid goodsAcceptanceId,
         CancellationToken cancellationToken = default) =>
         Task.FromException<PurchaseSupplierReturnCostSourcesV1>(new PurchasingServiceException(503, PurchaseSupplierReturnCodesV1.Unavailable));
+
+    /// <summary>AK-8b: the price-free plan of a return from a source label (mode, per-receipt distribution and open parts).</summary>
+    Task<PurchaseSupplierReturnLineagePreviewV1> GetSupplierReturnLineagePreviewAsync(Guid orderId, Guid goodsAcceptanceId,
+        Guid sourceLabelId, string quantityKg, int? pieceCount, CancellationToken cancellationToken = default) =>
+        Task.FromException<PurchaseSupplierReturnLineagePreviewV1>(new PurchasingServiceException(503, PurchaseSupplierReturnCodesV1.LineageUnavailable));
 }
 
 public static class PurchaseSupplierReturnApiV1
@@ -72,6 +81,7 @@ public static class PurchaseSupplierReturnApiV1
     public const string CostExceptionApprovalPath = ReturnDetailPath + "/cost-exception/approval";
     public const string CostExceptionRejectionPath = ReturnDetailPath + "/cost-exception/rejection";
     public const string CostSourcesPath = PurchasingApiV1.OrderDetailPath + "/goods-receipts/{acceptanceId}/supplier-return-cost-sources";
+    public const string LineagePreviewPath = PurchasingApiV1.OrderDetailPath + "/goods-receipts/{acceptanceId}/supplier-return-lineage-preview";
 }
 
 public static class PurchaseSupplierReturnCommandsV1
@@ -109,16 +119,53 @@ public static class PurchaseSupplierReturnCodesV1
 
     /// <summary>
     /// AK-8 503: a return from a foreign source label cannot be planned — the golden gate is closed (the earlier boundary), the
-    /// lineage or a receipt's supplier is unreadable, the lineage spans several receipts (one atomic multi-receipt return is not
-    /// staged yet), or the return also adjusts the receipt or names a cost allocation. Nothing is recorded or moved.
+    /// lineage port is not wired, or the lineage, a receipt's supplier or a receipt's invoiced/pending history is unreadable.
+    /// Nothing is recorded or moved.
     /// </summary>
     public const string LineageUnavailable = "purchasing_supplier_return_lineage_unavailable";
 
     /// <summary>
-    /// AK-8 409 (SAT-D433/SAT-D441): the named goods acceptance cannot carry this return — in a lineage return it is not the
-    /// label's sole receipt; in a quantity return the chosen order line is not a priced kilogram line in TL.
+    /// AK-8 409 (SAT-D433/SAT-D441): the named goods acceptance cannot carry this return — in a lineage return it is not one of
+    /// the label's receipts; in a quantity return the chosen order line is not a priced kilogram line in TL.
     /// </summary>
     public const string LineageReceiptMismatch = "purchasing_supplier_return_lineage_receipt_mismatch";
+
+    /// <summary>
+    /// AK-8b 409 (SAT-D433 step 2, SAT-D440, SAT-D442): the request's per-receipt parts are not the label's current distribution
+    /// (a receipt is missing or extra, or a selection does not add up to the receipt's kilograms). The preview is read again.
+    /// </summary>
+    public const string LineagePartsMismatch = "purchasing_supplier_return_lineage_parts_mismatch";
+
+    /// <summary>
+    /// AK-8b 409 (K3-B2): a receipt has more than one open part (invoiced and invoice-pending, or several invoices) and the
+    /// preparer did not choose between them. The system never assigns a part on the preparer's behalf.
+    /// </summary>
+    public const string LineageSelectionRequired = "purchasing_supplier_return_lineage_selection_required";
+
+    /// <summary>
+    /// AK-8b 409 (TI3, golden I07/I14): a receipt, or the chosen invoiced/pending part of it, has less open quantity than this
+    /// return takes from it. Nothing is moved to another receipt or part.
+    /// </summary>
+    public const string LineageReceiptLimitExceeded = "purchasing_supplier_return_lineage_receipt_limit_exceeded";
+
+    /// <summary>
+    /// AK-8b 422 (SAT-D444/SAT-D451): the chosen order line's net unit price after its discount has more than four decimals. The
+    /// stock exit carries four and the rounding of such a price is not decided, so the return is refused, never rounded. See
+    /// <see cref="PurchaseSupplierReturnQuantityPriceRuleV1"/>, the single rule point.
+    /// </summary>
+    public const string QuantityPriceUndecided = "purchasing_supplier_return_quantity_price_undecided";
+
+    /// <summary>
+    /// AK-8b 409 (SAT-D444/SAT-D393): the moving average of a quantity return is readable, so a manual cost (the exception
+    /// path) is not accepted.
+    /// </summary>
+    public const string QuantityAverageAvailable = "purchasing_supplier_return_quantity_average_available";
+
+    /// <summary>
+    /// AK-8b 409 (SAT-D371): on the exception path of a quantity return the manual stock cost differs from the chosen order's unit
+    /// price. That is a known difference with no decided posting; it is refused, never recorded.
+    /// </summary>
+    public const string QuantityManualCostDifference = "purchasing_supplier_return_quantity_manual_cost_difference";
 }
 
 /// <summary>
@@ -157,7 +204,10 @@ public sealed record PurchaseSupplierReturnExitRequestV1(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseSupplierReturnCostAllocationV1? CostAllocation = null,
     Guid PurchaseOrderId = default, string? UndoQuantity = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? SourceLabelId = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseSupplierReturnLineageModeV1? LineageMode = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseSupplierReturnLineageModeV1? LineageMode = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? PieceCount = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseSupplierReturnLineagePartV1>? LineageParts = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? ApprovedCostException = null);
 
 public sealed record PurchaseSupplierReturnExitResultV1(Guid InventoryMovementId, Guid LabelId, string QuantityKg, bool IsReplay);
 
@@ -188,7 +238,9 @@ public sealed record PurchaseSupplierReturnDraft(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseSupplierReturnCostAllocationV1? CostAllocation = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseSupplierReturnInvoiceSourceLabelV1>? CostAllocationSources = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? SourceLabelId = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseSupplierReturnLineageModeV1? LineageMode = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseSupplierReturnLineageModeV1? LineageMode = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? PieceCount = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseSupplierReturnLineagePartV1>? LineageParts = null);
 
 public sealed record StoredPurchaseSupplierReturn(
     Guid CompanyId, PurchaseSupplierReturnDraft Return, long Version, string RequestedBy, DateTimeOffset RequestedAtUtc,
@@ -219,6 +271,13 @@ public interface IPurchaseSupplierReturnStore
     /// </summary>
     Task<Guid?> FindAcceptanceSupplierAsync(Guid goodsAcceptanceId, CancellationToken cancellationToken = default) =>
         Task.FromResult<Guid?>(null);
+
+    /// <summary>
+    /// AK-8b: the order and order line a recorded goods acceptance counts on (this company), or null when unknown or ambiguous.
+    /// A lineage return records it for every receipt it takes from; that receipt may belong to another order of the supplier.
+    /// </summary>
+    Task<PurchaseSupplierReturnAcceptanceOwnerV1?> FindAcceptanceOwnerAsync(Guid goodsAcceptanceId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<PurchaseSupplierReturnAcceptanceOwnerV1?>(null);
 
     Task<StoredPurchaseSupplierReturn> SaveNewAsync(PurchaseSupplierReturnDraft draft, PurchasingWriteEnvelope envelope, string requestHash,
         string commandName, CancellationToken cancellationToken = default);
@@ -264,7 +323,9 @@ public static class PurchaseSupplierReturnJsonV1
             || request.UndoQuantity is not null && !IsPositiveQuantity(request.UndoQuantity)
             || !BoundedReason(request.Reason, required: true)
             || request.OccurredAtUtc == default || request.OccurredAtUtc.Offset != TimeSpan.Zero
-            || request.SourceLabelId == Guid.Empty)
+            || request.SourceLabelId == Guid.Empty
+            || (request.PieceCount is not null || request.LineageParts is not null) && request.SourceLabelId is null
+            || request.PieceCount is < 1 || !PurchaseSupplierReturnLineagePartsV1.ValidRequestShape(request))
         {
             throw new JsonException("Invalid return shape; identities, a block, a positive exact kg, a reason and UTC time are required.");
         }
@@ -280,6 +341,9 @@ public static class PurchaseSupplierReturnJsonV1
             throw new JsonException("Invalid decision shape; a canonical version and a bounded reason are required.");
         }
     }
+
+    /// <summary>A non-negative kg with at most three decimals in canonical form.</summary>
+    public static bool IsQuantity(string? value) => value is not null && Quantity.IsMatch(value);
 
     /// <summary>A positive kg with at most three decimals in canonical form (Inventory's "0.###").</summary>
     public static bool IsPositiveQuantity(string? value) => value is not null && Quantity.IsMatch(value) && value != "0";

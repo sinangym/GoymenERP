@@ -279,6 +279,10 @@ public sealed partial class PurchasingServiceTests
         public Dictionary<Guid, Guid> Suppliers { get; } = [];
         public Task<Guid?> FindAcceptanceSupplierAsync(Guid id, CancellationToken cancellationToken = default) =>
             Task.FromResult<Guid?>(Suppliers.TryGetValue(id, out var supplier) ? supplier : null);
+        public Dictionary<Guid, Guid> Orders { get; } = [];
+        public Task<PurchaseSupplierReturnAcceptanceOwnerV1?> FindAcceptanceOwnerAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Suppliers.TryGetValue(id, out var supplier)
+                ? new PurchaseSupplierReturnAcceptanceOwnerV1(Orders.TryGetValue(id, out var order) ? order : OtherOrder, lineId, supplier) : null);
         public Task<StoredPurchaseSupplierReturn> SaveNewAsync(PurchaseSupplierReturnDraft draft, PurchasingWriteEnvelope envelope, string hash, string command, CancellationToken cancellationToken = default)
         {
             NewWrites++; Stored = new(Company, draft, 1, envelope.ActorId, DateTimeOffset.UnixEpoch, null, null, null);

@@ -37,6 +37,9 @@ public enum SupplierReturnLineageMode
     Quantity = 2,
 }
 
+/// <summary>One root's exact share and receipt order, without its supplier (see <see cref="SupplierReturnLineageCalculator.DistributeByShare"/>).</summary>
+public sealed record SupplierReturnLineageShare(Guid RootId, int ReceiptOrder, ExactCostRatio Share);
+
 /// <summary>One receipt's part of a lineage return: kilograms always; pieces only for a piece-tracking label (KLN-D119).</summary>
 public sealed record SupplierReturnLineagePart(Guid RootId, int ReceiptOrder, decimal QuantityKg, int? Pieces);
 
@@ -155,11 +158,28 @@ public static class SupplierReturnLineageCalculator
     {
         ArgumentNullException.ThrowIfNull(roots);
         RequireRoots(roots);
+        return DistributeByShare(roots.Select(root => new SupplierReturnLineageShare(root.RootId, root.ReceiptOrder, root.Share)).ToArray(),
+            quantityKg, pieces);
+    }
+
+    /// <summary>
+    /// The same SAT-D440/SAT-D442 distribution for an owner that knows the shares but not the suppliers (Inventory re-checks the
+    /// distribution it is asked to stage). The shares are distinct, ordered, positive and add up to exactly one.
+    /// </summary>
+    public static IReadOnlyList<SupplierReturnLineagePart> DistributeByShare(
+        IReadOnlyList<SupplierReturnLineageShare> shares, decimal quantityKg, int? pieces)
+    {
+        ArgumentNullException.ThrowIfNull(shares);
+        if (shares.Count == 0 || shares.Any(share => share is null || share.RootId == Guid.Empty || share.Share.Sign <= 0)
+            || shares.Select(share => share.RootId).Distinct().Count() != shares.Count
+            || shares.Select(share => share.ReceiptOrder).Distinct().Count() != shares.Count
+            || shares.Aggregate(Zero, (sum, share) => sum.Add(share.Share)).CompareTo(One) != 0)
+            throw new ArgumentException("Lineage shares must be distinct, ordered, positive and add up to one.", nameof(shares));
         if (quantityKg <= 0m || decimal.Round(quantityKg, KilogramScale) != quantityKg)
             throw new ArgumentOutOfRangeException(nameof(quantityKg), "A positive kg with at most three decimals is required.");
         if (pieces is < 1) throw new ArgumentOutOfRangeException(nameof(pieces), "A piece return moves at least one piece.");
 
-        var ordered = roots.OrderBy(root => root.ReceiptOrder).ToArray();
+        var ordered = shares.OrderBy(root => root.ReceiptOrder).ToArray();
         var largest = ordered.Aggregate((best, next) => next.Share.CompareTo(best.Share) > 0 ? next : best);
         var kilograms = ordered.ToDictionary(root => root.RootId, root => Floor(ExactCostRatio.Of(quantityKg).Multiply(root.Share), KilogramScale));
         kilograms[largest.RootId] += quantityKg - kilograms.Values.Sum();

@@ -804,6 +804,11 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
     /// AK-8 (SAT-D433/SAT-D441/SAT-D445): a return either leaves the receipt's own label (both facts null) or names the foreign
     /// source label together with its mode, lineage (1) or quantity (2).
     /// </summary>
+    // AK-8b: per-receipt parts and a piece count exist only on a foreign-source-label return; the parts are stored JSON.
+    internal const string SupplierReturnLineagePartsCheck =
+        "([LineagePartsJson] IS NULL OR ([SourceLabelId] IS NOT NULL AND ISJSON([LineagePartsJson]) = 1)) "
+        + "AND ([PieceCount] IS NULL OR ([SourceLabelId] IS NOT NULL AND [PieceCount] >= 1))";
+
     internal const string SupplierReturnLineageCheck =
         "([SourceLabelId] IS NULL AND [LineageMode] IS NULL) "
         + "OR ([SourceLabelId] IS NOT NULL AND [SourceLabelId] <> " + EmptyGuid + " AND [LineageMode] IN (1, 2))";
@@ -826,6 +831,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
             table.HasCheckConstraint("CK_PurchaseSupplierReturns_CostAllocationJson",
                 "[CostAllocationJson] IS NULL OR ISJSON([CostAllocationJson]) = 1");
             table.HasCheckConstraint("CK_PurchaseSupplierReturns_Lineage", SupplierReturnLineageCheck);
+            table.HasCheckConstraint("CK_PurchaseSupplierReturns_LineageParts", SupplierReturnLineagePartsCheck);
         });
         entity.HasKey(x => x.ReturnId);
         entity.HasAlternateKey(x => new { x.CompanyId, x.ReturnId });
@@ -836,6 +842,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
         entity.Property(x => x.QuantityKg).HasPrecision(18, 3);
         entity.Property(x => x.UnitCostTryPerKg).HasPrecision(18, 4);
         entity.Property(x => x.CostAllocationJson).HasColumnType("nvarchar(max)");
+        entity.Property(x => x.LineagePartsJson).HasColumnType("nvarchar(max)");
         entity.Property(x => x.Reason).HasMaxLength(PurchaseSupplierReturnMaximumReasonLength).IsRequired();
         entity.Property(x => x.RequestedBy).HasMaxLength(128).IsRequired();
         entity.Property(x => x.DecidedBy).HasMaxLength(128);

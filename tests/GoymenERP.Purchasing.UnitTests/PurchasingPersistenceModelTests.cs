@@ -303,8 +303,8 @@ public sealed class PurchasingPersistenceModelTests
                 "20261117120452_AddPurchaseAdditionalCostInvoiceBindings",
                 "20261119012425_AllowPurchaseIncomingInvoiceFinalizedOutboxEvents",
                 "20261120103531_AddPurchaseSupplierReturnCostAllocations", "20261122095454_AddPurchasePieceKilogramFacts",
-                "20261122122332_AddPurchaseSupplierReturnLineageSource"],
-            context.Database.GetMigrations().TakeLast(24));
+                "20261122122332_AddPurchaseSupplierReturnLineageSource", "20261122142515_AddPurchaseSupplierReturnLineageParts"],
+            context.Database.GetMigrations().TakeLast(25));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var requests = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseRequestRow))!;
@@ -1003,6 +1003,29 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
         Assert.Contains("THROW 52071", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[SourceLabelId] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AK_8b_a_supplier_return_keeps_its_per_receipt_parts_and_piece_count_only_with_a_source_label_and_Down_is_a_forward_fix()
+    {
+        using var context = Context();
+        var returns = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseSupplierReturnRow))!;
+        Assert.True(returns.FindProperty(nameof(PurchaseSupplierReturnRow.LineagePartsJson))!.IsNullable);
+        Assert.True(returns.FindProperty(nameof(PurchaseSupplierReturnRow.PieceCount))!.IsNullable);
+        Assert.Equal("nvarchar(max)", returns.FindProperty(nameof(PurchaseSupplierReturnRow.LineagePartsJson))!.GetColumnType());
+        Assert.Contains(returns.GetCheckConstraints(), check => check.Name == "CK_PurchaseSupplierReturns_LineageParts"
+            && check.Sql == PurchasingDbContext.SupplierReturnLineagePartsCheck);
+        Assert.Contains("[SourceLabelId] IS NOT NULL AND ISJSON([LineagePartsJson]) = 1", PurchasingDbContext.SupplierReturnLineagePartsCheck,
+            StringComparison.Ordinal);
+        Assert.Contains("[SourceLabelId] IS NOT NULL AND [PieceCount] >= 1", PurchasingDbContext.SupplierReturnLineagePartsCheck,
+            StringComparison.Ordinal);
+
+        var migration = new GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations.AddPurchaseSupplierReturnLineageParts();
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Contains("THROW 52072", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[LineagePartsJson] IS NOT NULL OR [PieceCount] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
     }
 
     private static PurchaseOrderRow Order(Guid company) => new PurchaseOrderRow

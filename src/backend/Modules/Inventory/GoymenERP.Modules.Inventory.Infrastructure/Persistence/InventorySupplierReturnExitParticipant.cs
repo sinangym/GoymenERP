@@ -44,6 +44,7 @@ public sealed partial class InventorySupplierReturnExitParticipant : IInventoryS
     private readonly Guid companyId;
     private readonly TimeProvider clock;
     private readonly Func<CancellationToken, Task>? onStaged;
+    private readonly Dictionary<Guid, InventorySupplierReturnLineageSelectionProofV1> lineageSelections = [];
     private int started;
     private bool disposed;
 
@@ -139,6 +140,60 @@ public sealed partial class InventorySupplierReturnExitParticipant : IInventoryS
         }
 
         await AcquirePhysicalValidationAsync(store.LockPhysicalValidationAsync, cancellationToken);
+        var result = await StageExitAsync(request, input, metadata, plannedLineage: null, cancellationToken);
+        context.Commands.Add(new InventoryCommandRow
+        {
+            CompanyId = companyId,
+            CommandName = InventorySupplierReturnExitContractV1.CommandName,
+            IdempotencyKeyHash = keyHash,
+            ActorId = metadata.ActorId,
+            PayloadHash = payloadHash,
+            TargetId = request.SupplierReturnLineId,
+            ResultJson = JsonSerializer.Serialize(result, Json),
+            CorrelationId = metadata.CorrelationId,
+            RecordedAtUtc = clock.GetUtcNow(),
+        });
+        if (onStaged is not null)
+        {
+            await onStaged(cancellationToken);
+        }
+
+        await SaveStagedAsync(cancellationToken);
+        return result;
+    }
+
+    /// <summary>Flushes the staged Inventory rows into the owner's transaction; never commits it.</summary>
+    private async Task SaveStagedAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw Refused(409, InventorySupplierReturnExitCodesV1.ConcurrentChange);
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
+        {
+            throw Refused(409, InventorySupplierReturnExitCodesV1.ConcurrentChange);
+        }
+        catch (DbUpdateException)
+        {
+            throw Refused(503, InventorySupplierReturnExitCodesV1.Unavailable);
+        }
+    }
+
+    /// <summary>
+    /// One exit movement with its outbox message and audit event, staged (not saved). The caller owns the command record: a
+    /// single exit records one per exit, an atomic lineage return (AK-8b) one for all of its exits.
+    /// </summary>
+    private async Task<InventorySupplierReturnExitResultV1> StageExitAsync(
+        InventorySupplierReturnExitRequestV1 request,
+        InventorySupplierReturnExitInput input,
+        InventoryCommandMetadata metadata,
+        InventorySupplierReturnLineageV1? plannedLineage,
+        CancellationToken cancellationToken)
+    {
         var receipt = await OriginalReceiptTraceAsync(request.GoodsAcceptanceId, cancellationToken);
         // AK-8: with the golden gate closed a foreign source label keeps the earlier 503; a missing mode is 400.
         var lineageExit = InventorySupplierReturnLineageGateV1.Admit(request.SourceLabelId, request.LineageMode, receipt.LabelRow.Id);
@@ -150,7 +205,7 @@ public sealed partial class InventorySupplierReturnExitParticipant : IInventoryS
 
         if (lineageExit)
         {
-            receipt = await LineageExitTraceAsync(receipt, request, input, cancellationToken);
+            receipt = await LineageExitTraceAsync(receipt, request, input, plannedLineage, cancellationToken);
         }
 
         // Original receipt fixes the product. The company guard is already held before locating physical stock.
@@ -176,12 +231,16 @@ public sealed partial class InventorySupplierReturnExitParticipant : IInventoryS
                 store.PhysicalStockRefusal(movement, shortfall, metadata, receipt.LabelRow.Code));
         }
         await RequireExitLeavesAllocationsAsync(receipt.LabelRow.Id, input.Quantity.Value, cancellationToken);
-        var allocation = await ResolveCostAllocationAsync(request, receipt.LabelRow.Version, cancellationToken);
+        // The receipt-label cost-source attribution is for the receipt's own label; a foreign-label exit carries its own
+        // invoiced/pending choice (AK-8b), resolved with its lineage above.
+        var allocation = lineageExit ? null : await ResolveCostAllocationAsync(request, receipt.LabelRow.Version, cancellationToken);
         await RequireReturnPoolValueSafetyAsync(receipt, source, input, cancellationToken);
         try
         {
             store.UseSupplierReturnCost(movement.Id, input.OriginalUnitCostTryPerKg);
             if (allocation is not null) store.UseSupplierReturnAllocation(movement.Id, allocation);
+            if (lineageSelections.Remove(movement.Id, out var lineageSelection))
+                store.UseSupplierReturnLineageSelection(movement.Id, lineageSelection);
             var outcome = await store.StageMovementAsync(
                 movement, metadata, recordAudit: false, cancellationToken);
             if (outcome != InventoryWriteOutcome.Recorded)
@@ -271,18 +330,6 @@ public sealed partial class InventorySupplierReturnExitParticipant : IInventoryS
             CausationId = metadata.CausationId,
             RecordedAtUtc = clock.GetUtcNow(),
         });
-        context.Commands.Add(new InventoryCommandRow
-        {
-            CompanyId = companyId,
-            CommandName = InventorySupplierReturnExitContractV1.CommandName,
-            IdempotencyKeyHash = keyHash,
-            ActorId = metadata.ActorId,
-            PayloadHash = payloadHash,
-            TargetId = request.SupplierReturnLineId,
-            ResultJson = JsonSerializer.Serialize(result, Json),
-            CorrelationId = metadata.CorrelationId,
-            RecordedAtUtc = clock.GetUtcNow(),
-        });
         audit.Enqueue(new AuditEventDraft(
             companyId,
             InventorySupplierReturnExitOutboxV1.EventType,
@@ -329,28 +376,6 @@ public sealed partial class InventorySupplierReturnExitParticipant : IInventoryS
             metadata.CorrelationId,
             metadata.CausationId,
             metadata.IdempotencyKey));
-
-        if (onStaged is not null)
-        {
-            await onStaged(cancellationToken);
-        }
-
-        try
-        {
-            await context.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            throw Refused(409, InventorySupplierReturnExitCodesV1.ConcurrentChange);
-        }
-        catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
-        {
-            throw Refused(409, InventorySupplierReturnExitCodesV1.ConcurrentChange);
-        }
-        catch (DbUpdateException)
-        {
-            throw Refused(503, InventorySupplierReturnExitCodesV1.Unavailable);
-        }
 
         return result;
     }

@@ -66,6 +66,10 @@ internal sealed class PurchaseSupplierReturnHost(
             if (exception.Code == InventorySupplierReturnExitCodesV1.CostAllocationRequired)
                 throw new PurchasingServiceException(409, PurchaseSupplierReturnCostAllocationContractV1.Required,
                     [new PurchasingFieldError("costAllocation", PurchaseSupplierReturnCostAllocationContractV1.Required)], innerException: exception);
+            if (exception.Code == InventorySupplierReturnExitCodesV1.QuantityCostUnreadable)
+                // SAT-D393: the stock value cannot be read; the caller is told to take the exception path, nothing was written.
+                throw new PurchasingServiceException(409, PurchaseSupplierReturnCodesV1.CostRequired,
+                    [new PurchasingFieldError("manualUnitCostTryPerKg", PurchaseSupplierReturnCodesV1.CostRequired)], innerException: exception);
             throw new PurchasingServiceException(exception.Status, exception.Code, innerException: exception,
                 detail: InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, new Dictionary<string, object?>()));
         }
@@ -97,10 +101,25 @@ internal sealed class PurchaseSupplierReturnHost(
                 request.ReturnId, cancellationToken);
             participant = await InventorySupplierReturnExitParticipant.EnlistAsync(connection, transaction, companyId, settings,
                 cancellationToken, clock);
+            if (request.LineageMode == PurchaseSupplierReturnLineageModeV1.Lineage && request.LineageParts is { } parts)
+            {
+                // AK-8b (SAT-D433): one exit per receipt of the lineage, all under ONE Inventory command in this transaction.
+                if (request.SourceLabelId is not { } label) throw new InvalidOperationException("A lineage return names its source label.");
+                var lineage = await participant.StageLineageAsync(new InventorySupplierReturnLineageExitRequestV1(request.CompanyId,
+                    request.ReturnId, label, block, request.QuantityKg, request.PieceCount, request.OccurredAtUtc,
+                    parts.Select(part => new InventorySupplierReturnLineagePartV1(part.GoodsAcceptanceId, part.ReturnLineId,
+                        part.InventoryMovementId, PurchaseSupplierReturnLineagePartsV1.Kg(part.QuantityKg), part.PieceCount,
+                        UnitCost(part.UnitCostTryPerKg), Selection(part))).ToArray()), Metadata(envelope), cancellationToken);
+                var own = lineage.Parts.SingleOrDefault(part => part.GoodsAcceptanceId == request.GoodsAcceptanceId)
+                    ?? throw new InvalidOperationException("The lineage exit did not answer the return's own receipt.");
+                return new PurchaseSupplierReturnExitResultV1(own.InventoryMovementId, lineage.LabelId, request.QuantityKg, lineage.IsReplay);
+            }
+
             var staged = await participant.StageAsync(new InventorySupplierReturnExitRequestV1(request.CompanyId, request.ReturnId,
                 request.ReturnLineId, request.GoodsAcceptanceId, request.InventoryMovementId, block, request.QuantityKg,
                 request.UnitCostTryPerKg, request.OccurredAtUtc, PurchaseSupplierReturnCostSources.Map(request.CostAllocation),
                 PurchaseSupplierReturnCostSources.Map(purchase), request.UndoQuantity,
+                PieceCount: request.SourceLabelId is null ? null : request.PieceCount,
                 SourceLabelId: request.SourceLabelId,
                 LineageMode: request.LineageMode switch
                 {
@@ -108,10 +127,19 @@ internal sealed class PurchaseSupplierReturnHost(
                     PurchaseSupplierReturnLineageModeV1.Lineage => InventorySupplierReturnLineageModeV1.Lineage,
                     PurchaseSupplierReturnLineageModeV1.Quantity => InventorySupplierReturnLineageModeV1.Quantity,
                     _ => throw new InvalidOperationException("Supplier return lineage mode is not recognised."),
-                }),
+                },
+                // A quantity return (or an earlier single-receipt lineage return) carries at most one part: its explicit choice.
+                LineageSelection: request.LineageParts is { Count: 1 } single ? Selection(single[0]) : null,
+                ApprovedCostException: request.ApprovedCostException),
                 Metadata(envelope), cancellationToken);
             return new PurchaseSupplierReturnExitResultV1(staged.InventoryMovementId, staged.LabelId, staged.QuantityKg, staged.IsReplay);
         }
+
+        private static string UnitCost(decimal value) => value.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+
+        private static InventorySupplierReturnPartSelectionV1? Selection(PurchaseSupplierReturnLineagePartV1 part) =>
+            part.PendingKg is null || part.Invoiced is null ? null : new InventorySupplierReturnPartSelectionV1(part.PendingKg,
+                part.Invoiced.Select(item => new InventorySupplierReturnInvoicedSelectionV1(item.SourceEventId, item.QuantityKg)).ToArray());
 
         public async ValueTask DisposeAsync()
         {

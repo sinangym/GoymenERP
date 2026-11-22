@@ -5,7 +5,8 @@ namespace GoymenERP.Inventory.UnitTests;
 
 /// <summary>
 /// SAT-D442: the returned pieces of a mixed-lineage label over its acceptances (floor, remainder to the largest share,
-/// ties to the first in acceptance order), pinned to ADET_KG_FORMUL_GOLDEN_V1 rows I10 and I15. The gate stays closed.
+/// ties to the first in acceptance order), pinned to ADET_KG_FORMUL_GOLDEN_V1 rows I10 and I15. The gate is open in this
+/// train; the closed behaviour stays pinned through the test parameter.
 /// </summary>
 public sealed class InventorySupplierReturnPieceDistributionTests
 {
@@ -41,9 +42,34 @@ public sealed class InventorySupplierReturnPieceDistributionTests
     }
 
     [Fact]
-    public void The_distribution_stays_closed_until_its_independent_golden_is_in_main()
+    public void The_SAT_D442_gate_is_open_in_this_train_and_its_closed_state_stays_pinned_by_the_test_parameter()
     {
-        Assert.False(InventorySupplierReturnPieceDistributionV1.GoldenAccepted);
+        Assert.True(InventorySupplierReturnPieceDistributionV1.GoldenAccepted);
+        Assert.True(InventorySupplierReturnPieceDistributionV1.IsAccepted());
+        Assert.False(InventorySupplierReturnPieceDistributionV1.IsAccepted(overrideForTests: false));
+    }
+
+    [Theory]
+    [InlineData(10, "21/50,7/25,3/10", "5,2,3")]
+    [InlineData(5, "1/2,1/2", "3,2")]
+    [InlineData(1, "1/3,2/3", "0,1")]
+    [InlineData(7, "1/1", "7")]
+    public void The_live_calculator_distributes_pieces_exactly_like_the_pinned_SAT_D442_rule(int pieces, string shares, string expected)
+    {
+        // I10 and I15 plus two edges: the calculator staged by the atomic lineage return and this pinned rule never differ.
+        var ratios = shares.Split(',').Select(text => text.Split('/')).Select(parts =>
+            GoymenERP.Modules.Inventory.Domain.Costing.ExactCostRatio.Of(decimal.Parse(parts[0], System.Globalization.CultureInfo.InvariantCulture))
+                .Divide(decimal.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture))).ToArray();
+        var ids = ratios.Select((_, index) => new Guid($"a2000000-0000-0000-0000-{index + 1:D12}")).ToArray();
+
+        var live = GoymenERP.Modules.Inventory.Domain.Costing.SupplierReturnLineageCalculator.DistributeByShare(
+            ratios.Select((share, index) => new GoymenERP.Modules.Inventory.Domain.Costing.SupplierReturnLineageShare(ids[index], index + 1, share)).ToArray(),
+            100m, pieces);
+        var pinned = InventorySupplierReturnPieceDistributionV1.Distribute(pieces,
+            ratios.Select((share, index) => new InventorySupplierReturnPieceShareV1(ids[index], index + 1, share.Multiply(600m).Round(6))).ToArray());
+
+        Assert.Equal(expected, string.Join(',', live.Select(part => part.Pieces)));
+        Assert.Equal(live.Select(part => (part.RootId, part.Pieces!.Value)), pinned.Select(part => (part.AcceptanceId, part.Pieces)));
     }
 
     [Fact]
