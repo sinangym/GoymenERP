@@ -56,8 +56,9 @@ public sealed class SalesShellCapabilityProviderContractTests
         // API-40 / UI-70b / SAT-D288..SAT-D294 (1.25, merged after API-07 1.24): registers the four return names (manifest v30), the S-10
         // return list, create and detail screens and the detail's submission, approval and finalisation controls.
         // API-33 / API-36 (1.27): the four invoice controls of the S-09 list (write, approve, match, finalize); no new name.
-        Assert.Equal(("SALES", "1.27"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(43, declarations.Count);
+        // WP13 / YOL-D11 (1.28): the signed approval record control of the detail and its new name.
+        Assert.Equal(("SALES", "1.28"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(44, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -208,6 +209,16 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, customerAcceptance.ParentCapabilityId);
         Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord],
             customerAcceptance.RequiredPermissions);
+
+        var signedApproval = Assert.Single(declarations,
+            item => item.CapabilityId == SalesShellCapabilityProvider.SignedApprovalRecordCapabilityId);
+        Assert.Equal("sales.orders.signed-approval.record", signedApproval.CapabilityId);
+        Assert.Equal((detail.RouteId, detail.RoutePath, detail.ScreenId, detail.RoutePrecedence, detail.ContextRequirement, detail.ScopeRequirement),
+            (signedApproval.RouteId, signedApproval.RoutePath, signedApproval.ScreenId, signedApproval.RoutePrecedence,
+                signedApproval.ContextRequirement, signedApproval.ScopeRequirement));
+        Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, signedApproval.ParentCapabilityId);
+        Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersSignedApprovalRecord],
+            signedApproval.RequiredPermissions);
     }
 
     [Fact]
@@ -513,13 +524,16 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal("sales.contracts.read", SalesPermissionManifestV1.ContractsRead);
         Assert.Equal("sales.contracts.write", SalesPermissionManifestV1.ContractsWrite);
         Assert.Equal("sales.contracts.discount.approve", SalesPermissionManifestV1.ContractsDiscountApprove);
-        Assert.Equal((31, 40), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        // WP13 (YOL-D11, v32): the signed approval record name.
+        Assert.Equal("sales.orders.signed-approval.record", SalesPermissionManifestV1.OrdersSignedApprovalRecord);
+        Assert.Equal((32, 41), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         var exactNames = new HashSet<string>(
             [
                 SalesPermissionManifestV1.DraftsCreate,
                 SalesPermissionManifestV1.DraftsRead,
                 SalesPermissionManifestV1.OrdersApprove,
                 SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord,
+                SalesPermissionManifestV1.OrdersSignedApprovalRecord,
                 SalesPermissionManifestV1.OrdersPriceWrite,
                 SalesPermissionManifestV1.OrdersPriceRead,
                 SalesPermissionManifestV1.OrdersMarginRead,

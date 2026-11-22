@@ -51,8 +51,10 @@ internal static class ShellCapabilityRegistryAuthorities
     // Produced by the exact actual-host tuple test, including STK-S13's separate provider.
     // Tren-1 W8 (UI-64, API-33 / API-36): Sales 1.27 publishes the four invoice controls of the S-09 list; every row that
     // contains the Sales provider re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision; names unchanged.
+    // NOTE WP13 (YOL-D11): Sales 1.28 adds the signed approval record control of the S-04 detail; every row that contains the Sales
+    // provider re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names unchanged.
     // W1-A: Settings 1.19 adds the approval duration screen; re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision.
-    internal const string FullNormalHostWithSettingsAndPaintMemberships = "sha256:nCbm4YLiQlzeaf7z0-7iMMwU2IYVGMQsrX6ZCdNYwFQ";
+    internal const string FullNormalHostWithSettingsAndPaintMemberships = "sha256:uq0GvfAk-MWf1Jckk1OrtH5SZXD9Utkhpt1-eBL7UVY";
     // Tren-1 wave 7: Settings 1.11 and Inventory 1.9; active authority rows re-derived in place
     // by ShellCapabilityRegistry.ComputeCandidateRevision over actual providers; historical rows preserved.
     // Tren-1 wave 6: Manufacturing 1.11, Inventory 1.8, Identity 1.2 and Settings 1.9; active authority rows
@@ -143,7 +145,7 @@ internal static class ShellCapabilityRegistryAuthorities
     // and Organization 1.5 provider bumps combined; rows re-derived in place by
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12AndPublishedSalesV15 =
-        "sha256:qtgTRoV4MxcTxzpC0xa9XBDjBvy3h3diS6yAcZx3oFA";
+        "sha256:oS43EcFb38lqEK_hUYjTuH7PsOSTxyATBEENLsvt8mo";
 
     // ... + Finance 1.0 (#325, FIN-UI-1a) beside the STAGED Sales screens. Superseded when Sales was published
     // (#328, below); no host serves it now. Computed by the ComputeRevision reproduction and,
@@ -217,7 +219,7 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // Tren-1 wave 5 integration: Settings 1.6 provider bump and the merged team branches' provider/permission changes;
     // rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15AndPublishedFinanceV15 =
-        "sha256:uZ28CiyV-DIH9Cxuo5fKDmQ6uu6x8TTZfs_-NyAc2gQ";
+        "sha256:MgxwP3Vyq2opPCiGF3XePXQnVwSHEW2Ck-dzKmCRPbQ";
 
     // FIN-UI-1c: ... + Manufacturing 1.0 staged: the normal host (C+O+P+S(published)+F(published)+M(staged)).
     // Computed by the ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
@@ -278,7 +280,7 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // Tren-1 wave 5 integration: Settings 1.6 provider bump and the merged team branches' provider/permission changes;
     // rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15AndPublishedManufacturingV15 =
-        "sha256:yRR8BkShBUpdVthCPyoVt0UcNNmuuqqOzq3pqritxfE";
+        "sha256:l9LpVRJgOOihxqy5OGFtXC2NiyG6nY3DNCuQxSkXD60";
 
     // LOG-PUBLISH: ... + Logistics 1.1 PUBLISHED (the loading-instruction routes plus shipment/delivery actions,
     // master v3 §27.8): the normal host (C+O+P+S(published)+F(published)+M(published)+L(published)). Computed by
@@ -560,7 +562,7 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // Tren-1 wave 5 integration: Settings 1.6 provider bump and the merged team branches' provider/permission changes;
     // rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15AndPublishedLogisticsV13 =
-        "sha256:Sw1jRBx6nozMyKKyzvDvMe-aExGpOj6uGd04jzXCMKw";
+        "sha256:iIpZhFYf0mh7ecB1It_Hqp4lMTzFjpTc8ZHYg-4H0WE";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -589,7 +591,7 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // Tren-1 wave 5 integration: Settings 1.6 provider bump and the merged team branches' provider/permission changes;
     // rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13AndPublishedPurchasingV14 =
-        "sha256:AApvYNCM1Jf8aHzSa3a5MrOjNctv7mG8_FiDermT0m0";
+        "sha256:M-BVW0E3yAFnZWskxOwj4YfBy8ipA3LhmO1uGxE3uKE";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -618,7 +620,7 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // Tren-1 wave 5 integration: Settings 1.6 provider bump and the merged team branches' provider/permission changes;
     // rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14AndPublishedAccountingV13 =
-        "sha256:f9C_0AqupzolunLQO-mnv38m5dSUidZF5Ov6QYTsqBI";
+        "sha256:CuQererqk7j_qwUq2YHLPvWRBEJQmCsai9yHaQDZ4Nc";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -647,7 +649,7 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // Tren-1 wave 5 integration: Settings 1.6 provider bump and the merged team branches' provider/permission changes;
     // rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV17 =
-        "sha256:9A_c7FdBcZjR6-fp6AXTBlKrQ_ojwf3WTWwQsqGWy94";
+        "sha256:NkbOVUJOkOUm6p9WhmwuvkNyJqthQE1RQoxOU9erJl4";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -679,7 +681,7 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // Tren-1 wave 5 integration: Settings 1.6 provider bump and the merged team branches' provider/permission changes;
     // rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV17AndPublishedIdentityV10 =
-        "sha256:CeBqXFRz6N9mQGjxXPnfW10X4xAy3hTIKagONyAKbww";
+        "sha256:PrmYhn-bivLPdNG8EIEP71dqscBinkzKuNXpb9frdxY";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -711,7 +713,7 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // Tren-1 wave 5 integration: Settings 1.6 provider bump and the merged team branches' provider/permission changes;
     // rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
 internal const string FullNormalHostWithProductPriceListsAndSalesReports =
-        "sha256:CEY9TxVeKyvR-Uq5cjpSagXs-ADD5HQkBYWHJ9POZcY";
+        "sha256:mWZhV_36QrbjDPEe8qaUZPuIzHMuCQEztSJhA9VUq94";
     internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV10 =
         "sha256:CosLQ4Vlzw2OXN6VA89loeIwQJUX0gJR2KITZaVuNMs";
     // Merged over MOD-03 (#866, Settings 1.1): the full normal host with Sales 1.11 and the Settings 1.1 provider, derived by
@@ -749,7 +751,7 @@ internal const string FullNormalHostWithProductPriceListsAndSalesReports =
     // rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
 // W1-A: Settings 1.19 re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision.
 internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV11 =
-        "sha256:AhYXXhmjuvWWyLEXBg02rgALvDwjPaESrbESBdCYRck";
+        "sha256:Yc-llTEmSWVlRMcEaJ0cdgMWuDdAyWaIYgBByBM8FlE";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";

@@ -103,6 +103,9 @@ public sealed class SalesShellCapabilityProviderTests
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersRiskExceptionApprove}", "sales.drafts.detail"),
                 ("sales.orders.risk-exception.request", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersRiskExceptionRequest}", "sales.drafts.detail"),
+                // WP13 (Sales 1.28): the signed approval CONTROL of the detail (read + its own name).
+                ("sales.orders.signed-approval.record", "/satis/siparisler/:draftId",
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersSignedApprovalRecord}", "sales.drafts.detail"),
                 // S-2 API-11 (Sales 1.22): the source-plan CONTROL of the detail (read + its own name).
                 ("sales.orders.source-plan.write", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersSourcePlanWrite}", "sales.drafts.detail"),

@@ -49,11 +49,13 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 /// (<see cref="InvoiceMatchCapabilityId"/>) and finalizing / re-sending it to Finance (<see cref="InvoiceFinalizeCapabilityId"/>). Each
 /// control needs the invoice read, the price read (every invoice command measures it and answers amounts) and its own existing name.
 /// No new name is registered, nothing is granted and no name becomes Critical (SAT-D249: finalize is a normal permission).</para>
+/// <para>1.28 (WP13, YOL-D11): adds the signed approval CONTROL of the detail (<see cref="SignedApprovalRecordCapabilityId"/>) and
+/// registers <see cref="SalesPermissionManifestV1.OrdersSignedApprovalRecord"/>; registered, granted to no role, not Critical.</para>
 /// </summary>
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.27";
+    public const string OwnerContractVersion = "1.28";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";
@@ -106,6 +108,9 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 
     /// <summary>Q9: records customer acceptance of the current approved revision; a child control of S-04.</summary>
     public const string CustomerAcceptanceRecordCapabilityId = "sales.orders.customer-acceptance.record";
+
+    /// <summary>WP13 (YOL-D11): records / withdraws the customer's signed approval document of the order; a child control of S-04.</summary>
+    public const string SignedApprovalRecordCapabilityId = "sales.orders.signed-approval.record";
 
     /// <summary>
     /// No 30 / SAT-D12: the force-close CONTROL of the S-04 detail (read + the force-close name) — the impact preview and the
@@ -371,6 +376,13 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             CapabilityId = CustomerAcceptanceRecordCapabilityId,
             ParentCapabilityId = DetailCapabilityId,
             RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord],
+        },
+        // WP13 (YOL-D11): the signed approval record is a control of the detail, beside the customer acceptance.
+        detail with
+        {
+            CapabilityId = SignedApprovalRecordCapabilityId,
+            ParentCapabilityId = DetailCapabilityId,
+            RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersSignedApprovalRecord],
         },
         // No 30: the force-close preview and command are a control of the detail, exactly like the cancellation.
         detail with

@@ -141,6 +141,9 @@ public sealed class FinanceShellRegistrationTests
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersRiskExceptionApprove}"),
                 (SalesShellCapabilityProvider.RiskExceptionRequestCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersRiskExceptionRequest}"),
+                // WP13 (Sales 1.28): the signed approval record control of the detail.
+                (SalesShellCapabilityProvider.SignedApprovalRecordCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersSignedApprovalRecord}"),
                 // Sales 1.22 (S-2 API-11): the source-plan control of the detail.
                 (SalesShellCapabilityProvider.SourcePlanWriteCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersSourcePlanWrite}"),
