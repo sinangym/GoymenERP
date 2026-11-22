@@ -1,3 +1,4 @@
+using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -83,6 +84,9 @@ public static class ManufacturingModuleExtensions
         // port are the host's registrations.
         services.AddScoped<ManufacturingMassVerifier>();
         services.AddScoped<ManufacturingCommandService>();
+        // W1-A (AI-D31, AI-D32, YOL-D18): a read-only Work inbox source over Manufacturing's own plans waiting for approval.
+        services.AddScoped<WorkInbox.ManufacturingWorkInboxFence>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.ManufacturingPlanWorkInboxSourceV1>();
         return services;
     }
 

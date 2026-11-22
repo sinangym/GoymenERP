@@ -1541,6 +1541,11 @@ public static class ErpPermissions
     public const string SettingsManufacturingScrapCostManage = "settings.manufacturing-scrap-cost.manage";
     /// <summary>KLN-D114/D115: register notification passivation duration management, no grant or deletion authority.</summary>
     public const string SettingsNotificationRetentionManage = "settings.notification-retention.manage";
+    /// <summary>
+    /// YOL-D17/YOL-D18 (W1-A): records the hour-scale and business-day approval duration class lengths. Registered, not
+    /// granted; company-wide only; not Critical.
+    /// </summary>
+    public const string SettingsWorkApprovalDurationManage = "settings.work-approval-duration.manage";
     public const string SettingsDocumentNumberSeriesManage = "settings.document-number-series.manage";
 
     /// <summary>
@@ -1951,6 +1956,7 @@ public static class ErpPermissions
             SettingsFinanceOpeningPeriodManage,
             SettingsManufacturingScrapCostManage,
             SettingsNotificationRetentionManage,
+            SettingsWorkApprovalDurationManage,
             SettingsDocumentNumberSeriesManage,
             SettingsReferenceListsManage,
             SettingsProductionReferenceListsManage,
@@ -2253,6 +2259,7 @@ public static class ErpPermissions
             SettingsFinanceOpeningPeriodManage,
             SettingsManufacturingScrapCostManage,
             SettingsNotificationRetentionManage,
+            SettingsWorkApprovalDurationManage,
             SettingsDocumentNumberSeriesManage,
             SettingsReferenceListsManage,
             SettingsProductionReferenceListsManage,

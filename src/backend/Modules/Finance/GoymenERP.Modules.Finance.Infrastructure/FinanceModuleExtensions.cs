@@ -1,6 +1,7 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
@@ -109,6 +110,10 @@ public static class FinanceModuleExtensions
         services.TryAddScoped<IManualBankPaymentDocumentValidationPort,
             UnavailableManualBankPaymentDocumentValidationPort>();
         services.AddScoped<IManualBankPaymentService>(CreateManualBankPaymentService);
+        // W1-A (AI-D31, AI-D32): read-only Work inbox sources over Finance's own pending approvals. They decide nothing.
+        services.AddScoped<WorkInbox.FinanceWorkInboxFence>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.FinancePartyCreditLimitWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.FinanceManualBankPaymentWorkInboxSourceV1>();
         // FNS-D25 (API-25): one expense item. FNS-D102 uses the internal ledger, protected together with
         // each outgoing record in a serializable Finance transaction; unavailable never means sufficient.
         services.TryAddScoped<IFinanceExpenseItemCatalog, SingleExpenseItemCatalog>();

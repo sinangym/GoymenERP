@@ -41,7 +41,8 @@ public sealed partial class SettingsShellCapabilityProvider : IShellCapabilityPr
 {
     public const string OwnerId = "SETTINGS";
     // 1.18 preserves independent template purposes under an unavailable shared workspace.
-    public const string OwnerContractVersion = "1.18";
+    // 1.19 (W1-A, YOL-D18): the approval duration screen (/ayarlar/onay-sureleri) on settings.work-approval-duration.manage.
+    public const string OwnerContractVersion = "1.19";
     // Technical screen ids, not additional ERP permissions. Latest ALS-D105 authority decision.
     public const string SalesSubcontractTaxCapabilityId = "settings.sales-subcontract-tax-default.manage";
     public const string PurchasingSubcontractTaxCapabilityId = "settings.purchasing-subcontract-tax-default.manage";
@@ -207,6 +208,10 @@ public sealed partial class SettingsShellCapabilityProvider : IShellCapabilityPr
                 "/ayarlar/bildirim-etkinlik-suresi", "AY-BES-01", ShellCapabilityRoutePrecedence.Static,
                 ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
                 [SettingsOperationalPolicyPermissionsV1.NotificationRetentionManage], ImplementationAvailable: true),
+            new ShellCapabilityDeclaration(SettingsOperationalPolicyPermissionsV1.WorkApprovalDurationManage, SettingsOperationalPolicyPermissionsV1.WorkApprovalDurationManage,
+                "/ayarlar/onay-sureleri", "AY-OS-01", ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
+                [SettingsOperationalPolicyPermissionsV1.WorkApprovalDurationManage], ImplementationAvailable: true),
             new ShellCapabilityDeclaration(SettingsDocumentNumberSeriesPermissionsV1.Manage, SettingsDocumentNumberSeriesPermissionsV1.Manage,
                 "/ayarlar/belge-numara-serileri", "AY-BNS-01", ShellCapabilityRoutePrecedence.Static,
                 ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,

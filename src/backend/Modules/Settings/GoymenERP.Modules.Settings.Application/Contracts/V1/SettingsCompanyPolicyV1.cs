@@ -35,6 +35,13 @@ public static class CompanyPolicyKeysV1
     public const string ManufacturingIncludeScrapCost = "manufacturing.include-scrap-cost";
     /// <summary>KLN-D114/D115: passivate in-app notifications after this many whole days; never delete.</summary>
     public const string NotificationActiveDays = "work.notification-active-days";
+    /// <summary>
+    /// YOL-D17/YOL-D18 (W1-A): whole hours of the hour-scale approval duration class. No record means "not defined": the
+    /// Work inbox shows the duration as undefined (fail closed); nothing is seeded.
+    /// </summary>
+    public const string WorkApprovalDurationHours = "work.approval-duration-hours";
+    /// <summary>YOL-D17/YOL-D18 (W1-A): whole business days of the business-day approval duration class; no default.</summary>
+    public const string WorkApprovalDurationBusinessDays = "work.approval-duration-business-days";
     public const int MaximumLength = 64;
 
     public static IReadOnlyList<string> All { get; } =
@@ -42,6 +49,8 @@ public static class CompanyPolicyKeysV1
         SalesContractDiscountLimit,
         ManufacturingIncludeScrapCost,
         NotificationActiveDays,
+        WorkApprovalDurationHours,
+        WorkApprovalDurationBusinessDays,
         FinanceOpeningPeriod,
         ManufacturingDueDateBuffer,
         SalesSubcontractTaxDefault,

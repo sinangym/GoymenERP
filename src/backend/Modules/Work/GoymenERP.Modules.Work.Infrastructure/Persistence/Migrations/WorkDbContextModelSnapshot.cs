@@ -199,6 +199,61 @@ namespace GoymenERP.Modules.Work.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkApprovalInboxEventRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ClientEventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CycleStartedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("EventType")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(160)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "ClientEventId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_WorkApprovalInboxEvents_ClientEvent")
+                        .HasFilter("[ClientEventId] IS NOT NULL");
+
+                    b.HasIndex("CompanyId", "Kind", "ItemId", "CycleStartedAtUtc", "EventType")
+                        .IsUnique()
+                        .HasDatabaseName("UX_WorkApprovalInboxEvents_Cycle")
+                        .HasFilter("[EventType] IN (1, 4)");
+
+                    b.ToTable("ApprovalInboxEvents", "work", t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkApprovalInboxEvents_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [ItemId] <> '00000000-0000-0000-0000-000000000000' AND LEN([Kind]) > 0 AND [EventType] IN (1, 2, 3, 4)");
+
+                            t.HasCheckConstraint("CK_WorkApprovalInboxEvents_Shape", "([EventType] IN (1, 4) AND [ClientEventId] IS NULL) OR ([EventType] IN (2, 3) AND [ClientEventId] IS NOT NULL AND [ClientEventId] <> '00000000-0000-0000-0000-000000000000')");
+
+                            t.HasCheckConstraint("CK_WorkApprovalInboxEvents_Time", "([EventType] <> 1 OR [OccurredAtUtc] = [CycleStartedAtUtc]) AND [RecordedAtUtc] >= [CycleStartedAtUtc]");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkDesiredStateSnapshotRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -685,6 +740,15 @@ namespace GoymenERP.Modules.Work.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_WorkOutboxCursors_State", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([SourceName]) > 0 AND LEN([Position]) > 0");
                         });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkApprovalInboxEventRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Work.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkDesiredStateSnapshotRow", b =>

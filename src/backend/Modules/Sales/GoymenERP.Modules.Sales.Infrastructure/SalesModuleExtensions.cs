@@ -1,10 +1,12 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
+using GoymenERP.Modules.Sales.Infrastructure.WorkInbox;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -79,6 +81,11 @@ public static class SalesModuleExtensions
         services.AddScoped<ISalesOrderPrintReadServiceV1>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         services.AddScoped<ISalesOrderDraftPendingApprovalReadServiceV1,
             SalesOrderDraftPendingApprovalReadServiceV1>();
+        // W1-A (AI-D31, AI-D32): the read-only Work inbox sources over Sales's own pending exception approvals.
+        services.AddScoped<ISalesWorkInboxStoreV1, SalesWorkInboxStoreV1>();
+        services.AddScoped<IWorkInboxSourceV1, SalesPriceFloorExceptionWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, SalesDiscountExceptionWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, SalesRiskExceptionWorkInboxSourceV1>();
         // SALES-A1: the Sales-owned line reference port (Business 5737989917 = B) for the allocation
         // and loading consumers, over the same company-filtered store. Registered here, in the module
         // (no host file), so that a consumer module reads Sales only through this port.
