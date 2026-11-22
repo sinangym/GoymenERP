@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "goymen.ai.decision-index.v1",
   "title": "Göymen ERP yapay zekâ karar dizini v1",
-  "description": "tools/generate_ai_decision_index.py çıktısı; yalnız docs/decisions kaynaklarından deterministik üretilir (AI-D12, DALGA_PLANI_v2 A.4 (1)).",
+  "description": "tools/generate_ai_decision_index.py çıktısı; yalnız docs/decisions kaynaklarından deterministik üretilir (AI-D12, DALGA_PLANI_v2 A.4 (1)); kişi adları üretimde maskelenir (plan D2, AI-D36), bulut uygunluğu içerik ve veri sınıfından türetilir (AI-D34 d).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -13,7 +13,9 @@
     "source_set_sha256",
     "sources",
     "personal_name_terms_basis",
-    "personal_name_terms",
+    "personal_name_term_count",
+    "mask_policy",
+    "cloud_eligibility_basis",
     "statistics",
     "records",
     "conflicts"
@@ -69,13 +71,16 @@
     "personal_name_terms_basis": {
       "type": "string"
     },
-    "personal_name_terms": {
-      "type": "array",
-      "uniqueItems": true,
-      "items": {
-        "type": "string",
-        "minLength": 2
-      }
+    "personal_name_term_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "mask_policy": {
+      "const": "ai-d36-person-name-mask-at-generation@1"
+    },
+    "cloud_eligibility_basis": {
+      "type": "string",
+      "minLength": 1
     },
     "statistics": {
       "type": "object",
@@ -86,7 +91,9 @@
         "ambiguous_relation_count",
         "status_counts",
         "kind_counts",
-        "personal_data_candidate_count"
+        "personal_data_candidate_count",
+        "masked_record_count",
+        "cloud_eligibility_counts"
       ],
       "properties": {
         "record_count": {
@@ -118,6 +125,17 @@
         "personal_data_candidate_count": {
           "type": "integer",
           "minimum": 0
+        },
+        "masked_record_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cloud_eligibility_counts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
         }
       }
     },
@@ -144,6 +162,10 @@
           "superseded_by",
           "data_class_candidate",
           "personal_data_signals",
+          "commercial_signals",
+          "masked",
+          "cloud_eligibility",
+          "cloud_data_class",
           "has_conflict"
         ],
         "properties": {
@@ -388,6 +410,31 @@
                 "iban"
               ]
             }
+          },
+          "commercial_signals": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "para_tutari"
+              ]
+            }
+          },
+          "masked": {
+            "type": "boolean"
+          },
+          "cloud_eligibility": {
+            "enum": [
+              "bulut_uygun_aday",
+              "maskeli_bulut_uygun_aday",
+              "yerel_kalir"
+            ]
+          },
+          "cloud_data_class": {
+            "enum": [
+              "internal",
+              "confidential"
+            ]
           },
           "has_conflict": {
             "type": "boolean"
