@@ -179463,7 +179463,6 @@
               "purchasing_supplier_return_lineage_selection_required",
               "purchasing_supplier_return_quantity_average_available",
               "purchasing_supplier_return_quantity_manual_cost_difference",
-              "purchasing_supplier_return_quantity_piece_price_difference",
               "same_key_payload_mismatch"
             ]
           },
@@ -179622,6 +179621,8 @@
             },
             "x-erp-problem-codes": [
               "purchasing_supplier_return_piece_count_required",
+              "purchasing_supplier_return_quantity_document_discount",
+              "purchasing_supplier_return_quantity_piece_quantity_mismatch",
               "purchasing_supplier_return_quantity_price_undecided",
               "purchasing_supplier_return_replacement_unsupported",
               "validation_failed"
@@ -294331,6 +294332,12 @@
               "string"
             ],
             "format": "int32"
+          },
+          "supplierAmountTry": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

@@ -116,7 +116,8 @@ public static class PurchaseSupplierReturnLineagePlannerV1
 
 /// <summary>What one order line offers a quantity return as its price (the facts the rule needs, nothing else).</summary>
 public sealed record PurchaseSupplierReturnQuantityPriceLineV1(bool IsTurkishLira, bool IsKilogramLine, bool PricedPerOrderUnit,
-    decimal? UnitPrice, decimal? DiscountPercent = null, decimal? DiscountAmount = null, bool IsPieceLine = false);
+    decimal? UnitPrice, decimal? DiscountPercent = null, decimal? DiscountAmount = null, bool IsPieceLine = false,
+    bool HasDocumentDiscount = false);
 
 public enum PurchaseSupplierReturnQuantityPriceOutcomeV1
 {
@@ -130,6 +131,9 @@ public enum PurchaseSupplierReturnQuantityPriceOutcomeV1
     /// is never rounded without that rule.
     /// </summary>
     NotRepresentable = 3,
+
+    /// <summary>422 (SAT-D458): the order carries a document-level discount; it is not deducted and not spread over the lines.</summary>
+    DocumentDiscount = 4,
 }
 
 /// <summary><see cref="PerPiece"/>: the price is TL per piece of a piece order line (SAT-D455), otherwise TL per kg.</summary>
@@ -148,6 +152,9 @@ public sealed record PurchaseSupplierReturnQuantityPriceV1(PurchaseSupplierRetur
 /// <item>SAT-D453 (behind the quantity-rules gate): a net price above four decimals is rounded to four, half away from zero.
 /// Gate closed: refused, never rounded.</item>
 /// <item>SAT-D455 (behind the same gate): a piece order line is priced per piece. Gate closed: not a priced kilogram line.</item>
+/// <item>SAT-D458 (behind the same gate): every LINE discount is deducted — the purchase order line carries a percent or an
+/// amount, the only line discounts the model has (no chain) — and a document-level discount is never deducted: an order that
+/// has one is refused. The purchase order model has no document-level discount today, so the fact is always false.</item>
 /// </list>
 /// </summary>
 public static class PurchaseSupplierReturnQuantityPriceRuleV1
@@ -156,6 +163,11 @@ public static class PurchaseSupplierReturnQuantityPriceRuleV1
     public const string DiscountedLinePriceDecision = "SAT-D451: net-after-discount, deferral-excluded";
 
     public const int UnitPriceScale = 4;
+    public const int AmountScale = 2;
+
+    /// <summary>SAT-D453/SAT-D456: quantity × the (rounded) net price, rounded once to kuruş, half away from zero.</summary>
+    public static decimal Amount(decimal quantity, decimal unitPriceTry) =>
+        decimal.Round(quantity * unitPriceTry, AmountScale, MidpointRounding.AwayFromZero);
     private const decimal UnitCostUpperBound = 100_000_000_000_000m;
 
     public static PurchaseSupplierReturnQuantityPriceV1 Resolve(PurchaseSupplierReturnQuantityPriceLineV1 line,
@@ -166,6 +178,8 @@ public static class PurchaseSupplierReturnQuantityPriceRuleV1
         if (!line.IsTurkishLira || !line.PricedPerOrderUnit || line.UnitPrice is not { } gross || gross <= 0m
             || !(line.IsKilogramLine || perPiece && quantityRulesAccepted))
             return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.NotAKilogramTryLine, null);
+        if (line.HasDocumentDiscount && quantityRulesAccepted)
+            return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.DocumentDiscount, null);
         decimal price;
         try { price = CommercialLinePriceCalculator.NetUnitPrice(gross, line.DiscountPercent, line.DiscountAmount); }
         catch (Exception exception) when (exception is ArgumentException or OverflowException or InvalidOperationException)

@@ -169,11 +169,16 @@ public static class PurchaseSupplierReturnCodesV1
     public const string QuantityManualCostDifference = "purchasing_supplier_return_quantity_manual_cost_difference";
 
     /// <summary>
-    /// SAT-D455 409 (SAT-D371): a quantity return from a piece order line bills pieces × the net piece price; that amount per
-    /// returned kilogram is not a four-decimal TL/kg value, so it cannot equal the moving average the stock leaves at — a known
-    /// difference with no decided posting. Refused, never rounded into agreement.
+    /// SAT-D459 422: in a quantity return from a piece order line the pieces the preparer enters for the document must equal the
+    /// pieces that leave the label; a different count, or a label that tracks no pieces, is refused.
     /// </summary>
-    public const string QuantityPiecePriceDifference = "purchasing_supplier_return_quantity_piece_price_difference";
+    public const string QuantityPieceQuantityMismatch = "purchasing_supplier_return_quantity_piece_quantity_mismatch";
+
+    /// <summary>
+    /// SAT-D458 422: the chosen order carries a document-level discount. It is neither deducted from the line's net price nor
+    /// spread over the lines, so a quantity return from that order stops here.
+    /// </summary>
+    public const string QuantityDocumentDiscount = "purchasing_supplier_return_quantity_document_discount";
 }
 
 /// <summary>
@@ -216,9 +221,13 @@ public sealed record PurchaseSupplierReturnExitRequestV1(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseSupplierReturnLineageModeV1? LineageMode = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? PieceCount = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseSupplierReturnLineagePartV1>? LineageParts = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? ApprovedCostException = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? ApprovedCostException = null,
+    // SAT-D456 (behind the quantity-rules gate): the kuruş-rounded amount the document bills; Inventory measures the difference on it.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] decimal? SupplierReturnAmountTry = null);
 
-public sealed record PurchaseSupplierReturnExitResultV1(Guid InventoryMovementId, Guid LabelId, string QuantityKg, bool IsReplay);
+/// <summary><see cref="UnitCostTryPerKg"/>: the TL unit cost the exit actually left stock at (the moving average of an amount-measured quantity return).</summary>
+public sealed record PurchaseSupplierReturnExitResultV1(Guid InventoryMovementId, Guid LabelId, string QuantityKg, bool IsReplay,
+    string? UnitCostTryPerKg = null);
 
 public interface IPurchaseSupplierReturnExitV1
 {

@@ -106,7 +106,8 @@ public sealed partial class InventorySupplierReturnExitParticipant
         // The receipt-label allocation contract names positions of the receipt's own label; it is not a foreign-label choice.
         if (request.CostAllocation is not null) throw Refused(400, InventorySupplierReturnExitCodesV1.InvalidRequest);
         var mode = request.LineageMode!.Value;
-        if (request.ApprovedCostException is not null && mode != InventorySupplierReturnLineageModeV1.Quantity)
+        if ((request.ApprovedCostException is not null || request.SupplierReturnAmountTry is not null)
+            && mode != InventorySupplierReturnLineageModeV1.Quantity)
             throw Refused(400, InventorySupplierReturnExitCodesV1.InvalidRequest);
 
         var labelRow = await context.Labels.SingleOrDefaultAsync(row => row.Id == sourceLabelId, token);
@@ -154,7 +155,16 @@ public sealed partial class InventorySupplierReturnExitParticipant
         var exit = receipt with { Label = label, LabelRow = labelRow };
         if (mode == InventorySupplierReturnLineageModeV1.Quantity)
         {
-            await RequireQuantityReturnAtAverageAsync(exit, input, request.SourceBlock, request.ApprovedCostException == true, token);
+            if (request.SupplierReturnAmountTry is { } billedText)
+            {
+                var average = await RequireQuantityReturnAmountAsync(exit, input, request.SourceBlock,
+                    request.ApprovedCostException == true, decimal.Parse(billedText, CultureInfo.InvariantCulture), token);
+                if (average is { } known) quantityAverageCosts[request.InventoryMovementId] = known;
+            }
+            else
+            {
+                await RequireQuantityReturnAtAverageAsync(exit, input, request.SourceBlock, request.ApprovedCostException == true, token);
+            }
         }
 
         lineageSelections[request.InventoryMovementId] = selection;
@@ -193,6 +203,39 @@ public sealed partial class InventorySupplierReturnExitParticipant
             SupplierReturnCohortChoiceOutcome.LimitExceeded => throw Refused(409, InventorySupplierReturnExitCodesV1.ExitExceedsReceipt),
             _ => throw Refused(400, InventorySupplierReturnExitCodesV1.InvalidRequest),
         };
+    }
+
+    /// <summary>
+    /// SAT-D456 (with SAT-D444): the caller names the kuruş-rounded amount its document bills. With a readable moving average the
+    /// stock leaves at that average and the difference is the kuruş-rounded exit amount minus the billed amount; any difference
+    /// is refused (SAT-D371; an approved exception does not bypass it, SAT-D410) and the average is returned as the exit's unit
+    /// cost. With an unreadable average only a manual cost approved by another person (SAT-D393) lets the exit proceed, at that
+    /// cost (null is returned); the SAT-D306 (c) pool check still applies afterwards.
+    /// </summary>
+    private async Task<decimal?> RequireQuantityReturnAmountAsync(ReceiptTrace exit, InventorySupplierReturnExitInput input,
+        BlockState block, bool approvedCostException, decimal billedAmountTry, CancellationToken token)
+    {
+        if (exit.OwnerKind != StockPartyKind.Company || exit.OwnerId != companyId)
+        {
+            throw Refused(409, InventorySupplierReturnExitCodesV1.LineageMismatch);
+        }
+
+        var source = await SourcePositionAsync(exit, block, token);
+        var average = await InventorySupplierReturnReceiptStates.ReadAverageAsync(context, companyId, exit.ProductId,
+            source.Position.LocationId, token);
+        if (average is not { } known)
+        {
+            if (!approvedCostException || input.OriginalUnitCostTryPerKg is null)
+                throw Refused(409, InventorySupplierReturnExitCodesV1.QuantityCostUnreadable);
+            return null;
+        }
+
+        // A manual cost has no place while the average is readable (SAT-D454); the caller sends none.
+        if (input.OriginalUnitCostTryPerKg is not null || approvedCostException)
+            throw Refused(409, InventorySupplierReturnExitCodesV1.CostDifferenceUnposted);
+        var (_, difference) = SupplierReturnLineageCalculator.QuantityReturnAmountDifference(input.Quantity.Value, known, billedAmountTry);
+        if (difference != 0m) throw Refused(409, InventorySupplierReturnExitCodesV1.CostDifferenceUnposted);
+        return known;
     }
 
     /// <summary>

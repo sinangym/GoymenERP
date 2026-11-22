@@ -31,6 +31,8 @@ export interface SupplierReturnLineagePart {
   readonly supplierUnitPriceTry?: string
   /** SAT-D455: the document's pieces of a quantity return from a piece order line; the price above is then per piece. */
   readonly supplierPieceQuantity?: number
+  /** SAT-D453/SAT-D456: the kuruş-rounded amount the document bills; present exactly when the supplier price is. */
+  readonly supplierAmountTry?: string
 }
 
 export interface SupplierReturnInvoicedPart {
@@ -188,7 +190,7 @@ export function decodeSupplierReturnLineageParts(value: unknown, header: {
     const pricePresent = Object.hasOwn(source, 'supplierUnitPriceTry')
     const supplierPiecesPresent = Object.hasOwn(source, 'supplierPieceQuantity')
     const fields = [...PART_FIELDS, ...(piecePresent ? ['pieceCount'] : []), ...(choicePresent ? ['pendingKg', 'invoiced'] : []),
-      ...(pricePresent ? ['supplierUnitPriceTry'] : []), ...(supplierPiecesPresent ? ['supplierPieceQuantity'] : [])]
+      ...(pricePresent ? ['supplierUnitPriceTry', 'supplierAmountTry'] : []), ...(supplierPiecesPresent ? ['supplierPieceQuantity'] : [])]
     if (!exact(source, fields) || !isPurchasingGuid(source.goodsAcceptanceId) || !isPurchasingGuid(source.purchaseOrderId)
       || !isPurchasingGuid(source.purchaseOrderLineId) || !isPurchasingGuid(source.returnLineId)
       || !isPurchasingGuid(source.inventoryMovementId) || !positiveKg(source.quantityKg)
@@ -198,8 +200,10 @@ export function decodeSupplierReturnLineageParts(value: unknown, header: {
       || piecePresent !== (header.pieceCount !== undefined) || piecePresent && !count(source.pieceCount)
       // SAT-D454/SAT-D455: a supplier price only on a quantity return and only while the price is visible; pieces are whole.
       || pricePresent && (header.lineageMode !== 'Quantity' || !header.priceVisible || typeof source.supplierUnitPriceTry !== 'string'
-        || !COST.test(source.supplierUnitPriceTry) || source.supplierUnitPriceTry === '0')
-      || supplierPiecesPresent && (header.lineageMode !== 'Quantity' || !count(source.supplierPieceQuantity)
+        || !COST.test(source.supplierUnitPriceTry) || source.supplierUnitPriceTry === '0'
+        || typeof source.supplierAmountTry !== 'string' || !/^(0|[1-9]\d{0,15})(\.\d?[1-9])?$/.test(source.supplierAmountTry)
+        || source.supplierAmountTry === '0')
+      || supplierPiecesPresent && (!pricePresent || !count(source.supplierPieceQuantity)
         || source.supplierPieceQuantity < 1)) return null
     if (choicePresent) {
       const invoiced = decodeSelections(source.invoiced)

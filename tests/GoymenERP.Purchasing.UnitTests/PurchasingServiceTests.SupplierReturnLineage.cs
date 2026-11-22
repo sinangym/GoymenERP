@@ -466,17 +466,60 @@ public sealed partial class PurchasingServiceTests
     }
 
     [Fact]
-    public async Task SAT_D453_with_the_gate_open_the_return_is_recorded_at_the_rounded_net_price()
+    public async Task SAT_D453_D456_with_the_gate_open_the_document_bills_the_rounded_net_price_and_records_the_average_stock_left_at()
     {
+        // 80 kg at 41.25 less 2.5 % = 40.21875 → 40.2188 TL/kg; the document bills 80 × 40.2188 = 3 217.50 TL (kuruş).
         var (world, order, returns, request, lineage) = await QuantityWorldAsync(
             new PurchaseOrderLinePriceRequest("41.25", DiscountPercent: "2.5"), averageReadable: true);
-        var exits = new ReturnExitHost();
+        var exits = new ReturnExitHost { StagedAverage = "40.2187" };
 
         var answer = await world.Service(returns: returns, returnLineage: lineage, returnExits: exits, returnPolicy: QuantityRulesOpen)
             .CreateSupplierReturnAsync(order, request, Metadata("quantity-sat-d453"));
 
-        Assert.Equal(("Recorded", "40.2188", "40.2188"), (answer.Return.Status, answer.Return.UnitCostTryPerKg, Assert.Single(exits.Exits).UnitCostTryPerKg));
-        Assert.Equal("40.2188", Assert.Single(answer.Return.LineageParts!).SupplierUnitPriceTry);
+        var exit = Assert.Single(exits.Exits);
+        // Inventory is asked to measure the difference on the billed amount and names no unit cost of its own caller.
+        Assert.Equal((3217.50m, ""), (exit.SupplierReturnAmountTry, exit.UnitCostTryPerKg));
+        var part = Assert.Single(answer.Return.LineageParts!);
+        Assert.Equal(("Recorded", "40.2187", "40.2187", "40.2188", "3217.5"),
+            (answer.Return.Status, answer.Return.UnitCostTryPerKg, part.UnitCostTryPerKg, part.SupplierUnitPriceTry, part.SupplierAmountTry));
+    }
+
+    [Fact]
+    public async Task SAT_D456_with_the_gate_open_a_recorded_return_without_the_owners_stock_cost_is_refused_and_nothing_is_saved()
+    {
+        var (world, order, returns, request, lineage) = await QuantityWorldAsync(new PurchaseOrderLinePriceRequest("20.5"), averageReadable: true);
+
+        var refusal = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service(returns: returns, returnLineage: lineage,
+            returnExits: new ReturnExitHost(), returnPolicy: QuantityRulesOpen).CreateSupplierReturnAsync(order, request, Metadata("d456-no-cost")));
+
+        Assert.Equal((503, PurchaseSupplierReturnCodesV1.Unavailable, 0), (refusal.Status, refusal.Code, returns.NewWrites));
+    }
+
+    [Theory]
+    [InlineData("80", "40.2188", "3217.5")]
+    [InlineData("4", "205", "820")]
+    [InlineData("3", "0.335", "1.01")]     // 1.005 → half away from zero
+    [InlineData("33.333", "19.9936", "666.45")]
+    public void SAT_D453_D456_the_document_amount_is_the_quantity_times_the_rounded_price_rounded_once_to_kurus(string quantity, string price,
+        string expected)
+    {
+        static decimal Number(string text) => decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Equal(Number(expected), PurchaseSupplierReturnQuantityPriceRuleV1.Amount(Number(quantity), Number(price)));
+    }
+
+    [Theory]
+    [InlineData(true, "DocumentDiscount")]
+    [InlineData(false, "Priced")]
+    public void SAT_D458_a_document_level_discount_stops_the_quantity_return_behind_the_gate_and_line_discounts_are_all_deducted(bool gateOpen,
+        string outcome)
+    {
+        var line = new PurchaseSupplierReturnQuantityPriceLineV1(true, true, true, 20.5m, 2.5m, null, HasDocumentDiscount: true);
+
+        Assert.Equal(outcome, PurchaseSupplierReturnQuantityPriceRuleV1.Resolve(line, gateOpen).Outcome.ToString());
+        // The line's own discount (percent or amount; the order line has no chain) is always deducted in full.
+        Assert.Equal(19.9875m, PurchaseSupplierReturnQuantityPriceRuleV1.Resolve(line with { HasDocumentDiscount = false }, gateOpen).UnitPriceTry);
+        Assert.Equal(20m, PurchaseSupplierReturnQuantityPriceRuleV1.Resolve(
+            new PurchaseSupplierReturnQuantityPriceLineV1(true, true, true, 20.5m, null, 0.5m), gateOpen).UnitPriceTry);
     }
 
     [Fact]
@@ -491,7 +534,8 @@ public sealed partial class PurchasingServiceTests
         var pending = await service.CreateSupplierReturnAsync(order, request with { ManualUnitCostTryPerKg = "21.25" }, Metadata("d454-pending"));
         Assert.Equal(("PendingCostException", "ManualCostWithException", "21.25", 0),
             (pending.Return.Status, pending.Return.CostBasis, pending.Return.UnitCostTryPerKg, exits.Exits.Count));
-        Assert.Equal(("21.25", "20.5"), (pending.Return.LineageParts![0].UnitCostTryPerKg, pending.Return.LineageParts[0].SupplierUnitPriceTry));
+        Assert.Equal(("21.25", "20.5", "1640"), (pending.Return.LineageParts![0].UnitCostTryPerKg, pending.Return.LineageParts[0].SupplierUnitPriceTry,
+            pending.Return.LineageParts[0].SupplierAmountTry));
         var same = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
             service.ApproveSupplierReturnCostExceptionAsync(order, request.ReturnId, new("1", null), Metadata("d454-self")));
         var approved = await world.AsApprover(() =>
@@ -500,8 +544,8 @@ public sealed partial class PurchasingServiceTests
         Assert.Equal((409, PurchaseSupplierReturnCodesV1.CostRequired, 409), (noCost.Status, noCost.Code, same.Status));
         // Stock leaves at the approved manual cost; the supplier price stays the order's net price on the document.
         var exit = Assert.Single(exits.Exits);
-        Assert.Equal(("Recorded", "21.25", true, 20.5m), (approved.Return.Status, exit.UnitCostTryPerKg, exit.ApprovedCostException,
-            exit.LineageParts![0].SupplierUnitPriceTry));
+        Assert.Equal(("Recorded", "21.25", true, 20.5m, 1640m), (approved.Return.Status, exit.UnitCostTryPerKg, exit.ApprovedCostException,
+            exit.LineageParts![0].SupplierUnitPriceTry, exit.SupplierReturnAmountTry));
     }
 
     [Fact]
@@ -533,27 +577,40 @@ public sealed partial class PurchasingServiceTests
     }
 
     [Fact]
-    public async Task SAT_D455_with_the_gate_open_a_piece_order_line_bills_the_entered_pieces_at_the_net_piece_price()
+    public async Task SAT_D455_D459_with_the_gate_open_a_piece_order_line_bills_the_labels_pieces_at_the_net_piece_price()
     {
-        // 80 kg leave the label; the preparer returns 4 pieces at 205 TL: 820 TL, exactly 10.25 TL per returned kg.
+        // 80 kg and 4 pieces leave the label; the document bills 4 pieces at 205 TL = 820.00 TL; the kilograms are information.
         var (world, order, returns, request, lineage) = await QuantityWorldAsync(new PurchaseOrderLinePriceRequest("205", PieceUnitId),
-            averageReadable: true, pieceLine: true);
-        var exits = new ReturnExitHost();
+            averageReadable: true, pieceLine: true, tracksPieces: true);
+        request = request with { PieceCount = 4 };
+        var exits = new ReturnExitHost { StagedAverage = "10.2531" };
         var service = world.Service(returns: returns, returnLineage: lineage, returnExits: exits, returnPolicy: QuantityRulesOpen);
 
         var missing = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
             service.CreateSupplierReturnAsync(order, request, Metadata("d455-missing")));
-        var inexact = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
-            service.CreateSupplierReturnAsync(order, request with { SupplierPieceQuantity = 1, QuantityKg = "30" }, Metadata("d455-inexact")));
+        var different = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            service.CreateSupplierReturnAsync(order, request with { SupplierPieceQuantity = 3 }, Metadata("d459-different")));
         var answer = await service.CreateSupplierReturnAsync(order, request with { SupplierPieceQuantity = 4 }, Metadata("d455"));
 
         Assert.Equal((422, PurchaseSupplierReturnCodesV1.PieceCountRequired), (missing.Status, missing.Code));
-        // 205 TL over 30 kg is 6.8333… TL/kg: it cannot equal a four-decimal average, a known difference (SAT-D371) — refused.
-        Assert.Equal((409, PurchaseSupplierReturnCodesV1.QuantityPiecePriceDifference), (inexact.Status, inexact.Code));
+        Assert.Equal((422, PurchaseSupplierReturnCodesV1.QuantityPieceQuantityMismatch), (different.Status, different.Code));
         var part = Assert.Single(answer.Return.LineageParts!);
-        Assert.Equal(("Recorded", "80", "10.25", "205", 4), (answer.Return.Status, part.QuantityKg, part.UnitCostTryPerKg, part.SupplierUnitPriceTry,
-            part.SupplierPieceQuantity));
-        Assert.Equal("10.25", Assert.Single(exits.Exits).UnitCostTryPerKg);
+        Assert.Equal(("Recorded", "80", 4, "205", 4, "820", "10.2531"), (answer.Return.Status, part.QuantityKg, part.PieceCount, part.SupplierUnitPriceTry,
+            part.SupplierPieceQuantity, part.SupplierAmountTry, part.UnitCostTryPerKg));
+        Assert.Equal((820m, "", 4), (Assert.Single(exits.Exits).SupplierReturnAmountTry, exits.Exits[0].UnitCostTryPerKg, exits.Exits[0].PieceCount));
+    }
+
+    [Fact]
+    public async Task SAT_D459_with_the_gate_open_a_label_that_tracks_no_pieces_cannot_carry_a_piece_line_return()
+    {
+        var (world, order, returns, request, lineage) = await QuantityWorldAsync(new PurchaseOrderLinePriceRequest("205", PieceUnitId),
+            averageReadable: true, pieceLine: true);
+
+        var refusal = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service(returns: returns, returnLineage: lineage,
+            returnExits: new ReturnExitHost(), returnPolicy: QuantityRulesOpen)
+            .CreateSupplierReturnAsync(order, request with { SupplierPieceQuantity = 4 }, Metadata("d459-no-pieces")));
+
+        Assert.Equal((422, PurchaseSupplierReturnCodesV1.QuantityPieceQuantityMismatch, 0), (refusal.Status, refusal.Code, returns.NewWrites));
     }
 
     [Theory]
@@ -656,7 +713,8 @@ public sealed partial class PurchasingServiceTests
     }
 
     private static async Task<(World World, Guid Order, ReturnStoreFake Returns, CreatePurchaseSupplierReturnV1 Request, LineageFake Lineage)>
-        QuantityWorldAsync(PurchaseOrderLinePriceRequest price, bool averageReadable, string openKg = "300", bool pieceLine = false)
+        QuantityWorldAsync(PurchaseOrderLinePriceRequest price, bool averageReadable, string openKg = "300", bool pieceLine = false,
+            bool tracksPieces = false)
     {
         var world = pieceLine
             ? new World { TheoreticalKilograms = new FakeTheoreticalKilograms { Answer = PurchaseTheoreticalKilogramsPerUnitAnswerV1.Found(20m, "product.kg-per-unit.v1/sentetik") } }
@@ -670,7 +728,7 @@ public sealed partial class PurchasingServiceTests
         var foreign = Guid.NewGuid();
         returns.Suppliers[foreign] = OtherSupplier;
         // Golden I11: the label's lineage is another supplier's receipt; the chosen receipt R5 of this order has 300 kg open.
-        var lineage = new LineageFake { AverageCostReadable = averageReadable, Roots = [Root(foreign, "1", "1")],
+        var lineage = new LineageFake { AverageCostReadable = averageReadable, TracksPieces = tracksPieces, Roots = [Root(foreign, "1", "1")],
             Chosen = Receipt(request.GoodsAcceptanceId, "300", openKg, null) };
         return (world, order.Detail.Order.Id, returns, request, lineage);
     }
@@ -714,6 +772,8 @@ public sealed partial class PurchasingServiceTests
     private sealed class ReturnExitHost : IPurchaseSupplierReturnTransactionV1, IPurchaseSupplierReturnExitV1
     {
         public List<PurchaseSupplierReturnExitRequestV1> Exits { get; } = [];
+        /// <summary>The moving average the Inventory owner would answer for an amount-measured quantity return (SAT-D456).</summary>
+        public string? StagedAverage { get; init; }
 
         public async Task<T> ExecuteAsync<T>(Guid companyId, Func<IPurchaseSupplierReturnExitV1, CancellationToken, Task<T>> operation,
             Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken = default)
@@ -727,7 +787,8 @@ public sealed partial class PurchasingServiceTests
             CancellationToken cancellationToken)
         {
             Exits.Add(request);
-            return Task.FromResult(new PurchaseSupplierReturnExitResultV1(request.InventoryMovementId, LineageLabel, request.QuantityKg, false));
+            return Task.FromResult(new PurchaseSupplierReturnExitResultV1(request.InventoryMovementId, LineageLabel, request.QuantityKg, false,
+                request.SupplierReturnAmountTry is not null && request.UnitCostTryPerKg.Length == 0 ? StagedAverage : request.UnitCostTryPerKg));
         }
     }
 }

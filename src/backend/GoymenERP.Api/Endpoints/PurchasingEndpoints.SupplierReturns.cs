@@ -93,7 +93,8 @@ public static partial class PurchasingEndpoints
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(SupplierReturnCreateConflictCodes())
             .ProducesErpUnprocessableEntity(PurchaseSupplierReturnCodesV1.ReplacementUnsupported, PurchaseSupplierReturnCodesV1.PieceCountRequired,
-                PurchaseSupplierReturnCodesV1.QuantityPriceUndecided, "validation_failed")
+                PurchaseSupplierReturnCodesV1.QuantityPriceUndecided, PurchaseSupplierReturnCodesV1.QuantityPieceQuantityMismatch,
+                PurchaseSupplierReturnCodesV1.QuantityDocumentDiscount, "validation_failed")
             .ProducesErpServiceUnavailable(SupplierReturnUnavailableCodes())
             .ProducesErpAuthenticatedProblems();
 
@@ -198,7 +199,6 @@ public static partial class PurchasingEndpoints
         PurchaseSupplierReturnCodesV1.LineageReceiptLimitExceeded,
         PurchaseSupplierReturnCodesV1.QuantityAverageAvailable,
         PurchaseSupplierReturnCodesV1.QuantityManualCostDifference,
-        PurchaseSupplierReturnCodesV1.QuantityPiecePriceDifference,
         .. InventorySupplierReturnExitCodesV1.Status409Codes.Order(StringComparer.Ordinal),
     ];
 

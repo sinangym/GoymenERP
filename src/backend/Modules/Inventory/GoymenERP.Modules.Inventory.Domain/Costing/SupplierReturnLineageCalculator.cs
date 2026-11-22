@@ -289,6 +289,21 @@ public static class SupplierReturnLineageCalculator
             quantityKg, exit.Round(AmountScale), invoice.Round(AmountScale), difference, difference.Round(AmountScale));
     }
 
+    /// <summary>
+    /// SAT-D456: the return difference is the kuruş-rounded stock exit amount (kg × the moving average) minus the kuruş-rounded
+    /// amount the document bills. Both are rounded once, half away from zero (SAT-D261); nothing else is rounded.
+    /// </summary>
+    public static (decimal StockExitTry, decimal DifferenceTry) QuantityReturnAmountDifference(
+        decimal quantityKg, decimal averageCostTryPerKg, decimal billedAmountTry)
+    {
+        if (quantityKg <= 0m || decimal.Round(quantityKg, KilogramScale) != quantityKg) throw new ArgumentOutOfRangeException(nameof(quantityKg));
+        if (averageCostTryPerKg <= 0m) throw new ArgumentOutOfRangeException(nameof(averageCostTryPerKg));
+        if (billedAmountTry <= 0m || decimal.Round(billedAmountTry, AmountScale) != billedAmountTry)
+            throw new ArgumentOutOfRangeException(nameof(billedAmountTry));
+        var exit = ExactCostRatio.Of(quantityKg).Multiply(averageCostTryPerKg).Round(AmountScale);
+        return (exit, exit - billedAmountTry);
+    }
+
     /// <summary>SAT-D306 (2), I05: the remaining pool's average after the exact return value leaves; null at zero stock.</summary>
     public static decimal? RemainingAverage(decimal poolKg, decimal poolAverageTryPerKg, decimal exitKg, ExactCostRatio exitValueTry)
     {

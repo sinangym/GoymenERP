@@ -2159,7 +2159,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (36116eed… -> 95e9ff7c…).
                         // Re-fingerprinted for AK-2b (KLN-D119): optional piece count on the exit line and its refusal mapping; tokens unchanged.
                         // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): gated source-label supplier return; value from guard_fingerprint.py (9d9a8a48… -> 7f5639e0…).
-                        "7f5639e001def30ac4a1cd9ab3e70763672252de34896f4ef2b7a221a54ffdbc",
+                        "082f05cbe1e601f8e7e5535328c0ffb46032da8ab8f932260c16b2d3820b2462",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         ["System.Data.Common"] = 1,
@@ -2256,7 +2256,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "PurchaseSupplierReturnHost.cs"] =
                     new(
                         // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): gated source-label supplier return; value from guard_fingerprint.py (a5539d29… -> b14781e0…).
-                        "b14781e057c00a68abba6adec33c6ee014139d6fd9b7e45aa479bc1fc2032c0d",
+                        "e9ec43754c46c8d2ccee61c03585d8ec75a77607694aedd4a3827250a2035eb4",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         ["System.Data.Common"] = 1,
@@ -2321,7 +2321,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "PurchasingService.SupplierReturn.cs"] =
                     new(
                         // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): gated source-label supplier return; value from guard_fingerprint.py (7931129c… -> b7c4cb9f…).
-                        "62db366db0edd2e23f0bdc70234fed1aab53378d60dbdd48bd879fef32d8fab9",
+                        "278b86ecaeb3135db633cf7325ce7a96a2949f66e5d26a6d9d2f234b8906a1db",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         [".FindAsync"] = 3

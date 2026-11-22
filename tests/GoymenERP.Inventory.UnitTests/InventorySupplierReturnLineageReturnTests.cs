@@ -169,6 +169,40 @@ public sealed class InventorySupplierReturnLineageReturnTests
         Assert.Equal(("260", "240", "500"), (Text(state.PendingKg), Text(state.InvoicedKg[InvoiceA]), Text(state.OpenKg)));
     }
 
+    [Theory]
+    [InlineData("80", "40.2187", "3217.5", "3217.5", "0")]       // 3217.496 → 3217.50: no difference although the unit values differ
+    [InlineData("80", "21.25", "1640", "1700", "60")]           // golden I11 shape: 1 700,00 − 1 640,00 = 60,00
+    [InlineData("80", "10.2531", "820", "820.25", "0.25")]
+    [InlineData("3", "0.335", "1.01", "1.01", "0")]             // 1.005 → half away from zero on the exit side too
+    public void SAT_D456_the_difference_is_the_kurus_rounded_exit_amount_minus_the_kurus_rounded_billed_amount(string kg, string average,
+        string billed, string exit, string difference)
+    {
+        static decimal Number(string text) => decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
+
+        var answer = SupplierReturnLineageCalculator.QuantityReturnAmountDifference(Number(kg), Number(average), Number(billed));
+
+        Assert.Equal((Number(exit), Number(difference)), answer);
+    }
+
+    [Fact]
+    public void SAT_D456_the_billed_amount_is_a_canonical_positive_kurus_text_and_is_null_on_every_earlier_request()
+    {
+        InventorySupplierReturnExitRequestV1 Request(string? amount) => new(Company, Return, Id(51), A1, Id(52), BlockState.Free, "80", null,
+            DateTimeOffset.UnixEpoch, SourceLabelId: Label, LineageMode: InventorySupplierReturnLineageModeV1.Quantity, SupplierReturnAmountTry: amount);
+
+        Assert.Null(InventorySupplierReturnExitContractV1.Validate(Request("3217.5"), Metadata(), Company).OriginalUnitCostTryPerKg);
+        foreach (var bad in new[] { "0", "3217.50", "3217.505", "-1", "" })
+            Assert.Equal((400, InventorySupplierReturnExitCodesV1.InvalidCost), Refusal(() =>
+                InventorySupplierReturnExitContractV1.Validate(Request(bad), Metadata(), Company)));
+        Assert.DoesNotContain("SupplierReturnAmountTry", System.Text.Json.JsonSerializer.Serialize(Request(null)), StringComparison.Ordinal);
+    }
+
+    private static (int, string) Refusal(Action action)
+    {
+        var refused = Assert.Throws<InventorySupplierReturnExitException>(action);
+        return (refused.Status, refused.Code);
+    }
+
     [Fact]
     public void The_quantity_cost_unreadable_code_is_a_closed_409_and_the_exception_flag_is_part_of_the_request_shape()
     {
