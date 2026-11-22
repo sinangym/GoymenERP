@@ -13,12 +13,15 @@ public static class FinanceBankStatementPermissionsV1
 
     /// <summary>Read imports, their lines and the deterministic match suggestions.</summary>
     public const string Read = "finance.bank-statements.read";
+
+    /// <summary>FNS-D113: confirm a line-to-record match (the only way a match becomes final) and reverse a confirmed one.</summary>
+    public const string Match = "finance.bank-statements.match";
 }
 
 /// <summary>
-/// FNS-D52: the file kinds a statement may be. <see cref="Xlsx"/> is accepted by the document vault but the importer
-/// refuses it (<see cref="FinanceBankStatementCodesV1.FormatNotSupported"/>) until the column source of a workbook is decided
-/// (NEEDS-SINAN WP12-S2): the Settings mapping is a CSV mapping and no source says it also governs a workbook.
+/// FNS-D52: the file kinds a statement may be. The column source of a workbook is not decided (NEEDS-SINAN WP12-S2), so
+/// <see cref="Xlsx"/> is read only through a closed list of known header names (FinanceBankStatementXlsxHeadersV1); any
+/// other header refuses the file.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<FinanceBankStatementFormatV1>))]
 public enum FinanceBankStatementFormatV1
@@ -47,38 +50,60 @@ public enum FinanceBankStatementDirectionV1
 }
 
 /// <summary>
-/// FNS-D13: a statement line never creates a movement. A suggestion only names an EXISTING Finance record; recording a
-/// missing movement is done by a person with Finance's own commands.
+/// FNS-D13 / FNS-D113: a statement line never creates a movement. A suggestion only names an EXISTING Finance record whose
+/// amount is exactly the line's (no tolerance); a match becomes final only when a person confirms it.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<FinanceBankStatementMatchStatusV1>))]
 public enum FinanceBankStatementMatchStatusV1
 {
-    /// <summary>Exactly one recorded movement has the same direction, exact amount, date and verified counterparty.</summary>
+    /// <summary>Exactly one unmatched recorded movement has the same direction, exact amount and date; a person must confirm it.</summary>
     Suggested = 1,
 
     /// <summary>A person decides ("elle"); for FNS-D13 an unmatched line is a "elle kaydedilmemiş hareket" warning.</summary>
     Manual = 2,
+
+    /// <summary>A person confirmed the match (FNS-D113); it stays until a reversal record is written.</summary>
+    Confirmed = 3,
 }
 
-/// <summary>Why a line is <see cref="FinanceBankStatementMatchStatusV1.Manual"/>; the first reason that applies, in this order.</summary>
+/// <summary>Why a line is <see cref="FinanceBankStatementMatchStatusV1.Manual"/>.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<FinanceBankStatementManualReasonV1>))]
 public enum FinanceBankStatementManualReasonV1
 {
-    /// <summary>No recorded movement of this bank account has the same direction, exact amount and date.</summary>
+    /// <summary>No unmatched recorded movement of this bank account has the same direction, exact amount and date.</summary>
     NoExactCandidate = 1,
 
-    /// <summary>The line names no single counterparty IBAN, so the counterparty cannot be compared.</summary>
-    NoCounterpartyIdentity = 2,
-
-    /// <summary>
-    /// Candidates exist but none has a counterparty identity to compare with: a party receipt/payment (no party IBAN
-    /// source exists, NEEDS-SINAN WP12-S1), an expense payment, or a transfer leg of a cash account or of a bank account
-    /// without an approved IBAN.
-    /// </summary>
-    CounterpartyNotComparable = 3,
+    /// <summary>Exact candidates exist, but the line's IBAN proves another counterparty for every one of them.</summary>
+    CounterpartyMismatch = 2,
 
     /// <summary>More than one movement passes, or another line of the same import points at the same movement.</summary>
-    Ambiguous = 4,
+    Ambiguous = 3,
+}
+
+/// <summary>
+/// What the line's counterparty IBAN says about a candidate (FNS-D114): the cari's IBAN list (Counterparty owner) for a
+/// party record, the approved IBAN of the other own bank account for a transfer. An IBAN is never learned from a statement.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<FinanceBankStatementCounterpartyCheckV1>))]
+public enum FinanceBankStatementCounterpartyCheckV1
+{
+    /// <summary>The line's IBAN belongs to the record's counterparty.</summary>
+    Verified = 1,
+
+    /// <summary>No comparison was possible (no single IBAN on the line, no IBAN list source, or a record without a party).</summary>
+    NotAvailable = 2,
+
+    /// <summary>The line's IBAN belongs to a different counterparty.</summary>
+    Mismatch = 3,
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter<FinanceBankStatementMatchStateV1>))]
+public enum FinanceBankStatementMatchStateV1
+{
+    Confirmed = 1,
+
+    /// <summary>A reversal record undid the confirmation; the match row itself is kept (no deletion).</summary>
+    Reversed = 2,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<FinanceBankStatementCandidateKindV1>))]
@@ -113,6 +138,12 @@ public static class FinanceBankStatementCodesV1
     public const string FileAlreadyImported = "finance_bank_statement_file_already_imported";
     public const string FileInvalid = "finance_bank_statement_file_invalid";
     public const string NoLines = "finance_bank_statement_no_lines";
+    public const string LineNotFound = "finance_bank_statement_line_not_found";
+    public const string MatchNotFound = "finance_bank_statement_match_not_found";
+    public const string RecordNotEligible = "finance_bank_statement_record_not_eligible";
+    public const string CounterpartyMismatch = "finance_bank_statement_counterparty_mismatch";
+    public const string AlreadyMatched = "finance_bank_statement_already_matched";
+    public const string ReasonRequired = "finance_bank_statement_reason_required";
     public const string Unavailable = "finance_bank_statement_unavailable";
 }
 
@@ -124,12 +155,31 @@ public static class FinanceBankStatementLimitsV1
     public const int DescriptionMaximumLength = 1000;
     public const int ReferenceMaximumLength = 128;
     public const int MaximumListedImports = 100;
+    public const int ReasonMaximumLength = 1000;
+}
+
+/// <summary>
+/// NEEDS-SINAN WP12-S2: no workbook column source is decided, so an XLSX statement is read only when its header row uses
+/// these known names (compared trimmed, case-insensitive in the Turkish culture). Amounts come only from the explicit
+/// inflow/outflow pair ("Alacak"/"Giriş" = into the account, "Borç"/"Çıkış" = out of it), never from one signed column whose
+/// sign meaning is not decided. Any other header refuses the file.
+/// </summary>
+public static class FinanceBankStatementXlsxHeadersV1
+{
+    public static IReadOnlyList<string> TransactionDate { get; } = ["Tarih", "İşlem Tarihi"];
+    public static IReadOnlyList<string> ValueDate { get; } = ["Valör", "Valör Tarihi"];
+    public static IReadOnlyList<string> Description { get; } = ["Açıklama"];
+    public static IReadOnlyList<string> Inflow { get; } = ["Alacak", "Giriş"];
+    public static IReadOnlyList<string> Outflow { get; } = ["Borç", "Çıkış"];
+    public static IReadOnlyList<string> Balance { get; } = ["Bakiye"];
+    public static IReadOnlyList<string> Reference { get; } = ["Referans", "Dekont No"];
+    public static IReadOnlyList<string> Currency { get; } = ["Para Birimi", "Döviz"];
 }
 
 /// <summary>
 /// Reserves an import for an approved Finance bank account. The client chooses <c>ImportId</c> (the vault upload names it
 /// as the owner record). <c>BankKey</c> is the Settings CSV mapping key, required for <see cref="FinanceBankStatementFormatV1.Csv"/>
-/// and absent otherwise.
+/// and absent for MT940 and XLSX.
 /// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ReserveFinanceBankStatementImportV1(
@@ -171,12 +221,62 @@ public sealed record FinanceBankStatementImportViewV1(
 public sealed record FinanceBankStatementCandidateV1(
     FinanceBankStatementCandidateKindV1 Kind,
     Guid RecordId,
-    DateOnly OccurredOn);
+    DateOnly OccurredOn,
+    FinanceBankStatementCounterpartyCheckV1 CounterpartyCheck);
 
+/// <summary>
+/// <c>Candidate</c> is set for Suggested and Confirmed; <c>Match</c> only for Confirmed (the active confirmation).
+/// </summary>
 public sealed record FinanceBankStatementSuggestionV1(
     FinanceBankStatementMatchStatusV1 Status,
     FinanceBankStatementManualReasonV1? ManualReason,
-    FinanceBankStatementCandidateV1? Candidate);
+    FinanceBankStatementCandidateV1? Candidate,
+    FinanceBankStatementMatchViewV1? Match = null);
+
+/// <summary>
+/// FNS-D113: a person's confirmation that the statement line IS the named recorded movement. Immutable; undone only by a
+/// reversal record (<c>Reversal*</c>), never deleted.
+/// </summary>
+public sealed record FinanceBankStatementMatchViewV1(
+    Guid Id,
+    Guid CompanyId,
+    Guid ImportId,
+    Guid LineId,
+    FinanceBankStatementCandidateKindV1 Kind,
+    Guid RecordId,
+    string Version,
+    FinanceBankStatementMatchStateV1 State,
+    FinanceBankStatementCounterpartyCheckV1 CounterpartyCheck,
+    string ConfirmedBy,
+    DateTimeOffset ConfirmedAtUtc,
+    Guid? ReversalId,
+    string? ReversedBy,
+    DateTimeOffset? ReversedAtUtc,
+    string? ReversalReason);
+
+/// <summary>
+/// Confirms one line of the import as one recorded movement of the same bank account with the same direction and exactly
+/// the same amount (FNS-D113). The client chooses <c>MatchId</c>. Neither the line nor the record may hold another active match.
+/// </summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record ConfirmFinanceBankStatementMatchV1(
+    [property: JsonRequired] Guid MatchId,
+    [property: JsonRequired] Guid LineId,
+    [property: JsonRequired] FinanceBankStatementCandidateKindV1 Kind,
+    [property: JsonRequired] Guid RecordId);
+
+/// <summary>Reverses a confirmed match with a reversal record; <c>ExpectedVersion</c> is the match's version.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record ReverseFinanceBankStatementMatchV1(
+    [property: JsonRequired] string ExpectedVersion,
+    [property: JsonRequired] Guid ReversalId,
+    [property: JsonRequired] string Reason);
+
+public sealed record FinanceBankStatementMatchCommandResultV1(
+    CommandOutcome Outcome,
+    FinanceBankStatementMatchViewV1? Resource,
+    string? Code,
+    bool Replayed = false);
 
 /// <summary>
 /// One stored statement line. <c>Amount</c> and <c>Balance</c> are exact non-negative decimal text (<c>.</c> separator) as
@@ -242,6 +342,45 @@ public interface IFinanceBankStatementImportServiceV1
     /// owner-link question). Never discloses another company's import.
     /// </summary>
     Task<ReadOutcome> CheckDocumentOwnerAsync(FinanceContext context, Guid importId, CancellationToken cancellationToken);
+
+    Task<FinanceBankStatementMatchCommandResultV1> ConfirmMatchAsync(FinanceContext context, CommandMetadata metadata,
+        Guid importId, ConfirmFinanceBankStatementMatchV1 request, CancellationToken cancellationToken);
+
+    Task<FinanceBankStatementMatchCommandResultV1> ReverseMatchAsync(FinanceContext context, CommandMetadata metadata,
+        Guid matchId, ReverseFinanceBankStatementMatchV1 request, CancellationToken cancellationToken);
+}
+
+public enum FinancePartyIbanOutcomeV1 { Unavailable, Available }
+
+/// <summary>
+/// FNS-D114: for each asked IBAN, the cari (party) ids whose card lists that IBAN in the context company. An IBAN missing
+/// from the map belongs to no card. <see cref="FinancePartyIbanOutcomeV1.Unavailable"/> means no IBAN list source exists
+/// or it cannot be read: party matching by IBAN is then off (never a guess).
+/// </summary>
+public sealed record FinancePartyIbanAnswerV1(
+    FinancePartyIbanOutcomeV1 Outcome,
+    IReadOnlyDictionary<string, IReadOnlyList<Guid>> PartiesByIban);
+
+/// <summary>
+/// FNS-D114: Finance asks the Counterparty owner which cari cards list a given IBAN. The owner implements it from the cari
+/// card's IBAN list; Finance never stores or learns an IBAN from a statement.
+/// </summary>
+public interface IFinancePartyIbanReadPortV1
+{
+    Task<FinancePartyIbanAnswerV1> ReadAsync(FinanceContext context, IReadOnlyCollection<string> ibans,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// The default while the cari card carries no IBAN list (Counterparty has none on this tree): always Unavailable, so party
+/// IBAN matching stays off (FNS-D114 "port yoksa kapalı").
+/// </summary>
+public sealed class UnavailableFinancePartyIbanReadPort : IFinancePartyIbanReadPortV1
+{
+    public Task<FinancePartyIbanAnswerV1> ReadAsync(FinanceContext context, IReadOnlyCollection<string> ibans,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(new FinancePartyIbanAnswerV1(FinancePartyIbanOutcomeV1.Unavailable,
+            new Dictionary<string, IReadOnlyList<Guid>>()));
 }
 
 public enum FinanceBankStatementDocumentOutcomeV1 { Unavailable, Denied, NotFound, Found }

@@ -95,6 +95,42 @@ public sealed class FinanceBankStatementHttpAcceptanceTests(GoymenErpApiFactory 
         Assert.Equal(Import, owner.ParsedImport);
     }
 
+    [Fact]
+    public async Task Confirm_and_reverse_routes_reach_the_owner_and_map_not_found_conflict_and_rule_refusals()
+    {
+        var owner = new Capture();
+        using var host = Host(owner);
+        using var client = Client(host, TestCompanyIds.CompanyA);
+        var confirm = new ConfirmFinanceBankStatementMatchV1(Guid.Parse("f3851000-0000-4000-8000-000000000011"),
+            Guid.Parse("f3851000-0000-4000-8000-000000000012"), FinanceBankStatementCandidateKindV1.Receipt,
+            Guid.Parse("f3851000-0000-4000-8000-000000000013"));
+        var reverse = new ReverseFinanceBankStatementMatchV1("1", Guid.Parse("f3851000-0000-4000-8000-000000000014"), "SENTETIK");
+        var matchId = Guid.Parse("f3851000-0000-4000-8000-000000000015");
+        using (var ok = await Post(client, $"{Path}/{Import:D}/matches", Json(confirm), "SENTETIK-confirm"))
+            Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+        Assert.Equal((confirm, Import), (owner.Confirm, owner.ParsedImport));
+        using (var ok = await Post(client, $"/api/v1/finance/bank-statement-matches/{matchId:D}/reverse", Json(reverse), "SENTETIK-rev"))
+            Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+        Assert.Equal((matchId, reverse), owner.Reverse);
+
+        foreach (var (outcome, code, expected) in new (CommandOutcome, string?, HttpStatusCode)[]
+                 {
+                     (CommandOutcome.ValidationFailed, FinanceBankStatementCodesV1.MatchNotFound, HttpStatusCode.NotFound),
+                     (CommandOutcome.ValidationFailed, FinanceBankStatementCodesV1.LineNotFound, HttpStatusCode.NotFound),
+                     (CommandOutcome.ValidationFailed, FinanceBankStatementCodesV1.RecordNotEligible, HttpStatusCode.UnprocessableEntity),
+                     (CommandOutcome.VersionConflict, FinanceBankStatementCodesV1.AlreadyMatched, HttpStatusCode.Conflict),
+                     (CommandOutcome.Denied, null, HttpStatusCode.Forbidden),
+                 })
+        {
+            owner.MatchResult = new FinanceBankStatementMatchCommandResultV1(outcome, null, code);
+            using var reply = await Post(client, $"/api/v1/finance/bank-statement-matches/{matchId:D}/reverse", Json(reverse), "SENTETIK-r");
+            Assert.Equal(expected, reply.StatusCode);
+        }
+
+        using var spoof = await Post(client, $"{Path}/{Import:D}/matches", Json(confirm)[..^1] + ",\"amount\":\"1\"}", "SENTETIK-s");
+        Assert.Equal(HttpStatusCode.BadRequest, spoof.StatusCode);
+    }
+
     private static string Json<T>(T value) => JsonSerializer.Serialize(value, FinanceJson.CreateOptions());
 
     private WebApplicationFactory<Program> Host(Capture owner) => factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
@@ -164,6 +200,26 @@ public sealed class FinanceBankStatementHttpAcceptanceTests(GoymenErpApiFactory 
         {
             Calls++;
             return Task.FromResult(ReadOutcome.NotFound);
+        }
+
+        public FinanceBankStatementMatchCommandResultV1 MatchResult { get; set; } = new(CommandOutcome.Succeeded, null, null);
+        public ConfirmFinanceBankStatementMatchV1? Confirm { get; private set; }
+        public (Guid MatchId, ReverseFinanceBankStatementMatchV1 Request)? Reverse { get; private set; }
+
+        public Task<FinanceBankStatementMatchCommandResultV1> ConfirmMatchAsync(FinanceContext context, CommandMetadata metadata,
+            Guid importId, ConfirmFinanceBankStatementMatchV1 request, CancellationToken cancellationToken)
+        {
+            Calls++;
+            (Context, Key, Confirm, ParsedImport) = (context, metadata.IdempotencyKey, request, importId);
+            return Task.FromResult(MatchResult);
+        }
+
+        public Task<FinanceBankStatementMatchCommandResultV1> ReverseMatchAsync(FinanceContext context, CommandMetadata metadata,
+            Guid matchId, ReverseFinanceBankStatementMatchV1 request, CancellationToken cancellationToken)
+        {
+            Calls++;
+            (Context, Key, Reverse) = (context, metadata.IdempotencyKey, (matchId, request));
+            return Task.FromResult(MatchResult);
         }
     }
 }
