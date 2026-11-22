@@ -132,6 +132,22 @@ public sealed class WorkAssistantMemoryPersistenceTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => database.SaveChangesAsync());
         database.ChangeTracker.Clear();
 
+        // A last-use touch only moves the passive-after date forward (AI-D38); moving it back is refused.
+        var back = Row(1, 1);
+        back.ExpiresAtUtc = new DateTimeOffset(2027, 11, 22, 0, 0, 0, TimeSpan.Zero);
+        database.Attach(back);
+        back.ExpiresAtUtc = back.ExpiresAtUtc.AddDays(-1);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => database.SaveChangesAsync());
+        database.ChangeTracker.Clear();
+
+        // A touch cannot smuggle a text change past the version step.
+        var smuggle = Row(1, 1);
+        database.Attach(smuggle);
+        smuggle.ExpiresAtUtc = smuggle.ExpiresAtUtc.AddDays(1);
+        smuggle.Body = "gizlice degisti";
+        await Assert.ThrowsAsync<InvalidOperationException>(() => database.SaveChangesAsync());
+        database.ChangeTracker.Clear();
+
         // A closure moves by exactly one version step.
         var closure = new WorkAssistantMemoryUserClosureRow
         {

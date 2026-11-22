@@ -14,13 +14,16 @@ namespace GoymenERP.Modules.Work.Domain;
 /// <para>
 /// The owner sees, edits and deletes their own entries. An overseer holding <c>work.assistant-memory.oversee</c> (a separate
 /// permission that no role holds; a grant is a human gate) may view a person's entries and close an entry or the person's
-/// whole memory; every overseer view is written as an audit event and as a Work view row the owner can list.
+/// whole memory; every overseer view and closure is written to the audit trail (and each view as a Work evidence row) and is
+/// NOT notified to the person (AI-D39): the owner gets no message, no "who viewed" list and no closure reason.
 /// </para>
 /// <para>
-/// Writing is closed unless ALL of these hold: the pilot flag is on (default off), a retention period is configured (AI-D30
-/// leaves retention to a separate decision: no value means memory is closed, NEEDS-SINAN), a per-person entry limit is
-/// configured (AI-D30: "parametre"), and an approved employee information-notice version is configured (the notice text is a
-/// placeholder until the lawyer-confirmed text is approved by a human). Seeing and deleting one's own entries is never closed.
+/// Retention (AI-D38): an entry becomes passive one year after its last use (the owner's last write or the assistant's last
+/// read of it); passive entries are never handed to the assistant and are never physically destroyed here (destruction is a
+/// separate policy). Writing is closed unless ALL of these hold: the pilot flag is on (default off), a per-person entry limit
+/// is configured (AI-D30 "parametre"; value undecided, NEEDS-SINAN) and an approved employee information-notice version is
+/// configured (the notice text is a placeholder until the lawyer-confirmed text is approved by a human; NEEDS-SINAN). Seeing
+/// and deleting one's own entries is never closed.
 /// </para>
 /// </summary>
 public enum WorkAssistantMemoryKindV1
@@ -67,13 +70,14 @@ public static class WorkAssistantMemoryKindsV1
 public static class WorkAssistantMemoryStatesV1
 {
     public const string Active = "active";
-    public const string Expired = "expired";
+    /// <summary>AI-D38: one year without use. Kept, never handed to the assistant, never destroyed here.</summary>
+    public const string Passive = "passive";
     public const string Closed = "closed";
 
     /// <summary>A deleted entry is never shown to anyone, so it has no wire state.</summary>
     public static string Wire(WorkAssistantMemoryStateV1 state, DateTimeOffset expiresAtUtc, DateTimeOffset now) => state switch
     {
-        WorkAssistantMemoryStateV1.Active => expiresAtUtc <= now ? Expired : Active,
+        WorkAssistantMemoryStateV1.Active => expiresAtUtc <= now ? Passive : Active,
         WorkAssistantMemoryStateV1.ClosedByOverseer => Closed,
         _ => throw new InvalidOperationException("A deleted memory entry has no visible state."),
     };
@@ -87,7 +91,10 @@ public static class WorkAssistantMemoryLimitsV1
     public const int PageSize = 100;
 }
 
-/// <summary>Configuration section <c>Work:AssistantMemory</c>. Every value is unset by default, which keeps writing closed.</summary>
+/// <summary>
+/// Configuration section <c>Work:AssistantMemory</c>. The pilot flag, the entry limit and the notice version are unset by
+/// default, which keeps writing closed; the retention period carries the decided value (AI-D38).
+/// </summary>
 public sealed class WorkAssistantMemoryOptions
 {
     public const string SectionName = "Work:AssistantMemory";
@@ -95,8 +102,14 @@ public sealed class WorkAssistantMemoryOptions
     /// <summary>The pilot flag. Off by default; switching it on is a human gate.</summary>
     public bool PilotEnabled { get; set; }
 
-    /// <summary>How long an entry stays usable after its last write. No decided value (AI-D30): unset = memory closed.</summary>
-    public int? RetentionDays { get; set; }
+    /// <summary>AI-D38: the decided passive-after-last-use period (one year).</summary>
+    public const int DecidedRetentionDays = 365;
+
+    /// <summary>
+    /// Days without use after which an entry becomes passive. Defaults to the decided <see cref="DecidedRetentionDays"/>
+    /// (AI-D38); a non-positive value is a misconfiguration and keeps memory closed instead of inventing another period.
+    /// </summary>
+    public int? RetentionDays { get; set; } = DecidedRetentionDays;
 
     /// <summary>Active entries one person may keep (AI-D30 "parametre"). Unset = memory closed.</summary>
     public int? MaxEntriesPerUser { get; set; }
@@ -109,7 +122,7 @@ public sealed class WorkAssistantMemoryOptions
 public static class WorkAssistantMemoryDisabledReasonsV1
 {
     public const string PilotOff = "pilot_off";
-    public const string RetentionUndecided = "retention_undecided";
+    public const string RetentionInvalid = "retention_invalid";
     public const string EntryLimitUndecided = "entry_limit_undecided";
     public const string InformationNoticePending = "information_notice_pending";
     public const string ClosedForUser = "closed_for_user";
@@ -141,6 +154,10 @@ public sealed record ReviseWorkAssistantMemoryEntryRequestV1(string ExpectedVers
 
 public sealed record DeleteWorkAssistantMemoryEntryRequestV1(string ExpectedVersion);
 
+/// <summary>
+/// An entry as shown. <paramref name="CloseReason"/> is shown to the overseer only; the owner's own view carries null
+/// (AI-D39: an overseer's closure is not notified to the person, it is in the audit trail).
+/// </summary>
 public sealed record WorkAssistantMemoryEntryViewV1(Guid Id, Guid CompanyId, Guid OwnerUserId, string Kind, string Body, string State,
     string Version, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, DateTimeOffset ExpiresAtUtc, DateTimeOffset? ClosedAtUtc,
     string? CloseReason);
@@ -158,12 +175,6 @@ public sealed record WorkAssistantMemoryDeletionResponseV1(WorkAssistantMemoryDe
 
 public sealed record WorkAssistantMemoryStatusV1(Guid CompanyId, Guid UserId, bool Writable, IReadOnlyList<string> DisabledReasons,
     bool PilotEnabled, int? RetentionDays, int? MaxEntriesPerUser, string? InformationNoticeVersion, int ActiveEntryCount);
-
-/// <summary>One overseer view of the caller's own memory (transparency: the owner sees who looked and when).</summary>
-public sealed record WorkAssistantMemoryOversightViewV1(Guid Id, Guid ViewerUserId, DateTimeOffset ViewedAtUtc, int EntryCount);
-
-public sealed record WorkAssistantMemoryOversightViewPageV1(Guid CompanyId, Guid SubjectUserId,
-    IReadOnlyList<WorkAssistantMemoryOversightViewV1> Items, bool HasMore);
 
 // ---- Oversight ------------------------------------------------------------------------------------------------------------
 
@@ -196,8 +207,6 @@ public interface IWorkAssistantMemoryServiceV1
 
     Task<WorkAssistantMemoryDeletionResponseV1> DeleteEntryAsync(Guid entryId, DeleteWorkAssistantMemoryEntryRequestV1 request,
         WorkCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
-
-    Task<WorkAssistantMemoryOversightViewPageV1> ListViewsOfMyMemoryAsync(CancellationToken cancellationToken = default);
 
     Task<WorkAssistantMemoryOversightPageV1> ViewUserMemoryAsync(Guid subjectUserId, CancellationToken cancellationToken = default);
 

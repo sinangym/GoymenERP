@@ -8,16 +8,15 @@ export const ASSISTANT_MEMORY_TEXT = {
   // YER TUTUCU: çalışan bilgilendirme metni hukukçu teyidiyle hazırlanacak ve insan onayıyla yayımlanacak (AI-D30).
   noticeHeading: 'Çalışan bilgilendirmesi',
   noticePlaceholder: '[YER TUTUCU] Bilgilendirme metni hukukçu teyidi ve onay bekliyor. Onaylanana kadar hafızaya yeni kayıt eklenemez.',
-  noticeVersion: 'Onaylı bilgilendirme sürümü', oversightNotice: 'Yetkili yönetici hafıza kayıtlarınızı görebilir ve kapatabilir; her görüntüleme kayda geçer ve aşağıda listelenir.',
+  noticeVersion: 'Onaylı bilgilendirme sürümü',
   writableYes: 'Hafızaya kayıt eklenebilir.', writableNo: 'Şu an hafızaya kayıt eklenemez:',
-  includeInactive: 'Süresi dolan ve kapatılan kayıtları da göster',
+  includeInactive: 'Pasif ve kapatılan kayıtları da göster',
+  retentionNote: 'Bir yıl kullanılmayan kayıt pasife alınır ve asistana verilmez; silinmez.',
   newHeading: 'Yeni kayıt', kindLabel: 'Tür', bodyLabel: 'Metin', bodyHint: 'Tek satır, en çok 500 karakter.',
   save: 'Kaydet', saving: 'Kaydediliyor…', edit: 'Düzelt', saveEdit: 'Düzeltmeyi kaydet', cancel: 'Vazgeç', remove: 'Sil', confirmRemove: 'Silmeyi onayla',
   colKind: 'Tür', colBody: 'Metin', colState: 'Durum', colExpires: 'Geçerlilik sonu', colActions: 'İşlem',
   saved: 'Kayıt eklendi.', revised: 'Kayıt düzeltildi.', removed: 'Kayıt silindi.', replayed: 'İşlem daha önce yapılmıştı; aynı sonuç gösteriliyor.',
-  more: 'Daha fazla kayıt var.', closedBecause: 'Kapatma gerekçesi',
-  viewsHeading: 'Hafızamı kim görüntüledi', viewsSubject: 'görüntüleme kayıtları', viewsEmpty: 'Hafızanız henüz bir yönetici tarafından görüntülenmedi.',
-  viewer: 'Görüntüleyen', viewedAt: 'Zaman', viewedCount: 'Görülen kayıt sayısı',
+  more: 'Daha fazla kayıt var.',
   // Refusals by stable code (never by server text).
   disabled: 'Hafıza şu an kapalı; kayıt eklenemez veya düzeltilemez.', closedForUser: 'Hafızanız yönetici tarafından kapatıldı.',
   limitReached: 'Kayıt sınırına ulaştınız; önce bir kaydı silin.', notActive: 'Bu kayıt artık etkin değil.',
@@ -27,10 +26,10 @@ export const ASSISTANT_MEMORY_TEXT = {
 } as const
 
 export const ASSISTANT_MEMORY_KIND_TEXT: Record<AssistantMemoryKind, string> = { preference: 'Tercih', note: 'Not' }
-export const ASSISTANT_MEMORY_STATE_TEXT: Record<AssistantMemoryState, string> = { active: 'Etkin', expired: 'Süresi doldu', closed: 'Yönetici kapattı' }
+export const ASSISTANT_MEMORY_STATE_TEXT: Record<AssistantMemoryState, string> = { active: 'Etkin', passive: 'Pasif (1 yıl kullanılmadı)', closed: 'Kapatıldı' }
 export const ASSISTANT_MEMORY_REASON_TEXT: Record<AssistantMemoryDisabledReason, string> = {
   pilot_off: 'Pilot kapalı.',
-  retention_undecided: 'Saklama süresi henüz karara bağlanmadı.',
+  retention_invalid: 'Saklama süresi ayarı geçersiz.',
   entry_limit_undecided: 'Kişi başı kayıt sınırı henüz belirlenmedi.',
   information_notice_pending: 'Çalışan bilgilendirme metni onay bekliyor.',
   closed_for_user: 'Hafızanız yönetici tarafından kapatıldı.',

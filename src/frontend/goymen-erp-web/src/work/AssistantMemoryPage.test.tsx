@@ -11,7 +11,7 @@ import { ASSISTANT_MEMORY_REASON_TEXT as REASON, ASSISTANT_MEMORY_TEXT as T } fr
 
 /** WP-C6 (AI-D30). SENTETIK data only. */
 const ACTOR = '99999999-9999-4999-8999-999999999999'
-const OVERSEER = 'eeeeeeee-0000-4000-8000-0000000000c3'
+const OTHER = 'eeeeeeee-0000-4000-8000-0000000000c3'
 const ENTRY = 'ffffffff-0000-4000-8000-0000000000c6'
 const entry = (overrides: Record<string, unknown> = {}) => ({
   id: ENTRY, companyId: COMPANY_A, ownerUserId: ACTOR, kind: 'preference', body: 'SENTETIK kisa cevap', state: 'active', version: '1',
@@ -24,7 +24,6 @@ const status = (writable: boolean) => ({
   pilotEnabled: writable, retentionDays: writable ? 30 : null, maxEntriesPerUser: writable ? 5 : null,
   informationNoticeVersion: writable ? 'SENTETIK-NOTICE-1' : null, activeEntryCount: 1,
 })
-const views = (items: unknown[] = []) => ({ companyId: COMPANY_A, subjectUserId: ACTOR, items, hasMore: false })
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); sessionStorage.clear() })
 
@@ -44,7 +43,6 @@ describe('WP-C6 assistant memory page', () => {
       }
       if (url.includes('/assistant-memory/mine/status')) return json(status(false))
       if (url.includes('/assistant-memory/mine/entries?')) return json(page(deleted ? [] : [entry()]))
-      if (url.includes('/assistant-memory/mine/oversight-views')) return json(views())
       return undefined
     } })
     mount()
@@ -73,7 +71,6 @@ describe('WP-C6 assistant memory page', () => {
       }
       if (url.includes('/assistant-memory/mine/status')) return json(status(true))
       if (url.includes('/assistant-memory/mine/entries?')) return json(page([]))
-      if (url.includes('/assistant-memory/mine/oversight-views')) return json(views())
       return undefined
     } })
     mount()
@@ -88,18 +85,14 @@ describe('WP-C6 assistant memory page', () => {
     expect(posts[0].headers['Idempotency-Key']).toBe(posts[1].headers['Idempotency-Key'])
   })
 
-  it('revises an entry with its expected version and lists who viewed the memory', async () => {
+  it('revises an entry with its expected version and never asks who viewed the memory (AI-D39)', async () => {
     const calls = installFetch({ capabilities: [], respond: (url, init) => {
       if (url.endsWith(`/entries/${ENTRY}/revision`) && init?.method === 'POST') return json(entry({ body: 'SENTETIK duzeltildi', version: '2' }))
       if (url.includes('/assistant-memory/mine/status')) return json(status(true))
       if (url.includes('/assistant-memory/mine/entries?')) return json(page([entry()]))
-      if (url.includes('/assistant-memory/mine/oversight-views')) {
-        return json(views([{ id: 'abababab-0000-4000-8000-000000000001', viewerUserId: OVERSEER, viewedAtUtc: '2026-11-22T11:00:00+00:00', entryCount: 1 }]))
-      }
       return undefined
     } })
     mount()
-    expect(await screen.findByText(new RegExp(OVERSEER))).toBeTruthy()
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: T.edit }))
     const input = screen.getAllByLabelText(T.bodyLabel).find((element) => (element as HTMLInputElement).value === 'SENTETIK kisa cevap')!
@@ -108,13 +101,13 @@ describe('WP-C6 assistant memory page', () => {
     await user.click(screen.getByRole('button', { name: T.saveEdit }))
     expect(await screen.findByText(T.revised)).toBeTruthy()
     expect(calls.find((call) => call.method === 'POST')!.body).toEqual({ expectedVersion: '1', kind: 'preference', body: 'SENTETIK duzeltildi' })
+    expect(calls.some((call) => call.url.includes('oversight'))).toBe(false)
   })
 
   it('treats another persons entry page as malformed and shows none of its text', async () => {
     installFetch({ capabilities: [], respond: (url) => {
       if (url.includes('/assistant-memory/mine/status')) return json(status(true))
-      if (url.includes('/assistant-memory/mine/entries?')) return json({ ...page([entry({ ownerUserId: OVERSEER })]), ownerUserId: OVERSEER })
-      if (url.includes('/assistant-memory/mine/oversight-views')) return json(views())
+      if (url.includes('/assistant-memory/mine/entries?')) return json({ ...page([entry({ ownerUserId: OTHER })]), ownerUserId: OTHER })
       return undefined
     } })
     mount()
