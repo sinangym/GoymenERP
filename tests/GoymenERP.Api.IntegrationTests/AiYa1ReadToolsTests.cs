@@ -126,14 +126,14 @@ public sealed class AiYa1ReadToolsTests
     }
 
     [Fact]
-    public void The_tool_catalog_contract_matches_both_descriptors()
+    public void The_tool_catalog_contract_matches_every_registered_read_tool_descriptor()
     {
         using var catalog = JsonDocument.Parse(File.ReadAllText(Path.Combine(FindRepositoryRoot(), CatalogPath)));
         var descriptors = new[]
         {
             DecisionTool().Descriptor,
             new LogisticsPendingShipmentsAiTool(new ListOnlyInstructionService(), new FixedTime(Now)).Descriptor,
-        };
+        }.Concat(AiWpa3bReadToolsTests.Descriptors()).ToArray();
         var entries = catalog.RootElement.GetProperty("tools").EnumerateArray().ToArray();
         Assert.Equal(descriptors.Length, entries.Length);
         foreach (var descriptor in descriptors)
@@ -148,6 +148,11 @@ public sealed class AiYa1ReadToolsTests
             Assert.Equal(descriptor.FieldAllowlist,
                 entry.GetProperty("fieldAllowlist").EnumerateArray().Select(value => value.GetString()!).Order(StringComparer.Ordinal));
             Assert.Null(descriptor.OwnerCommandName);
+            if (entry.TryGetProperty("arguments", out var arguments))
+            {
+                Assert.Equal(descriptor.FieldAllowlist,
+                    arguments.EnumerateObject().Select(argument => argument.Name).Order(StringComparer.Ordinal));
+            }
         }
     }
 
