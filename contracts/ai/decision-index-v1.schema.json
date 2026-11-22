@@ -1,0 +1,481 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "goymen.ai.decision-index.v1",
+  "title": "Göymen ERP yapay zekâ karar dizini v1",
+  "description": "tools/generate_ai_decision_index.py çıktısı; yalnız docs/decisions kaynaklarından deterministik üretilir (AI-D12, DALGA_PLANI_v2 A.4 (1)).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "schema",
+    "generator",
+    "source_root",
+    "source_set_sha256",
+    "sources",
+    "personal_name_terms_basis",
+    "personal_name_terms",
+    "statistics",
+    "records",
+    "conflicts"
+  ],
+  "properties": {
+    "format": {
+      "const": "goymen.ai.decision-index.v1"
+    },
+    "schema": {
+      "const": "contracts/ai/decision-index-v1.schema.json"
+    },
+    "generator": {
+      "const": "tools/generate_ai_decision_index.py"
+    },
+    "source_root": {
+      "const": "docs/decisions"
+    },
+    "source_set_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "kind",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^docs/decisions/"
+          },
+          "kind": {
+            "enum": [
+              "sicil",
+              "acik_kararlar",
+              "sinan_kararlari",
+              "formul_golden"
+            ]
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "personal_name_terms_basis": {
+      "type": "string"
+    },
+    "personal_name_terms": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 2
+      }
+    },
+    "statistics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "record_count",
+        "conflict_count",
+        "ambiguous_relation_count",
+        "status_counts",
+        "kind_counts",
+        "personal_data_candidate_count"
+      ],
+      "properties": {
+        "record_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "conflict_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ambiguous_relation_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status_counts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "kind_counts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "personal_data_candidate_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "records": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "text",
+          "status",
+          "status_basis",
+          "effective_date",
+          "effective_date_basis",
+          "source",
+          "also_seen_in",
+          "scope",
+          "references",
+          "relations",
+          "superseded_by",
+          "data_class_candidate",
+          "personal_data_signals",
+          "has_conflict"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9-]*[A-Za-z0-9]$"
+          },
+          "kind": {
+            "enum": [
+              "sicil_karari",
+              "sinan_karari",
+              "varsayim",
+              "acik_karar",
+              "formul_golden"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "enum": [
+              "kilitli",
+              "gecici",
+              "acik",
+              "ertelendi",
+              "gecersiz",
+              "belirsiz"
+            ]
+          },
+          "status_basis": {
+            "type": "string",
+            "minLength": 1
+          },
+          "effective_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "effective_date_basis": {
+            "enum": [
+              "dosya_adi_tarihi",
+              "belirsiz"
+            ]
+          },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "line"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^docs/decisions/"
+              },
+              "line": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              }
+            }
+          },
+          "also_seen_in": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "line"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "pattern": "^docs/decisions/"
+                },
+                "line": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "scope": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "area",
+              "affected"
+            ],
+            "properties": {
+              "area": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "affected": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "references": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "relations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "target",
+                "confidence",
+                "extent",
+                "line",
+                "target_known"
+              ],
+              "properties": {
+                "type": {
+                  "enum": [
+                    "yerine_gecer",
+                    "gecersiz_kilar",
+                    "gunceller",
+                    "duzeltir",
+                    "daraltir",
+                    "genisletir",
+                    "belirsiz"
+                  ]
+                },
+                "target": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "confidence": {
+                  "enum": [
+                    "acik",
+                    "belirsiz"
+                  ]
+                },
+                "extent": {
+                  "enum": [
+                    "kismi",
+                    "tam_veya_belirsiz"
+                  ]
+                },
+                "line": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "target_known": {
+                  "type": "boolean"
+                },
+                "basis": {
+                  "enum": [
+                    "dosya_girisi"
+                  ]
+                },
+                "path": {
+                  "type": "string",
+                  "pattern": "^docs/decisions/"
+                }
+              }
+            }
+          },
+          "superseded_by": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "by",
+                "type",
+                "confidence",
+                "extent"
+              ],
+              "properties": {
+                "by": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "yerine_gecer",
+                    "gecersiz_kilar",
+                    "gunceller",
+                    "duzeltir",
+                    "daraltir",
+                    "genisletir",
+                    "belirsiz"
+                  ]
+                },
+                "confidence": {
+                  "enum": [
+                    "acik",
+                    "belirsiz"
+                  ]
+                },
+                "extent": {
+                  "enum": [
+                    "kismi",
+                    "tam_veya_belirsiz"
+                  ]
+                }
+              }
+            }
+          },
+          "data_class_candidate": {
+            "enum": [
+              "kisisel_veri_adayi",
+              "kisisel_veri_isareti_yok"
+            ]
+          },
+          "personal_data_signals": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "kisi_adi",
+                "e_posta",
+                "telefon",
+                "kimlik_numarasi",
+                "iban"
+              ]
+            }
+          },
+          "has_conflict": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "conflicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "kept",
+          "other",
+          "other_text_sha256"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "ayni_kimlik_farkli_metin",
+              "sicil_md_csv_farki",
+              "sicil_csv_satiri_yok",
+              "sicil_md_satiri_yok"
+            ]
+          },
+          "kept": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "line"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^docs/decisions/"
+              },
+              "line": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              }
+            }
+          },
+          "other": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "line"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^docs/decisions/"
+              },
+              "line": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              }
+            }
+          },
+          "other_text_sha256": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    }
+  }
+}

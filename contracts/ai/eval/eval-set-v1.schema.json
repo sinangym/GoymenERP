@@ -1,0 +1,227 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "goymen.ai.eval-set.v1",
+  "title": "Göymen ERP yapay zekâ değerlendirme seti v1",
+  "description": "Y-A1 iskeleti (DALGA_PLANI_v2 A.2, AI-D24, YOL-D21). Bütün maddeler SENTETİK; kişisel veri yok.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "schema",
+    "description",
+    "decision_index",
+    "tool_catalog",
+    "items"
+  ],
+  "properties": {
+    "format": {
+      "const": "goymen.ai.eval-set.v1"
+    },
+    "schema": {
+      "const": "contracts/ai/eval/eval-set-v1.schema.json"
+    },
+    "description": {
+      "type": "string"
+    },
+    "decision_index": {
+      "const": "contracts/ai/decision-index-v1.json"
+    },
+    "tool_catalog": {
+      "const": "contracts/ai/tool-catalog-v1.json"
+    },
+    "items": {
+      "type": "array",
+      "minItems": 150,
+      "maxItems": 250,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "category",
+          "question",
+          "expected_answer_summary",
+          "expected_source_ids",
+          "expected_behavior",
+          "data_marker"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^EV-[KS]-[0-9]{3}$"
+          },
+          "category": {
+            "enum": [
+              "bilgi_cikarma",
+              "guncellenen_karar",
+              "cevap_verememe",
+              "yetki_disi",
+              "islem_sorgusu"
+            ]
+          },
+          "question": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 400
+          },
+          "expected_answer_summary": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 600
+          },
+          "expected_source_ids": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9-]*[A-Za-z0-9]$"
+            }
+          },
+          "expected_behavior": {
+            "enum": [
+              "kaynakli_cevap",
+              "guncel_karari_soyle",
+              "cevap_verme_kaynak_yok",
+              "reddet",
+              "arac_sonucu"
+            ]
+          },
+          "data_marker": {
+            "const": "SENTETIK"
+          },
+          "expected_tool_call": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "toolId",
+              "version",
+              "arguments"
+            ],
+            "properties": {
+              "toolId": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+\\.v[1-9][0-9]*$"
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1
+              },
+              "arguments": {
+                "type": "object"
+              }
+            }
+          },
+          "fixture": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "permission",
+              "instructions"
+            ],
+            "properties": {
+              "permission": {
+                "enum": [
+                  "verildi",
+                  "yok",
+                  "servis_hatasi"
+                ]
+              },
+              "instructions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "status",
+                    "count",
+                    "company",
+                    "shipped"
+                  ],
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "Draft",
+                        "Issued",
+                        "Cancelled"
+                      ]
+                    },
+                    "count": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "company": {
+                      "enum": [
+                        "ayni",
+                        "baska"
+                      ]
+                    },
+                    "shipped": {
+                      "enum": [
+                        "yok",
+                        "kismi",
+                        "tam",
+                        "bilinmiyor"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "expected_tool_result": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "outcome"
+            ],
+            "properties": {
+              "outcome": {
+                "enum": [
+                  "succeeded",
+                  "denied",
+                  "invalid",
+                  "unavailable"
+                ]
+              },
+              "pendingCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "draftCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "issuedCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "listedCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "complete": {
+                "type": "boolean"
+              },
+              "fullyShippedExcludedCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

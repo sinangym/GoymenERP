@@ -1,0 +1,75 @@
+{
+ "format": "goymen.ai.tool-catalog.v1",
+ "description": "Y-A1 okuma araçları. Kayıt, çalışma zamanının varsayılan-ret kataloğuna (AiToolCatalog) aday olmaktır; bir aracın çağrılabilmesi ayrıca yapılandırma izin listesi (Ai:AllowedTools), Ai:Enabled=true, ai.panel.use ve aracın kendi izinlerinin şirket çapında verilmesini ister. Hiçbir izin bir role verilmez.",
+ "tools": [
+  {
+   "toolId": "decisions.lookup.v1",
+   "version": "1",
+   "ownerModule": "Ai",
+   "risk": "Read",
+   "dataClass": "Internal",
+   "requiredPermissions": [
+    "ai.decisions.read"
+   ],
+   "fieldAllowlist": [
+    "decisionId",
+    "keyword",
+    "limit"
+   ],
+   "arguments": {
+    "decisionId": {
+     "type": "string",
+     "pattern": "^[A-Z][A-Z0-9-]{1,79}$",
+     "note": "Tam karar kimliği; keyword ile birlikte verilemez."
+    },
+    "keyword": {
+     "type": "string",
+     "minLength": 2,
+     "maxLength": 80,
+     "note": "Başlık, metin ve kimlikte büyük/küçük harf duyarsız alt dize."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 10,
+     "default": 5
+    }
+   },
+   "source": "contracts/ai/decision-index-v1.json",
+   "personalData": "kisisel_veri_adayi kayıtlarda personal_name_terms ile e-posta/telefon/kimlik/IBAN kalıpları [KİŞİ]/[GİZLİ] ile maskelenir (AI-D34 d)."
+  },
+  {
+   "toolId": "logistics.pending-shipments.v1",
+   "version": "1",
+   "ownerModule": "Logistics",
+   "risk": "Read",
+   "dataClass": "Internal",
+   "requiredPermissions": [
+    "logistics.loading-instructions.read"
+   ],
+   "fieldAllowlist": [
+    "limit",
+    "status"
+   ],
+   "arguments": {
+    "status": {
+     "type": "string",
+     "enum": [
+      "Draft",
+      "Issued"
+     ],
+     "note": "Verilmezse ikisi birden."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 50,
+     "default": 20
+    }
+   },
+   "source": "ILogisticsPendingShipmentReadV1.GetPendingShipmentPageAsync (Logistics sahibi, sayfalı, şirket filtreli, salt okunur; sevk durumu talimat satırlarından)",
+   "pendingDefinition": "AI-D35 (ASSUMPTION-AI-PENDING-SHIPMENT-1'i kapatır): bekleyen = taslak (Draft) veya yayımlanmış (Issued) olup kesin sevke dönmemiş yükleme talimatı. Kısmen sevk edilmiş sayılır; tamamen sevk edilmiş (her satırda sevk ≥ talimat) ve iptal edilmiş sayılmaz; irsaliye durumu sayılmaz. Sevk durumu bilinemezse sayılar verilmez, sonuç eksik işaretlenir.",
+   "scanLimit": 1000
+  }
+ ]
+}
