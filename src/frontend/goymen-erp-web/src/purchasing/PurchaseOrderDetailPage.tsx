@@ -1,3 +1,4 @@
+import { RecordNotesPanel } from '../work/RecordNotesPanel'
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
@@ -374,6 +375,8 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
     {isCurrentDetail && namespace !== null ? <div className={styles.section}><GoodsReceiptBatchPanel
       fenceKey={`${namespace}::${shell.routeEntryGeneration}`} companyId={companyId} orderId={order.id}
       orderVersion={order.version} /></div> : null}
+    {/* W1-C: notes on this order; the server answers readability, write permission and mentions. */}
+    {isCurrentDetail && namespace !== null ? <RecordNotesPanel recordType="purchase-order" recordId={order.id} /> : null}
     {/* B-19 (ALC-S5; SAT-D306, SAT-D393): the order's returns to supplier, read only and loaded only when opened. */}
     {isCurrentDetail && namespace !== null ? <div className={styles.section}><SupplierReturnPanel
       fenceKey={`${namespace}::${shell.routeEntryGeneration}`} companyId={companyId} orderId={order.id}

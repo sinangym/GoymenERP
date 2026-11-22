@@ -1,0 +1,34 @@
+export const COLLABORATION_TEXT = {
+  notesHeading: 'Notlar', notesSubject: 'notlar', notesEmpty: 'Bu kayıtta henüz not yok.',
+  includePassive: 'Pasif notları da göster', noteLabel: 'Yeni not', notePlaceholder: 'Notunuzu yazın; düzeltme için yeni not yazılır.',
+  addNote: 'Notu kaydet', saving: 'Kaydediliyor…', passive: 'Pasif', correctionOf: 'Düzeltme notu', author: 'Yazan', time: 'Zaman',
+  passivate: 'Pasifleştir', passivateReason: 'Pasifleştirme gerekçesi', confirmPassivate: 'Pasifleştirmeyi kaydet', cancel: 'Vazgeç',
+  correct: 'Düzelt', correctingHint: 'Bu not, seçilen notun düzeltmesi olarak kaydedilir.',
+  mentionHeading: 'Bahsedilecek kişiler', mentionSearch: 'Kişi ara', mentionAdd: 'Ekle', mentionRemove: 'Çıkar', mentioned: 'Bahsedilenler',
+  peopleEmpty: 'Eşleşen kişi yok.', moreNotes: 'Daha eski notlar bu listede gösterilmiyor.',
+  noteSaved: 'Not kaydedildi.', noteReplayed: 'Not daha önce kaydedilmişti; aynı kayıt gösteriliyor.', notePassivated: 'Not pasifleştirildi.',
+  // Refusals by stable code (never by server text).
+  forbidden: 'Bu işlem için yetkiniz yok.', notFound: 'Kayıt bulunamadı veya görüntüleme yetkiniz yok.',
+  mentionRefused: 'Bahsettiğiniz kişilerden en az biri bu kaydı görüntüleyemiyor; not kaydedilmedi.',
+  correctedInvalid: 'Düzeltilen not bu kayda ait değil.', notOwn: 'Yalnız kendi notunuzu pasifleştirebilirsiniz.',
+  alreadyPassive: 'Bu not zaten pasif.', validation: 'Girilen bilgileri kontrol edin.', sameKeyMismatch: 'Önceki deneme farklı içerikle kaydedilmiş; sayfayı yenileyin.',
+  concurrent: 'Kayıt aynı anda değişti; listeyi yenileyip tekrar deneyin.', unknownOutcome: 'Sonuç alınamadı. Aynı işlem güvenle tekrar denenebilir.',
+  retry: 'Tekrar dene',
+  tasksHeading: 'Bana atanan görevler', tasksSubject: 'görevler', tasksEmpty: 'Size atanmış açık görev yok.', includeClosed: 'Kapanan görevleri de göster',
+  taskTitle: 'Görev', taskDue: 'Son tarih', taskAssigner: 'Atayan', taskStatus: 'Durum', taskRecord: 'Bağlı kayıt', taskNoRecord: 'Bağımsız',
+  statusOpen: 'Açık', statusCompleted: 'Tamamlandı', statusCancelled: 'İptal edildi', complete: 'Tamamla', overdue: 'Süresi geçti',
+  taskCompleted: 'Görev tamamlandı.', taskNotOpen: 'Görev artık açık değil.', taskNotAssignee: 'Yalnız görevin atananı tamamlayabilir.',
+  versionConflict: 'Görev başka bir işlemle değişti; listeyi yenileyin.', moreTasks: 'Daha fazla görev var; kapananları gizleyerek daraltın.',
+  homeTasks: 'Bana atanan görevleri aç',
+  inboxHeading: 'İş birliği bildirimleri', inboxSubject: 'iş birliği bildirimleri', classNow: 'Şimdi', classDigest: 'Özet',
+  inboxEmptyNow: '"Şimdi" sınıfında bildirim yok.', inboxEmptyDigest: 'Henüz yayımlanmış özet bildirimi yok.',
+  unreadOnly: 'Yalnız okunmamışlar', unreadCount: 'okunmamış', markRead: 'Okundu işaretle', read: 'Okundu', unread: 'Okunmadı',
+  kindMention: 'Sizden bahsedildi', kindAssigned: 'Size görev atandı', kindOverdue: 'Görevin süresi geçti',
+  inboxScope: 'Bahsetme ve süresi geçen işler hemen; diğerleri günde birkaç kez özet olarak gelir. Yalnız uygulama içidir.',
+  readFailed: 'Okundu bilgisi kaydedilemedi; tekrar deneyin.',
+} as const
+
+export const RECORD_TYPE_TEXT = {
+  'sales-order-draft': 'Satış siparişi', 'purchase-order': 'Alış siparişi', 'stock-label': 'Stok etiketi',
+  'manufacturing-plan': 'Üretim planı', counterparty: 'Cari',
+} as const

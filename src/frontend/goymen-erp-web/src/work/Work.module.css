@@ -194,3 +194,31 @@
   outline: 2px solid var(--goy-ds-color-accent, #2a57e3);
   outline-offset: 2px;
 }
+
+/* W1-C record notes, my tasks and the collaboration inbox. */
+.section {
+  margin-block: var(--goy-ds-space-4, 16px);
+}
+
+.noteList {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: var(--goy-ds-space-3, 12px);
+}
+
+.noteMeta {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.noteBody {
+  margin: 0.25rem 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tabs {
+  display: flex;
+  gap: var(--goy-ds-space-2, 8px);
+}
