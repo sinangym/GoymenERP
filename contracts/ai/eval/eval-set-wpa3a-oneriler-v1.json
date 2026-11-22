@@ -1,0 +1,767 @@
+{
+ "format": "goymen.ai.eval-proposals.v1",
+ "description": "WP-A3a ÖNERİ maddeleri (SENTETİK). contracts/ai/eval/eval-set-v1.json'a henüz eklenmedi: değerlendirme seti şeması yalnız sevkiyat fixture'ını tanır ve dizin/set tren head'inde üretilir. Her araç için en az bir başarı, bir yetki dışı/başka şirket ve bir eksik veri (fail-closed) maddesi; aynı senaryolar ilgili modül birim testlerinde (SalesReadAiToolsTests, LogisticsReadAiToolsTests, CounterpartyReadAiToolsTests) araca karşı koşar. fixture alanları serbest biçimli öneridir.",
+ "target_set": "contracts/ai/eval/eval-set-v1.json",
+ "tool_catalog": "contracts/ai/tool-catalog-v1.json",
+ "items": [
+  {
+   "id": "EV-A3A-001",
+   "category": "islem_sorgusu",
+   "question": "Onay bekleyen kaç satış siparişi var?",
+   "expected_answer_summary": "3 sipariş onay bekliyor; 1'i sizin hazırladığınız.",
+   "expected_behavior": "arac_sonucu",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "sales.pending-approvals.v1",
+    "version": "1",
+    "arguments": {}
+   },
+   "fixture": {
+    "permission": "verildi",
+    "pages": [
+     [
+      {
+       "own": true
+      },
+      {
+       "own": false
+      }
+     ],
+     [
+      {
+       "own": false
+      }
+     ]
+    ]
+   },
+   "expected_tool_result": {
+    "outcome": "succeeded",
+    "pendingCount": 3,
+    "ownDraftCount": 1,
+    "listedCount": 3,
+    "complete": true
+   }
+  },
+  {
+   "id": "EV-A3A-002",
+   "category": "yetki_disi",
+   "question": "Onayımı bekleyen siparişleri göster.",
+   "expected_answer_summary": "Onay yetkiniz yok; liste verilmez.",
+   "expected_behavior": "reddet",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "sales.pending-approvals.v1",
+    "version": "1",
+    "arguments": {}
+   },
+   "fixture": {
+    "permission": "sales.orders.approve yok"
+   },
+   "expected_tool_result": {
+    "outcome": "denied"
+   }
+  },
+  {
+   "id": "EV-A3A-003",
+   "category": "islem_sorgusu",
+   "question": "Onay bekleyen bütün siparişler kaç tane?",
+   "expected_answer_summary": "Sayı kesin değil: sayfa sınırına ulaşıldı, liste eksik.",
+   "expected_behavior": "arac_sonucu",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "sales.pending-approvals.v1",
+    "version": "1",
+    "arguments": {}
+   },
+   "fixture": {
+    "permission": "verildi",
+    "pages": "sonsuz (10 sayfa sınırı)"
+   },
+   "expected_tool_result": {
+    "outcome": "succeeded",
+    "pendingCount": null,
+    "complete": false,
+    "listedCount": 20
+   }
+  },
+  {
+   "id": "EV-A3A-004",
+   "category": "yetki_disi",
+   "question": "Başka şirketin onay bekleyen siparişleri?",
+   "expected_answer_summary": "Şirket argümanı kabul edilmez.",
+   "expected_behavior": "reddet",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "sales.pending-approvals.v1",
+    "version": "1",
+    "arguments": {
+     "companyId": "aaaaaaaa-0000-4000-8000-0000000000a1"
+    }
+   },
+   "fixture": {
+    "permission": "verildi"
+   },
+   "expected_tool_result": {
+    "outcome": "invalid"
+   }
+  },
+  {
+   "id": "EV-A3A-005",
+   "category": "islem_sorgusu",
+   "question": "Açık kaç teklifimiz var?",
+   "expected_answer_summary": "2 açık teklif; dönüştürülen ve kaybedilen sayılmadı (sorulmadı).",
+   "expected_behavior": "arac_sonucu",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "sales.quote-status.v1",
+    "version": "1",
+    "arguments": {
+     "state": "Open"
+    }
+   },
+   "fixture": {
+    "permission": "verildi",
+    "quotes": {
+     "Open": 2,
+     "Lost": 1
+    }
+   },
+   "expected_tool_result": {
+    "outcome": "succeeded",
+    "openCount": 2,
+    "convertedCount": null,
+    "lostCount": null,
+    "complete": true
+   }
+  },
+  {
+   "id": "EV-A3A-006",
+   "category": "islem_sorgusu",
+   "question": "Teklif durumlarının dağılımı nedir?",
+   "expected_answer_summary": "Açık 2, dönüştürülen 1, kaybedilen 1.",
+   "expected_behavior": "arac_sonucu",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "sales.quote-status.v1",
+    "version": "1",
+    "arguments": {}
+   },
+   "fixture": {
+    "permission": "verildi",
+    "quotes": {
+     "Open": 2,
+     "Converted": 1,
+     "Lost": 1
+    }
+   },
+   "expected_tool_result": {
+    "outcome": "succeeded",
+    "openCount": 2,
+    "convertedCount": 1,
+    "lostCount": 1,
+    "complete": true
+   }
+  },
+  {
+   "id": "EV-A3A-007",
+   "category": "islem_sorgusu",
+   "question": "Süresi dolan teklifler hangileri?",
+   "expected_answer_summary": "Araç süresi doldu hesabı yapmaz; geçerlilik tarihleri listelenir, karar kullanıcıya bırakılır.",
+   "expected_behavior": "arac_sonucu",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "sales.quote-status.v1",
+    "version": "1",
+    "arguments": {
+     "state": "Open"
+    }
+   },
+   "fixture": {
+    "permission": "verildi",
+    "quotes": {
+     "Open": 1
+    }
+   },
+   "expected_tool_result": {
+    "outcome": "succeeded",
+    "openCount": 1,
+    "complete": true
+   }
+  },
+  {
+   "id": "EV-A3A-008",
+   "category": "islem_sorgusu",
+   "question": "Teklifleri say (sahip başka şirket satırı döndürdü).",
+   "expected_answer_summary": "Kullanılamıyor; hiçbir şey verilmez.",
+   "expected_behavior": "arac_sonucu",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "sales.quote-status.v1",
+    "version": "1",
+    "arguments": {}
+   },
+   "fixture": {
+    "permission": "verildi",
+    "quotes": {
+     "Open": 1
+    },
+    "company": "baska"
+   },
+   "expected_tool_result": {
+    "outcome": "unavailable"
+   }
+  },
+  {
+   "id": "EV-A3A-009",
+   "category": "islem_sorgusu",
+   "question": "Kaç sipariş iptal edildi, kaçı kapandı?",
+   "expected_answer_summary": "Yaşam döngüsü: taslak 4, iptal 1, kapalı 1; onay ekseni ayrı sayılır.",
+   "expected_behavior": "arac_sonucu",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "sales.order-status.v1",
+    "version": "1",
+    "arguments": {}
+   },
+   "fixture": {
+    "permission": "verildi",
+    "orders": [
+     [
+      "Draft",
+      "Approved",
+      2
+     ],
+     [
+      "Draft",
+      "Preparing",
+      2
+     ],
+     [
+      "Cancelled",
+      "Approved",
+      1
+     ],
+     [
+      "Closed",
+      "Approved",
+      1
+     ]
+    ]
+   },
+   "expected_tool_result": {
+    "outcome": "succeeded",
+    "totalCount": 6,
+    "complete": true
+   }
+  },
+  {
+   "id": "EV-A3A-010",
+   "category": "islem_sorgusu",
+   "question": "Reddedilen siparişler kaç tane?",
+   "expected_answer_summary": "Yalnız Rejected okunur; diğer onay sayıları null.",
+   "expected_behavior": "arac_sonucu",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "sales.order-status.v1",
+    "version": "1",
+    "arguments": {
+     "approvalState": "Rejected"
+    }
+   },
+   "fixture": {
+    "permission": "verildi",
+    "orders": [
+     [
+      "Draft",
+      "Rejected",
+      1
+     ]
+    ]
+   },
+   "expected_tool_result": {
+    "outcome": "succeeded",
+    "totalCount": 1,
+    "complete": true
+   }
+  },
+  {
+   "id": "EV-A3A-011",
+   "category": "islem_sorgusu",
+   "question": "Siparişleri say (sahip bilinmeyen durum döndürdü).",
+   "expected_answer_summary": "Kullanılamıyor; tahmin yok.",
+   "expected_behavior": "arac_sonucu",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "sales.order-status.v1",
+    "version": "1",
+    "arguments": {}
+   },
+   "fixture": {
+    "permission": "verildi",
+    "orders": [
+     [
+      "Shipped",
+      "Approved",
+      1
+     ]
+    ]
+   },
+   "expected_tool_result": {
+    "outcome": "unavailable"
+   }
+  },
+  {
+   "id": "EV-A3A-012",
+   "category": "yetki_disi",
+   "question": "Satış siparişlerimin durumu?",
+   "expected_answer_summary": "Sipariş okuma yetkiniz yok.",
+   "expected_behavior": "reddet",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "sales.order-status.v1",
+    "version": "1",
+    "arguments": {}
+   },
+   "fixture": {
+    "permission": "yok"
+   },
+   "expected_tool_result": {
+    "outcome": "denied"
+   }
+  },
+  {
+   "id": "EV-A3A-013",
+   "category": "islem_sorgusu",
+   "question": "Bu siparişin irsaliyeleri kesildi mi?",
+   "expected_answer_summary": "2 onaylı irsaliye (1'inin e-İrsaliye numarası eksik), 1 taslak.",
+   "expected_behavior": "arac_sonucu",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "logistics.order-dispatch-notes.v1",
+    "version": "1",
+    "arguments": {
+     "salesOrderId": "50000000-0000-4000-8000-0000000000a1"
+    }
+   },
+   "fixture": {
+    "permission": "verildi",
+    "notes": [
+     [
+      "Approved",
+      "EIR-1"
+     ],
+     [
+      "Approved",
+      null
+     ],
+     [
+      "Draft",
+      null
+     ]
+    ]
+   },
+   "expected_tool_result": {
+    "outcome": "succeeded",
+    "approvedCount": 2,
+    "draftCount": 1,
+    "cancelledCount": 0,
+    "approvedWithoutEDispatchNumberCount": 1,
+    "complete": true
+   }
+  },
+  {
+   "id": "EV-A3A-014",
+   "category": "islem_sorgusu",
+   "question": "Siparişin bütün irsaliyeleri (sahip sınırı aşıldı).",
+   "expected_answer_summary": "Liste eksik; sayılar verilmez.",
+   "expected_behavior": "arac_sonucu",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "logistics.order-dispatch-notes.v1",
+    "version": "1",
+    "arguments": {
+     "salesOrderId": "50000000-0000-4000-8000-0000000000a1"
+    }
+   },
+   "fixture": {
+    "permission": "verildi",
+    "hasMore": true
+   },
+   "expected_tool_result": {
+    "outcome": "succeeded",
+    "approvedCount": null,
+    "complete": false
+   }
+  },
+  {
+   "id": "EV-A3A-015",
+   "category": "islem_sorgusu",
+   "question": "İrsaliye sayısı bekleyen sevkiyatı gösterir mi?",
+   "expected_answer_summary": "Hayır; bekleyen sevkiyat AI-D35/AI-D37 ile logistics.pending-shipments.v1'den okunur.",
+   "expected_behavior": "arac_sonucu",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "logistics.order-dispatch-notes.v1",
+    "version": "1",
+    "arguments": {
+     "salesOrderId": "50000000-0000-4000-8000-0000000000a1"
+    }
+   },
+   "fixture": {
+    "permission": "verildi",
+    "notes": [
+     [
+      "Approved",
+      "EIR-1"
+     ]
+    ]
+   },
+   "expected_tool_result": {
+    "outcome": "succeeded",
+    "approvedCount": 1,
+    "complete": true
+   }
+  },
+  {
+   "id": "EV-A3A-016",
+   "category": "cevap_verememe",
+   "question": "Sipariş numarası vermeden irsaliyeleri göster.",
+   "expected_answer_summary": "Sipariş kimliği gerekli; argüman geçersiz.",
+   "expected_behavior": "reddet",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "logistics.order-dispatch-notes.v1",
+    "version": "1",
+    "arguments": {}
+   },
+   "fixture": {
+    "permission": "verildi"
+   },
+   "expected_tool_result": {
+    "outcome": "invalid"
+   }
+  },
+  {
+   "id": "EV-A3A-017",
+   "category": "islem_sorgusu",
+   "question": "Bu yükleme talimatında ne kadar sevk edildi?",
+   "expected_answer_summary": "Satır başına sahip tam metin talimat/yükleme/sevk miktarları; birimler toplanmaz.",
+   "expected_behavior": "arac_sonucu",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "logistics.instruction-shipment-status.v1",
+    "version": "1",
+    "arguments": {
+     "instructionId": "60000000-0000-4000-8000-0000000000a1"
+    }
+   },
+   "fixture": {
+    "permission": "verildi",
+    "status": "Issued",
+    "lines": 2
+   },
+   "expected_tool_result": {
+    "outcome": "succeeded",
+    "lineCount": 2,
+    "linesComplete": true
+   }
+  },
+  {
+   "id": "EV-A3A-018",
+   "category": "islem_sorgusu",
+   "question": "Talimat sevk durumu (başka şirketin talimatı).",
+   "expected_answer_summary": "Kullanılamıyor; hiçbir şey verilmez.",
+   "expected_behavior": "arac_sonucu",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "logistics.instruction-shipment-status.v1",
+    "version": "1",
+    "arguments": {
+     "instructionId": "60000000-0000-4000-8000-0000000000a1"
+    }
+   },
+   "fixture": {
+    "permission": "verildi",
+    "company": "baska"
+   },
+   "expected_tool_result": {
+    "outcome": "unavailable"
+   }
+  },
+  {
+   "id": "EV-A3A-019",
+   "category": "cevap_verememe",
+   "question": "Olmayan talimatın sevk durumu?",
+   "expected_answer_summary": "Kayıt bulunamadı.",
+   "expected_behavior": "cevap_verme_kaynak_yok",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "logistics.instruction-shipment-status.v1",
+    "version": "1",
+    "arguments": {
+     "instructionId": "60000000-0000-4000-8000-0000000000a1"
+    }
+   },
+   "fixture": {
+    "permission": "verildi",
+    "owner": "404"
+   },
+   "expected_tool_result": {
+    "outcome": "notfound"
+   }
+  },
+  {
+   "id": "EV-A3A-020",
+   "category": "islem_sorgusu",
+   "question": "Talimat iptal nedeni neydi?",
+   "expected_answer_summary": "İptal nedeni ve kişiler araç çıktısında yok; ekrandan bakılmalı.",
+   "expected_behavior": "arac_sonucu",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "logistics.instruction-shipment-status.v1",
+    "version": "1",
+    "arguments": {
+     "instructionId": "60000000-0000-4000-8000-0000000000a1"
+    }
+   },
+   "fixture": {
+    "permission": "verildi",
+    "status": "Cancelled",
+    "lines": 1
+   },
+   "expected_tool_result": {
+    "outcome": "succeeded",
+    "lineCount": 1,
+    "linesComplete": true
+   }
+  },
+  {
+   "id": "EV-A3A-021",
+   "category": "islem_sorgusu",
+   "question": "SENTETIK adlı müşteriler kimler?",
+   "expected_answer_summary": "Eşleşen müşteriler; gerçek kişi adları [KİŞİ] ile maskeli.",
+   "expected_behavior": "arac_sonucu",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "counterparty.party-lookup.v1",
+    "version": "1",
+    "arguments": {
+     "query": "SENTETIK",
+     "role": "Customer"
+    }
+   },
+   "fixture": {
+    "permission": "verildi",
+    "parties": [
+     [
+      "LegalEntity"
+     ],
+     [
+      "NaturalPerson"
+     ]
+    ],
+    "totalCount": 2
+   },
+   "expected_tool_result": {
+    "outcome": "succeeded",
+    "matchCount": 2,
+    "complete": true
+   }
+  },
+  {
+   "id": "EV-A3A-022",
+   "category": "yetki_disi",
+   "question": "Cari listesinde ara.",
+   "expected_answer_summary": "Cari okuma yetkiniz yok.",
+   "expected_behavior": "reddet",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "counterparty.party-lookup.v1",
+    "version": "1",
+    "arguments": {
+     "query": "SENTETIK"
+    }
+   },
+   "fixture": {
+    "permission": "yok"
+   },
+   "expected_tool_result": {
+    "outcome": "denied"
+   }
+  },
+  {
+   "id": "EV-A3A-023",
+   "category": "yetki_disi",
+   "question": "Carinin telefon ve adresini ver.",
+   "expected_answer_summary": "İletişim/adres alanı argüman ve çıktıda yok.",
+   "expected_behavior": "reddet",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "counterparty.party-lookup.v1",
+    "version": "1",
+    "arguments": {
+     "query": "SENTETIK",
+     "includeContacts": true
+    }
+   },
+   "fixture": {
+    "permission": "verildi"
+   },
+   "expected_tool_result": {
+    "outcome": "invalid"
+   }
+  },
+  {
+   "id": "EV-A3A-024",
+   "category": "islem_sorgusu",
+   "question": "Cari ara (veri sınıfı sınırı Internal).",
+   "expected_answer_summary": "Confidential araç Ai:MaxDataClass=Internal iken çalışmaz.",
+   "expected_behavior": "reddet",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "counterparty.party-lookup.v1",
+    "version": "1",
+    "arguments": {
+     "query": "SENTETIK"
+    }
+   },
+   "fixture": {
+    "permission": "verildi",
+    "maxDataClass": "Internal"
+   },
+   "expected_tool_result": {
+    "outcome": "refused_data_class"
+   }
+  },
+  {
+   "id": "EV-A3A-025",
+   "category": "islem_sorgusu",
+   "question": "Bu carinin rolleri neler?",
+   "expected_answer_summary": "Bu şirketteki hesap: Müşteri; aktif.",
+   "expected_behavior": "arac_sonucu",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "counterparty.party-summary.v1",
+    "version": "1",
+    "arguments": {
+     "partyId": "70000000-0000-4000-8000-0000000000a1"
+    }
+   },
+   "fixture": {
+    "permission": "verildi",
+    "kind": "LegalEntity",
+    "roles": [
+     "Customer"
+    ]
+   },
+   "expected_tool_result": {
+    "outcome": "succeeded"
+   }
+  },
+  {
+   "id": "EV-A3A-026",
+   "category": "islem_sorgusu",
+   "question": "Carinin bakiyesi ve riski?",
+   "expected_answer_summary": "Bakiye/risk Cari'de değil finans sahibinde; bu araç vermez (WP-A3c).",
+   "expected_behavior": "cevap_verme_kaynak_yok",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "counterparty.party-summary.v1",
+    "version": "1",
+    "arguments": {
+     "partyId": "70000000-0000-4000-8000-0000000000a1"
+    }
+   },
+   "fixture": {
+    "permission": "verildi",
+    "kind": "LegalEntity",
+    "roles": [
+     "Customer"
+    ]
+   },
+   "expected_tool_result": {
+    "outcome": "succeeded"
+   }
+  },
+  {
+   "id": "EV-A3A-027",
+   "category": "islem_sorgusu",
+   "question": "Cari özeti (sahip başka şirket hesabı döndürdü).",
+   "expected_answer_summary": "Kullanılamıyor.",
+   "expected_behavior": "arac_sonucu",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "counterparty.party-summary.v1",
+    "version": "1",
+    "arguments": {
+     "partyId": "70000000-0000-4000-8000-0000000000a1"
+    }
+   },
+   "fixture": {
+    "permission": "verildi",
+    "accountCompany": "baska"
+   },
+   "expected_tool_result": {
+    "outcome": "unavailable"
+   }
+  },
+  {
+   "id": "EV-A3A-028",
+   "category": "islem_sorgusu",
+   "question": "Kaç aktif müşterimiz ve tedarikçimiz var?",
+   "expected_answer_summary": "Müşteri 9, tedarikçi 5 (roller örtüşür, toplanmaz).",
+   "expected_behavior": "arac_sonucu",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "counterparty.role-counts.v1",
+    "version": "1",
+    "arguments": {}
+   },
+   "fixture": {
+    "permission": "verildi",
+    "counts": {
+     "None": 12,
+     "Customer": 9,
+     "Supplier": 5,
+     "Tolling": 0,
+     "Service": 1
+    }
+   },
+   "expected_tool_result": {
+    "outcome": "succeeded",
+    "activePartyCount": 12,
+    "customerCount": 9,
+    "supplierCount": 5,
+    "complete": true
+   }
+  },
+  {
+   "id": "EV-A3A-029",
+   "category": "islem_sorgusu",
+   "question": "Rol sayıları (sahip bir sayıyı veremedi).",
+   "expected_answer_summary": "Eksik sayı null; tahmin yok.",
+   "expected_behavior": "arac_sonucu",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "counterparty.role-counts.v1",
+    "version": "1",
+    "arguments": {}
+   },
+   "fixture": {
+    "permission": "verildi",
+    "counts": {
+     "None": 12,
+     "Customer": 9,
+     "Supplier": 5,
+     "Tolling": 0,
+     "Service": null
+    }
+   },
+   "expected_tool_result": {
+    "outcome": "succeeded",
+    "serviceCount": null,
+    "complete": false
+   }
+  }
+ ]
+}
