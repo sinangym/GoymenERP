@@ -39,6 +39,11 @@ export const SUPPLIER_RETURN_TEXT = {
   partNoPieces: 'Adet izlenmiyor',
   partCostBasis: 'Maliyet dayanağı',
   partUnitCost: 'Birim maliyet (TRY/kg)',
+  /** SAT-D454/SAT-D455: a quantity return's supplier price, amount and document pieces, exactly as the server answered. */
+  partSupplierPrice: 'Tedarikçi net fiyatı (TRY)',
+  partSupplierAmount: 'Belge tutarı (TRY)',
+  partSupplierPieces: 'Belgedeki iade adedi',
+  partNoSupplierFigure: '—',
   partChoice: 'Seçilen paylar',
   partChoiceImplied: 'Tek açık pay',
   partPending: (kg: string) => `Fatura bekleyen ${kg} kg`,

@@ -6,6 +6,8 @@ import { decodeOrderKilogramPrices } from './kilogramPriceContract'
 import { SalesOrderKilogramPrices } from './SalesKilogramPrices'
 import { KILOGRAM_PRICE_TEXT as T } from './salesText'
 import type { ShellState } from '../shell/shellState'
+import { SalesCurrencySourceContext, type UseCurrencyOptions } from './referenceSource'
+import { SALES_CAPABILITY } from './capabilities'
 
 // SAT-D436 (AK-4b): the order's kg price read is open (`Computed`). The panel is information beside the order: it shows
 // the server's figures, and every unreadable answer is one quiet line — never a second alert over the order. SENTETIK.
@@ -16,6 +18,7 @@ const CURRENCY = '22222222-2222-4222-8222-222222222222'
 
 const api = vi.hoisted(() => ({ fetch: vi.fn() }))
 const boundary = vi.hoisted(() => ({ report: vi.fn() }))
+const caps = vi.hoisted(() => ({ create: false }))
 vi.mock('./kilogramPriceApi', () => ({ fetchDraftKilogramPrices: api.fetch }))
 vi.mock('../shell/useAuthBoundary', () => ({
   useAuthBoundary: () => ({ capture: () => ({ token: 1 }), report: boundary.report }),
@@ -23,6 +26,7 @@ vi.mock('../shell/useAuthBoundary', () => ({
 vi.mock('../shell/shellState', async (original) => ({
   ...(await original<typeof import('../shell/shellState')>()),
   contextKey: () => ['SENTETIK-user', 'single', '10000000-0000-4000-8000-000000000001', 'g1', '1'],
+  hasCapability: (_shell: unknown, capability: string) => caps.create && capability === 'sales.drafts.create',
 }))
 
 const shell = { routeEntryGeneration: 1 } as unknown as ShellState
@@ -50,10 +54,29 @@ function mount(view = detail()) {
   </QueryClientProvider>)
 }
 
-beforeEach(() => { api.fetch.mockReset(); boundary.report.mockReset() })
+beforeEach(() => { api.fetch.mockReset(); boundary.report.mockReset(); caps.create = false })
 afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()) })
 
 describe('SalesOrderKilogramPrices on the order detail', () => {
+  it('SAT-D439: names the response currency by its code when the currencies reference is readable', async () => {
+    expect(SALES_CAPABILITY.draftsCreate).toBe('sales.drafts.create')
+    caps.create = true
+    const asked: string[] = []
+    const currencies: UseCurrencyOptions = (companyId) => {
+      asked.push(companyId)
+      return { status: 'ready', data: [{ currencyId: CURRENCY.toUpperCase(), code: 'TRY', profileId: 'p', profileVersion: '1' }] }
+    }
+    api.fetch.mockResolvedValue({ type: 'ok-single', data: computed() })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: 0 } } })
+    clients.push(client)
+    render(<QueryClientProvider client={client}><SalesCurrencySourceContext.Provider value={currencies}>
+      <SalesOrderKilogramPrices shell={shell} detail={detail()} companyId={COMPANY} />
+    </SalesCurrencySourceContext.Provider></QueryClientProvider>)
+    expect((await screen.findByTestId('sales-kilogram-line-1-theoretical')).textContent).toBe(T.perKg('20.25', 'TRY'))
+    expect(screen.getByTestId('sales-kilogram-document-actual').textContent).toBe('19.99 TRY/kg')
+    expect(asked).toContain(COMPANY)
+  })
+
   it('renders nothing while the read is in flight, then the computed figures of this order', async () => {
     let release: (value: unknown) => void = () => undefined
     api.fetch.mockReturnValue(new Promise((resolve) => { release = resolve }))
@@ -63,10 +86,10 @@ describe('SalesOrderKilogramPrices on the order detail', () => {
     expect(view.container.textContent).toBe('')
 
     release({ type: 'ok-single', data: computed() })
-    expect((await screen.findByTestId('sales-kilogram-line-1-theoretical')).textContent).toBe(T.perKg('20.25'))
-    expect(screen.getByTestId('sales-kilogram-line-1-actual').textContent).toBe(T.perKg('19.99'))
-    expect(screen.getByTestId('sales-kilogram-document-theoretical').textContent).toBe(T.perKg('20.25'))
-    expect(screen.getByTestId('sales-kilogram-document-actual').textContent).toBe(T.perKg('19.99'))
+    expect((await screen.findByTestId('sales-kilogram-line-1-theoretical')).textContent).toBe(T.perKg('20.25', CURRENCY))
+    expect(screen.getByTestId('sales-kilogram-line-1-actual').textContent).toBe(T.perKg('19.99', CURRENCY))
+    expect(screen.getByTestId('sales-kilogram-document-theoretical').textContent).toBe(T.perKg('20.25', CURRENCY))
+    expect(screen.getByTestId('sales-kilogram-document-actual').textContent).toBe(T.perKg('19.99', CURRENCY))
     expect(screen.queryByTestId('sales-kilogram-prices-pending')).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
   })

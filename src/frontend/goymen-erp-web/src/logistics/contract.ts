@@ -132,6 +132,11 @@ export interface RecordLoadRequest {
   readonly quantity: string
   readonly measurement: Measurement
   readonly planExcessUses?: readonly import('./planExcessApi').PlanExcessUse[]
+  /**
+   * AK-4 (KLN-D119): on a piece line `quantity` is whole pieces and this is their physical kg (exact text); the backend requires
+   * it there and refuses it on a kg line, so it is sent only for a piece line ({@link isPieceLine}).
+   */
+  readonly quantityKg?: string
 }
 
 /**
@@ -239,7 +244,16 @@ export interface InstructionLine {
   readonly shippedNotDelivered: string
   readonly isBlocked: boolean
   readonly approvedPlanExcess?: string
+  /**
+   * AK-4 (KLN-D119): a piece (non-kg) line's physical kilograms loaded / shipped so far (exact text, "0" is a value). The backend
+   * writes both on a piece line and neither on a kg line, whose quantities already are kg — so their presence marks a piece line.
+   */
+  readonly loadedKg?: string
+  readonly shippedKg?: string
 }
+
+/** AK-4: a piece line is one the backend published physical kilograms for; its loads and shipments must send `quantityKg`. */
+export const isPieceLine = (line: InstructionLine): boolean => line.loadedKg !== undefined
 
 export interface LoadingShare {
   readonly shareId: string
@@ -254,6 +268,8 @@ export interface LoadingShare {
    * user id, as on the dispatch note — no name lookup). Null for a share stored before the actor was kept.
    */
   readonly recordedBy: string | null
+  /** AK-4: the physical kg of a piece line's load or shipment; absent on a kg line and on a delivery. */
+  readonly quantityKg?: string
 }
 
 /**
@@ -312,6 +328,8 @@ export interface DispatchNoteLine {
   readonly productId: string
   readonly unitId: string
   readonly quantity: string
+  /** AK-4: the physical kg of a piece line's shipment (the share's own kg); absent on a kg line. */
+  readonly quantityKg?: string
 }
 
 /**
@@ -606,9 +624,17 @@ const LINE_KEYS = [
   'instructed', 'loaded', 'shipped', 'delivered', 'remainingToLoad', 'loadedNotShipped', 'shippedNotDelivered', 'isBlocked',
 ] as const
 
+/** The optional members present on `value` (`JsonIgnore(WhenWritingNull)` on the server: absent, never null). */
+const presentOptional = (value: unknown, keys: readonly string[]): string[] =>
+  typeof value === 'object' && value !== null && !Array.isArray(value) ? keys.filter((key) => Object.hasOwn(value, key)) : []
+
 function decodeLine(value: unknown): InstructionLine | null {
-  const hasExcess = typeof value === 'object' && value !== null && Object.hasOwn(value, 'approvedPlanExcess')
-  const o = exact(value, hasExcess ? [...LINE_KEYS, 'approvedPlanExcess'] : LINE_KEYS)
+  const optional = presentOptional(value, ['approvedPlanExcess', 'loadedKg', 'shippedKg'])
+  const hasExcess = optional.includes('approvedPlanExcess')
+  const hasKg = optional.includes('loadedKg')
+  // AK-4: the two physical-kg members travel together (a piece line) or not at all (a kg line).
+  if (hasKg !== optional.includes('shippedKg')) return null
+  const o = exact(value, [...LINE_KEYS, ...optional])
   if (
     o === null ||
     !isReferenceId(o.lineId) ||
@@ -626,7 +652,8 @@ function decodeLine(value: unknown): InstructionLine | null {
     !isQuantityText(o.loadedNotShipped) ||
     !isQuantityText(o.shippedNotDelivered) ||
     typeof o.isBlocked !== 'boolean' ||
-    hasExcess && !isPositiveQuantityText(o.approvedPlanExcess)
+    hasExcess && !isPositiveQuantityText(o.approvedPlanExcess) ||
+    hasKg && (!isQuantityText(o.loadedKg) || !isQuantityText(o.shippedKg))
   ) {
     return null
   }
@@ -647,6 +674,7 @@ function decodeLine(value: unknown): InstructionLine | null {
     shippedNotDelivered: o.shippedNotDelivered,
     isBlocked: o.isBlocked,
     ...(hasExcess ? { approvedPlanExcess: o.approvedPlanExcess as string } : {}),
+    ...(hasKg ? { loadedKg: o.loadedKg as string, shippedKg: o.shippedKg as string } : {}),
   }
 }
 
@@ -655,7 +683,8 @@ const SHARE_KEYS = [
 ] as const
 
 function decodeShare(value: unknown): LoadingShare | null {
-  const o = exact(value, SHARE_KEYS)
+  const hasKg = presentOptional(value, ['quantityKg']).length > 0
+  const o = exact(value, hasKg ? [...SHARE_KEYS, 'quantityKg'] : SHARE_KEYS)
   if (
     o === null ||
     !isReferenceId(o.shareId) ||
@@ -666,7 +695,8 @@ function decodeShare(value: unknown): LoadingShare | null {
     !isNullable(o.measurement, (v): v is string => typeof v === 'string' && MEASUREMENTS.includes(v)) ||
     !isNullable(o.sourceShipmentId, isReferenceId) ||
     !isInstant(o.recordedAtUtc) ||
-    !isNullable(o.recordedBy, isActor)
+    !isNullable(o.recordedBy, isActor) ||
+    hasKg && !isPositiveQuantityText(o.quantityKg)
   ) {
     return null
   }
@@ -675,6 +705,8 @@ function decodeShare(value: unknown): LoadingShare | null {
   if (kind === SHARE_KIND.loaded && (o.measurement === null || o.sourceShipmentId !== null)) return null
   if (kind === SHARE_KIND.shipped && (o.measurement !== null || o.sourceShipmentId !== null)) return null
   if (kind === SHARE_KIND.delivered && (o.measurement !== null || o.sourceShipmentId === null)) return null
+  // AK-4: only a load or a shipment carries physical kg; a delivery never does.
+  if (hasKg && kind === SHARE_KIND.delivered) return null
   return {
     shareId: o.shareId,
     lineId: o.lineId,
@@ -684,6 +716,7 @@ function decodeShare(value: unknown): LoadingShare | null {
     sourceShipmentId: o.sourceShipmentId,
     recordedAtUtc: o.recordedAtUtc,
     recordedBy: o.recordedBy,
+    ...(hasKg ? { quantityKg: o.quantityKg as string } : {}),
   }
 }
 
@@ -798,7 +831,8 @@ const DISPATCH_NOTE_LINE_KEYS = [
 ] as const
 
 function decodeDispatchNoteLine(value: unknown): DispatchNoteLine | null {
-  const o = exact(value, DISPATCH_NOTE_LINE_KEYS)
+  const hasKg = presentOptional(value, ['quantityKg']).length > 0
+  const o = exact(value, hasKg ? [...DISPATCH_NOTE_LINE_KEYS, 'quantityKg'] : DISPATCH_NOTE_LINE_KEYS)
   if (
     o === null ||
     !isPositiveInt(o.lineNo, LIMITS.lines) ||
@@ -808,7 +842,8 @@ function decodeDispatchNoteLine(value: unknown): DispatchNoteLine | null {
     !isReferenceId(o.sourceOrderLineId) ||
     !isReferenceId(o.productId) ||
     !isReferenceId(o.unitId) ||
-    !isPositiveQuantityText(o.quantity)
+    !isPositiveQuantityText(o.quantity) ||
+    hasKg && !isPositiveQuantityText(o.quantityKg)
   ) {
     return null
   }
@@ -821,6 +856,7 @@ function decodeDispatchNoteLine(value: unknown): DispatchNoteLine | null {
     productId: o.productId,
     unitId: o.unitId,
     quantity: o.quantity,
+    ...(hasKg ? { quantityKg: o.quantityKg as string } : {}),
   }
 }
 
@@ -925,6 +961,8 @@ function decodeDispatchNotes(value: unknown, lines: readonly InstructionLine[], 
         shipment.kind !== SHARE_KIND.shipped ||
         shipment.lineId !== line.instructionLineId ||
         shipment.quantity !== line.quantity ||
+        // AK-4: the note line carries the shipment's own physical kg, nothing else.
+        shipment.quantityKg !== line.quantityKg ||
         source === undefined ||
         source.sourceOrderId !== line.sourceOrderId ||
         source.sourceOrderLineId !== line.sourceOrderLineId ||
@@ -969,6 +1007,8 @@ export function decodeInstructionDetail(value: unknown, expectedId: string | nul
     const share = decodeShare(entry)
     // A share of a line the instruction does not have is not this instruction's.
     if (share === null || shareIds.has(share.shareId) || !lineIds.has(share.lineId)) return null
+    // AK-4: physical kg belongs to a piece line's shares only; a kg line's share carrying it is not the backend's answer.
+    if (share.quantityKg !== undefined && !isPieceLine(lines.find((line) => line.lineId === share.lineId)!)) return null
     shareIds.add(share.shareId)
     shares.push(share)
   }

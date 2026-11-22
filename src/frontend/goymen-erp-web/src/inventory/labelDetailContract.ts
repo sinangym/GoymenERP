@@ -1,4 +1,4 @@
-import { MOVEMENT_KINDS, type InventoryMovementKind } from './movementTimelineContract'
+import { MOVEMENT_KINDS, movementLinesFitKind, type InventoryMovementKind } from './movementTimelineContract'
 
 export interface InventoryLabelDocument {
   readonly kind: string
@@ -268,28 +268,8 @@ function movement(value: unknown): InventoryLabelMovement | null {
   const decoded = lines as InventoryLabelMovementLine[]
   if (new Set(decoded.map((line) => line.sequence)).size !== decoded.length ||
     decoded.some((line, index) => index > 0 && decoded[index - 1].sequence >= line.sequence) ||
-    ((source.kind === 'Receipt' || source.kind === 'Return' || source.kind === 'TransferAccept' ||
-      source.kind === 'TransferDispatchCancellation') && decoded.some((line) => line.direction !== 'In')) ||
-    source.kind === 'Issue' && decoded.some((line) => line.direction !== 'Out' || line.block === 'Blocked') ||
-    source.kind === 'TransferDispatch' && decoded.some((line) => line.direction !== 'Out') ||
-    source.kind === 'Scrap' && (decoded.length !== 1 || decoded[0].direction !== 'Out') ||
-    source.kind === 'ManufacturingOutputReversal' &&
-      (decoded.length !== 1 || decoded[0].direction !== 'Out' || decoded[0].block !== 'Free') ||
-    (source.kind === 'Block' || source.kind === 'Release') && !validBlockChange(source.kind, decoded)) return null
+    !movementLinesFitKind(source.kind as InventoryMovementKind, decoded)) return null
   return { ...(source as unknown as InventoryLabelMovement), lines: decoded }
-}
-
-function validBlockChange(kind: 'Block' | 'Release', lines: readonly InventoryLabelMovementLine[]): boolean {
-  if (lines.length !== 2) return false
-  const from = lines.filter((line) => line.direction === 'Out')
-  const to = lines.filter((line) => line.direction === 'In')
-  if (from.length !== 1 || to.length !== 1) return false
-  return from[0].block === (kind === 'Block' ? 'Free' : 'Blocked') &&
-    to[0].block === (kind === 'Block' ? 'Blocked' : 'Free') &&
-    from[0].ownerKind === to[0].ownerKind && from[0].ownerId === to[0].ownerId &&
-    from[0].custodianKind === to[0].custodianKind && from[0].custodianId === to[0].custodianId &&
-    from[0].locationId === to[0].locationId && from[0].productId === to[0].productId &&
-    from[0].quantityKg === to[0].quantityKg
 }
 
 interface GenealogyLabelFacts {

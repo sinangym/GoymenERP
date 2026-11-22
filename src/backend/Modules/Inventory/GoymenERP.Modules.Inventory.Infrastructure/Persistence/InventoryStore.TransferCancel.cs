@@ -343,11 +343,11 @@ public sealed partial class InventoryStore
             CorrelationId = metadata.CorrelationId.Trim(),
         };
         dbContext.TransferDispatchCancellations.Add(cancellation);
-        var before = TransferView(row, lines, dispatch, dispatchLines, []);
+        var before = TransferView(row, lines, dispatch, dispatchLines, [], dispatchedPieces: DispatchedPieces(buckets));
         row.Version = effect.TransferVersion;
         row.Status = (int)aggregate.Status;
         row.UpdatedAtUtc = now;
-        var view = TransferView(row, lines, dispatch, dispatchLines, []);
+        var view = TransferView(row, lines, dispatch, dispatchLines, [], dispatchedPieces: DispatchedPieces(buckets));
         dbContext.Commands.Add(TransferCommandRow(CancelDispatchTransferCommand, keyHash, payloadHash, metadata, row.Id,
             view));
         Audit(metadata, row.CompanyId, TransferEntityType, row.Id, "inventory.transfer.dispatch-cancelled.v1",

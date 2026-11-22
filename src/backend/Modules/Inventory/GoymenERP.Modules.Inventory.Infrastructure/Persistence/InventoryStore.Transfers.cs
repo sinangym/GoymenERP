@@ -405,7 +405,9 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
         row.Version = effect.TransferVersion;
         row.Status = (int)aggregate.Status;
         row.UpdatedAtUtc = now;
-        var view = TransferView(row, lines, dispatch, effect.Lines.Select(ToDispatchRow).ToArray(), []);
+        var view = TransferView(row, lines, dispatch, effect.Lines.Select(ToDispatchRow).ToArray(), [],
+            dispatchedPieces: effect.Lines.Where(line => line.ActualPieces is not null)
+                .ToDictionary(line => line.LineId, line => line.ActualPieces!.Value.Value));
         dbContext.Commands.Add(TransferCommandRow(DispatchTransferCommand, keyHash, payloadHash, metadata, row.Id, view));
         Audit(metadata, row.CompanyId, TransferEntityType, row.Id, "inventory.transfer.dispatched.v1", "Dispatch",
             expectedVersion, row.Version, JsonSerializer.Serialize(before, Json), JsonSerializer.Serialize(view, Json),
@@ -568,12 +570,12 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
         };
         dbContext.TransferAcceptances.Add(acceptance);
         var writtenOffIds = writtenOff.Select(candidate => candidate.LineId).ToArray();
-        var before = TransferView(row, lines, dispatch, dispatchLines, accepted, writtenOffIds);
+        var before = TransferView(row, lines, dispatch, dispatchLines, accepted, writtenOffIds, DispatchedPieces(buckets));
         row.Version = effect.TransferVersion;
         row.Status = (int)aggregate.Status;
         row.UpdatedAtUtc = now;
         var afterAccepted = accepted.Append(acceptance).ToArray();
-        var view = TransferView(row, lines, dispatch, dispatchLines, afterAccepted, writtenOffIds);
+        var view = TransferView(row, lines, dispatch, dispatchLines, afterAccepted, writtenOffIds, DispatchedPieces(buckets));
         dbContext.Commands.Add(TransferCommandRow(AcceptTransferLineCommand, keyHash, payloadHash, metadata, row.Id, view));
         Audit(metadata, row.CompanyId, TransferEntityType, row.Id, "inventory.transfer.line-accepted.v1", "AcceptLine",
             expectedVersion, row.Version, JsonSerializer.Serialize(before, Json), JsonSerializer.Serialize(view, Json),
@@ -713,9 +715,20 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
         var accepted = await dbContext.TransferAcceptances.AsNoTracking()
             .Where(line => line.TransferId == transferId).ToListAsync(cancellationToken);
         var writtenOff = await ApprovedLossDecisionsAsync(transferId, cancellationToken);
+        var buckets = await dbContext.TransferBuckets.AsNoTracking()
+            .Where(bucket => bucket.TransferId == transferId).ToListAsync(cancellationToken);
         return TransferView(row, lines, dispatch, actual, accepted,
-            writtenOff.Select(decision => decision.LineId).ToArray());
+            writtenOff.Select(decision => decision.LineId).ToArray(), DispatchedPieces(buckets));
     }
+
+    /// <summary>
+    /// KLN-D119: each dispatched line's pieces — the sum of its buckets' pieces when every bucket carries pieces (a
+    /// piece-tracking label), none otherwise (the bucket check keeps a label's buckets all-or-none).
+    /// </summary>
+    internal static IReadOnlyDictionary<Guid, int> DispatchedPieces(IEnumerable<InventoryTransferBucketRow> buckets) =>
+        buckets.GroupBy(bucket => bucket.LineId)
+            .Where(group => group.All(bucket => bucket.PieceCount is not null))
+            .ToDictionary(group => group.Key, group => group.Sum(bucket => bucket.PieceCount!.Value));
 
     private static InventoryTransferViewV1 TransferView(
         InventoryTransferRow row,
@@ -723,7 +736,8 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
         InventoryTransferDispatchRow? dispatch,
         IReadOnlyList<InventoryTransferDispatchLineRow> actual,
         IReadOnlyList<InventoryTransferAcceptanceRow> accepted,
-        IReadOnlyCollection<Guid>? writtenOffLineIds = null)
+        IReadOnlyCollection<Guid>? writtenOffLineIds = null,
+        IReadOnlyDictionary<Guid, int>? dispatchedPieces = null)
     {
         var actualByLine = actual.ToDictionary(line => line.LineId);
         var acceptedIds = accepted.Select(line => line.LineId).ToHashSet();
@@ -745,7 +759,9 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
                 return new InventoryTransferLineViewV1(line.LineId, line.LabelId,
                     line.ExpectedLabelVersion.ToString(CultureInfo.InvariantCulture), Kilograms.Positive(line.PlannedKg).ToString(),
                     dispatched is null ? null : Kilograms.Positive(dispatched.ActualKg).ToString(),
-                    dispatched is null ? null : SignedKilograms(dispatched.DifferenceKg), status.ToString());
+                    dispatched is null ? null : SignedKilograms(dispatched.DifferenceKg), status.ToString(),
+                    dispatched is not null && dispatchedPieces is not null && dispatchedPieces.TryGetValue(line.LineId, out var pieces)
+                        ? pieces : null);
             })]);
     }
 

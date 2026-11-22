@@ -149,8 +149,9 @@ function Body({ detail, receipt, binding, attemptBinding, onSettled }: SupplierR
         returnLineId: own ? '' : receiptIdentity(), inventoryMovementId: own ? '' : receiptIdentity(),
         ...selection, ...(manual === undefined ? {} : { manualUnitCostTryPerKg: manual }) })
     }
-    // SAT-D455: the document's pieces, for a quantity return from a piece order line; the server refuses it anywhere else.
-    const supplierPieces = documentPieces.trim() === '' ? null : /^[1-9]\d{0,8}$/.test(documentPieces.trim()) ? Number(documentPieces.trim()) : undefined
+    // SAT-D455: the document's pieces, for a quantity return from a piece order line; the server refuses it anywhere else. The field
+    // is shown only for a quantity return, so a value typed under an earlier quantity preview never travels with a lineage return.
+    const supplierPieces = !quantityReturn || documentPieces.trim() === '' ? null : /^[1-9]\d{0,8}$/.test(documentPieces.trim()) ? Number(documentPieces.trim()) : undefined
     if (supplierPieces === undefined) { setInvalidChoice(true); return }
     setInvalidChoice(false)
     const returnLineId = receiptIdentity(), inventoryMovementId = receiptIdentity()

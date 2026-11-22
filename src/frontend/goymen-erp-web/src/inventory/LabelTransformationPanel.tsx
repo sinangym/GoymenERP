@@ -25,6 +25,7 @@ import {
   type PendingLabelTransformation,
 } from './pendingTransformationStore'
 import { parseQuantityInput } from '../sales/wirePrimitives'
+import { parsePieceCount } from './stockCountContract'
 import { createRequestFence } from '../purchasing/requestFence'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './inventory.module.css'
@@ -47,10 +48,12 @@ export interface TransformableLabel {
     readonly locationId: string
     readonly block: string
     readonly quantityKg: string
+    /** KLN-D119: the pieces at the position of a piece-tracking label; absent for a kg-only label. */
+    readonly pieceCount?: number
   }[]
 }
 
-type OutputDraft = { readonly id: string; readonly code: string; readonly quantityKg: string }
+type OutputDraft = { readonly id: string; readonly code: string; readonly quantityKg: string; readonly pieces: string }
 
 type Attempt =
   | { readonly phase: 'idle' }
@@ -76,7 +79,7 @@ function quantityError(index: number, raw: string): string {
 }
 
 function newId(): string { return globalThis.crypto.randomUUID() }
-function newOutput(): OutputDraft { return { id: newId(), code: '', quantityKg: '' } }
+function newOutput(): OutputDraft { return { id: newId(), code: '', quantityKg: '', pieces: '' } }
 
 function parsedKilograms(raw: string): string | null {
   const parsed = parseQuantityInput(raw)
@@ -129,6 +132,9 @@ export function LabelTransformationPanel({ label, companyId, actorId, sessionEpo
   const [kind, setKind] = useState<LabelTransformationKind>('Split')
   const [outputs, setOutputs] = useState<readonly OutputDraft[]>(() => [newOutput(), newOutput()])
   const [mergeCode, setMergeCode] = useState('')
+  const [mergePieces, setMergePieces] = useState('')
+  // KLN-D119 (AK-2): a piece-tracking source label's outputs each name their pieces; a kg-only label's never do.
+  const tracksPieces = label.positions[0]?.pieceCount !== undefined
   const [reason, setReason] = useState('')
   const [search, setSearch] = useState('')
   const [candidates, setCandidates] = useState<Candidates>({ type: 'idle' })
@@ -251,7 +257,7 @@ export function LabelTransformationPanel({ label, companyId, actorId, sessionEpo
     const source = { labelId: label.labelId, expectedLabelVersion: label.labelVersion }
     let payload: LabelTransformationRequest
     if (kind === 'Split') {
-      const built: { labelId: string; code: string; quantityKg: string }[] = []
+      const built: { labelId: string; code: string; quantityKg: string; pieceCount?: number }[] = []
       for (const [index, output] of outputs.entries()) {
         const quantityKg = parsedKilograms(output.quantityKg)
         const code = output.code.trim()
@@ -259,7 +265,12 @@ export function LabelTransformationPanel({ label, companyId, actorId, sessionEpo
           setFormError(quantityError(index, output.quantityKg))
           return
         }
-        built.push({ labelId: newId(), code, quantityKg })
+        const pieces = tracksPieces ? parsePieceCount(output.pieces) : undefined
+        if (pieces === null || pieces === 0) {
+          setFormError(`Çıktı ${index + 1} adedi zorunludur: en az 1, tam sayı.`)
+          return
+        }
+        built.push({ labelId: newId(), code, quantityKg, ...(pieces === undefined ? {} : { pieceCount: pieces }) })
       }
       if (hasDuplicateLabelCodes(built.map((output) => output.code))) {
         setFormError('Çıktı etiket kodları birbirinden farklı olmalıdır (büyük/küçük harf farkı ayrı kod sayılmaz).')
@@ -281,11 +292,16 @@ export function LabelTransformationPanel({ label, companyId, actorId, sessionEpo
         setFormError('Birleşik paketin yeni etiket kodu zorunludur.')
         return
       }
+      const pieces = tracksPieces ? parsePieceCount(mergePieces) : undefined
+      if (pieces === null || pieces === 0) {
+        setFormError('Birleşik paketin adedi zorunludur: en az 1, tam sayı.')
+        return
+      }
       payload = {
         transformationId: newId(),
         kind,
         sources: [source, ...selected.map((item) => ({ labelId: item.labelId, expectedLabelVersion: item.labelVersion }))],
-        outputs: [{ labelId: newId(), code, quantityKg: mergeTotal }],
+        outputs: [{ labelId: newId(), code, quantityKg: mergeTotal, ...(pieces === undefined ? {} : { pieceCount: pieces }) }],
         occurredAtUtc: new Date().toISOString(),
         reason: cleanReason,
       }
@@ -319,6 +335,11 @@ export function LabelTransformationPanel({ label, companyId, actorId, sessionEpo
             <label htmlFor={`split-kg-${output.id}`}>Çıktı {index + 1} kg</label>
             <input id={`split-kg-${output.id}`} inputMode="decimal" value={output.quantityKg}
               onChange={(event) => setOutputs((current) => current.map((item) => item.id === output.id ? { ...item, quantityKg: event.target.value } : item))} />
+            {tracksPieces ? <>
+              <label htmlFor={`split-pieces-${output.id}`}>Çıktı {index + 1} adet</label>
+              <input id={`split-pieces-${output.id}`} inputMode="numeric" required aria-required="true" value={output.pieces}
+                onChange={(event) => setOutputs((current) => current.map((item) => item.id === output.id ? { ...item, pieces: event.target.value } : item))} />
+            </> : null}
           </div>
           {outputs.length > 2 ? <button type="button" className={styles.secondary} onClick={() => setOutputs((current) => current.filter((item) => item.id !== output.id))}>Çıktıyı kaldır</button> : null}
         </div>)}
@@ -353,6 +374,10 @@ export function LabelTransformationPanel({ label, companyId, actorId, sessionEpo
         <div className={styles.grid}>
           <label htmlFor="merge-code">Birleşik paket etiket kodu</label>
           <input id="merge-code" value={mergeCode} maxLength={64} onChange={(event) => setMergeCode(event.target.value)} />
+          {tracksPieces ? <>
+            <label htmlFor="merge-pieces">Birleşik paket adedi</label>
+            <input id="merge-pieces" inputMode="numeric" required aria-required="true" value={mergePieces} onChange={(event) => setMergePieces(event.target.value)} />
+          </> : null}
         </div>
         <p role="status">Birleşik paket: {label.code}{selected.map((item) => ` + ${item.labelCode}`).join('')} = {mergeTotal} kg</p>
       </fieldset>}
