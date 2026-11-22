@@ -35,7 +35,8 @@ def make_repository(root: Path) -> None:
         shutil.copyfile(source_root / relative, destination)
     shutil.copytree(source_root / "tools/relational_inventory", root / "tools/relational_inventory")
     projects = [path for group in VERIFIER.GROUP_PROJECTS.values() for path in group]
-    projects += [f"src/backend/Other{i:02d}/Other{i:02d}.csproj" for i in range(53)]
+    projects += [f"src/backend/Other{i:02d}/Other{i:02d}.csproj"
+                 for i in range(VERIFIER.SOLUTION_PROJECT_COUNT - VERIFIER.TEST_PROJECT_COUNT)]
     solution = ["<Solution>", '  <Folder Name="/tests/">']
     for path in projects:
         project = root / path
@@ -244,7 +245,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
             resultHash=VERIFIER.digest([(record[0], record[2], record[3]) for record in tests]),
         )
 
-    def test_exact_seventy_five_project_solution_has_twenty_two_disjoint_testsdk_projects(self) -> None:
+    def test_exact_solution_project_count_has_twenty_two_disjoint_testsdk_projects(self) -> None:
         solution_hash, catalog_hash = VERIFIER.source_inventory(self.root)
         self.assertEqual(len(solution_hash), 64)
         self.assertEqual(len(catalog_hash), 64)

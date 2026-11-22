@@ -50,6 +50,7 @@ GROUP_PROJECTS = {
         "tests/GoymenERP.Work.UnitTests/GoymenERP.Work.UnitTests.csproj",
     ),
 }
+# WP-A4: +2 (GoymenERP.Modules.AiKnowledge.Domain/.Infrastructure); no test project added.
 SOLUTION_PROJECT_COUNT = 77
 TEST_PROJECT_COUNT = 22
 PROOF_SCHEMA = 5
@@ -168,7 +169,7 @@ def source_inventory(root: Path) -> tuple[str, str]:
     except (OSError, ET.ParseError, KeyError) as exception:
         raise RuntimeError("Backend solution inventory is unreadable.") from exception
     if len(paths) != SOLUTION_PROJECT_COUNT or len(set(paths)) != SOLUTION_PROJECT_COUNT:
-        raise RuntimeError("Backend solution must retain exactly seventy-five unique projects.")
+        raise RuntimeError(f"Backend solution must retain exactly {SOLUTION_PROJECT_COUNT} unique projects.")
     test_projects = []
     for value in paths:
         if value.startswith("/") or ".." in Path(value).parts or not value.endswith(".csproj"):

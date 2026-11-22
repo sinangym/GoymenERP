@@ -1,4 +1,5 @@
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
+using GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
@@ -192,6 +193,14 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
         services.RemoveAll<IDbContextOptionsConfiguration<DocumentsDbContext>>();
         services.AddDbContext<DocumentsDbContext>((serviceProvider, options) =>
             options.UseInMemoryDatabase($"{databaseName}-documents")
+                .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
+
+        // WP-A4: the AI knowledge approvals are host-wired; without this the in-memory host would try to migrate them
+        // against the placeholder SQL connection string at startup.
+        services.RemoveAll<DbContextOptions<AiKnowledgeDbContext>>();
+        services.RemoveAll<IDbContextOptionsConfiguration<AiKnowledgeDbContext>>();
+        services.AddDbContext<AiKnowledgeDbContext>((serviceProvider, options) =>
+            options.UseInMemoryDatabase($"{databaseName}-ai-knowledge")
                 .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
     }
 
