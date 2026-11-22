@@ -1,0 +1,38 @@
+{
+ "format": "goymen.ai.tool-catalog.v1",
+ "description": "Y-A1 okuma araçları. Kayıt, çalışma zamanının varsayılan-ret kataloğuna (AiToolCatalog) aday olmaktır; bir aracın çağrılabilmesi ayrıca yapılandırma izin listesi (Ai:AllowedTools), Ai:Enabled=true, ai.panel.use ve aracın kendi izinlerinin şirket çapında verilmesini ister. Hiçbir izin bir role verilmez.",
+ "tools": [
+  {
+   "toolId": "decisions.lookup.v1",
+   "version": "1",
+   "ownerModule": "Ai",
+   "risk": "Read",
+   "dataClass": "Internal",
+   "requiredPermissions": ["ai.decisions.read"],
+   "fieldAllowlist": ["decisionId", "keyword", "limit"],
+   "arguments": {
+    "decisionId": {"type": "string", "pattern": "^[A-Z][A-Z0-9-]{1,79}$", "note": "Tam karar kimliği; keyword ile birlikte verilemez."},
+    "keyword": {"type": "string", "minLength": 2, "maxLength": 80, "note": "Başlık, metin ve kimlikte büyük/küçük harf duyarsız alt dize."},
+    "limit": {"type": "integer", "minimum": 1, "maximum": 10, "default": 5}
+   },
+   "source": "contracts/ai/decision-index-v1.json",
+   "personalData": "kisisel_veri_adayi kayıtlarda personal_name_terms ile e-posta/telefon/kimlik/IBAN kalıpları [KİŞİ]/[GİZLİ] ile maskelenir (AI-D34 d)."
+  },
+  {
+   "toolId": "logistics.pending-shipments.v1",
+   "version": "1",
+   "ownerModule": "Logistics",
+   "risk": "Read",
+   "dataClass": "Internal",
+   "requiredPermissions": ["logistics.loading-instructions.read"],
+   "fieldAllowlist": ["limit", "status"],
+   "arguments": {
+    "status": {"type": "string", "enum": ["Draft", "Issued"], "note": "Verilmezse ikisi birden."},
+    "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 20}
+   },
+   "source": "ILogisticsInstructionService.GetInstructionListAsync (Logistics sahibi okuma servisi)",
+   "pendingDefinition": "ASSUMPTION-AI-PENDING-SHIPMENT-1: bekleyen = durumu Draft (yayımlanmayı bekliyor) veya Issued (yayımlandı, iptal edilmedi) olan yükleme talimatı. İrsaliye durumu bu sürümde sayılmaz (NEEDS-SINAN).",
+   "scanLimit": 1000
+  }
+ ]
+}
