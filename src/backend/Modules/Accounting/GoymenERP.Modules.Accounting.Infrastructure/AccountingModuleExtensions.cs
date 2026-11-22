@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Ai;
+using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Accounting.Application.Ai;
 using GoymenERP.Modules.Accounting.Application.Contracts;
@@ -128,6 +129,18 @@ public static class AccountingModuleExtensions
         services.AddScoped<FinanceJournalSourceInboxConsumerV1>();
         services.AddScoped<GoymenERP.Modules.Accounting.Application.Inbox.CreditMovementProposalInboxConsumerV1>();
         services.AddScoped<GoymenERP.Modules.Accounting.Application.Inbox.ManufacturingCostDifferenceInboxConsumerV1>();
+        // W1-A (AI-D31): Accounting's own pending approvals for the Work inbox. Read-only, company-wide approvers only.
+        services.AddScoped<WorkInbox.AccountingWorkInboxFence>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.AccountingPeriodOpeningWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.AccountingPeriodReopeningWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.AccountingNormalJournalDraftWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.AccountingJournalReversalWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.AccountingManufacturingCostDifferenceWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.AccountingInvoiceLineCogsCorrectionWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.AccountingInvoicedShipmentCostWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.AccountingPurchaseCostDifferenceWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.AccountingInventoryCostCancellationWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.AccountingSourceVoucherWorkInboxSourceV1>();
         return services;
     }
 
