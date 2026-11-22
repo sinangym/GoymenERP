@@ -10,7 +10,7 @@ namespace GoymenERP.Modules.Purchasing.Application;
 /// <summary>
 /// WP15 (DALGA_PLANI_v2 1.16, YOL-D1 "kural tabanlı mükerrer fatura kontrolü"): read-only incoming invoice duplicate check.
 /// The rule is <see cref="PurchaseInvoiceDuplicateRule"/>; the answer is always a warning
-/// (<see cref="PurchaseInvoiceDuplicateBehaviorV1.Warn"/>) because no decision says a match blocks (NEEDS-SINAN WP15-1).
+/// (<see cref="PurchaseInvoiceDuplicateBehaviorV1.Warn"/>) because a match never blocks (ALS-D125; the record command asks for a reason).
 /// Authority is the one of the invoice screens: the invoice permission (import before recording, read after) and order price
 /// read (the rule compares amounts), both company-wide, measured before the read and fresh after it. Nothing is written.
 /// </summary>

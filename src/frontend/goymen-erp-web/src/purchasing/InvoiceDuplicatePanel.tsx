@@ -1,6 +1,6 @@
 /**
  * WP15 (DALGA_PLANI_v2 1.16): the rule-based duplicate warning on the incoming invoice detail. Read-only; it never blocks a
- * step (no decision says a match blocks: NEEDS-SINAN WP15-1). The server decides what matches.
+ * step (ALS-D125: a match never blocks; the record command asks for a reason). The server decides what matches.
  */
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'

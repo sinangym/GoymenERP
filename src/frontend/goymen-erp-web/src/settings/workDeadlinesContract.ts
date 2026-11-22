@@ -7,6 +7,9 @@
 export const WORK_DEADLINES_PATH = '/work/deadlines'
 
 export type WorkDeadlineState = 'defined' | 'undefined'
+/** YOL-D32: whether the shown due date was moved from the original (legal) date. */
+export type WorkDeadlineAdjustment = 'none' | 'moved-to-business-day' | 'holiday-calendar-undefined'
+const ADJUSTMENTS: readonly string[] = ['none', 'moved-to-business-day', 'holiday-calendar-undefined']
 
 export interface WorkDeadlineItem {
   readonly module: string
@@ -19,6 +22,8 @@ export interface WorkDeadlineItem {
   readonly daysRemaining: number | null
   readonly definitionVersion: string | null
   readonly link: string
+  readonly originalDueDate: string | null
+  readonly dueDateAdjustment: WorkDeadlineAdjustment | null
 }
 
 export interface WorkDeadlineSource {
@@ -49,7 +54,8 @@ export function isDateOnly(raw: unknown): raw is string {
 }
 
 const ROOT_KEYS = ['companyId', 'items', 'sources'] as const
-const ITEM_KEYS = ['module', 'kind', 'code', 'state', 'periodStart', 'periodEnd', 'dueDate', 'daysRemaining', 'definitionVersion', 'link'] as const
+const ITEM_KEYS = ['module', 'kind', 'code', 'state', 'periodStart', 'periodEnd', 'dueDate', 'daysRemaining', 'definitionVersion', 'link',
+  'originalDueDate', 'dueDateAdjustment'] as const
 const SOURCE_KEYS = ['module', 'kind', 'outcome', 'hasMore'] as const
 
 function decodeItem(raw: unknown): WorkDeadlineItem | null {
@@ -59,13 +65,17 @@ function decodeItem(raw: unknown): WorkDeadlineItem | null {
   if (!optionalDate(raw.periodStart) || !optionalDate(raw.periodEnd) || !optionalDate(raw.dueDate)) return null
   if (raw.state === 'defined') {
     if (!isDateOnly(raw.dueDate) || typeof raw.daysRemaining !== 'number' || !Number.isInteger(raw.daysRemaining) || raw.daysRemaining < 0
-      || typeof raw.definitionVersion !== 'string' || raw.definitionVersion.trim().length === 0) return null
+      || typeof raw.definitionVersion !== 'string' || raw.definitionVersion.trim().length === 0
+      || !isDateOnly(raw.originalDueDate) || typeof raw.dueDateAdjustment !== 'string' || !ADJUSTMENTS.includes(raw.dueDateAdjustment)
+      // A moved date lies after its original; otherwise both are the same day (ISO dates compare as text).
+      || (raw.dueDateAdjustment === 'moved-to-business-day' ? raw.dueDate <= raw.originalDueDate : raw.dueDate !== raw.originalDueDate)) return null
   } else if (raw.state !== 'undefined' || raw.dueDate !== null || raw.daysRemaining !== null || raw.periodStart !== null
-    || raw.periodEnd !== null || raw.definitionVersion !== null) return null
+    || raw.periodEnd !== null || raw.definitionVersion !== null || raw.originalDueDate !== null || raw.dueDateAdjustment !== null) return null
   return {
     module: raw.module, kind: raw.kind, code: raw.code, state: raw.state, periodStart: raw.periodStart as string | null,
     periodEnd: raw.periodEnd as string | null, dueDate: raw.dueDate as string | null, daysRemaining: raw.daysRemaining as number | null,
     definitionVersion: raw.definitionVersion as string | null, link: raw.link,
+    originalDueDate: raw.originalDueDate as string | null, dueDateAdjustment: raw.dueDateAdjustment as WorkDeadlineAdjustment | null,
   }
 }
 

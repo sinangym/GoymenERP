@@ -7,7 +7,7 @@ namespace GoymenERP.Api.Endpoints;
 
 /// <summary>
 /// WP15 (DALGA_PLANI_v2 1.16): read-only incoming invoice duplicate check. Both answers are warnings
-/// (<c>behavior = "warn"</c>); neither records nor blocks anything (NEEDS-SINAN WP15-1).
+/// (<c>behavior = "warn"</c>); neither records nor blocks anything (ALS-D125; the record command asks for a reason).
 /// <c>GET /api/v1/purchasing/invoices/duplicate-check</c> checks the facts of an invoice about to be recorded
 /// (import permission); <c>GET /api/v1/purchasing/invoices/{id}/duplicates</c> checks a recorded invoice against the
 /// others (read permission).

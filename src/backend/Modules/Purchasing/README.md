@@ -551,7 +551,10 @@ activates nothing; real-SQL acceptance is **NOT_RUN** and independent K3 accepta
 
 `GET /api/v1/purchasing/invoices/duplicate-check` (facts before recording; `purchasing.invoices.import` + order price read)
 and `GET /api/v1/purchasing/invoices/{id}/duplicates` (a recorded invoice; `purchasing.invoices.read` + order price read)
-answer `behavior: "warn"` and never block: no decision says a match blocks (NEEDS-SINAN WP15-1). Rules
+answer `behavior: "warn"` and never block (ALS-D125). The import record command
+(`POST …/invoice-imports/{id}/records`) runs the number and date+amount rules: a match without `duplicateReason` is 422
+`purchasing_invoice_duplicate_reason_required` (not stored); with a reason the invoice is recorded and the reason goes to the
+record's audit event. Rules
 (`PurchaseInvoiceDuplicateRule`): same ETTN; same supplier and official number equal after case/space/dash normalization;
 same supplier, invoice date, currency and exactly equal payable (no tolerance — a tolerance is an undecided policy). The
 existing database refusals (company + ETTN, company + supplier + exact number) are unchanged.

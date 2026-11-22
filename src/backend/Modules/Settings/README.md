@@ -1116,7 +1116,8 @@ SQL/Unit/HTTP/UI acceptance sources accompany this change; runtime remains **NOT
 (registered, not granted): insert-only versions of periodic obligations (closed catalogue: KDV, muhtasar, e-defter berat,
 BA/BS, geçici vergi, kurumlar vergisi, damga vergisi, SGK) with period length 1/3/12 months, months after period end and
 due day. Nothing is seeded: values wait for the financial advisor (`docs/delivery/MALI_MUSAVIR_SORULARI_v1.md`); until
-then every counter is "undefined" and does not run. `LegalDeadlineCalculatorV1` is the only calculator; no holiday/weekend
-shift is applied (NEEDS-SINAN WP15-2). Settings serves the counters as a Work deadline source
+then every counter is "undefined" and does not run. `LegalDeadlineCalculatorV1` is the only calculator. YOL-D32: a due day
+on a weekend or a company holiday/eve (YOL-D22 calendar) is shown on the first business day with the legal date as a note;
+without the holiday calendar of a needed year nothing is moved and the item says so. Settings serves the counters as a Work deadline source
 (`IWorkDeadlineSourceV1`, `GET /api/v1/work/deadlines`) on `settings.legal-deadlines.read` (registered, not granted).
 `20261122202227_AddLegalDeadlineCalendars`: Down refuses with `THROW 52280` while a calendar version exists (forward fix).

@@ -20,9 +20,12 @@ const definedCalendar = {
   versions: [{ version: '1', entryCount: 1, recordedBy: 'SENTETIK Yönetici', recordedAtUtc: '2026-11-20T07:00:00+00:00', reason: 'SENTETIK teyit' }],
 }
 const undefinedItem = (code: string) => ({ module: 'settings', kind: 'settings.legal-deadline.v1', code, state: 'undefined',
-  periodStart: null, periodEnd: null, dueDate: null, daysRemaining: null, definitionVersion: null, link: CALENDAR_PATH })
+  periodStart: null, periodEnd: null, dueDate: null, daysRemaining: null, definitionVersion: null, link: CALENDAR_PATH,
+  originalDueDate: null, dueDateAdjustment: null })
 const definedItem = { module: 'settings', kind: 'settings.legal-deadline.v1', code: 'settings.legal-deadline.vat-return', state: 'defined',
-  periodStart: '2026-10-01', periodEnd: '2026-10-31', dueDate: '2026-11-28', daysRemaining: 6, definitionVersion: 'legal.deadline-calendar:1', link: CALENDAR_PATH }
+  periodStart: '2026-10-01', periodEnd: '2026-10-31', dueDate: '2026-11-28', daysRemaining: 6, definitionVersion: 'legal.deadline-calendar:1', link: CALENDAR_PATH,
+  originalDueDate: '2026-11-28', dueDateAdjustment: 'holiday-calendar-undefined' }
+const movedItem = { ...definedItem, dueDate: '2026-11-30', daysRemaining: 8, dueDateAdjustment: 'moved-to-business-day' }
 const settingsSource = { module: 'settings', kind: 'settings.legal-deadline.v1', outcome: 'found', hasMore: false }
 const page = (items: unknown[], sources: unknown[] = [settingsSource]) => ({ companyId: COMPANY_A, items, sources })
 
@@ -65,6 +68,10 @@ describe('decodeWorkDeadlines', () => {
     ['an item of an unavailable source', page([definedItem], [{ ...settingsSource, outcome: 'unavailable' }])],
     ['an item of an unlisted source', page([definedItem], [])],
     ['a code outside its module', page([{ ...definedItem, code: 'finance.x' }])],
+    ['a moved date not after its original', page([{ ...movedItem, dueDate: '2026-11-28' }])],
+    ['an unmoved date different from its original', page([{ ...definedItem, dueDateAdjustment: 'none', dueDate: '2026-11-30' }])],
+    ['an unknown adjustment', page([{ ...definedItem, dueDateAdjustment: 'shifted' }])],
+    ['an undefined item with an original date', page([{ ...undefinedItem('settings.legal-deadline.vat-return'), originalDueDate: '2026-11-28' }])],
     ['another company', { ...page([]), companyId: 'bbbbbbbb-0000-4000-8000-000000000002' }],
   ])('refuses %s', (_, raw) => {
     expect(decodeWorkDeadlines(raw, COMPANY_A)).toBeNull()
@@ -151,6 +158,15 @@ describe('/ayarlar/yasal-sureler', () => {
     renderAt(DEADLINES_PATH)
     expect(await screen.findByText('28.11.2026')).toBeTruthy()
     expect(screen.getByText(T.days(6))).toBeTruthy()
+  })
+
+  it('YOL-D32: shows the moved due date with the legal date as a note, and says when the holiday calendar is missing', async () => {
+    installFetch({ capabilities: [SETTINGS_CAPABILITY.legalDeadlines], respond: (url) => url.endsWith(DEADLINES)
+      ? json(page([movedItem, { ...definedItem, code: 'settings.legal-deadline.ba-bs-forms' }])) : undefined })
+    renderAt(DEADLINES_PATH)
+    expect(await screen.findByText('30.11.2026')).toBeTruthy()
+    expect(screen.getByTestId('legal-deadline-moved').textContent?.trim()).toBe(T.movedNote('28.11.2026'))
+    expect(screen.getByTestId('legal-deadline-unshifted').textContent?.trim()).toBe(T.calendarUndefinedNote)
   })
 
   it('says when a deadline source could not be read', async () => {

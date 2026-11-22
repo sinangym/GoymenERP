@@ -61,7 +61,11 @@ function Deadlines({ page }: { readonly page: WorkDeadlinePage }) {
         <tbody>{page.items.map((item) => <tr key={`${item.kind}:${item.code}`} data-state={item.state}>
           <td>{LEGAL_DEADLINE_CODE_TEXT[item.code] ?? item.code}</td>
           <td>{item.state === 'undefined' ? T.undefinedState : item.daysRemaining === 0 ? T.today : T.days(item.daysRemaining ?? 0)}</td>
-          <td>{item.dueDate === null ? '—' : <time dateTime={item.dueDate}>{dateText(item.dueDate)}</time>}</td>
+          <td>{item.dueDate === null ? '—' : <><time dateTime={item.dueDate}>{dateText(item.dueDate)}</time>
+            {item.dueDateAdjustment === 'moved-to-business-day' && item.originalDueDate !== null
+              ? <small data-testid="legal-deadline-moved"> {T.movedNote(dateText(item.originalDueDate))}</small>
+              : item.dueDateAdjustment === 'holiday-calendar-undefined'
+                ? <small data-testid="legal-deadline-unshifted"> {T.calendarUndefinedNote}</small> : null}</>}</td>
           <td>{item.daysRemaining ?? '—'}</td>
           <td>{item.periodStart !== null && item.periodEnd !== null ? `${dateText(item.periodStart)} – ${dateText(item.periodEnd)}` : '—'}</td>
           <td><Link to={item.link}>{T.openDefinition}</Link></td>

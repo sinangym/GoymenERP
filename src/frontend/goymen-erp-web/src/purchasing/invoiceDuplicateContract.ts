@@ -1,6 +1,6 @@
 /**
  * WP15 (DALGA_PLANI_v2 1.16) — `GET /api/v1/purchasing/invoices/{id}/duplicates`: the rule-based duplicate check of a recorded
- * incoming invoice. The answer is always a warning (`behavior: "warn"`); nothing is blocked (NEEDS-SINAN WP15-1). The rules
+ * incoming invoice. The answer is always a warning (`behavior: "warn"`); nothing is blocked (ALS-D125; the record command asks for a reason). The rules
  * run on the server; the screen only lists the matches.
  */
 
