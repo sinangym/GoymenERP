@@ -84,6 +84,44 @@ public sealed class ManualBankPaymentServiceTests
     }
 
     [Fact]
+    public async Task Reviser_of_the_draft_cannot_approve_it_and_a_third_actor_can()
+    {
+        await using var run = await Run.StartAsync();
+        ManualBankPaymentCommandResult draft;
+        await using (var maker = run.Scope("maker", new AllowAll()))
+        {
+            draft = await maker.Service.DraftSaveAsync(maker.Context, Key("draft-1"), Draft(), CancellationToken.None);
+        }
+
+        ManualBankPaymentCommandResult revised;
+        await using (var reviser = run.Scope("reviser", new AllowAll()))
+        {
+            var replacement = Draft();
+            revised = await reviser.Service.DraftSaveAsync(reviser.Context, Key("draft-2"),
+                new ManualBankPaymentDraftSaveRequest(draft.Resource!.Id, draft.Resource.Version,
+                    replacement.Preparation with { Description = "SENTETIK revize odeme" },
+                    replacement.LinkedDocument), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, revised.Outcome);
+            var reviserApproval = await reviser.Service.ApproveAsync(reviser.Context, Key("approve-reviser"),
+                new ApproveManualBankPaymentRequest(revised.Resource!.Id, revised.Resource.Version),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.ValidationFailed, reviserApproval.Outcome);
+            Assert.Equal("payment_approval_invalid", Assert.Single(reviserApproval.Issues).Code);
+        }
+
+        await using (var verify = run.Context())
+        {
+            Assert.Equal(ManualBankPaymentStatuses.Draft, (await verify.ManualBankPayments.SingleAsync()).Status);
+        }
+
+        await using var checker = run.Scope("checker", new AllowAll());
+        var approved = await checker.Service.ApproveAsync(checker.Context, Key("approve-checker"),
+            new ApproveManualBankPaymentRequest(revised.Resource.Id, revised.Resource.Version), CancellationToken.None);
+        Assert.Equal((CommandOutcome.Succeeded, ManualBankPaymentStatus.Approved),
+            (approved.Outcome, approved.Resource!.Status));
+    }
+
+    [Fact]
     public async Task Maker_cannot_approve_and_unknown_bank_result_writes_nothing()
     {
         await using var run = await Run.StartAsync();

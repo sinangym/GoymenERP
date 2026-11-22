@@ -180,6 +180,10 @@ public sealed class ExpensePaymentService(
                 cancellationToken);
         if (!ExpensePaymentValidator.CanApprove(ToStatus(row.Status), row.PreparedBy, context.ActorId, request))
             return Refused(context, CommandOutcome.ValidationFailed, Issue("paymentId", "payment_approval_invalid"));
+        var revisedByApprover = await RevisedByAsync(row.Id, context.ActorId, cancellationToken);
+        if (await FenceAsync(context, action, row.Id, cancellationToken) is { } afterRevisers) return afterRevisers;
+        if (revisedByApprover)
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("paymentId", "payment_approval_invalid"));
 
         var before = AuditJson(row);
         var versionBefore = row.Version;
@@ -559,6 +563,24 @@ public sealed class ExpensePaymentService(
         var stored = JsonSerializer.Deserialize<ExpensePaymentCommandResult>(prior.ResultJson, Json)
             ?? throw new InvalidOperationException("Kayitli masraf odemesi komut sonucu okunamadi.");
         return stored with { IsReplay = true };
+    }
+
+    /// <summary>
+    /// SINAN_KARARLARI_2026-10-21 P6 (maker != approver) with No 103: whoever revised the draft is a maker as well as
+    /// its first preparer, so a successful draft save by the actor for this payment bars that actor from approving it.
+    /// The successful saves are the module's own command rows (one per accepted create/update, written with the row).
+    /// </summary>
+    private async Task<bool> RevisedByAsync(Guid paymentId, string actorId, CancellationToken cancellationToken)
+    {
+        var results = await dbContext.ExpensePaymentCommands.AsNoTracking()
+            .Where(command => command.CommandName == DraftCommand && command.PaymentId == paymentId
+                && command.ActorId == actorId)
+            .Select(command => command.ResultJson)
+            .ToListAsync(cancellationToken);
+        return results.Any(json =>
+            (JsonSerializer.Deserialize<ExpensePaymentCommandResult>(json, Json)
+                ?? throw new InvalidOperationException("Kayitli masraf odemesi komut sonucu okunamadi.")).Outcome
+            == CommandOutcome.Succeeded);
     }
 
     private async Task<ExpensePaymentCommandResult?> SaveAsync(

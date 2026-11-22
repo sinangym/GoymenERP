@@ -188,6 +188,11 @@ public sealed class ManualBankPaymentService(
                     Issue("expectedVersion", "version_conflict")), cancellationToken);
         if (!ManualBankPaymentValidator.CanApprove(ToStatus(row.Status), row.PreparedBy, context.ActorId, request))
             return Refused(context, CommandOutcome.ValidationFailed, Issue("paymentId", "payment_approval_invalid"));
+        var revisedByApprover = await RevisedByAsync(row.Id, context.ActorId, cancellationToken);
+        if (await FenceAsync(context, FinanceAction.ApproveManualBankPayment, row.Id, cancellationToken)
+            is { } afterRevisers) return afterRevisers;
+        if (revisedByApprover)
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("paymentId", "payment_approval_invalid"));
 
         var before = AuditJson(row);
         var versionBefore = row.Version;
@@ -580,6 +585,24 @@ public sealed class ManualBankPaymentService(
                 : Refused(context, CommandOutcome.Unavailable,
                     Issue("permission", "finance_permission_mapping_unavailable"));
         return SameContext(context) ? null : Refused(context, CommandOutcome.Denied);
+    }
+
+    /// <summary>
+    /// SINAN_KARARLARI_2026-10-21 P6 (maker != approver) with No 103: whoever revised the draft is a maker as well as
+    /// its first preparer, so a successful draft save by the actor for this payment bars that actor from approving it.
+    /// The successful saves are the module's own command rows (one per accepted create/update, written with the row).
+    /// </summary>
+    private async Task<bool> RevisedByAsync(Guid paymentId, string actorId, CancellationToken cancellationToken)
+    {
+        var results = await dbContext.Commands.AsNoTracking()
+            .Where(command => command.CommandName == DraftCommand && command.ManualBankPaymentId == paymentId
+                && command.ActorId == actorId)
+            .Select(command => command.ResultJson)
+            .ToListAsync(cancellationToken);
+        return results.Any(json =>
+            (JsonSerializer.Deserialize<ManualBankPaymentCommandResult>(json, Json)
+                ?? throw new InvalidOperationException("Kayitli manuel banka odemesi komut sonucu okunamadi.")).Outcome
+            == CommandOutcome.Succeeded);
     }
 
     private void AddCommand(
