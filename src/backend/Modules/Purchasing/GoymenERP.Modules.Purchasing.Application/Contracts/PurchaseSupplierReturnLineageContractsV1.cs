@@ -16,12 +16,14 @@ public static class PurchaseSupplierReturnLineageGoldenV1
     public const bool SupplierReturnLineageGoldenAccepted = true;
 
     /// <summary>
-    /// SAT-D453 (round a net price above four decimals), SAT-D454 (an approved manual stock cost may differ from the order price)
-    /// and SAT-D455 (a quantity return from a piece order line). They are money formulas whose independent golden rows are not
-    /// in main yet, so the gate is closed: every one of them keeps today's refusal (422 / 409 / 409) and nothing is recorded.
-    /// <see cref="PurchaseSupplierReturnPolicyV1.QuantityRulesGoldenAccepted"/> carries it so tests pin both states.
+    /// SAT-D453 (round a net price above four decimals), SAT-D454 (an approved manual stock cost may differ from the order price),
+    /// SAT-D455 (a quantity return from a piece order line) and SAT-D456/SAT-D458–SAT-D461 (kuruş difference basis, line and
+    /// document discounts, the label's pieces, a difference waits). Their independent golden is
+    /// <c>docs/decisions/ADET_KG_FORMUL_GOLDEN_V1_EK1.md</c> (rows E01–E15, two independent DOCS approvals, part of this train),
+    /// so the gate is open. <see cref="PurchaseSupplierReturnPolicyV1.QuantityRulesGoldenAccepted"/> carries it so tests pin the
+    /// closed state too: closed, every one of them keeps the earlier refusal (422 / 409 / 409) and nothing is recorded.
     /// </summary>
-    public const bool SupplierReturnQuantityRulesGoldenAccepted = false;
+    public const bool SupplierReturnQuantityRulesGoldenAccepted = true;
 }
 
 /// <summary>How a return leaves a foreign source label (stored as 1/2; shown as its name).</summary>

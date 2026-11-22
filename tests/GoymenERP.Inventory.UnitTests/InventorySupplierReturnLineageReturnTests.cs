@@ -184,6 +184,29 @@ public sealed class InventorySupplierReturnLineageReturnTests
         Assert.Equal((Number(exit), Number(difference)), answer);
     }
 
+    [Theory]
+    // Golden EK1 (docs/decisions/ADET_KG_FORMUL_GOLDEN_V1_EK1.md): row, kg leaving stock, stock cost per kg (the moving average or,
+    // when it cannot be read, the approved manual cost), billed document amount → stock exit amount and difference (SAT-D456).
+    [InlineData("E06", "80", "21.2500", "1638.00", "1700.00", "62.00")]
+    [InlineData("E08", "80", "22.1000", "1638.00", "1768.00", "130.00")]
+    [InlineData("E09", "80", "20.4750", "1638.00", "1638.00", "0.00")]
+    [InlineData("E12", "37.461", "21.2500", "775.51", "796.05", "20.54")]
+    [InlineData("E13", "37.461", "21.2500", "775.51", "796.05", "20.54")]
+    [InlineData("E13a", "37.461", "21.2500", "900.00", "796.05", "-103.95")]
+    [InlineData("E13b", "37.461", "21.2500", "796.05", "796.05", "0.00")]   // exact values give −0.00375; on kuruş it is zero
+    [InlineData("E14", "37.461", "20.7000", "775.51", "775.44", "-0.07")]   // exact values give −0.0627 → −0.06: NOT that
+    public void Golden_EK1_the_quantity_return_difference_is_measured_on_the_two_kurus_rounded_amounts(string row, string kg, string cost,
+        string billed, string exit, string difference)
+    {
+        static decimal Number(string text) => decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
+
+        var answer = SupplierReturnLineageCalculator.QuantityReturnAmountDifference(Number(kg), Number(cost), Number(billed));
+
+        Assert.Equal((row, Number(exit), Number(difference)), (row, answer.StockExitTry, answer.DifferenceTry));
+        // SAT-D461: the return passes only on a zero difference; every other row waits (409 on the Inventory side).
+        Assert.Equal(row is "E09" or "E13b", answer.DifferenceTry == 0m);
+    }
+
     [Fact]
     public void SAT_D456_the_billed_amount_is_a_canonical_positive_kurus_text_and_is_null_on_every_earlier_request()
     {

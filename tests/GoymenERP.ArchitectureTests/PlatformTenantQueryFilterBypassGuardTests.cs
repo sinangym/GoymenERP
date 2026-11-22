@@ -392,7 +392,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for AK-2 (KLN-D119): +3 piece-count SQL facts, ordinal-sorted; value from guard_fingerprint.py (b1a5f100… -> 7cadf6ca…); SQL execution NOT_RUN.
                 // Re-fingerprinted for AK-2b (KLN-D119): +2 movement piece-count SQL facts, ordinal-sorted; value from guard_fingerprint.py (7cadf6ca… -> 6e29756c…); SQL execution NOT_RUN.
                 // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): +1 SQL fact, ordinal-sorted; SQL execution NOT_RUN; value from guard_fingerprint.py (6e29756c… -> 10cf1aea…).
-                "10cf1aea73a5edc63eb56776c0b2507f1cfe419e81383d4a8d87e40867d35bcb",
+                // Re-fingerprinted for AK-8b (SAT-D440 atomic lineage return; SAT-D456/SAT-D461 quantity-return amount facts, golden EK1):
+                // +3 SQL facts, ordinal-sorted; SQL execution NOT_RUN locally; value from guard_fingerprint.py (10cf1aea… -> 5170a145…).
+                "5170a1450bc53f5ce7f06cb74ed784dffd306858e4c359c7e0e3a8385fa4a466",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).

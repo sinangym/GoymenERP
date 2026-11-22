@@ -268,12 +268,17 @@ public sealed partial class PurchasingService
                 else
                 {
                     // SAT-D393: the average cannot be read; the manual cost waits for another person's approval. SAT-D454 (behind
-                    // the gate): it may differ from the order price — stock leaves at the approved manual cost, the supplier is
-                    // billed at the order's net price, both recorded. Gate closed: a differing manual cost is refused (SAT-D371).
+                    // the gate): it may differ from the order price as a unit cost — stock leaves at the approved manual cost, the
+                    // supplier is billed at the order's net price, both recorded. Gate closed: a differing manual cost is refused.
                     if (manual is null)
                         throw new PurchasingServiceException(409, PurchaseSupplierReturnCodesV1.CostRequired,
                             [new("manualUnitCostTryPerKg", PurchaseSupplierReturnCodesV1.CostRequired)]);
                     if (!quantityRulesAccepted && manual != unitPrice)
+                        throw new PurchasingServiceException(409, PurchaseSupplierReturnCodesV1.QuantityManualCostDifference,
+                            [new("manualUnitCostTryPerKg", PurchaseSupplierReturnCodesV1.QuantityManualCostDifference)]);
+                    // SAT-D461 (golden EK1 E08/E09/E14): the kuruş-rounded stock exit at the manual cost is compared with the
+                    // kuruş-rounded document amount (SAT-D456); a difference waits and the approval does not carry it.
+                    if (supplierAmount is { } billed && PurchaseSupplierReturnQuantityPriceRuleV1.Amount(row.QuantityKg, manual.Value) != billed)
                         throw new PurchasingServiceException(409, PurchaseSupplierReturnCodesV1.QuantityManualCostDifference,
                             [new("manualUnitCostTryPerKg", PurchaseSupplierReturnCodesV1.QuantityManualCostDifference)]);
                     (basis, unitCost) = (PurchaseSupplierReturnCostBasis.ManualCostWithException, manual.Value);

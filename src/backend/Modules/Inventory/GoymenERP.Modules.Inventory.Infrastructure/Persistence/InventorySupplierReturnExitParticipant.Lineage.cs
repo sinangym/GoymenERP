@@ -209,8 +209,10 @@ public sealed partial class InventorySupplierReturnExitParticipant
     /// SAT-D456 (with SAT-D444): the caller names the kuruş-rounded amount its document bills. With a readable moving average the
     /// stock leaves at that average and the difference is the kuruş-rounded exit amount minus the billed amount; any difference
     /// is refused (SAT-D371; an approved exception does not bypass it, SAT-D410) and the average is returned as the exit's unit
-    /// cost. With an unreadable average only a manual cost approved by another person (SAT-D393) lets the exit proceed, at that
-    /// cost (null is returned); the SAT-D306 (c) pool check still applies afterwards.
+    /// cost. With an unreadable average only a manual cost approved by another person (SAT-D393, SAT-D454) lets the exit proceed,
+    /// at that cost (null is returned), and only when the same kuruş difference at that cost is zero (SAT-D461: a difference
+    /// waits for the Finance voucher specification on a kilogram and on a piece line alike; the approval does not bypass it).
+    /// The SAT-D306 (c) pool check still applies afterwards.
     /// </summary>
     private async Task<decimal?> RequireQuantityReturnAmountAsync(ReceiptTrace exit, InventorySupplierReturnExitInput input,
         BlockState block, bool approvedCostException, decimal billedAmountTry, CancellationToken token)
@@ -225,8 +227,11 @@ public sealed partial class InventorySupplierReturnExitParticipant
             source.Position.LocationId, token);
         if (average is not { } known)
         {
-            if (!approvedCostException || input.OriginalUnitCostTryPerKg is null)
+            if (!approvedCostException || input.OriginalUnitCostTryPerKg is not { } manual)
                 throw Refused(409, InventorySupplierReturnExitCodesV1.QuantityCostUnreadable);
+            // SAT-D461: the same kuruş comparison at the approved manual cost; the approval does not carry a difference.
+            if (SupplierReturnLineageCalculator.QuantityReturnAmountDifference(input.Quantity.Value, manual, billedAmountTry).DifferenceTry != 0m)
+                throw Refused(409, InventorySupplierReturnExitCodesV1.CostDifferenceUnposted);
             return null;
         }
 
