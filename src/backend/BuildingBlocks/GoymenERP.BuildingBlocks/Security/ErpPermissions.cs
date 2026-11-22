@@ -1555,6 +1555,12 @@ public static class ErpPermissions
     /// granted; company-wide only; not Critical.
     /// </summary>
     public const string SettingsWorkApprovalDurationManage = "settings.work-approval-duration.manage";
+    /// <summary>
+    /// WP-A1 (AI-D24, AI-D30; DALGA_PLANI_v2 A.1): reads and records the versioned AI gateway policy (task kind × data class
+    /// model table, monthly usage ceiling, per-feature switches). Registered, not granted; company-wide only; not Critical.
+    /// The budget value and the grant are human gates.
+    /// </summary>
+    public const string SettingsAiGatewayManage = "settings.ai-gateway.manage";
     public const string SettingsDocumentNumberSeriesManage = "settings.document-number-series.manage";
 
     /// <summary>
@@ -2014,6 +2020,7 @@ public static class ErpPermissions
             SettingsManufacturingScrapCostManage,
             SettingsNotificationRetentionManage,
             SettingsWorkApprovalDurationManage,
+            SettingsAiGatewayManage,
             SettingsDocumentNumberSeriesManage,
             SettingsReferenceListsManage,
             SettingsProductionReferenceListsManage,
@@ -2327,6 +2334,7 @@ public static class ErpPermissions
             SettingsManufacturingScrapCostManage,
             SettingsNotificationRetentionManage,
             SettingsWorkApprovalDurationManage,
+            SettingsAiGatewayManage,
             SettingsDocumentNumberSeriesManage,
             SettingsReferenceListsManage,
             SettingsProductionReferenceListsManage,

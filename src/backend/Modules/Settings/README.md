@@ -1109,3 +1109,15 @@ The actual Finance record permission reserves through the borrowed SERIALIZABLE 
 format administration retain their existing purpose gates. The first Down operation refuses with **THROW 51910**
 while any of the four series tables contains a receipt/voucher row; old series alone can roll back.
 SQL/Unit/HTTP/UI acceptance sources accompany this change; runtime remains **NOT_RUN**.
+
+## AI gateway policy and usage ledger (WP-A1; AI-D24, AI-D30, AI-D34 d)
+
+| Item | Contract |
+|---|---|
+| Purpose | The company's versioned AI gateway policy: the **task kind × data class** model table (each cell: placement `Cloud` / `OnPremises` + model deployment name), the **monthly usage ceiling**, the **per-request reservation** and the **per-feature switches** (`Panel`, `Summary`, `Document`, `Query`, `Write`, `Chat`, `Scheduled`, `Memory`, `Email`). Read by the AI gateway (`src/backend/GoymenERP.Api/Ai/README.md`). |
+| Start state | Nothing is seeded. No recorded version = version `0`: every feature off, no route, budget closed. An empty ceiling or reservation in a recorded version is also "budget closed", never a default. The budget value and the usage unit are a human gate (S5, NEEDS-SINAN). |
+| Fixed rule | A cloud route never carries more than `Internal` data (`AiGatewayPlacementRulesV1`); the command refuses it and `CK_SettingsAiGatewayModelRoutes_Route` restates it. Document and e-mail text is never routed to a cloud model (enforced by the gateway, AI-D24). |
+| Authority | `settings.ai-gateway.manage` (`SettingsAiGatewayPermissionsV1.Manage`): registered, company-wide only, not Critical, granted to no role (human gate). Shell 1.20 declares `/ayarlar/yapay-zeka-ag-gecidi` (`AY-YZG-01`) as not yet implemented; the screen arrives with WP-A5. |
+| HTTP | `GET /api/v1/settings/company-policies/ai-gateway` (policy in force, current month's committed units, version history); `POST …/ai-gateway/versions` (full snapshot; K3 path: fresh permission, mandatory reason, Idempotency-Key, expected version, one audit event per real change, insert-only). |
+| Ledger | `ISettingsAiBudgetLedgerV1`: a reservation re-reads the version in force (it must equal the version the gateway routed with), creates the month row on first use and moves the committed total only while `committed + reservation ≤ ceiling` in one conditional update; settlement moves it by `used − reserved` once. Entries are append-only. The budget month is the calendar month in `Europe/Istanbul`. |
+| Migration | `20261122202350_AddAiGatewayPolicyAndBudgetLedger` (dotnet ef, pure DDL Up; five tables). `Down` refuses with **THROW 52180** (WP-A1 range 52180–52189) while any policy version, ledger entry or month total exists (forward fix); an empty store rolls back freely. |

@@ -1,5 +1,6 @@
 using GoymenERP.Api.Ai.Commands;
 using GoymenERP.Api.Ai.External;
+using GoymenERP.Api.Ai.Gateway;
 using GoymenERP.Api.Ai.Knowledge;
 using GoymenERP.Api.Ai.SecurityWatch;
 using GoymenERP.BuildingBlocks.Ai;
@@ -40,6 +41,12 @@ public static class AiRuntimeServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IAiOwnerToolV1, DecisionLookupAiTool>());
         services.AddScoped<AiToolCatalog>();
         services.AddScoped<AiCapabilityService>();
+        // WP-A1 gateway: the Settings-owned policy port and usage ledger come from the Settings module. Only the in-process
+        // Fake composers are registered (one per placement); the runtime never admits the Fake kind in Production, and no
+        // external or local composer exists until the provider and hardware decisions (OPEN-020, OPEN-014).
+        services.AddSingleton<IAiAnswerComposerV1>(_ => new FakeAiAnswerComposer(AiModelPlacementV1.Cloud));
+        services.AddSingleton<IAiAnswerComposerV1>(_ => new FakeAiAnswerComposer(AiModelPlacementV1.OnPremises));
+        services.AddScoped<IAiGatewayV1, AiGateway>();
         services.AddScoped<AiAskService>();
         // WP-C1: the approved write pipeline. Closed: Ai:Commands:Enabled is false, no command tool is allowlisted, the
         // ledger is unconfigured (no durable store yet) and step-up never verifies (decision 156; method undecided).

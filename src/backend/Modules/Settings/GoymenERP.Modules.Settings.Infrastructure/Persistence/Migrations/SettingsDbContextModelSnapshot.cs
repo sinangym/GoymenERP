@@ -262,6 +262,178 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.AiBudgetLedgerEntryRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("EntryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("BudgetMonth")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("Feature")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ModelDeployment")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("Placement")
+                        .HasColumnType("int");
+
+                    b.Property<long>("PolicyVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("ReservedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("ReservedUnits")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("SettledAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("State")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TaskKind")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("UsedUnits")
+                        .HasColumnType("int");
+
+                    b.HasKey("CompanyId", "EntryId");
+
+                    b.HasIndex("CompanyId", "BudgetMonth");
+
+                    b.ToTable("AiBudgetLedgerEntries", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsAiBudgetLedgerEntries_Entry", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [EntryId] <> '00000000-0000-0000-0000-000000000000' AND [BudgetMonth] BETWEEN 200001 AND 210012 AND [PolicyVersion] > 0 AND [Feature] BETWEEN 1 AND 9 AND [TaskKind] BETWEEN 1 AND 6 AND [Placement] IN (1, 2) AND [ReservedUnits] > 0 AND LEN(LTRIM(RTRIM([ModelDeployment]))) > 0 AND LEN(LTRIM(RTRIM([ActorId]))) > 0 AND LEN(LTRIM(RTRIM([CorrelationId]))) > 0 AND (([State] = 1 AND [UsedUnits] IS NULL AND [SettledAtUtc] IS NULL) OR ([State] = 2 AND [UsedUnits] IS NOT NULL AND [UsedUnits] >= 0 AND [SettledAtUtc] IS NOT NULL))");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.AiBudgetMonthTotalRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("BudgetMonth")
+                        .HasColumnType("int");
+
+                    b.Property<long>("CommittedUnits")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "BudgetMonth");
+
+                    b.ToTable("AiBudgetMonthTotals", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsAiBudgetMonthTotals_Total", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [BudgetMonth] BETWEEN 200001 AND 210012 AND [BudgetMonth] % 100 BETWEEN 1 AND 12 AND [CommittedUnits] >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.AiGatewayFeatureRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Feature")
+                        .HasColumnType("int");
+
+                    b.HasKey("CompanyId", "Version", "Feature");
+
+                    b.ToTable("AiGatewayFeatures", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsAiGatewayFeatures_Feature", "[Feature] BETWEEN 1 AND 9");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.AiGatewayModelRouteRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("TaskKind")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DataClass")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ModelDeployment")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("Placement")
+                        .HasColumnType("int");
+
+                    b.HasKey("CompanyId", "Version", "TaskKind", "DataClass");
+
+                    b.ToTable("AiGatewayModelRoutes", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsAiGatewayModelRoutes_Route", "[TaskKind] BETWEEN 1 AND 6 AND [DataClass] BETWEEN 1 AND 4 AND [Placement] IN (1, 2) AND ([Placement] = 2 OR [DataClass] <= 2) AND LEN(LTRIM(RTRIM([ModelDeployment]))) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.AiGatewayPolicyVersionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("FeatureCount")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("MaxUnitsPerRequest")
+                        .HasColumnType("int");
+
+                    b.Property<long?>("MonthlyUsageCeiling")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("RouteCount")
+                        .HasColumnType("int");
+
+                    b.HasKey("CompanyId", "Version");
+
+                    b.ToTable("AiGatewayPolicyVersions", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsAiGatewayPolicyVersions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Version] > 0 AND ([MonthlyUsageCeiling] IS NULL OR [MonthlyUsageCeiling] BETWEEN 0 AND 1000000000000) AND ([MaxUnitsPerRequest] IS NULL OR [MaxUnitsPerRequest] BETWEEN 1 AND 10000000) AND [FeatureCount] BETWEEN 0 AND 9 AND [RouteCount] BETWEEN 0 AND 24 AND LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.BankCsvMappingVersionRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -3993,6 +4165,33 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_SettingsWorkHolidayCalendarVersions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Version] > 0 AND [Year] BETWEEN 2000 AND 2100 AND [DayCount] BETWEEN 0 AND 60 AND LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
                         });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.AiBudgetLedgerEntryRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.AiBudgetMonthTotalRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "BudgetMonth")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.AiGatewayFeatureRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.AiGatewayPolicyVersionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "Version")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.AiGatewayModelRouteRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.AiGatewayPolicyVersionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "Version")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.BankInstitutionEntryRow", b =>

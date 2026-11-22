@@ -24,6 +24,7 @@ public sealed class SettingsSalesDiscountLimitPermissionRegistrationTests
         // Keep the exact non-Manufacturing registry inventory, including the approved F-029 and W6-W8 owners.
         // Each owner's registration tests separately protect its literal, scope, classification and no-grant boundary.
         Assert.Equal([
+                "settings.ai-gateway.manage",
                 "settings.bank-csv-mappings.manage",
                 "settings.collateral-types.manage",
                 "settings.document-number-series.manage",

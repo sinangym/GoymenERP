@@ -20,7 +20,7 @@ internal sealed partial class SettingsCompanyPolicyAdministration : ISettingsOpe
     private static bool UsesAuditOwner(KeySpec spec) => spec.Key is CompanyPolicyKeysV1.SalesContractDiscountLimit
         or CompanyPolicyKeysV1.ManufacturingIncludeScrapCost or CompanyPolicyKeysV1.NotificationActiveDays
         or CompanyPolicyKeysV1.WorkApprovalDurationHours or CompanyPolicyKeysV1.WorkApprovalDurationBusinessDays
-        or WorkHolidayCalendarSpecKey;
+        or WorkHolidayCalendarSpecKey or AiGatewaySpecKey;
 
     public async Task<ManufacturingScrapCostPolicyViewV1> GetScrapCostAsync(CancellationToken cancellationToken = default)
     {
