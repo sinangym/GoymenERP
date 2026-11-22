@@ -21,7 +21,8 @@ internal sealed class SettingsLegalDeadlineWorkSourceV1(
     ICurrentUser currentUser,
     IErpAuthorityRevalidationService authority,
     ISettingsLegalDeadlineCalendarProviderV1 calendars,
-    TimeProvider timeProvider) : IWorkDeadlineSourceV1
+    TimeProvider timeProvider,
+    ISettingsWorkHolidayCalendarProviderV1 holidays) : IWorkDeadlineSourceV1
 {
     public const string ModuleName = "settings";
     public const string KindName = "settings.legal-deadline.v1";
@@ -30,6 +31,17 @@ internal sealed class SettingsLegalDeadlineWorkSourceV1(
     public const string CalendarScreenPath = "/ayarlar/yasal-sure-takvimi";
 
     private const string BusinessTimeZoneId = "Europe/Istanbul";
+
+    /// <summary>Years after this one whose holiday calendar a due date can need (a yearly period plus up to 12 months).</summary>
+    private const int HolidayYearsAhead = 3;
+
+    private static string Adjustment(LegalDeadlineDueAdjustmentV1 adjustment) => adjustment switch
+    {
+        LegalDeadlineDueAdjustmentV1.None => WorkDeadlineAdjustmentsV1.None,
+        LegalDeadlineDueAdjustmentV1.MovedToBusinessDay => WorkDeadlineAdjustmentsV1.MovedToBusinessDay,
+        LegalDeadlineDueAdjustmentV1.HolidayCalendarUndefined => WorkDeadlineAdjustmentsV1.HolidayCalendarUndefined,
+        _ => throw new ArgumentOutOfRangeException(nameof(adjustment)),
+    };
 
     public string Module => ModuleName;
 
@@ -43,11 +55,15 @@ internal sealed class SettingsLegalDeadlineWorkSourceV1(
         if (await CheckAsync(context, cancellationToken) is { } refused) return refused;
         SettingsLegalDeadlineCalendarV1 calendar;
         DateOnly today;
+        SettingsWorkHolidayCalendarsV1 holidayCalendars;
         try
         {
             calendar = await calendars.GetLegalDeadlineCalendarAsync(context.CompanyId, cancellationToken);
             var zone = TimeZoneInfo.FindSystemTimeZoneById(BusinessTimeZoneId);
             today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(timeProvider.GetUtcNow(), zone).DateTime);
+            // YOL-D32: the longest entry (yearly period + 12 months) falls due within the next HolidayYearsAhead years.
+            var lastYear = Math.Min(today.Year + HolidayYearsAhead, SettingsWorkHolidayCalendarLimitsV1.MaximumYear);
+            holidayCalendars = await holidays.GetWorkHolidayCalendarsAsync(context.CompanyId, today.Year, lastYear, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -59,9 +75,14 @@ internal sealed class SettingsLegalDeadlineWorkSourceV1(
         }
 
         if (await CheckAsync(context, cancellationToken) is { } refusedAfter) return refusedAfter;
-        if (calendar.CompanyId != context.CompanyId) return WorkDeadlineSourceResultV1.Unavailable();
+        if (calendar.CompanyId != context.CompanyId || holidayCalendars.CompanyId != context.CompanyId) return WorkDeadlineSourceResultV1.Unavailable();
         IReadOnlyList<LegalDeadlineCounterV1> counters;
-        try { counters = LegalDeadlineCalculatorV1.Evaluate(calendar, today); }
+        try
+        {
+            var holidayYears = holidayCalendars.DefinedYears.ToDictionary(year => year.Year,
+                year => (IReadOnlySet<DateOnly>)year.Days.ToHashSet());
+            counters = LegalDeadlineCalculatorV1.Evaluate(calendar, today, holidayYears);
+        }
         catch (ArgumentException) { return WorkDeadlineSourceResultV1.Unavailable(); }
         catch (InvalidOperationException) { return WorkDeadlineSourceResultV1.Unavailable(); }
 
@@ -73,7 +94,8 @@ internal sealed class SettingsLegalDeadlineWorkSourceV1(
             .Select(counter => new WorkDeadlineItemV1(ModuleName, KindName, Code(counter.Obligation),
                 counter.State == LegalDeadlineCounterStateV1.Defined ? WorkDeadlineStatesV1.Defined : WorkDeadlineStatesV1.Undefined,
                 counter.PeriodStart, counter.PeriodEnd, counter.DueDate, counter.DaysRemaining,
-                counter.State == LegalDeadlineCounterStateV1.Defined ? version : null, CalendarScreenPath))
+                counter.State == LegalDeadlineCounterStateV1.Defined ? version : null, CalendarScreenPath,
+                counter.LegalDueDate, counter.Adjustment is { } adjustment ? Adjustment(adjustment) : null))
             .ToArray();
         return WorkDeadlineSourceResultV1.Found(ordered.Take(maxCount).ToArray(), ordered.Length > maxCount);
     }

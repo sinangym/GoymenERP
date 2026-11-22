@@ -55,6 +55,28 @@ public sealed class WorkDeadlineReadQueryV1Tests
     }
 
     [Fact]
+    public async Task YOL_D32_a_weekend_due_date_is_shown_on_the_first_business_day_with_the_legal_date_as_the_original()
+    {
+        var world = new World { HolidayYears = [new(2026, 1, []), new(2027, 1, [])] };
+        world.Calendar = new(Company, 2, [new(LegalDeadlineObligationV1.VatReturn, 1, 1, 28)]);
+        var first = (await world.Source().ListUpcomingAsync(world.Context(), 50)).Items[0];
+        Assert.Equal((new DateOnly(2026, 11, 30), new DateOnly(2026, 11, 28), WorkDeadlineAdjustmentsV1.MovedToBusinessDay, 8),
+            (first.DueDate!.Value, first.OriginalDueDate!.Value, first.DueDateAdjustment, first.DaysRemaining!.Value));
+    }
+
+    [Fact]
+    public async Task YOL_D32_without_a_holiday_calendar_the_date_is_not_moved_and_the_item_says_so()
+    {
+        var world = new World();
+        world.Calendar = new(Company, 2, [new(LegalDeadlineObligationV1.VatReturn, 1, 1, 28)]);
+        var first = (await world.Source().ListUpcomingAsync(world.Context(), 50)).Items[0];
+        Assert.Equal((new DateOnly(2026, 11, 28), new DateOnly(2026, 11, 28), WorkDeadlineAdjustmentsV1.HolidayCalendarUndefined),
+            (first.DueDate!.Value, first.OriginalDueDate!.Value, first.DueDateAdjustment));
+        var failing = new World { FailHolidays = true };
+        Assert.Equal(WorkDeadlineSourceOutcomeV1.Unavailable, (await failing.Source().ListUpcomingAsync(failing.Context(), 50)).Outcome);
+    }
+
+    [Fact]
     public async Task The_page_bound_reports_has_more()
     {
         var world = new World();
@@ -123,6 +145,12 @@ public sealed class WorkDeadlineReadQueryV1Tests
         var world = new World();
         var bad = new WorkDeadlineItemV1("finance", "finance.deadline.v1", "finance.x", WorkDeadlineStatesV1.Undefined,
             null, null, new DateOnly(2026, 12, 1), 9, null, "/finans");
+        // A "moved" item whose shown date is not after its original is inconsistent too.
+        var notMoved = new WorkDeadlineItemV1("finance", "finance.deadline.v1", "finance.y", WorkDeadlineStatesV1.Defined,
+            null, null, new DateOnly(2026, 12, 1), 9, "v1", "/finans", new DateOnly(2026, 12, 1), WorkDeadlineAdjustmentsV1.MovedToBusinessDay);
+        var otherQuery = new WorkDeadlineReadQueryV1([new StubSource("finance", "finance.deadline.v1",
+            WorkDeadlineSourceResultV1.Found([notMoved], false))], world.CompanyContext, world, world);
+        Assert.Equal("unavailable", Assert.Single((await otherQuery.ListAsync()).Resource!.Sources).Outcome);
         var query = new WorkDeadlineReadQueryV1([new StubSource("finance", "finance.deadline.v1",
             WorkDeadlineSourceResultV1.Found([bad], false))], world.CompanyContext, world, world);
         var result = await query.ListAsync();
@@ -159,8 +187,19 @@ public sealed class WorkDeadlineReadQueryV1Tests
             CancellationToken cancellationToken = default) => Task.FromResult(result);
     }
 
-    private sealed class World : ICurrentUser, IErpAuthorityRevalidationService, ISettingsLegalDeadlineCalendarProviderV1, ICorrelationContext
+    private sealed class World : ICurrentUser, IErpAuthorityRevalidationService, ISettingsLegalDeadlineCalendarProviderV1, ICorrelationContext,
+        ISettingsWorkHolidayCalendarProviderV1
     {
+        public IReadOnlyList<SettingsWorkHolidayCalendarYearV1> HolidayYears { get; set; } = [];
+        public bool FailHolidays { get; set; }
+        public Task<SettingsWorkHolidayCalendarsV1> GetWorkHolidayCalendarsAsync(Guid companyId, int fromYear, int toYear,
+            CancellationToken cancellationToken = default)
+        {
+            if (FailHolidays) throw new InvalidOperationException("SENTETIK holiday failure");
+            return Task.FromResult(new SettingsWorkHolidayCalendarsV1(companyId,
+                HolidayYears.Where(year => year.Year >= fromYear && year.Year <= toYear).ToArray()));
+        }
+
         public World()
         {
             CompanyContext.Set(Company);
@@ -177,7 +216,7 @@ public sealed class WorkDeadlineReadQueryV1Tests
         public Action? OnCalendarRead { get; set; }
         public int CalendarReads { get; private set; }
 
-        public SettingsLegalDeadlineWorkSourceV1 Source() => new(CompanyContext, this, this, this, new Clock(Now));
+        public SettingsLegalDeadlineWorkSourceV1 Source() => new(CompanyContext, this, this, this, new Clock(Now), this);
 
         public WorkDeadlineSourceContextV1 Context() => new(Company, "SENTETIK-user", "SENTETIK-correlation");
 

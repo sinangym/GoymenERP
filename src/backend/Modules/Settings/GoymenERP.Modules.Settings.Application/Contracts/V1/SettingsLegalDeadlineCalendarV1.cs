@@ -35,8 +35,8 @@ public enum LegalDeadlineObligationV1
 /// One recorded calendar entry: the obligation's period length in months (<c>1</c>, <c>3</c> or <c>12</c>; periods end at
 /// calendar month ends aligned to the year: months 1..12, quarters ending March/June/September/December, the year ending
 /// December), how many months after the period end the due month is, and the day of that month (a day past the month's last
-/// day means the last day). No holiday or weekend shift is applied: whether and how a due day moves is not decided
-/// (NEEDS-SINAN WP15-2) and the screen says so.
+/// day means the last day). YOL-D32: the upcoming deadlines view moves a due day on a weekend or company holiday to the first
+/// business day and shows the legal day as a note; without a holiday calendar nothing is moved and the screen says so.
 /// </summary>
 public sealed record SettingsLegalDeadlineEntryV1(LegalDeadlineObligationV1 Obligation, int PeriodMonths, int MonthsAfterPeriodEnd,
     int DueDayOfMonth);

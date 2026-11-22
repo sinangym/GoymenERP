@@ -80,7 +80,10 @@ public sealed class WorkDeadlineReadQueryV1(
         && !string.IsNullOrWhiteSpace(item.Code) && item.Code.StartsWith(source.Module + ".", StringComparison.Ordinal)
         && !string.IsNullOrWhiteSpace(item.Link) && item.Link.StartsWith('/')
         && (item.State == WorkDeadlineStatesV1.Defined
-            ? item.DueDate is not null && item.DaysRemaining is >= 0 && !string.IsNullOrWhiteSpace(item.DefinitionVersion)
+            ? item.DueDate is { } due && item.DaysRemaining is >= 0 && !string.IsNullOrWhiteSpace(item.DefinitionVersion)
+                && item.OriginalDueDate is { } original && WorkDeadlineAdjustmentsV1.IsKnown(item.DueDateAdjustment)
+                && (item.DueDateAdjustment == WorkDeadlineAdjustmentsV1.MovedToBusinessDay ? due > original : due == original)
             : item.State == WorkDeadlineStatesV1.Undefined && item.DueDate is null && item.DaysRemaining is null
-                && item.PeriodStart is null && item.PeriodEnd is null && item.DefinitionVersion is null);
+                && item.PeriodStart is null && item.PeriodEnd is null && item.DefinitionVersion is null
+                && item.OriginalDueDate is null && item.DueDateAdjustment is null);
 }

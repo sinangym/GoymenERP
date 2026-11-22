@@ -91,6 +91,60 @@ public sealed class LegalDeadlineCalculatorV1Tests
         Assert.Throws<ArgumentOutOfRangeException>(() => LegalDeadlineCalculatorV1.Next(entry, new DateOnly(2026, 11, 22)));
     }
 
+    private static readonly Dictionary<int, IReadOnlySet<DateOnly>> Holidays2026 = new()
+    {
+        // SENTETIK holiday list: 29 October (Thursday) and its eve 28 October; 2027 defined empty.
+        [2026] = new HashSet<DateOnly> { new(2026, 10, 28), new(2026, 10, 29) },
+        [2027] = new HashSet<DateOnly>(),
+    };
+
+    [Theory]
+    // 28 November 2026 is a Saturday: moved to Monday 30 November.
+    [InlineData(28, "2026-11-22", "2026-11-30", "2026-11-28", LegalDeadlineDueAdjustmentV1.MovedToBusinessDay, 8)]
+    // 26 November 2026 is a Thursday: unchanged.
+    [InlineData(26, "2026-11-22", "2026-11-26", "2026-11-26", LegalDeadlineDueAdjustmentV1.None, 4)]
+    public void YOL_D32_a_due_date_on_a_weekend_moves_to_the_first_business_day_and_keeps_the_legal_date(int day, string today,
+        string shown, string legal, LegalDeadlineDueAdjustmentV1 adjustment, int daysRemaining)
+    {
+        var counter = LegalDeadlineCalculatorV1.Next(new(LegalDeadlineObligationV1.VatReturn, 1, 1, day),
+            DateOnly.Parse(today, System.Globalization.CultureInfo.InvariantCulture), Holidays2026);
+        Assert.Equal((DateOnly.Parse(shown, System.Globalization.CultureInfo.InvariantCulture),
+                DateOnly.Parse(legal, System.Globalization.CultureInfo.InvariantCulture), adjustment, daysRemaining),
+            (counter.DueDate!.Value, counter.LegalDueDate!.Value, counter.Adjustment!.Value, counter.DaysRemaining!.Value));
+    }
+
+    [Fact]
+    public void YOL_D32_holidays_and_eves_are_skipped_together_with_the_weekend()
+    {
+        // Due 28 October (eve), 29 October (holiday) -> Friday 30 October.
+        var (shown, adjustment) = LegalDeadlineCalculatorV1.Shift(new DateOnly(2026, 10, 28), Holidays2026);
+        Assert.Equal((new DateOnly(2026, 10, 30), LegalDeadlineDueAdjustmentV1.MovedToBusinessDay), (shown, adjustment));
+        // Thursday 31 December 2026 stays; Saturday 2 January 2027 moves to Monday 4 January (2027 defined empty).
+        Assert.Equal((new DateOnly(2026, 12, 31), LegalDeadlineDueAdjustmentV1.None), LegalDeadlineCalculatorV1.Shift(new DateOnly(2026, 12, 31), Holidays2026));
+        Assert.Equal((new DateOnly(2027, 1, 4), LegalDeadlineDueAdjustmentV1.MovedToBusinessDay), LegalDeadlineCalculatorV1.Shift(new DateOnly(2027, 1, 2), Holidays2026));
+    }
+
+    [Fact]
+    public void YOL_D32_without_a_holiday_calendar_for_a_year_the_move_needs_nothing_is_moved_and_it_says_so()
+    {
+        Assert.Equal((new DateOnly(2026, 11, 28), LegalDeadlineDueAdjustmentV1.HolidayCalendarUndefined),
+            LegalDeadlineCalculatorV1.Shift(new DateOnly(2026, 11, 28), null));
+        Assert.Equal((new DateOnly(2028, 1, 1), LegalDeadlineDueAdjustmentV1.HolidayCalendarUndefined),
+            LegalDeadlineCalculatorV1.Shift(new DateOnly(2028, 1, 1), Holidays2026));
+        // Saturday 30 December 2028... a move crossing into an undefined year is not applied either.
+        var crossing = new Dictionary<int, IReadOnlySet<DateOnly>> { [2028] = new HashSet<DateOnly>() };
+        Assert.Equal((new DateOnly(2028, 12, 30), LegalDeadlineDueAdjustmentV1.HolidayCalendarUndefined),
+            LegalDeadlineCalculatorV1.Shift(new DateOnly(2028, 12, 30), crossing));
+    }
+
+    [Fact]
+    public void YOL_D32_the_upcoming_period_is_chosen_by_the_moved_date()
+    {
+        // On Sunday 29 November the October period (legal 28 Nov, Saturday) is still upcoming: shown Monday 30 November.
+        var counter = LegalDeadlineCalculatorV1.Next(new(LegalDeadlineObligationV1.VatReturn, 1, 1, 28), new DateOnly(2026, 11, 29), Holidays2026);
+        Assert.Equal((new DateOnly(2026, 10, 31), new DateOnly(2026, 11, 30), 1), (counter.PeriodEnd!.Value, counter.DueDate!.Value, counter.DaysRemaining!.Value));
+    }
+
     [Fact]
     public void An_unknown_obligation_is_not_valid()
     {
