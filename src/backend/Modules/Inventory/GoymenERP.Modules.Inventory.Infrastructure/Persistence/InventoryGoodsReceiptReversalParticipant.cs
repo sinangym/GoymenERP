@@ -128,8 +128,7 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
         var row = await context.Commands.AsNoTracking().SingleOrDefaultAsync(item => item.CommandName == Codes.CommandName
             && item.IdempotencyKeyHash == key, cancellationToken);
         if (row is null) return null;
-        if (row.ActorId != metadata.ActorId || row.PayloadHash != Engine.PayloadHash(request with { PurchaseSource = null, PieceCount = null,
-            UndoQuantity = request.CostAllocation is null ? null : request.UndoQuantity }) || row.TargetId != request.ReversalId)
+        if (row.ActorId != metadata.ActorId || row.PayloadHash != RequestHash(request) || row.TargetId != request.ReversalId)
             throw Error(409, Codes.IdempotencyConflict);
         try
         {
@@ -343,8 +342,7 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
             AuditAiInvolvement.None, AiContextJson: null, metadata.SourceChannel, metadata.ClientIpAddress, metadata.UserAgent,
             metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey));
         context.Commands.Add(new InventoryCommandRow() { CompanyId = companyId, CommandName = Codes.CommandName, IdempotencyKeyHash = Engine.KeyHash(metadata.IdempotencyKey),
-            PayloadHash = Engine.PayloadHash(request with { PurchaseSource = null, PieceCount = null,
-                UndoQuantity = request.CostAllocation is null ? null : request.UndoQuantity }), ActorId = metadata.ActorId, TargetId = request.ReversalId,
+            PayloadHash = RequestHash(request), ActorId = metadata.ActorId, TargetId = request.ReversalId,
             ResultJson = JsonSerializer.Serialize(answerResult, Engine.Json), CorrelationId = metadata.CorrelationId, RecordedAtUtc = clock.GetUtcNow() });
         context.OutboxMessages.Add(new InventoryOutboxRow() { Id = Guid.NewGuid(), CompanyId = companyId, EventType = Codes.EventType,
             SchemaVersion = 1, SourceOperation = Codes.CommandName, AggregateType = "Inventory.GoodsReceiptReversal",
@@ -360,10 +358,18 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
     {
         await store.ObservePhysicalCountBoundaryAsync(original.ProductId, original.LocationId, token);
         var label = await context.Labels.SingleAsync(row => row.Id == original.LabelId, token);
-        var physical = await context.Balances.AsNoTracking().Where(row => row.LabelId == label.Id)
-            .SumAsync(row => (decimal?)row.QuantityKg, token) ?? 0m;
-        var allocated = await context.Allocations.AsNoTracking().Where(row => row.LabelId == label.Id
-            && row.Status == (int)StockAllocationStatus.Active).SumAsync(row => (decimal?)row.RemainingKg, token) ?? 0m;
+        var balances = await context.Balances.AsNoTracking().Where(row => row.LabelId == label.Id)
+            .Select(row => new { row.QuantityKg, row.PieceCount }).ToListAsync(token);
+        var allocations = await context.Allocations.AsNoTracking().Where(row => row.LabelId == label.Id
+            && row.Status == (int)StockAllocationStatus.Active).Select(row => new { row.RemainingKg, row.RemainingPieces })
+            .ToListAsync(token);
+        // KLN-D93 / KLN-D119: what stays on the label covers the active allocations' kilograms and held pieces.
+        int? piecesLeft = request.PieceCount is { } exitPieces && balances.All(row => row.PieceCount is not null)
+            ? balances.Sum(row => row.PieceCount!.Value) - exitPieces
+            : null;
+        var leavesAllocations = StockAllocation.ExitLeavesActiveAllocations(
+            balances.Sum(row => row.QuantityKg) - Quantity(request.QuantityKg), piecesLeft,
+            allocations.Sum(row => row.RemainingKg), allocations.Sum(row => row.RemainingPieces ?? 0));
         var position = new StockPosition(companyId, new StockOwner(original.OwnerKind, original.OwnerId),
             new StockCustodian(original.CustodianKind, original.CustodianId), original.LocationId,
             new MaterialLabel(label.Id, companyId, label.Code, label.ProductId, label.LotId, label.ProductVersion), request.SourceBlock);
@@ -380,10 +386,21 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
             throw Error(409, Codes.StockNotAvailable, store.PhysicalStockRefusal(movement,
                 new StockShortfall(movement.Kind, movement.Source, position, movement.Lines[0].Quantity,
                     Kilograms.Of(atPosition), 1), metadata, label.Code));
-        if (allocated > physical - Quantity(request.QuantityKg)) throw Error(409, Codes.StockAllocated);
+        if (!leavesAllocations) throw Error(409, Codes.StockAllocated);
         if (await store.StageMovementAsync(movement, metadata, recordAudit: true, token) != InventoryWriteOutcome.Recorded)
             throw Error(409, Codes.IdempotencyConflict);
         return Text(label.Version);
+    }
+
+    /// <summary>
+    /// The stored payload hash. KLN-D119 (K3-B P3-2): the piece count joins it only when given, so a replay with the same key
+    /// but different pieces is a payload mismatch while every piece-less request keeps exactly the hash it had before.
+    /// </summary>
+    internal static string RequestHash(InventoryGoodsReceiptReversalRequestV1 request)
+    {
+        var kilogramHash = Engine.PayloadHash(request with { PurchaseSource = null, PieceCount = null,
+            UndoQuantity = request.CostAllocation is null ? null : request.UndoQuantity });
+        return request.PieceCount is { } pieces ? Engine.PayloadHash(new { Core = kilogramHash, PieceCount = pieces }) : kilogramHash;
     }
 
     private void ReleasePhysical(AllocationRow row, decimal kg, string reason, InventoryCommandMetadata metadata)

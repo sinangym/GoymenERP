@@ -77,7 +77,7 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
                 CarryMetadata(CarryMaker, AccountingPermissionManifestV1.PeriodsPropose), default)).Id;
         await using (var checker = OpenCarry(run, CarryChecker))
             await checker.Store.ApproveReopeningAsync(period, proposal, new(1, 3), CarryChecker,
-                CarryMetadata(CarryChecker, AccountingPermissionManifestV1.PeriodsApprove), default);
+                CarryMetadata(CarryChecker, AccountingPermissionManifestV1.PeriodsReopen), default);
         await using (var reader = OpenPartyCarryOpening(run, CarryMaker))
         {
             var company = new CompanyContext(); company.Set(CompanyA);

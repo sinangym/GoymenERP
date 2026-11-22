@@ -239,7 +239,7 @@ public sealed partial class InventorySupplierReturnExitParticipant : IInventoryS
             throw Refused(409, InventorySupplierReturnExitCodesV1.StockNotAvailable,
                 store.PhysicalStockRefusal(movement, shortfall, metadata, receipt.LabelRow.Code));
         }
-        await RequireExitLeavesAllocationsAsync(receipt.LabelRow.Id, input.Quantity.Value, cancellationToken);
+        await RequireExitLeavesAllocationsAsync(receipt.LabelRow.Id, input.Quantity.Value, input.Pieces, cancellationToken);
         // The receipt-label cost-source attribution is for the receipt's own label; a foreign-label exit carries its own
         // invoiced/pending choice (AK-8b), resolved with its lineage above.
         var allocation = lineageExit ? null : await ResolveCostAllocationAsync(request, receipt.LabelRow.Version, cancellationToken);
@@ -532,20 +532,29 @@ public sealed partial class InventorySupplierReturnExitParticipant : IInventoryS
     }
 
     /// <summary>
-    /// KLN-D93: a reservation is never silently broken. What stays on the label must cover its active allocations;
-    /// otherwise the return is refused with its own code. The return never releases an allocation: the allocation is
-    /// released first by its own command, then the return is retried.
+    /// KLN-D93: a reservation is never silently broken. What stays on the label must cover its active allocations —
+    /// their kilograms and, when they hold pieces (KLN-D119), their pieces; otherwise the return is refused with its own
+    /// code. The return never releases an allocation: the allocation is released first by its own command, then the
+    /// return is retried.
     /// </summary>
     private async Task RequireExitLeavesAllocationsAsync(Guid labelId, decimal exitKg,
+        GoymenERP.Modules.Inventory.Domain.Quantities.PieceCount? exitPieces,
         CancellationToken cancellationToken)
     {
-        var onLabel = await context.Balances.AsNoTracking()
+        var balances = await context.Balances.AsNoTracking()
             .Where(row => row.LabelId == labelId)
-            .SumAsync(row => (decimal?)row.QuantityKg, cancellationToken) ?? 0m;
+            .Select(row => new { row.QuantityKg, row.PieceCount })
+            .ToListAsync(cancellationToken);
         var reserved = await context.Allocations.AsNoTracking()
             .Where(row => row.LabelId == labelId && row.Status == (int)StockAllocationStatus.Active)
-            .SumAsync(row => (decimal?)row.RemainingKg, cancellationToken) ?? 0m;
-        if (reserved > onLabel - exitKg)
+            .Select(row => new { row.RemainingKg, row.RemainingPieces })
+            .ToListAsync(cancellationToken);
+        var onLabelKg = balances.Sum(row => row.QuantityKg);
+        int? remainingPieces = exitPieces is { } pieces && balances.All(row => row.PieceCount is not null)
+            ? balances.Sum(row => row.PieceCount!.Value) - pieces.Value
+            : null;
+        if (!StockAllocation.ExitLeavesActiveAllocations(onLabelKg - exitKg, remainingPieces,
+                reserved.Sum(row => row.RemainingKg), reserved.Sum(row => row.RemainingPieces ?? 0)))
         {
             throw Refused(409, InventorySupplierReturnExitCodesV1.StockAllocated);
         }
@@ -666,9 +675,18 @@ public sealed partial class InventorySupplierReturnExitParticipant : IInventoryS
         }
     }
 
-    private static string RequestHash(InventorySupplierReturnExitRequestV1 request) =>
-        Hash(JsonSerializer.Serialize(request with { PurchaseSource = null, PieceCount = null,
+    /// <summary>
+    /// The stored payload hash. KLN-D119 (K3-B P3-2): the piece count joins it only when given, so a replay with the same key
+    /// but different pieces is a payload mismatch while every piece-less request keeps exactly the hash it had before.
+    /// </summary>
+    internal static string RequestHash(InventorySupplierReturnExitRequestV1 request)
+    {
+        var kilogramHash = Hash(JsonSerializer.Serialize(request with { PurchaseSource = null, PieceCount = null,
             UndoQuantity = request.CostAllocation is null ? null : request.UndoQuantity }, Json));
+        return request.PieceCount is { } pieces
+            ? Hash(JsonSerializer.Serialize(new { Core = kilogramHash, PieceCount = pieces }, Json))
+            : kilogramHash;
+    }
 
     private static string Hash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));

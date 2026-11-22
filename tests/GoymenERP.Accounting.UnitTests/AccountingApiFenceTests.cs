@@ -180,6 +180,48 @@ public sealed class AccountingApiFenceTests
         Assert.Equal(["ListPeriodsAsync"], stores.Calls);
     }
 
+    [Theory]
+    [InlineData(AccountingPermissionManifestV1.PeriodsApprove, false)]
+    [InlineData(AccountingPermissionManifestV1.PeriodsClose, false)]
+    [InlineData(AccountingPermissionManifestV1.PeriodsReopen, true)]
+    public async Task A_period_reopening_approval_requires_the_separate_reopen_permission(string held, bool applied)
+    {
+        // ROL-D12: reopening is its own permission; the period-opening approval name never reopens a period.
+        var stores = new Stores();
+        var authority = new PermissionAuthority(held);
+        var result = await Service(authority, stores).ApprovePeriodReopeningAsync(Guid.NewGuid(), Guid.NewGuid(),
+            new ApproveAccountingPeriodReopeningV1(1, 3), "SENTETIK-reopen", CancellationToken.None);
+
+        Assert.Equal(applied ? AccountingApiStatus.Ok : AccountingApiStatus.Denied, result.Status);
+        Assert.All(authority.Requested, permission => Assert.Equal(AccountingPermissionManifestV1.PeriodsReopen, permission));
+        Assert.NotEmpty(authority.Requested);
+        if (applied)
+        {
+            Assert.Contains("ApproveReopeningAsync", stores.Calls);
+            Assert.Equal(AccountingPermissionManifestV1.PeriodsReopen, stores.ReopeningPermission);
+        }
+        else Assert.DoesNotContain("ApproveReopeningAsync", stores.Calls);
+    }
+
+    [Fact]
+    public void The_reopen_name_is_distinct_from_the_period_opening_approval()
+    {
+        Assert.Equal("accounting.periods.reopen", AccountingPermissionManifestV1.PeriodsReopen);
+        Assert.NotEqual(AccountingPermissionManifestV1.PeriodsApprove, AccountingPermissionManifestV1.PeriodsReopen);
+        Assert.Contains(AccountingPermissionManifestV1.PeriodsReopen, AccountingPermissionManifestV1.All);
+    }
+
+    private sealed class PermissionAuthority(string held) : IErpAuthorityRevalidationService
+    {
+        public List<string> Requested { get; } = [];
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
+            CancellationToken cancellationToken = default)
+        {
+            Requested.Add(permission);
+            return Task.FromResult(permission == held ? Granted() : PermissionScope.Denied);
+        }
+    }
+
     private static PeriodViewV1 View() => new(Guid.Parse("a0000000-0000-4000-8000-0000000000c1"), Company,
         new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31), "Proposed", 1, Actor,
         new DateTimeOffset(2026, 10, 1, 0, 0, 0, TimeSpan.Zero), null, null, null, null, true);
@@ -220,9 +262,27 @@ public sealed class AccountingApiFenceTests
         }
     }
 
-    private sealed class Stores : IAccountingPeriodStore, IAccountingPostingStore, IAccountingCommandLog
+    private sealed class Stores : IAccountingPeriodStore, IAccountingPostingStore, IAccountingCommandLog, IAccountingPeriodReopeningStoreV1
     {
         public List<string> Calls { get; } = [];
+        public string? ReopeningPermission { get; private set; }
+
+        public Task<AccountingPeriodLifecycleViewV1?> ReadLifecycleAsync(Guid periodId, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Unexpected lifecycle read.");
+
+        public Task<AccountingPeriodReopeningViewV1> ProposeReopeningAsync(Guid periodId,
+            ProposeAccountingPeriodReopeningV1 request, Guid actor, AccountingCommandMetadata metadata, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Unexpected reopening proposal.");
+
+        public Task<AccountingPeriodReopeningViewV1> ApproveReopeningAsync(Guid periodId, Guid proposalId,
+            ApproveAccountingPeriodReopeningV1 request, Guid actor, AccountingCommandMetadata metadata, CancellationToken cancellationToken)
+        {
+            Calls.Add(nameof(ApproveReopeningAsync));
+            ReopeningPermission = metadata.PermissionCode;
+            return Task.FromResult(new AccountingPeriodReopeningViewV1(proposalId, Company, periodId, Guid.NewGuid(), 3, OtherActor,
+                new DateTimeOffset(2026, 11, 1, 0, 0, 0, TimeSpan.Zero), "SENTETIK", actor,
+                new DateTimeOffset(2026, 11, 2, 0, 0, 0, TimeSpan.Zero), 2));
+        }
         public Func<AccountingCommandRecord?> FindCommand { get; init; } = () => null;
         public Func<(AccountingPeriodRecord Record, AccountingWriteOutcome Outcome)>? Propose { get; init; }
         public Func<AccountingPeriodRecord>? Approve { get; init; }

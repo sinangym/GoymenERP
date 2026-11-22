@@ -41,6 +41,12 @@ public sealed partial class LogisticsInstructionService
                 if (piece != (request.QuantityKg is not null))
                     throw new LogisticsInstructionServiceException(422, "validation_failed", [new("quantityKg",
                         piece ? LogisticsRuleCodes.PhysicalKilogramsRequired : LogisticsRuleCodes.PhysicalKilogramsOnKilogramLine)]);
+                // Inventory counts the label's pieces in an int: a piece count beyond it is the column's refusal (422, nothing
+                // read or written further), never an overflow after the instruction was mutated (K3-A P3).
+                if (piece && quantity.Value > int.MaxValue)
+                    throw new LogisticsInstructionServiceException(422, "validation_failed",
+                        [new("shipment.quantity", LogisticsStoreCodes.ValueDoesNotFit)]);
+                int? shippedPieces = piece ? decimal.ToInt32(quantity.Value) : null;
                 Quantity? shippedKg = piece ? Quantity.Positive(ReadWeighingKg(request.QuantityKg!, "quantityKg"), QuantityUnit.Kilogram) : null;
                 await RequireShipmentSourceAsync(scope, permission, stored, line, quantity.Value, token);
                 var allocation = await GuardedAsync(scope, permission,
@@ -81,7 +87,7 @@ public sealed partial class LogisticsInstructionService
                 var stockRequest = new LogisticsShipmentStockRequestV1(scope.CompanyId, request.ShipmentId, instructionId, lineId,
                     allocation.AllocationId, request.ExpectedAllocationVersion, allocation.LabelId, request.ExpectedLabelVersion,
                     request.MovementId, piece ? request.QuantityKg! : request.Quantity, request.OccurredAtUtc,
-                    piece ? decimal.ToInt32(quantity.Value) : null);
+                    shippedPieces);
                 var staged = await GuardedAsync(scope, permission, () => stock.StageAsync(stockRequest, envelope, token), token);
                 if (staged is null || staged.CompanyId != scope.CompanyId || staged.ShipmentId != request.ShipmentId
                     || staged.AllocationId != allocation.AllocationId || staged.LabelId != allocation.LabelId

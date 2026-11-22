@@ -967,8 +967,9 @@ Down first refuses with **THROW 51926** while either proof table contains rows. 
   (V1/V2) and output reversal, subcontract delivery lines. Returns of a traced exit (customer return, input return) never
   exceed its pieces and run out with its kilograms (`PieceCountReturnRule`). Callers before AK-3/AK-4/AK-7 omit it;
   kg-only labels behave exactly as before and every piece-less request keeps its stored hash.
-- SAT-D442 piece distribution (`InventorySupplierReturnPieceDistributionV1`) is implemented and pinned to golden rows
-  I10/I15 behind `GoldenAccepted => false`; no live command uses it (lineage return stays at its 503 boundary, AK-8).
+- SAT-D442 piece distribution (`InventorySupplierReturnPieceDistributionV1`) is implemented, pinned to golden rows I10/I15
+  and its gate is open (`GoldenAccepted = true`): the atomic multi-receipt piece supplier return (AK-8b,
+  `InventorySupplierReturnLineageReader`) distributes its pieces with it; closing the gate restores the 503 boundary.
 - No block/release command exists yet; the ledger already moves pieces on Block/Release pairs.
 - `20261122095820_AddInventoryMovementPieceCounts` adds nullable piece columns and checks on `TransferBuckets`,
   `TransferReceipts`, `TransferOverageRenewals` and `StockScraps` (pure DDL). Down first refuses with **THROW 52031** while

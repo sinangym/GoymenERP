@@ -70,12 +70,12 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
                 CarryMetadata(CarryMaker, AccountingPermissionManifestV1.PeriodsPropose), default);
             proposal = proposed.Id;
             await Assert.ThrowsAsync<AccountingDomainException>(() => scope.Store.ApproveReopeningAsync(period, proposal, new(1, 3), CarryMaker,
-                CarryMetadata(CarryMaker, AccountingPermissionManifestV1.PeriodsApprove), default));
+                CarryMetadata(CarryMaker, AccountingPermissionManifestV1.PeriodsReopen), default));
         }
         await using (var scope = OpenCarry(run, CarryChecker))
         {
             await scope.Store.ApproveReopeningAsync(period, proposal, new(1, 3), CarryChecker,
-                CarryMetadata(CarryChecker, AccountingPermissionManifestV1.PeriodsApprove), default);
+                CarryMetadata(CarryChecker, AccountingPermissionManifestV1.PeriodsReopen), default);
             Assert.Equal(AccountingPeriodStatus.Open, (await scope.Store.FindPeriodAsync(period))!.Period.Status);
             var close = Assert.Single((await scope.Store.ReadLifecycleAsync(period, default))!.Closures);
             Assert.Equal((closeId, voucher, hash, proposal), (close.Id, close.CarryVoucherId, close.SourceHash, close.ReopeningId));
@@ -125,22 +125,22 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
             laterProposal = (await maker.Store.ProposeReopeningAsync(later, new(3, Guid.NewGuid(), "SENTETIK later correction"), CarryMaker,
                 CarryMetadata(CarryMaker, AccountingPermissionManifestV1.PeriodsPropose), default)).Id;
             await Assert.ThrowsAsync<AccountingDomainException>(() => maker.Store.ApproveReopeningAsync(later, laterProposal, new(1, 3), CarryMaker,
-                CarryMetadata(CarryMaker, AccountingPermissionManifestV1.PeriodsApprove), default));
+                CarryMetadata(CarryMaker, AccountingPermissionManifestV1.PeriodsReopen), default));
         }
         await using (var checker = OpenCarry(run, CarryChecker))
         {
             var refused = await Assert.ThrowsAsync<AccountingStoreException>(() => checker.Store.ApproveReopeningAsync(earlier,
-                earlierProposal, new(1, 3), CarryChecker, CarryMetadata(CarryChecker, AccountingPermissionManifestV1.PeriodsApprove), default));
+                earlierProposal, new(1, 3), CarryChecker, CarryMetadata(CarryChecker, AccountingPermissionManifestV1.PeriodsReopen), default));
             Assert.Equal("accounting_period_carry_source_unavailable", refused.Code);
             Assert.Equal(AccountingPeriodStatus.Closed, (await checker.Store.FindPeriodAsync(earlier))!.Period.Status);
             Assert.Equal(AccountingPeriodStatus.Closed, (await checker.Store.FindPeriodAsync(later))!.Period.Status);
             Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.PeriodCarryReversals"));
             await checker.Store.ApproveReopeningAsync(later, laterProposal, new(1, 3), CarryChecker,
-                CarryMetadata(CarryChecker, AccountingPermissionManifestV1.PeriodsApprove), default);
+                CarryMetadata(CarryChecker, AccountingPermissionManifestV1.PeriodsReopen), default);
             Assert.Equal(AccountingPeriodStatus.Open, (await checker.Store.FindPeriodAsync(later))!.Period.Status);
             Assert.Equal(AccountingPeriodStatus.Closed, (await checker.Store.FindPeriodAsync(earlier))!.Period.Status);
             await checker.Store.ApproveReopeningAsync(earlier, earlierProposal, new(1, 3), CarryChecker,
-                CarryMetadata(CarryChecker, AccountingPermissionManifestV1.PeriodsApprove), default);
+                CarryMetadata(CarryChecker, AccountingPermissionManifestV1.PeriodsReopen), default);
             Assert.Equal(AccountingPeriodStatus.Open, (await checker.Store.FindPeriodAsync(earlier))!.Period.Status);
             Assert.Equal(AccountingPeriodStatus.Open, (await checker.Store.FindPeriodAsync(next))!.Period.Status);
         }
@@ -204,6 +204,7 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
     {
         public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default) =>
             Task.FromResult(companyId == company && permission is AccountingPermissionManifestV1.PeriodsClose or AccountingPermissionManifestV1.PeriodsApprove
+                    or AccountingPermissionManifestV1.PeriodsReopen
                 ? new PermissionScope(true, true, new HashSet<string>(), new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()) : PermissionScope.Denied);
     }
 }

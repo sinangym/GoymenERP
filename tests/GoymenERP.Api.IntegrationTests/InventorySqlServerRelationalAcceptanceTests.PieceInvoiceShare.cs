@@ -24,11 +24,11 @@ namespace GoymenERP.Api.IntegrationTests;
 /// </summary>
 public sealed partial class InventorySqlServerRelationalAcceptanceTests
 {
-    /// <summary>A piece receipt of 3 pieces weighing 4 kg, stamped at 10 TL/kg (the receipt's own known cost).</summary>
-    private static async Task<InventoryGoodsReceiptRequestV1> SeedPieceInvoiceCostReceipt(Run run)
+    /// <summary>A piece receipt of 3 pieces (or <paramref name="pieces"/>) weighing 4 kg, stamped at 10 TL/kg (the receipt's own known cost).</summary>
+    private static async Task<InventoryGoodsReceiptRequestV1> SeedPieceInvoiceCostReceipt(Run run, int pieces = 3)
     {
         var seed = await SeedGoodsReceiptPurchaseOrderAsync(run);
-        var receipt = Receipt(seed, Guid.NewGuid(), "4", await run.LocationOfAsync(CompanyA)) with { InitialBlock = BlockState.Free, PieceCount = 3 };
+        var receipt = Receipt(seed, Guid.NewGuid(), "4", await run.LocationOfAsync(CompanyA)) with { InitialBlock = BlockState.Free, PieceCount = pieces };
         var receiptKey = $"SENTETIK-piece-cost-receipt-{receipt.AcceptanceId:N}";
         await using var connection = new SqlConnection(run.Factory.DatabaseConnectionString); await connection.OpenAsync();
         await using var transaction = (DbTransaction)await connection.BeginTransactionAsync();

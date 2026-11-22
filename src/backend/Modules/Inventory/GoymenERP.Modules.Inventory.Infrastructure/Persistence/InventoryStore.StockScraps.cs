@@ -130,7 +130,7 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
             throw StockScrapError(400, InventoryStockScrapCodesV1.ValidationFailed, exception);
         }
 
-        await RequireScrapLeavesAllocationsAsync(label.Id, scrap.Remaining.Value, freshAuthorityFence,
+        await RequireScrapLeavesAllocationsAsync(label.Id, scrap.Remaining.Value, scrap.RemainingPieces, freshAuthorityFence,
             cancellationToken);
 
         var scale = await kilogramScale.CheckAsync(companyId,
@@ -298,7 +298,7 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
 
                     var scrap = RestoreStockScrap(scrapRow, label);
                     await RequireScrapLeavesAllocationsAsync(scrapRow.LabelId, scrap.Remaining.Value,
-                        freshAuthorityFence, cancellationToken);
+                        scrap.RemainingPieces, freshAuthorityFence, cancellationToken);
 
                     var movement = scrap.WriteOff(Guid.NewGuid(), now);
                     try
@@ -451,18 +451,24 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
         return (version, scrap, request.Reason.Trim());
     }
 
-    /// <summary>A reservation is never silently broken: what stays on the label must cover its active allocations.</summary>
+    /// <summary>
+    /// A reservation is never silently broken: what stays on the label must cover its active allocations — their
+    /// kilograms and, when they hold pieces (KLN-D119), their pieces.
+    /// </summary>
     private async Task RequireScrapLeavesAllocationsAsync(
         Guid labelId,
         decimal remainingKg,
+        PieceCount? remainingPieces,
         Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken)
     {
         var reserved = await dbContext.Allocations.AsNoTracking()
             .Where(row => row.LabelId == labelId && row.Status == (int)StockAllocationStatus.Active)
-            .SumAsync(row => (decimal?)row.RemainingKg, cancellationToken) ?? 0m;
+            .Select(row => new { row.RemainingKg, row.RemainingPieces })
+            .ToListAsync(cancellationToken);
         await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
-        if (reserved > remainingKg)
+        if (!StockAllocation.ExitLeavesActiveAllocations(remainingKg, remainingPieces?.Value,
+                reserved.Sum(row => row.RemainingKg), reserved.Sum(row => row.RemainingPieces ?? 0)))
         {
             throw StockScrapError(409, InventoryStockScrapCodesV1.AllocationConflict);
         }

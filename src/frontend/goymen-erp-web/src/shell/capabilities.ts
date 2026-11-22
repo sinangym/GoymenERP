@@ -283,7 +283,7 @@ export const CAPABILITY = {
   /**
    * M-04 Muhasebe Fişleri, read-only. Route `/muhasebe/fisler`.
    *
-   * `accounting.periods.approve` (Ö4) and `accounting.periods.close` (Ö5) are CONTROLS of the M-07
+   * `accounting.periods.approve` (Ö4), `accounting.periods.close` (Ö5) and `accounting.periods.reopen` (ROL-D12) are CONTROLS of the M-07
    * list (the provider's `ParentCapabilityId`), not routes, so neither is in these tables; the list
    * reads them with `hasCapability` and the server refuses a self-approval regardless.
    */

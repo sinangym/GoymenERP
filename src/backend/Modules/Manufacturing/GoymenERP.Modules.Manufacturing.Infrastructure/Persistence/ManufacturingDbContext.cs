@@ -154,7 +154,7 @@ public sealed partial class ManufacturingDbContext(DbContextOptions<Manufacturin
     /// </summary>
     internal const string FactOutputPiecesCheck =
         "([OutputPieceCount] IS NULL AND [OutputTheoreticalKgPerPiece] IS NULL AND [OutputTheoreticalKgPerPieceSource] IS NULL) "
-        + "OR ([Kind] = 3 AND [OutputClass] IN (1, 2, 3, 4) AND [OutputPieceCount] > 0 "
+        + "OR ([OutputPieceCount] IS NOT NULL AND [OutputTheoreticalKgPerPiece] IS NOT NULL AND [OutputTheoreticalKgPerPieceSource] IS NOT NULL AND [Kind] = 3 AND [OutputClass] IN (1, 2, 3, 4) AND [OutputPieceCount] > 0 "
         + "AND [OutputTheoreticalKgPerPiece] > 0 AND LEN([OutputTheoreticalKgPerPieceSource]) > 0)";
 
     /// <summary>

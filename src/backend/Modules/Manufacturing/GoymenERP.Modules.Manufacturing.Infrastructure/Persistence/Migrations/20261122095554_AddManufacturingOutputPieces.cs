@@ -58,7 +58,7 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                 name: "CK_Facts_OutputPieces",
                 schema: "manufacturing",
                 table: "Facts",
-                sql: "([OutputPieceCount] IS NULL AND [OutputTheoreticalKgPerPiece] IS NULL AND [OutputTheoreticalKgPerPieceSource] IS NULL) OR ([Kind] = 3 AND [OutputClass] IN (1, 2, 3, 4) AND [OutputPieceCount] > 0 AND [OutputTheoreticalKgPerPiece] > 0 AND LEN([OutputTheoreticalKgPerPieceSource]) > 0)");
+                sql: "([OutputPieceCount] IS NULL AND [OutputTheoreticalKgPerPiece] IS NULL AND [OutputTheoreticalKgPerPieceSource] IS NULL) OR ([OutputPieceCount] IS NOT NULL AND [OutputTheoreticalKgPerPiece] IS NOT NULL AND [OutputTheoreticalKgPerPieceSource] IS NOT NULL AND [Kind] = 3 AND [OutputClass] IN (1, 2, 3, 4) AND [OutputPieceCount] > 0 AND [OutputTheoreticalKgPerPiece] > 0 AND LEN([OutputTheoreticalKgPerPieceSource]) > 0)");
         }
 
         /// <inheritdoc />

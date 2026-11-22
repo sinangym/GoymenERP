@@ -78,7 +78,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         var first = await ReceiveForSupplierReturnAsync(run, BlockState.Free);
-        var second = await ReceiveForSupplierReturnAsync(run, BlockState.Free);
+        // The domain merges only labels of one lot: the second receipt arrives into the first one's lot.
+        var second = await ReceiveForSupplierReturnAsync(run, BlockState.Free, first.LotId);
         var merged = Guid.NewGuid();
         await using (var context = run.Context(CompanyA))
         {
@@ -233,7 +234,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     private static async Task<(InventoryGoodsReceiptRequestV1 First, Guid Merged)> MergedQuantityReturnLabelAsync(Run run)
     {
         var first = await ReceiveForSupplierReturnAsync(run, BlockState.Free);
-        var second = await ReceiveForSupplierReturnAsync(run, BlockState.Free);
+        // The domain merges only labels of one lot: the second receipt arrives into the first one's lot.
+        var second = await ReceiveForSupplierReturnAsync(run, BlockState.Free, first.LotId);
         var merged = Guid.NewGuid();
         await using var context = run.Context(CompanyA);
         var versions = await context.Labels.AsNoTracking().Where(row => row.Id == first.LabelId || row.Id == second.LabelId)

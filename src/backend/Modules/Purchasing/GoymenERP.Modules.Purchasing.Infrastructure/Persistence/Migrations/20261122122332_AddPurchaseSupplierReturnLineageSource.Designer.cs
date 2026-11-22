@@ -2166,7 +2166,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_PurchaseSupplierReturns_Identity", "[ReturnId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ReturnLineId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [GoodsAcceptanceId] <> '00000000-0000-0000-0000-000000000000' AND [MovementId] <> '00000000-0000-0000-0000-000000000000'");
 
-                            t.HasCheckConstraint("CK_PurchaseSupplierReturns_Lineage", "([SourceLabelId] IS NULL AND [LineageMode] IS NULL) OR ([SourceLabelId] IS NOT NULL AND [SourceLabelId] <> '00000000-0000-0000-0000-000000000000' AND [LineageMode] IN (1, 2))");
+                            t.HasCheckConstraint("CK_PurchaseSupplierReturns_Lineage", "([SourceLabelId] IS NULL AND [LineageMode] IS NULL) OR ([SourceLabelId] IS NOT NULL AND [SourceLabelId] <> '00000000-0000-0000-0000-000000000000' AND [LineageMode] IS NOT NULL AND [LineageMode] IN (1, 2))");
 
                             t.HasCheckConstraint("CK_PurchaseSupplierReturns_Status", "[Status] IN (1, 2, 3) AND [CostBasis] IN (1, 2)");
 

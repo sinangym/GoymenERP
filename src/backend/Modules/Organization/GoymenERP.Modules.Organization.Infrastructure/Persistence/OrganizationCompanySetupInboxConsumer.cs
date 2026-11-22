@@ -57,7 +57,8 @@ public sealed class OrganizationCompanySetupInboxConsumer(OrganizationDbContext 
             {
                 auditEvents.Enqueue(new AuditEventDraft(company.Id, "organization.company.setup-completed.v1", "Organization.Company",
                     company.Id.ToString("D"), "Update", before, company.Version, AuditActorTypes.User,
-                    payload.ActorUserId.ToString("D"), ErpPermissions.IdentityRolesManage, [],
+                    // The permission the actor held for the fact being completed: the explicit first-Admin assignment (KIM-D56).
+                    payload.ActorUserId.ToString("D"), ErpPermissions.IdentityCompanyFirstAdminAssign, [],
                     "{\"lifecycleState\":\"SetupPending\"}", "{\"lifecycleState\":\"Active\"}",
                     "İlk Admin ataması Organization yaşam döngüsünü tamamladı.",
                     JsonSerializer.Serialize(new { sourceEventId = message.EventId, payload.RoleAssignmentId }, Json),

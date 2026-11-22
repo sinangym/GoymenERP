@@ -19,6 +19,12 @@ public interface IFounderBootstrapConsole
 
     /// <summary>Reads the repeated new password without echoing it.</summary>
     string? ReadNewPasswordConfirmation();
+
+    /// <summary>
+    /// The operator declaration written to each company Audit row (spec ID-2: actor <c>System</c> + operator declaration,
+    /// the same term as <c>recover-founder</c>); <see langword="null"/> when it cannot be read (the command refuses).
+    /// </summary>
+    FounderRecoveryOperatorDeclaration? ReadOperatorDeclaration();
 }
 
 public enum FounderBootstrapStatus
@@ -54,6 +60,12 @@ public enum FounderBootstrapStatus
 
     /// <summary>The fail-closed security event could not be written; the transaction was rolled back.</summary>
     SecurityEventRefused = 13,
+
+    /// <summary>The operator declaration could not be read; nothing was written.</summary>
+    OperatorDeclarationMissing = 14,
+
+    /// <summary>A company Audit row could not be written; the transaction was rolled back.</summary>
+    AuditRefused = 15,
 }
 
 public sealed record FounderBootstrapResult(

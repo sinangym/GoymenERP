@@ -6,9 +6,10 @@ namespace GoymenERP.Modules.Purchasing.Domain.Invoices;
 /// AK-3b (SAT-D436 TK6): which supplier invoices count toward an order's realization (invoiced pieces, amount, real kg and real kg
 /// price). This is the single named place of that rule.
 /// <para>
-/// NEEDS-SINAN (asked on Issue #1189): until Sinan answers, only a FINALISED invoice counts — one that is <c>FinancePending</c> or
-/// <c>FinanceAccepted</c>. A recorded or matched invoice that is not finalised yet does not. The incoming invoice has no cancelled
-/// or rejected state today; when one is added it must be excluded here.
+/// SAT-D452 (Sinan, 2026-11-22; SAT-D457 for the Finance rejection): only a FINALISED invoice counts — one that is
+/// <c>FinancePending</c> (finalised, Finance has not answered yet) or <c>FinanceAccepted</c>. A recorded or matched invoice that is
+/// not finalised yet does not. The incoming invoice has no cancelled or rejected state today; when one is added it must be
+/// excluded here.
 /// </para>
 /// </summary>
 public static class PurchaseInvoiceRealizationRule

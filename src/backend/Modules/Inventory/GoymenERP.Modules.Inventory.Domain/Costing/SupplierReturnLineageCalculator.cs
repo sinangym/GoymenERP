@@ -199,6 +199,11 @@ public static class SupplierReturnLineageCalculator
     /// values each part at its own TL cost per kg, and applies the SAT-D392 comparison of each invoiced part with its invoice.
     /// Order of refusals: an open quantity shortfall (TI3), then a selection that does not cover the share, then an unreadable
     /// cost (TI4), then a readable difference (SAT-D371).
+    /// <para>
+    /// No live command calls it today: the lineage return values each part with the owner's per-receipt cost basis
+    /// (<c>PurchasingService.SupplierReturn</c>); this method is pinned only by the golden rows of
+    /// <c>SupplierReturnLineageGoldenTests</c> (K3-A P3 — kept, not deleted, because removing it would delete golden tests).
+    /// </para>
     /// </summary>
     public static SupplierReturnLineageResult Value(
         IReadOnlyList<SupplierReturnLineagePart> parts, IReadOnlyList<SupplierReturnLineageReceiptSelection> selections)

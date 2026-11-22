@@ -30,7 +30,7 @@ public static partial class AccountingEndpoints
             Guid proposalId, ApproveAccountingPeriodReopeningV1 request, AccountingApiService service, HttpContext httpContext,
             CancellationToken cancellationToken) => await WriteAsync(httpContext,
                 key => service.ApprovePeriodReopeningAsync(periodId, proposalId, request, key, cancellationToken)))
-            .RequireCompanyContext().RequireAuthorization(AccountingPermissionManifestV1.PeriodsApprove)
+            .RequireCompanyContext().RequireAuthorization(AccountingPermissionManifestV1.PeriodsReopen)
             .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
             .WithName("ApproveAccountingPeriodReopeningV1").Accepts<ApproveAccountingPeriodReopeningV1>("application/json")
             .Produces<AccountingPeriodReopeningViewV1>(StatusCodes.Status200OK).WithWriteProblems(notFound: true);

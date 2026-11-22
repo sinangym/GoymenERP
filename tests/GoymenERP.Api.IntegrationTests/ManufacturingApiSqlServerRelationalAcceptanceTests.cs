@@ -1449,7 +1449,12 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             private static ProductOperationException Denied() => new("product_access_denied", 403);
         }
 
-        private sealed class SyntheticManufacturingToleranceProvider : ISettingsManufacturingToleranceProviderV1
+        /// <remarks>
+        /// The closure assessment compares the profile's window with the host clock's day (TimeProvider.System in this broad
+        /// suite): a fixed end date would make every closure "policy not effective" once the wall clock passes it (K3-B P1).
+        /// The window starts at the suite's fixed start and ends a year after the host's current UTC day.
+        /// </remarks>
+        private sealed class SyntheticManufacturingToleranceProvider(TimeProvider clock) : ISettingsManufacturingToleranceProviderV1
         {
             public Task<ManufacturingToleranceProfileV1> GetManufacturingToleranceAsync(
                 string process, DateOnly effectiveOn, CancellationToken cancellationToken = default)
@@ -1463,7 +1468,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
 
                 return Task.FromResult(new ManufacturingToleranceProfileV1(
                     CompanyA, process, new ProfileVersionV1(ToleranceProfile, 1), 100m, true,
-                    new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)));
+                    new DateOnly(2026, 1, 1), DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime).AddYears(1)));
             }
         }
 
@@ -1879,10 +1884,18 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         /// without that command's audit event or command record, so those facts' counts stay theirs. The plan version does
         /// not move (the termin never moves it). The termin command itself is proven at the store and in its own facts.
         /// </summary>
+        /// <remarks>
+        /// The termin is relative to this run's own clock (URT-D70 refuses a termin before the business day): a fixed calendar day
+        /// would turn every approval below into a 422 once the wall clock passes it (K3-B P1). Thirty days ahead of the run's UTC
+        /// day is never before the company's business day.
+        /// </remarks>
         public async Task EnterTerminAsync(Guid planId) => Assert.Equal(1, await ExecuteAsync(
             "UPDATE manufacturing.Plans SET RequestedDueDate = CONVERT(date, @day, 23), DueDateRevision = 1 "
             + "WHERE Id = @plan AND DueDateRevision = 0",
-            ("@day", "2026-12-31"), ("@plan", planId)));
+            ("@day", UtcToday.AddDays(TerminDaysAhead).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)),
+            ("@plan", planId)));
+
+        private const int TerminDaysAhead = 30;
 
         public Task<int> InsertToleranceAsync(
             Guid companyId,

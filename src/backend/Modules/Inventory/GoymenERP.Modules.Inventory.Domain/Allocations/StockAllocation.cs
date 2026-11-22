@@ -133,6 +133,44 @@ public sealed class StockAllocation
     }
 
     /// <summary>
+    /// KLN-D93 / KLN-D119: whether what stays on a label after an exit (a supplier return, a scrap, a receipt reversal)
+    /// still covers its active allocations — the kilograms and, when the allocations hold pieces, the pieces too. A
+    /// reservation is never silently broken: an exit that leaves the held pieces uncovered is refused like one that
+    /// leaves the held kilograms uncovered. <paramref name="remainingPieces"/> is null when the pieces left on the label
+    /// are not known (a kg-only label, or an exit that states no pieces): with pieces held that is refused fail-closed.
+    /// </summary>
+    public static bool ExitLeavesActiveAllocations(decimal remainingKg, int? remainingPieces, decimal reservedKg,
+        int reservedPieces)
+    {
+        if (reservedKg > remainingKg)
+        {
+            return false;
+        }
+
+        return reservedPieces <= 0 || remainingPieces is { } pieces && reservedPieces <= pieces;
+    }
+
+    /// <summary>
+    /// SAT-D463: the piece side of moving <paramref name="source"/> to another label. An allocation that holds pieces
+    /// moves only with its pieces: a move without pieces is refused even when the target label is kg-only (it would
+    /// silently drop the reserved pieces), and a kg-only target refuses the pieces it cannot count. Otherwise the target
+    /// takes the pieces by <see cref="ReservablePieces"/>.
+    /// </summary>
+    public static PieceCount? MovedPieces(StockAllocation source, Kilograms quantity, int? requestedPieces,
+        Kilograms unreservedKg, PieceCount? positionPieces, PieceCount activelyAllocatedPieces,
+        bool everyActiveAllocationHoldsPieces)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        if (source.TracksPieces && requestedPieces is null)
+        {
+            throw new StockAllocationException(StockAllocationFailure.PiecesRequired);
+        }
+
+        return ReservablePieces(quantity, requestedPieces, unreservedKg, positionPieces, activelyAllocatedPieces,
+            everyActiveAllocationHoldsPieces);
+    }
+
+    /// <summary>
     /// The kilograms of one Free physical position that no active allocation holds, the only part another
     /// consumer (a Manufacturing input issue) may take. Master v3 §7.6 / INV-003:
     /// <c>Serbest Fiziki = Fiziki Mevcut − Aktif Satış Tahsisleri − …</c>; DEC-STK-004: an allocation never
