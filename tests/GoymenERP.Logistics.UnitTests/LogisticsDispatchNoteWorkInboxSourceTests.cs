@@ -15,15 +15,16 @@ namespace GoymenERP.Logistics.UnitTests;
 public sealed class LogisticsDispatchNoteWorkInboxSourceTests
 {
     [Fact]
-    public void The_source_declares_its_kind_the_approve_permission_and_the_hour_class_and_the_module_registers_it()
+    public void The_source_declares_its_kind_the_approve_permission_and_the_module_registers_it()
     {
         var fixture = new F();
         var source = new LogisticsDispatchNoteWorkInboxSourceV1(fixture.Rows, fixture.Fence);
 
+        // WP1: the duration class is the Work rule table's (YOL-D18 default: hour scale), never the source's declaration.
         Assert.Equal(("logistics", "logistics.dispatch-note.v1", LogisticsPermissionManifestV1.DispatchNotesApprove,
-                "logistics.dispatch-notes.approve", WorkApprovalDurationClassV1.Hours),
+                "logistics.dispatch-notes.approve", false),
             (source.Module, source.Kind, source.ApproverPermission, LogisticsPermissionManifestV1.DispatchNotesApprove,
-                source.DurationClass));
+                ((IWorkInboxSourceV1)source).AcceptsScopedApprovers));
         Assert.True(NativeApprovalQueueRulesV1.IsValidKind(source.Module, source.Kind));
         var services = new ServiceCollection().AddLogisticsModule(new LogisticsWorkInboxTestSettings());
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IWorkInboxSourceV1)

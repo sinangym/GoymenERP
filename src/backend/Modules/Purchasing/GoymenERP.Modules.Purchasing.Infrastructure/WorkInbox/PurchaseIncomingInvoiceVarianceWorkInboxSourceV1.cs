@@ -13,7 +13,9 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.WorkInbox;
 /// Matched, the owner's match found at least one variance and no variance decision is recorded — exactly what
 /// <c>ApprovePurchaseIncomingInvoiceVarianceV1</c> accepts. It is approved on the invoice's own screen by a holder of
 /// <c>purchasing.invoices.approve-variance</c> other than its recorder and matcher. Every such invoice of the company is
-/// returned, the caller's own included: Work hides a maker's own item.
+/// returned, the caller's own included: Work hides the item from the owner's "may not decide" set
+/// (<see cref="PurchaseIncomingInvoice.VarianceDeciderExclusions"/>: the matcher as maker, the recorder and — ROL-D10, WP1
+/// D4 — the approvers of the matched purchase orders).
 /// <para>
 /// The variances are not stored apart: each invoice is restored through its own history (the domain's
 /// <see cref="PurchaseIncomingInvoice.Match"/> recomputes them from the frozen receipt facts and the frozen Ayarlar policy). One rule
@@ -71,7 +73,7 @@ internal sealed class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1(
         }
 
         List<Pending> pending;
-        Dictionary<Guid, string?> orderNumbers;
+        Dictionary<Guid, OrderFacts> orders;
         try
         {
             var matched = (int)PurchaseIncomingInvoiceStatus.Matched;
@@ -93,9 +95,9 @@ internal sealed class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1(
 
             pending = pending.OrderBy(item => item.WaitingSinceUtc).ThenBy(item => item.Invoice.Id).ToList();
             var orderIds = pending.Take(maxCount).SelectMany(item => OrderIds(item.Invoice)).Distinct().ToArray();
-            orderNumbers = await dbContext.Orders.AsNoTracking()
+            orders = await dbContext.Orders.AsNoTracking()
                 .Where(row => row.CompanyId == context.CompanyId && orderIds.Contains(row.Id))
-                .ToDictionaryAsync(row => row.Id, row => row.DocumentNumber, cancellationToken);
+                .ToDictionaryAsync(row => row.Id, row => new OrderFacts(row.DocumentNumber, row.ApprovedBy), cancellationToken);
         }
         catch (Exception) when (!cancellationToken.IsCancellationRequested)
         {
@@ -111,7 +113,7 @@ internal sealed class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1(
         var items = new List<WorkInboxItemV1>(Math.Min(pending.Count, maxCount));
         foreach (var entry in pending.Take(maxCount))
         {
-            if (!TryItem(entry, orderNumbers, out var item))
+            if (!TryItem(entry, orders, out var item))
             {
                 return WorkInboxSourceResultV1.Unavailable();
             }
@@ -139,7 +141,7 @@ internal sealed class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1(
     private static IEnumerable<Guid> OrderIds(PurchaseIncomingInvoice invoice) =>
         invoice.Matches.Select(match => match.OrderId).Concat(invoice.AdditionalCosts.Select(cost => cost.OrderId));
 
-    private static bool TryItem(Pending entry, IReadOnlyDictionary<Guid, string?> orderNumbers, out WorkInboxItemV1 item)
+    private static bool TryItem(Pending entry, IReadOnlyDictionary<Guid, OrderFacts> orders, out WorkInboxItemV1 item)
     {
         item = null!;
         var invoice = entry.Invoice;
@@ -166,14 +168,27 @@ internal sealed class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1(
         };
         foreach (var orderId in OrderIds(invoice).Distinct().Order().Take(MaxOrderReferences))
         {
-            orderNumbers.TryGetValue(orderId, out var number);
-            references.Add(new("purchase-order", PurchasingWorkInboxFence.OrderLabel(orderId, number), orderId,
+            orders.TryGetValue(orderId, out var facts);
+            references.Add(new("purchase-order", PurchasingWorkInboxFence.OrderLabel(orderId, facts?.DocumentNumber), orderId,
                 PurchasingWorkInboxFence.Link(PurchasingWorkInboxFence.OrderScreenPath, orderId)));
+        }
+
+        var matchedOrderIds = OrderIds(invoice).Distinct().ToArray();
+        if (matchedOrderIds.Any(orderId => !orders.ContainsKey(orderId)))
+        {
+            // ROL-D10 needs every matched order's approver: an order the read did not return is unavailable, never skipped.
+            return false;
+        }
+
+        var excluded = invoice.VarianceDeciderExclusions(matchedOrderIds.Select(orderId => orders[orderId].ApprovedBy));
+        if (excluded.Count > WorkInboxRulesV1.MaxExcludedDecidersPerItem)
+        {
+            return false;
         }
 
         item = new WorkInboxItemV1(ModuleName, KindName, invoice.Id, label, entry.WaitingSinceUtc,
             PurchasingWorkInboxFence.Link(PurchasingWorkInboxFence.InvoiceScreenPath, invoice.Id), invoice.MatchedBy,
-            rules, references);
+            rules, references, excluded);
         return true;
     }
 
@@ -202,4 +217,6 @@ internal sealed class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1(
     }
 
     private sealed record Pending(PurchaseIncomingInvoice Invoice, DateTimeOffset WaitingSinceUtc);
+
+    private sealed record OrderFacts(string? DocumentNumber, string? ApprovedBy);
 }

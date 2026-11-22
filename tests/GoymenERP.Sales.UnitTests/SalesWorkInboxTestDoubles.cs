@@ -92,7 +92,8 @@ internal static class SalesWorkInboxTestDoubles
     {
         Assert.True(NativeApprovalQueueRulesV1.IsValidKind(source.Module, source.Kind));
         Assert.True(WorkInboxRulesV1.IsValidPermission(source.ApproverPermission));
-        Assert.Equal(WorkApprovalDurationClassV1.BusinessDays, source.DurationClass);
+        // WP1: the duration class is the Work rule table's (YOL-D18 default: business days), never the source's declaration.
+        Assert.False(source.AcceptsScopedApprovers);
         foreach (var item in result.Items!)
         {
             Assert.Equal(source.Module, item.Module);

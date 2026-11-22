@@ -279,6 +279,21 @@ public sealed class PurchaseIncomingInvoice
         MatchedBy = actor; Status = PurchaseIncomingInvoiceStatus.Matched; Version = checked(Version + 1);
     }
 
+    /// <summary>
+    /// The users who may not decide this invoice's variance: its recorder and matcher (maker ≠ checker, ROL-D14) and, by
+    /// ROL-D10, the approvers of the purchase orders the invoice is matched to ("siparişi onaylayan Satınalma Müdürü
+    /// onaylamaz"). YOL-D23: no one else is excluded. The Work inbox reads this set (WP1 D4); blank entries are dropped.
+    /// </summary>
+    public IReadOnlyList<string> VarianceDeciderExclusions(IEnumerable<string?> matchedOrderApprovers)
+    {
+        ArgumentNullException.ThrowIfNull(matchedOrderApprovers);
+        return new[] { RecordedBy, MatchedBy }.Concat(matchedOrderApprovers)
+            .Where(actor => !string.IsNullOrWhiteSpace(actor))
+            .Select(actor => actor!.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
+
     public void ApproveVariance(long expectedVersion, string approvedBy, string reason, DateTimeOffset now)
     {
         RequireVersion(expectedVersion); RequireStatus(PurchaseIncomingInvoiceStatus.Matched);
