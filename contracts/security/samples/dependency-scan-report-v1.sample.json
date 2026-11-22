@@ -1,0 +1,13 @@
+{
+ "format": "goymen.security.dependency-scan-report.v1",
+ "generatedAtUtc": "2026-11-22T06:00:00Z",
+ "sourceCommit": "0000000000000000000000000000000000000001",
+ "scanners": [
+  {"name": "SENTETIK-tarayici", "version": "1.0.0"}
+ ],
+ "findings": [
+  {"ecosystem": "npm", "package": "sentetik-paket-a", "installedVersion": "1.0.0", "fixedVersion": "1.0.1", "advisoryId": "SENTETIK-0001", "severity": "moderate", "title": "SENTETIK orta önem bulgusu"},
+  {"ecosystem": "nuget", "package": "Sentetik.Paket.B", "installedVersion": "2.0.0", "fixedVersion": null, "advisoryId": "SENTETIK-0002", "severity": "critical", "title": "SENTETIK kritik bulgu"},
+  {"ecosystem": "pip", "package": "sentetik-paket-c", "installedVersion": "3.0.0", "fixedVersion": "3.1.0", "advisoryId": "SENTETIK-0003", "severity": "low", "title": "SENTETIK düşük önem bulgusu"}
+ ]
+}

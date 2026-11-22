@@ -1,4 +1,6 @@
+using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.BuildingBlocks.Security.Events;
+using GoymenERP.Modules.SecurityEvents.Infrastructure.Ai;
 using GoymenERP.Modules.SecurityEvents.Infrastructure.Persistence;
 using GoymenERP.Modules.SecurityEvents.Infrastructure.Reading;
 using GoymenERP.Modules.SecurityEvents.Infrastructure.Writing;
@@ -49,6 +51,11 @@ public static class SecurityEventsModuleExtensions
         services.AddScoped<IAuthorizationDenialRecorderV1, AuthorizationDenialRecorder>();
         // ADR-SEC-001 section 5 company read; it records security.events.read before reading (fail-closed).
         services.AddScoped<ISecurityEventQueryServiceV1, SecurityEventQueryService>();
+        // WP-C10: the read-only AI security event summary (security.events.summary.v1). Registration only: the catalog
+        // admits it solely when Ai:AllowedTools lists it, a call needs ai.panel.use + platform.security-events.read
+        // company-wide, and its Confidential data class is refused unless Ai:MaxDataClass admits it.
+        services.AddScoped<SecurityEventDigestReader>();
+        services.AddScoped<IAiOwnerToolV1, SecurityEventsSummaryAiTool>();
 
         return services;
     }
