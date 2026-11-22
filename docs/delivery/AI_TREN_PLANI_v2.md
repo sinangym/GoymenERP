@@ -87,3 +87,35 @@ tren (PR #1201) ana dala girdikten sonra ayrı trende yapılır (AI-D10).
 - Kişisel hafıza saklama süresi ve kullanıcının silme hakkı.
 - Hangi onay türlerinde ileride politika sınırlı otomatik onay açılacağı ve eşikleri.
 - `ai.panel.use` dışında yeni izinler (zamanlı görev, belge taslağı) ve hangi rollere verileceği (insan kapısı).
+
+## 7. Genel çalışan sistem yapay zekâsı (AI-D19–AI-D21)
+
+"AGI" iddiası yerine bu şirketin işini genel olarak bilen ve yapan bir sistem. Ajan projelerinin çoğunun çökme nedenleri
+(sistemin gerçek işlevlerine bağlanmamış sohbet botu, ölçüm yokluğu, erken otonomi, dağınık veri, maliyet) ve karşılıkları:
+
+1. **Eller:** bütün okuma ve komutlar şemalı araç; hesap ve yazma deterministik backend'de (mevcut calculator'lar, yetki,
+   expected version, idempotency, audit). Yapay zekâ planlar.
+2. **Dünya bilgisi:** varlıklar ve ilişkileri (sipariş → tahsis → sevk → fatura → tahsilat; alış → kabul → maliyet), durum
+   makineleri, formüller, kararlar sürümlü bilgi grafiğinde; yeni karar ana dala girince güncellenir.
+3. **Düşünme döngüsü:** planla → araçla uygula → sonucu kurallara ve calculator'a karşı doğrula → emin değilse insana sor.
+4. **Hafıza:** şirket bilgisi (kararlar, kurallar, tarifler), kullanıcı hafızası (tercihler), olay hafızası (geçmiş
+   görevler ve sonuçları).
+5. **Ölçüm ve öğrenme:** her önerinin kabul/düzeltme oranı; şirketin gerçek örneklerinden değerlendirme seti her model,
+   istem veya tarif değişikliğinde CI gibi koşar; kötüleşen davranış canlıya çıkmaz.
+6. **Kazanılan otonomi (AI-D21):** öner-onayla başlar; ölçülen başarıyla üst seviye önerilir, Sinan onaylar; hata artarsa
+   geri iner.
+7. **Ajan ekibi:** satış, alış, finans, üretim, kapanış, güvenlik uzman ajanları + koordinatör; olay güdümlü tetikleme.
+8. **Tarif kütüphanesi ve eksik araç talebi (AI-D19):** anlatılan iş tarife çevrilir; iyi tarifler şirket kütüphanesine;
+   aracı olmayan iş geliştirme talebine dönüşür.
+9. **Tek iş kutusu (AI-D20):** onay, görev, mesaj, bildirim; belgeye bağlı konuşma; vekâlet ve yükseltme.
+
+Ek dilimler:
+
+| # | Dilim | İçerik |
+|---|---|---|
+| AI-24 | Genel komut araçları | Modül komutlarının önizleme + onaylı araç olarak açılması (onay komutları hariç) |
+| AI-25 | Tarif kütüphanesi | Tarif oluşturma, onay, paylaşım, şirket kütüphanesine terfi; eksik araç talebi |
+| AI-26 | Tek iş kutusu | Work modülünde görev, belgeye bağlı mesaj, vekâlet, yükseltme, yönetim ekranı |
+| AI-27 | Değerlendirme ve otonomi | Değerlendirme seti, kabul/düzeltme ölçümü, otonomi seviyeleri ve otomatik geri inme |
+| AI-28 | Bilgi grafiği ve olay hafızası | Varlık ilişkileri, durum makineleri, geçmiş görev sonuçları |
+| AI-29 | Uzman ajanlar ve koordinatör | Olay güdümlü uzman ajanlar, koordinatör, ajan kimliği ve kaydı |
