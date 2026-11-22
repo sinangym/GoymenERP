@@ -1,4 +1,4 @@
-# Adet/kg Formül Golden v1 — EK1 (SAT-D451, SAT-D452, SAT-D453, SAT-D454, SAT-D455, ALS-D122)
+# Adet/kg Formül Golden v1 — EK1 (SAT-D451–SAT-D459, ALS-D122–ALS-D124)
 
 ## Kaynak, bağımsızlık ve kabul sınırı
 
@@ -7,8 +7,10 @@ kararların formül golden'ını kaydeder. Ana golden'ın tanımları (TK1–TK9
 örnekleri (R1, R5, L9, A07, K02/K03) ve gösterim kuralları burada da geçerlidir.
 
 **Kaynak kararlar:** `SINAN_KARARLARI_2026-11-22_WORK_AI_DALGALAR.md` (bu belge yazılırken `claude/nifty-franklin-nk76d5`
-@ `f12fed4b8bb1f3e6861647dfb17ea9a2f0dd472c` dalında, main'de değil): SAT-D451, SAT-D452, SAT-D453, SAT-D454, SAT-D455,
-ALS-D122 ve 11–16. cevaplar. Dayandıkları önceki kararlar: SAT-D436, SAT-D441, SAT-D444, SAT-D445, ALS-D119, ALS-D120,
+@ `453f72dbad0bd4b738fd8a89efb757c84808f426` dalında, main'de değil): SAT-D451–SAT-D459, ALS-D122–ALS-D124, GOV-D13 ve
+11–23. cevaplar. SAT-D456–SAT-D459, ALS-D123 ve ALS-D124 (SINAN-CEVAP 64), bu ekin ilk taslağındaki NEEDS-SINAN EN1–EN6
+sorularına verilen cevaplardır; GOV-D13 bu ekin ayrı dala gönderilip taslak PR açılmasına izin verir (merge yetkisi
+vermez). Dayandıkları önceki kararlar: SAT-D436, SAT-D441, SAT-D444, SAT-D445, ALS-D119, ALS-D120,
 ALS-D121, SAT-D371, SAT-D392, SAT-D393, SAT-D396, SAT-D408, SAT-D410, SAT-D427 (`SINAN_KARARLARI_2026-11-21_TREN_KAPANIS.md`
 ve main'deki dosyalar), SAT-D11, SAT-D261, SAT-D265.
 
@@ -24,6 +26,9 @@ edilmez. `OPEN-*`, `KARAR_SICILI.md`, `ACIK_KARARLAR.md`, grant/rol/Critical ve 
 karar metninde açıkça yazmayan ve mevcut kurallardan gerekçesiyle çıkarılan adımlardır; karara bağlanmamış noktalar
 `NEEDS-SINAN` diye listelenir ve o satırlar hesaplanamaz bırakılır.
 
+**Fark tabanı (SAT-D456):** iade farkı = belgeye yazılan (kuruşa yuvarlanmış) stok çıkış tutarı − belgeye yazılan
+(kuruşa yuvarlanmış) iade tutarı.
+
 **Ortak sonuç notu (miktar iadesi):** Bu ekteki miktar iadesi satırlarında stok çıkışı ile iade faturası arasında fark
 ≠ 0 olduğunda sonuç ana golden I11/I12 ile aynıdır: ortalama okunabiliyorsa fark içeren iade Finans spec'i gelene kadar
 **reddedilir** (SAT-D371); fark okunamıyorsa yol SAT-D393/D396/D408 farklı kişi onaylı istisnadır; onaylı istisna Stok
@@ -35,8 +40,11 @@ karar metninde açıkça yazmayan ve mevcut kurallardan gerekçesiyle çıkarıl
 
 ### Formül
 
-1. Net birim fiyat = seçilen alış siparişi satırının birim fiyatı × (1 − iskonto oranı); **vade farkı eklenmez**
-   (SAT-D451). Sinan'ın örneği: 41,25 − %2,5 = 40,21875 (13. soru).
+1. Net birim fiyat = seçilen alış siparişi satırının birim fiyatından satıra ait **bütün satır iskontoları** (yüzde,
+   zincir, tutar) düşülmüş fiyattır; **vade farkı eklenmez** (SAT-D451, SAT-D458). Sinan'ın örneği: 41,25 − %2,5 =
+   40,21875 (13. soru).
+   **Belge altı iskonto düşülmez** ve satıra dağıtılmaz; belge altı iskontosu olan siparişten miktar iadesi anlaşılır
+   hata koduyla durur (SAT-D458).
 2. Net birim fiyat 4 ondalığı aşarsa **4 ondalığa, yarımda sıfırdan uzağa** yuvarlanır (SAT-D453).
 3. İade tutarı = iade miktarı × yuvarlanmış net birim fiyat (SAT-D453).
 
@@ -46,9 +54,11 @@ karar metninde açıkça yazmayan ve mevcut kurallardan gerekçesiyle çıkarıl
   yuvarlanır. Gerekçe: SAT-D453 tutarın yuvarlanmış birim fiyatla hesaplanacağını söyler; belge satırı tutarının kuruşa bir
   kez yuvarlanması mevcut satır kuralıdır (SAT-D11). Satırlar bu yuvarlamaya duyarlı olmayacak biçimde değil, onu
   gösterecek biçimde seçildi (E04).
-- **TE2 — Tek satır iskontosu:** formül, satırda tek bir yüzde iskonto olduğu durumu kapsar (13. sorudaki örnek). Zincir
-  iskonto (ör. %10 + %5), tutar olarak satır iskontosu ve belge altı iskontonun net birim fiyata nasıl yansıyacağı
-  kararda yazmaz → NEEDS-SINAN EN1.
+- **TE2 — İskonto türlerinin uygulanışı:** zincir iskonto ardışık uygulanır (fiyat × (1 − i₁) × (1 − i₂)); satır
+  tutarı olarak verilen iskonto net birim fiyata (miktar × fiyat − tutar iskontosu) ÷ miktar olarak yansır. Gerekçe:
+  SAT-D458 bu iskontoların "net fiyata yansıdığını" söyler; "zincir" iskontonun tanımı ardışık uygulamadır ve tutar
+  iskontosunun birim fiyattaki karşılığı ancak miktara bölünerek bulunur. Yüzde ve tutar iskontosu aynı satırda birlikte
+  varsa hangisinin önce uygulanacağı kararda yazmaz → NEEDS-SINAN EN7.
 
 ### Golden satırları (kg birimli seçilen sipariş satırı)
 
@@ -59,13 +69,16 @@ karar metninde açıkça yazmayan ve mevcut kurallardan gerekçesiyle çıkarıl
 | E03 | İskontosuz satır | Sipariş 20,50 TL/kg; iade 80,000 kg | Net 20,5 (yuvarlama yok) | Birim fiyat **20,5000**; iade faturası **1 640,00 TL** (= ana golden I11) |
 | E04 | Vade farkı hariç (SAT-D451); TE1 kuruş yuvarlaması | Sipariş 41,25 TL/kg, %2,5 iskonto, %3 vade farkı; iade 80,000 kg | Net 40,2188 (vade farkı hariç); 80 × 40.2188 = 3 217,504 → kuruş | Birim fiyat **40,2188** (vade farkı dahil 40.21875 × 1.03 = 41.4253125 → 41,4253 **OLMAZ**); iade faturası **3 217,50 TL** |
 | E05 | Net 4 ondalığı aşmıyor | Sipariş 40,00 TL/kg, %2,5 iskonto; iade 50,000 kg | Net 39 | Birim fiyat **39,0000**; iade faturası **1 950,00 TL** |
-| E06 | Ortalama okunabilir, fark var | L9 (ana golden I11) 80,000 kg, depo/ürün ortalaması 21,2500; seçilen R5 satırı 21,00 TL/kg, %2,5 iskonto | Net 20.475 → 20,4750; fatura 80 × 20.475 = 1 638; stok çıkışı 80 × 21.25 = 1 700; fark 62 | Birim fiyat **20,4750**; iade faturası **1 638,00 TL**; stok çıkışı **1 700,00 TL**; fark **62,00 TL** → Finans spec'i gelene kadar **reddedilir** (SAT-D371) |
+| E06 | Ortalama okunabilir, fark var | L9 (ana golden I11) 80,000 kg, depo/ürün ortalaması 21,2500; seçilen R5 satırı 21,00 TL/kg, %2,5 iskonto | Net 20.475 → 20,4750; fatura 80 × 20.475 = 1 638; stok çıkışı 80 × 21.25 = 1 700; fark (SAT-D456) 1 700,00 − 1 638,00 | Birim fiyat **20,4750**; iade faturası **1 638,00 TL**; stok çıkışı **1 700,00 TL**; fark **62,00 TL** → Finans spec'i gelene kadar **reddedilir** (SAT-D371) |
+| E07 | Zincir iskonto (SAT-D458, TE2) | Sipariş 41,25 TL/kg, %10 + %2,5 zincir iskonto; iade 80,000 kg | Net 41.25 × 0.9 × 0.975 = 36.196875 → **36,1969**; 80 × 36.1969 = 2 895,752 → kuruş | Birim fiyat **36,1969**; iade faturası **2 895,75 TL** |
+| E07a | Satır tutar iskontosu (SAT-D458, TE2) | Sipariş satırı 120,000 kg × 41,25 = 4 950,00, satır tutar iskontosu 10,00 TL; iade 120,000 kg | Net (4950 − 10)/120 = 41.1666… → **41,1667**; 120 × 41.1667 = 4 940,004 → kuruş | Birim fiyat **41,1667**; iade faturası **4 940,00 TL** |
 
 Hesaplanamaz:
 
 | # | Durum | Sonuç |
 |---|---|---|
-| E07 | Seçilen sipariş satırında zincir iskonto (%10 + %5), tutar iskontosu veya belge altı iskonto var (TE2) | **NEEDS-SINAN EN1** |
+| E07b | Seçilen siparişte belge altı iskonto var | Miktar iadesi **anlaşılır hata koduyla durur** (SAT-D458); belge altı iskonto satıra dağıtılmaz |
+| E07c | Aynı satırda yüzde iskonto ve tutar iskontosu birlikte var | Uygulama sırası kararda yok → **NEEDS-SINAN EN7** |
 
 ---
 
@@ -76,7 +89,8 @@ Hesaplanamaz:
 1. Ortalama maliyet **okunamıyorsa**, farklı kişinin onayladığı elle maliyet sipariş fiyatından farklı olabilir
    (SAT-D454).
 2. Stok çıkışı = iade kg × onaylı elle maliyet/kg; iade faturası = iade miktarı × siparişin net birim fiyatı (SAT-D451/D453).
-3. Fark = stok çıkışı − iade faturası; mevcut iade farkı kuralıyla (SAT-D392/D393, farklı kişi onayı) kaydedilir.
+3. Fark = kuruşa yuvarlanmış stok çıkışı − kuruşa yuvarlanmış iade faturası (SAT-D456); mevcut iade farkı kuralıyla
+   (SAT-D392/D393, farklı kişi onayı) kaydedilir.
 4. Ortalama okunabiliyorken elle maliyet girilemez (SAT-D371/D410 sürer).
 
 ### Golden satırları
@@ -105,25 +119,22 @@ Hesaplanamaz / reddedilir:
 4. Stok çıkışı = etiketten çıkan kg × depo/ürün ortalaması/kg (SAT-D444) veya, ortalama okunamıyorsa, onaylı elle maliyet
    (SAT-D454).
 
-### Türetilen adım
-
-- **TE3 — Fark tabanı:** fark = stok çıkışı − iade belgesi satır tutarı. Stok çıkışı tutarının saklama hassasiyeti ve
-  farkın kuruşa yuvarlanmış belge tutarından mı, kesin tutardan mı alınacağı kararda yazmaz; E12 ve E13 bu iki okumanın
-  aynı gösterilen farkı verdiği sayılarla seçildi. İki okumanın ayrıştığı durum NEEDS-SINAN EN2'dir.
+5. Girilen iade adedi stoktan çıkan etiket adedine **eşit olmalıdır**; farklıysa iade reddedilir (SAT-D459).
+6. Fark = kuruşa yuvarlanmış stok çıkışı − kuruşa yuvarlanmış iade belgesi tutarı (SAT-D456).
 
 ### Golden satırları
 
 | # | Durum | Girdiler | Kesin ara değerler | Gösterilen / sonuç |
 |---|---|---|---|---|
-| E12 | Adetli satır, iskonto, yarım sınırı | Sipariş satırı 265,13 TL/adet, %2,5 iskonto; iade 3 adet; etiket 3 adet / 37,461 kg; depo/ürün ortalaması 21,2500 TL/kg | Net 265.13 × 0.975 = 258.50175 (tam yarım) → **258,5018**; belge 3 × 258.5018 = 775,5054 → 775,51; stok çıkışı 37.461 × 21.25 = 796,04625; fark 20,54085 (kuruş tabanıyla 20,53625) | Birim fiyat **258,5018 TL/adet**; iade faturası **775,51 TL** (3 adet; kg 37,461 bilgi); stok çıkışı **796,05 TL**; fark **20,54 TL** → Finans spec'i gelene kadar **reddedilir** (SAT-D371) |
+| E12 | Adetli satır, iskonto, yarım sınırı | Sipariş satırı 265,13 TL/adet, %2,5 iskonto; iade 3 adet; etiket 3 adet / 37,461 kg; depo/ürün ortalaması 21,2500 TL/kg | Net 265.13 × 0.975 = 258.50175 (tam yarım) → **258,5018**; belge 3 × 258.5018 = 775,5054 → 775,51; stok çıkışı 37.461 × 21.25 = 796,04625 → 796,05; fark (SAT-D456) 796,05 − 775,51 | Birim fiyat **258,5018 TL/adet**; iade faturası **775,51 TL** (3 adet; kg 37,461 bilgi); stok çıkışı **796,05 TL**; fark **20,54 TL** → Finans spec'i gelene kadar **reddedilir** (SAT-D371) |
 | E13 | Adetli satır, vade farkı hariç | E12 satırında ayrıca %2 vade farkı | Net yine 258,5018 (vade farkı dahil 258.50175 × 1.02 = 263,671785 → 263,6718 **OLMAZ**) | E12 ile aynı: **775,51 TL** fatura, **796,05 TL** çıkış, fark **20,54 TL** |
-| E14 | Adetli satır, ortalama okunamıyor (SAT-D454) | E12; ortalama okunamıyor; onaylı elle maliyet 20,7000 TL/kg | Stok çıkışı 37.461 × 20.7 = 775,4427; fark 775.4427 − 775.5054 = −0,0627 (kuruş tabanıyla −0,0673) | Stok çıkışı **775,44 TL**; iade faturası **775,51 TL**; fark **−0,06 TL** (kuruş tabanında −0,07) → iki okuma ayrışır: **hesaplanamaz — NEEDS-SINAN EN2** |
+| E14 | Adetli satır, ortalama okunamıyor (SAT-D454); ayırt edici fark tabanı (SAT-D456) | E12; ortalama okunamıyor; onaylı elle maliyet 20,7000 TL/kg | Stok çıkışı 37.461 × 20.7 = 775,4427 → 775,44; fark 775,44 − 775,51 | Stok çıkışı **775,44 TL**; iade faturası **775,51 TL**; fark **−0,07 TL** (kesin değerlerden 775.4427 − 775.5054 = −0,0627 → −0,06 **OLMAZ**); onaylı istisna Stok 409'unu aşmaz (SAT-D410) |
 
-Hesaplanamaz:
+Reddedilir:
 
 | # | Durum | Sonuç |
 |---|---|---|
-| E15 | Girilen iade adedi, iade edilen etiketin adediyle tutmuyor (ör. 3 adet girildi, etikette 5 adet var) | **NEEDS-SINAN EN3** (etiketin önce bölünmesi mi gerekir, kg nasıl belirlenir) |
+| E15 | Girilen iade adedi, iade edilen etiketin adediyle tutmuyor (ör. 3 adet girildi, etikette 5 adet var) | **Reddedilir** (SAT-D459); hazırlayan düzeltir |
 
 ---
 
@@ -132,7 +143,8 @@ Hesaplanamaz:
 ### Formül
 
 Satış ve alışta gerçekleşme ve gerçek kg fiyatı (SAT-D436, ana golden TK6) hesabına **yalnız kesinleşmiş faturalar** girer;
-taslak, iptal ve reddedilmiş faturalar sayılmaz (SAT-D452). Teorik kg fiyatı siparişin kendi tutarı ve teorik kg'sinden
+taslak, iptal ve reddedilmiş faturalar sayılmaz (SAT-D452). Finans'ın reddettiği satış faturası kesinleşmiş sayılmaz ve
+hesaba girmez; yeniden gönderilip Finans kabul edince girer (SAT-D457). Teorik kg fiyatı siparişin kendi tutarı ve teorik kg'sinden
 hesaplandığı için faturaların durumundan etkilenmez.
 
 ### Golden satırları
@@ -148,11 +160,8 @@ Fatura 1: 40 adet, 10 000,00 TL, kantar 500,160 kg. Fatura 2: 60 adet, 15 000,00
 | E19 | Sipariş için yalnız taslak fatura var | Kesinleşmiş fatura yok | Gerçek kg fiyatı **gösterilemez**; teorik **20,25** gösterilir |
 | E20 | Alış: kabul tartılmış (489,750 kg), fatura taslak | Kesinleşmiş fatura yok | Gerçek kg fiyatı **gösterilemez**; teorik **18,00** (ana golden K10); fatura kesinleşince 9000/489.75 → **18,38** |
 
-Hesaplanamaz:
-
-| # | Durum | Sonuç |
-|---|---|---|
-| E21 | Kesinleşmiş satış faturası Finans tarafından yetki gerekçesiyle reddedildi (SAT-D427) ve yeniden gönderimi bekliyor | SAT-D452'deki "reddedilmiş fatura"nın bu Finans reddini kapsayıp kapsamadığı yazmaz (SAT-D427'de fatura değişmez, kesinleşmiş kalır) → **NEEDS-SINAN EN4** |
+| E21 | Fatura 2 Finans tarafından reddedildi (SAT-D427), yeniden gönderim bekliyor (SAT-D457) | Yalnız fatura 1 | **40/100 adet**, **19,99** |
+| E21a | Fatura 2 yeniden gönderildi ve Finans kabul etti (SAT-D457) | 25000/1249.06 | **100/100 adet**, **20,02** |
 
 ---
 
@@ -161,8 +170,12 @@ Hesaplanamaz:
 ### Formül
 
 1. Kısmi iade yapılmışsa faturalanan adede düşen kg = **kabulün kalan kg'si × faturalanan adet ÷ kalan adet** (ALS-D122).
+   Kalan kg ve adet **her fatura işlenirken güncel** hesaplanır: kabulün tartılan kg'si ve adedinden o ana kadarki iadeler
+   ve önceki faturaların kg ve adedi düşülür (ALS-D123).
 2. İade yoksa ALS-D121 aynen geçerlidir (kabulde tartılan kg × faturalanan adet ÷ kabul adedi).
-3. Maliyet/kg = faturalı payın tutarı ÷ kg payı; tutar kesin taşınır (ALS-D120); dövizde TL karşılığı tedarikçi
+3. kg payı **3 ondalığa, yarımda sıfırdan uzağa** yuvarlanır; kabul tamamen faturalandığında **son fatura kalan kg'yi**
+   alır ve toplam, iadeler düşülmüş kabul kg'sine tam eşit olur (ALS-D124).
+4. Maliyet/kg = faturalı payın tutarı ÷ kg payı; tutar kesin taşınır (ALS-D120); dövizde TL karşılığı tedarikçi
    faturasının resmî kuruyla (BS-1).
 
 ### Golden satırları
@@ -175,39 +188,38 @@ Ortak kabul (ana golden A01/A07): 100 adet, kabulde tartılan 1 250,400 kg.
 | E23 | Aynı, dövizli (A07) | E22; 40 adet × 7,50 USD, resmî kur 34,5678 → 10 370,34 TL | 10370.34/500.265 = 20.72969326… | kg payı **500,265**; faturalı pay **10 370,34 TL**; maliyet/kg gösterim **20,7297** |
 | E24 | İade kabulün kendi oranıyla çıktı | 20 adet iade, tartılmış 250,080 kg (= 12,504 × 20) → kalan 80 adet / 1 000,320 kg; fatura 40 adet | 1000.32 × 40 / 80 = 500,16 | kg payı **500,160** (ALS-D121 ile aynı; iki kural bu durumda örtüşür) |
 | E25 | İade yok | Fatura 40 adet | ALS-D121: 1250.4 × 40 / 100 = 500,16 | kg payı **500,160** (= ana golden A13) |
-
-Hesaplanamaz:
-
-| # | Durum | Sonuç |
-|---|---|---|
-| E26 | kg payı 3 ondalıkta bitmiyor: kalan 70 adet / 1 000,530 kg, fatura 40 adet → 571,73142857… kg | Payın yuvarlanıp yuvarlanmayacağı (3 ondalık, URN-D9 benzeri) ve artığın kalan paya nasıl yazılacağı kararda yok → **NEEDS-SINAN EN5** |
-| E27 | Faturalar arasında iade: önce fatura 1 (40 adet, kg payı 500,160), sonra 20 adet iade (249,870 kg, fatura bekleyen paydan seçildi), sonra fatura 2 (40 adet) | "Kalan" iadeden sonra kalan kabul miktarı mı (1 000,530 kg / 80 adet → 500,265), yoksa faturalanmamış ve iade edilmemiş kalan mı (500,370 kg / 40 adet → 500,370)? → **NEEDS-SINAN EN6** |
+| E26 | kg payı 3 ondalıkta bitmiyor (ALS-D124) | 30 adet iade (tartılmış 249,870 kg) sonrası kalan 70 adet / 1 000,530 kg; fatura 40 adet (son değil) | 1000.53 × 40 / 70 = 571.73142857… → 3 ondalık | kg payı **571,731**; kalan 30 adet / 428,799 kg |
+| E27 | Faturalar arasında iade (ALS-D123) | Fatura 1: 40 adet (iade yok, ALS-D121) → 500,160; sonra 20 adet iade (249,870 kg, fatura bekleyen paydan); sonra fatura 2: 40 adet | Fatura 2 anında kalan 1250.4 − 249.87 − 500.16 = 500,370 kg / 100 − 20 − 40 = 40 adet; 500.37 × 40 / 40 | Fatura 1 **500,160**; fatura 2 **500,370 kg** (yalnız iadeyi düşen okumayla 1000.53 × 40/80 = 500,265 **OLMAZ**) |
+| E28 | Yarım sınırı ve son faturanın kalanı (ALS-D123, ALS-D124) | İade sonrası kalan 3 adet / 1 000,000 kg; üç fatura, her biri 1 adet | F1: 1000/3 = 333.333… → 333,333; F2: kalan 666,667 / 2 = 333.3335 (tam yarım) → 333,334; F3 son: kalan 333,333 | **333,333 / 333,334 / 333,333**; toplam 1 000,000 |
+| E29 | İade yokken üç fatura (ALS-D121, ALS-D124) | Kabul 3 adet / 1 000,000 kg, iade yok; üç fatura, her biri 1 adet | F1, F2: 1000 × 1/3 = 333.333… → 333,333 (ALS-D121 özgün oran); F3 son: 1000 − 666,666 = 333,334 | **333,333 / 333,333 / 333,334**; toplam 1 000,000 (E28'den farklı: iade yoksa ALS-D121 aynen geçerlidir) |
 
 ---
 
 ## Türetilenler
 
-- **TE1:** İade belgesi satır tutarı, SAT-D11 ile kuruşa bir kez yuvarlanır (E01, E04, E12).
-- **TE2:** SAT-D451/D453 formülü tek yüzde satır iskontosunu kapsar; diğer iskonto biçimleri EN1.
-- **TE3:** Fark = stok çıkışı − iade belgesi satır tutarı; satırlar iki tabanın aynı gösterilen farkı verdiği sayılarla
-  seçildi, ayrışma EN2.
+- **TE1:** İade belgesi satır tutarı, SAT-D11 ile kuruşa bir kez yuvarlanır (E01, E04, E07, E07a, E12). SAT-D456 "belgeye
+  yazılan (kuruşa yuvarlanmış) iade tutarı" ifadesiyle bu adımı doğrular.
+- **TE2:** Zincir iskonto ardışık; tutar iskontosu net birim fiyata miktara bölünerek yansır (E07, E07a).
+- İlk taslaktaki TE3 (fark tabanı) SAT-D456 ile karar metnine dönüştü.
 
 Hiçbiri yeni para/stok/maliyet politikası seçmez. Bir reviewer bir türetmeyi politika seçimi sayarsa ilgili satır
 hesaplanamaz kabul edilip `NEEDS-SINAN`'a taşınmalıdır.
 
+## İlk taslağın NEEDS-SINAN noktalarının durumu (SINAN-CEVAP 64)
+
+| No | Konu | Durum | Satır |
+|---|---|---|---|
+| EN1 | Zincir, tutar ve belge altı iskonto | **SAT-D458:** satır iskontolarının hepsi düşülür; belge altı düşülmez, iade hata koduyla durur | E07, E07a, E07b |
+| EN2 | Fark tabanı | **SAT-D456:** kuruşa yuvarlanmış iki tutar | E14 |
+| EN3 | Girilen adet ≠ etiket adedi | **SAT-D459:** reddedilir | E15 |
+| EN4 | Finans reddi alan fatura | **SAT-D457:** sayılmaz; Finans kabul edince girer | E21, E21a |
+| EN5 | kg payının yuvarlanması | **ALS-D124:** 3 ondalık, yarımda sıfırdan uzağa; son fatura kalanı alır | E26, E28, E29 |
+| EN6 | "Kalan"ın tanımı | **ALS-D123:** her fatura anında güncel kalan | E27, E28 |
+
 ## NEEDS-SINAN
 
-- **EN1 (E07):** Seçilen sipariş satırında zincir iskonto (%10 + %5), tutar olarak iskonto veya belge altı iskonto varsa
-  miktar iadesinin net birim fiyatı nasıl hesaplansın?
-- **EN2 (E14):** Miktar iadesinde fark, kuruşa yuvarlanmış iade belgesi tutarından mı, kesin tutardan (miktar × 4 ondalıklı
-  net fiyat) mı hesaplansın; stok çıkışı tutarı hangi hassasiyetle tutulsun?
-- **EN3 (E15):** Adetli satırdan miktar iadesinde girilen adet, iade edilen etiketin adediyle tutmuyorsa ne olsun (etiket
-  önce bölünsün mü; kg nasıl belirlensin)?
-- **EN4 (E21):** SAT-D427 Finans yetki reddi alan, kesinleşmiş ve yeniden gönderim bekleyen fatura, SAT-D452'deki
-  "reddedilmiş fatura" sayılsın mı?
-- **EN5 (E26):** ALS-D122/ALS-D121 kg payı 3 ondalıkta bitmezse yuvarlansın mı; artık kalan paya nasıl yazılsın?
-- **EN6 (E27):** ALS-D122'deki "kalan", faturalar arasında iade olduğunda iade sonrası kalan kabul miktarı mı, yoksa
-  faturalanmamış ve iade edilmemiş kalan mı?
+- **EN7 (E07c):** Miktar iadesinin düşüldüğü sipariş satırında yüzde iskonto ve tutar iskontosu birlikte varsa hangisi
+  önce uygulansın?
 
 ## Sınırlar
 
