@@ -146,8 +146,24 @@ public static class SalesModuleExtensions
         // owner's and is NOT composed here: without it no limit is defined and every discount goes to approval (SAT-D346).
         services.AddScoped<ISalesContractStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         services.AddScoped<ISalesContractService>(CreateContractService);
+        // WP13 (YOL-D11): the order's signed approval records over the Sales store. The Document Vault port is the host's (Api) and
+        // is NOT composed here: without it a record is 503 before anything is written (fail-closed).
+        services.AddScoped<ISalesOrderSignedApprovalStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        services.AddScoped<ISalesOrderSignedApprovalServiceV1>(CreateSignedApprovalService);
         return services;
     }
+
+    // Named for the same architecture guard as the factories below: the company context is resolved, never registered.
+    // A missing Document Vault port stays null: a record fails closed (503), never a guessed document.
+    private static SalesOrderSignedApprovalService CreateSignedApprovalService(IServiceProvider serviceProvider) =>
+        new SalesOrderSignedApprovalService(
+            serviceProvider.GetRequiredService<ICompanyContext>(),
+            serviceProvider.GetRequiredService<ICurrentUser>(),
+            serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
+            serviceProvider.GetRequiredService<ICorrelationContext>(),
+            serviceProvider.GetRequiredService<ISalesOrderSignedApprovalStore>(),
+            serviceProvider.GetRequiredService<TimeProvider>(),
+            serviceProvider.GetService<ISalesOrderSignedApprovalDocumentPortV1>());
 
     // Named for the same architecture guard as the factories below: the company context is resolved, never registered.
     // A missing discount limit source stays null: "sınır tanımlı değil", every discount goes to approval (SAT-D346).

@@ -38,6 +38,12 @@ public static class SalesPermissionManifestV1
     public const string OrdersCustomerAcceptanceRecord = "sales.orders.customer-acceptance.record";
 
     /// <summary>
+    /// WP13 (YOL-D11): records (and withdraws, with a reason) the customer's signed approval document of a sales order. Company-wide;
+    /// not Critical; registered, granted to no role (human gate).
+    /// </summary>
+    public const string OrdersSignedApprovalRecord = "sales.orders.signed-approval.record";
+
+    /// <summary>
     /// K3 (Sinan 5748258299, closes 5745151414): writing a unit price or a discount on an order line —
     /// POST /api/v1/sales/drafts with a line carrying a commercial field. A SEPARATE name: the draft's
     /// create permission does NOT confer it, and this name confers no approval. Company-wide; the grant
@@ -316,7 +322,7 @@ public static class SalesPermissionManifestV1
     public const string ContractsDiscountApprove = "sales.contracts.discount.approve";
 
     public static IReadOnlySet<string> Names { get; } =
-        new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersCustomerAcceptanceRecord, OrdersPriceWrite, OrdersPriceRead,
+        new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersCustomerAcceptanceRecord, OrdersSignedApprovalRecord, OrdersPriceWrite, OrdersPriceRead,
             OrdersMarginRead, OrdersPriceFloorExceptionApprove, OrdersDiscountExceptionApprove, OrdersDeliveryScheduleWrite, OrdersCancel,
             OrdersQuantityWrite, OrdersHeaderWrite, OrdersForceClose, OrdersClose, OrdersOverDeliveryApprove, OrdersRiskExceptionRequest, OrdersRiskExceptionApprove, OrdersLineClose, OrdersSourcePlanWrite, RequestsWrite, RequestsRead, RequestsApprove, QuotesWrite, QuotesRead,
             QuotesExpiredConversionApprove, InvoicesRead, InvoicesWrite, InvoicesApprove, InvoicesMatch, InvoicesFinalize, InvoicesExport, ReportsRead,

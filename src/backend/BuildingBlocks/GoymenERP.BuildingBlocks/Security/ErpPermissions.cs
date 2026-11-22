@@ -1117,6 +1117,14 @@ public static class ErpPermissions
     public const string SalesOrdersCustomerAcceptanceRecord = "sales.orders.customer-acceptance.record";
 
     /// <summary>
+    /// WP13 (YOL-D11): records the customer's wet-signed approval document (already uploaded to the order in the Document Vault)
+    /// as the order's signed approval, and withdraws a wrong one with a reason (nothing is deleted). Its own name: customer
+    /// acceptance, draft read and document upload do not confer it. Registered, granted to no role (human gate; NEEDS-SINAN).
+    /// Company-wide only, like the other Sales commands. Not Critical.
+    /// </summary>
+    public const string SalesOrdersSignedApprovalRecord = "sales.orders.signed-approval.record";
+
+    /// <summary>
     /// LOG-4a (Business #66 5737790175: the loading instruction on approved order lines, one stock effect): the
     /// Logistics owner's names (LogisticsPermissionManifestV1), the backend owners' technical mapping (Business
     /// #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Registered, not granted: no
@@ -1779,6 +1787,7 @@ public static class ErpPermissions
             SalesOrdersQuantityWrite,
             SalesOrdersHeaderWrite,
             SalesOrdersCustomerAcceptanceRecord,
+            SalesOrdersSignedApprovalRecord,
             SalesRequestsWrite,
             SalesRequestsRead,
             SalesRequestsApprove,
@@ -2086,6 +2095,7 @@ public static class ErpPermissions
             SalesOrdersQuantityWrite,
             SalesOrdersHeaderWrite,
             SalesOrdersCustomerAcceptanceRecord,
+            SalesOrdersSignedApprovalRecord,
             SalesRequestsWrite,
             SalesRequestsRead,
             SalesRequestsApprove,
