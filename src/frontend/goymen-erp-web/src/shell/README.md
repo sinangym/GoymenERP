@@ -18,6 +18,8 @@ Stack: ADR-013 (`react-router` + `@tanstack/react-query` + CSS Modules + reducer
 | `ShellHome.tsx` | Index route — active company + honest "no module yet". |
 | `StateBlock.tsx` / `.module.css` | Renders a `RemoteViewState` with distinct text per §12 state. |
 | `router.tsx` | `shellRoutes` (config, for tests) + `shellRouter` (browser). |
+| `navEntries.ts` | `drawnGroups` — the granted sidebar entries; the ONE rule the sidebar and the command palette both read. |
+| `commandPalette/` | W1-B Ctrl+K / ⌘K palette: granted screens, granted context-free "Yeni …" screens, hand-off to `/arama`, last ten screens (tab session storage, keyed by session/actor/company). Navigation only; no command runs. |
 | `SwitchConfirmDialog.tsx` / `.module.css` | Dirty-scope confirmation (`confirming-switch`): Kal / Değişiklikleri bırak, focus return. The bound context stays mounted underneath. |
 
 ## Bootstrap / switch flow

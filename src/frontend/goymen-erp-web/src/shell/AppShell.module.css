@@ -356,6 +356,12 @@
   font-size: 0.75rem;
   color: #48505d;
 }
+/* A phone has no Ctrl key to press: the button keeps its words, the shortcut badge goes. */
+@media (max-width: 767px) {
+  .paletteShortcut {
+    display: none;
+  }
+}
 
 .main:focus {
   outline: 2px solid var(--shell-action);
