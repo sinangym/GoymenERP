@@ -48,6 +48,12 @@ public static class DocumentOwnerLinkKindsV1
 
     /// <summary>A Finance customer instrument (çek/senet) readable in the context company (Finance owner; B-26).</summary>
     public const string FinanceCustomerInstrument = "finance.customer-instrument";
+
+    /// <summary>
+    /// A Finance bank statement import (WP12, FNS-D52): the statement file (XLSX, MT940 or CSV) is uploaded on the
+    /// reserved import. The only owner that opts in to <see cref="DocumentContentPolicy.BankStatementImportKinds"/>.
+    /// </summary>
+    public const string FinanceBankStatementImport = "finance.bank-statement-import";
 }
 
 /// <summary>

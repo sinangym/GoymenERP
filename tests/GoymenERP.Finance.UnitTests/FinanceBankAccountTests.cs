@@ -131,7 +131,11 @@ public sealed class FinanceBankAccountTests
         const string collateralBankProof = "20261117220054_AddCollateralBankProof";
         Assert.Contains(collateralBankProof, migrations);
         Assert.True(Array.IndexOf(migrations, sourceDates) < Array.IndexOf(migrations, collateralBankProof));
-        Assert.Equal(collateralBankProof, migrations.Last());
+        // WP12 appends the bank statement import (FNS-D13/D52) after the collateral bank proof.
+        const string bankStatementImports = "20261122201621_AddBankStatementImports";
+        Assert.Contains(bankStatementImports, migrations);
+        Assert.True(Array.IndexOf(migrations, collateralBankProof) < Array.IndexOf(migrations, bankStatementImports));
+        Assert.Equal(bankStatementImports, migrations.Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

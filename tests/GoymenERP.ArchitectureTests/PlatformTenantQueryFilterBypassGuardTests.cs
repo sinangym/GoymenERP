@@ -6027,6 +6027,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Explicit collateral bank proof exists; AddCollateralBankProof is not rolled back (forward fix). 1 lexical Sql call(s).
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261117220054_AddCollateralBankProof.cs"] =
                     new("90aa325edba4dc64deb81eb8cd6590b644e06b6b92aab408414fcf7e5df9248c", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // WP12 (tren-2); K3 review pending. Down refuses while bank statement imports, lines or command records exist; AddBankStatementImports is not rolled back (forward fix, THROW 52250). 1 lexical Sql call(s). Fingerprint pinned at the tren-2 head (not produced in the package).
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261122201621_AddBankStatementImports.cs"] =
+                    new("0000000000000000000000000000000000000000000000000000000000000000", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Explicit COGS classification evidence exists; AddProductCogsClassificationTerminals is not rolled back (forward fix). 1 lexical Sql call(s).
                 ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Persistence/Migrations/20261117082927_AddProductCogsClassificationTerminals.cs"] =
                     new("b56cc14affae99cd499f5f2f53c38d73c3ddabe749c7977bbea75b2db9a81549", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),

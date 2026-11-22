@@ -733,6 +733,15 @@ public static class ErpPermissions
     /// </summary>
     public const string FinancePartyBalanceTransfersRecord = "finance.party-balance-transfers.record";
 
+    /// <summary>
+    /// WP12 (FNS-D13/D52): reserve a bank statement import for a Finance bank account and parse its uploaded file into
+    /// control lines (a line never creates a movement). Registered, not granted. Company-wide only; not Critical.
+    /// </summary>
+    public const string FinanceBankStatementsImport = "finance.bank-statements.import";
+
+    /// <summary>WP12: read statement imports, lines and the exact match suggestions. Registered, not granted. Company-wide only.</summary>
+    public const string FinanceBankStatementsRead = "finance.bank-statements.read";
+
     /// <summary>FI04 independent read and amount disclosure; registration grants no user or role access.</summary>
     public const string FinanceOpenItemsRead = "finance.open-items.read";
     public const string FinanceOpenItemsAmountRead = "finance.open-items.amount.read";
@@ -1951,6 +1960,8 @@ public static class ErpPermissions
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
         FinancePartyBalanceTransfersRecord,
+        FinanceBankStatementsImport,
+        FinanceBankStatementsRead,
         FinanceOpenItemsRead,
         FinanceOpenItemsAmountRead,
         FinanceAllocationWrite,
@@ -2259,6 +2270,8 @@ public static class ErpPermissions
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
         FinancePartyBalanceTransfersRecord,
+        FinanceBankStatementsImport,
+        FinanceBankStatementsRead,
         FinanceOpenItemsRead,
         FinanceOpenItemsAmountRead,
         FinanceAllocationWrite,
