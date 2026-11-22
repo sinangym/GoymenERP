@@ -25,6 +25,7 @@ import {
   problemInvalidFields,
   type AiAskAnswer,
   type AiCapabilities,
+  type AiComposedAnswer,
   type AiInvalidField,
   type AiToolCapability,
   type AiToolResult,
@@ -168,6 +169,12 @@ function viewOf(outcome: ViewOutcome<AiAskAnswer>): AskView {
   if (outcome.status === 503 && code === AI_PROBLEM_CODE.disabled) {
     return { kind: 'notice', title: AI_TEXT.askDisabledTitle, body: AI_TEXT.askDisabledBody }
   }
+  if (outcome.status === 503 && code === AI_PROBLEM_CODE.featureDisabled) {
+    return { kind: 'notice', title: AI_TEXT.askFeatureDisabledTitle, body: AI_TEXT.askFeatureDisabledBody }
+  }
+  if (outcome.status === 503 && code === AI_PROBLEM_CODE.budgetExhausted) {
+    return { kind: 'notice', title: AI_TEXT.askBudgetExhaustedTitle, body: AI_TEXT.askBudgetExhaustedBody }
+  }
   if (outcome.status === 503 && code === AI_PROBLEM_CODE.toolUnavailable) {
     return { kind: 'notice', title: AI_TEXT.askToolUnavailableTitle, body: AI_TEXT.askToolUnavailableBody }
   }
@@ -301,6 +308,12 @@ function AskResult({ view }: { readonly view: AskView }) {
           <h3 id="ai-answer-heading" className={styles.answerHeading}>
             {AI_TEXT.answerHeading}
           </h3>
+          {view.answer.answer !== null ? (
+            <ComposedAnswerView answer={view.answer.answer} />
+          ) : (
+            <p data-ai-answer="cannot-answer">{AI_TEXT.cannotAnswer}</p>
+          )}
+          <h4 className={styles.answerHeading}>{AI_TEXT.readSourcesHeading}</h4>
           {view.answer.toolResults.length === 0 ? (
             <p>{AI_TEXT.answerEmpty}</p>
           ) : (
@@ -311,6 +324,24 @@ function AskResult({ view }: { readonly view: AskView }) {
     default:
       return null
   }
+}
+
+function ComposedAnswerView({ answer }: { readonly answer: AiComposedAnswer }) {
+  return (
+    <div data-ai-answer="answered">
+      {/* Composed text is shown as text, never as markup. */}
+      <p className={styles.content}>{answer.text}</p>
+      <h4 className={styles.answerHeading}>{AI_TEXT.citationsHeading}</h4>
+      <ul>
+        {answer.citations.map((citation) => (
+          <li key={`${citation.toolId}-${citation.targetId}-${citation.sourceVersion}`}>
+            {citation.title} · {AI_TEXT.sourceVersion} {citation.sourceVersion} ·{' '}
+            <time dateTime={citation.asOfUtc}>{citation.asOfUtc}</time>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
 }
 
 function ToolResultView({ result }: { readonly result: AiToolResult }) {

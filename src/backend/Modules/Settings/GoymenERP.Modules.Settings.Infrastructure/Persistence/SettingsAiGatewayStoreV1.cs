@@ -3,7 +3,6 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
@@ -74,9 +73,9 @@ public sealed class SettingsAiGatewayStoreV1 : ISettingsAiGatewayPolicyProviderV
             await using var transaction = await _database.Database.BeginTransactionAsync(cancellationToken);
             var latest = await AiGatewayPolicyReader.ReadLatestAsync(_database, request.CompanyId, cancellationToken);
             if (latest.Version != request.PolicyVersion)
-                return new(SettingsAiBudgetReservationOutcomeV1.PolicyChanged, null, month, 0);
+                return new SettingsAiBudgetReservationV1(SettingsAiBudgetReservationOutcomeV1.PolicyChanged, null, month, 0);
             if (latest.MonthlyUsageCeiling is not { } ceiling || latest.MaxUnitsPerRequest is not { } units)
-                return new(SettingsAiBudgetReservationOutcomeV1.BudgetClosed, null, month, 0);
+                return new SettingsAiBudgetReservationV1(SettingsAiBudgetReservationOutcomeV1.BudgetClosed, null, month, 0);
 
             await EnsureMonthAsync(request.CompanyId, month, cancellationToken);
             var moved = await _database.AiBudgetMonthTotals
@@ -87,7 +86,7 @@ public sealed class SettingsAiGatewayStoreV1 : ISettingsAiGatewayPolicyProviderV
             if (moved != 1)
             {
                 await transaction.RollbackAsync(CancellationToken.None);
-                return new(SettingsAiBudgetReservationOutcomeV1.CeilingReached, null, month, 0);
+                return new SettingsAiBudgetReservationV1(SettingsAiBudgetReservationOutcomeV1.CeilingReached, null, month, 0);
             }
 
             var entryId = Guid.NewGuid();
@@ -111,7 +110,7 @@ public sealed class SettingsAiGatewayStoreV1 : ISettingsAiGatewayPolicyProviderV
             await _database.SaveChangesAsync(cancellationToken);
             RequireAccess(request.CompanyId, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return new(SettingsAiBudgetReservationOutcomeV1.Reserved, entryId, month, units);
+            return new SettingsAiBudgetReservationV1(SettingsAiBudgetReservationOutcomeV1.Reserved, entryId, month, units);
         }
         catch (Exception exception) when (exception is not OperationCanceledException and not SettingsPrerequisiteException)
         {
@@ -188,9 +187,14 @@ public sealed class SettingsAiGatewayStoreV1 : ISettingsAiGatewayPolicyProviderV
         {
             await _database.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateException exception) when (exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
+        catch (DbUpdateException)
         {
-            // Another request opened the month first; its row is the fence.
+            // Another request opened the month first (duplicate key); its row is the fence. Any other failure leaves the row
+            // missing and is refused below.
+            _database.ChangeTracker.Clear();
+            if (!await _database.AiBudgetMonthTotals.AsNoTracking()
+                    .AnyAsync(row => row.CompanyId == companyId && row.BudgetMonth == month, cancellationToken))
+                throw;
         }
         finally
         {
@@ -261,10 +265,10 @@ internal static class AiGatewayPolicyReader
                 || string.IsNullOrWhiteSpace(route.ModelDeployment)
                 || route.ModelDeployment.Length > SettingsAiGatewayLimitsV1.ModelDeploymentMaximumLength)
                 throw new SettingsPrerequisiteException(CompanyPolicyProblemCodesV1.ProfileInvalid);
-            readRoutes.Add(new(task, dataClass, placement, route.ModelDeployment));
+            readRoutes.Add(new SettingsAiModelRouteV1(task, dataClass, placement, route.ModelDeployment));
         }
 
-        return new(companyId, version.Version, version.MonthlyUsageCeiling, version.MaxUnitsPerRequest,
+        return new SettingsAiGatewayPolicyV1(companyId, version.Version, version.MonthlyUsageCeiling, version.MaxUnitsPerRequest,
             features.Select(feature => (AiFeatureV1)feature).ToHashSet(), readRoutes);
     }
 
@@ -277,6 +281,6 @@ internal static class AiGatewayPolicyReader
         var count = await database.AiBudgetLedgerEntries.AsNoTracking()
             .CountAsync(row => row.CompanyId == companyId && row.BudgetMonth == month, cancellationToken);
         if (committed is < 0) throw new SettingsPrerequisiteException(CompanyPolicyProblemCodesV1.ProfileInvalid);
-        return new(companyId, month, committed ?? 0, count);
+        return new SettingsAiBudgetMonthUsageV1(companyId, month, committed ?? 0, count);
     }
 }

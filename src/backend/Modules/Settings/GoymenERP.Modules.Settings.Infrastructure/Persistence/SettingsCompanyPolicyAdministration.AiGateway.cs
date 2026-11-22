@@ -184,7 +184,7 @@ internal sealed partial class SettingsCompanyPolicyAdministration : ISettingsAiG
             if (route is null || !TryParseName(route.TaskKind, out AiTaskKindV1 task) || !TryParseName(route.DataClass, out AiDataClassV1 dataClass)
                 || !TryParseName(route.Placement, out AiModelPlacementV1 placement))
             {
-                detail = "Her satırda tanımlı görev türü, veri sınıfı ve yerleşim (Cloud veya Local) olmalıdır.";
+                detail = "Her satırda tanımlı görev türü, veri sınıfı ve yerleşim (Cloud veya OnPremises) olmalıdır.";
                 return false;
             }
 

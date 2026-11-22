@@ -44,8 +44,8 @@ internal sealed class InMemoryAiGatewayStore : ISettingsAiGatewayPolicyProviderV
         Routes:
         [
             new(AiTaskKindV1.Answer, AiDataClassV1.Public, AiModelPlacementV1.Cloud, CloudDeployment),
-            new(AiTaskKindV1.Answer, AiDataClassV1.Internal, AiModelPlacementV1.Local, LocalDeployment),
-            new(AiTaskKindV1.Answer, AiDataClassV1.Confidential, AiModelPlacementV1.Local, LocalDeployment),
+            new(AiTaskKindV1.Answer, AiDataClassV1.Internal, AiModelPlacementV1.OnPremises, LocalDeployment),
+            new(AiTaskKindV1.Answer, AiDataClassV1.Confidential, AiModelPlacementV1.OnPremises, LocalDeployment),
             new(AiTaskKindV1.Converse, AiDataClassV1.Internal, AiModelPlacementV1.Cloud, CloudDeployment),
             new(AiTaskKindV1.Extract, AiDataClassV1.Internal, AiModelPlacementV1.Cloud, CloudDeployment),
         ]);
@@ -103,7 +103,7 @@ internal static class AiGatewayTestDoubles
             Options.Create(options),
             new GatewayTestHostEnvironment(environmentName),
             new FakeAiModelProvider(),
-            composers ?? [new FakeAiAnswerComposer(AiModelPlacementV1.Cloud), new FakeAiAnswerComposer(AiModelPlacementV1.Local)],
+            composers ?? [new FakeAiAnswerComposer(AiModelPlacementV1.Cloud), new FakeAiAnswerComposer(AiModelPlacementV1.OnPremises)],
             store,
             store);
 

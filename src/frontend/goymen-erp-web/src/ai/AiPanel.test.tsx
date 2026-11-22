@@ -179,6 +179,22 @@ describe('Plan AI-5 — sağ AI paneli', () => {
               },
             },
           ],
+          answer: {
+            text: '[1] Sentetik kaynak (7, 2026-11-15): name: Sentetik kalem;',
+            citations: [
+              {
+                toolId: TOOL_ID,
+                toolVersion: '1',
+                targetKind: 'test-item',
+                targetId: TARGET_ID,
+                title: 'Sentetik kaynak',
+                sourceVersion: '7',
+                asOfUtc: '2026-11-15T08:00:00+00:00',
+              },
+            ],
+            modelDeployment: 'sentetik-yerel-model',
+            policyVersion: 'ai.gateway-policy:1',
+          },
         })
       },
     })
@@ -192,6 +208,8 @@ describe('Plan AI-5 — sağ AI paneli', () => {
     await userEvent.click(within(panel).getByRole('button', { name: AI_TEXT.submit }))
 
     expect(await within(panel).findByText('Sentetik kaynak')).toBeTruthy()
+    expect(within(panel).getByText('[1] Sentetik kaynak (7, 2026-11-15): name: Sentetik kalem;')).toBeTruthy()
+    expect(within(panel).getByText(AI_TEXT.citationsHeading)).toBeTruthy()
     expect(within(panel).getByText('{"name":"Sentetik kalem"}')).toBeTruthy()
     expect(within(panel).getByText('Şirket içi')).toBeTruthy()
     expect(asked).toEqual([
@@ -230,6 +248,8 @@ describe('Plan AI-5 — sağ AI paneli', () => {
   it.each([
     [503, 'ai_tool_unavailable', AI_TEXT.askToolUnavailableTitle],
     [503, 'ai_disabled', AI_TEXT.askDisabledTitle],
+    [503, 'ai_feature_disabled', AI_TEXT.askFeatureDisabledTitle],
+    [503, 'ai_budget_exhausted', AI_TEXT.askBudgetExhaustedTitle],
   ])('soru %i %s ile reddedilirse dürüst durum gösterilir, sahte cevap yoktur', async (status, code, title) => {
     installFetch([], { capabilities: () => json(READY), ask: () => json({ status, code }, status) })
     renderShell()
@@ -238,6 +258,25 @@ describe('Plan AI-5 — sağ AI paneli', () => {
     await userEvent.click(within(panel).getByRole('button', { name: AI_TEXT.submit }))
     expect(await within(panel).findByText(title)).toBeTruthy()
     expect(within(panel).queryByText(AI_TEXT.answerHeading)).toBeNull()
+  })
+
+  it('kaynak cevabı desteklemiyorsa (cannot_answer) model metni yerine "cevap veremem" gösterilir', async () => {
+    installFetch([], {
+      capabilities: () => json(READY),
+      ask: () =>
+        json({
+          outcome: 'cannot_answer',
+          toolResults: [{ toolId: TOOL_ID, toolVersion: '1', outcome: 'not_found', contentJson: null, source: null }],
+          answer: null,
+        }),
+    })
+    renderShell()
+    const panel = await openPanel()
+    await userEvent.type(await within(panel).findByRole('textbox', { name: AI_TEXT.questionLabel }), 'Soru')
+    await userEvent.click(within(panel).getByRole('button', { name: AI_TEXT.submit }))
+    expect(await within(panel).findByText(AI_TEXT.cannotAnswer)).toBeTruthy()
+    expect(within(panel).getByText(AI_TEXT.resultNotFound)).toBeTruthy()
+    expect(within(panel).queryByText(AI_TEXT.citationsHeading)).toBeNull()
   })
 
   it('soru 403 sonrası yeni yetki okuması paneli kapalı tutar; eski soru ve yeniden gönderme kalmaz', async () => {

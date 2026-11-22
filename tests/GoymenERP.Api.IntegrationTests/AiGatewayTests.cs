@@ -34,7 +34,7 @@ public sealed class AiGatewayTests
         Assert.Equal(Target, citation.TargetId);
         Assert.Equal("rv-9", citation.SourceVersion);
         Assert.Equal(InMemoryAiGatewayStore.LocalDeployment, answer.ModelDeployment);
-        Assert.Equal(AiModelPlacementV1.Local, answer.Placement);
+        Assert.Equal(AiModelPlacementV1.OnPremises, answer.Placement);
         Assert.Equal("ai.gateway-policy:7", answer.PolicyVersion);
         var reservation = Assert.Single(store.Reservations);
         Assert.Equal(AiFeatureV1.Panel, reservation.Feature);
@@ -49,7 +49,7 @@ public sealed class AiGatewayTests
     public async Task Without_a_source_the_gateway_cannot_answer_and_neither_reserves_budget_nor_calls_a_model()
     {
         var store = new InMemoryAiGatewayStore(Company);
-        var composer = new CountingComposer(AiModelPlacementV1.Local);
+        var composer = new CountingComposer(AiModelPlacementV1.OnPremises);
         var gateway = AiGatewayTestDoubles.Gateway(ReadyOptions(), store, [composer]);
 
         var result = await gateway.ComposeAsync(Request(grounding: []));
@@ -68,7 +68,7 @@ public sealed class AiGatewayTests
     public async Task A_number_the_sources_do_not_hold_is_cannot_answer_and_the_used_units_are_still_recorded(string text)
     {
         var store = new InMemoryAiGatewayStore(Company);
-        var composer = new CountingComposer(AiModelPlacementV1.Local) { Text = text, Cited = [1], Units = 17 };
+        var composer = new CountingComposer(AiModelPlacementV1.OnPremises) { Text = text, Cited = [1], Units = 17 };
         var gateway = AiGatewayTestDoubles.Gateway(ReadyOptions(), store, [composer]);
 
         var result = await gateway.ComposeAsync(Request(grounding: [Item("{\"bekleyenTalimat\":42}")]));
@@ -87,7 +87,7 @@ public sealed class AiGatewayTests
     public async Task A_text_that_cites_no_existing_source_or_cites_twice_is_cannot_answer(int[] cited)
     {
         var store = new InMemoryAiGatewayStore(Company);
-        var composer = new CountingComposer(AiModelPlacementV1.Local) { Text = "SENTETIK talimat: 42.", Cited = cited };
+        var composer = new CountingComposer(AiModelPlacementV1.OnPremises) { Text = "SENTETIK talimat: 42.", Cited = cited };
         var gateway = AiGatewayTestDoubles.Gateway(ReadyOptions(), store, [composer]);
 
         var result = await gateway.ComposeAsync(Request(grounding: [Item("{\"bekleyenTalimat\":42}")]));
@@ -100,7 +100,7 @@ public sealed class AiGatewayTests
     public async Task A_reached_monthly_ceiling_closes_the_gateway_before_the_model_is_called()
     {
         var store = new InMemoryAiGatewayStore(Company) { CommittedUnits = 999_600 };
-        var composer = new CountingComposer(AiModelPlacementV1.Local);
+        var composer = new CountingComposer(AiModelPlacementV1.OnPremises);
         var gateway = AiGatewayTestDoubles.Gateway(ReadyOptions(), store, [composer]);
 
         var result = await gateway.ComposeAsync(Request(grounding: [Item("{\"bekleyenTalimat\":42}")]));
@@ -116,7 +116,7 @@ public sealed class AiGatewayTests
     {
         var store = new InMemoryAiGatewayStore(Company);
         store.Policy = store.Policy with { MonthlyUsageCeiling = 600, MaxUnitsPerRequest = 500 };
-        var composer = new CountingComposer(AiModelPlacementV1.Local) { Text = "[1] SENTETIK: 42.", Cited = [1], Units = 300 };
+        var composer = new CountingComposer(AiModelPlacementV1.OnPremises) { Text = "[1] SENTETIK: 42.", Cited = [1], Units = 300 };
         var gateway = AiGatewayTestDoubles.Gateway(ReadyOptions(), store, [composer]);
 
         var first = await gateway.ComposeAsync(Request(grounding: [Item("{\"bekleyenTalimat\":42}")]));
@@ -135,7 +135,7 @@ public sealed class AiGatewayTests
     {
         var store = new InMemoryAiGatewayStore(Company);
         store.Policy = store.Policy with { MonthlyUsageCeiling = ceiling, MaxUnitsPerRequest = perRequest };
-        var composer = new CountingComposer(AiModelPlacementV1.Local);
+        var composer = new CountingComposer(AiModelPlacementV1.OnPremises);
         var gateway = AiGatewayTestDoubles.Gateway(ReadyOptions(), store, [composer]);
 
         var result = await gateway.ComposeAsync(Request(grounding: [Item("{\"bekleyenTalimat\":42}")]));
@@ -183,7 +183,7 @@ public sealed class AiGatewayTests
     public async Task Strictly_confidential_content_without_a_route_is_refused_and_never_reaches_a_model()
     {
         var store = new InMemoryAiGatewayStore(Company);
-        var composer = new CountingComposer(AiModelPlacementV1.Local);
+        var composer = new CountingComposer(AiModelPlacementV1.OnPremises);
         var gateway = AiGatewayTestDoubles.Gateway(ReadyOptions(AiDataClassV1.StrictlyConfidential), store, [composer]);
 
         var result = await gateway.ComposeAsync(Request(grounding: [Item("{\"bekleyenTalimat\":42}", AiDataClassV1.StrictlyConfidential)]));
@@ -213,7 +213,7 @@ public sealed class AiGatewayTests
     {
         var store = new InMemoryAiGatewayStore(Company);
         var cloud = new CountingComposer(AiModelPlacementV1.Cloud);
-        var local = new CountingComposer(AiModelPlacementV1.Local) { Text = "[1] [2] SENTETIK: 42 ve 7.", Cited = [1, 2] };
+        var local = new CountingComposer(AiModelPlacementV1.OnPremises) { Text = "[1] [2] SENTETIK: 42 ve 7.", Cited = [1, 2] };
         var gateway = AiGatewayTestDoubles.Gateway(ReadyOptions(AiDataClassV1.Confidential), store, [cloud, local]);
 
         var result = await gateway.ComposeAsync(Request(grounding:
@@ -304,7 +304,7 @@ public sealed class AiGatewayTests
     public async Task A_model_failure_settles_the_reservation_at_zero_and_releases_nothing()
     {
         var store = new InMemoryAiGatewayStore(Company);
-        var composer = new CountingComposer(AiModelPlacementV1.Local) { Fail = true };
+        var composer = new CountingComposer(AiModelPlacementV1.OnPremises) { Fail = true };
         var gateway = AiGatewayTestDoubles.Gateway(ReadyOptions(), store, [composer]);
 
         var result = await gateway.ComposeAsync(Request(grounding: [Item("{\"bekleyenTalimat\":42}")]));

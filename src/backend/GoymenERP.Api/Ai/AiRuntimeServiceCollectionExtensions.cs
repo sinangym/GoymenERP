@@ -43,7 +43,7 @@ public static class AiRuntimeServiceCollectionExtensions
         // Fake composers are registered (one per placement); the runtime never admits the Fake kind in Production, and no
         // external or local composer exists until the provider and hardware decisions (OPEN-020, OPEN-014).
         services.AddSingleton<IAiAnswerComposerV1>(_ => new FakeAiAnswerComposer(AiModelPlacementV1.Cloud));
-        services.AddSingleton<IAiAnswerComposerV1>(_ => new FakeAiAnswerComposer(AiModelPlacementV1.Local));
+        services.AddSingleton<IAiAnswerComposerV1>(_ => new FakeAiAnswerComposer(AiModelPlacementV1.OnPremises));
         services.AddScoped<IAiGatewayV1, AiGateway>();
         services.AddScoped<AiAskService>();
         return services;

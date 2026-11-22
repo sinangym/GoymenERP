@@ -57,11 +57,11 @@ public enum AiTaskKindV1
     Converse = 6,
 }
 
-/// <summary>Where a model runs. Cloud is outside the company; Local is a company-internal model (OPEN-014).</summary>
+/// <summary>Where a model runs. Cloud is outside the company; OnPremises is a company-internal model (OPEN-014).</summary>
 public enum AiModelPlacementV1
 {
     Cloud = 1,
-    Local = 2,
+    OnPremises = 2,
 }
 
 /// <summary>
@@ -79,7 +79,7 @@ public static class AiGatewayPlacementRulesV1
         && placement switch
         {
             AiModelPlacementV1.Cloud => dataClass <= CloudMaximumDataClass,
-            AiModelPlacementV1.Local => true,
+            AiModelPlacementV1.OnPremises => true,
             _ => false,
         };
 
