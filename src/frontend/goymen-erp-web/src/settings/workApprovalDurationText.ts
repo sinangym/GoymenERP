@@ -2,7 +2,7 @@
 export const WORK_APPROVAL_DURATION_TEXT = {
   title: 'Onay süreleri',
   intro:
-    'Saat ölçekli sınıf: irsaliye onayı, plan üstü sevk, tartım farkı, üretim planı onayı. İş günü sınıfı: diğer onay türleri. Değer kaydedilmemişse iş kutusunda \'Süre tanımlı değil\' görünür.',
+    'Saat ölçekli sınıf: irsaliye onayı, plan üstü sevk, tartım farkı, üretim planı onayı. İş günü sınıfı: diğer onay türleri. Değer kaydedilmemişse karar varsayılanı (YOL-D18: 4 saat / 2 iş günü) geçerlidir. Hangi türün hangi sınıfta olduğu aşağıdaki onay kural tablosunda sürümlü olarak tutulur.',
   subject: 'Onay süreleri',
   hoursHeading: 'Saat ölçekli onay süresi',
   businessDaysHeading: 'İş günü ölçekli onay süresi',
@@ -10,8 +10,9 @@ export const WORK_APPROVAL_DURATION_TEXT = {
   businessDaysUnit: 'iş günü',
   current: 'Geçerli değer',
   notRecorded: 'Kaydedilmedi (iş kutusunda "Süre tanımlı değil")',
+  decidedDefault: 'karar varsayılanı (YOL-D18), sürüm 0',
   history: (heading: string) => `${heading} — değişiklik geçmişi`,
-  empty: 'Henüz değer kaydedilmedi.',
+  empty: 'Henüz sürüm kaydedilmedi; karar varsayılanı geçerli.',
   version: 'Sürüm',
   value: 'Değer',
   who: 'Kaydeden',
