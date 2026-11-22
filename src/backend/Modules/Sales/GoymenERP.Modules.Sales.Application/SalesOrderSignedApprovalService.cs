@@ -15,15 +15,18 @@ namespace GoymenERP.Modules.Sales.Application;
 /// events; a terminal refusal (order not approved, stale order version, the same document again, a passive record) is recorded under
 /// the key and answered again on retry.
 /// <list type="bullet">
-/// <item><b>Record</b> (<c>sales.orders.signed-approval.record</c>): the order must be open and its current revision internally
+/// <item><b>Record</b> (SAT-D471: <c>sales.orders.customer-acceptance.record</c>; no separate name): the order must be open and its current revision internally
 /// approved, at the version the person saw. The document is checked by the Documents owner through
 /// <see cref="ISalesOrderSignedApprovalDocumentPortV1"/> (a clean PDF/PNG/JPEG uploaded to this order, under the actor's own vault
 /// read); its current version and SHA-256 are pinned on the record. A newer record supersedes the active one (nothing is deleted).</item>
 /// <item><b>Withdraw</b> (same name): the active record becomes passive with a reason; the file stays in the vault.</item>
 /// <item><b>Read</b> (<c>sales.drafts.read</c>): the order's records and whether the current revision is covered.</item>
 /// </list>
-/// Who may record is a human grant decision: the name is registered and given to no role. The record never changes the order, its
-/// customer acceptance or any amount.
+/// SAT-D471: when the current revision still awaits the customer's acceptance, the record PERFORMS that acceptance once, through
+/// the draft service's own acceptance command (<see cref="ISalesOrderCustomerAcceptanceWithSignedApprovalV1"/>: its fences, the
+/// accepted revision's demand reduction, attempt and audit), with the record staged into the same save. An already accepted revision
+/// (or a pre-Q9 order that seeks no acceptance) is recorded alone: no second acceptance is written. A revision the customer rejected
+/// is refused. Withdrawing the record never undoes the acceptance (the existing acceptance correction paths apply). No amount moves.
 /// </summary>
 public sealed class SalesOrderSignedApprovalService(
     ICompanyContext companyContext,
@@ -32,9 +35,10 @@ public sealed class SalesOrderSignedApprovalService(
     ICorrelationContext correlation,
     ISalesOrderSignedApprovalStore store,
     TimeProvider timeProvider,
-    ISalesOrderSignedApprovalDocumentPortV1? documents = null) : ISalesOrderSignedApprovalServiceV1
+    ISalesOrderSignedApprovalDocumentPortV1? documents = null,
+    ISalesOrderCustomerAcceptanceWithSignedApprovalV1? acceptance = null) : ISalesOrderSignedApprovalServiceV1
 {
-    private const string RecordPermission = SalesPermissionManifestV1.OrdersSignedApprovalRecord;
+    private const string RecordPermission = SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord;
     private const string ReadPermission = SalesPermissionManifestV1.DraftsRead;
 
     private static readonly SalesDraftStateAudit RecordedAudit =
@@ -74,7 +78,7 @@ public sealed class SalesOrderSignedApprovalService(
 
         var order = await StoreAsync(scope, RecordPermission, () => store.FindSignedApprovalOrderAsync(orderId, cancellationToken),
             cancellationToken) ?? throw new SalesDraftServiceException(404, "not_found");
-        if (!order.IsOpen || !order.IsApproved)
+        if (!order.IsOpen || !order.IsApproved || order.CurrentRevisionRejected)
         {
             return await TerminalAsync(scope, envelope, requestHash, command, orderId,
                 new SalesDraftTerminalRefusal(409, SalesOrderSignedApprovalProblemCodesV1.OrderNotApproved,
@@ -110,6 +114,11 @@ public sealed class SalesOrderSignedApprovalService(
         catch (SalesRuleException exception)
         {
             throw new SalesDraftServiceException(422, SalesOrderSignedApprovalProblemCodesV1.DocumentInvalid, [new("documentId", exception.Code)]);
+        }
+
+        if (order.AwaitsCustomerAcceptance)
+        {
+            return await RecordWithAcceptanceAsync(scope, envelope, requestHash, orderId, request, metadata, approval, cancellationToken);
         }
 
         // The last fence that can still prevent the write; none after the commit.
@@ -149,6 +158,40 @@ public sealed class SalesOrderSignedApprovalService(
 
         return new SalesOrderSignedApprovalCommandResultV1(await DetailAsync(scope, RecordPermission, stored.OrderId, cancellationToken),
             stored.Outcome == SalesDraftWriteOutcome.Replayed, stored.OriginalCorrelationId);
+    }
+
+    /// <summary>
+    /// SAT-D471: the customer acceptance and the signed approval record in ONE save, through the draft service's acceptance command
+    /// (expected version = the order version the person sent). Its refusals are its own answers (recorded under its key as usual);
+    /// a replayed acceptance key wrote nothing now and is refused here (the key already carried an acceptance).
+    /// </summary>
+    private async Task<SalesOrderSignedApprovalCommandResultV1> RecordWithAcceptanceAsync(Scope scope, SalesDraftWriteEnvelope envelope,
+        string requestHash, Guid orderId, RecordSalesOrderSignedApprovalRequest request, SalesCommandMetadata metadata,
+        SalesOrderSignedApproval approval, CancellationToken cancellationToken)
+    {
+        if (acceptance is null)
+        {
+            throw new SalesDraftServiceException(503, "service_unavailable");
+        }
+
+        await RequireStillAsync(scope, RecordPermission, cancellationToken);
+        var accepted = await acceptance.RecordCustomerAcceptanceWithAsync(orderId,
+            new SalesDraftStateCommandRequest(request.ExpectedOrderVersion), metadata,
+            (draft, now, token) => store.StageSignedApprovalAsync(envelope, requestHash, draft, approval, RecordedAudit, SupersededAudit,
+                now, token),
+            cancellationToken);
+        if (accepted.IsReplay)
+        {
+            // The acceptance key was used before: nothing was staged now. A same-key retry of THIS record meets its own replay first.
+            var won = await FindReplayAsync(scope, RecordPermission, envelope, requestHash, SalesOrderSignedApprovalCommands.RecordV1,
+                cancellationToken);
+            return won is null
+                ? throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.SameKeyPayloadMismatch)
+                : await ReplayedAsync(scope, RecordPermission, won, cancellationToken);
+        }
+
+        return new SalesOrderSignedApprovalCommandResultV1(await DetailAsync(scope, RecordPermission, orderId, cancellationToken), false,
+            metadata.CorrelationId, CustomerAcceptanceRecorded: true);
     }
 
     public async Task<SalesOrderSignedApprovalCommandResultV1> DeactivateAsync(Guid orderId, Guid approvalId,
@@ -292,7 +335,7 @@ public sealed class SalesOrderSignedApprovalService(
         var active = items.SingleOrDefault(item => item.State == SalesOrderSignedApprovalState.Active);
         return new SalesOrderSignedApprovalsResponseV1(order.OrderId, Text(order.Version), Revision(order.Revision),
             active is not null && active.OrderRevision == order.Revision && order.IsApproved,
-            active is null ? null : View(active), views);
+            active is null ? null : View(active), views, order.CustomerAccepted);
     }
 
     internal static SalesOrderSignedApprovalViewV1 View(SalesOrderSignedApproval item) => new(

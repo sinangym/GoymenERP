@@ -17,7 +17,9 @@ namespace GoymenERP.Api.Endpoints;
 /// <item><c>GET …/{id}/signed-approvals</c> — the records, newest first, and whether the current revision is covered
 /// (<c>sales.drafts.read</c>).</item>
 /// <item><c>POST …/{id}/signed-approvals</c> — <c>{documentId, expectedOrderVersion}</c> under
-/// <c>sales.orders.signed-approval.record</c>; 201 with the status; the same key answers the same 201 with the replay headers.</item>
+/// <c>sales.orders.customer-acceptance.record</c> (SAT-D471: no separate name); 201 with the status. When the current revision still
+/// awaits the customer, the record performs the customer acceptance in the same save (the draft's own acceptance command); an accepted
+/// revision is recorded alone. The same key answers the same 201 with the replay headers.</item>
 /// <item><c>POST …/{id}/signed-approvals/{approvalId}/deactivation</c> — <c>{expectedVersion, reason}</c>; 200.</item>
 /// </list>
 /// The draft routes' wire rules apply: exactly one canonical <c>Idempotency-Key</c> (else 400 <c>command_metadata_invalid</c>), JSON

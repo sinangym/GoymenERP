@@ -49,12 +49,23 @@ public sealed partial class SalesStore : ISalesOrderSignedApprovalStore
         // Tenant-filtered: another company's order is null (404 to the caller).
         var row = await dbContext.Drafts.AsNoTracking()
             .Where(candidate => candidate.Id == orderId && candidate.Kind == (int)SalesDraftKind.Order)
-            .Select(candidate => new { candidate.Id, candidate.Version, candidate.Revision, candidate.State, candidate.ApprovalState })
+            .Select(candidate => new
+            {
+                candidate.Id, candidate.Version, candidate.Revision, candidate.State, candidate.ApprovalState,
+                candidate.CustomerAcceptanceRequired, candidate.CustomerAcceptedRevision,
+            })
             .SingleOrDefaultAsync(cancellationToken);
-        return row is null
-            ? null
-            : new SalesOrderSignedApprovalOrderFactsV1(row.Id, row.Version, row.Revision, row.State == (int)SalesDraftState.Draft,
-                row.ApprovalState == (int)InternalApprovalState.Approved);
+        if (row is null)
+        {
+            return null;
+        }
+
+        // SAT-D115: a revision the customer rejected is never accepted (the acceptance rule refuses it).
+        var rejected = await dbContext.DraftCustomerRejections.AsNoTracking()
+            .AnyAsync(rejection => rejection.DraftId == row.Id && rejection.Revision == row.Revision, cancellationToken);
+        return new SalesOrderSignedApprovalOrderFactsV1(row.Id, row.Version, row.Revision, row.State == (int)SalesDraftState.Draft,
+            row.ApprovalState == (int)InternalApprovalState.Approved, row.CustomerAcceptanceRequired, row.CustomerAcceptedRevision,
+            rejected);
     }
 
     public async Task<SalesOrderSignedApprovalStoreResult> StoreSignedApprovalAsync(SalesDraftWriteEnvelope envelope, string requestHash,
@@ -88,10 +99,17 @@ public sealed partial class SalesStore : ISalesOrderSignedApprovalStore
             // Read inside the transaction (repeatable read): the order cannot move under the record until it commits.
             var order = await dbContext.Drafts
                 .Where(candidate => candidate.Id == approval.OrderId && candidate.Kind == (int)SalesDraftKind.Order)
-                .Select(candidate => new { candidate.Version, candidate.Revision, candidate.State, candidate.ApprovalState })
+                .Select(candidate => new
+                {
+                    candidate.Version, candidate.Revision, candidate.State, candidate.ApprovalState, candidate.CustomerAcceptanceRequired,
+                    candidate.CustomerAcceptedRevision,
+                })
                 .SingleOrDefaultAsync(cancellationToken)
                 ?? throw Refused(SalesDraftStoreCodes.ConcurrentChange, "Sipariş okunamadı; hiçbir şey kaydedilmedi.");
-            if (order.State != (int)SalesDraftState.Draft || order.ApprovalState != (int)InternalApprovalState.Approved)
+            // SAT-D471: an order still awaiting the customer's acceptance is recorded only together with that acceptance
+            // (StageSignedApprovalAsync inside the acceptance command), never here.
+            if (order.State != (int)SalesDraftState.Draft || order.ApprovalState != (int)InternalApprovalState.Approved
+                || order.CustomerAcceptanceRequired && order.CustomerAcceptedRevision != order.Revision)
             {
                 throw new SalesRuleException(SalesRuleCodes.StateConflict, "Sipariş açık ve onaylı değil.");
             }
@@ -102,25 +120,64 @@ public sealed partial class SalesStore : ISalesOrderSignedApprovalStore
             }
 
             var now = timeProvider.GetUtcNow();
-            var activeRow = await dbContext.OrderSignedApprovals
-                .SingleOrDefaultAsync(row => row.OrderId == approval.OrderId && row.State == (int)SalesOrderSignedApprovalState.Active,
-                    cancellationToken);
-            if (activeRow is not null)
-            {
-                var previous = SalesSignedApprovalRows.Restore(activeRow);
-                var before = SignedApprovalAuditState(previous);
-                previous.Supersede(approval.Id, actorId, now);
-                SalesSignedApprovalRows.ApplyDeactivation(activeRow, previous);
-                EnqueueSignedApprovalAudit(envelope, companyId, supersededAudit, previous, 1, before);
-            }
-
-            dbContext.OrderSignedApprovals.Add(SalesSignedApprovalRows.ToRow(approval, envelope.CorrelationId));
-            dbContext.OrderSignedApprovalAttempts.Add(NewSignedApprovalAttempt(companyId, command, keyHash, requestHash, actorId,
-                AttemptOutcomeRecorded, approval.OrderId, null, envelope.CorrelationId, now));
-            EnqueueSignedApprovalAudit(envelope, companyId, audit, approval, null, "{}");
+            await StageSignedApprovalRowsAsync(envelope, requestHash, companyId, actorId, keyHash, approval, audit, supersededAudit, now,
+                cancellationToken);
             await SaveAsync(cancellationToken);
             return new SalesOrderSignedApprovalStoreResult(approval.OrderId, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
         }, cancellationToken);
+    }
+
+    public async Task StageSignedApprovalAsync(SalesDraftWriteEnvelope envelope, string requestHash, SalesOrderDraft order,
+        SalesOrderSignedApproval approval, SalesDraftStateAudit audit, SalesDraftStateAudit supersededAudit, DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+        ArgumentNullException.ThrowIfNull(approval);
+        RequireSignedApprovalAudit(audit);
+        RequireSignedApprovalAudit(supersededAudit);
+        RequireEnvelope(envelope);
+        RequireHash(requestHash);
+        var companyId = RequireResolvedCompany();
+        RequireCompany(approval.CompanyId);
+        var actorId = envelope.ActorId.Trim();
+        if (order.Id != approval.OrderId || order.CompanyId != companyId || order.Revision != approval.OrderRevision
+            || order.CustomerAcceptance?.Revision != order.Revision || approval.State != SalesOrderSignedApprovalState.Active
+            || approval.Version != 1 || !string.Equals(approval.RecordedBy, actorId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("İmzalı onay yalnız aynı kayıtta müşteri kabulü verilen revizyonu, aktörün adına kapsar.");
+        }
+
+        var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
+        if (await FindSignedApprovalAttemptAsync(SalesOrderSignedApprovalCommands.RecordV1, keyHash, cancellationToken) is not null)
+        {
+            throw Refused(SalesDraftStoreCodes.ConcurrentChange, "Bu anahtar zaten bir imzalı onay denemesi taşıyor; tekrar onu alır.");
+        }
+
+        await StageSignedApprovalRowsAsync(envelope, requestHash, companyId, actorId, keyHash, approval, audit, supersededAudit, now,
+            cancellationToken);
+    }
+
+    /// <summary>The supersession of the order's active record, the new record, its attempt and the audit events — not saved here.</summary>
+    private async Task StageSignedApprovalRowsAsync(SalesDraftWriteEnvelope envelope, string requestHash, Guid companyId, string actorId,
+        string keyHash, SalesOrderSignedApproval approval, SalesDraftStateAudit audit, SalesDraftStateAudit supersededAudit,
+        DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var activeRow = await dbContext.OrderSignedApprovals
+            .SingleOrDefaultAsync(row => row.OrderId == approval.OrderId && row.State == (int)SalesOrderSignedApprovalState.Active,
+                cancellationToken);
+        if (activeRow is not null)
+        {
+            var previous = SalesSignedApprovalRows.Restore(activeRow);
+            var before = SignedApprovalAuditState(previous);
+            previous.Supersede(approval.Id, actorId, now);
+            SalesSignedApprovalRows.ApplyDeactivation(activeRow, previous);
+            EnqueueSignedApprovalAudit(envelope, companyId, supersededAudit, previous, 1, before);
+        }
+
+        dbContext.OrderSignedApprovals.Add(SalesSignedApprovalRows.ToRow(approval, envelope.CorrelationId));
+        dbContext.OrderSignedApprovalAttempts.Add(NewSignedApprovalAttempt(companyId, SalesOrderSignedApprovalCommands.RecordV1, keyHash,
+            requestHash, actorId, AttemptOutcomeRecorded, approval.OrderId, null, envelope.CorrelationId, now));
+        EnqueueSignedApprovalAudit(envelope, companyId, audit, approval, null, "{}");
     }
 
     public async Task<SalesOrderSignedApprovalStoreResult?> DeactivateSignedApprovalAsync(SalesDraftWriteEnvelope envelope,

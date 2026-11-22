@@ -56,9 +56,6 @@ export const SALES_CUSTOMER_RETURN_FINALIZE_CAPABILITY = 'sales.customer-returns
 /** Q9: non-routed control for recording customer acceptance of the current approved revision. */
 export const SALES_CUSTOMER_ACCEPTANCE_RECORD_CAPABILITY = 'sales.orders.customer-acceptance.record' as const
 
-/** WP13 (YOL-D11): non-routed control for recording / withdrawing the customer's signed approval document of the order. */
-export const SALES_SIGNED_APPROVAL_RECORD_CAPABILITY = 'sales.orders.signed-approval.record' as const
-
 /** K3: the commercial-revision CONTROL on S-04; separate from every routed Sales screen. */
 export const SALES_PRICE_WRITE_CAPABILITY = 'sales.orders.price.write' as const
 export const SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY = 'sales.orders.price-floor-exception.approve' as const

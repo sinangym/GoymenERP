@@ -41,6 +41,7 @@ public sealed class SalesOrderSignedApprovalSqlServerRelationalAcceptanceTests
     private static readonly SalesDraftStateAudit Submitted = new("sales.order-draft.submitted.v1", "Submit", "SENTETIK onaya gönderildi");
     private static readonly SalesDraftStateAudit Approved = new("sales.order-draft.approved.v1", "Approve", "SENTETIK onaylandı");
     private static readonly SalesDraftStateAudit Recorded = new("sales.order-signed-approval.recorded.v1", "RecordSignedApproval", "SENTETIK bağlandı");
+    private static readonly SalesDraftStateAudit Accepted = new("sales.order-draft.customer-acceptance-recorded.v1", "RecordCustomerAcceptance", "SENTETIK imzalı sözleşmeyle kabul");
     private static readonly SalesDraftStateAudit Superseded = new("sales.order-signed-approval.superseded.v1", "SupersedeSignedApproval", "SENTETIK yenilendi");
 
     [SqlServerFact]
@@ -130,6 +131,60 @@ public sealed class SalesOrderSignedApprovalSqlServerRelationalAcceptanceTests
         }
     }
 
+    /// <summary>
+    /// SAT-D471: on an order awaiting the customer, the signed approval is staged into the customer acceptance's own save through the
+    /// real store: ONE save writes the acceptance (header acceptance columns, version + 1, the acceptance attempt and audit event) and
+    /// the signed approval (record, attempt, audit event). The record-alone path refuses such an order; nothing is written twice.
+    /// </summary>
+    [SqlServerFact]
+    public async Task SAT_D471_the_signed_approval_and_the_customer_acceptance_are_written_in_one_save_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var order = await run.ApprovedOrderAsync(CompanyA, "k", customerAcceptanceRequired: true);
+        var auditBefore = await run.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents]");
+        var approval = Approval(order, 1);
+
+        // The record-alone path never records an order still awaiting the customer's acceptance.
+        await using (var scope = run.SalesStore(CompanyA))
+        {
+            await Assert.ThrowsAsync<SalesRuleException>(() => scope.Store.StoreSignedApprovalAsync(run.Envelope("k-alone"), Hash("k-alone"),
+                order.Version, approval, Recorded, Superseded));
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[OrderSignedApprovals]"));
+        await using (var scope = run.SalesStore(CompanyA))
+        {
+            var accepted = await scope.Store.UpdateDraftStateStagedAsync(run.Envelope("k-signed"), Hash("k-accept"),
+                SalesDraftCommands.RecordCustomerAcceptanceV1, order.Id,
+                (draft, now) => draft.RecordCustomerAcceptance(order.Version, Recorder, now), Accepted, null,
+                (draft, now, token) => scope.Store.StageSignedApprovalAsync(run.Envelope("k-signed"), Hash("k-signed"), draft, approval,
+                    Recorded, Superseded, now, token));
+            Assert.Equal((SalesDraftWriteOutcome.Recorded, order.Version + 1, 0), (accepted!.Outcome, accepted.Draft.Version,
+                accepted.Draft.CustomerAcceptance!.Revision));
+        }
+
+        Assert.Equal((0, order.Version + 1, 1, 1, 1, auditBefore + 2), (
+            await run.ScalarAsync<int>("SELECT [CustomerAcceptedRevision] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", order.Id)),
+            await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", order.Id)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[OrderSignedApprovals] WHERE [OrderId] = @id AND [State] = 1", ("@id", order.Id)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[OrderSignedApprovalAttempts] WHERE [OrderId] = @id", ("@id", order.Id)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [DraftId] = @id AND [CommandName] = @c",
+                ("@id", order.Id), ("@c", SalesDraftCommands.RecordCustomerAcceptanceV1)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents]")));
+
+        // A second acceptance of the same revision is refused by the existing rule: no second acceptance, no second record.
+        await using (var scope = run.SalesStore(CompanyA))
+        {
+            await Assert.ThrowsAsync<SalesRuleException>(() => scope.Store.UpdateDraftStateStagedAsync(run.Envelope("k-signed-2"),
+                Hash("k-accept-2"), SalesDraftCommands.RecordCustomerAcceptanceV1, order.Id,
+                (draft, now) => draft.RecordCustomerAcceptance(order.Version + 1, Recorder, now), Accepted, null,
+                (draft, now, token) => scope.Store.StageSignedApprovalAsync(run.Envelope("k-signed-2"), Hash("k-signed-2"), draft,
+                    Approval(order, 2), Recorded, Superseded, now, token)));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[OrderSignedApprovals] WHERE [OrderId] = @id", ("@id", order.Id)));
+    }
+
     [SqlServerFact]
     public async Task The_signed_approval_migrations_Down_passes_with_no_record_and_refuses_52260_while_one_exists()
     {
@@ -161,12 +216,12 @@ public sealed class SalesOrderSignedApprovalSqlServerRelationalAcceptanceTests
 
     private static string Hash(string seed) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(seed)));
 
-    /// <summary>A one-line 10 kg draft from SYNTHETIC owner snapshots in the kg unit: version 2.</summary>
-    private static SalesOrderDraft Draft(Guid company, string documentNo)
+    /// <summary>A one-line 10 kg draft from SYNTHETIC owner snapshots in the kg unit (pre-Q9 unless acceptance is required): version 2.</summary>
+    private static SalesOrderDraft Draft(Guid company, string documentNo, bool customerAcceptanceRequired)
     {
         var header = new SalesDraftHeader(Guid.NewGuid(), Guid.NewGuid(), Currency, Day, Day.AddDays(10), DueTerms: TestDueTerms.PointDue30);
         var money = new MoneyProfileSnapshot(company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", Day, true, From, null, 2);
-        var draft = SalesOrderDraft.Create(Guid.NewGuid(), company, documentNo, header, money, T0, customerAcceptanceRequired: true);
+        var draft = SalesOrderDraft.Create(Guid.NewGuid(), company, documentNo, header, money, T0, customerAcceptanceRequired);
         var unit = new UnitProfileSnapshot(company, KgUnit, "kg", "weight", KgProfile, "4", true, 3, 3, true, From, null);
         var binding = new UnitBindingSnapshot(company, KgUnit, KgProfile, "4");
         var product = new ProductSnapshot(Product, "7", "GDC-001", "Sentetik bant", Day, binding, binding, binding);
@@ -207,11 +262,11 @@ public sealed class SalesOrderSignedApprovalSqlServerRelationalAcceptanceTests
         }
 
         /// <summary>A stored order of the company through the real Sales store: Rev.0 submitted and approved inside — version 4.</summary>
-        public async Task<SalesOrderDraft> ApprovedOrderAsync(Guid company, string keyPrefix)
+        public async Task<SalesOrderDraft> ApprovedOrderAsync(Guid company, string keyPrefix, bool customerAcceptanceRequired = false)
         {
             await using var scope = SalesStore(company);
             var draft = (await scope.Store.StoreDraftAsync(Envelope($"{keyPrefix}-create", Actor), Hash($"{keyPrefix}-create"),
-                documentNo => Draft(company, documentNo))).Draft;
+                documentNo => Draft(company, documentNo, customerAcceptanceRequired))).Draft;
             await scope.Store.UpdateDraftStateAsync(Envelope($"{keyPrefix}-submit", Actor), Hash($"{keyPrefix}-submit"),
                 SalesDraftCommands.SubmitV1, draft.Id, (d, now) => d.Submit(2, Actor, now), Submitted);
             var approved = await scope.Store.UpdateDraftStateAsync(Envelope($"{keyPrefix}-approve", "SENTETIK-approver"),
@@ -222,7 +277,7 @@ public sealed class SalesOrderSignedApprovalSqlServerRelationalAcceptanceTests
         }
 
         public SalesDraftWriteEnvelope Envelope(string key, string actor = Recorder) =>
-            new(actor, SalesPermissionManifestV1.OrdersSignedApprovalRecord, ["SENTETIK-SALES"], Correlation, null, key, "Web", "127.0.0.1",
+            new(actor, SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord, ["SENTETIK-SALES"], Correlation, null, key, "Web", "127.0.0.1",
                 "SENTETIK-agent");
 
         public SalesScope SalesStore(Guid company)

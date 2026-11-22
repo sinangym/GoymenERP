@@ -73,6 +73,8 @@ public static class SalesModuleExtensions
         // API-20 / API-21: the request use cases share the draft service's fence and owner reads (one scoped instance).
         services.AddScoped<ISalesRequestService>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         services.AddScoped<ISalesQuoteService>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
+        // WP13 / SAT-D471: the signed approval performs the customer acceptance through the SAME draft command.
+        services.AddScoped<ISalesOrderCustomerAcceptanceWithSignedApprovalV1>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         // API-41 / API-42: the Sales reports share the draft service's fence, measurement basis and price-read decision.
         services.AddScoped<ISalesReportService>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         // MOD-03 → Sales: the order's tax reads share the draft service's fence and price-read decision.
@@ -163,7 +165,8 @@ public static class SalesModuleExtensions
             serviceProvider.GetRequiredService<ICorrelationContext>(),
             serviceProvider.GetRequiredService<ISalesOrderSignedApprovalStore>(),
             serviceProvider.GetRequiredService<TimeProvider>(),
-            serviceProvider.GetService<ISalesOrderSignedApprovalDocumentPortV1>());
+            serviceProvider.GetService<ISalesOrderSignedApprovalDocumentPortV1>(),
+            serviceProvider.GetService<ISalesOrderCustomerAcceptanceWithSignedApprovalV1>());
 
     // Named for the same architecture guard as the factories below: the company context is resolved, never registered.
     // A missing discount limit source stays null: "sınır tanımlı değil", every discount goes to approval (SAT-D346).

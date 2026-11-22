@@ -39,6 +39,18 @@ public sealed class SalesOrderSignedApprovalServiceTests
         return (service, store, vault, authority);
     }
 
+    private static (SalesOrderSignedApprovalService Service, Store Store, Vault Vault, Authority Authority, Acceptance Acceptance)
+        BuildWithAcceptance()
+    {
+        var store = new Store();
+        var vault = new Vault();
+        var authority = new Authority();
+        var acceptance = new Acceptance(store);
+        var service = new SalesOrderSignedApprovalService(new CompanyContext(), new User(Seller), authority, new Correlation(), store,
+            new FixedClock(), vault, acceptance);
+        return (service, store, vault, authority, acceptance);
+    }
+
     private static async Task<SalesDraftServiceException> Refused(Func<Task> act) =>
         await Assert.ThrowsAsync<SalesDraftServiceException>(act);
 
@@ -46,7 +58,7 @@ public sealed class SalesOrderSignedApprovalServiceTests
     public async Task Record_without_its_own_permission_is_403_before_any_replay_or_vault_read()
     {
         var (service, store, vault, authority) = Build();
-        authority.Denied.Add(SalesPermissionManifestV1.OrdersSignedApprovalRecord);
+        authority.Denied.Add(SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord);
 
         var refused = await Refused(() => service.RecordAsync(Order, Request(), Metadata));
 
@@ -208,7 +220,7 @@ public sealed class SalesOrderSignedApprovalServiceTests
     public async Task The_read_needs_only_the_draft_read_and_another_companys_order_is_404()
     {
         var (service, store, _, authority) = Build();
-        authority.Denied.Add(SalesPermissionManifestV1.OrdersSignedApprovalRecord);
+        authority.Denied.Add(SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord);
 
         var empty = await service.GetAsync(Order);
         store.OrderVisible = false;
@@ -280,11 +292,88 @@ public sealed class SalesOrderSignedApprovalServiceTests
     }
 
     [Fact]
-    public void The_record_name_is_registered_in_the_central_catalogue_and_company_wide()
+    public void SAT_D471_no_separate_signed_approval_name_exists_and_the_record_uses_the_customer_acceptance_name()
     {
-        Assert.True(ErpPermissions.IsKnown(SalesPermissionManifestV1.OrdersSignedApprovalRecord));
-        Assert.Equal(ErpPermissions.SalesOrdersSignedApprovalRecord, SalesPermissionManifestV1.OrdersSignedApprovalRecord);
-        Assert.Contains(SalesPermissionManifestV1.OrdersSignedApprovalRecord, SalesPermissionManifestV1.Names);
+        Assert.False(ErpPermissions.IsKnown("sales.orders.signed-approval.record"));
+        Assert.DoesNotContain("sales.orders.signed-approval.record", SalesPermissionManifestV1.Names);
+        Assert.True(ErpPermissions.IsKnown(SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord));
+    }
+
+    [Fact]
+    public async Task SAT_D471_an_order_awaiting_the_customer_performs_the_acceptance_once_with_the_record_staged_into_the_same_save()
+    {
+        var (service, store, _, _, acceptance) = BuildWithAcceptance();
+        store.Order = store.Order with { CustomerAcceptanceRequired = true, CustomerAcceptedRevision = 2 };
+
+        var result = await service.RecordAsync(Order, Request(), Metadata);
+
+        Assert.True(result.CustomerAcceptanceRecorded);
+        Assert.False(result.IsReplay);
+        Assert.Equal([(Order, "7", "SENTETIK-key-1")], acceptance.Calls);
+        // Only the staged path wrote: the record rides on the acceptance save, never through the record-alone store call.
+        Assert.Single(store.Staged);
+        Assert.DoesNotContain("store", store.Calls);
+        Assert.True(result.Detail.CustomerAccepted);
+        Assert.Equal((3, 7L), (store.Staged[0].OrderRevision, store.Staged[0].OrderVersion));
+    }
+
+    [Fact]
+    public async Task SAT_D471_an_already_accepted_revision_is_recorded_alone_and_no_second_acceptance_is_written()
+    {
+        var (service, store, _, _, acceptance) = BuildWithAcceptance();
+        store.Order = store.Order with { CustomerAcceptanceRequired = true, CustomerAcceptedRevision = 3 };
+
+        var result = await service.RecordAsync(Order, Request(), Metadata);
+
+        Assert.False(result.CustomerAcceptanceRecorded);
+        Assert.Empty(acceptance.Calls);
+        Assert.Single(store.Records);
+        Assert.Empty(store.Staged);
+    }
+
+    [Fact]
+    public async Task SAT_D471_a_revision_the_customer_rejected_is_a_recorded_409_and_no_acceptance_is_asked()
+    {
+        var (service, store, vault, _, acceptance) = BuildWithAcceptance();
+        store.Order = store.Order with { CustomerAcceptanceRequired = true, CustomerAcceptedRevision = 2, CurrentRevisionRejected = true };
+
+        var refused = await Refused(() => service.RecordAsync(Order, Request(), Metadata));
+
+        Assert.Equal((409, SalesOrderSignedApprovalProblemCodesV1.OrderNotApproved), (refused.Status, refused.Code));
+        Assert.Single(store.Refusals);
+        Assert.Empty(acceptance.Calls);
+        Assert.Equal(0, vault.Calls);
+    }
+
+    [Fact]
+    public async Task SAT_D471_without_the_acceptance_command_an_awaiting_order_fails_closed_and_a_replayed_acceptance_key_is_refused()
+    {
+        var (withoutAcceptance, store, _, _) = Build();
+        store.Order = store.Order with { CustomerAcceptanceRequired = true };
+        var unavailable = await Refused(() => withoutAcceptance.RecordAsync(Order, Request(), Metadata));
+        Assert.Equal(503, unavailable.Status);
+        Assert.Empty(store.Records);
+
+        var (service, other, _, _, acceptance) = BuildWithAcceptance();
+        other.Order = other.Order with { CustomerAcceptanceRequired = true };
+        acceptance.Replay = true;
+        var replayed = await Refused(() => service.RecordAsync(Order, Request(), Metadata));
+        Assert.Equal((409, SalesDraftProblemCodesV1.SameKeyPayloadMismatch), (replayed.Status, replayed.Code));
+        Assert.Empty(other.Staged);
+    }
+
+    [Fact]
+    public async Task SAT_D471_an_acceptance_refusal_is_the_acceptance_commands_own_answer_and_nothing_is_staged()
+    {
+        var (service, store, _, _, acceptance) = BuildWithAcceptance();
+        store.Order = store.Order with { CustomerAcceptanceRequired = true };
+        acceptance.Refusal = new SalesDraftServiceException(409, SalesDraftProblemCodesV1.StateConflict);
+
+        var refused = await Refused(() => service.RecordAsync(Order, Request(), Metadata));
+
+        Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict), (refused.Status, refused.Code));
+        Assert.Empty(store.Staged);
+        Assert.Empty(store.Records);
     }
 
     [Fact]
@@ -376,6 +465,37 @@ public sealed class SalesOrderSignedApprovalServiceTests
         }
     }
 
+    /// <summary>
+    /// The draft service's acceptance command as the signed approval sees it: it records the acceptance (the store's order facts
+    /// move to accepted, version + 1) and runs the stage with the accepted draft, or answers its own refusal / a replay.
+    /// </summary>
+    private sealed class Acceptance(Store store) : ISalesOrderCustomerAcceptanceWithSignedApprovalV1
+    {
+        public List<(Guid, string, string)> Calls { get; } = [];
+        public bool Replay { get; set; }
+        public SalesDraftServiceException? Refusal { get; set; }
+
+        public async Task<SalesOrderDraftResponse> RecordCustomerAcceptanceWithAsync(Guid draftId, SalesDraftStateCommandRequest request,
+            SalesCommandMetadata metadata, Func<GoymenERP.Modules.Sales.Domain.Drafts.SalesOrderDraft, DateTimeOffset, CancellationToken, Task> stage,
+            CancellationToken cancellationToken = default)
+        {
+            Calls.Add((draftId, request.ExpectedVersion, metadata.IdempotencyKey));
+            if (Refusal is not null)
+            {
+                throw Refusal;
+            }
+
+            if (!Replay)
+            {
+                store.Order = store.Order with { CustomerAcceptedRevision = store.Order.Revision, Version = store.Order.Version + 1 };
+                store.StageFromAcceptance = true;
+                await stage(null!, Now, cancellationToken);
+            }
+
+            return new SalesOrderDraftResponse(null!, Replay, metadata.CorrelationId);
+        }
+    }
+
     /// <summary>An in-memory store with the attempt rules of the real one (key identity, same content and actor, recorded refusal).</summary>
     private sealed class Store : ISalesOrderSignedApprovalStore
     {
@@ -384,6 +504,8 @@ public sealed class SalesOrderSignedApprovalServiceTests
         public List<string> Calls { get; } = [];
         public List<SalesOrderSignedApproval> Records { get; } = [];
         public List<SalesDraftTerminalRefusal> Refusals { get; } = [];
+        public List<SalesOrderSignedApproval> Staged { get; } = [];
+        public bool StageFromAcceptance { get; set; }
         public SalesOrderSignedApprovalOrderFactsV1 Order { get; set; } = new(SalesOrderSignedApprovalServiceTests.Order, 7, 3, true, true);
         public bool OrderVisible { get; set; } = true;
 
@@ -455,6 +577,19 @@ public sealed class SalesOrderSignedApprovalServiceTests
             Calls.Add("refusal");
             Refusals.Add(refusal);
             attempts[(commandName, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, null, refusal, envelope.CorrelationId);
+            return Task.CompletedTask;
+        }
+
+        public Task StageSignedApprovalAsync(SalesDraftWriteEnvelope envelope, string requestHash,
+            GoymenERP.Modules.Sales.Domain.Drafts.SalesOrderDraft order, SalesOrderSignedApproval approval, SalesDraftStateAudit audit,
+            SalesDraftStateAudit supersededAudit, DateTimeOffset now, CancellationToken cancellationToken = default)
+        {
+            Calls.Add("stage");
+            Assert.True(StageFromAcceptance, "The record is staged only inside the acceptance save.");
+            Staged.Add(approval);
+            Records.Add(approval);
+            attempts[(SalesOrderSignedApprovalCommands.RecordV1, envelope.IdempotencyKey)] =
+                (envelope.ActorId, requestHash, approval.OrderId, null, envelope.CorrelationId);
             return Task.CompletedTask;
         }
 

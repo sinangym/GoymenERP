@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Domain.SignedApprovals;
 
 namespace GoymenERP.Modules.Sales.Application.Contracts;
@@ -65,12 +66,28 @@ public sealed record SalesOrderSignedApprovalViewV1(
 /// CURRENT revision; after a commercial revision the old record stays active but no longer covers the order (false, "yeni revizyon
 /// için imzalı onay bekleniyor"). <see cref="Items"/> is the history, newest first.
 /// </summary>
+/// <param name="CustomerAccepted">SAT-D471: whether the order's current revision carries the customer acceptance (or the order is
+/// a pre-Q9 one that seeks none).</param>
 public sealed record SalesOrderSignedApprovalsResponseV1(
     Guid OrderId, string OrderVersion, string OrderRevision, bool SignedApprovalReceived, SalesOrderSignedApprovalViewV1? Active,
-    IReadOnlyList<SalesOrderSignedApprovalViewV1> Items);
+    IReadOnlyList<SalesOrderSignedApprovalViewV1> Items, bool CustomerAccepted = false);
 
+/// <param name="CustomerAcceptanceRecorded">SAT-D471: true when THIS record performed the order's customer acceptance (same save);
+/// false when the current revision was already accepted or the order seeks no acceptance (no second acceptance is written).</param>
 public sealed record SalesOrderSignedApprovalCommandResultV1(
-    SalesOrderSignedApprovalsResponseV1 Detail, bool IsReplay, string OriginalCorrelationId);
+    SalesOrderSignedApprovalsResponseV1 Detail, bool IsReplay, string OriginalCorrelationId, bool CustomerAcceptanceRecorded = false);
+
+/// <summary>
+/// WP13 / SAT-D471: the Sales draft service's own customer acceptance command with the signed approval rows staged into its save
+/// (one act: the acceptance and the signed approval record are written together, once, or not at all). Implemented by the draft
+/// service; the signed approval service never re-implements the acceptance.
+/// </summary>
+public interface ISalesOrderCustomerAcceptanceWithSignedApprovalV1
+{
+    Task<SalesOrderDraftResponse> RecordCustomerAcceptanceWithAsync(Guid draftId, SalesDraftStateCommandRequest request,
+        SalesCommandMetadata metadata, Func<SalesOrderDraft, DateTimeOffset, CancellationToken, Task> stage,
+        CancellationToken cancellationToken = default);
+}
 
 public interface ISalesOrderSignedApprovalServiceV1
 {
@@ -84,7 +101,18 @@ public interface ISalesOrderSignedApprovalServiceV1
 }
 
 /// <summary>The order facts a signed approval needs (Sales' own row, company-filtered).</summary>
-public sealed record SalesOrderSignedApprovalOrderFactsV1(Guid OrderId, long Version, int Revision, bool IsOpen, bool IsApproved);
+/// <param name="CustomerAcceptanceRequired">Q9: false for a pre-Q9 order (no separate customer acceptance is sought).</param>
+/// <param name="CustomerAcceptedRevision">The revision the customer last accepted, or null.</param>
+/// <param name="CurrentRevisionRejected">SAT-D115: the customer rejected the current revision (it is never accepted).</param>
+public sealed record SalesOrderSignedApprovalOrderFactsV1(Guid OrderId, long Version, int Revision, bool IsOpen, bool IsApproved,
+    bool CustomerAcceptanceRequired = false, int? CustomerAcceptedRevision = null, bool CurrentRevisionRejected = false)
+{
+    /// <summary>The current revision still awaits the customer's acceptance (the signed approval performs it).</summary>
+    public bool AwaitsCustomerAcceptance => CustomerAcceptanceRequired && CustomerAcceptedRevision != Revision;
+
+    /// <summary>The current revision is accepted, or the order seeks no acceptance.</summary>
+    public bool CustomerAccepted => !CustomerAcceptanceRequired || CustomerAcceptedRevision == Revision;
+}
 
 /// <summary>What a signed approval key already holds: the order whose state it answers, or the recorded terminal refusal.</summary>
 public sealed record SalesOrderSignedApprovalReplay(Guid? OrderId, SalesDraftTerminalRefusal? Refusal, string OriginalCorrelationId);
@@ -109,6 +137,15 @@ public interface ISalesOrderSignedApprovalStore
     /// </summary>
     Task<SalesOrderSignedApprovalStoreResult> StoreSignedApprovalAsync(SalesDraftWriteEnvelope envelope, string requestHash,
         long expectedOrderVersion, SalesOrderSignedApproval approval, SalesDraftStateAudit audit, SalesDraftStateAudit supersededAudit,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// SAT-D471: stages (does NOT save) the record, the supersession of the active record, the attempt and the audit events into the
+    /// pending save of the customer acceptance of <paramref name="order"/> (the draft the acceptance just moved, same store scope).
+    /// The record must cover that draft's revision.
+    /// </summary>
+    Task StageSignedApprovalAsync(SalesDraftWriteEnvelope envelope, string requestHash, SalesOrderDraft order,
+        SalesOrderSignedApproval approval, SalesDraftStateAudit audit, SalesDraftStateAudit supersededAudit, DateTimeOffset now,
         CancellationToken cancellationToken = default);
 
     /// <summary>Withdraws the order's record <paramref name="approvalId"/>; null when no such record of the order exists.</summary>

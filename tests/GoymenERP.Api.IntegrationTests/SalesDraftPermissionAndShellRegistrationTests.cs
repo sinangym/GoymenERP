@@ -73,8 +73,6 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
     [InlineData(SalesPermissionManifestV1.QuotesExpiredConversionApprove, ErpPermissions.SalesQuotesExpiredConversionApprove)]
     // Q9 customer acceptance: registered company-wide, not Critical and not granted by this catalogue.
     [InlineData(SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord, ErpPermissions.SalesOrdersCustomerAcceptanceRecord)]
-    // WP13 (YOL-D11): the signed approval record name; registered company-wide, not Critical and granted to no role.
-    [InlineData(SalesPermissionManifestV1.OrdersSignedApprovalRecord, ErpPermissions.SalesOrdersSignedApprovalRecord)]
     // API-20 / API-21 (plan §3.2, S-01): the sales request's record, read and decide names. Each its own name, company-wide and
     // not Critical, registered without any grant (the reason is on ErpPermissions.SalesRequestsWrite).
     [InlineData(SalesPermissionManifestV1.RequestsWrite, ErpPermissions.SalesRequestsWrite)]
@@ -174,8 +172,7 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         // return screens and the submit / approve / finalize controls of the return detail.
         // W8: external official cancellation is a distinct route on invoice finalization authority.
         // Sales 1.27 (API-33 / API-36): the four invoice controls of the S-09 list (write, approve, match, finalize).
-        // Sales 1.28 (WP13, YOL-D11): the signed approval record control of the detail.
-        Assert.Equal(44, sales.Length);
+        Assert.Equal(43, sales.Length);
         Assert.Equal(SalesShellCapabilityProvider.CustomerReturnDetailCapabilityId,
             Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.CustomerReturnApproveCapabilityId)
                 .Declaration.ParentCapabilityId);
@@ -213,9 +210,6 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
                 .Declaration.ParentCapabilityId);
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId,
             Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.CustomerAcceptanceRecordCapabilityId)
-                .Declaration.ParentCapabilityId);
-        Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId,
-            Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.SignedApprovalRecordCapabilityId)
                 .Declaration.ParentCapabilityId);
         // Published (S03-c, #328): available; each still opens only for an actor holding its Sales permission
         // in the context company (SalesShellCapabilitySqlServerRelationalAcceptanceTests).
