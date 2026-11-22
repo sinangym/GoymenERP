@@ -259,6 +259,14 @@ def _owner_names(registry_rows: list[dict[str, str]]) -> list[str]:
     return sorted(names, key=lambda value: (-len(value), value))
 
 
+def owner_name_terms(root: Path = REPOSITORY_ROOT) -> list[str]:
+    """The person-name terms (registry ``Sahip`` column), read from the sources; the index itself never carries them (D2)."""
+    path = root / DECISIONS_DIRECTORY / REGISTRY_CSV
+    if not path.is_file():
+        return []
+    return _owner_names(list(_registry_csv(path).values()))
+
+
 def _name_pattern(name: str) -> re.Pattern[str]:
     return re.compile(r"(?<![\wÇĞİÖŞÜçğıöşü])" + re.escape(name) + r"(?![A-Za-zÇĞİÖŞÜçğıöşü])")
 

@@ -3,8 +3,9 @@
 
 Without a model (the only mode in this slice: Ai:Enabled=false, no provider key, no network) it validates the set:
 schema, unique ids, category counts, every expected source id against the decision index, every expected tool call
-against the tool catalog, SENTETIK marking and the absence of personal data (the decision index's own
-``personal_name_terms`` plus e-mail/phone/national id/IBAN patterns). It never calls a model.
+against the tool catalog, SENTETIK marking and the absence of personal data (the registry's owner name terms, read from
+``docs/decisions/KARAR_SICILI.csv`` because the index no longer carries them after WP-A4 / plan D2, plus e-mail/phone/
+national id/IBAN patterns). It never calls a model.
 
 Usage::
 
@@ -63,7 +64,7 @@ def evaluate(root: Path = REPOSITORY_ROOT) -> dict[str, Any]:
     records = {record["id"]: record for record in index["records"]}
     catalog = _read_json(root, TOOL_CATALOG_PATH)
     tools = {(tool["toolId"], tool["version"]): tool for tool in catalog["tools"]}
-    names = index["personal_name_terms"]
+    names = GENERATOR.owner_name_terms(root)
 
     items = eval_set["items"]
     identities = [item["id"] for item in items]

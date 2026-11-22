@@ -25,10 +25,8 @@ Usage::
 from __future__ import annotations
 
 import argparse
-import csv
 import hashlib
 import importlib.util
-import io
 import json
 import re
 import sys
@@ -95,10 +93,7 @@ def _registered_permissions(root: Path) -> set[str]:
 
 
 def _owner_names(root: Path) -> list[str]:
-    path = root / REGISTRY_CSV_PATH
-    if not path.is_file():
-        return []
-    return DECISIONS._owner_names(list(csv.DictReader(io.StringIO(_read_text(path)))))
+    return DECISIONS.owner_name_terms(root)
 
 
 def _parse_note(relative: str, text: str) -> tuple[dict[str, Any], str, int]:
