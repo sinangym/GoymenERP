@@ -295,6 +295,8 @@ builder.Services.AddProductPriceListHost(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
 builder.Services.AddProductPurchaseSelection(p => p.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
 builder.Services.AddProductLogisticsDocumentDisplay(p => p.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
+// WP13: the purchase order PDF names its products through the Product owner under the Purchasing order read.
+builder.Services.AddProductPurchasingDocumentDisplay(p => p.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
 builder.Services.AddCounterpartyModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
@@ -640,6 +642,7 @@ app.MapLogisticsTransferDepartureEndpoints();
 app.MapLogisticsTransferOutgoingDocumentEndpoints();
 app.MapLogisticsWeighingDifferenceEndpoints();
 app.MapLogisticsDispatchPdfEndpoints();
+app.MapPurchaseOrderPdfEndpoints();
 app.MapLogisticsCustomerReturnEndpoints();
 app.MapPurchasingEndpoints();
 app.MapPurchaseServiceOrderEndpointsV1();
