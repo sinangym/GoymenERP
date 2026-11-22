@@ -26,6 +26,32 @@ public static class PurchaseInvoiceKilogramShare
     /// </summary>
     public static bool PurchaseInvoiceRemainingShareGoldenAccepted => false;
 
+    /// <summary>ALS-D124: a partial invoice's kilogram share keeps three decimals.</summary>
+    public const int ShareScale = 3;
+
+    /// <summary>
+    /// ALS-D122 / ALS-D123 / ALS-D124 (behind <see cref="PurchaseInvoiceRemainingShareGoldenAccepted"/>): the kilograms of an invoice
+    /// on a piece receipt — remaining kg × invoiced pieces ÷ remaining pieces, rounded to three decimals half away from zero. The
+    /// remaining kg and pieces are the caller's CURRENT figures: the receipt's weighed kg and pieces less every return so far and
+    /// less the kg and pieces of earlier invoices (ALS-D123). The invoice that takes the last remaining pieces takes the whole
+    /// remaining kg, so the shares add up to the receipt's (returns deducted) kilograms exactly (ALS-D124).
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">Nothing remains, or the invoiced pieces are not within the remaining pieces.</exception>
+    public static ExactCostRatio RemainingShare(ExactCostRatio remainingKg, ExactCostRatio remainingPieces, decimal invoicedPieces)
+    {
+        ArgumentNullException.ThrowIfNull(remainingKg);
+        ArgumentNullException.ThrowIfNull(remainingPieces);
+        if (remainingKg.Sign <= 0) throw new ArgumentOutOfRangeException(nameof(remainingKg), "Kalan kg pozitif olmalıdır.");
+        if (remainingPieces.Sign <= 0) throw new ArgumentOutOfRangeException(nameof(remainingPieces), "Kalan adet pozitif olmalıdır.");
+        var invoiced = ExactCostRatio.Of(invoicedPieces);
+        var comparison = invoiced.CompareTo(remainingPieces);
+        if (invoicedPieces <= 0m || comparison > 0)
+            throw new ArgumentOutOfRangeException(nameof(invoicedPieces), "Faturalanan adet kalan adedi aşamaz.");
+        return comparison == 0
+            ? remainingKg
+            : ExactCostRatio.Of(Of(remainingKg, invoicedPieces, remainingPieces).Round(ShareScale));
+    }
+
     /// <summary>
     /// Whether a piece-line share's kilograms can be applied. Without a non-proportional return ALS-D121 and ALS-D122 agree, so the
     /// share is always decided; with one it is decided only while ALS-D122 is accepted (<paramref name="remainingShareAccepted"/>),

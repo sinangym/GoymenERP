@@ -208,6 +208,38 @@ public sealed class InventoryPurchaseInvoiceCostSourceTests
         Assert.False(PurchaseInvoiceKilogramShare.PieceShareIsDecided(originalKg, 100m, ExactCostRatio.Of(0m), ExactCostRatio.Of(0m), true));
     }
 
+    [Fact]
+    public void ALS_D123_D124_each_invoice_takes_its_rounded_share_of_what_currently_remains_and_the_last_one_takes_the_rest()
+    {
+        // Receipt 100 pieces / 1 250,400 kg; 20 pieces / 249,870 kg returned -> 80 pieces / 1 000,530 kg remain.
+        var kg = ExactCostRatio.Of(1000.53m);
+        var pieces = ExactCostRatio.Of(80m);
+
+        // Invoice 1: 30 pieces -> 1 000,53 x 30 / 80 = 375,19875 -> 375,199 (half away from zero at the third decimal).
+        var first = PurchaseInvoiceKilogramShare.RemainingShare(kg, pieces, 30m);
+        Assert.Equal(0, first.CompareTo(ExactCostRatio.Of(375.199m)));
+        // Invoice 2: 30 of the 50 remaining pieces over the CURRENT remaining 625,331 kg -> 375,1986 -> 375,199.
+        kg = kg.Subtract(first); pieces = pieces.Subtract(ExactCostRatio.Of(30m));
+        var second = PurchaseInvoiceKilogramShare.RemainingShare(kg, pieces, 30m);
+        Assert.Equal(0, second.CompareTo(ExactCostRatio.Of(375.199m)));
+        // Invoice 3 completes the receipt: it takes the remaining kg (250,132), not a rounded proportion.
+        kg = kg.Subtract(second); pieces = pieces.Subtract(ExactCostRatio.Of(30m));
+        var last = PurchaseInvoiceKilogramShare.RemainingShare(kg, pieces, 20m);
+        Assert.Equal(0, last.CompareTo(ExactCostRatio.Of(250.132m)));
+        Assert.Equal(0, first.Add(second).Add(last).CompareTo(ExactCostRatio.Of(1000.53m)));
+    }
+
+    [Fact]
+    public void ALS_D124_rounds_an_exact_half_away_from_zero_and_refuses_more_than_what_remains()
+    {
+        // 0,001 kg over 2 pieces, 1 invoiced: 0,0005 -> 0,001.
+        Assert.Equal(0, PurchaseInvoiceKilogramShare.RemainingShare(ExactCostRatio.Of(0.001m), ExactCostRatio.Of(2m), 1m)
+            .CompareTo(ExactCostRatio.Of(0.001m)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PurchaseInvoiceKilogramShare.RemainingShare(ExactCostRatio.Of(10m), ExactCostRatio.Of(2m), 3m));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PurchaseInvoiceKilogramShare.RemainingShare(ExactCostRatio.Of(10m), ExactCostRatio.Of(2m), 0m));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PurchaseInvoiceKilogramShare.RemainingShare(ExactCostRatio.Of(0m), ExactCostRatio.Of(2m), 1m));
+    }
+
     private static InventoryPurchaseInvoiceCostSourceV1 Source() => new(Company, Guid.NewGuid(), 4,
         Guid.NewGuid(), SettingsCurrencyIdentitiesV1.TurkishLira, 100.01m, null, new(2026, 11, 17), "synthetic-finalizer",
         [new(Guid.NewGuid(), 1, "Product", "resale", 100.01m, null,

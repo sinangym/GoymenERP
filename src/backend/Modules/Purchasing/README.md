@@ -540,7 +540,7 @@ activates nothing; real-SQL acceptance is **NOT_RUN** and independent K3 accepta
 - Migration `20261122141554_AddPurchaseGoodsReceiptBatchPieceFacts`: toplu mal kabulde adetli satır (batch `KilogramsPerUnit`, etiket `PieceCount`,
   varyans check'inin adet dalı). Down guard **52042** (forward fix): adetli toplu kabul varken geri alınmaz.
 - ALS-D119/D120 ve SAT-D436/D439 anahtarları açık (`PurchaseCostGoldenAccepted`, `PurchaseKgPriceGoldenAccepted`). ALS-D122 anahtarı
-  (`PurchaseInvoiceKilogramShare.PurchaseInvoiceRemainingShareGoldenAccepted`, Inventory) golden gelene kadar kapalı; kapalıyken oransız iadeli
+  (`PurchaseInvoiceKilogramShare.PurchaseInvoiceRemainingShareGoldenAccepted`, Inventory; ALS-D123 güncel kalan ve ALS-D124 3 ondalık + son fatura kalanı alır aynı anahtarda) golden gelene kadar kapalı; kapalıyken oransız iadeli
   adetli kabulün faturası `purchase_invoice_cost_piece_reversal_basis_unavailable` ile bekler.
 - SAT-D452: gerçekleşmeye yalnız kesinleşmiş faturalar girer (`PurchaseInvoiceRealizationRule`).
 - ASSUMPTION-AK3B-1 (geri alınabilir sunum ayrıntısı): sipariş gerçekleşme tablosunda sunucu yalnız gerçek kg fiyatı için neden kodu verir;
