@@ -134,11 +134,13 @@ public sealed class InventoryCustomerReturnParticipant : IInventoryCustomerRetur
         await AcquirePhysicalValidationAsync(store.LockPhysicalValidationAsync, cancellationToken);
         var trace = await OriginalShipmentTraceAsync(request.SourceShipmentId,
             request.LoadingInstructionLineId, cancellationToken);
-        var returned = await ReturnedQuantityAsync(trace, cancellationToken);
+        var (returned, returnedPieces) = await ReturnedQuantityAsync(trace, cancellationToken);
         if (returned + quantity.Value > trace.QuantityKg)
         {
             throw Refused(409, InventoryCustomerReturnCodesV1.ReturnExceedsShipment);
         }
+
+        var pieces = ReturnedPieces(trace, quantity, returned, returnedPieces, request.PieceCount);
 
         var versionBefore = trace.LabelRow.Version;
         var movement = new StockMovement(
@@ -150,7 +152,7 @@ public sealed class InventoryCustomerReturnParticipant : IInventoryCustomerRetur
                 InventoryCustomerReturnContractV1.SourceKind,
                 trace.MovementId,
                 request.CustomerReturnId),
-            [new StockMovementLine(trace.Position, StockDirection.In, quantity)],
+            [new StockMovementLine(trace.Position, StockDirection.In, quantity, pieces)],
             CostResult.NotCalculated);
         try
         {
@@ -168,6 +170,13 @@ public sealed class InventoryCustomerReturnParticipant : IInventoryCustomerRetur
         catch (InventoryStoreException exception)
         {
             throw StoreRefusal(exception.Code);
+        }
+        catch (InventoryRuleException exception) when (exception.Code is InventoryRuleCodes.PieceCountRequired
+            or InventoryRuleCodes.PieceCountNotTracked or InventoryRuleCodes.NegativePieceCount
+            or InventoryRuleCodes.InvalidPieceCount)
+        {
+            // KLN-D119: the label's current piece tracking disagrees with the returned count; the request's quantity fault.
+            throw Refused(400, InventoryCustomerReturnCodesV1.InvalidQuantity);
         }
         catch (InventoryRuleException)
         {
@@ -187,7 +196,8 @@ public sealed class InventoryCustomerReturnParticipant : IInventoryCustomerRetur
             quantity.ToString(),
             outboxMessageId,
             IsReplay: false,
-            OriginalCorrelationId: metadata.CorrelationId);
+            OriginalCorrelationId: metadata.CorrelationId,
+            PieceCount: pieces?.Value);
         var payload = new InventoryCustomerReturnRecordedV1(
             companyId,
             request.CustomerReturnId,
@@ -366,10 +376,31 @@ public sealed class InventoryCustomerReturnParticipant : IInventoryCustomerRetur
             line.LocationId,
             label,
             BlockState.Free);
-        return new ShipmentTrace(movement.Id, line.QuantityKg, position, labelRow);
+        return new ShipmentTrace(movement.Id, line.QuantityKg, position, labelRow, line.PieceCount);
     }
 
-    private async Task<decimal> ReturnedQuantityAsync(ShipmentTrace trace, CancellationToken cancellationToken)
+    /// <summary>KLN-D119 (AK-2b): <see cref="PieceCountReturnRule"/> against the shipped line; 409 when pieces exceed it.</summary>
+    private static PieceCount? ReturnedPieces(ShipmentTrace trace, Kilograms quantity, decimal returnedKg, int returnedPieces,
+        int? requested)
+    {
+        try
+        {
+            return PieceCountReturnRule.Returned(Kilograms.Of(trace.QuantityKg),
+                trace.ShippedPieces is { } shipped ? PieceCount.Of(shipped) : null, Kilograms.Of(returnedKg),
+                PieceCount.Of(returnedPieces), quantity, requested);
+        }
+        catch (InventoryRuleException exception) when (exception.Code == InventoryRuleCodes.NegativePieceCount)
+        {
+            throw Refused(409, InventoryCustomerReturnCodesV1.ReturnExceedsShipment);
+        }
+        catch (InventoryRuleException)
+        {
+            throw Refused(400, InventoryCustomerReturnCodesV1.InvalidQuantity);
+        }
+    }
+
+    private async Task<(decimal Kilograms, int Pieces)> ReturnedQuantityAsync(ShipmentTrace trace,
+        CancellationToken cancellationToken)
     {
         var movements = await context.Movements.AsNoTracking().Where(row =>
             row.Kind == (int)StockMovementKind.Return
@@ -377,7 +408,7 @@ public sealed class InventoryCustomerReturnParticipant : IInventoryCustomerRetur
             && row.SourceId == trace.MovementId).ToListAsync(cancellationToken);
         if (movements.Count == 0)
         {
-            return 0m;
+            return (0m, 0);
         }
 
         var movementIds = movements.Select(row => row.Id).ToArray();
@@ -394,7 +425,7 @@ public sealed class InventoryCustomerReturnParticipant : IInventoryCustomerRetur
             }
         }
 
-        return lines.Sum(row => row.QuantityKg);
+        return (lines.Sum(row => row.QuantityKg), lines.Sum(row => row.PieceCount ?? 0));
     }
 
     private static bool Matches(MovementLineRow row, StockPosition position) =>
@@ -489,5 +520,6 @@ public sealed class InventoryCustomerReturnParticipant : IInventoryCustomerRetur
         Guid MovementId,
         decimal QuantityKg,
         StockPosition Position,
-        LabelRow LabelRow);
+        LabelRow LabelRow,
+        int? ShippedPieces = null);
 }

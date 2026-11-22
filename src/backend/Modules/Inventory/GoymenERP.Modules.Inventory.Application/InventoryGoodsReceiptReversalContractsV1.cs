@@ -42,6 +42,9 @@ public sealed record InventoryGoodsReceiptReversalLinkV1(Guid ConversionId, Guid
 /// The physical kilograms are measured input, not a conversion of purchase quantity. The original link's
 /// stamped quantity/kg pair is the only basis for a partial link undo. An approved return cost is supplied
 /// by Purchasing's existing invoice/manual-exception flow; Inventory never chooses an exception policy.
+/// <c>PieceCount</c> (KLN-D119, AK-2b) is the number of pieces leaving a piece-tracking label: required for such a label
+/// and refused on a kg-only label (400 <see cref="InventoryGoodsReceiptReversalCodesV1.InvalidRequest"/>); a partial undo
+/// leaves at least one piece, a whole undo takes every piece. Purchasing before AK-3 omits it.
 /// </summary>
 public sealed record InventoryGoodsReceiptReversalRequestV1(Guid CompanyId, Guid ReversalId, Guid ReversalLineId,
     Guid AcceptanceId, Guid InventoryMovementId, InventoryGoodsReceiptReversalKindV1 Kind,
@@ -52,7 +55,9 @@ public sealed record InventoryGoodsReceiptReversalRequestV1(Guid CompanyId, Guid
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     InventorySupplierReturnPurchaseSourceV1? PurchaseSource = null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-    string? UndoQuantity = null);
+    string? UndoQuantity = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    int? PieceCount = null);
 
 /// <summary>Post-write Purchasing expectation. Its actual source must be bound to the SAME host transaction.</summary>
 public sealed record InventoryGoodsReceiptReversalSupplyV1(Guid CompanyId, Guid PurchaseOrderId,

@@ -447,6 +447,9 @@ internal sealed class StockScrapRow : IInventoryTenantRow
     public int Block { get; set; }
     public decimal BookKg { get; set; }
     public decimal ScrapKg { get; set; }
+    /// <summary>KLN-D119 (AK-2b): the book and scrapped pieces of a piece-tracking label; both null on a kg-only label.</summary>
+    public int? BookPieceCount { get; set; }
+    public int? ScrapPieceCount { get; set; }
     public DateTimeOffset ScrappedAtUtc { get; set; }
     public string Reason { get; set; } = string.Empty;
     public string PayloadHash { get; set; } = string.Empty;
@@ -634,6 +637,8 @@ internal sealed class InventoryTransferBucketRow : IInventoryTenantRow
     public Guid ProductId { get; set; }
     public int Block { get; set; }
     public decimal QuantityKg { get; set; }
+    /// <summary>KLN-D119 (AK-2b): the bucket's dispatched pieces; null on a label that does not track pieces.</summary>
+    public int? PieceCount { get; set; }
 }
 
 /// <summary>One immutable whole-line target acceptance and its physical movement.</summary>
@@ -667,6 +672,11 @@ internal sealed class InventoryTransferReceiptRow : IInventoryTenantRow
     public decimal ReceivedKg { get; set; }
     public decimal ShortageKg { get; set; }
     public decimal OverageKg { get; set; }
+    /// <summary>KLN-D119 (AK-2b): dispatched/received/shortage/excess pieces of a piece-tracking label; all null otherwise.</summary>
+    public int? DispatchedPieceCount { get; set; }
+    public int? ReceivedPieceCount { get; set; }
+    public int? ShortagePieceCount { get; set; }
+    public int? OveragePieceCount { get; set; }
     public Guid? ShortageMovementId { get; set; }
     public long LabelVersionAfterReceipt { get; set; }
     public string? OverageReason { get; set; }
@@ -710,6 +720,8 @@ internal sealed class InventoryTransferOverageRenewalRow : IInventoryTenantRow
     public Guid LineId { get; set; }
     public int RequestNumber { get; set; }
     public decimal OverageKg { get; set; }
+    /// <summary>KLN-D119 (AK-2b): the re-requested excess pieces of a piece-tracking label; null otherwise.</summary>
+    public int? OveragePieceCount { get; set; }
     public string Reason { get; set; } = string.Empty;
     public DateTimeOffset RequestedAtUtc { get; set; }
     public string PayloadHash { get; set; } = string.Empty;

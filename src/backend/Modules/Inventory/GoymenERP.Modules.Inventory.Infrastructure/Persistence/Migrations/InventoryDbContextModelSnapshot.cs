@@ -1253,6 +1253,9 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                     b.Property<int>("OwnerKind")
                         .HasColumnType("int");
 
+                    b.Property<int?>("PieceCount")
+                        .HasColumnType("int");
+
                     b.Property<Guid>("ProductId")
                         .HasColumnType("uniqueidentifier");
 
@@ -1272,6 +1275,8 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                     b.ToTable("TransferBuckets", "inventory", t =>
                         {
                             t.HasCheckConstraint("CK_TransferBuckets_Identity", "[OwnerId] <> '00000000-0000-0000-0000-000000000000' AND [CustodianId] <> '00000000-0000-0000-0000-000000000000' AND [LabelId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_TransferBuckets_PieceCount", "[PieceCount] IS NULL OR [PieceCount] > 0");
 
                             t.HasCheckConstraint("CK_TransferBuckets_State", "[Sequence] >= 1 AND [OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] IN (1, 2) AND [QuantityKg] > 0");
                         });
@@ -1769,6 +1774,9 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<int?>("OveragePieceCount")
+                        .HasColumnType("int");
+
                     b.Property<string>("PayloadHash")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -1795,6 +1803,8 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
 
                     b.ToTable("TransferOverageRenewals", "inventory", t =>
                         {
+                            t.HasCheckConstraint("CK_TransferOverageRenewals_PieceCount", "[OveragePieceCount] IS NULL OR [OveragePieceCount] >= 0");
+
                             t.HasCheckConstraint("CK_TransferOverageRenewals_Quantity", "[OverageKg] > 0");
 
                             t.HasCheckConstraint("CK_TransferOverageRenewals_RequestNumber", "[RequestNumber] >= 2");
@@ -1878,12 +1888,18 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<int?>("DispatchedPieceCount")
+                        .HasColumnType("int");
+
                     b.Property<long>("LabelVersionAfterReceipt")
                         .HasColumnType("bigint");
 
                     b.Property<decimal>("OverageKg")
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
+
+                    b.Property<int?>("OveragePieceCount")
+                        .HasColumnType("int");
 
                     b.Property<string>("OverageReason")
                         .HasMaxLength(500)
@@ -1902,6 +1918,9 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<int?>("ReceivedPieceCount")
+                        .HasColumnType("int");
+
                     b.Property<DateTimeOffset>("RecordedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -1917,6 +1936,9 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("ShortageMovementId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int?>("ShortagePieceCount")
+                        .HasColumnType("int");
+
                     b.HasKey("CompanyId", "TransferId", "LineId");
 
                     b.HasIndex("CompanyId", "ShortageMovementId")
@@ -1926,6 +1948,8 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                     b.ToTable("TransferReceipts", "inventory", t =>
                         {
                             t.HasCheckConstraint("CK_TransferReceipts_Overage", "([OverageKg] = 0 AND [OverageReason] IS NULL) OR ([OverageKg] > 0 AND [OverageReason] IS NOT NULL AND LEN(LTRIM(RTRIM([OverageReason]))) > 0)");
+
+                            t.HasCheckConstraint("CK_TransferReceipts_PieceCount", "([DispatchedPieceCount] IS NULL AND [ReceivedPieceCount] IS NULL AND [ShortagePieceCount] IS NULL AND [OveragePieceCount] IS NULL) OR ([DispatchedPieceCount] > 0 AND [ReceivedPieceCount] > 0 AND [ShortagePieceCount] >= 0 AND [OveragePieceCount] >= 0 AND ([ShortagePieceCount] = 0 OR [OveragePieceCount] = 0) AND [ReceivedPieceCount] + [ShortagePieceCount] - [OveragePieceCount] = [DispatchedPieceCount] AND ([ShortagePieceCount] = 0 OR [ShortageKg] > 0) AND ([OveragePieceCount] = 0 OR [OverageKg] > 0))");
 
                             t.HasCheckConstraint("CK_TransferReceipts_Quantities", "[DispatchedKg] > 0 AND [ReceivedKg] > 0 AND [ShortageKg] >= 0 AND [OverageKg] >= 0 AND ([ShortageKg] = 0 OR [OverageKg] = 0) AND [ReceivedKg] + [ShortageKg] - [OverageKg] = [DispatchedKg]");
 
@@ -3677,6 +3701,9 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<int?>("BookPieceCount")
+                        .HasColumnType("int");
+
                     b.Property<Guid>("CompanyId")
                         .HasColumnType("uniqueidentifier");
 
@@ -3732,6 +3759,9 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<int?>("ScrapPieceCount")
+                        .HasColumnType("int");
+
                     b.Property<DateTimeOffset>("ScrappedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -3744,6 +3774,8 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                     b.ToTable("StockScraps", "inventory", t =>
                         {
                             t.HasCheckConstraint("CK_StockScraps_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OwnerId] <> '00000000-0000-0000-0000-000000000000' AND [CustodianId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_StockScraps_PieceCount", "([BookPieceCount] IS NULL AND [ScrapPieceCount] IS NULL) OR ([BookPieceCount] > 0 AND [ScrapPieceCount] >= 0 AND (([ScrapPieceCount] = [BookPieceCount] AND [ScrapKg] = [BookKg]) OR ([ScrapPieceCount] < [BookPieceCount] AND [ScrapKg] < [BookKg])))");
 
                             t.HasCheckConstraint("CK_StockScraps_State", "[OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] IN (1, 2) AND [LabelVersion] >= 1 AND [BookKg] > 0 AND [ScrapKg] > 0 AND [ScrapKg] <= [BookKg]");
 

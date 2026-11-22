@@ -953,3 +953,24 @@ Down first refuses with **THROW 51926** while either proof table contains rows. 
   `LabelTransformationInputs/Outputs` and `StockCounts` (pure DDL). Down first refuses with **THROW 52021** while any piece
   count exists (forward fix). Real SQL acceptance: `InventorySqlServerRelationalAcceptanceTests.PieceCounts.cs`, **NOT_RUN**
   locally.
+
+### AK-2b — piece count on the remaining movements (KLN-D119)
+
+- Transfer: dispatch copies each bucket's stored pieces (`TransferBuckets.PieceCount`); acceptance, dispatch cancel and
+  transit loss move them. The receipt takes the receiver's counted pieces (`ReceiveInventoryTransferLineV1.ReceivedPieceCount`,
+  required for a piece-tracking line, refused for a kg-only one, 400); a piece shortage/excess is accepted only with a
+  kilogram shortage/excess in the same direction, and the shortage fire / excess approval carry it. A re-request names its
+  excess pieces (`RenewInventoryTransferOverageV1.OveragePieceCount`, never above the receipt's).
+- Scrap: `RecordInventoryStockScrapV1.ScrapPieceCount` (whole kg take every piece; a partial scrap leaves at least one).
+- Participants with a new optional `int? PieceCount` (required on a piece-tracking label, refused on a kg-only label):
+  supplier return exit, goods-receipt reversal, customer return, manufacturing input issue/return, output declaration
+  (V1/V2) and output reversal, subcontract delivery lines. Returns of a traced exit (customer return, input return) never
+  exceed its pieces and run out with its kilograms (`PieceCountReturnRule`). Callers before AK-3/AK-4/AK-7 omit it;
+  kg-only labels behave exactly as before and every piece-less request keeps its stored hash.
+- SAT-D442 piece distribution (`InventorySupplierReturnPieceDistributionV1`) is implemented and pinned to golden rows
+  I10/I15 behind `GoldenAccepted => false`; no live command uses it (lineage return stays at its 503 boundary, AK-8).
+- No block/release command exists yet; the ledger already moves pieces on Block/Release pairs.
+- `20261122095820_AddInventoryMovementPieceCounts` adds nullable piece columns and checks on `TransferBuckets`,
+  `TransferReceipts`, `TransferOverageRenewals` and `StockScraps` (pure DDL). Down first refuses with **THROW 52031** while
+  any of them carries a piece count (forward fix). Real SQL acceptance:
+  `InventorySqlServerRelationalAcceptanceTests.MovementPieceCounts.cs`, **NOT_RUN** locally.

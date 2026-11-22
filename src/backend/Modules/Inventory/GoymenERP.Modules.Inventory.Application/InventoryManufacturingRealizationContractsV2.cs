@@ -65,12 +65,13 @@ public sealed record InventoryManufacturingOutputRequestV2(
     Guid MovementId,
     string QuantityKg,
     DateTimeOffset OccurredAtUtc,
-    InventoryLabelClassificationV1? RemnantClassification = null)
+    InventoryLabelClassificationV1? RemnantClassification = null,
+    int? PieceCount = null)
 {
     public InventoryManufacturingOutputRequestV1 ToV1() => new(CompanyId, ManufacturingOrderId, OutputId,
         ManufacturingOrderVersionAfter, ParentLabelId, ExpectedParentLabelVersion, OutputClass, ProductId,
         ExpectedProductVersion, LotId, LabelId, LabelCode, HeatNumber, CoilNumber, RequiredDocuments, OwnerKind,
-        OwnerId, CustodianKind, CustodianId, LocationId, InitialBlock, MovementId, QuantityKg, OccurredAtUtc);
+        OwnerId, CustodianKind, CustodianId, LocationId, InitialBlock, MovementId, QuantityKg, OccurredAtUtc, PieceCount);
 }
 
 /// <summary>

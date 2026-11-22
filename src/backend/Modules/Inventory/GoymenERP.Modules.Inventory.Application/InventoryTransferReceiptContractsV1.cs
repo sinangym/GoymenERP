@@ -37,7 +37,10 @@ public static class InventoryTransferReceiptApiV1
 /// <summary>
 /// B-22c receipt of one in-transit line. <see cref="ReceivedKg"/> is the receiver's weighed kilograms (positive,
 /// canonical decimal text); KLN-D21 makes it final. <see cref="OverageReason"/> is required exactly when the received
-/// kilograms exceed the dispatched kilograms (KLN-D24) and must be absent otherwise.
+/// kilograms exceed the dispatched kilograms (KLN-D24) and must be absent otherwise. <see cref="ReceivedPieceCount"/>
+/// (KLN-D119, AK-2b) is the receiver's counted pieces: required (at least one) for a label dispatched with pieces and
+/// refused for a kg-only label; a piece difference is accepted only together with a kilogram difference in the same
+/// direction (the shortage fire and the excess carry both). Both refusals answer 400 validation.
 /// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ReceiveInventoryTransferLineV1(
@@ -46,7 +49,8 @@ public sealed record ReceiveInventoryTransferLineV1(
     [property: JsonRequired] InventoryTransferDocumentReferenceV1 IncomingDocument,
     [property: JsonRequired] string ReceivedKg,
     string? OverageReason,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExpectedIncomingDocumentVersion = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExpectedIncomingDocumentVersion = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? ReceivedPieceCount = null);
 
 [JsonConverter(typeof(JsonStringEnumConverter<InventoryTransferDecisionKindV1>))]
 public enum InventoryTransferDecisionKindV1
@@ -73,14 +77,17 @@ public sealed record DecideInventoryTransferOverageV1(
 /// KLN-D107: the corrected re-request of a rejected receipt excess, recorded under the existing receive permission. The
 /// line's latest excess request must be rejected; <see cref="OverageKg"/> (positive, canonical decimal text) never exceeds
 /// the excess first declared on the receipt. The re-request takes the next request number and is decided under the
-/// overage approval like the first one. It changes no stock and no transfer version.
+/// overage approval like the first one. It changes no stock and no transfer version. <see cref="OveragePieceCount"/>
+/// (KLN-D119, AK-2b) is required for a piece-tracking line (zero when only kilograms are in excess) and never exceeds the
+/// receipt's first declared excess pieces; it is refused on a kg-only line (400 validation).
 /// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record RenewInventoryTransferOverageV1(
     [property: JsonRequired] string ExpectedTransferVersion,
     [property: JsonRequired] DateTimeOffset RequestedAtUtc,
     [property: JsonRequired] string OverageKg,
-    [property: JsonRequired] string Reason);
+    [property: JsonRequired] string Reason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? OveragePieceCount = null);
 
 /// <summary>
 /// KLN-D23 (c): the loss request of one pending (in-transit) line, with the explanation. KLN-D97: after a rejection the
@@ -124,7 +131,8 @@ public sealed record WithdrawInventoryTransferLossV1(
 /// One recorded receipt. Kilograms are canonical decimal text. <see cref="OverageStatus"/> is <c>None</c>,
 /// <c>Pending</c>, <c>Approved</c> or <c>Rejected</c>; the decision fields are set only once decided. They describe the
 /// receipt's own declared excess (request 1); corrected re-requests are listed in
-/// <see cref="InventoryTransferReceiptFactsViewV1.OverageRenewals"/>.
+/// <see cref="InventoryTransferReceiptFactsViewV1.OverageRenewals"/>. The four piece counts (KLN-D119) appear only for a
+/// piece-tracking line; a kg-only receipt answers exactly as before.
 /// </summary>
 public sealed record InventoryTransferReceiptViewV1(
     Guid LineId,
@@ -140,7 +148,11 @@ public sealed record InventoryTransferReceiptViewV1(
     string? OverageDecisionReason,
     DateTimeOffset? OverageDecidedAtUtc,
     string? OverageDecidedBy,
-    Guid? OverageMovementId);
+    Guid? OverageMovementId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? DispatchedPieceCount = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? ReceivedPieceCount = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? ShortagePieceCount = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? OveragePieceCount = null);
 
 /// <summary>
 /// One recorded loss request. <see cref="Status"/> is <c>Pending</c>, <c>Approved</c>, <c>Rejected</c> or
@@ -173,6 +185,7 @@ public sealed record InventoryTransferReceiptFactsViewV1(
 /// <summary>
 /// KLN-D107: one corrected re-request of a rejected receipt excess, numbered from 2. <see cref="Status"/> is
 /// <c>Pending</c>, <c>Approved</c> or <c>Rejected</c>; the decision fields are set only once decided.
+/// <see cref="OveragePieceCount"/> appears only for a piece-tracking line (KLN-D119).
 /// </summary>
 public sealed record InventoryTransferOverageRenewalViewV1(
     Guid LineId,
@@ -185,7 +198,8 @@ public sealed record InventoryTransferOverageRenewalViewV1(
     string? DecisionReason,
     DateTimeOffset? DecidedAtUtc,
     string? DecidedBy,
-    Guid? MovementId);
+    Guid? MovementId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? OveragePieceCount = null);
 
 /// <summary>The HTTP body of a B-22c command answer: the transfer view and the receipt facts after the command.</summary>
 public sealed record InventoryTransferReceiptResponseV1(

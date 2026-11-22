@@ -4,6 +4,7 @@ using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain;
 using GoymenERP.Modules.Inventory.Domain.Costing;
 using GoymenERP.Modules.Inventory.Domain.Movements;
+using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 
 namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
@@ -79,7 +80,8 @@ public sealed partial class InventoryManufacturingRealizationParticipant : IInve
             request.OccurredAtUtc,
             new StockSourceReference(InventoryManufacturingOutputReversalContractV1.OutputReversalSourceKind,
                 request.ManufacturingOrderId, request.ReversalId),
-            [new StockMovementLine(position, StockDirection.Out, quantity)], CostResult.NotCalculated);
+            [new StockMovementLine(position, StockDirection.Out, quantity,
+                request.PieceCount is { } pieces ? PieceCount.Of(pieces) : null)], CostResult.NotCalculated);
         // The figures were checked under the label fence above; a shortfall here is a concurrent change.
         await RecordMovementAsync(movement, metadata, InventoryManufacturingRealizationCodesV1.ConcurrentChange,
             cancellationToken);

@@ -160,6 +160,7 @@ public sealed partial class InventorySubcontractDeliveryParticipant : IInventory
         {
             Source(line.Source, companyId, line.LabelId); _ = Version(line.ExpectedLabelVersion); _ = Version(line.ExpectedAllocationVersion);
             _ = Quantity(line.QuantityKg);
+            if (line.PieceCount is < 0) throw Refused(400, Invalid);
             if (line.Source.CustomerPartyId != request.CustomerPartyId || line.AllocationId == Guid.Empty || line.ShipmentId == Guid.Empty
                 || line.MovementId == Guid.Empty || line.LoadingInstructionLineId == Guid.Empty) throw Refused(400, Invalid);
         }
@@ -216,7 +217,8 @@ public sealed partial class InventorySubcontractDeliveryParticipant : IInventory
             var line = item.Input; var row = item.Row; var before = JsonSerializer.Serialize(View(row), Json); var beforeVersion = row.Version;
             var movement = new StockMovement(line.MovementId, companyId, StockMovementKind.Issue, request.OccurredAtUtc,
                 new StockSourceReference(MovementSourceKind, line.ShipmentId, line.LoadingInstructionLineId),
-                [new StockMovementLine(item.Allocation.Position, StockDirection.Out, Quantity(line.QuantityKg))], CostResult.NotCalculated);
+                [new StockMovementLine(item.Allocation.Position, StockDirection.Out, Quantity(line.QuantityKg),
+                    line.PieceCount is { } pieces ? PieceCount.Of(pieces) : null)], CostResult.NotCalculated);
             try
             {
                 if (await store.StageMovementAsync(movement, metadata, false, cancellationToken) != InventoryWriteOutcome.Recorded)
@@ -224,6 +226,10 @@ public sealed partial class InventorySubcontractDeliveryParticipant : IInventory
             }
             catch (InventoryRuleException error) when (error.Code == InventoryRuleCodes.NegativePhysicalStock)
             { throw Refused(409, InventoryDefiniteShipmentCodesV1.PhysicalStockInsufficient, error); }
+            catch (InventoryRuleException error) when (error.Code is InventoryRuleCodes.PieceCountRequired
+                or InventoryRuleCodes.PieceCountNotTracked or InventoryRuleCodes.NegativePieceCount
+                or InventoryRuleCodes.InvalidPieceCount)
+            { throw Refused(400, Invalid, error); } // KLN-D119: an unknown, extra or impossible piece count for this label.
             row.RemainingKg = item.Allocation.Remaining.Value; row.Status = (int)item.Allocation.Status; row.Version = item.Allocation.Version;
             row.UpdatedAtUtc = clock.GetUtcNow(); var eventId = Guid.NewGuid();
             foreach (var extra in item.Extras)
@@ -237,7 +243,7 @@ public sealed partial class InventorySubcontractDeliveryParticipant : IInventory
             }
             var projected = new InventorySubcontractShipmentLineResultV1(line.ShipmentId, line.LoadingInstructionLineId, row.Id,
                 row.Version.ToString(CultureInfo.InvariantCulture), line.LabelId, item.Label.Version.ToString(CultureInfo.InvariantCulture),
-                line.MovementId, eventId, line.QuantityKg);
+                line.MovementId, eventId, line.QuantityKg, line.PieceCount);
             lines.Add(projected);
             context.OutboxMessages.Add(new InventoryOutboxRow { Id = eventId, CompanyId = companyId, EventType = EventType, SchemaVersion = 1,
                 SourceOperation = ShipmentCommand, AggregateType = "Inventory.StockAllocation", AggregateId = row.Id,

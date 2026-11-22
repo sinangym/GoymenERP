@@ -77,7 +77,11 @@ public sealed record InventoryTransferAcceptedLineState(
 /// <summary>KLN-D23 (c): an approved transit-loss decision of one still pending line.</summary>
 public sealed record InventoryTransferWrittenOffLineState(Guid LineId, DateTimeOffset WrittenOffAtUtc);
 
-public sealed record InventoryTransferBucketEffect(StockPosition Position, Kilograms Quantity);
+/// <summary>
+/// One dispatched bucket. <paramref name="Pieces"/> (KLN-D119, AK-2b) is the bucket's stored piece count on a
+/// piece-tracking label and null on a kg-only label; every transfer leg moves the bucket's pieces with its kilograms.
+/// </summary>
+public sealed record InventoryTransferBucketEffect(StockPosition Position, Kilograms Quantity, PieceCount? Pieces = null);
 
 public sealed record InventoryTransferLineEffect(
     Guid LineId,
@@ -85,7 +89,13 @@ public sealed record InventoryTransferLineEffect(
     Kilograms PlannedQuantity,
     Kilograms ActualQuantity,
     decimal DifferenceKg,
-    IReadOnlyList<InventoryTransferBucketEffect> Buckets);
+    IReadOnlyList<InventoryTransferBucketEffect> Buckets)
+{
+    /// <summary>KLN-D119: the whole label's dispatched pieces, or null when the label does not track pieces.</summary>
+    public PieceCount? ActualPieces => Buckets.All(bucket => bucket.Pieces is not null) && Buckets.Count != 0
+        ? Buckets.Aggregate(PieceCount.Zero, (sum, bucket) => sum + bucket.Pieces!.Value)
+        : null;
+}
 
 public sealed record InventoryTransferDispatchEffect(
     Guid TransferId,
@@ -101,7 +111,7 @@ public sealed record InventoryTransferDispatchEffect(
         DispatchedAtUtc,
         new StockSourceReference(InventoryTransfer.SourceKind, TransferId),
         Lines.SelectMany(line => line.Buckets)
-            .Select(bucket => new StockMovementLine(bucket.Position, StockDirection.Out, bucket.Quantity)));
+            .Select(bucket => new StockMovementLine(bucket.Position, StockDirection.Out, bucket.Quantity, bucket.Pieces)));
 }
 
 public sealed record InventoryTransferAcceptanceEffect(
@@ -117,7 +127,7 @@ public sealed record InventoryTransferAcceptanceEffect(
         StockMovementKind.TransferAccept,
         AcceptedAtUtc,
         new StockSourceReference(InventoryTransfer.SourceKind, TransferId, Line.LineId),
-        Line.Buckets.Select(bucket => new StockMovementLine(bucket.Position, StockDirection.In, bucket.Quantity)));
+        Line.Buckets.Select(bucket => new StockMovementLine(bucket.Position, StockDirection.In, bucket.Quantity, bucket.Pieces)));
 }
 
 /// <summary>
@@ -137,7 +147,7 @@ public sealed record InventoryTransferReceiptShortageEffect(
         StockMovementKind.TransferReceiptShortage,
         ReceivedAtUtc,
         new StockSourceReference(InventoryTransfer.SourceKind, TransferId, LineId),
-        [new StockMovementLine(Bucket.Position, StockDirection.Out, Bucket.Quantity)]);
+        [new StockMovementLine(Bucket.Position, StockDirection.Out, Bucket.Quantity, Bucket.Pieces)]);
 }
 
 /// <summary>
@@ -151,7 +161,20 @@ public sealed record InventoryTransferReceiptEffect(
     Kilograms ReceivedQuantity,
     Kilograms ShortageQuantity,
     Kilograms OverageQuantity,
-    InventoryTransferReceiptShortageEffect? Shortage);
+    InventoryTransferReceiptShortageEffect? Shortage)
+{
+    /// <summary>KLN-D119: the dispatched pieces of a piece-tracking label, else null.</summary>
+    public PieceCount? DispatchedPieces { get; init; }
+
+    /// <summary>KLN-D119: the receiver's counted pieces of a piece-tracking label, else null.</summary>
+    public PieceCount? ReceivedPieces { get; init; }
+
+    /// <summary>KLN-D119: the missing pieces (moved out with the shortage kilograms), else null.</summary>
+    public PieceCount? ShortagePieces { get; init; }
+
+    /// <summary>KLN-D119: the excess pieces (waiting with the excess kilograms for approval), else null.</summary>
+    public PieceCount? OveragePieces { get; init; }
+}
 
 /// <summary>KLN-D24: the approved receipt excess, one In line on the received destination bucket.</summary>
 public sealed record InventoryTransferReceiptOverageEffect(
@@ -166,7 +189,7 @@ public sealed record InventoryTransferReceiptOverageEffect(
         StockMovementKind.TransferReceiptOverage,
         ApprovedAtUtc,
         new StockSourceReference(InventoryTransfer.SourceKind, TransferId, LineId),
-        [new StockMovementLine(Bucket.Position, StockDirection.In, Bucket.Quantity)]);
+        [new StockMovementLine(Bucket.Position, StockDirection.In, Bucket.Quantity, Bucket.Pieces)]);
 }
 
 /// <summary>
@@ -188,8 +211,8 @@ public sealed record InventoryTransferTransitLossEffect(
         new StockSourceReference(InventoryTransfer.SourceKind, TransferId, Line.LineId),
         Line.Buckets.SelectMany(bucket => new[]
         {
-            new StockMovementLine(bucket.Position, StockDirection.In, bucket.Quantity),
-            new StockMovementLine(bucket.Position, StockDirection.Out, bucket.Quantity),
+            new StockMovementLine(bucket.Position, StockDirection.In, bucket.Quantity, bucket.Pieces),
+            new StockMovementLine(bucket.Position, StockDirection.Out, bucket.Quantity, bucket.Pieces),
         }));
 }
 
@@ -213,7 +236,7 @@ public sealed record InventoryTransferDispatchCancellationEffect(
         CancelledAtUtc,
         new StockSourceReference(InventoryTransfer.SourceKind, TransferId),
         Lines.SelectMany(line => line.Buckets)
-            .Select(bucket => new StockMovementLine(bucket.Position, StockDirection.In, bucket.Quantity)));
+            .Select(bucket => new StockMovementLine(bucket.Position, StockDirection.In, bucket.Quantity, bucket.Pieces)));
 }
 
 /// <summary>
@@ -431,7 +454,7 @@ public sealed class InventoryTransfer
 
         var targetBuckets = line.Effect.Buckets
             .Select(bucket => new InventoryTransferBucketEffect(
-                bucket.Position.Relocate(DestinationCustodian, DestinationLocationId), bucket.Quantity))
+                bucket.Position.Relocate(DestinationCustodian, DestinationLocationId), bucket.Quantity, bucket.Pieces))
             .ToArray();
         line.Accept(acceptedAtUtc, incomingDocument);
         Version = checked(Version + 1);
@@ -452,7 +475,8 @@ public sealed class InventoryTransfer
         Guid lineId,
         DateTimeOffset receivedAtUtc,
         InventoryTransferDocumentReference incomingDocument,
-        Kilograms receivedQuantity)
+        Kilograms receivedQuantity,
+        PieceCount? receivedPieces = null)
     {
         if (receivedQuantity.Value <= 0m)
         {
@@ -461,9 +485,16 @@ public sealed class InventoryTransfer
 
         var candidate = lines.SingleOrDefault(item => item.LineId == lineId);
         if (candidate?.Effect is { } dispatched && dispatched.Buckets.Count != 1
-            && receivedQuantity != dispatched.ActualQuantity)
+            && (receivedQuantity != dispatched.ActualQuantity
+                || (receivedPieces is { } multiPieces && dispatched.ActualPieces is { } multiDispatched
+                    && multiPieces != multiDispatched)))
         {
             throw Invalid("Birden çok blok veya partiyle sevk edilen etiket yalnız tam miktarla teslim alınır.");
+        }
+
+        if (candidate?.Effect is { } tracked)
+        {
+            RequireReceivedPieces(tracked, receivedQuantity, receivedPieces);
         }
 
         var acceptance = AcceptLine(expectedVersion, lineId, receivedAtUtc, incomingDocument);
@@ -474,11 +505,66 @@ public sealed class InventoryTransfer
         var overage = receivedQuantity > dispatchedQuantity
             ? Kilograms.Of(receivedQuantity.Value - dispatchedQuantity.Value)
             : Kilograms.Zero;
+        var dispatchedPieces = acceptance.Line.ActualPieces;
+        PieceCount? shortagePieces = dispatchedPieces is { } sent && receivedPieces is { } got
+            ? PieceCount.Of(Math.Max(0, sent.Value - got.Value))
+            : null;
+        PieceCount? overagePieces = dispatchedPieces is { } sentAgain && receivedPieces is { } gotAgain
+            ? PieceCount.Of(Math.Max(0, gotAgain.Value - sentAgain.Value))
+            : null;
         var shortageEffect = shortage.Value > 0m
             ? new InventoryTransferReceiptShortageEffect(Id, lineId, receivedAtUtc,
-                new InventoryTransferBucketEffect(acceptance.Line.Buckets[0].Position, shortage))
+                new InventoryTransferBucketEffect(acceptance.Line.Buckets[0].Position, shortage, shortagePieces))
             : null;
-        return new(acceptance, dispatchedQuantity, receivedQuantity, shortage, overage, shortageEffect);
+        return new(acceptance, dispatchedQuantity, receivedQuantity, shortage, overage, shortageEffect)
+        {
+            DispatchedPieces = dispatchedPieces,
+            ReceivedPieces = receivedPieces,
+            ShortagePieces = shortagePieces,
+            OveragePieces = overagePieces,
+        };
+    }
+
+    /// <summary>
+    /// KLN-D119 (AK-2b): a piece-tracking label is received with the receiver's counted pieces, a kg-only label without
+    /// them. The received pieces and kilograms are both positive. A piece difference moves together with a kilogram
+    /// difference in the same direction (a missing piece is missing kilograms; an excess piece is excess kilograms): the
+    /// shortage fire and the excess approval are each one line, so a piece difference without such a kilogram difference
+    /// is refused rather than split into a second movement. A received count equal to the dispatched one is always valid.
+    /// </summary>
+    private static void RequireReceivedPieces(InventoryTransferLineEffect dispatched, Kilograms receivedQuantity,
+        PieceCount? receivedPieces)
+    {
+        var dispatchedPieces = dispatched.ActualPieces;
+        if (dispatchedPieces is null && receivedPieces is not null)
+        {
+            throw new InventoryRuleException(InventoryRuleCodes.PieceCountNotTracked,
+                "Adetsiz sevk edilen etiket adetle teslim alınmaz.");
+        }
+
+        if (dispatchedPieces is not { } sent)
+        {
+            return;
+        }
+
+        if (receivedPieces is not { } got)
+        {
+            throw new InventoryRuleException(InventoryRuleCodes.PieceCountRequired,
+                "Adetli sevk edilen etiket teslim alınan adetle kaydedilir.");
+        }
+
+        if (got.Value == 0)
+        {
+            throw new InventoryRuleException(InventoryRuleCodes.InvalidPieceCount,
+                "Teslim alınan adet sıfırdan büyük olmalıdır.");
+        }
+
+        var pieceSign = Math.Sign(got.Value - sent.Value);
+        if (pieceSign != 0 && pieceSign != Math.Sign(receivedQuantity.Value - dispatched.ActualQuantity.Value))
+        {
+            throw new InventoryRuleException(InventoryRuleCodes.InvalidPieceCount,
+                "Adet farkı aynı yönde bir kilogram farkıyla birlikte kaydedilir.");
+        }
     }
 
     /// <summary>
@@ -488,7 +574,8 @@ public sealed class InventoryTransfer
     public InventoryTransferReceiptOverageEffect ReceiptOverage(
         Guid lineId,
         Kilograms overageQuantity,
-        DateTimeOffset approvedAtUtc)
+        DateTimeOffset approvedAtUtc,
+        PieceCount? overagePieces = null)
     {
         RequireUtc(approvedAtUtc, "Onay zamanı");
         if (overageQuantity.Value <= 0m)
@@ -515,8 +602,16 @@ public sealed class InventoryTransfer
             throw Invalid("Onay zamanı teslim almadan önce olamaz.");
         }
 
+        if ((line.Effect.ActualPieces is null) != (overagePieces is null))
+        {
+            // KLN-D119: the excess of a piece-tracking label names its pieces (zero when only kilograms are in excess);
+            // a kg-only label's excess never does.
+            throw new InventoryRuleException(overagePieces is null ? InventoryRuleCodes.PieceCountRequired
+                : InventoryRuleCodes.PieceCountNotTracked, "Adetli etiketin fazlası adetle, adetsiz etiketinki adetsiz onaylanır.");
+        }
+
         var position = line.Effect.Buckets[0].Position.Relocate(DestinationCustodian, DestinationLocationId);
-        return new(Id, lineId, approvedAtUtc, new InventoryTransferBucketEffect(position, overageQuantity));
+        return new(Id, lineId, approvedAtUtc, new InventoryTransferBucketEffect(position, overageQuantity, overagePieces));
     }
 
     /// <summary>
@@ -623,7 +718,7 @@ public sealed class InventoryTransfer
                 throw Invalid("Etiketin bütün bakiyeleri planlanan kaynak şirket/konum/gözeten bağlamında olmalıdır.");
             }
 
-            effects.Add(new(bucket.Position, bucket.Quantity));
+            effects.Add(new(bucket.Position, bucket.Quantity, bucket.Pieces));
         }
 
         if (effects.Select(effect => effect.Position.Block).Distinct().Count() != effects.Count

@@ -27,15 +27,21 @@ public sealed record InventorySubcontractReservationRequestV1(Guid CompanyId, Gu
 public sealed record InventorySubcontractReservationResultV1(Guid CompanyId, Guid ReservationId,
     IReadOnlyList<InventoryPhysicalAllocationViewV1> Allocations, bool IsReplay, string OriginalCorrelationId);
 
+/// <summary>
+/// One subcontract delivery line. <c>PieceCount</c> (KLN-D119, AK-2b) is the number of pieces leaving a piece-tracking
+/// customer label: required for such a label and refused on a kg-only label (400); a partial delivery leaves at least one
+/// piece, a whole delivery takes every piece. Hosts before AK-4/AK-7 omit it and kg-only labels deliver as before.
+/// </summary>
 public sealed record InventorySubcontractShipmentLineV1(Guid ShipmentId, Guid LoadingInstructionLineId,
     Guid AllocationId, string ExpectedAllocationVersion, Guid LabelId, string ExpectedLabelVersion,
     Guid MovementId, string QuantityKg, InventorySubcontractDeliverySourceV1 Source,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<InventorySubcontractAdditionalAllocationV1>? AdditionalAllocations = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<InventorySubcontractAdditionalAllocationV1>? AdditionalAllocations = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? PieceCount = null);
 public sealed record InventorySubcontractShipmentRequestV1(Guid CompanyId, Guid LoadingInstructionId,
     Guid CustomerPartyId, DateTimeOffset OccurredAtUtc, IReadOnlyList<InventorySubcontractShipmentLineV1> Lines);
 public sealed record InventorySubcontractShipmentLineResultV1(Guid ShipmentId, Guid LoadingInstructionLineId,
     Guid AllocationId, string AllocationVersion, Guid LabelId, string LabelVersion, Guid MovementId, Guid OutboxMessageId,
-    string QuantityKg);
+    string QuantityKg, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? PieceCount = null);
 public sealed record InventorySubcontractShipmentResultV1(Guid CompanyId, Guid LoadingInstructionId,
     IReadOnlyList<InventorySubcontractShipmentLineResultV1> Lines, bool IsReplay, string OriginalCorrelationId);
 

@@ -160,6 +160,10 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
         catch (InventoryStoreException exception) { throw StoreRefusal(exception.Code, exception); }
         catch (InventoryRuleException exception) when (exception.Code == InventoryRuleCodes.NegativePhysicalStock)
         { throw Error(409, Codes.StockNotAvailable, exception); }
+        catch (InventoryRuleException exception) when (exception.Code is InventoryRuleCodes.PieceCountRequired
+            or InventoryRuleCodes.PieceCountNotTracked or InventoryRuleCodes.NegativePieceCount
+            or InventoryRuleCodes.InvalidPieceCount)
+        { throw Error(400, Codes.InvalidRequest, exception); } // KLN-D119: an unknown, extra or impossible piece count.
         catch (InventoryRuleException exception) { throw Error(503, Codes.Unavailable, exception); }
         catch (FutureSupplyRuleException exception) when (exception.Failure == FutureSupplyRuleFailure.VersionConflict)
         { throw Error(409, Codes.ConcurrentChange, exception); }
@@ -318,7 +322,8 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
                 settings, cancellationToken, clock);
             var result = await exit.StageAsync(new InventorySupplierReturnExitRequestV1(companyId, request.ReversalId, request.ReversalLineId, request.AcceptanceId,
                 request.InventoryMovementId, request.SourceBlock, request.QuantityKg, request.OriginalUnitCostTryPerKg,
-                request.OccurredAtUtc, request.CostAllocation, request.PurchaseSource, request.UndoQuantity), metadata, cancellationToken);
+                request.OccurredAtUtc, request.CostAllocation, request.PurchaseSource, request.UndoQuantity, request.PieceCount), metadata,
+                cancellationToken);
             if (result.IsReplay) throw Error(409, Codes.IdempotencyConflict);
             labelVersion = result.LabelVersion;
         }
@@ -364,7 +369,8 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
             new MaterialLabel(label.Id, companyId, label.Code, label.ProductId, label.LotId, label.ProductVersion), request.SourceBlock);
         var movement = new StockMovement(request.InventoryMovementId, companyId, StockMovementKind.PurchaseAcceptanceReversal,
             request.OccurredAtUtc, new StockSourceReference(Codes.SourceKind, original.MovementId, request.ReversalLineId),
-            [new StockMovementLine(position, StockDirection.Out, Kilograms.Positive(Quantity(request.QuantityKg)))], CostResult.NotCalculated);
+            [new StockMovementLine(position, StockDirection.Out, Kilograms.Positive(Quantity(request.QuantityKg)),
+                request.PieceCount is { } pieces ? PieceCount.Of(pieces) : null)], CostResult.NotCalculated);
         var atPosition = await context.Balances.AsNoTracking().Where(row => row.LabelId == label.Id
             && row.OwnerKind == (int)original.OwnerKind && row.OwnerId == original.OwnerId
             && row.CustodianKind == (int)original.CustodianKind && row.CustodianId == original.CustodianId
@@ -450,7 +456,8 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
             || request.AcceptanceId == Guid.Empty || request.InventoryMovementId == Guid.Empty || !Enum.IsDefined(request.Kind)
             || request.SourceBlock is not (BlockState.Free or BlockState.Blocked) || request.OccurredAtUtc == default
             || request.OccurredAtUtc.Offset != TimeSpan.Zero || string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 1000
-            || !InventoryFutureAllocationTextV1.TryPositiveQuantity(request.QuantityKg, out _)) throw Error(400, Codes.InvalidRequest);
+            || !InventoryFutureAllocationTextV1.TryPositiveQuantity(request.QuantityKg, out _)
+            || request.PieceCount is < 0) throw Error(400, Codes.InvalidRequest);
     }
 
     private static decimal Quantity(string value) => InventoryFutureAllocationTextV1.TryNonNegativeQuantity(value, out var quantity)
