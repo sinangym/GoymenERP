@@ -24,6 +24,10 @@ export const COLLABORATION_TEXT = {
   inboxEmptyNow: '"Şimdi" sınıfında bildirim yok.', inboxEmptyDigest: 'Henüz yayımlanmış özet bildirimi yok.',
   unreadOnly: 'Yalnız okunmamışlar', unreadCount: 'okunmamış', markRead: 'Okundu işaretle', read: 'Okundu', unread: 'Okunmadı',
   kindMention: 'Sizden bahsedildi', kindAssigned: 'Size görev atandı', kindOverdue: 'Görevin süresi geçti',
+  kindAllocationReleased: 'Tahsis serbest bırakıldı', kindSupplyRevived: 'Satınalma tedariki yeniden açıldı',
+  kindApprovalWaiting: 'Onayınızı bekleyen kayıt', kindApprovalReminder: 'Onay süresi doldu (hatırlatma)',
+  kindApprovalEscalated: 'Size yükseltilen onay', kindApprovalOrphaned: 'Sahipsiz onay', openApproval: 'Kaydı aç',
+  approvalDue: 'Süre', approvalWaitingSince: 'Bekliyor:',
   inboxScope: 'Bahsetme ve süresi geçen işler hemen; diğerleri günde birkaç kez özet olarak gelir. Yalnız uygulama içidir.',
   readFailed: 'Okundu bilgisi kaydedilemedi; tekrar deneyin.',
   // WP9 note read receipts.
