@@ -165,3 +165,10 @@ describe('AK-5 kg price indicator (SAT-D436, SAT-D439)', () => {
     expect(decodePurchaseOrderDetail(body(withheld, [line({ price: null, kgPrice })]))).toBeNull()
   })
 })
+
+describe('AK-3 approval refusal text', () => {
+  it('names the missing theoretical kg per piece in user words', async () => {
+    const { ORDER_APPROVAL_PROBLEM_TEXT } = await import('./purchaseOrderDetailText')
+    expect(ORDER_APPROVAL_PROBLEM_TEXT.purchasing_theoretical_kilograms_missing).toContain('teorik kg/adet')
+  })
+})

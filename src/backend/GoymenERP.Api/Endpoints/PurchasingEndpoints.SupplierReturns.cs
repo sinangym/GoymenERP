@@ -55,7 +55,8 @@ public static partial class PurchasingEndpoints
             .ProducesErpUnsupportedMediaType()
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(SupplierReturnCreateConflictCodes())
-            .ProducesErpUnprocessableEntity(PurchaseSupplierReturnCodesV1.ReplacementUnsupported, "validation_failed")
+            .ProducesErpUnprocessableEntity(PurchaseSupplierReturnCodesV1.ReplacementUnsupported, PurchaseSupplierReturnCodesV1.PieceCountRequired,
+                "validation_failed")
             .ProducesErpServiceUnavailable(SupplierReturnUnavailableCodes())
             .ProducesErpAuthenticatedProblems();
 
@@ -74,7 +75,7 @@ public static partial class PurchasingEndpoints
             .ProducesErpUnsupportedMediaType()
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(SupplierReturnApprovalConflictCodes())
-            .ProducesErpUnprocessableEntity("validation_failed")
+            .ProducesErpUnprocessableEntity(PurchaseSupplierReturnCodesV1.PieceCountRequired, "validation_failed")
             .ProducesErpServiceUnavailable(SupplierReturnUnavailableCodes())
             .ProducesErpAuthenticatedProblems();
 

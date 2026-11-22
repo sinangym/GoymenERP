@@ -352,7 +352,7 @@ public static partial class PurchasingEndpoints
                 PurchasingProblemCodesV1.OrderSameActor, PurchasingProblemCodesV1.OrderMakerUnknown,
                 PurchasingProblemCodesV1.OrderExchangeRateRequired,
                 PurchasingProblemCodesV1.SameKeyPayloadMismatch, PurchasingProblemCodesV1.ConcurrentChange)
-            .ProducesErpUnprocessableEntity("validation_failed")
+            .ProducesErpUnprocessableEntity(PurchasingProblemCodesV1.TheoreticalKilogramsMissing, "validation_failed")
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
@@ -648,11 +648,13 @@ public static partial class PurchasingEndpoints
             .Produces<PurchaseGoodsReceiptResponseV1>(PurchasingApiV1.CreatedStatus)
             .ProducesErpBadRequest("validation_failed", PurchasingProblemCodesV1.CommandMetadataInvalid,
                 InventoryGoodsReceiptCodesV1.InvalidRequest, InventoryGoodsReceiptCodesV1.InvalidVersion,
-                InventoryGoodsReceiptCodesV1.InvalidQuantity)
+                InventoryGoodsReceiptCodesV1.InvalidQuantity, PurchaseGoodsReceiptCodesV1.PieceCountInvalid,
+                PurchaseAcceptanceParticipantCodes.MeasuredKilogramsMismatch)
             .AllowsEmptyErpBadRequestBody()
             .ProducesErpUnsupportedMediaType()
             .ProducesErpCodeLessNotFound()
-            .ProducesErpConflict(PurchaseAcceptanceParticipantCodes.OrderVersionConflict,
+            .ProducesErpConflict(PurchaseGoodsReceiptCodesV1.TheoreticalKilogramsMissing,
+                PurchaseAcceptanceParticipantCodes.OrderVersionConflict,
                 PurchaseAcceptanceParticipantCodes.ProductVersionConflict,
                 PurchaseAcceptanceParticipantCodes.OrderStateConflict,
                 PurchaseAcceptanceParticipantCodes.QuantityExceedsRemaining,

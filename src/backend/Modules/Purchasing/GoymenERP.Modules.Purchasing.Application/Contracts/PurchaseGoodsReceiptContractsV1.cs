@@ -34,6 +34,7 @@ public sealed record PurchaseGoodsReceiptResponseV1(PurchaseGoodsReceiptViewV1 R
     /// (accepted pieces × the line's recorded kg per piece). Information and warning only — the receipt stands and its cost is
     /// computed from the weighed kilograms; null on a kilogram line.
     /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public PurchaseGoodsReceiptPieceKilogramsV1? PieceKilograms { get; init; }
 }
 

@@ -84,4 +84,6 @@ export const PURCHASE_ORDER_DETAIL_TEXT = {
 export const ORDER_APPROVAL_PROBLEM_TEXT: Readonly<Record<string, string>> = {
   purchasing_order_same_actor: 'Siparişi hazırlayan kişi aynı siparişi onaylayamaz; onayı başka bir yetkili vermelidir.',
   purchasing_order_maker_unknown: 'Siparişi hazırlayan bilinmiyor; görev ayrılığı doğrulanamadığından onay verilemez.',
+  // AK-3 (SAT-D437): a piece line's product has no theoretical kg per piece on its card; fail-closed until the card has one.
+  purchasing_theoretical_kilograms_missing: 'Adetli satırın ürün kartında teorik kg/adet kaynağı yok; kart tamamlanmadan sipariş onaylanamaz.',
 }

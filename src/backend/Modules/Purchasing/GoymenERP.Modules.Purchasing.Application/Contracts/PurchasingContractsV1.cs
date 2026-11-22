@@ -543,6 +543,10 @@ public sealed record PurchaseOrderReadDetailViewV1(
     /// A2a-1 (ALS-D18): true while a general line has no price ("fiyat bekliyor"); null when the prices are withheld (PRS-02).
     /// </summary>
     public bool? PricePending { get; init; }
+
+    /// <summary>AK-5 (SAT-D436): the document-level kg price indicator as the owner answered it (see <see cref="PurchaseOrderDetailView.KgPrice"/>).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PurchaseKgPriceView? KgPrice { get; init; }
 }
 
 public sealed record PurchaseOrderResponse(PurchaseOrderDetailView Detail, bool IsReplay, string OriginalCorrelationId);
