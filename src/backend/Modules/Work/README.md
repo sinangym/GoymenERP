@@ -25,10 +25,10 @@ Work hiçbir sahip tablosunu okumaz/yazmaz; her okumada sahibe yeniden sorar.
   yeniden kontrol eder). Kaydı hazırlayan kendi kaydını görmez (maker ≠ checker).
 - Açıklama kartı modelsizdir: kural kodu, eşik/gerçekleşen/sapma sahip modülün sakladığı veya
   kendi hesaplayıcısıyla ürettiği değerlerdir; Work ve ekran hesaplamaz, yapay zekâ çağrısı yoktur.
-- Süre sınıfı sahibin bildirimidir (saat / iş günü); uzunluklar Ayarlar'da versiyonlu
-  `work.approval-duration-hours` ve `work.approval-duration-business-days` kayıtlarıdır. Kayıt
-  yoksa "süre tanımlı değil" gösterilir (varsayılan yok). İş günü hesabı Türkiye saatinde
-  Pazartesi–Cuma sayar ve YOL-D22 gereği şirketin Ayarlar'da yıllık, sürümlü kaydettiği resmî
+- Süre sınıfı WP1'den beri sahibin bildirimi değildir; Work'ün sürümlü onay kural tablosundan gelir (aşağıda).
+  Uzunluklar Ayarlar'da versiyonlu `work.approval-duration-hours` ve `work.approval-duration-business-days`
+  kayıtlarıdır; kayıt yoksa YOL-D18 karar varsayılanı (4 saat / 2 iş günü) sürüm 0 olarak geçerlidir (WP1 D3).
+  İş günü hesabı iş saat diliminde (P7 / SAT-D10, Europe/Istanbul; sabit +3 yok, WP1 D6) Pazartesi–Cuma sayar ve YOL-D22 gereği şirketin Ayarlar'da yıllık, sürümlü kaydettiği resmî
   tatil/arife listesini düşer (`settings.WorkHolidayCalendarVersions/Days`, aynı
   `settings.work-approval-duration.manage` izni). Bir yılın listesi yoksa yalnız hafta sonu düşülür
   ve kalemde "tatil takvimi tanımsız" uyarısı görünür; liste okunamazsa "okunamadı" uyarısı.
@@ -43,6 +43,25 @@ bekleme = `Arrived` → `ResolvedObserved`; aktif inceleme = ilk `Opened` → `R
 `AddWorkApprovalInboxEvents` Down guard **52080**: olay varken geri alma reddedilir (forward fix).
 Ayarlar'daki `AddWorkApprovalDurationPolicies` Down guard **52084** (Work aralığı; anahtarlar ve
 tatil takvimi Work'e aittir): süre veya tatil takvimi kaydı varken reddeder.
+
+## WP1: sürümlü onay kural tablosu, tek kutu (YOL-D17, YOL-D18, ROL-D10, YOL-D23)
+
+- `work.ApprovalRuleVersions` (yalnız ekleme): tür → sahibin onay izni (kayıt anındaki), süre sınıfı, yükseltme izni;
+  kaydeden, zaman, gerekçe, korelasyon. Kayıt yoksa karar varsayılanı (sürüm 0): irsaliye, plan üstü sevk, tartım farkı,
+  üretim planı saat ölçekli; diğerleri iş günü (`WorkApprovalRuleDefaultsV1`). Yükseltme izni varsayılanda tanımsızdır
+  (yükseltme yapılmaz; WP2 okur).
+- `GET /api/v1/work/approval-rules`, `PUT /api/v1/work/approval-rules/{kind}`: `settings.work-approval-duration.manage`
+  (şirket geneli; yeni izin yok, role atama yok). Komut iskeleti: izin çiti (önce ve kayıttan hemen önce), beklenen sürüm
+  (`"0"` = varsayılan), Idempotency-Key ile tekrar, kalıcı ret (sürüm çakışması, değişmeyen kural), denetim, tek kayıt.
+- Sahibin onay izni kayıttan sonra değişirse satır `ApproverPermissionChanged` olur ve kutu o türü okunamaz gösterir.
+- Dört yerel tür (resmî fatura içe alma, sayım, hurda, sipariş taslağı) `NativeApprovalWorkInboxSourceV1` ile kutu
+  kaynağıdır; B-25 kuyruğu ekranda ikinci liste değildir (uç nokta geriye uyum için durur).
+- "Onaylayamaz" kümesi sahip modülün kuralıdır: `WorkInboxItemV1.PreparedBy` + `ExcludedDeciders` (ör. gelen fatura
+  farkında kaydeden, eşleştiren ve eşleşen siparişlerin onaylayanı, ROL-D10). Kimlik karşılaştırması Guid biçiminden bağımsızdır.
+- Kapsamlı onaycı (D11): sahip `AcceptsScopedApprovers` derse tesis/lokasyon/iş merkezi kapsamlı izin sahibi yalnız kapsamındaki
+  kayıtları görür; kapsamlı okuma ölçümde döngü kapatmaz. Bugün hiçbir sahip komutu kapsamlı onayı kabul etmiyor.
+
+`AddWorkApprovalRuleVersions` Down guard **52100**: kural sürümü varken geri alma reddedilir (forward fix).
 ## W1-C: kayda bağlı not, bahsetme, görev ve iki sınıflı bildirim (AI-D20, AI-D23, AI-D29, YOL-D19)
 
 Yapay zekâ yoktur. Kayıt türleri: satış siparişi taslağı, alış siparişi, stok etiketi, üretim planı, cari. Kaydın
