@@ -148308,6 +148308,9 @@
               "manufacturing_output_label_code_entry_not_allowed",
               "manufacturing_output_label_code_format_invalid",
               "manufacturing_output_label_code_required",
+              "manufacturing_output_piece_kg_source_missing",
+              "manufacturing_output_pieces_not_applicable",
+              "manufacturing_output_pieces_required",
               "manufacturing_plan_engine_refused",
               "manufacturing_plan_label_not_usable",
               "manufacturing_plan_not_approved",
@@ -148764,6 +148767,10 @@
               "manufacturing_output_already_declared",
               "manufacturing_output_line_missing",
               "manufacturing_output_not_declared",
+              "manufacturing_output_piece_reversal_exceeds_declared",
+              "manufacturing_output_piece_reversal_inconsistent",
+              "manufacturing_output_pieces_not_applicable",
+              "manufacturing_output_pieces_required",
               "manufacturing_output_reversal_already_recorded",
               "manufacturing_output_reversal_exceeds_declared",
               "manufacturing_plan_engine_refused",
@@ -252861,6 +252868,15 @@
               "string"
             ],
             "format": "date-time"
+          },
+          "pieceCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -259709,6 +259725,15 @@
                 "$ref": "#/components/schemas/ManufacturingOutputLineReferenceV1"
               }
             ]
+          },
+          "pieceCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -278126,6 +278151,15 @@
             "items": {
               "$ref": "#/components/schemas/OrderReopeningViewV1"
             }
+          },
+          "outputPieces": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/OutputPieceViewV1"
+            }
           }
         }
       },
@@ -278343,6 +278377,82 @@
           },
           "difference": {
             "$ref": "#/components/schemas/MassDifferenceViewV1"
+          }
+        }
+      },
+      "OutputPieceViewV1": {
+        "required": [
+          "outputId",
+          "parentRollId",
+          "outputClass",
+          "declaredPieceCount",
+          "netPieceCount",
+          "netKg",
+          "theoreticalKgPerPiece",
+          "realKgPerPiece",
+          "deviationKgPerPiece",
+          "deviationPercent",
+          "formulaVersion",
+          "deviationThresholdApplied"
+        ],
+        "type": "object",
+        "properties": {
+          "outputId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parentRollId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "outputClass": {
+            "type": "string"
+          },
+          "declaredPieceCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "netPieceCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "netKg": {
+            "type": "string"
+          },
+          "theoreticalKgPerPiece": {
+            "type": "string"
+          },
+          "realKgPerPiece": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "deviationKgPerPiece": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "deviationPercent": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "formulaVersion": {
+            "type": "string"
+          },
+          "deviationThresholdApplied": {
+            "type": "boolean"
           }
         }
       },

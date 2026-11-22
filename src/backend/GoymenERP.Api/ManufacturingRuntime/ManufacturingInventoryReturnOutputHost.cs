@@ -142,7 +142,7 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
                 command.MovementId,
                 command.Quantity,
                 command.OccurredAtUtc,
-                command.RemnantClassification, command.OutputLine), metadata, cancellationToken);
+                command.RemnantClassification, command.OutputLine, command.Pieces), metadata, cancellationToken);
             return new ManufacturingInventoryOutputPortResultV1(
                 result.OrderVersion, result.ParentLabelVersion, result.LabelVersion, result.IsReplay);
         }
@@ -244,9 +244,12 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
         var committed = false;
         try
         {
+            // AK-7 (URT-D112): the pieces taken back are recorded on the Manufacturing reversal. Inventory's reversal
+            // request has no piece field yet (AK-2 opened none for production), so the label's piece count is not moved
+            // here; that stays open for the Inventory owner.
             var manufacturingOutcome = await orders.ReverseOutputAsync(
                 command.OrderId, command.ExpectedOrderVersion, command.ReversalId, command.OutputId,
-                command.Quantity, command.Reason, command.OccurredAtUtc, metadata, cancellationToken);
+                command.Quantity, command.Pieces, command.Reason, command.OccurredAtUtc, metadata, cancellationToken);
             var stored = await orders.FindOrderAsync(command.OrderId, cancellationToken) ?? throw Incomplete();
             if (stored.OutputReversals.All(reversal =>
                     reversal.ReversalId != command.ReversalId || reversal.OutputId != command.OutputId))
@@ -482,9 +485,14 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
         var committed = false;
         try
         {
+            // AK-7 (URT-D112): the piece count and the captured theoretical kg per piece are recorded on the Manufacturing
+            // fact. Inventory's V2 output request has no piece field (AK-2 opened none for production output), so the
+            // output label is opened without a piece count until the Inventory owner adds it; no Inventory table is
+            // written from here.
             var manufacturingOutcome = await orders.DeclareOutputAsync(
                 command.OrderId, command.ExpectedOrderVersion, command.OutputId, command.ParentLabelId,
-                command.OutputClass, command.Quantity, command.OccurredAtUtc, command.OutputLine, metadata, cancellationToken);
+                command.OutputClass, command.Quantity, command.OccurredAtUtc, command.OutputLine, command.Pieces, metadata,
+                cancellationToken);
             var stored = await RequireStoredOrderAsync(command.OrderId, command.ParentLabelId, cancellationToken);
             var realizationOrderVersion = checked(command.ExpectedOrderVersion + 1);
             RequireRecordedVersion(manufacturingOutcome, stored.Version, realizationOrderVersion);
@@ -974,7 +982,8 @@ internal sealed record ManufacturingInventoryOutputCommand(
     Kilograms Quantity,
     DateTimeOffset OccurredAtUtc,
     InventoryLabelClassificationV1? RemnantClassification = null,
-    PlanOutputLineReference? OutputLine = null);
+    PlanOutputLineReference? OutputLine = null,
+    OutputPieces? Pieces = null);
 
 internal sealed record ManufacturingInventoryInputReturnResult(
     Guid OrderId,

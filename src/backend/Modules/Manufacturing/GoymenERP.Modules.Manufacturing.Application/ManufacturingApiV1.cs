@@ -119,14 +119,20 @@ public sealed record ReturnInventoryInputRequestV1(
 /// movement and <see cref="LabelId"/> the output's label at its read <see cref="ExpectedLabelVersion"/>.
 /// <see cref="Reason"/> is required (1 to the domain's maximum characters, trimmed, no control characters).
 /// </summary>
+/// <para>
+/// AK-7 (URT-D112): <see cref="PieceCount"/> is the number of pieces the correction takes back from a counted output
+/// (zero when only the weighed kg is corrected); it is required for a counted output and refused for an uncounted one.
+/// </para>
 public sealed record CorrectOutputRequestV1(
     Guid ReversalId, long ExpectedVersion, Guid LabelId, string? ExpectedLabelVersion, Guid MovementId, string? Kg,
-    string? Reason, DateTimeOffset? OccurredAtUtc);
+    string? Reason, DateTimeOffset? OccurredAtUtc, int? PieceCount = null);
 
 /// <summary>
 /// URT-S16 (BS-14, URT-D43): <see cref="RemnantClassification"/> is the stock label classification the operator chose
 /// for a <c>UsableRemnant</c> output, <c>Standard</c> or <c>SecondQuality</c>; omitted or null means SecondQuality. It
 /// is refused with any other output class, whose label classification follows the fixed mapping.
+/// AK-7 (URT-D112): <see cref="PieceCount"/> is the counted pieces of the output, with <see cref="Kg"/> the weighed kg;
+/// required when the product's card names the piece unit with a theoretical kg per piece, refused when it does not.
 /// </summary>
 public sealed record DeclareInventoryOutputRequestV1(
     Guid OutputId, long ExpectedVersion, Guid ParentRollId, string? ExpectedParentLabelVersion,
@@ -134,7 +140,7 @@ public sealed record DeclareInventoryOutputRequestV1(
     string? LabelCode, string? HeatNumber, string? CoilNumber, IReadOnlyList<string>? RequiredDocuments,
     string? OwnerKind, Guid OwnerId, string? CustodianKind, Guid CustodianId, Guid LocationId,
     string? InitialBlock, Guid MovementId, string? Kg, DateTimeOffset? OccurredAtUtc,
-    string? RemnantClassification = null, ManufacturingOutputLineReferenceV1? OutputLine = null);
+    string? RemnantClassification = null, ManufacturingOutputLineReferenceV1? OutputLine = null, int? PieceCount = null);
 
 /// <summary>URT-D30: the user's exact plan output line, or the class line for an unlined output class.</summary>
 public sealed record ManufacturingOutputLineReferenceV1(string Kind, int? SlitLineSequence, Guid? CutLineId);
@@ -290,7 +296,11 @@ public sealed record RemainingTargetViewV1(string? Basis, string? TargetKg, stri
 public sealed record OrderReopeningViewV1(long ClosedOrderVersion, Guid ClosedByUserId, DateTimeOffset ClosedAtUtc,
     long ReopenedOrderVersion, Guid ReopenedByUserId, DateTimeOffset ReopenedAtUtc, string Reason);
 
-/// <summary>Cost is a status only in this view; separate versioned cost reads carry figures.</summary>
+/// <summary>
+/// Cost is a status only in this view; separate versioned cost reads carry figures. AK-7 (URT-D112):
+/// <see cref="OutputPieces"/> lists the counted outputs with their real/theoretical kg per piece deviation; it is omitted
+/// (not serialized) for an order without a counted output, so earlier answers keep their shape.
+/// </summary>
 public sealed record OrderViewV1(
     Guid OrderId, Guid CompanyId, Guid PlanId, Guid WorkCenterId, string Process, string Status, long Version,
     TargetViewV1? Target, RemainingTargetViewV1 RemainingTarget, IReadOnlyList<RollBalanceViewV1> Rolls,
@@ -298,7 +308,9 @@ public sealed record OrderViewV1(
     DateOnly? DueDate = null, long DueDateRevision = 0, DateOnly? PlanDueDate = null, bool DueDateDiffersFromPlan = false,
     string? CancellationReason = null, Guid? CancelledByUserId = null, DateTimeOffset? CancelledAtUtc = null,
     IReadOnlyList<ManufacturingOutputLineReferenceV1>? OutputLines = null,
-    IReadOnlyList<OrderReopeningViewV1>? Reopenings = null);
+    IReadOnlyList<OrderReopeningViewV1>? Reopenings = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<OutputPieceViewV1>? OutputPieces = null);
 
 /// <summary>
 /// One plan in the plan list (MFG-PLAN-LIST): its stored row only — the work center and process it was bound to,
@@ -551,7 +563,8 @@ public sealed partial class ManufacturingCommandService(
     IManufacturingClosedOrderCostRecognitionPortV1? costRecognition = null,
     IManufacturingScrapCostDistributionSourceV1? costSource = null,
     IManufacturingNonKgInputStoreV1? nonKgInputs = null,
-    IManufacturingPaintSelectionSourceV1? paintSelections = null)
+    IManufacturingPaintSelectionSourceV1? paintSelections = null,
+    IProductTheoreticalKilogramsPerUnitReadPortV1? productKilogramsPerPiece = null)
 {
     // These owner-provider codes stay inside the application result. The public endpoint continues to
     // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the
@@ -1675,6 +1688,12 @@ public sealed partial class ManufacturingCommandService(
             return Task.FromResult(Invalid<OrderViewV1>("reason"));
         }
 
+        // AK-7 (URT-D112): a correction takes back zero or more whole pieces.
+        if (request.PieceCount is < 0)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("pieceCount"));
+        }
+
         if (request.OccurredAtUtc is not { } occurredAt || occurredAt.Offset != TimeSpan.Zero)
         {
             return Task.FromResult(Invalid<OrderViewV1>("occurredAtUtc"));
@@ -1694,9 +1713,13 @@ public sealed partial class ManufacturingCommandService(
             reason,
             occurredAtUtc = occurredAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
         };
+        // AK-7: the piece count joins the request hash only when it was sent (an uncounted correction keeps its old hash).
+        object canonicalRequest = request.PieceCount is { } sentPieceCount
+            ? new { correction = canonical, pieceCount = sentPieceCount }
+            : canonical;
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.CorrectOutput,
-            canonical, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
+            canonicalRequest, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
             {
                 if (outputCorrections is null)
                 {
@@ -1718,7 +1741,8 @@ public sealed partial class ManufacturingCommandService(
                 var outcome = await outputCorrections.CorrectOutputAsync(
                     new ManufacturingInventoryOutputCorrectionPortCommandV1(
                         orderId, request.ExpectedVersion, factId, request.ReversalId, request.LabelId,
-                        expectedLabelVersion, request.MovementId, mass.Value, reason, occurredAt),
+                        expectedLabelVersion, request.MovementId, mass.Value, reason, occurredAt,
+                        request.PieceCount is { } takenPieces ? new PieceCount(takenPieces) : null),
                     metadata, cancellationToken);
                 return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, outcome.IsReplay, cancellationToken);
             }, stored => OrderView((ProductionOrder)stored), cancellationToken);
@@ -1836,6 +1860,12 @@ public sealed partial class ManufacturingCommandService(
             return Task.FromResult(Invalid<OrderViewV1>("kg"));
         }
 
+        // AK-7 (URT-D112): a declared output counts at least one piece.
+        if (request.PieceCount is <= 0)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("pieceCount"));
+        }
+
         if (request.OccurredAtUtc is not { } occurredAt || occurredAt.Offset != TimeSpan.Zero)
         {
             return Task.FromResult(Invalid<OrderViewV1>("occurredAtUtc"));
@@ -1890,6 +1920,12 @@ public sealed partial class ManufacturingCommandService(
             canonicalRequest = new { declaration = canonicalRequest, outputLine = selectedLine };
         }
 
+        // AK-7: the piece count joins the request hash only when it was sent (an uncounted output keeps its old hash).
+        if (request.PieceCount is { } sentPieceCount)
+        {
+            canonicalRequest = new { declaration = canonicalRequest, pieceCount = sentPieceCount };
+        }
+
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.DeclareOutput,
             canonicalRequest, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
             {
@@ -1905,6 +1941,13 @@ public sealed partial class ManufacturingCommandService(
                     return Refusal<OrderViewV1>(mass.Refusal);
                 }
 
+                var pieces = await ReadOutputPiecesAsync(request.ProductId, request.PieceCount,
+                    DateOnly.FromDateTime(occurredAt.UtcDateTime), cancellationToken);
+                if (pieces.Refusal is not null)
+                {
+                    return pieces.Refusal;
+                }
+
                 if (await FenceAsync<OrderViewV1>(permission, cancellationToken) is { } fenced)
                 {
                     return fenced;
@@ -1917,7 +1960,7 @@ public sealed partial class ManufacturingCommandService(
                         request.LotId, request.LabelId, enteredLabelCode, request.HeatNumber,
                         request.CoilNumber, request.RequiredDocuments, request.OwnerKind, request.OwnerId,
                         request.CustodianKind, request.CustodianId, request.LocationId, request.InitialBlock,
-                        request.MovementId, mass.Value, occurredAt, remnantClassification, outputLine),
+                        request.MovementId, mass.Value, occurredAt, remnantClassification, outputLine, pieces.Pieces),
                     metadata, cancellationToken);
                 return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, outcome.IsReplay, cancellationToken);
             }, stored => OrderView((ProductionOrder)stored), cancellationToken);
@@ -3335,7 +3378,8 @@ public sealed partial class ManufacturingCommandService(
                 new ManufacturingOutputLineReferenceV1(line.Kind.ToString(), line.SlitLineSequence, line.CutLineId))],
             [.. order.Reopenings.Select(reopening => new OrderReopeningViewV1(reopening.ClosedOrderVersion,
                 reopening.ClosedByUserId, reopening.ClosedAtUtc, reopening.ReopenedOrderVersion,
-                reopening.ReopenedByUserId, reopening.ReopenedAtUtc, reopening.Reason))]);
+                reopening.ReopenedByUserId, reopening.ReopenedAtUtc, reopening.Reason))],
+            OutputPieceViews(order));
     }
 
     /// <summary>

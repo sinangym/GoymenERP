@@ -456,7 +456,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 W5 (integration): token change since the wave-4 merge (stale pin), same fact count; value from guard_fingerprint.py (bb328fa5… -> 884e8c98…).
                 // Tren-1 W6: +7 source facts, ordinal-sorted; SQL execution NOT_RUN.
                 // Re-fingerprinted for tren-1 W7: source facts kept ordinal-sorted; SQL execution NOT_RUN.
-                "958218df323c09fef781ab125b5a53d931e29ae0b19c91310abc40d72f0ad4da",
+                // Re-fingerprinted for AK-7 (URT-D112): +1 output pieces Down-guard fact, ordinal-sorted (958218df… -> 0be0493b…); SQL execution NOT_RUN.
+                "0be0493be6386b731c2abdb771cacb2be40fac96a7faaaac47dd6a662c46ae52",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -975,7 +976,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 W7: owner append-only schema changes; company filters retained; K3 review pending.
                 // URT-D33/D34: permit only the first Open-to-Cancelled facts; cancelled history remains immutable.
                 // No query filter or tenant bypass changed; measured by the house generator; K3 review pending.
-                "9ae9060aecdc83e521ee6e370d194e3f6c9fd77317fbfffe0cdd2c138306bf77",
+                // Re-fingerprinted for AK-7 (URT-D112): nullable output piece columns and checks on Facts/OutputReversals;
+                // no query filter or tenant bypass changed (9ae9060a… -> eff5cc7c…).
+                "eff5cc7cd74cf7d1354b1e9f4738a7e0c9b52a059f4e762b8d492eef2d11be93",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for DEC-FIN-014: nullable POS fact columns on ReceiptDrafts and MoneyEvents; no new table,
@@ -1693,7 +1696,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // correction on the same borrowed boundary). Exact source count; pending the owning team's K3 review.
                         // Re-fingerprinted for tren-1 W6: URT-S2: forward the explicit output-line reference to Inventory; reviewed API counts unchanged (656d12ae... -> 80abcca8...).
                         // W8 K3 review pending: bound correction fact key; same borrowed transaction/context/API counts.
-                        "6231bb2c96ecb47d92cc34fabf1304e850a78a6d1d13c81e6693a085c11ca560",
+                        // Re-fingerprinted for AK-7 (URT-D112): forward output/correction pieces to the Manufacturing store; same API counts (6231bb2c… -> 37329c38…).
+                        "37329c38e1075161ad56bb0b75ba4a06aea3bb91659b779e1ac05382a46ad177",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
@@ -2632,7 +2636,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for tren-1 wave 3 (integration): the team slices combined; token counts checked by the guard (165dbfdd… -> aa1e4254…).
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (aa1e4254… -> 14691ba6…).
                         // Re-fingerprinted for tren-1 W6: URT-S4/S5: persist released-plan revisions while preserving order and approval history; reviewed API counts unchanged (14691ba6... -> 4dcbc99e...).
-                        "e49f4fb8bc094d5fca5ff76a60a578408e38c9ae4583062b5f3ff2964d640d0c",
+                        // Re-fingerprinted for AK-7 (URT-D112): store and restore output/reversal pieces; reviewed API counts unchanged (e49f4fb8… -> 890d2df3…).
+                        "890d2df33070eb34f21cb427afbdfc96b96da51dbd668b809f7bd5d66dacb3a5",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -6012,6 +6017,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Stored paint owner references would be lost; AddManufacturingPaintSelections is not rolled back (forward fix). 1 lexical Sql call(s).
                 ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/20261117014136_AddManufacturingPaintSelections.cs"] =
                     new("f0364d671f6b5b179567f6372687ae9f6c9d18252ce7922e6be841afd88299b8", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // AK-7 (URT-D112); K3 review pending. Down refuses (52061, used by no other migration) while a counted output or counted reversal exists; AddManufacturingOutputPieces is not rolled back (forward fix). 1 lexical Sql call(s).
+                ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/20261122095554_AddManufacturingOutputPieces.cs"] =
+                    new("ce166651d5c43f07e4c3c9d80f23cd7e887913f7eb2d0ad96e6e7cee8e056865", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; AddAuthorizedCompanyOpening history exists; rollback is refused (forward fix). 1 lexical Sql call(s).
                 ["src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/Migrations/20261116205304_AddAuthorizedCompanyOpening.cs"] =
                     new("d8188f063f4bbf7428c75ec9f5245e146ca27925d88de187a13219bfd53a6a0c", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),

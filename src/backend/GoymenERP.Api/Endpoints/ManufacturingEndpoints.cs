@@ -79,6 +79,11 @@ public static class ManufacturingEndpoints
         ManufacturingStoreCodes.OutputLabelCodeRequired,
         ManufacturingStoreCodes.OutputLabelCodeFormatInvalid,
         ManufacturingStoreCodes.OutputLabelCodeEntryNotAllowed,
+        // AK-7 (URT-D112): a counted product's output without pieces, pieces on an uncounted output, and a counted
+        // product whose card gives no theoretical kg per piece.
+        ManufacturingRuleCodes.OutputPiecesRequired,
+        ManufacturingRuleCodes.OutputPiecesNotApplicable,
+        ManufacturingOutputPieceCodesV1.KilogramsPerPieceSourceMissing,
     ];
 
     // F-009 D3 (API-25, URT-S2): the output correction meets Inventory's refusal to take the mass back from the output
@@ -97,6 +102,11 @@ public static class ManufacturingEndpoints
         ManufacturingRuleCodes.OutputLineMissing,
         ManufacturingRuleCodes.OutputReversalAlreadyRecorded,
         ManufacturingRuleCodes.OutputReversalExceedsDeclared,
+        // AK-7 (URT-D112): the piece side of a correction.
+        ManufacturingRuleCodes.OutputPiecesRequired,
+        ManufacturingRuleCodes.OutputPiecesNotApplicable,
+        ManufacturingRuleCodes.OutputPieceReversalExceedsDeclared,
+        ManufacturingRuleCodes.OutputPieceReversalInconsistent,
     ];
 
     private static readonly string[] SavePlanConflictCodes =

@@ -63,6 +63,8 @@ public sealed record ManufacturingInventoryInputReturnPortCommandV1(
 /// URT-S21 (URT-D62): <see cref="LabelCode"/> is the output label's own code as the operator entered it (trimmed), or
 /// null when the host gives the next number of the company's Ayarlar output label format. It never carries an input
 /// label's number.
+/// AK-7 (URT-D112): <see cref="Pieces"/> is the counted output's piece count with the captured theoretical kg per piece,
+/// recorded on the Manufacturing fact; null for an uncounted output.
 /// </summary>
 public sealed record ManufacturingInventoryOutputPortCommandV1(
     Guid OrderId,
@@ -89,7 +91,8 @@ public sealed record ManufacturingInventoryOutputPortCommandV1(
     Kilograms Quantity,
     DateTimeOffset OccurredAtUtc,
     InventoryLabelClassificationV1? RemnantClassification = null,
-    PlanOutputLineReference? OutputLine = null);
+    PlanOutputLineReference? OutputLine = null,
+    OutputPieces? Pieces = null);
 
 public sealed record ManufacturingInventoryInputIssuePortResultV1(
     long OrderVersion,
@@ -338,7 +341,8 @@ public sealed record ManufacturingInventoryOutputCorrectionPortCommandV1(
     Guid MovementId,
     Kilograms Quantity,
     string Reason,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    PieceCount? Pieces = null);
 
 public sealed record ManufacturingInventoryOutputCorrectionPortResultV1(
     long OrderVersion,

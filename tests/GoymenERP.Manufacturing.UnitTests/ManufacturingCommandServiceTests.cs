@@ -3278,7 +3278,7 @@ public sealed partial class ManufacturingCommandServiceTests
     {
         public Fixture(bool withWorkCenters = true, bool withPlanAllocations = true, bool withOutputCorrections = true,
             IManufacturingPaintSelectionSourceV1? paintSelections = null,
-            ISettingsManufacturingParameterProviderV1? manufacturingParameters = null)
+            ISettingsManufacturingParameterProviderV1? manufacturingParameters = null, bool withProductPieces = true)
         {
             CompanyContext = new MutableCompanyContext(Company);
             var correlation = new CorrelationContext();
@@ -3300,8 +3300,12 @@ public sealed partial class ManufacturingCommandServiceTests
                 productTechnicalSnapshots: ProductSnapshots, partyAccounts: PartyAccounts,
                 contextualParentRolls: ParentRolls, planAllocations: withPlanAllocations ? PlanAllocations : null,
                 outputCorrections: withOutputCorrections ? OutputCorrections : null, paintSelections: paintSelections,
-                manufacturingParameters: manufacturingParameters);
+                manufacturingParameters: manufacturingParameters,
+                productKilogramsPerPiece: withProductPieces ? ProductPieces : null);
         }
+
+        /// <summary>AK-7: the Product owner's theoretical kg per piece; by default the piece unit is not on the card.</summary>
+        public ProductPiecePort ProductPieces { get; } = new();
 
         public List<string> Calls { get; } = [];
 
@@ -3430,7 +3434,7 @@ public sealed partial class ManufacturingCommandServiceTests
             Outputs.Add(command);
             var order = store.Orders[command.OrderId];
             order.DeclareOutput(command.ExpectedOrderVersion, command.OutputId, command.ParentLabelId,
-                command.OutputClass, command.Quantity, command.OccurredAtUtc, command.OutputLine);
+                command.OutputClass, command.Quantity, command.OccurredAtUtc, command.OutputLine, command.Pieces);
             Complete(store, metadata, order);
             return Task.FromResult(new ManufacturingInventoryOutputPortResultV1(
                 order.Version, command.ExpectedParentLabelVersion + 1, 1, false));
