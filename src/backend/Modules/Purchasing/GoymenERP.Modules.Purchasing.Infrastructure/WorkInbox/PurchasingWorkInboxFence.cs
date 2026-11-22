@@ -28,6 +28,11 @@ internal sealed class PurchasingWorkInboxFence(
     /// <summary>The incoming invoice screen (<c>PURCHASING_ROUTE invoiceDetail</c>, <c>/satinalma/faturalar/:invoiceId</c>).</summary>
     internal const string InvoiceScreenPath = "/satinalma/faturalar";
 
+    /// <summary>
+    /// WP7: the service order screen (<c>PURCHASING_ROUTE serviceOrderDetail</c>, <c>/satinalma/hizmet-siparisleri/:serviceOrderId</c>).
+    /// </summary>
+    internal const string ServiceOrderScreenPath = "/satinalma/hizmet-siparisleri";
+
     /// <summary>Null when the caller may read; otherwise the outcome to return.</summary>
     public async Task<WorkInboxSourceResultV1?> CheckAsync(
         WorkInboxSourceContextV1 context,
@@ -53,6 +58,33 @@ internal sealed class PurchasingWorkInboxFence(
         catch (Exception)
         {
             return WorkInboxSourceResultV1.Unavailable();
+        }
+    }
+
+    /// <summary>
+    /// WP7: whether the caller may see purchase prices and costs (<c>purchasing.orders.price.read</c>, company-wide, as it stands
+    /// now) — the owner's own disclosure rule (PRS-02). Anything but a company-wide grant, or an answer that cannot be read, withholds.
+    /// </summary>
+    public async Task<bool> PricesDisclosedAsync(WorkInboxSourceContextV1 context, CancellationToken cancellationToken)
+    {
+        if (!SameContext(context))
+        {
+            return false;
+        }
+
+        try
+        {
+            var scope = await authority.RevalidatePermissionScopeAsync(
+                Application.Contracts.PurchasingPermissionManifestV1.OrdersPriceRead, context.CompanyId, cancellationToken);
+            return scope is { IsGranted: true, IsCompanyWide: true } && SameContext(context);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return false;
         }
     }
 

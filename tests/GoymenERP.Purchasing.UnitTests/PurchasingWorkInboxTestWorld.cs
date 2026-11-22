@@ -27,6 +27,12 @@ internal sealed class PurchasingWorkInboxTestWorld
 
     public string? LastPermission { get; private set; }
 
+    /// <summary>WP7: permissions answered as not granted even while <see cref="Granted"/> is true (e.g. price disclosure).</summary>
+    public HashSet<string> Withheld { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>WP7: every permission the fence asked about, in order.</summary>
+    public List<string> AskedPermissions { get; } = [];
+
     public string UserId { get; set; } = Approver;
 
     public PurchasingDbContext Context(Guid company)
@@ -81,7 +87,8 @@ internal sealed class PurchasingWorkInboxTestWorld
             CancellationToken cancellationToken = default)
         {
             world.LastPermission = permission;
-            return Task.FromResult(new PermissionScope(world.Granted, world.CompanyWide,
+            world.AskedPermissions.Add(permission);
+            return Task.FromResult(new PermissionScope(world.Granted && !world.Withheld.Contains(permission), world.CompanyWide,
                 new HashSet<string>(StringComparer.Ordinal), new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()));
         }
     }

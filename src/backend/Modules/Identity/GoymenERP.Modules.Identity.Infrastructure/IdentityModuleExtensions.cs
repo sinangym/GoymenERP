@@ -71,6 +71,9 @@ public static class IdentityModuleExtensions
             provider => provider.GetRequiredService<ErpAuthorizationService>());
         services.AddScoped<IActiveRoleCodeReader>(
             provider => provider.GetRequiredService<ErpAuthorizationService>());
+        // WP7 (AI-D31/AI-D32): the read-only Work inbox source of pending access grant requests; it decides and grants nothing.
+        services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkInboxSourceV1,
+            WorkInbox.IdentityAccessGrantRequestWorkInboxSourceV1>();
         services.TryAddSingleton<IAuthorizationSnapshotReadObserver,
             NullAuthorizationSnapshotReadObserver>();
         services.TryAddSingleton<IPermissionScopeReadObserver,
