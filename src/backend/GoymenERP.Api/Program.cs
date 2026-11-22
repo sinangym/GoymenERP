@@ -643,6 +643,7 @@ app.MapLogisticsTransferOutgoingDocumentEndpoints();
 app.MapLogisticsWeighingDifferenceEndpoints();
 app.MapLogisticsDispatchPdfEndpoints();
 app.MapPurchaseOrderPdfEndpoints();
+app.MapSalesQuotePdfEndpoints();
 app.MapLogisticsCustomerReturnEndpoints();
 app.MapPurchasingEndpoints();
 app.MapPurchaseServiceOrderEndpointsV1();
