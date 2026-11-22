@@ -1,4 +1,4 @@
-# Adet/kg Formül Golden v1 — EK2 (SAT-D465: belge düzeyi kg fiyatı)
+# Adet/kg Formül Golden v1 — EK2 (SAT-D465–SAT-D467: belge düzeyi kg fiyatı)
 
 ## Kaynak, bağımsızlık ve kabul sınırı
 
@@ -8,9 +8,11 @@ geçerlidir; SAT-D465 ana golden'daki **N2**'yi cevaplar ve "Sınırlar"daki fai
 bütün satırlar kg'li mal satırıyken gösterilir") kg'siz hizmet satırı için yerine geçer.
 
 **Kaynak karar:** `SINAN_KARARLARI_2026-11-22_EK_SORULAR.md` (bu belge yazılırken `claude/nifty-franklin-nk76d5` @
-`e468324e5de264d1b4a409905320bce449eb5fc2`, main'de değil), E-09 sorusu ve SAT-D465: "Belge düzeyi kg fiyatı = net mal
+`0308f5415` ve öncesi, main'de değil), E-09, E-13–E-15 soruları, SAT-D465, SAT-D466, SAT-D467 ve GOV-D14 (bu ekin
+`claude/adet-kg-golden-ek2` dalına gönderilme izni; merge yetkisi vermez). SAT-D465: "Belge düzeyi kg fiyatı = net mal
 tutarı / net kg. Belge altı iskonto mal satırlarına tutarla oransal dağıtılıp düşülür; vade farkı ve kg'siz hizmet satırları
-dahil edilmez; iade satırlarının tutarı ve kg'si düşülür." Dayandığı önceki kararlar: SAT-D436, SAT-D437, SAT-D439,
+dahil edilmez; iade satırlarının tutarı ve kg'si düşülür." SAT-D466 ve SAT-D467, bu ekin ilk taslağındaki NEEDS-SINAN
+EB1 ve EB2'yi cevaplar. Dayandığı önceki kararlar: SAT-D436, SAT-D437, SAT-D439,
 SAT-D452, SAT-D457 (kesinleşmiş faturalar), SAT-D11, SAT-D76, SAT-D407 (belge altı iskonto dağıtımında kuruş ve artık),
 URN-D9 (belge satırı kg'si).
 
@@ -37,7 +39,9 @@ gerekçesiyle çıkarılan adımlardır; karara bağlanmamış noktalar `NEEDS-S
    belgede belge para biriminde (SAT-D439). Gerçek kg fiyatına yalnız kesinleşmiş ve Finans'ın reddetmediği faturalar
    girer (SAT-D452, SAT-D457).
 4. **Net kg ≤ 0** ise belge düzeyi kg fiyatı **gösterilmez** (sıfıra veya negatif kg'ye bölme yapılmaz; sıfır/tahmini
-   değer yazılmaz).
+   değer yazılmaz). **Net kg > 0 ama net mal tutarı ≤ 0** ise de gösterilmez ("hesaplanamaz"; SAT-D466).
+5. **Belge altı iskonto dağıtım tabanı:** yalnız pozitif mal satırları; iade satırı tabana girmez ve pay almaz (SAT-D467).
+   Belge düzeyi değer bundan etkilenmez (TB1).
 
 ## Türetilen adımlar
 
@@ -68,6 +72,7 @@ Ortak girdiler (ana golden K01/K06): S1 = 100 adet × 250,00 TL = 25 000,00 TL, 
 | B07 | Belge altı iskonto kg'siz hizmet satırı olan belgede | S1 + nakliye 750,00; belge altı iskonto 257,50 | İskontonun tamamı S1'e (TB1): 25000 − 257.5 = 24 742,5; 24742.5 / 1234.5 = 20.04252733… | **20,04 TL/kg** (iskonto hizmet satırıyla birlikte oransal dağıtılsaydı S1 payı 250,00 → 24750 / 1234.5 = 20,05 **OLMAZ**) |
 | B08 | Bütün kurallar birlikte | S1 (vade farkı %2; belgede 25 500,00) + kg birimli S4 500,000 kg × 21,00 = 10 500,00 + nakliye 750,00 + belge altı iskonto 355,00 + iade satırı 10 adet × 240,00 (123,450 kg) | Belge altı paylar (TB1): 355 × 25000/35500 = 250,00; 355 × 10500/35500 = 105,00; net mal 25000 + 10500 − 355 − 2400 = 32 745; net kg 1234.5 + 500 − 123.45 = 1 611,050; 32745 / 1611.05 = 20.32525371… | **20,33 TL/kg** |
 | B09 | Adetli ürün kg'si | S1 (adetli; `k` kaydı 12,345) + S2 (adetli; `k` 4,321) | Teorik kg = adet × `k`: 1 234,500 + 216,050 | = B02: **19,99 TL/kg** |
+| B17 | İade satırı ve belge altı iskonto birlikte (SAT-D467) | B08 belgesi: S1 25 000,00, S4 10 500,00, iade satırı 2 400,00, belge altı iskonto 355,00 | Dağıtım tabanı yalnız pozitif mal satırları: 25000 + 10500 = 35 500; paylar 355 × 25000/35500 = 250,00 ve 355 × 10500/35500 = 105,00; iade satırı payı 0 | Satır payları **S1 250,00 / S4 105,00 / iade 0,00**; belge düzeyi **20,33 TL/kg** (= B08; iade satırı tabana girseydi taban 37 900 olur, paylar değişirdi, OLMAZ) |
 | B10 | Dövizli belge (SAT-D439) | 10 adet × 100,00 USD = 1 000,00 USD; `k` 12,345 → 123,450 kg | 1000 / 123.45 = 8.10044552… (kur yok) | **8,10 USD/kg** |
 
 ## Golden satırları — alış
@@ -84,12 +89,12 @@ Ortak girdiler (ana golden K01/K06): S1 = 100 adet × 250,00 TL = 25 000,00 TL, 
 | B13 | Kg'li mal satırlarından birinin ilgili kg'si yok (TB3) | Belge düzeyi **gösterilmez**; satır düzeyi diğer satırlarda gösterilir |
 | B14 | Net kg = 0: S1 (1 234,500 kg) + iade satırı 100 adet (1 234,500 kg) | **Gösterilmez** (formül 4) |
 | B15 | Net kg < 0: iade satırlarının kg'si mal satırlarınınkini aşıyor | **Gösterilmez** (formül 4) |
-| B16 | Net kg > 0 ama net mal tutarı ≤ 0 (ör. belge altı iskonto ve iadeler mal tutarını sıfıra veya altına indiriyor) | Mekanik sonuç 0,00 veya negatif kg fiyatıdır; gösterilip gösterilmeyeceği kararda yok → **NEEDS-SINAN EB1** |
-| B17 | Belgede hem iade satırı hem belge altı iskonto var: iade satırı belge altı iskontodan pay alır mı (iade satırı "mal satırı" sayılıp dağıtıma girer mi)? | Belge düzeyi değer bu sorudan etkilenmez, çünkü iskontonun tamamı düşülür (TB1); ama iade satırı payın tabanına girerse satır paylarının dağılımı değişir. Satır payları bu yüzden gösterilmez → **NEEDS-SINAN EB2** (belge düzeyi değer B08 gibi hesaplanır) |
+| B16 | Net kg > 0 ama net mal tutarı ≤ 0: S1 (25 000,00; 1 234,500 kg) + iade satırı 50 adet × 520,00 = 26 000,00 (50 × 12,345 = 617,250 kg) → net mal −1 000,00, net kg 617,250 | **Gösterilmez** ("hesaplanamaz"; SAT-D466). Mekanik −1000 / 617.25 değeri yazılmaz |
 
 ## Türetilenler
 
-- **TB1:** Belge altı iskontonun tamamı mal tutarından düşülür; satır payları bilgi için SAT-D407 ile (B03, B07, B08).
+- **TB1:** Belge altı iskontonun tamamı mal tutarından düşülür; satır payları bilgi için SAT-D407 ile, taban SAT-D467'ye
+  göre yalnız pozitif mal satırları (B03, B07, B08, B17).
 - **TB2:** Vade farkı hariç satır tutarı = miktar × iskontolu birim fiyat, kuruşa bir kez (B04, B08).
 - **TB3:** Kg'si olması gereken mal satırında kg yoksa belge düzeyi gösterilmez (B13).
 
@@ -98,10 +103,8 @@ hesaplanamaz kabul edilip `NEEDS-SINAN`'a taşınmalıdır.
 
 ## NEEDS-SINAN
 
-- **EB1 (B16):** Net kg > 0 iken net mal tutarı sıfır veya negatifse belge düzeyi kg fiyatı gösterilsin mi (0,00 / negatif
-  değer), yoksa gösterilmesin mi?
-- **EB2 (B17):** Aynı belgede iade satırı ve belge altı iskonto varsa, iade satırı belge altı iskonto dağıtımının tabanına
-  girer mi (satır payları nasıl hesaplanır)? Belge düzeyi değeri etkilemez.
+Açık nokta yoktur. İlk taslaktaki EB1 SAT-D466 ile (net mal tutarı ≤ 0 → gösterilmez; B16), EB2 SAT-D467 ile (iade satırı
+dağıtım tabanına girmez; B17) cevaplandı.
 
 ## Sınırlar
 
