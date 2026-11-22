@@ -64,10 +64,21 @@ public interface IInventorySupplierReturnLineageReadPortV1
     Task<InventorySupplierReturnLineagePlanV1> PlanAsync(Guid companyId, Guid labelId, string quantityKg, int? pieceCount,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// SAT-D456/SAT-D460: what <paramref name="quantityKg"/> of the label is worth at its location/product moving average —
+    /// the kuruş-rounded stock exit amount and the average itself — or both null when the average cannot be read. Cost-bearing:
+    /// for the owner's planning only, never for a price-free preview.
+    /// </summary>
+    Task<InventorySupplierReturnStockAmountV1> ReadStockAmountAsync(Guid companyId, Guid labelId, string quantityKg,
+        CancellationToken cancellationToken = default);
+
     /// <summary>AK-8b: one goods receipt's open, invoiced and pending kilograms (the chosen receipt of a quantity return).</summary>
     Task<InventorySupplierReturnReceiptStateV1> ReadReceiptAsync(Guid companyId, Guid goodsAcceptanceId,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>The kuruş-rounded stock exit amount of a quantity return at the moving average; both null when it cannot be read.</summary>
+public sealed record InventorySupplierReturnStockAmountV1(Guid CompanyId, Guid LabelId, string? StockExitAmountTry, string? AverageCostTryPerKg);
 
 /// <summary>What is left of one invoiced source of a receipt (its recognition event) for a supplier return.</summary>
 public sealed record InventorySupplierReturnInvoicedPartV1(Guid SourceEventId, Guid InvoiceId, Guid InvoiceLineId,

@@ -204,7 +204,7 @@ public sealed partial class PurchasingService
     /// SAT-D392/SAT-D393 (lineage) or SAT-D444 (quantity).
     /// </summary>
     private static ReturnLineageDecision DecideReturnLineage(ReturnLineagePlan plan, CreatePurchaseSupplierReturnV1 request,
-        bool quantityRulesAccepted)
+        bool quantityRulesAccepted, PurchaseSupplierReturnStockAmountV1? stockAmount = null)
     {
         var posted = request.LineageParts;
         if (posted is null && plan.Rows.Count != 1 || posted is not null && (posted.Count != plan.Rows.Count
@@ -230,7 +230,7 @@ public sealed partial class PurchasingService
             var manual = manualText is null ? (decimal?)null : ParseUnitCost(manualText);
             PurchaseSupplierReturnCostBasis basis;
             decimal unitCost;
-            decimal? supplierPrice = null, supplierAmount = null;
+            decimal? supplierPrice = null, supplierAmount = null, stockExitAmount = null;
             int? supplierPieces = null;
             if (plan.Mode == PurchaseSupplierReturnLineageModeV1.Quantity)
             {
@@ -264,6 +264,20 @@ public sealed partial class PurchasingService
                     // Gate closed: the kg price itself is the stock cost Inventory compares with the average. Gate open: the
                     // stock leaves at the average Inventory reads; the price here is replaced by it before the document is saved.
                     (basis, unitCost) = (PurchaseSupplierReturnCostBasis.InvoiceUnitCost, unitPrice);
+                    if (QuantityDifferenceGoesToApproval(quantityRulesAccepted, price) && supplierAmount is { } billed)
+                    {
+                        // SAT-D460: a difference between the kuruş-rounded stock exit amount and the billed amount is not a
+                        // refusal; it is recorded on the document and waits for another person's approval (SAT-D392/D393).
+                        // Nothing leaves stock before that approval.
+                        if (stockAmount is not { } stock || stock.StockExitAmountTry <= 0m || stock.AverageCostTryPerKg <= 0m)
+                            throw new PurchasingServiceException(409, PurchaseSupplierReturnCodesV1.CostRequired,
+                                [new("manualUnitCostTryPerKg", PurchaseSupplierReturnCodesV1.CostRequired)]);
+                        if (stock.StockExitAmountTry != billed)
+                        {
+                            stockExitAmount = stock.StockExitAmountTry;
+                            (basis, unitCost) = (PurchaseSupplierReturnCostBasis.ManualCostWithException, stock.AverageCostTryPerKg);
+                        }
+                    }
                 }
                 else
                 {
@@ -296,7 +310,7 @@ public sealed partial class PurchasingService
 
             parts.Add(new PurchaseSupplierReturnLineagePartV1(row.GoodsAcceptanceId, row.Owner.PurchaseOrderId, row.Owner.PurchaseOrderLineId,
                 part.ReturnLineId, part.InventoryMovementId, row.QuantityKg, basis, unitCost, row.Pieces, part.PendingKg, part.Invoiced,
-                supplierPrice, supplierPrice is null ? null : supplierPieces, supplierAmount));
+                supplierPrice, supplierPrice is null ? null : supplierPieces, supplierAmount, stockExitAmount));
         }
 
         var anchor = parts.Single(part => part.GoodsAcceptanceId == request.GoodsAcceptanceId);
@@ -305,6 +319,26 @@ public sealed partial class PurchasingService
             pending ? PurchaseSupplierReturnStatus.PendingCostException : PurchaseSupplierReturnStatus.Recorded,
             pending ? PurchaseSupplierReturnCostBasis.ManualCostWithException : PurchaseSupplierReturnCostBasis.InvoiceUnitCost,
             anchor.UnitCostTryPerKg, parts);
+    }
+
+    /// <summary>
+    /// SAT-D460 names the quantity return from a PIECE order line: its amount difference is recorded and approved, never refused.
+    /// A kilogram line keeps the SAT-D371 refusal of a readable difference (golden I11) — the decision text does not extend the
+    /// approval path to it; this is the one switch to change if it is extended.
+    /// </summary>
+    private static bool QuantityDifferenceGoesToApproval(bool quantityRulesAccepted, PurchaseSupplierReturnQuantityPriceV1 price) =>
+        quantityRulesAccepted && price.PerPiece;
+
+    /// <summary>Reads the stock exit amount the SAT-D460 difference is measured on; null when not needed or unreadable.</summary>
+    private async Task<PurchaseSupplierReturnStockAmountV1?> ReadQuantityStockAmountAsync(Scope scope, string? permission,
+        ReturnLineagePlan plan, Guid sourceLabelId, string quantityKg, CancellationToken cancellationToken)
+    {
+        if (plan.Mode != PurchaseSupplierReturnLineageModeV1.Quantity || plan.QuantityPrice is not { } price
+            || !QuantityDifferenceGoesToApproval(QuantityRulesAccepted, price)
+            || plan.Rows is not [{ CostSource: PurchaseSupplierReturnCostSourceV1.MovingAverage }]) return null;
+        var port = returnLineage ?? throw PurchaseSupplierReturnLineagePlannerV1.Unavailable();
+        return await GuardedAsync(scope, permission,
+            () => port.ReadStockAmountAsync(scope.CompanyId, sourceLabelId, quantityKg, cancellationToken), cancellationToken);
     }
 
     /// <summary>K3-B2 / TI3: the explicit choice adds up to the share and stays inside each part; several open parts need a choice.</summary>

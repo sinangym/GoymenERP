@@ -49,8 +49,9 @@ public interface IInventorySupplierReturnExitParticipantV1 : IAsyncDisposable
 /// foreign-label exit; <c>ApprovedCostException</c> true says the unit cost is a manual cost approved by another person
 /// (SAT-D393) because the moving average of a quantity return could not be read. <c>SupplierReturnAmountTry</c> (SAT-D456) is
 /// the kuruş-rounded amount the document bills for a quantity return: with it the difference is measured between the
-/// kuruş-rounded stock exit amount at the moving average and that amount, and the stock leaves at the average itself. All are
-/// null on every earlier request.
+/// kuruş-rounded stock exit amount at the moving average and that amount, and the stock leaves at the average itself.
+/// <c>ApprovedStockExitAmountTry</c> (SAT-D460) is the kuruş-rounded stock exit amount whose difference another person approved;
+/// the exit proceeds only while the stock still leaves at exactly that amount. All are null on every earlier request.
 /// </remarks>
 public sealed record InventorySupplierReturnExitRequestV1(
     Guid CompanyId,
@@ -79,7 +80,9 @@ public sealed record InventorySupplierReturnExitRequestV1(
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     bool? ApprovedCostException = null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-    string? SupplierReturnAmountTry = null);
+    string? SupplierReturnAmountTry = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    string? ApprovedStockExitAmountTry = null);
 
 /// <summary>The exact Inventory identities staged by one supplier-return exit.</summary>
 public sealed record InventorySupplierReturnExitResultV1(
@@ -248,6 +251,13 @@ public static class InventorySupplierReturnExitContractV1
 
         if (request.SupplierReturnAmountTry is not null
             && (!TryCanonical(request.SupplierReturnAmountTry, "0.##", out var amount) || amount <= 0m))
+        {
+            throw Refused(400, InventorySupplierReturnExitCodesV1.InvalidCost);
+        }
+
+        if (request.ApprovedStockExitAmountTry is not null
+            && (!TryCanonical(request.ApprovedStockExitAmountTry, "0.##", out var approvedAmount) || approvedAmount <= 0m
+                || request.SupplierReturnAmountTry is null || request.ApprovedCostException != true))
         {
             throw Refused(400, InventorySupplierReturnExitCodesV1.InvalidCost);
         }

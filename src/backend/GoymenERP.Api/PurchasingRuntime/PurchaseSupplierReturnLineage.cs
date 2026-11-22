@@ -45,6 +45,23 @@ internal sealed class PurchaseSupplierReturnLineage(IInventorySupplierReturnLine
         return Map(state);
     }
 
+    public async Task<PurchaseSupplierReturnStockAmountV1?> ReadStockAmountAsync(Guid companyId, Guid labelId, string quantityKg,
+        CancellationToken cancellationToken)
+    {
+        InventorySupplierReturnStockAmountV1 amount;
+        try { amount = await inventory.ReadStockAmountAsync(companyId, labelId, quantityKg, cancellationToken); }
+        catch (InventorySupplierReturnExitException exception)
+        { throw new PurchasingServiceException(exception.Status, exception.Code, innerException: exception); }
+        if (amount.CompanyId != companyId || amount.LabelId != labelId)
+            throw new PurchasingServiceException(503, PurchaseSupplierReturnCodesV1.LineageUnavailable);
+        if (amount.StockExitAmountTry is null || amount.AverageCostTryPerKg is null) return null;
+        return decimal.TryParse(amount.StockExitAmountTry, System.Globalization.NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var exit)
+            && decimal.TryParse(amount.AverageCostTryPerKg, System.Globalization.NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var average)
+            && exit > 0m && average > 0m
+            ? new PurchaseSupplierReturnStockAmountV1(exit, average)
+            : throw new PurchasingServiceException(503, PurchaseSupplierReturnCodesV1.LineageUnavailable);
+    }
+
     internal static PurchaseSupplierReturnReceiptStateV1 Map(InventorySupplierReturnReceiptStateV1 state) => new(
         state.GoodsAcceptanceId, state.ReceivedKg, state.OpenKg, state.PartsReadable,
         state.PendingRemainingKg is { } pending ? FloorKg(pending) : null,

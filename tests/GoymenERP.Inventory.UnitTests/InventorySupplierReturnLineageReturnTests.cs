@@ -197,6 +197,22 @@ public sealed class InventorySupplierReturnLineageReturnTests
         Assert.DoesNotContain("SupplierReturnAmountTry", System.Text.Json.JsonSerializer.Serialize(Request(null)), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void SAT_D460_an_approved_stock_exit_amount_needs_the_billed_amount_and_the_approval_flag()
+    {
+        InventorySupplierReturnExitRequestV1 Request(string? billed, bool? approved, string? approvedAmount) => new(Company, Return, Id(51), A1,
+            Id(52), BlockState.Free, "80", null, DateTimeOffset.UnixEpoch, SourceLabelId: Label,
+            LineageMode: InventorySupplierReturnLineageModeV1.Quantity, ApprovedCostException: approved, SupplierReturnAmountTry: billed,
+            ApprovedStockExitAmountTry: approvedAmount);
+
+        InventorySupplierReturnExitContractV1.Validate(Request("820", true, "820.25"), Metadata(), Company);
+        foreach (var bad in new[] { Request(null, true, "820.25"), Request("820", null, "820.25"), Request("820", true, "820.250"),
+                     Request("820", true, "0") })
+            Assert.Equal((400, InventorySupplierReturnExitCodesV1.InvalidCost), Refusal(() =>
+                InventorySupplierReturnExitContractV1.Validate(bad, Metadata(), Company)));
+        Assert.DoesNotContain("ApprovedStockExitAmountTry", System.Text.Json.JsonSerializer.Serialize(Request(null, null, null)), StringComparison.Ordinal);
+    }
+
     private static (int, string) Refusal(Action action)
     {
         var refused = Assert.Throws<InventorySupplierReturnExitException>(action);
