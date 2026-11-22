@@ -92,7 +92,8 @@ public sealed class ReportingDbContext(DbContextOptions<ReportingDbContext> opti
         attempt.HasQueryFilter(row => row.CompanyId == companyContext.CompanyId);
 
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
-        modelBuilder.Entity<AuditEvent>().HasQueryFilter(row => row.CompanyId == companyContext.CompanyId);
+        modelBuilder.Entity<AuditEvent>()
+            .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)

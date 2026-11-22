@@ -92,6 +92,12 @@
       "reason": "JV03 desired-state snapshot, inbox, outbox, and canonical audit insert share one EF SaveChanges and SQL transaction; Audit owns its mapped table."
     },
     {
+      "source": "src/backend/Modules/Reporting/GoymenERP.Modules.Reporting.Infrastructure/GoymenERP.Modules.Reporting.Infrastructure.csproj",
+      "target": "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj",
+      "adr": "docs/delivery/WORK_AI_TAMAMLAMA_PLANI_v1.md",
+      "reason": "WP14 export record or saved-view change and its canonical audit insert share one EF SaveChanges and SQL transaction; Audit owns its mapped table."
+    },
+    {
       "source": "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/GoymenERP.Modules.Settings.Infrastructure.csproj",
       "target": "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj",
       "adr": "docs/adr/ADR-009-audit-and-correlation.md",
