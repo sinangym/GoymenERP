@@ -177,6 +177,25 @@ describe('Supplier return from another label (AK-8b; SAT-D433, SAT-D440–SAT-D4
     expect(vi.mocked(createLineageSupplierReturn).mock.calls[0][2].supplierPieceQuantity).toBe(4)
   })
 
+  it('SAT-D455: document pieces typed under a quantity preview never travel with a later lineage return', async () => {
+    const quantityPlan = { ...plan, lineageMode: 'Quantity' as const, quantityKg: '80',
+      parts: [{ ...plan.parts[0], quantityKg: '80', costSource: 'MovingAverage' as const, invoiced: [], selectionRequired: false }] }
+    vi.mocked(fetchSupplierReturnLineagePreview).mockResolvedValueOnce({ type: 'ok-single', data: quantityPlan })
+      .mockResolvedValue({ type: 'ok-single', data: { ...plan, parts: plan.parts.map((part) => ({ ...part, invoiced: [], selectionRequired: false,
+        costSource: 'InvoiceUnitCost' as const })) } })
+    vi.mocked(createLineageSupplierReturn).mockImplementation(async (_company, _order, request) => recorded(request, 'Recorded'))
+    mount(); await openAndAsk('80')
+    await userEvent.type(await screen.findByLabelText(T.supplierPieceQuantity), '4')
+    await userEvent.clear(screen.getByLabelText(T.quantityKg))
+    await userEvent.type(screen.getByLabelText(T.quantityKg), '300')
+    await userEvent.click(screen.getByRole('button', { name: T.preview }))
+    await waitFor(() => expect(screen.getByTestId('supplier-return-lineage-plan').getAttribute('data-mode')).toBe('Lineage'))
+    expect(screen.queryByLabelText(T.supplierPieceQuantity)).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: T.save }))
+    await screen.findByTestId('supplier-return-lineage-result')
+    expect(vi.mocked(createLineageSupplierReturn).mock.calls[0][2]).not.toHaveProperty('supplierPieceQuantity')
+  })
+
   it('sends the pieces of a piece-tracking label and shows each receipt\'s pieces (golden I10)', async () => {
     vi.mocked(fetchSupplierReturnLineagePreview).mockResolvedValue({ type: 'ok-single', data: { ...plan, quantityKg: '100', pieceCount: 7, tracksPieces: true,
       freePieces: 20, blockedPieces: 0, parts: [{ ...plan.parts[0], quantityKg: '60', pieceCount: 5, invoiced: [], selectionRequired: false },

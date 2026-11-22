@@ -275,6 +275,19 @@ describe('output correction pieces (AK-7)', () => {
     expect(posts(recorded)).toHaveLength(0)
   })
 
+  it('marks every field the correction needs as required for assistive technology', async () => {
+    const user = userEvent.setup()
+    stub({ reads: [() => json(countedOrder())] })
+    renderAt(PATH)
+    const section = await fillCorrection(user)
+    for (const name of ['Düzeltilecek çıktı', 'Geri alınacak kg', 'Geri alınan adet']) {
+      expect(within(section).getByLabelText(name).getAttribute('aria-required')).toBe('true')
+    }
+    for (const id of ['mfg-correction-reason', 'mfg-correction-occurred-at']) {
+      expect(section.querySelector(`#${id}`)?.getAttribute('aria-required')).toBe('true')
+    }
+  })
+
   it('draws no piece field for an uncounted output and sends no pieces', async () => {
     const user = userEvent.setup()
     const recorded = stub({ reads: [() => json(order()), () => json(order({ version: 2 }))] })

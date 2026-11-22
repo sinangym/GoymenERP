@@ -251,6 +251,7 @@ function CorrectionBody({
             <label htmlFor="mfg-correction-output">{OUTPUT_CORRECTION_TEXT.output}</label>
             <select
               id="mfg-correction-output"
+              aria-required="true"
               value={form.outputId}
               disabled={frozen}
               onChange={(event) => update({ outputId: event.target.value })}
@@ -284,6 +285,7 @@ function CorrectionBody({
             <label htmlFor="mfg-correction-kg">{OUTPUT_CORRECTION_TEXT.kg}</label>
             <input
               id="mfg-correction-kg"
+              aria-required="true"
               inputMode="decimal"
               autoComplete="off"
               value={form.kg}
@@ -298,6 +300,7 @@ function CorrectionBody({
               <label htmlFor="mfg-correction-piece-count">{OUTPUT_PIECE_TEXT.correctionPieceCount}</label>
               <input
                 id="mfg-correction-piece-count"
+                aria-required="true"
                 inputMode="numeric"
                 autoComplete="off"
                 value={form.pieceCount}
@@ -314,6 +317,7 @@ function CorrectionBody({
             <label htmlFor="mfg-correction-reason">{OUTPUT_CORRECTION_TEXT.reason}</label>
             <textarea
               id="mfg-correction-reason"
+              aria-required="true"
               value={form.reason}
               maxLength={256}
               rows={3}
@@ -325,6 +329,7 @@ function CorrectionBody({
             <label htmlFor="mfg-correction-occurred-at">{OUTPUT_CORRECTION_TEXT.occurredAt}</label>
             <input
               id="mfg-correction-occurred-at"
+              aria-required="true"
               type="datetime-local"
               value={form.occurredAt}
               disabled={frozen}
