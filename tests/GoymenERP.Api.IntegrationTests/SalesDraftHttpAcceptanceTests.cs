@@ -461,6 +461,11 @@ public sealed partial class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory fa
         public Task<SalesOrderKilogramPricesResponse> GetDraftKilogramPricesAsync(Guid draftId, CancellationToken cancellationToken = default) =>
             Task.FromException<SalesOrderKilogramPricesResponse>(new SalesDraftServiceException(404, "not_found"));
 
+        /// <summary>WP11: the margin explanation's HTTP surface; the stub answers 403 (a withheld margin has no trace).</summary>
+        public Task<SalesDraftLineMarginExplanationV1> ExplainDraftLineMarginAsync(Guid draftId, Guid lineId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromException<SalesDraftLineMarginExplanationV1>(new SalesDraftServiceException(403, "forbidden"));
+
         public Task<SalesOrderDraftPriceReferencesResponse> GetLinePriceReferencesAsync(Guid draftId, Guid lineId,
             CancellationToken cancellationToken = default) =>
             Task.FromException<SalesOrderDraftPriceReferencesResponse>(new SalesDraftServiceException(404, "not_found"));

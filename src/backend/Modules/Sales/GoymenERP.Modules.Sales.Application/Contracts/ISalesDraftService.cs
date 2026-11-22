@@ -50,6 +50,12 @@ public interface ISalesDraftService
     Task<SalesOrderDraftLinePricingResponse> GetDraftLinePricingAsync(Guid draftId, CancellationToken cancellationToken = default);
     /// <summary>SAT-D436 (AK-5): the order's kg prices and realization (draft read and price read); closed until its golden.</summary>
     Task<SalesOrderKilogramPricesResponse> GetDraftKilogramPricesAsync(Guid draftId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// WP11 (DALGA_PLANI_v2 1.12): one line's margin with the calculator's own steps and its input records (draft read, price read
+    /// and the separate margin read; withheld margin is 403, never an empty trace).
+    /// </summary>
+    Task<SalesDraftLineMarginExplanationV1> ExplainDraftLineMarginAsync(Guid draftId, Guid lineId,
+        CancellationToken cancellationToken = default);
 
     /// <summary>API-03 / SAT-D11: the order's line and document totals from the one backend calculator (draft read + price read).</summary>
     Task<SalesOrderDraftTotalsResponse> GetDraftTotalsAsync(Guid draftId, CancellationToken cancellationToken = default);

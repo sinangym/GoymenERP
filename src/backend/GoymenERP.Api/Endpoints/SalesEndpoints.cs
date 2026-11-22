@@ -1819,6 +1819,32 @@ public static partial class SalesEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // WP11 (DALGA_PLANI_v2 1.12): one line's margin explained — the same resolution and calculator run as line-pricing, with
+        // its steps and input records. Draft read, price read and the separate margin read (else 403); no new permission.
+        drafts.MapGet("/{id:guid}/lines/{lineId:guid}/margin-explanation", async (
+            Guid id,
+            Guid lineId,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.ExplainDraftLineMarginAsync(id, lineId, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftLineMarginExplanationV1")
+            .Produces<SalesDraftLineMarginExplanationV1>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         drafts.MapGet("/{id:guid}/lines/{lineId:guid}/price-references", async (
             Guid id,
             Guid lineId,
