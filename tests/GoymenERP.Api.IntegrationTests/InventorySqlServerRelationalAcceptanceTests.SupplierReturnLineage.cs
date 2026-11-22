@@ -2,7 +2,9 @@ using System.Globalization;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Movements;
+using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -63,5 +65,114 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 new InventorySupplierReturnLineageReader(context, company).ReadAsync(CompanyA, merged));
             Assert.Equal((503, InventorySupplierReturnExitCodesV1.ReceiptTraceInvalid), (refused.Status, refused.Code));
         }
+    }
+
+    /// <summary>
+    /// AK-8b (SAT-D433, SAT-D440, K3-B2/TI3) on real SQL Server: a label merged from two goods receipts is returned in ONE
+    /// command — one exit movement per receipt, each sourced from its own receipt, one command record — and a request that moves
+    /// kilograms between the receipts stages nothing. A second attempt under the key is a replay; each receipt's open quantity
+    /// then reads what its own exit took.
+    /// </summary>
+    [SqlServerFact]
+    public async Task An_atomic_lineage_return_of_a_merged_label_stages_one_exit_per_receipt_under_one_command_and_another_distribution_stages_nothing()
+    {
+        await using var run = await Run.StartAsync();
+        var first = await ReceiveForSupplierReturnAsync(run, BlockState.Free);
+        var second = await ReceiveForSupplierReturnAsync(run, BlockState.Free);
+        var merged = Guid.NewGuid();
+        await using (var context = run.Context(CompanyA))
+        {
+            var versions = await context.Labels.AsNoTracking().Where(row => row.Id == first.LabelId || row.Id == second.LabelId)
+                .ToDictionaryAsync(row => row.Id, row => row.Version);
+            await using var owner = run.Store(CompanyA);
+            await owner.Store.TransformAsync(new TransformInventoryLabelsV1(Guid.NewGuid(), InventoryLabelTransformationKindV1.Merge,
+                [new(first.LabelId, versions[first.LabelId].ToString(CultureInfo.InvariantCulture)),
+                    new(second.LabelId, versions[second.LabelId].ToString(CultureInfo.InvariantCulture))],
+                [new(merged, $"SYN-AK8B-MERGED-{Guid.NewGuid():N}", "8")], GoodsReceiptTime.AddMinutes(30),
+                "Sentetik AK-8b birlestirme."), Metadata(run));
+        }
+
+        var metadata = SupplierReturnMetadata(run);
+        var returnId = Guid.NewGuid();
+        Guid[] lines = [Guid.NewGuid(), Guid.NewGuid()], movements = [Guid.NewGuid(), Guid.NewGuid()];
+        InventorySupplierReturnLineageExitRequestV1 Request(string firstKg, string secondKg) => new(CompanyA, returnId, merged,
+            BlockState.Free, "3", null, GoodsReceiptTime.AddHours(1),
+            [new(first.AcceptanceId, lines[0], movements[0], firstKg, null, "41.5", null),
+                new(second.AcceptanceId, lines[1], movements[1], secondKg, null, "41.5", null)]);
+
+        await using (var connection = new SqlConnection(run.Factory.DatabaseConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            await using var participant = await InventorySupplierReturnExitParticipant.EnlistAsync(
+                connection, transaction, CompanyA, GoodsReceiptSettings(run));
+            var refused = await Assert.ThrowsAsync<InventorySupplierReturnExitException>(() =>
+                participant.StageLineageAsync(Request("2", "1"), metadata));
+            Assert.Equal((409, InventorySupplierReturnExitCodesV1.LineageMismatch), (refused.Status, refused.Code));
+            await transaction.RollbackAsync();
+        }
+
+        Assert.Equal(8m, await LabelBlockKgAsync(run, merged, BlockState.Free));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Movements WHERE Kind = @kind", ("@kind", (int)StockMovementKind.SupplierReturnExit)));
+
+        InventorySupplierReturnLineageExitResultV1 staged;
+        await using (var connection = new SqlConnection(run.Factory.DatabaseConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            await using var participant = await InventorySupplierReturnExitParticipant.EnlistAsync(
+                connection, transaction, CompanyA, GoodsReceiptSettings(run));
+            staged = await participant.StageLineageAsync(Request("1.5", "1.5"), metadata);
+            await transaction.CommitAsync();
+        }
+
+        Assert.False(staged.IsReplay);
+        Assert.Equal([(first.AcceptanceId, first.MovementId, movements[0], "1.5"), (second.AcceptanceId, second.MovementId, movements[1], "1.5")],
+            staged.Parts.Select(part => (part.GoodsAcceptanceId, part.OriginalReceiptMovementId, part.InventoryMovementId, part.QuantityKg)));
+        Assert.All(staged.Parts, part => Assert.Equal(merged, part.LabelId));
+        Assert.Equal(5m, await LabelBlockKgAsync(run, merged, BlockState.Free));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Movements WHERE Kind = @kind AND SourceId IN (@first, @second)",
+            ("@kind", (int)StockMovementKind.SupplierReturnExit), ("@first", first.MovementId), ("@second", second.MovementId)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands WHERE CommandName = @name AND TargetId = @id",
+            ("@name", InventorySupplierReturnExitContractV1.LineageCommandName), ("@id", returnId)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands WHERE CommandName = @name",
+            ("@name", InventorySupplierReturnExitContractV1.CommandName)));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.MovementCostStamps WHERE MovementId IN (@a, @b) AND EvidenceJson LIKE '%supplierReturnLineageSelection%'",
+            ("@a", movements[0]), ("@b", movements[1])));
+
+        await using (var connection = new SqlConnection(run.Factory.DatabaseConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            await using var participant = await InventorySupplierReturnExitParticipant.EnlistAsync(
+                connection, transaction, CompanyA, GoodsReceiptSettings(run));
+            var replay = await participant.StageLineageAsync(Request("1.5", "1.5"), metadata with { CorrelationId = "lineage-return-retry" });
+            await transaction.CommitAsync();
+            Assert.True(replay.IsReplay);
+            Assert.Equal(metadata.CorrelationId, replay.OriginalCorrelationId);
+        }
+
+        Assert.Equal(5m, await LabelBlockKgAsync(run, merged, BlockState.Free));
+        await using (var context = run.Context(CompanyA))
+        {
+            var company = new CompanyContext();
+            company.Set(CompanyA);
+            var plan = await new InventorySupplierReturnLineageReader(context, company).PlanAsync(CompanyA, merged, "1", null);
+            Assert.Equal(("5", false), (plan.FreeKg, plan.TracksPieces));
+            Assert.Equal([("4", "2.5", "0.5", true), ("4", "2.5", "0.5", true)],
+                plan.Receipts.Select(receipt => (receipt.ReceivedKg, receipt.OpenKg, receipt.DistributedKg!, receipt.PartsReadable)));
+            Assert.All(plan.Receipts, receipt => Assert.Equal(new InventoryExactCostRatioV1("5", "2"), Normalised(receipt.PendingRemainingKg!)));
+        }
+    }
+
+    private static InventoryExactCostRatioV1 Normalised(InventoryExactCostRatioV1 ratio)
+    {
+        var numerator = System.Numerics.BigInteger.Parse(ratio.Numerator, CultureInfo.InvariantCulture);
+        var denominator = System.Numerics.BigInteger.Parse(ratio.Denominator, CultureInfo.InvariantCulture);
+        var divisor = System.Numerics.BigInteger.GreatestCommonDivisor(numerator, denominator);
+        return new((numerator / divisor).ToString(CultureInfo.InvariantCulture), (denominator / divisor).ToString(CultureInfo.InvariantCulture));
     }
 }

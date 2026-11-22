@@ -71,8 +71,7 @@ public static class PurchaseSupplierReturnCostSourceV1
 
 /// <summary>One receipt row of the preview.</summary>
 public sealed record PurchaseSupplierReturnLineagePreviewPartV1(
-    Guid GoodsAcceptanceId, Guid PurchaseOrderId, Guid PurchaseOrderLineId, string QuantityKg,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? PieceCount,
+    Guid GoodsAcceptanceId, Guid PurchaseOrderId, Guid PurchaseOrderLineId, string QuantityKg, int? PieceCount,
     string CostSource, string ReceivedKg, string OpenKg, string PendingRemainingKg,
     IReadOnlyList<PurchaseSupplierReturnInvoicedPartV1> Invoiced, bool SelectionRequired);
 
@@ -80,14 +79,12 @@ public sealed record PurchaseSupplierReturnLineagePreviewPartV1(
 /// AK-8b preview (read-only, price-free): how a return of <see cref="QuantityKg"/> from <see cref="SourceLabelId"/> would be
 /// planned. <see cref="LineageMode"/> is Lineage (SAT-D433: one row per receipt of the lineage) or Quantity (SAT-D441: one row,
 /// the chosen receipt). <see cref="Refusal"/> names the code the command would answer with when the plan cannot be posted as it
-/// stands (a receipt limit, an undecided price rule …); the rows are still shown so the preparer sees why.
+/// stands (a receipt limit, an undecided price rule …); the rows are still shown so the preparer sees why. The piece fields
+/// are always present and null on a label that tracks no pieces.
 /// </summary>
 public sealed record PurchaseSupplierReturnLineagePreviewV1(
     Guid CompanyId, Guid PurchaseOrderId, Guid GoodsAcceptanceId, Guid SourceLabelId, string LineageMode, string QuantityKg,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? PieceCount,
-    bool TracksPieces, string FreeKg, string BlockedKg,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? FreePieces,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? BlockedPieces,
+    int? PieceCount, bool TracksPieces, string FreeKg, string BlockedKg, int? FreePieces, int? BlockedPieces,
     IReadOnlyList<PurchaseSupplierReturnLineagePreviewPartV1> Parts,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Refusal = null);
 
