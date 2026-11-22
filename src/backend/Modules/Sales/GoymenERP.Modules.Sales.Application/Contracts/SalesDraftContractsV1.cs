@@ -425,6 +425,9 @@ public static class SalesDraftApiV1
     // AT-018 / AT-021: the line pricing read (price read) and the line's list-price references (price write). The detail
     // wire is unchanged: pricing lives on its own route so the S-04 decoder (exact members) keeps working.
     public const string LinePricingPath = "/api/v1/sales/drafts/{id}/line-pricing";
+
+    /// <summary>SAT-D436 (AK-5): the order's kg prices and realization (draft read and price read).</summary>
+    public const string KilogramPricesPath = "/api/v1/sales/drafts/{id}/kilogram-prices";
     public const string PriceReferencesPath = "/api/v1/sales/drafts/{id}/lines/{lineId}/price-references";
 
     // DEC-SAL-002 / AT-023: the quantity revision (200 with the detail after the change; same-key replay 200 +

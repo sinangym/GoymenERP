@@ -458,6 +458,9 @@ public sealed partial class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory fa
         public Task<SalesOrderDraftLinePricingResponse> GetDraftLinePricingAsync(Guid draftId, CancellationToken cancellationToken = default) =>
             Task.FromException<SalesOrderDraftLinePricingResponse>(new SalesDraftServiceException(404, "not_found"));
 
+        public Task<SalesOrderKilogramPricesResponse> GetDraftKilogramPricesAsync(Guid draftId, CancellationToken cancellationToken = default) =>
+            Task.FromException<SalesOrderKilogramPricesResponse>(new SalesDraftServiceException(404, "not_found"));
+
         public Task<SalesOrderDraftPriceReferencesResponse> GetLinePriceReferencesAsync(Guid draftId, Guid lineId,
             CancellationToken cancellationToken = default) =>
             Task.FromException<SalesOrderDraftPriceReferencesResponse>(new SalesDraftServiceException(404, "not_found"));

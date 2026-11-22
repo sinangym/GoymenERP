@@ -777,7 +777,31 @@ public sealed partial class SalesInvoiceService(
                 line.Share.TheoreticalKilograms is { } theoretical ? KilogramText(theoretical) : null,
                 line.Share.ActualKilograms is { } actual ? KilogramText(actual) : null))],
             invoice.CreatedBy, invoice.CreatedAtUtc, DecisionView(invoice.Decision), PaymentAllocationWarning: null, IsReplay: isReplay,
-            Match: MatchView(invoice.Match), Finalization: FinalizationView(invoice));
+            Match: MatchView(invoice.Match), Finalization: FinalizationView(invoice), KilogramPrices: KilogramPrices(invoice));
+    }
+
+    /// <summary>
+    /// SAT-D436 / SAT-D439 (AK-5): an invoice with a piece line shows each line's theoretical and actual kg price and the document's
+    /// (the shared calculator; document figures only while every line has that kg). Closed until the formula golden is in main.
+    /// </summary>
+    internal static SalesInvoiceKilogramPricesV1? KilogramPrices(SalesInvoice invoice)
+    {
+        if (!invoice.Lines.Any(line => line.Share.CarriesKilogramInformation)) return null;
+        if (!SalesDraftService.KilogramPriceGoldenAccepted)
+            return new SalesInvoiceKilogramPricesV1(SalesKilogramPriceStatesV1.FormulaGoldenPending);
+        var lines = invoice.Lines.OrderBy(line => line.LineNo).Select(line =>
+        {
+            // A kg line's invoiced quantity is its scale kg, so its theoretical and actual kg are that quantity (TK4).
+            var theoretical = line.Share.CarriesKilogramInformation ? line.Share.TheoreticalKilograms : line.Share.Quantity;
+            var actual = line.Share.CarriesKilogramInformation ? line.Share.ActualKilograms : line.Share.Quantity;
+            return (line, amount: (decimal?)line.Amounts.Net.Amount, theoretical, actual);
+        }).ToList();
+        return new SalesInvoiceKilogramPricesV1(SalesKilogramPriceStatesV1.Computed,
+            [.. lines.Select(item => new SalesInvoiceLineKilogramPricesV1(item.line.Id,
+                SalesDraftService.View(SalesKilogramPriceCalculator.Line(item.amount, item.theoretical, SalesKilogramPriceState.TheoreticalKgUnavailable)),
+                SalesDraftService.View(SalesKilogramPriceCalculator.Line(item.amount, item.actual, SalesKilogramPriceState.WeighedKgUnavailable))))],
+            SalesDraftService.View(SalesKilogramPriceCalculator.Document([.. lines.Select(item => new SalesKilogramPriceLine(item.amount, item.theoretical))])),
+            SalesDraftService.View(SalesKilogramPriceCalculator.Document([.. lines.Select(item => new SalesKilogramPriceLine(item.amount, item.actual))])));
     }
 
     private static SalesInvoiceDecisionView? DecisionView(SalesInvoiceDecisionFacts facts) => facts == SalesInvoiceDecisionFacts.None

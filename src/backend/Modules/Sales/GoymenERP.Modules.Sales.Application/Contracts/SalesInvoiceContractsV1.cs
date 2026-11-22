@@ -401,7 +401,9 @@ public sealed record SalesInvoiceDetailView(
     string? PaymentAllocationWarning = null,
     bool IsReplay = false,
     SalesInvoiceMatchView? Match = null,
-    SalesInvoiceFinalizationView? Finalization = null);
+    SalesInvoiceFinalizationView? Finalization = null,
+    // SAT-D436 (AK-5): the kg prices of an invoice with a piece line; omitted on a kg-only invoice.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SalesInvoiceKilogramPricesV1? KilogramPrices = null);
 
 /// <summary>The Finance axis of a finalised invoice (SAT-D208): Sales commits first and never calls a waiting invoice admitted.</summary>
 public static class SalesInvoiceFinanceStatusesV1
