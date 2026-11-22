@@ -20,6 +20,12 @@ internal abstract class LogisticsWorkInboxRows
 
     public abstract IQueryable<WeighingDifferenceRecordRow> WeighingDifferences { get; }
 
+    /// <summary>WP6 D4: who entered the weighing or a shipment of a weighing-difference record (the owner's "may not approve" set).</summary>
+    public abstract IQueryable<WeighingDifferenceEnteredByRow> WeighingDifferenceEnteredBy { get; }
+
+    /// <summary>WP6: the physical customer returns (LOJ customer return acceptance).</summary>
+    public abstract IQueryable<CustomerReturnRow> CustomerReturns { get; }
+
     public abstract Task<List<T>> ListAsync<T>(IQueryable<T> query, CancellationToken cancellationToken);
 }
 
@@ -35,6 +41,11 @@ internal sealed class LogisticsWorkInboxDbRows(LogisticsDbContext dbContext) : L
     public override IQueryable<LogisticsPlanExcessRow> PlanExcessExceptions => dbContext.PlanExcessExceptions.AsNoTracking();
 
     public override IQueryable<WeighingDifferenceRecordRow> WeighingDifferences => dbContext.WeighingDifferences.AsNoTracking();
+
+    public override IQueryable<WeighingDifferenceEnteredByRow> WeighingDifferenceEnteredBy =>
+        dbContext.WeighingDifferenceEnteredBy.AsNoTracking();
+
+    public override IQueryable<CustomerReturnRow> CustomerReturns => dbContext.CustomerReturns.AsNoTracking();
 
     public override Task<List<T>> ListAsync<T>(IQueryable<T> query, CancellationToken cancellationToken) =>
         query.ToListAsync(cancellationToken);

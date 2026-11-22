@@ -141,6 +141,47 @@ public sealed class LogisticsWeighingDifferenceWorkInboxSourceTests
     }
 
     [Fact]
+    public async Task Who_entered_the_weighing_or_a_shipment_is_the_owners_may_not_approve_set_beside_the_recorder()
+    {
+        var fixture = new F();
+        fixture.Instruction(F.Id(1));
+        Note(fixture, F.Id(1), F.Id(11));
+        Note(fixture, F.Id(1), F.Id(12));
+        Record(fixture, F.Id(1), F.Id(11), F.Id(21), status: 2, minutes: 1);
+        Record(fixture, F.Id(1), F.Id(12), F.Id(22), status: 2, minutes: 2);
+        EnteredBy(fixture, F.Id(21), "SENTETIK-kantar", "SENTETIK-sevk", F.Maker, "SENTETIK-kantar");
+        EnteredBy(fixture, F.Id(22), F.Maker);
+        EnteredBy(fixture, F.Id(23), "SENTETIK-baska-kayit");
+        var source = new LogisticsWeighingDifferenceWorkInboxSourceV1(fixture.Rows, fixture.Fence);
+
+        var result = await source.ListPendingAsync(fixture.Context(), 10, CancellationToken.None);
+
+        // WP6 D4: WeighingDifferenceRecord.Approve refuses everyone who entered the weighing or a shipment (ROL-D14 keeps the
+        // recorder out too); each actor once, the recorder not repeated, another record's actors never mixed in.
+        Assert.Equal(["SENTETIK-kantar", "SENTETIK-sevk"], result.Items![0].ExcludedDeciders);
+        Assert.Null(result.Items![1].ExcludedDeciders);
+        Assert.True(result.Items![0].Excludes("SENTETIK-sevk"));
+        Assert.True(result.Items![0].Excludes(F.Maker));
+        Assert.False(result.Items![0].Excludes(F.Approver));
+    }
+
+    [Fact]
+    public async Task A_record_with_more_entering_actors_than_the_contract_carries_is_unavailable_never_truncated()
+    {
+        var fixture = new F();
+        fixture.Instruction(F.Id(1));
+        Note(fixture, F.Id(1), F.Id(11));
+        Record(fixture, F.Id(1), F.Id(11), F.Id(21), status: 2, minutes: 1);
+        EnteredBy(fixture, F.Id(21), [.. Enumerable.Range(0, WorkInboxRulesV1.MaxExcludedDecidersPerItem + 1)
+            .Select(n => $"SENTETIK-actor-{n}")]);
+        var source = new LogisticsWeighingDifferenceWorkInboxSourceV1(fixture.Rows, fixture.Fence);
+
+        var result = await source.ListPendingAsync(fixture.Context(), 10, CancellationToken.None);
+
+        Assert.Equal(NativeApprovalQueueOutcomeV1.Unavailable, result.Outcome);
+    }
+
+    [Fact]
     public async Task More_records_than_the_maximum_answer_the_oldest_and_has_more()
     {
         var fixture = new F();
@@ -171,6 +212,12 @@ public sealed class LogisticsWeighingDifferenceWorkInboxSourceTests
         Assert.Equal(NativeApprovalQueueOutcomeV1.Found, result.Outcome);
         Assert.Contains("[WeighingDifferences]", Assert.Single(rows.Sql), StringComparison.Ordinal);
     }
+
+    private static void EnteredBy(F fixture, Guid recordId, params string[] actors) =>
+        fixture.Rows.WeighingDifferenceEnteredByRows.AddRange(actors.Select(actor => new WeighingDifferenceEnteredByRow
+        {
+            CompanyId = F.CompanyA, RecordId = recordId, ActorId = actor,
+        }));
 
     private static void Note(F fixture, Guid instructionId, Guid noteId, string? series = null, long? sequence = null,
         Guid? companyId = null) =>

@@ -12,7 +12,9 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.WorkInbox;
 /// <c>ApproveLogisticsWeighingDifferenceV1</c> accepts — and is decided on the instruction detail screen (the dispatch note's
 /// kilogram panel) by a holder of <c>logistics.weighing-differences.approve</c> who entered neither the weighing nor a shipment
 /// (the inbox decides nothing). Every pending record of the company is returned, the recorder's own included: Work hides a
-/// maker's own item.
+/// maker's own item. WP6 (D4): the owner's "may not approve" set (<c>WeighingDifferenceRecord.Approve</c>) is everyone who
+/// entered the weighing or a shipment; they are the item's <c>ExcludedDeciders</c> beside the recorder (ROL-D14), read from the
+/// record's own entered-by rows. A record with more such actors than the contract carries is unavailable (never truncated).
 /// <para>
 /// The rule results are the record's stored evaluation (the single calculator's result written once at recording): the
 /// approval rate Settings gave and the excess ratio (<see cref="WeighingDifferenceCalculator.ExcessRatioPercent"/>), the note
@@ -122,10 +124,35 @@ internal sealed class LogisticsWeighingDifferenceWorkInboxSourceV1 : IWorkInboxS
             return afterRead;
         }
 
-        var items = new List<WorkInboxItemV1>(Math.Min(pending.Count, maxCount));
-        foreach (var row in pending.Take(maxCount))
+        var shown = pending.Take(maxCount).ToList();
+        ILookup<Guid, string> enteredBy = Array.Empty<(Guid, string)>().ToLookup(entry => entry.Item1, entry => entry.Item2);
+        if (shown.Count > 0)
         {
-            if (!TryItem(row, out var item))
+            try
+            {
+                var recordIds = shown.Select(row => row.RecordId).ToArray();
+                var actors = await rows.ListAsync(
+                    rows.WeighingDifferenceEnteredBy
+                        .Where(entry => entry.CompanyId == companyId && recordIds.Contains(entry.RecordId))
+                        .Select(entry => new { entry.RecordId, entry.ActorId }),
+                    cancellationToken);
+                enteredBy = actors.ToLookup(entry => entry.RecordId, entry => entry.ActorId);
+            }
+            catch (Exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                return await fence.UnavailableAsync(context, ApproverPermission, cancellationToken);
+            }
+
+            if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is { } afterActors)
+            {
+                return afterActors;
+            }
+        }
+
+        var items = new List<WorkInboxItemV1>(Math.Min(pending.Count, maxCount));
+        foreach (var row in shown)
+        {
+            if (!TryItem(row, enteredBy[row.RecordId], out var item))
             {
                 // A record Logistics cannot read as its own invariants say: unavailable, never a partial list.
                 return WorkInboxSourceResultV1.Unavailable();
@@ -137,9 +164,30 @@ internal sealed class LogisticsWeighingDifferenceWorkInboxSourceV1 : IWorkInboxS
         return WorkInboxSourceResultV1.Found(companyId, items, pending.Count > maxCount);
     }
 
-    private static bool TryItem(Pending row, out WorkInboxItemV1 item)
+    private static bool TryItem(Pending row, IEnumerable<string> enteredBy, out WorkInboxItemV1 item)
     {
         item = null!;
+        var excluded = new List<string>();
+        foreach (var actor in enteredBy)
+        {
+            if (string.IsNullOrWhiteSpace(actor))
+            {
+                return false;
+            }
+
+            var trimmed = actor.Trim();
+            if (!WorkInboxRulesV1.SameUser(trimmed, row.RecordedBy)
+                && !excluded.Any(known => WorkInboxRulesV1.SameUser(known, trimmed)))
+            {
+                excluded.Add(trimmed);
+            }
+        }
+
+        if (excluded.Count > WorkInboxRulesV1.MaxExcludedDecidersPerItem)
+        {
+            return false;
+        }
+
         if (row.RecordId == Guid.Empty || row.InstructionId == Guid.Empty || row.DispatchNoteId == Guid.Empty
             || string.IsNullOrWhiteSpace(row.RecordedBy) || row.TheoreticalKg < 0m || row.ScaleKg < 0m || row.TotalExcessKg < 0m
             || (row.SeriesCode is null) != (row.SequenceNo is null))
@@ -186,7 +234,8 @@ internal sealed class LogisticsWeighingDifferenceWorkInboxSourceV1 : IWorkInboxS
             [
                 new WorkApprovalReferenceV1("dispatch-note", noteLabel, row.DispatchNoteId, link),
                 LogisticsWorkInboxFence.InstructionReference(row.InstructionId),
-            ]);
+            ],
+            excluded.Count == 0 ? null : excluded);
         return true;
     }
 
