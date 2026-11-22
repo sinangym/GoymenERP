@@ -155,7 +155,8 @@ public sealed class AiYa1ReadToolsTests
         }.Concat(AiWpa3bReadToolsTests.Descriptors()).ToArray();
         Assert.Equal(descriptors.Length, descriptors.Select(descriptor => descriptor.ToolId).Distinct(StringComparer.Ordinal).Count());
         var entries = catalog.RootElement.GetProperty("tools").EnumerateArray().ToArray();
-        Assert.Equal(descriptors.Length, entries.Length);
+        // Every catalog entry is a reviewed descriptor: the two Y-A1 tools here and the WP-A3c tools checked in AiWpA3cReadToolsTests.
+        Assert.Equal(descriptors.Length + AiWpA3cReadToolsTests.CatalogDescriptors().Length, entries.Length);
         foreach (var descriptor in descriptors)
         {
             var entry = Assert.Single(entries, e => e.GetProperty("toolId").GetString() == descriptor.ToolId);

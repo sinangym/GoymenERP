@@ -220,6 +220,11 @@ builder.Services.AddScoped<IWorkInboxSourceV1>(provider => new NativeApprovalWor
 builder.Services.AddScoped<IWorkInboxSourceV1>(provider => new NativeApprovalWorkInboxSourceV1(
     ActivatorUtilities.CreateInstance<SalesOrderDraftPendingApprovalAdapterV1>(provider)));
 builder.Services.AddScoped<WorkInboxReadQueryV1>();
+// WP-A3c: Work READ tools for the AI catalog over the same inbox query (maker ≠ checker, owner permissions) and the
+// W1-C "my tasks" read. Registration only makes them candidates of the default-deny catalog; Ai:AllowedTools stays empty.
+builder.Services.AddScoped<GoymenERP.BuildingBlocks.Ai.IAiOwnerToolV1, GoymenERP.Api.WorkRuntime.Ai.WorkInboxAwaitingMeAiTool>();
+builder.Services.AddScoped<GoymenERP.BuildingBlocks.Ai.IAiOwnerToolV1, GoymenERP.Api.WorkRuntime.Ai.WorkOverdueApprovalsAiTool>();
+builder.Services.AddScoped<GoymenERP.BuildingBlocks.Ai.IAiOwnerToolV1, GoymenERP.Api.WorkRuntime.Ai.WorkMyTasksAiTool>();
 builder.Services.AddScoped<IFinancePartyAccountPort, CounterpartyFinancePartyAccountPort>();
 // B-17: the version bump with the account's roles (dual role) and supplier IBAN view; V1 stays for its consumers.
 builder.Services.AddScoped<IFinancePartyAccountPortV2, CounterpartyFinancePartyAccountPortV2>();

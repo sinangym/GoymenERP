@@ -159,7 +159,7 @@ public sealed partial class AccountingApiService(
     IErpAuthorityRevalidationService authority,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
-    ICorrelationContext correlation)
+    ICorrelationContext correlation) : IAccountingOwnerReadV1
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
