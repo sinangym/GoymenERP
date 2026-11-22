@@ -141,7 +141,7 @@ function text(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
 
-const ALLOCATION_FIELDS = [
+export const ALLOCATION_FIELDS = [
   'allocationId', 'companyId', 'version', 'status', 'labelId', 'productId', 'demandKind', 'demandId', 'demandLineId',
   'demandProductVersion', 'allocatedKg', 'remainingKg', 'reason', 'reservedUntilUtc', 'createdAtUtc', 'updatedAtUtc',
 ] as const

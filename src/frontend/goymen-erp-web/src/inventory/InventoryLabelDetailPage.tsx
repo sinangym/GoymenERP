@@ -185,7 +185,7 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
       {balances.positions.length === 0
         ? <p>Bu etiket için fiziksel stok konumu yok.</p>
         : <div className={styles.tableWrap}><table>
-          <thead><tr><th>Sahip</th><th>Gözeten</th><th>Lokasyon</th><th>Durum</th><th>Miktar</th>{showPositionPieces ? <th>{PT.positionPieces}</th> : null}</tr></thead>
+          <thead><tr><th>Sahip</th><th>Gözeten</th><th>Lokasyon</th><th>Durum</th><th>Miktar</th>{showPositionPieces ? <th scope="col">{PT.positionPieces}</th> : null}</tr></thead>
           <tbody>{balances.positions.map((position, index) => <tr key={`${position.locationId}:${position.ownerId}:${position.custodianId}:${position.block}:${index}`}>
             <td>{position.ownerKind}<br /><span className={styles.mono}>{position.ownerId}</span></td>
             <td>{position.custodianKind}<br /><span className={styles.mono}>{position.custodianId}</span></td>

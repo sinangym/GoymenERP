@@ -106,3 +106,106 @@ describe('SAT-D434 / SAT-D436 invoice detail members (additive)', async () => {
     expect(decodeSalesInvoiceDetail(withPiece({}, { kilogramPrices: { state: 'Other' } }), INVOICE_ID)).toBeNull()
   })
 })
+
+describe('SAT-D436 / AK-4b: the opened (Computed) kg price panels', () => {
+  const invoiceLineOf = (over: Record<string, unknown> = {}) => ({
+    lineId: LINE, lineNo: 1, shipmentId: LINE, dispatchNoteNumber: 'IRS-1', productId: LINE, unitId: LINE, quantity: '40',
+    netUnitPrice: '250', vatPercent: '20', amounts: { netAmount: '10000.00', vatAmount: '2000.00', withheldVatAmount: '0.00',
+      grossAmount: '12000.00', payableAmount: '12000.00' }, theoreticalKg: '493.8', actualKg: '500.16', ...over,
+  }) as InvoiceLine
+
+  it('shows every server figure of a computed order line and the document figures, with no pending text', () => {
+    render(<OrderKilogramPricesView prices={decodeOrderKilogramPrices(computedOrder())!} />)
+    const line = screen.getByTestId('sales-kilogram-line-1')
+    const fact = (label: string) => {
+      const term = Array.from(line.querySelectorAll('dt')).find((dt) => dt.textContent === label)
+      return term?.nextElementSibling?.textContent
+    }
+    expect(fact(KILOGRAM_PRICE_TEXT.theoreticalKg)).toBe('1234.5')
+    expect(fact(KILOGRAM_PRICE_TEXT.theoreticalPrice)).toBe(KILOGRAM_PRICE_TEXT.perKg('20.25'))
+    expect(fact(KILOGRAM_PRICE_TEXT.invoicedQuantity)).toBe('40')
+    expect(fact(KILOGRAM_PRICE_TEXT.invoicedAmount)).toBe('10000.00')
+    expect(fact(KILOGRAM_PRICE_TEXT.actualKg)).toBe('500.16')
+    expect(fact(KILOGRAM_PRICE_TEXT.actualPrice)).toBe(KILOGRAM_PRICE_TEXT.perKg('19.99'))
+    expect(fact(KILOGRAM_PRICE_TEXT.kgDifference)).toBe('6.36')
+    expect(fact(KILOGRAM_PRICE_TEXT.deviationPercent)).toBe(KILOGRAM_PRICE_TEXT.percent('1.29'))
+    expect(screen.getByTestId('sales-kilogram-document-theoretical').textContent).toBe(KILOGRAM_PRICE_TEXT.perKg('20.25'))
+    expect(screen.getByTestId('sales-kilogram-document-actual').textContent).toBe(KILOGRAM_PRICE_TEXT.perKg('19.99'))
+    expect(screen.queryByTestId('sales-kilogram-prices-pending')).toBeNull()
+    // The document currency note stays: the figures are in the document currency, no rate is applied (SAT-D439).
+    expect(screen.getByText(KILOGRAM_PRICE_TEXT.note)).toBeTruthy()
+  })
+
+  it('shows a dash for the figures the server did not send, never a zero', () => {
+    const base = computedOrder()
+    const prices = decodeOrderKilogramPrices({
+      ...base,
+      lines: [{ ...base.lines[0], theoreticalKg: null, theoreticalPrice: { state: 'TheoreticalKgUnavailable' },
+        invoicedQuantity: '0', invoicedAmount: null, actualKg: null, actualPrice: { state: 'WeighedKgUnavailable' },
+        kgDifference: null, deviationPercent: null }],
+    })!
+    render(<OrderKilogramPricesView prices={prices} />)
+    const values = Array.from(screen.getByTestId('sales-kilogram-line-1').querySelectorAll('dd')).map((dd) => dd.textContent)
+    expect(values).toEqual([
+      KILOGRAM_PRICE_TEXT.none, KILOGRAM_PRICE_TEXT.state.TheoreticalKgUnavailable, '0', KILOGRAM_PRICE_TEXT.none,
+      KILOGRAM_PRICE_TEXT.none, KILOGRAM_PRICE_TEXT.state.WeighedKgUnavailable, KILOGRAM_PRICE_TEXT.none,
+      KILOGRAM_PRICE_TEXT.none,
+    ])
+  })
+
+  it.each([
+    'TheoreticalKgUnavailable', 'WeighedKgUnavailable', 'ZeroKg', 'AmountUnavailable', 'DocumentNotAllKilogramLines',
+    'OutOfRange',
+  ] as const)('tells why a price is not shown for %s, on the line and on the document', (state) => {
+    const reason = KILOGRAM_PRICE_TEXT.state[state]
+    expect(reason).toMatch(/\S/)
+    const base = computedOrder()
+    const prices = decodeOrderKilogramPrices({
+      ...base, lines: [{ ...base.lines[0], theoreticalPrice: { state }, actualPrice: { state } }],
+      documentTheoreticalPrice: { state }, documentActualPrice: { state },
+    })!
+    render(<OrderKilogramPricesView prices={prices} />)
+    expect(screen.getByTestId('sales-kilogram-line-1-theoretical').textContent).toBe(reason)
+    expect(screen.getByTestId('sales-kilogram-line-1-actual').textContent).toBe(reason)
+    expect(screen.getByTestId('sales-kilogram-document-theoretical').textContent).toBe(reason)
+    expect(screen.getByTestId('sales-kilogram-document-actual').textContent).toBe(reason)
+  })
+
+  it('has one distinct reason text per unavailable state', () => {
+    const reasons = (['TheoreticalKgUnavailable', 'WeighedKgUnavailable', 'ZeroKg', 'AmountUnavailable',
+      'DocumentNotAllKilogramLines', 'OutOfRange'] as const).map((state) => KILOGRAM_PRICE_TEXT.state[state])
+    expect(new Set(reasons).size).toBe(reasons.length)
+  })
+
+  it('shows a computed invoice block: each line’s two kg prices and the document figures', () => {
+    const prices = decodeInvoiceKilogramPrices({
+      state: 'Computed',
+      lines: [{ lineId: LINE, theoreticalPrice: shown('20.25'), actualPrice: shown('19.99') }],
+      documentTheoreticalPrice: shown('20.25'),
+      documentActualPrice: { state: 'DocumentNotAllKilogramLines' },
+    })!
+    render(<InvoiceKilogramPricesView prices={prices} lines={[invoiceLineOf()]} />)
+    const line = screen.getByTestId('sales-invoice-kilogram-line-1').textContent
+    expect(line).toContain(`${KILOGRAM_PRICE_TEXT.theoreticalPrice}: ${KILOGRAM_PRICE_TEXT.perKg('20.25')}`)
+    expect(line).toContain(`${KILOGRAM_PRICE_TEXT.actualPrice}: ${KILOGRAM_PRICE_TEXT.perKg('19.99')}`)
+    expect(screen.getByTestId('sales-invoice-kilogram-document-theoretical').textContent).toBe(KILOGRAM_PRICE_TEXT.perKg('20.25'))
+    expect(screen.getByTestId('sales-invoice-kilogram-document-actual').textContent)
+      .toBe(KILOGRAM_PRICE_TEXT.state.DocumentNotAllKilogramLines)
+    expect(screen.getByTestId('sales-invoice-kilogram-info-1').textContent).toContain('493.8')
+    expect(screen.queryByTestId('sales-invoice-kilogram-prices-pending')).toBeNull()
+  })
+
+  it('decodes a computed invoice block strictly', () => {
+    const block = {
+      state: 'Computed', lines: [{ lineId: LINE, theoreticalPrice: shown('20.25'), actualPrice: { state: 'ZeroKg' } }],
+      documentTheoreticalPrice: shown('20.25'), documentActualPrice: { state: 'WeighedKgUnavailable' },
+    }
+    expect(decodeInvoiceKilogramPrices(block)?.lines?.[0]?.actualPrice).toEqual({ state: 'ZeroKg', value: null })
+    expect(decodeInvoiceKilogramPrices({ ...block, lines: null })).toBeNull()
+    expect(decodeInvoiceKilogramPrices({ ...block, documentActualPrice: undefined })).toBeNull()
+    expect(decodeInvoiceKilogramPrices({ ...block, lines: [{ ...block.lines[0], extra: 1 }] })).toBeNull()
+    expect(decodeInvoiceKilogramPrices({ ...block, lines: [{ ...block.lines[0], theoreticalPrice: { state: 'Shown', value: 20.25 } }] }))
+      .toBeNull()
+    expect(decodeInvoiceKilogramPrices({ ...block, currencyId: CURRENCY })).toBeNull()
+  })
+})
