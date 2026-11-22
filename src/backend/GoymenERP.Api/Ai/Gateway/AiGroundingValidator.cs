@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace GoymenERP.Api.Ai.Gateway;
@@ -26,6 +27,7 @@ public static partial class AiGroundingValidator
         foreach (var source in cited.Select(number => sources[number - 1]))
         {
             AddNumbers(allowed, source.ContentJson);
+            AddJsonStringNumbers(allowed, source.ContentJson);
             AddNumbers(allowed, source.Title);
             AddNumbers(allowed, source.SourceVersion);
             AddNumbers(allowed, source.AsOfUtc.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture));
@@ -33,6 +35,46 @@ public static partial class AiGroundingValidator
 
         var body = CitationMarker().Replace(text, " ");
         return NumberToken().Matches(body).All(match => allowed.Contains(match.Value));
+    }
+
+    /// <summary>
+    /// WP-A2 finding: canonical content JSON escapes non-ASCII characters (<c>"§9.1"</c> is written <c>"\u00a79.1"</c>), so a
+    /// number next to such a character is not a token of the raw text. The decoded string values (and property names) are
+    /// scanned as well; this only admits numbers that are really in the source.
+    /// </summary>
+    private static void AddJsonStringNumbers(HashSet<string> allowed, string? contentJson)
+    {
+        if (string.IsNullOrEmpty(contentJson)) return;
+        try
+        {
+            using var document = JsonDocument.Parse(contentJson);
+            AddElementNumbers(allowed, document.RootElement);
+        }
+        catch (JsonException)
+        {
+            // Not JSON: the raw text scan above is all there is.
+        }
+    }
+
+    private static void AddElementNumbers(HashSet<string> allowed, JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.String:
+                AddNumbers(allowed, element.GetString());
+                break;
+            case JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    AddNumbers(allowed, property.Name);
+                    AddElementNumbers(allowed, property.Value);
+                }
+
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray()) AddElementNumbers(allowed, item);
+                break;
+        }
     }
 
     private static void AddNumbers(HashSet<string> allowed, string? value)

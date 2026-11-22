@@ -73,6 +73,28 @@ provider-reported units (zero on failure). The ledger is append-only; the month 
 stored by Settings and never renumbered; a new member takes the next number and needs a Settings check-constraint widening.
 A breaking change is a new `…V2` contract beside this one.
 
+
+## Evaluation runner (WP-A2, `ai-eval-runner.v1`)
+
+`Evaluation/AiEvalRunner` runs the SENTETIK set (`contracts/ai/eval/eval-set-v1.json`) for one candidate, or two for the
+YOL-D21 provider comparison. Per item: classify (AI-D44/AI-D42: personal data → Confidential) → an item with personal data
+is **withheld** from an external candidate (neither planner nor gateway called) → plan with the candidate's
+`IAiModelProviderV1` → run catalog READ tools only when the item grants the permission (out-of-authority items grant none)
+→ compose through `IAiGatewayV1` (Panel × Answer) → score source accuracy (citations only to returned sources, expected
+sources among the cited content), correct answer, abstention, refusal. A gateway status other than Answered/CannotAnswer
+fails the item (a closed feature is not a correct refusal). `AiEvalReportWriter` writes JSON and Turkish Markdown with
+identities, verdicts and reason codes only (no question/answer text).
+
+- Candidates: `AiEvalCandidateV1` = name + kind (`Fake` | `External`) + planner + gateway. Only a Fake candidate may plan
+  with the expected call as a hint (oracle harness self-check); an external candidate never does. No external candidate
+  is wired: provider, contract, key, KVKK and budget are human gates (S5, OPEN-020).
+- Tools: `AiEvalFixtureToolRunner` — real `decisions.lookup.v1` over the index; pending shipments from the recorded fixture
+  result (the tool itself is pinned against the same fixtures in `LogisticsPendingShipmentsAiToolTests`).
+- Scoring has no model judge (ASSUMPTION-AI-EVAL-SCORING-1: identities, summary term coverage ≥ 0.5, marker phrases;
+  `AiEvalScoringOptionsV1`). A real provider comparison should add a human-reviewed sample.
+- Run: `GOYMEN_AI_EVAL_REPORT_DIR=<dir> dotnet test tests/GoymenERP.Api.IntegrationTests --filter
+  "FullyQualifiedName~AiEvalRunnerTests"` writes `ai-eval-report.json` / `.md`. CI wiring is WP16.
+
 ## Open points (NEEDS-SINAN, fail-closed until decided)
 
 - Monthly budget value and its unit (provider billing unit/tokens vs. currency) — S5.
