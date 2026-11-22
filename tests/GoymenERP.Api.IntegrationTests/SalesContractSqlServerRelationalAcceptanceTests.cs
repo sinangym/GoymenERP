@@ -6,6 +6,7 @@ using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Domain.SalesContracts;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations;
+using GoymenERP.Modules.Sales.Infrastructure.WorkInbox;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -109,6 +110,42 @@ public sealed class SalesContractSqlServerRelationalAcceptanceTests
         {
             Assert.Null(await other.Store.FindContractAsync(pending.Id));
             Assert.Empty(await other.Store.ListContractsAsync(50));
+        }
+    }
+
+    [SqlServerFact]
+    public async Task The_work_inbox_store_lists_a_pending_contract_discount_for_its_company_until_it_is_decided()
+    {
+        await using var run = await Run.StartAsync();
+        var pending = await run.PendingContractAsync("k-w-create");
+
+        await using (var context = run.SalesContext(CompanyA))
+        {
+            var listed = Assert.Single(await new SalesWorkInboxApprovalStoreV1(context).ListPendingDiscountContractsAsync(CompanyA, 10, default));
+            Assert.Equal((pending.Id, CompanyA, pending.ContractNo, Seller, (decimal?)null),
+                (listed.Id, listed.CompanyId, listed.ContractNo, listed.CreatedBy, listed.DiscountLimitPercent));
+            Assert.Equal(pending.DiscountRules.Select(rule => (rule.RuleNo, rule.RatePercent)),
+                listed.DiscountRules.Select(rule => (rule.RuleNo, rule.RatePercent)));
+            Assert.True(SalesContract.RequiresDiscountApproval(listed.DiscountRules, listed.DiscountLimitPercent));
+        }
+
+        await using (var other = run.SalesContext(CompanyB))
+        {
+            var store = new SalesWorkInboxApprovalStoreV1(other);
+            Assert.Empty(await store.ListPendingDiscountContractsAsync(CompanyB, 10, default));
+            Assert.Empty(await store.ListPendingDiscountContractsAsync(CompanyA, 10, default));
+        }
+
+        await using (var scope = run.SalesStore(CompanyA))
+        {
+            await scope.Store.DecideContractAsync(run.Envelope("k-w-approve", Manager, SalesPermissionManifestV1.ContractsDiscountApprove),
+                Hash('b'), SalesContractCommands.ApproveDiscountV1, pending.Id,
+                (contract, now) => contract.ApproveDiscount(1, Manager, now), Approved);
+        }
+
+        await using (var context = run.SalesContext(CompanyA))
+        {
+            Assert.Empty(await new SalesWorkInboxApprovalStoreV1(context).ListPendingDiscountContractsAsync(CompanyA, 10, default));
         }
     }
 

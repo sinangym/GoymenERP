@@ -88,7 +88,7 @@ internal static class SalesWorkInboxTestDoubles
     }
 
     /// <summary>Every item satisfies the Work source contract's shape rules.</summary>
-    public static void AssertContractShape(IWorkInboxSourceV1 source, WorkInboxSourceResultV1 result)
+    public static void AssertContractShape(IWorkInboxSourceV1 source, WorkInboxSourceResultV1 result, bool ownerNamesMaker = true)
     {
         Assert.True(NativeApprovalQueueRulesV1.IsValidKind(source.Module, source.Kind));
         Assert.True(WorkInboxRulesV1.IsValidPermission(source.ApproverPermission));
@@ -103,7 +103,18 @@ internal static class SalesWorkInboxTestDoubles
             Assert.True(item.DocumentLabel.Length <= WorkInboxRulesV1.MaxDocumentLabelLength);
             Assert.Equal(TimeSpan.Zero, item.WaitingSinceUtc.Offset);
             Assert.True(NativeApprovalQueueRulesV1.IsValidLink(item.Link), item.Link);
-            Assert.False(string.IsNullOrWhiteSpace(item.PreparedBy));
+            if (ownerNamesMaker)
+            {
+                Assert.False(string.IsNullOrWhiteSpace(item.PreparedBy));
+            }
+            else
+            {
+                Assert.Null(item.PreparedBy);
+                Assert.Null(item.ExcludedDeciders);
+            }
+
+            Assert.True(item.ExcludedDeciders is null
+                || item.ExcludedDeciders.Count is > 0 and <= WorkInboxRulesV1.MaxExcludedDecidersPerItem);
             Assert.InRange(item.Rules.Count, 1, WorkInboxRulesV1.MaxRulesPerItem);
             Assert.All(item.Rules, rule => Assert.True(WorkInboxRulesV1.IsValidRule(source.Module, rule), rule.RuleCode));
             Assert.InRange(item.References.Count, 0, WorkInboxRulesV1.MaxReferencesPerItem);

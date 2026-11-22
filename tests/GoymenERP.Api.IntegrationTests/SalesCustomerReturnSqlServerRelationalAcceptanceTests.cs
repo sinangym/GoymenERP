@@ -10,6 +10,7 @@ using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Domain.Invoices;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations;
+using GoymenERP.Modules.Sales.Infrastructure.WorkInbox;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -121,6 +122,51 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[CustomerReturns] WHERE [State] = 4"),
             await run.ScalarAsync<int>("SELECT MAX([FinalizationSequence]) FROM [sales].[CustomerReturns]"),
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[CustomerReturns] WHERE [CustomerDocumentNo] = N'IADE-SENTETIK-3'")));
+    }
+
+    [SqlServerFact]
+    public async Task The_work_inbox_store_lists_a_customer_return_only_while_it_waits_for_approval_and_only_for_its_company()
+    {
+        await using var run = await Run.StartAsync();
+        var (invoice, shipment) = await run.FinalizedInvoiceAsync("w");
+        var line = invoice.Lines.Single(item => item.LineNo == 1);
+        await using var scope = run.SalesStore(CompanyA);
+        var preparer = run.Service(scope.Store, CompanyA, Preparer, null);
+        var id = (await preparer.CreateCustomerReturnAsync(new CreateSalesCustomerReturnRequest(invoice.Id, "IADE-SENTETIK-W", Day,
+            [new CreateSalesCustomerReturnLineRequest(line.Id, "1")], shipment), Metadata("k-w-create"))).CustomerReturn.Id;
+
+        await using (var context = run.SalesContext(CompanyA))
+        {
+            var store = new SalesWorkInboxApprovalStoreV1(context);
+            // A draft return does not wait for approval; a finalised invoice is not a pending invoice.
+            Assert.Empty(await store.ListPendingCustomerReturnsAsync(CompanyA, 10, default));
+            Assert.Empty(await store.ListPendingInvoicesAsync(CompanyA, 10, default));
+        }
+
+        await preparer.SubmitCustomerReturnAsync(id, new SalesDraftStateCommandRequest("1"), Metadata("k-w-submit"));
+        await using (var context = run.SalesContext(CompanyA))
+        {
+            var pending = Assert.Single(await new SalesWorkInboxApprovalStoreV1(context).ListPendingCustomerReturnsAsync(CompanyA, 10, default));
+            Assert.Equal((id, CompanyA, "IADE-SENTETIK-W", invoice.Id, invoice.DocumentNo, Preparer, Preparer),
+                (pending.Id, pending.CompanyId, pending.CustomerDocumentNo, pending.OriginalInvoiceId, pending.OriginalDocumentNo,
+                    pending.CreatedBy, pending.SubmittedBy));
+            Assert.NotNull(pending.SubmittedAtUtc);
+        }
+
+        // Another company never sees it, neither through its context nor by asking for the first company explicitly.
+        await using (var other = run.SalesContext(CompanyB))
+        {
+            var store = new SalesWorkInboxApprovalStoreV1(other);
+            Assert.Empty(await store.ListPendingCustomerReturnsAsync(CompanyB, 10, default));
+            Assert.Empty(await store.ListPendingCustomerReturnsAsync(CompanyA, 10, default));
+        }
+
+        await run.Service(scope.Store, CompanyA, Approver, null)
+            .ApproveCustomerReturnAsync(id, new SalesDraftStateCommandRequest("2"), Metadata("k-w-approve"));
+        await using (var context = run.SalesContext(CompanyA))
+        {
+            Assert.Empty(await new SalesWorkInboxApprovalStoreV1(context).ListPendingCustomerReturnsAsync(CompanyA, 10, default));
+        }
     }
 
     [SqlServerFact]
