@@ -619,6 +619,11 @@ public sealed class WorkInboxReadQueryV1Tests
             Interactions.Add(interaction);
             return Task.FromResult(WorkApprovalInboxInteractionOutcomeV1.Recorded);
         }
+        public Task<bool> RecordDecisionAsync(Guid companyId, string kind, WorkApprovalInboxCycleV1 cycle, DateTimeOffset decidedAtUtc,
+            CancellationToken cancellationToken = default) => Task.FromResult(false);
+
+        public Task<IReadOnlyList<WorkApprovalInboxCycleV1>> ListOpenCyclesAsync(Guid companyId, string kind,
+            CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<WorkApprovalInboxCycleV1>>([]);
     }
 
     private sealed class FixedTime(DateTimeOffset now) : TimeProvider

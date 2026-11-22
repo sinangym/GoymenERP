@@ -26,7 +26,7 @@ public sealed class WorkShellCapabilityProviderTests
     public void Work_declares_the_my_tasks_route_and_its_assign_control_with_Work_permissions_only()
     {
         var provider = new WorkShellCapabilityProvider();
-        Assert.Equal(("WORK", "1.0"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(("WORK", "1.1"), (provider.Owner, provider.ContractVersion));
         // TEKNIK_TUZAKLAR 1: records with a collection member compare by reference, so each declaration is projected.
         static string Comparable(ShellCapabilityDeclaration declaration) => string.Join('\u001f',
             declaration.CapabilityId, declaration.RouteId, declaration.RoutePath, declaration.ScreenId, declaration.RoutePrecedence.ToString(),
@@ -37,6 +37,7 @@ public sealed class WorkShellCapabilityProviderTests
             {
                 "work.tasks.mine\u001fwork.tasks-mine\u001f/gorevlerim\u001fW-TASKS-01\u001fStatic\u001fSingleCompany\u001fCompanyWide\u001favailable\u001f<no-parent>\u001fwork.tasks.complete",
                 "work.tasks.assign\u001fwork.tasks-mine\u001f/gorevlerim\u001fW-TASKS-01\u001fStatic\u001fSingleCompany\u001fCompanyWide\u001favailable\u001fwork.tasks.mine\u001fwork.tasks.complete,work.tasks.assign",
+                "work.approvals.follow-up\u001fwork.approvals-follow-up\u001f/onay-takibi\u001fW-APPROVAL-FOLLOW-UP-01\u001fStatic\u001fSingleCompany\u001fCompanyWide\u001favailable\u001f<no-parent>\u001fwork.approvals.escalate",
             },
             provider.GetDeclarations().Select(Comparable).ToArray());
         Assert.All(provider.GetDeclarations().SelectMany(declaration => declaration.RequiredPermissions), permission =>
