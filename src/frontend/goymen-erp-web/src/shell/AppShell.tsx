@@ -15,7 +15,7 @@
 
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
-import { capabilityFailClosed, hasCapability, type ShellState } from './shellState'
+import { capabilityFailClosed } from './shellState'
 import { useShellDispatch, useShellState } from './shellContext'
 import { useShellOrchestrator } from './useShellOrchestrator'
 import { StateBlock } from './StateBlock'
@@ -28,21 +28,13 @@ import { SwitchConfirmDialog } from './SwitchConfirmDialog'
 import { GlobalSearchBox } from '../search/GlobalSearchBox'
 import { AI_PANEL_ID, AiPanel } from '../ai/AiPanel'
 import { AI_TEXT } from '../ai/aiText'
-import { PRICE_LIST_CAPABILITY, PRICE_LIST_ROUTE } from '../product/priceLists/capabilities'
-import { PRICE_LIST_TEXT } from '../product/priceLists/priceListText'
-import { CAPABILITY_ROUTE } from './capabilities'
-import {
-  CAPABILITY_NAV_LABEL,
-  NAV_CAPABILITIES,
-  NAV_GROUPS,
-  NAV_PURPOSE_CAPABILITIES,
-  NAV_HOME,
-  NAV_TEXT,
-  type NavEntryId,
-  type NavGroup,
-  type NavGroupId,
-} from './navigation'
-import { activeGroupOf, type DrawnGroup, type NavLeaf } from './activeGroup'
+import { NAV_CAPABILITIES, NAV_HOME, NAV_TEXT, type NavGroupId } from './navigation'
+import { activeGroupOf } from './activeGroup'
+import { drawnGroups } from './navEntries'
+import { CommandPalette } from './commandPalette/CommandPalette'
+import { PALETTE_TEXT } from './commandPalette/paletteText'
+import { browserStorage } from './commandPalette/recentScreens'
+import { useRecentScreenTracker } from './commandPalette/useRecentScreens'
 import styles from './AppShell.module.css'
 
 /** The nav order is defined in `./navigation`; re-exported for the tests that read it from the shell. */
@@ -51,40 +43,6 @@ export { NAV_CAPABILITIES }
 /** Below this width the sidebar is a drawer: the width at which the shell already stopped being two columns. */
 const COMPACT_VIEWPORT = '(max-width: 767px)'
 const SIDEBAR_ID = 'shell-sidebar'
-
-function leafOf(entry: NavEntryId): NavLeaf {
-  // #590: the price list is drawn on its OWN capability, with its own route and heading.
-  if (entry === PRICE_LIST_CAPABILITY.list) {
-    return { key: entry, path: PRICE_LIST_ROUTE.list, label: PRICE_LIST_TEXT.listHeading }
-  }
-  return { key: entry, path: CAPABILITY_ROUTE[entry], label: CAPABILITY_NAV_LABEL[entry] }
-}
-
-/**
- * A group's granted leaves. A subheading opens a section at the entry that declares it, and the section runs to the
- * next declaring entry (KLN-D2: Ana Veriler, Sistem Yönetimi). The label is drawn above the section's FIRST GRANTED
- * entry, so an actor holding only a later entry of a section still sees which section it is in. A section with no
- * granted entry draws no label: a subheading is never drawn on its own.
- */
-function grantedLeaves(group: NavGroup, state: ShellState): NavLeaf[] {
-  const leaves: NavLeaf[] = []
-  let pending: string | undefined
-  for (const entry of group.entries) {
-    const declared = group.subheadings?.[entry]
-    if (declared !== undefined) pending = declared
-    const purposes = NAV_PURPOSE_CAPABILITIES[entry] ?? [entry]
-    if (!purposes.some((purpose) => hasCapability(state, purpose))) continue
-    leaves.push({ ...leafOf(entry), subheading: pending })
-    pending = undefined
-  }
-  return leaves
-}
-
-/** The groups this actor sees: each with only its granted entries, and none left empty. */
-function drawnGroups(state: ShellState): DrawnGroup[] {
-  return NAV_GROUPS.map((group) => ({ id: group.id, label: group.label, leaves: grantedLeaves(group, state) }))
-    .filter((group) => group.leaves.length > 0)
-}
 
 function subscribeCompact(onChange: () => void): () => void {
   if (typeof window.matchMedia !== 'function') return () => {}
@@ -355,6 +313,53 @@ export function AppShell() {
   const aiOpen = aiCompany !== null
   const closeAi = () => setAiCompany(null)
 
+  // W1-B: the command palette belongs to the session and company it was opened in. A company switch, a gate, the
+  // drawer or the dirty-switch dialog closes it, so no option computed for one context survives into another.
+  const paletteContext = `${state.sessionEpoch}:${activeCompanyId ?? ''}`
+  const [paletteFor, setPaletteFor] = useState<string | null>(null)
+  if (paletteFor !== null && (paletteFor !== paletteContext || gate !== null || drawerOpen || state.phase === 'confirming-switch')) {
+    setPaletteFor(null)
+  }
+  const paletteOpen = paletteFor !== null
+  const paletteButtonRef = useRef<HTMLButtonElement>(null)
+  const paletteOpenerRef = useRef<HTMLElement | null>(null)
+  const focusMainOnPaletteCloseRef = useRef(false)
+  const paletteWasOpenRef = useRef(false)
+  const paletteAllowed = gate === null && !drawerOpen && state.phase !== 'confirming-switch'
+  const openPalette = () => {
+    if (!paletteAllowed) return
+    paletteOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setPaletteFor(paletteContext)
+  }
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLocaleLowerCase('en-US') !== 'k') return
+      if (!paletteAllowed) return
+      event.preventDefault()
+      if (paletteFor !== null) {
+        setPaletteFor(null)
+        return
+      }
+      paletteOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      setPaletteFor(paletteContext)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [paletteAllowed, paletteFor, paletteContext])
+  // Closing returns focus where it was (or to "Komutlar"); choosing a screen hands focus to the new page's content.
+  useEffect(() => {
+    const wasOpen = paletteWasOpenRef.current
+    paletteWasOpenRef.current = paletteOpen
+    if (paletteOpen || !wasOpen) return
+    const opener = paletteOpenerRef.current
+    paletteOpenerRef.current = null
+    if (focusMainOnPaletteCloseRef.current) mainRef.current?.focus()
+    else if (opener !== null && opener.isConnected && opener !== document.body) opener.focus()
+    else paletteButtonRef.current?.focus()
+    focusMainOnPaletteCloseRef.current = false
+  }, [paletteOpen])
+  useRecentScreenTracker(state, pathname, browserStorage)
+
   if (gate) return gate
 
   const switching = state.phase === 'switching'
@@ -384,7 +389,7 @@ export function AppShell() {
 
   return (
     <div className={styles.shell}>
-      <a className={styles.skipLink} href="#main-content" inert={drawerOpen}>
+      <a className={styles.skipLink} href="#main-content" inert={drawerOpen || paletteOpen}>
         Ana içeriğe geç
       </a>
 
@@ -396,6 +401,7 @@ export function AppShell() {
         role={drawerOpen ? 'dialog' : undefined}
         aria-modal={drawerOpen ? true : undefined}
         aria-label={drawerOpen ? NAV_TEXT.drawer : undefined}
+        inert={paletteOpen || undefined}
       >
         <div className={styles.brand}>
           <span>Göymen ERP</span>
@@ -478,7 +484,18 @@ export function AppShell() {
       </div>
       {drawerOpen ? <div className={styles.backdrop} aria-hidden="true" onClick={closeDrawer} /> : null}
 
-      <div className={styles.body} inert={drawerOpen}>
+      {paletteOpen ? (
+        <CommandPalette
+          storage={browserStorage}
+          onClose={() => setPaletteFor(null)}
+          onNavigate={() => {
+            focusMainOnPaletteCloseRef.current = true
+            setPaletteFor(null)
+          }}
+        />
+      ) : null}
+
+      <div className={styles.body} inert={drawerOpen || paletteOpen}>
         <header className={styles.toolbar}>
           {compact ? (
             <button
@@ -525,6 +542,19 @@ export function AppShell() {
 
           {/* AT-002: the global search box; it renders only with a searchable owner list grant. */}
           <GlobalSearchBox />
+          {/* W1-B: the command palette's visible entry point; Ctrl+K / ⌘K opens the same dialog. */}
+          <button
+            type="button"
+            ref={paletteButtonRef}
+            className={styles.paletteButton}
+            aria-haspopup="dialog"
+            aria-expanded={paletteOpen}
+            aria-keyshortcuts="Control+K Meta+K"
+            onClick={openPalette}
+          >
+            {PALETTE_TEXT.open}
+            <kbd className={styles.paletteShortcut} aria-hidden="true">{PALETTE_TEXT.shortcutHint}</kbd>
+          </button>
           {identity && <CompanySetupLink key={`${identity.userId}:${identity.authenticationSessionBinding}:${state.sessionEpoch}`} binding={`${identity.userId}:${identity.authenticationSessionBinding}:${state.sessionEpoch}`} />}
 
           {/* Plan AI-5: the AI panel toggle is on every page; the panel itself is honest about AI being off. */}
