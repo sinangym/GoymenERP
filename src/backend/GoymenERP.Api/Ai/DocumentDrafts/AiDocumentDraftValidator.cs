@@ -44,14 +44,14 @@ public static partial class AiDocumentDraftValidator
 
     // A profile written as WxHxT (box/rectangle) or ØDxT (round), optionally followed by a length and its unit.
     [GeneratedRegex(@"(?:(?:Ø|O|D)\s*(?<d>\d+(?:[.,]\d+)?)|(?<w>\d+(?:[.,]\d+)?)\s*[xX×*]\s*(?<h>\d+(?:[.,]\d+)?))\s*[xX×*]\s*(?<t>\d+(?:[.,]\d+)?)(?:\s*mm\b)?(?:\s+(?<l>\d+(?:[.,]\d+)?)\s*(?<lu>mm|cm|metre|mt|m)\b)?",
-        RegexOptions.CultureInvariant)]
+        RegexOptions.CultureInvariant, matchTimeoutMilliseconds: AiDocumentRegexBudget.Milliseconds)]
     private static partial Regex ProfilePattern();
 
     [GeneratedRegex(@"\A\s*(?:(?:Ø|O|D)\s*(?<d>\d+(?:[.,]\d+)?)|(?<w>\d+(?:[.,]\d+)?)\s*[xX×*]\s*(?<h>\d+(?:[.,]\d+)?))\s*(?:mm)?\s*\z",
-        RegexOptions.CultureInvariant)]
+        RegexOptions.CultureInvariant, matchTimeoutMilliseconds: AiDocumentRegexBudget.Milliseconds)]
     private static partial Regex SectionPattern();
 
-    [GeneratedRegex(@"\A\s*(?<v>\d+(?:[.,]\d+)?)\s*(?<u>[A-Za-z]+)?\s*\z", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"\A\s*(?<v>\d+(?:[.,]\d+)?)\s*(?<u>[A-Za-z]+)?\s*\z", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: AiDocumentRegexBudget.Milliseconds)]
     private static partial Regex MeasurePattern();
 
     public static AiDocumentDraftResponseV1 Build(

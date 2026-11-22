@@ -13,3 +13,19 @@ paketlenmesi dağıtım kapısıdır. Dizin tren head'inde yeniden üretilir; ka
 bayatsa `tests/ai_decision_index` kırmızı olur). Durum eşlemesi `ASSUMPTION-AI-INDEX-STATUS-1`: KAPANDI → kilitli,
 KISMEN/AÇIK → açık, ERTELENDI ayrı durum, golden → belirsiz. Bekleyen sevkiyat tanımı AI-D35; `ai.decisions.read`
 önerisi AI-D36 (grant insan kapısı).
+
+## Araç kartı pin'i ve dış metin karantinası (WP-A6)
+
+- `Ai:AllowedTools` girdisi `DescriptionSha256` taşır: aracın model kartının (kimlik, sürüm, sahip, risk, veri sınıfı,
+  açıklama, izinler, alan listesi) SHA-256'sı (`AiToolDescriptionPinV1`). Kart değişirse (açıklama yeniden yazılırsa,
+  alan eklenirse) araç onaylı yeni pin girilene kadar katalogda yoktur; pin'i olmayan araç da yoktur (varsayılan red).
+- Dışarıdan gelen her metin (e-posta, PDF, yapıştırılan metin, tablo hücresi, OCR çıktısı) `AiExternalContentQuarantineV1`
+  ile veri olarak tutulur (AI-D34 c). Bulgu yalnız türdür; değer güvenilmez sayılır. Dış içerik görmüş model turu araç
+  çağrısı planlarsa çıktının tamamı atılır.
+
+## Belgeden taslak (WP-B3)
+
+`POST /api/v1/ai/document-drafts`: satış siparişi, tedarikçi teyidi, gelen fatura TASLAĞI. Kademeler: yapılı dosya
+(UBL-TR, Satınalma'nın kendi okuyucusuyla; CSV/XLSX bilinen başlıkla) → yerel PDF metni → OCR portu (motor yok) → yerel
+model portu (OPEN-014'e kadar kapalı). Taslak kayıt oluşturmaz; `Ai:Enabled` ve `Ai:DocumentDrafts:Enabled` kapalıdır.
+

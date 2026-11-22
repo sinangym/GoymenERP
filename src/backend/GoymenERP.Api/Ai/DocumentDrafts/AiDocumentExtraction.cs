@@ -80,31 +80,31 @@ public sealed class AiExtractedDocumentV1
 public static partial class AiDocumentTextParser
 {
     [GeneratedRegex(@"(?:sipari[şs]|fatura|teyit|onay|order|invoice|confirmation)\s*(?:no|numaras[ıi]|number|#)\s*[:.]?\s*(?<v>[A-Z0-9][A-Z0-9/_-]{1,40})",
-        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, matchTimeoutMilliseconds: AiDocumentRegexBudget.Milliseconds)]
     private static partial Regex DocumentNumberPattern();
 
     [GeneratedRegex(@"(?:tarih|tarihi|date)\s*[:.]?\s*(?<v>\d{4}-\d{2}-\d{2}|\d{2}[./]\d{2}[./]\d{4})",
-        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, matchTimeoutMilliseconds: AiDocumentRegexBudget.Milliseconds)]
     private static partial Regex DatePattern();
 
     [GeneratedRegex(@"(?:vkn|tckn|v\.k\.n\.?|vergi\s*(?:kimlik\s*)?no)\s*[:.]?\s*(?<v>\d{10,11})(?!\d)",
-        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, matchTimeoutMilliseconds: AiDocumentRegexBudget.Milliseconds)]
     private static partial Regex TaxIdPattern();
 
     [GeneratedRegex(@"(?:para\s*birimi|d[öo]viz|currency)\s*[:.]?\s*(?<v>[A-Za-z]{3})(?![A-Za-z])",
-        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, matchTimeoutMilliseconds: AiDocumentRegexBudget.Milliseconds)]
     private static partial Regex CurrencyPattern();
 
     [GeneratedRegex(@"^\s*(?:m[üu][şs]teri|tedarik[çc]i|sat[ıi]c[ıi]|al[ıi]c[ıi]|firma|unvan|customer|supplier|vendor)\s*[:]\s*(?<v>[^\r\n]{2,120}?)\s*$",
-        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Multiline)]
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Multiline, matchTimeoutMilliseconds: AiDocumentRegexBudget.Milliseconds)]
     private static partial Regex CounterpartyNamePattern();
 
     [GeneratedRegex(@"(?:genel\s*toplam|[öo]denecek\s*tutar|toplam\s*tutar|payable\s*amount|grand\s*total)\s*[:.]?\s*(?<v>\d[\d.,]*)",
-        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, matchTimeoutMilliseconds: AiDocumentRegexBudget.Milliseconds)]
     private static partial Regex PayablePattern();
 
     [GeneratedRegex(@"^\s*(?<code>[A-Z0-9][A-Z0-9._/-]{1,40})\s+(?<desc>\S.*?)\s+(?<qty>\d[\d.,]*)\s+(?<unit>[A-Za-zÇĞİÖŞÜçğıöşü]{1,6}\d?)\s+(?<price>\d[\d.,]*)(?:\s+(?<cur>[A-Z]{3}))?\s*$",
-        RegexOptions.CultureInvariant | RegexOptions.Multiline)]
+        RegexOptions.CultureInvariant | RegexOptions.Multiline, matchTimeoutMilliseconds: AiDocumentRegexBudget.Milliseconds)]
     private static partial Regex LinePattern();
 
     public static AiExtractedDocumentV1 Parse(string text, string source, int maximumLines)
@@ -184,3 +184,12 @@ public static partial class AiDocumentTextParser
 public enum AiNumberReadStateV1 { Missing = 1, Read = 2, Ambiguous = 3, Invalid = 4 }
 
 public sealed record AiNumberReadV1(AiNumberReadStateV1 State, decimal? Value);
+
+/// <summary>
+/// The time budget of every document pattern: external text is adversarial, so a pathological input ends in a timeout
+/// (reported as unreadable) instead of a long backtrack. A technical bound, not a business value.
+/// </summary>
+public static class AiDocumentRegexBudget
+{
+    public const int Milliseconds = 2000;
+}

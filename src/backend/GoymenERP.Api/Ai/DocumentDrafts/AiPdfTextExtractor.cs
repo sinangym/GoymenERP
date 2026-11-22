@@ -16,7 +16,7 @@ public static partial class AiPdfTextExtractor
     private const int CopyBufferBytes = 81920;
     private const int OctalEscapeDigits = 3;
 
-    [GeneratedRegex(@"<<(?<dict>(?:(?!>>\s*stream).){0,4096}?)>>\s*stream\r?\n", RegexOptions.Singleline | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"<<(?<dict>(?:(?!>>\s*stream).){0,4096}?)>>\s*stream\r?\n", RegexOptions.Singleline | RegexOptions.CultureInvariant, matchTimeoutMilliseconds: AiDocumentRegexBudget.Milliseconds)]
     private static partial Regex StreamStartPattern();
 
     public static bool LooksLikePdf(ReadOnlySpan<byte> content) =>

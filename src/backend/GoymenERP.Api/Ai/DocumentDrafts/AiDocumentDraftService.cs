@@ -99,6 +99,11 @@ public sealed class AiDocumentDraftService(
         {
             reading = await ReadAsync(input, limits, cancellationToken);
         }
+        catch (System.Text.RegularExpressions.RegexMatchTimeoutException)
+        {
+            logger.LogWarning("AI document draft parsing timed out. Kind {DraftKind}, media {MediaType}.", kind, input.MediaType);
+            return new AiDocumentDraftResultV1(AiDocumentDraftStatusV1.Unreadable, null, ["parse_timeout"]);
+        }
         catch (AiDocumentUnreadableException exception)
         {
             logger.LogInformation("AI document draft unreadable. Kind {DraftKind}, media {MediaType}, code {Code}.", kind, input.MediaType, exception.Code);
@@ -128,7 +133,16 @@ public sealed class AiDocumentDraftService(
 
         if (reading.Document.IsEmpty) return new AiDocumentDraftResultV1(AiDocumentDraftStatusV1.Unreadable, null, ["no_fields_found"]);
 
-        var matches = await MatchAsync(kind, reading.Document, cancellationToken);
+        AiDraftMatchesV1 matches;
+        AiDocumentDraftResponseV1 draft;
+        try
+        {
+            matches = await MatchAsync(kind, reading.Document, cancellationToken);
+        }
+        catch (System.Text.RegularExpressions.RegexMatchTimeoutException)
+        {
+            return new AiDocumentDraftResultV1(AiDocumentDraftStatusV1.Unreadable, null, ["parse_timeout"]);
+        }
 
         // Fence: nothing is released if the actor lost a permission while the document was read.
         if (await FirstMissingPermissionAsync(permissions, companyId, cancellationToken) is { } revoked)
@@ -137,14 +151,21 @@ public sealed class AiDocumentDraftService(
             return AiDocumentDraftResultV1.Of(AiDocumentDraftStatusV1.Refused);
         }
 
-        var draft = AiDocumentDraftValidator.Build(
-            kind,
-            reading.Tier,
-            new AiDraftSourceV1(sha256, input.MediaType, input.Bytes.Length),
-            reading.Findings,
-            reading.Document,
-            matches,
-            OpenIn(kind));
+        try
+        {
+            draft = AiDocumentDraftValidator.Build(
+                kind,
+                reading.Tier,
+                new AiDraftSourceV1(sha256, input.MediaType, input.Bytes.Length),
+                reading.Findings,
+                reading.Document,
+                matches,
+                OpenIn(kind));
+        }
+        catch (System.Text.RegularExpressions.RegexMatchTimeoutException)
+        {
+            return new AiDocumentDraftResultV1(AiDocumentDraftStatusV1.Unreadable, null, ["parse_timeout"]);
+        }
         if (extraFindings.Count != 0) draft = draft with { QuarantineFindings = [.. draft.QuarantineFindings, .. extraFindings] };
         logger.LogInformation("AI document draft prepared. Kind {DraftKind}, tier {Tier}, lines {Lines}, findings {Findings}.",
             kind, draft.ReadingTier, draft.Lines.Count, draft.QuarantineFindings.Count);
