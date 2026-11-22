@@ -2,7 +2,8 @@
 
 Bu belge önceki karar dosyalarını silmez; AI-D22–AI-D30, YOL-D17, SAT-D451 ve SAT-D452 ekler; aynı gün ek cevaplarla
 (SINAN-CEVAP 63) SAT-D453–SAT-D455 ve ALS-D122; golden yazarının EK1 soruları üzerine (SINAN-CEVAP 64) SAT-D456–SAT-D459,
-ALS-D123, ALS-D124 ve GOV-D13; Sinan'ın paylaştığı rapor değerlendirmesi üzerine (SINAN-CEVAP 65) AI-D31–AI-D34; uygulama oturumunun sorusu üzerine (SINAN-CEVAP 66) SAT-D460 eklendi.
+ALS-D123, ALS-D124 ve GOV-D13; Sinan'ın paylaştığı rapor değerlendirmesi üzerine (SINAN-CEVAP 65) AI-D31–AI-D34; uygulama oturumunun sorusu üzerine (SINAN-CEVAP 66) SAT-D460 eklendi; SAT-D454 ve SAT-D460, eksik sorulduğu için düzeltilmiş soruyla
+(SINAN-CEVAP 67) SAT-D461 ile güncellendi.
 AI-D31, AI-D23'teki onay türü sırasını; AI-D33, AI-D15 ve AI-D27'deki zamanlı görev sınırını günceller. DEC-AI-001..009, AI-D1..AI-D21,
 YOL-D1..YOL-D16, SAT-D433–SAT-D445, DEC-DOC-006/007 ve 21 Ekim kararlarının 125 ve 156 numaraları geçerliliğini korur.
 AI-D22 ve AI-D25, AI-D19'un "her şey aynı anda" yaklaşımını ve AI-D21'in ilk aşamasını bu belgedeki sırayla daraltır;
@@ -50,6 +51,8 @@ onlara değil seçilen yöne dayanır.
 
 | 28 | Adetli sipariş satırından miktar iadesinde (SAT-D455) belge tutarı adet × adet fiyatı; Stok malı ortalama kg maliyetiyle çıkarıp kg başına faturalanan değeri ortalamayla karşılaştırıyor. Adetli satırda bu kg karşılaştırması nasıl olsun? | **Karşılaştırılır; fark iade farkı olarak onaya gider (Önerilen)** | Belge tutarı ÷ iade kg ile ortalama karşılaştırılır; fark (kuruşa yuvarlanmış tutarlardan, SAT-D456) diğer miktar iadeleri gibi iade farkı olarak kaydedilir ve farklı kişi onaylar; ret yok. Seçilmeyen: "Adetli satırda karşılaştırma yapılmaz". |
 
+| 29 | Düzeltilmiş soru: kilitli kurala göre (SAT-D371/D392/D410) maliyet farkı olan tedarikçi iadesi, farkın muhasebe hesabı Finans fiş spesifikasyonunda belirlenene kadar reddediliyor ve onaylı istisna bu reddi aşmıyor; önceki soruda (SAT-D454/SAT-D460) bu anılmadan "fark onaya gider, ret yok" diye soruldu. Şimdi ne olsun? | **Mevcut kural kalsın: fark varsa iade bekler (Önerilen)** | Karşılaştırma yapılır (kg ve adetli satır, kuruş tabanı); fark sıfırsa iade geçer, fark varsa Finans fiş spesifikasyonu fark hesabını belirleyene kadar açık hata koduyla bekler; muhasebe ilk yıl Mikro'da olduğu için fark hesabı kararı mali müşavirle sonra verilir. Seçilmeyen: "Fark şimdi kaydedilip onaya gitsin". |
+
 ## Kararlar
 
 | No | Konu | Karar | Etkilenen yer |
@@ -82,10 +85,11 @@ onlara değil seçilen yöne dayanır.
 | AI-D33 | Zamanlı görevlerin etkileri | Zamanlı görev etkileri dörde ayrılır: (1) **okuma** görev sahibinin çalışma anındaki güncel yetkisiyle; (2) **özet, rapor, taslak ve bildirim üretme** tanımlı kapsam ve bütçe içinde; (3) **iş kaydını değiştirme** yalnız ilgili komutun yetki, önizleme ve onay koşullarıyla; (4) **dışarı gönderim** ayrı gönderim yetkisi ve insan onayıyla (AI-D27). Görev sahibi ayrılırsa, yetkisi kaldırılırsa ya da veri erişimi değişirse görev eski yetkiyle çalışmaz; durur ve sahibine/yöneticiye bildirir. AI-D15'teki "zamanlı görev yazma yapmaz" kuralının yerine geçer. | Zamanlı görevler, Work bildirimleri |
 | AI-D34 | Güvenlik netleştirmeleri | (a) Yapay zekânın hazırladığı işlemde onay, **görülen somut işleme** bağlıdır: hedef kayıt, değişecek alanlar, tutarlar ve alıcılar; onaydan sonra biri değişirse onay kullanılmaz; yürütme anında kullanıcının yetkisi ve kaydın güncel sürümü yeniden kontrol edilir (DEC-AI-003'ün açık hâli). (b) Bir işlemin onaysız akması yalnız **Sinan'ın ayrıca onayladığı deterministik bir iş kuralıyla** mümkündür; model bir kaydı "temiz/güvenli" diye sınıflandırarak onay şartını kaldıramaz; kazanılan otonomi (AI-D21) yürürlükteki onay şartını kaldırmaz. (c) Dışarıdan gelen belge ve e-posta içeriği yalnız işlenecek veridir; araç yetkisini, alıcıyı, işlem kapsamını ya da onay kuralını değiştiremez. (d) Bir içeriğin bulut modele gönderilebilirliği belge adına göre değil **içerik ve veri sınıfına** göre belirlenir; karar ve kural belgeleri de kişisel ya da ticari hassas veri içerebilir. | AI ağ geçidi, komut hattı, onay politikası |
 | SAT-D460 | Adetli miktar iadesinde maliyet karşılaştırması (SAT-D455 ayrıntısı) | Adetli sipariş satırından miktar iadesinde belge tutarı (adet × net adet fiyatı) iade kg'sine bölünerek stok ortalama kg maliyetiyle karşılaştırılır; fark, kuruşa yuvarlanmış tutarlardan (SAT-D456) **iade farkı** olarak kaydedilir ve farklı kişi onayıyla (SAT-D392/D393) geçer; fark yüzünden iade reddedilmez. | Tedarikçi iadesi, Stok iade çıkışı |
+| SAT-D461 | Miktar iadesinde fark (SAT-D454 ve SAT-D460'ı düzeltir) | SAT-D371, SAT-D392 ve SAT-D410 aynen geçerlidir. Miktar iadesinde (kg ve adetli satır) belge tutarı ile stok çıkış tutarı **karşılaştırılır** (kuruş tabanı, SAT-D456; adetli satırda belge tutarı ÷ iade kg). Fark **sıfırsa** iade geçer; fark **varsa** iade, Finans muhasebe fişi spesifikasyonu farkın hesabını belirleyene kadar açık hata koduyla **bekler**; onaylı elle maliyet istisnası (SAT-D393/D454) bu bekleyişi aşmaz. SAT-D454'teki "fark iade farkı kuralıyla kaydedilir" ve SAT-D460'taki "reddedilmez, onaya gider" ifadeleri bu kararla geçersizdir; SAT-D454'ün "ortalama okunamazsa farklı kişinin onayladığı elle maliyet sipariş fiyatından farklı olabilir" kısmı sürer. | Tedarikçi iadesi, Stok iade çıkışı |
 
 ## Sınırlar
 
-- SAT-D453–SAT-D460 ve ALS-D122–ALS-D124 para/maliyet formülüdür: golden satırları SAT-D431 yöntemiyle (bağımsız yazar, iki DOCS
+- SAT-D453–SAT-D461 ve ALS-D122–ALS-D124 para/maliyet formülüdür: golden satırları SAT-D431 yöntemiyle (bağımsız yazar, iki DOCS
   incelemesi) hazırlanıp trene girmeden etkinleştirilmez; o zamana kadar ilgili yollar anlaşılır kodla kapalı kalır.
 - **NEEDS-SINAN:** çekirdek dilimlerin başarı eşikleri ve durdurma koşulları; AI-D25'te açılacak komutların sırası;
   AI-D26'da "düşük riskli" onay türleri; YOL-D17'de saat ölçekli türler ve süreleri; AI-D28'de abonelik ürünü, kişi
