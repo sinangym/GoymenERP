@@ -1,6 +1,6 @@
-# Rol–Yetki Taslağı v1.2 (bütün modüller)
+# Rol–Yetki Taslağı v1.3 (bütün modüller)
 
-- **Durum:** TASLAK v1.2. Sinan'ın S-01–S-20 cevaplarıyla (ROL-D1–ROL-D20,
+- **Durum:** TASLAK v1.3 (v1.3: yeni kayıtlı 5 izin öneri olarak eklendi, plan D12 / WP16). Sinan'ın S-01–S-20 cevaplarıyla (ROL-D1–ROL-D20,
   `docs/decisions/SINAN_KARARLARI_2026-11-22_ROL_YETKI.md`) ve Y-01–Y-05 cevaplarıyla (ROL-D21–ROL-D23, AI-D36,
   `docs/decisions/SINAN_KARARLARI_2026-11-22_EK_SORULAR.md`) güncellendi. Bu belge **karar değildir**; yeni karar kimliği
   üretmez, `KARAR_SICILI.md`'yi, `docs/decisions/**`'ı, seed'i, manifesti veya kodu değiştirmez.
@@ -10,6 +10,19 @@
   kişi listesiyle Sinan'a yeniden sunulur (ROL kararları "Sınırlar").
 - **Makine-okunur eş:** [`ROL_YETKI_TASLAGI_v1.csv`](ROL_YETKI_TASLAGI_v1.csv) — her izin için bir satır; §2.3 matrisi o
   dosyadan üretilmiştir. Çelişki olursa CSV'deki hücre esas alınır ve belge yeniden üretilir.
+
+## v1.3 değişiklik özeti (plan D12, WP16)
+
+Tren-2'de kayıtlı izin sayısı 286'dan 291'e çıktı. Beş yeni izin matrise **öneri** olarak eklendi; hiçbiri bir role
+atanmaz, seed değişmez. ROL-D21–ROL-D23 v1.2'de yansıtılmıştı; v1.3'te değişmedi.
+
+| İzin | Öneri | Dayanak |
+|---|---|---|
+| `ai.decisions.read` | Bütün kullanıcı rolleri (16) | AI-D36 (KARARLI); ROL-D16 ile tutarlı, AI-D34 maskeleme, AI-D6 canlıda kapalı. |
+| `work.notes.write` | Sistem Yöneticisi dışında bütün roller | AI-D23, YOL-D19, YOL-D26; ROL-D6 (SYS iş kaydı taşımaz). ÖNERİ. |
+| `work.tasks.assign` | GM + modül müdürleri (SATM, ALMM, OPM, FINM, MUHM) | AI-D23. Persona kümesi kararda yok; ÖNERİ. |
+| `work.tasks.complete` | Sistem Yöneticisi dışında bütün roller | AI-D23 (yalnız kendisine atanan görev); ROL-D6. ÖNERİ. |
+| `settings.work-approval-duration.manage` | GM + Sistem Yöneticisi | YOL-D18 (değer Ayarlar parametresi); ROL-D19 eşik dağılımına benzetme. ÖNERİ. |
 
 ## v1.2 değişiklik özeti
 
@@ -31,7 +44,7 @@
 | ROL-D3 | Uygun onaycı kalmazsa onay **ilgili modül müdürü ve Genel Müdür**'e düşer; yoksa sahipsiz onay (YOL-D17). Küçük kadro istisnası yok. |
 | ROL-D4 | GM vekili, ilgili izne sahip modül müdürü; Sistem Yöneticisi vekil olamaz. |
 | ROL-D5 | **Yeni rol: Operasyon Müdürü (OPM)** — sevk, depo ve üretim müdürlüğü tek rolde. Sayım, hurda, transfer, irsaliye, plan üstü sevk, tartım farkı ve üretim planı onayları OPM'ye geçti; GM yedek. SAT-D191 ara dönem kayıt hücreleri (açılış stoğu, üretim fiilîsi, yükleme talimatı, yükleme) GM'den OPM'ye geçti. |
-| ROL-D6 | Sistem Yöneticisi (SYS) iş onaylarını ve iş kayıtlarını **taşımaz**; 27 izne indi (v1.2'de ROL-D22 ile 28) (temel okumalar, kurulum ana verisi, sistem ayarları, kullanıcı yönetimi, AI paneli). Bu, SAT-D187'nin Admin satırlarının yerine geçer. |
+| ROL-D6 | Sistem Yöneticisi (SYS) iş onaylarını ve iş kayıtlarını **taşımaz**; 27 izne indi (v1.2'de ROL-D22 ile 28; v1.3'te `ai.decisions.read` ve onay süresi ayarıyla 30) (temel okumalar, kurulum ana verisi, sistem ayarları, kullanıcı yönetimi, AI paneli). Bu, SAT-D187'nin Admin satırlarının yerine geçer. |
 | ROL-D7 | Satış Müdürü kredi limitini ve cari ekstreyi (tutarlar dahil) okur. |
 | ROL-D8 | Muhasebe dönem ve yevmiyeyi salt okur. |
 | ROL-D9 | Üretim emri kapatma OPM; tahsilat kaydı Finans. |
@@ -51,7 +64,7 @@
 
 | Kaynak | Ne alındı |
 |---|---|
-| `src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Security/ErpPermissions.cs` | Bütün izin sabitleri: **286** (`All` kümesi 286; **17 Critical**; 271 yalnız şirket geneli) |
+| `src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Security/ErpPermissions.cs` | Bütün izin sabitleri: **291** (`All` kümesi 291; **17 Critical**; 276 yalnız şirket geneli) |
 | `src/backend/GoymenERP.Api/Seed/identity-seed.json` | Mevcut 5 sistem rolü (§6) |
 | `docs/security/PERSONA_GRANT_MATRISI_KARTI_v0.md` | Kararlı persona eşlemeleri (SAT-D141…D205, SAT-D187…D197, ALS-D53…D73, K4) |
 | `docs/delivery/SATIS_ROL_YETKI_ONERISI_v1.md` | Satış önerisi (SAT-D230 ile onaylı satırlar) |
@@ -67,8 +80,8 @@ da gerekçedeki ek koşul) · `IK` = Critical; taslak vermez, bu rol yalnız ins
 kararlı çekirdek + öneri uzantısı. **ÖNERİ** = kararlarda persona kümesi yok. **IK** = Critical, insan kapısı. **YOK** =
 hiçbir role önerilmez.
 
-**Özet sayılar:** 286 izinden **268**'i en az bir role önerildi; **18**'i hiçbir role önerilmedi (17 Critical +
-`identity.company-setup.first-admin.assign`). Durum dağılımı: KARARLI 88 · KISMEN 12 · ÖNERİ 168 · IK 16 · YOK 2.
+**Özet sayılar:** 291 izinden **273**'ü en az bir role önerildi; **18**'i hiçbir role önerilmedi (17 Critical +
+`identity.company-setup.first-admin.assign`). Durum dağılımı: KARARLI 89 · KISMEN 12 · ÖNERİ 172 · IK 16 · YOK 2.
 Sınıflandırılamayan izin yoktur.
 
 ## 1. Standart roller
@@ -104,22 +117,22 @@ bazında** atanır (§4).
 
 | Rol | Önerilen izin | Bunların koşullu (`K`) olanı |
 |---|---|---|
-| GM | 185 | 45 |
-| SAT | 51 | 3 |
-| SATM | 71 | 10 |
-| ALM | 24 | 0 |
-| ALMM | 33 | 4 |
-| OPM | 65 | 16 |
-| DEPO | 49 | 0 |
-| KNT | 20 | 0 |
-| UPL | 39 | 0 |
-| UOP | 24 | 0 |
-| KAL | 14 | 0 |
-| FIN | 52 | 0 |
-| FINM | 39 | 7 |
-| MUH | 58 | 1 |
-| MUHM | 84 | 9 |
-| SYS | 28 (+5 `IK` adayı) | 0 |
+| GM | 190 | 45 |
+| SAT | 54 | 3 |
+| SATM | 75 | 10 |
+| ALM | 27 | 0 |
+| ALMM | 37 | 4 |
+| OPM | 69 | 16 |
+| DEPO | 52 | 0 |
+| KNT | 23 | 0 |
+| UPL | 42 | 0 |
+| UOP | 27 | 0 |
+| KAL | 17 | 0 |
+| FIN | 55 | 0 |
+| FINM | 43 | 7 |
+| MUH | 61 | 1 |
+| MUHM | 88 | 9 |
+| SYS | 30 (+5 `IK` adayı) | 0 |
 
 GM'nin sayısı yüksek kalır, çünkü ROL-D3 gereği her müdür onayının yedek onaycısıdır ve müdürlerin okumalarını taşır.
 
@@ -424,7 +437,7 @@ Operasyon Müdürü · DEPO Depo/Sevk · KNT Kantar (isteğe bağlı) · UPL Ür
 | `accounting.posting-mappings.activate` | K | · | · | · | · | · | · | · | · | · | · | · | · | · | K | · | ÖNERİ | Hazırlayan ≠ etkinleştiren. |
 | `accounting.account-plan.read` | + | · | · | · | · | · | · | · | · | · | · | + | + | + | + | · | ÖNERİ | Hesap planı okuması. |
 
-### Ayarlar (39 izin)
+### Ayarlar (40 izin)
 
 | İzin | GM | SAT | SATM | ALM | ALMM | OPM | DEPO | KNT | UPL | UOP | KAL | FIN | FINM | MUH | MUHM | SYS | Durum | Gerekçe |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -467,6 +480,7 @@ Operasyon Müdürü · DEPO Depo/Sevk · KNT Kantar (isteğe bağlı) · UPL Ür
 | `settings.manufacturing-tolerance-profiles.prepare` | · | · | · | · | · | · | · | · | + | · | · | · | · | · | · | · | ÖNERİ | Profili planlama hazırlar. |
 | `settings.manufacturing-tolerance-profiles.approve` | K | · | · | · | · | K | · | · | · | · | · | · | · | · | · | · | ÖNERİ | Hazırlayan ≠ onaylayan; ROL-D5. |
 | `settings.manufacturing-tolerance-profiles.publish` | + | · | · | · | · | + | · | · | · | · | · | · | · | · | · | · | ÖNERİ | Onaylı profili yayımlama. |
+| `settings.work-approval-duration.manage` | + | · | · | · | · | · | · | · | · | · | · | · | · | · | · | + | ÖNERİ | YOL-D18 onay süre değerleri Ayarlar parametresidir; ROL-D19 onay eşiklerindeki dağılımla aynı öneri: GM + Sistem Yöneticisi. İş onayı değil, sistem ayarıdır. |
 
 ### Belgeler (10 izin)
 
@@ -501,11 +515,20 @@ Operasyon Müdürü · DEPO Depo/Sevk · KNT Kantar (isteğe bağlı) · UPL Ür
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | `platform.security-events.read` **(Critical)** | · | · | · | · | · | · | · | · | · | · | · | · | · | · | · | IK | IK | Critical. Aday: Sistem Yöneticisi. |
 
-### AI (1 izin)
+### Work (3 izin)
+
+| İzin | GM | SAT | SATM | ALM | ALMM | OPM | DEPO | KNT | UPL | UOP | KAL | FIN | FINM | MUH | MUHM | SYS | Durum | Gerekçe |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `work.notes.write` | + | + | + | + | + | + | + | + | + | + | + | + | + | + | + | · | ÖNERİ | AI-D23/YOL-D19/YOL-D26: kayda bağlı not; okuma kontrolü kaydın sahip modülündedir, not yetki genişletmez. Sistem Yöneticisi iş kaydı taşımaz (ROL-D6). Kalite pasif (ROL-D20). |
+| `work.tasks.assign` | + | · | + | · | + | + | · | · | · | · | · | · | + | · | + | · | ÖNERİ | AI-D23: görev atama; öneri yalnız müdürler + GM (görev bir başkasının iş listesini belirler). Kişi listesi bu izin veya work.notes.write ister (plan D7). |
+| `work.tasks.complete` | + | + | + | + | + | + | + | + | + | + | + | + | + | + | + | · | ÖNERİ | AI-D23: yalnız kendisine atanan görevi tamamlar (kural Work alanında). Sistem Yöneticisi iş kaydı taşımadığı için önerilmez (ROL-D6); Kalite pasif (ROL-D20). |
+
+### AI (2 izin)
 
 | İzin | GM | SAT | SATM | ALM | ALMM | OPM | DEPO | KNT | UPL | UOP | KAL | FIN | FINM | MUH | MUHM | SYS | Durum | Gerekçe |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | `ai.panel.use` | + | + | + | + | + | + | + | + | + | + | + | + | + | + | + | + | KARARLI | ROL-D16: başlangıçta bütün kullanıcı rollerine önerilir (AI-D8'in yerine); AI-D1/AI-D6 sürer, grant insan kapısı. |
+| `ai.decisions.read` | + | + | + | + | + | + | + | + | + | + | + | + | + | + | + | + | KARARLI | AI-D36: bütün kullanıcı rollerine (ROL-D16 ile tutarlı); kişi adları dizinde maskelenir (AI-D34); AI canlıda kapalı (AI-D6); grant insan kapısı. |
 
 ## 3. Onay izinleri
 
@@ -650,8 +673,8 @@ ettiği risk; denetim kaydı ve raporla izlenir · ✅ **giderildi**.
   kullanıcının göremediği veriyi açmaz (AI-D1); AI canlıda kapalı başlar ve açılması ayrı insan kapısıdır (AI-D6); grant
   insan kapısıdır. Pasif Kalite rolü atanmadığı sürece izni fiilen kullanılmaz.
 - **`ai.decisions.read` (AI-D36):** bütün kullanıcı rollerine önerilir (ROL-D16 ile tutarlı); kişi adları dizinde
-  maskelenir (AI-D34); grant insan kapısıdır. İzin henüz kayıtlı değildir; kaydedildiğinde CSV'ye `ai.panel.use` ile
-  aynı sütunlarla eklenir.
+  maskelenir (AI-D34); grant insan kapısıdır. İzin Y-A1 ile kaydedildi; v1.3'te CSV'ye `ai.panel.use` ile aynı
+  sütunlarla eklendi.
 - **Sistem Yöneticisi acil erişimi (ROL-D23):** süreli ve gerekçeli erişim ataması; başka bir yetkili onaylar, denetim
   kaydına yazılır, süre bitince kalkar. Kalıcı iş izni olarak matriste yer almaz.
 
@@ -702,7 +725,7 @@ Açık soru kalmadı. Atama öncesi taslak kişi listesiyle Sinan'a yeniden sunu
 
 ## 7. Yöntem ve sınırlar
 
-- İzin listesi `ErpPermissions.cs` sabitlerinden alındı; CSV satır sayısı `All` kümesiyle (286) birebir eşit; Critical
+- İzin listesi `ErpPermissions.cs` sabitlerinden alındı; CSV satır sayısı `All` kümesiyle (291) birebir eşit; Critical
   işareti `Critical`, "yalnız şirket geneli" sütunu `CompanyWideOnly` kümesindendir. v1.1 için kaynak dal birleştirildi;
   `ErpPermissions.cs` değişmedi.
 - KARARLI hücreler persona kartı, satış önerisi ve ROL-D kararlarından aktarıldı; çelişkide karar dosyası geçerlidir.
