@@ -25,6 +25,16 @@ public sealed partial class SalesDraftServiceTests
         Assert.False(result.IsReplay); Assert.Equal(1,f.Store.Writes);
     }
     [Fact]
+    public async Task Official_cancellation_hands_the_store_a_lowercase_sha256_request_hash()
+    {
+        // The real store refuses anything but a 64-character lowercase sha256 (SalesStore.RequireHash); an uppercase hash made
+        // every official cancellation answer 503 against SQL (K3-B P1).
+        var f = new CancellationWorld(); f.World.Authority.Denied.UnionWith([SalesPermissionManifestV1.InvoicesRead,SalesPermissionManifestV1.OrdersPriceRead,SalesPermissionManifestV1.InvoicesWrite]);
+        await f.Service().RecordAsync(SalesOfficialInvoiceKindV1.Normal,f.Id,new("4","SENTETIK"),Metadata("official-hash"));
+        Assert.NotEmpty(f.Store.Hashes);
+        Assert.All(f.Store.Hashes,h=>Assert.Matches("^[0-9a-f]{64}$",h));
+    }
+    [Fact]
     public async Task Official_cancellation_uses_finalize_only_and_replays_original_answer_without_rechecking_external_status()
     {
         var f = new CancellationWorld(); f.World.Authority.Denied.UnionWith([SalesPermissionManifestV1.InvoicesRead,SalesPermissionManifestV1.OrdersPriceRead,SalesPermissionManifestV1.InvoicesWrite]);
@@ -83,10 +93,10 @@ public sealed partial class SalesDraftServiceTests
     private sealed class CancellationStore : ISalesOfficialInvoiceCancellationStoreV1
     {
         public SalesOfficialCancellationTargetV1 Target {get;set;}=null!; public SalesOfficialInvoiceCancellationResultV1? Replay {get;set;}
-        public int Writes{get;private set;} public int Refusals{get;private set;}
-        public Task<SalesOfficialInvoiceCancellationResultV1?> FindReplayAsync(SalesDraftWriteEnvelope e,string h,string c,Func<CancellationToken,Task> f,CancellationToken t=default)=>Task.FromResult(Replay);
+        public int Writes{get;private set;} public int Refusals{get;private set;} public List<string> Hashes{get;}=[];
+        public Task<SalesOfficialInvoiceCancellationResultV1?> FindReplayAsync(SalesDraftWriteEnvelope e,string h,string c,Func<CancellationToken,Task> f,CancellationToken t=default){Hashes.Add(h);return Task.FromResult(Replay);}
         public Task<SalesOfficialCancellationTargetV1?> ReadTargetAsync(SalesOfficialInvoiceKindV1 k,Guid id,Func<CancellationToken,Task> f,CancellationToken t=default)=>Task.FromResult<SalesOfficialCancellationTargetV1?>(Target);
-        public async Task<SalesOfficialInvoiceCancellationResultV1> RecordAsync(SalesDraftWriteEnvelope e,string h,SalesOfficialInvoiceKindV1 k,Guid id,long v,string r,SalesOfficialInvoiceCancellationEvidenceV1 proof,Func<CancellationToken,Task> f,CancellationToken t=default){await f(t);Writes++;return new(new(proof.CompanyId,Guid.NewGuid(),id,k,"5","4",Target.Admission.AdmissionId,proof.OfficialInvoiceNo,proof.Ettn,e.ActorId,DateTimeOffset.UtcNow,r,proof),false,e.CorrelationId);}
+        public async Task<SalesOfficialInvoiceCancellationResultV1> RecordAsync(SalesDraftWriteEnvelope e,string h,SalesOfficialInvoiceKindV1 k,Guid id,long v,string r,SalesOfficialInvoiceCancellationEvidenceV1 proof,Func<CancellationToken,Task> f,CancellationToken t=default){Hashes.Add(h);await f(t);Writes++;return new(new(proof.CompanyId,Guid.NewGuid(),id,k,"5","4",Target.Admission.AdmissionId,proof.OfficialInvoiceNo,proof.Ettn,e.ActorId,DateTimeOffset.UtcNow,r,proof),false,e.CorrelationId);}
         public Task<SalesOfficialCancellationDeliveryV1?> ReadDeliveryAsync(Guid id,Func<CancellationToken,Task> f,CancellationToken t=default)=>throw new NotSupportedException();
         public Task<SalesOfficialCancellationDeliveryV1?> ReadForInvoiceAsync(SalesOfficialInvoiceKindV1 k,Guid id,Func<CancellationToken,Task> f,CancellationToken t=default)=>throw new NotSupportedException();
         public Task<SalesOfficialCancellationCandidatesV1> ListCandidatesAsync(SalesOfficialInvoiceKindV1 k,Guid? id,Func<CancellationToken,Task> f,CancellationToken t=default)=>throw new NotSupportedException();

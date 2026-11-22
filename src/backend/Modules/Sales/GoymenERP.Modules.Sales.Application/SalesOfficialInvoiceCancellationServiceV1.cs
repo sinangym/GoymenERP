@@ -231,7 +231,9 @@ public sealed class SalesOfficialInvoiceCancellationServiceV1(ICompanyContext co
         if (!Text(metadata.IdempotencyKey, 200) || !Text(metadata.CorrelationId, 128)
             || metadata.CausationId is not null && !Text(metadata.CausationId, 128)) throw Error(400, SalesDraftProblemCodesV1.CommandMetadataInvalid);
     }
-    private static string Hash<T>(T value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value, Json))));
+    // The store accepts only a 64-character lowercase sha256 (SalesStore.RequireHash); K3-B P1.
+    private static string Hash<T>(T value) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value, Json)))).ToLowerInvariant();
     private static SalesDraftServiceException Map(SalesDraftStoreException exception) => exception.Code switch
     {
         SalesDraftStoreCodes.SameKeyPayloadMismatch => Error(409, SalesDraftProblemCodesV1.SameKeyPayloadMismatch),
