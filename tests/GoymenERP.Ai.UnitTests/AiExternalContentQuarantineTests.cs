@@ -79,7 +79,9 @@ public sealed class AiToolDescriptionPinTests
         Assert.True(AiToolDescriptionPinV1.IsWellFormed(pin));
         Assert.Equal(pin, AiToolDescriptionPinV1.Compute(Card()));
         Assert.True(AiToolDescriptionPinV1.Matches(Card(), pin));
-        Assert.Contains("\"description\":\"SENTETIK: bekleyen sevkiyatları listeler.\"", AiToolDescriptionPinV1.CanonicalCard(Card()), StringComparison.Ordinal);
+        using var card = System.Text.Json.JsonDocument.Parse(AiToolDescriptionPinV1.CanonicalCard(Card()));
+        Assert.Equal("SENTETIK: bekleyen sevkiyatları listeler.", card.RootElement.GetProperty("description").GetString());
+        Assert.Equal(AiToolDescriptionPinV1.Format, card.RootElement.GetProperty("format").GetString());
     }
 
     [Fact]

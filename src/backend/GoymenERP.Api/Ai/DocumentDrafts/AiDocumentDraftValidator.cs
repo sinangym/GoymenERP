@@ -43,7 +43,7 @@ public static partial class AiDocumentDraftValidator
     };
 
     // A profile written as WxHxT (box/rectangle) or ØDxT (round), optionally followed by a length and its unit.
-    [GeneratedRegex(@"(?:(?:Ø|O|D)\s*(?<d>\d+(?:[.,]\d+)?)|(?<w>\d+(?:[.,]\d+)?)\s*[xX×*]\s*(?<h>\d+(?:[.,]\d+)?))\s*[xX×*]\s*(?<t>\d+(?:[.,]\d+)?)\s*(?:mm)?(?:\s+(?<l>\d+(?:[.,]\d+)?)\s*(?<lu>mm|cm|metre|mt|m)\b)?",
+    [GeneratedRegex(@"(?:(?:Ø|O|D)\s*(?<d>\d+(?:[.,]\d+)?)|(?<w>\d+(?:[.,]\d+)?)\s*[xX×*]\s*(?<h>\d+(?:[.,]\d+)?))\s*[xX×*]\s*(?<t>\d+(?:[.,]\d+)?)(?:\s*mm\b)?(?:\s+(?<l>\d+(?:[.,]\d+)?)\s*(?<lu>mm|cm|metre|mt|m)\b)?",
         RegexOptions.CultureInvariant)]
     private static partial Regex ProfilePattern();
 
@@ -98,10 +98,12 @@ public static partial class AiDocumentDraftValidator
         var quantity = AmountField(AiDraftFieldCodesV1.Quantity, line.Quantity, allowZero: false);
         var unitPrice = AmountField(AiDraftFieldCodesV1.UnitPrice, line.UnitPrice, allowZero: true);
         var lineAmount = LineAmountField(line, quantity, unitPrice);
+        // A line's own currency must be the document's: the price and amount are in it, and nothing converts.
         var lineCurrency = line.Currency is null ? null : CurrencyField(line.Currency, headerCurrency.Value);
-        if (lineCurrency is { Status: AiDraftFieldStatusesV1.Invalid } && lineAmount.Value is not null)
+        if (lineCurrency is { Status: AiDraftFieldStatusesV1.Invalid })
         {
-            lineAmount = lineAmount with { Status = AiDraftFieldStatusesV1.Invalid, ReasonCode = lineCurrency.ReasonCode };
+            if (unitPrice.Value is not null) unitPrice = unitPrice with { Status = AiDraftFieldStatusesV1.Invalid, ReasonCode = lineCurrency.ReasonCode };
+            if (lineAmount.Value is not null) lineAmount = lineAmount with { Status = AiDraftFieldStatusesV1.Invalid, ReasonCode = lineCurrency.ReasonCode };
         }
 
         var (section, wall, length) = Dimensions(line);
