@@ -17,7 +17,7 @@ public sealed class AccountingShellCapabilityProviderTests
     {
         var declarations = new AccountingShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(29, declarations.Count);
+        Assert.Equal(30, declarations.Count);
         // ACC-V0c published what acc01 walked; the ACC-V1 reversal slice adds the journal DETAIL and M-06, whose real
         // read routes exist and which acc01 ACC01-09 walks over the synthetic posted-journal fixture.
         Assert.Equal(
@@ -31,6 +31,7 @@ public sealed class AccountingShellCapabilityProviderTests
                 AccountingShellCapabilityProvider.PeriodCloseCapabilityId,
                 AccountingShellCapabilityProvider.PeriodListCapabilityId,
                 AccountingShellCapabilityProvider.PeriodProposeCapabilityId,
+                AccountingShellCapabilityProvider.PeriodReopenCapabilityId,
                 AccountingShellCapabilityProvider.PostingQueuesCapabilityId,
                 AccountingShellCapabilityProvider.TrialBalanceCapabilityId,
             ],
@@ -71,7 +72,7 @@ public sealed class AccountingShellCapabilityProviderTests
 
         // 1.3: the reversal slice changed the declaration set (detail and M-06 published, reversal actions declared staged).
         // 1.4: FIN-S16 declares the staged M-05 account plan route.
-        Assert.Equal(("ACCOUNTING", "1.10"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(("ACCOUNTING", "1.11"), (provider.Owner, provider.ContractVersion));
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("accounting.invoiced-shipment-costs.prepare", "accounting.invoiced-shipment-costs.prepare", "/muhasebe/sevk-smm-hazirla",
@@ -116,6 +117,8 @@ public sealed class AccountingShellCapabilityProviderTests
                 [AccountingPermissionManifestV1.PeriodsRead, AccountingPermissionManifestV1.PeriodsApprove]),
             ("accounting.periods.close", "accounting.periods", "/muhasebe/donemler", "M-07", ShellCapabilityRoutePrecedence.Static,
                 [AccountingPermissionManifestV1.PeriodsRead, AccountingPermissionManifestV1.PeriodsClose]),
+            ("accounting.periods.reopen", "accounting.periods", "/muhasebe/donemler", "M-07", ShellCapabilityRoutePrecedence.Static,
+                [AccountingPermissionManifestV1.PeriodsRead, AccountingPermissionManifestV1.PeriodsReopen]),
             ("accounting.journals.list", "accounting.journals", "/muhasebe/fisler", "M-04", ShellCapabilityRoutePrecedence.Static,
                 [AccountingPermissionManifestV1.JournalsRead]),
             ("accounting.journals.detail", "accounting.journals.detail", "/muhasebe/fisler/:journalId", "M-04-DETAIL",
@@ -170,6 +173,7 @@ public sealed class AccountingShellCapabilityProviderTests
         foreach (var controlId in new[]
                  {
                      AccountingShellCapabilityProvider.PeriodApproveCapabilityId, AccountingShellCapabilityProvider.PeriodCloseCapabilityId,
+                     AccountingShellCapabilityProvider.PeriodReopenCapabilityId,
                  })
         {
             var control = Assert.Single(declarations, item => item.CapabilityId == controlId);
@@ -181,7 +185,7 @@ public sealed class AccountingShellCapabilityProviderTests
                 control.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
         }
 
-        Assert.Equal(6, declarations.Count(item => item.ParentCapabilityId is not null));
+        Assert.Equal(7, declarations.Count(item => item.ParentCapabilityId is not null));
     }
 
     [Fact]

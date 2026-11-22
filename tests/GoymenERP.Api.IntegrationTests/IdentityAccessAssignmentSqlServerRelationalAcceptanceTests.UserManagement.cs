@@ -55,18 +55,47 @@ public sealed partial class IdentityAccessAssignmentSqlServerRelationalAcceptanc
                 return body.RootElement.EnumerateArray().Select(user => user.GetProperty("userId").GetGuid()).ToArray();
             }
 
+            // KIM-D57: an account with no valid assignment is listed only for its creator; another creator's or a
+            // creator-less (seed/bootstrap) account is not, and the platform-level branch admits nobody yet.
+            var otherCreator = Guid.NewGuid();
+            Guid strangerUnassigned = Guid.NewGuid(), creatorless = Guid.NewGuid();
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+                identity.Users.Add(new GoymenERP.Modules.Identity.Domain.Users.UserAccount(otherCreator, "Sentetik başka yönetici", null));
+                identity.Users.Add(new GoymenERP.Modules.Identity.Domain.Users.UserAccount(strangerUnassigned, "Sentetik başkasının", null, otherCreator));
+                identity.Users.Add(new GoymenERP.Modules.Identity.Domain.Users.UserAccount(creatorless, "Sentetik oluşturansız", null));
+                foreach (var id in new[] { strangerUnassigned, creatorless })
+                    identity.LocalCredentials.Add(new GoymenERP.Modules.Identity.Domain.Credentials.LocalCredential(id, $"synthetic-x-{id:N}",
+                        "SENTETIK-hash", 1, true, DateTimeOffset.UtcNow, Guid.NewGuid()));
+                await identity.SaveChangesAsync();
+                Assert.Equal(actor, (await identity.Users.AsNoTracking().SingleAsync(x => x.Id == neverAssigned)).CreatedByUserId);
+            }
+
             var listed = await ListAsync();
             Assert.Contains(onlyA, listed);
             Assert.Contains(neverAssigned, listed);
+            Assert.Contains(expiredB, listed); // no valid assignment any more, created by the actor (KIM-D57)
             Assert.DoesNotContain(onlyB, listed);
-            Assert.DoesNotContain(expiredB, listed);
             Assert.DoesNotContain(bothAandB, listed);
+            Assert.DoesNotContain(strangerUnassigned, listed);
+            Assert.DoesNotContain(creatorless, listed);
 
             await AssignDirectlyAsync(factory, actor, manager, TestCompanyIds.CompanyB);
             listed = await ListAsync();
             Assert.Contains(bothAandB, listed);
             Assert.DoesNotContain(onlyB, listed);
-            Assert.DoesNotContain(expiredB, listed);
+            Assert.DoesNotContain(strangerUnassigned, listed);
+
+            // KIM-D57 migration Down is a forward fix while a creator is recorded (real SQL).
+            var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(
+                new GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations.AddUserAccountCreatedBy().DownOperations[0]).Sql;
+            await using (var connection = new Microsoft.Data.SqlClient.SqlConnection(factory.DatabaseConnectionString))
+            {
+                await connection.OpenAsync();
+                await using var command = new Microsoft.Data.SqlClient.SqlCommand(guard, connection);
+                Assert.Equal(52082, (await Assert.ThrowsAsync<Microsoft.Data.SqlClient.SqlException>(() => command.ExecuteNonQueryAsync())).Number);
+            }
         });
     }
 

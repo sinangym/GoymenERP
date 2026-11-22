@@ -1293,8 +1293,6 @@ public sealed partial class SalesDraftService(
         {
             var approval = await RequireAsync(bindings.ApprovePermission, cancellationToken);
             if (approval.CompanyId != scope.CompanyId || approval.ActorId != scope.ActorId) throw new SalesDraftServiceException(403, "forbidden");
-            var purchasing = await RequireAsync(SubcontractTaxCrossModulePermission, cancellationToken);
-            if (purchasing.CompanyId != scope.CompanyId || purchasing.ActorId != scope.ActorId) throw new SalesDraftServiceException(403, "forbidden");
         }
         return current with { RequiresSubcontractTaxAuthority = scope.RequiresSubcontractTaxAuthority };
     }

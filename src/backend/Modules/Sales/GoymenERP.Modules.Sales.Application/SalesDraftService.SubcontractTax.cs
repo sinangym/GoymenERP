@@ -5,22 +5,13 @@ using GoymenERP.Modules.Sales.Domain.Drafts;
 
 namespace GoymenERP.Modules.Sales.Application;
 
-/// <summary>
-/// SAT-D381 subcontract line tax writes, without conferring price-write authority. K3-B finding 4: SAT-D395 binds the
-/// sales subcontract line code to <c>purchasing.orders.approve</c>, while Issue #1189 6947126872 (not in a decision file)
-/// names <c>sales.orders.approve</c>. Until the decision files agree (NEEDS-SINAN) the write requires BOTH, the narrowest
-/// fail-closed reading that contradicts neither; no grant changes.
-/// </summary>
+/// <summary>SAT-D381 and SAT-D469 (#1189 6947126872): tax-only writes use Sales approval alone, without conferring price-write authority.</summary>
 public sealed partial class SalesDraftService : ISalesSubcontractTaxServiceV1
 {
-    /// <summary>SAT-D395: the cross-module Purchasing approval a subcontract tax write must also hold.</summary>
-    internal const string SubcontractTaxCrossModulePermission = GoymenERP.BuildingBlocks.Security.ErpPermissions.PurchasingOrdersApprove;
-
     private async Task<Scope> WithSubcontractTaxAuthorityAsync(Scope scope, CancellationToken token)
     {
-        var marked = scope with { RequiresSubcontractTaxAuthority = true };
-        await RequireStillAsync(marked, bindings.ApprovePermission, token);
-        return marked;
+        await RequireStillAsync(scope, bindings.ApprovePermission, token);
+        return scope with { RequiresSubcontractTaxAuthority = true };
     }
     public async Task<SalesSubcontractTaxOptionsV1> GetSubcontractTaxOptionsAsync(Guid draftId, CancellationToken token = default)
     {
@@ -37,7 +28,7 @@ public sealed partial class SalesDraftService : ISalesSubcontractTaxServiceV1
     {
         ArgumentNullException.ThrowIfNull(request); ArgumentNullException.ThrowIfNull(metadata);
         var permission = bindings.ApprovePermission;
-        var scope = await WithSubcontractTaxAuthorityAsync(await RequireAsync(permission, token), token);
+        var scope = await RequireAsync(permission, token);
         if (!long.TryParse(request.ExpectedVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var expected) || expected < 1
             || request.LineId == Guid.Empty || request.Tax is null || string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Trim().Length > 4000)
             throw new SalesDraftServiceException(400, "validation_failed");

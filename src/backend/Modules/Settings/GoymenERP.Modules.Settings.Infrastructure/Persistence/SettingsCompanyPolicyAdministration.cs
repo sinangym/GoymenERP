@@ -23,13 +23,10 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 /// changes each time.</item>
 /// <item><b>Manufacturing due-date buffer</b> (URT-D96/URT-D100): whole working days ≥ 0, company default, start value 0
 /// without a row; authority <see cref="ErpPermissions.ManufacturingPlansApprove"/> (URT-D100).</item>
-/// <item><b>Sales subcontract tax default</b> (SAT-D381): one default VAT/withholding code a line may change. K3-B
-/// finding 4: SAT-D395 names <see cref="ErpPermissions.PurchasingOrdersApprove"/>, Issue #1189 6947126872 (not in a decision
-/// file) names <see cref="ErpPermissions.SalesOrdersApprove"/>; until they agree (NEEDS-SINAN) a write requires BOTH (the
-/// narrowest fail-closed reading). Reading keeps <see cref="ErpPermissions.SalesOrdersApprove"/>.</item>
-/// <item><b>Purchasing subcontract tax default</b> (ALS-D105): a separate record read under
-/// <see cref="ErpPermissions.PurchasingOrdersApprove"/>; TK-36 keeps its write route CLOSED (403 for everyone) until a
-/// decision opens it. Codes must be in the tax master list in force today.</item>
+/// <item><b>Sales subcontract tax default</b> (SAT-D381): one default VAT/withholding code a line may change; authority
+/// <see cref="ErpPermissions.SalesOrdersApprove"/> alone (SAT-D469, splitting SAT-D395 by module; #1189 6947126872).
+/// Purchasing uses its separate <see cref="ErpPermissions.PurchasingOrdersApprove"/> authority and record (ALS-D105, SAT-D469).
+/// Codes must be in the tax master list in force today.</item>
 /// <item><b>Every command</b>: the key's permission company-wide, measured first and re-measured fresh before every save;
 /// a mandatory reason (≤ 4000); one Idempotency-Key per command (the stored terminal answer replays; another body under the
 /// key is 409); the expected version as decimal text; correlation/causation; one audit event per real change, none for a
@@ -72,8 +69,7 @@ internal sealed partial class SettingsCompanyPolicyAdministration(
         "settings.sales-subcontract-tax-default.record.v1",
         "settings.sales-subcontract-tax-default.recorded.v1",
         "Settings.SalesSubcontractTaxDefault",
-        "Satış fason vergi varsayılanı sürümü kaydedildi; gerekçe kayıt içeriğindedir",
-        AlsoRequiredForWrite: ErpPermissions.PurchasingOrdersApprove);
+        "Satış fason vergi varsayılanı sürümü kaydedildi; gerekçe kayıt içeriğindedir");
 
     private static readonly KeySpec PurchasingSubcontractTaxDefault = new KeySpec(
         CompanyPolicyKeysV1.PurchasingSubcontractTaxDefault,
@@ -81,8 +77,7 @@ internal sealed partial class SettingsCompanyPolicyAdministration(
         "settings.purchasing-subcontract-tax-default.record.v1",
         "settings.purchasing-subcontract-tax-default.recorded.v1",
         "Settings.PurchasingSubcontractTaxDefault",
-        "Alış fason vergi varsayılanı sürümü kaydedildi; gerekçe kayıt içeriğindedir",
-        WriteClosed: true);
+        "Alış fason vergi varsayılanı sürümü kaydedildi; gerekçe kayıt içeriğindedir");
 
     private static readonly KeySpec SalesContractDiscountLimit = new KeySpec(
         CompanyPolicyKeysV1.SalesContractDiscountLimit,
@@ -352,9 +347,6 @@ internal sealed partial class SettingsCompanyPolicyAdministration(
         ValidateMetadata(metadata);
         var companyId = RequireContextCompany();
         var scope = await RequireAsync(spec.Permission, companyId, cancellationToken);
-        // K3-B finding 4: a closed write route refuses everyone; a second authority is measured like the first.
-        if (spec.WriteClosed) throw new UnauthorizedAccessException();
-        if (spec.AlsoRequiredForWrite is { } also) await RequireAsync(also, companyId, cancellationToken);
         if (!TryParseVersion(expectedVersionText, 0, out var expectedVersion))
         {
             return Unstored(Answers.Invalid("Beklenen sürüm (\"0\" veya pozitif tam sayı metni) zorunludur."), metadata);
@@ -474,8 +466,6 @@ internal sealed partial class SettingsCompanyPolicyAdministration(
     {
         RequireOriginalIdentity();
         await RequireStillAsync(spec.Permission, metadata.CompanyId, cancellationToken);
-        if (spec.WriteClosed) throw new UnauthorizedAccessException();
-        if (spec.AlsoRequiredForWrite is { } also) await RequireStillAsync(also, metadata.CompanyId, cancellationToken);
         RequireOriginalIdentity();
 
         void RequireOriginalIdentity()
@@ -746,7 +736,7 @@ internal sealed partial class SettingsCompanyPolicyAdministration(
         new CompanyPolicyCommandResultV1(answer, false, metadata.CorrelationId);
 
     private sealed record KeySpec(string Key, string Permission, string CommandName, string RecordedEvent, string EntityType,
-        string AuditDescription, string? AlsoRequiredForWrite = null, bool WriteClosed = false);
+        string AuditDescription);
 
     /// <summary>
     /// One requested value: its idempotency payload, whether it equals the value in force (a no-op), an optional stored

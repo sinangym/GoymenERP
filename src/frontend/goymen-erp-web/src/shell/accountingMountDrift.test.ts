@@ -55,7 +55,7 @@ describe('shell ↔ Accounting lane capability ids', () => {
   it('mounts routed ids without period or source voucher approval controls', () => {
     const shellIds = (Object.values(CAPABILITY) as string[]).filter((id) => id.startsWith('accounting.'))
     expect([...shellIds].sort()).toEqual([...ROUTED.map(([shellId]) => shellId as string)].sort())
-    for (const control of [ACCOUNTING_CAPABILITY.periodsApprove, ACCOUNTING_CAPABILITY.periodsClose, ACCOUNTING_CAPABILITY.sourceVouchersApprove,
+    for (const control of [ACCOUNTING_CAPABILITY.periodsApprove, ACCOUNTING_CAPABILITY.periodsClose, ACCOUNTING_CAPABILITY.periodsReopen, ACCOUNTING_CAPABILITY.sourceVouchersApprove,
       ACCOUNTING_CAPABILITY.postingMappingsPrepare, ACCOUNTING_CAPABILITY.postingMappingsActivate]) {
       expect(shellIds).not.toContain(control)
       expect(Object.values(ACCOUNTING_ROUTE) as string[]).not.toContain(control)

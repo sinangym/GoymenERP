@@ -28,16 +28,14 @@ internal sealed partial class IdentityAccessAssignmentService
     }
 
     /// <summary>
-    /// The managed-user list (K3-B finding 1, KIM-D16/KIM-D19). Accounts are group-wide, so the context-company fence alone
+    /// The managed-user list (K3-B finding 1, KIM-D16/KIM-D57). Accounts are group-wide, so the context-company fence alone
     /// would list every local user of the group. A row is returned only when either
     /// <list type="bullet">
     /// <item>the user is a member of the context company now and every membership company of the user is one where the
-    /// actor holds <c>identity.users.manage</c> company-wide (the KIM-D16 management scope, the same evaluator as the
+    /// actor holds <c>identity.users.manage</c> company-wide (KIM-D16, the same evaluator as the
     /// password-reset/unlock/deactivate fence), or</item>
-    /// <item>the user has never had any assignment row in any company (a freshly created account that must first be
-    /// assigned, KIM-D19). A user whose only assignments are in another company, even revoked or expired ones, is not
-    /// listed. Who may see never-assigned accounts is NEEDS-SINAN; this is the narrowest reading that keeps the
-    /// create-then-assign flow working.</item>
+    /// <item>the user has no valid assignment in any company and the actor created the account (KIM-D57). The platform-level
+    /// System Administrator branch of KIM-D57 has no technical mapping yet and admits nobody (fail-closed).</item>
     /// </list>
     /// </summary>
     public async Task<IReadOnlyList<IdentityManagedUserV1>> ReadUsersAsync(CancellationToken cancellationToken = default)
@@ -53,7 +51,7 @@ internal sealed partial class IdentityAccessAssignmentService
                           join credential in database.LocalCredentials.AsNoTracking() on user.Id equals credential.UserId
                           where (valid.Any(a => a.UserId == user.Id && a.CompanyId == company)
                                   && !valid.Any(a => a.UserId == user.Id && !managed.Contains(a.CompanyId)))
-                              || !database.RoleAssignments.Any(a => a.UserId == user.Id)
+                              || (user.CreatedByUserId == actor && !valid.Any(a => a.UserId == user.Id))
                           orderby user.DisplayName, user.Id
                           select new { user.Id, user.DisplayName, user.IsActive, credential.UserName, credential.Version,
                               credential.MustChangePassword, credential.LockoutEndUtc }).ToListAsync(cancellationToken);
@@ -88,7 +86,7 @@ internal sealed partial class IdentityAccessAssignmentService
             var normalized = LocalUserName.TryNormalize(request.UserName)!;
             if (await database.LocalCredentials.AnyAsync(x => x.NormalizedUserName == normalized, cancellationToken))
                 return Step.Refuse(Answers.Problem(409, IdentityUserManagementV1.UserNameTaken, "Kullanıcı adı kullanılıyor.", "Başka bir kullanıcı adı girin."));
-            var user = new UserAccount(request.UserId, request.DisplayName, email: null);
+            var user = new UserAccount(request.UserId, request.DisplayName, email: null, createdByUserId: command.ActorUserId);
             var credential = new LocalCredential(user.Id, request.UserName, hash, passwordHasher.FormatVersion, true, now, Guid.NewGuid());
             database.Users.Add(user);
             database.LocalCredentials.Add(credential);
