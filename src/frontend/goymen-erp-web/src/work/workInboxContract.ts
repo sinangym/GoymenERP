@@ -100,6 +100,8 @@ export interface WorkInboxItem {
   readonly waitingSinceUtc: string
   readonly awaitingPermission: string
   readonly duration: WorkInboxDuration
+  /** WP1: the approval rule version that gave the duration class (`work.approval-rule:{kind}:{n}`, 0 = YOL-D18 default). */
+  readonly ruleVersion: string
   readonly explanation: { readonly rules: readonly WorkInboxRule[]; readonly references: readonly WorkInboxReference[] }
 }
 
@@ -108,6 +110,7 @@ export interface WorkInboxSource {
   readonly kind: string
   readonly awaitingPermission: string
   readonly durationClass: WorkInboxDurationClass
+  readonly ruleVersion: string
   readonly state: WorkInboxSourceState
   readonly hasMore: boolean
 }
@@ -140,13 +143,14 @@ const UNIT = /^(?:%|[A-Za-z]{1,16})$/
 
 const ROOT_KEYS = ['companyId', 'view', 'generatedAtUtc', 'items', 'sources'] as const
 const ITEM_KEYS = [
-  'module', 'kind', 'itemId', 'documentLabel', 'link', 'waitingSinceUtc', 'awaitingPermission', 'duration', 'explanation',
+  'module', 'kind', 'itemId', 'documentLabel', 'link', 'waitingSinceUtc', 'awaitingPermission', 'duration', 'ruleVersion',
+  'explanation',
 ] as const
 const DURATION_KEYS = ['class', 'state', 'limit', 'dueAtUtc', 'isOverdue', 'policyVersion', 'holidayCalendar'] as const
 const EXPLANATION_KEYS = ['rules', 'references'] as const
 const RULE_KEYS = ['ruleCode', 'threshold', 'actual', 'deviation', 'unit'] as const
 const REFERENCE_KEYS = ['role', 'label', 'recordId', 'link'] as const
-const SOURCE_KEYS = ['module', 'kind', 'awaitingPermission', 'durationClass', 'state', 'hasMore'] as const
+const SOURCE_KEYS = ['module', 'kind', 'awaitingPermission', 'durationClass', 'ruleVersion', 'state', 'hasMore'] as const
 const EVENT_KEYS = ['clientEventId', 'replayed'] as const
 
 const isObject = (value: unknown): value is Obj => typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -170,6 +174,14 @@ const isDurationClass = (value: unknown): value is WorkInboxDurationClass =>
   value === DURATION_CLASS_HOURS || value === DURATION_CLASS_BUSINESS_DAYS
 
 /** A rule code is `{module}.{rule}`, owned by the item's module. Its words are the screen's; an unknown code is still valid. */
+const RULE_VERSION_NUMBER = /^(?:0|[1-9][0-9]{0,18})$/
+
+/** WP1: `work.approval-rule:{kind}:{n}` naming exactly this kind. */
+export const isRuleVersion = (kind: string, value: unknown): value is string => {
+  const prefix = `work.approval-rule:${kind}:`
+  return typeof value === 'string' && value.startsWith(prefix) && RULE_VERSION_NUMBER.test(value.slice(prefix.length))
+}
+
 const isRuleCode = (module: string, value: unknown): value is string =>
   typeof value === 'string'
   && value.length <= INBOX_MAX_RULE_CODE_LENGTH
@@ -222,8 +234,9 @@ function decodeReference(value: unknown): WorkInboxReference | null {
 
 function decodeItem(value: unknown): WorkInboxItem | null {
   if (!isObject(value) || !exact(value, ITEM_KEYS)) return null
-  const { module, kind, itemId, documentLabel, link, waitingSinceUtc, awaitingPermission, duration, explanation } = value
+  const { module, kind, itemId, documentLabel, link, waitingSinceUtc, awaitingPermission, duration, ruleVersion, explanation } = value
   if (!isQueueKind(module, kind) || !isInboxId(itemId) || !isQueueLink(link) || !isUtcInstant(waitingSinceUtc)) return null
+  if (!isRuleVersion(kind, ruleVersion)) return null
   if (!isLabel(documentLabel, INBOX_MAX_DOCUMENT_LABEL_LENGTH) || !isInboxPermission(awaitingPermission)) return null
   const decodedDuration = decodeDuration(duration)
   if (decodedDuration === null) return null
@@ -252,18 +265,21 @@ function decodeItem(value: unknown): WorkInboxItem | null {
     waitingSinceUtc,
     awaitingPermission,
     duration: decodedDuration,
+    ruleVersion,
     explanation: { rules: decodedRules, references: decodedReferences },
   }
 }
 
 function decodeSource(value: unknown): WorkInboxSource | null {
   if (!isObject(value) || !exact(value, SOURCE_KEYS)) return null
-  const { module, kind, awaitingPermission, durationClass, state, hasMore } = value
+  const { module, kind, awaitingPermission, durationClass, ruleVersion, state, hasMore } = value
   if (!isQueueModule(module) || !isQueueKind(module, kind) || !isInboxPermission(awaitingPermission)) return null
-  if (!isDurationClass(durationClass) || typeof hasMore !== 'boolean') return null
-  if (state === INBOX_SOURCE_READY) return { module, kind, awaitingPermission, durationClass, state, hasMore }
+  if (!isDurationClass(durationClass) || !isRuleVersion(kind, ruleVersion) || typeof hasMore !== 'boolean') return null
+  if (state === INBOX_SOURCE_READY) return { module, kind, awaitingPermission, durationClass, ruleVersion, state, hasMore }
   // An unavailable source shows nothing and claims nothing more.
-  if (state === INBOX_SOURCE_UNAVAILABLE && !hasMore) return { module, kind, awaitingPermission, durationClass, state, hasMore }
+  if (state === INBOX_SOURCE_UNAVAILABLE && !hasMore) {
+    return { module, kind, awaitingPermission, durationClass, ruleVersion, state, hasMore }
+  }
   return null
 }
 
@@ -291,6 +307,7 @@ export function decodeWorkInbox(body: unknown, companyId: string): WorkInbox | n
     const source = sourceByKind.get(item.kind)
     if (source === undefined || source.state !== INBOX_SOURCE_READY || source.module !== item.module) return null
     if (source.awaitingPermission !== item.awaitingPermission || source.durationClass !== item.duration.class) return null
+    if (source.ruleVersion !== item.ruleVersion) return null
     const key = `${item.kind}::${item.itemId}`
     if (seen.has(key)) return null
     seen.add(key)

@@ -18,8 +18,9 @@ import { WORK_APPROVALS_CAPABILITIES, WORK_ROUTE } from './workText'
 import { WORK_INBOX_CAPABILITIES } from './workInboxKinds'
 
 /**
- * W1-A: the Work inbox (`/onaylarim/kuyruk`) also opens for an actor holding any inbox kind's EXISTING approve
- * capability (`WORK_INBOX_CAPABILITIES`); no capability is new and the server re-authorizes every source.
+ * W1-A / WP1: the one Work inbox (`/onaylarim/kuyruk`) opens for an actor holding any inbox kind's EXISTING approve
+ * capability (`WORK_INBOX_CAPABILITIES`, the native "Onaylarım" kinds included); no capability is new and the server
+ * re-authorizes every source.
  */
 const WORK_INBOX_ROUTE_CAPABILITIES: readonly string[] = [...new Set([...WORK_APPROVALS_CAPABILITIES, ...WORK_INBOX_CAPABILITIES])]
 
@@ -28,7 +29,7 @@ export const workRoutes: RouteObject[] = [
   { path: NOTIFICATIONS_ROUTE.slice(1), element: <NotificationsPage /> },
   // W1-C "Bana atanan": own tasks only, like the personal inbox; the server accepts no assignee override.
   { path: MY_TASKS_ROUTE.slice(1), element: <MyTasksPage /> },
-  // B-25 / W1-A: the Work inbox and the one-list Work queue, behind the same owners' approve capabilities (declared before the detail route).
+  // W1-A / WP1 (D5): the one Work inbox, behind the owners' approve capabilities (declared before the detail route).
   {
     path: WORK_ROUTE.queue.slice(1),
     element: <CapabilityRoute capability={WORK_INBOX_ROUTE_CAPABILITIES}><WorkQueuePage /></CapabilityRoute>,

@@ -1,43 +1,23 @@
 /**
- * W1-A Work inbox (AI-D31): `/onaylarim/kuyruk` is the inbox. Its first view, "Benden karar bekleyen", shows the inbox
- * items with their duration and explanation card (`WorkInboxSection`), and under them the B-25 queue below; each reads
- * on its own, so one source's failure never hides the other. The three later views are named as coming.
+ * W1-A / WP1 Work inbox (AI-D31, D5): `/onaylarim/kuyruk` is the ONE inbox. Its first view, "Benden karar bekleyen",
+ * lists every approval waiting for the signed-in actor's decision — the four native D-05 kinds (official invoice import,
+ * stock count, stock scrap, sales order draft) included — with their duration and explanation card
+ * (`WorkInboxSection`). The former B-25 queue is no longer a second list here: its sources are inbox sources now. The
+ * three later views are named as coming.
  *
- * B-25 Work queue — `/onaylarim/kuyruk`: the pending approvals of every connected source the signed-in actor may see in
- * the committed company, in ONE list, oldest first (`GET /api/v1/work/queue`). Each source is its owner's own read
- * through the native approval queue adapter; the owner decides who sees a record, so a source that refuses the actor is
- * simply absent, and a source that cannot answer is named in a notice while the others are still shown.
- *
- * Read only. There is no approve button here: each row opens its owner's own screen, which reads the record afresh and
- * owns every decision (authority, separation of duties, versions). The route opens on the same owners' approve
- * capabilities as "Onaylarım"; the server re-authorizes every source regardless.
+ * Read only. There is no approve button here: each card opens its owner's own screen, which reads the record afresh and
+ * owns every decision (authority, separation of duties, versions). The route opens on the owners' existing approve
+ * capabilities (`WORK_INBOX_CAPABILITIES`, which include the "Onaylarım" ones); the server re-authorizes every source.
  */
 
-import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
-import { fetchWorkQueue } from './workQueueApi'
-import { QUEUE_SOURCE_READY, QUEUE_SOURCE_UNAVAILABLE, type WorkQueue, type WorkQueueSource } from './workQueueContract'
-import {
-  APPROVAL_KIND_TEXT,
-  WORK_APPROVALS_CAPABILITIES,
-  WORK_QUEUE_MODULE_TEXT,
-  WORK_QUEUE_TEXT as T,
-  WORK_ROUTE,
-  formatInstant,
-} from './workText'
+import { WORK_QUEUE_TEXT as Q, WORK_ROUTE } from './workText'
 import { WORK_INBOX_CAPABILITIES } from './workInboxKinds'
 import { WORK_INBOX_TEXT as I } from './workInboxText'
 import { WorkInboxSection } from './WorkInboxSection'
-import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
-import { StateBlock } from '../shell/StateBlock'
-import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './Work.module.css'
-
-const kindText = (kind: string): string => APPROVAL_KIND_TEXT[kind] ?? kind
-const moduleText = (module: string): string => WORK_QUEUE_MODULE_TEXT[module] ?? module
-const sourceLabels = (sources: readonly WorkQueueSource[]): string[] => sources.map((source) => kindText(source.kind))
 
 export function WorkQueuePage() {
   const shell = useShellState()
@@ -45,9 +25,8 @@ export function WorkQueuePage() {
   const namespace = key === null ? null : contextKeyString(key)
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const inboxEnabled = WORK_INBOX_CAPABILITIES.some((capability) => hasCapability(shell, capability))
-  const queueEnabled = WORK_APPROVALS_CAPABILITIES.some((capability) => hasCapability(shell, capability))
   return <section className={styles.page} aria-labelledby="work-queue-heading" data-testid="work-queue">
-    <Link className={styles.backLink} to={WORK_ROUTE.approvals}>← {T.backToInbox}</Link>
+    <Link className={styles.backLink} to={WORK_ROUTE.approvals}>← {Q.backToInbox}</Link>
     <header className={styles.header}>
       <h1 id="work-queue-heading">{I.heading}</h1>
       <div className={styles.scope}>
@@ -69,78 +48,5 @@ export function WorkQueuePage() {
         routeEntryGeneration={shell.routeEntryGeneration}
         enabled={inboxEnabled} />
     </section>
-    {queueEnabled
-      ? <section className={styles.section} aria-labelledby="work-queue-legacy-heading" data-testid="work-queue-legacy">
-        <h2 id="work-queue-legacy-heading">{I.legacyHeading}</h2>
-        <p className={styles.muted}>{T.scope}</p>
-        <LegacyQueue companyId={companyId} namespace={namespace} routeEntryGeneration={shell.routeEntryGeneration} />
-      </section>
-      : null}
   </section>
-}
-
-/** B-25: the four connected native sources' one list (`GET /api/v1/work/queue`), read on its own. */
-function LegacyQueue({ companyId, namespace, routeEntryGeneration }: {
-  readonly companyId: string | null
-  readonly namespace: string | null
-  readonly routeEntryGeneration: number
-}) {
-  const boundary = useAuthBoundary()
-  const query = useQuery({
-    queryKey: [namespace ?? 'no-context', routeEntryGeneration, 'work-queue'],
-    enabled: namespace !== null && companyId !== null,
-    queryFn: async ({ signal }) => {
-      const snapshot = boundary.capture()
-      const outcome = await fetchWorkQueue(companyId as string, signal)
-      if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
-      return outcome
-    },
-  })
-  const queue = query.data?.type === 'ok-single' ? query.data.data : null
-  return queue === null
-    ? <StateBlock
-      state={query.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(query.data) as RemoteViewState<unknown>}
-      subject={T.subject}
-      onRetry={() => void query.refetch()} />
-    : <QueueBody queue={queue} />
-}
-
-function QueueBody({ queue }: { readonly queue: WorkQueue }) {
-  const unavailable = queue.sources.filter((source) => source.state === QUEUE_SOURCE_UNAVAILABLE)
-  const more = queue.sources.filter((source) => source.state === QUEUE_SOURCE_READY && source.hasMore)
-  return <>
-    {unavailable.length > 0
-      ? <p role="alert" data-testid="work-queue-unavailable">{T.unavailable(sourceLabels(unavailable))}</p>
-      : null}
-    {more.length > 0
-      ? <p role="note" className={styles.muted} data-testid="work-queue-has-more">{T.hasMore(sourceLabels(more))}</p>
-      : null}
-    {queue.items.length === 0
-      ? unavailable.length === 0
-        ? <StateBlock state={{ kind: 'empty-no-data' }} subject={T.subject} />
-        : <p className={styles.muted} data-testid="work-queue-empty-readable">{T.emptyReadable}</p>
-      : <div className={styles.tableWrap} tabIndex={0} role="region" aria-label={T.caption}>
-        <table className={styles.table} data-testid="work-queue-table">
-          <caption className={styles.caption}>{T.caption}</caption>
-          <thead>
-            <tr>
-              <th scope="col">{T.kind}</th>
-              <th scope="col">{T.module}</th>
-              <th scope="col">{T.createdAt}</th>
-              <th scope="col"><span className={styles.muted}>{T.open}</span></th>
-            </tr>
-          </thead>
-          <tbody>
-            {queue.items.map((item) => <tr key={`${item.kind}::${item.itemId}`} data-kind={item.kind}>
-              <td>{kindText(item.kind)}</td>
-              <td>{moduleText(item.module)}</td>
-              <td><time dateTime={item.createdAtUtc}>{formatInstant(item.createdAtUtc)}</time></td>
-              <td className={styles.actions}>
-                <Link to={item.link} aria-label={T.openLabel(kindText(item.kind))}>{T.open}</Link>
-              </td>
-            </tr>)}
-          </tbody>
-        </table>
-      </div>}
-  </>
 }
