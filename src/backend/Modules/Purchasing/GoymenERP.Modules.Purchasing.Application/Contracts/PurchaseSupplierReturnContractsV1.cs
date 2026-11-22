@@ -26,7 +26,8 @@ public sealed record CreatePurchaseSupplierReturnV1(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseSupplierReturnCostAllocationV1? CostAllocation = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? SourceLabelId = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? PieceCount = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseSupplierReturnLineagePartRequestV1>? LineageParts = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseSupplierReturnLineagePartRequestV1>? LineageParts = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? SupplierPieceQuantity = null);
 
 /// <summary>An approval or a rejection of a pending cost exception; a rejection needs a reason.</summary>
 public sealed record DecidePurchaseSupplierReturnV1(string ExpectedVersion, string? Reason,
@@ -166,6 +167,13 @@ public static class PurchaseSupplierReturnCodesV1
     /// price. That is a known difference with no decided posting; it is refused, never recorded.
     /// </summary>
     public const string QuantityManualCostDifference = "purchasing_supplier_return_quantity_manual_cost_difference";
+
+    /// <summary>
+    /// SAT-D455 409 (SAT-D371): a quantity return from a piece order line bills pieces × the net piece price; that amount per
+    /// returned kilogram is not a four-decimal TL/kg value, so it cannot equal the moving average the stock leaves at — a known
+    /// difference with no decided posting. Refused, never rounded into agreement.
+    /// </summary>
+    public const string QuantityPiecePriceDifference = "purchasing_supplier_return_quantity_piece_price_difference";
 }
 
 /// <summary>
@@ -192,7 +200,8 @@ public interface IPurchaseSupplierReturnInvoiceCostReadPortV1
 /// cannot decide its exception) until the same-person approval question is decided; it is a configuration, not a default choice.
 /// </summary>
 public sealed record PurchaseSupplierReturnPolicyV1(bool AllowSameActorCostExceptionDecision,
-    bool LineageGoldenAccepted = PurchaseSupplierReturnLineageGoldenV1.SupplierReturnLineageGoldenAccepted)
+    bool LineageGoldenAccepted = PurchaseSupplierReturnLineageGoldenV1.SupplierReturnLineageGoldenAccepted,
+    bool QuantityRulesGoldenAccepted = PurchaseSupplierReturnLineageGoldenV1.SupplierReturnQuantityRulesGoldenAccepted)
 {
     public static PurchaseSupplierReturnPolicyV1 Default { get; } = new(false);
 }
@@ -325,7 +334,8 @@ public static class PurchaseSupplierReturnJsonV1
             || request.OccurredAtUtc == default || request.OccurredAtUtc.Offset != TimeSpan.Zero
             || request.SourceLabelId == Guid.Empty
             || (request.PieceCount is not null || request.LineageParts is not null) && request.SourceLabelId is null
-            || request.PieceCount is < 1 || !PurchaseSupplierReturnLineagePartsV1.ValidRequestShape(request))
+            || request.PieceCount is < 1 || !PurchaseSupplierReturnLineagePartsV1.ValidRequestShape(request)
+            || request.SupplierPieceQuantity is not null && (request.SourceLabelId is null || request.SupplierPieceQuantity < 1))
         {
             throw new JsonException("Invalid return shape; identities, a block, a positive exact kg, a reason and UTC time are required.");
         }

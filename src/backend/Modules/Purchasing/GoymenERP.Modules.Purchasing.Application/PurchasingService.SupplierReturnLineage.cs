@@ -27,11 +27,13 @@ namespace GoymenERP.Modules.Purchasing.Application;
 /// </summary>
 public sealed partial class PurchasingService
 {
+    private bool QuantityRulesAccepted => (returnPolicy ?? PurchaseSupplierReturnPolicyV1.Default).QuantityRulesGoldenAccepted;
+
     private sealed record ReturnLineageRow(Guid GoodsAcceptanceId, PurchaseSupplierReturnAcceptanceOwnerV1 Owner, decimal QuantityKg,
         int? Pieces, PurchaseSupplierReturnReceiptStateV1 Receipt, bool SelectionRequired, decimal? InvoiceCost, string CostSource);
 
     private sealed record ReturnLineagePlan(PurchaseSupplierReturnLineageModeV1 Mode, PurchaseSupplierReturnLineageV1 Lineage,
-        IReadOnlyList<ReturnLineageRow> Rows, decimal? QuantityPrice, PurchasingServiceException? Refusal);
+        IReadOnlyList<ReturnLineageRow> Rows, PurchaseSupplierReturnQuantityPriceV1? QuantityPrice, PurchasingServiceException? Refusal);
 
     private sealed record ReturnLineageDecision(PurchaseSupplierReturnLineageModeV1 Mode, PurchaseSupplierReturnStatus Status,
         PurchaseSupplierReturnCostBasis CostBasis, decimal UnitCostTryPerKg, IReadOnlyList<PurchaseSupplierReturnLineagePartV1> Parts);
@@ -117,7 +119,7 @@ public sealed partial class PurchasingService
 
         var total = PurchaseSupplierReturnLineagePartsV1.ParseKg(quantityKg);
         var rows = new List<ReturnLineageRow>();
-        decimal? quantityPrice = null;
+        PurchaseSupplierReturnQuantityPriceV1? quantityPrice = null;
         if (mode == PurchaseSupplierReturnLineageModeV1.Lineage)
         {
             foreach (var root in lineage.Roots)
@@ -151,11 +153,11 @@ public sealed partial class PurchasingService
             var receipt = await GuardedAsync(scope, permission,
                 () => port.ReadReceiptAsync(scope.CompanyId, goodsAcceptanceId, cancellationToken), cancellationToken);
             if (receipt is null || receipt.GoodsAcceptanceId != goodsAcceptanceId) throw PurchaseSupplierReturnLineagePlannerV1.Unavailable();
-            var price = PurchaseSupplierReturnQuantityPriceRuleV1.Resolve(QuantityPriceLine(order, lineId));
+            var price = PurchaseSupplierReturnQuantityPriceRuleV1.Resolve(QuantityPriceLine(order, lineId), QuantityRulesAccepted);
             switch (price.Outcome)
             {
                 case PurchaseSupplierReturnQuantityPriceOutcomeV1.Priced:
-                    quantityPrice = price.UnitPriceTryPerKg;
+                    quantityPrice = price;
                     break;
                 case PurchaseSupplierReturnQuantityPriceOutcomeV1.NotAKilogramTryLine:
                     Refuse(new PurchasingServiceException(409, PurchaseSupplierReturnCodesV1.LineageReceiptMismatch,
@@ -197,12 +199,16 @@ public sealed partial class PurchasingService
     /// selection must add up to the receipt's share and stay inside what is left of each part, and each part's cost follows
     /// SAT-D392/SAT-D393 (lineage) or SAT-D444 (quantity).
     /// </summary>
-    private static ReturnLineageDecision DecideReturnLineage(ReturnLineagePlan plan, CreatePurchaseSupplierReturnV1 request)
+    private static ReturnLineageDecision DecideReturnLineage(ReturnLineagePlan plan, CreatePurchaseSupplierReturnV1 request,
+        bool quantityRulesAccepted)
     {
         var posted = request.LineageParts;
         if (posted is null && plan.Rows.Count != 1 || posted is not null && (posted.Count != plan.Rows.Count
                 || plan.Rows.Any(row => posted.All(part => part.GoodsAcceptanceId != row.GoodsAcceptanceId))))
             throw PartsMismatch();
+        // SAT-D455: the document's piece quantity belongs to a quantity return from a piece order line only.
+        if (request.SupplierPieceQuantity is not null && plan.Mode != PurchaseSupplierReturnLineageModeV1.Quantity)
+            throw new PurchasingServiceException(400, "validation_failed");
         var single = plan.Rows.Count == 1;
         if (!single && request.ManualUnitCostTryPerKg is not null
             || plan.Mode == PurchaseSupplierReturnLineageModeV1.Quantity && posted?[0].ManualUnitCostTryPerKg is not null)
@@ -220,27 +226,52 @@ public sealed partial class PurchasingService
             var manual = manualText is null ? (decimal?)null : ParseUnitCost(manualText);
             PurchaseSupplierReturnCostBasis basis;
             decimal unitCost;
+            decimal? supplierPrice = null;
+            int? supplierPieces = null;
             if (plan.Mode == PurchaseSupplierReturnLineageModeV1.Quantity)
             {
                 var price = plan.QuantityPrice ?? throw PurchaseSupplierReturnLineagePlannerV1.Unavailable();
+                var unitPrice = price.UnitPriceTry ?? throw PurchaseSupplierReturnLineagePlannerV1.Unavailable();
+                // SAT-D455: a piece order line bills the pieces the preparer enters × the net piece price; a kg line never names them.
+                if (price.PerPiece != (request.SupplierPieceQuantity is not null))
+                    throw price.PerPiece
+                        ? new PurchasingServiceException(422, PurchaseSupplierReturnCodesV1.PieceCountRequired,
+                            [new("supplierPieceQuantity", PurchaseSupplierReturnCodesV1.PieceCountRequired)])
+                        : new PurchasingServiceException(400, "validation_failed");
+                // What the supplier is billed per returned kilogram, when that is an exact four-decimal value (it always is for
+                // a kg line). The stock leaves at the moving average, which Inventory compares with it (SAT-D371).
+                decimal? billedPerKg = unitPrice;
+                if (price.PerPiece)
+                {
+                    var amountPerKg = unitPrice * request.SupplierPieceQuantity!.Value / row.QuantityKg;
+                    billedPerKg = decimal.Round(amountPerKg, PurchaseSupplierReturnQuantityPriceRuleV1.UnitPriceScale) == amountPerKg
+                        && amountPerKg * row.QuantityKg == unitPrice * request.SupplierPieceQuantity.Value ? amountPerKg : null;
+                    supplierPieces = request.SupplierPieceQuantity;
+                }
+
+                if (quantityRulesAccepted) supplierPrice = unitPrice;
                 if (row.CostSource == PurchaseSupplierReturnCostSourceV1.MovingAverage)
                 {
                     if (manual is not null)
                         throw new PurchasingServiceException(409, PurchaseSupplierReturnCodesV1.QuantityAverageAvailable,
                             [new("manualUnitCostTryPerKg", PurchaseSupplierReturnCodesV1.QuantityAverageAvailable)]);
-                    (basis, unitCost) = (PurchaseSupplierReturnCostBasis.InvoiceUnitCost, price);
+                    if (billedPerKg is not { } perKg)
+                        throw new PurchasingServiceException(409, PurchaseSupplierReturnCodesV1.QuantityPiecePriceDifference,
+                            [new("supplierPieceQuantity", PurchaseSupplierReturnCodesV1.QuantityPiecePriceDifference)]);
+                    (basis, unitCost) = (PurchaseSupplierReturnCostBasis.InvoiceUnitCost, perKg);
                 }
                 else
                 {
-                    // SAT-D393: the average cannot be read; the manual cost waits for another person's approval. SAT-D371: a
-                    // manual cost other than the supplier price is a known difference with no decided posting — refused.
+                    // SAT-D393: the average cannot be read; the manual cost waits for another person's approval. SAT-D454 (behind
+                    // the gate): it may differ from the order price — stock leaves at the approved manual cost, the supplier is
+                    // billed at the order's net price, both recorded. Gate closed: a differing manual cost is refused (SAT-D371).
                     if (manual is null)
                         throw new PurchasingServiceException(409, PurchaseSupplierReturnCodesV1.CostRequired,
                             [new("manualUnitCostTryPerKg", PurchaseSupplierReturnCodesV1.CostRequired)]);
-                    if (manual != price)
+                    if (!quantityRulesAccepted && manual != billedPerKg)
                         throw new PurchasingServiceException(409, PurchaseSupplierReturnCodesV1.QuantityManualCostDifference,
                             [new("manualUnitCostTryPerKg", PurchaseSupplierReturnCodesV1.QuantityManualCostDifference)]);
-                    (basis, unitCost) = (PurchaseSupplierReturnCostBasis.ManualCostWithException, price);
+                    (basis, unitCost) = (PurchaseSupplierReturnCostBasis.ManualCostWithException, manual.Value);
                 }
             }
             else if (row.InvoiceCost is { } invoiced)
@@ -259,7 +290,8 @@ public sealed partial class PurchasingService
             }
 
             parts.Add(new PurchaseSupplierReturnLineagePartV1(row.GoodsAcceptanceId, row.Owner.PurchaseOrderId, row.Owner.PurchaseOrderLineId,
-                part.ReturnLineId, part.InventoryMovementId, row.QuantityKg, basis, unitCost, row.Pieces, part.PendingKg, part.Invoiced));
+                part.ReturnLineId, part.InventoryMovementId, row.QuantityKg, basis, unitCost, row.Pieces, part.PendingKg, part.Invoiced,
+                supplierPrice, supplierPieces));
         }
 
         var anchor = parts.Single(part => part.GoodsAcceptanceId == request.GoodsAcceptanceId);
@@ -307,6 +339,6 @@ public sealed partial class PurchasingService
             order.Money is { } money && money.CurrencyId == SettingsCurrencyIdentitiesV1.TurkishLira,
             line.Quantity.Unit == QuantityUnit.Kilogram, price is not null && price.PriceUnitId == line.UnitId, price?.UnitPrice,
             // SAT-D451: the discount is part of the price; the deferral (maturity difference) is deliberately not passed.
-            price?.DiscountPercent, price?.DiscountAmount);
+            price?.DiscountPercent, price?.DiscountAmount, line.Quantity.Unit == QuantityUnit.Piece);
     }
 }

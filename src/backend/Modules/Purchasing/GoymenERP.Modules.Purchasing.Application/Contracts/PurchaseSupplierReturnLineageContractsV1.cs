@@ -14,6 +14,14 @@ namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 public static class PurchaseSupplierReturnLineageGoldenV1
 {
     public const bool SupplierReturnLineageGoldenAccepted = true;
+
+    /// <summary>
+    /// SAT-D453 (round a net price above four decimals), SAT-D454 (an approved manual stock cost may differ from the order price)
+    /// and SAT-D455 (a quantity return from a piece order line). They are money formulas whose independent golden rows are not
+    /// in main yet, so the gate is closed: every one of them keeps today's refusal (422 / 409 / 409) and nothing is recorded.
+    /// <see cref="PurchaseSupplierReturnPolicyV1.QuantityRulesGoldenAccepted"/> carries it so tests pin both states.
+    /// </summary>
+    public const bool SupplierReturnQuantityRulesGoldenAccepted = false;
 }
 
 /// <summary>How a return leaves a foreign source label (stored as 1/2; shown as its name).</summary>
@@ -108,42 +116,55 @@ public static class PurchaseSupplierReturnLineagePlannerV1
 
 /// <summary>What one order line offers a quantity return as its price (the facts the rule needs, nothing else).</summary>
 public sealed record PurchaseSupplierReturnQuantityPriceLineV1(bool IsTurkishLira, bool IsKilogramLine, bool PricedPerOrderUnit,
-    decimal? UnitPrice, decimal? DiscountPercent = null, decimal? DiscountAmount = null);
+    decimal? UnitPrice, decimal? DiscountPercent = null, decimal? DiscountAmount = null, bool IsPieceLine = false);
 
 public enum PurchaseSupplierReturnQuantityPriceOutcomeV1
 {
     Priced = 1,
 
-    /// <summary>409: not a priced kilogram line in TL (golden TI8 prices a kg order; a piece order's return quantity is not given).</summary>
+    /// <summary>409: not a priced kilogram line in TL (and, with the SAT-D455 gate closed, a piece line).</summary>
     NotAKilogramTryLine = 2,
 
     /// <summary>
-    /// 422: the net price after the discount has more than four decimals (or does not fit TL/kg). The stock exit contract carries
-    /// four; how such a price is rounded is not decided, so it is never rounded here.
+    /// 422: the net price after the discount has more than four decimals (or does not fit) and the SAT-D453 gate is closed; it
+    /// is never rounded without that rule.
     /// </summary>
     NotRepresentable = 3,
 }
 
-public sealed record PurchaseSupplierReturnQuantityPriceV1(PurchaseSupplierReturnQuantityPriceOutcomeV1 Outcome, decimal? UnitPriceTryPerKg);
+/// <summary><see cref="PerPiece"/>: the price is TL per piece of a piece order line (SAT-D455), otherwise TL per kg.</summary>
+public sealed record PurchaseSupplierReturnQuantityPriceV1(PurchaseSupplierReturnQuantityPriceOutcomeV1 Outcome, decimal? UnitPriceTry,
+    bool PerPiece = false)
+{
+    public decimal? UnitPriceTryPerKg => PerPiece ? null : UnitPriceTry;
+}
 
 /// <summary>
-/// SAT-D444 / SAT-D451, THE single rule point for "the chosen purchase order's unit price" of a quantity return. SAT-D451
-/// (Sinan, 2026-11-22, <c>docs/decisions/SINAN_KARARLARI_2026-11-22_WORK_AI_DALGALAR.md</c>): it is the chosen order line's NET
-/// unit price AFTER the discount; the maturity difference (deferral) is NOT included. The discount arithmetic is the shared
-/// <see cref="CommercialLinePriceCalculator"/> (exact, never rounded); no price formula is written here.
+/// SAT-D444 / SAT-D451 / SAT-D453 / SAT-D455, THE single rule point for "the chosen purchase order's unit price" of a quantity
+/// return (Sinan, 2026-11-22, <c>docs/decisions/SINAN_KARARLARI_2026-11-22_WORK_AI_DALGALAR.md</c>).
+/// <list type="bullet">
+/// <item>SAT-D451: the chosen order line's NET unit price AFTER the discount; the maturity difference is NOT included. The
+/// discount arithmetic is the shared <see cref="CommercialLinePriceCalculator"/> (exact).</item>
+/// <item>SAT-D453 (behind the quantity-rules gate): a net price above four decimals is rounded to four, half away from zero.
+/// Gate closed: refused, never rounded.</item>
+/// <item>SAT-D455 (behind the same gate): a piece order line is priced per piece. Gate closed: not a priced kilogram line.</item>
+/// </list>
 /// </summary>
 public static class PurchaseSupplierReturnQuantityPriceRuleV1
 {
     /// <summary>SAT-D451: net of the discount, without the deferral.</summary>
     public const string DiscountedLinePriceDecision = "SAT-D451: net-after-discount, deferral-excluded";
 
-    private const int UnitCostScale = 4;
+    public const int UnitPriceScale = 4;
     private const decimal UnitCostUpperBound = 100_000_000_000_000m;
 
-    public static PurchaseSupplierReturnQuantityPriceV1 Resolve(PurchaseSupplierReturnQuantityPriceLineV1 line)
+    public static PurchaseSupplierReturnQuantityPriceV1 Resolve(PurchaseSupplierReturnQuantityPriceLineV1 line,
+        bool quantityRulesAccepted = PurchaseSupplierReturnLineageGoldenV1.SupplierReturnQuantityRulesGoldenAccepted)
     {
         ArgumentNullException.ThrowIfNull(line);
-        if (!line.IsTurkishLira || !line.IsKilogramLine || !line.PricedPerOrderUnit || line.UnitPrice is not { } gross || gross <= 0m)
+        var perPiece = line.IsPieceLine && !line.IsKilogramLine;
+        if (!line.IsTurkishLira || !line.PricedPerOrderUnit || line.UnitPrice is not { } gross || gross <= 0m
+            || !(line.IsKilogramLine || perPiece && quantityRulesAccepted))
             return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.NotAKilogramTryLine, null);
         decimal price;
         try { price = CommercialLinePriceCalculator.NetUnitPrice(gross, line.DiscountPercent, line.DiscountAmount); }
@@ -151,8 +172,14 @@ public static class PurchaseSupplierReturnQuantityPriceRuleV1
         { return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.NotRepresentable, null); }
         // A fully discounted line has no supplier price to bill a return at.
         if (price <= 0m) return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.NotAKilogramTryLine, null);
-        if (price >= UnitCostUpperBound || decimal.Round(price, UnitCostScale) != price)
-            return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.NotRepresentable, null);
-        return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.Priced, price);
+        if (decimal.Round(price, UnitPriceScale) != price)
+        {
+            if (!quantityRulesAccepted) return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.NotRepresentable, null);
+            // SAT-D453: four decimals, half away from zero; the return amount uses the rounded price.
+            price = decimal.Round(price, UnitPriceScale, MidpointRounding.AwayFromZero);
+        }
+
+        if (price <= 0m || price >= UnitCostUpperBound) return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.NotRepresentable, null);
+        return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.Priced, price, perPiece);
     }
 }

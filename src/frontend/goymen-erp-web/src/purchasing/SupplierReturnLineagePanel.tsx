@@ -77,7 +77,7 @@ export function SupplierReturnLineagePanel(props: SupplierReturnLineagePanelProp
 function Body({ detail, receipt, binding, attemptBinding, onSettled }: SupplierReturnLineagePanelProps) {
   const id = useId(), boundary = useAuthBoundary()
   const company = detail.order.companyId, order = detail.order.id
-  const [label, setLabel] = useState(''), [kg, setKg] = useState(''), [pieces, setPieces] = useState('')
+  const [label, setLabel] = useState(''), [kg, setKg] = useState(''), [pieces, setPieces] = useState(''), [documentPieces, setDocumentPieces] = useState('')
   const [block, setBlock] = useState<'Free' | 'Blocked'>('Free'), [reason, setReason] = useState('')
   const [asked, setAsked] = useState<Asked | null>(null)
   const [choices, setChoices] = useState<Readonly<Record<string, Choice>>>({})
@@ -149,6 +149,9 @@ function Body({ detail, receipt, binding, attemptBinding, onSettled }: SupplierR
         returnLineId: own ? '' : receiptIdentity(), inventoryMovementId: own ? '' : receiptIdentity(),
         ...selection, ...(manual === undefined ? {} : { manualUnitCostTryPerKg: manual }) })
     }
+    // SAT-D455: the document's pieces, for a quantity return from a piece order line; the server refuses it anywhere else.
+    const supplierPieces = documentPieces.trim() === '' ? null : /^[1-9]\d{0,8}$/.test(documentPieces.trim()) ? Number(documentPieces.trim()) : undefined
+    if (supplierPieces === undefined) { setInvalidChoice(true); return }
     setInvalidChoice(false)
     const returnLineId = receiptIdentity(), inventoryMovementId = receiptIdentity()
     const lineageParts = parts.map((part) => part.returnLineId === '' ? { ...part, returnLineId, inventoryMovementId } : part)
@@ -156,6 +159,7 @@ function Body({ detail, receipt, binding, attemptBinding, onSettled }: SupplierR
       sourceBlock: asked.block, quantityKg: asked.quantityKg, manualUnitCostTryPerKg: documentCost, replacementExpected: false,
       reason: asked.reason, occurredAtUtc: new Date().toISOString(), sourceLabelId: asked.sourceLabelId,
       ...(asked.pieceCount === null ? {} : { pieceCount: asked.pieceCount }),
+      ...(supplierPieces === null ? {} : { supplierPieceQuantity: supplierPieces }),
       // The document's own receipt is always one of the parts; a receipt outside the lineage is refused by the server (409).
       ...(lineageParts.some((part) => part.goodsAcceptanceId.toLowerCase() === receipt.acceptanceId.toLowerCase()) ? { lineageParts } : {}) })
   }
@@ -202,6 +206,11 @@ function Body({ detail, receipt, binding, attemptBinding, onSettled }: SupplierR
     {plan !== null ? <>
       {stale ? <p role="alert">{T.previewStale}</p> : null}
       {invalidChoice ? <p role="alert">{T.invalidSelection}</p> : null}
+      {plan.lineageMode === 'Quantity' ? <div className={styles.formGrid}>
+        <label htmlFor={`${id}-document-pieces`}>{T.supplierPieceQuantity}</label>
+        <input id={`${id}-document-pieces`} inputMode="numeric" value={documentPieces} disabled={attempt.locked}
+          onChange={(e) => setDocumentPieces(e.target.value)} />
+      </div> : null}
       <Button type="button" onClick={save} disabled={attempt.locked || stale || plan.refusal !== undefined}>{T.save}</Button>
     </> : null}
   </div>

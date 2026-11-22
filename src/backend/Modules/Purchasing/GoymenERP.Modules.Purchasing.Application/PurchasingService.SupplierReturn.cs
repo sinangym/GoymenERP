@@ -83,7 +83,7 @@ public sealed partial class PurchasingService
                 // source are decided here, before anything is written. The receipt-label cost-source attribution does not apply.
                 var plan = await PlanReturnLineageAsync(scope, permission, returns, stored.Order, lineId, sourceLabelId,
                     request.GoodsAcceptanceId, request.QuantityKg, request.PieceCount, collectRefusal: false, cancellationToken);
-                lineage = DecideReturnLineage(plan, request);
+                lineage = DecideReturnLineage(plan, request, QuantityRulesAccepted);
             }
             else
             {
@@ -470,7 +470,8 @@ public sealed partial class PurchasingService
             item.CostAllocation, item.CostAllocationSources, item.SourceLabelId, item.LineageMode?.ToString(), item.PieceCount,
             item.LineageParts?.Select(part => new PurchaseSupplierReturnLineagePartViewV1(part.GoodsAcceptanceId, part.PurchaseOrderId,
                 part.PurchaseOrderLineId, part.ReturnLineId, part.InventoryMovementId, Kg(part.QuantityKg), part.CostBasis.ToString(),
-                visible ? UnitCostText(part.UnitCostTryPerKg) : null, part.PieceCount, part.PendingKg, part.Invoiced)).ToArray())
+                visible ? UnitCostText(part.UnitCostTryPerKg) : null, part.PieceCount, part.PendingKg, part.Invoiced,
+                visible && part.SupplierUnitPriceTry is { } supplierPrice ? UnitCostText(supplierPrice) : null, part.SupplierPieceQuantity)).ToArray())
         {
             PriceDisclosure = visible ? PurchasingPriceDisclosureV1.Visible : PurchasingPriceDisclosureV1.Withheld,
         };

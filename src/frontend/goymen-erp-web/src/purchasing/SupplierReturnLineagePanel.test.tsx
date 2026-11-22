@@ -163,6 +163,18 @@ describe('Supplier return from another label (AK-8b; SAT-D433, SAT-D440–SAT-D4
     const request = vi.mocked(createLineageSupplierReturn).mock.calls[0][2]
     expect(request.manualUnitCostTryPerKg).toBe('20.5')
     expect(request.lineageParts).toEqual([{ goodsAcceptanceId: id(10), returnLineId: request.returnLineId, inventoryMovementId: request.inventoryMovementId }])
+    expect(request).not.toHaveProperty('supplierPieceQuantity')
+  })
+
+  it('SAT-D455: a quantity return can carry the document pieces of a piece order line and never sends them when left empty', async () => {
+    vi.mocked(fetchSupplierReturnLineagePreview).mockResolvedValue({ type: 'ok-single', data: { ...plan, lineageMode: 'Quantity', quantityKg: '80',
+      parts: [{ ...plan.parts[0], quantityKg: '80', costSource: 'MovingAverage', invoiced: [], selectionRequired: false }] } })
+    vi.mocked(createLineageSupplierReturn).mockResolvedValue({ type: 'failed', status: 409, code: 'purchasing_supplier_return_quantity_piece_price_difference' })
+    mount(); await openAndAsk('80')
+    await userEvent.type(await screen.findByLabelText(T.supplierPieceQuantity), '4')
+    await userEvent.click(screen.getByRole('button', { name: T.save }))
+    expect(await screen.findByText(T.code.purchasing_supplier_return_quantity_piece_price_difference)).toBeTruthy()
+    expect(vi.mocked(createLineageSupplierReturn).mock.calls[0][2].supplierPieceQuantity).toBe(4)
   })
 
   it('sends the pieces of a piece-tracking label and shows each receipt\'s pieces (golden I10)', async () => {

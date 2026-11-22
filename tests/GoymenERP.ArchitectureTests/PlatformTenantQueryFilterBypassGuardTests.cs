@@ -2321,7 +2321,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "PurchasingService.SupplierReturn.cs"] =
                     new(
                         // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): gated source-label supplier return; value from guard_fingerprint.py (7931129c… -> b7c4cb9f…).
-                        "b7c4cb9f982a728ee059c783b3baeb7108182db6febcfe0b286dc5100fe140c5",
+                        "62db366db0edd2e23f0bdc70234fed1aab53378d60dbdd48bd879fef32d8fab9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         [".FindAsync"] = 3

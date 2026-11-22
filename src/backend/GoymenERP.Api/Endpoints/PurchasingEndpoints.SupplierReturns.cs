@@ -198,6 +198,7 @@ public static partial class PurchasingEndpoints
         PurchaseSupplierReturnCodesV1.LineageReceiptLimitExceeded,
         PurchaseSupplierReturnCodesV1.QuantityAverageAvailable,
         PurchaseSupplierReturnCodesV1.QuantityManualCostDifference,
+        PurchaseSupplierReturnCodesV1.QuantityPiecePriceDifference,
         .. InventorySupplierReturnExitCodesV1.Status409Codes.Order(StringComparer.Ordinal),
     ];
 

@@ -179463,6 +179463,7 @@
               "purchasing_supplier_return_lineage_selection_required",
               "purchasing_supplier_return_quantity_average_available",
               "purchasing_supplier_return_quantity_manual_cost_difference",
+              "purchasing_supplier_return_quantity_piece_price_difference",
               "same_key_payload_mismatch"
             ]
           },
@@ -256843,6 +256844,15 @@
             "items": {
               "$ref": "#/components/schemas/PurchaseSupplierReturnLineagePartRequestV1"
             }
+          },
+          "supplierPieceQuantity": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -294306,6 +294316,21 @@
             "items": {
               "$ref": "#/components/schemas/PurchaseSupplierReturnInvoicedSelectionV1"
             }
+          },
+          "supplierUnitPriceTry": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "supplierPieceQuantity": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
