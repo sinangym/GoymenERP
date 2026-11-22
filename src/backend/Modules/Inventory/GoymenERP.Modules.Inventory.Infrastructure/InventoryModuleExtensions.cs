@@ -138,6 +138,8 @@ public static class InventoryModuleExtensions
         services.AddScoped<IAiOwnerToolV1, InventoryStockPositionsAiTool>();
         services.AddScoped<IAiOwnerToolV1, InventoryNegativeStockAttemptsAiTool>();
         services.AddScoped<IAiOwnerToolV1, InventoryPendingStockCountsAiTool>();
+        // AI-D45: the CONFIDENTIAL stock cost READ tool over the owner's existing cost port (inventory.average-cost.read).
+        services.AddScoped<IAiOwnerToolV1, InventoryAverageCostAiTool>();
         services.AddSingleton<IShellCapabilityProvider, InventoryShellCapabilityProvider>();
         return services;
     }

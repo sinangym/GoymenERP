@@ -392,6 +392,35 @@
    "scanLimit": 500
   },
   {
+   "toolId": "inventory.average-cost.v1",
+   "version": "1",
+   "ownerModule": "Inventory",
+   "risk": "Read",
+   "dataClass": "Confidential",
+   "requiredPermissions": [
+    "inventory.average-cost.read"
+   ],
+   "fieldAllowlist": [
+    "locationId",
+    "productId"
+   ],
+   "arguments": {
+    "locationId": {
+     "type": "string",
+     "format": "uuid",
+     "note": "Zorunlu."
+    },
+    "productId": {
+     "type": "string",
+     "format": "uuid",
+     "note": "Zorunlu."
+    }
+   },
+   "source": "IInventoryAverageCostReadPortV1.ReadAsync (SAT-D262; Stok sahibi, hareketli ortalama alış maliyeti; port yetki taşımaz, izin araçta ölçülür)",
+   "units": "Stok kg başına maliyet, sahibin tuttuğu maliyet para biriminde; hesap yeniden yazılmaz.",
+   "redaction": "AI-D45: yalnız maliyet görme izni (inventory.average-cost.read) olan kullanıcının asistanı okur; Gizli (Confidential), bulut modele gitmez (CloudMaximumDataClass = Internal). Okunamayan/olmayan maliyet sıfır yazılmaz; sahibin kodu verilir."
+  },
+  {
    "toolId": "inventory.negative-stock-attempts.v1",
    "version": "1",
    "ownerModule": "Inventory",
@@ -813,7 +842,8 @@
    "source": "IPurchaseOpenLineReadPortV1.ListOpenApprovedLinesAsync (AT-025; port yetki taşımaz, izin araçta ölçülür)",
    "units": "Her satır kendi Ayarlar birimindedir; toplamlar BİRİM BAŞINA verilir, birimler toplanmaz, kg↔adet dönüşümü yapılmaz.",
    "redaction": "Fiyatsız (port yapısı gereği).",
-   "scanLimit": 1000
+   "scanLimit": 1000,
+   "openPurchaseOrderDefinition": "KLN-D42: açık alış siparişi = onaylı alış siparişinin mal kabul bekleyen (kalan > 0) satırı; taslak sipariş ve tamamen kabul edilmiş satır açık değildir. Eksik uyarısının tedarik tarafıyla aynı sahip portu."
   },
   {
    "toolId": "sales.order-status.v1",

@@ -50,6 +50,12 @@ public static class InventoryPermissionManifestV1
     public const string StockCountApprove = "inventory.stock-count.approve";
 
     /// <summary>
+    /// AI-D45: disclose the moving-average purchase cost (the "maliyet görme izni"). Company-wide. Registered only; every
+    /// grant is the user's. Read first by the <c>inventory.average-cost.v1</c> AI tool (CONFIDENTIAL).
+    /// </summary>
+    public const string AverageCostRead = "inventory.average-cost.read";
+
+    /// <summary>
     /// ST-02 scrap write-off: record that part or all of one stocked label is scrap, with its mandatory reason.
     /// Company-wide. Recording changes no stock; the scrap waits for <see cref="StockScrapApprove"/>. The literal is
     /// the owner's technical mapping, by analogy with <see cref="StockCountRecord"/>; registration, classification

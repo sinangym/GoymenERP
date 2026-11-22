@@ -356,6 +356,16 @@ public static class ErpPermissions
     public const string InventoryOpeningCostApprove = "inventory.opening-cost.approve";
 
     /// <summary>
+    /// AI-D45 (SINAN_KARARLARI_2026-11-22_EK_SORULAR.md, WP-A3b): the "maliyet görme izni" for the Inventory moving-average
+    /// purchase cost (SAT-D262 <c>IInventoryAverageCostReadPortV1</c>). It governs DISCLOSURE of the stock cost to its holder;
+    /// the first reader is the AI assistant's <c>inventory.average-cost.v1</c> READ tool (CONFIDENTIAL, never sent to a cloud
+    /// model). Its own name: no other Inventory, Sales or Purchasing name confers it and it confers none (the Sales margin read
+    /// stays <see cref="SalesOrdersMarginRead"/>). Registered, not granted: no seeded role and no real user receives it; the
+    /// persona → grant mapping is a human gate. Company-wide only, like the other Inventory reads. Not Critical.
+    /// </summary>
+    public const string InventoryAverageCostRead = "inventory.average-cost.read";
+
+    /// <summary>
     /// Finance bank-account master (FS0, #312): names are the Finance owner's technical mapping
     /// (Business #254 5654539215). Registering them makes them KNOWN, not granted: no role and no
     /// user receives them here, and who holds which is a human gate. All three are company-wide
@@ -1898,6 +1908,7 @@ public static class ErpPermissions
             InventoryStockTransferLossApprove,
             InventoryOpeningCostSubmit,
             InventoryOpeningCostApprove,
+            InventoryAverageCostRead,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
@@ -2215,6 +2226,7 @@ public static class ErpPermissions
             InventoryStockTransferLossApprove,
             InventoryOpeningCostSubmit,
             InventoryOpeningCostApprove,
+            InventoryAverageCostRead,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
