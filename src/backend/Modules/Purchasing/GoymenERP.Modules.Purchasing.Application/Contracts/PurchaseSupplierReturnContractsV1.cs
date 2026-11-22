@@ -149,8 +149,8 @@ public static class PurchaseSupplierReturnCodesV1
     public const string LineageReceiptLimitExceeded = "purchasing_supplier_return_lineage_receipt_limit_exceeded";
 
     /// <summary>
-    /// AK-8b 422 (SAT-D444, OPEN): the chosen order line carries a discount or a deferral and it is not decided whether "the
-    /// order's unit price" of a quantity return is the gross or the net price. Refused until that answer; see
+    /// AK-8b 422 (SAT-D444/SAT-D451): the chosen order line's net unit price after its discount has more than four decimals. The
+    /// stock exit carries four and the rounding of such a price is not decided, so the return is refused, never rounded. See
     /// <see cref="PurchaseSupplierReturnQuantityPriceRuleV1"/>, the single rule point.
     /// </summary>
     public const string QuantityPriceUndecided = "purchasing_supplier_return_quantity_price_undecided";

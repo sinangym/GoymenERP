@@ -18,7 +18,8 @@ namespace GoymenERP.Modules.Purchasing.Application;
 /// valued at that receipt's invoice unit cost (SAT-D392) or, when it cannot be read, at a manual cost that waits for another
 /// person's approval (SAT-D393); one pending part makes the whole document wait and nothing leaves stock.</item>
 /// <item><b>Quantity</b> (any other lineage): the named acceptance of this order is the chosen receipt; the supplier price is the
-/// order line's unit price (<see cref="PurchaseSupplierReturnQuantityPriceRuleV1"/>). Stock leaves at the moving average; when
+/// order line's net unit price after its discount, without the deferral (SAT-D451,
+/// <see cref="PurchaseSupplierReturnQuantityPriceRuleV1"/>). Stock leaves at the moving average; when
 /// that cannot be read the SAT-D393 exception path applies and no value is written without the approval.</item>
 /// </list>
 /// Inside every receipt the invoiced / invoice-pending part is the preparer's explicit choice (K3-B2); a receipt's open quantity
@@ -160,12 +161,11 @@ public sealed partial class PurchasingService
                     Refuse(new PurchasingServiceException(409, PurchaseSupplierReturnCodesV1.LineageReceiptMismatch,
                         [new("goodsAcceptanceId", PurchaseSupplierReturnCodesV1.LineageReceiptMismatch)]));
                     break;
-                case PurchaseSupplierReturnQuantityPriceOutcomeV1.Undecided:
+                default:
+                    // The net price does not fit four decimals; its rounding is not decided (never rounded here).
                     Refuse(new PurchasingServiceException(422, PurchaseSupplierReturnCodesV1.QuantityPriceUndecided,
                         [new("goodsAcceptanceId", PurchaseSupplierReturnCodesV1.QuantityPriceUndecided)]));
                     break;
-                default:
-                    throw PurchaseSupplierReturnLineagePlannerV1.Unavailable();
             }
 
             rows.Add(Row(receipt, new(order.Id, lineId, order.SupplierPartyId), total, pieceCount, null,
@@ -306,6 +306,7 @@ public sealed partial class PurchasingService
         return new PurchaseSupplierReturnQuantityPriceLineV1(
             order.Money is { } money && money.CurrencyId == SettingsCurrencyIdentitiesV1.TurkishLira,
             line.Quantity.Unit == QuantityUnit.Kilogram, price is not null && price.PriceUnitId == line.UnitId, price?.UnitPrice,
-            price is not null && (price.DiscountPercent is not null || price.DiscountAmount is not null), price?.HasDeferral ?? false);
+            // SAT-D451: the discount is part of the price; the deferral (maturity difference) is deliberately not passed.
+            price?.DiscountPercent, price?.DiscountAmount);
     }
 }

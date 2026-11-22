@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Numerics;
+using GoymenERP.BuildingBlocks.Monetary;
 
 namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 
@@ -107,7 +108,7 @@ public static class PurchaseSupplierReturnLineagePlannerV1
 
 /// <summary>What one order line offers a quantity return as its price (the facts the rule needs, nothing else).</summary>
 public sealed record PurchaseSupplierReturnQuantityPriceLineV1(bool IsTurkishLira, bool IsKilogramLine, bool PricedPerOrderUnit,
-    decimal? UnitPrice, bool HasDiscount, bool HasDeferral);
+    decimal? UnitPrice, decimal? DiscountPercent = null, decimal? DiscountAmount = null);
 
 public enum PurchaseSupplierReturnQuantityPriceOutcomeV1
 {
@@ -116,26 +117,25 @@ public enum PurchaseSupplierReturnQuantityPriceOutcomeV1
     /// <summary>409: not a priced kilogram line in TL (golden TI8 prices a kg order; a piece order's return quantity is not given).</summary>
     NotAKilogramTryLine = 2,
 
-    /// <summary>422: a discounted or deferred line — gross or net is not decided (SAT-D444, OPEN).</summary>
-    Undecided = 3,
-
-    /// <summary>503: the price does not fit the four-decimal TL/kg contract; it is never rounded.</summary>
-    NotRepresentable = 4,
+    /// <summary>
+    /// 422: the net price after the discount has more than four decimals (or does not fit TL/kg). The stock exit contract carries
+    /// four; how such a price is rounded is not decided, so it is never rounded here.
+    /// </summary>
+    NotRepresentable = 3,
 }
 
 public sealed record PurchaseSupplierReturnQuantityPriceV1(PurchaseSupplierReturnQuantityPriceOutcomeV1 Outcome, decimal? UnitPriceTryPerKg);
 
 /// <summary>
-/// SAT-D444, THE single rule point for "the chosen purchase order's unit price" of a quantity return. For a plain kilogram line
-/// in TL it is the line's unit price. For a line with a discount or a deferral Sinan has not yet answered whether the price is
-/// gross or net: <see cref="DiscountedLinePriceDecision"/> is null, so such a line is refused with
-/// <see cref="PurchaseSupplierReturnCodesV1.QuantityPriceUndecided"/> (422) and nothing is recorded. When the answer arrives it
-/// is implemented here, in <see cref="Resolve"/>, and nowhere else.
+/// SAT-D444 / SAT-D451, THE single rule point for "the chosen purchase order's unit price" of a quantity return. SAT-D451
+/// (Sinan, 2026-11-22, <c>docs/decisions/SINAN_KARARLARI_2026-11-22_WORK_AI_DALGALAR.md</c>): it is the chosen order line's NET
+/// unit price AFTER the discount; the maturity difference (deferral) is NOT included. The discount arithmetic is the shared
+/// <see cref="CommercialLinePriceCalculator"/> (exact, never rounded); no price formula is written here.
 /// </summary>
 public static class PurchaseSupplierReturnQuantityPriceRuleV1
 {
-    /// <summary>OPEN (NEEDS-SINAN): null until the gross/net answer; no value is assumed.</summary>
-    public const string? DiscountedLinePriceDecision = null;
+    /// <summary>SAT-D451: net of the discount, without the deferral.</summary>
+    public const string DiscountedLinePriceDecision = "SAT-D451: net-after-discount, deferral-excluded";
 
     private const int UnitCostScale = 4;
     private const decimal UnitCostUpperBound = 100_000_000_000_000m;
@@ -143,10 +143,14 @@ public static class PurchaseSupplierReturnQuantityPriceRuleV1
     public static PurchaseSupplierReturnQuantityPriceV1 Resolve(PurchaseSupplierReturnQuantityPriceLineV1 line)
     {
         ArgumentNullException.ThrowIfNull(line);
-        if (!line.IsTurkishLira || !line.IsKilogramLine || !line.PricedPerOrderUnit || line.UnitPrice is not { } price || price <= 0m)
+        if (!line.IsTurkishLira || !line.IsKilogramLine || !line.PricedPerOrderUnit || line.UnitPrice is not { } gross || gross <= 0m)
             return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.NotAKilogramTryLine, null);
-        if (line.HasDiscount || line.HasDeferral)
-            return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.Undecided, null);
+        decimal price;
+        try { price = CommercialLinePriceCalculator.NetUnitPrice(gross, line.DiscountPercent, line.DiscountAmount); }
+        catch (Exception exception) when (exception is ArgumentException or OverflowException or InvalidOperationException)
+        { return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.NotRepresentable, null); }
+        // A fully discounted line has no supplier price to bill a return at.
+        if (price <= 0m) return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.NotAKilogramTryLine, null);
         if (price >= UnitCostUpperBound || decimal.Round(price, UnitCostScale) != price)
             return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.NotRepresentable, null);
         return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.Priced, price);

@@ -4,7 +4,7 @@
  */
 export const SUPPLIER_RETURN_LINEAGE_TEXT = {
   heading: 'Başka etiketten tedarikçiye iade',
-  note: 'Bölünmüş veya birleştirilmiş bir etiketi iade ederken kullanılır. Etiketin soyu yalnız bu tedarikçinin kabullerinden oluşuyorsa iade kabullere soy payına göre dağıtılır; her kabul için ayrı stok çıkışı tek bir iade belgesinde yazılır. Soyda başka kaynak varsa iadenin tamamı bu karttaki kabulden düşülür (miktar iadesi).',
+  note: 'Bölünmüş veya birleştirilmiş bir etiketi iade ederken kullanılır. Etiketin soyu yalnız bu tedarikçinin kabullerinden oluşuyorsa iade kabullere soy payına göre dağıtılır; her kabul için ayrı stok çıkışı tek bir iade belgesinde yazılır. Soyda başka kaynak varsa iadenin tamamı bu karttaki kabulden düşülür (miktar iadesi); tedarikçiye fatura fiyatı sipariş satırının iskonto sonrası net birim fiyatıdır, vade farkı dahil edilmez.',
   show: 'Başka etiketten iadeyi aç',
   hide: 'Başka etiketten iadeyi kapat',
   subject: 'iade önizlemesi',
@@ -63,7 +63,7 @@ export const SUPPLIER_RETURN_LINEAGE_TEXT = {
     purchasing_supplier_return_lineage_parts_mismatch: 'Kabul payları etiketin güncel dağıtımıyla uyuşmuyor. Dağıtımı yeniden önizleyin; seçtiğiniz paylar kabulün iade kg\'sine eşit olmalı.',
     purchasing_supplier_return_lineage_selection_required: 'Bir kabulde birden fazla pay açık; faturalı / fatura bekleyen payı seçmeden iade kaydedilmez.',
     purchasing_supplier_return_lineage_receipt_limit_exceeded: 'Bir kabulün (ya da seçilen payının) açık miktarı bu iadeye yetmiyor. Miktar başka kabule kaydırılmaz.',
-    purchasing_supplier_return_quantity_price_undecided: 'Seçilen sipariş satırı iskontolu ya da vade farklı. Miktar iadesinde sipariş birim fiyatının brüt mü net mi olacağı henüz karara bağlanmadı; karar gelene kadar bu satırdan miktar iadesi yapılamaz.',
+    purchasing_supplier_return_quantity_price_undecided: 'Seçilen sipariş satırının iskonto sonrası net birim fiyatı dört ondalıktan fazla. Bu fiyatın nasıl yuvarlanacağı karara bağlanmadığı için bu satırdan miktar iadesi yapılamaz.',
     purchasing_supplier_return_quantity_average_available: 'Depo/ürün ortalama maliyeti okunabiliyor; elle maliyet girilmez.',
     purchasing_supplier_return_quantity_manual_cost_difference: 'Elle girilen maliyet sipariş birim fiyatından farklı. Fark için muhasebe kaydı tanımlı olmadığından iade kaydedilmez.',
     purchasing_supplier_return_cost_required: 'Maliyet okunamıyor. Elle birim maliyet girin; iade farklı bir kişinin onayını bekler.',

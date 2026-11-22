@@ -140,7 +140,7 @@ describe('Supplier return from another label (AK-8b; SAT-D433, SAT-D440–SAT-D4
     expect((screen.getByRole('button', { name: T.save }) as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('a quantity return shows the moving average as its cost source and the undecided discounted-line rule as a refusal', async () => {
+  it('a quantity return shows the moving average as its cost source and an unrepresentable net price as a refusal', async () => {
     vi.mocked(fetchSupplierReturnLineagePreview).mockResolvedValue({ type: 'ok-single', data: { ...plan, lineageMode: 'Quantity', quantityKg: '80',
       refusal: 'purchasing_supplier_return_quantity_price_undecided',
       parts: [{ ...plan.parts[0], quantityKg: '80', costSource: 'MovingAverage', invoiced: [], selectionRequired: false }] } })

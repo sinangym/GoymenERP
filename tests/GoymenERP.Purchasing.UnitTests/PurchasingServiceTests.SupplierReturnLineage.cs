@@ -377,44 +377,64 @@ public sealed partial class PurchasingServiceTests
     }
 
     [Theory]
-    [InlineData("2.5", null, null)]
-    [InlineData(null, "0.5", null)]
-    [InlineData(null, null, "3")]
-    public async Task OPEN_a_quantity_return_from_a_discounted_or_deferred_line_is_refused_422_until_gross_or_net_is_decided(string? discountPercent,
-        string? discountAmount, string? deferralPercent)
+    [InlineData("20.5", null, null, null, "20.5")]
+    [InlineData("20.5", "2.5", null, null, "19.9875")]
+    [InlineData("20.5", null, "0.5", null, "20")]
+    [InlineData("20.5", null, null, "3", "20.5")]
+    [InlineData("20.5", "2.5", null, "3", "19.9875")]
+    public async Task SAT_D451_a_quantity_return_bills_the_lines_net_price_after_the_discount_and_never_the_deferral(string unitPrice,
+        string? discountPercent, string? discountAmount, string? deferralPercent, string expected)
     {
         var (world, order, returns, request, lineage) = await QuantityWorldAsync(
-            new PurchaseOrderLinePriceRequest("20.5", DiscountPercent: discountPercent, DiscountAmount: discountAmount, DeferralPercent: deferralPercent),
+            new PurchaseOrderLinePriceRequest(unitPrice, DiscountPercent: discountPercent, DiscountAmount: discountAmount, DeferralPercent: deferralPercent),
             averageReadable: true);
+        var exits = new ReturnExitHost();
+
+        var answer = await world.Service(returns: returns, returnLineage: lineage, returnExits: exits)
+            .CreateSupplierReturnAsync(order, request, Metadata("quantity-sat-d451"));
+
+        Assert.Equal(("Recorded", expected), (answer.Return.Status, answer.Return.UnitCostTryPerKg));
+        Assert.Equal(expected, Assert.Single(exits.Exits).UnitCostTryPerKg);
+    }
+
+    [Fact]
+    public async Task A_net_price_with_more_than_four_decimals_is_refused_422_and_never_rounded()
+    {
+        // 41.25 less 2.5 % is 40.21875: five decimals. The stock exit carries four; rounding it is not decided.
+        var (world, order, returns, request, lineage) = await QuantityWorldAsync(
+            new PurchaseOrderLinePriceRequest("41.25", DiscountPercent: "2.5"), averageReadable: true);
         var exits = new ReturnExitHost();
         var service = world.Service(returns: returns, returnLineage: lineage, returnExits: exits);
 
         var refusal = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
-            service.CreateSupplierReturnAsync(order, request, Metadata("quantity-undecided")));
+            service.CreateSupplierReturnAsync(order, request, Metadata("quantity-five-decimals")));
         var preview = await service.GetSupplierReturnLineagePreviewAsync(order, request.GoodsAcceptanceId, LineageLabel, request.QuantityKg, null);
 
         Assert.Equal((422, PurchaseSupplierReturnCodesV1.QuantityPriceUndecided, 0, 0), (refusal.Status, refusal.Code, returns.NewWrites, exits.Exits.Count));
         Assert.Equal(("Quantity", PurchaseSupplierReturnCodesV1.QuantityPriceUndecided), (preview.LineageMode, preview.Refusal));
-        Assert.Null(PurchaseSupplierReturnQuantityPriceRuleV1.DiscountedLinePriceDecision);
     }
 
     [Theory]
-    [InlineData(true, true, true, "20.5", false, false, "Priced")]
-    [InlineData(false, true, true, "20.5", false, false, "NotAKilogramTryLine")]
-    [InlineData(true, false, true, "20.5", false, false, "NotAKilogramTryLine")]
-    [InlineData(true, true, false, "20.5", false, false, "NotAKilogramTryLine")]
-    [InlineData(true, true, true, null, false, false, "NotAKilogramTryLine")]
-    [InlineData(true, true, true, "20.5", true, false, "Undecided")]
-    [InlineData(true, true, true, "20.5", false, true, "Undecided")]
-    [InlineData(true, true, true, "20.50001", false, false, "NotRepresentable")]
-    public void SAT_D444_the_single_price_rule_point_prices_only_a_plain_kilogram_line_in_TL(bool lira, bool kilogram, bool perUnit, string? price,
-        bool discount, bool deferral, string outcome)
+    [InlineData(true, true, true, "20.5", null, null, "Priced", "20.5")]
+    [InlineData(true, true, true, "20.5", "2.5", null, "Priced", "19.9875")]
+    [InlineData(true, true, true, "20.5", null, "0.5", "Priced", "20")]
+    [InlineData(false, true, true, "20.5", null, null, "NotAKilogramTryLine", null)]
+    [InlineData(true, false, true, "20.5", null, null, "NotAKilogramTryLine", null)]
+    [InlineData(true, true, false, "20.5", null, null, "NotAKilogramTryLine", null)]
+    [InlineData(true, true, true, null, null, null, "NotAKilogramTryLine", null)]
+    [InlineData(true, true, true, "20.5", "100", null, "NotAKilogramTryLine", null)]
+    [InlineData(true, true, true, "41.25", "2.5", null, "NotRepresentable", null)]
+    [InlineData(true, true, true, "20.50001", null, null, "NotRepresentable", null)]
+    public void SAT_D451_the_single_price_rule_point_is_the_net_price_after_the_discount_of_a_kilogram_line_in_TL(bool lira, bool kilogram,
+        bool perUnit, string? price, string? discountPercent, string? discountAmount, string outcome, string? expected)
     {
-        var answer = PurchaseSupplierReturnQuantityPriceRuleV1.Resolve(new(lira, kilogram, perUnit,
-            price is null ? null : decimal.Parse(price, System.Globalization.CultureInfo.InvariantCulture), discount, deferral));
+        static decimal? Number(string? text) => text is null ? null : decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
+        var answer = PurchaseSupplierReturnQuantityPriceRuleV1.Resolve(new(lira, kilogram, perUnit, Number(price), Number(discountPercent),
+            Number(discountAmount)));
 
         Assert.Equal(outcome, answer.Outcome.ToString());
-        Assert.Equal(outcome == "Priced" ? 20.5m : null, answer.UnitPriceTryPerKg);
+        Assert.Equal(Number(expected), answer.UnitPriceTryPerKg);
+        Assert.Contains("SAT-D451", PurchaseSupplierReturnQuantityPriceRuleV1.DiscountedLinePriceDecision, StringComparison.Ordinal);
     }
 
     [Fact]
