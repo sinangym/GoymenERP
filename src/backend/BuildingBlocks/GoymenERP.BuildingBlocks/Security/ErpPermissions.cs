@@ -1690,6 +1690,22 @@ public static class ErpPermissions
     /// tool still requires its own permissions in addition to this capability, and the runtime itself stays off (AI-D6).
     /// </summary>
     public const string AiPanelUse = "ai.panel.use";
+    /// <summary>
+    /// W1-C (AI-D20/AI-D23, YOL-D19; DALGA_PLANI_v2 1.7): write a note on a record the actor can read (the record's owner
+    /// answers the read) and passivate one's own note. A note is never edited or deleted. Company-wide only (Work filters by no
+    /// site, location or work center). Not Critical. Registered, not granted: no seeded role holds it; a grant is a human gate.
+    /// </summary>
+    public const string WorkNotesWrite = "work.notes.write";
+    /// <summary>
+    /// W1-C: create a task (bound to a readable record or free-standing) for an active member of the same company, and cancel a
+    /// task one assigned. Company-wide only. Not Critical. Registered, not granted (a grant is a human gate).
+    /// </summary>
+    public const string WorkTasksAssign = "work.tasks.assign";
+    /// <summary>
+    /// W1-C: complete a task assigned to oneself (only the assignee may; that rule lives in the Work domain, not here).
+    /// Company-wide only. Not Critical. Registered, not granted (a grant is a human gate).
+    /// </summary>
+    public const string WorkTasksComplete = "work.tasks.complete";
 
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(
         [
@@ -1979,6 +1995,9 @@ public static class ErpPermissions
             AiPanelUse,
             IdentityUsersManage,
             PlatformSecurityEventsRead,
+            WorkNotesWrite,
+            WorkTasksAssign,
+            WorkTasksComplete,
         ],
         StringComparer.Ordinal);
 
@@ -2277,6 +2296,9 @@ public static class ErpPermissions
             AiPanelUse,
             IdentityUsersManage,
             PlatformSecurityEventsRead,
+            WorkNotesWrite,
+            WorkTasksAssign,
+            WorkTasksComplete,
         ],
         StringComparer.Ordinal);
 

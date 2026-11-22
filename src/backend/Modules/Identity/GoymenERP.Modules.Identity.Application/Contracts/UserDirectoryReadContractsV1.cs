@@ -163,3 +163,34 @@ public sealed record CompanySingleActiveMemberRequestV1(
 public sealed record CompanySingleActiveMemberAnswerV1(
     UserDirectoryOutcomeV1 Outcome,
     bool HasSingleActiveMember);
+
+/// <summary>
+/// W1-C (AI-D20/AI-D23, Work notes and mentions): does ONE person hold ONE registered permission in the company NOW, under a
+/// company-wide assignment — the measurement of <see cref="UserDirectorySearchRequestV1.HoldingPermission"/> for a single
+/// user, with the company scope always required (a narrower assignment answers false, never "maybe"). Work uses it to refuse a
+/// mention of a person who cannot read the record the note is about; it is a module-to-module port, not an endpoint.
+/// <para>
+/// Fail-closed fence: the company and the actor are copies of the server-resolved context; the caller must be authenticated,
+/// may access the company and is an active member there now. Anything else is <see cref="UserDirectoryOutcomeV1.Denied"/>; an
+/// owner failure is <see cref="UserDirectoryOutcomeV1.Unavailable"/>. Only the yes/no answer leaves the module: no role, scope,
+/// assignment or other permission. The person must also be an active member (the directory predicate), otherwise false.
+/// </para>
+/// </summary>
+public interface IUserPermissionHolderReadPortV1
+{
+    Task<UserPermissionHolderAnswerV1> HoldsAsync(
+        UserPermissionHolderRequestV1 request,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary><c>UserId</c> non-empty; <c>Permission</c> a registered name spelled exactly.</summary>
+public sealed record UserPermissionHolderRequestV1(
+    Guid CompanyId,
+    string ActorId,
+    Guid UserId,
+    string Permission);
+
+/// <summary><c>Holds</c> is meaningful only with <see cref="UserDirectoryOutcomeV1.Found"/>.</summary>
+public sealed record UserPermissionHolderAnswerV1(
+    UserDirectoryOutcomeV1 Outcome,
+    bool Holds);
