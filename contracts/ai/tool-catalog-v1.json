@@ -768,13 +768,14 @@
   },
   {
    "toolId": "finance.treasury-accounts.v1",
-   "version": "1",
+   "version": "2",
    "ownerModule": "Finance",
    "risk": "Read",
-   "dataClass": "Internal",
+   "dataClass": "Confidential",
    "requiredPermissions": [
     "finance.bank-account.read",
-    "finance.cash-account.read"
+    "finance.cash-account.read",
+    "finance.treasury-balance.read"
    ],
    "fieldAllowlist": [
     "kind",
@@ -796,9 +797,10 @@
      "default": 20
     }
    },
-   "source": "IFinanceBankAccountReader.ListAuthorizedAsync + IFinanceCashAccountMaster.ListAsync (Finance sahibi, salt okunur)",
-   "balance": "Bakiye verilmez: FNS-D11/FNS-D22 güncel hazine bakiyesi kaynağı henüz yok (IFinanceTreasuryBalanceGuard Unavailable). Her hesap balanceState=NoSource; sıfır veya tahmin gösterilmez. IBAN verilmez.",
-   "scanLimit": 500
+   "source": "IFinanceBankAccountReader.ListAuthorizedAsync + IFinanceCashAccountMaster.ListAsync + IFinanceTreasuryBalanceReadV1.ReadAuthorizedAsync (iç hazine defteri) + IFinanceBankStatementImportServiceV1 (son ekstre; Finance sahibi, salt okunur)",
+   "scanLimit": 500,
+   "balance": "AI-D43: bakiye finans defterindeki hareketlerden gelir (FinanceTreasuryLedger), yalnız listelenen hesaplar için, her hesap kendi para biriminde ve açık ISO koduyla; hesaplar/para birimleri arası toplam veya çevrim yok. Banka hesabında son ayrıştırılmış ekstrenin son satır bakiyesi, defterin ekstre tarihine kadarki bakiyesiyle karşılaştırılır: fark varsa statement.state=Difference, statementBalance ve difference (defter − ekstre) döner. Ekstre yetkisi yoksa NotAuthorized; ekstre yoksa NoStatement; bunlar cevabı reddetmez. finance.treasury-balance.read hiçbir role verilmez. IBAN ve ekstre satırı verilmez.",
+   "sensitivity": "Tutarlar hassas veri sınıfıdır (Confidential)."
   },
   {
    "toolId": "accounting.period-status.v1",

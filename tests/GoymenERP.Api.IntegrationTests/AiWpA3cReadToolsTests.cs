@@ -67,6 +67,28 @@ public sealed class AiWpA3cReadToolsTests
     }
 
     [Fact]
+    public async Task The_assistant_inbox_read_records_no_work_measurement_while_the_screen_read_still_does()
+    {
+        // ASSUMPTION-AI-INBOX-MEASUREMENT-1: the same scope and maker != checker, but an assistant read is not counted as
+        // what a person saw on the inbox screen.
+        var payment = InboxSource("finance", PaymentKind, PaymentApprove, WorkApprovalDurationClassV1.Hours,
+            [Item("finance", PaymentKind, Now.AddHours(-1), Someone)]);
+        var inbox = Inbox([payment]);
+
+        var assistant = await new WorkInboxAwaitingMeAiTool(inbox.Query).ReadAsync(new AiToolInputV1("{}"), Context());
+        var overdue = await new WorkOverdueApprovalsAiTool(inbox.Query).ReadAsync(new AiToolInputV1("{}"), Context());
+
+        Assert.Equal(AiToolOutcomeV1.Succeeded, assistant.Outcome);
+        Assert.Equal(AiToolOutcomeV1.Succeeded, overdue.Outcome);
+        Assert.Equal(2, payment.Calls);
+        Assert.Equal(0, inbox.Measurements.Observations);
+
+        var screen = await inbox.Query.ListAsync(null, null, default);
+        Assert.Equal(WorkInboxReadOutcomeV1.Found, screen.Outcome);
+        Assert.Equal(1, inbox.Measurements.Observations);
+    }
+
+    [Fact]
     public async Task A_source_whose_approve_permission_I_lack_is_not_asked_and_without_any_the_answer_is_denied()
     {
         var payment = InboxSource("finance", PaymentKind, PaymentApprove, WorkApprovalDurationClassV1.Hours,
@@ -318,7 +340,7 @@ public sealed class AiWpA3cReadToolsTests
         [
             new FinanceDueOpenItemsAiTool(new RecordingOpenItems(), time),
             new FinanceDueCustomerInstrumentsAiTool(new UnusedFinance(), time),
-            new FinanceTreasuryAccountsAiTool(new UnusedFinance(), new UnusedFinance(), time),
+            new FinanceTreasuryAccountsAiTool(new UnusedFinance(), new UnusedFinance(), new UnusedFinance(), time),
             new AccountingPeriodStatusAiTool(new UnusedAccounting(), company, time),
             new AccountingPostingQueuesAiTool(new UnusedAccounting(), company, time),
             new AccountingPeriodJournalsAiTool(new UnusedAccounting(), company, time),
@@ -357,10 +379,11 @@ public sealed class AiWpA3cReadToolsTests
         var company = new CompanyContext();
         company.Set(ambientCompany ?? Company);
         var authority = new SourceAuthority();
+        var measurements = new Measurements();
         var query = new WorkInboxReadQueryV1(company, new TestUser(Actor, Company, OtherCompany), new FixedCorrelation(), authority,
             new Durations(withPolicy ? new SettingsWorkApprovalDurationPolicyV1(Company, 4, 1, 2, 1) : null), new Holidays(),
-            new Measurements(), new SourceRules(), new IstanbulZone(), new FixedTime(Now), NullLogger<WorkInboxReadQueryV1>.Instance, sources);
-        return new(query, authority);
+            measurements, new SourceRules(), new IstanbulZone(), new FixedTime(Now), NullLogger<WorkInboxReadQueryV1>.Instance, sources);
+        return new(query, authority, measurements);
     }
 
     private static string FindRepositoryRoot()
@@ -376,7 +399,7 @@ public sealed class AiWpA3cReadToolsTests
         throw new DirectoryNotFoundException("GöymenERP repository kökü bulunamadı.");
     }
 
-    private sealed record InboxFixture(WorkInboxReadQueryV1 Query, SourceAuthority Authority);
+    private sealed record InboxFixture(WorkInboxReadQueryV1 Query, SourceAuthority Authority, Measurements Measurements);
 
     /// <summary>WP1: no recorded rule; each SENTETIK source keeps its own duration class as the default rule.</summary>
     private sealed class SourceRules : GoymenERP.Modules.Work.Infrastructure.ApprovalRules.IWorkApprovalRuleReaderV1
@@ -445,8 +468,14 @@ public sealed class AiWpA3cReadToolsTests
 
     private sealed class Measurements : IWorkApprovalInboxMeasurementsV1
     {
+        public int Observations { get; private set; }
+
         public Task ObserveAsync(Guid companyId, string kind, IReadOnlyList<WorkApprovalInboxCycleV1> pending, bool complete,
-            CancellationToken cancellationToken = default) => Task.CompletedTask;
+            CancellationToken cancellationToken = default)
+        {
+            Observations++;
+            return Task.CompletedTask;
+        }
 
         public Task<WorkApprovalInboxInteractionOutcomeV1> RecordInteractionAsync(Guid companyId,
             WorkApprovalInboxInteractionV1 interaction, CancellationToken cancellationToken = default) =>
@@ -536,8 +565,10 @@ public sealed class AiWpA3cReadToolsTests
     }
 
     /// <summary>Owner reads a descriptor-only test never calls.</summary>
-    private sealed class UnusedFinance : ICustomerInstrumentService, IFinanceBankAccountReader, IFinanceCashAccountMaster
+    private sealed class UnusedFinance : ICustomerInstrumentService, IFinanceBankAccountReader, IFinanceCashAccountMaster,
+        IFinanceTreasuryBalanceReadV1
     {
+        public Task<ReadResult<FinanceTreasuryBalanceViewV1>> ReadAuthorizedAsync(FinanceContext c, FinanceTreasuryAccountKindV1 k, Guid id, DateOnly? through, CancellationToken t) => throw new NotSupportedException();
         public Task<CustomerInstrumentCommandResult> ReceiveAsync(FinanceContext c, CommandMetadata m, CustomerInstrumentReceiveRequest r, CancellationToken t) => throw new NotSupportedException();
         public Task<CustomerInstrumentCommandResult> ChangeStatusAsync(FinanceContext c, CommandMetadata m, CustomerInstrumentStatusChangeRequest r, CancellationToken t) => throw new NotSupportedException();
         public Task<CustomerInstrumentCommandResult> CollectAsync(FinanceContext c, CommandMetadata m, CustomerInstrumentCollectRequest r, CancellationToken t) => throw new NotSupportedException();

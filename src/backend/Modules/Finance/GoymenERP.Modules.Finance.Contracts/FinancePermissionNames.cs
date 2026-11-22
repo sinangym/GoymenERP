@@ -76,4 +76,8 @@ public static class FinancePermissionNames
     // Declarations grant nothing; the central registry and every human role assignment remain separate.
     public const string OpenItemRead = "finance.open-items.read";
     public const string OpenItemAmountRead = "finance.open-items.amount.read";
+
+    // AI-D43 (WP-A3c): the treasury account balance from the internal Finance ledger. Its own narrow read: who may see
+    // a kasa/banka balance is not decided by holding an account-master or transfer read. Registered, granted to no role.
+    public const string TreasuryBalanceRead = "finance.treasury-balance.read";
 }

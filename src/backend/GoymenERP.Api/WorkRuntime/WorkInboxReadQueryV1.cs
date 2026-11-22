@@ -56,6 +56,13 @@ internal sealed record WorkInboxPageV1(
     IReadOnlyList<WorkInboxPageItemV1> Items,
     IReadOnlyList<WorkInboxSourceStateV1> Sources);
 
+/// <summary>Who asks the inbox read: the inbox screen (measured) or the AI assistant's READ tool (not measured).</summary>
+internal enum WorkInboxReadCallerV1
+{
+    Screen = 1,
+    AiAssistant = 2,
+}
+
 internal enum WorkInboxReadOutcomeV1
 {
     Found,
@@ -151,11 +158,29 @@ internal sealed class WorkInboxReadQueryV1
         registrationIsValid = valid;
     }
 
+    public Task<WorkInboxReadResultV1<WorkInboxPageV1>> ListAsync(
+        string? view,
+        string? kind,
+        CancellationToken cancellationToken) =>
+        ListAsync(view, kind, WorkInboxReadCallerV1.Screen, cancellationToken);
+
+    /// <summary>
+    /// The same read for a named caller. ASSUMPTION-AI-INBOX-MEASUREMENT-1 (WP-A3c, reversible technical setting): an
+    /// <see cref="WorkInboxReadCallerV1.AiAssistant"/> read applies exactly the same scope, maker ≠ checker and owner
+    /// permissions, but records no Work measurement observation — the inbox measurements count what people saw on the
+    /// inbox screen, and an assistant's read is not that.
+    /// </summary>
     public async Task<WorkInboxReadResultV1<WorkInboxPageV1>> ListAsync(
         string? view,
         string? kind,
+        WorkInboxReadCallerV1 caller,
         CancellationToken cancellationToken)
     {
+        if (!Enum.IsDefined(caller))
+        {
+            return new(WorkInboxReadOutcomeV1.Invalid, null);
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
         if (view is not null && !string.Equals(view, WorkInboxViewsV1.AwaitingMyDecision, StringComparison.Ordinal))
         {
@@ -244,7 +269,11 @@ internal sealed class WorkInboxReadQueryV1
             }
 
             // A scoped read sees only part of the company: it never closes another scope's cycle.
-            await ObserveAsync(context, source, accepted, !result.HasMore && decision.Scope is null, cancellationToken);
+            if (caller == WorkInboxReadCallerV1.Screen)
+            {
+                await ObserveAsync(context, source, accepted, !result.HasMore && decision.Scope is null, cancellationToken);
+            }
+
             if (!policyRead)
             {
                 policy = await ReadPolicyAsync(context, cancellationToken);

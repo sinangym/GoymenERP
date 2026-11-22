@@ -703,6 +703,12 @@ public static class ErpPermissions
     public const string FinanceCashTransfersCommit = "finance.cash-transfers.commit";
 
     /// <summary>
+    /// AI-D43 (WP-A3c): the treasury (kasa/banka) account balance read from the internal Finance ledger, with the latest
+    /// bank statement comparison. Company-wide, not Critical; registration grants nothing (grants are a human gate).
+    /// </summary>
+    public const string FinanceTreasuryBalanceRead = "finance.treasury-balance.read";
+
+    /// <summary>
     /// DEC-FIN-016 customer cheque / promissory-note portfolio: the Finance owner's names
     /// (FinancePermissionNames, same strings). Registration makes them measurable; it grants nothing — the
     /// user's decision of 2026-09-27 gives them only to the disposable fin01 browser actor, and the real-user
@@ -1975,6 +1981,7 @@ public static class ErpPermissions
         FinanceExpensePaymentRecord,
         FinanceCashTransfersRead,
         FinanceCashTransfersCommit,
+        FinanceTreasuryBalanceRead,
         FinanceCustomerInstrumentRead,
         FinanceCustomerInstrumentAmountRead,
         FinanceCustomerInstrumentReceive,
@@ -2289,6 +2296,7 @@ public static class ErpPermissions
         FinanceExpensePaymentRecord,
         FinanceCashTransfersRead,
         FinanceCashTransfersCommit,
+        FinanceTreasuryBalanceRead,
         FinanceCustomerInstrumentRead,
         FinanceCustomerInstrumentAmountRead,
         FinanceCustomerInstrumentReceive,

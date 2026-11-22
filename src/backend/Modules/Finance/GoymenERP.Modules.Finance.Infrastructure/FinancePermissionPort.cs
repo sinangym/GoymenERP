@@ -111,6 +111,8 @@ public sealed class FinancePermissionPort(
         // WP12 (FNS-D13/D52): the statement import's own names, registered centrally (company-wide; not Critical; no grant).
         FinanceAction.ImportBankStatement => FinanceBankStatementPermissionsV1.Import,
         FinanceAction.ReadBankStatements => FinanceBankStatementPermissionsV1.Read,
+        // AI-D43 (WP-A3c): the ledger balance's own name, registered centrally (company-wide; not Critical; no grant).
+        FinanceAction.ReadTreasuryBalances => FinancePermissionNames.TreasuryBalanceRead,
         _ => null,
     };
 

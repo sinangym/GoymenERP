@@ -90,7 +90,8 @@ internal static class WorkInboxAiRead
         WorkInboxReadResultV1<WorkInboxPageV1> result;
         try
         {
-            result = await inbox.ListAsync(WorkInboxViewsV1.AwaitingMyDecision, null, cancellationToken);
+            // ASSUMPTION-AI-INBOX-MEASUREMENT-1: the assistant's read is marked and records no Work measurement.
+            result = await inbox.ListAsync(WorkInboxViewsV1.AwaitingMyDecision, null, WorkInboxReadCallerV1.AiAssistant, cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {

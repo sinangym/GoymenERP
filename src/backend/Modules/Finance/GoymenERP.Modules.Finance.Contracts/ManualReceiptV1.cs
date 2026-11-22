@@ -130,6 +130,8 @@ public enum FinanceAction
     RecordPartyBalanceTransfer,
     // WP12 (FNS-D13/D52): the bank statement import and its read; registration grants nothing.
     ImportBankStatement, ReadBankStatements,
+    // AI-D43 (WP-A3c): the treasury account's ledger balance read; its own name, registration grants nothing.
+    ReadTreasuryBalances,
 }
 public enum PermissionDecision { Unavailable, Denied, Allowed }
 

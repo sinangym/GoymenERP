@@ -170,9 +170,13 @@ public static class FinanceModuleExtensions
         services.AddScoped<IAiOwnerToolV1>(provider => new FinanceDueCustomerInstrumentsAiTool(
             provider.GetRequiredService<ICustomerInstrumentService>(), provider.GetRequiredService<TimeProvider>(),
             provider.GetService<ISettingsMoneyCandidateReader>()));
+        // AI-D43: the treasury balance comes from the internal Finance ledger through its own authorized read; the
+        // latest bank statement (WP12, registered by the host) only adds the difference warning.
+        services.AddScoped<IFinanceTreasuryBalanceReadV1, FinanceTreasuryBalanceReadService>();
         services.AddScoped<IAiOwnerToolV1>(provider => new FinanceTreasuryAccountsAiTool(
             provider.GetRequiredService<IFinanceBankAccountReader>(), provider.GetRequiredService<IFinanceCashAccountMaster>(),
-            provider.GetRequiredService<TimeProvider>(), provider.GetService<ISettingsMoneyCandidateReader>()));
+            provider.GetRequiredService<IFinanceTreasuryBalanceReadV1>(), provider.GetRequiredService<TimeProvider>(),
+            provider.GetService<ISettingsMoneyCandidateReader>(), provider.GetService<IFinanceBankStatementImportServiceV1>()));
         services.TryAddSingleton(TimeProvider.System);
         return services;
     }
