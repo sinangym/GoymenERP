@@ -10,6 +10,89 @@ namespace GoymenERP.Purchasing.UnitTests;
 
 public sealed class PurchaseInvoiceImportAdmissionTests
 {
+    private static PurchaseInvoiceDuplicateCandidate SameNumber(PurchaseInvoiceDuplicateProbe probe) =>
+        new(Guid.Parse("15000000-0000-0000-0001-000000000099"), probe.SupplierPartyId, " " + probe.OfficialNumber.ToLowerInvariant() + " ",
+            Guid.Parse("15000000-0000-0000-0002-000000000099"), probe.InvoiceDate.AddDays(-40), probe.CurrencyId, 1m);
+
+    [Fact]
+    public async Task ALS_D125_without_a_duplicate_match_the_record_needs_no_reason_and_writes_no_note()
+    {
+        var world = new World();
+        await world.Service.RecordAsync(world.Id, world.Request, World.Metadata);
+        Assert.NotNull(world.Saved);
+        Assert.Null(world.SavedAuditNote);
+        // The probe carries the recorded facts; the ETTN rule is the database's (no ETTN in the probe).
+        Assert.Equal((Guid.Empty, SettingsCurrencyIdentitiesV1.UnitedStatesDollar, world.Saved!.Amounts.Payable, world.Saved.Source.InvoiceDate,
+                world.Saved.Source.OfficialNumber),
+            (world.DuplicateProbe!.Ettn, world.DuplicateProbe.CurrencyId, world.DuplicateProbe.Payable, world.DuplicateProbe.InvoiceDate,
+                world.DuplicateProbe.OfficialNumber));
+    }
+
+    [Fact]
+    public async Task ALS_D125_a_duplicate_match_without_a_reason_is_422_and_nothing_is_recorded_or_stored()
+    {
+        var world = new World { Duplicates = probe => [SameNumber(probe)] };
+        var refusal = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service.RecordAsync(world.Id, world.Request, World.Metadata));
+        Assert.Equal((422, PurchaseInvoiceDuplicateBehaviorV1.ReasonRequired), (refusal.Status, refusal.Code));
+        Assert.Equal("duplicateReason", Assert.Single(refusal.Errors).Field);
+        Assert.Null(world.Saved);
+        Assert.Equal(0, world.RefusalWrites);
+    }
+
+    [Fact]
+    public async Task ALS_D125_a_duplicate_match_with_a_reason_records_and_the_reason_goes_to_the_audit_note()
+    {
+        var world = new World { Duplicates = probe => [SameNumber(probe)] };
+        var result = await world.Service.RecordAsync(world.Id, world.Request with { DuplicateReason = "SENTETIK tedarikçi düzeltme faturası" }, World.Metadata);
+        Assert.Equal(PurchaseIncomingInvoiceStatus.Recorded, result.Invoice.Status);
+        Assert.Contains("gerekçe: SENTETIK tedarikçi düzeltme faturası", world.SavedAuditNote, StringComparison.Ordinal);
+        Assert.Contains("purchasing.invoice-duplicate.same-supplier-number", world.SavedAuditNote, StringComparison.Ordinal);
+        Assert.Contains("1 benzer fatura", world.SavedAuditNote, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ALS_D125_a_reason_without_a_match_is_accepted_and_stores_no_note()
+    {
+        var world = new World();
+        await world.Service.RecordAsync(world.Id, world.Request with { DuplicateReason = "SENTETIK" }, World.Metadata);
+        Assert.NotNull(world.Saved);
+        Assert.Null(world.SavedAuditNote);
+    }
+
+    [Theory]
+    [InlineData(" SENTETIK")]
+    [InlineData("   ")]
+    [InlineData("SENTETIK\u0007")]
+    public async Task ALS_D125_a_malformed_reason_is_a_validation_failure(string reason)
+    {
+        var world = new World { Duplicates = probe => [SameNumber(probe)] };
+        var refusal = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service.RecordAsync(world.Id, world.Request with { DuplicateReason = reason }, World.Metadata));
+        Assert.Equal(400, refusal.Status);
+        Assert.Null(world.Saved);
+    }
+
+    [Fact]
+    public async Task ALS_D125_a_reason_longer_than_the_bound_is_refused_and_a_missing_candidate_source_is_unavailable()
+    {
+        var world = new World { Duplicates = probe => [SameNumber(probe)] };
+        var tooLong = new string('x', PurchaseInvoiceDuplicateBehaviorV1.MaximumReasonLength + 1);
+        Assert.Equal(400, (await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            world.Service.RecordAsync(world.Id, world.Request with { DuplicateReason = tooLong }, World.Metadata))).Status);
+        var blind = new World { NoDuplicateSource = true };
+        Assert.Equal(503, (await Assert.ThrowsAsync<PurchasingServiceException>(() => blind.Service.RecordAsync(blind.Id, blind.Request, World.Metadata))).Status);
+        Assert.Null(blind.Saved);
+    }
+
+    [Fact]
+    public void ALS_D125_a_null_reason_keeps_the_request_hash_of_earlier_attempts()
+    {
+        var world = new World();
+        var request = world.Request;
+        var withoutMember = PurchasingRequestHash.Compute(PurchaseIncomingInvoiceCommandsV1.Record, world.Id, request);
+        Assert.DoesNotContain("duplicateReason", System.Text.Json.JsonSerializer.Serialize(request, PurchasingJson.Options), StringComparison.Ordinal);
+        Assert.NotEqual(withoutMember, PurchasingRequestHash.Compute(PurchaseIncomingInvoiceCommandsV1.Record, world.Id, request with { DuplicateReason = "SENTETIK" }));
+    }
+
     [Fact]
     public async Task Foreign_import_retains_file_mapping_and_actual_profile_proofs_without_finalizing_or_admitting_Finance()
     {
@@ -252,8 +335,19 @@ public sealed class PurchaseInvoiceImportAdmissionTests
     private sealed class World : ICompanyContext, ICurrentUser, IErpAuthorityRevalidationService, ICorrelationContext,
         IPurchaseInvoiceImportV1, IPurchasingIncomingInvoiceStoreV1, IPurchasingPartyAccountPortV2,
         IProductPurchaseEligibilityPortV1, ISettingsPrerequisiteProvider, ISettingsReferenceListReaderV1,
-        ISettingsUnitIdentityCatalogV1, ISettingsMoneyCandidateReaderV2, IPurchaseInvoiceImportProductSearchV1, IPurchasingProductItemTypePortV1
+        ISettingsUnitIdentityCatalogV1, ISettingsMoneyCandidateReaderV2, IPurchaseInvoiceImportProductSearchV1, IPurchasingProductItemTypePortV1,
+        IPurchasingInvoiceDuplicateCandidateSourceV1
     {
+        public Func<PurchaseInvoiceDuplicateProbe, IReadOnlyList<PurchaseInvoiceDuplicateCandidate>> Duplicates { get; set; } = _ => [];
+        public bool NoDuplicateSource { get; set; }
+        public PurchaseInvoiceDuplicateProbe? DuplicateProbe { get; private set; }
+        public string? SavedAuditNote { get; private set; }
+        public Task<IReadOnlyList<PurchaseInvoiceDuplicateCandidate>> ListDuplicateCandidatesAsync(PurchaseInvoiceDuplicateProbe probe,
+            CancellationToken cancellationToken = default)
+        { DuplicateProbe = probe; return Task.FromResult(Duplicates(probe)); }
+        public async Task<PurchasingIncomingInvoiceWriteResult> RecordIncomingInvoiceAsync(PurchaseIncomingInvoice invoice, PurchasingWriteEnvelope envelope,
+            string hash, Func<CancellationToken, Task> fence, string? auditNote, CancellationToken cancellationToken = default)
+        { SavedAuditNote = auditNote; return await RecordIncomingInvoiceAsync(invoice, envelope, hash, fence, cancellationToken); }
         public static PurchasingCommandMetadata Metadata => new("synthetic-import-key", "synthetic-import-correlation", null, DateTimeOffset.UtcNow);
         public Guid Id { get; } = Guid.NewGuid();
         public Guid CompanyId { get; } = Guid.NewGuid();
@@ -287,7 +381,8 @@ public sealed class PurchaseInvoiceImportAdmissionTests
                 [new("source-01", "synthetic-product", null, "Sentetik ürün", "KGM", "5", new("USD", "10"),
                     [new("0015", "20", new("USD", "2"), new("USD", "10"), false)], [])], new("20.01", "4", "0"));
         }
-        public PurchaseInvoiceImportAdmission Service => new(this, this, this, this, this, this, this, this, this, this, TimeProvider.System, this, this, this, this);
+        public PurchaseInvoiceImportAdmission Service => new(this, this, this, this, this, this, this, this, this, this, TimeProvider.System, this, this, this, this,
+            NoDuplicateSource ? null : this);
         public PurchaseInvoiceImportAdmissionRequestV1 Request => new(new("1", Id, 1, new string('a', 64), new(PurchaseInvoiceFileFormatV1.Csv)),
             "0", supplier, account, "1", "1", SettingsCurrencyIdentitiesV1.UnitedStatesDollar,
             [new("source-01", Guid.Parse("86f4a3cf-261b-4372-ae49-bbe8606a8a33"), product, "1", unit, "Steel", "resale", "0015", ExpectedItemTypeVersion: "7")],

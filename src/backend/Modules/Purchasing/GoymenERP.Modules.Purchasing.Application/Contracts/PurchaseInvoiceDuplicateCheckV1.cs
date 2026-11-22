@@ -3,13 +3,19 @@ using GoymenERP.Modules.Purchasing.Domain.Invoices;
 namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 
 /// <summary>
-/// WP15 (DALGA_PLANI_v2 1.16): what the duplicate check does with a match. Only <see cref="Warn"/> exists: no decision says
-/// a rule match blocks recording (NEEDS-SINAN WP15-1), so the answer is a warning and recording stays possible. The existing
+/// WP15 (DALGA_PLANI_v2 1.16), ALS-D125: what the duplicate check does with a match. A match never blocks recording: the
+/// answer is a warning, and the record command then requires the actor's reason, which goes to the audit. The existing
 /// database refusals (same ETTN; same supplier and exact official number) are not this check's and are unchanged.
 /// </summary>
 public static class PurchaseInvoiceDuplicateBehaviorV1
 {
     public const string Warn = "warn";
+
+    /// <summary>ALS-D125: 422 when the record command meets a duplicate match and carries no reason (not stored; retry with one).</summary>
+    public const string ReasonRequired = "purchasing_invoice_duplicate_reason_required";
+
+    /// <summary>Input bound of the reason text (fits the audit reason with its prefix).</summary>
+    public const int MaximumReasonLength = 500;
 }
 
 /// <summary>One recorded invoice that looks like the checked one, with the rule code (<c>purchasing.invoice-duplicate.*</c>).</summary>
