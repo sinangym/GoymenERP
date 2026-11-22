@@ -10,6 +10,7 @@
  * server decides the book, the position and every conflict; this module only builds requests the writer can accept
  * and refuses to show a response that does not describe that request.
  */
+import { isPieceCount } from './stockCountContract'
 import { gramsToKilograms, isGuid, isReason, KG_MAX_DECIMALS, kilogramsToGrams, REASON_MAX_LENGTH } from './labelTransformationContract'
 
 export { REASON_MAX_LENGTH }
@@ -24,6 +25,8 @@ export interface StockScrapRequest {
   readonly scrapKg: string
   readonly scrappedAtUtc: string
   readonly reason: string
+  /** KLN-D119 (AK-2b): the scrapped pieces — required for a label that tracks pieces, absent for a kg-only label. */
+  readonly scrapPieceCount?: number
 }
 
 export interface StockScrapDecisionRequest {
@@ -58,6 +61,9 @@ export interface StockScrapView {
   readonly recordedAtUtc: string
   readonly status: StockScrapStatus
   readonly decision: StockScrapDecisionView | null
+  /** KLN-D119: the book and scrapped pieces of a piece-tracking label (both or neither). */
+  readonly bookPieceCount?: number
+  readonly scrapPieceCount?: number
 }
 
 export interface LabelStockScraps {
@@ -134,7 +140,10 @@ const VIEW_FIELDS = [
 /** One scrap, only when it is internally consistent: remaining = book − scrap and the status matches the decision. */
 export function decodeStockScrapView(value: unknown): StockScrapView | null {
   const view = record(value)
-  if (view === null || !exact(view, VIEW_FIELDS)) return null
+  if (view === null) return null
+  const pieces = ['bookPieceCount', 'scrapPieceCount'].filter((name) => Object.hasOwn(view, name))
+  const hasPieces = pieces.length > 0
+  if (!exact(view, [...VIEW_FIELDS, ...pieces]) || (hasPieces && pieces.length !== 2)) return null
   if (!isGuid(view.scrapId) || !isGuid(view.companyId) || !isGuid(view.labelId) || !isVersion(view.labelVersion) ||
     typeof view.ownerKind !== 'string' || !isGuid(view.ownerId) || typeof view.custodianKind !== 'string' ||
     !isGuid(view.custodianId) || !isGuid(view.locationId) || !isGuid(view.productId) ||
@@ -144,6 +153,9 @@ export function decodeStockScrapView(value: unknown): StockScrapView | null {
     typeof view.reason !== 'string' || view.reason.trim().length === 0 ||
     !STATUSES.includes(view.status as StockScrapStatus)) return null
   if (remainingKilograms(view.bookKg, view.scrapKg) !== view.remainingKg) return null
+  // KLN-D119 (the writer's check): book pieces are positive; a whole scrap takes every piece, a partial one leaves at least one.
+  if (hasPieces && (!isPieceCount(view.bookPieceCount) || !isPieceCount(view.scrapPieceCount) || view.bookPieceCount === 0 ||
+    (view.remainingKg === '0' ? view.scrapPieceCount !== view.bookPieceCount : view.scrapPieceCount >= view.bookPieceCount))) return null
   const decision = view.decision === null ? null : decodeDecision(view.decision)
   if (view.decision !== null && decision === null) return null
   const consistent = view.status === 'PendingApproval' ? decision === null
@@ -169,6 +181,7 @@ export function decodeStockScrapView(value: unknown): StockScrapView | null {
     recordedAtUtc: view.recordedAtUtc,
     status: view.status as StockScrapStatus,
     decision,
+    ...(hasPieces ? { bookPieceCount: view.bookPieceCount as number, scrapPieceCount: view.scrapPieceCount as number } : {}),
   }
 }
 
@@ -186,7 +199,9 @@ export function decodeLabelStockScraps(value: unknown): LabelStockScraps | null 
 
 export function isStockScrapRequest(value: unknown): value is StockScrapRequest {
   const request = record(value)
-  return request !== null && exact(request, ['scrapId', 'labelId', 'expectedLabelVersion', 'scrapKg', 'scrappedAtUtc', 'reason']) &&
+  const pieces = request === null || !Object.hasOwn(request, 'scrapPieceCount') ? [] : ['scrapPieceCount']
+  return request !== null && exact(request, ['scrapId', 'labelId', 'expectedLabelVersion', 'scrapKg', 'scrappedAtUtc', 'reason', ...pieces]) &&
+    (pieces.length === 0 || isPieceCount(request.scrapPieceCount)) &&
     isGuid(request.scrapId) && isGuid(request.labelId) && isVersion(request.expectedLabelVersion) &&
     isScrapKilogramText(request.scrapKg) && isUtcInstant(request.scrappedAtUtc) && isReason(request.reason)
 }
@@ -198,6 +213,7 @@ export function describesRecordedScrap(view: StockScrapView, request: StockScrap
     view.labelId.toLowerCase() === request.labelId.toLowerCase() &&
     view.labelVersion === request.expectedLabelVersion &&
     kilogramsToGrams(view.scrapKg) === kilogramsToGrams(request.scrapKg) &&
+    view.scrapPieceCount === request.scrapPieceCount &&
     view.reason === request.reason &&
     Date.parse(view.scrappedAtUtc) === Date.parse(request.scrappedAtUtc)
 }

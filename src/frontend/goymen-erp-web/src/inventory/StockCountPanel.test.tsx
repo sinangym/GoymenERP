@@ -104,6 +104,37 @@ afterEach(() => {
 })
 
 describe('StockCountPanel on the label detail', () => {
+  it('KLN-D119: a piece-tracking label requires the counted pieces and sends them; a kg-only label never shows the field', async () => {
+    const pieceDetail = detail()
+    api.detail.mockResolvedValue({ type: 'ok-single', data: { ...pieceDetail, balances: { ...pieceDetail.balances, physicalPieces: 10, freePieces: 10,
+      blockedPieces: 0, positions: [{ ...pieceDetail.balances.positions[0], pieceCount: 10 }] } } })
+    api.record.mockImplementation(async (request: StockCountRequest) => ({ type: 'applied', replayed: false,
+      response: view({ countId: request.countId, countedKg: request.countedKg, reason: request.reason, countedAtUtc: request.countedAtUtc,
+        bookPieceCount: 10, countedPieceCount: request.countedPieceCount }) }))
+    const user = userEvent.setup(); mount(); await panel()
+    expect(await screen.findByText(/Defter: 1250.5 kg · 10 adet/)).toBeTruthy()
+    await user.type(screen.getByLabelText('Sayılan kg'), '1248')
+    await user.type(screen.getByLabelText('Fark gerekçesi'), 'Rulo tartıldı')
+    await user.click(screen.getByRole('button', { name: 'Sayımı kaydet' }))
+    expect(await screen.findByText('Sayılan adet zorunludur: 0 veya pozitif tam sayı.')).toBeTruthy()
+    expect(api.record).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Sayılan adet').getAttribute('aria-required')).toBe('true')
+    await user.type(screen.getByLabelText('Sayılan adet'), '9')
+    await user.click(screen.getByRole('button', { name: 'Sayımı kaydet' }))
+    await screen.findByText(/fark -2.5 kg, başka bir yetkilinin onayını bekliyor/)
+    expect(api.record.mock.calls[0][0]).toMatchObject({ countedKg: '1248', countedPieceCount: 9 })
+  })
+
+  it('KLN-D119: a kg-only label count carries no piece member', async () => {
+    const user = userEvent.setup(); mount(); await panel()
+    expect(screen.queryByLabelText('Sayılan adet')).toBeNull()
+    await user.type(screen.getByLabelText('Sayılan kg'), '1248')
+    await user.type(screen.getByLabelText('Fark gerekçesi'), 'Rulo tartıldı')
+    await user.click(screen.getByRole('button', { name: 'Sayımı kaydet' }))
+    await screen.findByText(/fark -2.5 kg, başka bir yetkilinin onayını bekliyor/)
+    expect(api.record.mock.calls[0][0]).not.toHaveProperty('countedPieceCount')
+  })
+
   it('shows the recorded uncalculated surplus warning without showing a price or amount', async () => {
     api.counts.mockResolvedValue({ type: 'ok-single', data: { labelId: LABEL, windowFull: false, items: [view({
       countedKg: '1251.5', differenceKg: '1', status: 'Approved', decision: {

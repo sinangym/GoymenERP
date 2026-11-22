@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { parseQuantityInput } from '../sales/wirePrimitives'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import type { CountableLabel } from './StockCountPanel'
+import { parsePieceCount } from './stockCountContract'
 import { decideStockScrap, fetchLabelStockScraps, recordStockScrap, type StockScrapCommandOutcome } from './stockScrapApi'
 import {
   isReason,
@@ -67,6 +68,7 @@ export function StockScrapPanel({ label, companyId, namespace, routeEntry, actor
   const boundary = useAuthBoundary()
   const [attempt, setAttempt] = useState<Attempt>({ phase: 'idle' })
   const [scrapKg, setScrapKg] = useState('')
+  const [scrapPieces, setScrapPieces] = useState('')
   const [reason, setReason] = useState('')
   const [notes, setNotes] = useState<Readonly<Record<string, string>>>({})
   const [formError, setFormError] = useState<string | null>(null)
@@ -152,6 +154,12 @@ export function StockScrapPanel({ label, companyId, namespace, routeEntry, actor
       setFormError(`Hurda miktarı etiketin defter miktarından (${position.quantityKg} kg) fazla olamaz.`)
       return
     }
+    // KLN-D119 (AK-2b): a piece-tracking label's scrap names the scrapped pieces (never more than the book); a kg-only label's never does.
+    const pieces = position.pieceCount === undefined ? undefined : parsePieceCount(scrapPieces)
+    if (pieces === null || (pieces !== undefined && position.pieceCount !== undefined && pieces > position.pieceCount)) {
+      setFormError(`Hurda adedi zorunludur: 0 veya pozitif tam sayı, en fazla defterdeki ${position.pieceCount ?? 0} adet.`)
+      return
+    }
     if (!isReason(cleanReason)) {
       setFormError(`Hurda gerekçesi zorunludur (en fazla ${REASON_MAX_LENGTH} karakter).`)
       return
@@ -167,6 +175,7 @@ export function StockScrapPanel({ label, companyId, namespace, routeEntry, actor
         scrapKg: scrap,
         scrappedAtUtc: new Date().toISOString(),
         reason: cleanReason,
+        ...(pieces === undefined ? {} : { scrapPieceCount: pieces }),
       },
     })
   }
@@ -209,10 +218,15 @@ export function StockScrapPanel({ label, companyId, namespace, routeEntry, actor
         : <form className={styles.form} onSubmit={submitScrap} noValidate>
           <fieldset disabled={frozen}>
             <legend>Yeni hurda kaydı</legend>
-            <p>Defter: {position.quantityKg} kg · {position.block} · lokasyon <span className={styles.mono}>…{position.locationId.slice(-8)}</span></p>
+            <p>Defter: {position.quantityKg} kg{position.pieceCount === undefined ? '' : ` · ${position.pieceCount} adet`} · {position.block} · lokasyon <span className={styles.mono}>…{position.locationId.slice(-8)}</span></p>
             <div className={styles.grid}>
               <label htmlFor="stock-scrap-kg">Hurda kg</label>
               <input id="stock-scrap-kg" inputMode="decimal" value={scrapKg} onChange={(event) => setScrapKg(event.target.value)} />
+              {position.pieceCount === undefined ? null : <>
+                <label htmlFor="stock-scrap-pieces">Hurda adet</label>
+                <input id="stock-scrap-pieces" inputMode="numeric" required aria-required="true" value={scrapPieces}
+                  onChange={(event) => setScrapPieces(event.target.value)} />
+              </>}
               <label htmlFor="stock-scrap-reason">Hurda gerekçesi</label>
               <textarea id="stock-scrap-reason" value={reason} maxLength={REASON_MAX_LENGTH} onChange={(event) => setReason(event.target.value)} />
             </div>
@@ -235,8 +249,8 @@ export function StockScrapPanel({ label, companyId, namespace, routeEntry, actor
         <thead><tr><th>Hurda</th><th>Defter</th><th>Hurda kg</th><th>Kalan</th><th>Gerekçe</th><th>Durum</th></tr></thead>
         <tbody>{data.items.map((item) => <tr key={item.scrapId}>
           <td>{item.scrappedAtUtc}<br /><span className={styles.mono}>…{item.scrapId.slice(-8)}</span></td>
-          <td>{item.bookKg} kg<br />sürüm {item.labelVersion}</td>
-          <td>{item.scrapKg} kg</td>
+          <td>{item.bookKg} kg{item.bookPieceCount === undefined ? '' : ` · ${item.bookPieceCount} adet`}<br />sürüm {item.labelVersion}</td>
+          <td>{item.scrapKg} kg{item.scrapPieceCount === undefined ? '' : ` · ${item.scrapPieceCount} adet`}</td>
           <td>{item.remainingKg} kg</td>
           <td>{item.reason}</td>
           <td>
