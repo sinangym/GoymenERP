@@ -1,7 +1,86 @@
 {
  "format": "goymen.ai.tool-catalog.v1",
- "description": "Y-A1 okuma araçları. Kayıt, çalışma zamanının varsayılan-ret kataloğuna (AiToolCatalog) aday olmaktır; bir aracın çağrılabilmesi ayrıca yapılandırma izin listesi (Ai:AllowedTools), Ai:Enabled=true, ai.panel.use ve aracın kendi izinlerinin şirket çapında verilmesini ister. Hiçbir izin bir role verilmez.",
+ "description": "Y-A1 ve WP-A3a okuma araçları. Kayıt, çalışma zamanının varsayılan-ret kataloğuna (AiToolCatalog) aday olmaktır; bir aracın çağrılabilmesi ayrıca yapılandırma izin listesi (Ai:AllowedTools), Ai:Enabled=true, ai.panel.use ve aracın kendi izinlerinin şirket çapında verilmesini ister; veri sınıfı Ai:MaxDataClass'ı aşan araç listelenmez. Hiçbir izin bir role verilmez.",
  "tools": [
+  {
+   "toolId": "counterparty.party-lookup.v1",
+   "version": "1",
+   "ownerModule": "Counterparty",
+   "risk": "Read",
+   "dataClass": "Confidential",
+   "requiredPermissions": [
+    "counterparty.parties.read"
+   ],
+   "fieldAllowlist": [
+    "limit",
+    "query",
+    "role"
+   ],
+   "arguments": {
+    "query": {
+     "type": "string",
+     "minLength": 2,
+     "maxLength": 80,
+     "required": true,
+     "note": "Kod, unvan, ticari ad içinde (sahibin Türkçe eşleşmesi)."
+    },
+    "role": {
+     "type": "string",
+     "enum": [
+      "Customer",
+      "Supplier",
+      "Tolling",
+      "Service"
+     ]
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 20,
+     "default": 10
+    }
+   },
+   "source": "ICounterpartyReadService.GetAuthorizedPageAsync (Cari sahibi; counterparty.parties.read şirket çapında, oturum bağlı)",
+   "personalData": "Gerçek kişi carinin unvanı ve ticari adı [KİŞİ] ile maskelenir (AI-D34 d, AI-D36); iletişim, adres, vergi, banka alanı verilmez.",
+   "dataClassNote": "Confidential: cari listesi ticari gizli; Ai:MaxDataClass=Internal iken listelenmez (NEEDS-SINAN veri sınıfı)."
+  },
+  {
+   "toolId": "counterparty.party-summary.v1",
+   "version": "1",
+   "ownerModule": "Counterparty",
+   "risk": "Read",
+   "dataClass": "Confidential",
+   "requiredPermissions": [
+    "counterparty.parties.read"
+   ],
+   "fieldAllowlist": [
+    "partyId"
+   ],
+   "arguments": {
+    "partyId": {
+     "type": "string",
+     "format": "uuid",
+     "required": true
+    }
+   },
+   "source": "ICounterpartyReadService.GetAuthorizedPartyAsync (Cari sahibi; çözümlenmiş şirkette hesabı olmayan cari görünmez)",
+   "personalData": "Gerçek kişi adları [KİŞİ]; bakiye ve risk Cari'de değil finans sahibindedir (WP-A3c).",
+   "dataClassNote": "Confidential (NEEDS-SINAN veri sınıfı)."
+  },
+  {
+   "toolId": "counterparty.role-counts.v1",
+   "version": "1",
+   "ownerModule": "Counterparty",
+   "risk": "Read",
+   "dataClass": "Internal",
+   "requiredPermissions": [
+    "counterparty.parties.read"
+   ],
+   "fieldAllowlist": [],
+   "arguments": {},
+   "source": "ICounterpartyReadService.GetAuthorizedPageAsync (IncludeCount; sahibin tam filtreli sayısı)",
+   "released": "aktif hesaplı aktif cari sayısı ve rol başına sayılar (örtüşür, toplanmaz); ad veya başka alan yok"
+  },
   {
    "toolId": "decisions.lookup.v1",
    "version": "1",
@@ -39,6 +118,59 @@
    "personalData": "kisisel_veri_adayi kayıtlarda personal_name_terms ile e-posta/telefon/kimlik/IBAN kalıpları [KİŞİ]/[GİZLİ] ile maskelenir (AI-D34 d)."
   },
   {
+   "toolId": "logistics.instruction-shipment-status.v1",
+   "version": "1",
+   "ownerModule": "Logistics",
+   "risk": "Read",
+   "dataClass": "Internal",
+   "requiredPermissions": [
+    "logistics.loading-instructions.read"
+   ],
+   "fieldAllowlist": [
+    "instructionId"
+   ],
+   "arguments": {
+    "instructionId": {
+     "type": "string",
+     "format": "uuid",
+     "required": true
+    }
+   },
+   "source": "ILogisticsInstructionService.GetInstructionDetailAsync (Lojistik sahibi, şirket filtreli)",
+   "released": "talimat durumu ve satır başına sahip tam metin talimat/yükleme/sevk/teslim miktarları ve kalanları; hesap yapılmaz, birimler toplanmaz; bekleyen sevkiyat kararı logistics.pending-shipments.v1'dedir (AI-D35/AI-D37)",
+   "lineLimit": 100
+  },
+  {
+   "toolId": "logistics.order-dispatch-notes.v1",
+   "version": "1",
+   "ownerModule": "Logistics",
+   "risk": "Read",
+   "dataClass": "Internal",
+   "requiredPermissions": [
+    "logistics.loading-instructions.read"
+   ],
+   "fieldAllowlist": [
+    "limit",
+    "salesOrderId"
+   ],
+   "arguments": {
+    "salesOrderId": {
+     "type": "string",
+     "format": "uuid",
+     "required": true
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 50,
+     "default": 20
+    }
+   },
+   "source": "ILogisticsInstructionService.GetSalesOrderDispatchNotesAsync (Lojistik sahibi, şirket filtreli, sahip sınırlı)",
+   "released": "irsaliye durumu (Draft/Approved/Cancelled), sistem no, e-İrsaliye no, bu siparişin satırları ve sahip tam metin miktarları; kişi ve iptal nedeni yok",
+   "completeness": "sahip daha fazla irsaliye olduğunu söylerse sayılar null, complete=false. İrsaliye durumu bekleyen sevkiyat ölçüsü değildir (AI-D35/AI-D37)."
+  },
+  {
    "toolId": "logistics.pending-shipments.v1",
    "version": "1",
    "ownerModule": "Logistics",
@@ -69,6 +201,101 @@
    },
    "source": "ILogisticsPendingShipmentReadV1.GetPendingShipmentPageAsync (Logistics sahibi, sayfalı, şirket filtreli, salt okunur; sevk durumu talimat satırlarından)",
    "pendingDefinition": "AI-D35 (ASSUMPTION-AI-PENDING-SHIPMENT-1'i kapatır): bekleyen = taslak (Draft) veya yayımlanmış (Issued) olup kesin sevke dönmemiş yükleme talimatı. Kısmen sevk edilmiş sayılır; tamamen sevk edilmiş (her satırda sevk ≥ talimat) ve iptal edilmiş sayılmaz; irsaliye durumu sayılmaz. Sevk durumu bilinemezse sayılar verilmez, sonuç eksik işaretlenir.",
+   "scanLimit": 1000
+  },
+  {
+   "toolId": "sales.order-status.v1",
+   "version": "1",
+   "ownerModule": "Sales",
+   "risk": "Read",
+   "dataClass": "Internal",
+   "requiredPermissions": [
+    "sales.drafts.read"
+   ],
+   "fieldAllowlist": [
+    "approvalState",
+    "limit"
+   ],
+   "arguments": {
+    "approvalState": {
+     "type": "string",
+     "enum": [
+      "Preparing",
+      "PendingApproval",
+      "Approved",
+      "Rejected",
+      "Withdrawn"
+     ],
+     "note": "Verilirse yalnız o iç onay durumu okunur; diğer onay sayıları null."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 50,
+     "default": 20
+    }
+   },
+   "source": "ISalesDraftService.GetDraftListAsync (Satış sahibi, sayfalı, şirket filtreli)",
+   "released": "yaşam döngüsü (Draft/Cancelled/Closed) ve iç onay eksenine göre ayrı sayılar; sipariş no, tür, revizyon, cari/hesap kimliği; fiyat, not, kişi yok",
+   "scanLimit": 1000
+  },
+  {
+   "toolId": "sales.pending-approvals.v1",
+   "version": "1",
+   "ownerModule": "Sales",
+   "risk": "Read",
+   "dataClass": "Internal",
+   "requiredPermissions": [
+    "sales.drafts.read",
+    "sales.orders.approve"
+   ],
+   "fieldAllowlist": [
+    "limit"
+   ],
+   "arguments": {
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 50,
+     "default": 20
+    }
+   },
+   "source": "ISalesOrderDraftPendingApprovalReadServiceV1.ListAsync (Satış sahibi; her çitte iki izni şirket çapında yeniden ölçer, karar veremeyeceği revizyonu sahip dışarıda bırakır)",
+   "released": "belge no, revizyon, sürüm, gönderim zamanı, kendi taslağı mı; gönderen kişi ve serbest metin yok",
+   "completeness": "en çok 10 sayfa; sınır aşılırsa sayılar null, complete=false"
+  },
+  {
+   "toolId": "sales.quote-status.v1",
+   "version": "1",
+   "ownerModule": "Sales",
+   "risk": "Read",
+   "dataClass": "Internal",
+   "requiredPermissions": [
+    "sales.quotes.read"
+   ],
+   "fieldAllowlist": [
+    "limit",
+    "state"
+   ],
+   "arguments": {
+    "state": {
+     "type": "string",
+     "enum": [
+      "Open",
+      "Converted",
+      "Lost"
+     ],
+     "note": "Verilmezse üçü birden; sorulmayan durumun sayısı null."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 50,
+     "default": 20
+    }
+   },
+   "source": "ISalesQuoteService.GetQuoteListAsync (Satış sahibi, sayfalı, şirket filtreli; fiyat taşımaz)",
+   "released": "teklif no, durum, revizyon, cari/hesap kimliği, iş tarihi, geçerlilik tarihi (süresi doldu hesabı yapılmaz), satır sayısı",
    "scanLimit": 1000
   }
  ]
