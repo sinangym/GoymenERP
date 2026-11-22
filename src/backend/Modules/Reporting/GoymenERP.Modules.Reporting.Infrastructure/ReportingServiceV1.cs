@@ -31,6 +31,7 @@ public sealed class ReportingServiceV1(
     IReportingRecallSourceV1 recall,
     IReportingIntercompanySourceV1 intercompany,
     IReportingTrialBalanceSourceV1 trialBalance,
+    IReportingPartyAgingSourceV1 partyAging,
     IAuditEventCollector audit,
     ICorrelationContext correlation,
     TimeProvider time) : IReportingServiceV1
@@ -108,6 +109,7 @@ public sealed class ReportingServiceV1(
             ReportingCatalogV1.Otif => await OtifAsync(actor, report, set, page, pageSize, cancellationToken),
             ReportingCatalogV1.Recall => await RecallAsync(actor, report, set, page, pageSize, cancellationToken),
             ReportingCatalogV1.Intercompany => await IntercompanyAsync(actor, report, set, page, pageSize, cancellationToken),
+            ReportingCatalogV1.PartyAging => await PartyAgingAsync(actor, report, set, page, pageSize, cancellationToken),
             _ => throw new ReportingException(404, "not_found"),
         };
 
@@ -153,7 +155,6 @@ public sealed class ReportingServiceV1(
     {
         var zone = BusinessZone();
         var asOf = set.Date("asOf");
-        var basis = set.Choice("ageBasis");
         var boundaries = set.WholeNumbers("bucketDays");
         var answer = await stockAging.ReadAsync(actor.CompanyId, page, pageSize, set.OptionalGuid("productId"), set.OptionalGuid("locationId"),
             cancellationToken);
@@ -168,7 +169,7 @@ public sealed class ReportingServiceV1(
             var kg = OwnerNumber(item.PhysicalKg);
             if (kg <= 0) throw new ReportingException(503, ReportingProblemCodesV1.SourceUnavailable);
             totalKg += kg;
-            DateTimeOffset? entry = basis == ReportingCatalogV1.AgeBasisLabelCreated ? item.LabelCreatedAtUtc : item.FirstIncomingAtUtc;
+            var entry = item.EntryAtUtc;
             string? entryText = null, ageText = null, bucket = null;
             if (entry is { } instant)
             {
@@ -181,12 +182,12 @@ public sealed class ReportingServiceV1(
             }
             else
             {
-                // No incoming movement: the age on this basis is unknown, never guessed from another date.
+                // The owner could not name the entry (no incoming movement at the root, or a too long chain): unknown, never guessed.
                 unknownKg += kg;
             }
 
             rows.Add([item.LabelCode, item.LabelId.ToString("D"), item.ProductId.ToString("D"), item.LocationId.ToString("D"), item.HeatNumber,
-                item.CoilNumber, item.PhysicalKg, entryText, ageText, bucket]);
+                item.CoilNumber, item.PhysicalKg, entryText, Flag(item.EntryInherited), ageText, bucket]);
         }
 
         var summary = new List<ReportingSummaryItemV1> { new("pageTotalKg", Number(totalKg)), new("unknownAgeKg", Number(unknownKg)) };
@@ -199,38 +200,76 @@ public sealed class ReportingServiceV1(
     {
         var from = set.Date("from");
         var to = set.Date("to");
-        var toleranceDays = set.WholeNumber("onTimeToleranceDays");
-        var tolerancePercent = set.Decimal("inFullTolerancePercent");
         var answer = await otif.ReadAsync(actor.CompanyId, from, to, page, pageSize, cancellationToken);
         RequireStill(actor);
         RequireFound(answer.Outcome, answer.CompanyId, actor);
         if (answer.Lines.Count > pageSize) throw new ReportingException(503, ReportingProblemCodesV1.SourceUnavailable);
-        int onTime = 0, inFull = 0, both = 0;
+        var otifLines = 0;
         var rows = new List<IReadOnlyList<string?>>(answer.Lines.Count);
         foreach (var line in answer.Lines)
         {
-            if (line.OrderedQuantity <= 0 || line.RequestedDate < from || line.RequestedDate > to
+            if (line.OrderedQuantity <= 0 || line.PromisedDate < from || line.PromisedDate > to
                 || line.Shipments.Any(shipment => shipment.Quantity <= 0))
                 throw new ReportingException(503, ReportingProblemCodesV1.SourceUnavailable);
-            var result = ReportingOtifCalculatorV1.Evaluate(line.RequestedDate, line.OrderedQuantity, line.Shipments, toleranceDays, tolerancePercent);
-            onTime += result.OnTime ? 1 : 0;
-            inFull += result.InFull ? 1 : 0;
-            both += result.Otif ? 1 : 0;
+            var result = ReportingOtifCalculatorV1.Evaluate(line.PromisedDate, line.OrderedQuantity, line.Shipments);
+            otifLines += result.Otif ? 1 : 0;
             rows.Add([line.OrderNumber, line.OrderId.ToString("D"), line.LineNumber.ToString(CultureInfo.InvariantCulture),
-                line.CustomerId.ToString("D"), line.UnitCode, DateText(line.RequestedDate), Number(line.OrderedQuantity),
-                Number(result.ShippedQuantity), result.InFullDate is { } day ? DateText(day) : null, Flag(result.OnTime), Flag(result.InFull),
+                line.CustomerId.ToString("D"), line.UnitCode, DateText(line.PromisedDate), Number(line.OrderedQuantity),
+                Number(result.ShippedByPromisedDate), Number(result.ShippedQuantity), result.InFullDate is { } day ? DateText(day) : null,
                 Flag(result.Otif)]);
         }
 
         var summary = new List<ReportingSummaryItemV1>
         {
             new("pageLines", rows.Count.ToString(CultureInfo.InvariantCulture)),
-            new("onTimeLines", onTime.ToString(CultureInfo.InvariantCulture)),
-            new("inFullLines", inFull.ToString(CultureInfo.InvariantCulture)),
-            new("otifLines", both.ToString(CultureInfo.InvariantCulture)),
+            new("otifLines", otifLines.ToString(CultureInfo.InvariantCulture)),
         };
-        if (ReportingOtifCalculatorV1.Percent(both, rows.Count) is { } percent) summary.Add(new("otifPercent", percent));
+        if (ReportingOtifCalculatorV1.Percent(otifLines, rows.Count) is { } percent) summary.Add(new("otifPercent", percent));
         return Table(actor, report, set, rows, page, pageSize, answer.HasMore, summary, []);
+    }
+
+    /// <summary>
+    /// YOL-D30: one row per (party, party account, currency) of the chosen direction, the outstanding money of its open items in
+    /// the decided buckets. Currencies are never converted or added together; sums are within one currency only.
+    /// </summary>
+    private async Task<ReportingTableV1> PartyAgingAsync(Actor actor, ReportingReportDefinitionV1 report, ReportingParameterSetV1 set, int page,
+        int pageSize, CancellationToken cancellationToken)
+    {
+        var rows = await PartyAgingRowsAsync(actor, set.Date("asOf"), set.Choice("direction") == ReportingCatalogV1.DirectionReceivable,
+            cancellationToken);
+        var skip = (long)(page - 1) * pageSize;
+        var slice = rows.Skip((int)Math.Min(skip, int.MaxValue)).Take(pageSize).ToArray();
+        return Table(actor, report, set, slice, page, pageSize, skip + slice.Length < rows.Count,
+            [new("groups", rows.Count.ToString(CultureInfo.InvariantCulture))], []);
+    }
+
+    private async Task<IReadOnlyList<IReadOnlyList<string?>>> PartyAgingRowsAsync(Actor actor, DateOnly asOf, bool receivable,
+        CancellationToken cancellationToken)
+    {
+        var answer = await partyAging.ReadAsync(actor.CompanyId, receivable, cancellationToken);
+        RequireStill(actor);
+        RequireFound(answer.Outcome, answer.CompanyId, actor);
+        // A cut list is never presented as the whole sub-ledger.
+        if (answer.WindowFull || answer.Items.Count > IReportingPartyAgingSourceV1.MaximumItems)
+            throw new ReportingException(503, ReportingProblemCodesV1.SourceWindowFull);
+        var groups = new SortedDictionary<(Guid Party, Guid Account, Guid Currency), (Dictionary<string, decimal> Sums, int Count)>();
+        foreach (var item in answer.Items)
+        {
+            var amount = OwnerNumber(item.OutstandingAmount);
+            if (amount <= 0) throw new ReportingException(503, ReportingProblemCodesV1.SourceUnavailable);
+            var key = (item.PartyId, item.CompanyAccountId, item.CurrencyId);
+            if (!groups.TryGetValue(key, out var group))
+                group = (ReportingPartyAgingCalculatorV1.Columns.ToDictionary(column => column, _ => 0m, StringComparer.Ordinal), 0);
+            group.Sums[ReportingPartyAgingCalculatorV1.Bucket(item.DueOn, asOf)] += amount;
+            groups[key] = (group.Sums, group.Count + 1);
+        }
+
+        return groups.Select(pair => (IReadOnlyList<string?>)
+        [
+            pair.Key.Party.ToString("D"), pair.Key.Account.ToString("D"), pair.Key.Currency.ToString("D"),
+            .. ReportingPartyAgingCalculatorV1.Columns.Select(column => (string?)Number(pair.Value.Sums[column])),
+            Number(pair.Value.Sums.Values.Sum()), pair.Value.Count.ToString(CultureInfo.InvariantCulture),
+        ]).ToArray();
     }
 
     private static string Flag(bool value) => value ? "true" : "false";
@@ -446,7 +485,7 @@ public sealed class ReportingServiceV1(
 
                 rows.AddRange(answer.Items.Select(item => (IReadOnlyList<string?>)[item.LabelCode, item.LabelId.ToString("D"),
                     item.ProductId.ToString("D"), item.LocationId.ToString("D"), item.HeatNumber, item.CoilNumber, item.PhysicalKg,
-                    DateText(BusinessDate(item.LabelCreatedAtUtc, zone))]));
+                    item.EntryAtUtc is { } entry ? DateText(BusinessDate(entry, zone)) : null]));
                 if (!answer.HasMore)
                 {
                     complete = true;
@@ -494,8 +533,32 @@ public sealed class ReportingServiceV1(
             sections.Add(new Section("intercompany", "forbidden", 0, null, null, null, false));
         }
 
+        // Cari (YOL-D13): the receivable and payable aging as of the period end, for a holder of Finance's open-item reads.
+        var party = ReportingCatalogV1.Find(ReportingCatalogV1.PartyAging)!;
+        foreach (var (id, receivable) in new[] { ("receivables-aging", true), ("payables-aging", false) })
+        {
+            if (!await HoldsAsync(actor, ErpPermissions.FinanceOpenItemsRead, cancellationToken)
+                || !await HoldsAsync(actor, ErpPermissions.FinanceOpenItemsAmountRead, cancellationToken))
+            {
+                sections.Add(new Section(id, "forbidden", 0, null, null, null, false));
+                continue;
+            }
+
+            try
+            {
+                var rows = await PartyAgingRowsAsync(actor, to, receivable, cancellationToken);
+                AddSection(sections, files, id, party.Columns.Select(column => new ReportingSheetColumnV1(column.Id, column.Kind)).ToArray(), rows,
+                    null, true);
+            }
+            catch (ReportingException exception) when (exception.StatusCode is 403 or 503)
+            {
+                sections.Add(new Section(id, exception.StatusCode == 403 ? "forbidden"
+                    : exception.Code == ReportingProblemCodesV1.SourceNotConnected ? "not-connected" : "unavailable", 0, null, null, null, false));
+            }
+        }
+
         // YOL-D13 names these too; no owner port is connected to the centre yet, so they are listed, never fabricated.
-        foreach (var pending in new[] { "counterparty-balances", "cost", "document-trail" })
+        foreach (var pending in new[] { "cost", "document-trail" })
             sections.Add(new Section(pending, "not-connected", 0, null, null, null, false));
 
         await RequireAllAgainAsync(scope, [ReportingPermissionManifestV1.AuditorPackageExport], cancellationToken);

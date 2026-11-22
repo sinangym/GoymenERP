@@ -3,8 +3,9 @@ using System.Globalization;
 namespace GoymenERP.Modules.Reporting.Domain;
 
 /// <summary>
-/// WP14 aging: the age of a stock position in whole business days and its bucket. The boundaries and the age basis are the
-/// caller's parameters (no bucket set is decided by any decision); the business day is the Europe/Istanbul calendar day (P7).
+/// WP14 stock aging: the age of a stock position in whole business days and its bucket. The boundaries are the caller's
+/// parameter (no stock bucket set is decided, NEEDS-SINAN); the entry date is the Inventory owner's (label entry, inherited on
+/// split); the business day is the Europe/Istanbul calendar day (P7).
 /// The screen never recomputes either value.
 /// </summary>
 public static class ReportingStockAgingCalculatorV1
@@ -57,54 +58,67 @@ public sealed record ReportingOtifShipmentV1(DateOnly ShippedOn, decimal Quantit
 
 public sealed record ReportingOtifLineResultV1(
     decimal ShippedQuantity,
+    decimal ShippedByPromisedDate,
     DateOnly? InFullDate,
-    bool OnTime,
-    bool InFull,
     bool Otif);
 
 /// <summary>
-/// WP14 OTIF over one order line, in the line's own unit (quantities are never converted). The tolerances are required
-/// parameters: the decisions name the report (YOL-D4) but not its tolerance (NEEDS-SINAN). The proposed definition, kept as
-/// one deterministic function so it can be changed in one place when Sinan decides:
-/// <list type="bullet">
-/// <item>deadline = requested date + <c>onTimeToleranceDays</c>; target = ordered × (100 − <c>inFullTolerancePercent</c>) / 100;</item>
-/// <item><b>on time</b>: the first shipment is on or before the deadline;</item>
-/// <item><b>in full</b>: the total shipped reaches the target (the in-full date is the shipment day it is reached);</item>
-/// <item><b>OTIF</b>: the quantity shipped on or before the deadline reaches the target.</item>
-/// </list>
-/// The date is the shipment (dispatch) date: the customer's receipt date is not recorded by any owner.
+/// WP14 OTIF over one order line, in the line's own unit (quantities are never converted). YOL-D29: the line is OTIF when the
+/// WHOLE ordered quantity is shipped on or before the promised day; a partial shipment is not OTIF; there is no tolerance. The
+/// date is the shipment (dispatch) date. The in-full date is the shipment day the whole quantity was reached (late or not).
 /// </summary>
 public static class ReportingOtifCalculatorV1
 {
-    public static ReportingOtifLineResultV1 Evaluate(DateOnly requestedDate, decimal orderedQuantity,
-        IReadOnlyList<ReportingOtifShipmentV1> shipments, int onTimeToleranceDays, decimal inFullTolerancePercent)
+    public static ReportingOtifLineResultV1 Evaluate(DateOnly promisedDate, decimal orderedQuantity, IReadOnlyList<ReportingOtifShipmentV1> shipments)
     {
         ArgumentNullException.ThrowIfNull(shipments);
         if (orderedQuantity <= 0) throw new ArgumentOutOfRangeException(nameof(orderedQuantity));
-        if (onTimeToleranceDays < 0) throw new ArgumentOutOfRangeException(nameof(onTimeToleranceDays));
-        if (inFullTolerancePercent is < 0 or > 100) throw new ArgumentOutOfRangeException(nameof(inFullTolerancePercent));
         if (shipments.Any(shipment => shipment.Quantity <= 0)) throw new ArgumentException("A shipment quantity is positive.", nameof(shipments));
 
-        var deadline = requestedDate.AddDays(onTimeToleranceDays);
-        var target = orderedQuantity * (100 - inFullTolerancePercent) / 100;
-        var ordered = shipments.OrderBy(shipment => shipment.ShippedOn).ToArray();
-        decimal total = 0, byDeadline = 0;
+        decimal total = 0, byPromise = 0;
         DateOnly? inFullDate = null;
-        foreach (var shipment in ordered)
+        foreach (var shipment in shipments.OrderBy(shipment => shipment.ShippedOn))
         {
             total += shipment.Quantity;
-            if (shipment.ShippedOn <= deadline) byDeadline += shipment.Quantity;
-            if (inFullDate is null && total >= target) inFullDate = shipment.ShippedOn;
+            if (shipment.ShippedOn <= promisedDate) byPromise += shipment.Quantity;
+            if (inFullDate is null && total >= orderedQuantity) inFullDate = shipment.ShippedOn;
         }
 
-        var onTime = ordered.Length > 0 && ordered[0].ShippedOn <= deadline;
-        var inFull = ordered.Length > 0 && total >= target;
-        var otif = ordered.Length > 0 && byDeadline >= target;
-        return new ReportingOtifLineResultV1(total, inFullDate, onTime, inFull, otif);
+        return new ReportingOtifLineResultV1(total, byPromise, inFullDate, byPromise >= orderedQuantity);
     }
 
     /// <summary>A share as percent text with two decimals (away from zero); "0" lines give null, never a made-up 0 or 100.</summary>
     public static string? Percent(int part, int whole) => whole <= 0
         ? null
         : Math.Round(part * 100m / whole, 2, MidpointRounding.AwayFromZero).ToString("0.00", CultureInfo.InvariantCulture);
+}
+
+/// <summary>
+/// WP14 receivable/payable aging (YOL-D30): the delay is counted from the due date; buckets 0-30 / 31-60 / 61-90 / 90+ days
+/// overdue; an item not yet due is its own column; an item without a due date is "due unknown" (never guessed).
+/// </summary>
+public static class ReportingPartyAgingCalculatorV1
+{
+    public const string NotDue = "notDue";
+    public const string Overdue0To30 = "overdue0To30";
+    public const string Overdue31To60 = "overdue31To60";
+    public const string Overdue61To90 = "overdue61To90";
+    public const string Overdue90Plus = "overdue90Plus";
+    public const string DueUnknown = "dueUnknown";
+
+    public static IReadOnlyList<string> Columns { get; } = [NotDue, Overdue0To30, Overdue31To60, Overdue61To90, Overdue90Plus, DueUnknown];
+
+    public static string Bucket(DateOnly? dueOn, DateOnly asOf)
+    {
+        if (dueOn is not { } due) return DueUnknown;
+        var overdue = asOf.DayNumber - due.DayNumber;
+        return overdue switch
+        {
+            < 0 => NotDue,
+            <= 30 => Overdue0To30,
+            <= 60 => Overdue31To60,
+            <= 90 => Overdue61To90,
+            _ => Overdue90Plus,
+        };
+    }
 }

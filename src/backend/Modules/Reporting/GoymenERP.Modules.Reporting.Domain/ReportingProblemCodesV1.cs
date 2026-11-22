@@ -12,6 +12,7 @@ public static class ReportingProblemCodesV1
     public const string SourceUnavailable = "reporting_source_unavailable";
     public const string SourceNotConnected = "reporting_source_not_connected";
     public const string SourceNotFound = "reporting_source_not_found";
+    public const string SourceWindowFull = "reporting_source_window_full";
     public const string TimeZoneUnavailable = "reporting_time_zone_unavailable";
     public const string CommandMetadataInvalid = "reporting_command_metadata_invalid";
     public const string SameKeyPayloadMismatch = "reporting_same_key_payload_mismatch";
