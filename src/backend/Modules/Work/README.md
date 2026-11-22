@@ -62,6 +62,23 @@ tatil takvimi Work'e aittir): süre veya tatil takvimi kaydı varken reddeder.
   kayıtları görür; kapsamlı okuma ölçümde döngü kapatmaz. Bugün hiçbir sahip komutu kapsamlı onayı kabul etmiyor.
 
 `AddWorkApprovalRuleVersions` Down guard **52100**: kural sürümü varken geri alma reddedilir (forward fix).
+
+## WP6: Stok / Lojistik / Üretim onay türleri (AI-D31, DALGA_PLANI_v2 1.4)
+
+Sahip modül kaynakları (Work şeması değişmedi; süre sınıfı varsayılanı iş günü, YOL-D18):
+
+| Tür | Sahip izni | Bekleme | Onaylayamaz (sahip kuralı) |
+|---|---|---|---|
+| `inventory.transfer-overage.v1` | `inventory.stock-transfer.overage-approve` | kabulde fazla (talep 1) veya reddedilen fazlanın düzeltilmiş yeni talebi, kararsız | kabulü kaydeden + yeni talebi kaydeden (KLN-D24/D107) |
+| `inventory.transfer-loss.v1` | `inventory.stock-transfer.loss-approve` | kararsız ve geri çekilmemiş kayıp talebi | talebi kaydeden (KLN-D23 c/D97) |
+| `logistics.customer-return.v1` | `logistics.customer-returns.decision` | `Pending` fiziksel iade | iadeyi hazırlayan |
+
+- Tartım farkı (`logistics.weighing-difference.v1`): sahip kuralındaki kantar/sevk girenler `ExcludedDeciders` olarak eklendi (D4).
+- Üretim planı kalemi iş merkezini, transfer kalemleri varış lokasyonunu kapsam olarak taşır (D11). Sahip komutları yalnız
+  şirket geneli izni kabul ettiğinden `AcceptsScopedApprovers` false kalır; kapsamlı onay açılışı sahip modül kararıdır.
+- Kapsam dışı kalanlar: açılış maliyeti onayı (`inventory.opening-cost.approve`) — sahip ekranı/shell yeteneği yok, kalem
+  bağlanacak ekran olmadan kutuya alınmadı; üretim emri kapanış istisnası ve çıktı düzeltmesi bekleyen durum taşımaz (karar
+  komutun içinde verilir); Ayarlar üretim profili onayları WP7'dedir.
 ## W1-C: kayda bağlı not, bahsetme, görev ve iki sınıflı bildirim (AI-D20, AI-D23, AI-D29, YOL-D19)
 
 Yapay zekâ yoktur. Kayıt türleri: satış siparişi taslağı, alış siparişi, stok etiketi, üretim planı, cari (WP9 ile

@@ -1,6 +1,7 @@
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -34,6 +35,11 @@ public static class InventoryTransferRegistration
         services.AddScoped<IInventoryTransferReverseReaderV1>(provider => provider.GetRequiredService<InventoryStore>());
         services.AddScoped<IInventoryTransferReverseCommandV1, InventoryTransferReverseCommandService>();
         services.AddScoped<IInventoryTransferReverseQueryV1, InventoryTransferReverseQueryService>();
+        // WP6 (AI-D31, DALGA_PLANI_v2 1.4): the transfer excess and loss decisions as Work inbox sources (read-only; Work
+        // never reads these tables, the decision stays on the owner's screen).
+        services.AddScoped<WorkInbox.InventoryWorkInboxFence>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.InventoryTransferOverageWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.InventoryTransferLossWorkInboxSourceV1>();
         return services;
     }
 
