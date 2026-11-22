@@ -155,6 +155,7 @@ public static partial class PurchasingEndpoints
         PurchaseSupplierReturnCostAllocationContractV1.Required,
         PurchaseSupplierReturnCostAllocationContractV1.Stale,
         PurchaseSupplierReturnCostAllocationContractV1.ExceedsSource,
+        PurchaseSupplierReturnCodesV1.LineageReceiptMismatch,
         .. InventorySupplierReturnExitCodesV1.Status409Codes.Order(StringComparer.Ordinal),
     ];
 
@@ -176,6 +177,7 @@ public static partial class PurchasingEndpoints
     [
         PurchaseSupplierReturnCodesV1.Unavailable,
         PurchaseSupplierReturnCodesV1.InvoiceCostInvalid,
+        PurchaseSupplierReturnCodesV1.LineageUnavailable,
         .. InventorySupplierReturnExitCodesV1.Status503Codes.Order(StringComparer.Ordinal),
     ];
 }

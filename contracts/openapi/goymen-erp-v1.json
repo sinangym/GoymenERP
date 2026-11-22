@@ -178840,6 +178840,7 @@
               "inventory_supplier_return_exit_cost_difference_unposted",
               "inventory_supplier_return_exit_exceeds_receipt",
               "inventory_supplier_return_exit_idempotency_conflict",
+              "inventory_supplier_return_exit_lineage_mismatch",
               "inventory_supplier_return_exit_receipt_not_recorded",
               "inventory_supplier_return_exit_stock_allocated",
               "inventory_supplier_return_exit_stock_not_available",
@@ -178871,6 +178872,7 @@
               "inventory_supplier_return_exit_receipt_trace_invalid",
               "inventory_supplier_return_exit_unavailable",
               "purchasing_supplier_return_invoice_cost_invalid",
+              "purchasing_supplier_return_lineage_unavailable",
               "purchasing_supplier_return_unavailable",
               "service_unavailable"
             ]
@@ -179148,6 +179150,7 @@
               "inventory_supplier_return_exit_cost_difference_unposted",
               "inventory_supplier_return_exit_exceeds_receipt",
               "inventory_supplier_return_exit_idempotency_conflict",
+              "inventory_supplier_return_exit_lineage_mismatch",
               "inventory_supplier_return_exit_receipt_not_recorded",
               "inventory_supplier_return_exit_stock_allocated",
               "inventory_supplier_return_exit_stock_not_available",
@@ -179159,6 +179162,7 @@
               "purchasing_supplier_return_cost_required",
               "purchasing_supplier_return_id_taken",
               "purchasing_supplier_return_invoice_cost_available",
+              "purchasing_supplier_return_lineage_receipt_mismatch",
               "same_key_payload_mismatch"
             ]
           },
@@ -179187,6 +179191,7 @@
               "inventory_supplier_return_exit_receipt_trace_invalid",
               "inventory_supplier_return_exit_unavailable",
               "purchasing_supplier_return_invoice_cost_invalid",
+              "purchasing_supplier_return_lineage_unavailable",
               "purchasing_supplier_return_unavailable",
               "service_unavailable"
             ]
@@ -179780,6 +179785,7 @@
               "inventory_supplier_return_exit_cost_difference_unposted",
               "inventory_supplier_return_exit_exceeds_receipt",
               "inventory_supplier_return_exit_idempotency_conflict",
+              "inventory_supplier_return_exit_lineage_mismatch",
               "inventory_supplier_return_exit_receipt_not_recorded",
               "inventory_supplier_return_exit_stock_allocated",
               "inventory_supplier_return_exit_stock_not_available",
@@ -179819,6 +179825,7 @@
               "inventory_supplier_return_exit_receipt_trace_invalid",
               "inventory_supplier_return_exit_unavailable",
               "purchasing_supplier_return_invoice_cost_invalid",
+              "purchasing_supplier_return_lineage_unavailable",
               "purchasing_supplier_return_unavailable",
               "service_unavailable"
             ]
@@ -256501,6 +256508,13 @@
                 "$ref": "#/components/schemas/PurchaseSupplierReturnCostAllocationV1"
               }
             ]
+          },
+          "sourceLabelId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
           }
         }
       },
@@ -293876,6 +293890,19 @@
             "items": {
               "$ref": "#/components/schemas/PurchaseSupplierReturnInvoiceSourceLabelV1"
             }
+          },
+          "sourceLabelId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "lineageMode": {
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "priceDisclosure": {
             "type": "string"
