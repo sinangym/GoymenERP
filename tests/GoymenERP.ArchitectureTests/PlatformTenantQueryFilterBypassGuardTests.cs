@@ -157,7 +157,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // Re-fingerprinted for tren-1 W6: committed in-process owner registrations and endpoint maps; final host integration must re-pin its exact Program source (65d7e684... -> 1fa4780c...).
         // Tren-1 W6: owner bridges and scoped DI only; source fingerprint re-derived.
         // Re-fingerprinted for tren-1 W7: in-process owner registrations; activation flags unchanged; K3 review pending.
-        "759798d71737c095a1b1d6e8e43bcd0b51200f77d0bdfee1680b78a8f2857f6e";
+        // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): gated source-label supplier return; value from guard_fingerprint.py (759798d7… -> 74df118d…).
+        "74df118df4fddd45c9f2a40d02dbe45afccd44885d06e8df0ed8a4772283a7f9";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -390,7 +391,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 W7: source facts kept ordinal-sorted; SQL execution NOT_RUN.
                 // Re-fingerprinted for AK-2 (KLN-D119): +3 piece-count SQL facts, ordinal-sorted; value from guard_fingerprint.py (b1a5f100… -> 7cadf6ca…); SQL execution NOT_RUN.
                 // Re-fingerprinted for AK-2b (KLN-D119): +2 movement piece-count SQL facts, ordinal-sorted; value from guard_fingerprint.py (7cadf6ca… -> 6e29756c…); SQL execution NOT_RUN.
-                "6e29756c83f5d187fd4698a0fd008c369d1a58b89e82eee684c9590ce80d1c30",
+                // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): +1 SQL fact, ordinal-sorted; SQL execution NOT_RUN; value from guard_fingerprint.py (6e29756c… -> 10cf1aea…).
+                "10cf1aea73a5edc63eb56776c0b2507f1cfe419e81383d4a8d87e40867d35bcb",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -562,7 +564,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Tren-1 W6: +4 source facts, ordinal-sorted; SQL execution NOT_RUN.
                 // W8 EK24 FNS-D105: +1 finalized outbox Down-guard fact, kept ordinal-sorted (4bea9141… -> 982791b3…).
                 // W8 KLN-D105: rename one same-line lock-busy SQL fact to its actual owner-lock contract; same count, ordinal order.
-                "82f5a6dc6a8ec4a52ed62699b021436b1912c5bf04550213986c298b2d68394d",
+                // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): +1 SQL fact, ordinal-sorted; SQL execution NOT_RUN; value from guard_fingerprint.py (82f5a6dc… -> e31a4690…).
+                "e31a46901e68506b8c6f490a605e16d8539462fdd6e3fd3b1a2d944ee81cfb4d",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
@@ -943,7 +946,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 wave 3 (integration): the team slices combined; token counts checked by the guard (c8164526… -> fb48d6ed…).
                 // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (fb48d6ed… -> e4ca95ad…).
                 // W8 EK24 FNS-D105: finalized invoice outbox event joins the existing typed check; tenant filters unchanged.
-                "928ffbe0a21e8b1b965de738fb99aaf1db7973f25f5711e2e73e8fc685ae2f68",
+                // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): gated source-label supplier return; value from guard_fingerprint.py (928ffbe0… -> 8fc7fbaa…).
+                "8fc7fbaa3d3c7327d7aedc0bd727e4bc70df067b9b72aeefada6bbe773cc0dc3",
             // ERP-000G / AT-065: company-scoped like Organization; every tenant row (blobs, documents, versions, links,
             // attempts) and AuditEvent carries the CompanyId filter, and the write guard refuses any update or delete.
             // A standard entry, not an exception.
@@ -1625,7 +1629,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): the stok wave-3 slices (transfer receipts, future supply conversion, supplier return exit, shortage warnings, substitute allocation) registered (1fa2b806… -> b9269aed…).
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (b9269aed… -> ae06f965…).
                         // Re-fingerprinted for tren-1 W6: STK-S17/S18: register future-allocation commands, queries and the fail-closed schedule source; reviewed API counts unchanged (ae06f965... -> ea6ca888...).
-                        "73eba049951e8b9bf1b3d1bae2856c12ef328067d1fb224ba865d699939c4893",
+                        // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): gated source-label supplier return; value from guard_fingerprint.py (73eba049… -> 134b730d…).
+                        "134b730db1d046adfee4e630d6f6145586bbead3866205036ae3074e92f6e334",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2153,7 +2158,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (36116eed… -> 95e9ff7c…).
                         // Re-fingerprinted for AK-2b (KLN-D119): optional piece count on the exit line and its refusal mapping; tokens unchanged.
-                        "9d9a8a4854c5fdfdb22a4e960dfad69c4e86696e053cc42a247493f75e6cfdb0",
+                        // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): gated source-label supplier return; value from guard_fingerprint.py (9d9a8a48… -> 7f5639e0…).
+                        "7f5639e001def30ac4a1cd9ab3e70763672252de34896f4ef2b7a221a54ffdbc",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         ["System.Data.Common"] = 1,
@@ -2249,7 +2255,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/GoymenERP.Api/PurchasingRuntime/"
                  + "PurchaseSupplierReturnHost.cs"] =
                     new(
-                        "a5539d29c2a7582efa9de90c5e917f576dee7d84a083d8930f7008d7ff9d2c2b",
+                        // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): gated source-label supplier return; value from guard_fingerprint.py (a5539d29… -> b14781e0…).
+                        "b14781e057c00a68abba6adec33c6ee014139d6fd9b7e45aa479bc1fc2032c0d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         ["System.Data.Common"] = 1,
@@ -2313,7 +2320,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/"
                  + "PurchasingService.SupplierReturn.cs"] =
                     new(
-                        "7931129c120e4648f111298f2a0395f5ab7646b0483f2fa36b1685af4207be94",
+                        // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): gated source-label supplier return; value from guard_fingerprint.py (7931129c… -> b7c4cb9f…).
+                        "b7c4cb9f982a728ee059c783b3baeb7108182db6febcfe0b286dc5100fe140c5",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         [".FindAsync"] = 3
@@ -2324,7 +2332,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "Persistence/PurchaseSupplierReturnStore.cs"] =
                     new(
                         // Re-fingerprinted for tren-1 W6: W5 correction: replace the unauthorized filter bypass with a company-bound collision lookup; reviewed API counts unchanged (e7e33daa... -> e9eab045...).
-                        "a933ab7d748933a19a0513166c416222b317952d1a8c2b7ab9c4159dd757c279",
+                        // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): gated source-label supplier return; value from guard_fingerprint.py (a933ab7d… -> b0571789…).
+                        "b05717899793bc7253d88e9a3ca3222dcf62ca1c9e83dd857b873cfe226aedb9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         ["Microsoft.Data.SqlClient"] = 1
@@ -2782,7 +2791,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for tren-1 wave 3 (integration): the team slices combined; token counts checked by the guard (c786a176… -> d849429f…).
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (d849429f… -> 8bb1a10c…).
                         // Re-fingerprinted for tren-1 W6: STK-S17/S18: register the Purchasing-owned current unreceived schedule reader; reviewed API counts unchanged (8bb1a10c... -> 90022337...).
-                        "17c16d3cb10743a4bb64c46baa38758d28c7490516401e76ffebef9ee827fe1b",
+                        // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): gated source-label supplier return; value from guard_fingerprint.py (17c16d3c… -> 0429febc…).
+                        "0429febc9a5093b92160c5e1bab2072aace3a252cca69b1d8f89ebefc6453fba",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -4065,6 +4075,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedMigrationMutationSources =
             new Dictionary<string, ReviewedMigrationMutationSource>(StringComparer.Ordinal)
             {
+                // AK-8 (SAT-D433/SAT-D441/SAT-D445); K3 review pending. EF-generated nullable source label and mode of a supplier return.
+                // Down refuses 52071 while a source-label return exists; one deployment-time SQL guard, no runtime tenant bypass.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/"
+                 + "20261122122332_AddPurchaseSupplierReturnLineageSource.cs"] =
+                    new("cf59f1bf464e93311d3491b07fd965efe38895fa2998c791e667415c91fbb319",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 // K3 review B2 remediation; K3 review pending. EF-generated nullable immutable source evidence.
                 // Down refuses 52012 while an explicit allocation exists; no history is discarded.
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261120103531_AddPurchaseSupplierReturnCostAllocations.cs"] =

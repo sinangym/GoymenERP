@@ -290,7 +290,7 @@ public sealed class PurchasingPersistenceModelTests
     public void The_A1_1_A1_1b_A1_2_A1_3_A2a_1_A2a_1c_A2a_2_A2a_5a_A3_API_30_API_11_and_ALC_S16_migrations_are_the_last_ones_and_the_snapshot_matches_the_model()
     {
         using PurchasingDbContext context = Context();
-        Assert.Equal(["20261103012142_AddPurchaseRequestLineSource", "20261103053923_AddPurchaseOrderCancellation",
+        Assert.Equal(["20261103053923_AddPurchaseOrderCancellation",
                 "20261107063820_AddPurchaseOrderLinePrice", "20261107131321_AddPurchaseOrderUnitPriceScale",
                 "20261107151838_AddPurchaseOrderLineDeferral", "20261111182351_AddPurchaseOrderApproval",
                 "20261112014446_AddPurchaseOrderLineDeliverySchedule", "20261115132609_AddPurchaseOrderLineClosure",
@@ -302,7 +302,8 @@ public sealed class PurchasingPersistenceModelTests
                 "20261117112436_AddPurchaseInvoiceImportReservations", "20261117114517_AddPurchaseAdditionalCosts",
                 "20261117120452_AddPurchaseAdditionalCostInvoiceBindings",
                 "20261119012425_AllowPurchaseIncomingInvoiceFinalizedOutboxEvents",
-                "20261120103531_AddPurchaseSupplierReturnCostAllocations", "20261122095454_AddPurchasePieceKilogramFacts"],
+                "20261120103531_AddPurchaseSupplierReturnCostAllocations", "20261122095454_AddPurchasePieceKilogramFacts",
+                "20261122122332_AddPurchaseSupplierReturnLineageSource"],
             context.Database.GetMigrations().TakeLast(24));
         Assert.False(context.Database.HasPendingModelChanges());
 
@@ -982,6 +983,26 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Contains("THROW 52041", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[TheoreticalKilogramsPerUnit] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[MeasuredQuantityKg] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_AK_8_supplier_return_source_label_and_mode_are_paired_nullable_columns_and_the_Down_refuses_while_one_is_recorded()
+    {
+        using PurchasingDbContext context = Context();
+        var returns = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseSupplierReturnRow))!;
+        Assert.True(returns.FindProperty(nameof(PurchaseSupplierReturnRow.SourceLabelId))!.IsNullable);
+        Assert.True(returns.FindProperty(nameof(PurchaseSupplierReturnRow.LineageMode))!.IsNullable);
+        Assert.Contains(returns.GetCheckConstraints(), check => check.Name == "CK_PurchaseSupplierReturns_Lineage"
+            && check.Sql == PurchasingDbContext.SupplierReturnLineageCheck);
+        Assert.Contains("[LineageMode] IN (1, 2)", PurchasingDbContext.SupplierReturnLineageCheck, StringComparison.Ordinal);
+        Assert.Contains("[SourceLabelId] IS NULL AND [LineageMode] IS NULL", PurchasingDbContext.SupplierReturnLineageCheck, StringComparison.Ordinal);
+
+        var migration = new GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations.AddPurchaseSupplierReturnLineageSource();
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Contains("THROW 52071", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[SourceLabelId] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
     }
 
     private static PurchaseOrderRow Order(Guid company) => new PurchaseOrderRow

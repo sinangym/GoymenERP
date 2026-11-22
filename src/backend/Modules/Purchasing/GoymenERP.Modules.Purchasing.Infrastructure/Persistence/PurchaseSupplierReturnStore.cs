@@ -128,6 +128,17 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
         return lines.Count == 1 ? lines[0] : null;
     }
 
+    public async Task<Guid?> FindAcceptanceSupplierAsync(Guid goodsAcceptanceId, CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        // AK-8: the supplier of the order a recorded acceptance counts on; another company's acceptance is invisible (filter).
+        var suppliers = await (from acceptance in dbContext.Acceptances.AsNoTracking()
+                               join order in dbContext.Orders.AsNoTracking() on acceptance.OrderId equals order.Id
+                               where acceptance.AcceptanceId == goodsAcceptanceId
+                               select order.SupplierPartyId).Distinct().Take(2).ToListAsync(cancellationToken);
+        return suppliers.Count == 1 && suppliers[0] != Guid.Empty ? suppliers[0] : null;
+    }
+
     // ---- writes ---------------------------------------------------------------------------------
 
     public async Task<StoredPurchaseSupplierReturn> SaveNewAsync(PurchaseSupplierReturnDraft draft, PurchasingWriteEnvelope envelope, string requestHash,
@@ -168,6 +179,8 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
             UndoQuantity = draft.UndoQuantity,
             CostAllocationJson = draft.CostAllocation is null ? null : JsonSerializer.Serialize(
                 new CostAllocationSnapshot(draft.CostAllocation, draft.CostAllocationSources!), Json),
+            SourceLabelId = draft.SourceLabelId,
+            LineageMode = draft.LineageMode is { } mode ? (int)mode : null,
             Reason = reason,
             OccurredAtUtc = draft.OccurredAtUtc,
             RequestedBy = actorId,
@@ -302,7 +315,12 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
         var draft = new PurchaseSupplierReturnDraft(row.ReturnId, row.ReturnLineId, row.OrderId, row.LineId, row.GoodsAcceptanceId, row.MovementId,
             status, row.SourceBlock, row.QuantityKg, basis, row.UnitCostTryPerKg, row.ReplacementExpected, row.Reason, row.OccurredAtUtc,
             row.ExpectedPurchaseOrderVersion, row.UndoQuantity,
-            allocation?.Selection, allocation?.InvoiceSources);
+            allocation?.Selection, allocation?.InvoiceSources, row.SourceLabelId,
+            row.LineageMode is null ? null : Enum.IsDefined(typeof(PurchaseSupplierReturnLineageModeV1), row.LineageMode.Value)
+                ? (PurchaseSupplierReturnLineageModeV1)row.LineageMode.Value
+                : throw new InvalidOperationException("Kayıtlı tedarikçi iadesi soy modu tanınmıyor."));
+        if ((draft.SourceLabelId is null) != (draft.LineageMode is null))
+            throw new InvalidOperationException("Kayıtlı tedarikçi iadesinin kaynak etiketi ve soy modu birlikte bulunur.");
         ValidateAllocation(draft);
         return new StoredPurchaseSupplierReturn(companyId, draft, row.Version, row.RequestedBy, row.RequestedAtUtc, row.DecidedBy, row.DecidedAtUtc,
             row.DecisionReason);
@@ -323,7 +341,11 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
             || draft.ExpectedPurchaseOrderVersion is <= 0 || draft.UndoQuantity is <= 0
             || (draft.UndoQuantity is { } undo && (undo >= KgColumnBound || decimal.Round(undo, KgScale) != undo))
             || !PurchaseSupplierReturnJsonV1.SourceBlocks.Contains(draft.SourceBlock, StringComparer.Ordinal)
-            || draft.QuantityKg <= 0 || draft.UnitCostTryPerKg <= 0 || string.IsNullOrWhiteSpace(draft.Reason))
+            || draft.QuantityKg <= 0 || draft.UnitCostTryPerKg <= 0 || string.IsNullOrWhiteSpace(draft.Reason)
+            || (draft.SourceLabelId is null) != (draft.LineageMode is null) || draft.SourceLabelId == Guid.Empty
+            || draft.LineageMode is { } mode && !Enum.IsDefined(mode)
+            || draft.SourceLabelId is not null && (draft.ExpectedPurchaseOrderVersion is not null || draft.CostAllocation is not null)
+            || draft.LineageMode == PurchaseSupplierReturnLineageModeV1.Quantity && draft.CostBasis != PurchaseSupplierReturnCostBasis.InvoiceUnitCost)
         {
             throw new ArgumentException("Yeni tedarikçi iadesi kimlikli, pozitif kg ve maliyetli, tutarlı durum ve dayanaklıdır.", nameof(draft));
         }
@@ -427,6 +449,8 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
         stored.Return.UndoQuantity,
         stored.Return.CostAllocation,
         stored.Return.CostAllocationSources,
+        stored.Return.SourceLabelId,
+        LineageMode = stored.Return.LineageMode?.ToString(),
         stored.Return.Reason,
         stored.RequestedBy,
         stored.DecidedBy,

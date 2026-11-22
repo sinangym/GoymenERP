@@ -100,7 +100,16 @@ internal sealed class PurchaseSupplierReturnHost(
             var staged = await participant.StageAsync(new InventorySupplierReturnExitRequestV1(request.CompanyId, request.ReturnId,
                 request.ReturnLineId, request.GoodsAcceptanceId, request.InventoryMovementId, block, request.QuantityKg,
                 request.UnitCostTryPerKg, request.OccurredAtUtc, PurchaseSupplierReturnCostSources.Map(request.CostAllocation),
-                PurchaseSupplierReturnCostSources.Map(purchase), request.UndoQuantity), Metadata(envelope), cancellationToken);
+                PurchaseSupplierReturnCostSources.Map(purchase), request.UndoQuantity,
+                SourceLabelId: request.SourceLabelId,
+                LineageMode: request.LineageMode switch
+                {
+                    null => null,
+                    PurchaseSupplierReturnLineageModeV1.Lineage => InventorySupplierReturnLineageModeV1.Lineage,
+                    PurchaseSupplierReturnLineageModeV1.Quantity => InventorySupplierReturnLineageModeV1.Quantity,
+                    _ => throw new InvalidOperationException("Supplier return lineage mode is not recognised."),
+                }),
+                Metadata(envelope), cancellationToken);
             return new PurchaseSupplierReturnExitResultV1(staged.InventoryMovementId, staged.LabelId, staged.QuantityKg, staged.IsReplay);
         }
 

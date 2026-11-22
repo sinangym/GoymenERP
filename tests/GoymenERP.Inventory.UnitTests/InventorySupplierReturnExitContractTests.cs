@@ -22,7 +22,11 @@ public sealed class InventorySupplierReturnExitContractTests
             .GetMethod(nameof(IInventorySupplierReturnExitParticipantV1.StageAsync))!;
         Assert.Equal(typeof(InventorySupplierReturnExitRequestV1), stage.GetParameters()[0].ParameterType);
         Assert.Equal(typeof(InventoryCommandMetadata), stage.GetParameters()[1].ParameterType);
-        Assert.DoesNotContain(typeof(InventorySupplierReturnExitRequestV1).GetProperties(), property =>
+        // AK-8 (SAT-D433/SAT-D445): the only label the caller may name is the optional SourceLabelId, honoured only behind the
+        // golden gate and re-checked against Inventory's own lineage; the receipt still fixes product, owner and ceiling.
+        Assert.Equal(typeof(Guid?), typeof(InventorySupplierReturnExitRequestV1).GetProperty("SourceLabelId")!.PropertyType);
+        Assert.Null(request.SourceLabelId);
+        Assert.DoesNotContain(typeof(InventorySupplierReturnExitRequestV1).GetProperties().Where(property => property.Name != "SourceLabelId"), property =>
             property.Name.Contains("Label", StringComparison.Ordinal)
             || property.Name.Contains("Product", StringComparison.Ordinal)
             || property.Name.Contains("Owner", StringComparison.Ordinal)

@@ -32,6 +32,10 @@ public interface IInventorySupplierReturnExitParticipantV1 : IAsyncDisposable
 /// <remarks>
 /// AK-3 (KLN-D119): <c>PieceCount</c> is the returned piece count of a piece-tracking label (a piece purchase line's undo quantity,
 /// derived by the caller); null for a kg-only label, exactly as before. It is derived data and does not enter the payload hash.
+/// AK-8 (SAT-D433/SAT-D441/SAT-D445): <c>SourceLabelId</c> names the label that physically leaves when it is not the receipt's own
+/// label, and <c>LineageMode</c> says how (see <see cref="InventorySupplierReturnLineageModeV1"/>). Both are null on every earlier
+/// request, so the payload hash of an earlier key is unchanged. They are honoured only behind
+/// <c>SupplierReturnLineageGoldenV1.SupplierReturnLineageGoldenAccepted</c>; with the gate closed the earlier 503 stays.
 /// </remarks>
 public sealed record InventorySupplierReturnExitRequestV1(
     Guid CompanyId,
@@ -50,7 +54,11 @@ public sealed record InventorySupplierReturnExitRequestV1(
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     string? UndoQuantity = null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-    int? PieceCount = null);
+    int? PieceCount = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    Guid? SourceLabelId = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    InventorySupplierReturnLineageModeV1? LineageMode = null);
 
 /// <summary>The exact Inventory identities staged by one supplier-return exit.</summary>
 public sealed record InventorySupplierReturnExitResultV1(
@@ -96,6 +104,12 @@ public static class InventorySupplierReturnExitCodesV1
     /// </summary>
     public const string CostDifferenceUnposted = "inventory_supplier_return_exit_cost_difference_unposted";
     public const string CostAllocationRequired = "inventory_supplier_return_exit_cost_allocation_required";
+
+    /// <summary>
+    /// AK-8 (SAT-D433): a lineage-mode return names a source label whose lineage is not the named receipt (another root, or a
+    /// label of another product or owner). Nothing is moved to another receipt.
+    /// </summary>
+    public const string LineageMismatch = "inventory_supplier_return_exit_lineage_mismatch";
     public const string IdempotencyConflict = "inventory_supplier_return_exit_idempotency_conflict";
     public const string ConcurrentChange = "inventory_supplier_return_exit_concurrent_change";
     public const string QuantityProfileUnavailable = "inventory_supplier_return_exit_quantity_profile_unavailable";
@@ -105,7 +119,7 @@ public static class InventorySupplierReturnExitCodesV1
     public static IReadOnlySet<string> Status404Codes { get; } = Set(InvalidReference);
     public static IReadOnlySet<string> Status409Codes { get; } = Set(
         ReceiptNotRecorded, ExitExceedsReceipt, StockNotAvailable, StockAllocated, CostDifferenceUnposted, CostAllocationRequired,
-        IdempotencyConflict, ConcurrentChange);
+        IdempotencyConflict, ConcurrentChange, LineageMismatch);
     public static IReadOnlySet<string> Status503Codes { get; } = Set(
         ReceiptTraceInvalid, QuantityProfileUnavailable, Unavailable);
 

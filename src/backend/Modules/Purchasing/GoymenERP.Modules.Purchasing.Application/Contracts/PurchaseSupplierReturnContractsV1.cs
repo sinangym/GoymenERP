@@ -23,7 +23,8 @@ public sealed record CreatePurchaseSupplierReturnV1(
     string? ManualUnitCostTryPerKg, bool ReplacementExpected, string Reason, DateTimeOffset OccurredAtUtc,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExpectedPurchaseOrderVersion = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? UndoQuantity = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseSupplierReturnCostAllocationV1? CostAllocation = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseSupplierReturnCostAllocationV1? CostAllocation = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? SourceLabelId = null);
 
 /// <summary>An approval or a rejection of a pending cost exception; a rejection needs a reason.</summary>
 public sealed record DecidePurchaseSupplierReturnV1(string ExpectedVersion, string? Reason,
@@ -37,7 +38,9 @@ public sealed record PurchaseSupplierReturnViewV1(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExpectedPurchaseOrderVersion = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? UndoQuantity = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseSupplierReturnCostAllocationV1? CostAllocation = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseSupplierReturnInvoiceSourceLabelV1>? CostAllocationSources = null)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseSupplierReturnInvoiceSourceLabelV1>? CostAllocationSources = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? SourceLabelId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? LineageMode = null)
 {
     /// <summary>ALS-D70: without a fresh price-read grant the unit cost is null and disclosure is Withheld.</summary>
     public string PriceDisclosure { get; init; } = PurchasingPriceDisclosureV1.Withheld;
@@ -103,6 +106,19 @@ public static class PurchaseSupplierReturnCodesV1
 
     /// <summary>The return id is already used by another return.</summary>
     public const string ReturnIdTaken = "purchasing_supplier_return_id_taken";
+
+    /// <summary>
+    /// AK-8 503: a return from a foreign source label cannot be planned — the golden gate is closed (the earlier boundary), the
+    /// lineage or a receipt's supplier is unreadable, the lineage spans several receipts (one atomic multi-receipt return is not
+    /// staged yet), or the return also adjusts the receipt or names a cost allocation. Nothing is recorded or moved.
+    /// </summary>
+    public const string LineageUnavailable = "purchasing_supplier_return_lineage_unavailable";
+
+    /// <summary>
+    /// AK-8 409 (SAT-D433/SAT-D441): the named goods acceptance cannot carry this return — in a lineage return it is not the
+    /// label's sole receipt; in a quantity return the chosen order line is not a priced kilogram line in TL.
+    /// </summary>
+    public const string LineageReceiptMismatch = "purchasing_supplier_return_lineage_receipt_mismatch";
 }
 
 /// <summary>
@@ -128,7 +144,8 @@ public interface IPurchaseSupplierReturnInvoiceCostReadPortV1
 /// SAT-D396 policy inputs. <see cref="AllowSameActorCostExceptionDecision"/> stays false (the person who entered the return
 /// cannot decide its exception) until the same-person approval question is decided; it is a configuration, not a default choice.
 /// </summary>
-public sealed record PurchaseSupplierReturnPolicyV1(bool AllowSameActorCostExceptionDecision)
+public sealed record PurchaseSupplierReturnPolicyV1(bool AllowSameActorCostExceptionDecision,
+    bool LineageGoldenAccepted = PurchaseSupplierReturnLineageGoldenV1.SupplierReturnLineageGoldenAccepted)
 {
     public static PurchaseSupplierReturnPolicyV1 Default { get; } = new(false);
 }
@@ -138,7 +155,9 @@ public sealed record PurchaseSupplierReturnExitRequestV1(
     Guid CompanyId, Guid ReturnId, Guid ReturnLineId, Guid GoodsAcceptanceId, Guid InventoryMovementId, string SourceBlock,
     string QuantityKg, string UnitCostTryPerKg, DateTimeOffset OccurredAtUtc,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseSupplierReturnCostAllocationV1? CostAllocation = null,
-    Guid PurchaseOrderId = default, string? UndoQuantity = null);
+    Guid PurchaseOrderId = default, string? UndoQuantity = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? SourceLabelId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseSupplierReturnLineageModeV1? LineageMode = null);
 
 public sealed record PurchaseSupplierReturnExitResultV1(Guid InventoryMovementId, Guid LabelId, string QuantityKg, bool IsReplay);
 
@@ -167,7 +186,9 @@ public sealed record PurchaseSupplierReturnDraft(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? ExpectedPurchaseOrderVersion = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] decimal? UndoQuantity = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseSupplierReturnCostAllocationV1? CostAllocation = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseSupplierReturnInvoiceSourceLabelV1>? CostAllocationSources = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseSupplierReturnInvoiceSourceLabelV1>? CostAllocationSources = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? SourceLabelId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseSupplierReturnLineageModeV1? LineageMode = null);
 
 public sealed record StoredPurchaseSupplierReturn(
     Guid CompanyId, PurchaseSupplierReturnDraft Return, long Version, string RequestedBy, DateTimeOffset RequestedAtUtc,
@@ -191,6 +212,13 @@ public interface IPurchaseSupplierReturnStore
 
     /// <summary>The order line a recorded goods acceptance of <paramref name="orderId"/> counts on, or null.</summary>
     Task<Guid?> FindAcceptanceLineAsync(Guid orderId, Guid goodsAcceptanceId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// AK-8: the supplier party of the order a recorded goods acceptance counts on (this company), or null when it is unknown or
+    /// ambiguous. A store that cannot answer leaves every foreign-label return unplannable (fail closed).
+    /// </summary>
+    Task<Guid?> FindAcceptanceSupplierAsync(Guid goodsAcceptanceId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<Guid?>(null);
 
     Task<StoredPurchaseSupplierReturn> SaveNewAsync(PurchaseSupplierReturnDraft draft, PurchasingWriteEnvelope envelope, string requestHash,
         string commandName, CancellationToken cancellationToken = default);
@@ -235,7 +263,8 @@ public static class PurchaseSupplierReturnJsonV1
             || request.ExpectedPurchaseOrderVersion is not null && !Version(request.ExpectedPurchaseOrderVersion)
             || request.UndoQuantity is not null && !IsPositiveQuantity(request.UndoQuantity)
             || !BoundedReason(request.Reason, required: true)
-            || request.OccurredAtUtc == default || request.OccurredAtUtc.Offset != TimeSpan.Zero)
+            || request.OccurredAtUtc == default || request.OccurredAtUtc.Offset != TimeSpan.Zero
+            || request.SourceLabelId == Guid.Empty)
         {
             throw new JsonException("Invalid return shape; identities, a block, a positive exact kg, a reason and UTC time are required.");
         }
