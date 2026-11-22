@@ -76,6 +76,9 @@ tren (PR #1201) ana dala girdikten sonra ayrı trende yapılır (AI-D10).
 | AI-18 | Zamanlı görevler | Görev tanımı, zamanlayıcı, olay tetikleyicileri, bildirim; yalnız okuma |
 | AI-19 | Öğrenme döngüsü | Geri bildirim, kural önerisi → yönetici onayı → sürümlü politika |
 | AI-20 | AI Merkezi ekranları | AI-01/02/03: kullanım, denetim, politika ve bilgi tabanı yönetimi |
+| AI-21 | Konuşarak ayar/yetki (AI-D16) | Ayar değişikliği ve yetki talebi taslağı, önizleme, etki özeti; uygulama yetkili onayıyla |
+| AI-22 | Zamanlı dış e-posta (AI-D17) | E-posta entegrasyonu, toplu onay ekranı, yanıt sınıflandırma ve üst kullanıcı raporu |
+| AI-23 | Güvenlik/teknoloji takip (AI-D18) | Açık/haber/olay izleme, çözüm önerisi, değişiklik önerisi (PR), önceden onaylı acil adımlar |
 
 ## 6. Açık kararlar (sonraki trenden önce sorulacak)
 

@@ -1,6 +1,6 @@
 # Sinan Kararları — 2026-11-22 (sistem içi yapay zekâ: zamanlama, sürekli öğrenme, onaycı yardımı, kişisel asistan ve zamanlı görevler)
 
-Bu belge önceki AI kararlarını silmez; AI-D10–AI-D15 ekler. DEC-AI-001..DEC-AI-009 (`KARAR_SICILI.md`), AI-D1..AI-D6
+Bu belge önceki AI kararlarını silmez; AI-D10–AI-D18 ekler. DEC-AI-001..DEC-AI-009 (`KARAR_SICILI.md`), AI-D1..AI-D6
 (`SINAN_KARARLARI_2026-11-03_AI.md`), AI-D7, AI-D8, AI-D9, 2026-10-21 kararlarının 156/157/159 numaraları ve E9
 geçerliliğini korur: yapay zekâ isteğe bağlıdır, kendini onaylayamaz, yetki veremez, ham SQL kullanamaz; her yazma önizleme
 ve kullanıcı onayı ister; hassas veri yalnız takma adla, kişisel ve "çok gizli" veri hiç dışarı çıkmaz; sağlayıcı veriyi
@@ -9,7 +9,8 @@ saklamaz ve eğitmez; anahtar ekleme, üretimde açma, veri türü izinleri ve r
 **Kaynak:** Sinan, 2026-11-22, bu Claude Code oturumunda soru penceresiyle cevapladı (SINAN-CEVAP 56, ajan aktarımı: Issue
 #1189 yorumu 7078140665). Sorulardan önce sistemdeki yapay zekânın kod durumu ve ERP satıcılarının (SAP, Oracle Fusion ve
 NetSuite, Microsoft Dynamics 365, Workday, Infor, Odoo, Epicor, IFS, Sage, Acumatica) 2025–2026 yapay zekâ/ajan
-özellikleri araştırılıp özetlendi. "(Önerilen)" işaretleri soranındır.
+özellikleri araştırılıp özetlendi. "(Önerilen)" işaretleri soranındır. 5–7. sorular aynı gün Sinan'ın ek önerisi üzerine
+soruldu (SINAN-CEVAP 57, ajan aktarımı: Issue #1189 yorumu 7078607030).
 
 ## Soru ve cevaplar
 
@@ -19,6 +20,9 @@ NetSuite, Microsoft Dynamics 365, Workday, Infor, Odoo, Epicor, IFS, Sage, Acuma
 | 2 | Yapay zekâ ilk aşamada hangi modeli kullansın? | **Serbest cevap:** "En faydalı hangisi ise, öğrenimi yapıp kendisini sürekli geliştirsin sürekli öğrensin, birşeyi aynı şeyi sürekli yeniden öğrenmesin ama öğrendiği değişirse bunu güncellesin ve üzerine ekleyerek öğrenmesini genişletsin yeni şeyleride sürekli öğrensin" | Model seçimi faydaya göre (AI-D11); öğrenme sürekli, tekrarsız, değişince güncellenen ve üzerine eklenen bilgi olarak (AI-D12). | Dış model, takma adla (Önerilen); Önce yerel model; İkisi birden. |
 | 3 | Onaylarda yapay zekâ ilk aşamada ne kadar ileri gitsin? | **Özet + risk + gerekçeli öneri (Önerilen)** | Onaylayan her zaman insan; yapay zekâ özeti, kural kontrolünü ve öneriyi hazırlar. Otomatik onay sonra, her onay türü için ayrı kararla. | Düşük riskte otomatik onay da. |
 | 4 | İlk yapılacak yapay zekâ yetenekleri hangileri olsun? | **Sistemi ve kararları bilen asistan; Onay kutusu yardımcısı; E-posta/PDF'ten taslak; Doğal dille sorgu ve rapor** ve serbest ek: "Ve sistem içi daha fazla, her modül için daha detaylı düşün ve modüller arası daha detaylı düşün, ayrıca her kullanıcının kendi ai si olsun veya bunun yerine sen ne önerirsen, birde her kullanıcının openai chatgpt deki dot gibi sürekli zamanlı görev ve araştırma takibi yapabilen bir özellikte olsun ve kullanıcılar bunu hem sistemin her modülünde hemde sistem dışı chatgpt sohbeti gibi sistem dışı sektörel işlerinde kullanabilsin" | Dört yetenek seçildi; modül ve modüller arası ayrıntılı yetenek planı, kişisel asistan ve zamanlı görev/araştırma takibi istendi (AI-D13–AI-D15). | — |
+| 5 | Yapay zekâ ile ayar ve yetki yönetimi nasıl olsun? (Sinan'ın önerisi: yetkili kullanıcılar ayarları ve kullanıcı yetkilendirmelerini konuşarak/yazarak, önerili şekilde yönetebilmeli) | **Taslak + önizleme, yetkili onaylar (Önerilen)** | Ayar değişikliği ve yetki talebini yapay zekâ hazırlar ve etkisini gösterir; uygulayan yetkili kullanıcının onayıdır; kritik ayar ve yetkide ikinci kişi onayı sürer. | Ayarlarda doğrudan uygulasın, yetkide onay. |
+| 6 | Zamanlı görevle dış firmalara giden e-postalar nasıl gönderilsin? (Sinan'ın önerisi: her sabah belirli saatte belirli firmalara e-posta ve gelen yanıtlarla üst kullanıcıya rapor) | **Toplu onay, sonra şablonla otomatik (Önerilen)** | Başlangıçta e-postalar hazırlanır ve tek ekranda topluca onaylanır; belirli şablon ve alıcılar için yönetici izniyle otomatik gönderim sonradan açılabilir. | Her e-posta tek tek onaylı; Baştan otomatik. |
+| 7 | Güvenlik ve teknoloji takip görevinde yapay zekâ ne kadar ileri gitsin? (Sinan'ın önerisi: yazılım eski kalmasın; tehdit ve saldırı haberlerini izleyip önlem ve çözüm önerip devreye sokabilsin) | **Öneri + hazır değişiklik, acil adımlar önceden onaylı (Önerilen)** | Açık ve tehditleri izler, çözüm önerir, kod değişikliği önerisini review/CI'ya açar; ayar değişikliği yetkili onayıyla; önceden onaylanmış birkaç acil durum adımı otomatik devreye girer ve hemen bildirilir. | Yalnız rapor ve öneri; Ayar adımlarını da otomatik uygulasın. |
 
 ## Kararlar
 
@@ -30,6 +34,9 @@ NetSuite, Microsoft Dynamics 365, Workday, Infor, Odoo, Epicor, IFS, Sage, Acuma
 | AI-D13 | Onaycı yardımı (ilk aşama) | Onay ekranlarında yapay zekâ **özet, risk işaretleri ve gerekçeli öneri** hazırlar; onaylayan her zaman insandır; kural kontrolü sunucudaki deterministik kurallardan okunur. Politika sınırlı otomatik onay ilk aşamada yoktur; her onay türü için ayrı kararla açılabilir. | Onay kutusu, onay ekranları |
 | AI-D14 | İlk yetenekler | İlk trende: (1) sistemi ve kararları bilen asistan, (2) bütün onay türlerini toplayan onay kutusu yardımcısı, (3) e-posta/PDF'ten satış siparişi, tedarikçi teyidi ve gelen fatura taslağı (kaydetmeyi insan onaylar, DEC-AI-008), (4) yetki sınırında doğal dille sorgu ve rapor; ayrıca her modül ve modüller arası ayrıntılı yetenek planı (`AI_TREN_PLANI_v2.md`). | AI yetenek kataloğu |
 | AI-D15 | Kişisel asistan ve zamanlı görevler | Her kullanıcının **kendi asistanı** olur: tek bir sistem yapay zekâsı, kullanıcının yetkisiyle, kullanıcıya ait hafıza ve tercihlerle çalışır (ayrı model değil). Kullanıcı **zamanlı görev ve araştırma takibi** kurabilir (ör. her sabah açık onay özeti, geciken tedarikçi teslimlerini izleme, haftalık marj kaybı raporu, sektör/emtia fiyatı araştırması); görevler sistem içi modüllerde ve sistem dışı genel/sektörel sohbette kullanılabilir. Sistem dışı sohbet ve web araştırması AI-D1 (genel sorulara cevap) kapsamındadır; şirket verisi dışarı çıkacaksa AI-D3/D4 kuralları uygulanır; zamanlı görev yazma işlemi yapamaz, yalnız okur, özetler ve bildirir. | Kişisel asistan, zamanlı görevler, bildirimler |
+| AI-D16 | Konuşarak ayar ve yetki yönetimi | Yetkili kullanıcı ayar değişikliğini ve kullanıcı yetki talebini konuşarak/yazarak yapay zekâya hazırlatır; yapay zekâ taslak, önizleme ve etki özeti (etkilenen işlemler, görevler ayrılığı çakışması, benzer kullanıcılar) sunar; değişikliği **yetkili kullanıcının onayı** uygular; kritik ayar ve yetkide mevcut ikinci kişi onayı sürer. Yapay zekâ yetki vermez ve kendi talebini onaylayamaz (DEC-AI-002); rol/izin ataması insan kapısıdır. | Ayarlar politika akışı, yetki talebi akışı, AI araçları |
+| AI-D17 | Zamanlı dış e-posta ve yanıt raporu | Kullanıcı zamanlı görevle (ör. her sabah) belirli firmalara e-posta hazırlatabilir; gelen yanıtlar okunup sınıflandırılır ve üst kullanıcıya rapor hazırlanır. Dışarı giden e-postalar başlangıçta **tek ekranda toplu onayla** gönderilir; yönetici izniyle belirli şablon ve alıcılar için otomatik gönderim sonradan açılabilir; her gönderim denetim kaydına girer. E-posta hesabı/sırrı tanımlamak insan kapısıdır. AI-D15'in "zamanlı görev yazma yapmaz" sınırının yalnız bu onaylı e-posta gönderimi için istisnasıdır. | Zamanlı görevler, e-posta entegrasyonu, bildirimler |
+| AI-D18 | Güvenlik ve teknoloji takip görevi | Yapay zekâ kullanılan kütüphane ve çatıların güvenlik açıklarını, güvenlik haberlerini, sistemin kendi güvenlik olaylarını ve eskiyen sürümleri sürekli izler; her bulgu için risk, etki ve çözüm önerisi yazar. Kod değişikliği (güncelleme, yama) hazır değişiklik önerisi olarak açılır ve normal review/CI/K3 yolundan geçer; canlıya alma production insan kapısıdır. Güvenlik ayarı değişikliği yetkili onayıyla uygulanır. Sinan'ın önceden onayladığı sınırlı acil durum adımları (ör. saldırı sırasında geçici giriş kısıtlaması) otomatik devreye girebilir, hemen bildirilir ve sonradan gözden geçirilir; bu adımların listesi ayrıca karara bağlanır. | AI güvenlik görevi, Ayarlar güvenlik politikaları, güvenlik olayları |
 
 ## Sınırlar
 
@@ -38,4 +45,6 @@ NetSuite, Microsoft Dynamics 365, Workday, Infor, Odoo, Epicor, IFS, Sage, Acuma
 - Politika sınırlı otomatik onay, eşikleri ve hangi onay türlerinde açılacağı ayrı karardır.
 - Sistem dışı web araştırmasının hangi sağlayıcıyla yapılacağı ve şirket verisiyle birleştirme sınırları ayrı karardır.
 - Kişisel asistan hafızasının saklama süresi mevcut 90 gün / 1 yıl / 2 yıl kararlarıyla (159, 157, E9) uyumlu ayrıca netleştirilir.
+- Otomatik e-posta gönderimine izin verilecek şablon/alıcılar ve önceden onaylı acil güvenlik adımlarının listesi ayrı
+  karardır.
 - `KARAR_SICILI.md` ve `ACIK_KARARLAR.md` değişmez.
