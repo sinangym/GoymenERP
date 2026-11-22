@@ -21,13 +21,16 @@ public sealed partial class SalesDraftService
     internal static bool KilogramPriceGoldenAccepted => true;
 
     /// <summary>
-    /// SAT-D436 (TK6): the ONE named rule for which invoices of an order enter its realization ("faturalanan tutar", actual
-    /// kg, actual kg price). Only a finalised invoice counts: a draft, a pending or an approved invoice is not yet an
-    /// invoiced amount, and a rejected, cancelled or officially cancelled one never is.
-    /// NEEDS-SINAN: the decision text says "faturalanan" without naming the invoice state; this reading (finalised only) is
-    /// asked in #1189. Changing the answer changes this one predicate and nothing else.
+    /// SAT-D452 / SAT-D457 (SAT-D436 TK6): the ONE named rule for which invoices of an order enter its realization ("faturalanan
+    /// tutar", actual kg, actual kg price). Only a finalised invoice counts (SAT-D452): a draft, a pending or an approved invoice
+    /// is not yet an invoiced amount, and a rejected, cancelled or officially cancelled one never is. A finalised invoice whose
+    /// last Finance hand-off answer is a refusal does not count either (SAT-D457); it counts again once a re-drive is admitted
+    /// (or answered otherwise). A finalised invoice Finance has not answered yet counts: the decision excludes the refusal only.
     /// </summary>
-    internal static bool EntersKilogramPriceRealization(SalesInvoice invoice) => invoice.State == SalesInvoiceState.Finalized;
+    internal static bool EntersKilogramPriceRealization(SalesInvoice invoice) =>
+        invoice.State == SalesInvoiceState.Finalized
+        && !(invoice.Finalization is { FinanceStatus: not SalesInvoiceFinanceStatus.Admitted } ledger
+            && SalesInvoiceService.IsRefusedFinanceOutcome(ledger.LastOutcome));
 
     public Task<SalesOrderKilogramPricesResponse> GetDraftKilogramPricesAsync(Guid draftId, CancellationToken cancellationToken = default) =>
         GetDraftKilogramPricesAsync(draftId, KilogramPriceGoldenAccepted, cancellationToken);

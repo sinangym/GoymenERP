@@ -8,7 +8,7 @@ namespace GoymenERP.Sales.UnitTests;
 /// SAT-D436 / SAT-D439 (AK-5): the order's kg price read is OPEN (golden ADET_KG_FORMUL_GOLDEN_V1 §1 in this train); the closed
 /// path is pinned through the named switch parameter (FormulaGoldenPending, nothing else). It needs the price read; the computed
 /// path is pinned to golden K01–K03 over a real piece order and its invoices. Only finalised invoices enter the realization
-/// (<see cref="SalesDraftService.EntersKilogramPriceRealization"/>, NEEDS-SINAN in #1189).
+/// (<see cref="SalesDraftService.EntersKilogramPriceRealization"/>, SAT-D452), and not one Finance refused (SAT-D457).
 /// </summary>
 public sealed partial class SalesDraftServiceTests
 {
@@ -52,7 +52,7 @@ public sealed partial class SalesDraftServiceTests
     [InlineData(SalesInvoiceState.OfficiallyCancelled, false)]
     public async Task SAT_D436_only_a_finalised_invoice_enters_the_order_realization(SalesInvoiceState state, bool enters)
     {
-        // NEEDS-SINAN (#1189): "faturalanan" is read as finalised only. This theory pins the one rule point for every state.
+        // SAT-D452: only finalised invoices enter the realization. This theory pins the one rule point for every state.
         var invoicing = await PieceInvoiceWorldAsync(40m, 495m, 500.16m);
         await invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-kgp-state"));
         var draft = Assert.Single(invoicing.World.Store.Drafts);
@@ -151,6 +151,32 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(new SalesInvoiceKilogramPricesV1(SalesKilogramPriceStatesV1.FormulaGoldenPending),
             SalesInvoiceService.KilogramPrices(Assert.Single(piece.Invoices.Stored.Values), kilogramPriceOpen: false));
         Assert.Null(SalesInvoiceService.KilogramPrices(Assert.Single(kg.Invoices.Stored.Values), kilogramPriceOpen: false));
+    }
+
+    [Theory]
+    [InlineData(null, false, true)]            // finalised, Finance not answered yet
+    [InlineData("refused", false, false)]      // SAT-D457: Finance refused it
+    [InlineData("refused:party_account_ineligible", false, false)]
+    [InlineData("unavailable", false, true)]   // no answer is not a refusal
+    [InlineData("retry", false, true)]
+    [InlineData("admitted", true, true)]       // re-driven and admitted: it enters again
+    public async Task SAT_D457_a_finalised_invoice_finance_refused_stays_out_of_the_realization_until_it_is_admitted(
+        string? lastOutcome, bool admitted, bool enters)
+    {
+        var invoicing = await PieceInvoiceWorldAsync(40m, 495m, 500.16m);
+        await invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-kgp-finance"));
+        var draft = Assert.Single(invoicing.World.Store.Drafts);
+        var invoice = Finalized(Assert.Single(invoicing.Invoices.Stored.Values));
+        var at = invoice.CreatedAtUtc.AddMinutes(10);
+        // The hand-off ledger alone is under test: it is set as stored state (the full restore also needs the official match).
+        typeof(SalesInvoice).GetProperty(nameof(SalesInvoice.Finalization))!.SetValue(invoice, new SalesInvoiceFinalization(Guid.NewGuid(), invoice.Version, "synthetic-invoice-checker", at,
+            admitted ? SalesInvoiceFinanceStatus.Admitted : SalesInvoiceFinanceStatus.Waiting, admitted ? at : null,
+            lastOutcome is null ? 0 : 1, lastOutcome is null ? null : at, lastOutcome, []));
+
+        Assert.Equal(enters, SalesDraftService.EntersKilogramPriceRealization(invoice));
+        var line = Assert.Single(SalesDraftService.KilogramPrices(draft, [invoice]).Lines!);
+        Assert.Equal(enters ? ("40", "10000.00", "19.99") : ("0", null, null),
+            (line.InvoicedQuantity, line.InvoicedAmount, line.ActualPrice.Value));
     }
 
     private static SalesInvoice Finalized(SalesInvoice invoice) => InState(invoice, SalesInvoiceState.Finalized);
