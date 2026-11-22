@@ -153,6 +153,13 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
     /// amount of zero or more — beside a unit price ABOVE 0 (Sinan: no surcharge on a 0 price). It is kept apart from
     /// <see cref="OrderLinePriceCheck"/>, which stays as A2a-1 wrote it; a surcharge without a price fails here (UnitPrice NULL).
     /// </summary>
+    /// <summary>AK-3 (SAT-D437): both snapshot columns or neither; positive; only on a piece (UnitIsKilogram = 0) general (Kind = 1) line.</summary>
+    internal const string OrderLineTheoreticalKilogramsCheck =
+        "([TheoreticalKilogramsPerUnit] IS NULL AND [TheoreticalKilogramsSourceVersion] IS NULL) "
+        + "OR ([TheoreticalKilogramsPerUnit] IS NOT NULL AND [TheoreticalKilogramsPerUnit] > 0 "
+        + "AND [TheoreticalKilogramsSourceVersion] IS NOT NULL AND LEN([TheoreticalKilogramsSourceVersion]) > 0 "
+        + "AND [UnitIsKilogram] = 0 AND [Kind] = 1)";
+
     internal const string OrderLineDeferralCheck =
         "([DeferralPercent] IS NULL AND [DeferralAmount] IS NULL) "
         + "OR ([UnitPrice] IS NOT NULL AND [UnitPrice] > 0 AND ([DeferralPercent] IS NULL OR [DeferralAmount] IS NULL) "
@@ -388,6 +395,8 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
             table.HasCheckConstraint("CK_PurchaseOrderLines_Price", OrderLinePriceCheck);
             // A2a-2 (ALS-D38, ALS-D75): at most one maturity surcharge, only beside a unit price above 0.
             table.HasCheckConstraint("CK_PurchaseOrderLines_Deferral", OrderLineDeferralCheck);
+            // AK-3 (SAT-D437): the theoretical kg/piece snapshot — both columns or neither, positive, only on a piece general line.
+            table.HasCheckConstraint("CK_PurchaseOrderLines_TheoreticalKilograms", OrderLineTheoreticalKilogramsCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.OrderId, x.LineNo });
         entity.HasAlternateKey(x => new { x.CompanyId, x.OrderId, x.LineId })
@@ -411,6 +420,8 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
         // A2a-2: the maturity surcharge in the same precisions as the discount (a percent decimal(9,6), an amount decimal(24,6)).
         entity.Property(x => x.DeferralAmount).HasPrecision(24, PurchaseOrderMoney.MaximumPriceScale);
         entity.Property(x => x.DeferralPercent).HasPrecision(9, PurchaseOrderLinePrice.PercentScale);
+        entity.Property(x => x.TheoreticalKilogramsPerUnit).HasPrecision(18, PurchaseOrderLineTheoreticalKilograms.KilogramsPerUnitScale);
+        entity.Property(x => x.TheoreticalKilogramsSourceVersion).HasMaxLength(PurchaseOrderLineTheoreticalKilograms.SourceVersionMaxLength);
 
         entity.HasOne<PurchaseOrderRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.OrderId })
@@ -468,6 +479,8 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
             table.HasCheckConstraint("CK_PurchaseAcceptanceShares_Identity",
                 $"[AcceptanceId] <> {EmptyGuid} AND [CompanyId] <> {EmptyGuid} AND [OrderId] <> {EmptyGuid} AND [LineId] <> {EmptyGuid}");
             table.HasCheckConstraint("CK_PurchaseAcceptanceShares_Quantity", "[Quantity] > 0");
+            // AK-3 (ALS-D119): a piece-line acceptance's weighed kilograms, positive when present.
+            table.HasCheckConstraint("CK_PurchaseAcceptanceShares_MeasuredKg", "[MeasuredQuantityKg] IS NULL OR [MeasuredQuantityKg] > 0");
             table.HasCheckConstraint("CK_PurchaseAcceptanceShares_Version", "[OrderVersionAfter] >= 1");
             table.HasCheckConstraint("CK_PurchaseAcceptanceShares_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
             table.HasCheckConstraint("CK_PurchaseAcceptanceShares_Text",
@@ -478,6 +491,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
         entity.HasAlternateKey(x => new { x.CompanyId, x.OrderId, x.LineId, x.AcceptanceId });
         entity.Property(x => x.AcceptanceId).ValueGeneratedNever();
         entity.Property(x => x.Quantity).HasPrecision(18, 3);
+        entity.Property(x => x.MeasuredQuantityKg).HasPrecision(18, 3);
         entity.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
         entity.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
         entity.Property(x => x.ActorId).HasMaxLength(128).IsRequired();

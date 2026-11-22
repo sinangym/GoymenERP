@@ -302,8 +302,8 @@ public sealed class PurchasingPersistenceModelTests
                 "20261117112436_AddPurchaseInvoiceImportReservations", "20261117114517_AddPurchaseAdditionalCosts",
                 "20261117120452_AddPurchaseAdditionalCostInvoiceBindings",
                 "20261119012425_AllowPurchaseIncomingInvoiceFinalizedOutboxEvents",
-                "20261120103531_AddPurchaseSupplierReturnCostAllocations"],
-            context.Database.GetMigrations().TakeLast(23));
+                "20261120103531_AddPurchaseSupplierReturnCostAllocations", "20261122095454_AddPurchasePieceKilogramFacts"],
+            context.Database.GetMigrations().TakeLast(24));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var requests = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseRequestRow))!;
@@ -953,6 +953,35 @@ public sealed class PurchasingPersistenceModelTests
         row.EffectiveOn = new DateOnly(2026, 11, 3); // not allowed: the business date never moves
         var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
         Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_AK_3_piece_kilogram_facts_are_nullable_checked_columns_and_the_Down_refuses_while_one_is_recorded()
+    {
+        using PurchasingDbContext context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var lines = model.FindEntityType(typeof(PurchaseOrderLineRow))!;
+        var perUnit = lines.FindProperty(nameof(PurchaseOrderLineRow.TheoreticalKilogramsPerUnit))!;
+        var source = lines.FindProperty(nameof(PurchaseOrderLineRow.TheoreticalKilogramsSourceVersion))!;
+        Assert.Equal((true, 18, 6), (perUnit.IsNullable, perUnit.GetPrecision(), perUnit.GetScale()));
+        Assert.Equal((true, 128), (source.IsNullable, source.GetMaxLength()));
+        Assert.Contains(lines.GetCheckConstraints(), check => check.Name == "CK_PurchaseOrderLines_TheoreticalKilograms"
+            && check.Sql == PurchasingDbContext.OrderLineTheoreticalKilogramsCheck);
+        Assert.Contains("[UnitIsKilogram] = 0 AND [Kind] = 1", PurchasingDbContext.OrderLineTheoreticalKilogramsCheck, StringComparison.Ordinal);
+
+        var acceptances = model.FindEntityType(typeof(PurchaseAcceptanceRow))!;
+        var measured = acceptances.FindProperty(nameof(PurchaseAcceptanceRow.MeasuredQuantityKg))!;
+        Assert.Equal((true, 18, 3), (measured.IsNullable, measured.GetPrecision(), measured.GetScale()));
+        Assert.Contains(acceptances.GetCheckConstraints(), check => check.Name == "CK_PurchaseAcceptanceShares_MeasuredKg"
+            && check.Sql == "[MeasuredQuantityKg] IS NULL OR [MeasuredQuantityKg] > 0");
+
+        var migration = new GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations.AddPurchasePieceKilogramFacts();
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Contains("THROW 52041", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[TheoreticalKilogramsPerUnit] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[MeasuredQuantityKg] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
     }
 
     private static PurchaseOrderRow Order(Guid company) => new PurchaseOrderRow

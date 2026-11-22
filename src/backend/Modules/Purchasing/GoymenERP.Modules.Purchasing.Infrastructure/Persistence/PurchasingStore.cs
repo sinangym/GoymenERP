@@ -579,6 +579,20 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             lineRow.DiscountAmount = line.Price?.DiscountAmount;
             lineRow.DeferralPercent = line.Price?.DeferralPercent;
             lineRow.DeferralAmount = line.Price?.DeferralAmount;
+            if (line.TheoreticalKilograms is { } snapshot)
+            {
+                // AK-3 (SAT-D437): written once at the first approval; a stored snapshot never moves.
+                if (lineRow.TheoreticalKilogramsPerUnit is null)
+                {
+                    lineRow.TheoreticalKilogramsPerUnit = snapshot.KilogramsPerUnit;
+                    lineRow.TheoreticalKilogramsSourceVersion = snapshot.SourceVersion;
+                }
+                else if (lineRow.TheoreticalKilogramsPerUnit != snapshot.KilogramsPerUnit
+                         || lineRow.TheoreticalKilogramsSourceVersion != snapshot.SourceVersion)
+                {
+                    throw new InvalidOperationException("Kayıtlı teorik kg/adet değiştirilemez.");
+                }
+            }
         }
 
         foreach (var change in order.CancellationHistory.Where(change => change.OrderVersionAfter > versionBefore))
@@ -1354,6 +1368,13 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             {
                 throw new InvalidOperationException("Kayıtlı satır toplamları yeniden kurulan toplamlarla uyuşmuyor.");
             }
+
+            // AK-3 (SAT-D437): the snapshot recorded at the first approval comes back as stored; a partial pair is not a snapshot.
+            if ((line.TheoreticalKilogramsPerUnit is null) != (line.TheoreticalKilogramsSourceVersion is null))
+                throw new InvalidOperationException("Kayıtlı teorik kg/adet ile kaynak sürümü birlikte bulunmalıdır.");
+            if (line.TheoreticalKilogramsPerUnit is { } kilogramsPerUnit)
+                order.RestoreTheoreticalKilograms(line.LineId,
+                    new PurchaseOrderLineTheoreticalKilograms(kilogramsPerUnit, line.TheoreticalKilogramsSourceVersion!));
         }
 
         return order;

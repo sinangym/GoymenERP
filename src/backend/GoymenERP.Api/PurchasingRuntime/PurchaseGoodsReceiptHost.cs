@@ -204,7 +204,7 @@ internal sealed class PurchaseGoodsReceiptHost(
                 request.LabelCode, request.HeatNumber, request.CoilNumber, request.RequiredDocuments,
                 request.OwnerKind.ToString(), request.OwnerId, request.CustodianKind.ToString(), request.CustodianId,
                 request.LocationId, request.MovementId, request.QuantityKg, request.OccurredAtUtc)
-                { InitialBlock = request.InitialBlock.ToString() };
+                { InitialBlock = request.InitialBlock.ToString(), PieceCount = request.PieceCount };
         }
 
         public async Task<PurchaseReceiptFactsV1> ResolveFirstAsync(PurchaseReceiptSourceV1 source, Guid locationId,
@@ -238,7 +238,7 @@ internal sealed class PurchaseGoodsReceiptHost(
                 request.PurchaseUnitId, request.LotId, request.LabelId, request.LabelCode, request.HeatNumber,
                 request.CoilNumber, request.RequiredDocuments, owner, request.OwnerId, custodian,
                 request.CustodianId, request.LocationId, block, request.MovementId, request.QuantityKg,
-                request.OccurredAtUtc), Metadata(envelope), cancellationToken);
+                request.OccurredAtUtc, request.PieceCount), Metadata(envelope), cancellationToken);
             var conversion = await ConvertFutureSupplyAsync(result, envelope, cancellationToken);
             var releases = LinkFailedReleases(conversion, result.AcceptanceId);
             if (releases.Count > 0 && !conversion.IsReplay)

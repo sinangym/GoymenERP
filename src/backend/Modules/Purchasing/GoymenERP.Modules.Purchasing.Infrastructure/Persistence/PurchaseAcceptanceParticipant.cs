@@ -242,6 +242,14 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
                 "Kabul miktarı sipariş satırının birim ölçeğine uygun değil.", exception);
         }
 
+        // AK-3 (ALS-D119/ALS-D121): a piece-line acceptance carries its weighed kilograms; a kilogram line's weight is its quantity.
+        if ((line.Quantity.Unit == QuantityUnit.Piece) != (validated.MeasuredQuantityKg is not null)
+            || validated.MeasuredQuantityKg >= ColumnBound)
+        {
+            throw Refused(PurchaseAcceptanceParticipantCodes.MeasuredKilogramsMismatch, 400,
+                "Adetli satırın kabulü tartılan kg ister; kg satırı ayrıca tartılan kg almaz.");
+        }
+
         order.RecordAcceptance(order.Version, request.AcceptanceId, request.PurchaseOrderLineId, quantity, request.OccurredAtUtc);
         var changedLine = order.Lines.Single(candidate => candidate.Id == request.PurchaseOrderLineId);
         orderRow.Version = order.Version;
@@ -266,6 +274,7 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
             OrderId = request.PurchaseOrderId,
             LineId = request.PurchaseOrderLineId,
             Quantity = validated.AcceptedQuantity,
+            MeasuredQuantityKg = validated.MeasuredQuantityKg,
             OrderVersionAfter = order.Version,
             RecordedAtUtc = request.OccurredAtUtc,
             IdempotencyKeyHash = keyHash,
@@ -287,7 +296,9 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
             envelope.PermissionCode,
             envelope.RoleCodes,
             JsonSerializer.Serialize(new { version = versionBefore, accepted = acceptedBefore }, Json),
-            JsonSerializer.Serialize(new { version = order.Version, accepted = changedLine.AcceptedQuantity.Value, remaining = changedLine.RemainingQuantity.Value }, Json),
+            validated.MeasuredQuantityKg is { } measuredKg
+                ? JsonSerializer.Serialize(new { version = order.Version, accepted = changedLine.AcceptedQuantity.Value, remaining = changedLine.RemainingQuantity.Value, measuredKg }, Json)
+                : JsonSerializer.Serialize(new { version = order.Version, accepted = changedLine.AcceptedQuantity.Value, remaining = changedLine.RemainingQuantity.Value }, Json),
             "Satınalma siparişi kabul payı kaydedildi",
             ApprovalContextJson: null,
             AuditAiInvolvement.None,
@@ -396,6 +407,12 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
             request.AcceptedQuantity,
             occurredAtUtc = request.OccurredAtUtc.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
         }, Json);
+        if (request.MeasuredQuantityKg is { } measured)
+        {
+            // AK-3: only a piece-line acceptance hashes its weighed kilograms; a kilogram line's hash is the earlier one.
+            canonical = canonical[..^1] + ",\"measuredQuantityKg\":" + JsonSerializer.Serialize(measured, Json) + "}";
+        }
+
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
+using GoymenERP.Modules.Purchasing.Domain.GoodsReceipts;
 using GoymenERP.Modules.Purchasing.Domain.Orders;
 
 namespace GoymenERP.Modules.Purchasing.Application;
@@ -19,6 +20,7 @@ public sealed partial class PurchasingService
         catch (JsonException) { throw new PurchasingServiceException(400, "validation_failed"); }
         var runner = goodsReceipts ?? throw ReceiptUnavailable();
         var envelope = Envelope(scope, metadata, permission!);
+        var piece = await PieceReceiptAsync(scope, permission, orderId, lineId, request, cancellationToken);
         try
         {
             return await runner.ExecuteAsync(scope.CompanyId, new(orderId, lineId, request.ExpectedPurchaseOrderVersion),
@@ -41,7 +43,8 @@ public sealed partial class PurchasingService
 
                 var purchase = await GuardedAsync(scope, permission, () => participants.StagePurchaseAsync(
                     new(scope.CompanyId, request.AcceptanceId, orderId, lineId, request.ExpectedPurchaseOrderVersion,
-                        source.ProductId, request.ExpectedProductVersion, source.UnitId, request.AcceptedQuantity, request.OccurredAtUtc), envelope, token), token);
+                        source.ProductId, request.ExpectedProductVersion, source.UnitId, request.AcceptedQuantity, request.OccurredAtUtc,
+                        piece is null ? null : request.MeasuredQuantityKg), envelope, token), token);
                 if (purchase is null || purchase.CompanyId != scope.CompanyId || purchase.AcceptanceId != request.AcceptanceId
                     || purchase.PurchaseOrderId != orderId || purchase.PurchaseOrderLineId != lineId
                     || purchase.AcceptedQuantity != request.AcceptedQuantity || !ReceiptVersion(purchase.PurchaseOrderVersion)
@@ -53,7 +56,8 @@ public sealed partial class PurchasingService
                 PurchaseReceiptStockRequestV1 stockRequest;
                 if (original is not null)
                 {
-                    if (original.PurchaseOrderVersionAfter != purchase.PurchaseOrderVersion) throw ReceiptSourceInvalid();
+                    if (original.PurchaseOrderVersionAfter != purchase.PurchaseOrderVersion || original.PieceCount != piece?.PieceCount)
+                        throw ReceiptSourceInvalid();
                     stockRequest = original;
                 }
                 else
@@ -66,7 +70,7 @@ public sealed partial class PurchasingService
                         source.ProductId, request.ExpectedProductVersion, source.UnitId, request.LotId, request.LabelId,
                         request.LabelCode, request.HeatNumber, request.CoilNumber, PurchaseGoodsReceiptDocumentPolicyV1.RequiredForNewReceipt,
                         facts.OwnerKind, facts.OwnerId, facts.CustodianKind, facts.CustodianId, facts.LocationId,
-                        request.MovementId, request.MeasuredQuantityKg, request.OccurredAtUtc);
+                        request.MovementId, request.MeasuredQuantityKg, request.OccurredAtUtc) { PieceCount = piece?.PieceCount };
                 }
 
                 var inventory = await GuardedAsync(scope, permission,
@@ -90,6 +94,7 @@ public sealed partial class PurchasingService
                     inventory.QuantityKg, stockRequest.InitialBlock, request.OccurredAtUtc), purchase.IsReplay, purchase.OriginalCorrelationId)
                 {
                     FutureSupplyReleases = releases,
+                    PieceKilograms = piece,
                 };
             }, token => RequireStillAsync(scope, permission, token), cancellationToken);
         }
@@ -234,6 +239,37 @@ public sealed partial class PurchasingService
             },
         };
     }
+
+    /// <summary>
+    /// AK-3 (KLN-D119, BS-16/BS-17, golden TA4): the piece facts of a receipt on a piece-unit line, or null on a kilogram line. The
+    /// accepted quantity must be a whole piece count; the line (a technical slice reads its general line) must carry the theoretical
+    /// kg per piece recorded at approval (fail-closed 409 otherwise). The theoretical kilograms (pieces × kg/piece, URN-D9) are
+    /// compared with the weighed kilograms against the Ayarlar tolerance; the outcome is a warning, never a block, and the cost
+    /// uses the weighed kilograms (ALS-D119).
+    /// </summary>
+    private async Task<PurchaseGoodsReceiptPieceKilogramsV1?> PieceReceiptAsync(Scope scope, string? permission, Guid orderId, Guid lineId,
+        RecordPurchaseGoodsReceiptV1 request, CancellationToken cancellationToken)
+    {
+        if (orderId == Guid.Empty || lineId == Guid.Empty) return null;
+        var stored = await GuardedAsync(scope, permission, () => store.FindOrderAsync(orderId, cancellationToken), cancellationToken);
+        var line = stored?.Order.Lines.SingleOrDefault(candidate => candidate.Id == lineId);
+        if (stored is null || line is null || line.Quantity.Unit != QuantityUnit.Piece) return null;
+        var general = line.Kind == PurchaseOrderLineKind.General ? line
+            : stored.Order.Lines.SingleOrDefault(candidate => candidate.Id == line.ParentLineId) ?? throw ReceiptSourceInvalid();
+        var snapshot = general.TheoreticalKilograms
+            ?? throw new PurchasingServiceException(409, PurchaseGoodsReceiptCodesV1.TheoreticalKilogramsMissing);
+        var pieces = decimal.Parse(request.AcceptedQuantity, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture);
+        if (decimal.Truncate(pieces) != pieces || pieces > int.MaxValue)
+            throw new PurchasingServiceException(400, PurchaseGoodsReceiptCodesV1.PieceCountInvalid, [new("acceptedQuantity", PurchaseGoodsReceiptCodesV1.PieceCountInvalid)]);
+        var measured = decimal.Parse(request.MeasuredQuantityKg, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture);
+        var theoretical = PurchasePieceKilograms.TheoreticalKilograms(pieces, snapshot.KilogramsPerUnit);
+        var policy = await ReadReceiptPolicyAsync(scope, permission, cancellationToken);
+        var outcome = GoodsReceiptKgVariance.Evaluate(theoretical, measured, policy.KgTolerancePercent);
+        return new PurchaseGoodsReceiptPieceKilogramsV1((int)pieces, Exact(snapshot.KilogramsPerUnit), Exact(theoretical), Exact(measured),
+            Exact(measured - theoretical), outcome.ToString(), policy.KgTolerancePercent is { } tolerance ? Exact(tolerance) : null);
+    }
+
+    private static string Exact(decimal value) => PurchaseAcceptanceParticipantContractV1.FormatQuantity(value);
 
     private static void RequireOriginalReceipt(Guid companyId, Guid orderId, Guid lineId, RecordPurchaseGoodsReceiptV1 request,
         PurchaseReceiptStockRequestV1 original)

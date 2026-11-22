@@ -27,6 +27,15 @@ public sealed class PurchasingRuleException(string code, string message) : Inval
 /// <summary>The stable refusal codes of the Purchasing domain.</summary>
 public static class PurchasingRuleCodes
 {
+    /// <summary>AK-3 (SAT-D437): a theoretical kg/piece snapshot is not positive, too fine or without its source version.</summary>
+    public const string TheoreticalKilogramsInvalid = "purchasing_theoretical_kilograms_invalid";
+
+    /// <summary>AK-3 (SAT-D437, fail-closed): a piece line has no theoretical kg source, so the order is not approved.</summary>
+    public const string TheoreticalKilogramsMissing = "purchasing_theoretical_kilograms_missing";
+
+    /// <summary>AK-3 (SAT-D437): a snapshot is only recorded on a Draft piece general line that has none yet.</summary>
+    public const string TheoreticalKilogramsNotApplicable = "purchasing_theoretical_kilograms_not_applicable";
+
     public const string ReceiptAdjustmentReasonInvalid = "purchasing_receipt_adjustment_reason_invalid";
     public const string ReceiptAdjustmentDuplicate = "purchasing_receipt_adjustment_duplicate";
     public const string ReceiptAdjustmentInvalid = "purchasing_receipt_adjustment_invalid";

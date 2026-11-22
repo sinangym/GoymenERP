@@ -264,6 +264,39 @@ public sealed partial class PurchaseOrder
     }
 
     /// <summary>
+    /// AK-3 (SAT-D437): approval of an order with piece-unit general lines. Each such line without a snapshot takes the theoretical
+    /// kg per piece the Product owner answered (<paramref name="theoreticalKilograms"/>, by line id) and keeps it from then on; a
+    /// line already carrying one (a re-approval) keeps its own. A piece line without an answer refuses the whole approval
+    /// (<see cref="PurchasingRuleCodes.TheoreticalKilogramsMissing"/>, fail-closed); an answer for any other line is an internal
+    /// inconsistency. Every other rule is <see cref="Approve(long, string, DateTimeOffset, Guid)"/>'s (the version and Draft checks come first).
+    /// </summary>
+    public void Approve(long expectedVersion, string approvedBy, DateTimeOffset now, Guid functionalCurrencyId,
+        IReadOnlyDictionary<Guid, PurchaseOrderLineTheoreticalKilograms> theoreticalKilograms)
+    {
+        ArgumentNullException.ThrowIfNull(theoreticalKilograms);
+        RequireVersion(expectedVersion);
+        var pending = lines.Where(line => line.NeedsTheoreticalKilograms && line.TheoreticalKilograms is null).ToArray();
+        if (theoreticalKilograms.Keys.Any(id => pending.All(line => line.Id != id)))
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.InternalInvariant,
+                "İç tutarsızlık: teorik kg/adet yalnız kaydı olmayan adetli genel satıra verilir.");
+        }
+
+        if (Status == PurchaseOrderStatus.Draft && pending.Any(line => !theoreticalKilograms.ContainsKey(line.Id)))
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.TheoreticalKilogramsMissing,
+                "Adetli satırın teorik kg kaynağı yok; sipariş onaylanamaz.");
+        }
+
+        Approve(expectedVersion, approvedBy, now, functionalCurrencyId);
+        foreach (var line in pending) line.RecordTheoreticalKilograms(theoreticalKilograms[line.Id]);
+    }
+
+    /// <summary>AK-3: the stored snapshot of a piece general line, put back on rebuild (no state rule; it was checked when recorded).</summary>
+    internal void RestoreTheoreticalKilograms(Guid lineId, PurchaseOrderLineTheoreticalKilograms snapshot) =>
+        lines.Single(line => line.Id == lineId).RecordTheoreticalKilograms(snapshot);
+
+    /// <summary>
     /// ALC-SC33 (FNS-D79): the automatic default rate an order is opened with — the Settings resolver's SAT-D54/D170 answer for the
     /// order's business day. Assigned once, on a Draft order with a foreign currency and no rate yet; it is part of the opening and
     /// does not move the version.

@@ -792,6 +792,12 @@ public static class PurchasingProblemCodesV1
     /// <summary>503 (never on the wire): the Product owner has not published purchase eligibility, or cannot answer (fail-closed).</summary>
     public const string ProductEligibilityUnavailable = "product_eligibility_unavailable";
 
+    /// <summary>AK-3 (SAT-D437) 422: a piece line's product gives no theoretical kg per piece; the order is not approved (fail-closed).</summary>
+    public const string TheoreticalKilogramsMissing = "purchasing_theoretical_kilograms_missing";
+
+    /// <summary>AK-3 (SAT-D437) 503: the Product owner's theoretical kg per piece cannot be read for a piece line; nothing is recorded.</summary>
+    public const string TheoreticalKilogramsUnavailable = "purchasing_theoretical_kilograms_unavailable";
+
     /// <summary>503 (never on the wire): an owner answered a malformed value.</summary>
     public const string ReferenceProviderInvalid = "reference_provider_invalid";
 
