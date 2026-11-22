@@ -78,6 +78,35 @@ internal sealed class IdentityUserManagementEvaluator(IdentityDbContext dbContex
             .OrderBy(companyId => companyId)
             .ToListAsync(cancellationToken);
 
+    /// <summary>
+    /// The user ids of the managed-user list (K3-B finding 1; KIM-D16, KIM-D57, KIM-D58) for
+    /// <paramref name="actorUserId"/> in <paramref name="contextCompanyId"/>:
+    /// <list type="bullet">
+    /// <item>members of the context company whose every membership company is one where the actor holds
+    /// <c>identity.users.manage</c> company-wide (KIM-D16), and</item>
+    /// <item>users without any valid assignment, only when the actor created them (KIM-D57) or the actor is the founder
+    /// account named by the bootstrap marker (KIM-D58). Without a marker the founder branch admits nobody.</item>
+    /// </list>
+    /// </summary>
+    internal async Task<IReadOnlyList<Guid>> GetListedUserIdsAsync(
+        Guid actorUserId,
+        Guid contextCompanyId,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken)
+    {
+        var managed = await GetCompanyWideManagedCompanyIdsAsync(actorUserId, nowUtc, cancellationToken);
+        var founder = await dbContext.BootstrapStates.AsNoTracking()
+            .AnyAsync(state => state.FounderUserId == actorUserId, cancellationToken);
+        var valid = dbContext.RoleAssignments.AsNoTracking().Where(assignment => assignment.Status == RoleAssignmentStatus.Active
+            && assignment.ValidFromUtc <= nowUtc && (assignment.ValidUntilUtc == null || assignment.ValidUntilUtc > nowUtc));
+        return await dbContext.Users.AsNoTracking()
+            .Where(user => (valid.Any(assignment => assignment.UserId == user.Id && assignment.CompanyId == contextCompanyId)
+                    && !valid.Any(assignment => assignment.UserId == user.Id && !managed.Contains(assignment.CompanyId)))
+                || ((founder || user.CreatedByUserId == actorUserId) && !valid.Any(assignment => assignment.UserId == user.Id)))
+            .Select(user => user.Id)
+            .ToListAsync(cancellationToken);
+    }
+
     /// <summary>KIM-D16 fence first, then KIM-D19 (a target without membership cannot be managed from the screen).</summary>
     internal async Task<IdentityUserManagementDecision> EvaluateAsync(
         Guid actorUserId,
