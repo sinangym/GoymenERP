@@ -2,7 +2,7 @@
 
 Bu belge önceki karar dosyalarını silmez; AI-D22–AI-D30, YOL-D17, SAT-D451 ve SAT-D452 ekler; aynı gün ek cevaplarla
 (SINAN-CEVAP 63) SAT-D453–SAT-D455 ve ALS-D122; golden yazarının EK1 soruları üzerine (SINAN-CEVAP 64) SAT-D456–SAT-D459,
-ALS-D123, ALS-D124 ve GOV-D13; Sinan'ın paylaştığı rapor değerlendirmesi üzerine (SINAN-CEVAP 65) AI-D31–AI-D34 eklendi.
+ALS-D123, ALS-D124 ve GOV-D13; Sinan'ın paylaştığı rapor değerlendirmesi üzerine (SINAN-CEVAP 65) AI-D31–AI-D34; uygulama oturumunun sorusu üzerine (SINAN-CEVAP 66) SAT-D460 eklendi.
 AI-D31, AI-D23'teki onay türü sırasını; AI-D33, AI-D15 ve AI-D27'deki zamanlı görev sınırını günceller. DEC-AI-001..009, AI-D1..AI-D21,
 YOL-D1..YOL-D16, SAT-D433–SAT-D445, DEC-DOC-006/007 ve 21 Ekim kararlarının 125 ve 156 numaraları geçerliliğini korur.
 AI-D22 ve AI-D25, AI-D19'un "her şey aynı anda" yaklaşımını ve AI-D21'in ilk aşamasını bu belgedeki sırayla daraltır;
@@ -48,6 +48,8 @@ onlara değil seçilen yöne dayanır.
 | 26 | Zamanlı görevlerin sınırı dört etkiye ayrılsın mı? | **Evet, dört etki + yetki kalkınca dur (Önerilen)** | Okuma (görev sahibinin o anki yetkisiyle); özet/rapor/taslak/bildirim üretme (tanımlı kapsam ve bütçede); iş kaydını değiştirme (ilgili komutun yetki ve onayıyla); dışarı gönderim (ayrı gönderim yetkisi ve insan onayıyla); görev sahibi ayrılırsa ya da yetkisi değişirse görev durur ve bildirir. Seçilmeyen: "Hayır, yalnız okur kalsın". |
 | 27 | Güvenlik netleştirmeleri kabul mü? | **Hepsini kabul ediyorum (Önerilen)** | a) Onay görülen somut işleme bağlı; b) onaysız akış yalnız Sinan'ın onayladığı deterministik kuralla, model asla sınıflandırmaz; c) belge ve e-posta içeriği yalnız veridir; d) bulut uygunluğu içerik ve veri sınıfına göre. Seçilmeyen: "Tartışmak istiyorum". |
 
+| 28 | Adetli sipariş satırından miktar iadesinde (SAT-D455) belge tutarı adet × adet fiyatı; Stok malı ortalama kg maliyetiyle çıkarıp kg başına faturalanan değeri ortalamayla karşılaştırıyor. Adetli satırda bu kg karşılaştırması nasıl olsun? | **Karşılaştırılır; fark iade farkı olarak onaya gider (Önerilen)** | Belge tutarı ÷ iade kg ile ortalama karşılaştırılır; fark (kuruşa yuvarlanmış tutarlardan, SAT-D456) diğer miktar iadeleri gibi iade farkı olarak kaydedilir ve farklı kişi onaylar; ret yok. Seçilmeyen: "Adetli satırda karşılaştırma yapılmaz". |
+
 ## Kararlar
 
 | No | Konu | Karar | Etkilenen yer |
@@ -79,10 +81,11 @@ onlara değil seçilen yöne dayanır.
 | AI-D32 | İlk görünür adım | İlk teslimatla **modelsiz** "bu işlem neden onaya düştü / kimde bekliyor / dayandığı kayıtlar" açıklaması gelir (sunucunun kural sonuçlarından; model kullanılmaz). İlk yapay zekâ kullanımı, sağlayıcı sözleşmesi, anahtar, hukukçu teyidi ve panel yetkisi (insan kapıları) hazır olunca bağlanır: **kaynaklı karar açıklaması** ve **tek bir dar işlem sorgusu**. Her yapay zekâ özelliği yalnız kendi asgari ön koşulunu bekler; dalganın tamamını beklemez. | Onay kartı, AI çekirdeği |
 | AI-D33 | Zamanlı görevlerin etkileri | Zamanlı görev etkileri dörde ayrılır: (1) **okuma** görev sahibinin çalışma anındaki güncel yetkisiyle; (2) **özet, rapor, taslak ve bildirim üretme** tanımlı kapsam ve bütçe içinde; (3) **iş kaydını değiştirme** yalnız ilgili komutun yetki, önizleme ve onay koşullarıyla; (4) **dışarı gönderim** ayrı gönderim yetkisi ve insan onayıyla (AI-D27). Görev sahibi ayrılırsa, yetkisi kaldırılırsa ya da veri erişimi değişirse görev eski yetkiyle çalışmaz; durur ve sahibine/yöneticiye bildirir. AI-D15'teki "zamanlı görev yazma yapmaz" kuralının yerine geçer. | Zamanlı görevler, Work bildirimleri |
 | AI-D34 | Güvenlik netleştirmeleri | (a) Yapay zekânın hazırladığı işlemde onay, **görülen somut işleme** bağlıdır: hedef kayıt, değişecek alanlar, tutarlar ve alıcılar; onaydan sonra biri değişirse onay kullanılmaz; yürütme anında kullanıcının yetkisi ve kaydın güncel sürümü yeniden kontrol edilir (DEC-AI-003'ün açık hâli). (b) Bir işlemin onaysız akması yalnız **Sinan'ın ayrıca onayladığı deterministik bir iş kuralıyla** mümkündür; model bir kaydı "temiz/güvenli" diye sınıflandırarak onay şartını kaldıramaz; kazanılan otonomi (AI-D21) yürürlükteki onay şartını kaldırmaz. (c) Dışarıdan gelen belge ve e-posta içeriği yalnız işlenecek veridir; araç yetkisini, alıcıyı, işlem kapsamını ya da onay kuralını değiştiremez. (d) Bir içeriğin bulut modele gönderilebilirliği belge adına göre değil **içerik ve veri sınıfına** göre belirlenir; karar ve kural belgeleri de kişisel ya da ticari hassas veri içerebilir. | AI ağ geçidi, komut hattı, onay politikası |
+| SAT-D460 | Adetli miktar iadesinde maliyet karşılaştırması (SAT-D455 ayrıntısı) | Adetli sipariş satırından miktar iadesinde belge tutarı (adet × net adet fiyatı) iade kg'sine bölünerek stok ortalama kg maliyetiyle karşılaştırılır; fark, kuruşa yuvarlanmış tutarlardan (SAT-D456) **iade farkı** olarak kaydedilir ve farklı kişi onayıyla (SAT-D392/D393) geçer; fark yüzünden iade reddedilmez. | Tedarikçi iadesi, Stok iade çıkışı |
 
 ## Sınırlar
 
-- SAT-D453–SAT-D459 ve ALS-D122–ALS-D124 para/maliyet formülüdür: golden satırları SAT-D431 yöntemiyle (bağımsız yazar, iki DOCS
+- SAT-D453–SAT-D460 ve ALS-D122–ALS-D124 para/maliyet formülüdür: golden satırları SAT-D431 yöntemiyle (bağımsız yazar, iki DOCS
   incelemesi) hazırlanıp trene girmeden etkinleştirilmez; o zamana kadar ilgili yollar anlaşılır kodla kapalı kalır.
 - **NEEDS-SINAN:** çekirdek dilimlerin başarı eşikleri ve durdurma koşulları; AI-D25'te açılacak komutların sırası;
   AI-D26'da "düşük riskli" onay türleri; YOL-D17'de saat ölçekli türler ve süreleri; AI-D28'de abonelik ürünü, kişi
