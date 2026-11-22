@@ -6185,6 +6185,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // kg/unit or invoice kg information exists, then restores the previous trigger body verbatim (forward fix). 3 lexical Sql call(s).
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261122101114_AddSalesPieceLineKilograms.cs"] =
                     new("9f7ecd9f9a8fbcdd66a2be4ef90401b9214628a1d37ee988bd9aa37cdb189a84", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 3 }),
+                // WP13 (YOL-D11); K3 review pending. Up adds TR_OrderSignedApprovals_Guard (facts never change, Active -> Passive once, no
+                // delete; 52261) and TR_OrderSignedApprovalAttempts_Guard (append-only; 52262); Down refuses (52260) while a signed approval
+                // or attempt exists (forward fix). 3 lexical Sql call(s); the value is the guard output for this file.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261122201322_AddSalesOrderSignedApprovals.cs"] =
+                    new("030971daa0ffa41e827d91489074559373c28c338be434766723474483a505a6", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 3 }),
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/SalesOfficialInvoiceCancellationGuards.cs"] =
                     new("11d2eb4d9eafee146372461936adffe7f64514fb463a500a16230ff1e26757ff", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 7 }),
                 // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Operator two-factor recovery security history exists; AddOperatorTwoFactorRecoverySecurityEvents requires a forward fix. 1 lexical Sql call(s).

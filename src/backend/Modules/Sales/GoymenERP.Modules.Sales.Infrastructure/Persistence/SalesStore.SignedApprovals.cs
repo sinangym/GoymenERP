@@ -1,11 +1,9 @@
-using System.Data;
 using System.Text.Json;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Domain.SignedApprovals;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
@@ -222,44 +220,6 @@ public sealed partial class SalesStore : ISalesOrderSignedApprovalStore
             .Take(limit)
             .ToListAsync(cancellationToken);
         return [.. rows.Select(SalesSignedApprovalRows.Restore)];
-    }
-
-    private async Task<T> InSignedApprovalTransactionAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken)
-    {
-        // An owner command with its own clean transaction: pending changes or a borrowed transaction would commit unrelated work.
-        if (dbContext.Database.CurrentTransaction is not null || dbContext.ChangeTracker.HasChanges())
-        {
-            throw new InvalidOperationException("A signed approval record requires its own clean Sales transaction.");
-        }
-
-        var companyId = RequireResolvedCompany();
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken);
-        try
-        {
-            var result = await action();
-            if (RequireResolvedCompany() != companyId)
-            {
-                throw new UnauthorizedAccessException();
-            }
-
-            await transaction.CommitAsync(cancellationToken);
-            return result;
-        }
-        catch (Exception exception) when (exception is SqlException { Number: 1205 }
-            || exception is DbUpdateException { InnerException: SqlException { Number: 1205 } }
-            || exception is InvalidOperationException
-                { InnerException: DbUpdateException { InnerException: SqlException { Number: 1205 } } })
-        {
-            // SQL Server has already rolled back a deadlock victim; a second rollback could mask the refusal.
-            dbContext.ChangeTracker.Clear();
-            throw Refused(SalesDraftStoreCodes.ConcurrentChange, "Sipariş başka bir işlemle değişti; yeniden okuyun.", exception);
-        }
-        catch
-        {
-            await transaction.RollbackAsync(CancellationToken.None);
-            dbContext.ChangeTracker.Clear();
-            throw;
-        }
     }
 
     private Task<OrderSignedApprovalAttemptRow?> FindSignedApprovalAttemptAsync(string commandName, string keyHash,

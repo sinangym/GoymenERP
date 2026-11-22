@@ -129,7 +129,7 @@ public static class PurchaseOrderPdfEndpoints
                                                       or OverflowException or KeyNotFoundException)
                 {
                     // An answer the composer cannot print faithfully is not printed; the log names the rule, never order content.
-                    logger.LogWarning("Purchase order PDF was not rendered. OrderId={OrderId} Reason={Reason}", id, exception.GetType().Name);
+                    logger.LogWarning("Purchase order PDF was not rendered. OrderId={OrderId} Reason={Reason}", id, exception is ArgumentException ? "layout" : exception is FormatException ? "text-format" : "composition");
                     return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
                 }
             })

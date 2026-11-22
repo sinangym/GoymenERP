@@ -123,7 +123,7 @@ public static class SalesQuotePdfEndpoints
                 catch (Exception exception) when (exception is InvalidOperationException or ArgumentException or FormatException
                                                       or OverflowException)
                 {
-                    logger.LogWarning("Sales quote PDF was not rendered. QuoteId={QuoteId} Reason={Reason}", id, exception.GetType().Name);
+                    logger.LogWarning("Sales quote PDF was not rendered. QuoteId={QuoteId} Reason={Reason}", id, exception is ArgumentException ? "layout" : exception is FormatException ? "text-format" : "composition");
                     return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
                 }
             })
