@@ -54,31 +54,32 @@ karar metninde açıkça yazmayan ve mevcut kurallardan gerekçesiyle çıkarıl
   yuvarlanır. Gerekçe: SAT-D453 tutarın yuvarlanmış birim fiyatla hesaplanacağını söyler; belge satırı tutarının kuruşa bir
   kez yuvarlanması mevcut satır kuralıdır (SAT-D11). Satırlar bu yuvarlamaya duyarlı olmayacak biçimde değil, onu
   gösterecek biçimde seçildi (E04).
-- **TE2 — İskonto türlerinin uygulanışı:** zincir iskonto ardışık uygulanır (fiyat × (1 − i₁) × (1 − i₂)); satır
-  tutarı olarak verilen iskonto net birim fiyata (miktar × fiyat − tutar iskontosu) ÷ miktar olarak yansır. Gerekçe:
-  SAT-D458 bu iskontoların "net fiyata yansıdığını" söyler; "zincir" iskontonun tanımı ardışık uygulamadır ve tutar
-  iskontosunun birim fiyattaki karşılığı ancak miktara bölünerek bulunur. Yüzde ve tutar iskontosu aynı satırda birlikte
-  varsa hangisinin önce uygulanacağı kararda yazmaz → NEEDS-SINAN EN7.
+- **TE2 — Satır iskontosunun biçimi (uygulama modelinden):** SAT-D458 satıra ait bütün iskontoların net fiyata
+  yansıdığını söyler, ama iskontonun satırda hangi biçimde tutulduğunu söylemez. Ana oturumun aktardığı mevcut alış satır
+  modeline göre (uygulama kuralı; karar metninde yazılı değildir, golden yazarı uygulama kodunu okumadı) satırda iskonto
+  **ya yüzde ya tutardır, ikisi birlikte olmaz**; satır düzeyinde zincir iskonto tanımlı değildir; **tutar iskontosu birim
+  başınadır**: net birim fiyat = birim fiyat − tutar iskontosu (E07a). Bu nedenle zincir iskonto (E07) ve yüzde + tutar
+  birlikteliği (E07c) mevcut modelde oluşamaz. Model değişirse bu satırlar yeniden ele alınır.
 
 ### Golden satırları (kg birimli seçilen sipariş satırı)
 
 | # | Durum | Girdiler | Kesin ara değerler | Gösterilen / sonuç |
 |---|---|---|---|---|
 | E01 | Sinan'ın örneği, ayırt edici miktar | Sipariş 41,25 TL/kg, %2,5 iskonto; iade 1 000,000 kg | Net 41.25 × 0.975 = 40.21875 → **40,2188**; tutar 1000 × 40.2188 = 40 218,8 | Birim fiyat **40,2188**; iade faturası **40 218,80 TL** (kesin net 40,21875 ile çıkan 40 218,75 **OLMAZ**) |
-| E02 | Yarım sınırı, çift basamak | Sipariş 10,01 TL/kg, %7,5 iskonto; iade 100,000 kg | Net 10.01 × 0.925 = 9.25925 (tam yarım) → **9,2593** | Birim fiyat **9,2593** (çifte yuvarlamayla 9,2592 **OLMAZ**); iade faturası **925,93 TL** |
+| E02 | Yarım sınırı, çift basamak | Sipariş 10,01 TL/kg, %7,5 iskonto; iade 100,000 kg | Net 10.01 × 0.925 = 9.25925 (tam yarım) → **9,2593** | Birim fiyat **9,2593** (yarımda çifte (banker's) yuvarlamayla çıkan 9,2592 **OLMAZ**); iade faturası **925,93 TL** |
 | E03 | İskontosuz satır | Sipariş 20,50 TL/kg; iade 80,000 kg | Net 20,5 (yuvarlama yok) | Birim fiyat **20,5000**; iade faturası **1 640,00 TL** (= ana golden I11) |
 | E04 | Vade farkı hariç (SAT-D451); TE1 kuruş yuvarlaması | Sipariş 41,25 TL/kg, %2,5 iskonto, %3 vade farkı; iade 80,000 kg | Net 40,2188 (vade farkı hariç); 80 × 40.2188 = 3 217,504 → kuruş | Birim fiyat **40,2188** (vade farkı dahil 40.21875 × 1.03 = 41.4253125 → 41,4253 **OLMAZ**); iade faturası **3 217,50 TL** |
 | E05 | Net 4 ondalığı aşmıyor | Sipariş 40,00 TL/kg, %2,5 iskonto; iade 50,000 kg | Net 39 | Birim fiyat **39,0000**; iade faturası **1 950,00 TL** |
-| E06 | Ortalama okunabilir, fark var | L9 (ana golden I11) 80,000 kg, depo/ürün ortalaması 21,2500; seçilen R5 satırı 21,00 TL/kg, %2,5 iskonto | Net 20.475 → 20,4750; fatura 80 × 20.475 = 1 638; stok çıkışı 80 × 21.25 = 1 700; fark (SAT-D456) 1 700,00 − 1 638,00 | Birim fiyat **20,4750**; iade faturası **1 638,00 TL**; stok çıkışı **1 700,00 TL**; fark **62,00 TL** → Finans spec'i gelene kadar **reddedilir** (SAT-D371) |
-| E07 | Zincir iskonto (SAT-D458, TE2) | Sipariş 41,25 TL/kg, %10 + %2,5 zincir iskonto; iade 80,000 kg | Net 41.25 × 0.9 × 0.975 = 36.196875 → **36,1969**; 80 × 36.1969 = 2 895,752 → kuruş | Birim fiyat **36,1969**; iade faturası **2 895,75 TL** |
-| E07a | Satır tutar iskontosu (SAT-D458, TE2) | Sipariş satırı 120,000 kg × 41,25 = 4 950,00, satır tutar iskontosu 10,00 TL; iade 120,000 kg | Net (4950 − 10)/120 = 41.1666… → **41,1667**; 120 × 41.1667 = 4 940,004 → kuruş | Birim fiyat **41,1667**; iade faturası **4 940,00 TL** |
+| E06 | Ortalama okunabilir, fark var | L9 lotundan (ana golden I11, 120,000 kg) **80,000 kg iade**; depo/ürün ortalaması 21,2500; seçilen satır **R5′** (R5'in fiyatı değiştirilmiş varyantı: 21,00 TL/kg, %2,5 iskonto; ana golden'daki R5 20,50 TL/kg ve iskontosuzdur) | Net 20.475 → 20,4750; fatura 80 × 20.475 = 1 638; stok çıkışı 80 × 21.25 = 1 700; fark (SAT-D456) 1 700,00 − 1 638,00 | Birim fiyat **20,4750**; iade faturası **1 638,00 TL**; stok çıkışı **1 700,00 TL**; fark **62,00 TL** → Finans spec'i gelene kadar **reddedilir** (SAT-D371) |
+| E07a | Birim başına tutar iskontosu (SAT-D458, TE2) | Sipariş 41,25 TL/kg, tutar iskontosu 0,2500 TL/kg; iade 80,000 kg | Net 41.25 − 0.25 = 41 | Birim fiyat **41,0000**; iade faturası **3 280,00 TL** |
 
-Hesaplanamaz:
+Durur / oluşamaz:
 
 | # | Durum | Sonuç |
 |---|---|---|
 | E07b | Seçilen siparişte belge altı iskonto var | Miktar iadesi **anlaşılır hata koduyla durur** (SAT-D458); belge altı iskonto satıra dağıtılmaz |
-| E07c | Aynı satırda yüzde iskonto ve tutar iskontosu birlikte var | Uygulama sırası kararda yok → **NEEDS-SINAN EN7** |
+| E07 | Zincir iskonto (%10 + %2,5) | **Mevcut satır modelinde oluşamaz** (TE2: satır düzeyinde zincir iskonto tanımlı değil; uygulama kuralı) |
+| E07c | Aynı satırda yüzde iskonto ve tutar iskontosu birlikte | **Mevcut satır modelinde oluşamaz** (TE2: iskonto ya yüzde ya tutardır; uygulama kuralı). Model değişip bu durum oluşursa, karar gelene kadar yol anlaşılır kodla kapalı kalır (karar dosyası "Sınırlar") |
 
 ---
 
@@ -121,13 +122,19 @@ Hesaplanamaz / reddedilir:
 
 5. Girilen iade adedi stoktan çıkan etiket adedine **eşit olmalıdır**; farklıysa iade reddedilir (SAT-D459).
 6. Fark = kuruşa yuvarlanmış stok çıkışı − kuruşa yuvarlanmış iade belgesi tutarı (SAT-D456).
+7. **Maliyet karşılaştırması (SAT-D460):** belge tutarı (adet × net adet fiyatı) iade kg'sine bölünerek stok ortalama kg
+   maliyetiyle karşılaştırılır; fark (6. adım) **iade farkı** olarak kaydedilir ve farklı kişi onayıyla (SAT-D392/D393)
+   geçer; **fark yüzünden iade reddedilmez**. Kg başına faturalanan değer karşılaştırma bilgisidir; golden onun gösterim
+   hassasiyetini seçmez, kesin değerini verir.
 
 ### Golden satırları
 
 | # | Durum | Girdiler | Kesin ara değerler | Gösterilen / sonuç |
 |---|---|---|---|---|
-| E12 | Adetli satır, iskonto, yarım sınırı | Sipariş satırı 265,13 TL/adet, %2,5 iskonto; iade 3 adet; etiket 3 adet / 37,461 kg; depo/ürün ortalaması 21,2500 TL/kg | Net 265.13 × 0.975 = 258.50175 (tam yarım) → **258,5018**; belge 3 × 258.5018 = 775,5054 → 775,51; stok çıkışı 37.461 × 21.25 = 796,04625 → 796,05; fark (SAT-D456) 796,05 − 775,51 | Birim fiyat **258,5018 TL/adet**; iade faturası **775,51 TL** (3 adet; kg 37,461 bilgi); stok çıkışı **796,05 TL**; fark **20,54 TL** → Finans spec'i gelene kadar **reddedilir** (SAT-D371) |
-| E13 | Adetli satır, vade farkı hariç | E12 satırında ayrıca %2 vade farkı | Net yine 258,5018 (vade farkı dahil 258.50175 × 1.02 = 263,671785 → 263,6718 **OLMAZ**) | E12 ile aynı: **775,51 TL** fatura, **796,05 TL** çıkış, fark **20,54 TL** |
+| E12 | Adetli satır, iskonto, yarım sınırı (SAT-D460) | Sipariş satırı 265,13 TL/adet, %2,5 iskonto; iade 3 adet; etiket 3 adet / 37,461 kg; depo/ürün ortalaması 21,2500 TL/kg | Net 265.13 × 0.975 = 258.50175 (tam yarım) → **258,5018**; belge 3 × 258.5018 = 775,5054 → 775,51; kg başına faturalanan 775.51 / 37.461 = 20.70179653… (ortalama 21,25 ile karşılaştırılır); stok çıkışı 37.461 × 21.25 = 796,04625 → 796,05; fark (SAT-D456) 796,05 − 775,51 | Birim fiyat **258,5018 TL/adet**; iade faturası **775,51 TL** (3 adet; kg 37,461 bilgi); stok çıkışı **796,05 TL**; fark **20,54 TL** iade farkı olarak kaydedilir, farklı kişi onayıyla geçer; **reddedilmez** (SAT-D460) |
+| E13 | Adetli satır, vade farkı hariç | E12 satırında ayrıca %2 vade farkı | Net yine 258,5018 (vade farkı dahil 258.50175 × 1.02 = 263,671785 → 263,6718 **OLMAZ**) | E12 ile aynı: **775,51 TL** fatura, **796,05 TL** çıkış, fark **20,54 TL** iade farkı, farklı kişi onayı (SAT-D460) |
+| E13a | Adetli satır, fatura stok çıkışından büyük (SAT-D460) | Net 300,00 TL/adet; iade 3 adet; etiket 3 adet / 37,461 kg; ortalama 21,2500 | Belge 900,00; kg başına faturalanan 900 / 37.461 = 24.02498598…; stok çıkışı 796,05; fark 796,05 − 900,00 | İade faturası **900,00 TL**; stok çıkışı **796,05 TL**; fark **−103,95 TL** iade farkı, farklı kişi onayıyla geçer; **reddedilmez** |
+| E13b | Adetli satır, fark kuruş tabanında sıfır (SAT-D460, SAT-D456) | Net 265,35 TL/adet; iade 3 adet; etiket 37,461 kg; ortalama 21,2500 | Belge 796,05; kg başına faturalanan 796.05 / 37.461 = 21.25010010…; stok çıkışı 796,04625 → 796,05; fark 796,05 − 796,05 | Fark **0,00 TL** → iade farkı yok (kesin değerlerden −0,00375 çıkar; kuruş tabanında sıfırdır, fark kaydı **OLMAZ**) |
 | E14 | Adetli satır, ortalama okunamıyor (SAT-D454); ayırt edici fark tabanı (SAT-D456) | E12; ortalama okunamıyor; onaylı elle maliyet 20,7000 TL/kg | Stok çıkışı 37.461 × 20.7 = 775,4427 → 775,44; fark 775,44 − 775,51 | Stok çıkışı **775,44 TL**; iade faturası **775,51 TL**; fark **−0,07 TL** (kesin değerlerden 775.4427 − 775.5054 = −0,0627 → −0,06 **OLMAZ**); onaylı istisna Stok 409'unu aşmaz (SAT-D410) |
 
 Reddedilir:
@@ -197,9 +204,10 @@ Ortak kabul (ana golden A01/A07): 100 adet, kabulde tartılan 1 250,400 kg.
 
 ## Türetilenler
 
-- **TE1:** İade belgesi satır tutarı, SAT-D11 ile kuruşa bir kez yuvarlanır (E01, E04, E07, E07a, E12). SAT-D456 "belgeye
+- **TE1:** İade belgesi satır tutarı, SAT-D11 ile kuruşa bir kez yuvarlanır (E01, E04, E07a, E12). SAT-D456 "belgeye
   yazılan (kuruşa yuvarlanmış) iade tutarı" ifadesiyle bu adımı doğrular.
-- **TE2:** Zincir iskonto ardışık; tutar iskontosu net birim fiyata miktara bölünerek yansır (E07, E07a).
+- **TE2:** Satır iskontosunun biçimi uygulama modelinden alınır (karar metninde yazılı değildir): yüzde ya da birim başına
+  tutar, ikisi birlikte değil; zincir iskonto yok (E07, E07a, E07c).
 - İlk taslaktaki TE3 (fark tabanı) SAT-D456 ile karar metnine dönüştü.
 
 Hiçbiri yeni para/stok/maliyet politikası seçmez. Bir reviewer bir türetmeyi politika seçimi sayarsa ilgili satır
@@ -209,7 +217,8 @@ hesaplanamaz kabul edilip `NEEDS-SINAN`'a taşınmalıdır.
 
 | No | Konu | Durum | Satır |
 |---|---|---|---|
-| EN1 | Zincir, tutar ve belge altı iskonto | **SAT-D458:** satır iskontolarının hepsi düşülür; belge altı düşülmez, iade hata koduyla durur | E07, E07a, E07b |
+| EN1 | Zincir, tutar ve belge altı iskonto | **SAT-D458:** satır iskontolarının hepsi düşülür; belge altı düşülmez, iade hata koduyla durur | E07a, E07b (E07 mevcut modelde oluşamaz) |
+| EN7 | Yüzde ve tutar iskontosu birlikte | Mevcut satır modelinde oluşamaz (TE2; uygulama kuralı) | E07c |
 | EN2 | Fark tabanı | **SAT-D456:** kuruşa yuvarlanmış iki tutar | E14 |
 | EN3 | Girilen adet ≠ etiket adedi | **SAT-D459:** reddedilir | E15 |
 | EN4 | Finans reddi alan fatura | **SAT-D457:** sayılmaz; Finans kabul edince girer | E21, E21a |
@@ -218,8 +227,8 @@ hesaplanamaz kabul edilip `NEEDS-SINAN`'a taşınmalıdır.
 
 ## NEEDS-SINAN
 
-- **EN7 (E07c):** Miktar iadesinin düşüldüğü sipariş satırında yüzde iskonto ve tutar iskontosu birlikte varsa hangisi
-  önce uygulansın?
+Açık nokta yoktur. EN7, mevcut satır modelinde oluşamadığı için listeden çıkarıldı (TE2); "iskonto yüzde ya da
+tutardır" kuralı uygulama kuralıdır, ayrıca bir karar satırına bağlanması istenirse Sinan'a sorulabilir.
 
 ## Sınırlar
 
