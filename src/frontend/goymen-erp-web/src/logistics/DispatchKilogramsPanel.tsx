@@ -26,6 +26,16 @@ function readMessage<TData>(result: ViewOutcome<TData>): string | null {
     default: return null
   }
 }
+/**
+ * The weighing-difference read publishes no shell capability, so the panel learns it is forbidden only from a 403. Reporting
+ * that 403 refreshes the shell's authority, which remounts the panel (its key carries the request fence): re-reading on every
+ * mount would loop 403 → refresh → remount. A forbidden read is therefore remembered per session, user, company, note and the
+ * server's capability generation: a remount under the same authority does not read again; a changed authority (a new generation,
+ * e.g. after a grant) reads once more. While the shell is re-reading the authority (no generation) nothing is read.
+ */
+const forbiddenReads = new Set<string>()
+export function resetForbiddenDispatchKilogramReadsForTests(): void { forbiddenReads.clear() }
+
 export function DispatchKilogramsPanel(props: { readonly shell: ShellState; readonly note: DispatchNote; readonly companyId: string }) {
   const binding = attemptBinding(props.shell, `dispatch-kilograms:${props.note.dispatchNoteId}`)
   if (binding === null) return null
@@ -33,7 +43,9 @@ export function DispatchKilogramsPanel(props: { readonly shell: ShellState; read
 }
 function KilogramPanel({ shell, note, companyId, binding }: { readonly shell: ShellState; readonly note: DispatchNote; readonly companyId: string; readonly binding: string }) {
   const boundary = useAuthBoundary()
-  const [read, setRead] = useState<ViewOutcome<DispatchKilograms>>({ type: 'loading' })
+  const generation = shell.activeContext?.capabilityGeneration ?? null
+  const forbiddenKey = `${binding}|${generation ?? ''}`
+  const [read, setRead] = useState<ViewOutcome<DispatchKilograms>>(() => forbiddenReads.has(forbiddenKey) ? { type: 'http', status: 403 } : { type: 'loading' })
   const [refresh, setRefresh] = useState(0)
   const [external, setExternal] = useState(false)
   const [ettn, setEttn] = useState('')
@@ -47,15 +59,19 @@ function KilogramPanel({ shell, note, companyId, binding }: { readonly shell: Sh
   const alive = useRef(true)
   useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
   useEffect(() => {
+    // A remembered 403 under this authority is not re-read by a remount; a retry (refresh > 0) clears it and reads once more.
+    if (generation === null || (refresh === 0 && forbiddenReads.has(forbiddenKey))) return
+    forbiddenReads.delete(forbiddenKey)
     const controller = new AbortController()
     const captured = boundary.capture()
     setRead({ type: 'loading' })
     void readDispatchKilograms(companyId, note.dispatchNoteId, controller.signal).then(result => {
+      if (result.type === 'http' && result.status === 403) forbiddenReads.add(forbiddenKey)
       if (result.type === 'http') boundary.report(result.status, captured)
       if (!controller.signal.aborted) setRead(result)
     })
     return () => controller.abort()
-  }, [companyId, note.dispatchNoteId, refresh, boundary])
+  }, [companyId, note.dispatchNoteId, refresh, boundary, forbiddenKey, generation])
   const documents = useQuery({ queryKey: documentsQueryKey(binding, shell.routeEntryGeneration, OWNER_KIND.logisticsDispatchNote, note.dispatchNoteId),
     queryFn: ({ signal }) => fetchDocuments(OWNER_KIND.logisticsDispatchNote, note.dispatchNoteId, companyId, signal), enabled: external })
   const choices = documents.data?.type === 'ok-single' ? documents.data.data.items.filter(d => d.downloadable && d.contentType === 'application/pdf') : []

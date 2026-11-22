@@ -55,17 +55,23 @@ public sealed partial class SalesDraftService
         SalesOrderDraft draft, CancellationToken cancellationToken)
     {
         var costs = new List<SalesMarginCostSnapshot>();
-        // SAT-D426 / SAT-D430: the order rate is frozen once, at the first approval that resolves it, and never changes. A
-        // revision approval reuses it for every re-pinned line; an order whose earlier approvals found no rate reads it at
-        // this approval (lines pinned before keep no rate). A rate frozen for another currency is never replaced.
+        // SAT-D426 / SAT-D430 / golden T4 ("kur tektir"): the rate is the ORDER's. It is frozen once, at the first approval that
+        // resolves it, and never changes. A revision approval reuses it; an order whose earlier approvals found no rate reads it at
+        // this approval (golden D15), and from then on every line of the order is converted at it, the lines pinned before
+        // included (the margin read applies the order rate, OrderSaleRate). A rate frozen for another currency is never replaced.
         var frozen = FrozenSaleRateOf(draft);
         SalesMarginSaleRate? saleRate = frozen is { } existing && existing.CurrencyId == draft.Header.CurrencyId ? existing : null;
         var saleRateRead = frozen is not null;
+        (SalesOrderDraftLine Line, SalesMarginCostSnapshot Cost)? carrier = null;
         foreach (var line in draft.Lines.OrderBy(item => item.LineNo))
         {
             var previous = LastMarginCost(draft, line.Id);
             // The same product/quantity reinstated after customer rejection keeps its original immutable cost.
-            if (previous is not null && SameCostBasis(draft, line, previous)) continue;
+            if (previous is not null && SameCostBasis(draft, line, previous))
+            {
+                if (carrier is null && previous.Revision < draft.Revision) carrier = (line, previous);
+                continue;
+            }
             if (previous is null && LegacyApprovedCost(draft, line)) continue; // SAT-D273: no backfill.
             if (!saleRateRead)
             {
@@ -74,11 +80,22 @@ public sealed partial class SalesDraftService
             }
             costs.Add(await ReadMarginCostAsync(scope, permission, draft, line, cancellationToken) with { SaleRate = saleRate });
         }
+
+        // Golden D15: a revision approval that re-pins no line still freezes the order rate it resolves. The rate is stored with a
+        // line's approval snapshot, so it travels on this revision's copy of an unchanged line's pinned cost: the cost, its unit,
+        // its source proof and its unavailability stay exactly as pinned (SAT-D269, no re-read); only the order rate is added.
+        if (!saleRateRead && costs.Count == 0 && carrier is { } unchanged)
+        {
+            saleRate = await ReadSaleRateAsync(scope, permission, draft, cancellationToken);
+            if (saleRate is not null)
+                costs.Add(unchanged.Cost with { Revision = draft.Revision, Quantity = unchanged.Line.Quantity.Value, SaleRate = saleRate });
+        }
         return costs;
     }
 
-    // SAT-D432: the unsaved preview of a revision uses the order's frozen rate; before the first freeze it has none (golden D17).
-    private static SalesMarginSaleRate? PreviewSaleRate(SalesOrderDraft draft) =>
+    // SAT-D426 / SAT-D430 / SAT-D432 (golden T4): the one rate a margin of this order converts at — the order's frozen rate when it
+    // is for the order's currency; before the first freeze, none (golden D17/D19: CurrencyConversionUndecided).
+    private static SalesMarginSaleRate? OrderSaleRate(SalesOrderDraft draft) =>
         FrozenSaleRateOf(draft) is { } rate && rate.CurrencyId == draft.Header.CurrencyId ? rate : null;
 
     private static SalesMarginSaleRate? FrozenSaleRateOf(SalesOrderDraft draft) =>
@@ -200,9 +217,10 @@ public sealed partial class SalesDraftService
         else if (cost is null || !SameCostBasis(draft, line, cost))
             cost = draft.ApprovalState == InternalApprovalState.Approved || LegacyApprovedCost(draft, line)
                 ? UnavailableCost(draft, line, SalesLineMarginUnavailableReason.CostSourceMissing)
-                : await ReadMarginCostAsync(scope, bindings.ReadPermission, draft, line, cancellationToken)
-                    // SAT-D432: a revision preview of an order whose rate is frozen shows the margin at that rate.
-                    with { SaleRate = PreviewSaleRate(draft) };
+                : await ReadMarginCostAsync(scope, bindings.ReadPermission, draft, line, cancellationToken);
+        // Golden T4 / D15: the rate is the order's, never a line's. Every line — a pinned snapshot, the copy of an unchanged line,
+        // or a revision preview (SAT-D432) — converts at the order's frozen rate; before the first freeze at none.
+        cost = cost with { SaleRate = OrderSaleRate(draft) };
         var explained = cost.UnavailableReason is { } reason ? NotCalculated(reason)
             : cost.CostPerUnit == 0m ? NotCalculated(SalesLineMarginUnavailableReason.CostUnreadable)
             : !MarginGoldenAccepted ? NotCalculated(SalesLineMarginUnavailableReason.FormulaGoldenPending)

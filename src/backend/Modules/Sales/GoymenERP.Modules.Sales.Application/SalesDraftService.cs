@@ -1076,7 +1076,8 @@ public sealed partial class SalesDraftService(
             {
                 transition(draft, scope.ActorId, expectedVersion, now);
                 if (approvalCosts.Count > 0)
-                    draft.PinMarginCosts([.. approvalCosts.Select(cost => cost with { RecordedAtUtc = now.ToUniversalTime() })]);
+                    draft.PinMarginCosts([.. approvalCosts.Select(cost => cost with { RecordedAtUtc = now.ToUniversalTime() })],
+                        SettingsUnitIdentitiesV1.Kilogram);
                 if (approvalKilogramsPerUnit.Count > 0)
                     draft.PinKilogramsPerUnit([.. approvalKilogramsPerUnit.Select(item => item with { RecordedAtUtc = now.ToUniversalTime() })]);
             };
@@ -1715,6 +1716,13 @@ public sealed partial class SalesDraftService(
             || profile.Scale < 0 || string.IsNullOrWhiteSpace(profile.UnitCode) || string.IsNullOrWhiteSpace(profile.DimensionCode))
         {
             throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
+        }
+
+        // SAT-D443: only kilogram and the standard piece unit are sold in this train; metre (or any other dimension) is refused,
+        // never counted as pieces.
+        if (!SalesOrderUnitPolicy.IsApproved(profile))
+        {
+            throw new SalesDraftServiceException(422, "unsupported_unit", [new(unitField, "unsupported_unit")]);
         }
 
         var product = new ProductSnapshot(snapshot.ProductId, snapshot.ProductVersion, snapshot.Code, snapshot.Name, snapshot.EffectiveOn,

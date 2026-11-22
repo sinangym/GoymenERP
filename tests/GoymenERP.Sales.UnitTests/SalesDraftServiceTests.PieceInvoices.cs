@@ -12,7 +12,7 @@ namespace GoymenERP.Sales.UnitTests;
 public sealed partial class SalesDraftServiceTests
 {
     private static async Task<InvoiceWorld> PieceInvoiceWorldAsync(decimal pieces, decimal shippedKg, decimal scaleKg,
-        bool pinFigure = true)
+        bool pinFigure = true, string? surchargePercent = null)
     {
         var world = new World
         {
@@ -34,6 +34,13 @@ public sealed partial class SalesDraftServiceTests
                 UnitPrice = "250.00", PriceUnitId = PieceUnit }],
         };
         var created = (await world.Service().CreateDraftAsync(request, Metadata("k-piece-invoice-create"))).Detail;
+        if (surchargePercent is not null)
+        {
+            created = (await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision(created.Draft.Version,
+                new SalesDraftLineCommercialV1(created.Lines[0].LineId, "250.00", PieceUnit, SurchargePercent: surchargePercent)),
+                Metadata("k-piece-invoice-surcharge"))).Detail;
+        }
+
         var version = await ApproveDiscountChecksAsync(world, created.Draft.Id, created.Draft.Version, created.Lines[0].LineId);
         var submitted = await world.Service().SubmitDraftAsync(created.Draft.Id, Command(version), Metadata("k-piece-invoice-submit"));
         var approved = (await world.Service().ApproveDraftAsync(created.Draft.Id, Command(submitted.Detail.Draft.Version),

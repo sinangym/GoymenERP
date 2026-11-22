@@ -54,10 +54,10 @@ internal static class ShellCapabilityRegistryAuthorities
     // W1-A: Settings 1.19 adds the approval duration screen; re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision.
     // WP-A1: Settings 1.20 declares the AI gateway policy screen (not yet implemented); re-derived in place by
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
-    internal const string FullNormalHostWithSettingsAndPaintMemberships = "sha256:nCbm4YLiQlzeaf7z0-7iMMwU2IYVGMQsrX6ZCdNYwFQ";
+    internal const string FullNormalHostWithSettingsAndPaintMemberships = "sha256:lKCSs9orhHjSLShVcZGLM8VZOzbIouvMoYbn20pDlWI";
     // WP9: the actual host adds Work 1.0 (work.tasks.mine route + work.tasks.assign control); produced by
     // ShellCapabilityRegistry.ComputeCandidateRevision over the actual providers.
-    internal const string FullNormalHostWithSettingsPaintMembershipsAndWork = "sha256:Kv4Y6GHctlwnv4KzZABtPMwpONP2phQyhwb6kqHqOww";
+    internal const string FullNormalHostWithSettingsPaintMembershipsAndWork = "sha256:4UCYE5eruD6Xtoh3ZOrp7J_XsU54ZPgCU2T3W1eI-JY";
     // Tren-1 wave 7: Settings 1.11 and Inventory 1.9; active authority rows re-derived in place
     // by ShellCapabilityRegistry.ComputeCandidateRevision over actual providers; historical rows preserved.
     // Tren-1 wave 6: Manufacturing 1.11, Inventory 1.8, Identity 1.2 and Settings 1.9; active authority rows

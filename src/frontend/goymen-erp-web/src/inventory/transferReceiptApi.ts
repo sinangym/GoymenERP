@@ -19,6 +19,8 @@ export interface ReceiptFact {
   readonly lineId: string; readonly dispatchedKg: string; readonly receivedKg: string; readonly shortageKg: string; readonly overageKg: string; readonly shortageMovementId: string | null
   readonly overageReason: string | null; readonly receivedAtUtc: string; readonly receivedBy: string; readonly overageStatus: 'None' | 'Pending' | 'Approved' | 'Rejected'
   readonly overageDecisionReason: string | null; readonly overageDecidedAtUtc: string | null; readonly overageDecidedBy: string | null; readonly overageMovementId: string | null
+  /** KLN-D119 (AK-2b): the four piece figures of a piece-tracking line (all or none). */
+  readonly dispatchedPieceCount?: number; readonly receivedPieceCount?: number; readonly shortagePieceCount?: number; readonly overagePieceCount?: number
 }
 export interface ReceiptLoss {
   readonly lineId: string; readonly requestNumber: number; readonly explanation: string; readonly requestedAtUtc: string; readonly requestedBy: string
@@ -27,19 +29,25 @@ export interface ReceiptLoss {
 export interface ReceiptOverageRenewal {
   readonly lineId: string; readonly requestNumber: number; readonly overageKg: string; readonly reason: string; readonly requestedAtUtc: string; readonly requestedBy: string
   readonly status: 'Pending' | 'Approved' | 'Rejected'; readonly decisionReason: string | null; readonly decidedAtUtc: string | null; readonly decidedBy: string | null; readonly movementId: string | null
+  /** KLN-D119: the re-requested excess pieces of a piece-tracking line; absent for a kg-only line. */
+  readonly overagePieceCount?: number
 }
 export interface ReceiptFacts { readonly companyId: string; readonly transferId: string; readonly version: string; readonly status: string; readonly receipts: readonly ReceiptFact[]; readonly losses: readonly ReceiptLoss[]; readonly overageRenewals: readonly ReceiptOverageRenewal[] }
 export interface ReceiptWork { readonly purpose: ReceiptPurpose; readonly transfer: TransferDetail; readonly facts: ReceiptFacts }
 export interface ReceiptCandidate extends TransferDisplayItem { readonly labelCodes: readonly string[] }
 export interface ReceiptCandidates { readonly companyId: string; readonly purpose: ReceiptPurpose; readonly query: string | null; readonly limit: 25; readonly items: readonly ReceiptCandidate[]; readonly searchWindowFull: boolean; readonly nextCursor: string | null }
 interface CreateBody { readonly documentId: string; readonly transferId: string; readonly expectedTransferVersion: string; readonly receivedAtUtc: string; readonly lines: readonly { readonly documentLineId: string; readonly transferLineId: string; readonly receivedKg: string; readonly overageReason: string | null }[] }
-interface ReceiveBody { readonly expectedTransferVersion: string; readonly receivedAtUtc: string; readonly incomingDocument: { readonly kind: 'inventory.transfer.incoming'; readonly id: string; readonly lineId: string }; readonly receivedKg: string; readonly overageReason: string | null; readonly expectedIncomingDocumentVersion: string }
+interface ReceiveBody { readonly expectedTransferVersion: string; readonly receivedAtUtc: string; readonly incomingDocument: { readonly kind: 'inventory.transfer.incoming'; readonly id: string; readonly lineId: string }; readonly receivedKg: string; readonly overageReason: string | null; readonly expectedIncomingDocumentVersion: string
+  /** KLN-D119 (AK-2b): the received pieces — sent exactly for a line dispatched with pieces (`dispatchedPieceCount`). */
+  readonly receivedPieceCount?: number }
 export type ReceiptCommand =
   | { readonly kind: 'create'; readonly payload: CreateBody }
   | { readonly kind: 'finalize'; readonly document: ReceiptDocument; readonly payload: { readonly expectedDocumentVersion: string; readonly expectedTransferVersion: string; readonly reason: string } }
   | { readonly kind: 'receive'; readonly lineId: string; readonly document: ReceiptDocument; readonly payload: ReceiveBody }
   | { readonly kind: 'overage-decision'; readonly lineId: string; readonly payload: { readonly decision: 'Approve' | 'Reject'; readonly decidedAtUtc: string; readonly reason: string; readonly requestNumber: number } }
-  | { readonly kind: 'overage-renewal'; readonly lineId: string; readonly payload: { readonly expectedTransferVersion: string; readonly requestedAtUtc: string; readonly overageKg: string; readonly reason: string } }
+  | { readonly kind: 'overage-renewal'; readonly lineId: string; readonly payload: { readonly expectedTransferVersion: string; readonly requestedAtUtc: string; readonly overageKg: string; readonly reason: string
+    /** KLN-D119: the re-requested excess pieces — sent exactly for a piece-tracking line. */
+    readonly overagePieceCount?: number } }
   | { readonly kind: 'loss-request'; readonly lineId: string; readonly payload: { readonly expectedTransferVersion: string; readonly requestedAtUtc: string; readonly explanation: string } }
   | { readonly kind: 'loss-decision'; readonly lineId: string; readonly payload: { readonly expectedTransferVersion: string; readonly decision: 'Approve' | 'Reject'; readonly decidedAtUtc: string; readonly reason: string; readonly requestNumber: number } }
   | { readonly kind: 'loss-withdrawal'; readonly lineId: string; readonly payload: { readonly expectedTransferVersion: string; readonly withdrawnAtUtc: string; readonly reason: string; readonly requestNumber: number } }
@@ -52,6 +60,17 @@ export const receiptKg = (value: unknown): value is string => typeof value === '
 export const receiptPositiveKg = (value: unknown): value is string => receiptKg(value) && value !== '0'
 const id = (value: unknown, expected: string): value is string => isTransferGuid(value) && value.toLowerCase() === expected.toLowerCase()
 const nullableId = (value: unknown) => value === null || isTransferGuid(value)
+/** KLN-D119: a stored piece count (`int`, never text, null or a fraction). */
+const pieceCount = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 2147483647
+const RECEIPT_PIECES = ['dispatchedPieceCount', 'receivedPieceCount', 'shortagePieceCount', 'overagePieceCount'] as const
+/** The writer's piece check: all four or none; dispatched/received positive; the difference is one-sided and goes with a kg difference. */
+function receiptPieces(row: Record<string, unknown>, present: readonly string[]): boolean {
+  if (present.length === 0) return true
+  if (present.length !== RECEIPT_PIECES.length) return false
+  const { dispatchedPieceCount: d, receivedPieceCount: r, shortagePieceCount: s, overagePieceCount: o } = row
+  return pieceCount(d) && pieceCount(r) && pieceCount(s) && pieceCount(o) && d > 0 && r > 0 && (s === 0 || o === 0)
+    && r + s - o === d && (s === 0 || row.shortageKg !== '0') && (o === 0 || row.overageKg !== '0')
+}
 const numbered = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value > 0 && value <= 2147483647
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 const instant = (value: string) => value.replace(/\+00:00$/, 'Z').replace(/\.0+Z$/, 'Z').replace(/(\.\d*?[1-9])0+Z$/, '$1Z')
@@ -107,7 +126,9 @@ export function decodeReceiptFacts(raw: unknown, transfer: TransferDetail): Rece
   const receipts = raw.receipts
   const sourceLine = (value: unknown) => isTransferGuid(value) && transfer.lines.some((line) => id(value, line.lineId))
   for (const row of raw.receipts) {
-    if (!obj(row) || !exact(row, ['lineId', 'dispatchedKg', 'receivedKg', 'shortageKg', 'overageKg', 'shortageMovementId', 'overageReason', 'receivedAtUtc', 'receivedBy', 'overageStatus', 'overageDecisionReason', 'overageDecidedAtUtc', 'overageDecidedBy', 'overageMovementId'])
+    const pieces = obj(row) ? RECEIPT_PIECES.filter((key) => Object.hasOwn(row, key)) : []
+    if (!obj(row) || !exact(row, ['lineId', 'dispatchedKg', 'receivedKg', 'shortageKg', 'overageKg', 'shortageMovementId', 'overageReason', 'receivedAtUtc', 'receivedBy', 'overageStatus', 'overageDecisionReason', 'overageDecidedAtUtc', 'overageDecidedBy', 'overageMovementId', ...pieces])
+      || !receiptPieces(row, pieces)
       || !sourceLine(row.lineId) || !receiptPositiveKg(row.dispatchedKg) || !receiptPositiveKg(row.receivedKg) || !receiptKg(row.shortageKg) || !receiptKg(row.overageKg)
       || !nullableId(row.shortageMovementId) || !(row.overageReason === null || receiptReason(row.overageReason)) || !transferDispatchUtc(row.receivedAtUtc) || !text(row.receivedBy, 128)
       || !['None', 'Pending', 'Approved', 'Rejected'].includes(String(row.overageStatus))
@@ -117,7 +138,10 @@ export function decodeReceiptFacts(raw: unknown, transfer: TransferDetail): Rece
       || !transfer.lines.some((line) => id(row.lineId, line.lineId) && row.dispatchedKg === line.actualShippedKg)) return null
   }
   for (const [rows, renewal] of [[raw.losses, false], [raw.overageRenewals, true]] as const) for (const row of rows) {
-    if (!obj(row) || !exact(row, ['lineId', 'requestNumber', ...(renewal ? ['overageKg', 'reason'] : ['explanation']), 'requestedAtUtc', 'requestedBy', 'status', 'decisionReason', 'decidedAtUtc', 'decidedBy', 'movementId'])
+    // KLN-D119: only a renewal of a piece-tracking line names its excess pieces; a loss request never does.
+    const renewalPieces = renewal && obj(row) && Object.hasOwn(row, 'overagePieceCount') ? ['overagePieceCount'] : []
+    if (!obj(row) || !exact(row, ['lineId', 'requestNumber', ...(renewal ? ['overageKg', 'reason'] : ['explanation']), 'requestedAtUtc', 'requestedBy', 'status', 'decisionReason', 'decidedAtUtc', 'decidedBy', 'movementId', ...renewalPieces])
+      || (renewalPieces.length > 0 && !pieceCount(row.overagePieceCount))
       || !sourceLine(row.lineId) || !numbered(row.requestNumber) || renewal && row.requestNumber < 2
       || !(renewal ? receiptPositiveKg(row.overageKg) && receiptReason(row.reason) : receiptReason(row.explanation))
       || !transferDispatchUtc(row.requestedAtUtc) || !text(row.requestedBy, 128)
@@ -214,10 +238,15 @@ export function validReceiptCommand(work: ReceiptWork, command: ReceiptCommand):
     && !work.facts.losses.some((row) => id(row.lineId, command.lineId) && row.status === 'Pending')
     && command.document.lines.some((row) => id(row.documentLineId, command.payload.incomingDocument.lineId) && id(row.transferLineId, command.lineId)
       && row.receivedKg === command.payload.receivedKg && row.overageReason === command.payload.overageReason)
+    // KLN-D119: a line dispatched with pieces is received with its pieces (≥ 1); a kg-only line never names any.
+    && (line.dispatchedPieceCount === undefined ? command.payload.receivedPieceCount === undefined
+      : pieceCount(command.payload.receivedPieceCount) && command.payload.receivedPieceCount > 0)
   if (command.kind === 'overage-renewal') {
     const original = work.facts.receipts.find((row) => id(row.lineId, command.lineId))
     const latest = work.facts.overageRenewals.filter((row) => id(row.lineId, command.lineId)).reduce<ReceiptOverageRenewal | null>((prior, row) => prior === null || row.requestNumber > prior.requestNumber ? row : prior, null)
+    const pieceLine = work.transfer.lines.some((source) => id(source.lineId, command.lineId) && source.dispatchedPieceCount !== undefined)
     return receiptPositiveKg(command.payload.overageKg) && (latest?.status ?? original?.overageStatus) === 'Rejected'
+      && (pieceLine ? pieceCount(command.payload.overagePieceCount) : command.payload.overagePieceCount === undefined)
   }
   if (command.kind === 'overage-decision') return command.payload.requestNumber === 1
     ? work.facts.receipts.some((row) => id(row.lineId, command.lineId) && row.overageStatus === 'Pending')
@@ -241,13 +270,15 @@ function commandProved(snapshot: ReceiptSnapshot, result: ReceiptWork): boolean 
   if (!immutableTransfer(prior.transfer, result.transfer)) return false
   if (command.kind === 'receive') return BigInt(result.transfer.version) === BigInt(prior.transfer.version) + 1n
     && facts.receipts.some((row) => id(row.lineId, command.lineId) && row.receivedBy === actorId && at(row.receivedAtUtc, command.payload.receivedAtUtc)
-      && row.receivedKg === command.payload.receivedKg && row.overageReason === command.payload.overageReason)
+      && row.receivedKg === command.payload.receivedKg && row.overageReason === command.payload.overageReason
+      && row.receivedPieceCount === command.payload.receivedPieceCount)
     && result.transfer.lines.some((line) => id(line.lineId, command.lineId) && line.status === 'Accepted')
   if (command.kind === 'loss-request') return result.transfer.version === prior.transfer.version && facts.losses.some((row) => id(row.lineId, command.lineId)
     && row.status === 'Pending' && row.requestedBy === actorId && at(row.requestedAtUtc, command.payload.requestedAtUtc) && row.explanation === command.payload.explanation
     && !prior.facts.losses.some((old) => id(old.lineId, row.lineId) && old.requestNumber === row.requestNumber))
   if (command.kind === 'overage-renewal') return result.transfer.version === prior.transfer.version && facts.overageRenewals.some((row) => id(row.lineId, command.lineId)
     && row.status === 'Pending' && row.requestedBy === actorId && at(row.requestedAtUtc, command.payload.requestedAtUtc) && row.reason === command.payload.reason && row.overageKg === command.payload.overageKg
+    && row.overagePieceCount === command.payload.overagePieceCount
     && !prior.facts.overageRenewals.some((old) => id(old.lineId, row.lineId) && old.requestNumber === row.requestNumber))
   if (command.kind === 'overage-decision') {
     const receiver = prior.facts.receipts.find((value) => id(value.lineId, command.lineId))

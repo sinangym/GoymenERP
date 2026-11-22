@@ -69,6 +69,11 @@ public sealed record AcceptInventoryTransferLineV1(
     [property: JsonRequired] InventoryTransferDocumentReferenceV1 IncomingDocument,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExpectedIncomingDocumentVersion = null);
 
+/// <summary>
+/// One transfer line. <see cref="DispatchedPieceCount"/> (KLN-D119, AK-2b) is the dispatched pieces of a piece-tracking label —
+/// present exactly when the line was dispatched with pieces, so a receiver knows the receipt must name its received pieces;
+/// absent for a kg-only label and for a line not dispatched yet.
+/// </summary>
 public sealed record InventoryTransferLineViewV1(
     Guid LineId,
     Guid LabelId,
@@ -76,7 +81,8 @@ public sealed record InventoryTransferLineViewV1(
     string PlannedKg,
     string? ActualShippedKg,
     string? DifferenceKg,
-    string Status);
+    string Status,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? DispatchedPieceCount = null);
 
 public sealed record InventoryTransferViewV1(
     Guid TransferId,

@@ -24,6 +24,7 @@ import { SHELL_CAPABILITY_CONTRACT_VERSION } from '../shell/api'
 import { MANUFACTURING_CAPABILITY } from './capabilities'
 import { manufacturingRoutes } from './manufacturingRoutes'
 import { clearPendingFacts } from './pendingFactStore'
+import { clearPendingCorrections } from './pendingCorrectionStore'
 import { clearPendingPlanLifecycles } from './planCommandApi'
 import { clearPendingScrapPrices } from './scrapPriceApi'
 
@@ -442,6 +443,7 @@ export function installFetch(options: HarnessOptions = {}): RecordedRequest[] {
   resetCompanyPreference()
   // Module state that deliberately outlives unmounts: never inherited across cases.
   clearPendingFacts()
+  clearPendingCorrections()
   clearPendingPlanLifecycles()
   clearPendingScrapPrices()
   // The tab's sessionStorage (pending create/revise slots) starts empty in every case.

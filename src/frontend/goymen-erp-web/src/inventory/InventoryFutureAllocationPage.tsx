@@ -61,7 +61,9 @@ function FutureAllocationView({ company, actor, namespace, order, line, routeEnt
   const [quantity, setQuantity] = useState('')
   const [reason, setReason] = useState('')
   const [release, setRelease] = useState<FutureAllocation | null>(null)
-  const storeKey = `goymen.inventory.future-allocation.v1:${namespace}:${actor}:${company}:${order}:${line}`
+  // The pending key must outlive an authority refresh: the context namespace carries the capability generation, so an unknown
+  // create would be forgotten (and a retry could mint a second allocation). Session epoch, actor, company and line only.
+  const storeKey = `goymen.inventory.future-allocation.v1:${shell.sessionEpoch}:${actor}:${company}:${order}:${line}`
   const [pending, setPending] = useState<FutureAllocationPending | null>(() => recall(storeKey, order, line))
   const [busy, setBusy] = useState(false)
   const [commandState, setCommandState] = useState<RemoteViewState<never> | null>(null)

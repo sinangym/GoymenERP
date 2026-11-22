@@ -95,21 +95,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.NotNull(first);
 
         // K03: the same order's other 60 adet on a second note and invoice.
-        var shipment = Guid.NewGuid();
-        invoicing.Shipments.Answer = _ => new(SalesDispatchReadOutcomeV1.Found, Company,
-        [
-            new SalesInvoiceableShipmentV1(Guid.NewGuid(), "IRS-2026-000002", null, Approved, Party, Account, 1, shipment, Shipped,
-                draft.Id, draft.Lines[0].Id, Product, PieceUnit, 60m, 740m),
-        ], false, SalesInvoicedStateSourceV1.NoSource);
-        invoicing.Weighings.Answer = note =>
-        {
-            var share = invoicing.Shipments.LastAnswer!.Shares.Single();
-            var recorded = WeighingRecorded(note, theoretical: 740m, scale: 748.9m);
-            return recorded with { Value = recorded.Value! with { KilogramAllocation = new(
-                [new SalesDispatchKilogramLineV1(share.NoteLineNo, share.ShipmentId, share.ProductId, 740m, 748.9m)]) } };
-        };
-        var secondInvoice = (await invoicing.Service().CreateInvoiceAsync(new CreateSalesInvoiceRequest(Account,
-            [new SalesInvoiceShareRequest(shipment)]), Metadata("k-kgp-2"))).Invoice;
+        var secondInvoice = await SecondPieceInvoiceAsync(invoicing, draft.Id, draft.Lines[0].Id, "k-kgp-2");
         Assert.Equal(("60", "748.9"), (Assert.Single(secondInvoice.Lines).Quantity, secondInvoice.Lines[0].ActualKg));
 
         var full = SalesDraftService.KilogramPrices(draft, [.. invoicing.Invoices.Stored.Values.Select(Finalized)]);
@@ -154,30 +140,123 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Theory]
-    [InlineData(null, false, true)]            // finalised, Finance not answered yet
-    [InlineData("refused", false, false)]      // SAT-D457: Finance refused it
-    [InlineData("refused:party_account_ineligible", false, false)]
-    [InlineData("unavailable", false, true)]   // no answer is not a refusal
-    [InlineData("retry", false, true)]
-    [InlineData("admitted", true, true)]       // re-driven and admitted: it enters again
+    [InlineData(null, 0, false, true)]            // finalised, Finance not answered yet
+    [InlineData("refused", 1, false, false)]      // SAT-D457: Finance refused it
+    [InlineData("refused:party_account_ineligible", 1, false, false)]
+    [InlineData("unavailable", 1, false, true)]   // one answer and no refusal: not a refusal
+    [InlineData("retry", 1, false, true)]
+    [InlineData("unavailable", 2, false, false)]  // the ledger keeps the last answer only: an earlier refusal is not ruled out
+    [InlineData("admitted", 1, true, true)]       // admitted at once
+    [InlineData("admitted", 3, true, true)]       // re-driven and admitted: it enters again (E21a)
     public async Task SAT_D457_a_finalised_invoice_finance_refused_stays_out_of_the_realization_until_it_is_admitted(
-        string? lastOutcome, bool admitted, bool enters)
+        string? lastOutcome, int attempts, bool admitted, bool enters)
     {
         var invoicing = await PieceInvoiceWorldAsync(40m, 495m, 500.16m);
         await invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-kgp-finance"));
         var draft = Assert.Single(invoicing.World.Store.Drafts);
         var invoice = Finalized(Assert.Single(invoicing.Invoices.Stored.Values));
         var at = invoice.CreatedAtUtc.AddMinutes(10);
-        // The hand-off ledger alone is under test: it is set as stored state (the full restore also needs the official match).
-        typeof(SalesInvoice).GetProperty(nameof(SalesInvoice.Finalization))!.SetValue(invoice, new SalesInvoiceFinalization(Guid.NewGuid(), invoice.Version, "synthetic-invoice-checker", at,
-            admitted ? SalesInvoiceFinanceStatus.Admitted : SalesInvoiceFinanceStatus.Waiting, admitted ? at : null,
-            lastOutcome is null ? 0 : 1, lastOutcome is null ? null : at, lastOutcome, []));
+        // The hand-off ledger alone is under test.
+        WithLedger(invoice, admitted, attempts, lastOutcome, at);
 
         Assert.Equal(enters, SalesDraftService.EntersKilogramPriceRealization(invoice));
         var line = Assert.Single(SalesDraftService.KilogramPrices(draft, [invoice]).Lines!);
         Assert.Equal(enters ? ("40", "10000.00", "19.99") : ("0", null, null),
             (line.InvoicedQuantity, line.InvoicedAmount, line.ActualPrice.Value));
     }
+
+    [Fact]
+    public async Task SAT_D465_pending_a_surcharged_line_hides_every_kg_price_on_the_order_and_on_the_invoice()
+    {
+        // K18 / N2: a maturity surcharge ("vade farkı") is not a goods amount (SAT-D465) and the invoice keeps no pre-surcharge
+        // net. Until the SAT-D465 slice and its golden (EK2) land, every kg figure of such a line and of its document fails closed.
+        var invoicing = await PieceInvoiceWorldAsync(40m, 495m, 500.16m, surchargePercent: "2");
+        var invoice = (await invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-kgp-surcharge"))).Invoice;
+        var draft = Assert.Single(invoicing.World.Store.Drafts);
+
+        var read = SalesDraftService.KilogramPrices(draft, [Finalized(Assert.Single(invoicing.Invoices.Stored.Values))]);
+        var line = Assert.Single(read.Lines!);
+        Assert.Equal(("AmountUnavailable", null, "AmountUnavailable", null),
+            (line.TheoreticalPrice.State, line.TheoreticalPrice.Value, line.ActualPrice.State, line.ActualPrice.Value));
+        Assert.NotNull(line.InvoicedAmount); // the invoiced amount itself is a fact and stays shown
+        Assert.Null(read.DocumentTheoreticalPrice!.Value);
+        Assert.Null(read.DocumentActualPrice!.Value);
+        Assert.NotEqual("Shown", read.DocumentTheoreticalPrice.State);
+        Assert.NotEqual("Shown", read.DocumentActualPrice.State);
+
+        var block = invoice.KilogramPrices!;
+        var invoiceLine = Assert.Single(block.Lines!);
+        Assert.Equal(("AmountUnavailable", null, "AmountUnavailable", null), (invoiceLine.TheoreticalPrice.State,
+            invoiceLine.TheoreticalPrice.Value, invoiceLine.ActualPrice.State, invoiceLine.ActualPrice.Value));
+        Assert.Null(block.DocumentTheoreticalPrice!.Value);
+        Assert.Null(block.DocumentActualPrice!.Value);
+    }
+
+    /// <summary>Golden K03 / EK1 §4: the order's other 60 adet on a second note and invoice (15 000,00 TL, 748,900 scale kg).</summary>
+    private static async Task<SalesInvoiceDetailView> SecondPieceInvoiceAsync(InvoiceWorld invoicing, Guid draftId, Guid lineId,
+        string key)
+    {
+        var shipment = Guid.NewGuid();
+        invoicing.Shipments.Answer = _ => new(SalesDispatchReadOutcomeV1.Found, Company,
+        [
+            new SalesInvoiceableShipmentV1(Guid.NewGuid(), "IRS-2026-000002", null, Approved, Party, Account, 1, shipment, Shipped,
+                draftId, lineId, Product, PieceUnit, 60m, 740m),
+        ], false, SalesInvoicedStateSourceV1.NoSource);
+        invoicing.Weighings.Answer = note =>
+        {
+            var share = invoicing.Shipments.LastAnswer!.Shares.Single();
+            var recorded = WeighingRecorded(note, theoretical: 740m, scale: 748.9m);
+            return recorded with { Value = recorded.Value! with { KilogramAllocation = new(
+                [new SalesDispatchKilogramLineV1(share.NoteLineNo, share.ShipmentId, share.ProductId, 740m, 748.9m)]) } };
+        };
+        return (await invoicing.Service().CreateInvoiceAsync(new CreateSalesInvoiceRequest(Account,
+            [new SalesInvoiceShareRequest(shipment)]), Metadata(key))).Invoice;
+    }
+
+    [Theory]
+    [InlineData("unavailable")]
+    [InlineData("keyconflict")]
+    [InlineData("retry")]
+    [InlineData("denied")]
+    public async Task SAT_D457_golden_E21_a_refused_invoice_stays_out_after_a_redrive_that_finance_did_not_admit(string redriveAnswer)
+    {
+        // EK1 §4 E21 / E21a: order 100 adet × 250,00; invoice 1 (40 adet, 10 000,00, 500,160 kg) finalised; invoice 2 (60 adet,
+        // 15 000,00, 748,900 kg) finalised and refused by Finance. Only invoice 1 counts until Finance admits a re-drive.
+        var invoicing = await PieceInvoiceWorldAsync(40m, 495m, 500.16m);
+        var first = (await invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-kgp-e21-1"))).Invoice;
+        var draft = Assert.Single(invoicing.World.Store.Drafts);
+        var second = await SecondPieceInvoiceAsync(invoicing, draft.Id, draft.Lines[0].Id, "k-kgp-e21-2");
+        var invoices = invoicing.Invoices.Stored.Values.Select(Finalized).ToList();
+        var firstInvoice = invoices.Single(invoice => invoice.Id == first.Id);
+        var secondInvoice = invoices.Single(invoice => invoice.Id == second.Id);
+        var at = secondInvoice.CreatedAtUtc.AddMinutes(10);
+        WithLedger(firstInvoice, admitted: true, attempts: 1, "admitted", at);
+        WithLedger(secondInvoice, admitted: false, attempts: 0, null, at);
+
+        secondInvoice.RecordFinanceAttempt(false, "refused:party_account_ineligible", at.AddMinutes(1));
+        AssertRealization(SalesDraftService.KilogramPrices(draft, invoices), "40", "10000.00", "19.99"); // E21
+
+        // The re-drive is answered without an admission: the ledger's last answer is no longer the refusal, yet it stays out.
+        secondInvoice.RecordFinanceAttempt(false, redriveAnswer, at.AddMinutes(2));
+        Assert.False(SalesDraftService.EntersKilogramPriceRealization(secondInvoice));
+        AssertRealization(SalesDraftService.KilogramPrices(draft, invoices), "40", "10000.00", "19.99"); // still E21
+
+        secondInvoice.RecordFinanceAttempt(true, "admitted", at.AddMinutes(3));
+        AssertRealization(SalesDraftService.KilogramPrices(draft, invoices), "100", "25000.00", "20.02"); // E21a
+
+        static void AssertRealization(SalesOrderKilogramPricesResponse read, string quantity, string amount, string price)
+        {
+            var line = Assert.Single(read.Lines!);
+            Assert.Equal((quantity, amount, price), (line.InvoicedQuantity, line.InvoicedAmount, line.ActualPrice.Value));
+            Assert.Equal(price, read.DocumentActualPrice!.Value);
+        }
+    }
+
+    /// <summary>The hand-off ledger set as stored state (the full restore also needs the official match).</summary>
+    private static void WithLedger(SalesInvoice invoice, bool admitted, int attempts, string? lastOutcome, DateTimeOffset at) =>
+        typeof(SalesInvoice).GetProperty(nameof(SalesInvoice.Finalization))!.SetValue(invoice, new SalesInvoiceFinalization(Guid.NewGuid(),
+            invoice.Version, "synthetic-invoice-checker", at, admitted ? SalesInvoiceFinanceStatus.Admitted : SalesInvoiceFinanceStatus.Waiting,
+            admitted ? at : null, attempts, attempts == 0 ? null : at, lastOutcome, []));
 
     private static SalesInvoice Finalized(SalesInvoice invoice) => InState(invoice, SalesInvoiceState.Finalized);
 

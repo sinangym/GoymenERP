@@ -11,14 +11,15 @@ namespace GoymenERP.Purchasing.UnitTests;
 /// </summary>
 public sealed partial class PurchasingServiceTests
 {
-    private static async Task<(World World, ReceiptRunner Runner, Guid Order, Guid Line)> PieceReceiptWorldAsync(decimal? tolerance)
+    private static async Task<(World World, ReceiptRunner Runner, Guid Order, Guid Line)> PieceReceiptWorldAsync(decimal? tolerance,
+        decimal kilogramsPerUnit = 12.345m)
     {
         var world = new World
         {
             Bindings = new(CreatePermission, ReadPermission, ApprovePermission, CreatePermission),
             TheoreticalKilograms = new FakeTheoreticalKilograms
             {
-                Answer = PurchaseTheoreticalKilogramsPerUnitAnswerV1.Found(12.345m, "product.kg-per-unit.v1/sentetik"),
+                Answer = PurchaseTheoreticalKilogramsPerUnitAnswerV1.Found(kilogramsPerUnit, "product.kg-per-unit.v1/sentetik"),
             },
             ReceiptPolicy = new FixedReceiptPolicy(new PurchaseGoodsReceiptPolicyV1(tolerance, null, null)),
         };
@@ -83,6 +84,20 @@ public sealed partial class PurchasingServiceTests
             world.Service(runner).RecordGoodsReceiptAsync(orderId, lineId, PieceReceipt("2.5", "30"), Metadata("piece-fraction")));
 
         Assert.Equal((400, PurchaseGoodsReceiptCodesV1.PieceCountInvalid), (refusal.Status, refusal.Code));
+        Assert.Empty(runner.Events);
+    }
+
+    [Fact]
+    public async Task A_piece_receipt_whose_theoretical_kg_rounds_to_zero_is_refused_before_any_stage()
+    {
+        // Golden K15: 1 adet x 0,0004 kg/adet rounds to 0,000 kg; no comparison is possible, so the receipt is a 409 problem,
+        // never an unhandled variance error.
+        var (world, runner, orderId, lineId) = await PieceReceiptWorldAsync(1m, kilogramsPerUnit: 0.0004m);
+
+        var refusal = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            world.Service(runner).RecordGoodsReceiptAsync(orderId, lineId, PieceReceipt("1", "0.001"), Metadata("piece-zero-kg")));
+
+        Assert.Equal((409, PurchaseGoodsReceiptCodesV1.TheoreticalKilogramsMissing), (refusal.Status, refusal.Code));
         Assert.Empty(runner.Events);
     }
 

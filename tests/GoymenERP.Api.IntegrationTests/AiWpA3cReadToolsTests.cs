@@ -599,8 +599,10 @@ public sealed class AiWpA3cReadToolsTests
             IAiOwnerToolV1[] tools = [new FinanceDueOpenItemsAiTool(owner, new FixedTime(Now))];
             return new AiAskService(Options.Create(options), new TestHostEnvironment("Development"), new FakeAiModelProvider(),
                 new AiToolCatalog(tools, Options.Create(options)), new TestUser(Actor, Company), CompanyScope, Authority,
-                new FixedSessionResolver(), Correlation, Writer, new FixedTime(Now));
+                new FixedSessionResolver(), Correlation, Writer, new FixedTime(Now), AiGatewayTestDoubles.Gateway(options, GatewayStore));
         }
+
+        public InMemoryAiGatewayStore GatewayStore { get; } = new(Company);
     }
 
     private sealed class AskAuthority(params string[] granted) : IErpAuthorityRevalidationService, IErpAuthorizationService

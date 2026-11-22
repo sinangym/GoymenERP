@@ -144,12 +144,64 @@ public sealed partial class SalesDraftServiceTests
         snapshot.Validate();
     }
 
+    [Fact]
+    public async Task SAT_D443_a_metre_order_unit_is_refused_as_unsupported_never_counted_as_pieces()
+    {
+        // Golden K07 / M05 / M15: metre is not opened in this train ("bu trende gösterilmez"); the line is refused, not a piece line.
+        var world = PieceWorld();
+        world.Settings.MetreUnits.Add(Metre);
+        var request = PieceRequest() with { Lines = [PieceRequest().Lines[0] with { OrderUnitId = Metre, Quantity = "12.5" }] };
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().CreateDraftAsync(request, Metadata("kpu-metre")));
+
+        Assert.Equal((422, "unsupported_unit"), (refused.Status, refused.Code));
+        Assert.Equal("lines[0].orderUnitId", Assert.Single(refused.Errors).Field);
+        Assert.Empty(world.Store.Drafts);
+    }
+
+    [Fact]
+    public async Task SAT_D443_a_count_profile_that_is_not_the_standard_piece_identity_is_refused()
+    {
+        var other = Guid.Parse("10000000-0000-4000-8000-000000000443");
+        var world = PieceWorld();
+        world.Settings.PieceUnits.Add(other);
+        var request = PieceRequest() with { Lines = [PieceRequest().Lines[0] with { OrderUnitId = other }] };
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().CreateDraftAsync(request, Metadata("kpu-other-count")));
+
+        Assert.Equal((422, "unsupported_unit"), (refused.Status, refused.Code));
+        Assert.Empty(world.Store.Drafts);
+    }
+
+    [Theory]
+    [InlineData(ProductPhysicalUnitKindV1.Metre)]
+    [InlineData(ProductPhysicalUnitKindV1.Kilogram)]
+    [InlineData(ProductPhysicalUnitKindV1.Tonne)]
+    public async Task SAT_D443_an_owner_figure_for_a_non_piece_unit_kind_is_never_pinned(ProductPhysicalUnitKindV1 kind)
+    {
+        var source = new FakeKilogramsPerUnit { Figure = 1.235m, UnitKind = kind };
+        var world = PieceWorld(source);
+        var created = (await world.Service().CreateDraftAsync(PieceRequest(), Metadata("kpu-kind-create"))).Detail;
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("kpu-kind-submit"));
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-kind-approve")));
+
+        Assert.Equal((409, SalesDraftProblemCodesV1.KilogramsPerUnitUnavailable), (refused.Status, refused.Code));
+        Assert.Empty(Assert.Single(world.Store.Drafts).KilogramsPerUnitSnapshots);
+    }
+
+    private static readonly Guid Metre = Guid.Parse("564b68b4-02a8-5e72-af2a-4f5cb9b91702");
+
     private sealed class FakeKilogramsPerUnit : IProductTheoreticalKilogramsPerUnitReadPortV1
     {
         public decimal Figure { get; set; } = 12.345m;
         public ProductTheoreticalKilogramsPerUnitOutcomeV1 Outcome { get; set; } = ProductTheoreticalKilogramsPerUnitOutcomeV1.Found;
         public string? Code { get; set; }
         public Guid? AnswerProduct { get; set; }
+        public ProductPhysicalUnitKindV1 UnitKind { get; set; } = ProductPhysicalUnitKindV1.Piece;
         public List<(Guid ProductId, Guid UnitId, DateOnly EffectiveOn)> Asked { get; } = [];
 
         public Task<ProductTheoreticalKilogramsPerUnitAnswerV1> ReadAsync(Guid productId, Guid unitId, DateOnly effectiveOn,
@@ -158,7 +210,7 @@ public sealed partial class SalesDraftServiceTests
             Asked.Add((productId, unitId, effectiveOn));
             return Task.FromResult(Outcome == ProductTheoreticalKilogramsPerUnitOutcomeV1.Found
                 ? ProductTheoreticalKilogramsPerUnitAnswerV1.Found(Figure, new ProductTheoreticalKilogramsPerUnitEvidenceV1(Company,
-                    AnswerProduct ?? productId, unitId, ProductPhysicalUnitKindV1.Piece, "7", "product-unit-conversion-v1", 3, null, null,
+                    AnswerProduct ?? productId, unitId, UnitKind, "7", "product-unit-conversion-v1", 3, null, null,
                     Guid.Parse("10000000-0000-4000-8000-000000000437"), 2, 7.85m,
                     Guid.Parse("10000000-0000-4000-8000-000000000438"), 1, "settings-unit-semantics-v1"))
                 : ProductTheoreticalKilogramsPerUnitAnswerV1.Without(Outcome, Code));

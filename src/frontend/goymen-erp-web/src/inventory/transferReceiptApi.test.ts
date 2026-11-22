@@ -202,3 +202,43 @@ describe('separate immutable receipt command intent and actual proof', () => {
     expect(receiptBinding({ ...shell, activeContext: { ...shell.activeContext, companyId: TARGET } })).not.toBe(binding)
   })
 })
+
+describe('KLN-D119 piece-tracking transfer lines', () => {
+  const pieceWork = (kind: ReceiptCommand['kind']): ReceiptWork => {
+    const value = context(kind)
+    return { ...value, transfer: { ...value.transfer, lines: value.transfer.lines.map((line) => ({ ...line, dispatchedPieceCount: 5 })) } }
+  }
+  const receive = (extra: Record<string, unknown> = {}): ReceiptCommand => {
+    const base = command('receive') as Extract<ReceiptCommand, { kind: 'receive' }>
+    return { ...base, payload: { ...base.payload, ...extra } }
+  }
+  const renewal = (extra: Record<string, unknown> = {}): ReceiptCommand => {
+    const base = command('overage-renewal') as Extract<ReceiptCommand, { kind: 'overage-renewal' }>
+    return { ...base, payload: { ...base.payload, ...extra } }
+  }
+
+  it('decodes the dispatched pieces only on a dispatched line, as a positive whole number', () => {
+    const line = work().transfer.lines[0]
+    const detail = (patch: Record<string, unknown>) => decodeReceiptWork({ ...work(), transfer: { ...work().transfer, lines: [{ ...line, ...patch }] } },
+      COMPANY, TRANSFER, 'receive')
+    expect(detail({ dispatchedPieceCount: 5 })?.transfer.lines[0].dispatchedPieceCount).toBe(5)
+    expect(detail({ dispatchedPieceCount: 0 })).toBeNull()
+    expect(detail({ dispatchedPieceCount: '5' })).toBeNull()
+    expect(detail({ dispatchedPieceCount: null })).toBeNull()
+    expect(detail({ actualShippedKg: null, differenceKg: null, status: 'Planned', dispatchedPieceCount: 5 })).toBeNull()
+  })
+
+  it('receives a line dispatched with pieces only with its received pieces, and a kg-only line never with pieces', () => {
+    expect(beginReceiptAttempt('SENTETIK-a', ACTOR, pieceWork('receive'), receive(), () => 'k1')).toBeNull()
+    expect(beginReceiptAttempt('SENTETIK-b', ACTOR, pieceWork('receive'), receive({ receivedPieceCount: 0 }), () => 'k2')).toBeNull()
+    expect(beginReceiptAttempt('SENTETIK-c', ACTOR, pieceWork('receive'), receive({ receivedPieceCount: 4 }), () => 'k3')?.command.payload)
+      .toMatchObject({ receivedPieceCount: 4 })
+    expect(beginReceiptAttempt('SENTETIK-d', ACTOR, context('receive'), receive({ receivedPieceCount: 4 }), () => 'k4')).toBeNull()
+  })
+
+  it('re-requests a piece line excess only with its pieces, and a kg-only excess never with pieces', () => {
+    expect(beginReceiptAttempt('SENTETIK-e', ACTOR, pieceWork('overage-renewal'), renewal(), () => 'k5')).toBeNull()
+    expect(beginReceiptAttempt('SENTETIK-f', ACTOR, pieceWork('overage-renewal'), renewal({ overagePieceCount: 1 }), () => 'k6')).not.toBeNull()
+    expect(beginReceiptAttempt('SENTETIK-g', ACTOR, context('overage-renewal'), renewal({ overagePieceCount: 1 }), () => 'k7')).toBeNull()
+  })
+})
