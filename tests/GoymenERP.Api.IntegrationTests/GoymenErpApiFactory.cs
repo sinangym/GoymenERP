@@ -16,6 +16,7 @@ using GoymenERP.Modules.Sales.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.SecurityEvents.Infrastructure.Persistence;
+using GoymenERP.Modules.Reporting.Infrastructure.Persistence;
 using GoymenERP.Modules.Work.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -184,6 +185,14 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
         services.RemoveAll<IDbContextOptionsConfiguration<WorkDbContext>>();
         services.AddDbContext<WorkDbContext>((serviceProvider, options) =>
             options.UseInMemoryDatabase($"{databaseName}-work")
+                .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
+
+        // The report centre is host-wired since WP14; without this the in-memory host would try to
+        // migrate it against the placeholder SQL connection string at startup.
+        services.RemoveAll<DbContextOptions<ReportingDbContext>>();
+        services.RemoveAll<IDbContextOptionsConfiguration<ReportingDbContext>>();
+        services.AddDbContext<ReportingDbContext>((serviceProvider, options) =>
+            options.UseInMemoryDatabase($"{databaseName}-reporting")
                 .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
 
         // The document vault is host-wired since ERP-000G / AT-065; without this the in-memory host

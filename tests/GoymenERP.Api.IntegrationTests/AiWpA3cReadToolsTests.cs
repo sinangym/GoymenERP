@@ -359,7 +359,7 @@ public sealed class AiWpA3cReadToolsTests
         var authority = new SourceAuthority();
         var query = new WorkInboxReadQueryV1(company, new TestUser(Actor, Company, OtherCompany), new FixedCorrelation(), authority,
             new Durations(withPolicy ? new SettingsWorkApprovalDurationPolicyV1(Company, 4, 1, 2, 1) : null), new Holidays(),
-            new Measurements(), new FixedTime(Now), NullLogger<WorkInboxReadQueryV1>.Instance, sources);
+            new Measurements(), new SourceRules(), new IstanbulZone(), new FixedTime(Now), NullLogger<WorkInboxReadQueryV1>.Instance, sources);
         return new(query, authority);
     }
 
@@ -377,6 +377,24 @@ public sealed class AiWpA3cReadToolsTests
     }
 
     private sealed record InboxFixture(WorkInboxReadQueryV1 Query, SourceAuthority Authority);
+
+    /// <summary>WP1: no recorded rule; each SENTETIK source keeps its own duration class as the default rule.</summary>
+    private sealed class SourceRules : GoymenERP.Modules.Work.Infrastructure.ApprovalRules.IWorkApprovalRuleReaderV1
+    {
+        public Task<IReadOnlyDictionary<string, GoymenERP.Modules.Work.Infrastructure.ApprovalRules.WorkApprovalRuleResolutionV1>?> ResolveAsync(
+            Guid companyId, IReadOnlyList<IWorkInboxSourceV1> sources, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyDictionary<string, GoymenERP.Modules.Work.Infrastructure.ApprovalRules.WorkApprovalRuleResolutionV1>?>(
+                sources.ToDictionary(source => source.Kind,
+                    source => new GoymenERP.Modules.Work.Infrastructure.ApprovalRules.WorkApprovalRuleResolutionV1(source.Kind,
+                        source is FakeInboxSource fake ? fake.DurationClass : WorkApprovalDurationClassV1.BusinessDays, null, 0, true, true),
+                    StringComparer.Ordinal));
+    }
+
+    private sealed class IstanbulZone : GoymenERP.Modules.Work.Infrastructure.ApprovalRules.IWorkBusinessTimeZoneSourceV1
+    {
+        public TimeZoneInfo? BusinessTimeZone { get; } = TimeZoneInfo.FindSystemTimeZoneById(
+            GoymenERP.Modules.Work.Infrastructure.ApprovalRules.SystemWorkBusinessTimeZoneSourceV1.TimeZoneId);
+    }
 
     private sealed class FakeInboxSource(string module, string kind, string permission, WorkApprovalDurationClassV1 durationClass,
         Func<WorkInboxSourceContextV1, WorkInboxSourceResultV1> answer) : IWorkInboxSourceV1
@@ -484,6 +502,7 @@ public sealed class AiWpA3cReadToolsTests
         public Task<WorkNotePageV1> ListNotesAsync(string recordType, Guid recordId, bool includePassive, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<WorkNoteResponseV1> AddNoteAsync(string recordType, Guid recordId, AddWorkNoteRequestV1 request, WorkCommandMetadataV1 metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<WorkNoteResponseV1> PassivateNoteAsync(Guid noteId, PassivateWorkNoteRequestV1 request, WorkCommandMetadataV1 metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<WorkNoteReadResponseV1> MarkNoteReadAsync(Guid noteId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<WorkTaskPageV1> ListRecordTasksAsync(string recordType, Guid recordId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<WorkTaskResponseV1> CreateTaskAsync(CreateWorkTaskRequestV1 request, WorkCommandMetadataV1 metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<WorkTaskResponseV1> CompleteTaskAsync(Guid taskId, CompleteWorkTaskRequestV1 request, WorkCommandMetadataV1 metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();

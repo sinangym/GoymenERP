@@ -47,12 +47,12 @@ public sealed record AiReadToolArgumentV1
 }
 
 /// <summary>The strictly read arguments: integers (defaults applied) and the chosen closed values (absent = null).</summary>
-public sealed class AiReadToolArgumentsV1
+public sealed class AiReadToolArgumentReaderV1
 {
     private readonly IReadOnlyDictionary<string, int> integers;
     private readonly IReadOnlyDictionary<string, string?> choices;
 
-    private AiReadToolArgumentsV1(IReadOnlyDictionary<string, int> integers, IReadOnlyDictionary<string, string?> choices)
+    private AiReadToolArgumentReaderV1(IReadOnlyDictionary<string, int> integers, IReadOnlyDictionary<string, string?> choices)
     {
         this.integers = integers;
         this.choices = choices;
@@ -68,7 +68,7 @@ public sealed class AiReadToolArgumentsV1
     /// <c>arguments</c> when the field is not one the tool knows or the input is not an object).
     /// </summary>
     public static bool TryRead(string? json, IReadOnlyList<AiReadToolArgumentV1> specification,
-        out AiReadToolArgumentsV1 arguments, out string invalidField)
+        out AiReadToolArgumentReaderV1 arguments, out string invalidField)
     {
         ArgumentNullException.ThrowIfNull(specification);
         const string Whole = "arguments";

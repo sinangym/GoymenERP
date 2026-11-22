@@ -56,7 +56,7 @@ internal sealed class WorkMyTasksAiTool(IWorkCollaborationServiceV1 collaboratio
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
-        if (!AiReadToolArgumentsV1.TryRead(input.ArgumentsJson, Arguments, out var arguments, out var invalidField))
+        if (!AiReadToolArgumentReaderV1.TryRead(input.ArgumentsJson, Arguments, out var arguments, out var invalidField))
         {
             return new AiReadResultV1(AiToolOutcomeV1.Invalid, invalidFields: [invalidField]);
         }
