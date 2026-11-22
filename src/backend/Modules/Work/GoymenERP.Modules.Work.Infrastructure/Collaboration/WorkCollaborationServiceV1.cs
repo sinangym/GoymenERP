@@ -352,7 +352,7 @@ public sealed class WorkCollaborationServiceV1(
         return new(found.Id, now);
     }
 
-    public async Task<WorkPeopleAnswerV1> SearchPeopleAsync(string? query, CancellationToken cancellationToken = default)
+    public async Task<WorkPeoplePageV1> SearchPeopleAsync(string? query, CancellationToken cancellationToken = default)
     {
         var actor = RequireActor();
         var trimmed = query?.Trim();
@@ -362,7 +362,8 @@ public sealed class WorkCollaborationServiceV1(
         RequireStill(actor);
         return answer.Outcome switch
         {
-            WorkPersonOutcomeV1.Found => answer,
+            WorkPersonOutcomeV1.Found => new WorkPeoplePageV1(actor.CompanyId,
+                answer.People.Where(person => person.IsActiveInCompany).ToArray(), answer.HasMore),
             WorkPersonOutcomeV1.Denied => throw new WorkCollaborationException(403, "forbidden"),
             _ => throw new WorkCollaborationException(503, "service_unavailable"),
         };

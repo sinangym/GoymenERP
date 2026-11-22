@@ -105,7 +105,7 @@ public static class WorkCollaborationEndpoints
         group.MapGet("/people", (string? query, HttpContext http, [FromServices] IWorkCollaborationServiceV1 service,
                 ICorrelationContext correlation, CancellationToken token) =>
             ReadAsync(http, correlation, () => service.SearchPeopleAsync(query, token)))
-            .WithName("SearchWorkPeopleV1").Produces<WorkPeopleAnswerV1>()
+            .WithName("SearchWorkPeopleV1").Produces<WorkPeoplePageV1>()
             .ProducesErpBadRequest(WorkCollaborationProblemCodesV1.ValidationFailed).ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
         return endpoints;
     }

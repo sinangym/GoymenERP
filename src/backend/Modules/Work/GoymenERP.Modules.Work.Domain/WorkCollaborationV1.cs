@@ -89,6 +89,9 @@ public sealed record WorkPersonV1(Guid UserId, string DisplayName, bool IsActive
 
 public sealed record WorkPeopleAnswerV1(WorkPersonOutcomeV1 Outcome, IReadOnlyList<WorkPersonV1> People, bool HasMore);
 
+/// <summary>The picker's wire answer: active people of the server-resolved company only.</summary>
+public sealed record WorkPeoplePageV1(Guid CompanyId, IReadOnlyList<WorkPersonV1> People, bool HasMore);
+
 /// <summary>Identity-backed directory for display names, the mention/assignee picker and "is this person a member here now".</summary>
 public interface IWorkPersonDirectoryV1
 {
@@ -377,7 +380,7 @@ public interface IWorkCollaborationServiceV1
     Task<WorkTaskResponseV1> CancelTaskAsync(Guid taskId, CancelWorkTaskRequestV1 request, WorkCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
     Task<WorkInboxNotificationPageV1> ListMyInboxAsync(string? notificationClass, bool unreadOnly, CancellationToken cancellationToken = default);
     Task<WorkInboxNotificationReadResponseV1> MarkReadAsync(Guid notificationId, CancellationToken cancellationToken = default);
-    Task<WorkPeopleAnswerV1> SearchPeopleAsync(string? query, CancellationToken cancellationToken = default);
+    Task<WorkPeoplePageV1> SearchPeopleAsync(string? query, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Scheduler work, run per company by the digest hosted service (off by default).</summary>
