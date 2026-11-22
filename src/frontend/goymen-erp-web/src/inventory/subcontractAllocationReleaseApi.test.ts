@@ -22,3 +22,29 @@ describe('explicit unused subcontract release owner contract',()=>{
   expect(JSON.parse(init.body as string)).toEqual({expectedAllocationVersion:'2',reason:'SENTETIK explicit'});expect(new Headers(init.headers).get('Idempotency-Key')).toBe('SENTETIK-key')
  })
 })
+
+describe('KLN-D119 piece figures on the shared allocation view of a subcontract release candidate', () => {
+  const withAllocation = (extra: Record<string, unknown>) => {
+    const value = releaseCandidateFixture()
+    return { ...value, items: [{ ...value.items[0], allocation: { ...value.items[0].allocation, ...extra } }] }
+  }
+
+  it('accepts the pair of piece figures and keeps reading an allocation without them', () => {
+    const decoded = decodeSubcontractReleaseCandidates(withAllocation({ allocatedPieces: 12, remainingPieces: 3 }), company)
+    expect([decoded?.items[0].allocation.allocatedPieces, decoded?.items[0].allocation.remainingPieces]).toEqual([12, 3])
+    const kgOnly = decodeSubcontractReleaseCandidates(releaseCandidateFixture(), company)
+    expect(kgOnly).not.toBeNull()
+    expect(kgOnly?.items[0].allocation.allocatedPieces).toBeUndefined()
+  })
+
+  it.each([
+    ['a null count', { allocatedPieces: null, remainingPieces: 3 }],
+    ['a text count', { allocatedPieces: 12, remainingPieces: '3' }],
+    ['a fractional count', { allocatedPieces: 12, remainingPieces: 2.5 }],
+    ['half the pair', { allocatedPieces: 12 }],
+    ['more remaining than allocated', { allocatedPieces: 3, remainingPieces: 12 }],
+    ['an unknown member', { pieces: 3 }],
+  ])('fails closed on %s', (_name, extra) => {
+    expect(decodeSubcontractReleaseCandidates(withAllocation(extra), company)).toBeNull()
+  })
+})

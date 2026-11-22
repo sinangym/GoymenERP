@@ -59,6 +59,24 @@ public sealed class SettingsHostWiringTests
     }
 
     [Fact]
+    public void The_host_hands_the_manufacturing_command_service_the_one_product_kilograms_per_piece_port()
+    {
+        // AK-7b (URT-D112): without this owner port every output declaration answers piece-source unavailable. The real
+        // composition must resolve exactly one Product owner read and construct the service with it.
+        using var factory = Host(Gdc);
+        using var scope = factory.Services.CreateScope();
+
+        var port = scope.ServiceProvider.GetRequiredService<IProductTheoreticalKilogramsPerUnitReadPortV1>();
+        var service = scope.ServiceProvider.GetRequiredService<ManufacturingCommandService>();
+
+        Assert.Single(scope.ServiceProvider.GetServices<IProductTheoreticalKilogramsPerUnitReadPortV1>());
+        Assert.Equal("GoymenERP.Modules.Product.Infrastructure", port.GetType().Assembly.GetName().Name);
+        Assert.True(service.HasProductKilogramsPerPiecePort);
+        // The output product selector reads the same owner port for its piece-counting flag.
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IManufacturingOutputSelectionV1>());
+    }
+
+    [Fact]
     public void The_host_registers_the_approved_provider_as_the_one_Settings_port()
     {
         using var factory = Host(Gdc);

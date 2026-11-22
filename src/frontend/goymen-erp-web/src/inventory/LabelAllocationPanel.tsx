@@ -17,12 +17,14 @@ import {
   allocationReleaseRefusalText,
   isPositiveKilogramText,
   isReason,
+  parseAllocationPieceCount,
   REASON_MAX_LENGTH,
   type AllocationChangeEntry,
   type AllocationChangeRequest,
   type AllocationReleaseRequest,
   type LabelAllocationItem,
 } from './allocationChangeContract'
+import { ALLOCATION_PIECE_TEXT as PT } from './allocationPieceText'
 import { isGuid } from './labelTransformationContract'
 import styles from './inventory.module.css'
 
@@ -52,6 +54,8 @@ interface ChangeDraft {
   readonly mode: 'change'
   readonly allocationId: string
   readonly quantityKg: string
+  /** KLN-D119: the pieces the allocation holds afterwards, as typed. */
+  readonly pieceCount: string
   readonly moveTo: boolean
   readonly targetLabelId: string
   readonly targetLabelVersion: string
@@ -85,9 +89,10 @@ function changeText(entry: AllocationChangeEntry, allocationId: string): string 
 function completionText(outcome: Extract<AllocationChangeOutcome, { type: 'applied' }>): string {
   const replay = outcome.replayed ? ' (önceki kayıtlı sonuç yeniden gösterildi)' : ''
   const current = outcome.response.allocation
+  const pieces = current.remainingPieces === undefined ? '' : PT.completionPieces(current.remainingPieces)
   return outcome.response.kind === 'Resize'
-    ? `Tahsis güncellendi: ${current.remainingKg} kg ayrılmış durumda; stok hareketi oluşmadı${replay}.`
-    : `Tahsis başka etikete taşındı: yeni tahsis ${short(current.allocationId)} ${current.remainingKg} kg; bu etiketteki tahsis serbest bırakıldı${replay}.`
+    ? `Tahsis güncellendi: ${current.remainingKg} kg${pieces} ayrılmış durumda; stok hareketi oluşmadı${replay}.`
+    : `Tahsis başka etikete taşındı: yeni tahsis ${short(current.allocationId)} ${current.remainingKg} kg${pieces}; bu etiketteki tahsis serbest bırakıldı${replay}.`
 }
 
 function releaseCompletionText(outcome: Extract<AllocationReleaseOutcome, { type: 'applied' }>): string {
@@ -198,7 +203,7 @@ export function LabelAllocationPanel({ labelId, companyId, namespace, routeEntry
     setFormError(null)
     setAttempt({ phase: 'idle' })
     setDraft({
-      mode: 'change', allocationId: item.allocation.allocationId, quantityKg: '', moveTo: false,
+      mode: 'change', allocationId: item.allocation.allocationId, quantityKg: '', pieceCount: '', moveTo: false,
       targetLabelId: '', targetLabelVersion: '', reason: '',
     })
   }
@@ -247,8 +252,27 @@ export function LabelAllocationPanel({ labelId, companyId, namespace, routeEntry
       setFormError(`Değişiklik gerekçesi zorunludur (en fazla ${REASON_MAX_LENGTH} karakter).`)
       return
     }
-    if (!draft.moveTo && quantity === item.allocation.remainingKg) {
-      setFormError('Değişiklik yok: miktar şu anki tahsisle aynı.')
+    // KLN-D119: an allocation that holds pieces states the pieces it holds afterwards; a move may land on a label whose
+    // piece tracking this screen cannot see, so there the field is optional and the server decides.
+    const holdsPieces = item.allocation.remainingPieces !== undefined
+    const typedPieces = holdsPieces || draft.moveTo ? draft.pieceCount.trim() : ''
+    let pieces: number | undefined
+    if (typedPieces.length === 0) {
+      if (holdsPieces && !draft.moveTo) {
+        setFormError(PT.changePieceCountRequired)
+        return
+      }
+    } else {
+      const parsedPieces = parseAllocationPieceCount(typedPieces)
+      if (parsedPieces === null) {
+        setFormError(PT.changePieceCountFormat)
+        return
+      }
+      pieces = parsedPieces
+    }
+    if (!draft.moveTo && quantity === item.allocation.remainingKg &&
+      (pieces === undefined || pieces === item.allocation.remainingPieces)) {
+      setFormError(holdsPieces ? PT.unchangedWithPieces : 'Değişiklik yok: miktar şu anki tahsisle aynı.')
       return
     }
     setFormError(null)
@@ -265,6 +289,7 @@ export function LabelAllocationPanel({ labelId, companyId, namespace, routeEntry
         quantityKg: quantity,
         reason,
         newAllocationId: draft.moveTo ? newId() : null,
+        ...(pieces === undefined ? {} : { pieceCount: pieces }),
       },
     })
   }
@@ -308,7 +333,14 @@ export function LabelAllocationPanel({ labelId, companyId, namespace, routeEntry
               ? <Link to={salesDetailPath(item.allocation.demandId)} aria-label="Satış siparişini aç">{short(item.allocation.demandId)}</Link>
               : short(item.allocation.demandId)} / {short(item.allocation.demandLineId)}</td>
           <td>{ALLOCATION_STATUS_TEXT[item.allocation.status]}</td>
-          <td>{item.allocation.allocatedKg} kg / {item.allocation.remainingKg} kg</td>
+          <td>
+            {item.allocation.allocatedKg} kg / {item.allocation.remainingKg} kg
+            {item.allocation.allocatedPieces !== undefined && item.allocation.remainingPieces !== undefined
+              ? <><br /><span data-testid={`inventory-allocation-pieces-${item.allocation.allocationId}`}>
+                {PT.allocatedRemaining(item.allocation.allocatedPieces, item.allocation.remainingPieces)}
+              </span></>
+              : null}
+          </td>
           <td>{item.allocation.reason}{item.releaseReason === null ? null : <><br />Serbest bırakma: {item.releaseReason}</>}</td>
           <td>
             {item.changes.length === 0
@@ -324,7 +356,7 @@ export function LabelAllocationPanel({ labelId, companyId, namespace, routeEntry
               ? <form className={styles.form} onSubmit={(event) => submitRelease(event, item)} noValidate>
                 <fieldset disabled={frozen}>
                   <legend>Tahsisi serbest bırak</legend>
-                  <p>Kalan {item.allocation.remainingKg} kg ayrılmış miktarın tamamı serbest bırakılır; tahsis kaydı silinmez.</p>
+                  <p>Kalan {item.allocation.remainingKg} kg ayrılmış miktarın tamamı serbest bırakılır; tahsis kaydı silinmez.{item.allocation.remainingPieces === undefined ? null : ` ${PT.releasePieces(item.allocation.remainingPieces)}`}</p>
                   <div className={styles.grid}>
                     <label htmlFor={`allocation-release-reason-${item.allocation.allocationId}`}>Serbest bırakma gerekçesi</label>
                     <textarea id={`allocation-release-reason-${item.allocation.allocationId}`} value={draft.reason} maxLength={REASON_MAX_LENGTH}
@@ -346,6 +378,23 @@ export function LabelAllocationPanel({ labelId, companyId, namespace, routeEntry
                     <label htmlFor={`allocation-change-kg-${item.allocation.allocationId}`}>Yeni tahsis kg</label>
                     <input id={`allocation-change-kg-${item.allocation.allocationId}`} inputMode="decimal" value={draft.quantityKg}
                       onChange={(event) => setDraft({ ...draft, quantityKg: event.target.value })} />
+                    {item.allocation.remainingPieces !== undefined || draft.moveTo
+                      ? <>
+                        <label htmlFor={`allocation-change-pieces-${item.allocation.allocationId}`}>{PT.changePieceCount}</label>
+                        <div>
+                          <input id={`allocation-change-pieces-${item.allocation.allocationId}`} type="text" inputMode="numeric" autoComplete="off"
+                            value={draft.pieceCount}
+                            required={item.allocation.remainingPieces !== undefined && !draft.moveTo}
+                            aria-required={item.allocation.remainingPieces !== undefined && !draft.moveTo}
+                            aria-describedby={`allocation-change-pieces-hint-${item.allocation.allocationId}`}
+                            onChange={(event) => setDraft({ ...draft, pieceCount: event.target.value })} />
+                          <p id={`allocation-change-pieces-hint-${item.allocation.allocationId}`}>
+                            {item.allocation.remainingPieces !== undefined && !draft.moveTo
+                              ? PT.changePieceCountRequiredHint(item.allocation.remainingPieces) : PT.changePieceCountMoveHint}
+                          </p>
+                        </div>
+                      </>
+                      : null}
                     <label htmlFor={`allocation-change-move-${item.allocation.allocationId}`}>Başka etikete taşı</label>
                     <input id={`allocation-change-move-${item.allocation.allocationId}`} type="checkbox" checked={draft.moveTo}
                       onChange={(event) => setDraft({ ...draft, moveTo: event.target.checked })} />

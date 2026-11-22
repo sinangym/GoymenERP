@@ -33,6 +33,14 @@ public sealed class PurchaseReceiptWeighedCostTests
     }
 
     [Fact]
+    public void ALS_D122_is_one_switch_Inventory_and_the_Purchasing_indicator_mirror_agree_and_are_on()
+    {
+        Assert.True(PurchaseInvoiceKilogramShare.PurchaseInvoiceRemainingShareGoldenAccepted);
+        Assert.Equal(PurchaseInvoiceKilogramShare.PurchaseInvoiceRemainingShareGoldenAccepted,
+            GoymenERP.Modules.Purchasing.Domain.Orders.PurchasePieceKilograms.RemainingShareGoldenAccepted);
+    }
+
+    [Fact]
     public void A01_the_cost_per_kg_is_the_paid_amount_over_the_weighed_kilograms_not_the_theoretical()
     {
         // R1: 100 pieces × 250,00 = 25 000,00 TL; weighed 1 250,400 kg → 19,9936 (theoretical 1 234,500 → 20,2511 OLMAZ).

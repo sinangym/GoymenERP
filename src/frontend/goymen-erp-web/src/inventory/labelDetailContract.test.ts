@@ -235,3 +235,39 @@ describe('Inventory label detail contract', () => {
     })).toBeNull()
   })
 })
+
+describe('KLN-D119 label piece totals and position pieces', () => {
+  const withPieces = () => {
+    const base = balances()
+    return {
+      ...base, physicalPieces: 40, freePieces: 36, blockedPieces: 4,
+      positions: [{ ...base.positions[0], pieceCount: 36 }, { ...base.positions[1], pieceCount: 4 }],
+    }
+  }
+
+  it('reads the piece totals and each position’s pieces when present, and leaves them undefined when absent', () => {
+    const decoded = decodeInventoryLabelBalances(withPieces())
+    expect([decoded?.physicalPieces, decoded?.freePieces, decoded?.blockedPieces]).toEqual([40, 36, 4])
+    expect(decoded?.positions.map((position) => position.pieceCount)).toEqual([36, 4])
+    const kgOnly = decodeInventoryLabelBalances(balances())
+    expect(kgOnly).not.toBeNull()
+    expect([kgOnly?.physicalPieces, kgOnly?.freePieces, kgOnly?.blockedPieces]).toEqual([undefined, undefined, undefined])
+    expect(kgOnly?.positions.every((position) => position.pieceCount === undefined)).toBe(true)
+  })
+
+  it.each([null, '40', 4.5, -1, true])('fails closed on the piece value %j', (bad) => {
+    expect(decodeInventoryLabelBalances({ ...withPieces(), physicalPieces: bad })).toBeNull()
+    expect(decodeInventoryLabelBalances({ ...withPieces(), freePieces: bad })).toBeNull()
+    expect(decodeInventoryLabelBalances({ ...withPieces(), blockedPieces: bad })).toBeNull()
+    const base = withPieces()
+    expect(decodeInventoryLabelBalances({ ...base, positions: [{ ...base.positions[0], pieceCount: bad }, base.positions[1]] }))
+      .toBeNull()
+  })
+
+  it('still refuses an unknown member beside the piece members', () => {
+    expect(decodeInventoryLabelBalances({ ...withPieces(), reservedPieces: 1 })).toBeNull()
+    const base = withPieces()
+    expect(decodeInventoryLabelBalances({ ...base, positions: [{ ...base.positions[0], pieces: 1 }, base.positions[1]] }))
+      .toBeNull()
+  })
+})

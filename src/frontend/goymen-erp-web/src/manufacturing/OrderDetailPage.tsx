@@ -1285,8 +1285,14 @@ function FactSection({
     if (outputSelected && selectedProduct === undefined) return setError(OUTPUT_INVENTORY_TEXT.productRequired)
     if (outputSelected && selectedLocation === undefined) return setError(OUTPUT_INVENTORY_TEXT.locationRequired)
     if (outputSelected && form.initialBlock === '') return setError(OUTPUT_INVENTORY_TEXT.blockRequired)
-    const pieceCount = parsePieceCount(form.pieceCount, 1)
-    if (outputSelected && pieceCount === undefined) return setError(OUTPUT_PIECE_TEXT.pieceCountFormat)
+    // AK-7b (URT-D112): the selector said what the declaration will ask of this product. A product without a
+    // theoretical kg/piece source would be refused: nothing is sent. Only a counted product carries a piece count.
+    if (outputSelected && selectedProduct?.pieceCounting === 'SourceMissing')
+      return setError(OUTPUT_PIECE_TEXT.sourceMissingSubmit)
+    const counted = outputSelected && selectedProduct?.pieceCounting === 'Counted'
+    const pieceCount = counted ? parsePieceCount(form.pieceCount, 1) : null
+    if (pieceCount === undefined) return setError(OUTPUT_PIECE_TEXT.pieceCountFormat)
+    if (counted && pieceCount === null) return setError(OUTPUT_PIECE_TEXT.pieceCountRequired)
     setError(null)
     const common = {
       factId: newId(),
@@ -1330,7 +1336,7 @@ function FactSection({
               custodianId: outputOwnership!.custodianId,
               locationId: selectedLocation?.locationId ?? '',
               initialBlock: form.initialBlock as 'Free' | 'Blocked',
-              // AK-7 (URT-D112): sent only when entered; the server decides whether the product is counted.
+              // AK-7b (URT-D112): sent only for a counted product; never for an uncounted or unreadable one.
               ...(pieceCount == null ? {} : { pieceCount }),
             }
           : { ...common, kind: form.kind, movementId: null, expectedParentLabelVersion: null }
@@ -1511,7 +1517,7 @@ function FactSection({
                   id="mfg-output-product-search"
                   value={form.productSearch}
                   disabled={frozen}
-                  onChange={(event) => update({ productSearch: event.target.value, productId: '' })}
+                  onChange={(event) => update({ productSearch: event.target.value, productId: '', pieceCount: '' })}
                 />
               </div>
               <div className={styles.control}>
@@ -1520,7 +1526,7 @@ function FactSection({
                   id="mfg-output-product"
                   value={form.productId}
                   disabled={frozen || products === null}
-                  onChange={(event) => update({ productId: event.target.value })}
+                  onChange={(event) => update({ productId: event.target.value, pieceCount: '' })}
                 >
                   <option value="">{FACT_FORM_TEXT.choose}</option>
                   {products?.items.map((product) => (
@@ -1564,20 +1570,30 @@ function FactSection({
                   ? <span role="alert">{OUTPUT_INVENTORY_TEXT.locationUnavailable}</span> : null}
                 {locations?.searchWindowFull ? <span className={styles.help}>{OUTPUT_INVENTORY_TEXT.moreMatches}</span> : null}
               </div>
-              <div className={styles.control}>
-                <label htmlFor="mfg-output-piece-count">{OUTPUT_PIECE_TEXT.pieceCount}</label>
-                <input
-                  id="mfg-output-piece-count"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  value={form.pieceCount}
-                  disabled={frozen}
-                  aria-describedby="mfg-output-piece-count-help"
-                  onChange={(event) => update({ pieceCount: event.target.value })}
-                />
-                <span id="mfg-output-piece-count-help" className={styles.help}>{OUTPUT_PIECE_TEXT.pieceCountHelp}</span>
-              </div>
+              {selectedProduct?.pieceCounting === 'Counted' ? (
+                <div className={styles.control}>
+                  <label htmlFor="mfg-output-piece-count">{OUTPUT_PIECE_TEXT.pieceCount}</label>
+                  <input
+                    id="mfg-output-piece-count"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={form.pieceCount}
+                    disabled={frozen}
+                    required
+                    aria-required="true"
+                    aria-describedby="mfg-output-piece-count-help"
+                    onChange={(event) => update({ pieceCount: event.target.value })}
+                  />
+                  <span id="mfg-output-piece-count-help" className={styles.help}>{OUTPUT_PIECE_TEXT.pieceCountHelp}</span>
+                </div>
+              ) : null}
+              {selectedProduct?.pieceCounting === 'SourceMissing' ? (
+                <p role="alert" data-testid="mfg-output-piece-source-missing">{OUTPUT_PIECE_TEXT.sourceMissing}</p>
+              ) : null}
+              {selectedProduct?.pieceCounting === 'Unavailable' ? (
+                <p role="status" data-testid="mfg-output-piece-unavailable">{OUTPUT_PIECE_TEXT.unavailable}</p>
+              ) : null}
               <div className={styles.control}>
                 <label htmlFor="mfg-output-label-code">{OUTPUT_INVENTORY_TEXT.labelCode}</label>
                 <input

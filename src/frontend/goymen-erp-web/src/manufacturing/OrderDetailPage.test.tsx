@@ -10,6 +10,7 @@ import userEvent from '@testing-library/user-event'
 import { INVENTORY_STOCK_POSITIONS_CAPABILITY } from '../inventory/capabilities'
 import type { InventoryLabelIdentity } from '../inventory/labelDetailContract'
 import { MANUFACTURING_CAPABILITY } from './capabilities'
+import { OUTPUT_PIECE_TEXT } from './outputPieceText'
 import {
   CLOSER_CAPABILITIES,
   COMPANY_A,
@@ -150,7 +151,8 @@ function stub(
   const balances = options.balances ?? [() => json(massBalance())]
   const labels = options.labels ?? [() => json(labelDetail())]
   const products = options.products ?? [() => json({
-    items: [{ productId: PRODUCT, productVersion: '12', code: 'PRD-12', name: 'Galvaniz bant', stockUnitCode: 'kg' }],
+    items: [{ productId: PRODUCT, productVersion: '12', code: 'PRD-12', name: 'Galvaniz bant', stockUnitCode: 'kg',
+      pieceCounting: 'NotCounted' }],
     searchWindowFull: false,
   })]
   const locations = options.locations ?? [() => json({
@@ -957,6 +959,7 @@ describe('fact forms', () => {
             code: 'PRD-13',
             name: 'Yeni yetkili ürün',
             stockUnitCode: 'kg',
+            pieceCounting: 'NotCounted',
           }],
           searchWindowFull: false,
         }),
@@ -981,6 +984,7 @@ describe('fact forms', () => {
         code: 'PRD-12',
         name: 'Eski giriş ürünü',
         stockUnitCode: 'kg',
+        pieceCounting: 'NotCounted',
       }],
       searchWindowFull: false,
     }))
@@ -1410,6 +1414,13 @@ describe('output piece count (AK-7)', () => {
     }
   }
 
+  /** AK-7b (URT-D112): the selector's answer for the one product, with what the declaration will ask of its pieces. */
+  const productsWith = (pieceCounting: string) => [() => json({
+    items: [{ productId: PRODUCT, productVersion: '12', code: 'PRD-12', name: 'Galvaniz bant', stockUnitCode: 'kg',
+      pieceCounting }],
+    searchWindowFull: false,
+  })]
+
   async function fillOutput(user: ReturnType<typeof userEvent.setup>, recorded: RecordedRequest[], pieces: string) {
     await user.click(screen.getByLabelText('Üretim çıktısı'))
     await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
@@ -1428,23 +1439,58 @@ describe('output piece count (AK-7)', () => {
     const user = userEvent.setup()
     const { recorded } = stub({
       capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      products: productsWith('Counted'),
       labels: [() => json(labelDetail('8', '900')), () => json(labelDetail('9', '900'))],
     })
     renderAt(PATH)
     await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
     await fillOutput(user, recorded, '48')
     expect(screen.getByLabelText('Adet').getAttribute('aria-describedby')).toBe('mfg-output-piece-count-help')
-    expect(document.getElementById('mfg-output-piece-count-help')?.textContent).toContain('Adetli üründe zorunludur')
+    expect(document.getElementById('mfg-output-piece-count-help')?.textContent).toBe(OUTPUT_PIECE_TEXT.pieceCountHelp)
+    expect((screen.getByLabelText('Adet') as HTMLInputElement).required).toBe(true)
     await user.click(screen.getByRole('button', { name: 'Kaydet' }))
 
     await waitFor(() => expect(posts(recorded)).toHaveLength(1))
     expect(posts(recorded)[0].body).toMatchObject({ kg: '20', pieceCount: 48 })
   })
 
-  it('sends no piece count when the field is empty (an uncounted product)', async () => {
+  it('shows no piece field and sends no piece count for an uncounted product', async () => {
     const user = userEvent.setup()
     const { recorded } = stub({
       capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      products: productsWith('NotCounted'),
+      labels: [() => json(labelDetail('8', '900')), () => json(labelDetail('9', '900'))],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await fillOutput(user, recorded, '')
+    expect(screen.queryByLabelText('Adet')).toBeNull()
+    expect(screen.queryByTestId('mfg-output-piece-source-missing')).toBeNull()
+    expect(screen.queryByTestId('mfg-output-piece-unavailable')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    await waitFor(() => expect(posts(recorded)).toHaveLength(1))
+    expect(posts(recorded)[0].body).not.toHaveProperty('pieceCount')
+  })
+
+  it('shows no piece field before a product is selected', async () => {
+    const user = userEvent.setup()
+    stub({ capabilities: INVENTORY_RECORDER_CAPABILITIES, products: productsWith('Counted') })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await user.click(screen.getByLabelText('Üretim çıktısı'))
+    await user.type(screen.getByLabelText('Zaman'), '2026-09-25T00:30')
+    await screen.findByRole('option', { name: /PRD-12/ })
+    expect(screen.queryByLabelText('Adet')).toBeNull()
+    await user.selectOptions(screen.getByLabelText('Ürün'), PRODUCT)
+    expect(screen.getByLabelText('Adet')).toBeTruthy()
+  })
+
+  it('requires the piece count of a counted product and sends nothing without it', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      products: productsWith('Counted'),
       labels: [() => json(labelDetail('8', '900')), () => json(labelDetail('9', '900'))],
     })
     renderAt(PATH)
@@ -1452,14 +1498,67 @@ describe('output piece count (AK-7)', () => {
     await fillOutput(user, recorded, '')
     await user.click(screen.getByRole('button', { name: 'Kaydet' }))
 
+    expect(await screen.findByText(OUTPUT_PIECE_TEXT.pieceCountRequired)).toBeTruthy()
+    expect(posts(recorded)).toHaveLength(0)
+  })
+
+  it('warns and blocks the output of a product whose theoretical kg per piece source is missing', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      products: productsWith('SourceMissing'),
+      labels: [() => json(labelDetail('8', '900')), () => json(labelDetail('9', '900'))],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await fillOutput(user, recorded, '')
+    expect(screen.getByTestId('mfg-output-piece-source-missing').textContent).toBe(OUTPUT_PIECE_TEXT.sourceMissing)
+    expect(screen.queryByLabelText('Adet')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    expect(await screen.findByText(OUTPUT_PIECE_TEXT.sourceMissingSubmit)).toBeTruthy()
+    expect(posts(recorded)).toHaveLength(0)
+  })
+
+  it('informs, hides the field and lets the server decide when the piece counting could not be read', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      products: productsWith('Unavailable'),
+      labels: [() => json(labelDetail('8', '900')), () => json(labelDetail('9', '900'))],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await fillOutput(user, recorded, '')
+    const notice = screen.getByTestId('mfg-output-piece-unavailable')
+    expect(notice.textContent).toBe(OUTPUT_PIECE_TEXT.unavailable)
+    expect(notice.getAttribute('role')).toBe('status')
+    expect(screen.queryByLabelText('Adet')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+
     await waitFor(() => expect(posts(recorded)).toHaveLength(1))
     expect(posts(recorded)[0].body).not.toHaveProperty('pieceCount')
+  })
+
+  it('fails the product selector closed on an unknown piece counting', async () => {
+    const user = userEvent.setup()
+    stub({ capabilities: INVENTORY_RECORDER_CAPABILITIES, products: productsWith('Sometimes') })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await user.click(screen.getByLabelText('Üretim çıktısı'))
+    await user.type(screen.getByLabelText('Zaman'), '2026-09-25T00:30')
+    await screen.findByRole('option', { name: /HOL-1/ })
+    expect(await screen.findByText('Ürün seçenekleri okunamadı. Tekrar deneyin.')).toBeTruthy()
+    expect((screen.getByLabelText('Ürün') as HTMLSelectElement).disabled).toBe(true)
+    expect(screen.queryByRole('option', { name: /PRD-12/ })).toBeNull()
+    expect(screen.queryByLabelText('Adet')).toBeNull()
   })
 
   it.each(['0', '-3', '2.5', '01'])('refuses the piece count %s without sending anything', async (pieces) => {
     const user = userEvent.setup()
     const { recorded } = stub({
       capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      products: productsWith('Counted'),
       labels: [() => json(labelDetail('8', '900')), () => json(labelDetail('9', '900'))],
     })
     renderAt(PATH)
@@ -1479,6 +1578,8 @@ describe('output piece count (AK-7)', () => {
     const user = userEvent.setup()
     const { recorded } = stub({
       capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      // The selector's answer can be older than the command's: the server's refusal is told whatever the form showed.
+      products: productsWith(code === 'manufacturing_output_pieces_required' ? 'NotCounted' : 'Counted'),
       labels: [() => json(labelDetail('8', '900')), () => json(labelDetail('9', '900'))],
       commands: [() => problem(422, { code })],
     })

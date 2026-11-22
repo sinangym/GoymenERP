@@ -19,12 +19,37 @@ public static class PurchaseInvoiceKilogramShare
     }
 
     /// <summary>
-    /// ALS-D122's switch (SINAN_KARARLARI_2026-11-22_WORK_AI_DALGALAR): after a partial return of a piece receipt, the invoiced
-    /// pieces take "remaining kg × invoiced pieces ÷ remaining pieces". Its golden rows are prepared by an independent session
-    /// (SAT-D431) and are not in the train yet, so this stays false: a piece share whose return did not leave in the receipt's own
-    /// proportion keeps waiting (<c>purchase_invoice_cost_piece_reversal_basis_unavailable</c>).
+    /// ALS-D122 / ALS-D123 / ALS-D124's switch (SINAN_KARARLARI_2026-11-22_WORK_AI_DALGALAR). The independent golden
+    /// (<c>docs/decisions/ADET_KG_FORMUL_GOLDEN_V1_EK1.md</c> §5, rows E22–E29) travels with this train (SAT-D431), so a piece
+    /// receipt's invoice takes <see cref="PieceShare"/>. The closed state (a non-proportional return keeps waiting with
+    /// <c>purchase_invoice_cost_piece_reversal_basis_unavailable</c>) stays pinned by parameter in the tests.
     /// </summary>
-    public static bool PurchaseInvoiceRemainingShareGoldenAccepted => false;
+    public static bool PurchaseInvoiceRemainingShareGoldenAccepted => true;
+
+    /// <summary>
+    /// Golden EK1 §5 (E22–E29): the kilograms of one invoice on a piece receipt, three decimals half away from zero (ALS-D124).
+    /// <list type="bullet">
+    /// <item>the invoice that takes the last remaining pieces takes the whole remaining kg (E28, E29);</item>
+    /// <item>without any return so far ALS-D121 holds: weighed kg × invoiced pieces ÷ accepted pieces (E25, E29);</item>
+    /// <item>after a return: CURRENT remaining kg × invoiced pieces ÷ CURRENT remaining pieces (ALS-D122/D123: E22, E26–E28).</item>
+    /// </list>
+    /// "Remaining" is the receipt less every return so far and less the kg and pieces of earlier invoices.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">Nothing remains, or the invoiced pieces are not within the remaining pieces.</exception>
+    public static ExactCostRatio PieceShare(ExactCostRatio originalKg, decimal originalPieces, bool anyReturn, ExactCostRatio remainingKg,
+        ExactCostRatio remainingPieces, decimal invoicedPieces)
+    {
+        ArgumentNullException.ThrowIfNull(originalKg);
+        if (anyReturn) return RemainingShare(remainingKg, remainingPieces, invoicedPieces);
+        ArgumentNullException.ThrowIfNull(remainingKg);
+        ArgumentNullException.ThrowIfNull(remainingPieces);
+        var comparison = ExactCostRatio.Of(invoicedPieces).CompareTo(remainingPieces);
+        if (remainingKg.Sign <= 0 || remainingPieces.Sign <= 0 || invoicedPieces <= 0m || comparison > 0 || originalPieces <= 0m)
+            throw new ArgumentOutOfRangeException(nameof(invoicedPieces), "Faturalanan adet kalan adedi aşamaz.");
+        return comparison == 0
+            ? remainingKg
+            : ExactCostRatio.Of(Of(originalKg, invoicedPieces, ExactCostRatio.Of(originalPieces)).Round(ShareScale));
+    }
 
     /// <summary>ALS-D124: a partial invoice's kilogram share keeps three decimals.</summary>
     public const int ShareScale = 3;

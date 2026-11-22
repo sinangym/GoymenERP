@@ -14,6 +14,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   closeBody,
+  decodeManufacturingOutputProductCandidates,
   decodeMassBalance,
   decodeOrder,
   decodeOrderList,
@@ -22,6 +23,7 @@ import {
   decodeTechnicalSnapshot,
   FACT_KINDS,
   OUTPUT_CLASSES,
+  OUTPUT_PIECE_COUNTINGS,
   outputCorrectionBody,
 } from './contract'
 import { MANUFACTURING_BASE } from './api'
@@ -135,6 +137,20 @@ const OUTPUT_PIECE_FIXTURE_KEYS = [
 ] as const
 
 describe('Manufacturing port ↔ canonical OpenAPI', () => {
+  it('reads exactly the members of an output product candidate, the AK-7b piece counting among them', () => {
+    const candidate = {
+      productId: ROLL_1, productVersion: '12', code: 'PRD-12', name: 'SENTETIK', stockUnitCode: 'kg',
+      pieceCounting: 'Counted',
+    }
+    expect(Object.keys(candidate).sort()).toEqual(names('ManufacturingOutputProductCandidateV1'))
+    expect(decodeManufacturingOutputProductCandidates({ items: [candidate], searchWindowFull: false })?.items[0])
+      .toEqual(candidate)
+    expect(names('ManufacturingOutputProductCandidatesV1')).toEqual(['items', 'searchWindowFull'])
+    // The four values are the backend's ManufacturingOutputPieceCountingV1 constants; the schema types it as a string.
+    expect([...OUTPUT_PIECE_COUNTINGS]).toEqual(['Counted', 'NotCounted', 'SourceMissing', 'Unavailable'])
+    expect(schema('ManufacturingOutputProductCandidateV1').properties?.pieceCounting).toMatchObject({ type: 'string' })
+  })
+
   it('sends exactly the CorrectOutputRequestV1 members, the AK-7 piece count optional', () => {
     const body = outputCorrectionBody({
       idempotencyKey: 'k', outputId: ROLL_1, reversalId: ROLL_1, movementId: ROLL_1, expectedVersion: 3, labelId: ROLL_1,

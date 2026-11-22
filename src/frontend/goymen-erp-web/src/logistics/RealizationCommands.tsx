@@ -169,7 +169,7 @@ function ShipmentForm(props: LineProps) {
           <select id={`${id}-allocation`} value={allocationId} onChange={(event) => setAllocationId(event.target.value)}>
             <option value="">{T.choose}</option>
             {allocations.map((item) => <option key={item.allocationId} value={item.allocationId}>
-              {T.labelReference} {item.labelId.slice(-8)} / {T.allocationReference} {item.allocationId.slice(-8)} ({T.remaining}: {item.remainingKg} kg)
+              {T.labelReference} {item.labelId.slice(-8)} / {T.allocationReference} {item.allocationId.slice(-8)} ({T.remaining}: {item.remainingKg} kg{item.remainingPieces === undefined ? '' : T.remainingPieces(item.remainingPieces)})
             </option>)}
           </select>
           <label htmlFor={`${id}-quantity`}>{T.quantity}</label>

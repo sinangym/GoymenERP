@@ -13,6 +13,8 @@ namespace GoymenERP.Api.Endpoints;
 /// both from the approved Sales line and never accepts those authoritative facts from the caller.
 /// <see cref="IsSubstitute"/> (KLN-D39, STK-S30) confirms a suggested label of another, similar product ("muadil");
 /// the server re-verifies the similarity within the Settings tolerance and refuses it otherwise. Absent means false.
+/// <see cref="PieceCount"/> (KLN-D119, SAT-D434; AK-4b) is the number of pieces reserved with the kilograms: required when
+/// the label's free stock tracks pieces and refused on a kg-only label; the stock owner decides, never the caller.
 /// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record CreateInventoryPhysicalAllocationRequestV1(
@@ -24,13 +26,16 @@ public sealed record CreateInventoryPhysicalAllocationRequestV1(
     [property: JsonRequired] string QuantityKg,
     [property: JsonRequired] string Reason,
     DateTimeOffset? ReservedUntilUtc,
-    bool? IsSubstitute = null);
+    bool? IsSubstitute = null,
+    int? PieceCount = null);
 
 /// <summary>
 /// INV-AL-1 change request. The Sales order/line name the demand the allocation already serves; the host re-reads
 /// that line through the Sales owner port (it must still be approved) and supplies its product identity and version.
 /// <see cref="TargetLabelId"/> equal to the allocation's own label changes the kilograms in place (no
 /// <see cref="NewAllocationId"/>); another label of the same product moves the reservation (a new allocation id).
+/// <see cref="PieceCount"/> (KLN-D119, AK-4b) is the pieces the allocation holds afterwards: required when the allocation
+/// (in place) or the target label's free stock (move) tracks pieces, refused otherwise.
 /// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ChangeInventoryPhysicalAllocationRequestV1(
@@ -41,7 +46,8 @@ public sealed record ChangeInventoryPhysicalAllocationRequestV1(
     [property: JsonRequired] string ExpectedTargetLabelVersion,
     [property: JsonRequired] string QuantityKg,
     [property: JsonRequired] string Reason,
-    Guid? NewAllocationId);
+    Guid? NewAllocationId,
+    int? PieceCount = null);
 
 /// <summary>
 /// Central host boundary for the Inventory-owned writer. It performs no Inventory or Sales table read:
@@ -67,7 +73,8 @@ public sealed class InventoryPhysicalAllocationHostService(
         if (request.AllocationId == Guid.Empty || request.SalesOrderId == Guid.Empty
             || request.SalesOrderLineId == Guid.Empty || request.LabelId == Guid.Empty
             || string.IsNullOrWhiteSpace(request.ExpectedLabelVersion)
-            || string.IsNullOrWhiteSpace(request.QuantityKg) || string.IsNullOrWhiteSpace(request.Reason))
+            || string.IsNullOrWhiteSpace(request.QuantityKg) || string.IsNullOrWhiteSpace(request.Reason)
+            || request.PieceCount is <= 0)
         {
             throw new InventoryPhysicalAllocationHostException(
                 StatusCodes.Status400BadRequest, InventoryAllocationCodesV1.ValidationFailed);
@@ -86,7 +93,8 @@ public sealed class InventoryPhysicalAllocationHostService(
             request.QuantityKg,
             request.Reason,
             request.ReservedUntilUtc,
-            request.IsSubstitute == true);
+            request.IsSubstitute == true,
+            request.PieceCount);
         return await writer.CreateAsync(command, Metadata(finalScope, transport), cancellationToken);
     }
 
@@ -156,7 +164,8 @@ public sealed class InventoryPhysicalAllocationHostService(
             || request.TargetLabelId == Guid.Empty || request.NewAllocationId == Guid.Empty
             || string.IsNullOrWhiteSpace(request.ExpectedAllocationVersion)
             || string.IsNullOrWhiteSpace(request.ExpectedTargetLabelVersion)
-            || string.IsNullOrWhiteSpace(request.QuantityKg) || string.IsNullOrWhiteSpace(request.Reason))
+            || string.IsNullOrWhiteSpace(request.QuantityKg) || string.IsNullOrWhiteSpace(request.Reason)
+            || request.PieceCount is <= 0)
         {
             throw new InventoryPhysicalAllocationHostException(
                 StatusCodes.Status400BadRequest, InventoryAllocationCodesV1.ValidationFailed);
@@ -174,7 +183,8 @@ public sealed class InventoryPhysicalAllocationHostService(
             request.ExpectedTargetLabelVersion,
             request.QuantityKg,
             request.Reason,
-            request.NewAllocationId);
+            request.NewAllocationId,
+            request.PieceCount);
         return await writer.ChangeAsync(allocationId, command, Metadata(finalScope, transport), cancellationToken);
     }
 
@@ -306,6 +316,7 @@ public static class InventoryPhysicalAllocationHttpCodesV1
         InventoryAllocationCodesV1.IdempotencyConflict,
         InventoryAllocationCodesV1.LabelVersionConflict,
         InventoryAllocationCodesV1.InsufficientFreeStock,
+        InventoryAllocationCodesV1.InsufficientFreePieces,
         InventoryAllocationCodesV1.ConcurrentChange,
         InventoryAllocationCodesV1.ExceedsDemandOpenQuantity,
         SalesOrderLineSerializationLockContractV1.BusyCode);
@@ -324,7 +335,11 @@ public static class InventoryPhysicalAllocationHttpCodesV1
         InventoryAllocationCodesV1.InvalidReference,
         InventoryAllocationCodesV1.OwnerNotCompany,
         InventoryAllocationCodesV1.UnitConversionUnavailable,
-        InventoryAllocationCodesV1.SubstituteNotSimilar);
+        InventoryAllocationCodesV1.SubstituteNotSimilar,
+        // KLN-D119 (AK-4b): the piece side of a reservation on a piece-tracking (or kg-only) label.
+        InventoryAllocationCodesV1.PieceCountRequired,
+        InventoryAllocationCodesV1.PieceCountNotTracked,
+        InventoryAllocationCodesV1.PieceCountInvalid);
 
     public static IReadOnlySet<string> ReleaseStatus422Codes { get; } = Set(InventoryAllocationCodesV1.InvalidReference);
 
@@ -336,6 +351,7 @@ public static class InventoryPhysicalAllocationHttpCodesV1
         InventoryAllocationCodesV1.AllocationStateConflict,
         InventoryAllocationCodesV1.LabelVersionConflict,
         InventoryAllocationCodesV1.InsufficientFreeStock,
+        InventoryAllocationCodesV1.InsufficientFreePieces,
         InventoryAllocationCodesV1.ConcurrentChange,
         InventoryAllocationCodesV1.ExceedsDemandOpenQuantity,
         SalesOrderLineSerializationLockContractV1.BusyCode);
@@ -345,7 +361,10 @@ public static class InventoryPhysicalAllocationHttpCodesV1
         InventoryAllocationCodesV1.InvalidReference,
         InventoryAllocationCodesV1.OwnerNotCompany,
         InventoryAllocationCodesV1.ChangeUnchanged,
-        InventoryAllocationCodesV1.UnitConversionUnavailable);
+        InventoryAllocationCodesV1.UnitConversionUnavailable,
+        InventoryAllocationCodesV1.PieceCountRequired,
+        InventoryAllocationCodesV1.PieceCountNotTracked,
+        InventoryAllocationCodesV1.PieceCountInvalid);
 
     private static IReadOnlySet<string> Set(params string[] codes) => codes.ToHashSet(StringComparer.Ordinal);
 }

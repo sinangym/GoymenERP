@@ -217,7 +217,10 @@ public sealed record InventoryAllocationSuggestionV1(
     string Kind,
     bool IsSubstitute,
     string UnreservedKg,
-    string? MaximumDeviationPercent);
+    string? MaximumDeviationPercent,
+    // KLN-D119 (AK-4b): the pieces of a piece-tracking label that no active allocation holds; omitted for a kg-only label.
+    // A create on a label that carries this figure must name its piece count.
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? UnreservedPieces = null);
 
 /// <summary>
 /// The suggestion answer. <see cref="RequestedKg"/> echoes the query's requested kilograms as invariant text (null when

@@ -69,11 +69,32 @@ public sealed class InventoryReadModelsTests
     }
 
     [Fact]
+    public void A_piece_tracking_label_shows_its_pieces_by_position_and_block_and_a_kg_only_label_shows_none()
+    {
+        // KLN-D119: the label detail carries adet + kg; the JSON omits the piece members of a kg-only label entirely.
+        var counted = InventoryReadModelsV1.Balances(Label1,
+        [
+            new StockBalance(Position(block: BlockState.Blocked), Kilograms.Of(100.500m), PieceCount.Of(8)),
+            new StockBalance(Position(), Kilograms.Of(899.625m), PieceCount.Of(72)),
+        ]);
+        var plain = InventoryReadModelsV1.Balances(Label1, [new StockBalance(Position(), Kilograms.Of(899.625m))]);
+
+        Assert.Equal(((int?)80, (int?)72, (int?)8), (counted.PhysicalPieces, counted.FreePieces, counted.BlockedPieces));
+        Assert.Equal([(int?)72, (int?)8], counted.Positions.Select(position => position.PieceCount));
+        Assert.Equal(((int?)null, (int?)null, (int?)null), (plain.PhysicalPieces, plain.FreePieces, plain.BlockedPieces));
+        Assert.Null(Assert.Single(plain.Positions).PieceCount);
+        var json = System.Text.Json.JsonSerializer.Serialize(plain, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        Assert.DoesNotContain("ieces", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("pieceCount", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_label_without_stock_has_no_positions_and_zero_totals_and_another_labels_stock_is_refused()
     {
         var empty = InventoryReadModelsV1.Balances(Label1, []);
         Assert.Empty(empty.Positions);
         Assert.Equal(("0", "0", "0"), (empty.PhysicalKg, empty.FreeKg, empty.BlockedKg));
+        Assert.Null(empty.PhysicalPieces);
 
         Assert.Throws<ArgumentException>(() => InventoryReadModelsV1.Balances(Label2,
             [new StockBalance(Position(), Kilograms.Of(1m))]));

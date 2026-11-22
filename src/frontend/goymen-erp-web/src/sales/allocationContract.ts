@@ -14,7 +14,16 @@ export const CREATE_ALLOCATION_422_CODES = {
   substituteNotSimilar: 'inventory_allocation_substitute_not_similar',
   /** KLN-D66 (3): the kilogram comparison with the Sales order unit has no conversion source; refused, never guessed. */
   unitConversionUnavailable: 'inventory_allocation_unit_conversion_unavailable',
+  /** KLN-D119: the label's free stock tracks pieces; the allocation must name how many it reserves. */
+  pieceCountRequired: 'inventory_allocation_piece_count_required',
+  /** KLN-D119: the label's free stock tracks no pieces; a piece count is refused, never dropped. */
+  pieceCountNotTracked: 'inventory_allocation_piece_count_not_tracked',
+  /** KLN-D119: the piece count is not a whole number of at least one, or does not fit the reserved kilograms. */
+  pieceCountInvalid: 'inventory_allocation_piece_count_invalid',
 } as const
+
+/** Declared 409 code of the create command added by KLN-D119: fewer unreserved pieces than asked. */
+export const CREATE_ALLOCATION_INSUFFICIENT_FREE_PIECES = 'inventory_allocation_insufficient_free_pieces' as const
 
 export interface PhysicalAllocation {
   readonly allocationId: string
@@ -35,6 +44,10 @@ export interface PhysicalAllocation {
   readonly updatedAtUtc: string
   /** KLN-D39: the allocation reserves a label of a similar product ("muadil"); `productId` stays the line's product. */
   readonly isSubstitute: boolean
+  /** KLN-D119: the pieces the allocation reserved; absent when it holds none (a kg-only label). */
+  readonly allocatedPieces?: number
+  /** KLN-D119: the pieces still reserved; present exactly when `allocatedPieces` is. */
+  readonly remainingPieces?: number
 }
 
 export interface PhysicalAllocationItem {
@@ -66,6 +79,8 @@ export interface CreatePhysicalAllocationBody {
   readonly reservedUntilUtc: string | null
   /** Sent only for a confirmed similar-product suggestion; the server re-checks the similarity. */
   readonly isSubstitute?: true
+  /** KLN-D119: sent only when the label tracks pieces (or the user entered one); the server decides. */
+  readonly pieceCount?: number
 }
 
 export interface ReleasePhysicalAllocationBody {
@@ -87,6 +102,20 @@ const guid = (value: unknown): value is string => text(value) && GUID.test(value
 const version = (value: unknown): value is string => text(value) && VERSION.test(value)
 const decimal = (value: unknown): value is string => text(value) && DECIMAL.test(value)
 const instant = (value: unknown): value is string => text(value) && !Number.isNaN(Date.parse(value))
+const INT32_MAX = 2147483647
+/** An optional piece member: absent is "no pieces"; present must be a whole number (never null, text or a fraction). */
+const optionalPieces = (value: unknown): value is number | undefined => value === undefined
+  || (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= INT32_MAX)
+
+/**
+ * The allocation form's piece count as typed: a whole number of at least one (no sign, no leading zero, within int32);
+ * anything else is `null` and nothing is sent.
+ */
+export function parseAllocationPieceCount(value: string): number | null {
+  if (!/^[1-9][0-9]{0,9}$/.test(value)) return null
+  const parsed = Number(value)
+  return parsed <= INT32_MAX ? parsed : null
+}
 
 export function decodePhysicalAllocation(value: unknown, expected: AllocationScope): PhysicalAllocation | null {
   const source = record(value)
@@ -97,7 +126,11 @@ export function decodePhysicalAllocation(value: unknown, expected: AllocationSco
     || !decimal(source.allocatedKg) || !decimal(source.remainingKg) || !text(source.reason)
     || !(source.reservedUntilUtc === null || instant(source.reservedUntilUtc))
     || !instant(source.createdAtUtc) || !instant(source.updatedAtUtc)
-    || !(source.isSubstitute === undefined || typeof source.isSubstitute === 'boolean')) return null
+    || !(source.isSubstitute === undefined || typeof source.isSubstitute === 'boolean')
+    || !optionalPieces(source.allocatedPieces) || !optionalPieces(source.remainingPieces)) return null
+  // KLN-D119: both piece figures or neither; the reserved pieces never exceed the allocated ones.
+  if ((source.allocatedPieces === undefined) !== (source.remainingPieces === undefined)
+    || (source.allocatedPieces !== undefined && source.remainingPieces! > source.allocatedPieces)) return null
 
   if (source.companyId !== expected.companyId || source.demandId !== expected.salesOrderId
     || source.demandLineId !== expected.salesOrderLineId || source.productId !== expected.productId
@@ -150,6 +183,8 @@ export interface AllocationSuggestion {
   readonly isSubstitute: boolean
   readonly unreservedKg: string
   readonly maximumDeviationPercent: string | null
+  /** KLN-D119: the label's unreserved pieces; absent for a kg-only label. Present means the create asks a piece count. */
+  readonly unreservedPieces?: number
 }
 
 export interface AllocationSuggestions {
@@ -187,14 +222,16 @@ const SUGGESTION_KEYS = ['isSubstitute', 'kind', 'labelCode', 'labelId', 'labelV
   'productCode', 'productId', 'productName', 'productVersion', 'unreservedKg']
 const POSITIVE_DECIMAL = (value: unknown): value is string => decimal(value) && !/^0(?:\.0+)?$/.test(value)
 const optionalText = (value: unknown): value is string | null => value === null || text(value)
-const exactKeys = (source: Record<string, unknown>, keys: readonly string[]) => {
-  const actual = Object.keys(source).sort()
+const SUGGESTION_OPTIONAL_KEYS = ['unreservedPieces']
+const exactKeys = (source: Record<string, unknown>, keys: readonly string[], optional: readonly string[] = []) => {
+  const actual = Object.keys(source).filter((key) => !optional.includes(key)).sort()
   return actual.length === keys.length && actual.every((key, index) => key === keys[index])
 }
 
 function decodeSuggestion(value: unknown, expected: AllocationScope, mode: SimilarProductMode): AllocationSuggestion | null {
   const source = record(value)
-  if (source === null || !exactKeys(source, SUGGESTION_KEYS) || !guid(source.labelId) || !version(source.labelVersion)
+  if (source === null || !exactKeys(source, SUGGESTION_KEYS, SUGGESTION_OPTIONAL_KEYS)
+    || !optionalPieces(source.unreservedPieces) || !guid(source.labelId) || !version(source.labelVersion)
     || !text(source.labelCode) || !guid(source.productId) || !optionalText(source.productVersion)
     || !optionalText(source.productCode) || !optionalText(source.productName)
     || typeof source.isSubstitute !== 'boolean' || !POSITIVE_DECIMAL(source.unreservedKg)

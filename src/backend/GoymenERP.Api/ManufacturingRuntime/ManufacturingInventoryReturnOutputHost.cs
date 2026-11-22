@@ -270,7 +270,10 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
                 command.ExpectedLabelVersion.ToString(CultureInfo.InvariantCulture),
                 command.MovementId,
                 Quantity(command.Quantity),
-                command.OccurredAtUtc);
+                command.OccurredAtUtc,
+                // AK-7b (URT-D112, KLN-D119): a counted output's correction takes its pieces back from the label too; an
+                // uncounted correction names none, so its stored Inventory request hash is unchanged.
+                command.Pieces?.Value);
             var inventoryMetadata = OutputCorrectionInventoryMetadata(metadata, companyId, command.OrderId, command.ReversalId);
             var connection = manufacturing.Database.GetDbConnection();
             var databaseTransaction = transaction.GetDbTransaction();
@@ -532,7 +535,10 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
                 command.OccurredAtUtc,
                 expectedLabel.ProductionStatus is null
                     ? null
-                    : (InventoryLabelClassificationV1?)expectedLabel.Classification);
+                    : (InventoryLabelClassificationV1?)expectedLabel.Classification,
+                // AK-7b (URT-D112, KLN-D119): a counted output opens its label with pieces + weighed kg; an uncounted
+                // output names none, so its stored Inventory request hash is unchanged.
+                command.Pieces?.Count.Value);
             // Inventory command identities are capped at 128 characters. The explicit company/order/output
             // grain already makes this participant key unique; keep the operation token short enough that the
             // complete deterministic identity remains inside that owner contract.

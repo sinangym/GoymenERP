@@ -23,6 +23,7 @@ describe('Manufacturing output selectors', () => {
         code: 'PRD-12',
         name: 'Galvaniz bant',
         stockUnitCode: 'kg',
+        pieceCounting: 'NotCounted',
       }],
       searchWindowFull: false,
     })

@@ -12,12 +12,32 @@ namespace GoymenERP.Modules.Sales.Application;
 public sealed partial class SalesDraftService
 {
     /// <summary>
-    /// SAT-D436 / SAT-D265(5): the kg price indicator stays CLOSED until its independent golden (ADET_KG_FORMUL_GOLDEN_V1 §1, rows
-    /// K01-K19) is in main and the train's exact-head K3 acceptance is given. Closed, the read answers FormulaGoldenPending only.
+    /// SAT-D436 / SAT-D439 / SAT-D265(5): the kg price indicator is OPEN. Its independent golden (ADET_KG_FORMUL_GOLDEN_V1 §1, rows
+    /// K01-K19, TK1-TK9) travels in this train (PR #1201) with the decision file it cites; the rows are pinned by row id in
+    /// SalesKilogramPriceGoldenTests and SalesDraftServiceTests.KilogramPrices. The train's exact-head K3 acceptance still decides
+    /// the merge. Closed (the named parameter of the overloads below), the read answers FormulaGoldenPending only. N2 stays
+    /// open: a document figure is hidden while any line is not a kg-bearing goods line (K17/K18).
     /// </summary>
-    internal static bool KilogramPriceGoldenAccepted => false;
+    internal static bool KilogramPriceGoldenAccepted => true;
 
-    public async Task<SalesOrderKilogramPricesResponse> GetDraftKilogramPricesAsync(Guid draftId, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// SAT-D452 / SAT-D457 (SAT-D436 TK6): the ONE named rule for which invoices of an order enter its realization ("faturalanan
+    /// tutar", actual kg, actual kg price). Only a finalised invoice counts (SAT-D452): a draft, a pending or an approved invoice
+    /// is not yet an invoiced amount, and a rejected, cancelled or officially cancelled one never is. A finalised invoice whose
+    /// last Finance hand-off answer is a refusal does not count either (SAT-D457); it counts again once a re-drive is admitted
+    /// (or answered otherwise). A finalised invoice Finance has not answered yet counts: the decision excludes the refusal only.
+    /// </summary>
+    internal static bool EntersKilogramPriceRealization(SalesInvoice invoice) =>
+        invoice.State == SalesInvoiceState.Finalized
+        && !(invoice.Finalization is { FinanceStatus: not SalesInvoiceFinanceStatus.Admitted } ledger
+            && SalesInvoiceService.IsRefusedFinanceOutcome(ledger.LastOutcome));
+
+    public Task<SalesOrderKilogramPricesResponse> GetDraftKilogramPricesAsync(Guid draftId, CancellationToken cancellationToken = default) =>
+        GetDraftKilogramPricesAsync(draftId, KilogramPriceGoldenAccepted, cancellationToken);
+
+    /// <summary>The same read with the AK-5 switch named, so the closed and the open path are both measured by tests.</summary>
+    internal async Task<SalesOrderKilogramPricesResponse> GetDraftKilogramPricesAsync(Guid draftId, bool kilogramPriceOpen,
+        CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var scope = await RequireAsync(bindings.ReadPermission, cancellationToken);
@@ -26,7 +46,7 @@ public sealed partial class SalesDraftService
         // A kg price is a price: without the price read nothing of it is disclosed.
         if (await DiscloseAsync(scope, cancellationToken) != SalesPriceDisclosure.Visible)
             throw new SalesDraftServiceException(403, "forbidden");
-        if (!KilogramPriceGoldenAccepted)
+        if (!kilogramPriceOpen)
             return new SalesOrderKilogramPricesResponse(SalesKilogramPriceStatesV1.FormulaGoldenPending, draft.Header.CurrencyId);
 
         IReadOnlyList<SalesInvoice> invoices = [];
@@ -60,7 +80,7 @@ public sealed partial class SalesDraftService
     internal static SalesOrderKilogramPricesResponse KilogramPrices(SalesOrderDraft draft, IReadOnlyList<SalesInvoice> invoices)
     {
         var totals = SalesOrderTotalsCalculator.CalculateWithLineTax(draft);
-        var activeLines = invoices.Where(invoice => invoice.HoldsShares).SelectMany(invoice => invoice.Lines).ToList();
+        var activeLines = invoices.Where(EntersKilogramPriceRealization).SelectMany(invoice => invoice.Lines).ToList();
         var lines = new List<SalesOrderLineKilogramPricesV1>();
         var theoreticalDocument = new List<SalesKilogramPriceLine>();
         var actualDocument = new List<SalesKilogramPriceLine>();

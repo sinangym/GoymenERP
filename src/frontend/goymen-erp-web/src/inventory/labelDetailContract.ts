@@ -42,6 +42,8 @@ export interface InventoryLabelPosition {
   readonly productId: string
   readonly block: string
   readonly quantityKg: string
+  /** KLN-D119: the pieces at this position; absent when the label tracks no pieces. */
+  readonly pieceCount?: number
 }
 
 export interface InventoryLabelBalances {
@@ -50,6 +52,10 @@ export interface InventoryLabelBalances {
   readonly freeKg: string
   readonly blockedKg: string
   readonly positions: readonly InventoryLabelPosition[]
+  /** KLN-D119: the label's piece totals; each absent for a label without pieces. */
+  readonly physicalPieces?: number
+  readonly freePieces?: number
+  readonly blockedPieces?: number
 }
 
 export interface InventoryLabelGenealogyEdge {
@@ -133,6 +139,17 @@ function exact(value: JsonObject, names: readonly string[]): boolean {
   return actual.length === expected.length && actual.every((name, index) => name === expected[index])
 }
 
+function exactWithOptional(value: JsonObject, names: readonly string[], optional: readonly string[]): boolean {
+  return exact(Object.fromEntries(Object.entries(value).filter(([name]) => !optional.includes(name))), names)
+}
+
+const INT32_MAX = 2147483647
+
+/** An optional piece member: absent is "no pieces"; present must be a whole number (never null, text or a fraction). */
+function optionalPieces(value: unknown): value is number | undefined {
+  return value === undefined || (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= INT32_MAX)
+}
+
 function text(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
@@ -200,9 +217,9 @@ function lot(value: unknown): InventoryLabelLot | null {
 
 function position(value: unknown): InventoryLabelPosition | null {
   const source = record(value)
-  if (source === null || !exact(source, [
+  if (source === null || !exactWithOptional(source, [
     'ownerKind', 'ownerId', 'custodianKind', 'custodianId', 'locationId', 'productId', 'block', 'quantityKg',
-  ]) || !text(source.ownerKind) || !guid(source.ownerId) || !text(source.custodianKind) ||
+  ], ['pieceCount']) || !optionalPieces(source.pieceCount) || !text(source.ownerKind) || !guid(source.ownerId) || !text(source.custodianKind) ||
     !guid(source.custodianId) || !guid(source.locationId) || !guid(source.productId) ||
     (source.block !== 'Free' && source.block !== 'Blocked') || !positiveQuantity(source.quantityKg)) return null
   return source as unknown as InventoryLabelPosition
@@ -362,7 +379,9 @@ export function decodeInventoryLabelIdentity(value: unknown): InventoryLabelIden
 
 export function decodeInventoryLabelBalances(value: unknown): InventoryLabelBalances | null {
   const source = record(value)
-  if (source === null || !exact(source, ['labelId', 'physicalKg', 'freeKg', 'blockedKg', 'positions']) ||
+  if (source === null || !exactWithOptional(source, ['labelId', 'physicalKg', 'freeKg', 'blockedKg', 'positions'],
+    ['physicalPieces', 'freePieces', 'blockedPieces']) || !optionalPieces(source.physicalPieces) ||
+    !optionalPieces(source.freePieces) || !optionalPieces(source.blockedPieces) ||
     !guid(source.labelId) || !quantity(source.physicalKg) || !quantity(source.freeKg) ||
     !quantity(source.blockedKg) || !Array.isArray(source.positions)) return null
   const positions = source.positions.map(position)

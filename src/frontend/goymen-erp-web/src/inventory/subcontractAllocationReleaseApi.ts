@@ -13,6 +13,8 @@ export interface SubcontractAllocation {
   readonly demandId: string; readonly demandLineId: string; readonly demandProductVersion: string; readonly allocatedKg: string
   readonly remainingKg: string; readonly reason: string; readonly reservedUntilUtc: string|null
   readonly createdAtUtc: string; readonly updatedAtUtc: string; readonly isSubstitute: false
+  /** KLN-D119: present together, only when the allocation holds pieces. */
+  readonly allocatedPieces?: number; readonly remainingPieces?: number
 }
 export interface SubcontractReleaseCandidate { readonly allocation: SubcontractAllocation; readonly labelCode: string; readonly labelVersion: string; readonly customerPartyId: string; readonly customerAccountId: string; readonly manufacturingOrderId: string; readonly outputFactId: string }
 export interface SubcontractReleaseCandidates { readonly items: readonly SubcontractReleaseCandidate[]; readonly nextCursor: string|null }
@@ -22,15 +24,22 @@ const obj = (v: unknown): Record<string,unknown>|null => typeof v === 'object' &
 const exact = (v: unknown, keys: readonly string[]) => {const o=obj(v);return o!==null&&Object.keys(o).length===keys.length&&keys.every(k=>Object.hasOwn(o,k))?o:null}
 const text = (v: unknown, max=128): v is string => typeof v==='string'&&v.length>0&&v.length<=max&&v===v.trim()&&!/[\u0000-\u001f\u007f]/.test(v)
 const instant = (v: unknown): v is string => typeof v==='string'&&/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,7})?(?:Z|\+00:00)$/.test(v)&&!Number.isNaN(Date.parse(v))
+const pieces = (v: unknown): v is number|undefined => v===undefined||(typeof v==='number'&&Number.isInteger(v)&&v>=0&&v<=2147483647)
 const kg = (v: unknown): v is string => typeof v==='string'&&/^(?:0|[1-9]\d{0,14})(?:\.\d{0,2}[1-9])?$/.test(v)
 function allocation(v: unknown, companyId: string, status: 'Active'|'Released'): SubcontractAllocation|null {
-  const o=exact(v,['allocationId','companyId','version','status','labelId','productId','demandKind','demandId','demandLineId','demandProductVersion','allocatedKg','remainingKg','reason','reservedUntilUtc','createdAtUtc','updatedAtUtc','isSubstitute'])
+  // KLN-D119: the shared allocation view omits its two piece figures when the allocation holds none; present, each must
+  // be a whole number and they come as a pair (the held pieces never above the allocated ones).
+  const source=obj(v)
+  const {allocatedPieces,remainingPieces,...core}=source??{}
+  const o=source===null||!pieces(allocatedPieces)||!pieces(remainingPieces)||(allocatedPieces===undefined)!==(remainingPieces===undefined)
+    ||(allocatedPieces!==undefined&&remainingPieces!>allocatedPieces)?null
+    :exact(core,['allocationId','companyId','version','status','labelId','productId','demandKind','demandId','demandLineId','demandProductVersion','allocatedKg','remainingKg','reason','reservedUntilUtc','createdAtUtc','updatedAtUtc','isSubstitute'])
   if(!o||o.companyId!==companyId||o.status!==status||o.demandKind!=='sales.subcontract-service-order-line'||o.isSubstitute!==false
     ||!['allocationId','labelId','productId','demandId','demandLineId'].every(k=>isReferenceId(o[k]))||!isVersionString(o.version)
     ||!text(o.demandProductVersion)||!text(o.reason,1000)||!kg(o.allocatedKg)||o.allocatedKg==='0'||!kg(o.remainingKg)
     ||(status==='Active'?o.remainingKg==='0':o.remainingKg!=='0')||!(o.reservedUntilUtc===null||instant(o.reservedUntilUtc))
     ||!instant(o.createdAtUtc)||!instant(o.updatedAtUtc)||Date.parse(o.updatedAtUtc)<Date.parse(o.createdAtUtc))return null
-  return o as unknown as SubcontractAllocation
+  return {...o,...(allocatedPieces===undefined?{}:{allocatedPieces,remainingPieces})} as unknown as SubcontractAllocation
 }
 export function decodeSubcontractReleaseCandidates(v: unknown, companyId: string): SubcontractReleaseCandidates|null {
   const o=exact(v,['items','nextCursor']);if(!o||!Array.isArray(o.items)||o.items.length>50||!(o.nextCursor===null||isReferenceId(o.nextCursor)))return null

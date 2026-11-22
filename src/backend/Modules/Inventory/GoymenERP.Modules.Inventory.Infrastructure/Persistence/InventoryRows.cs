@@ -222,6 +222,15 @@ internal sealed class AllocationRow : IInventoryTenantRow
     public DateTimeOffset? ReservedUntilUtc { get; set; }
     public decimal AllocatedKg { get; set; }
     public decimal RemainingKg { get; set; }
+
+    /// <summary>
+    /// KLN-D119 / SAT-D434 (AK-4b): the pieces the allocation reserved on a piece-tracking label; null when it holds
+    /// kilograms only (a kg-only label, or a row written before AK-4b: no backfill).
+    /// </summary>
+    public int? AllocatedPieces { get; set; }
+
+    /// <summary>KLN-D119: the pieces still reserved; null exactly when <see cref="AllocatedPieces"/> is null.</summary>
+    public int? RemainingPieces { get; set; }
     public int Status { get; set; }
     public long Version { get; set; }
     public byte[] RowVersion { get; set; } = [];
