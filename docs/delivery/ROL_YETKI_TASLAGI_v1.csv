@@ -1,287 +1,287 @@
-izin,modul,critical,yalniz_sirket_geneli,GM,SAT,SATM,ALM,ALMM,DEPO,KNT,UPL,UOP,KAL,FIN,FINM,MUH,MUHM,SYS,DEN,durum,gerekce
+izin,modul,critical,yalniz_sirket_geneli,GM,SAT,SATM,ALM,ALMM,OPM,DEPO,KNT,UPL,UOP,KAL,FIN,FINM,MUH,MUHM,SYS,durum,gerekce
 organization.companies.open,organization,evet,hayır,,,,,,,,,,,,,,,,,YOK,Critical; şirket açma grup düzeyinde insan kararıdır (KIM-D21/KIM-D56). Hiçbir role önerilmez.
 identity.company-setup.first-admin.assign,identity,hayır,hayır,,,,,,,,,,,,,,,,,YOK,"KIM-D56: ilk Admin seçimi açık ve insan sahipli; yalnız kayıtlı, rol paketi olamaz."
-organization.context.read,organization,hayır,hayır,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,KARARLI,SAT-D191 temel izin (bütün personalar); Denetçi için ÖNERİ.
-organization.sites.read,organization,hayır,hayır,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,KARARLI,SAT-D191 temel izin; Denetçi için ÖNERİ.
-organization.locations.read,organization,hayır,hayır,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,KARARLI,SAT-D191 temel izin; Denetçi için ÖNERİ.
-organization.work-centers.read,organization,hayır,hayır,+,,,,,+,,+,+,+,,,,,+,+,KISMEN,Kart: Sevkiyatçı ve GM +. Üretim/Kalite/Denetçi ÖNERİ (iş merkezi seçimi ve izleme).
-organization.locations.status.update,organization,hayır,hayır,+,,,,,,,,,,,,,,+,,KARARLI,SAT-D191 ara dönem: müdürü olmayan modül GM + Admin.
-organization.sites.write,organization,hayır,evet,+,,,,,,,,,,,,,,+,,ÖNERİ,Organizasyon ana verisi; müdürü olmayan modül kuralı (SAT-D191) yorumu.
-organization.locations.write,organization,hayır,hayır,+,,,,,,,,,,,,,,+,,ÖNERİ,Organizasyon ana verisi; SAT-D191 yorumu.
-organization.work-centers.write,organization,hayır,hayır,+,,,,,,,,,,,,,,+,,ÖNERİ,Organizasyon ana verisi; SAT-D191 yorumu.
-organization.work-centers.calendar.write,organization,hayır,hayır,+,,,,,,,+,,,,,,,+,,ÖNERİ,URT-D11 hat takvimi planlamanın işidir.
-organization.company.tax-id.request,organization,hayır,evet,,,,,,,,,,,,,,+,+,,ÖNERİ,Şirket VKN değişikliği talebi muhasebe tarafından hazırlanır.
-organization.company.tax-id.approve,organization,hayır,evet,+,,,,,,,,,,,,,,K,,ÖNERİ,Hazırlayan ≠ onaylayan; talebi açan Admin onaylayamaz (kayıt kuralı).
-counterparty.parties.read,counterparty,hayır,evet,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,KARARLI,SAT-D191 temel izin; Denetçi için ÖNERİ (YOL-D13 cari paketi).
-counterparty.parties.create,counterparty,hayır,evet,+,,,,,,,,,,,,,+,+,,KARARLI,"SAT-D192: cari yönetimi yalnız Muhasebe Müdürü (+ GM, Admin)."
-counterparty.parties.update.basic,counterparty,hayır,evet,+,,,,,,,,,,,,,+,+,,KARARLI,SAT-D192.
-counterparty.accounts.create,counterparty,hayır,evet,+,,,,,,,,,,,,,+,+,,KARARLI,SAT-D192.
-counterparty.accounts.status.update,counterparty,hayır,evet,+,,,,,,,,,,,,,+,+,,KARARLI,SAT-D192.
-counterparty.parties.tax-identity.update,counterparty,hayır,evet,,,,,,,,,,,,,+,+,+,,ÖNERİ,Vergi kimliği değişikliğini muhasebe hazırlar; onayı Critical ayrı izindir.
-counterparty.parties.tax-identity.approve,counterparty,evet,evet,,,,,,,,,,,,,,,IK,,IK,Critical; insan kapısı. Aday: Muhasebe Müdürü veya GM (update sahibinden farklı kişi).
-counterparty.customer-groups.manage,counterparty,hayır,evet,+,,+,,,,,,,,,,,,+,,ÖNERİ,Müşteri grubu satış politikasıdır.
-counterparty.accounts.customer-group.assign,counterparty,hayır,evet,+,,+,,,,,,,,,,,,+,,ÖNERİ,Müşteri grubu ataması satış politikasıdır.
-counterparty.accounts.e-document.update,counterparty,hayır,evet,,,,,,,,,,,,,+,,+,,KARARLI,SAT-D155: Muhasebe; GM ve müdürler almaz.
-counterparties.legal_name.propose,counterparties,hayır,evet,,,,,,,,,,,,,+,+,+,,ÖNERİ,Unvan değişikliğini muhasebe önerir.
-counterparties.legal_name.approve,counterparties,hayır,evet,+,,,,,,,,,,,,,K,K,,ÖNERİ,Hazırlayan ≠ onaylayan; öneren kendi önerisini onaylayamaz.
-counterparty.parties.merge.approve,counterparty,hayır,evet,+,,,,,,,,,,,,,+,+,,ÖNERİ,Cari birleştirme geri dönüşü zor; müdür seviyesi.
-counterparty.parties.succession.record,counterparty,hayır,evet,,,,,,,,,,,,,,+,+,,ÖNERİ,Halef/selef kaydı cari yönetimidir (SAT-D192 yorumu).
-counterparty.parties.group-deactivate,counterparty,hayır,evet,+,,,,,,,,,,,,,+,+,,ÖNERİ,Grup genelinde etkili; müdür seviyesi.
-product.operational-selection.read,product,hayır,evet,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,KARARLI,SAT-D191 temel izin; Denetçi için ÖNERİ.
-product.price-lists.read,product,hayır,evet,+,+,+,,,,,,,,,,+,+,+,+,ÖNERİ,Fiyat listesi satış ve muhasebe okumasıdır; Depo/Sevk fiyat görmez (kart §4).
-product.price-lists.write,product,hayır,evet,+,,+,,,,,,,,,,,,+,,ÖNERİ,Fiyat listesi hazırlığı satış müdürlüğündedir.
-product.price-lists.publish,product,hayır,evet,+,,K,,,,,,,,,,,,+,,ÖNERİ,'write yayımı kapsamaz'. Satış Müdürü yalnız başkasının hazırladığı sürümü yayımlayabilir; hazırlayan ≠ yayımlayan doğrulanmadı (SoD-07).
-product.item-type.manage,product,hayır,evet,+,,,,,,,,,,,,,+,+,,KARARLI,"SAT-D145/D149, SAT-D188."
-product.dimension.manage,product,hayır,evet,+,,,,+,,,+,,,,,,,+,,ÖNERİ,URN-D10 ortak ebat; üretim ve satınalma ana verisi.
-product.profile-weights.import,product,hayır,evet,+,,,,,,,+,,,,,,,+,,ÖNERİ,Profil ağırlıkları üretim ana verisidir.
-product.package-standards.manage,product,hayır,evet,,,,,,,,+,,,,,,,+,,ÖNERİ,Paket standardını üretim planlama hazırlar.
-product.paint-memberships.manage,product,hayır,evet,+,,,,,,,+,,,,,,,+,,ÖNERİ,Boya üyeliği üretim ana verisidir.
-product.cogs-classifications.manage,product,hayır,hayır,+,,,,,,,,,,,,,+,+,,ÖNERİ,SMM sınıflaması muhasebe politikasıdır.
-product.package-standards.approve,product,hayır,evet,+,,,,,,,,,,,,,,K,,ÖNERİ,Hazırlayan ≠ onaylayan; Üretim Müdürü tanımlanana kadar GM (SAT-D191).
-inventory.labels.read,inventory,hayır,evet,+,+,+,+,+,+,+,+,+,+,,,+,+,+,+,KISMEN,Kart: Sevkiyatçı + GM +; diğerleri ÖNERİ (operasyon ve denetim için stok görünümü).
-inventory.balances.read,inventory,hayır,evet,+,+,+,+,+,+,+,+,+,+,,,+,+,+,+,KISMEN,Kart: Sevkiyatçı + GM +; diğerleri ÖNERİ.
-inventory.opening-stock.record,inventory,hayır,evet,+,,,,,,,,,,,,,,+,,KARARLI,SAT-D191 ara dönem (Stok Müdürü yok). Depo Müdürü tanımlanırsa ona geçer (soru).
-inventory.physical-allocation.write,inventory,hayır,evet,,+,+,,,+,,+,,,,,,,+,,ÖNERİ,K4.4: satış tarafına tahsis/rezervasyon; depo ve planlama fiziksel ayırır.
-inventory.future-allocation.read,inventory,hayır,evet,+,+,+,+,+,+,,+,,,,,,,+,+,ÖNERİ,Gelecek tedarik ayırma (F017) satış ve satınalma görünümü.
-inventory.future-allocation.write,inventory,hayır,evet,,+,+,+,+,,,,,,,,,,+,,ÖNERİ,F017: satış ve satınalma ayırma yapar.
-inventory.label-transformation.record,inventory,hayır,evet,,,,,,+,,,+,,,,,,+,,ÖNERİ,Etiket dönüşümü depo/üretim sahasında kaydedilir.
-inventory.label-classification.write,inventory,hayır,evet,,,,,,+,,,+,+,,,,,+,,ÖNERİ,URT-D14: yalnız 1./2. kalite ayrımı; Kalite rolü ileride.
-inventory.stock-count.record,inventory,hayır,evet,,,,,,+,,,,,,,,,+,,ÖNERİ,Sayımı depo girer.
-inventory.stock-count.approve,inventory,hayır,evet,+,,,,,,,,,,,,,,K,,ÖNERİ,Sayımı giren onaylayamaz (GOREV_AYRILIGI_ONAY). Depo Müdürü yoksa GM.
-inventory.stock-scrap.record,inventory,hayır,evet,,,,,,+,,,+,,,,,,+,,ÖNERİ,Hurdayı saha kaydeder.
-inventory.stock-scrap.approve,inventory,hayır,evet,+,,,,,,,,,,,,,,K,,ÖNERİ,Kayıt ≠ onay. Kalite rolü gelince aday (EK-14 Q-05).
-inventory.stock-transfer.write,inventory,hayır,evet,,,,,,+,,,,,,,,,+,,ÖNERİ,Transferi depo yazar.
-inventory.stock-transfer.cancel,inventory,hayır,evet,+,,,,,+,,,,,,,,,+,,ÖNERİ,İptal depo veya yönetici.
-inventory.stock-transfer.overage-approve,inventory,hayır,evet,+,,,,,,,,,,,,,,K,,ÖNERİ,Transfer fazlası onayı; kabul eden depo onaylayamaz.
-inventory.stock-transfer.loss-record,inventory,hayır,evet,,,,,,+,,,,,,,,,+,,ÖNERİ,Kaybı depo kaydeder.
-inventory.stock-transfer.loss-approve,inventory,hayır,evet,+,,,,,,,,,,,,,,K,,ÖNERİ,Kaybı kaydeden onaylayamaz.
-inventory.opening-cost.submit,inventory,hayır,evet,,,,,,,,,,,,,+,,+,,ÖNERİ,Açılış maliyeti muhasebe verisidir.
-inventory.opening-cost.approve,inventory,hayır,evet,+,,,,,,,,,,,,,K,K,,ÖNERİ,Gönderen ≠ onaylayan.
-finance.bank-account.read,finance,hayır,evet,,,,,,,,,,,+,,,,+,+,KARARLI,SAT-D196 (Finans Uzmanı); GM almaz (SAT-D197). Denetçi ÖNERİ.
-finance.bank-account.propose,finance,evet,evet,,,,,,,,,,,,,,,IK,,IK,"Critical. Aday: Finans. Öneren, elle banka ödemesini onaylayan kişi olmamalı (GOREV_AYRILIGI_ONAY ilk madde)."
-finance.bank-account.approve,finance,evet,evet,,,,,,,,,,,,,,,IK,,IK,Critical. Aday: Finans Müdürü; öneren ≠ onaylayan.
-finance.cash-account.read,finance,hayır,evet,,,,,,,,,,,+,+,,,+,+,ÖNERİ,Kasa hesabı oluşturma ve onayın gerektirdiği okuma.
-finance.cash-account.propose,finance,evet,evet,,,,,,,,,,,,,,,IK,,IK,Critical. Aday: Finans.
-finance.cash-account.approve,finance,evet,evet,,,,,,,,,,,,,,,IK,,IK,Critical. Aday: Finans Müdürü (öneren ≠ onaylayan).
-finance.cash-account.passivation.propose,finance,evet,evet,,,,,,,,,,,,,,,IK,,IK,Critical. Aday: Finans.
-finance.cash-account.passivation.approve,finance,evet,evet,,,,,,,,,,,,,,,IK,,IK,Critical. Aday: Finans Müdürü (öneren ≠ onaylayan).
-finance.cash-account.reactivation.propose,finance,evet,evet,,,,,,,,,,,,,,,IK,,IK,Critical. Aday: Finans.
-finance.cash-account.reactivation.approve,finance,evet,evet,,,,,,,,,,,,,,,IK,,IK,Critical. Aday: Finans Müdürü (öneren ≠ onaylayan).
-finance.credit-limits.read,finance,hayır,evet,+,,+,,,,,,,,+,+,,,+,+,ÖNERİ,Kredi limiti finans + risk istisnasını değerlendiren Satış Müdürü okuması (soru).
-finance.credit-limits.propose,finance,hayır,evet,,,,,,,,,,,+,,,,+,,ÖNERİ,SAT-D196: Finans oluşturur.
-finance.credit-limits.approve,finance,evet,evet,,,,,,,,,,,,,,,IK,,IK,Critical. Aday: Finans Müdürü veya GM (SAT-D197).
-finance.collaterals.read,finance,hayır,evet,+,,,,,,,,,,+,+,,,+,+,ÖNERİ,Teminat finans okumasıdır.
-finance.collaterals.record,finance,hayır,evet,,,,,,,,,,,+,,,,+,,ÖNERİ,SAT-D196: Finans oluşturur. Onay adımı yok (SoD-12).
-finance.opening-balances.read,finance,hayır,evet,+,,,,,,,,,,+,+,,+,+,+,ÖNERİ,Açılış bakiyesi finans + muhasebe müdürü okuması.
-finance.opening-balances.propose,finance,hayır,evet,,,,,,,,,,,+,,,,+,,ÖNERİ,SAT-D196.
-finance.opening-balances.approve,finance,hayır,evet,K,,,,,,,,,,,K,,,K,,ÖNERİ,SAT-D196/D197: Finans Müdürü ve GM onaylar; öneren onaylayamaz.
-finance.credits.read,finance,hayır,evet,+,,,,,,,,,,+,+,,,+,+,ÖNERİ,Kredi hesabı finans okumasıdır.
-finance.credits.propose,finance,hayır,evet,,,,,,,,,,,+,,,,+,,ÖNERİ,SAT-D196.
-finance.credits.approve,finance,evet,evet,,,,,,,,,,,,,,,IK,,IK,Critical. Aday: Finans Müdürü veya GM.
-finance.official-invoice-import.upload,finance,hayır,evet,,,,,,,,,,,+,,+,,+,,ÖNERİ,Resmî fatura listesi finans veya muhasebe yükler (soru).
-finance.official-invoice-import.approve,finance,hayır,evet,K,,,,,,,,,,,K,,,K,,ÖNERİ,Yükleyen onaylayamaz.
-finance.official-sales-invoices.record,finance,hayır,evet,,,,,,,,,,,+,,,,+,,ÖNERİ,Resmî satış faturası kaydı finans tarafıdır.
-finance.official-sales-invoices.approve,finance,hayır,evet,K,,,,,,,,,,,K,,,K,,ÖNERİ,SAT-D196/D197.
-finance.official-sales-invoices.withdraw,finance,hayır,evet,,,,,,,,,,,+,,,,+,,ÖNERİ,Hazırlayanın geri çekmesi.
-manufacturing.plans.write,manufacturing,hayır,evet,+,,,,,,,+,,,,,,,+,,KISMEN,Kart: GM + Admin ara dönem; Üretim Planlama ÖNERİ.
-manufacturing.plans.approve,manufacturing,hayır,evet,K,,,,,,,,,,,,,,K,,KARARLI,URT-D2 Üretim müdürü; tanımlanana kadar GM + Admin (SAT-D191). Planı yazan onaylayamaz.
-manufacturing.orders.create,manufacturing,hayır,evet,+,,,,,,,+,,,,,,,+,,KISMEN,Kart: GM + Admin; Üretim Planlama ÖNERİ.
-manufacturing.facts.record,manufacturing,hayır,evet,+,,,,,,,+,+,,,,,,+,,KISMEN,Kart: GM + Admin ara dönem; Operatör/Planlama ÖNERİ.
-manufacturing.orders.read,manufacturing,hayır,evet,+,,+,,,+,,+,+,+,,,,+,+,+,KISMEN,Kart: Sevkiyatçı + GM +; diğerleri ÖNERİ.
-manufacturing.facts.correct,manufacturing,hayır,evet,+,,,,,,,+,,,,,,,+,,ÖNERİ,Fiilî düzeltme operatör dışında; kaydı giren kendi düzeltmesini yapmamalı (soru).
-manufacturing.orders.close,manufacturing,hayır,evet,+,,,,,,,+,,,,,,,+,,ÖNERİ,Kart: kimin kapatacağı NEEDS-SINAN. Öneri: planlama kapatır.
-manufacturing.orders.close-exception.approve,manufacturing,hayır,evet,K,,,,,,,,,,,,,,K,,ÖNERİ,Tolerans dışı kapanışı fiilî miktarı giren onaylayamaz (GOREV_AYRILIGI_ONAY).
-manufacturing.orders.write,manufacturing,hayır,evet,+,,,,,,,+,,,,,,,+,,ÖNERİ,Emir düzeltme planlamanındır.
-manufacturing.orders.cancel,manufacturing,hayır,evet,+,,,,,,,+,,,,,,,+,,ÖNERİ,Emir iptali.
-manufacturing.orders.reopen,manufacturing,hayır,evet,+,,,,,,,,,,,,,,+,,ÖNERİ,Kapanmış emri yeniden açma müdür seviyesi.
-manufacturing.plans.cancel,manufacturing,hayır,evet,+,,,,,,,+,,,,,,,+,,ÖNERİ,Plan iptali.
-manufacturing.plans.reorder,manufacturing,hayır,evet,+,,,,,,,+,,,,,,,+,,ÖNERİ,Plan sıralaması.
-manufacturing.scrap-prices.read,manufacturing,hayır,evet,+,,,,,,,+,,,,,+,+,+,+,ÖNERİ,Hurda fiyatı maliyet okumasıdır.
-manufacturing.scrap-prices.write,manufacturing,hayır,evet,+,,,,,,,,,,,,,+,+,,ÖNERİ,Hurda fiyatı maliyet politikasıdır.
-manufacturing.reports.read,manufacturing,hayır,evet,+,,,,,,,+,,,,,,+,+,+,ÖNERİ,Üretim raporu.
-manufacturing.plans.read,manufacturing,hayır,evet,+,+,+,,,+,,+,+,,,,,,+,+,ÖNERİ,Plan görünümü (SAT-D179 kaynak planı için satış da görür).
-finance.manual-receipt.draft.save,finance,hayır,evet,,,,,,,,,,,+,,,,+,,KARARLI,SAT-D196 (kart Finans personaları tablosu).
-finance.manual-receipt.draft.read,finance,hayır,evet,,,,,,,,,,,+,,,,+,,KARARLI,SAT-D196.
-finance.manual-receipt.amount.read,finance,hayır,evet,,,,,,,,,,,+,,,,+,+,KARARLI,SAT-D196; Denetçi ÖNERİ.
-finance.manual-receipt.record,finance,hayır,evet,,,,,,,,,,,K,,,,+,,ÖNERİ,Kart: 'tek dar yetkili operatör' (FIN-T05) NEEDS-SINAN. Öneri: yalnız adı verilen Finans kişisi; onay adımı yok (SoD-12).
-finance.manual-receipt.reverse.propose,finance,hayır,evet,,,,,,,,,,,+,,,,+,,ÖNERİ,SAT-D196.
-finance.manual-receipt.reverse.approve,finance,hayır,evet,K,,,,,,,,,,,K,,,K,,ÖNERİ,SAT-D196/D197; öneren onaylayamaz.
-finance.manual-bank-payment.draft.save,finance,hayır,evet,,,,,,,,,,,+,,,,+,,ÖNERİ,SAT-D196 (oluşturma).
-finance.manual-bank-payment.draft.read,finance,hayır,evet,+,,,,,,,,,,+,+,,,+,,ÖNERİ,Oluşturma + onayın gerektirdiği okuma (SAT-D197).
-finance.manual-bank-payment.approve,finance,hayır,evet,K,,,,,,,,,,,K,,,K,,ÖNERİ,SAT-D196/D197; hazırlayan onaylayamaz. Banka hesabı öneren kişi bu onayı almamalı.
-finance.manual-bank-payment.record,finance,hayır,evet,,,,,,,,,,,+,,,,+,,ÖNERİ,Onaylı ödemenin kaydı; 'record' adları NEEDS-SINAN (kart).
-finance.manual-bank-payment.reverse.propose,finance,hayır,evet,,,,,,,,,,,+,,,,+,,ÖNERİ,SAT-D196.
-finance.manual-bank-payment.reverse.approve,finance,hayır,evet,K,,,,,,,,,,,K,,,K,,ÖNERİ,SAT-D196/D197.
-finance.expense-payment.draft.save,finance,hayır,evet,,,,,,,,,,,+,,,,+,,ÖNERİ,SAT-D196.
-finance.expense-payment.draft.read,finance,hayır,evet,+,,,,,,,,,,+,+,,,+,,ÖNERİ,Oluşturma + onay okuması.
-finance.expense-payment.approve,finance,hayır,evet,K,,,,,,,,,,,K,,,K,,ÖNERİ,SAT-D196/D197.
-finance.expense-payment.record,finance,hayır,evet,,,,,,,,,,,+,,,,+,,ÖNERİ,Onaylı masrafın kaydı; NEEDS-SINAN (kart 'record' kuralı).
-finance.cash-transfers.read,finance,hayır,evet,+,,,,,,,,,,+,+,,,+,+,ÖNERİ,Virman okuması.
-finance.cash-transfers.commit,finance,hayır,evet,,,,,,,,,,,+,,,,+,,ÖNERİ,Kendi hesapları arası virman; onay adımı yok (SoD-12).
-finance.customer-instrument.read,finance,hayır,evet,+,,,,,,,,,,+,+,,,+,+,ÖNERİ,Çek/senet okuması.
-finance.customer-instrument.amount.read,finance,hayır,evet,+,,,,,,,,,,+,+,,,+,+,ÖNERİ,Çek/senet tutarı.
-finance.customer-instrument.receive,finance,hayır,evet,,,,,,,,,,,+,,,,+,,ÖNERİ,Çek/senet alma finans işlemidir.
-finance.customer-instrument.status.change,finance,hayır,evet,,,,,,,,,,,+,,,,+,,ÖNERİ,Durum değişikliği.
-finance.customer-instrument.collect,finance,hayır,evet,,,,,,,,,,,+,,,,+,,ÖNERİ,Tahsil.
-finance.party-ledger.read,finance,hayır,evet,+,,,,,,,,,,+,+,+,+,+,+,ÖNERİ,Cari ekstre finans + muhasebe; Satış görünümü soru (S-07).
-finance.party-ledger.amount.read,finance,hayır,evet,+,,,,,,,,,,+,+,+,+,+,+,ÖNERİ,Cari ekstre tutarları.
-finance.party-balance-transfers.record,finance,hayır,evet,,,,,,,,,,,K,,,,+,,ÖNERİ,Cari bakiye virmanı; onay adımı yok (SoD-12) — kim yapsın soru.
-finance.open-items.read,finance,hayır,evet,+,,,,,,,,,,+,+,+,+,+,+,ÖNERİ,Açık kalem okuması.
-finance.open-items.amount.read,finance,hayır,evet,+,,,,,,,,,,+,+,+,+,+,+,ÖNERİ,Açık kalem tutarı.
-finance.allocation.write,finance,hayır,evet,,,,,,,,,,,+,,,,+,,ÖNERİ,Kapama/eşleştirme finans işlemidir.
-finance.allocation.read,finance,hayır,evet,+,,,,,,,,,,+,+,+,+,+,+,ÖNERİ,Kapama okuması.
-sales.drafts.create,sales,hayır,evet,+,+,+,,,,,,,,,,,,+,,KARARLI,"SAT-D141, SAT-D194."
-sales.drafts.read,sales,hayır,evet,+,+,+,,,,,,,,,,+,+,+,+,KARARLI,Kart; Denetçi ÖNERİ. Depo/Sevk engelli (kart).
-sales.orders.approve,sales,hayır,evet,K,,K,,,,,,,,,,,,K,,KARARLI,"SAT-D6, SAT-D188; P6 hazırlayan ≠ onaylayan."
-sales.orders.price.write,sales,hayır,evet,+,+,+,,,,,,,,,,,,+,,KARARLI,"SAT-D151, SAT-D188."
-sales.orders.price.read,sales,hayır,evet,+,+,+,,,,,,,,,,+,+,+,+,KARARLI,SAT-D150; Depo/Sevk görmez. Denetçi ÖNERİ.
-sales.orders.margin.read,sales,hayır,evet,+,,,,,,,,,,,,,,+,,KARARLI,"SAT-D250, SAT-D276 (2): yalnız GM + Admin."
-sales.orders.price-floor-exception.approve,sales,hayır,evet,K,,K,,,,,,,,,,,,K,,KARARLI,"SAT-D1, SAT-D188."
-sales.orders.discount-exception.approve,sales,hayır,evet,K,,K,,,,,,,,,,,,K,,KARARLI,SAT-D37/D67: Satış Müdürü'nün kendi limitini aşanı başkası onaylar.
-sales.orders.delivery-schedule.write,sales,hayır,evet,+,+,+,,,,,,,,,,,,+,,ÖNERİ,Teslim planı sipariş düzenlemesidir.
-sales.orders.cancel,sales,hayır,evet,+,,+,,,,,,,,,,,,+,,KARARLI,SAT-D4; Satış Temsilcisi hücresi ÖNERİ: verme.
-sales.orders.force-close,sales,hayır,evet,+,,+,,,,,,,,,,,,+,,ÖNERİ,SATIS_ROL_YETKI_ONERISI_v1 öneri 5.
-sales.orders.close,sales,hayır,evet,+,+,+,,,,,,,,,,,,+,,KARARLI,"SAT-D168, SAT-D230."
-sales.orders.over-delivery.approve,sales,hayır,evet,K,K,K,,,,,,,,,,,,K,,KARARLI,SAT-D168; SAT-D216 kendi sevki/talebi için onay yok; SAT-D222.
-sales.orders.risk-exception.request,sales,hayır,evet,+,+,+,,,+,,,,,,,,,+,,KARARLI,"SAT-D159 (Sevkiyatçı dahil, kart)."
-sales.orders.risk-exception.approve,sales,hayır,evet,K,K,K,,,,,,,,,,,,K,,KARARLI,SAT-D153: kendi talebini onaylayamaz.
-sales.orders.lines.close,sales,hayır,evet,+,K,+,,,,,,,,,,,,+,,KARARLI,SAT-D168; SAT-D216.
-sales.orders.source-plan.write,sales,hayır,evet,+,+,+,,,,,,,,,,,,+,,KARARLI,SAT-D179.
-sales.requests.write,sales,hayır,evet,+,+,+,,,,,,,,,,,,+,,ÖNERİ,Satış talebi satış personelindedir.
-sales.requests.read,sales,hayır,evet,+,+,+,,,,,,,,,,+,+,+,,ÖNERİ,Satış okuması (SAT-D142 'her şeyi görür').
-sales.requests.approve,sales,hayır,evet,K,,K,,,,,,,,,,,,K,,ÖNERİ,Talep onayı müdür seviyesi; açan onaylayamaz.
-sales.quotes.write,sales,hayır,evet,+,+,+,,,,,,,,,,,,+,,ÖNERİ,Teklif hazırlama.
-sales.quotes.read,sales,hayır,evet,+,+,+,,,,,,,,,,+,+,+,,ÖNERİ,Satış okuması.
-sales.quotes.expired-conversion.approve,sales,hayır,evet,+,,+,,,,,,,,,,,,+,,KARARLI,SAT-D24/D44 ('yönetici'); SAT-D44 istisnası: hazırlayan da onaylayabilir.
-sales.invoices.read,sales,hayır,evet,+,+,+,,,,,,,,,,+,+,+,+,KARARLI,SAT-D110; Denetçi ÖNERİ.
-sales.invoices.write,sales,hayır,evet,+,,,,,,,,,,,,+,+,+,,KARARLI,SAT-D202: faturayı Muhasebe keser; Satış görür ama kesemez.
-sales.invoices.approve,sales,hayır,evet,K,,,,,,,,,,,,K,K,K,,KARARLI,"SAT-D88, SAT-D204: hazırlayan onaylayamaz."
-sales.invoices.match,sales,hayır,evet,+,,,,,,,,,,,,+,+,+,,ÖNERİ,SAT-D142 yorumu (SATIS_ROL öneri 7).
-sales.invoices.finalize,sales,hayır,evet,+,,,,,,,,,,,,+,+,+,,KARARLI,SAT-D230; SAT-D235 (2) kesinleştirmede SoD yok; KLN-D17.
-sales.invoices.export,sales,hayır,evet,+,,,,,,,,,,,,+,+,+,,KARARLI,SAT-D276 (1).
-sales.reports.read,sales,hayır,evet,+,+,+,,,+,,,,,,,+,+,+,+,KARARLI,SAT-D143 (kart Sevkiyatçı +); Denetçi ÖNERİ.
-sales.returns.read,sales,hayır,evet,+,+,+,,,+,,,,,,,+,+,+,+,ÖNERİ,İade okuması.
-sales.returns.write,sales,hayır,evet,+,+,+,,,,,,,,,,,,+,,ÖNERİ,İadeyi satış hazırlar.
-sales.returns.approve,sales,hayır,evet,K,,K,,,,,,,,,,,,K,,ÖNERİ,Hazırlayan ≠ onaylayan.
-sales.returns.finalize,sales,hayır,evet,+,,,,,,,,,,,,+,+,+,,ÖNERİ,Kesinleştirme belge/muhasebe tarafı (fatura emsali SAT-D202).
-sales.contracts.read,sales,hayır,evet,+,+,+,,,,,,,,,,+,+,+,+,ÖNERİ,Sözleşme okuması.
-sales.contracts.write,sales,hayır,evet,+,+,+,,,,,,,,,,,,+,,ÖNERİ,Sözleşmeyi satış hazırlar.
-sales.contracts.discount.approve,sales,hayır,evet,K,,K,,,,,,,,,,,,K,,ÖNERİ,Hazırlayan ≠ onaylayan.
-sales.orders.quantity.write,sales,hayır,evet,+,+,+,,,,,,,,,,,,+,,ÖNERİ,Miktar revizyonu (SAT-D3 yeniden onay ister).
-sales.orders.header.write,sales,hayır,evet,+,+,+,,,,,,,,,,,,+,,KARARLI,"SAT-D144, SAT-D185."
-sales.orders.customer-acceptance.record,sales,hayır,evet,+,+,+,,,,,,,,,,,,+,,ÖNERİ,Müşteri kabulünü satış kaydeder.
-logistics.loading-instructions.create,logistics,hayır,evet,+,,,,,+,,,,,,,,,+,,KARARLI,Kart: Sevkiyatçı +; GM + Admin ara dönem.
-logistics.loading-instructions.read,logistics,hayır,evet,+,+,+,,,+,+,,,,,,,,+,+,KISMEN,Kart: Sevkiyatçı + GM +; diğerleri ÖNERİ.
-logistics.loads.record,logistics,hayır,evet,+,,,,,+,,,,,,,,,+,,KARARLI,Kart: Sevkiyatçı +; GM + Admin ara dönem.
-logistics.shipments.record,logistics,hayır,evet,,,,,,+,,,,,,,,,+,,ÖNERİ,Sevk kaydı depo/sevk işidir.
-logistics.shipments.plan-excess.approve,logistics,hayır,evet,K,,,,,,,,,,,,,,K,,ÖNERİ,Plan üstü sevk (YOL-D18: 4 saat sınıfı); Lojistik Müdürü yoksa GM. Sevki yapan onaylayamaz.
-logistics.deliveries.record,logistics,hayır,evet,,,,,,+,,,,,,,,,+,,ÖNERİ,Teslim kaydı.
-logistics.weighings.record,logistics,hayır,evet,,,,,,+,+,,,,,,,,+,,ÖNERİ,Tartımı kantar girer; kantarcı yoksa depo (SoD-10).
-logistics.weighings.correct,logistics,hayır,evet,K,,,,,,,,,,,,,,K,,ÖNERİ,Tartımı giren kendi tartımını düzeltmemeli.
-logistics.dispatch-notes.create,logistics,hayır,evet,,,,,,+,,,,,,,,,+,,ÖNERİ,İrsaliye taslağını sevk hazırlar.
-logistics.dispatch-notes.approve,logistics,hayır,evet,K,,,,,,,,,,,,,,K,,ÖNERİ,İrsaliye onayı (YOL-D18: 4 saat); hazırlayan onaylayamaz. Sevk Sorumlusu/Lojistik Müdürü tanımı soru.
-logistics.dispatch-notes.cancel,logistics,hayır,evet,+,,,,,,,,,,,,,,+,,ÖNERİ,Onaylı irsaliye iptali yönetici seviyesi.
-logistics.transfer-outgoing-documents.read,logistics,hayır,evet,+,,,,,+,+,,,,,,,,+,+,ÖNERİ,Transfer çıkış belgeleri.
-logistics.transfer-departures.record,logistics,hayır,evet,,,,,,+,,,,,,,,,+,,ÖNERİ,Transfer çıkışı.
-logistics.loading-instructions.cancel,logistics,hayır,evet,+,,,,,+,,,,,,,,,+,,ÖNERİ,Talimatı açan veya yönetici iptal eder.
-logistics.customer-returns.read,logistics,hayır,evet,+,+,+,,,+,,,,,,,+,,+,+,ÖNERİ,Müşteri iadesi okuması.
-logistics.customer-returns.request,logistics,hayır,evet,,+,+,,,+,,,,,,,,,+,,ÖNERİ,İade kabul talebi.
-logistics.customer-returns.decision,logistics,hayır,evet,K,,K,,,,,,,,,,,,K,,ÖNERİ,Talep açan karar veremez.
-logistics.weighing-differences.record,logistics,hayır,evet,,,,,,+,+,,,,,,,,+,,ÖNERİ,Tartım farkını kantar/depo kaydeder.
-logistics.weighing-differences.approve,logistics,hayır,evet,K,,,,,,,,,,,,,,K,,ÖNERİ,YOL-D18: 4 saat. Farkı kaydeden onaylayamaz; alışta Satınalma Müdürü adaylığı soru.
-logistics.weighing-differences.read,logistics,hayır,evet,+,,+,,+,+,+,,,,,,,,+,+,ÖNERİ,Tartım farkı okuması.
-logistics.operations-work.sales.read,logistics,hayır,evet,+,+,+,,,+,+,,,,,,,,+,,ÖNERİ,Operasyon iş listesi (satış).
-logistics.operations-work.purchase.read,logistics,hayır,evet,+,,,+,+,+,+,,,,,,,,+,,ÖNERİ,Operasyon iş listesi (alış).
-purchasing.orders.create,purchasing,hayır,evet,+,+,,+,+,,,,,,,,,,+,,KARARLI,"ALS-D53, kart §4 (Satış Destek/Uzmanı alış siparişi girer), SAT-D188."
-purchasing.orders.read,purchasing,hayır,evet,+,+,,+,+,+,,,,,,,+,+,+,+,KARARLI,Kart + ALS-D73; Denetçi ÖNERİ. Depo fiyatı görmez (PRS-02).
-purchasing.orders.approve,purchasing,hayır,evet,K,,,,K,,,,,,,,,,K,,KARARLI,"ALS-D3, ALS-D53; hazırlayan onaylayamaz."
-purchasing.goods-receipts.record,purchasing,hayır,evet,,,,,,+,,,,,,,,,+,,ÖNERİ,"Kart: deny-first, sorulmadı. Öneri: mal kabulü depo yapar."
-purchasing.requests.approve,purchasing,hayır,evet,K,,,,K,,,,,,,,,,K,,KARARLI,"ALS-D2, ALS-D53."
-purchasing.requests.withdraw,purchasing,hayır,evet,,+,,+,+,,,,,,,,,,+,,KARARLI,"ALS-D54, ALS-D47 (talebi açan geri çeker)."
-purchasing.orders.cancel,purchasing,hayır,evet,+,,,,+,,,,,,,,,,+,,KARARLI,ALS-D66.
-purchasing.orders.price.read,purchasing,hayır,evet,+,+,,+,+,,,,,,,,+,+,+,+,KARARLI,ALS-D70; Depo/Sevk görmez; Satış Müdürü verilmez (EK11 yorumu). Denetçi ÖNERİ.
-purchasing.orders.revise,purchasing,hayır,evet,,,,+,+,,,,,,,,,,+,,ÖNERİ,Revizyonu hazırlayan; yeniden onay ister.
-purchasing.orders.close,purchasing,hayır,evet,+,,,,+,,,,,,,,,,+,,ÖNERİ,Kapatma onaycılarda (ALS-D66 benzetmesi).
-purchasing.goods-receipts.approve-variance,purchasing,hayır,evet,K,,,,K,,,,,,,,,,K,,ÖNERİ,Mal kabul farkı; kabulü kaydeden onaylayamaz.
-purchasing.goods-receipts.approve-overdelivery,purchasing,hayır,evet,K,,,,K,,,,,,,,,,K,,ÖNERİ,Fazla teslim; kabulü kaydeden onaylayamaz.
-purchasing.future-allocation.release,purchasing,hayır,evet,+,,,,+,,,,,,,,,,+,,ÖNERİ,F017 ayırma bırakma.
-purchasing.supplier-returns.record,purchasing,hayır,evet,,,,+,+,,,,,,,,,,+,,ÖNERİ,Tedarikçi iadesini satınalma hazırlar.
-purchasing.invoices.read,purchasing,hayır,evet,+,,,+,+,,,,,,,,+,+,+,+,ÖNERİ,Alış faturası okuması.
-purchasing.invoices.import,purchasing,hayır,evet,,,,,,,,,,,,,+,,+,,ÖNERİ,Gelen faturayı muhasebe alır.
-purchasing.invoices.match,purchasing,hayır,evet,,,,,,,,,,,,,+,+,+,,ÖNERİ,Eşleştirme muhasebe işidir (satış emsali).
-purchasing.invoices.approve-variance,purchasing,hayır,evet,K,,,,K,,,,,,,,,K,K,,ÖNERİ,Fark onayı; eşleştiren onaylayamaz. Muhasebe mi Satınalma mı soru.
-purchasing.invoices.finalize,purchasing,hayır,evet,+,,,,,,,,,,,,+,+,+,,ÖNERİ,Kesinleştirme (SAT-D230 emsali).
-accounting.periods.read,accounting,hayır,evet,+,,,,,+,,,,,,,,+,+,+,KARARLI,"K4.5 (Sevkiyatçı +), SAT-D191; Muhasebe almaz (SAT-D164, soru). Denetçi ÖNERİ."
-accounting.periods.propose,accounting,hayır,evet,+,,,,,,,,,,,,,+,+,,KARARLI,SAT-D191; P6.
-accounting.periods.approve,accounting,hayır,evet,K,,,,,,,,,,,,,K,K,,KARARLI,SAT-D191; kendi önerisini onaylayamaz (P6).
-accounting.periods.close,accounting,hayır,evet,+,,,,,,,,,,,,,+,+,,KARARLI,SAT-D191. Kapatan ile kilidi kaldıran ayrı yetki (GOREV_AYRILIGI_ONAY).
-accounting.journals.read,accounting,hayır,evet,+,,,,,,,,,,,,,+,+,+,KARARLI,"SAT-D191; Muhasebe ve Depo almaz (SAT-D164, K4.1). Denetçi ÖNERİ (mizan paketi)."
-accounting.posting-queues.read,accounting,hayır,evet,+,,,,,,,,,,,,,+,+,,KARARLI,SAT-D191; K4.5.
-accounting.normal-journal.draft.create,accounting,hayır,evet,,,,,,,,,,,,,+,+,+,,ÖNERİ,Fiş taslağı; Muhasebe accounting yazması kartta '?' (soru).
-accounting.normal-journal.draft.approve,accounting,hayır,evet,K,,,,,,,,,,,,,K,K,,ÖNERİ,Hazırlayan ≠ onaylayan; KLN-D17.
-accounting.journal.reverse.propose,accounting,hayır,evet,,,,,,,,,,,,,+,+,+,,ÖNERİ,Ters kayıt önerisi.
-accounting.journal.reverse.approve,accounting,hayır,evet,K,,,,,,,,,,,,,K,K,,ÖNERİ,Öneren onaylayamaz.
-accounting.approved-source-catalog.prepare,accounting,hayır,evet,,,,,,,,,,,,,+,+,+,,ÖNERİ,Kaynak kataloğu hazırlığı.
-accounting.approved-source-catalog.activate,accounting,hayır,evet,K,,,,,,,,,,,,,K,K,,ÖNERİ,Hazırlayan ≠ etkinleştiren.
-accounting.posting-mappings.read,accounting,hayır,evet,+,,,,,,,,,,,,+,+,+,+,ÖNERİ,Hesap eşleme okuması.
-accounting.posting-mappings.prepare,accounting,hayır,evet,,,,,,,,,,,,,+,+,+,,ÖNERİ,Eşleme hazırlığı.
-accounting.posting-mappings.activate,accounting,hayır,evet,K,,,,,,,,,,,,,K,K,,ÖNERİ,Hazırlayan ≠ etkinleştiren.
-accounting.account-plan.read,accounting,hayır,evet,+,,,,,,,,,,+,+,+,+,+,+,ÖNERİ,Hesap planı okuması.
-settings.sales-discount-limits.manage,settings,hayır,evet,,,,,,,,,,,,,,,+,,KARARLI,SAT-D65/D69: yalnız Admin; GM ve Satış Müdürü almaz.
-settings.tax-master.manage,settings,hayır,evet,+,,,,,,,,,,,,,+,+,,KARARLI,"SAT-D145, SAT-D188."
-settings.sales-delivery-tolerances.manage,settings,hayır,evet,+,,+,,,,,,,,,,,,+,,KARARLI,SAT-D189 (teslim toleransı).
-settings.sales-approval-thresholds.manage,settings,hayır,evet,+,,,,,,,,,,,,,,+,,ÖNERİ,"Onay eşiğini, eşiğe tabi onaycı (Satış Müdürü) belirlememeli (SoD-05)."
-settings.sales-quote-policies.manage,settings,hayır,evet,+,,+,,,,,,,,,,,,+,,KARARLI,"SAT-D189 (teklif geçerlilik, kayıp nedenleri)."
-settings.purchase-invoice-variance-policies.manage,settings,hayır,evet,+,,,,,,,,,,,,,+,+,,ÖNERİ,Alış fatura farkı politikası.
-settings.warehouse-transfer-scale.manage,settings,hayır,evet,+,,,,,,,,,,,,,,+,,ÖNERİ,Depo transfer kantar ayarı.
-settings.einvoice-scenarios.manage,settings,hayır,evet,,,,,,,,,,,,,,+,+,,ÖNERİ,e-Fatura senaryoları muhasebe ayarıdır.
-settings.unit-conversion-policies.manage,settings,hayır,evet,+,,,,,,,,,,,,,,+,,ÖNERİ,Birim çevrim politikası (formül etkisi; dikkat).
-settings.unit-profiles.manage,settings,hayır,evet,+,,,,,,,,,,,,,,+,,ÖNERİ,Birim profilleri.
-settings.money-profiles.manage,settings,hayır,evet,,,,,,,,,,,,,,+,+,,ÖNERİ,Para profili muhasebe ayarıdır.
-settings.login-rate-limit.manage,settings,hayır,evet,,,,,,,,,,,,,,,+,,ÖNERİ,Sistem yönetimi (SAT-D190: GM almaz).
-settings.work-center-capacities.manage,settings,hayır,evet,+,,,,,,,+,,,,,,,+,,ÖNERİ,Kapasite planlama ayarı.
-settings.bank-csv-mappings.manage,settings,hayır,evet,,,,,,,,,,,,+,,,+,,ÖNERİ,Banka ekstresi eşlemesi finans ayarıdır.
-settings.segregation-of-duties.manage,settings,hayır,evet,,,,,,,,,,,,,,,+,,ÖNERİ,Sistem yönetimi; KIM-D39 gevşetme yalnız tek kullanıcıda.
-settings.sales-contract-discount-limit.manage,settings,hayır,evet,+,,,,,,,,,,,,,,+,,ÖNERİ,"Limiti, limite tabi onaycı belirlememeli (SoD-05; SAT-D65 emsali)."
-settings.collateral-types.manage,settings,hayır,evet,,,,,,,,,,,,+,,,+,,ÖNERİ,Teminat türleri finans ayarıdır.
-settings.finance-opening-period.manage,settings,hayır,evet,,,,,,,,,,,,+,,,+,,ÖNERİ,Finans açılış dönemi.
-settings.manufacturing-scrap-cost.manage,settings,hayır,evet,+,,,,,,,,,,,,,+,+,,ÖNERİ,Hurda maliyeti muhasebe politikasıdır.
-settings.notification-retention.manage,settings,hayır,evet,,,,,,,,,,,,,,,+,,ÖNERİ,Saklama ayarı sistem yönetimidir.
-settings.document-number-series.manage,settings,hayır,evet,,,,,,,,,,,,,,+,+,,ÖNERİ,Belge numara serileri.
-settings.reference-lists.manage,settings,hayır,evet,+,,,,,,,,,,,,,,+,,ÖNERİ,Genel referans listeleri.
-settings.production-reference-lists.manage,settings,hayır,evet,,,,,,,,+,,,,,,,+,,ÖNERİ,Üretim referans listeleri.
-settings.exchange-rates.read,settings,hayır,evet,+,+,+,+,+,,,,,,+,+,+,+,+,+,KISMEN,SAT-D199 sekiz persona; Satınalma ve Denetçi ÖNERİ.
-settings.exchange-rates.correct,settings,hayır,evet,+,,,,,,,,,,,,+,+,+,,KARARLI,"SAT-D169, SAT-D188."
-settings.exchange-rates.import,settings,hayır,evet,+,,,,,,,,,,,,+,+,+,,KARARLI,SAT-D205.
-settings.exchange-rates.half-day.mark,settings,hayır,evet,+,,,,,,,,,,,,+,+,+,,KARARLI,SAT-D198.
-settings.manufacturing-parameter-profiles.read,settings,hayır,evet,+,,,,,,,+,+,,,,,,+,,ÖNERİ,Üretim profili okuması.
-settings.policies.prepare,settings,hayır,evet,,,,,,,,,,,,+,,,+,,ÖNERİ,Finans onay matrisleri vb. politika taslağı.
-settings.policies.approve,settings,hayır,evet,K,,,,,,,,,,,,,,K,,ÖNERİ,Hazırlayan ≠ onaylayan.
-settings.policies.publish,settings,hayır,evet,+,,,,,,,,,,,,,,+,,ÖNERİ,Onaylı politikayı yayımlama.
-settings.policies.publish-critical,settings,hayır,evet,,,,,,,,,,,,,,,K,,ÖNERİ,Kritik politika yayımı; kayıtta Critical değil. İkinci onay gereksin mi soru.
-settings.manufacturing-parameter-profiles.prepare,settings,hayır,evet,,,,,,,,+,,,,,,,+,,ÖNERİ,Profili planlama hazırlar.
-settings.manufacturing-parameter-profiles.approve,settings,hayır,evet,K,,,,,,,,,,,,,,K,,ÖNERİ,Hazırlayan ≠ onaylayan.
-settings.manufacturing-parameter-profiles.publish,settings,hayır,evet,+,,,,,,,,,,,,,,+,,ÖNERİ,Onaylı profili yayımlama.
-settings.manufacturing-tolerance-profiles.read,settings,hayır,evet,+,,,,,,,+,+,,,,,,+,,ÖNERİ,Üretim profili okuması.
-settings.manufacturing-tolerance-profiles.prepare,settings,hayır,evet,,,,,,,,+,,,,,,,+,,ÖNERİ,Profili planlama hazırlar.
-settings.manufacturing-tolerance-profiles.approve,settings,hayır,evet,K,,,,,,,,,,,,,,K,,ÖNERİ,Hazırlayan ≠ onaylayan.
-settings.manufacturing-tolerance-profiles.publish,settings,hayır,evet,+,,,,,,,,,,,,,,+,,ÖNERİ,Onaylı profili yayımlama.
+organization.context.read,organization,hayır,hayır,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,KARARLI,SAT-D191 temel izin (bütün personalar).
+organization.sites.read,organization,hayır,hayır,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,KARARLI,SAT-D191 temel izin.
+organization.locations.read,organization,hayır,hayır,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,KARARLI,SAT-D191 temel izin.
+organization.work-centers.read,organization,hayır,hayır,+,,,,,+,+,,+,+,+,,,,,,KISMEN,"Kart: Sevkiyatçı ve GM +; Operasyon Müdürü (ROL-D5), üretim ve kalite ÖNERİ."
+organization.locations.status.update,organization,hayır,hayır,+,,,,,,,,,,,,,,,+,ÖNERİ,Organizasyonun müdürü yok (SAT-D191): GM; Sistem Yöneticisi kurulum ana verisi olarak (ROL-D6 yorumu).
+organization.sites.write,organization,hayır,evet,+,,,,,,,,,,,,,,,+,ÖNERİ,Organizasyon ana verisi; müdürü olmayan modül kuralı (SAT-D191) yorumu.
+organization.locations.write,organization,hayır,hayır,+,,,,,,,,,,,,,,,+,ÖNERİ,Organizasyon ana verisi; SAT-D191 yorumu.
+organization.work-centers.write,organization,hayır,hayır,+,,,,,,,,,,,,,,,+,ÖNERİ,Organizasyon ana verisi; SAT-D191 yorumu.
+organization.work-centers.calendar.write,organization,hayır,hayır,+,,,,,+,,,+,,,,,,,,ÖNERİ,URT-D11; Operasyon Müdürü ve planlama.
+organization.company.tax-id.request,organization,hayır,evet,,,,,,,,,,,,,,,+,,ÖNERİ,Şirket VKN değişikliği talebi muhasebe tarafından hazırlanır.
+organization.company.tax-id.approve,organization,hayır,evet,K,,,,,,,,,,,,,,,,ÖNERİ,Hazırlayan ≠ onaylayan; ROL-D6 sonrası Sistem Yöneticisi iş onayı almaz.
+counterparty.parties.read,counterparty,hayır,evet,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,KARARLI,SAT-D191 temel izin.
+counterparty.parties.create,counterparty,hayır,evet,+,,,,,,,,,,,,,,+,,KARARLI,SAT-D192: cari yönetimi Muhasebe Müdürü (+ GM). Admin hücresi ROL-D6 ile kalktı.
+counterparty.parties.update.basic,counterparty,hayır,evet,+,,,,,,,,,,,,,,+,,KARARLI,SAT-D192; ROL-D6.
+counterparty.accounts.create,counterparty,hayır,evet,+,,,,,,,,,,,,,,+,,KARARLI,SAT-D192; ROL-D6.
+counterparty.accounts.status.update,counterparty,hayır,evet,+,,,,,,,,,,,,,,+,,KARARLI,SAT-D192; ROL-D6.
+counterparty.parties.tax-identity.update,counterparty,hayır,evet,,,,,,,,,,,,,,+,+,,ÖNERİ,Vergi kimliği değişikliğini muhasebe hazırlar; onayı Critical ayrı izindir.
+counterparty.parties.tax-identity.approve,counterparty,evet,evet,IK,,,,,,,,,,,,,,IK,,IK,Critical. Aday: Muhasebe Müdürü veya GM; hazırlayandan farklı kişi.
+counterparty.customer-groups.manage,counterparty,hayır,evet,+,,+,,,,,,,,,,,,,,ÖNERİ,Müşteri grubu satış politikasıdır.
+counterparty.accounts.customer-group.assign,counterparty,hayır,evet,+,,+,,,,,,,,,,,,,,ÖNERİ,Müşteri grubu ataması satış politikasıdır.
+counterparty.accounts.e-document.update,counterparty,hayır,evet,,,,,,,,,,,,,,+,,,KARARLI,SAT-D155: Muhasebe; GM ve müdürler almaz.
+counterparties.legal_name.propose,counterparties,hayır,evet,,,,,,,,,,,,,,+,+,,ÖNERİ,Unvan değişikliğini muhasebe önerir.
+counterparties.legal_name.approve,counterparties,hayır,evet,+,,,,,,,,,,,,,,K,,ÖNERİ,Hazırlayan ≠ onaylayan; öneren kendi önerisini onaylayamaz.
+counterparty.parties.merge.approve,counterparty,hayır,evet,+,,,,,,,,,,,,,,+,,ÖNERİ,Cari birleştirme geri dönüşü zor; müdür seviyesi.
+counterparty.parties.succession.record,counterparty,hayır,evet,,,,,,,,,,,,,,,+,,ÖNERİ,Halef/selef kaydı cari yönetimidir (SAT-D192 yorumu).
+counterparty.parties.group-deactivate,counterparty,hayır,evet,+,,,,,,,,,,,,,,+,,ÖNERİ,Grup genelinde etkili; müdür seviyesi.
+product.operational-selection.read,product,hayır,evet,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,KARARLI,SAT-D191 temel izin.
+product.price-lists.read,product,hayır,evet,+,+,+,,,,,,,,,,,+,+,,ÖNERİ,Fiyat listesi satış ve muhasebe okumasıdır; Depo/Sevk fiyat görmez (kart §4).
+product.price-lists.write,product,hayır,evet,+,,+,,,,,,,,,,,,,,ÖNERİ,Fiyat listesi hazırlığı satış müdürlüğündedir.
+product.price-lists.publish,product,hayır,evet,+,,+,,,,,,,,,,,,,,KARARLI,"ROL-D18: Satış Müdürü hem hazırlar hem yayımlar (kabul edilen risk, SoD-07)."
+product.item-type.manage,product,hayır,evet,+,,,,,,,,,,,,,,+,,KARARLI,"SAT-D145/D149, SAT-D188."
+product.dimension.manage,product,hayır,evet,+,,,,+,,,,+,,,,,,,,ÖNERİ,URN-D10 ortak ebat; üretim ve satınalma ana verisi.
+product.profile-weights.import,product,hayır,evet,+,,,,,,,,+,,,,,,,,ÖNERİ,Profil ağırlıkları üretim ana verisidir.
+product.package-standards.manage,product,hayır,evet,,,,,,,,,+,,,,,,,,ÖNERİ,Paket standardını üretim planlama hazırlar.
+product.paint-memberships.manage,product,hayır,evet,+,,,,,,,,+,,,,,,,,ÖNERİ,Boya üyeliği üretim ana verisidir.
+product.cogs-classifications.manage,product,hayır,hayır,+,,,,,,,,,,,,,,+,,ÖNERİ,SMM sınıflaması muhasebe politikasıdır.
+product.package-standards.approve,product,hayır,evet,K,,,,,K,,,,,,,,,,,KISMEN,ROL-D5: üretim müdürlüğü Operasyon Müdürü'nde; GM yedek (ROL-D3). Hazırlayan onaylayamaz.
+inventory.labels.read,inventory,hayır,evet,+,+,+,+,+,+,+,+,+,+,+,,,+,+,,KISMEN,Kart: Sevkiyatçı + GM +; diğerleri ÖNERİ.
+inventory.balances.read,inventory,hayır,evet,+,+,+,+,+,+,+,+,+,+,+,,,+,+,,KISMEN,Kart: Sevkiyatçı + GM +; diğerleri ÖNERİ.
+inventory.opening-stock.record,inventory,hayır,evet,,,,,,+,,,,,,,,,,,KARARLI,"SAT-D191 ara dönem hücresi, modül müdürü tanımlandığı için Operasyon Müdürü'ne geçer (ROL-D5)."
+inventory.physical-allocation.write,inventory,hayır,evet,,+,+,,,,+,,+,,,,,,,,ÖNERİ,K4.4: satış tarafına tahsis/rezervasyon; depo ve planlama fiziksel ayırır.
+inventory.future-allocation.read,inventory,hayır,evet,+,+,+,+,+,+,+,,+,,,,,,,,ÖNERİ,F017 görünümü.
+inventory.future-allocation.write,inventory,hayır,evet,,+,+,+,+,,,,,,,,,,,,ÖNERİ,F017: satış ve satınalma ayırma yapar.
+inventory.label-transformation.record,inventory,hayır,evet,,,,,,,+,,,+,,,,,,,ÖNERİ,Etiket dönüşümü depo/üretim sahasında kaydedilir.
+inventory.label-classification.write,inventory,hayır,evet,,,,,,,+,,,+,+,,,,,,ÖNERİ,URT-D14: yalnız 1./2. kalite ayrımı; Kalite rolü ileride.
+inventory.stock-count.record,inventory,hayır,evet,,,,,,,+,,,,,,,,,,ÖNERİ,Sayımı depo girer.
+inventory.stock-count.approve,inventory,hayır,evet,K,,,,,K,,,,,,,,,,,KARARLI,ROL-D5 sayım onayı Operasyon Müdürü; GM yedek (ROL-D3). Sayımı giren onaylayamaz.
+inventory.stock-scrap.record,inventory,hayır,evet,,,,,,,+,,,+,,,,,,,ÖNERİ,Hurdayı saha kaydeder.
+inventory.stock-scrap.approve,inventory,hayır,evet,K,,,,,K,,,,,,,,,,,KARARLI,ROL-D5 hurda onayı; Kalite pasif (ROL-D20).
+inventory.stock-transfer.write,inventory,hayır,evet,,,,,,,+,,,,,,,,,,ÖNERİ,Transferi depo yazar.
+inventory.stock-transfer.cancel,inventory,hayır,evet,+,,,,,+,+,,,,,,,,,,ÖNERİ,İptal depo veya Operasyon Müdürü.
+inventory.stock-transfer.overage-approve,inventory,hayır,evet,K,,,,,K,,,,,,,,,,,KARARLI,ROL-D5 transfer onayları.
+inventory.stock-transfer.loss-record,inventory,hayır,evet,,,,,,,+,,,,,,,,,,ÖNERİ,Kaybı depo kaydeder.
+inventory.stock-transfer.loss-approve,inventory,hayır,evet,K,,,,,K,,,,,,,,,,,KARARLI,ROL-D5 transfer onayları.
+inventory.opening-cost.submit,inventory,hayır,evet,,,,,,,,,,,,,,+,,,ÖNERİ,Açılış maliyeti muhasebe verisidir.
+inventory.opening-cost.approve,inventory,hayır,evet,+,,,,,,,,,,,,,,K,,ÖNERİ,Gönderen ≠ onaylayan.
+finance.bank-account.read,finance,hayır,evet,,,,,,,,,,,,+,,,,,KARARLI,SAT-D196 (Finans Uzmanı); GM almaz (SAT-D197).
+finance.bank-account.propose,finance,evet,evet,,,,,,,,,,,,IK,,,,,IK,"Critical. Aday: Finans. Öneren, ödeme onaylayan kişi olmamalı (SoD-08)."
+finance.bank-account.approve,finance,evet,evet,,,,,,,,,,,,,IK,,,,IK,Critical. Aday: Finans Müdürü; öneren ≠ onaylayan.
+finance.cash-account.read,finance,hayır,evet,,,,,,,,,,,,+,+,,,,ÖNERİ,Kasa hesabı oluşturma ve onayın gerektirdiği okuma.
+finance.cash-account.propose,finance,evet,evet,,,,,,,,,,,,IK,,,,,IK,Critical. Aday: Finans.
+finance.cash-account.approve,finance,evet,evet,,,,,,,,,,,,,IK,,,,IK,Critical. Aday: Finans Müdürü (öneren ≠ onaylayan).
+finance.cash-account.passivation.propose,finance,evet,evet,,,,,,,,,,,,IK,,,,,IK,Critical. Aday: Finans.
+finance.cash-account.passivation.approve,finance,evet,evet,,,,,,,,,,,,,IK,,,,IK,Critical. Aday: Finans Müdürü (öneren ≠ onaylayan).
+finance.cash-account.reactivation.propose,finance,evet,evet,,,,,,,,,,,,IK,,,,,IK,Critical. Aday: Finans.
+finance.cash-account.reactivation.approve,finance,evet,evet,,,,,,,,,,,,,IK,,,,IK,Critical. Aday: Finans Müdürü (öneren ≠ onaylayan).
+finance.credit-limits.read,finance,hayır,evet,+,,+,,,,,,,,,+,+,,,,KARARLI,ROL-D7: Satış Müdürü kredi limitini okur; finans çekirdeği SAT-D196 deseni.
+finance.credit-limits.propose,finance,hayır,evet,,,,,,,,,,,,+,,,,,ÖNERİ,SAT-D196: Finans oluşturur.
+finance.credit-limits.approve,finance,evet,evet,IK,,,,,,,,,,,,IK,,,,IK,Critical. Aday: Finans Müdürü veya GM (SAT-D197).
+finance.collaterals.read,finance,hayır,evet,+,,,,,,,,,,,+,+,,,,ÖNERİ,Teminat finans okumasıdır.
+finance.collaterals.record,finance,hayır,evet,,,,,,,,,,,,+,,,,,KARARLI,ROL-D11: tek adımda kalır.
+finance.opening-balances.read,finance,hayır,evet,+,,,,,,,,,,,+,+,,+,,ÖNERİ,Açılış bakiyesi finans + muhasebe müdürü okuması.
+finance.opening-balances.propose,finance,hayır,evet,,,,,,,,,,,,+,,,,,ÖNERİ,SAT-D196.
+finance.opening-balances.approve,finance,hayır,evet,K,,,,,,,,,,,,K,,,,ÖNERİ,SAT-D196/D197: Finans Müdürü ve GM onaylar; öneren onaylayamaz.
+finance.credits.read,finance,hayır,evet,+,,,,,,,,,,,+,+,,,,ÖNERİ,Kredi hesabı finans okumasıdır.
+finance.credits.propose,finance,hayır,evet,,,,,,,,,,,,+,,,,,ÖNERİ,SAT-D196.
+finance.credits.approve,finance,evet,evet,IK,,,,,,,,,,,,IK,,,,IK,Critical. Aday: Finans Müdürü veya GM.
+finance.official-invoice-import.upload,finance,hayır,evet,,,,,,,,,,,,+,,+,,,ÖNERİ,Resmî fatura listesi finans veya muhasebe yükler (soru).
+finance.official-invoice-import.approve,finance,hayır,evet,K,,,,,,,,,,,,K,,,,ÖNERİ,Yükleyen onaylayamaz.
+finance.official-sales-invoices.record,finance,hayır,evet,,,,,,,,,,,,+,,,,,ÖNERİ,Resmî satış faturası kaydı finans tarafıdır.
+finance.official-sales-invoices.approve,finance,hayır,evet,K,,,,,,,,,,,,K,,,,ÖNERİ,SAT-D196/D197.
+finance.official-sales-invoices.withdraw,finance,hayır,evet,,,,,,,,,,,,+,,,,,ÖNERİ,Hazırlayanın geri çekmesi.
+manufacturing.plans.write,manufacturing,hayır,evet,+,,,,,+,,,+,,,,,,,,KISMEN,Planlama hazırlar; Operasyon Müdürü (ROL-D5).
+manufacturing.plans.approve,manufacturing,hayır,evet,K,,,,,K,,,,,,,,,,,KARARLI,URT-D2 + ROL-D5: Operasyon Müdürü; GM yedek (ROL-D3). Planı yazan onaylayamaz.
+manufacturing.orders.create,manufacturing,hayır,evet,+,,,,,+,,,+,,,,,,,,KISMEN,Planlama + Operasyon Müdürü.
+manufacturing.facts.record,manufacturing,hayır,evet,,,,,,+,,,+,+,,,,,,,KISMEN,SAT-D191 ara dönem hücresi Operasyon Müdürü'ne geçer; Operatör/Planlama ÖNERİ.
+manufacturing.orders.read,manufacturing,hayır,evet,+,,+,,,+,+,,+,+,+,,,,+,,KISMEN,Kart: Sevkiyatçı + GM +; diğerleri ÖNERİ.
+manufacturing.facts.correct,manufacturing,hayır,evet,,,,,,+,,,+,,,,,,,,ÖNERİ,Fiilî düzeltme; kaydı giren kendi kaydını düzeltmemeli (SoD-14).
+manufacturing.orders.close,manufacturing,hayır,evet,,,,,,+,,,,,,,,,,,KARARLI,ROL-D9: üretim emri kapatma Operasyon Müdürü'nde.
+manufacturing.orders.close-exception.approve,manufacturing,hayır,evet,K,,,,,K,,,,,,,,,,,ÖNERİ,Fiilî miktarı giren onaylayamaz; ROL-D5 + ROL-D3.
+manufacturing.orders.write,manufacturing,hayır,evet,+,,,,,+,,,+,,,,,,,,ÖNERİ,Emir düzeltme.
+manufacturing.orders.cancel,manufacturing,hayır,evet,+,,,,,+,,,+,,,,,,,,ÖNERİ,Emir iptali.
+manufacturing.orders.reopen,manufacturing,hayır,evet,+,,,,,+,,,,,,,,,,,ÖNERİ,Kapanmış emri yeniden açma müdür seviyesi.
+manufacturing.plans.cancel,manufacturing,hayır,evet,+,,,,,+,,,+,,,,,,,,ÖNERİ,Plan iptali.
+manufacturing.plans.reorder,manufacturing,hayır,evet,+,,,,,+,,,+,,,,,,,,ÖNERİ,Plan sıralaması.
+manufacturing.scrap-prices.read,manufacturing,hayır,evet,+,,,,,+,,,+,,,,,+,+,,ÖNERİ,Hurda fiyatı maliyet okuması.
+manufacturing.scrap-prices.write,manufacturing,hayır,evet,+,,,,,,,,,,,,,,+,,ÖNERİ,Hurda fiyatı maliyet politikasıdır.
+manufacturing.reports.read,manufacturing,hayır,evet,+,,,,,+,,,+,,,,,,+,,ÖNERİ,Üretim raporu.
+manufacturing.plans.read,manufacturing,hayır,evet,+,+,+,,,+,+,,+,+,,,,,,,ÖNERİ,Plan görünümü.
+finance.manual-receipt.draft.save,finance,hayır,evet,,,,,,,,,,,,+,,,,,KARARLI,SAT-D196 (kart Finans personaları tablosu).
+finance.manual-receipt.draft.read,finance,hayır,evet,,,,,,,,,,,,+,,,,,KARARLI,SAT-D196.
+finance.manual-receipt.amount.read,finance,hayır,evet,,,,,,,,,,,,+,,,,,KARARLI,SAT-D196.
+finance.manual-receipt.record,finance,hayır,evet,,,,,,,,,,,,+,,,,,KARARLI,ROL-D9: tahsilat kaydı Finans rolünde. Onay adımı yok (ROL-D11 kabul).
+finance.manual-receipt.reverse.propose,finance,hayır,evet,,,,,,,,,,,,+,,,,,ÖNERİ,SAT-D196.
+finance.manual-receipt.reverse.approve,finance,hayır,evet,K,,,,,,,,,,,,K,,,,ÖNERİ,SAT-D196/D197; öneren onaylayamaz.
+finance.manual-bank-payment.draft.save,finance,hayır,evet,,,,,,,,,,,,+,,,,,ÖNERİ,SAT-D196 (oluşturma).
+finance.manual-bank-payment.draft.read,finance,hayır,evet,+,,,,,,,,,,,+,+,,,,ÖNERİ,Oluşturma + onayın gerektirdiği okuma (SAT-D197).
+finance.manual-bank-payment.approve,finance,hayır,evet,K,,,,,,,,,,,,K,,,,ÖNERİ,SAT-D196/D197; hazırlayan onaylayamaz. Banka hesabı öneren kişi bu onayı almamalı.
+finance.manual-bank-payment.record,finance,hayır,evet,,,,,,,,,,,,+,,,,,ÖNERİ,Onaylı ödemenin kaydı; 'record' adları NEEDS-SINAN (kart).
+finance.manual-bank-payment.reverse.propose,finance,hayır,evet,,,,,,,,,,,,+,,,,,ÖNERİ,SAT-D196.
+finance.manual-bank-payment.reverse.approve,finance,hayır,evet,K,,,,,,,,,,,,K,,,,ÖNERİ,SAT-D196/D197.
+finance.expense-payment.draft.save,finance,hayır,evet,,,,,,,,,,,,+,,,,,ÖNERİ,SAT-D196.
+finance.expense-payment.draft.read,finance,hayır,evet,+,,,,,,,,,,,+,+,,,,ÖNERİ,Oluşturma + onay okuması.
+finance.expense-payment.approve,finance,hayır,evet,K,,,,,,,,,,,,K,,,,ÖNERİ,SAT-D196/D197.
+finance.expense-payment.record,finance,hayır,evet,,,,,,,,,,,,+,,,,,ÖNERİ,Onaylı masrafın kaydı; NEEDS-SINAN (kart 'record' kuralı).
+finance.cash-transfers.read,finance,hayır,evet,+,,,,,,,,,,,+,+,,,,ÖNERİ,Virman okuması.
+finance.cash-transfers.commit,finance,hayır,evet,,,,,,,,,,,,+,,,,,KARARLI,"ROL-D11: tek adımda kalır (kabul edilen risk, SoD-12)."
+finance.customer-instrument.read,finance,hayır,evet,+,,,,,,,,,,,+,+,,,,ÖNERİ,Çek/senet okuması.
+finance.customer-instrument.amount.read,finance,hayır,evet,+,,,,,,,,,,,+,+,,,,ÖNERİ,Çek/senet tutarı.
+finance.customer-instrument.receive,finance,hayır,evet,,,,,,,,,,,,+,,,,,KARARLI,ROL-D11: çek/senet kayıtları tek adımda kalır.
+finance.customer-instrument.status.change,finance,hayır,evet,,,,,,,,,,,,+,,,,,KARARLI,ROL-D11: çek/senet kayıtları tek adımda kalır.
+finance.customer-instrument.collect,finance,hayır,evet,,,,,,,,,,,,+,,,,,KARARLI,ROL-D11: çek/senet kayıtları tek adımda kalır.
+finance.party-ledger.read,finance,hayır,evet,+,,+,,,,,,,,,+,+,+,+,,KISMEN,ROL-D7: Satış Müdürü cari ekstreyi okur; diğerleri ÖNERİ.
+finance.party-ledger.amount.read,finance,hayır,evet,+,,+,,,,,,,,,+,+,+,+,,KISMEN,ROL-D7: tutarlar dahil.
+finance.party-balance-transfers.record,finance,hayır,evet,,,,,,,,,,,,+,,,,,KARARLI,ROL-D11: tek adımda kalır.
+finance.open-items.read,finance,hayır,evet,+,,,,,,,,,,,+,+,+,+,,ÖNERİ,Açık kalem okuması.
+finance.open-items.amount.read,finance,hayır,evet,+,,,,,,,,,,,+,+,+,+,,ÖNERİ,Açık kalem tutarı.
+finance.allocation.write,finance,hayır,evet,,,,,,,,,,,,+,,,,,ÖNERİ,Kapama/eşleştirme finans işlemidir.
+finance.allocation.read,finance,hayır,evet,+,,,,,,,,,,,+,+,+,+,,ÖNERİ,Kapama okuması.
+sales.drafts.create,sales,hayır,evet,+,+,+,,,,,,,,,,,,,,KARARLI,"SAT-D141, SAT-D194."
+sales.drafts.read,sales,hayır,evet,+,+,+,,,,,,,,,,,+,+,,KARARLI,Kart. Depo/Sevk engelli (kart).
+sales.orders.approve,sales,hayır,evet,K,,K,,,,,,,,,,,,,,KARARLI,"SAT-D6, SAT-D188; P6 hazırlayan ≠ onaylayan."
+sales.orders.price.write,sales,hayır,evet,+,+,+,,,,,,,,,,,,,,KARARLI,"SAT-D151, SAT-D188."
+sales.orders.price.read,sales,hayır,evet,+,+,+,,,,,,,,,,,+,+,,KARARLI,SAT-D150; Depo/Sevk görmez.
+sales.orders.margin.read,sales,hayır,evet,+,,,,,,,,,,,,,,,,KARARLI,"SAT-D250, SAT-D276 (2): GM + Admin; Admin hücresi ROL-D6 ile kalktı (soru Y-01)."
+sales.orders.price-floor-exception.approve,sales,hayır,evet,K,,K,,,,,,,,,,,,,,KARARLI,"SAT-D1, SAT-D188."
+sales.orders.discount-exception.approve,sales,hayır,evet,K,,K,,,,,,,,,,,,,,KARARLI,SAT-D37/D67: Satış Müdürü'nün kendi limitini aşanı başkası onaylar.
+sales.orders.delivery-schedule.write,sales,hayır,evet,+,+,+,,,,,,,,,,,,,,ÖNERİ,Teslim planı sipariş düzenlemesidir.
+sales.orders.cancel,sales,hayır,evet,+,,+,,,,,,,,,,,,,,KARARLI,SAT-D4; Satış Temsilcisi hücresi ÖNERİ: verme.
+sales.orders.force-close,sales,hayır,evet,+,,+,,,,,,,,,,,,,,ÖNERİ,SATIS_ROL_YETKI_ONERISI_v1 öneri 5.
+sales.orders.close,sales,hayır,evet,+,+,+,,,,,,,,,,,,,,KARARLI,"SAT-D168, SAT-D230."
+sales.orders.over-delivery.approve,sales,hayır,evet,K,K,K,,,,,,,,,,,,,,KARARLI,SAT-D168; SAT-D216 kendi sevki/talebi için onay yok; SAT-D222.
+sales.orders.risk-exception.request,sales,hayır,evet,+,+,+,,,,+,,,,,,,,,,KARARLI,"SAT-D159 (Sevkiyatçı dahil, kart)."
+sales.orders.risk-exception.approve,sales,hayır,evet,K,K,K,,,,,,,,,,,,,,KARARLI,SAT-D153: kendi talebini onaylayamaz.
+sales.orders.lines.close,sales,hayır,evet,+,K,+,,,,,,,,,,,,,,KARARLI,SAT-D168; SAT-D216.
+sales.orders.source-plan.write,sales,hayır,evet,+,+,+,,,,,,,,,,,,,,KARARLI,SAT-D179.
+sales.requests.write,sales,hayır,evet,+,+,+,,,,,,,,,,,,,,ÖNERİ,Satış talebi satış personelindedir.
+sales.requests.read,sales,hayır,evet,+,+,+,,,,,,,,,,,+,+,,ÖNERİ,Satış okuması (SAT-D142 'her şeyi görür').
+sales.requests.approve,sales,hayır,evet,K,,K,,,,,,,,,,,,,,ÖNERİ,Talep onayı müdür seviyesi; açan onaylayamaz.
+sales.quotes.write,sales,hayır,evet,+,+,+,,,,,,,,,,,,,,ÖNERİ,Teklif hazırlama.
+sales.quotes.read,sales,hayır,evet,+,+,+,,,,,,,,,,,+,+,,ÖNERİ,Satış okuması.
+sales.quotes.expired-conversion.approve,sales,hayır,evet,+,,+,,,,,,,,,,,,,,KARARLI,SAT-D24/D44 ('yönetici'); SAT-D44 istisnası: hazırlayan da onaylayabilir.
+sales.invoices.read,sales,hayır,evet,+,+,+,,,,,,,,,,,+,+,,KARARLI,SAT-D110.
+sales.invoices.write,sales,hayır,evet,+,,,,,,,,,,,,,+,+,,KARARLI,SAT-D202: faturayı Muhasebe keser; Satış görür ama kesemez.
+sales.invoices.approve,sales,hayır,evet,K,,,,,,,,,,,,,K,K,,KARARLI,"SAT-D88, SAT-D204: hazırlayan onaylayamaz."
+sales.invoices.match,sales,hayır,evet,+,,,,,,,,,,,,,+,+,,ÖNERİ,SAT-D142 yorumu (SATIS_ROL öneri 7).
+sales.invoices.finalize,sales,hayır,evet,+,,,,,,,,,,,,,+,+,,KARARLI,SAT-D230; SAT-D235 (2) kesinleştirmede SoD yok; KLN-D17.
+sales.invoices.export,sales,hayır,evet,+,,,,,,,,,,,,,+,+,,KARARLI,SAT-D276 (1).
+sales.reports.read,sales,hayır,evet,+,+,+,,,,+,,,,,,,+,+,,KARARLI,SAT-D143 (kart Sevkiyatçı +).
+sales.returns.read,sales,hayır,evet,+,+,+,,,,+,,,,,,,+,+,,ÖNERİ,İade okuması.
+sales.returns.write,sales,hayır,evet,+,+,+,,,,,,,,,,,,,,ÖNERİ,İadeyi satış hazırlar.
+sales.returns.approve,sales,hayır,evet,K,,K,,,,,,,,,,,,,,ÖNERİ,Hazırlayan ≠ onaylayan.
+sales.returns.finalize,sales,hayır,evet,+,,,,,,,,,,,,,+,+,,ÖNERİ,Kesinleştirme belge/muhasebe tarafı (fatura emsali SAT-D202).
+sales.contracts.read,sales,hayır,evet,+,+,+,,,,,,,,,,,+,+,,ÖNERİ,Sözleşme okuması.
+sales.contracts.write,sales,hayır,evet,+,+,+,,,,,,,,,,,,,,ÖNERİ,Sözleşmeyi satış hazırlar.
+sales.contracts.discount.approve,sales,hayır,evet,K,,K,,,,,,,,,,,,,,ÖNERİ,Hazırlayan ≠ onaylayan.
+sales.orders.quantity.write,sales,hayır,evet,+,+,+,,,,,,,,,,,,,,ÖNERİ,Miktar revizyonu (SAT-D3 yeniden onay ister).
+sales.orders.header.write,sales,hayır,evet,+,+,+,,,,,,,,,,,,,,KARARLI,"SAT-D144, SAT-D185."
+sales.orders.customer-acceptance.record,sales,hayır,evet,+,+,+,,,,,,,,,,,,,,ÖNERİ,Müşteri kabulünü satış kaydeder.
+logistics.loading-instructions.create,logistics,hayır,evet,,,,,,+,+,,,,,,,,,,KARARLI,Kart: Sevkiyatçı +; ara dönem hücresi Operasyon Müdürü'ne geçer (ROL-D5).
+logistics.loading-instructions.read,logistics,hayır,evet,+,+,+,,,+,+,+,,,,,,,,,KISMEN,Kart: Sevkiyatçı + GM +; diğerleri ÖNERİ.
+logistics.loads.record,logistics,hayır,evet,,,,,,+,+,,,,,,,,,,KARARLI,Kart: Sevkiyatçı +; ara dönem hücresi Operasyon Müdürü'ne geçer (ROL-D5).
+logistics.shipments.record,logistics,hayır,evet,,,,,,,+,,,,,,,,,,ÖNERİ,Sevk kaydı depo/sevk işidir.
+logistics.shipments.plan-excess.approve,logistics,hayır,evet,K,,,,,K,,,,,,,,,,,KARARLI,ROL-D5 plan üstü sevk; YOL-D18 4 saat. Sevki yapan onaylayamaz.
+logistics.deliveries.record,logistics,hayır,evet,,,,,,,+,,,,,,,,,,ÖNERİ,Teslim kaydı.
+logistics.weighings.record,logistics,hayır,evet,,,,,,,+,+,,+,,,,,,,KARARLI,ROL-D14: tartımı sevk/üretim sürecini hazırlayan girer; ayrı kantar rolü zorunlu değil.
+logistics.weighings.correct,logistics,hayır,evet,K,,,,,K,,,,,,,,,,,ÖNERİ,Tartımı giren kendi tartımını düzeltmemeli; ROL-D14 onay Operasyon Müdürü.
+logistics.dispatch-notes.create,logistics,hayır,evet,,,,,,,+,,,,,,,,,,ÖNERİ,İrsaliye taslağını sevk hazırlar.
+logistics.dispatch-notes.approve,logistics,hayır,evet,K,,K,,,K,,,,,,,,,,,KARARLI,ROL-D14: irsaliye onayı Operasyon Müdürü'ne ve Satış Müdürü'ne düşebilir (biri onaylar); YOL-D18 4 saat; hazırlayan onaylayamaz.
+logistics.dispatch-notes.cancel,logistics,hayır,evet,+,,,,,+,,,,,,,,,,,ÖNERİ,Onaylı irsaliye iptali müdür seviyesi.
+logistics.transfer-outgoing-documents.read,logistics,hayır,evet,+,,,,,+,+,+,,,,,,,,,ÖNERİ,Transfer çıkış belgeleri.
+logistics.transfer-departures.record,logistics,hayır,evet,,,,,,,+,,,,,,,,,,ÖNERİ,Transfer çıkışı.
+logistics.loading-instructions.cancel,logistics,hayır,evet,+,,,,,+,+,,,,,,,,,,ÖNERİ,Talimatı açan veya müdür iptal eder.
+logistics.customer-returns.read,logistics,hayır,evet,+,+,+,,,+,+,,,,,,,+,,,ÖNERİ,Müşteri iadesi okuması.
+logistics.customer-returns.request,logistics,hayır,evet,,+,+,,,,+,,,,,,,,,,ÖNERİ,İade kabul talebi.
+logistics.customer-returns.decision,logistics,hayır,evet,K,,K,,,K,,,,,,,,,,,ÖNERİ,Talep açan karar veremez.
+logistics.weighing-differences.record,logistics,hayır,evet,,,,,,,+,+,,+,,,,,,,KARARLI,ROL-D14: hazırlayan girer.
+logistics.weighing-differences.approve,logistics,hayır,evet,K,,,,,K,,,,,,,,,,,KARARLI,ROL-D14: tartım farkı onayı Operasyon Müdürü; YOL-D18 4 saat; kaydeden onaylayamaz.
+logistics.weighing-differences.read,logistics,hayır,evet,+,,+,,+,+,+,+,,,,,,,,,ÖNERİ,Tartım farkı okuması.
+logistics.operations-work.sales.read,logistics,hayır,evet,+,+,+,,,+,+,+,,,,,,,,,ÖNERİ,Operasyon iş listesi (satış).
+logistics.operations-work.purchase.read,logistics,hayır,evet,+,,,+,+,+,+,+,,,,,,,,,ÖNERİ,Operasyon iş listesi (alış).
+purchasing.orders.create,purchasing,hayır,evet,+,+,,+,+,,,,,,,,,,,,KARARLI,"ALS-D53, kart §4 (Satış Destek/Uzmanı alış siparişi girer), SAT-D188."
+purchasing.orders.read,purchasing,hayır,evet,+,+,,+,+,+,+,,,,,,,+,+,,KARARLI,Kart + ALS-D73; Operasyon Müdürü ÖNERİ (mal kabul). Depo fiyat görmez (PRS-02).
+purchasing.orders.approve,purchasing,hayır,evet,K,,,,K,,,,,,,,,,,,KARARLI,"ALS-D3, ALS-D53; hazırlayan onaylayamaz."
+purchasing.goods-receipts.record,purchasing,hayır,evet,,,,,,,+,,,,,,,,,,ÖNERİ,"Kart: deny-first, sorulmadı. Öneri: mal kabulü depo yapar."
+purchasing.requests.approve,purchasing,hayır,evet,K,,,,K,,,,,,,,,,,,KARARLI,"ALS-D2, ALS-D53."
+purchasing.requests.withdraw,purchasing,hayır,evet,,+,,+,+,,,,,,,,,,,,KARARLI,"ALS-D54, ALS-D47 (talebi açan geri çeker)."
+purchasing.orders.cancel,purchasing,hayır,evet,+,,,,+,,,,,,,,,,,,KARARLI,ALS-D66.
+purchasing.orders.price.read,purchasing,hayır,evet,+,+,,+,+,,,,,,,,,+,+,,KARARLI,ALS-D70; Depo/Sevk görmez; Satış Müdürü verilmez (EK11 yorumu).
+purchasing.orders.revise,purchasing,hayır,evet,,,,+,+,,,,,,,,,,,,ÖNERİ,Revizyonu hazırlayan; yeniden onay ister.
+purchasing.orders.close,purchasing,hayır,evet,+,,,,+,,,,,,,,,,,,ÖNERİ,Kapatma onaycılarda (ALS-D66 benzetmesi).
+purchasing.goods-receipts.approve-variance,purchasing,hayır,evet,K,,,,K,,,,,,,,,,,,ÖNERİ,Mal kabul farkı; kabulü kaydeden onaylayamaz.
+purchasing.goods-receipts.approve-overdelivery,purchasing,hayır,evet,K,,,,K,,,,,,,,,,,,ÖNERİ,Fazla teslim; kabulü kaydeden onaylayamaz.
+purchasing.future-allocation.release,purchasing,hayır,evet,+,,,,+,,,,,,,,,,,,ÖNERİ,F017 ayırma bırakma.
+purchasing.supplier-returns.record,purchasing,hayır,evet,,,,+,+,,,,,,,,,,,,ÖNERİ,Tedarikçi iadesini satınalma hazırlar.
+purchasing.invoices.read,purchasing,hayır,evet,+,,,+,+,,,,,,,,,+,+,,ÖNERİ,Alış faturası okuması.
+purchasing.invoices.import,purchasing,hayır,evet,,,,,,,,,,,,,,+,,,ÖNERİ,Gelen faturayı muhasebe alır.
+purchasing.invoices.match,purchasing,hayır,evet,,,,,,,,,,,,,,+,+,,ÖNERİ,Eşleştirme muhasebe işidir (satış emsali).
+purchasing.invoices.approve-variance,purchasing,hayır,evet,K,,,,,,,,,,,,,,K,,KARARLI,ROL-D10: Muhasebe Müdürü onaylar; siparişi onaylayan Satınalma Müdürü onaylamaz.
+purchasing.invoices.finalize,purchasing,hayır,evet,+,,,,,,,,,,,,,+,+,,ÖNERİ,Kesinleştirme (SAT-D230 emsali).
+accounting.periods.read,accounting,hayır,evet,+,,,,,,+,,,,,,,+,+,,KARARLI,"K4.5 (Sevkiyatçı +), SAT-D191, ROL-D8 (Muhasebe salt okur)."
+accounting.periods.propose,accounting,hayır,evet,+,,,,,,,,,,,,,,+,,KARARLI,SAT-D191; P6.
+accounting.periods.approve,accounting,hayır,evet,K,,,,,,,,,,,,,,K,,KARARLI,"SAT-D191; P6. Yeniden açma ROL-D12 ile ayrı izin olacak (ad henüz kayıtlı değil), yalnız GM."
+accounting.periods.close,accounting,hayır,evet,+,,,,,,,,,,,,,,+,,KARARLI,SAT-D191. Kapatan ile kilidi kaldıran ayrı yetki (GOREV_AYRILIGI_ONAY).
+accounting.journals.read,accounting,hayır,evet,+,,,,,,,,,,,,,+,+,,KARARLI,"SAT-D191, ROL-D8 (Muhasebe salt okur)."
+accounting.posting-queues.read,accounting,hayır,evet,+,,,,,,,,,,,,,,+,,KARARLI,SAT-D191; K4.5.
+accounting.normal-journal.draft.create,accounting,hayır,evet,,,,,,,,,,,,,,+,+,,ÖNERİ,Fiş taslağı; Muhasebe accounting yazması kartta '?' (soru).
+accounting.normal-journal.draft.approve,accounting,hayır,evet,K,,,,,,,,,,,,,,K,,ÖNERİ,Hazırlayan ≠ onaylayan; KLN-D17.
+accounting.journal.reverse.propose,accounting,hayır,evet,,,,,,,,,,,,,,+,+,,ÖNERİ,Ters kayıt önerisi.
+accounting.journal.reverse.approve,accounting,hayır,evet,K,,,,,,,,,,,,,,K,,ÖNERİ,Öneren onaylayamaz.
+accounting.approved-source-catalog.prepare,accounting,hayır,evet,,,,,,,,,,,,,,+,+,,ÖNERİ,Kaynak kataloğu hazırlığı.
+accounting.approved-source-catalog.activate,accounting,hayır,evet,K,,,,,,,,,,,,,,K,,ÖNERİ,Hazırlayan ≠ etkinleştiren.
+accounting.posting-mappings.read,accounting,hayır,evet,+,,,,,,,,,,,,,+,+,,ÖNERİ,Hesap eşleme okuması.
+accounting.posting-mappings.prepare,accounting,hayır,evet,,,,,,,,,,,,,,+,+,,ÖNERİ,Eşleme hazırlığı.
+accounting.posting-mappings.activate,accounting,hayır,evet,K,,,,,,,,,,,,,,K,,ÖNERİ,Hazırlayan ≠ etkinleştiren.
+accounting.account-plan.read,accounting,hayır,evet,+,,,,,,,,,,,+,+,+,+,,ÖNERİ,Hesap planı okuması.
+settings.sales-discount-limits.manage,settings,hayır,evet,,,,,,,,,,,,,,,,+,KARARLI,SAT-D65/D69: yalnız Admin; ROL-D19 eşik/limit ayarını GM + Sistem Yöneticisi'nde topladı (GM eklensin mi: soru Y-02).
+settings.tax-master.manage,settings,hayır,evet,+,,,,,,,,,,,,,,+,,KARARLI,"SAT-D145, SAT-D188."
+settings.sales-delivery-tolerances.manage,settings,hayır,evet,+,,+,,,,,,,,,,,,,,KARARLI,SAT-D189 (teslim toleransı).
+settings.sales-approval-thresholds.manage,settings,hayır,evet,+,,,,,,,,,,,,,,,+,KARARLI,ROL-D19: GM + Sistem Yöneticisi.
+settings.sales-quote-policies.manage,settings,hayır,evet,+,,+,,,,,,,,,,,,,,KARARLI,"SAT-D189 (teklif geçerlilik, kayıp nedenleri)."
+settings.purchase-invoice-variance-policies.manage,settings,hayır,evet,+,,,,,,,,,,,,,,+,,ÖNERİ,Alış fatura farkı politikası.
+settings.warehouse-transfer-scale.manage,settings,hayır,evet,+,,,,,+,,,,,,,,,,,ÖNERİ,Depo transfer kantar ayarı Operasyon Müdürü.
+settings.einvoice-scenarios.manage,settings,hayır,evet,,,,,,,,,,,,,,,+,,ÖNERİ,e-Fatura senaryoları muhasebe ayarıdır.
+settings.unit-conversion-policies.manage,settings,hayır,evet,+,,,,,,,,,,,,,,,+,ÖNERİ,Birim çevrim politikası (formül etkisi; dikkat).
+settings.unit-profiles.manage,settings,hayır,evet,+,,,,,,,,,,,,,,,+,ÖNERİ,Birim profilleri.
+settings.money-profiles.manage,settings,hayır,evet,,,,,,,,,,,,,,,+,+,ÖNERİ,Para profili muhasebe ayarıdır.
+settings.login-rate-limit.manage,settings,hayır,evet,,,,,,,,,,,,,,,,+,ÖNERİ,Sistem yönetimi (SAT-D190: GM almaz).
+settings.work-center-capacities.manage,settings,hayır,evet,+,,,,,+,,,+,,,,,,,,ÖNERİ,Kapasite planlama ayarı.
+settings.bank-csv-mappings.manage,settings,hayır,evet,,,,,,,,,,,,,+,,,,ÖNERİ,Banka ekstresi eşlemesi finans ayarıdır.
+settings.segregation-of-duties.manage,settings,hayır,evet,,,,,,,,,,,,,,,,+,ÖNERİ,Sistem yönetimi; KIM-D39 gevşetme yalnız tek kullanıcıda.
+settings.sales-contract-discount-limit.manage,settings,hayır,evet,+,,,,,,,,,,,,,,,+,KARARLI,ROL-D19: GM + Sistem Yöneticisi.
+settings.collateral-types.manage,settings,hayır,evet,,,,,,,,,,,,,+,,,,ÖNERİ,Teminat türleri finans ayarıdır.
+settings.finance-opening-period.manage,settings,hayır,evet,,,,,,,,,,,,,+,,,,ÖNERİ,Finans açılış dönemi.
+settings.manufacturing-scrap-cost.manage,settings,hayır,evet,+,,,,,,,,,,,,,,+,,ÖNERİ,Hurda maliyeti muhasebe politikasıdır.
+settings.notification-retention.manage,settings,hayır,evet,,,,,,,,,,,,,,,,+,ÖNERİ,Saklama ayarı sistem yönetimidir.
+settings.document-number-series.manage,settings,hayır,evet,,,,,,,,,,,,,,,+,+,ÖNERİ,Belge numara serileri.
+settings.reference-lists.manage,settings,hayır,evet,+,,,,,,,,,,,,,,,+,ÖNERİ,Genel referans listeleri.
+settings.production-reference-lists.manage,settings,hayır,evet,,,,,,,,,+,,,,,,,+,ÖNERİ,Üretim referans listeleri.
+settings.exchange-rates.read,settings,hayır,evet,+,+,+,+,+,,,,,,,+,+,+,+,,KISMEN,SAT-D199 sekiz persona; Satınalma ve
+settings.exchange-rates.correct,settings,hayır,evet,+,,,,,,,,,,,,,+,+,,KARARLI,"SAT-D169, SAT-D188."
+settings.exchange-rates.import,settings,hayır,evet,+,,,,,,,,,,,,,+,+,,KARARLI,SAT-D205.
+settings.exchange-rates.half-day.mark,settings,hayır,evet,+,,,,,,,,,,,,,+,+,,KARARLI,SAT-D198.
+settings.manufacturing-parameter-profiles.read,settings,hayır,evet,+,,,,,+,,,+,+,,,,,,,ÖNERİ,Üretim profili okuması.
+settings.policies.prepare,settings,hayır,evet,,,,,,,,,,,,,+,,,,ÖNERİ,Finans onay matrisleri vb. politika taslağı.
+settings.policies.approve,settings,hayır,evet,K,,,,,,,,,,,,,,,,ÖNERİ,Hazırlayan ≠ onaylayan.
+settings.policies.publish,settings,hayır,evet,+,,,,,,,,,,,,,,,,ÖNERİ,Onaylı politikayı yayımlama.
+settings.policies.publish-critical,settings,hayır,evet,K,,,,,,,,,,,,,,,,ÖNERİ,Kritik politika yayımı iş politikasıdır; ROL-D6 sonrası Sistem Yöneticisi değil GM (soru Y-03).
+settings.manufacturing-parameter-profiles.prepare,settings,hayır,evet,,,,,,,,,+,,,,,,,,ÖNERİ,Profili planlama hazırlar.
+settings.manufacturing-parameter-profiles.approve,settings,hayır,evet,K,,,,,K,,,,,,,,,,,ÖNERİ,Hazırlayan ≠ onaylayan; ROL-D5.
+settings.manufacturing-parameter-profiles.publish,settings,hayır,evet,+,,,,,+,,,,,,,,,,,ÖNERİ,Onaylı profili yayımlama.
+settings.manufacturing-tolerance-profiles.read,settings,hayır,evet,+,,,,,+,,,+,+,,,,,,,ÖNERİ,Üretim profili okuması.
+settings.manufacturing-tolerance-profiles.prepare,settings,hayır,evet,,,,,,,,,+,,,,,,,,ÖNERİ,Profili planlama hazırlar.
+settings.manufacturing-tolerance-profiles.approve,settings,hayır,evet,K,,,,,K,,,,,,,,,,,ÖNERİ,Hazırlayan ≠ onaylayan; ROL-D5.
+settings.manufacturing-tolerance-profiles.publish,settings,hayır,evet,+,,,,,+,,,,,,,,,,,ÖNERİ,Onaylı profili yayımlama.
 documents.files.read,documents,hayır,evet,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,ÖNERİ,Kayda bağlı dosya okuması; kayıt yetkisiyle birlikte geçerli.
-documents.files.upload,documents,hayır,evet,,+,+,+,+,+,+,+,+,,+,+,+,+,+,,ÖNERİ,İş kaydına belge ekleme.
-documents.files.link,documents,hayır,evet,,+,+,+,+,+,+,+,+,,+,+,+,+,+,,ÖNERİ,Belgeyi kayda bağlama.
-documents.company-branding.manage,documents,hayır,evet,+,,,,,,,,,,,,,,+,,ÖNERİ,Şirket logo/antet (OPEN-019).
-documents.templates.sales.prepare,documents,hayır,evet,,,+,,,,,,,,,,,,+,,ÖNERİ,Satış şablonu hazırlığı.
-documents.templates.sales.publish,documents,hayır,evet,K,,,,,,,,,,,,,,K,,ÖNERİ,OPEN-019 onay rolü açık; hazırlayan ≠ yayımlayan.
-documents.templates.inventory.prepare,documents,hayır,evet,,,,,,+,,,,,,,,,+,,ÖNERİ,Stok şablonu.
-documents.templates.inventory.publish,documents,hayır,evet,K,,,,,,,,,,,,,,K,,ÖNERİ,OPEN-019.
-documents.templates.logistics.prepare,documents,hayır,evet,,,,,,+,,,,,,,,,+,,ÖNERİ,Lojistik şablonu.
-documents.templates.logistics.publish,documents,hayır,evet,K,,,,,,,,,,,,,,K,,ÖNERİ,OPEN-019.
-identity.profile.read,identity,hayır,hayır,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,KARARLI,SAT-D191 temel; Denetçi ÖNERİ.
-identity.access.request,identity,hayır,hayır,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,,KARARLI,SAT-D191 temel (kendi erişim talebi).
-identity.access.approve,identity,evet,hayır,,,,,,,,,,,,,,,IK,,IK,Critical. Seed: SECURITY_APPROVER. Talep eden/kurgulayan ≠ onaylayan.
-identity.roles.manage,identity,evet,hayır,,,,,,,,,,,,,,,IK,,IK,Critical. Seed: SECURITY_ADMINISTRATOR. Onaylayıcıdan ayrı kişi (SoD-01).
-identity.audit.read,identity,evet,evet,,,,,,,,,,,,,,,IK,,IK,"Critical. Aday: Yetki Onaylayıcısı, Denetçi (YOL-D13 ayrı insan kararı)."
-identity.assignments.read,identity,evet,evet,,,,,,,,,,,,,,,IK,,IK,"Critical. Aday: Sistem Yöneticisi, Denetçi."
-identity.users.manage,identity,hayır,evet,,,,,,,,,,,,,,,+,,ÖNERİ,Kullanıcı yönetimi sistem yönetimidir (SAT-D190: GM almaz). Kayıtta Critical değil.
-platform.security-events.read,platform,evet,evet,,,,,,,,,,,,,,,IK,,IK,Critical. Aday: Sistem Yöneticisi.
-ai.panel.use,ai,hayır,evet,+,,,,,,,,,,,,,,+,,KARARLI,AI-D8: başlangıç Admin + Genel Müdür; genişletme ayrı karar.
+documents.files.upload,documents,hayır,evet,,+,+,+,+,+,+,+,+,+,,+,+,+,+,,ÖNERİ,İş kaydına belge ekleme.
+documents.files.link,documents,hayır,evet,,+,+,+,+,+,+,+,+,+,,+,+,+,+,,ÖNERİ,Belgeyi kayda bağlama.
+documents.company-branding.manage,documents,hayır,evet,+,,,,,,,,,,,,,,,+,ÖNERİ,Şirket logo/antet (OPEN-019).
+documents.templates.sales.prepare,documents,hayır,evet,,,+,,,,,,,,,,,,,,ÖNERİ,Satış şablonu hazırlığı.
+documents.templates.sales.publish,documents,hayır,evet,K,,,,,,,,,,,,,,,,ÖNERİ,OPEN-019 onay rolü açık; hazırlayan ≠ yayımlayan.
+documents.templates.inventory.prepare,documents,hayır,evet,,,,,,,+,,,,,,,,,,ÖNERİ,Stok şablonu.
+documents.templates.inventory.publish,documents,hayır,evet,K,,,,,K,,,,,,,,,,,ÖNERİ,OPEN-019; hazırlayan ≠ yayımlayan.
+documents.templates.logistics.prepare,documents,hayır,evet,,,,,,,+,,,,,,,,,,ÖNERİ,Lojistik şablonu.
+documents.templates.logistics.publish,documents,hayır,evet,K,,,,,K,,,,,,,,,,,ÖNERİ,OPEN-019; hazırlayan ≠ yayımlayan.
+identity.profile.read,identity,hayır,hayır,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,KARARLI,SAT-D191 temel.
+identity.access.request,identity,hayır,hayır,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,KARARLI,SAT-D191 temel (kendi erişim talebi).
+identity.access.approve,identity,evet,hayır,,,,,,,,,,,,,,,,IK,IK,"Critical. ROL-D17: şimdilik Sistem Yöneticisi hem kurgular hem onaylar (geçici istisna, kabul edildi); grant insan kapısı."
+identity.roles.manage,identity,evet,hayır,,,,,,,,,,,,,,,,IK,IK,Critical. ROL-D17 geçici istisna (kabul edildi).
+identity.audit.read,identity,evet,evet,,,,,,,,,,,,,,,,IK,IK,Critical. Aday: Sistem Yöneticisi. Denetçiye erişim yok (ROL-D13).
+identity.assignments.read,identity,evet,evet,,,,,,,,,,,,,,,,IK,IK,Critical. Aday: Sistem Yöneticisi.
+identity.users.manage,identity,hayır,evet,,,,,,,,,,,,,,,,+,ÖNERİ,Kullanıcı yönetimi sistem yönetimidir (SAT-D190: GM almaz). Kayıtta Critical değil.
+platform.security-events.read,platform,evet,evet,,,,,,,,,,,,,,,,IK,IK,Critical. Aday: Sistem Yöneticisi.
+ai.panel.use,ai,hayır,evet,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,KARARLI,"ROL-D16: başlangıçta bütün kullanıcı rollerine önerilir (AI-D8'in yerine); AI-D1/AI-D6 sürer, grant insan kapısı."
