@@ -1,6 +1,6 @@
 # Sinan Kararları — 22 Kasım 2026 (adet/kg sevk, yapay zekâ okuma araçları, rol taslağı ek soruları)
 
-Bu belge önceki karar dosyalarını silmez; SAT-D462–SAT-D465, AI-D35–AI-D36, ROL-D21–ROL-D23, YOL-D22–YOL-D24, SAT-D466–SAT-D468 ve GOV-D14 ekler. ROL-D21,
+Bu belge önceki karar dosyalarını silmez; SAT-D462–SAT-D465, AI-D35–AI-D36, ROL-D21–ROL-D23, YOL-D22–YOL-D24, SAT-D466–SAT-D468, GOV-D14, YOL-D25–YOL-D26 ve AI-D37 ekler. ROL-D21,
 SAT-D250 ve SAT-D276 (2)'deki marj görünürlüğünü günceller.
 
 **Kaynak:** Sinan, 22 Kasım 2026, Claude Code oturumunda soru kutusuyla. Sorular şerit raporlarındaki NEEDS-SINAN
@@ -28,6 +28,9 @@ işaretleri soranındır. Bu dosya bir **ajan aktarımıdır**; Issue #1189 kayd
 | E-14 | Net kg pozitif ama net mal tutarı sıfır ya da negatifse belge düzeyi kg fiyatı gösterilsin mi? | **Gösterilmesin (Önerilen)** | Seçilmeyen: "Hesaplanan değer gösterilsin". |
 | E-15 | Belge altı iskontonun satırlara dağıtımında iade satırları tabana girsin mi? | **Hayır, yalnız satış mal satırları (Önerilen)** | Seçilmeyen: "Evet, iade de girer". |
 | E-16 | Belge altı iskonto oransal dağıtılırken vade farkı olan satırın tutarı tabana vade farkı dahil mi girsin? (PR #1206 DOCS-REVIEW-2 P2-1) | **Vade hariç taban (Önerilen)** | Seçilmeyen: "Vade dahil taban". |
+| E-17 | İş kutusunda "günde üç özet" (AI-D29) hangi saatlerde gönderilsin? | **09:00, 13:00, 17:00 (Önerilen)** | Seçilmeyenler: "08:30, 12:30, 16:30"; "08:00, 12:00, 18:00". Kaynak: Work + AI tamamlama planı §5 S1. |
+| E-18 | "Bekleyen sevkiyat" sayımında kısmen sevk edilmiş yayımlanmış talimat bekleyen sayılsın mı? | **Evet, kalanı varsa bekleyen (Önerilen)** | Seçilmeyen: "Hayır, sevk başlayınca düşer". Plan §5 S2. |
+| E-19 | Kayda bağlı notlar ve iş kutusu mesajları ne kadar saklansın? | **Bağlı kayıt kadar (Önerilen)** | Seçilmeyenler: "10 yıl sabit"; "Şimdilik karar yok". Plan §5 S4. |
 
 ## Kararlar
 
@@ -49,6 +52,9 @@ işaretleri soranındır. Bu dosya bir **ajan aktarımıdır**; Issue #1189 kayd
 | SAT-D467 | Belge altı iskonto dağıtım tabanı | Belge altı iskonto yalnız pozitif mal satırlarına tutarla oransal dağıtılır; iade satırı dağıtım tabanına girmez ve pay almaz. Belge düzeyi kg fiyatı (SAT-D465) bundan etkilenmez. |
 | SAT-D468 | Belge altı iskonto dağıtım tabanında vade farkı (SAT-D407/SAT-D467 ayrıntısı) | Belge altı iskonto pozitif mal satırlarına satırın **vade farkı hariç** iskontolu tutarıyla oransal dağıtılır; vade farkı finansman bedelidir ve dağıtım tabanına girmez. Belge düzeyi kg fiyatı (SAT-D465) bundan etkilenmez. |
 | GOV-D14 | Golden EK2 dalı için izin | Golden yazarı oturumu yalnız `docs/decisions/ADET_KG_FORMUL_GOLDEN_V1_EK2.md` dosyasını `claude/adet-kg-golden-ek2` dalına gönderebilir; PR'ı ana oturum açar; merge yetkisi vermez; SAT-D431 gereği iki bağımsız DOCS incelemesi aranır. |
+| YOL-D25 | Günlük özet saatleri (AI-D29 ayrıntısı) | "Özet" sınıfı bildirimler iş günlerinde şirket saat diliminde 09:00, 13:00 ve 17:00'de toplanır; saatler Ayarlar'dan değiştirilebilir. |
+| AI-D37 | Kısmi sevk (AI-D35 ayrıntısı) | Yayımlanmış yükleme talimatının sevk edilmemiş miktarı kaldıkça talimat "bekleyen sevkiyat" sayılır; tamamı sevk edilince düşer. |
+| YOL-D26 | Not ve iş kutusu mesajı saklama (YOL-D19 ayrıntısı) | Kayda bağlı not ve iş kutusu mesajı, bağlı olduğu kaydın yasal saklama süresi boyunca tutulur; kayıt imha edilince not da imha edilir. İmha yolu kayıt imha politikası etkinleşene kadar kapalı kalır; bugün not silinmez, pasifleştirilir. |
 
 ## Taslağa doğrudan yansıyanlar (yeni karar değil)
 

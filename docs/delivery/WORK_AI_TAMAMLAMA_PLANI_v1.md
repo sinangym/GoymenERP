@@ -135,8 +135,8 @@ ayrı dosyaya bölünür; OpenAPI, guard, relational, recovery, release ve karar
 
 | # | Konu | Neden |
 |---|---|---|
-| S1 | Günde üç özetin saatleri (AI-D29) | Özet sınıfı bildirim bu saatler olmadan bekletiliyor |
-| S2 | AI-D35: kısmen sevk edilmiş yayımlanmış talimat "bekleyen" sayılsın mı | Bugünkü uygulama sayıyor; karar metni "kesin sevke dönmemiş" |
+| S1 | Günde üç özetin saatleri (AI-D29) | **Cevaplandı: YOL-D25** (09:00, 13:00, 17:00) |
+| S2 | AI-D35: kısmen sevk edilmiş talimat | **Cevaplandı: AI-D37** (kalanı varsa bekleyen) |
 | S3 | Saat ölçekli onay türleri ve ilk 12 türün kabul ölçütü eşikleri | Dalga 1 açık noktası |
-| S4 | Mesaj/not saklama süresi | YOL-D19; imha yolu kapalı kalır |
+| S4 | Mesaj/not saklama süresi | **Cevaplandı: YOL-D26** (bağlı kayıt kadar; imha yolu politika etkinleşene kadar kapalı) |
 | S5 | Yapay zekâ insan kapıları: sağlayıcı ve sözleşme, KVKK teyidi, aylık bütçe, iş ve teknik sahip | Kod kapalı teslim edilir, açılış bunları bekler |
