@@ -67,6 +67,17 @@ Before the model call the gateway reserves the version's per-request units in th
 would be passed, when the ceiling/reservation is empty, or when the policy version changed); after the call it settles the
 provider-reported units (zero on failure). The ledger is append-only; the month is the `Europe/Istanbul` calendar month.
 
+### Management screen (WP-A5, AI-20)
+
+`/ayarlar/yapay-zeka-ag-gecidi` (AY-YZG-01, Settings provider 1.21) on `settings.ai-gateway.manage` reads the policy
+(`GET …/ai-gateway`), the month's usage per feature (`GET …/ai-gateway/usage`, counts only from the ledger) and records a
+new version (`POST …/ai-gateway/versions`, K3). A version with any feature switched on is refused unless both budget values
+are entered — a positive monthly ceiling and a per-request reservation (YOL-D21). Acceptance counts come from an
+`IAiAcceptanceCountSourceV1` (`Gateway/AiAcceptanceCountsContractsV1.cs`); none is registered until the WP-C9 learning
+record, so the usage answer says `acceptanceMeasured: false` (never zeros). The AI security events (`ai.request.refused`,
+`ai.tool.called`, `ai.authz.denied`) are listed read-only through `GET /api/v1/security-events` only with the screen control
+`settings.ai-gateway.events.read` (`settings.ai-gateway.manage` + `platform.security-events.read`). Neither name is granted.
+
 ### Versioning
 
 `AiGatewayContractV1.Version = "ai-gateway.v1"`. Enum values (`AiFeatureV1`, `AiTaskKindV1`, `AiModelPlacementV1`) are
