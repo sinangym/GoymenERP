@@ -1,6 +1,7 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.Modules.Logistics.Application;
 using GoymenERP.Modules.Logistics.Application.Contracts;
 using GoymenERP.Modules.Logistics.Infrastructure.Persistence;
@@ -120,6 +121,11 @@ public static class LogisticsModuleExtensions
             LogisticsPermissionManifestV1.WeighingDifferencesApprove,
             LogisticsPermissionManifestV1.WeighingDifferencesRead));
         services.AddScoped<ILogisticsWeighingDifferenceServiceV1, LogisticsWeighingDifferenceService>();
+        // W1-A (AI-D31, AI-D32, YOL-D18): read-only Work inbox sources over Logistics's own pending approvals. They decide nothing.
+        services.AddScoped<WorkInbox.LogisticsWorkInboxFence>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.LogisticsDispatchNoteWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.LogisticsPlanExcessWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.LogisticsWeighingDifferenceWorkInboxSourceV1>();
         return services;
     }
 

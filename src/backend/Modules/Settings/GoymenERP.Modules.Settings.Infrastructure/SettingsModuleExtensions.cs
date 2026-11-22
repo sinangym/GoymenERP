@@ -113,6 +113,8 @@ public static class SettingsModuleExtensions
         services.AddScoped<SettingsCompanyPolicyProviderV1>();
         services.AddScoped<ISettingsManufacturingScrapCostPolicyProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
         services.AddScoped<ISettingsNotificationRetentionPolicyProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
+        services.AddScoped<ISettingsWorkApprovalDurationPolicyProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
+        services.AddScoped<ISettingsWorkHolidayCalendarProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
         services.AddScoped<ISettingsNotificationRetentionAutomationV1, SettingsNotificationRetentionAutomationV1>();
         services.AddScoped<ISettingsInventoryCostProfileReaderV1, SettingsInventoryCostProfileReaderV1>();
         services.AddScoped<ISettingsFinancePolicyProviderV1>(provider =>

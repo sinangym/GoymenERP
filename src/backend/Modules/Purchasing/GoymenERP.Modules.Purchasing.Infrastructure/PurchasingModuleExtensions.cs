@@ -1,9 +1,11 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.Modules.Purchasing.Application;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
+using GoymenERP.Modules.Purchasing.Infrastructure.WorkInbox;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -91,6 +93,11 @@ public static class PurchasingModuleExtensions
         // A4 / MOD-03: the open purchase lines serving a Sales order (the host adapts it to Sales's linked-supply read contract).
         services.AddScoped<IPurchaseSalesLinkedSupplyReadPortV1, PurchaseSalesLinkedSupplyReadPort>();
         services.AddScoped<IPurchaseNotificationRecipientsV1, PurchaseNotificationRecipients>();
+        // W1-A (AI-D31/AI-D32): the read-only Work inbox sources of Purchasing's pending approvals; they decide nothing.
+        services.AddScoped<PurchasingWorkInboxFence>();
+        services.AddScoped<IWorkInboxSourceV1, PurchaseOrderWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, PurchaseIncomingInvoiceVarianceWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, PurchaseGoodsReceiptBatchWorkInboxSourceV1>();
         // F-017 F17-1 (ALS-D82): the allocatable amount of an approved general line, read by Inventory's future allocation only.
         services.AddScoped<IPurchaseFutureSupplyReadPortV1, PurchaseFutureSupplyReadPort>();
         // F17-1b / KLN-D30: current unreceived schedule slices, on the same scoped owner context/transaction.

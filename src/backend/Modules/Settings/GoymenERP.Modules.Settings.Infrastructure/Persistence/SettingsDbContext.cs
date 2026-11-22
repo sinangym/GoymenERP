@@ -115,6 +115,7 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
         ConfigureWarehouseTransferScale(modelBuilder);
         ConfigureDocumentNumbers(modelBuilder);
         ConfigureFinancePolicies(modelBuilder);
+        ConfigureWorkHolidayCalendars(modelBuilder);
 
         // The platform audit and command-result tables are their owners' (excluded from Settings' migrations); Settings
         // writes them in the same SaveChanges as its own rows and reads them only through the company filter.
@@ -677,7 +678,7 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
                 throw new InvalidOperationException("Para profili kaydı değiştirilemez; yeni sürüm yazılır.");
             }
 
-            if (entry.State == EntityState.Modified && entry.Entity is CompanyPolicyVersionRow
+            if (entry.State == EntityState.Modified && entry.Entity is CompanyPolicyVersionRow or WorkHolidayCalendarVersionRow or WorkHolidayCalendarDayRow
                 or PurchaseInvoiceVariancePolicyRow
                 or WarehouseTransferScaleVersionRow
                 or FinanceCreditAccountMappingVersionRow or ReferenceListEntryRow or ReferenceListEntryVersionRow

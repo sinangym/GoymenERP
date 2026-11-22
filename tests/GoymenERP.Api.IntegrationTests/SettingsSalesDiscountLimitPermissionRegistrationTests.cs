@@ -53,6 +53,7 @@ public sealed class SettingsSalesDiscountLimitPermissionRegistrationTests
                 "settings.unit-conversion-policies.manage",
                 "settings.unit-profiles.manage",
                 "settings.warehouse-transfer-scale.manage",
+                "settings.work-approval-duration.manage",
                 "settings.work-center-capacities.manage"],
             ErpPermissions.All.Where(name => name.StartsWith("settings.", StringComparison.Ordinal)
                     && !name.StartsWith("settings.manufacturing-", StringComparison.Ordinal))

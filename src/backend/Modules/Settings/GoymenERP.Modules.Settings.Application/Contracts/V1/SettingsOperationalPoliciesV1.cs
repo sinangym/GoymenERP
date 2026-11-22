@@ -5,6 +5,11 @@ public static class SettingsOperationalPolicyPermissionsV1
     // Technical registration only. Real grant/role mapping remains human-owned.
     public const string ScrapCostManage = "settings.manufacturing-scrap-cost.manage";
     public const string NotificationRetentionManage = "settings.notification-retention.manage";
+    /// <summary>
+    /// YOL-D17/YOL-D18 (W1-A): records the two approval duration class lengths. Registered, not granted; company-wide;
+    /// not Critical. Giving it to a role is a human gate.
+    /// </summary>
+    public const string WorkApprovalDurationManage = "settings.work-approval-duration.manage";
 }
 
 public sealed record SettingsManufacturingScrapCostPolicyV1(Guid CompanyId, bool IncludeScrapCost, long Version)
@@ -23,6 +28,66 @@ public interface ISettingsNotificationRetentionPolicyProviderV1
 {
     Task<SettingsNotificationRetentionPolicyV1> GetNotificationRetentionAsync(Guid companyId, CancellationToken cancellationToken = default);
 }
+/// <summary>
+/// YOL-D18 (W1-A): the lengths of the two approval duration classes. A null length is "not recorded": the reader shows
+/// "süre tanımlı değil" and never assumes a default (fail closed). Each length carries its own version text.
+/// </summary>
+public sealed record SettingsWorkApprovalDurationPolicyV1(Guid CompanyId, int? Hours, long HoursVersion, int? BusinessDays,
+    long BusinessDaysVersion)
+{
+    public string HoursVersionText => $"work.approval-duration-hours:{HoursVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+    public string BusinessDaysVersionText =>
+        $"work.approval-duration-business-days:{BusinessDaysVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+}
+public interface ISettingsWorkApprovalDurationPolicyProviderV1
+{
+    Task<SettingsWorkApprovalDurationPolicyV1> GetWorkApprovalDurationAsync(Guid companyId, CancellationToken cancellationToken = default);
+}
+public static class SettingsWorkApprovalDurationLimitsV1
+{
+    /// <summary>Input range only (one hour up to a week of hours); the decided values live in recorded versions.</summary>
+    public const int MaximumHours = 168;
+    /// <summary>Input range only; the decided values live in recorded versions.</summary>
+    public const int MaximumBusinessDays = 30;
+}
+/// <summary>YOL-D22: a listed day is an official holiday or an eve (arife); both are deducted from business days.</summary>
+public enum WorkHolidayKindV1
+{
+    Holiday = 1,
+    Eve = 2,
+}
+/// <summary>YOL-D22: the latest recorded holiday list of one year; a year missing from the answer is "not defined".</summary>
+public sealed record SettingsWorkHolidayCalendarYearV1(int Year, long Version, IReadOnlyList<DateOnly> Days)
+{
+    public string VersionText => string.Create(System.Globalization.CultureInfo.InvariantCulture,
+        $"work.holiday-calendar.{Year}:{Version}");
+}
+public sealed record SettingsWorkHolidayCalendarsV1(Guid CompanyId, IReadOnlyList<SettingsWorkHolidayCalendarYearV1> DefinedYears);
+public interface ISettingsWorkHolidayCalendarProviderV1
+{
+    /// <summary>The defined years among <paramref name="fromYear"/>..<paramref name="toYear"/> (inclusive) with their latest list.</summary>
+    Task<SettingsWorkHolidayCalendarsV1> GetWorkHolidayCalendarsAsync(Guid companyId, int fromYear, int toYear,
+        CancellationToken cancellationToken = default);
+}
+public static class SettingsWorkHolidayCalendarLimitsV1
+{
+    public const int MinimumYear = 2000;
+    public const int MaximumYear = 2100;
+    /// <summary>Input bound only: no year lists more official holidays and eves than this.</summary>
+    public const int MaximumDays = 60;
+}
+public sealed record RecordWorkHolidayDayV1(DateOnly? Date, string? Kind);
+public sealed record RecordWorkHolidayCalendarRequestV1(string? ExpectedVersion, IReadOnlyList<RecordWorkHolidayDayV1>? Days, string? Reason);
+public sealed record WorkHolidayCalendarDayViewV1(DateOnly Date, string Kind);
+public sealed record WorkHolidayCalendarVersionViewV1(string Version, int DayCount, string RecordedBy, DateTimeOffset RecordedAtUtc,
+    string Reason);
+public sealed record WorkHolidayCalendarViewV1(Guid CompanyId, int Year, bool IsDefined, string Version,
+    IReadOnlyList<WorkHolidayCalendarDayViewV1> Days, IReadOnlyList<WorkHolidayCalendarVersionViewV1> Versions);
+public sealed record RecordWorkApprovalDurationRequestV1(string? ExpectedVersion, int? Value, string? Reason);
+public sealed record WorkApprovalDurationClassViewV1(int? Value, string Version,
+    IReadOnlyList<WholeNumberCompanyPolicyVersionViewV1> Versions);
+public sealed record WorkApprovalDurationPolicyViewV1(Guid CompanyId, WorkApprovalDurationClassViewV1 Hours,
+    WorkApprovalDurationClassViewV1 BusinessDays);
 public sealed record RecordManufacturingScrapCostRequestV1(string? ExpectedVersion, bool? IncludeScrapCost, string? Reason);
 public sealed record RecordNotificationRetentionRequestV1(string? ExpectedVersion, int? ActiveDays, string? Reason);
 public sealed record BooleanCompanyPolicyVersionViewV1(string Version, bool Value, string RecordedBy, DateTimeOffset RecordedAtUtc, string Reason);
@@ -38,5 +103,13 @@ public interface ISettingsOperationalPolicyAdministrationV1
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
     Task<NotificationRetentionPolicyViewV1> GetNotificationRetentionAsync(CancellationToken cancellationToken = default);
     Task<CompanyPolicyCommandResultV1> RecordNotificationRetentionAsync(RecordNotificationRetentionRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+    Task<WorkApprovalDurationPolicyViewV1> GetWorkApprovalDurationAsync(CancellationToken cancellationToken = default);
+    Task<CompanyPolicyCommandResultV1> RecordWorkApprovalDurationHoursAsync(RecordWorkApprovalDurationRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+    Task<CompanyPolicyCommandResultV1> RecordWorkApprovalDurationBusinessDaysAsync(RecordWorkApprovalDurationRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+    Task<WorkHolidayCalendarViewV1> GetWorkHolidayCalendarAsync(int year, CancellationToken cancellationToken = default);
+    Task<CompanyPolicyCommandResultV1> RecordWorkHolidayCalendarAsync(int year, RecordWorkHolidayCalendarRequestV1 request,
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
 }

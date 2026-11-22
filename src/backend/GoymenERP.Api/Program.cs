@@ -203,6 +203,10 @@ builder.Services.AddScoped<INativeApprovalReadAdapterV1, InventoryStockScrapPend
 builder.Services.AddScoped<INativeApprovalReadAdapterV1, SalesOrderDraftPendingApprovalAdapterV1>();
 builder.Services.AddScoped<NativeApprovalReadQueryV1>();
 builder.Services.AddScoped<NativeApprovalQueueReadQueryV1>();
+// W1-A (AI-D31/AI-D32, YOL-D18): the Work inbox reads the owners' IWorkInboxSourceV1 ports (registered by each module)
+// and records only Work's own measurement events; it decides nothing.
+builder.Services.AddWorkApprovalInboxMeasurementsV1();
+builder.Services.AddScoped<WorkInboxReadQueryV1>();
 builder.Services.AddScoped<IFinancePartyAccountPort, CounterpartyFinancePartyAccountPort>();
 // B-17: the version bump with the account's roles (dual role) and supplier IBAN view; V1 stays for its consumers.
 builder.Services.AddScoped<IFinancePartyAccountPortV2, CounterpartyFinancePartyAccountPortV2>();
@@ -617,6 +621,7 @@ app.MapFinanceCashExchangeBookValuesV1();
 app.MapFinanceOpenItemReadEndpoints();
 app.MapWorkApprovalEndpoints();
 app.MapWorkQueueEndpoints();
+app.MapWorkInboxEndpoints();
 app.MapWorkNotificationEndpoints();
 app.MapSalesEndpoints();
 app.MapSalesProductCandidateEndpoints();

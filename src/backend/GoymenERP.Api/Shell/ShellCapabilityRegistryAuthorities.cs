@@ -51,7 +51,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // Produced by the exact actual-host tuple test, including STK-S13's separate provider.
     // Tren-1 W8 (UI-64, API-33 / API-36): Sales 1.27 publishes the four invoice controls of the S-09 list; every row that
     // contains the Sales provider re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision; names unchanged.
-    internal const string FullNormalHostWithSettingsAndPaintMemberships = "sha256:8vv8UHxk1zT7vo0PM3WBaKld44MRuYrRv7itjfK3ivY";
+    // W1-A: Settings 1.19 adds the approval duration screen; re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision.
+    internal const string FullNormalHostWithSettingsAndPaintMemberships = "sha256:nCbm4YLiQlzeaf7z0-7iMMwU2IYVGMQsrX6ZCdNYwFQ";
     // Tren-1 wave 7: Settings 1.11 and Inventory 1.9; active authority rows re-derived in place
     // by ShellCapabilityRegistry.ComputeCandidateRevision over actual providers; historical rows preserved.
     // Tren-1 wave 6: Manufacturing 1.11, Inventory 1.8, Identity 1.2 and Settings 1.9; active authority rows
@@ -746,8 +747,9 @@ internal const string FullNormalHostWithProductPriceListsAndSalesReports =
     // rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
     // Tren-1 wave 5 integration: Settings 1.6 provider bump and the merged team branches' provider/permission changes;
     // rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
+// W1-A: Settings 1.19 re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision.
 internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV11 =
-        "sha256:F_FUy6zxp7-6WSqhtmNxVruYZg_BLzyiZDuggu1UDTY";
+        "sha256:AhYXXhmjuvWWyLEXBg02rgALvDwjPaESrbESBdCYRck";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";

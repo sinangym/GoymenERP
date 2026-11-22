@@ -316,8 +316,8 @@ public sealed class WorkOutboxRegistrationTests
                 .Options,
             company);
 
-        Assert.Equal(new[] { "AddWorkInboxConsumerDedup", "AddPersonalNotifications" },
-            context.Database.GetMigrations().TakeLast(2).Select(name => name.Split('_', 2)[1]));
+        Assert.Equal(new[] { "AddWorkInboxConsumerDedup", "AddPersonalNotifications", "AddWorkApprovalInboxEvents" },
+            context.Database.GetMigrations().TakeLast(3).Select(name => name.Split('_', 2)[1]));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var deliveries = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(WorkOutboxDeliveryRow))!;

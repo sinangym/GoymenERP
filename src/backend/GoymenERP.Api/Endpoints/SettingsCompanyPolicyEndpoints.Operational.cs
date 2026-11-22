@@ -45,5 +45,51 @@ public static partial class SettingsCompanyPolicyEndpoints
             .ProducesErpBadRequest(CommandBadRequestCodes).AllowsCodeLessErpBadRequestBody().ProducesErpUnsupportedMediaType()
             .ProducesErpConflict(CompanyPolicyProblemCodesV1.IdempotencyConflict, CompanyPolicyProblemCodesV1.VersionConflict)
             .ProducesErpServiceUnavailable(CompanyPolicyProblemCodesV1.ProviderUnavailable).ProducesErpAuthenticatedProblems();
+        group.MapGet("/work-approval-duration", async (HttpContext context, ISettingsOperationalPolicyAdministrationV1 service,
+            CancellationToken cancellationToken) => await ReadAsync(context, () => service.GetWorkApprovalDurationAsync(cancellationToken)))
+            .RequireCompanyContext().RequireAuthorization(SettingsOperationalPolicyPermissionsV1.WorkApprovalDurationManage)
+            .WithName("GetSettingsWorkApprovalDurationV1").Produces<WorkApprovalDurationPolicyViewV1>()
+            .ProducesErpBadRequest(CompanyPolicyProblemCodesV1.RequestInvalid)
+            .ProducesErpServiceUnavailable(CompanyPolicyProblemCodesV1.ProviderUnavailable).ProducesErpAuthenticatedProblems();
+        group.MapPost("/work-approval-duration/hours/versions", async (RecordWorkApprovalDurationRequestV1 request,
+            ISettingsOperationalPolicyAdministrationV1 service, ICurrentUser currentUser, ICompanyContext companyContext,
+            ICorrelationContext correlation, HttpContext context, CancellationToken cancellationToken) =>
+                await CommandAsync(context, currentUser, companyContext, correlation,
+                    metadata => service.RecordWorkApprovalDurationHoursAsync(request, metadata, cancellationToken)))
+            .RequireCompanyContext().RequireAuthorization(SettingsOperationalPolicyPermissionsV1.WorkApprovalDurationManage)
+            .WithName("RecordSettingsWorkApprovalDurationHoursV1").WithIdempotencyContract(204, 409)
+            .Accepts<RecordWorkApprovalDurationRequestV1>("application/json").Produces(204)
+            .ProducesErpBadRequest(CommandBadRequestCodes).AllowsCodeLessErpBadRequestBody().ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(CompanyPolicyProblemCodesV1.IdempotencyConflict, CompanyPolicyProblemCodesV1.VersionConflict)
+            .ProducesErpServiceUnavailable(CompanyPolicyProblemCodesV1.ProviderUnavailable).ProducesErpAuthenticatedProblems();
+        group.MapPost("/work-approval-duration/business-days/versions", async (RecordWorkApprovalDurationRequestV1 request,
+            ISettingsOperationalPolicyAdministrationV1 service, ICurrentUser currentUser, ICompanyContext companyContext,
+            ICorrelationContext correlation, HttpContext context, CancellationToken cancellationToken) =>
+                await CommandAsync(context, currentUser, companyContext, correlation,
+                    metadata => service.RecordWorkApprovalDurationBusinessDaysAsync(request, metadata, cancellationToken)))
+            .RequireCompanyContext().RequireAuthorization(SettingsOperationalPolicyPermissionsV1.WorkApprovalDurationManage)
+            .WithName("RecordSettingsWorkApprovalDurationBusinessDaysV1").WithIdempotencyContract(204, 409)
+            .Accepts<RecordWorkApprovalDurationRequestV1>("application/json").Produces(204)
+            .ProducesErpBadRequest(CommandBadRequestCodes).AllowsCodeLessErpBadRequestBody().ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(CompanyPolicyProblemCodesV1.IdempotencyConflict, CompanyPolicyProblemCodesV1.VersionConflict)
+            .ProducesErpServiceUnavailable(CompanyPolicyProblemCodesV1.ProviderUnavailable).ProducesErpAuthenticatedProblems();
+        group.MapGet("/work-holiday-calendar/{year:int}", async (int year, HttpContext context,
+            ISettingsOperationalPolicyAdministrationV1 service, CancellationToken cancellationToken) =>
+                await ReadAsync(context, () => service.GetWorkHolidayCalendarAsync(year, cancellationToken)))
+            .RequireCompanyContext().RequireAuthorization(SettingsOperationalPolicyPermissionsV1.WorkApprovalDurationManage)
+            .WithName("GetSettingsWorkHolidayCalendarV1").Produces<WorkHolidayCalendarViewV1>()
+            .ProducesErpBadRequest(CompanyPolicyProblemCodesV1.RequestInvalid)
+            .ProducesErpServiceUnavailable(CompanyPolicyProblemCodesV1.ProviderUnavailable).ProducesErpAuthenticatedProblems();
+        group.MapPost("/work-holiday-calendar/{year:int}/versions", async (int year, RecordWorkHolidayCalendarRequestV1 request,
+            ISettingsOperationalPolicyAdministrationV1 service, ICurrentUser currentUser, ICompanyContext companyContext,
+            ICorrelationContext correlation, HttpContext context, CancellationToken cancellationToken) =>
+                await CommandAsync(context, currentUser, companyContext, correlation,
+                    metadata => service.RecordWorkHolidayCalendarAsync(year, request, metadata, cancellationToken)))
+            .RequireCompanyContext().RequireAuthorization(SettingsOperationalPolicyPermissionsV1.WorkApprovalDurationManage)
+            .WithName("RecordSettingsWorkHolidayCalendarV1").WithIdempotencyContract(204, 409)
+            .Accepts<RecordWorkHolidayCalendarRequestV1>("application/json").Produces(204)
+            .ProducesErpBadRequest(CommandBadRequestCodes).AllowsCodeLessErpBadRequestBody().ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(CompanyPolicyProblemCodesV1.IdempotencyConflict, CompanyPolicyProblemCodesV1.VersionConflict)
+            .ProducesErpServiceUnavailable(CompanyPolicyProblemCodesV1.ProviderUnavailable).ProducesErpAuthenticatedProblems();
     }
 }

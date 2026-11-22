@@ -214,6 +214,8 @@ export const APPROVALS_TEXT = {
   homeHeading: 'Onaylarım',
   homeText: (labels: readonly string[]) => `Onayınızı bekleyen kayıtlar: ${joinLabels(labels)}.`,
   homeLink: 'Bekleyen onaylarımı aç',
+  /** W1-A: the home entry's link to the Work inbox's "Benden karar bekleyen" view. */
+  homeInboxLink: 'İş kutusunu aç (benden karar bekleyen)',
 } as const
 
 /** B-25 Work queue — the words of the one-list view (`WORK_ROUTE.queue`). */
