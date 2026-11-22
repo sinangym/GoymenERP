@@ -50,7 +50,7 @@ GROUP_PROJECTS = {
         "tests/GoymenERP.Work.UnitTests/GoymenERP.Work.UnitTests.csproj",
     ),
 }
-SOLUTION_PROJECT_COUNT = 75
+SOLUTION_PROJECT_COUNT = 77
 TEST_PROJECT_COUNT = 22
 PROOF_SCHEMA = 5
 # The api project is the CI critical path; its classes are split over this many

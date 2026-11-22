@@ -16,6 +16,10 @@
     <Project Path="src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Domain/GoymenERP.Modules.Accounting.Domain.csproj" />
     <Project Path="src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/GoymenERP.Modules.Accounting.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/src/backend/Modules/AiKnowledge/">
+    <Project Path="src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Domain/GoymenERP.Modules.AiKnowledge.Domain.csproj" />
+    <Project Path="src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/GoymenERP.Modules.AiKnowledge.Infrastructure.csproj" />
+  </Folder>
   <Folder Name="/src/backend/Modules/Audit/">
     <Project Path="src/backend/Modules/Audit/GoymenERP.Modules.Audit.Application/GoymenERP.Modules.Audit.Application.csproj" />
     <Project Path="src/backend/Modules/Audit/GoymenERP.Modules.Audit.Domain/GoymenERP.Modules.Audit.Domain.csproj" />
