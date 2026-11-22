@@ -266,6 +266,7 @@ settings.manufacturing-tolerance-profiles.read,settings,hayır,evet,+,,,,,+,,,+,
 settings.manufacturing-tolerance-profiles.prepare,settings,hayır,evet,,,,,,,,,+,,,,,,,,ÖNERİ,Profili planlama hazırlar.
 settings.manufacturing-tolerance-profiles.approve,settings,hayır,evet,K,,,,,K,,,,,,,,,,,ÖNERİ,Hazırlayan ≠ onaylayan; ROL-D5.
 settings.manufacturing-tolerance-profiles.publish,settings,hayır,evet,+,,,,,+,,,,,,,,,,,ÖNERİ,Onaylı profili yayımlama.
+settings.work-approval-duration.manage,settings,hayır,evet,+,,,,,,,,,,,,,,,+,ÖNERİ,"YOL-D18 onay süre değerleri Ayarlar parametresidir; ROL-D19 onay eşiklerindeki dağılımla aynı öneri: GM + Sistem Yöneticisi. İş onayı değil, sistem ayarıdır."
 documents.files.read,documents,hayır,evet,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,ÖNERİ,Kayda bağlı dosya okuması; kayıt yetkisiyle birlikte geçerli.
 documents.files.upload,documents,hayır,evet,,+,+,+,+,+,+,+,+,+,,+,+,+,+,,ÖNERİ,İş kaydına belge ekleme.
 documents.files.link,documents,hayır,evet,,+,+,+,+,+,+,+,+,+,,+,+,+,+,,ÖNERİ,Belgeyi kayda bağlama.
@@ -284,4 +285,8 @@ identity.audit.read,identity,evet,evet,,,,,,,,,,,,,,,,IK,IK,Critical. Aday: Sist
 identity.assignments.read,identity,evet,evet,,,,,,,,,,,,,,,,IK,IK,Critical. Aday: Sistem Yöneticisi.
 identity.users.manage,identity,hayır,evet,,,,,,,,,,,,,,,,+,ÖNERİ,Kullanıcı yönetimi sistem yönetimidir (SAT-D190: GM almaz). Kayıtta Critical değil.
 platform.security-events.read,platform,evet,evet,,,,,,,,,,,,,,,,IK,IK,Critical. Aday: Sistem Yöneticisi.
+work.notes.write,work,hayır,evet,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,,ÖNERİ,"AI-D23/YOL-D19/YOL-D26: kayda bağlı not; okuma kontrolü kaydın sahip modülündedir, not yetki genişletmez. Sistem Yöneticisi iş kaydı taşımaz (ROL-D6). Kalite pasif (ROL-D20)."
+work.tasks.assign,work,hayır,evet,+,,+,,+,+,,,,,,,+,,+,,ÖNERİ,AI-D23: görev atama; öneri yalnız müdürler + GM (görev bir başkasının iş listesini belirler). Kişi listesi bu izin veya work.notes.write ister (plan D7).
+work.tasks.complete,work,hayır,evet,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,,ÖNERİ,AI-D23: yalnız kendisine atanan görevi tamamlar (kural Work alanında). Sistem Yöneticisi iş kaydı taşımadığı için önerilmez (ROL-D6); Kalite pasif (ROL-D20).
 ai.panel.use,ai,hayır,evet,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,KARARLI,"ROL-D16: başlangıçta bütün kullanıcı rollerine önerilir (AI-D8'in yerine); AI-D1/AI-D6 sürer, grant insan kapısı."
+ai.decisions.read,ai,hayır,evet,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,KARARLI,AI-D36: bütün kullanıcı rollerine (ROL-D16 ile tutarlı); kişi adları dizinde maskelenir (AI-D34); AI canlıda kapalı (AI-D6); grant insan kapısı.

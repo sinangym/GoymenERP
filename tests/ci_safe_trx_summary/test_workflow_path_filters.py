@@ -7,6 +7,10 @@ skipped, and fail when checked-in code starts to read a skipped file.
 
 GOV-D5: the Faz 0 tier (c) commands in AGENTS.md let a merge go ahead when ``main`` moved only in
 that skipped prose. The last two tests keep those commands equal to the filter.
+
+WP16 / D1: ``docs/decisions`` is no longer skipped prose. The AI decision index generator reads every
+decision file there and CI checks that the committed index is current, so a decision change alone must
+start CI.
 """
 from __future__ import annotations
 
@@ -25,22 +29,15 @@ THIS_FILE = "tests/ci_safe_trx_summary/test_workflow_path_filters.py"
 FILTERED_WORKFLOWS = ("ci.yml", "cari-c02-link-acceptance.yml")
 
 # Markdown below these folders is prose for people; no CI job opens it.
-PROSE_ROOTS = ("docs/decisions/", "docs/delivery/", "docs/handoffs/", "docs/operations/")
+PROSE_ROOTS = ("docs/delivery/", "docs/handoffs/", "docs/operations/")
 
 # Markdown below those folders that a CI validator does read; it must keep starting CI.
 READ_BY_CI = (
-    "docs/decisions/KARAR_SICILI.md",
-    "docs/decisions/ACIK_KARARLAR.md",
-    "docs/decisions/SINAN_KARARLARI_2026-08-31.md",
     "docs/delivery/DECISION_PACK.md",
 )
 
 EXPECTED_FILTER = (
     "**",
-    "!docs/decisions/**/*.md",
-    "docs/decisions/KARAR_SICILI.md",
-    "docs/decisions/ACIK_KARARLAR.md",
-    "docs/decisions/SINAN_KARARLARI_2026-08-31.md",
     "!docs/delivery/**/*.md",
     "docs/delivery/DECISION_PACK.md",
     "!docs/handoffs/**/*.md",
@@ -66,9 +63,13 @@ MUST_START = (
     "docs/decisions/global.json", "docs/delivery/Directory.Build.props",
     "docs/handoffs/NuGet.Config", "docs/operations/.config/dotnet-tools.json",
     "docs/decisionsX/note.md", "other/docs/decisions/note.md", "docs/note.md",
+    # WP16 / D1: every decision document feeds the AI decision index.
+    "docs/decisions/KARAR_SICILI.md", "docs/decisions/ACIK_KARARLAR.md",
+    "docs/decisions/SINAN_KARARLARI_2026-11-12_CI_KUYRUK.md", "docs/decisions/nested/NOTE.md",
+    "docs/decisions/ADET_KG_FORMUL_GOLDEN_V1.md",
 )
 SKIPPED_PROSE = (
-    "docs/decisions/SINAN_KARARLARI_2026-11-12_CI_KUYRUK.md", "docs/delivery/PLAN.md",
+    "docs/delivery/PLAN.md",
     "docs/delivery/nested/deeper/PLAN.md", "docs/handoffs/NOTE.md", "docs/operations/RUNBOOK.md",
 )
 
@@ -98,7 +99,9 @@ PRUNED_DIRECTORIES = frozenset(
     {".git", "node_modules", "bin", "obj", "dist", "TestResults", "artifacts", "coverage"}
 )
 PROSE_MENTION = re.compile(
-    r"docs[/\\]+(?:decisions|delivery|handoffs|operations)(?![A-Za-z0-9_-])[A-Za-z0-9_.*/\\-]*"
+    r"docs[/\\]+(?:"
+    + "|".join(re.escape(root[len("docs/"):-1]) for root in PROSE_ROOTS)
+    + r")(?![A-Za-z0-9_-])[A-Za-z0-9_.*/\\-]*"
 )
 
 
@@ -305,7 +308,7 @@ class WorkflowPathFilterTests(unittest.TestCase):
             tuple(shell_array(script, "READ_BY_CI")), tuple(f":(top){path}" for path in READ_BY_CI)
         )
         self.assertEqual(tuple(script.splitlines()[-4:]), FAZ0_SKIPPED_ONLY_COMMANDS)
-        self.assertEqual(len(script.splitlines()), 8)
+        self.assertEqual(len(script.splitlines()), 7)
 
     def test_faz0_skipped_only_commands_agree_with_the_filter_in_git(self):
         script = read_faz0_skipped_only_script()
