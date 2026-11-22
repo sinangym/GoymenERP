@@ -1,5 +1,5 @@
 export const COLLABORATION_TEXT = {
-  notesHeading: 'Notlar', notesSubject: 'notlar', notesEmpty: 'Bu kayıtta henüz not yok.',
+  notesHeading: 'Notlar', showNotes: 'Notları göster', hideNotes: 'Notları gizle', notesSubject: 'notlar', notesEmpty: 'Bu kayıtta henüz not yok.',
   includePassive: 'Pasif notları da göster', noteLabel: 'Yeni not', notePlaceholder: 'Notunuzu yazın; düzeltme için yeni not yazılır.',
   addNote: 'Notu kaydet', saving: 'Kaydediliyor…', passive: 'Pasif', correctionOf: 'Düzeltme notu', author: 'Yazan', time: 'Zaman',
   passivate: 'Pasifleştir', passivateReason: 'Pasifleştirme gerekçesi', confirmPassivate: 'Pasifleştirmeyi kaydet', cancel: 'Vazgeç',

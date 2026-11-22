@@ -53,7 +53,7 @@
 import { useContext, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router'
-import { RecordNotesPanel } from '../work/RecordNotesPanel'
+import { RecordNotesSection } from '../work/RecordNotesSection'
 import { fetchDraftDetail, sendDraftCommand } from './api'
 import { orderUnitCodes } from './unitNames'
 import { UnitName } from './UnitName'
@@ -561,7 +561,7 @@ export function SalesDraftDetailPage() {
     />
       {/* W1-C: notes on this draft; the server answers readability, write permission and mentions. */}
       {companyId !== null && outcome.data.draft.companyId === companyId ? (
-        <RecordNotesPanel recordType="sales-order-draft" recordId={outcome.data.draft.id} />
+        <RecordNotesSection recordType="sales-order-draft" recordId={outcome.data.draft.id} />
       ) : null}
     </>
   )
