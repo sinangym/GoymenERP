@@ -27,11 +27,17 @@ public static class PurchaseInvoiceKilograms
     /// pieces ÷ accepted pieces, exact. A kilogram line's share is its matched quantity. Null when the share has no kg facts or
     /// the acceptance was not weighed (K14) — never the theoretical kg.
     /// </summary>
-    public static PurchaseExactRatio? Weighed(PurchaseInvoiceReceiptMatch match)
+    /// <remarks>
+    /// ALS-D122/D123 (<paramref name="remainingShareAccepted"/>, default <see cref="PurchasePieceKilograms.RemainingShareGoldenAccepted"/>):
+    /// a piece share matched after a return or reversal of its acceptance has no real kg here (the returned kilograms are
+    /// Inventory's); the cost itself is applied by Inventory with the current remaining share.
+    /// </remarks>
+    public static PurchaseExactRatio? Weighed(PurchaseInvoiceReceiptMatch match, bool? remainingShareAccepted = null)
     {
         ArgumentNullException.ThrowIfNull(match);
         if (match.Kilograms is not { } kilograms) return null;
         if (kilograms.UnitIsKilogram) return PurchaseExactRatio.Of(match.Quantity);
+        if ((remainingShareAccepted ?? PurchasePieceKilograms.RemainingShareGoldenAccepted) && match.ReceiptAdjustments is { Count: > 0 }) return null;
         if (kilograms.AcceptanceMeasuredKg is not { } measured || match.AcceptedQuantity is not { } accepted || accepted <= 0m) return null;
         return PurchaseExactRatio.Of(measured).Multiply(match.Quantity).Divide(accepted);
     }
@@ -72,7 +78,7 @@ public static class PurchaseInvoiceKgPrice
             if (!goods || shares.Length == 0 || shares.Sum(share => share.Quantity) != line.Quantity)
                 return new PurchaseInvoiceLineKilograms(line.Id, goods, line.Amounts.Net, null, null);
             var theoretical = shares.Select(PurchaseInvoiceKilograms.Theoretical).ToArray();
-            var weighed = shares.Select(PurchaseInvoiceKilograms.Weighed).ToArray();
+            var weighed = shares.Select(share => PurchaseInvoiceKilograms.Weighed(share)).ToArray();
             return new PurchaseInvoiceLineKilograms(line.Id, goods, line.Amounts.Net,
                 theoretical.Any(value => value is null) ? null : theoretical.Sum(value => value!.Value),
                 weighed.Any(value => value is null) ? null

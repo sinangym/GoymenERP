@@ -383,6 +383,62 @@ public sealed class PurchaseKgPriceRealizationTests
         Assert.Null(PurchaseOrderKgPriceViews.DocumentRealization(deferred, shares)!.RealKgPrice);
     }
 
+    // ---- golden EK1 §4 (SAT-D452): only finalised invoices, row ids in the names ---------------------------------------------
+
+    [Fact]
+    public void E16_E17_a_draft_invoice_does_not_count_until_it_is_finalised()
+    {
+        var (order, piece) = PieceOrder(100m, 250m, 12.345m);
+        var first = Finalized(Matched(Lira, null, new InvoiceLine(40m, 10000m, PieceShare(order, piece, 40m, 40m, 500.16m))));
+        var second = Matched(Lira, null, new InvoiceLine(60m, 15000m, PieceShare(order, piece, 60m, 60m, 748.9m)));
+        PurchaseOrderInvoiceShare[] Shares() => [.. PurchaseOrderRealizations.SharesOf(first, order.Id), .. PurchaseOrderRealizations.SharesOf(second, order.Id)];
+
+        // E16: invoice 2 is not finalised -> 40/100 pieces, 10 000,00, 500,160 kg, 19,99 (20,02 with the draft OLMAZ); theoretical 20,25.
+        var partial = PurchaseOrderKgPriceViews.LineRealization(order, piece, Shares())!;
+        Assert.Equal(("40", "10000.00", "500.16", "19.99"), (partial.InvoicedQuantity, partial.InvoicedAmount, partial.WeighedKg, partial.RealKgPrice));
+        Assert.Equal("20.25", PurchaseOrderKgPriceViews.Line(order, piece, Shares())!.TheoreticalKgPrice);
+
+        // E17: both finalised -> 100/100 pieces, 20,02.
+        Finalized(second);
+        var full = PurchaseOrderKgPriceViews.LineRealization(order, piece, Shares())!;
+        Assert.Equal(("100", "20.02"), (full.InvoicedQuantity, full.RealKgPrice));
+    }
+
+    [Fact]
+    public void E19_E20_with_only_a_draft_invoice_there_is_no_real_kg_price_and_the_theoretical_one_stays()
+    {
+        // E19: sales-shaped numbers; E20: purchase K10 (200 x 45,00, k 2,500, weighed 489,750) -> theoretical 18,00, real 18,38 once finalised.
+        var (order, piece) = PieceOrder(200m, 45m, 2.5m);
+        var invoice = Matched(Lira, null, new InvoiceLine(200m, 9000m, PieceShare(order, piece, 200m, 200m, 489.75m, 2.5m)));
+
+        var draft = PurchaseOrderKgPriceViews.Line(order, piece, PurchaseOrderRealizations.SharesOf(invoice, order.Id))!;
+        Assert.Equal(("18.00", (string?)null, PurchaseKgPriceUnavailableCodes.NotInvoiced), (draft.TheoreticalKgPrice, draft.RealKgPrice, draft.RealUnavailable));
+
+        Finalized(invoice);
+        Assert.Equal("18.38", PurchaseOrderKgPriceViews.Line(order, piece, PurchaseOrderRealizations.SharesOf(invoice, order.Id))!.RealKgPrice);
+    }
+
+    // E18 (an invoice cancelled after finalisation) and E21/E21a (a Finance rejection, SAT-D457) are sales-invoice states: the
+    // purchase incoming invoice has no cancelled or rejected status, so they have no purchase fact here. The single rule
+    // (PurchaseInvoiceRealizationRule) is where such a state must be excluded if it is ever added.
+
+    [Fact]
+    public void ALS_D122_a_piece_share_matched_after_a_return_shows_no_real_kg_instead_of_the_ALS_D121_figure()
+    {
+        var (order, piece) = PieceOrder(100m, 250m, 12.345m);
+        var invoice = Matched(Lira, null, new InvoiceLine(40m, 10000m, PieceShare(order, piece, 40m, 100m, 1250.4m)));
+        var returned = Assert.Single(invoice.Matches) with { ReceiptAdjustments = [new(Guid.NewGuid(), 20m, true)] };
+
+        // Open (default): no real kg — Purchasing does not hold the returned kilograms; the theoretical kg is unaffected.
+        Assert.True(PurchasePieceKilograms.RemainingShareGoldenAccepted);
+        Assert.Null(PurchaseInvoiceKilograms.Weighed(returned));
+        Assert.Equal(493.8m, PurchaseInvoiceKilograms.Theoretical(returned));
+        // Closed (pinned by parameter): the earlier ALS-D121 figure.
+        Assert.Equal(500.160m, PurchaseInvoiceKilograms.Weighed(returned, remainingShareAccepted: false)!.Value.Round(3));
+        // Without a return both states agree.
+        Assert.Equal(500.160m, PurchaseInvoiceKilograms.Weighed(Assert.Single(invoice.Matches))!.Value.Round(3));
+    }
+
     // ---- wire and event shape --------------------------------------------------------------------------------------------
 
     [Fact]

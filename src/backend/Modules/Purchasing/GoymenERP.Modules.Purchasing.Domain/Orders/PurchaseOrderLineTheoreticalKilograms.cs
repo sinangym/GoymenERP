@@ -45,6 +45,15 @@ public sealed record PurchaseOrderLineTheoreticalKilograms
 /// </summary>
 public static class PurchasePieceKilograms
 {
+    /// <summary>
+    /// ALS-D122/D123 on the kg price indicator: Purchasing's mirror of Inventory's
+    /// <c>PurchaseInvoiceKilogramShare.PurchaseInvoiceRemainingShareGoldenAccepted</c> (one switch; an Api test pins that the two
+    /// agree). While on, a piece share whose acceptance already had a return or reversal when it was matched shows NO real kg:
+    /// Purchasing does not hold the returned kilograms, so it neither keeps the ALS-D121 figure (wrong after a return) nor
+    /// estimates the ALS-D122 one.
+    /// </summary>
+    public static bool RemainingShareGoldenAccepted => true;
+
     /// <summary>Kilograms keep three decimals on a document line (URN-D9, BS-13).</summary>
     public const int KilogramScale = 3;
 

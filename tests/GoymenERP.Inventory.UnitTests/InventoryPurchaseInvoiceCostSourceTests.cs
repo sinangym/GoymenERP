@@ -179,9 +179,10 @@ public sealed class InventoryPurchaseInvoiceCostSourceTests
     }
 
     [Fact]
-    public void ALS_D122_stays_closed_and_a_non_proportional_return_keeps_the_piece_share_waiting()
+    public void ALS_D122_closed_by_parameter_a_non_proportional_return_keeps_the_piece_share_waiting()
     {
-        Assert.False(PurchaseInvoiceKilogramShare.PurchaseInvoiceRemainingShareGoldenAccepted);
+        // The switch is on with golden EK1; the closed state stays pinned by parameter.
+        Assert.True(PurchaseInvoiceKilogramShare.PurchaseInvoiceRemainingShareGoldenAccepted);
         var originalKg = ExactCostRatio.Of(1250.4m);
         // 20 of 100 pieces returned weighing 249,870 kg: 1 000,530 kg / 80 pieces remain, not in the receipt's own proportion.
         Assert.False(PurchaseInvoiceKilogramShare.PieceShareIsDecided(originalKg, 100m, ExactCostRatio.Of(1000.53m), ExactCostRatio.Of(80m),
@@ -238,6 +239,75 @@ public sealed class InventoryPurchaseInvoiceCostSourceTests
         Assert.Throws<ArgumentOutOfRangeException>(() => PurchaseInvoiceKilogramShare.RemainingShare(ExactCostRatio.Of(10m), ExactCostRatio.Of(2m), 3m));
         Assert.Throws<ArgumentOutOfRangeException>(() => PurchaseInvoiceKilogramShare.RemainingShare(ExactCostRatio.Of(10m), ExactCostRatio.Of(2m), 0m));
         Assert.Throws<ArgumentOutOfRangeException>(() => PurchaseInvoiceKilogramShare.RemainingShare(ExactCostRatio.Of(0m), ExactCostRatio.Of(2m), 1m));
+    }
+
+    // ---- golden ADET_KG_FORMUL_GOLDEN_V1_EK1 §5 (ALS-D122/D123/D124), row ids in the names -----------------------------------
+
+    private static readonly ExactCostRatio R1Kg = ExactCostRatio.Of(1250.4m);
+
+    private static decimal Share(bool anyReturn, decimal remainingKg, decimal remainingPieces, decimal invoiced, decimal originalKg = 1250.4m,
+        decimal originalPieces = 100m) => PurchaseInvoiceKilogramShare.PieceShare(ExactCostRatio.Of(originalKg), originalPieces, anyReturn,
+            ExactCostRatio.Of(remainingKg), ExactCostRatio.Of(remainingPieces), invoiced).Round(6);
+
+    [Fact]
+    public void E22_E23_after_a_partial_return_the_invoice_takes_the_remaining_kg_over_the_remaining_pieces()
+    {
+        // 20 pieces / 249,870 kg returned -> 80 pieces / 1 000,530 kg; 40 pieces invoiced -> 500,265 (500,160 OLMAZ).
+        var share = Share(anyReturn: true, 1000.53m, 80m, 40m);
+        Assert.Equal(500.265m, share);
+        Assert.NotEqual(500.160m, share);
+        // E22: 10 000,00 TL / 500,265 = 19,9894. E23: 10 370,34 TL / 500,265 = 20,7297.
+        Assert.Equal(19.9894m, ExactCostRatio.Of(10000m).Divide(share).Round(AverageCostPrecision.InternalScale));
+        Assert.Equal(20.7297m, ExactCostRatio.Of(10370.34m).Divide(share).Round(AverageCostPrecision.InternalScale));
+    }
+
+    [Fact]
+    public void E24_E25_a_proportional_return_or_no_return_gives_the_ALS_D121_share()
+    {
+        Assert.Equal(500.160m, Share(anyReturn: true, 1000.32m, 80m, 40m)); // E24: 20 pieces / 250,080 kg returned
+        Assert.Equal(500.160m, Share(anyReturn: false, 1250.4m, 100m, 40m)); // E25 (= A13)
+    }
+
+    [Fact]
+    public void E26_a_share_that_does_not_end_at_three_decimals_is_rounded_once()
+    {
+        // 30 pieces returned -> 70 pieces / 1 000,530 kg; 40 invoiced (not the last): 571,7314... -> 571,731; 30 pieces / 428,799 kg remain.
+        var share = Share(anyReturn: true, 1000.53m, 70m, 40m);
+        Assert.Equal(571.731m, share);
+        Assert.Equal(428.799m, 1000.53m - share);
+    }
+
+    [Fact]
+    public void E27_a_return_between_two_invoices_is_deducted_together_with_the_first_invoice()
+    {
+        var first = Share(anyReturn: false, 1250.4m, 100m, 40m);
+        Assert.Equal(500.160m, first);
+        // Then 20 pieces / 249,870 kg returned; invoice 2 takes the last 40 pieces: 1 250,4 - 249,87 - 500,16 = 500,370.
+        var second = Share(anyReturn: true, 1250.4m - 249.87m - first, 100m - 20m - 40m, 40m);
+        Assert.Equal(500.370m, second);
+        Assert.NotEqual(500.265m, second);
+    }
+
+    [Fact]
+    public void E28_after_a_return_each_invoice_rounds_its_share_of_the_current_remainder_and_the_last_takes_the_rest()
+    {
+        // 3 pieces / 1 000,000 kg remain after a return; three invoices of 1 piece: 333,333 / 333,334 (exact half) / 333,333.
+        var first = Share(true, 1000m, 3m, 1m, originalKg: 1200m, originalPieces: 4m);
+        var second = Share(true, 1000m - first, 2m, 1m, originalKg: 1200m, originalPieces: 4m);
+        var third = Share(true, 1000m - first - second, 1m, 1m, originalKg: 1200m, originalPieces: 4m);
+        Assert.Equal((333.333m, 333.334m, 333.333m), (first, second, third));
+        Assert.Equal(1000m, first + second + third);
+    }
+
+    [Fact]
+    public void E29_without_a_return_each_invoice_takes_the_original_ratio_and_the_last_takes_the_rest()
+    {
+        // 3 pieces / 1 000,000 kg, no return: 333,333 / 333,333 / 333,334 (differs from E28: ALS-D121 holds without a return).
+        var first = Share(false, 1000m, 3m, 1m, originalKg: 1000m, originalPieces: 3m);
+        var second = Share(false, 1000m - first, 2m, 1m, originalKg: 1000m, originalPieces: 3m);
+        var third = Share(false, 1000m - first - second, 1m, 1m, originalKg: 1000m, originalPieces: 3m);
+        Assert.Equal((333.333m, 333.333m, 333.334m), (first, second, third));
+        Assert.Equal(1000m, first + second + third);
     }
 
     private static InventoryPurchaseInvoiceCostSourceV1 Source() => new(Company, Guid.NewGuid(), 4,

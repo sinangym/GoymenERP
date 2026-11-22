@@ -20,8 +20,13 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// historical receipt/issue stamps. BS-1 first recognition retains its decided partial-material split separately.</summary>
 public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbContext db, ICompanyContext company,
     IAuditEventCollector audit, IAuditTransactionWriterV1 auditWriter, TimeProvider clock,
-    IInventoryFirstCostPrerequisitesV1? firstCostPrerequisites = null) : IInventoryPurchaseInvoiceCostStoreV1
+    IInventoryFirstCostPrerequisitesV1? firstCostPrerequisites = null, bool? remainingShareAccepted = null) : IInventoryPurchaseInvoiceCostStoreV1
 {
+    /// <summary>
+    /// ALS-D122/D123/D124: production composition passes nothing and reads
+    /// <see cref="PurchaseInvoiceKilogramShare.PurchaseInvoiceRemainingShareGoldenAccepted"/>; a test pins either state explicitly.
+    /// </summary>
+    private readonly bool remainingShareAccepted = remainingShareAccepted ?? PurchaseInvoiceKilogramShare.PurchaseInvoiceRemainingShareGoldenAccepted;
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     private static readonly Guid Tl = SettingsCurrencyIdentitiesV1.TurkishLira;
 
@@ -81,7 +86,7 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
                     // matched ÷ remaining pieces" (ALS-D122) differ from ALS-D121. ALS-D122 applies only behind its switch (golden
                     // pending); until then the source stays pending.
                     if (!PurchaseInvoiceKilogramShare.PieceShareIsDecided(basis.OriginalKg, share.AcceptedQuantity,
-                            basis.EligibleKg, basis.EligibleQuantity, PurchaseInvoiceKilogramShare.PurchaseInvoiceRemainingShareGoldenAccepted))
+                            basis.EligibleKg, basis.EligibleQuantity, remainingShareAccepted))
                         throw Unavailable("purchase_invoice_cost_piece_reversal_basis_unavailable");
                 }
                 if (basis.Cohort is { } cohort ? ExactCostRatio.Of(share.MatchedQuantity).CompareTo(cohort.PendingQuantity) > 0
@@ -108,7 +113,9 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
                 if (originalUnit.Sign < 0) throw Invalid("purchase_invoice_cost_receipt_source_conflict");
                 // The existing late-difference contract retains the original stamped kg/purchase-unit basis.
                 // A non-proportional measured undo cannot silently reinterpret that historical cost contract.
-                if (basis.EligibleKg.Divide(basis.EligibleQuantity)
+                // ALS-D122 (switch on): a piece share is decided by its own rule below, so this guard no longer holds it back.
+                if (!(remainingShareAccepted && share.MeasuredQuantityKg is not null)
+                    && basis.EligibleKg.Divide(basis.EligibleQuantity)
                     .CompareTo(basis.OriginalKg.Divide(share.AcceptedQuantity)) != 0)
                     throw Unavailable("purchase_invoice_cost_known_reversal_basis_unavailable");
                 // Physical kg comes from the immutable original Inventory receipt, not current Product conversion.
@@ -205,20 +212,20 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
     }
 
     /// <summary>
-    /// ALS-D122/D123/D124, only while <see cref="PurchaseInvoiceKilogramShare.PurchaseInvoiceRemainingShareGoldenAccepted"/> is on
-    /// and only for a piece-line share (null otherwise: the caller keeps today's formula). The remaining figures are current: the
+    /// ALS-D122/D123/D124 (golden EK1 E22–E29), only while the switch is on and only for a piece-line share (null otherwise: the caller keeps today's formula). The remaining figures are current: the
     /// receipt's kg and pieces after its returns (<paramref name="basis"/>) less the kg and pieces of the earlier invoices recorded
     /// for the same acceptance. An earlier effect whose kilograms cannot be read keeps the source pending; nothing is estimated.
     /// </summary>
-    private static ExactCostRatio? RemainingPieceShare(ReceiptCostBasis basis, InventoryPurchaseInvoiceCostReceiptV1 share,
+    private ExactCostRatio? RemainingPieceShare(ReceiptCostBasis basis, InventoryPurchaseInvoiceCostReceiptV1 share,
         IReadOnlyList<PurchaseInvoiceReceiptCostEffectRow> priorShares)
     {
-        if (!PurchaseInvoiceKilogramShare.PurchaseInvoiceRemainingShareGoldenAccepted || share.MeasuredQuantityKg is null) return null;
+        if (!remainingShareAccepted || share.MeasuredQuantityKg is null) return null;
         var remainingKg = priorShares.Aggregate(basis.EligibleKg, (left, prior) => left.Subtract(PriorInvoicedKg(prior)));
         var remainingPieces = priorShares.Aggregate(basis.EligibleQuantity, (left, prior) => left.Subtract(ExactCostRatio.Of(prior.MatchedQuantity)));
         if (remainingKg.Sign <= 0 || remainingPieces.Sign <= 0 || ExactCostRatio.Of(share.MatchedQuantity).CompareTo(remainingPieces) > 0)
             throw Unavailable("purchase_invoice_cost_piece_remaining_share_unavailable");
-        return PurchaseInvoiceKilogramShare.RemainingShare(remainingKg, remainingPieces, share.MatchedQuantity);
+        return PurchaseInvoiceKilogramShare.PieceShare(basis.OriginalKg, share.AcceptedQuantity, basis.Reversals.Count > 0,
+            remainingKg, remainingPieces, share.MatchedQuantity);
     }
 
     /// <summary>The kilograms an earlier invoice took from the same acceptance, from its immutable effect (either recognition shape).</summary>
