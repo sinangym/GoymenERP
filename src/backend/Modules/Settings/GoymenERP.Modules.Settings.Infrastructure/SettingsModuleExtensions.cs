@@ -121,6 +121,8 @@ public static class SettingsModuleExtensions
         services.AddScoped<ISettingsWorkApprovalDurationPolicyProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
         services.AddScoped<ISettingsWorkHolidayCalendarProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
         services.AddScoped<ISettingsNotificationRetentionAutomationV1, SettingsNotificationRetentionAutomationV1>();
+        // WP2: the Work scheduler's read of the Work timing keys (no user; resolved company only).
+        services.AddScoped<ISettingsWorkTimingAutomationV1, SettingsWorkTimingAutomationV1>();
         services.AddScoped<ISettingsInventoryCostProfileReaderV1, SettingsInventoryCostProfileReaderV1>();
         services.AddScoped<ISettingsFinancePolicyProviderV1>(provider =>
             provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());

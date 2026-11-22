@@ -17,9 +17,17 @@ internal sealed partial class SettingsCompanyPolicyAdministration : ISettingsOpe
     private static readonly KeySpec WorkApprovalDurationBusinessDays = new(CompanyPolicyKeysV1.WorkApprovalDurationBusinessDays,
         SettingsOperationalPolicyPermissionsV1.WorkApprovalDurationManage, "settings.work-approval-duration-business-days.record.v1",
         "settings.work-approval-duration-business-days.recorded.v1", "Settings.WorkApprovalDurationBusinessDays", "İş günü ölçekli onay süresi sürümü kaydedildi");
+    // YOL-D25 (WP2): the digest times are Work timing like the approval durations; the same registered permission records
+    // them (no new permission, none granted).
+    private static readonly IReadOnlyDictionary<string, (KeySpec Spec, int DecidedDefault)> WorkDigestTimes =
+        SettingsWorkDigestScheduleLimitsV1.Slots.ToDictionary(slot => slot.Slot, slot => (new KeySpec(slot.Key,
+            SettingsOperationalPolicyPermissionsV1.WorkApprovalDurationManage, $"settings.work-digest-time-{slot.Slot}.record.v1",
+            $"settings.work-digest-time-{slot.Slot}.recorded.v1", "Settings.WorkDigestTime", "Günlük özet saati sürümü kaydedildi"),
+            slot.DecidedDefault), StringComparer.Ordinal);
     private static bool UsesAuditOwner(KeySpec spec) => spec.Key is CompanyPolicyKeysV1.SalesContractDiscountLimit
         or CompanyPolicyKeysV1.ManufacturingIncludeScrapCost or CompanyPolicyKeysV1.NotificationActiveDays
         or CompanyPolicyKeysV1.WorkApprovalDurationHours or CompanyPolicyKeysV1.WorkApprovalDurationBusinessDays
+        or CompanyPolicyKeysV1.WorkDigestTimeMorning or CompanyPolicyKeysV1.WorkDigestTimeMidday or CompanyPolicyKeysV1.WorkDigestTimeEvening
         or WorkHolidayCalendarSpecKey or AiGatewaySpecKey;
 
     public async Task<ManufacturingScrapCostPolicyViewV1> GetScrapCostAsync(CancellationToken cancellationToken = default)
@@ -90,6 +98,39 @@ internal sealed partial class SettingsCompanyPolicyAdministration : ISettingsOpe
             : RecordAsync(spec, request.ExpectedVersion, request.Reason, metadata, null,
                 new Change(new { Value = value }, row => row is not null && row.WholeNumberValue == value, null,
                     row => row.WholeNumberValue = value, row => new { Value = value, PreviousValue = row?.WholeNumberValue }), cancellationToken);
+    }
+    /// <summary>YOL-D25: the three digest times; without a recorded version the decided default is in force as version "0".</summary>
+    public async Task<WorkDigestScheduleViewV1> GetWorkDigestScheduleAsync(CancellationToken cancellationToken = default)
+    {
+        Guid? company = null;
+        var times = new List<WorkDigestTimeViewV1>(WorkDigestTimes.Count);
+        foreach (var (slot, _, _) in SettingsWorkDigestScheduleLimitsV1.Slots)
+        {
+            var (spec, decidedDefault) = WorkDigestTimes[slot];
+            var (current, rows) = await ReadHistoryAsync(spec, cancellationToken);
+            if (company is { } known && known != current
+                || rows.Any(row => row.WholeNumberValue is null or < 0 or > SettingsWorkDigestScheduleLimitsV1.MaximumMinute))
+                throw new SettingsPrerequisiteException(CompanyPolicyProblemCodesV1.ProfileInvalid);
+            company = current;
+            times.Add(new(slot, rows.FirstOrDefault()?.WholeNumberValue ?? decidedDefault, Text(rows.FirstOrDefault()?.Version ?? 0),
+                rows.Select(row => new WholeNumberCompanyPolicyVersionViewV1(Text(row.Version), row.WholeNumberValue!.Value,
+                    row.RecordedBy, row.RecordedAtUtc, row.Reason)).ToArray()));
+        }
+        return new(company!.Value, true, times);
+    }
+    public Task<CompanyPolicyCommandResultV1> RecordWorkDigestTimeAsync(string slot, RecordWorkDigestTimeRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (auditWriter is null) throw new SettingsPrerequisiteException(CompanyPolicyProblemCodesV1.ProviderUnavailable);
+        if (slot is null || !WorkDigestTimes.TryGetValue(slot, out var entry))
+            throw new SettingsPrerequisiteException(CompanyPolicyProblemCodesV1.RequestInvalid);
+        return request.Minute is not { } minute || minute < 0 || minute > SettingsWorkDigestScheduleLimitsV1.MaximumMinute
+            ? RecordAsync(entry.Spec, request.ExpectedVersion, request.Reason, metadata,
+                Answers.Invalid("Özet saati gece yarısından sonra 0 ile 1439 arasında tam dakika olmalıdır."), null, cancellationToken)
+            : RecordAsync(entry.Spec, request.ExpectedVersion, request.Reason, metadata, null,
+                new Change(new { Minute = minute }, row => row is not null && row.WholeNumberValue == minute, null,
+                    row => row.WholeNumberValue = minute, row => new { Minute = minute, PreviousMinute = row?.WholeNumberValue }), cancellationToken);
     }
     /// <summary>YOL-D18 (WP1 D3): without a recorded version the decided default is in force as version "0".</summary>
     private static WorkApprovalDurationClassViewV1 DurationView(CompanyPolicyVersionRow[] rows, int decidedDefault) =>

@@ -661,6 +661,7 @@ app.MapWorkInboxEndpoints();
 app.MapWorkApprovalRuleEndpoints();
 app.MapWorkNotificationEndpoints();
 app.MapWorkCollaborationEndpoints();
+app.MapWorkApprovalFollowUpEndpoints();
 app.MapWorkAssistantMemoryEndpoints();
 app.MapReportingEndpoints();
 app.MapSalesEndpoints();

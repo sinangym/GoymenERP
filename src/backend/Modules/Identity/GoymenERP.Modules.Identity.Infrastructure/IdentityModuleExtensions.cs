@@ -93,6 +93,8 @@ public static class IdentityModuleExtensions
         services.AddScoped<IUserCompanyMembershipReadPortV1, UserDirectoryReadPortV1>();
         services.AddScoped<ICompanySingleActiveMemberReadPortV1, UserDirectoryReadPortV1>();
         services.AddScoped<IUserPermissionHolderReadPortV1, UserDirectoryReadPortV1>();
+        // WP2: the holders of one permission in the resolved company, for Work's approval follow-up cycle (system work).
+        services.AddScoped<IPermissionHolderListPortV1, PermissionHolderListPortV1>();
         // ID-1 local account login. The settings are validated (fail-closed) by the host only when the
         // LocalAccount authentication mode is on; the password hasher is supplied by the host.
         services.AddOptions<LocalAccountOptions>()

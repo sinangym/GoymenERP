@@ -26,7 +26,9 @@ public static class WorkCollaborationHostV1
         services.AddWorkCollaborationV1(configuration);
         services.AddScoped<IWorkRecordAccessPortV1, WorkOwnerRecordAccessPortV1>();
         services.AddScoped<IWorkPersonDirectoryV1, WorkIdentityPersonDirectoryV1>();
-        services.AddScoped<IWorkDigestScheduleReaderV1, WorkUnavailableDigestScheduleReaderV1>();
+        // YOL-D25 (WP2): the digest times are a Settings key now (09:00/13:00/17:00 version 0, business days only).
+        services.AddScoped<IWorkDigestScheduleReaderV1, WorkSettingsDigestScheduleReaderV1>();
+        services.AddWorkApprovalFollowUpHostV1();
         services.AddScoped<IWorkRecordDisposalPortV1, WorkUnavailableRecordDisposalPortV1>();
         return services;
     }
@@ -239,16 +241,6 @@ internal sealed class WorkIdentityPersonDirectoryV1(IUserDirectoryReadPortV1 dir
 
     private static WorkPersonOutcomeV1 Map(UserDirectoryOutcomeV1 outcome) => outcome == UserDirectoryOutcomeV1.Denied
         ? WorkPersonOutcomeV1.Denied : WorkPersonOutcomeV1.Unavailable;
-}
-
-/// <summary>
-/// AI-D29 makes the digest times a Settings parameter; no Settings owner key exists yet, so every company answers Unavailable
-/// and the digest class stays held (fail-closed; never shown early, never on a guessed hour). NEEDS-SINAN: the default times.
-/// </summary>
-internal sealed class WorkUnavailableDigestScheduleReaderV1(ICompanyContext company) : IWorkDigestScheduleReaderV1
-{
-    public Task<WorkDigestScheduleV1> ReadAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult(WorkDigestScheduleV1.Unavailable(company.IsResolved ? company.CompanyId : Guid.Empty));
 }
 
 /// <summary>

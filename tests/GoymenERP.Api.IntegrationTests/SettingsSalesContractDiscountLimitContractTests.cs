@@ -24,7 +24,7 @@ public sealed class SettingsSalesContractDiscountLimitContractTests
                 "20261117085524_AddPurchaseInvoiceVariancePolicies", "20261117111242_AddWarehouseTransferScalePolicies",
                 "20261117200733_AddFinanceDocumentNumberSeries", "20261117220044_AddFinancePolicyFamilies",
                 "20261120101534_HardenWorkCenterSafetyBufferNullPairs", "20261122181548_AddWorkApprovalDurationPolicies",
-                "20261122202350_AddAiGatewayPolicyAndBudgetLedger"], database.Database.GetMigrations().TakeLast(11));
+                "20261122202350_AddAiGatewayPolicyAndBudgetLedger", "20261122224127_Wp2WorkDigestTimes"], database.Database.GetMigrations().TakeLast(12));
         Assert.False(database.Database.HasPendingModelChanges());
     }
 

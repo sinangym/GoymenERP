@@ -73,6 +73,24 @@ public static partial class SettingsCompanyPolicyEndpoints
             .ProducesErpBadRequest(CommandBadRequestCodes).AllowsCodeLessErpBadRequestBody().ProducesErpUnsupportedMediaType()
             .ProducesErpConflict(CompanyPolicyProblemCodesV1.IdempotencyConflict, CompanyPolicyProblemCodesV1.VersionConflict)
             .ProducesErpServiceUnavailable(CompanyPolicyProblemCodesV1.ProviderUnavailable).ProducesErpAuthenticatedProblems();
+        // YOL-D25 (WP2): the three daily digest times (minutes after local midnight; business days only).
+        group.MapGet("/work-digest-schedule", async (HttpContext context, ISettingsOperationalPolicyAdministrationV1 service,
+            CancellationToken cancellationToken) => await ReadAsync(context, () => service.GetWorkDigestScheduleAsync(cancellationToken)))
+            .RequireCompanyContext().RequireAuthorization(SettingsOperationalPolicyPermissionsV1.WorkApprovalDurationManage)
+            .WithName("GetSettingsWorkDigestScheduleV1").Produces<WorkDigestScheduleViewV1>()
+            .ProducesErpBadRequest(CompanyPolicyProblemCodesV1.RequestInvalid)
+            .ProducesErpServiceUnavailable(CompanyPolicyProblemCodesV1.ProviderUnavailable).ProducesErpAuthenticatedProblems();
+        group.MapPost("/work-digest-schedule/{slot}/versions", async (string slot, RecordWorkDigestTimeRequestV1 request,
+            ISettingsOperationalPolicyAdministrationV1 service, ICurrentUser currentUser, ICompanyContext companyContext,
+            ICorrelationContext correlation, HttpContext context, CancellationToken cancellationToken) =>
+                await CommandAsync(context, currentUser, companyContext, correlation,
+                    metadata => service.RecordWorkDigestTimeAsync(slot, request, metadata, cancellationToken)))
+            .RequireCompanyContext().RequireAuthorization(SettingsOperationalPolicyPermissionsV1.WorkApprovalDurationManage)
+            .WithName("RecordSettingsWorkDigestTimeV1").WithIdempotencyContract(204, 409)
+            .Accepts<RecordWorkDigestTimeRequestV1>("application/json").Produces(204)
+            .ProducesErpBadRequest(CommandBadRequestCodes).AllowsCodeLessErpBadRequestBody().ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(CompanyPolicyProblemCodesV1.IdempotencyConflict, CompanyPolicyProblemCodesV1.VersionConflict)
+            .ProducesErpServiceUnavailable(CompanyPolicyProblemCodesV1.ProviderUnavailable).ProducesErpAuthenticatedProblems();
         group.MapGet("/work-holiday-calendar/{year:int}", async (int year, HttpContext context,
             ISettingsOperationalPolicyAdministrationV1 service, CancellationToken cancellationToken) =>
                 await ReadAsync(context, () => service.GetWorkHolidayCalendarAsync(year, cancellationToken)))
