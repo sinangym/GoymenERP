@@ -273,6 +273,63 @@ describe('UI-50 S-05 price, discount, margin and risk control', () => {
     expect(screen.getByTestId('sales-price-control-margin-line-1-percent').textContent).toBe('%-20.00')
   })
 
+  it('WP11 golden G01: "Açıkla" reads the server steps only when opened and they end on the margin shown', async () => {
+    // G01: 100 kg × 10,00 TL = 1000,00 net; 7,1234 TL/kg × 100 = 712,34 cost; 287,66 TL, %28,77.
+    const computed = { lineId: LINE, lineNo: 1, state: 'Computed', unavailableReason: null, amount: '287.66', currencyId: FUNCTIONAL,
+      percent: '28.77', percentUnavailableReason: null }
+    const step = (code: string, operation: string, operands: string[], value: string, scale: number | null = null) =>
+      ({ code, operation, operands, value, currencyId: null, unitId: null, scale })
+    const explanation = {
+      contractVersion: 1, draftId: DRAFT, version: '3', kind: 'Preview', calculatorVersion: 'sales-line-margin/1', margin: computed,
+      steps: [step('net_sale', 'input', [], '1000.00'), step('unit_cost', 'input', [], '7.1234'), step('quantity', 'input', [], '100'),
+        step('total_cost', 'multiply', ['unit_cost', 'quantity'], '712.3400'),
+        step('margin_exact', 'subtract', ['net_sale', 'total_cost'], '287.6600'),
+        step('margin_amount', 'round_half_away_from_zero', ['margin_exact'], '287.66', 2),
+        step('margin_percent', 'percent_of', ['margin_exact', 'net_sale'], '28.77', 2)],
+      sources: [{ kind: 'sales-order-line', recordId: LINE, revision: 0, reference: '1', recordedAtUtc: null, detail: null },
+        { kind: 'inventory-cost-observation', recordId: LINE, revision: 0, reference: KG, recordedAtUtc: '2026-11-22T10:00:00Z',
+          detail: '{"syntheticOwnerVersion":17}' }],
+      ruleReferences: ['SAT-D265(5) golden (PR1200)'],
+    }
+    let reads = 0
+    installFetch({
+      onDetail: () => json(detail()), onLinePricing: () => json(pricing('3', {}, visibleMargin([computed]))),
+      onMarginExplanation: () => { reads += 1; return json(explanation) },
+    })
+    renderSalesApp(PATH)
+
+    await userEvent.click(await screen.findByTestId('sales-price-control-margin-toggle'))
+    expect(reads).toBe(0)
+    await userEvent.click(screen.getByTestId('sales-margin-explain-1-toggle'))
+
+    const steps = await screen.findByTestId('sales-margin-explain-1-steps')
+    expect(within(steps).getByTestId('sales-margin-explain-1-steps-margin_amount').textContent)
+      .toBe(screen.getByTestId('sales-price-control-margin-line-1-amount').textContent)
+    expect(within(steps).getByTestId('sales-margin-explain-1-steps-margin_percent').textContent).toBe('28.77')
+    expect(screen.getByTestId('sales-margin-explain-1-sources').textContent).toContain('Stok maliyet okuması')
+    expect(screen.getByTestId('sales-margin-explain-1-rules').textContent).toContain('SAT-D265(5) golden (PR1200)')
+    expect(reads).toBe(1)
+  })
+
+  it('WP11: a withheld margin explanation (403) paints no step', async () => {
+    let reads = 0
+    const computed = { lineId: LINE, lineNo: 1, state: 'Computed', unavailableReason: null, amount: '287.66', currencyId: FUNCTIONAL,
+      percent: '28.77', percentUnavailableReason: null }
+    installFetch({
+      onDetail: () => json(detail()), onLinePricing: () => json(pricing('3', {}, visibleMargin([computed]))),
+      onMarginExplanation: () => { reads += 1; return json({ status: 403, title: 'Yasak' }, 403) },
+    })
+    renderSalesApp(PATH)
+
+    await userEvent.click(await screen.findByTestId('sales-price-control-margin-toggle'))
+    await userEvent.click(screen.getByTestId('sales-margin-explain-1-toggle'))
+
+    // The 403 goes to the auth boundary (the shell re-checks the grant); no step is ever painted.
+    await waitFor(() => expect(reads).toBe(1))
+    expect(screen.queryByTestId('sales-margin-explain-1-steps')).toBeNull()
+    expect(screen.queryByTestId('sales-margin-explain-1-body')).toBeNull()
+  })
+
   it('SAT-D259: a non-positive net sale has a margin amount but no ratio', async () => {
     const computed = { lineId: LINE, lineNo: 1, state: 'Computed', unavailableReason: null, amount: '-10.00', currencyId: FUNCTIONAL,
       percent: null, percentUnavailableReason: 'NetSaleNotPositive' }

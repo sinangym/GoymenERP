@@ -208,6 +208,39 @@ public sealed record SalesLineMargin(
 /// SAT-D265 (5): the formula is not activated until its golden is in main; until the Inventory port exists the line-pricing read
 /// passes <see cref="SalesLineMarginCost.SourceMissing"/> and every margin is unavailable.
 /// </summary>
+/// <summary>
+/// WP11: one intermediate value of <see cref="SalesLineMarginCalculator"/>. <see cref="Code"/> is a stable step code
+/// (<see cref="SalesLineMarginTraceCodes"/>), <see cref="Operation"/> how it was obtained from <see cref="Operands"/> (earlier
+/// step codes), <see cref="Value"/> the exact invariant text the calculator used (a rounding step names its <see cref="Scale"/>).
+/// </summary>
+public sealed record SalesLineMarginTraceStep(string Code, string Operation, IReadOnlyList<string> Operands, string Value,
+    Guid? CurrencyId, Guid? UnitId, int? Scale);
+
+/// <summary>WP11: the margin and the steps that produced it, from one run of the calculator.</summary>
+public sealed record SalesLineMarginExplained(SalesLineMargin Margin, IReadOnlyList<SalesLineMarginTraceStep> Steps);
+
+/// <summary>WP11: the stable step and operation codes of the margin trace; the wire carries them, the UI maps them to Turkish text.</summary>
+public static class SalesLineMarginTraceCodes
+{
+    public const string NetSale = "net_sale";
+    public const string SaleRate = "sale_rate";
+    public const string NetSaleFunctional = "net_sale_functional";
+    public const string UnitCost = "unit_cost";
+    public const string KilogramsPerUnit = "kilograms_per_unit";
+    public const string CostPerOrderUnit = "cost_per_order_unit";
+    public const string Quantity = "quantity";
+    public const string TotalCost = "total_cost";
+    public const string MarginExact = "margin_exact";
+    public const string MarginAmount = "margin_amount";
+    public const string MarginPercent = "margin_percent";
+
+    public const string Input = "input";
+    public const string Multiply = "multiply";
+    public const string Subtract = "subtract";
+    public const string RoundHalfAwayFromZero = "round_half_away_from_zero";
+    public const string PercentOf = "percent_of";
+}
+
 public static class SalesLineMarginCalculator
 {
     /// <summary>SAT-D261 (1) / SAT-D265 (3): the margin amount is shown to the kuruş (0,01 TL).</summary>
@@ -221,7 +254,21 @@ public static class SalesLineMarginCalculator
 
     private static readonly BigInteger Hundred = new(100);
 
-    public static SalesLineMargin Calculate(SalesLineMarginInput input)
+    public static SalesLineMargin Calculate(SalesLineMarginInput input) => Compute(input, null);
+
+    /// <summary>
+    /// WP11 (DALGA_PLANI_v2 1.12, "bu sayıyı açıkla"): the same calculation as <see cref="Calculate"/> — one code path, not a
+    /// second formula — that also returns every intermediate value it used, in order, as exact invariant text. The steps end
+    /// where the calculation ends: an unavailable margin carries the steps up to the check that refused it.
+    /// </summary>
+    public static SalesLineMarginExplained Explain(SalesLineMarginInput input)
+    {
+        var steps = new List<SalesLineMarginTraceStep>();
+        var margin = Compute(input, steps);
+        return new SalesLineMarginExplained(margin, steps.AsReadOnly());
+    }
+
+    private static SalesLineMargin Compute(SalesLineMarginInput input, List<SalesLineMarginTraceStep>? trace)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(input.Cost);
@@ -247,6 +294,14 @@ public static class SalesLineMarginCalculator
                 || saleRate.TargetCurrencyId != input.FunctionalCurrencyId))
         {
             return SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.CurrencyConversionUndecided);
+        }
+
+        trace?.Add(new(SalesLineMarginTraceCodes.NetSale, SalesLineMarginTraceCodes.Input, [], Exact.Of(netSale.Amount).ToText(),
+            netSale.CurrencyId, null, null));
+        if (netSale.CurrencyId != input.FunctionalCurrencyId)
+        {
+            trace?.Add(new(SalesLineMarginTraceCodes.SaleRate, SalesLineMarginTraceCodes.Input, [],
+                Exact.Of(input.SaleRate!.Value.Rate).ToText(), input.FunctionalCurrencyId, null, null));
         }
 
         var cost = input.Cost;
@@ -278,14 +333,45 @@ public static class SalesLineMarginCalculator
         var net = netSale.CurrencyId == input.FunctionalCurrencyId
             ? Exact.Of(netSale.Amount)
             : Exact.Of(netSale.Amount).Multiply(Exact.Of(input.SaleRate!.Value.Rate));
+        if (netSale.CurrencyId != input.FunctionalCurrencyId)
+        {
+            trace?.Add(new(SalesLineMarginTraceCodes.NetSaleFunctional, SalesLineMarginTraceCodes.Multiply,
+                [SalesLineMarginTraceCodes.NetSale, SalesLineMarginTraceCodes.SaleRate], net.ToText(), input.FunctionalCurrencyId,
+                null, null));
+        }
+
+        trace?.Add(new(SalesLineMarginTraceCodes.UnitCost, SalesLineMarginTraceCodes.Input, [], Exact.Of(unitCost).ToText(),
+            cost.CurrencyId, cost.UnitId, null));
         var costPerOrderUnit = converted
             ? Exact.Of(unitCost).Multiply(Exact.Of(input.PieceConversion!.KilogramsPerUnit))
             : Exact.Of(unitCost);
-        var margin = net.Subtract(costPerOrderUnit.Multiply(Exact.Of(input.Quantity)));
+        if (converted)
+        {
+            trace?.Add(new(SalesLineMarginTraceCodes.KilogramsPerUnit, SalesLineMarginTraceCodes.Input, [],
+                Exact.Of(input.PieceConversion!.KilogramsPerUnit).ToText(), null, input.OrderUnitId, null));
+            trace?.Add(new(SalesLineMarginTraceCodes.CostPerOrderUnit, SalesLineMarginTraceCodes.Multiply,
+                [SalesLineMarginTraceCodes.UnitCost, SalesLineMarginTraceCodes.KilogramsPerUnit], costPerOrderUnit.ToText(),
+                cost.CurrencyId, input.OrderUnitId, null));
+        }
+
+        var totalCost = costPerOrderUnit.Multiply(Exact.Of(input.Quantity));
+        var margin = net.Subtract(totalCost);
+        trace?.Add(new(SalesLineMarginTraceCodes.Quantity, SalesLineMarginTraceCodes.Input, [], Exact.Of(input.Quantity).ToText(),
+            null, input.OrderUnitId, null));
+        trace?.Add(new(SalesLineMarginTraceCodes.TotalCost, SalesLineMarginTraceCodes.Multiply,
+            [converted ? SalesLineMarginTraceCodes.CostPerOrderUnit : SalesLineMarginTraceCodes.UnitCost, SalesLineMarginTraceCodes.Quantity],
+            totalCost.ToText(), input.FunctionalCurrencyId, null, null));
+        trace?.Add(new(SalesLineMarginTraceCodes.MarginExact, SalesLineMarginTraceCodes.Subtract,
+            [netSale.CurrencyId == input.FunctionalCurrencyId ? SalesLineMarginTraceCodes.NetSale : SalesLineMarginTraceCodes.NetSaleFunctional,
+                SalesLineMarginTraceCodes.TotalCost], margin.ToText(), input.FunctionalCurrencyId, null, null));
         if (!margin.RoundAwayFromZero(AmountScale).TryToDecimal(out var amount))
         {
             return SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.AmountOutOfRange);
         }
+
+        trace?.Add(new(SalesLineMarginTraceCodes.MarginAmount, SalesLineMarginTraceCodes.RoundHalfAwayFromZero,
+            [SalesLineMarginTraceCodes.MarginExact], margin.RoundAwayFromZero(AmountScale).ToText(), input.FunctionalCurrencyId, null,
+            AmountScale));
 
         var money = Money.Of(amount, input.FunctionalCurrencyId, AmountScale);
         if (net.Mantissa.Sign <= 0)
@@ -298,6 +384,11 @@ public static class SalesLineMarginCalculator
         {
             return SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.AmountOutOfRange);
         }
+
+        trace?.Add(new(SalesLineMarginTraceCodes.MarginPercent, SalesLineMarginTraceCodes.PercentOf,
+            [SalesLineMarginTraceCodes.MarginExact,
+                netSale.CurrencyId == input.FunctionalCurrencyId ? SalesLineMarginTraceCodes.NetSale : SalesLineMarginTraceCodes.NetSaleFunctional],
+            margin.PercentOf(net, PercentScale).ToText(), null, null, PercentScale));
 
         return new SalesLineMargin(SalesLineMarginState.Computed, null, money, percent, null);
     }
@@ -343,6 +434,20 @@ public static class SalesLineMarginCalculator
             // (m / 10^s) × 100 / (d / 10^t) at 10^-scale = m × 100 × 10^(t + scale) / (d × 10^s)
             var numerator = Mantissa * Hundred * BigInteger.Pow(10, denominator.Scale + scale);
             return new Exact(Divide(numerator, denominator.Mantissa * BigInteger.Pow(10, Scale)), scale);
+        }
+
+        /// <summary>The exact value as invariant text at its own scale (trailing zeros kept): never rounded, never limited to decimal.</summary>
+        public string ToText()
+        {
+            var digits = BigInteger.Abs(Mantissa).ToString(CultureInfo.InvariantCulture);
+            if (Scale > 0)
+            {
+                digits = digits.Length <= Scale
+                    ? $"0.{new string('0', Scale - digits.Length)}{digits}"
+                    : $"{digits[..^Scale]}.{digits[^Scale..]}";
+            }
+
+            return Mantissa.Sign < 0 ? "-" + digits : digits;
         }
 
         public bool TryToDecimal(out decimal value)

@@ -16,6 +16,7 @@ import { ORDER_STATUS_LABEL, OUTPUT_CLASS_LABEL } from './manufacturingText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { StateBlock } from '../shell/StateBlock'
+import { ProductionCostExplanationToggle, type OrderExplainContext } from './CalculationExplanationPanels'
 import styles from './OrderDetailPage.module.css'
 
 function outputClassText(outputClass: string): string {
@@ -66,17 +67,17 @@ export function OrderCostPanel({
       {state.kind !== 'ready' ? (
         <StateBlock state={state} subject={ORDER_COST_TEXT.subject} onRetry={() => void query.refetch()} />
       ) : (
-        <OrderCostBody cost={state.data} />
+        <OrderCostBody cost={state.data} explain={{ namespace, routeEntryGeneration, companyId, orderId, orderVersion }} />
       )}
     </section>
   )
 }
 
-function OrderCostBody({ cost }: { readonly cost: OrderCostView }) {
+function OrderCostBody({ cost, explain }: { readonly cost: OrderCostView; readonly explain: OrderExplainContext }) {
   return (
     <div data-testid="order-cost-body" data-cost-status={cost.status}>
       <p role="status">{ORDER_COST_STATUS_TEXT[cost.status]}</p>
-      {cost.status === 'available' ? <AvailableCost cost={cost} /> : <CostWithoutFigures cost={cost} />}
+      {cost.status === 'available' ? <AvailableCost cost={cost} explain={explain} /> : <CostWithoutFigures cost={cost} />}
       {cost.noteCodes.length > 0 ? (
         <>
           <p className={styles.help}>{ORDER_COST_TEXT.notes}</p>
@@ -125,7 +126,7 @@ function CostWithoutFigures({ cost }: { readonly cost: OrderCostView }) {
   )
 }
 
-function AvailableCost({ cost }: { readonly cost: OrderCostView }) {
+function AvailableCost({ cost, explain }: { readonly cost: OrderCostView; readonly explain: OrderExplainContext }) {
   return (
     <>
       <dl data-testid="order-cost-figures">
@@ -138,7 +139,11 @@ function AvailableCost({ cost }: { readonly cost: OrderCostView }) {
           </>
         ) : null}
         <dt>{ORDER_COST_TEXT.costPerKg}</dt>
-        <dd data-testid="order-cost-per-kg">{cost.costPerKgTl}</dd>
+        <dd>
+          <span data-testid="order-cost-per-kg">{cost.costPerKgTl}</span>{' '}
+          {/* WP11: the server's own steps behind this figure, read only when asked for. */}
+          <ProductionCostExplanationToggle context={explain} />
+        </dd>
         <dt>{ORDER_COST_TEXT.rawMaterialCostPerKg}</dt>
         <dd data-testid="order-raw-material-cost-per-kg">{cost.rawMaterialCostPerKgTl}</dd>
         <dt>{ORDER_COST_TEXT.inputTotal}</dt>

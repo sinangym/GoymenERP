@@ -302,6 +302,14 @@ public sealed record ProductionReceiptCostResult(
     public IReadOnlyList<ProductionReceiptCostIssueReasonV1> IssueReasons { get; init; } =
         Array.Empty<ProductionReceiptCostIssueReasonV1>();
 
+    /// <summary>
+    /// WP11 (DALGA_PLANI_v2 1.12, "bu sayıyı açıkla"): the intermediate values of a value, captured by the calculator in the
+    /// same run that computed them; null on a pending or unreadable result. Display only: never serialized into stored
+    /// evidence, never compared by <see cref="Equals(ProductionReceiptCostResult?)"/> (it is a function of the same input).
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public ProductionReceiptCostTraceV1? Trace { get; init; }
+
     public bool Equals(ProductionReceiptCostResult? other) =>
         other is not null
         && Status == other.Status
@@ -363,6 +371,37 @@ public sealed record ProductionReceiptCostCurrencyLineV1(
     ProductionExactRatioV1? ForeignAmountRatio = null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     ProductionExactRatioV1? ExchangeRateRatio = null);
+
+/// <summary>
+/// WP11: one kg issue as the calculator valued it: issued and returned kg, the kg the order kept, the stamped TL cost per kg
+/// and the amount it added to the net input cost (kept kg x TL cost per kg).
+/// </summary>
+public sealed record ProductionReceiptCostIssueTraceV1(Guid IssueMovementId, decimal IssuedKg, decimal ReturnedKg,
+    decimal KeptKg, decimal TlUnitCostPerKg, decimal AmountTl);
+
+/// <summary>WP11: one scrap weighing as the calculator valued it (kg x its month's TL price; no price and no value at zero kg).</summary>
+public sealed record ProductionReceiptCostScrapTraceV1(Guid ScrapOutputId, decimal Kilograms, decimal? TlPerKg, decimal ValueTl);
+
+/// <summary>
+/// WP11: the calculator's intermediate values for a value, in the order of its formula:
+/// net input cost = Σ issue amounts; consumed kg = Σ kept kg; net raw-material kg cost = net / consumed; usable remnant value =
+/// remnant kg x net raw-material kg cost; weighed scrap value = Σ weighing values; produced kg = good + second quality;
+/// cost numerator = net − remnant value − scrap value; cost per kg = numerator / produced kg (unrounded).
+/// </summary>
+public sealed record ProductionReceiptCostTraceV1(
+    IReadOnlyList<ProductionReceiptCostIssueTraceV1> Issues,
+    decimal ConsumedKg,
+    decimal NetInputCostTl,
+    decimal RawMaterialCostPerKgTl,
+    decimal UsableRemnantKg,
+    decimal UsableRemnantValueTl,
+    IReadOnlyList<ProductionReceiptCostScrapTraceV1> ScrapWeighings,
+    decimal WeighedScrapValueTl,
+    decimal GoodProductKg,
+    decimal SecondQualityKg,
+    decimal ProducedKg,
+    decimal CostNumeratorTl,
+    decimal CostPerKgTl);
 
 /// <summary>
 /// One issue that keeps the order's cost from being computed and why: <c>input_cost_zero</c> (URT-D58 (1)) or
@@ -631,10 +670,13 @@ public static class ProductionReceiptCostCalculatorV1
 
         var netCost = 0m;
         var currencyLines = new List<ProductionReceiptCostCurrencyLineV1>();
+        var issueTrace = new List<ProductionReceiptCostIssueTraceV1>(issues.Count);
         foreach (var (id, issue) in issues)
         {
             var kept = issue.Mass - returned.GetValueOrDefault(id);
-            netCost += kept * issue.Cost;
+            var issueAmount = kept * issue.Cost;
+            netCost += issueAmount;
+            issueTrace.Add(new(id, issue.Mass, returned.GetValueOrDefault(id), kept, issue.Cost, issueAmount));
             if (issue.Currency is { Status: IssueCostCurrencyStatus.Converted, CurrencyId: { } currencyId } currency)
             {
                 currencyLines.Add(new(id, currencyId, currency.ForeignUnitCostPerKg, currency.ExchangeRate, issue.Cost, kept,
@@ -656,6 +698,7 @@ public static class ProductionReceiptCostCalculatorV1
         // month's price and that value is taken off the product cost in both settings; only where it goes differs (the
         // scrap stock with scrap in cost, URT-D75 (3) / URT-D65; the separate expense with scrap out of cost).
         var scrapValue = 0m;
+        var scrapTrace = new List<ProductionReceiptCostScrapTraceV1>(weighings.Count);
         var priceUnreadable = false;
         var priceAboveRawMaterialCost = false;
         var priceMissing = false;
@@ -666,6 +709,7 @@ public static class ProductionReceiptCostCalculatorV1
             {
                 // SAT-D326 (4) / #66 6857496471 (4): no scrap kg and no price entered adds nothing.
                 case { Status: ScrapPriceReadStatus.Missing, TlPerKg: null } when mass == 0m:
+                    scrapTrace.Add(new(weighing.ScrapOutputId, mass, null, 0m));
                     break;
                 // URT-D47 / #66 6864631364 (15), URT-D65: the weighing's month has no price yet; the cost waits for it.
                 case { Status: ScrapPriceReadStatus.Missing, TlPerKg: null }:
@@ -676,7 +720,9 @@ public static class ProductionReceiptCostCalculatorV1
                 // stops the calculation.
                 case { Status: ScrapPriceReadStatus.Value, TlPerKg: { } price } when price > 0m:
                     priceAboveRawMaterialCost |= price > rawMaterialCostPerKg;
-                    scrapValue += mass * price;
+                    var weighingValue = mass * price;
+                    scrapValue += weighingValue;
+                    scrapTrace.Add(new(weighing.ScrapOutputId, mass, price, weighingValue));
                     break;
                 default:
                     priceUnreadable = true;
@@ -702,11 +748,15 @@ public static class ProductionReceiptCostCalculatorV1
         // URT-D75 (1), (4): (net - usable remnant value - weighed scrap value) / produced kg; golden 1000 kg x 40 TL,
         // 900 kg good, 50 kg remnant, 50 kg scrap x 10 TL: (40000 - 2000 - 500) / 900 = 41.666... TL per kg. The scrap
         // value is no separate expense with scrap in cost, so the expense line stays zero there.
-        return input.ScrapSetting == ScrapCostSettingStatus.On
-            ? Value(input, (netCost - remnantValue - scrapValue) / produced, 0m, amounts,
-                ProductionReceiptCostCodesV1.BasisWithScrap)
-            : Value(input, (netCost - remnantValue - scrapValue) / produced, scrapValue, amounts,
-                ProductionReceiptCostCodesV1.BasisWithoutScrap);
+        var numerator = netCost - remnantValue - scrapValue;
+        var costPerKg = numerator / produced;
+        var trace = new ProductionReceiptCostTraceV1(issueTrace.ToArray(), consumed, netCost, rawMaterialCostPerKg, remnant,
+            remnantValue, scrapTrace.ToArray(), scrapValue, input.GoodProduct.Value, input.SecondQuality.Value, produced,
+            numerator, costPerKg);
+        var value = input.ScrapSetting == ScrapCostSettingStatus.On
+            ? Value(input, costPerKg, 0m, amounts, ProductionReceiptCostCodesV1.BasisWithScrap)
+            : Value(input, costPerKg, scrapValue, amounts, ProductionReceiptCostCodesV1.BasisWithoutScrap);
+        return value.Status == ProductionReceiptCostStatus.Value ? value with { Trace = trace } : value;
     }
 
     // SAT-D326 (2) / #66 6857496471 (2): a cost per kg of zero or below (also one that underflows to zero in decimal)

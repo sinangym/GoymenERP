@@ -1,0 +1,31 @@
+/** WP11 "bu sayıyı açıkla": Turkish texts of the line margin explanation (S-05). */
+export const MARGIN_EXPLANATION_TEXT = {
+  subject: 'marj açıklaması',
+  caption: (lineNo: number) => `${lineNo}. satır marjının ara adımları`,
+  rowLabel: (lineNo: number) => `${lineNo}. satır marjı`,
+  step: {
+    net_sale: 'Net satış (KDV ve vade farkı hariç)',
+    sale_rate: 'Onayda dondurulan satış kuru',
+    net_sale_functional: 'Net satış (TL)',
+    unit_cost: 'Birim maliyet',
+    kilograms_per_unit: 'Sabitlenen teorik kg/birim',
+    cost_per_order_unit: 'Sipariş birimi başına maliyet',
+    quantity: 'Miktar',
+    total_cost: 'Toplam maliyet',
+    margin_exact: 'Marj (yuvarlanmamış)',
+    margin_amount: 'Marj tutarı (gösterilen)',
+    margin_percent: 'Marj oranı (gösterilen)',
+  } as Readonly<Record<string, string>>,
+  source: {
+    'sales-order-line': 'Sipariş satırı',
+    'inventory-cost-observation': 'Stok maliyet okuması (önizleme)',
+    'margin-cost-snapshot': 'İç onayda sabitlenen maliyet',
+    'sale-rate': 'Satış kuru (kur günü)',
+    'kilograms-per-unit': 'Teorik kg/birim kaydı',
+  } as Readonly<Record<string, string>>,
+  revision: (revision: number) => `revizyon ${revision}`,
+  recordedAt: (at: string) => `kayıt ${at}`,
+  unavailable: 'Marj hesaplanmadı; neden:',
+  kindPreview: 'Önizleme: canlı maliyet okuması',
+  kindSnapshot: 'İç onayda sabitlenen maliyet',
+} as const

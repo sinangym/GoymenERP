@@ -31,6 +31,7 @@ import { PRICE_CONTROL_TEXT as T } from './priceControlText'
 import { SalesOrderTotalsCard } from './SalesOrderTotalsCard'
 import { SalesOrderRiskCard } from './SalesOrderRiskCard'
 import { useDraftLinePricing } from './useDraftLinePricing'
+import { SalesMarginExplanation } from './SalesMarginExplanationPanel'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, type ShellState } from '../shell/shellState'
@@ -85,6 +86,7 @@ export function SalesPriceControlPage() {
     <PriceControlView
       key={`price-control:${namespace}:${shell.routeEntryGeneration}:${detail.draft.id}`}
       shell={shell}
+      namespace={namespace}
       detail={detail}
       companyId={companyId}
       backLink={backLink}
@@ -93,8 +95,9 @@ export function SalesPriceControlPage() {
   )
 }
 
-function PriceControlView({ shell, detail, companyId, backLink, onRefreshDetail }: {
+function PriceControlView({ shell, namespace, detail, companyId, backLink, onRefreshDetail }: {
   readonly shell: ShellState
+  readonly namespace: string
   readonly detail: DraftDetail
   readonly companyId: string
   readonly backLink: ReactNode
@@ -156,7 +159,12 @@ function PriceControlView({ shell, detail, companyId, backLink, onRefreshDetail 
       <section className={styles.section} aria-labelledby="sales-price-control-margin-heading" data-testid="sales-price-control-margin">
         <h2 id="sales-price-control-margin-heading">{T.margin.heading}</h2>
         {bound && pricedLines !== null
-          ? <MarginSection margin={pricedLines.margin} />
+          ? (
+            <MarginSection margin={pricedLines.margin} explain={{
+              namespace, routeEntryGeneration: shell.routeEntryGeneration, companyId,
+              draftId: detail.draft.id, version: detail.draft.version,
+            }} />
+          )
           : <p className={styles.muted} data-testid="sales-price-control-margin-not-read">{T.margin.notRead}</p>}
       </section>
 
@@ -167,7 +175,15 @@ function PriceControlView({ shell, detail, companyId, backLink, onRefreshDetail 
 }
 
 /** The server's margin block as it says it: withheld ⇒ no button; visible ⇒ behind "Marjı göster", nothing computed here. */
-function MarginSection({ margin }: { readonly margin: DraftMargin }) {
+interface MarginExplainContext {
+  readonly namespace: string
+  readonly routeEntryGeneration: number
+  readonly companyId: string
+  readonly draftId: string
+  readonly version: string
+}
+
+function MarginSection({ margin, explain }: { readonly margin: DraftMargin; readonly explain: MarginExplainContext }) {
   const [open, setOpen] = useState(false)
   if (margin.disclosure === 'Withheld') {
     return <p className={styles.muted} data-testid="sales-price-control-margin-withheld">{T.margin.withheld}</p>
@@ -195,6 +211,7 @@ function MarginSection({ margin }: { readonly margin: DraftMargin }) {
                   <th scope="col">{T.margin.state}</th>
                   <th scope="col" className={styles.numeric}>{T.margin.amount}</th>
                   <th scope="col" className={styles.numeric}>{T.margin.percent}</th>
+                  <th scope="col">{T.margin.explain}</th>
                 </tr>
               </thead>
               <tbody>
@@ -218,6 +235,10 @@ function MarginSection({ margin }: { readonly margin: DraftMargin }) {
                         </td>
                       </>
                     )}
+                    <td data-testid={`sales-price-control-margin-line-${line.lineNo}-explain`}>
+                      {/* WP11: the server's own steps behind this line's margin, read only when asked for. */}
+                      <SalesMarginExplanation {...explain} lineId={line.lineId} lineNo={line.lineNo} />
+                    </td>
                   </tr>
                 ))}
               </tbody>

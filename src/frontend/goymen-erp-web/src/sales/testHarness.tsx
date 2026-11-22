@@ -293,6 +293,8 @@ export interface HarnessConfig {
   readonly onPdf?: (call: RecordedCall) => Response | Promise<Response>
   /** AT-018: GET `/sales/drafts/{id}/lines/{lineId}/price-references`. */
   readonly onPriceReferences?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** WP11: GET …/lines/{lineId}/margin-explanation; unset = an unexpected read (throws). */
+  readonly onMarginExplanation?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** API-09: GET `/sales/drafts/{id}/invoices` (read only once the "Faturalar" tab is opened); default: no invoices. */
   readonly onDraftInvoices?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** API-36: GET `/sales/invoices/{id}` (read only when a row's finalization is opened). */
@@ -351,6 +353,10 @@ export function installFetch(config: HarnessConfig = {}) {
         }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/line-pricing$/.test(url)) {
           return config.onLinePricing?.(url, call.companyId) ?? json({ status: 404 }, 404)
+        }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/lines\/[^/?]+\/margin-explanation$/.test(url)) {
+          if (config.onMarginExplanation === undefined) throw new Error('unexpected margin-explanation read')
+          return config.onMarginExplanation(url, call.companyId)
         }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/lines\/[^/?]+\/price-references$/.test(url)) {
           if (config.onPriceReferences === undefined) throw new Error('unexpected price-references read')

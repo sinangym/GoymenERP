@@ -25,6 +25,7 @@
  *    requirement with a frozen reason, while unexplained mass remains a missing fact.
  */
 
+import { MassBalanceExplanationToggle } from './CalculationExplanationPanels'
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams } from 'react-router'
@@ -405,7 +406,12 @@ function MassBalancePanel({
                     </th>
                     <td>{roll.difference.actualInputKg}</td>
                     <td>{roll.difference.accountedKg}</td>
-                    <td data-testid="mass-difference">{roll.difference.differenceKg}</td>
+                    <td>
+                      <span data-testid="mass-difference">{roll.difference.differenceKg}</span>{' '}
+                      {/* WP11: the server's own BAL-003 steps behind this difference, read only when asked for. */}
+                      <MassBalanceExplanationToggle parentRollId={roll.parentRollId}
+                        context={{ namespace, routeEntryGeneration, companyId, orderId, orderVersion }} />
+                    </td>
                     <td>
                       <span
                         className={roll.difference.isFullyAccounted ? styles.badgeBalanced : styles.badgeDifference}
