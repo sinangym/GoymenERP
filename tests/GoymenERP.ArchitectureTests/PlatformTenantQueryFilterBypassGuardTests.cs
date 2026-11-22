@@ -2821,7 +2821,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // DbConnection) and the future supply conversion enlists on a third GetDbConnection. K3 review pending.
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (f5285ea4… -> e1ba5d1d…).
                         // Re-fingerprinted for tren-1 W7: Sales-before-Purchase prelocks share the caller connection; GetDbConnection 3 to 6; K3 review pending.
-                        "f87be49a8d3cc123e2ddff5a5d1bb0d76bc0eb0d50e2dd49d047a3c47045fe6c",
+                        // Re-fingerprinted for AK-3 (KLN-D119): the host hands a piece line's piece count to the stock request and the receipt stage; same API counts; K3 review pending.
+                        "fc107b17c65993c36da856d9b259bd883467ddf5b09f4d0a610dbe781b38e7ff",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["GetDbConnection"] = 7,
@@ -2876,7 +2877,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // company-filtered context); reviewed tokens and the three construction sites unchanged (23106d16... -> 60aab061...).
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (60aab061… -> 4f423055…).
                         // Re-fingerprinted for tren-1 W7: owner transaction or response changes; existing API counts retained; K3 review pending.
-                        "72ae3cae1dae9eff49d017cec110e2e1b62a28740d649c9f88ae624903bfde08",
+                        // Re-fingerprinted for AK-3 (ALS-D119/ALS-D121): a piece-line acceptance stores its weighed kilograms and refuses a mismatch (400); same API counts; K3 review pending.
+                        "2227a0cae61a67dea237d3205a19ecc855b4e0bf55d283ea831936ac4d937377",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -2914,7 +2916,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (31b03aa5… -> 35f883d4…).
                         // Re-fingerprinted for tren-1 W6: KLN-D105 / SAT-S8: serialize schedule changes with future-allocation reduction using the existing order-line locks; reviewed API counts unchanged (35f883d4... -> 8bd3ca9b...).
                         // W8 numbered cancellation uses one Serializable owner transaction; same API counts, K3 pending.
-                        "ebaac3eb7efcd7e0adc530d45904b0e11d57df1eac1e7ca1731d73026b1ebc8a",
+                        // Re-fingerprinted for AK-3 (SAT-D437): the theoretical kg-per-unit snapshot is written once at first approval and never moves; same API counts; K3 review pending.
+                        "fa69f642a0a49bcf4f77265aa823906976daf95aa72d62fd2fc33f77166eaf6f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["GetDbConnection"] = 1,
@@ -3338,7 +3341,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // participants for receipt reversal. Captured company/actor and fresh authority are fenced; each module writes its
                 // own records. The unused Common import is removed.
                 ["src/backend/GoymenERP.Api/PurchasingRuntime/PurchaseReceiptReversalHost.cs"] =
-                    new("672b709ece28f09ee9b617dc2d56debf3ca971dd3a0d32fb285e24ee74d73cf8",
+                    // Re-fingerprinted for AK-3 (KLN-D119): a piece line's supplier return hands its whole-piece undo quantity to the Inventory exit (422 when missing); same API counts; K3 review pending.
+                    new("f6b84f628ae5a77b6b99438c5fb2f710fdeb92317a17c37e595faa8631d6ad74",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["GetDbConnection"] = 1,
@@ -3533,7 +3537,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // W8 guard-race closure; K3 review pending. Existing typed409 only, same owner TX/SQL API counts.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryGoodsReceiptReversalParticipant.cs"] =
                 // Re-fingerprinted for AK-2b (KLN-D119): optional piece count on the acceptance undo; SQL API counts unchanged.
-                    new("12e2c4817c70092f41f205d1263e6993a4e7f1135c17fd8a6dbf4e07165b7f5e",
+                    // Re-fingerprinted for the AK-3 merge (KLN-D119): the derived piece count stays outside the payload hash; SQL API counts unchanged; K3 review pending.
+                    new("b7bbcc00b85f52b3a8344998930b2f843b06e25e1e12211122a4ca2dec66fef5",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["DbConnection"] = 3,
@@ -3805,7 +3810,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Disposes only session context, never commits caller transaction. Existing read/write source predicates and owner
                 // query filters retained.
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseReceiptCostProof.cs"] =
-                    new("bd7cb9ceddf8a5d222b9b672e0004a6d1cfb57143a13aa530928cfb74b1dffb7",
+                    // Re-fingerprinted for AK-3 (ALS-D119): the proof also reads the acceptance's weighed kilograms (company-filtered, AsNoTracking, same transaction); same API counts; K3 review pending.
+                    new("7dff4dfc863ac330965207a3283e48748c520a6aac257aa4898c2bf149b532e7",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["DbConnection"] = 3,
@@ -4075,6 +4081,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedMigrationMutationSources =
             new Dictionary<string, ReviewedMigrationMutationSource>(StringComparer.Ordinal)
             {
+                // AK-3 (SAT-D437, ALS-D119); K3 review pending. EF-generated nullable piece-line kg facts (line snapshot, acceptance weighed kg).
+                // Down refuses 52041 (used by no other migration) while a fact exists; forward fix, nothing is discarded.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/"
+                 + "20261122095454_AddPurchasePieceKilogramFacts.cs"] =
+                    new("acea43b42888a96d79c78f4634a66d8f64a87511966f7c6b9d2eab228f94f0cb",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 // AK-8 (SAT-D433/SAT-D441/SAT-D445); K3 review pending. EF-generated nullable source label and mode of a supplier return.
                 // Down refuses 52071 while a source-label return exists; one deployment-time SQL guard, no runtime tenant bypass.
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/"
