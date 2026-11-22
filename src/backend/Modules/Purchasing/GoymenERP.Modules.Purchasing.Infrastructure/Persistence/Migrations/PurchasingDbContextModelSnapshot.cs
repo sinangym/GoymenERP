@@ -2186,7 +2186,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_PurchaseSupplierReturns_Text", "LEN([Reason]) > 0 AND LEN([RequestedBy]) > 0 AND LEN([CorrelationId]) > 0");
 
-                            t.HasCheckConstraint("CK_PurchaseSupplierReturns_Values", "[QuantityKg] > 0 AND [UnitCostTryPerKg] > 0 AND [SourceBlock] IN (N'Free', N'Blocked') AND [ReplacementExpected] = 0");
+                            t.HasCheckConstraint("CK_PurchaseSupplierReturns_Values", "[QuantityKg] > 0 AND [UnitCostTryPerKg] > 0 AND [SourceBlock] IN (N'Free', N'Blocked') AND ([ReplacementExpected] = 0 OR ([ExpectedPurchaseOrderVersion] IS NOT NULL AND [UndoQuantity] IS NOT NULL))");
 
                             t.HasCheckConstraint("CK_PurchaseSupplierReturns_Version", "[Version] >= 1");
                         });

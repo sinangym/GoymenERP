@@ -538,6 +538,14 @@ away from zero (SAT-D453), a piece order line is priced per piece (SAT-D455) and
 refused (SAT-D458); with the gate closed the earlier rule returns (more than four decimals refused 422, never rounded). The migration grants no access and
 activates nothing; real-SQL acceptance is **NOT_RUN** and independent K3 acceptance remains required.
 
+### ALS-D91 — "yerine yenisi gelecek" tedarikçi iadesi (K3-B P1)
+
+`20261122205751_AllowPurchaseSupplierReturnReplacement` widens `CK_PurchaseSupplierReturns_Values`
+(`PurchasingDbContext.SupplierReturnValuesCheck`): `ReplacementExpected = 1` is allowed only with the receipt-adjusting
+facts (`ExpectedPurchaseOrderVersion` and `UndoQuantity`), exactly what the service and the store accept; the earlier
+`[ReplacementExpected] = 0` refused the decided path on SQL Server. Pure DDL Up; Down first refuses with `THROW 52300`
+while such a return exists (forward fix).
+
 ## AK-3b (adet/kg — alışı tamamlama)
 
 - Migration `20261122141554_AddPurchaseGoodsReceiptBatchPieceFacts`: toplu mal kabulde adetli satır (batch `KilogramsPerUnit`, etiket `PieceCount`,
