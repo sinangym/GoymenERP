@@ -14,7 +14,8 @@ const entry = (overrides: Record<string, unknown> = {}) => ({
 describe('WP-C6 assistant memory decoders', () => {
   it('accepts exactly the server keys for the actor and active company', () => {
     expect(decodeAssistantMemoryEntry(entry(), COMPANY, OWNER)).not.toBeNull()
-    expect(decodeAssistantMemoryEntry(entry({ state: 'closed', closedAtUtc: '2026-11-23T09:00:00+00:00', closeReason: 'SENTETIK' }), COMPANY, OWNER)).not.toBeNull()
+    expect(decodeAssistantMemoryEntry(entry({ state: 'closed', closedAtUtc: '2026-11-23T09:00:00+00:00' }), COMPANY, OWNER)).not.toBeNull()
+    expect(decodeAssistantMemoryEntry(entry({ state: 'passive' }), COMPANY, OWNER)).not.toBeNull()
   })
 
   it('fails closed on an extra key, another owner, another company, a bad kind or an inconsistent closure', () => {
@@ -23,7 +24,9 @@ describe('WP-C6 assistant memory decoders', () => {
     expect(decodeAssistantMemoryEntry(entry({ companyId: OWNER }), COMPANY, OWNER)).toBeNull()
     expect(decodeAssistantMemoryEntry(entry({ kind: 'instruction' }), COMPANY, OWNER)).toBeNull()
     expect(decodeAssistantMemoryEntry(entry({ state: 'closed' }), COMPANY, OWNER)).toBeNull()
-    expect(decodeAssistantMemoryEntry(entry({ closeReason: 'x' }), COMPANY, OWNER)).toBeNull()
+    // AI-D39: an overseer's closure reason never reaches the owner; an answer that carries one is refused.
+    expect(decodeAssistantMemoryEntry(entry({ state: 'closed', closedAtUtc: '2026-11-23T09:00:00+00:00', closeReason: 'x' }), COMPANY, OWNER)).toBeNull()
+    expect(decodeAssistantMemoryEntry(entry({ state: 'expired' }), COMPANY, OWNER)).toBeNull()
     expect(decodeAssistantMemoryEntry(entry(), COMPANY, OWNER, OWNER)).toBeNull()
   })
 

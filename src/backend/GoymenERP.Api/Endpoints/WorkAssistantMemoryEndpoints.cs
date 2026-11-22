@@ -11,7 +11,7 @@ namespace GoymenERP.Api.Endpoints;
 /// <summary>
 /// WP-C6 (DALGA_PLANI_v2 C.6; AI-D30): personal assistant memory. Own memory lives under <c>/assistant-memory/mine</c>; the
 /// overseer surface under <c>/assistant-memory/oversight</c> needs <c>work.assistant-memory.oversee</c> and every view there is
-/// recorded before it is served. Commands take exactly one Idempotency-Key (no surrounding whitespace, no comma, at most 128
+/// recorded before it is served and is not notified to the person (AI-D39). Commands take exactly one Idempotency-Key (no surrounding whitespace, no comma, at most 128
 /// characters) and a strict JSON body; a replay answers with <c>Idempotency-Replayed</c> and the original correlation id.
 /// 401/403/404/503 are code-less. Responses are never cached.
 /// </summary>
@@ -33,12 +33,6 @@ public static class WorkAssistantMemoryEndpoints
             ReadAsync(http, correlation, () => service.ListMyEntriesAsync(includeInactive == true, token)))
             .WithName("GetMyWorkAssistantMemoryEntriesV1").Produces<WorkAssistantMemoryEntryPageV1>().ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
-
-        group.MapGet("/mine/oversight-views", (HttpContext http, [FromServices] IWorkAssistantMemoryServiceV1 service,
-                ICorrelationContext correlation, CancellationToken token) =>
-            ReadAsync(http, correlation, () => service.ListViewsOfMyMemoryAsync(token)))
-            .WithName("GetMyWorkAssistantMemoryOversightViewsV1").Produces<WorkAssistantMemoryOversightViewPageV1>()
-            .ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
 
         var create = group.MapPost("/mine/entries", (HttpContext http, [FromServices] IWorkAssistantMemoryServiceV1 service,
                 ICorrelationContext correlation, CancellationToken token) =>

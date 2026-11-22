@@ -10,10 +10,9 @@ import type { ViewOutcome } from '../shell/uiState'
 import type { WorkCommandOutcome } from './collaborationApi'
 import { problemCode } from './collaborationContract'
 import {
-  ASSISTANT_MEMORY_ENTRIES_PATH, ASSISTANT_MEMORY_STATUS_PATH, ASSISTANT_MEMORY_VIEWS_PATH, assistantMemoryDeletionPath, assistantMemoryRevisionPath,
-  decodeAssistantMemoryDeletion, decodeAssistantMemoryEntry, decodeAssistantMemoryEntryPage, decodeAssistantMemoryStatus, decodeAssistantMemoryViewPage,
+  ASSISTANT_MEMORY_ENTRIES_PATH, ASSISTANT_MEMORY_STATUS_PATH, assistantMemoryDeletionPath, assistantMemoryRevisionPath,
+  decodeAssistantMemoryDeletion, decodeAssistantMemoryEntry, decodeAssistantMemoryEntryPage, decodeAssistantMemoryStatus,
   type AssistantMemoryDeletion, type AssistantMemoryEntry, type AssistantMemoryEntryPage, type AssistantMemoryKind, type AssistantMemoryStatus,
-  type AssistantMemoryViewPage,
 } from './assistantMemoryContract'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
@@ -25,9 +24,6 @@ export const fetchAssistantMemoryStatus = (companyId: string, userId: string, si
 
 export const fetchMyAssistantMemory = (companyId: string, userId: string, includeInactive: boolean, signal?: AbortSignal): Promise<ViewOutcome<AssistantMemoryEntryPage>> =>
   readJson(`${ASSISTANT_MEMORY_ENTRIES_PATH}?includeInactive=${includeInactive}`, companyId, (raw) => decodeAssistantMemoryEntryPage(raw, companyId, userId), signal)
-
-export const fetchViewsOfMyAssistantMemory = (companyId: string, userId: string, signal?: AbortSignal): Promise<ViewOutcome<AssistantMemoryViewPage>> =>
-  readJson(ASSISTANT_MEMORY_VIEWS_PATH, companyId, (raw) => decodeAssistantMemoryViewPage(raw, companyId, userId), signal)
 
 async function post<T>(path: string, companyId: string, idempotencyKey: string, body: object, success: number,
   decode: (raw: unknown) => T | null): Promise<WorkCommandOutcome<T>> {

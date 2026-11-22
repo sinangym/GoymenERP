@@ -10,8 +10,7 @@ import type { WorkCommandOutcome } from './collaborationApi'
 import { commandScope, pendingKey, settleKey } from './collaborationApi'
 import { payloadFingerprint } from './collaborationOutcome'
 import {
-  createAssistantMemoryEntry, deleteAssistantMemoryEntry, fetchAssistantMemoryStatus, fetchMyAssistantMemory, fetchViewsOfMyAssistantMemory,
-  reviseAssistantMemoryEntry,
+  createAssistantMemoryEntry, deleteAssistantMemoryEntry, fetchAssistantMemoryStatus, fetchMyAssistantMemory, reviseAssistantMemoryEntry,
 } from './assistantMemoryApi'
 import { ASSISTANT_MEMORY_KINDS, ASSISTANT_MEMORY_LIMITS, type AssistantMemoryEntry, type AssistantMemoryKind } from './assistantMemoryContract'
 import {
@@ -81,12 +80,10 @@ function AssistantMemoryBody() {
   })
   const status = useQuery(read(['status'], (signal) => fetchAssistantMemoryStatus(companyId!, actorId!, signal)))
   const entries = useQuery(read(['entries', includeInactive], (signal) => fetchMyAssistantMemory(companyId!, actorId!, includeInactive, signal)))
-  const views = useQuery(read(['views'], (signal) => fetchViewsOfMyAssistantMemory(companyId!, actorId!, signal)))
   if (!enabled) return <StateBlock state={{ kind: 'no-authorized-company' }} subject={T.subject} />
 
   const statusData = status.data?.type === 'ok-single' ? status.data.data : null
   const page = entries.data?.type === 'ok-single' ? entries.data.data : null
-  const viewPage = views.data?.type === 'ok-single' ? views.data.data : null
   const refresh = () => void queryClient.invalidateQueries({ queryKey: base })
 
   const run = async <T,>(action: string, target: string, command: (key: string) => Promise<WorkCommandOutcome<T>>, done: string, after: () => void) => {
@@ -125,10 +122,10 @@ function AssistantMemoryBody() {
     <h1 id="work-assistant-memory-heading">{T.heading}</h1>
     <p>{T.intro}</p>
     <p>{T.dataOnly}</p>
+    <p>{T.retentionNote}</p>
     <section aria-labelledby="work-assistant-memory-notice">
       <h2 id="work-assistant-memory-notice">{T.noticeHeading}</h2>
       <p>{T.noticePlaceholder}</p>
-      <p>{T.oversightNotice}</p>
       {statusData?.informationNoticeVersion ? <p>{T.noticeVersion}: {statusData.informationNoticeVersion}</p> : null}
     </section>
     {statusData === null
@@ -163,8 +160,7 @@ function AssistantMemoryBody() {
               : KIND[entry.kind]}</td>
             <td>{editing?.id === entry.id
               ? <input type="text" aria-label={T.bodyLabel} value={editing.body} maxLength={ASSISTANT_MEMORY_LIMITS.body} onChange={(event) => setEditing({ ...editing, body: event.target.value })} />
-              : entry.body}
-              {entry.closeReason === null ? null : <><br />{T.closedBecause}: {entry.closeReason}</>}</td>
+              : entry.body}</td>
             <td>{STATE[entry.state]}</td>
             <td><time dateTime={entry.expiresAtUtc}>{new Date(entry.expiresAtUtc).toLocaleString('tr-TR')}</time></td>
             <td>{entry.state === 'closed' ? null : editing?.id === entry.id
@@ -179,14 +175,5 @@ function AssistantMemoryBody() {
     {page?.hasMore ? <p>{T.more}</p> : null}
     {message === null ? null : <p role="status">{message}</p>}
 
-    <section aria-labelledby="work-assistant-memory-views">
-      <h2 id="work-assistant-memory-views">{T.viewsHeading}</h2>
-      {viewPage === null
-        ? <StateBlock state={views.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(views.data) as RemoteViewState<unknown>} subject={T.viewsSubject} onRetry={() => void views.refetch()} />
-        : viewPage.items.length === 0 ? <p>{T.viewsEmpty}</p>
-          : <ul>{viewPage.items.map((view) => <li key={view.id}>
-            {T.viewer}: {view.viewerUserId} · {T.viewedAt}: <time dateTime={view.viewedAtUtc}>{new Date(view.viewedAtUtc).toLocaleString('tr-TR')}</time> · {T.viewedCount}: {view.entryCount}
-          </li>)}</ul>}
-    </section>
   </section>
 }

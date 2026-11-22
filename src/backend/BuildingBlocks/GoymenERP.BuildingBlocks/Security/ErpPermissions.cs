@@ -1728,7 +1728,7 @@ public static class ErpPermissions
     public const string WorkTasksComplete = "work.tasks.complete";
     /// <summary>
     /// WP-C6 (AI-D30; DALGA_PLANI_v2 C.6): view another person's personal assistant memory in the company and close one of
-    /// their entries or their whole memory. Every view is written as an audit event and as a Work view row the person can list.
+    /// their entries or their whole memory. Every view and closure is audited and, per AI-D39, not notified to the person.
     /// It never lets the holder edit or read the text of an entry its owner deleted. Separate from every other permission as
     /// AI-D30 requires. Company-wide only. Not Critical. Registered, not granted: no seeded role holds it; a grant is a human gate.
     /// </summary>

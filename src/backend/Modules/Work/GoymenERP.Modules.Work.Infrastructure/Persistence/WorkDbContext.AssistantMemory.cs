@@ -68,7 +68,8 @@ public sealed partial class WorkDbContext
 
     /// <summary>
     /// Entry: identity and creation time never change; only an active entry changes, by exactly one version; a revision keeps
-    /// it active, while deletion or closure keeps its text, kind and times. Closure row: same person, one version step. View
+    /// it active, while deletion or closure keeps its text, kind and times. The one exception is the AI-D38 last-use touch,
+    /// which moves only the passive-after date forward and keeps the version. Closure row: same person, one version step. View
     /// rows are append-only.
     /// </summary>
     private static void GuardAssistantMemoryWrite(EntityEntry<IWorkTenantRow> entry)
@@ -82,7 +83,17 @@ public sealed partial class WorkDbContext
         {
             var original = entry.OriginalValues;
             var ended = memory.State != 1;
-            if (original.GetValue<Guid>(nameof(memory.Id)) != memory.Id
+            // AI-D38 last-use touch: only the passive-after date moves forward; nothing else, not even the version.
+            var touch = memory.State == 1 && original.GetValue<int>(nameof(memory.State)) == 1
+                && memory.Version == original.GetValue<long>(nameof(memory.Version))
+                && original.GetValue<Guid>(nameof(memory.Id)) == memory.Id
+                && original.GetValue<Guid>(nameof(memory.OwnerUserId)) == memory.OwnerUserId
+                && original.GetValue<DateTimeOffset>(nameof(memory.CreatedAtUtc)) == memory.CreatedAtUtc
+                && original.GetValue<DateTimeOffset>(nameof(memory.UpdatedAtUtc)) == memory.UpdatedAtUtc
+                && original.GetValue<string>(nameof(memory.Body)) == memory.Body
+                && original.GetValue<int>(nameof(memory.Kind)) == memory.Kind
+                && memory.ExpiresAtUtc > original.GetValue<DateTimeOffset>(nameof(memory.ExpiresAtUtc));
+            if (!touch && (original.GetValue<Guid>(nameof(memory.Id)) != memory.Id
                 || original.GetValue<Guid>(nameof(memory.OwnerUserId)) != memory.OwnerUserId
                 || original.GetValue<DateTimeOffset>(nameof(memory.CreatedAtUtc)) != memory.CreatedAtUtc
                 || original.GetValue<int>(nameof(memory.State)) != 1
@@ -91,7 +102,7 @@ public sealed partial class WorkDbContext
                 || (ended && (original.GetValue<string>(nameof(memory.Body)) != memory.Body
                     || original.GetValue<int>(nameof(memory.Kind)) != memory.Kind
                     || original.GetValue<DateTimeOffset>(nameof(memory.UpdatedAtUtc)) != memory.UpdatedAtUtc
-                    || original.GetValue<DateTimeOffset>(nameof(memory.ExpiresAtUtc)) != memory.ExpiresAtUtc)))
+                    || original.GetValue<DateTimeOffset>(nameof(memory.ExpiresAtUtc)) != memory.ExpiresAtUtc))))
             {
                 throw new InvalidOperationException("A work assistant memory entry changes only while active, by one version step, and keeps its identity.");
             }
