@@ -29,8 +29,8 @@ public sealed record PurchaseInvoiceDuplicateMatch(Guid InvoiceId, PurchaseInvoi
 
 /// <summary>
 /// WP15 (1.16): the deterministic, rule-based incoming invoice duplicate check. It decides only whether a recorded invoice
-/// looks like the probed one and why; it never blocks. Whether a match should block recording is not decided
-/// (ALS-D125; the record command asks for a reason): the caller shows a warning. The hard refusals that already exist (database uniqueness on
+/// looks like the probed one and why; it never blocks (ALS-D125: the caller warns and the record command asks for a reason,
+/// which goes to the audit). The hard refusals that already exist (database uniqueness on
 /// company + ETTN and on company + supplier + exact official number) are unchanged.
 /// Rules, strongest first; one match per candidate:
 /// (1) both ETTNs present and equal; (2) same supplier and equal normalized number; (3) same supplier, same invoice date,
