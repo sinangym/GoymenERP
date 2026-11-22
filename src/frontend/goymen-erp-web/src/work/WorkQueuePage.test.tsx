@@ -15,6 +15,7 @@ import { SHELL_CAPABILITY_CONTRACT_VERSION } from '../shell/api'
 import { CAPABILITY } from '../shell/capabilities'
 import { COMPANY } from './approvalInboxFixtures'
 import { APPROVALS_TEXT, FINANCE_SOURCE, WORK_QUEUE_TEXT } from './workText'
+import { WORK_INBOX_TEXT } from './workInboxText'
 
 const USER = '11111111-1111-1111-1111-111111111111'
 const OTHER_COMPANY = '10000000-0000-0000-0000-000000000002'
@@ -94,7 +95,7 @@ describe('/onaylarim/kuyruk — the Work queue', () => {
   it('lists every readable source in one list, oldest first, each row linking to its owner\'s screen', async () => {
     const { queueCalls } = installFetch([APPROVE])
     await renderAt('/onaylarim/kuyruk')
-    expect(await screen.findByRole('heading', { level: 1, name: WORK_QUEUE_TEXT.heading })).toBeTruthy()
+    expect(await screen.findByRole('heading', { level: 1, name: WORK_INBOX_TEXT.heading })).toBeTruthy()
     expect(screen.getByText(WORK_QUEUE_TEXT.scope)).toBeTruthy()
     const table = await screen.findByTestId('work-queue-table')
     const rows = within(table).getAllByRole('row').slice(1)
@@ -189,6 +190,6 @@ describe('/onaylarim/kuyruk — the Work queue', () => {
     await screen.findByRole('heading', { level: 1, name: APPROVALS_TEXT.heading })
     await userEvent.setup().click(screen.getByRole('link', { name: WORK_QUEUE_TEXT.openQueue }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/onaylarim/kuyruk'))
-    expect(await screen.findByRole('heading', { level: 1, name: WORK_QUEUE_TEXT.heading })).toBeTruthy()
+    expect(await screen.findByRole('heading', { level: 1, name: WORK_INBOX_TEXT.heading })).toBeTruthy()
   })
 })

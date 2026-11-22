@@ -194,3 +194,153 @@
   outline: 2px solid var(--goy-ds-color-accent, #2a57e3);
   outline-offset: 2px;
 }
+
+/* W1-A Work inbox: view switch, filters, item cards and the explanation card. */
+.views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--goy-ds-space-1, 4px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-bottom: 1px solid var(--goy-ds-color-border, #e1e4e9);
+}
+
+.views li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--goy-ds-control-height, 32px);
+  padding: 0 12px;
+  border-bottom: 2px solid transparent;
+  color: var(--goy-ds-color-text-tertiary, #646e7e);
+}
+
+.views .viewCurrent {
+  border-bottom-color: var(--goy-ds-color-accent, #2a57e3);
+  color: var(--goy-ds-color-text, #141920);
+  font-weight: var(--goy-ds-font-weight-medium, 500);
+}
+
+.section {
+  display: grid;
+  gap: var(--goy-ds-space-3, 12px);
+  min-width: 0;
+}
+
+.section h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--goy-ds-space-2, 8px) var(--goy-ds-space-4, 16px);
+  margin: 0;
+  padding: var(--goy-ds-space-2, 8px) var(--goy-ds-space-3, 12px);
+  border: 1px solid var(--goy-ds-color-border, #e1e4e9);
+  border-radius: var(--goy-ds-radius-md, 8px);
+}
+
+.filterField {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.filterField select {
+  max-width: 100%;
+  min-height: var(--goy-ds-control-height, 32px);
+}
+
+.filterCheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--goy-ds-control-height, 32px);
+}
+
+.cards {
+  display: grid;
+  gap: var(--goy-ds-space-2, 8px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card {
+  display: grid;
+  gap: var(--goy-ds-space-2, 8px);
+  padding: var(--goy-ds-space-3, 12px);
+  border: 1px solid var(--goy-ds-color-border, #e1e4e9);
+  border-radius: var(--goy-ds-radius-md, 8px);
+  min-width: 0;
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.explanation {
+  display: grid;
+  gap: var(--goy-ds-space-1, 4px);
+  padding: var(--goy-ds-space-2, 8px) var(--goy-ds-space-3, 12px);
+  border-radius: var(--goy-ds-radius-sm, 6px);
+  background: var(--goy-ds-color-surface-muted, #f6f7f9);
+}
+
+.explanation h4 {
+  margin: 0;
+  font-size: var(--goy-ds-font-size-md, 0.84375rem);
+}
+
+.explanation p {
+  margin: 0;
+}
+
+.ruleList {
+  display: grid;
+  gap: var(--goy-ds-space-1, 4px);
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.ruleNumbers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--goy-ds-space-4, 16px);
+  margin: 2px 0 0;
+}
+
+.ruleNumbers div {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.ruleNumbers dt {
+  color: var(--goy-ds-color-text-tertiary, #646e7e);
+}
+
+.ruleNumbers dd {
+  margin: 0;
+}
+
+.techCode {
+  font-family: var(--goy-ds-font-mono, ui-monospace, monospace);
+  font-size: var(--goy-ds-font-size-sm, 0.78125rem);
+  color: var(--goy-ds-color-text-tertiary, #646e7e);
+  overflow-wrap: anywhere;
+}
+
+.overdue {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  border-radius: var(--goy-ds-radius-sm, 6px);
+  color: var(--goy-ds-color-danger, #b42318);
+  font-weight: var(--goy-ds-font-weight-medium, 500);
+}

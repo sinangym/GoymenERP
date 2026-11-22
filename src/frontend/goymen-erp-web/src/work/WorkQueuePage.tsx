@@ -1,4 +1,8 @@
 /**
+ * W1-A Work inbox (AI-D31): `/onaylarim/kuyruk` is the inbox. Its first view, "Benden karar bekleyen", shows the inbox
+ * items with their duration and explanation card (`WorkInboxSection`), and under them the B-25 queue below; each reads
+ * on its own, so one source's failure never hides the other. The three later views are named as coming.
+ *
  * B-25 Work queue — `/onaylarim/kuyruk`: the pending approvals of every connected source the signed-in actor may see in
  * the committed company, in ONE list, oldest first (`GET /api/v1/work/queue`). Each source is its owner's own read
  * through the native approval queue adapter; the owner decides who sees a record, so a source that refuses the actor is
@@ -15,14 +19,18 @@ import { fetchWorkQueue } from './workQueueApi'
 import { QUEUE_SOURCE_READY, QUEUE_SOURCE_UNAVAILABLE, type WorkQueue, type WorkQueueSource } from './workQueueContract'
 import {
   APPROVAL_KIND_TEXT,
+  WORK_APPROVALS_CAPABILITIES,
   WORK_QUEUE_MODULE_TEXT,
   WORK_QUEUE_TEXT as T,
   WORK_ROUTE,
   formatInstant,
 } from './workText'
+import { WORK_INBOX_CAPABILITIES } from './workInboxKinds'
+import { WORK_INBOX_TEXT as I } from './workInboxText'
+import { WorkInboxSection } from './WorkInboxSection'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
-import { contextKey, contextKeyString } from '../shell/shellState'
+import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './Work.module.css'
@@ -36,9 +44,50 @@ export function WorkQueuePage() {
   const key = contextKey(shell)
   const namespace = key === null ? null : contextKeyString(key)
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
+  const inboxEnabled = WORK_INBOX_CAPABILITIES.some((capability) => hasCapability(shell, capability))
+  const queueEnabled = WORK_APPROVALS_CAPABILITIES.some((capability) => hasCapability(shell, capability))
+  return <section className={styles.page} aria-labelledby="work-queue-heading" data-testid="work-queue">
+    <Link className={styles.backLink} to={WORK_ROUTE.approvals}>← {T.backToInbox}</Link>
+    <header className={styles.header}>
+      <h1 id="work-queue-heading">{I.heading}</h1>
+      <div className={styles.scope}>
+        <p>{I.scope}</p>
+        <p>{I.nativeOnly}</p>
+      </div>
+    </header>
+    {/* W1-A delivers the first of four views; the other three are named and marked as coming, never linked. */}
+    <ul className={styles.views} aria-label={I.viewsLabel} data-testid="work-inbox-views">
+      <li className={styles.viewCurrent} aria-current="page">{I.viewAwaitingMyDecision}</li>
+      {[I.viewPreparedByMe, I.viewOverdue, I.viewAll].map((view) =>
+        <li key={view} aria-disabled="true">{view} <span className={styles.muted}>({I.soon})</span></li>)}
+    </ul>
+    <section className={styles.section} aria-labelledby="work-inbox-heading" data-testid="work-inbox">
+      <h2 id="work-inbox-heading">{I.viewAwaitingMyDecision}</h2>
+      <WorkInboxSection
+        companyId={companyId}
+        namespace={namespace}
+        routeEntryGeneration={shell.routeEntryGeneration}
+        enabled={inboxEnabled} />
+    </section>
+    {queueEnabled
+      ? <section className={styles.section} aria-labelledby="work-queue-legacy-heading" data-testid="work-queue-legacy">
+        <h2 id="work-queue-legacy-heading">{I.legacyHeading}</h2>
+        <p className={styles.muted}>{T.scope}</p>
+        <LegacyQueue companyId={companyId} namespace={namespace} routeEntryGeneration={shell.routeEntryGeneration} />
+      </section>
+      : null}
+  </section>
+}
+
+/** B-25: the four connected native sources' one list (`GET /api/v1/work/queue`), read on its own. */
+function LegacyQueue({ companyId, namespace, routeEntryGeneration }: {
+  readonly companyId: string | null
+  readonly namespace: string | null
+  readonly routeEntryGeneration: number
+}) {
   const boundary = useAuthBoundary()
   const query = useQuery({
-    queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'work-queue'],
+    queryKey: [namespace ?? 'no-context', routeEntryGeneration, 'work-queue'],
     enabled: namespace !== null && companyId !== null,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
@@ -47,24 +96,13 @@ export function WorkQueuePage() {
       return outcome
     },
   })
-
   const queue = query.data?.type === 'ok-single' ? query.data.data : null
-  return <section className={styles.page} aria-labelledby="work-queue-heading" data-testid="work-queue">
-    <Link className={styles.backLink} to={WORK_ROUTE.approvals}>← {T.backToInbox}</Link>
-    <header className={styles.header}>
-      <h1 id="work-queue-heading">{T.heading}</h1>
-      <div className={styles.scope}>
-        <p>{T.scope}</p>
-        <p>{T.nativeOnly}</p>
-      </div>
-    </header>
-    {queue === null
-      ? <StateBlock
-        state={query.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(query.data) as RemoteViewState<unknown>}
-        subject={T.subject}
-        onRetry={() => void query.refetch()} />
-      : <QueueBody queue={queue} />}
-  </section>
+  return queue === null
+    ? <StateBlock
+      state={query.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(query.data) as RemoteViewState<unknown>}
+      subject={T.subject}
+      onRetry={() => void query.refetch()} />
+    : <QueueBody queue={queue} />
 }
 
 function QueueBody({ queue }: { readonly queue: WorkQueue }) {
