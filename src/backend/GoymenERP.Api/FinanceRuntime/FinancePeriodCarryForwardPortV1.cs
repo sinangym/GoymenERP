@@ -38,8 +38,9 @@ public sealed class FinancePeriodCarryForwardPortV1(AccountingDbContext accounti
     public async Task ReverseAsync(AccountingPeriodCarryReversalV1 request, AccountingCommandMetadata metadata,
         CancellationToken cancellationToken)
     {
+        // ROL-D12: the carry reversal runs inside the period reopening approval, which carries its own permission.
         await using var session = await EnlistAsync(request.CompanyId, request.ActorId,
-            AccountingPermissionManifestV1.PeriodsApprove, metadata, cancellationToken);
+            AccountingPermissionManifestV1.PeriodsReopen, metadata, cancellationToken);
         try
         {
             await session.ReverseAsync(Context(request.CompanyId, metadata), new FinancePeriodCarryReversalV1(request.ReopeningId, request.CompanyId,

@@ -119,6 +119,7 @@ public static class IdentityModuleExtensions
         services.AddScoped<IdentityUserManagementEvaluator>();
         services.AddScoped<IFounderRecoveryCompanyLock, SqlFounderRecoveryCompanyLock>();
         services.AddScoped<IFounderRecoveryAuditParticipant, FounderRecoveryAuditParticipant>();
+        services.AddScoped<IFounderBootstrapAuditParticipant, FounderBootstrapAuditParticipant>();
         services.AddScoped<IFounderRecoveryService, FounderRecoveryService>();
         services.AddScoped<ISystemRolePermissionReconciler, SystemRolePermissionReconciler>();
         services.AddScoped<IdentityDataSeeder>();

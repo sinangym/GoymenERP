@@ -41,6 +41,21 @@ public sealed partial class SalesDraftServiceTests
         Assert.Empty(world.Store.Transitions);
     }
     [Fact]
+    public async Task Subcontract_tax_revision_also_requires_the_Purchasing_approval_until_the_decisions_agree()
+    {
+        // K3-B finding 4: SAT-D395 names purchasing.orders.approve, Issue #1189 names sales.orders.approve; both are required.
+        var world = new World { ItemTypes = new FakeItemTypes(), LineTaxes = new FakeLineTaxes() };
+        var created = (await world.Service().CreateDraftAsync(Subcontract("10"), Metadata("SENTETIK-tax-cross-create"))).Detail;
+        world.Authority.Denied.Add(GoymenERP.BuildingBlocks.Security.ErpPermissions.PurchasingOrdersApprove);
+        var request = new SalesSubcontractTaxRevisionV1(created.Draft.Version, created.Lines[0].LineId,
+            new(SalesDraftLineTaxModesV1.Default), "SENTETIK gerekçe");
+        Assert.Equal(403, (await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().ReviseSubcontractTaxAsync(created.Draft.Id, request, Metadata("SENTETIK-tax-cross-denied")))).Status);
+        Assert.Empty(world.Store.Transitions);
+        Assert.Contains(GoymenERP.BuildingBlocks.Security.ErpPermissions.PurchasingOrdersApprove, world.Authority.Measured);
+    }
+
+    [Fact]
     public async Task A_normal_goods_order_cannot_use_the_subcontract_tax_only_entry_point()
     {
         var world = new World { LineTaxes = new FakeLineTaxes() };

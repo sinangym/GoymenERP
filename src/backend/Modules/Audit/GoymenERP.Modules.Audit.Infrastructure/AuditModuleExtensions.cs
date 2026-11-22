@@ -43,6 +43,7 @@ public static class AuditModuleExtensions
             provider.GetRequiredService<AuditEventCollector>());
         services.AddScoped<IAuditTransactionWriterV1, AuditTransactionWriterV1>();
         services.AddScoped<IFounderRecoverySystemAuditV1, FounderRecoverySystemAuditV1>();
+        services.AddScoped<IFounderBootstrapSystemAuditV1, FounderBootstrapSystemAuditV1>();
         services.AddScoped<ILocalTwoFactorOperatorRecoveryAuditV1, LocalTwoFactorOperatorRecoveryAuditWriterV1>();
         services.AddScoped<ILocalCredentialSelfServiceAuditWriterV1, LocalCredentialSelfServiceAuditWriterV1>();
         services.AddScoped<AuditSaveChangesInterceptor>();

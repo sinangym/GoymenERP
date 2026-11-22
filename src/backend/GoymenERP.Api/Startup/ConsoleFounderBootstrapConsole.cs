@@ -23,6 +23,9 @@ internal sealed class ConsoleFounderBootstrapConsole(TextWriter prompts) : IFoun
         return Console.ReadLine();
     }
 
+    public FounderRecoveryOperatorDeclaration? ReadOperatorDeclaration() => IsInteractive
+        ? new(Environment.UserName, Environment.MachineName) : null;
+
     public string? ReadNewPassword() => ReadSecret(FounderBootstrapTexts.PasswordPrompt);
 
     public string? ReadNewPasswordConfirmation() => ReadSecret(FounderBootstrapTexts.PasswordConfirmationPrompt);

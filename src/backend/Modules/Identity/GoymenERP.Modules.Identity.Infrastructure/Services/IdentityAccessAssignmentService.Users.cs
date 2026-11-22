@@ -27,13 +27,33 @@ internal sealed partial class IdentityAccessAssignmentService
             await RequireUserManagementAcrossMembershipAsync(command.ActorUserId, target, ct);
     }
 
+    /// <summary>
+    /// The managed-user list (K3-B finding 1, KIM-D16/KIM-D19). Accounts are group-wide, so the context-company fence alone
+    /// would list every local user of the group. A row is returned only when either
+    /// <list type="bullet">
+    /// <item>the user is a member of the context company now and every membership company of the user is one where the
+    /// actor holds <c>identity.users.manage</c> company-wide (the KIM-D16 management scope, the same evaluator as the
+    /// password-reset/unlock/deactivate fence), or</item>
+    /// <item>the user has never had any assignment row in any company (a freshly created account that must first be
+    /// assigned, KIM-D19). A user whose only assignments are in another company, even revoked or expired ones, is not
+    /// listed. Who may see never-assigned accounts is NEEDS-SINAN; this is the narrowest reading that keeps the
+    /// create-then-assign flow working.</item>
+    /// </list>
+    /// </summary>
     public async Task<IReadOnlyList<IdentityManagedUserV1>> ReadUsersAsync(CancellationToken cancellationToken = default)
     {
         var company = RequireContextCompany();
+        if (!Guid.TryParse(currentUser.UserId, out var actor) || actor == Guid.Empty) throw new UnauthorizedAccessException();
         await RequireAsync(ErpPermissions.IdentityUsersManage, company, cancellationToken);
         var now = timeProvider.GetUtcNow();
+        var managed = await new IdentityUserManagementEvaluator(database).GetCompanyWideManagedCompanyIdsAsync(actor, now, cancellationToken);
+        var valid = database.RoleAssignments.AsNoTracking().Where(a => a.Status == RoleAssignmentStatus.Active
+            && a.ValidFromUtc <= now && (a.ValidUntilUtc == null || a.ValidUntilUtc > now));
         var rows = await (from user in database.Users.AsNoTracking()
                           join credential in database.LocalCredentials.AsNoTracking() on user.Id equals credential.UserId
+                          where (valid.Any(a => a.UserId == user.Id && a.CompanyId == company)
+                                  && !valid.Any(a => a.UserId == user.Id && !managed.Contains(a.CompanyId)))
+                              || !database.RoleAssignments.Any(a => a.UserId == user.Id)
                           orderby user.DisplayName, user.Id
                           select new { user.Id, user.DisplayName, user.IsActive, credential.UserName, credential.Version,
                               credential.MustChangePassword, credential.LockoutEndUtc }).ToListAsync(cancellationToken);

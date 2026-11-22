@@ -77,6 +77,7 @@ internal static class AccountingPeriodCarrySqlFixture
     {
         public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default) =>
             Task.FromResult(companyId == company && permission is AccountingPermissionManifestV1.PeriodsClose or AccountingPermissionManifestV1.PeriodsApprove
+                    or AccountingPermissionManifestV1.PeriodsReopen
                 ? new PermissionScope(true, true, new HashSet<string>(), new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()) : PermissionScope.Denied);
     }
 }

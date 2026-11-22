@@ -11,6 +11,66 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed partial class IdentityAccessAssignmentSqlServerRelationalAcceptanceTests
 {
     [SqlServerFact]
+    public async Task Managed_user_list_hides_users_outside_the_context_company_or_outside_the_actor_management_scope()
+    {
+        await WithDatabaseAsync(SyntheticCode("ADMIN"), async factory =>
+        {
+            var manager = await CreateRoleAsync(factory, SyntheticCode("MANAGER"), ErpPermissions.IdentityUsersManage);
+            var plain = await CreateRoleAsync(factory, SyntheticCode("PLAIN"), ErpPermissions.IdentityProfileRead);
+            var actor = await EnsureUserAsync(factory, TestUsers.NoAssignment);
+            await AssignDirectlyAsync(factory, actor, manager, TestCompanyIds.CompanyA);
+            using var client = CreateClient(factory, TestUsers.NoAssignment, TestCompanyIds.CompanyA);
+            async Task<Guid> CreateAsync(string label)
+            {
+                var id = Guid.NewGuid();
+                using var created = await PostAsync(client, "/api/v1/identity/access/users", new CreateLocalUserV1(id, "0",
+                    $"Sentetik {label}", $"synthetic-{label}-{id:N}", "SentetikOnly!Temporary.5172", "Sentetik oluşturma"), NewKey(), NewKey());
+                Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+                return id;
+            }
+            var onlyA = await CreateAsync("only-a");
+            var onlyB = await CreateAsync("only-b");
+            var bothAandB = await CreateAsync("a-and-b");
+            var expiredB = await CreateAsync("expired-b");
+            var neverAssigned = await CreateAsync("never-assigned");
+            await AssignDirectlyAsync(factory, onlyA, plain, TestCompanyIds.CompanyA);
+            await AssignDirectlyAsync(factory, onlyB, plain, TestCompanyIds.CompanyB);
+            await AssignDirectlyAsync(factory, bothAandB, plain, TestCompanyIds.CompanyA);
+            await AssignDirectlyAsync(factory, bothAandB, plain, TestCompanyIds.CompanyB);
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+                var expired = new GoymenERP.Modules.Identity.Domain.Assignments.RoleAssignment(Guid.NewGuid(), expiredB, plain,
+                    TestCompanyIds.CompanyB, DateTimeOffset.UtcNow.AddDays(-2), DateTimeOffset.UtcNow.AddDays(-1), approvedByUserId: null);
+                expired.AddScope(GoymenERP.Modules.Identity.Domain.Assignments.AccessScopeType.Company, TestCompanyIds.CompanyB);
+                identity.RoleAssignments.Add(expired);
+                await identity.SaveChangesAsync();
+            }
+
+            async Task<Guid[]> ListAsync()
+            {
+                using var response = await client.GetAsync("/api/v1/identity/access/managed-users");
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                return body.RootElement.EnumerateArray().Select(user => user.GetProperty("userId").GetGuid()).ToArray();
+            }
+
+            var listed = await ListAsync();
+            Assert.Contains(onlyA, listed);
+            Assert.Contains(neverAssigned, listed);
+            Assert.DoesNotContain(onlyB, listed);
+            Assert.DoesNotContain(expiredB, listed);
+            Assert.DoesNotContain(bothAandB, listed);
+
+            await AssignDirectlyAsync(factory, actor, manager, TestCompanyIds.CompanyB);
+            listed = await ListAsync();
+            Assert.Contains(bothAandB, listed);
+            Assert.DoesNotContain(onlyB, listed);
+            Assert.DoesNotContain(expiredB, listed);
+        });
+    }
+
+    [SqlServerFact]
     public async Task User_management_requires_every_membership_company_and_replays_without_applying_a_second_password()
     {
         await WithDatabaseAsync(SyntheticCode("ADMIN"), async factory =>

@@ -8,8 +8,10 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed partial class SettingsCompanyPolicySqlServerRelationalAcceptanceTests
 {
     [SqlServerFact]
-    public async Task Sales_and_Purchasing_subcontract_defaults_use_separate_existing_approval_authorities_and_real_versioned_rate_lists()
+    public async Task Sales_subcontract_default_write_needs_both_approvals_and_the_Purchasing_default_write_route_stays_closed_with_real_versioned_rate_lists()
     {
+        // K3-B finding 4: SAT-D395 (purchasing.orders.approve) and Issue #1189 6947126872 (sales.orders.approve) disagree,
+        // so a Sales default write needs both (narrowest, NEEDS-SINAN); TK-36 keeps the Purchasing default write closed.
         await using var run = await HostRun.StartAsync();
         var salesSubject = await run.GrantAsync(TestUsers.CompanyA, CompanyA, ErpPermissions.SalesOrdersApprove);
         var purchaseSubject = await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, ErpPermissions.PurchasingOrdersApprove);
@@ -29,20 +31,25 @@ public sealed partial class SettingsCompanyPolicySqlServerRelationalAcceptanceTe
         var salesValue = new RecordSubcontractTaxDefaultRequestV1("0", true, "20", null, false, null, null, "SENTETIK satış varsayılanı");
         var purchaseValue = salesValue with { VatPercent = "10", Reason = "SENTETIK alış varsayılanı" };
         using (var denied = await sales.SendAsync(Json(purchasePath + "/versions", "wrong-side", purchaseValue))) Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        // Sales approval alone no longer writes the Sales default.
+        using (var salesOnly = await sales.SendAsync(Json(salesPath + "/versions", "tax-sales-only", salesValue))) Assert.Equal(HttpStatusCode.Forbidden, salesOnly.StatusCode);
+        // TK-36: the Purchasing default write route is closed even for the Purchasing approver.
+        using (var closed = await purchase.SendAsync(Json(purchasePath + "/versions", "tax-purchase", purchaseValue))) Assert.Equal(HttpStatusCode.Forbidden, closed.StatusCode);
+        await run.GrantAsync(salesSubject, CompanyA, ErpPermissions.PurchasingOrdersApprove);
         await run.CommandAsync(sales, salesPath + "/versions", "tax-sales", salesValue);
-        await run.CommandAsync(purchase, purchasePath + "/versions", "tax-purchase", purchaseValue);
-        await run.CommandAsync(purchase, purchasePath + "/versions", "tax-purchase", purchaseValue, replay: true);
+        await run.CommandAsync(sales, salesPath + "/versions", "tax-sales", salesValue, replay: true);
+        // Even an actor holding both approvals cannot open the closed Purchasing route.
+        using (var stillClosed = await sales.SendAsync(Json(purchasePath + "/versions", "tax-purchase-both", purchaseValue))) Assert.Equal(HttpStatusCode.Forbidden, stillClosed.StatusCode);
         Assert.Equal("20", (await sales.GetFromJsonAsync<SubcontractTaxDefaultViewV1>(salesPath))!.Current!.VatPercent);
-        var selected = await purchase.GetFromJsonAsync<SubcontractTaxOptionsV1>(purchasePath + "/options");
-        Assert.Equal((CompanyA, SubcontractTaxSideV1.Purchasing, "1", "10"),
-            (selected!.CompanyId, selected.Side, selected.DefaultVersion, selected.Default!.VatPercent));
-        Assert.Equal(2, selected.VatRates.Count); Assert.False(string.IsNullOrWhiteSpace(selected.SourceVersion));
-        using (var stale = await purchase.SendAsync(Json(purchasePath + "/versions", "tax-stale", purchaseValue)))
+        using (var stale = await sales.SendAsync(Json(salesPath + "/versions", "tax-stale", salesValue)))
             await ProblemAsync(stale, HttpStatusCode.Conflict, CompanyPolicyProblemCodesV1.VersionConflict);
-        using (var unknown = await purchase.SendAsync(Json(purchasePath + "/versions", "tax-unknown-rate", purchaseValue with { ExpectedVersion = "1", VatPercent = "30" })))
+        using (var unknown = await sales.SendAsync(Json(salesPath + "/versions", "tax-unknown-rate", salesValue with { ExpectedVersion = "1", VatPercent = "30" })))
             await ProblemAsync(unknown, HttpStatusCode.UnprocessableEntity, CompanyPolicyProblemCodesV1.RateUnknown);
-        Assert.Equal(1, await run.CountAsync("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType=N'Settings.PurchasingSubcontractTaxDefault'"));
+        var selected = await purchase.GetFromJsonAsync<SubcontractTaxOptionsV1>(purchasePath + "/options");
+        Assert.Equal((CompanyA, SubcontractTaxSideV1.Purchasing, "0"), (selected!.CompanyId, selected.Side, selected.DefaultVersion));
+        Assert.Null(selected.Default); Assert.Equal(2, selected.VatRates.Count);
+        Assert.Equal(0, await run.CountAsync("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType=N'Settings.PurchasingSubcontractTaxDefault'"));
         Assert.Equal(1, await run.CountAsync("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType=N'Settings.SalesSubcontractTaxDefault'"));
-        Assert.Single((await purchase.GetFromJsonAsync<SubcontractTaxDefaultViewV1>(purchasePath))!.Versions);
+        Assert.Empty((await purchase.GetFromJsonAsync<SubcontractTaxDefaultViewV1>(purchasePath))!.Versions);
     }
 }
