@@ -2243,8 +2243,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                         [".FindAsync"] = 3
                         }),
-                // tren-1 wave 3 integration (ALC-S16): SqlClient classifies 2601/2627 races only. Its cross-company batch-id collision probe
-                // (IgnoreQueryFilters) is NOT authorised here; it stays red for the owning team's K3 tenant-isolation review.
+                // tren-1 wave 3 integration (ALC-S16): SqlClient classifies 2601/2627 races only. The earlier cross-company batch-id
+                // collision probe (IgnoreQueryFilters) was replaced in W6 by a company-bound collision lookup; no filter bypass remains.
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
                  + "Persistence/PurchaseGoodsReceiptBatchStore.cs"] =
                     new(

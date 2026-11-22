@@ -73,8 +73,11 @@ public sealed partial class IdentityAccessAssignmentSqlServerRelationalAcceptanc
             using var replay = await PostAsync(client, "/api/v1/identity/company-setup/first-admin", request, key, NewKey());
             Assert.Equal(HttpStatusCode.Created, replay.StatusCode);
             Assert.Equal("true", Assert.Single(replay.Headers.GetValues("Idempotency-Replayed")));
-            Assert.Single(await check.ServiceProvider.GetRequiredService<AuditDbContext>().AuditEvents
+            var completed = Assert.Single(await check.ServiceProvider.GetRequiredService<AuditDbContext>().AuditEvents
                 .Where(x => x.EventType == "organization.company.setup-completed.v1").ToListAsync());
+            // K3-A P3: the completion is audited under the permission of the fact it completes (the explicit first-Admin
+            // assignment), not the general role-management permission.
+            Assert.Equal(ErpPermissions.IdentityCompanyFirstAdminAssign, completed.PermissionCode);
             await Assert.ThrowsAsync<OutboxPermanentFailureException>(() => DeliverFirstAdminAsync(factory, assigned with { PayloadJson = assigned.PayloadJson + " " }));
         });
     }

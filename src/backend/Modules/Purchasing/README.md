@@ -532,7 +532,10 @@ A return that names a source label is planned from Inventory's read port (lineag
 each receipt's open, invoiced and pending kilograms). Lineage mode writes one stock exit per receipt under one
 Inventory command in the host transaction; quantity mode (SAT-D441/SAT-D444) takes the whole return from the chosen
 receipt. `PurchaseSupplierReturnQuantityPriceRuleV1` is the single rule point of "the chosen order's unit price";
-SAT-D451: it is the net price after the discount, without the deferral; a net price with more than four decimals is refused 422 (never rounded). The migration grants no access and
+SAT-D451: it is the net price after the discount, without the deferral. Behind the open quantity-rules gate
+(`SupplierReturnQuantityRulesGoldenAccepted = true`) a net price with more than four decimals is rounded once to four, half
+away from zero (SAT-D453), a piece order line is priced per piece (SAT-D455) and an order with a document-level discount is
+refused (SAT-D458); with the gate closed the earlier rule returns (more than four decimals refused 422, never rounded). The migration grants no access and
 activates nothing; real-SQL acceptance is **NOT_RUN** and independent K3 acceptance remains required.
 
 ## AK-3b (adet/kg — alışı tamamlama)
