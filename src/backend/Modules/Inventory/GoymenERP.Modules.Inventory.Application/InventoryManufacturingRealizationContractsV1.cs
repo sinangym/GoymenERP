@@ -41,6 +41,13 @@ public interface IInventoryManufacturingRealizationParticipantV1 : IAsyncDisposa
 /// allocation must belong to <see cref="PlanId"/>, which is required with it, so an order can never consume another
 /// plan's allocation on the same label. Without an allocation the issue may take only the unreserved kg, as before.
 /// </para>
+/// <para>
+/// KLN-D119 (AK-2b; Manufacturing sends it from AK-7): <c>PieceCount</c> is the number of pieces issued from a
+/// piece-tracking label, required for such a label and refused on a kg-only label (400 invalid quantity); a partial
+/// issue leaves at least one piece, a whole issue takes every piece. The same field on the input return brings pieces
+/// back to a label issued with pieces (never more than issued; the last kilograms bring the last pieces), and on the
+/// output declaration starts a piece-tracking output label (at least one piece, URT-D112).
+/// </para>
 /// </summary>
 public sealed record InventoryManufacturingInputIssueRequestV1(
     Guid CompanyId,
@@ -53,7 +60,8 @@ public sealed record InventoryManufacturingInputIssueRequestV1(
     string QuantityKg,
     DateTimeOffset OccurredAtUtc,
     Guid? AllocationId = null,
-    Guid? PlanId = null);
+    Guid? PlanId = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? PieceCount = null);
 
 public sealed record InventoryManufacturingInputIssueResultV1(
     Guid CompanyId,
@@ -95,7 +103,8 @@ public sealed record InventoryManufacturingInputReturnRequestV1(
     string QuantityKg,
     DateTimeOffset OccurredAtUtc,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-    Guid? SourceIssueMovementId = null);
+    Guid? SourceIssueMovementId = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? PieceCount = null);
 
 public sealed record InventoryManufacturingInputReturnResultV1(
     Guid CompanyId,
@@ -139,7 +148,8 @@ public sealed record InventoryManufacturingOutputRequestV1(
     BlockState InitialBlock,
     Guid MovementId,
     string QuantityKg,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? PieceCount = null);
 
 public sealed record InventoryManufacturingOutputResultV1(
     Guid CompanyId,
@@ -386,7 +396,7 @@ public static class InventoryManufacturingRealizationContractV1
             request.ManufacturingOrderVersionAfter, request.ParentLabelId, request.ExpectedParentLabelVersion,
             request.MovementId, request.OccurredAtUtc, metadata, enlistedCompanyId);
         if ((request.AllocationId is null) != (request.PlanId is null)
-            || request.AllocationId == Guid.Empty || request.PlanId == Guid.Empty)
+            || request.AllocationId == Guid.Empty || request.PlanId == Guid.Empty || request.PieceCount is < 0)
         {
             throw Refused(400, InventoryManufacturingRealizationCodesV1.InvalidRequest);
         }
@@ -402,7 +412,7 @@ public static class InventoryManufacturingRealizationContractV1
             request.ManufacturingOrderVersionAfter, request.ParentLabelId, request.ExpectedParentLabelVersion,
             request.MovementId, request.OccurredAtUtc, metadata, enlistedCompanyId);
         RequireDistinctMovement(request.ReturnId, request.MovementId);
-        if (request.SourceIssueMovementId == Guid.Empty)
+        if (request.SourceIssueMovementId == Guid.Empty || request.PieceCount is < 0)
             throw Refused(400, InventoryManufacturingRealizationCodesV1.InvalidRequest);
         return Quantity(request.QuantityKg);
     }
@@ -418,7 +428,8 @@ public static class InventoryManufacturingRealizationContractV1
         if (request.ProductId == Guid.Empty || request.LotId == Guid.Empty || request.LabelId == Guid.Empty
             || request.OwnerId == Guid.Empty || request.CustodianId == Guid.Empty || request.LocationId == Guid.Empty
             || request.RequiredDocuments is null || !Enum.IsDefined(request.OwnerKind)
-            || !Enum.IsDefined(request.CustodianKind) || !Enum.IsDefined(request.InitialBlock))
+            || !Enum.IsDefined(request.CustodianKind) || !Enum.IsDefined(request.InitialBlock)
+            || request.PieceCount is <= 0)
         {
             throw Refused(400, InventoryManufacturingRealizationCodesV1.InvalidRequest);
         }

@@ -147,7 +147,12 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
         try
         {
             effect = aggregate.ReceiveLine(parsed.ExpectedVersion, lineId, request.ReceivedAtUtc, parsed.Document,
-                parsed.Received);
+                parsed.Received, parsed.ReceivedPieces);
+        }
+        catch (InventoryRuleException exception) when (IsPieceCountFault(exception))
+        {
+            // KLN-D119: a missing, extra or impossible received piece count is the request's fault.
+            throw TransferError(400, InventoryTransferCodesV1.ValidationFailed, exception);
         }
         catch (InventoryRuleException exception)
         {
@@ -192,6 +197,10 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             ReceivedKg = effect.ReceivedQuantity.Value,
             ShortageKg = effect.ShortageQuantity.Value,
             OverageKg = effect.OverageQuantity.Value,
+            DispatchedPieceCount = effect.DispatchedPieces?.Value,
+            ReceivedPieceCount = effect.ReceivedPieces?.Value,
+            ShortagePieceCount = effect.ShortagePieces?.Value,
+            OveragePieceCount = effect.OveragePieces?.Value,
             ShortageMovementId = shortageMovement?.Id,
             LabelVersionAfterReceipt = state.Label.Version,
             OverageReason = effect.OverageQuantity.Value > 0m ? parsed.OverageReason : null,
@@ -224,6 +233,10 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
                 receivedKg = effect.ReceivedQuantity.ToString(),
                 shortageKg = effect.ShortageQuantity.ToString(),
                 overageKg = effect.OverageQuantity.ToString(),
+                dispatchedPieceCount = receipt.DispatchedPieceCount,
+                receivedPieceCount = receipt.ReceivedPieceCount,
+                shortagePieceCount = receipt.ShortagePieceCount,
+                overagePieceCount = receipt.OveragePieceCount,
                 shortageMovementId = shortageMovement?.Id,
                 overageReason = receipt.OverageReason,
             }, Json),
@@ -335,6 +348,8 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
 
         // KLN-D107: a re-request is decided for its own kilograms, never above the receipt's first declared excess.
         var decidedOverageKg = renewal?.OverageKg ?? receipt.OverageKg;
+        // KLN-D119: the excess pieces travel with the decided request (a renewal's own pieces, else the receipt's).
+        var decidedOveragePieces = renewal is null ? receipt.OveragePieceCount : renewal.OveragePieceCount;
 
         Guid? movementId = null;
         if (parsed.Decision == ApproveDecision)
@@ -351,7 +366,8 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             InventoryTransferReceiptOverageEffect effect;
             try
             {
-                effect = aggregate.ReceiptOverage(lineId, Kilograms.Positive(decidedOverageKg), request.DecidedAtUtc);
+                effect = aggregate.ReceiptOverage(lineId, Kilograms.Positive(decidedOverageKg), request.DecidedAtUtc,
+                    decidedOveragePieces is { } pieces ? PieceCount.Of(pieces) : null);
             }
             catch (InventoryRuleException exception)
             {
@@ -395,6 +411,7 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
                 decision = ((InventoryTransferDecisionKindV1)parsed.Decision).ToString(),
                 reason = parsed.Reason,
                 overageKg = Kilograms.Positive(decidedOverageKg).ToString(),
+                overagePieceCount = decidedOveragePieces,
                 receivedBy = receipt.RecordedBy,
                 requestedBy = renewal?.RecordedBy ?? receipt.RecordedBy,
                 movementId,
@@ -904,7 +921,11 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
                     decision?.Reason,
                     decision?.DecidedAtUtc,
                     decision?.DecidedBy,
-                    decision?.MovementId);
+                    decision?.MovementId,
+                    receipt.DispatchedPieceCount,
+                    receipt.ReceivedPieceCount,
+                    receipt.ShortagePieceCount,
+                    receipt.OveragePieceCount);
             })],
             [.. lossRequests.OrderBy(request => sequence.GetValueOrDefault(request.LineId))
                 .ThenBy(request => request.RequestNumber).Select(request =>
@@ -930,7 +951,7 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
                 return new InventoryTransferOverageRenewalViewV1(renewal.LineId, renewal.RequestNumber,
                     Kilograms.Positive(renewal.OverageKg).ToString(), renewal.Reason, renewal.RequestedAtUtc,
                     renewal.RecordedBy, DecisionStatus(decision?.Decision), decision?.Reason, decision?.DecidedAtUtc,
-                    decision?.DecidedBy, decision?.MovementId);
+                    decision?.DecidedBy, decision?.MovementId, renewal.OveragePieceCount);
             })]);
     }
 
@@ -1033,6 +1054,7 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             || !TryVersion(request.ExpectedTransferVersion, out var expectedVersion)
             || request.ReceivedAtUtc.Offset != TimeSpan.Zero
             || !TryQuantity(request.ReceivedKg, out var received)
+            || request.ReceivedPieceCount is <= 0
             || (request.OverageReason is not null
                 && (overageReason = InventoryTransferReceiptApiV1.NormalizeText(request.OverageReason)) is null))
         {
@@ -1040,7 +1062,7 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
         }
 
         var document = ParseDocument(request.IncomingDocument);
-        var payloadHash = request.ExpectedIncomingDocumentVersion is null ? GenealogyPayloadHash(new
+        var kilogramHash = request.ExpectedIncomingDocumentVersion is null ? GenealogyPayloadHash(new
         {
             transferId,
             lineId,
@@ -1060,7 +1082,12 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             overageReason,
             expectedIncomingDocumentVersion = request.ExpectedIncomingDocumentVersion,
         });
-        return new(expectedVersion, document, received, overageReason, payloadHash);
+        // KLN-D119: the piece count joins the hash only when given, so every kg-only receipt keeps its stored hash.
+        var payloadHash = request.ReceivedPieceCount is { } pieces
+            ? GenealogyPayloadHash(new { kilogramHash, receivedPieceCount = pieces })
+            : kilogramHash;
+        return new(expectedVersion, document, received, overageReason, payloadHash,
+            request.ReceivedPieceCount is { } count ? PieceCount.Positive(count) : null);
     }
 
     private static ParsedDecision OverageDecisionPayload(
@@ -1171,7 +1198,13 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
         InventoryTransferDocumentReference Document,
         Kilograms Received,
         string? OverageReason,
-        string PayloadHash);
+        string PayloadHash,
+        PieceCount? ReceivedPieces = null);
+
+    /// <summary>KLN-D119: the domain's piece-count refusals, which are the request's fault (400), not a state conflict.</summary>
+    internal static bool IsPieceCountFault(InventoryRuleException exception) => exception.Code is
+        InventoryRuleCodes.PieceCountRequired or InventoryRuleCodes.PieceCountNotTracked
+        or InventoryRuleCodes.NegativePieceCount or InventoryRuleCodes.InvalidPieceCount;
 
     private sealed record ParsedDecision(long ExpectedVersion, int RequestNumber, int Decision, string Reason, string PayloadHash);
 

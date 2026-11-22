@@ -112,6 +112,35 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
         + "AND (([BookPieceCount] = 0 AND [BookKg] = 0) OR ([BookPieceCount] > 0 AND [BookKg] > 0)) "
         + "AND (([CountedPieceCount] = 0 AND [CountedKg] = 0) OR ([CountedPieceCount] > 0 AND [CountedKg] > 0)))";
 
+    /// <summary>KLN-D119 (AK-2b): a dispatched transfer bucket of a piece-tracking label carries at least one piece.</summary>
+    internal const string TransferBucketPieceCountCheck = "[PieceCount] IS NULL OR [PieceCount] > 0";
+
+    /// <summary>
+    /// KLN-D119 (AK-2b): a receipt of a piece-tracking line carries all four piece counts, a kg-only receipt none. Dispatched
+    /// and received pieces are positive; the shortage and excess pieces are exactly the dispatched/received difference, and
+    /// a piece difference goes with a kilogram difference in the same direction.
+    /// </summary>
+    internal const string TransferReceiptPieceCountCheck =
+        "([DispatchedPieceCount] IS NULL AND [ReceivedPieceCount] IS NULL AND [ShortagePieceCount] IS NULL "
+        + "AND [OveragePieceCount] IS NULL) OR ([DispatchedPieceCount] > 0 AND [ReceivedPieceCount] > 0 "
+        + "AND [ShortagePieceCount] >= 0 AND [OveragePieceCount] >= 0 "
+        + "AND ([ShortagePieceCount] = 0 OR [OveragePieceCount] = 0) "
+        + "AND [ReceivedPieceCount] + [ShortagePieceCount] - [OveragePieceCount] = [DispatchedPieceCount] "
+        + "AND ([ShortagePieceCount] = 0 OR [ShortageKg] > 0) AND ([OveragePieceCount] = 0 OR [OverageKg] > 0))";
+
+    /// <summary>KLN-D119 (AK-2b): a re-requested excess of a piece-tracking line names zero or more pieces.</summary>
+    internal const string TransferOverageRenewalPieceCountCheck = "[OveragePieceCount] IS NULL OR [OveragePieceCount] >= 0";
+
+    /// <summary>
+    /// KLN-D119 (AK-2b): a scrap of a piece-tracking label carries both piece counts, a kg-only scrap neither. The book
+    /// pieces are positive; the scrapped pieces never exceed them, and the whole kilograms take every piece while a partial
+    /// scrap leaves at least one.
+    /// </summary>
+    internal const string StockScrapPieceCountCheck =
+        "([BookPieceCount] IS NULL AND [ScrapPieceCount] IS NULL) OR ([BookPieceCount] > 0 AND [ScrapPieceCount] >= 0 "
+        + "AND (([ScrapPieceCount] = [BookPieceCount] AND [ScrapKg] = [BookKg]) "
+        + "OR ([ScrapPieceCount] < [BookPieceCount] AND [ScrapKg] < [BookKg])))";
+
     /// <summary>F-017 STOK §3.2 (F017-b): no empty identity on a future supply allocation.</summary>
     internal const string FutureSupplyAllocationIdentityCheck =
         "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
@@ -989,6 +1018,7 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
             table.HasCheckConstraint("CK_StockScraps_State",
                 "[OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] IN (1, 2) AND [LabelVersion] >= 1 "
                 + "AND [BookKg] > 0 AND [ScrapKg] > 0 AND [ScrapKg] <= [BookKg]");
+            table.HasCheckConstraint("CK_StockScraps_PieceCount", StockScrapPieceCountCheck);
             table.HasCheckConstraint("CK_StockScraps_Text",
                 "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 "
                 + "AND LEN([CorrelationId]) > 0");
@@ -1225,6 +1255,7 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
                 + "AND [LabelId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
             table.HasCheckConstraint("CK_TransferBuckets_State",
                 "[Sequence] >= 1 AND [OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] IN (1, 2) AND [QuantityKg] > 0");
+            table.HasCheckConstraint("CK_TransferBuckets_PieceCount", TransferBucketPieceCountCheck);
         });
         bucket.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId, x.Sequence });
         bucket.Property(x => x.QuantityKg).HasPrecision(18, 3);
@@ -1278,6 +1309,7 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
                 "([OverageKg] = 0 AND [OverageReason] IS NULL) OR ([OverageKg] > 0 "
                 + "AND [OverageReason] IS NOT NULL AND LEN(LTRIM(RTRIM([OverageReason]))) > 0)");
             table.HasCheckConstraint("CK_TransferReceipts_State", "[LabelVersionAfterReceipt] >= 3");
+            table.HasCheckConstraint("CK_TransferReceipts_PieceCount", TransferReceiptPieceCountCheck);
             table.HasCheckConstraint("CK_TransferReceipts_Text",
                 "LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
         });
@@ -1345,6 +1377,7 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
                 "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 "
                 + "AND LEN([CorrelationId]) > 0");
             table.HasCheckConstraint("CK_TransferOverageRenewals_RequestNumber", TransferOverageRenewalNumberCheck);
+            table.HasCheckConstraint("CK_TransferOverageRenewals_PieceCount", TransferOverageRenewalPieceCountCheck);
         });
         overageRenewal.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId, x.RequestNumber });
         overageRenewal.Property(x => x.OverageKg).HasPrecision(18, 3);

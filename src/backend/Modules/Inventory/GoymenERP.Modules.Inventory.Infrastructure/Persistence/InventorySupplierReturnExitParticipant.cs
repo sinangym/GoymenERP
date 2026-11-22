@@ -159,7 +159,7 @@ public sealed partial class InventorySupplierReturnExitParticipant : IInventoryS
                 InventorySupplierReturnExitContractV1.SourceKind,
                 receipt.MovementId,
                 request.SupplierReturnLineId),
-            [new StockMovementLine(source.Position, StockDirection.Out, input.Quantity)],
+            [new StockMovementLine(source.Position, StockDirection.Out, input.Quantity, input.Pieces)],
             CostResult.NotCalculated);
         if (source.QuantityKg < input.Quantity.Value)
         {
@@ -194,6 +194,13 @@ public sealed partial class InventorySupplierReturnExitParticipant : IInventoryS
         {
             throw Refused(409, InventorySupplierReturnExitCodesV1.StockNotAvailable, exception);
         }
+        catch (InventoryRuleException exception) when (exception.Code is InventoryRuleCodes.PieceCountRequired
+            or InventoryRuleCodes.PieceCountNotTracked or InventoryRuleCodes.NegativePieceCount
+            or InventoryRuleCodes.InvalidPieceCount)
+        {
+            // KLN-D119: an unknown, extra or impossible piece count for this label is the request's quantity fault.
+            throw Refused(400, InventorySupplierReturnExitCodesV1.InvalidQuantity, exception);
+        }
         catch (InventoryRuleException)
         {
             throw Refused(503, InventorySupplierReturnExitCodesV1.Unavailable);
@@ -217,7 +224,8 @@ public sealed partial class InventorySupplierReturnExitParticipant : IInventoryS
             cost,
             outboxMessageId,
             IsReplay: false,
-            OriginalCorrelationId: metadata.CorrelationId);
+            OriginalCorrelationId: metadata.CorrelationId,
+            PieceCount: input.Pieces?.Value);
         var payload = new InventorySupplierReturnExitRecordedV1(
             companyId,
             request.SupplierReturnId,

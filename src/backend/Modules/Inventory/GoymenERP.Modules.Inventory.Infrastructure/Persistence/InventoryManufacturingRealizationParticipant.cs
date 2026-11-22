@@ -136,7 +136,8 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             : await CurrentFreePositionAsync(parent.Label, quantity, source, cancellationToken);
         var movement = new StockMovement(request.MovementId, companyId, StockMovementKind.Issue,
             request.OccurredAtUtc, source,
-            [new StockMovementLine(position, StockDirection.Out, quantity)], CostResult.NotCalculated);
+            [new StockMovementLine(position, StockDirection.Out, quantity,
+                request.PieceCount is { } pieces ? PieceCount.Of(pieces) : null)], CostResult.NotCalculated);
         await RecordMovementAsync(movement, metadata, InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient,
             cancellationToken);
 
@@ -177,11 +178,28 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             throw Refused(409, InventoryManufacturingRealizationCodesV1.ReturnExceedsIssued);
         }
 
+        PieceCount? returnedPieces;
+        try
+        {
+            // KLN-D119 (AK-2b): an input issued with pieces comes back with pieces, never more than were issued, and the
+            // last kilograms bring back the last pieces.
+            returnedPieces = PieceCountReturnRule.Returned(Kilograms.Of(trace.IssuedKg), trace.IssuedPieces,
+                Kilograms.Of(trace.ReturnedKg), trace.ReturnedPieces, quantity, request.PieceCount);
+        }
+        catch (InventoryRuleException exception) when (exception.Code == InventoryRuleCodes.NegativePieceCount)
+        {
+            throw Refused(409, InventoryManufacturingRealizationCodesV1.ReturnExceedsIssued);
+        }
+        catch (InventoryRuleException)
+        {
+            throw Refused(400, InventoryManufacturingRealizationCodesV1.InvalidQuantity);
+        }
+
         var movement = new StockMovement(request.MovementId, companyId, StockMovementKind.Return,
             request.OccurredAtUtc,
             new StockSourceReference(InventoryManufacturingRealizationContractV1.InputReturnSourceKind,
                 request.ManufacturingOrderId, request.ReturnId),
-            [new StockMovementLine(trace.Position, StockDirection.In, quantity)], CostResult.NotCalculated);
+            [new StockMovementLine(trace.Position, StockDirection.In, quantity, returnedPieces)], CostResult.NotCalculated);
         store.UseReturnIssueCost(movement.Id, await ReturnIssueCostSourceAsync(request, quantity.Value, cancellationToken));
         await RecordMovementAsync(movement, metadata, InventoryManufacturingRealizationCodesV1.Unavailable,
             cancellationToken);
@@ -359,7 +377,8 @@ public sealed partial class InventoryManufacturingRealizationParticipant
                 request.OccurredAtUtc,
                 new StockSourceReference(InventoryManufacturingRealizationContractV1.OutputSourceKind,
                     request.ManufacturingOrderId, request.OutputId),
-                [new StockMovementLine(position, StockDirection.In, quantity)], CostResult.NotCalculated);
+                [new StockMovementLine(position, StockDirection.In, quantity,
+                    request.PieceCount is { } pieces ? PieceCount.Positive(pieces) : null)], CostResult.NotCalculated);
         }
         catch (Exception exception) when (exception is InventoryRuleException or ArgumentException)
         {
@@ -650,7 +669,25 @@ public sealed partial class InventoryManufacturingRealizationParticipant
                     && line.Direction == (int)StockDirection.In
                 select line.QuantityKg)
             .SumAsync(cancellationToken);
-        return new InputTrace(positions[0], issueRows.Sum(row => row.QuantityKg), returned);
+        // KLN-D119: the issued pieces count only when every issue line of the label carried them; a mix is not trustworthy.
+        var issuedWithPieces = issueRows.Count(row => row.PieceCount is not null);
+        if (issuedWithPieces != 0 && issuedWithPieces != issueRows.Count)
+        {
+            throw Refused(503, InventoryManufacturingRealizationCodesV1.Unavailable);
+        }
+
+        var returnedPieces = await (from movement in context.Movements
+                join line in context.MovementLines on movement.Id equals line.MovementId
+                where movement.Kind == (int)StockMovementKind.Return
+                    && movement.SourceKind == InventoryManufacturingRealizationContractV1.InputReturnSourceKind
+                    && movement.SourceId == orderId && movement.SourceLineId != null
+                    && movement.SourceGrain == (int)StockSourceGrain.Line && line.LabelId == label.Id
+                    && line.Direction == (int)StockDirection.In
+                select line.PieceCount)
+            .SumAsync(cancellationToken) ?? 0;
+        return new InputTrace(positions[0], issueRows.Sum(row => row.QuantityKg), returned,
+            issuedWithPieces == 0 ? null : PieceCount.Of(issueRows.Sum(row => row.PieceCount!.Value)),
+            PieceCount.Of(returnedPieces));
     }
 
     private async Task<InventoryManufacturingPositionSnapshotV1> RecoverInputIssuePositionAsync(
@@ -797,6 +834,13 @@ public sealed partial class InventoryManufacturingRealizationParticipant
         {
             throw StoreRefusal(exception.Code, negativeStockCode);
         }
+        catch (InventoryRuleException exception) when (exception.Code is InventoryRuleCodes.PieceCountRequired
+            or InventoryRuleCodes.PieceCountNotTracked or InventoryRuleCodes.NegativePieceCount
+            or InventoryRuleCodes.InvalidPieceCount)
+        {
+            // KLN-D119: an unknown, extra or impossible piece count for this label is the request's quantity fault.
+            throw Refused(400, InventoryManufacturingRealizationCodesV1.InvalidQuantity);
+        }
         catch (InventoryRuleException)
         {
             throw Refused(503, InventoryManufacturingRealizationCodesV1.Unavailable);
@@ -903,7 +947,18 @@ public sealed partial class InventoryManufacturingRealizationParticipant
     /// An issue without an allocation hashes exactly as it did before B-01 added <c>AllocationId</c>, so a replay of an
     /// issue recorded earlier still matches its stored payload hash.
     /// </summary>
-    private static string RequestHash(InventoryManufacturingInputIssueRequestV1 request) => request.AllocationId is null
+    private static string RequestHash(InventoryManufacturingInputIssueRequestV1 request) => WithPieces(
+        KilogramRequestHash(request with { PieceCount = null }), request.PieceCount);
+
+    /// <summary>
+    /// KLN-D119 (AK-2b): the piece count joins a stored hash only when given, so every piece-less request keeps exactly the
+    /// hash it had before.
+    /// </summary>
+    private static string WithPieces(string kilogramHash, int? pieces) => pieces is { } count
+        ? Hash(JsonSerializer.Serialize(new { Core = kilogramHash, PieceCount = count }, Json))
+        : kilogramHash;
+
+    private static string KilogramRequestHash(InventoryManufacturingInputIssueRequestV1 request) => request.AllocationId is null
         ? Hash(JsonSerializer.Serialize(new
         {
             request.CompanyId,
@@ -918,7 +973,7 @@ public sealed partial class InventoryManufacturingRealizationParticipant
         }, Json))
         : Hash(JsonSerializer.Serialize(request, Json));
 
-    private static string RequestHash(InventoryManufacturingOutputRequestV1 request) => Hash(
+    private static string RequestHash(InventoryManufacturingOutputRequestV1 request) => WithPieces(Hash(
         JsonSerializer.Serialize(new
         {
             request.CompanyId,
@@ -945,7 +1000,7 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             request.MovementId,
             request.QuantityKg,
             request.OccurredAtUtc,
-        }, Json));
+        }, Json)), request.PieceCount);
 
     /// <summary>
     /// STK-S9: an output without a production status hashes exactly as before (the V1 core alone), so a replay of an
@@ -998,5 +1053,6 @@ public sealed partial class InventoryManufacturingRealizationParticipant
     private sealed record StagedOutput(Guid ParentLabelId, string ParentLabelVersion, Guid LotId, Guid LabelId,
         string LabelVersion, Guid MovementId, Guid GenealogyTransformationId,
         IReadOnlyList<InventoryManufacturingGenealogyInputV2> GenealogyInputs);
-    private sealed record InputTrace(StockPosition Position, decimal IssuedKg, decimal ReturnedKg);
+    private sealed record InputTrace(StockPosition Position, decimal IssuedKg, decimal ReturnedKg,
+        PieceCount? IssuedPieces = null, PieceCount ReturnedPieces = default);
 }

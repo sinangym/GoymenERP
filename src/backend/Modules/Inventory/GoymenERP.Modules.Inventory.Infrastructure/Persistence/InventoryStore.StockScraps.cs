@@ -50,7 +50,7 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
         var (expectedVersion, scrapKg, reason) = ParseStockScrap(request);
         var companyId = companyContext.CompanyId;
         var keyHash = GenealogyHash(metadata.IdempotencyKey.Trim());
-        var payloadHash = GenealogyPayloadHash(new
+        var kilogramHash = GenealogyPayloadHash(new
         {
             request.ScrapId,
             request.LabelId,
@@ -59,6 +59,10 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
             scrappedAtUtc = request.ScrappedAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
             reason,
         });
+        // KLN-D119: the scrapped pieces join the hash only when given, so every kg-only scrap keeps its stored hash.
+        var payloadHash = request.ScrapPieceCount is { } piecesForHash
+            ? GenealogyPayloadHash(new { kilogramHash, scrapPieceCount = piecesForHash })
+            : kilogramHash;
         if (await FindStockScrapKeyReplayAsync(RecordStockScrapCommand, keyHash, payloadHash, metadata.ActorId,
                 freshAuthorityFence, cancellationToken) is { } replay)
         {
@@ -117,7 +121,9 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
             scrap = new StockScrap(request.ScrapId, companyId,
                 Position(balance.CompanyId, balance.OwnerKind, balance.OwnerId, balance.CustodianKind,
                     balance.CustodianId, balance.LocationId, IdentityOnly(label), balance.Block),
-                Kilograms.Positive(balance.QuantityKg), scrapKg, request.ScrappedAtUtc, reason);
+                Kilograms.Positive(balance.QuantityKg), scrapKg, request.ScrappedAtUtc, reason,
+                balance.PieceCount is { } bookPieces ? PieceCount.Of(bookPieces) : null,
+                request.ScrapPieceCount is { } scrapPieces ? PieceCount.Of(scrapPieces) : null);
         }
         catch (InventoryRuleException exception)
         {
@@ -155,6 +161,8 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
                     Block = balance.Block,
                     BookKg = scrap.Book.Value,
                     ScrapKg = scrap.Scrap.Value,
+                    BookPieceCount = scrap.BookPieces?.Value,
+                    ScrapPieceCount = scrap.ScrapPieces?.Value,
                     ScrappedAtUtc = scrap.ScrappedAtUtc,
                     Reason = scrap.Reason,
                     PayloadHash = payloadHash,
@@ -581,7 +589,9 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
             return new StockScrap(row.Id, row.CompanyId,
                 Position(row.CompanyId, row.OwnerKind, row.OwnerId, row.CustodianKind, row.CustodianId, row.LocationId,
                     IdentityOnly(label), row.Block),
-                Kilograms.Positive(row.BookKg), Kilograms.Positive(row.ScrapKg), row.ScrappedAtUtc, row.Reason);
+                Kilograms.Positive(row.BookKg), Kilograms.Positive(row.ScrapKg), row.ScrappedAtUtc, row.Reason,
+                row.BookPieceCount is { } bookPieces ? PieceCount.Of(bookPieces) : null,
+                row.ScrapPieceCount is { } scrapPieces ? PieceCount.Of(scrapPieces) : null);
         }
         catch (InventoryRuleException exception)
         {
@@ -623,7 +633,9 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
                     decision.Decision == DecisionApproved ? InventoryStockScrapStatusesV1.Approved : InventoryStockScrapStatusesV1.Rejected,
                     decision.DecidedAtUtc,
                     decision.Reason,
-                    decision.MovementId));
+                    decision.MovementId),
+            row.BookPieceCount,
+            row.ScrapPieceCount);
     }
 
     private static void RequireStockScrapMetadata(InventoryCommandMetadata metadata)

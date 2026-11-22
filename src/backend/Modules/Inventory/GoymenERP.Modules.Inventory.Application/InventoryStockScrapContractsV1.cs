@@ -35,7 +35,11 @@ public static class InventoryStockScrapApiV1
     public const int LabelScrapsLimit = 50;
 }
 
-/// <summary>One scrap of one stocked label, as the client sends it.</summary>
+/// <summary>
+/// One scrap of one stocked label, as the client sends it. <c>ScrapPieceCount</c> (KLN-D119, AK-2b) is required for a
+/// label that tracks pieces and refused for a kg-only label (400 validation); it never exceeds the book pieces, a whole
+/// scrap takes every piece and a partial scrap leaves at least one.
+/// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record RecordInventoryStockScrapV1(
     [property: JsonRequired] Guid ScrapId,
@@ -43,7 +47,8 @@ public sealed record RecordInventoryStockScrapV1(
     [property: JsonRequired] string ExpectedLabelVersion,
     [property: JsonRequired] string ScrapKg,
     [property: JsonRequired] DateTimeOffset ScrappedAtUtc,
-    [property: JsonRequired] string Reason);
+    [property: JsonRequired] string Reason,
+    int? ScrapPieceCount = null);
 
 /// <summary>The wire form is the name ("Approve" / "Reject").</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<InventoryStockScrapDecisionKindV1>))]
@@ -72,7 +77,8 @@ public sealed record InventoryStockScrapDecisionViewV1(
 /// <summary>
 /// One scrap: the scrapped position as stored when recorded, the book kg the recorder saw at that label version, the
 /// scrap kg, the kg that remain (canonical text), the reason and the status — <c>PendingApproval</c>,
-/// <c>Approved</c> or <c>Rejected</c>.
+/// <c>Approved</c> or <c>Rejected</c>. <c>BookPieceCount</c> / <c>ScrapPieceCount</c> appear only for a piece-tracking label
+/// (KLN-D119); a kg-only scrap answers exactly as before.
 /// </summary>
 public sealed record InventoryStockScrapViewV1(
     Guid ScrapId,
@@ -93,7 +99,9 @@ public sealed record InventoryStockScrapViewV1(
     string Reason,
     DateTimeOffset RecordedAtUtc,
     string Status,
-    InventoryStockScrapDecisionViewV1? Decision);
+    InventoryStockScrapDecisionViewV1? Decision,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? BookPieceCount = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? ScrapPieceCount = null);
 
 public sealed record InventoryStockScrapResultV1(
     InventoryStockScrapViewV1 Scrap,

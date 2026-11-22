@@ -331,7 +331,8 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
                 [.. lineBalances.Select(balance => new StockBalance(
                     Position(balance.CompanyId, balance.OwnerKind, balance.OwnerId, balance.CustodianKind,
                         balance.CustodianId, balance.LocationId, IdentityOnly(label), balance.Block),
-                    Kilograms.Positive(balance.QuantityKg)))]));
+                    Kilograms.Positive(balance.QuantityKg),
+                    balance.PieceCount is { } pieces ? PieceCount.Of(pieces) : null))]));
         }
 
         var aggregate = RestoreTransfer(row, lines, dispatch: null, [], []);
@@ -395,6 +396,7 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
                     ProductId = bucket.Position.ProductId,
                     Block = (int)bucket.Position.Block,
                     QuantityKg = bucket.Quantity.Value,
+                    PieceCount = bucket.Pieces?.Value,
                 });
             }
         }
@@ -674,7 +676,8 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
                     .Select(bucket => new StockBalance(
                         Position(bucket.CompanyId, bucket.OwnerKind, bucket.OwnerId, bucket.CustodianKind,
                             bucket.CustodianId, bucket.LocationId, IdentityOnly(label), bucket.Block),
-                        Kilograms.Positive(bucket.QuantityKg)))]);
+                        Kilograms.Positive(bucket.QuantityKg),
+                        bucket.PieceCount is { } pieces ? PieceCount.Of(pieces) : null))]);
         }).ToArray();
         return InventoryTransfer.Restore(row.Id, row.CompanyId, row.SourceLocationId,
             new StockCustodian((StockPartyKind)row.SourceCustodianKind, row.SourceCustodianId),

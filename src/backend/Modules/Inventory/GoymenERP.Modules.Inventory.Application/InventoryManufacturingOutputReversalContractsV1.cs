@@ -29,6 +29,9 @@ public interface IInventoryManufacturingOutputReversalParticipantV1 : IAsyncDisp
 /// <see cref="ManufacturingOrderId"/>, on that output's label. <see cref="ReversalId"/> is Manufacturing's reversal
 /// fact id and becomes the movement's source line; <see cref="ExpectedLabelVersion"/> is the label version the caller
 /// read (for example from <see cref="IInventoryLabelDispositionReadPortV1"/>) and is advanced by the movement.
+/// <c>PieceCount</c> (KLN-D119, AK-2b; Manufacturing sends it from AK-7) is the number of reversed pieces: required when
+/// the output label tracks pieces and refused otherwise (400 invalid quantity); a partial reversal leaves at least one
+/// piece, a whole reversal takes every piece.
 /// </summary>
 public sealed record InventoryManufacturingOutputReversalRequestV1(
     Guid CompanyId,
@@ -40,7 +43,8 @@ public sealed record InventoryManufacturingOutputReversalRequestV1(
     string ExpectedLabelVersion,
     Guid MovementId,
     string QuantityKg,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? PieceCount = null);
 
 /// <summary>
 /// <see cref="ReversedReceiptMovementId"/> is the output receipt the reversal is bound to (the old <c>Receipt</c>
@@ -109,7 +113,8 @@ public static class InventoryManufacturingOutputReversalContractV1
             || request.ManufacturingOrderId == Guid.Empty || request.OutputId == Guid.Empty
             || request.ReversalId == Guid.Empty || request.LabelId == Guid.Empty || request.MovementId == Guid.Empty
             || request.OccurredAtUtc.Offset != TimeSpan.Zero
-            || request.ReversalId == request.MovementId || request.ReversalId == request.OutputId)
+            || request.ReversalId == request.MovementId || request.ReversalId == request.OutputId
+            || request.PieceCount is < 0)
         {
             throw Refused(400, InventoryManufacturingRealizationCodesV1.InvalidRequest);
         }

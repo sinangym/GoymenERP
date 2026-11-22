@@ -24,7 +24,10 @@ public interface IInventorySupplierReturnExitParticipantV1 : IAsyncDisposable
 /// custodian from that receipt movement and the label's current balance, so a caller cannot pick another label. The
 /// caller chooses only whether the free or the blocked kilograms leave (B-19). <see cref="OriginalUnitCostTryPerKg"/>
 /// is the base-currency unit cost per stock kilogram booked at the original receipt (SAT-D306 (b)); null means that
-/// cost is unavailable and is carried as unavailable, never as zero.
+/// cost is unavailable and is carried as unavailable, never as zero. <c>PieceCount</c> (KLN-D119, AK-2b) is the number of
+/// pieces leaving a piece-tracking label: required for such a label and refused on a kg-only label (both 400
+/// <see cref="InventorySupplierReturnExitCodesV1.InvalidQuantity"/>); a partial exit leaves at least one piece, a whole
+/// exit takes every piece. Purchasing before AK-3/AK-8 omits it and kg-only labels return exactly as before.
 /// </summary>
 public sealed record InventorySupplierReturnExitRequestV1(
     Guid CompanyId,
@@ -41,7 +44,9 @@ public sealed record InventorySupplierReturnExitRequestV1(
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     InventorySupplierReturnPurchaseSourceV1? PurchaseSource = null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-    string? UndoQuantity = null);
+    string? UndoQuantity = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    int? PieceCount = null);
 
 /// <summary>The exact Inventory identities staged by one supplier-return exit.</summary>
 public sealed record InventorySupplierReturnExitResultV1(
@@ -58,7 +63,9 @@ public sealed record InventorySupplierReturnExitResultV1(
     string? OriginalUnitCostTryPerKg,
     Guid OutboxMessageId,
     bool IsReplay,
-    string OriginalCorrelationId);
+    string OriginalCorrelationId,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    int? PieceCount = null);
 
 public static class InventorySupplierReturnExitCodesV1
 {
@@ -129,7 +136,8 @@ public sealed class InventorySupplierReturnExitException : Exception
 }
 
 /// <summary>The validated quantity and the optional original unit cost of one supplier-return exit.</summary>
-public sealed record InventorySupplierReturnExitInput(Kilograms Quantity, decimal? OriginalUnitCostTryPerKg);
+public sealed record InventorySupplierReturnExitInput(Kilograms Quantity, decimal? OriginalUnitCostTryPerKg,
+    PieceCount? Pieces = null);
 
 public static class InventorySupplierReturnExitContractV1
 {
@@ -190,7 +198,13 @@ public static class InventorySupplierReturnExitContractV1
             cost = parsedCost;
         }
 
-        return new InventorySupplierReturnExitInput(quantity, cost);
+        if (request.PieceCount is < 0)
+        {
+            throw Refused(400, InventorySupplierReturnExitCodesV1.InvalidQuantity);
+        }
+
+        return new InventorySupplierReturnExitInput(quantity, cost,
+            request.PieceCount is { } pieces ? PieceCount.Of(pieces) : null);
     }
 
     private static bool TryCanonical(string? value, string format, out decimal parsed)

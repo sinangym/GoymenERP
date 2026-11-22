@@ -113,6 +113,18 @@ public sealed partial class InventoryStore
             throw TransferError(422, InventoryTransferReceiptCodesV1.OverageRenewalExceedsDeclared);
         }
 
+        if ((receipt.OveragePieceCount is null) != (request.OveragePieceCount is null))
+        {
+            // KLN-D119: a piece-tracking line's re-request names its excess pieces; a kg-only line's never does.
+            throw TransferError(400, InventoryTransferCodesV1.ValidationFailed);
+        }
+
+        if (request.OveragePieceCount > receipt.OveragePieceCount)
+        {
+            // KLN-D107 with KLN-D119: the excess pieces are never more than first declared on the receipt either.
+            throw TransferError(422, InventoryTransferReceiptCodesV1.OverageRenewalExceedsDeclared);
+        }
+
         var now = timeProvider.GetUtcNow();
         var renewal = new InventoryTransferOverageRenewalRow
         {
@@ -121,6 +133,7 @@ public sealed partial class InventoryStore
             LineId = lineId,
             RequestNumber = latestRequestNumber + 1,
             OverageKg = parsed.Overage.Value,
+            OveragePieceCount = request.OveragePieceCount,
             Reason = parsed.Reason,
             RequestedAtUtc = request.RequestedAtUtc,
             PayloadHash = payloadHash,
@@ -143,6 +156,8 @@ public sealed partial class InventoryStore
                 requestNumber = renewal.RequestNumber,
                 overageKg = parsed.Overage.ToString(),
                 declaredOverageKg = Kilograms.Positive(receipt.OverageKg).ToString(),
+                overagePieceCount = request.OveragePieceCount,
+                declaredOveragePieceCount = receipt.OveragePieceCount,
                 reason = parsed.Reason,
                 rejectedRequestNumber = latestRequestNumber,
             }, Json),
@@ -281,6 +296,7 @@ public sealed partial class InventoryStore
             || !TryVersion(request.ExpectedTransferVersion, out var expectedVersion)
             || request.RequestedAtUtc.Offset != TimeSpan.Zero
             || !TryQuantity(request.OverageKg, out var overage)
+            || request.OveragePieceCount is < 0
             || reason is null)
         {
             throw TransferError(400, InventoryTransferCodesV1.ValidationFailed);
@@ -295,7 +311,10 @@ public sealed partial class InventoryStore
             overageKg = overage.ToString(),
             reason,
         });
-        return new(expectedVersion, overage, reason, payloadHash);
+        // KLN-D119: the piece count joins the hash only when given, so every kg-only re-request keeps its stored hash.
+        return new(expectedVersion, overage, reason, request.OveragePieceCount is { } pieces
+            ? GenealogyPayloadHash(new { payloadHash, overagePieceCount = pieces })
+            : payloadHash);
     }
 
     private static ParsedLossWithdrawal LossWithdrawalPayload(
