@@ -395,26 +395,30 @@ public sealed class WorkCollaborationServiceV1(
         public DateTimeOffset? ReadAtUtc { get; init; }
     }
 
-    private IQueryable<VisibleRow> Visible(Actor actor) =>
-        from item in database.InboxNotifications.AsNoTracking()
-        join link in database.InboxDigestItems.AsNoTracking() on new { item.CompanyId, NotificationId = item.Id }
-            equals new { link.CompanyId, link.NotificationId } into links
-        from link in links.DefaultIfEmpty()
-        join digest in database.InboxDigests.AsNoTracking() on new { link.CompanyId, Id = link.DigestId }
-            equals new { digest.CompanyId, digest.Id } into digests
-        from digest in digests.DefaultIfEmpty()
-        join read in database.InboxNotificationReads.AsNoTracking() on new { item.CompanyId, NotificationId = item.Id }
-            equals new { read.CompanyId, read.NotificationId } into reads
-        from read in reads.DefaultIfEmpty()
-        where item.CompanyId == actor.CompanyId && item.RecipientUserId == actor.ActorUserId
-            && (item.Class == (int)WorkInboxNotificationClassV1.Now || digest != null)
-        select new VisibleRow
-        {
-            Id = item.Id, CompanyId = item.CompanyId, Kind = item.Kind, Class = item.Class, SourceId = item.SourceId,
-            RecordType = item.RecordType, RecordId = item.RecordId, ActorUserId = item.ActorUserId, RecordedAtUtc = item.RecordedAtUtc,
-            VisibleAtUtc = item.Class == (int)WorkInboxNotificationClassV1.Now ? item.RecordedAtUtc : digest!.ReleasedAtUtc,
-            ReadAtUtc = read == null ? null : read.ReadAtUtc,
-        };
+    private IQueryable<VisibleRow> Visible(Actor actor)
+    {
+        var released = from link in database.InboxDigestItems.AsNoTracking()
+            join digest in database.InboxDigests.AsNoTracking() on new { link.CompanyId, Id = link.DigestId }
+                equals new { digest.CompanyId, digest.Id }
+            where link.CompanyId == actor.CompanyId
+            select new { link.CompanyId, link.NotificationId, ReleasedAtUtc = (DateTimeOffset?)digest.ReleasedAtUtc };
+        return from item in database.InboxNotifications.AsNoTracking()
+            join release in released on new { item.CompanyId, NotificationId = item.Id }
+                equals new { release.CompanyId, release.NotificationId } into releases
+            from release in releases.DefaultIfEmpty()
+            join read in database.InboxNotificationReads.AsNoTracking() on new { item.CompanyId, NotificationId = item.Id }
+                equals new { read.CompanyId, read.NotificationId } into reads
+            from read in reads.DefaultIfEmpty()
+            where item.CompanyId == actor.CompanyId && item.RecipientUserId == actor.ActorUserId
+                && (item.Class == (int)WorkInboxNotificationClassV1.Now || release.ReleasedAtUtc != null)
+            select new VisibleRow
+            {
+                Id = item.Id, CompanyId = item.CompanyId, Kind = item.Kind, Class = item.Class, SourceId = item.SourceId,
+                RecordType = item.RecordType, RecordId = item.RecordId, ActorUserId = item.ActorUserId, RecordedAtUtc = item.RecordedAtUtc,
+                VisibleAtUtc = item.Class == (int)WorkInboxNotificationClassV1.Now ? item.RecordedAtUtc : release.ReleasedAtUtc ?? item.RecordedAtUtc,
+                ReadAtUtc = (DateTimeOffset?)read.ReadAtUtc,
+            };
+    }
 
     private Actor RequireActor()
     {
