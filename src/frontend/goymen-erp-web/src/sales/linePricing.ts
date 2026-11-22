@@ -282,7 +282,7 @@ function decodeDiscountCheck(value: unknown): DiscountLimitCheck | null {
   return pending || approved ? o as unknown as DiscountLimitCheck : null
 }
 
-function decodeLineMargin(value: unknown): LineMargin | null {
+export function decodeLineMargin(value: unknown): LineMargin | null {
   const o = exact(value, LINE_MARGIN_KEYS)
   if (o === null || !isText(o.lineId) || !isCount(o.lineNo)) return null
   if (o.state === 'Unavailable') {

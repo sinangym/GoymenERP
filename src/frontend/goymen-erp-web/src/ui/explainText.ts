@@ -1,0 +1,26 @@
+/** WP11 "bu sayıyı açıkla": the shared Turkish texts of the explanation table and toggle. */
+export const EXPLAIN_TEXT = {
+  show: 'Açıkla',
+  hide: 'Açıklamayı gizle',
+  step: 'Adım',
+  operation: 'İşlem',
+  operands: 'Girdiler',
+  value: 'Değer',
+  unit: 'Birim',
+  sources: 'Kullanılan kayıtlar',
+  rules: 'Uygulanan kurallar ve örnek doğrulamaları',
+  calculator: 'Hesaplayıcı',
+  note: 'Değerler sunucudaki hesaplayıcının kendi ara adımlarıdır; bu ekran hiçbir değeri yeniden hesaplamaz.',
+  noSteps: 'Bu sayı hesaplanmadığı için gösterilecek ara adım yok.',
+  operationName: {
+    input: 'Girdi',
+    sum: 'Toplam',
+    add: 'Toplama',
+    subtract: 'Çıkarma',
+    multiply: 'Çarpma',
+    divide: 'Bölme',
+    percent_of: 'Yüzde',
+    round_half_away_from_zero: 'Yuvarlama (yarım yukarı)',
+  } as Readonly<Record<string, string>>,
+  scale: (scale: number) => `${scale} ondalık`,
+} as const
