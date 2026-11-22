@@ -220,7 +220,7 @@ public sealed partial class ManufacturingCommandServiceTests
 
             var order = store.Orders[command.OrderId];
             order.ReverseOutput(command.ExpectedOrderVersion, command.ReversalId, command.OutputId, command.Quantity,
-                command.Reason, command.OccurredAtUtc);
+                command.Reason, command.OccurredAtUtc, command.Pieces);
             Complete(store, metadata, order);
             return Task.FromResult(new ManufacturingInventoryOutputCorrectionPortResultV1(
                 order.Version, command.ExpectedLabelVersion + 1, false));

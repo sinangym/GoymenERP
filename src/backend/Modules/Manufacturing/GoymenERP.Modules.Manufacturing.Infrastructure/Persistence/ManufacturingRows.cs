@@ -469,6 +469,18 @@ internal sealed class FactRow : IManufacturingTenantRow
     /// <summary>F-009 D2: the cut line's id, set only with <see cref="OutputLineKind"/> 2.</summary>
     public Guid? OutputLineId { get; set; }
 
+    /// <summary>
+    /// AK-7 (URT-D112): the declared piece count of a counted output (at least one); null for an uncounted output, every
+    /// output stored before AK-7 and every other kind of fact. Set together with the two theoretical columns below.
+    /// </summary>
+    public int? OutputPieceCount { get; set; }
+
+    /// <summary>AK-7: the Product owner's theoretical kg per piece captured with <see cref="OutputPieceCount"/>.</summary>
+    public decimal? OutputTheoreticalKgPerPiece { get; set; }
+
+    /// <summary>AK-7: the source evidence (card, formula, policy and unit-profile versions) of the theoretical figure.</summary>
+    public string? OutputTheoreticalKgPerPieceSource { get; set; }
+
     public string PayloadHash { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
     public string RecordedBy { get; set; } = string.Empty;
@@ -493,6 +505,13 @@ internal sealed class OutputReversalRow : IManufacturingTenantRow
     public Guid OutputId { get; set; }
     public Guid ParentRollId { get; set; }
     public decimal MassKg { get; set; }
+
+    /// <summary>
+    /// AK-7 (URT-D112): the pieces taken back from a counted declaration (zero when only the kg is corrected); null for a
+    /// reversal of an uncounted declaration and every reversal stored before AK-7.
+    /// </summary>
+    public int? PieceCount { get; set; }
+
     public string Reason { get; set; } = string.Empty;
     public DateTimeOffset OccurredAtUtc { get; set; }
     public string PayloadHash { get; set; } = string.Empty;

@@ -266,13 +266,13 @@ public sealed partial class ProductionOrder
             }
 
             order.DeclareOutput(order.Version, output.OutputId, output.ParentRollId, output.Class, output.Mass,
-                output.DeclaredAtUtc, output.OutputLine);
+                output.DeclaredAtUtc, output.OutputLine, output.Pieces);
         }
 
         foreach (var reversal in (outputReversals ?? Enumerable.Empty<OutputReversal>()).OrderBy(fact => fact.ReversedAtUtc))
         {
             order.ReverseOutput(order.Version, reversal.ReversalId, reversal.OutputId, reversal.Mass, reversal.Reason,
-                reversal.ReversedAtUtc);
+                reversal.ReversedAtUtc, reversal.Pieces);
         }
 
         foreach (var measurement in wipMeasurements.OrderBy(fact => fact.MeasuredAtUtc))
@@ -467,10 +467,16 @@ public sealed partial class ProductionOrder
     /// <see cref="ManufacturingRuleCodes.OutputLineNotInPlan"/>. A declaration without a line ("satırsız") is still
     /// accepted as before D2; it counts in every balance but cannot be corrected (<see cref="ReverseOutput"/>).
     /// </para>
+    /// <para>
+    /// AK-7 (URT-D112): <paramref name="pieces"/> is the piece count (with the captured theoretical kg per piece) of an
+    /// output whose product is counted in pieces; whether the product is counted is the product owner's answer, read by
+    /// the command before this method. A process loss is never counted
+    /// (<see cref="ManufacturingRuleCodes.OutputPiecesNotApplicable"/>).
+    /// </para>
     /// </summary>
     public OutputDeclaration DeclareOutput(
         long expectedVersion, Guid outputId, Guid parentRollId, OutputClass outputClass, Kilograms mass, DateTimeOffset declaredAt,
-        PlanOutputLineReference? outputLine = null)
+        PlanOutputLineReference? outputLine = null, OutputPieces? pieces = null)
     {
         RequireVersion(expectedVersion);
         RequireOpen();
@@ -492,8 +498,15 @@ public sealed partial class ProductionOrder
             RequireOutputLineFits(outputClass, outputLine);
         }
 
+        if (pieces is not null && outputClass == OutputClass.ProcessLoss)
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.OutputPiecesNotApplicable, "Proses kaybı adetle beyan edilmez.");
+        }
+
         var declaration = new OutputDeclaration(
-            outputId, parentRollId, outputClass, mass, declaredAt.ToUniversalTime(), CostResult.NotCalculated, outputLine);
+            outputId, parentRollId, outputClass, mass, declaredAt.ToUniversalTime(), CostResult.NotCalculated, outputLine,
+            pieces);
         _outputs.Add(declaration);
         Version++;
         return declaration;
@@ -509,9 +522,17 @@ public sealed partial class ProductionOrder
     /// would add up to more than its mass (<see cref="ManufacturingRuleCodes.OutputReversalExceedsDeclared"/>). Every
     /// output class is reversed the same way. The bound on mass already used downstream (URT-D31) and the matching
     /// stock movement belong to the correction command and to Inventory, not to this method.
+    /// <para>
+    /// AK-7 (URT-D112): a correction of a counted declaration names the pieces it takes back (zero allowed:
+    /// <see cref="ManufacturingRuleCodes.OutputPiecesRequired"/> when missing); one of an uncounted declaration names none
+    /// (<see cref="ManufacturingRuleCodes.OutputPiecesNotApplicable"/>). The pieces taken back never exceed the declared
+    /// count (<see cref="ManufacturingRuleCodes.OutputPieceReversalExceedsDeclared"/>), and the net kg and net pieces reach
+    /// zero together (<see cref="ManufacturingRuleCodes.OutputPieceReversalInconsistent"/>).
+    /// </para>
     /// </summary>
     public OutputReversal ReverseOutput(
-        long expectedVersion, Guid reversalId, Guid outputId, Kilograms mass, string reason, DateTimeOffset reversedAt)
+        long expectedVersion, Guid reversalId, Guid outputId, Kilograms mass, string reason, DateTimeOffset reversedAt,
+        PieceCount? pieces = null)
     {
         RequireVersion(expectedVersion);
         if (Status != OrderStatus.Open)
@@ -546,7 +567,8 @@ public sealed partial class ProductionOrder
                 "Bir beyanın düzeltmeleri toplamı beyan edilen kütleyi aşamaz.");
         }
 
-        var reversal = new OutputReversal(reversalId, outputId, mass, text, reversedAt.ToUniversalTime());
+        RequirePieceReversalFits(declaration, mass, pieces);
+        var reversal = new OutputReversal(reversalId, outputId, mass, text, reversedAt.ToUniversalTime(), pieces);
         _outputReversals.Add(reversal);
         Version++;
         return reversal;
@@ -907,6 +929,59 @@ public sealed partial class ProductionOrder
 
     private Kilograms NetMassOf(OutputDeclaration declaration) =>
         new(declaration.Mass.Value - ReversedOf(declaration.OutputId));
+
+    private int ReversedPiecesOf(Guid outputId) =>
+        _outputReversals.Where(entry => entry.OutputId == outputId).Sum(entry => entry.Pieces?.Value ?? 0);
+
+    /// <summary>
+    /// AK-7 (URT-D112): the declaration's piece count minus the pieces its corrections took back; null when the
+    /// declaration is not counted in pieces.
+    /// </summary>
+    public PieceCount? NetPiecesOf(Guid outputId)
+    {
+        var declaration = _outputs.SingleOrDefault(output => output.OutputId == outputId)
+            ?? throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.OutputNotDeclared, "Çıktı bu emirde beyan edilmedi.");
+        return declaration.Pieces is { } pieces
+            ? new PieceCount(pieces.Count.Value - ReversedPiecesOf(outputId))
+            : null;
+    }
+
+    private void RequirePieceReversalFits(OutputDeclaration declaration, Kilograms mass, PieceCount? pieces)
+    {
+        if (declaration.Pieces is not { } declared)
+        {
+            if (pieces is not null)
+            {
+                throw new ManufacturingRuleException(
+                    ManufacturingRuleCodes.OutputPiecesNotApplicable, "Adetsiz beyanın düzeltmesi adet taşımaz.");
+            }
+
+            return;
+        }
+
+        if (pieces is not { } taken)
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.OutputPiecesRequired, "Adetli beyanın düzeltmesi geri alınan adedi belirtmelidir.");
+        }
+
+        var netPiecesAfter = declared.Count.Value - ReversedPiecesOf(declaration.OutputId) - taken.Value;
+        if (netPiecesAfter < 0)
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.OutputPieceReversalExceedsDeclared,
+                "Bir beyanın düzeltmelerinde geri alınan adet beyan edilen adedi aşamaz.");
+        }
+
+        var netMassAfter = declaration.Mass.Value - ReversedOf(declaration.OutputId) - mass.Value;
+        if ((netMassAfter == 0m) != (netPiecesAfter == 0))
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.OutputPieceReversalInconsistent,
+                "Düzeltme sonrası net kg ve net adet birlikte sıfıra inmelidir.");
+        }
+    }
 
     private void RequireOutputLineFits(OutputClass outputClass, PlanOutputLineReference outputLine)
     {

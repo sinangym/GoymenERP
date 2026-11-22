@@ -20,7 +20,8 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { correctOutput, type FactFailure, type FactUnknown } from './commandApi'
 import { newCommandId } from './commandId'
-import { isKilogramText, type OutputCorrectionSnapshot, type ProductionOrderView } from './contract'
+import { isKilogramText, parsePieceCount, type OutputCorrectionSnapshot, type ProductionOrderView } from './contract'
+import { OUTPUT_PIECE_TEXT } from './outputPieceText'
 import { fetchOrderLineage } from './lineageApi'
 import type { OrderLineageOutput, OrderLineageView } from './lineageContract'
 import {
@@ -50,12 +51,14 @@ type CorrectionAttempt =
 interface CorrectionForm {
   readonly outputId: string
   readonly kg: string
+  /** AK-7 (URT-D112): the pieces taken back; asked only for a counted output. */
+  readonly pieceCount: string
   readonly reason: string
   /** `datetime-local` value, read as the browser's local time and sent as UTC. */
   readonly occurredAt: string
 }
 
-const EMPTY_FORM: CorrectionForm = { outputId: '', kg: '', reason: '', occurredAt: '' }
+const EMPTY_FORM: CorrectionForm = { outputId: '', kg: '', pieceCount: '', reason: '', occurredAt: '' }
 
 function utcInstant(value: string): string | null {
   const milliseconds = value.length === 0 ? Number.NaN : new Date(value).getTime()
@@ -136,6 +139,8 @@ function CorrectionBody({
   ) as RemoteViewState<OrderLineageView>
   const outputs: readonly OrderLineageOutput[] = lineageState.kind === 'ready' ? lineageState.data.outputs : []
   const selected = outputs.find((output) => output.outputId === form.outputId) ?? null
+  // AK-7 (URT-D112): a counted output (listed in the order's piece view) asks for the pieces taken back.
+  const counted = selected !== null && order.outputPieces.some((output) => output.outputId === selected.outputId)
 
   const labelId = selected?.outputLabelId ?? ''
   const labelQuery = useQuery({
@@ -171,6 +176,9 @@ function CorrectionBody({
     if (selected !== null && !canReadInventoryLabel) found.push(OUTPUT_CORRECTION_TEXT.labelPermission)
     else if (selected !== null && labelState?.kind !== 'ready') found.push(OUTPUT_CORRECTION_TEXT.labelNotReady)
     if (!isKilogramText(form.kg)) found.push(KG_FORMAT_ERROR)
+    const pieceCount = counted ? parsePieceCount(form.pieceCount, 0) : null
+    if (pieceCount === undefined) found.push(OUTPUT_PIECE_TEXT.correctionPieceCountFormat)
+    else if (counted && pieceCount === null) found.push(OUTPUT_PIECE_TEXT.correctionPieceCountRequired)
     const reason = form.reason.trim()
     if (reason.length === 0) found.push(OUTPUT_CORRECTION_TEXT.reasonRequired)
     const occurredAtUtc = utcInstant(form.occurredAt)
@@ -194,6 +202,7 @@ function CorrectionBody({
         kg: form.kg,
         reason,
         occurredAtUtc,
+        ...(counted && pieceCount != null ? { pieceCount } : {}),
       },
     })
   }
@@ -284,6 +293,23 @@ function CorrectionBody({
             />
             <p id="mfg-correction-kg-help" className={styles.help}>{KG_FORMAT_HELP}</p>
           </div>
+          {counted ? (
+            <div className={styles.control}>
+              <label htmlFor="mfg-correction-piece-count">{OUTPUT_PIECE_TEXT.correctionPieceCount}</label>
+              <input
+                id="mfg-correction-piece-count"
+                inputMode="numeric"
+                autoComplete="off"
+                value={form.pieceCount}
+                disabled={frozen}
+                aria-describedby="mfg-correction-piece-count-help"
+                onChange={(event) => update({ pieceCount: event.target.value })}
+              />
+              <p id="mfg-correction-piece-count-help" className={styles.help}>
+                {OUTPUT_PIECE_TEXT.correctionPieceCountHelp}
+              </p>
+            </div>
+          ) : null}
           <div className={styles.control}>
             <label htmlFor="mfg-correction-reason">{OUTPUT_CORRECTION_TEXT.reason}</label>
             <textarea

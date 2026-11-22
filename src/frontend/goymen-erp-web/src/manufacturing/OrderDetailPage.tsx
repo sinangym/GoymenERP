@@ -55,6 +55,7 @@ import {
   calendarDate,
   isKilogramText,
   outputLineKey,
+  parsePieceCount,
   type CloseSnapshot,
   type EngineAnswer,
   type FactKind,
@@ -76,6 +77,8 @@ import {
 } from './factAttempt'
 import { MANUFACTURING_CAPABILITY } from './capabilities'
 import { OrderCostTracePanel } from './OrderCostTracePanel'
+import { OutputPieceTable } from './OutputPieceTable'
+import { OUTPUT_PIECE_TEXT } from './outputPieceText'
 import { OrderCostPanel } from './OrderCostPanel'
 import { CostGenerationPanel } from './CostGenerationPanel'
 import { OrderUsdCostPanel } from './OrderUsdCostPanel'
@@ -242,6 +245,7 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
     <Frame>
       <OrderSummary order={order} />
       <RollTable rolls={order.rolls} />
+      <OutputPieceTable outputs={order.outputPieces} />
       <MassBalancePanel
         namespace={namespace ?? 'no-context'}
         routeEntryGeneration={shell.routeEntryGeneration}
@@ -919,6 +923,8 @@ interface FormValues {
   readonly productId: string
   readonly locationId: string
   readonly labelCode: string
+  /** AK-7 (URT-D112): the counted pieces; empty sends none (an uncounted product). */
+  readonly pieceCount: string
   readonly heatNumber: string
   readonly coilNumber: string
   readonly requiredDocuments: string
@@ -940,6 +946,7 @@ const EMPTY_FORM: FormValues = {
   productId: '',
   locationId: '',
   labelCode: '',
+  pieceCount: '',
   heatNumber: '',
   coilNumber: '',
   requiredDocuments: '',
@@ -965,6 +972,7 @@ function formFromSnapshot(snapshot: FactSnapshot): FormValues {
     productId: snapshot.kind === 'outputs' ? snapshot.productId : '',
     locationId: snapshot.kind === 'outputs' ? snapshot.locationId : '',
     labelCode: snapshot.kind === 'outputs' ? (snapshot.labelCode ?? '') : '',
+    pieceCount: snapshot.kind === 'outputs' && snapshot.pieceCount != null ? String(snapshot.pieceCount) : '',
     heatNumber: snapshot.kind === 'outputs' ? (snapshot.heatNumber ?? '') : '',
     coilNumber: snapshot.kind === 'outputs' ? (snapshot.coilNumber ?? '') : '',
     requiredDocuments: snapshot.kind === 'outputs' ? snapshot.requiredDocuments.join('\n') : '',
@@ -1241,7 +1249,10 @@ function FactSection({
       }
       dispatch({ type: 'SETTLE', outcome, idempotencyKey: snapshot.idempotencyKey })
       if (outcome.type === 'applied') {
-        setForm((current) => ({ ...current, kg: '', labelCode: current.kind === 'outputs' ? '' : current.labelCode }))
+        setForm((current) => ({
+          ...current, kg: '', labelCode: current.kind === 'outputs' ? '' : current.labelCode,
+          pieceCount: current.kind === 'outputs' ? '' : current.pieceCount,
+        }))
         await refreshReads(snapshot)
       } else if (
         outcome.type === 'failed' &&
@@ -1274,6 +1285,8 @@ function FactSection({
     if (outputSelected && selectedProduct === undefined) return setError(OUTPUT_INVENTORY_TEXT.productRequired)
     if (outputSelected && selectedLocation === undefined) return setError(OUTPUT_INVENTORY_TEXT.locationRequired)
     if (outputSelected && form.initialBlock === '') return setError(OUTPUT_INVENTORY_TEXT.blockRequired)
+    const pieceCount = parsePieceCount(form.pieceCount, 1)
+    if (outputSelected && pieceCount === undefined) return setError(OUTPUT_PIECE_TEXT.pieceCountFormat)
     setError(null)
     const common = {
       factId: newId(),
@@ -1317,6 +1330,8 @@ function FactSection({
               custodianId: outputOwnership!.custodianId,
               locationId: selectedLocation?.locationId ?? '',
               initialBlock: form.initialBlock as 'Free' | 'Blocked',
+              // AK-7 (URT-D112): sent only when entered; the server decides whether the product is counted.
+              ...(pieceCount == null ? {} : { pieceCount }),
             }
           : { ...common, kind: form.kind, movementId: null, expectedParentLabelVersion: null }
     dispatch({ type: 'SUBMIT', snapshot })
@@ -1548,6 +1563,20 @@ function FactSection({
                 {locationQuery.data !== undefined && locationQuery.data.type !== 'ok-single'
                   ? <span role="alert">{OUTPUT_INVENTORY_TEXT.locationUnavailable}</span> : null}
                 {locations?.searchWindowFull ? <span className={styles.help}>{OUTPUT_INVENTORY_TEXT.moreMatches}</span> : null}
+              </div>
+              <div className={styles.control}>
+                <label htmlFor="mfg-output-piece-count">{OUTPUT_PIECE_TEXT.pieceCount}</label>
+                <input
+                  id="mfg-output-piece-count"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={form.pieceCount}
+                  disabled={frozen}
+                  aria-describedby="mfg-output-piece-count-help"
+                  onChange={(event) => update({ pieceCount: event.target.value })}
+                />
+                <span id="mfg-output-piece-count-help" className={styles.help}>{OUTPUT_PIECE_TEXT.pieceCountHelp}</span>
               </div>
               <div className={styles.control}>
                 <label htmlFor="mfg-output-label-code">{OUTPUT_INVENTORY_TEXT.labelCode}</label>

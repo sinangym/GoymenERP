@@ -1395,3 +1395,139 @@ describe('the close (MFG-ORD)', () => {
     expect(await screen.findByText('Emir zaten kapatılmıştı')).toBeTruthy()
   })
 })
+
+// AK-7 (URT-D112): the output declaration carries the counted pieces with the weighed kg; the server decides whether the
+// product is counted and refuses by code; the order screen shows the server's real/theoretical kg per piece deviation.
+describe('output piece count (AK-7)', () => {
+  const COUNTED_OUTPUT = 'e0000000-0000-4000-8000-0000000000a7'
+
+  function pieceView(overrides: Record<string, unknown> = {}) {
+    return {
+      outputId: COUNTED_OUTPUT, parentRollId: ROLL_1, outputClass: 'GoodProduct', declaredPieceCount: 48,
+      netPieceCount: 48, netKg: '20', theoreticalKgPerPiece: '0.4', realKgPerPiece: '0.417',
+      deviationKgPerPiece: '0.017', deviationPercent: '4.17',
+      formulaVersion: 'manufacturing.output-piece-deviation.v1', deviationThresholdApplied: false, ...overrides,
+    }
+  }
+
+  async function fillOutput(user: ReturnType<typeof userEvent.setup>, recorded: RecordedRequest[], pieces: string) {
+    await user.click(screen.getByLabelText('Üretim çıktısı'))
+    await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
+    await user.type(screen.getByLabelText('Zaman'), '2026-09-25T00:30')
+    await waitFor(() => expect(labelReads(recorded)).toHaveLength(1))
+    await screen.findByRole('option', { name: /PRD-12/ })
+    await screen.findByRole('option', { name: /HOL-1/ })
+    await user.selectOptions(screen.getByLabelText('Ürün'), PRODUCT)
+    await user.selectOptions(screen.getByLabelText('Lokasyon'), LOCATION)
+    await user.selectOptions(screen.getByLabelText('İlk stok durumu'), 'Free')
+    await user.type(screen.getByLabelText('Kütle (kg)'), '20')
+    if (pieces.length > 0) await user.type(screen.getByLabelText('Adet'), pieces)
+  }
+
+  it('sends the counted pieces with the weighed kg and names the field by its label', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      labels: [() => json(labelDetail('8', '900')), () => json(labelDetail('9', '900'))],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await fillOutput(user, recorded, '48')
+    expect(screen.getByLabelText('Adet').getAttribute('aria-describedby')).toBe('mfg-output-piece-count-help')
+    expect(document.getElementById('mfg-output-piece-count-help')?.textContent).toContain('Adetli üründe zorunludur')
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    await waitFor(() => expect(posts(recorded)).toHaveLength(1))
+    expect(posts(recorded)[0].body).toMatchObject({ kg: '20', pieceCount: 48 })
+  })
+
+  it('sends no piece count when the field is empty (an uncounted product)', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      labels: [() => json(labelDetail('8', '900')), () => json(labelDetail('9', '900'))],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await fillOutput(user, recorded, '')
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    await waitFor(() => expect(posts(recorded)).toHaveLength(1))
+    expect(posts(recorded)[0].body).not.toHaveProperty('pieceCount')
+  })
+
+  it.each(['0', '-3', '2.5', '01'])('refuses the piece count %s without sending anything', async (pieces) => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      labels: [() => json(labelDetail('8', '900')), () => json(labelDetail('9', '900'))],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await fillOutput(user, recorded, pieces)
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    expect(await screen.findByText('Adet, sıfırdan büyük bir tam sayı olmalıdır.')).toBeTruthy()
+    expect(posts(recorded)).toHaveLength(0)
+  })
+
+  it.each([
+    ['manufacturing_output_pieces_required', 'Bu ürün adetle izleniyor'],
+    ['manufacturing_output_pieces_not_applicable', 'adet alanını boş bırakın'],
+    ['manufacturing_output_piece_kg_source_missing', 'teorik kg/adet hesaplanamıyor'],
+  ])('tells the server refusal %s in Turkish, never the code', async (code, fragment) => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      labels: [() => json(labelDetail('8', '900')), () => json(labelDetail('9', '900'))],
+      commands: [() => problem(422, { code })],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await fillOutput(user, recorded, code === 'manufacturing_output_pieces_required' ? '' : '4')
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    expect(await screen.findByText(new RegExp(fragment))).toBeTruthy()
+    expect(screen.queryByText(new RegExp(code))).toBeNull()
+  })
+
+  it('shows the server deviation of each counted output with its sign and no threshold', async () => {
+    stub({
+      reads: [() => json(order({
+        outputPieces: [
+          pieceView(),
+          pieceView({ outputId: 'e0000000-0000-4000-8000-0000000000a8', outputClass: 'Scrap', netPieceCount: 0,
+            netKg: '0', realKgPerPiece: null, deviationKgPerPiece: null, deviationPercent: null }),
+          pieceView({ outputId: 'e0000000-0000-4000-8000-0000000000a9', realKgPerPiece: '0.39',
+            deviationKgPerPiece: '-0.01', deviationPercent: '-2.5' }),
+        ],
+      }))],
+    })
+    renderAt(PATH)
+
+    const table = await screen.findByRole('region', { name: 'Adetli çıktılar: gerçek ve teorik kg/adet' })
+    expect(within(table).getByText(/eşik uygulanmaz/)).toBeTruthy()
+    const heavier = within(table).getByRole('row', { name: new RegExp(COUNTED_OUTPUT) })
+    expect(within(heavier).getByTestId('deviation-kg').textContent).toBe('+0.017')
+    expect(within(heavier).getByTestId('deviation-percent').textContent).toBe('+4.17')
+    expect(within(heavier).getByText('0.417')).toBeTruthy()
+    const empty = within(table).getByRole('row', { name: /0000000000a8/ })
+    expect(within(empty).getByTestId('no-net-pieces').textContent).toBe('Net adet kalmadı')
+    const lighter = within(table).getByRole('row', { name: /0000000000a9/ })
+    expect(within(lighter).getByTestId('deviation-percent').textContent).toBe('-2.5')
+  })
+
+  it('draws no piece table for an order without a counted output', async () => {
+    stub()
+    renderAt(PATH)
+    await screen.findByRole('region', { name: 'Ana rulo dengesi (kg)' })
+    expect(screen.queryByTestId('output-pieces')).toBeNull()
+  })
+
+  it('refuses an order whose piece view is malformed instead of showing invented figures', async () => {
+    stub({ reads: [() => json(order({ outputPieces: [pieceView({ deviationThresholdApplied: true })] }))] })
+    renderAt(PATH)
+    expect(await screen.findByRole('alert')).toBeTruthy()
+    expect(screen.queryByTestId('output-pieces')).toBeNull()
+  })
+})

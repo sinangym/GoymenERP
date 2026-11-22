@@ -237,3 +237,67 @@ describe('order cancel (URT-S4 draft)', () => {
     expect(sent.headers['Idempotency-Key']).toMatch(/^[0-9a-f-]{36}$/)
   })
 })
+
+// AK-7 (URT-D112): a counted output's correction names the pieces it takes back; an uncounted one never sends pieces.
+describe('output correction pieces (AK-7)', () => {
+  function countedOrder(overrides: Record<string, unknown> = {}) {
+    return order({
+      outputPieces: [{
+        outputId: OUTPUT_1, parentRollId: 'a0000000-0000-4000-8000-000000000001', outputClass: 'GoodProduct',
+        declaredPieceCount: 48, netPieceCount: 48, netKg: '20', theoreticalKgPerPiece: '0.4', realKgPerPiece: '0.417',
+        deviationKgPerPiece: '0.017', deviationPercent: '4.17', formulaVersion: 'manufacturing.output-piece-deviation.v1',
+        deviationThresholdApplied: false,
+      }],
+      ...overrides,
+    })
+  }
+
+  it('asks a counted output for the pieces taken back and sends them with the kg', async () => {
+    const user = userEvent.setup()
+    const recorded = stub({ reads: [() => json(countedOrder()), () => json(countedOrder({ version: 2 }))] })
+    renderAt(PATH)
+    const section = await fillCorrection(user)
+    await user.type(within(section).getByLabelText('Geri alınan adet'), '0')
+    await submitAndConfirm(user, section)
+
+    await waitFor(() => expect(posts(recorded)).toHaveLength(1))
+    expect(posts(recorded)[0].body).toMatchObject({ kg: '12.5', pieceCount: 0 })
+  })
+
+  it('refuses a counted output correction without pieces before sending anything', async () => {
+    const user = userEvent.setup()
+    const recorded = stub({ reads: [() => json(countedOrder())] })
+    renderAt(PATH)
+    const section = await fillCorrection(user)
+    await user.click(within(section).getByRole('button', { name: 'Düzeltmeyi gönder' }))
+
+    expect(await within(section).findByText(/geri alınan adedi girin/)).toBeTruthy()
+    expect(posts(recorded)).toHaveLength(0)
+  })
+
+  it('draws no piece field for an uncounted output and sends no pieces', async () => {
+    const user = userEvent.setup()
+    const recorded = stub({ reads: [() => json(order()), () => json(order({ version: 2 }))] })
+    renderAt(PATH)
+    const section = await fillCorrection(user)
+    expect(within(section).queryByLabelText('Geri alınan adet')).toBeNull()
+    await submitAndConfirm(user, section)
+
+    await waitFor(() => expect(posts(recorded)).toHaveLength(1))
+    expect(posts(recorded)[0].body).not.toHaveProperty('pieceCount')
+  })
+
+  it('tells the piece reversal refusals in Turkish', async () => {
+    const user = userEvent.setup()
+    stub({
+      reads: [() => json(countedOrder())],
+      commands: [() => problem(422, { code: 'manufacturing_output_piece_reversal_inconsistent' })],
+    })
+    renderAt(PATH)
+    const section = await fillCorrection(user)
+    await user.type(within(section).getByLabelText('Geri alınan adet'), '48')
+    await submitAndConfirm(user, section)
+
+    expect(await within(section).findByText(/net kg ve net adet birlikte sıfıra inmelidir/)).toBeTruthy()
+  })
+})

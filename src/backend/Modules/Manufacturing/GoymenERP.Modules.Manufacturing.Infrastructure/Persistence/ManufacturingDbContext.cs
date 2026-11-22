@@ -144,6 +144,19 @@ public sealed partial class ManufacturingDbContext(DbContextOptions<Manufacturin
     /// <summary>Binary collation: an actor id compares exactly, as the command service compares it.</summary>
     public const string IdentityCollation = "Latin1_General_100_BIN2";
 
+    /// <summary>AK-7: SQL decimal precision of the theoretical kg per piece (its scale is the domain's, 12 decimals).</summary>
+    internal const int TheoreticalKgPerPiecePrecision = 28;
+
+    /// <summary>
+    /// AK-7 (URT-D112): the piece count and the theoretical kg per piece of a counted output come together, only on an
+    /// output that is not a process loss (class 5), with a positive count and figure and a named source; every other fact
+    /// carries none of them.
+    /// </summary>
+    internal const string FactOutputPiecesCheck =
+        "([OutputPieceCount] IS NULL AND [OutputTheoreticalKgPerPiece] IS NULL AND [OutputTheoreticalKgPerPieceSource] IS NULL) "
+        + "OR ([Kind] = 3 AND [OutputClass] IN (1, 2, 3, 4) AND [OutputPieceCount] > 0 "
+        + "AND [OutputTheoreticalKgPerPiece] > 0 AND LEN([OutputTheoreticalKgPerPieceSource]) > 0)";
+
     /// <summary>
     /// F-009 D2 (URT-D30): a fact carries no plan output line (every fact but an output, and an output stored before
     /// D2), or an output carries exactly one well-formed line — a slit line by its 1-based position, a cut line by its
@@ -172,6 +185,9 @@ public sealed partial class ManufacturingDbContext(DbContextOptions<Manufacturin
 
     /// <summary>F-009 D2: a reversal names an output declaration (fact kind 3) and takes back a positive mass.</summary>
     internal const string OutputReversalMassCheck = "[OutputKind] = 3 AND [MassKg] > 0";
+
+    /// <summary>AK-7 (URT-D112): a reversal takes back no pieces (null, uncounted) or a whole count that is not negative.</summary>
+    internal const string OutputReversalPiecesCheck = "[PieceCount] IS NULL OR [PieceCount] >= 0";
 
     /// <summary>F-009 D2: the reason, the recorder and the correlation are never blank.</summary>
     internal const string OutputReversalTextCheck =
@@ -847,9 +863,14 @@ public sealed partial class ManufacturingDbContext(DbContextOptions<Manufacturin
                 + "OR ([Kind] <> 3 AND [OutputClass] IS NULL AND [CostStatus] IS NULL)");
             table.HasCheckConstraint("CK_Facts_Text", "LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
             table.HasCheckConstraint("CK_Facts_OutputLine", FactOutputLineCheck);
+            table.HasCheckConstraint("CK_Facts_OutputPieces", FactOutputPiecesCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.Kind, x.Id });
         entity.Property(x => x.MassKg).HasPrecision(18, 3);
+        entity.Property(x => x.OutputTheoreticalKgPerPiece)
+            .HasPrecision(TheoreticalKgPerPiecePrecision, OutputTheoreticalKilogramsPerPiece.Scale);
+        entity.Property(x => x.OutputTheoreticalKgPerPieceSource)
+            .HasMaxLength(OutputTheoreticalKilogramsPerPiece.SourceVersionMaximumLength).IsUnicode(false);
         entity.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
         entity.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
@@ -871,6 +892,7 @@ public sealed partial class ManufacturingDbContext(DbContextOptions<Manufacturin
         {
             table.HasCheckConstraint("CK_OutputReversals_Identity", OutputReversalIdentityCheck);
             table.HasCheckConstraint("CK_OutputReversals_Mass", OutputReversalMassCheck);
+            table.HasCheckConstraint("CK_OutputReversals_Pieces", OutputReversalPiecesCheck);
             table.HasCheckConstraint("CK_OutputReversals_Text", OutputReversalTextCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.Id });

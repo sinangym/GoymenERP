@@ -359,6 +359,31 @@ export interface ProductionOrderView {
   readonly cancelledByUserId?: string | null
   readonly cancelledAtUtc?: string | null
   readonly reopenings?: readonly OrderReopeningHistory[]
+  /**
+   * AK-7 (URT-D112): the counted outputs with their real/theoretical kg per piece deviation, in declaration order. The
+   * server omits the member for an order without a counted output (legacy JSON too): decoded as an empty list.
+   */
+  readonly outputPieces: readonly OutputPieceView[]
+}
+
+/**
+ * AK-7 (URT-D112): one counted output of the order read (`OutputPieceViewV1`). Every figure is the server's
+ * `Text(decimal)`; the deviation figures are null when no net piece is left. `deviationThresholdApplied` is always false
+ * (URT-D51 (5) open) and the screen shows no threshold.
+ */
+export interface OutputPieceView {
+  readonly outputId: string
+  readonly parentRollId: string
+  readonly outputClass: InventoryOutputClass
+  readonly declaredPieceCount: number
+  readonly netPieceCount: number
+  readonly netKg: string
+  readonly theoreticalKgPerPiece: string
+  readonly realKgPerPiece: string | null
+  readonly deviationKgPerPiece: string | null
+  readonly deviationPercent: string | null
+  readonly formulaVersion: string
+  readonly deviationThresholdApplied: false
 }
 
 const GUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
@@ -1092,6 +1117,52 @@ function decodeCancellation(value: unknown): PlanCancellationView | null | undef
   return { reason: value.reason, cancelledByUserId, cancelledAtUtc }
 }
 
+const OUTPUT_PIECE_KEYS = [
+  'outputId', 'parentRollId', 'outputClass', 'declaredPieceCount', 'netPieceCount', 'netKg', 'theoreticalKgPerPiece',
+  'realKgPerPiece', 'deviationKgPerPiece', 'deviationPercent', 'formulaVersion', 'deviationThresholdApplied',
+] as const
+
+function pieceCountOut(value: unknown, minimum: number): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= minimum && value <= INT32_MAX ? value : null
+}
+
+/**
+ * AK-7: the counted outputs, fail-closed — exact keys, a positive theoretical figure, a net count within the declared
+ * one, and the three deviation figures present together exactly when a net piece is left. Absent or null is none.
+ */
+export function decodeOutputPieces(value: unknown): OutputPieceView[] | null {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) return null
+  const result: OutputPieceView[] = []
+  for (const raw of value) {
+    if (!isObject(raw) || !hasExactKeys(raw, OUTPUT_PIECE_KEYS)) return null
+    const outputId = nonNilGuid(raw.outputId)
+    const parentRollId = nonNilGuid(raw.parentRollId)
+    const declared = pieceCountOut(raw.declaredPieceCount, 1)
+    const net = pieceCountOut(raw.netPieceCount, 0)
+    const netKg = kg(raw.netKg)
+    const theoretical = kg(raw.theoreticalKgPerPiece)
+    const real = raw.realKgPerPiece === null ? null : kg(raw.realKgPerPiece)
+    const deviation = raw.deviationKgPerPiece === null ? null : kg(raw.deviationKgPerPiece, true)
+    const percent = raw.deviationPercent === null ? null : kg(raw.deviationPercent, true)
+    if (outputId === null || parentRollId === null || declared === null || net === null || net > declared
+      || netKg === null || theoretical === null || theoretical === '0'
+      || !(INVENTORY_OUTPUT_CLASSES as readonly unknown[]).includes(raw.outputClass)
+      || !requiredText(raw.formulaVersion) || raw.deviationThresholdApplied !== false
+      || (raw.realKgPerPiece !== null && real === null) || (raw.deviationKgPerPiece !== null && deviation === null)
+      || (raw.deviationPercent !== null && percent === null)
+      || (net > 0) !== (real !== null && deviation !== null && percent !== null)
+      || (net === 0 && (real !== null || deviation !== null || percent !== null))
+      || result.some((entry) => entry.outputId === outputId)) return null
+    result.push({
+      outputId, parentRollId, outputClass: raw.outputClass as InventoryOutputClass, declaredPieceCount: declared,
+      netPieceCount: net, netKg, theoreticalKgPerPiece: theoretical, realKgPerPiece: real, deviationKgPerPiece: deviation,
+      deviationPercent: percent, formulaVersion: raw.formulaVersion, deviationThresholdApplied: false,
+    })
+  }
+  return result
+}
+
 export function decodeOrder(body: unknown): ProductionOrderView | null {
   if (!isObject(body)) return null
   const orderId = guid(body.orderId)
@@ -1157,6 +1228,8 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
     : cancellationReason !== null || cancelledByUserId !== null || cancelledAtUtc !== null) return null
   const reopenings = decodeOrderReopenings(body.reopenings, orderVersion)
   if (reopenings === null) return null
+  const outputPieces = decodeOutputPieces(body.outputPieces)
+  if (outputPieces === null) return null
   // CK_Orders_DueDateRevision: a termin changed on the order always has a day.
   if (dueDateRevision > 0 && dueDate === null) return null
   // The flag is the server's, but it never contradicts the two days it was computed from.
@@ -1190,6 +1263,7 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
     cancelledByUserId,
     cancelledAtUtc,
     reopenings,
+    outputPieces,
   }
 }
 
@@ -1294,6 +1368,8 @@ export type FactSnapshot =
       readonly custodianId: string
       readonly locationId: string
       readonly initialBlock: 'Free' | 'Blocked'
+      /** AK-7 (URT-D112): the counted pieces with the weighed kg; null (not sent) for an uncounted product. */
+      readonly pieceCount?: number | null
     })
 
 /** The exact strict request body selected by the route segment. */
@@ -1341,6 +1417,7 @@ export function factBody(snapshot: FactSnapshot): Record<string, unknown> {
       locationId: snapshot.locationId,
       initialBlock: snapshot.initialBlock,
       movementId: snapshot.movementId,
+      ...(snapshot.pieceCount == null ? {} : { pieceCount: snapshot.pieceCount }),
     }
   }
   return { factId: snapshot.factId, ...common }
@@ -1742,6 +1819,8 @@ export interface OutputCorrectionSnapshot {
   readonly reason: string
   /** UTC instant (`…Z`) the user named for the correction. */
   readonly occurredAtUtc: string
+  /** AK-7 (URT-D112): the pieces taken back from a counted output (0 allowed); null (not sent) for an uncounted one. */
+  readonly pieceCount?: number | null
 }
 
 /** The request body exactly as `CorrectOutputRequestV1` names it; the declaration's id travels in the path. */
@@ -1755,6 +1834,7 @@ export function outputCorrectionBody(snapshot: OutputCorrectionSnapshot): Record
     kg: snapshot.kg,
     reason: snapshot.reason,
     occurredAtUtc: snapshot.occurredAtUtc,
+    ...(snapshot.pieceCount == null ? {} : { pieceCount: snapshot.pieceCount }),
   }
 }
 
@@ -1775,4 +1855,16 @@ export function orderCancelBody(snapshot: OrderCancelSnapshot): Record<string, u
     expectedVersion: snapshot.expectedVersion,
     reason: snapshot.reason,
   }
+}
+
+/**
+ * A piece count as typed: empty is none (null); a whole number of at least `minimum` (no sign, no leading zero, within
+ * int32) is the count; anything else is invalid (undefined) and nothing is sent.
+ */
+export function parsePieceCount(text: string, minimum: number): number | null | undefined {
+  const trimmed = text.trim()
+  if (trimmed.length === 0) return null
+  if (!/^(0|[1-9][0-9]{0,9})$/.test(trimmed)) return undefined
+  const value = Number(trimmed)
+  return value >= minimum && value <= INT32_MAX ? value : undefined
 }

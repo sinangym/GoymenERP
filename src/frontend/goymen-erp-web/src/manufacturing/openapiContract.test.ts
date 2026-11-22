@@ -22,6 +22,7 @@ import {
   decodeTechnicalSnapshot,
   FACT_KINDS,
   OUTPUT_CLASSES,
+  outputCorrectionBody,
 } from './contract'
 import { MANUFACTURING_BASE } from './api'
 import { decodePlanList } from './planListContract'
@@ -128,12 +129,29 @@ function requestSchemaName(pathName: string): string {
   return reference.slice(prefix.length)
 }
 
+const OUTPUT_PIECE_FIXTURE_KEYS = [
+  'outputId', 'parentRollId', 'outputClass', 'declaredPieceCount', 'netPieceCount', 'netKg', 'theoreticalKgPerPiece',
+  'realKgPerPiece', 'deviationKgPerPiece', 'deviationPercent', 'formulaVersion', 'deviationThresholdApplied',
+] as const
+
 describe('Manufacturing port ↔ canonical OpenAPI', () => {
+  it('sends exactly the CorrectOutputRequestV1 members, the AK-7 piece count optional', () => {
+    const body = outputCorrectionBody({
+      idempotencyKey: 'k', outputId: ROLL_1, reversalId: ROLL_1, movementId: ROLL_1, expectedVersion: 3, labelId: ROLL_1,
+      expectedLabelVersion: '7', kg: '5', reason: 'SENTETIK', occurredAtUtc: '2026-11-22T10:00:00.000Z', pieceCount: 2,
+    })
+    expect(Object.keys(body).sort()).toEqual(names('CorrectOutputRequestV1'))
+    expect(schema('CorrectOutputRequestV1').required ?? []).not.toContain('pieceCount')
+  })
+
   it('reads exactly the properties OrderViewV1 and its parts declare, all required', () => {
     const rollView = { ...roll(ROLL_1), commercialContext: null }
     expect(Object.keys(order({ cancellationReason: null, cancelledAtUtc: null, cancelledByUserId: null,
       dueDate: null, dueDateDiffersFromPlan: false, dueDateRevision: 0, outputLines: [], planDueDate: null,
-      reopenings: [] })).sort()).toEqual(names('OrderViewV1'))
+      reopenings: [], outputPieces: [] })).sort()).toEqual(names('OrderViewV1'))
+    // AK-7 (URT-D112): the counted output view has exactly the members the decoder reads, all required.
+    expect(names('OutputPieceViewV1')).toEqual([...OUTPUT_PIECE_FIXTURE_KEYS].sort())
+    expect([...(schema('OutputPieceViewV1').required ?? [])].sort()).toEqual([...OUTPUT_PIECE_FIXTURE_KEYS].sort())
     expect(Object.keys(rollView).sort()).toEqual(names('RollBalanceViewV1'))
     expect(Object.keys(order().remainingTarget).sort()).toEqual(names('RemainingTargetViewV1'))
     expect(['basis', 'kg']).toEqual(names('TargetViewV1'))
@@ -311,7 +329,8 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
           'requiredDocuments',
         ],
         // URT-S16 (BS-14): the usable remnant's label classification is an additive optional member.
-        optional: ['outputLine', 'remnantClassification'],
+        // AK-7 (URT-D112): the counted pieces are an additive optional member.
+        optional: ['outputLine', 'pieceCount', 'remnantClassification'],
       },
     ] as const
 
