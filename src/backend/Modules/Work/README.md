@@ -62,6 +62,28 @@ tatil takvimi Work'e aittir): süre veya tatil takvimi kaydı varken reddeder.
   kayıtları görür; kapsamlı okuma ölçümde döngü kapatmaz. Bugün hiçbir sahip komutu kapsamlı onayı kabul etmiyor.
 
 `AddWorkApprovalRuleVersions` Down guard **52100**: kural sürümü varken geri alma reddedilir (forward fix).
+
+## WP2: tek hatırlatma, yükseltme, sahipsiz onay, "şimdi" bildirimi, tek bildirim deposu (YOL-D17, YOL-D25, YOL-D28, AI-D29, D9, D10)
+
+- **Tek depo (D9):** `work.Notifications` kaldırıldı; satırları kimlikleriyle `work.InboxNotifications`'a taşındı (tür 1→4
+  "tahsis serbest", 2→5 "tedarik yeniden açıldı", "özet" sınıfı); pasifleştirme satırları aynı kimliği gösterir. Eski
+  `GET /api/v1/work/notifications` sözleşmesi aynı kalır, artık tek depodan okur.
+- **Takip döngüsü:** `WorkApprovalFollowUpMaintenanceV1`, `IWorkInboxFollowUpSourceV1` uygulayan kaynaklar için kullanıcısız
+  çalışır: yeni bekleyen onayda uygun onaylayıcılara "şimdi" bildirimi (yapan ve sahibin dışladıkları hariç); süre dolunca
+  **bir** hatırlatma; bir sınıf süresi daha sonra kural tablosunun yükseltme izni sahiplerine yükseltme (sürüm 0:
+  `work.approvals.escalate`; kimsede yoksa yalnız hatırlatma gider, YOL-D28); uygun onaylayıcı yoksa "sahipsiz onay".
+  Otomatik onay/ret yoktur. Her adım `work.ApprovalFollowUps`'ta döngü+adım başına tek satırdır.
+- **D10:** sahip artık listelemediği ölçülmüş döngünün kararını kendi kaydından okur (`ReadDecisionAsync`); karar zamanı
+  `ApprovalInboxEvents` tür 5 (`Decided`) olarak sahibin zamanıyla yazılır. Ölçüm artık kutu açılmasını beklemez.
+- **Özet saatleri (YOL-D25):** Ayarlar anahtarları `work.digest-time-morning|midday|evening` (gece yarısından dakika; sürüm 0 =
+  09:00/13:00/17:00), yalnız iş günü (hafta sonu + kayıtlı tatil/arife düşülür), iş saat dilimi (D6).
+- **Bayrak:** döngü yalnız `Work:CollaborationScheduler:Enabled` ve `Work:CollaborationScheduler:ApprovalFollowUpEnabled` ikisi
+  de true iken çalışır (varsayılan kapalı; açmak insan kapısı).
+- **Görünüm:** `GET /api/v1/work/approval-follow-ups?view=escalated|orphaned` (`work.approvals.escalate`, şirket geneli);
+  ekran `/onay-takibi`. Bugün yalnız Lojistik irsaliye kaynağı takip kaynağıdır; diğer kaynaklar eklenene kadar takip edilmez.
+- `Wp2SingleNotificationStoreAndApprovalFollowUp`: Up kopya eksikse **52111** ile eski depoyu düşürmeden durur; Down guard
+  **52110** (taşınmış/yeni bildirim, takip satırı veya karar olayı varken reddeder, forward fix). Ayarlar
+  `Wp2WorkDigestTimes` Down guard **52112**.
 ## W1-C: kayda bağlı not, bahsetme, görev ve iki sınıflı bildirim (AI-D20, AI-D23, AI-D29, YOL-D19)
 
 Yapay zekâ yoktur. Kayıt türleri: satış siparişi taslağı, alış siparişi, stok etiketi, üretim planı, cari (WP9 ile
