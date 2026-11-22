@@ -1,7 +1,8 @@
 # Sinan Kararları — 22 Kasım 2026 (Work ve yapay zekâ kapsamı, model yolu, sistem dışı kullanım, dalgaların kesinleşmesi; adet/kg açık soruları)
 
 Bu belge önceki karar dosyalarını silmez; AI-D22–AI-D30, YOL-D17, SAT-D451 ve SAT-D452 ekler; aynı gün ek cevaplarla
-(SINAN-CEVAP 63) SAT-D453–SAT-D455 ve ALS-D122 eklendi. DEC-AI-001..009, AI-D1..AI-D21,
+(SINAN-CEVAP 63) SAT-D453–SAT-D455 ve ALS-D122; golden yazarının EK1 soruları üzerine (SINAN-CEVAP 64) SAT-D456–SAT-D459,
+ALS-D123, ALS-D124 ve GOV-D13 eklendi. DEC-AI-001..009, AI-D1..AI-D21,
 YOL-D1..YOL-D16, SAT-D433–SAT-D445, DEC-DOC-006/007 ve 21 Ekim kararlarının 125 ve 156 numaraları geçerliliğini korur.
 AI-D22 ve AI-D25, AI-D19'un "her şey aynı anda" yaklaşımını ve AI-D21'in ilk aşamasını bu belgedeki sırayla daraltır;
 AI-D27, AI-D17'nin ilk aşamasını genişletir.
@@ -33,6 +34,14 @@ onlara değil seçilen yöne dayanır.
 | 15 | Miktar iadesinin düşüldüğü sipariş satırı adet birimliyse iade nasıl belirlensin? | **Hazırlayan adedi girer, fiyat adet fiyatı; kg tartılan (Önerilen)** | İade belgesi adet × siparişin net adet fiyatı olur (adetli satıştaki kuralla aynı); stoktan çıkan kg ve adet etiketten gelir; kg yalnız bilgi. Seçilmeyenler: "Kg üzerinden, siparişin teorik kg fiyatıyla"; "Şimdilik kapalı kalsın". |
 | 16 | Adetli alış kabulünde önce kısmi iade, sonra kısmi fatura gelirse faturalanan adede düşen kg nasıl hesaplansın? | **Kalan kg ÷ kalan adet (Önerilen)** | İade gerçek tartıyla çıktığı için kalan malın gerçek kg/adet oranı kullanılır; iade kabulün kendi oranıyla çıkmadıysa da çalışır. Seçilmeyen: "Kabulün özgün oranı (ALS-D121 aynen)". |
 
+| 17 | Golden yazarı oturumu, ek golden belgesini (yalnız tek doküman dosyası) yeni bir dala (claude/adet-kg-golden-ek1) gönderip taslak PR açabilsin mi? | **Evet, izin veriyorum (Önerilen)** | Oturum yalnız `docs/decisions/ADET_KG_FORMUL_GOLDEN_V1_EK1.md` dosyasını bu dala gönderir ve taslak PR açar; merge etmez; iki bağımsız inceleme sonra gelir. Seçilmeyen: "Hayır, mevcut golden dalına eklensin". |
+| 18 | İade farkı (stok çıkışı − belge tutarı) hangi tutarlardan hesaplansın? | **Kuruşa yuvarlanmış iki tutardan (Önerilen)** | Fark = belgeye yazılan stok çıkış tutarı − belgeye yazılan iade tutarı; ekranda ve muhasebede görülen rakamlar birbirini tutar. Seçilmeyen: "Kesin değerlerden, sonuç kuruşa yuvarlanır". |
+| 19 | Finans'ın reddettiği (yeniden gönderilebilen) satış faturası gerçekleşen kg fiyatı hesabında sayılsın mı? | **Sayılmasın; Finans kabul edince girsin (Önerilen)** | Reddedilmiş fatura kesinleşmiş sayılmaz; yeniden gönderilip kabul edilince hesaba girer. Seçilmeyen: "Sayılsın". |
+| 20 | Aynı kabulde birden çok fatura ve arada iade varsa "kalan kg ÷ kalan adet" hangi ana göre hesaplansın? | **Her fatura anında güncel kalan (Önerilen)** | Fatura işlenirken o ana kadarki iadeler ve önceki faturaların kg ve adedi düşülür; kalan malın o anki gerçek oranı kullanılır. Seçilmeyen: "İadeler düşülür, önceki faturalar düşülmez". |
+| 21 | Miktar iadesinin düşüldüğü sipariş satırında tek yüzde iskonto dışında iskonto varsa ne yapılsın? | **Satır iskontolarının hepsi düşülür, belge altı düşülmez (Önerilen)** | Satıra ait zincir ve tutar iskontoları net fiyata yansır; belge altı iskonto satıra dağıtılmaz, böyle belgede iade anlaşılır hatayla durur. Seçilmeyenler: "Belge altı iskonto da orantılı düşülsün"; "Yalnız tek yüzde iskonto; diğerleri kapalı". |
+| 22 | Adetli siparişten miktar iadesinde girilen iade adedi, stoktan çıkan etiketin adedinden farklıysa ne olsun? | **Eşit olmalı; farklıysa reddet (Önerilen)** | Belgedeki adet ile stoktan çıkan adet aynı olur; fark varsa hazırlayan düzeltir. Seçilmeyen: "Farklı olabilir; ikisi de kaydedilsin". |
+| 23 | Kısmi faturada hesaplanan kg payı 3 ondalıkta bitmezse nasıl yuvarlansın? | **3 ondalığa yuvarla, artık son faturaya (Önerilen)** | Her fatura payı 3 ondalığa (yarımda yukarı) yuvarlanır; kabul tamamen faturalanınca son fatura kalan kg'yi alır, toplam kabul kg'sine tam eşit olur. Seçilmeyen: "Yuvarlama; pay kesin kesirle taşınsın". |
+
 ## Kararlar
 
 | No | Konu | Karar | Etkilenen yer |
@@ -53,10 +62,17 @@ onlara değil seçilen yöne dayanır.
 | SAT-D454 | Ortalama okunamazken elle maliyet (SAT-D393/SAT-D444 ayrıntısı) | Miktar iadesinde ortalama maliyet okunamıyorsa farklı kişinin onayladığı elle maliyet sipariş fiyatından **farklı olabilir**; stok çıkışı onaylı elle maliyetle, fatura siparişin net fiyatıyla yapılır ve fark mevcut iade farkı kuralıyla (SAT-D392/D393, farklı kişi onayı) kaydedilir. Ortalama okunabiliyorken elle maliyet girilemez (SAT-D371/D410 sürer). | Tedarikçi iadesi, Stok iade çıkışı |
 | SAT-D455 | Adetli sipariş satırından miktar iadesi | Seçilen alış siparişi satırı adet birimliyse hazırlayan **iade adedini** girer; belge adet × siparişin net adet fiyatıdır (SAT-D451/D453); stoktan çıkan kg ve adet etiketten gelir, kg yalnız bilgidir. | Tedarikçi iadesi belgesi |
 | ALS-D122 | Kısmi iadeden sonra kısmi fatura kg payı (ALS-D121 ayrıntısı) | Adetli alış kabulünde kısmi iade yapıldıktan sonra gelen faturada faturalanan adede düşen kg = **kabulün kalan kg'si × faturalanan adet ÷ kalan adet**. İade yoksa ALS-D121 aynen geçerlidir. | Alış faturası maliyet uygulaması |
+| GOV-D13 | Golden EK1 dalı için izin | Golden yazarı oturumu yalnız `docs/decisions/ADET_KG_FORMUL_GOLDEN_V1_EK1.md` dosyasını `claude/adet-kg-golden-ek1` dalına gönderip **taslak PR** açabilir; merge yetkisi vermez; SAT-D431 gereği iki bağımsız DOCS incelemesi aranır. | Golden süreci |
+| SAT-D456 | İade farkının tabanı | İade farkı = belgeye yazılan (kuruşa yuvarlanmış) stok çıkış tutarı − belgeye yazılan (kuruşa yuvarlanmış) iade tutarı. | Tedarikçi iadesi farkı |
+| SAT-D457 | Finans reddi alan fatura ve gerçekleşme (SAT-D452 ayrıntısı) | Finans'ın reddettiği satış faturası kesinleşmiş sayılmaz ve gerçekleşen kg fiyatı hesabına girmez; yeniden gönderilip Finans kabul edince girer. | Kg fiyatı göstergesi |
+| SAT-D458 | Miktar iadesinde iskonto türleri (SAT-D451 ayrıntısı) | Net birim fiyat hesabında satıra ait **bütün satır iskontoları** (yüzde, zincir, tutar) düşülür; **belge altı iskonto düşülmez** ve satıra dağıtılmaz. Belge altı iskontosu olan siparişten miktar iadesi anlaşılır hata koduyla durur. | Tedarikçi iadesi belgesi |
+| SAT-D459 | Adetli miktar iadesinde adet eşitliği (SAT-D455 ayrıntısı) | Hazırlayanın girdiği iade adedi stoktan çıkan etiket adedine **eşit olmalıdır**; farklıysa iade reddedilir. | Tedarikçi iadesi, Stok iade çıkışı |
+| ALS-D123 | "Kalan"ın tanımı (ALS-D122 ayrıntısı) | Kalan kg ve kalan adet **her fatura işlenirken güncel** hesaplanır: kabulün tartılan kg'si ve adedinden o ana kadarki iadeler ve önceki faturaların kg ve adedi düşülür. | Alış faturası maliyet uygulaması |
+| ALS-D124 | Kg payı yuvarlaması | Kısmi faturanın kg payı **3 ondalığa, yarımda sıfırdan uzağa** yuvarlanır; kabul tamamen faturalandığında **son fatura kalan kg'yi** alır, toplam kabulün (iadeler düşülmüş) kg'sine tam eşit olur. | Alış faturası maliyet uygulaması |
 
 ## Sınırlar
 
-- SAT-D453–SAT-D455 ve ALS-D122 para/maliyet formülüdür: golden satırları SAT-D431 yöntemiyle (bağımsız yazar, iki DOCS
+- SAT-D453–SAT-D459 ve ALS-D122–ALS-D124 para/maliyet formülüdür: golden satırları SAT-D431 yöntemiyle (bağımsız yazar, iki DOCS
   incelemesi) hazırlanıp trene girmeden etkinleştirilmez; o zamana kadar ilgili yollar anlaşılır kodla kapalı kalır.
 - **NEEDS-SINAN:** çekirdek dilimlerin başarı eşikleri ve durdurma koşulları; AI-D25'te açılacak komutların sırası;
   AI-D26'da "düşük riskli" onay türleri; YOL-D17'de saat ölçekli türler ve süreleri; AI-D28'de abonelik ürünü, kişi
