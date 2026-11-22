@@ -118,6 +118,7 @@
     <Project Path="tests/GoymenERP.Logistics.UnitTests/GoymenERP.Logistics.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.DocumentGeneration.Pdf.Tests/GoymenERP.DocumentGeneration.Pdf.Tests.csproj" />
     <Project Path="tests/GoymenERP.Documents.UnitTests/GoymenERP.Documents.UnitTests.csproj" />
+    <Project Path="tests/GoymenERP.Reporting.UnitTests/GoymenERP.Reporting.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Work.UnitTests/GoymenERP.Work.UnitTests.csproj" />
   </Folder>
   <Folder Name="/tools/">
