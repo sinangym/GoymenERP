@@ -2070,6 +2070,9 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("LineId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int?>("LineageMode")
+                        .HasColumnType("int");
+
                     b.Property<Guid>("MovementId")
                         .HasColumnType("uniqueidentifier");
 
@@ -2115,6 +2118,9 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         .HasColumnType("varchar(16)")
                         .UseCollation("Latin1_General_100_BIN2");
 
+                    b.Property<Guid?>("SourceLabelId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
@@ -2156,6 +2162,8 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_PurchaseSupplierReturns_Decision", "([CostBasis] = 1 AND [Status] = 2 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionReason] IS NULL) OR ([CostBasis] = 2 AND [Status] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionReason] IS NULL) OR ([CostBasis] = 2 AND [Status] = 2 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [DecisionReason] IS NULL) OR ([CostBasis] = 2 AND [Status] = 3 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [DecisionReason] IS NOT NULL AND LEN([DecisionReason]) > 0)");
 
                             t.HasCheckConstraint("CK_PurchaseSupplierReturns_Identity", "[ReturnId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ReturnLineId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [GoodsAcceptanceId] <> '00000000-0000-0000-0000-000000000000' AND [MovementId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_PurchaseSupplierReturns_Lineage", "([SourceLabelId] IS NULL AND [LineageMode] IS NULL) OR ([SourceLabelId] IS NOT NULL AND [SourceLabelId] <> '00000000-0000-0000-0000-000000000000' AND [LineageMode] IN (1, 2))");
 
                             t.HasCheckConstraint("CK_PurchaseSupplierReturns_Status", "[Status] IN (1, 2, 3) AND [CostBasis] IN (1, 2)");
 

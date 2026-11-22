@@ -800,6 +800,14 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
         + "OR ([CostBasis] = 2 AND [Status] = 3 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL "
         + "AND [DecisionReason] IS NOT NULL AND LEN([DecisionReason]) > 0)";
 
+    /// <summary>
+    /// AK-8 (SAT-D433/SAT-D441/SAT-D445): a return either leaves the receipt's own label (both facts null) or names the foreign
+    /// source label together with its mode, lineage (1) or quantity (2).
+    /// </summary>
+    internal const string SupplierReturnLineageCheck =
+        "([SourceLabelId] IS NULL AND [LineageMode] IS NULL) "
+        + "OR ([SourceLabelId] IS NOT NULL AND [SourceLabelId] <> " + EmptyGuid + " AND [LineageMode] IN (1, 2))";
+
     private void ConfigureSupplierReturns(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<PurchaseSupplierReturnRow>();
@@ -817,6 +825,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
             table.HasCheckConstraint("CK_PurchaseSupplierReturns_Decision", SupplierReturnDecisionCheck);
             table.HasCheckConstraint("CK_PurchaseSupplierReturns_CostAllocationJson",
                 "[CostAllocationJson] IS NULL OR ISJSON([CostAllocationJson]) = 1");
+            table.HasCheckConstraint("CK_PurchaseSupplierReturns_Lineage", SupplierReturnLineageCheck);
         });
         entity.HasKey(x => x.ReturnId);
         entity.HasAlternateKey(x => new { x.CompanyId, x.ReturnId });

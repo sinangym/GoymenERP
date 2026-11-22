@@ -62,7 +62,8 @@ public sealed partial class PurchasingService(
     IPurchaseReceiptReversalTransactionV1? receiptReversals = null,
     IPurchaseReceiptReversalBatchTransactionV1? receiptReversalBatches = null,
     IPurchaseSupplierReturnCostSourceReadPortV1? returnCostSources = null,
-    IPurchaseTheoreticalKilogramsPerUnitPortV1? theoreticalKilograms = null) : IPurchasingService, IPurchasingOrderRecordReadSourceV1,
+    IPurchaseTheoreticalKilogramsPerUnitPortV1? theoreticalKilograms = null,
+    IPurchaseSupplierReturnLineageReadPortV1? returnLineage = null) : IPurchasingService, IPurchasingOrderRecordReadSourceV1,
     IPurchaseGoodsReceiptServiceV1, IPurchaseGoodsReceiptQuantityComparisonServiceV1, IPurchaseGoodsReceiptBatchServiceV1,
     IPurchaseSupplierReturnServiceV1, IPurchaseReceiptReversalServiceV1, IPurchaseReceiptReversalBatchServiceV1
 {

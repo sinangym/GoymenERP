@@ -26,6 +26,13 @@ internal sealed class PurchaseSupplierReturnRow : IPurchasingTenantRow
     public long? ExpectedPurchaseOrderVersion { get; set; }
     public decimal? UndoQuantity { get; set; }
     public string? CostAllocationJson { get; set; }
+
+    /// <summary>
+    /// AK-8 (SAT-D433/SAT-D441/SAT-D445): the label that physically left when it is not the receipt's own label, and how
+    /// (1 lineage, 2 quantity). Both null on every earlier return.
+    /// </summary>
+    public Guid? SourceLabelId { get; set; }
+    public int? LineageMode { get; set; }
     public string Reason { get; set; } = string.Empty;
     public DateTimeOffset OccurredAtUtc { get; set; }
     public string RequestedBy { get; set; } = string.Empty;

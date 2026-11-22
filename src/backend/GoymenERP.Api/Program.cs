@@ -460,6 +460,8 @@ builder.Services.AddScoped<IPurchaseGoodsReceiptBatchTransactionV1, PurchaseGood
 // ALC-S5 (B-19; SAT-D306): one transaction for the supplier return row and Inventory's exit at the original line cost.
 builder.Services.AddScoped<IPurchaseSupplierReturnTransactionV1, PurchaseSupplierReturnHost>();
 builder.Services.AddScoped<IPurchaseSupplierReturnCostSourceReadPortV1, PurchaseSupplierReturnCostSources>();
+// AK-8 (SAT-D433/SAT-D445): Purchasing reads a label's lineage only through Inventory's read port.
+builder.Services.AddScoped<IPurchaseSupplierReturnLineageReadPortV1, PurchaseSupplierReturnLineage>();
 // F-017 F17-1 (§3.4): Inventory's future allocation takes the purchase general line's lock through this binder (no module reference).
 builder.Services.AddScoped<IPurchaseLineSerializationLockBinderV1, PurchaseLineSerializationLockHostBinder>();
 // F-017 STOK F017-b: the sales order line lock (taken before the purchase line lock) and the Purchasing adapter of Inventory's
