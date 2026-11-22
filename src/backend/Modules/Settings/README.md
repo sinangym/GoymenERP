@@ -1109,3 +1109,14 @@ The actual Finance record permission reserves through the borrowed SERIALIZABLE 
 format administration retain their existing purpose gates. The first Down operation refuses with **THROW 51910**
 while any of the four series tables contains a receipt/voucher row; old series alone can roll back.
 SQL/Unit/HTTP/UI acceptance sources accompany this change; runtime remains **NOT_RUN**.
+
+## WP15 — legal deadline calendar (DALGA_PLANI_v2 1.16, YOL-D4 (c))
+
+`GET/POST /api/v1/settings/company-policies/legal-deadline-calendar[/versions]` on `settings.legal-deadline-calendar.manage`
+(registered, not granted): insert-only versions of periodic obligations (closed catalogue: KDV, muhtasar, e-defter berat,
+BA/BS, geçici vergi, kurumlar vergisi, damga vergisi, SGK) with period length 1/3/12 months, months after period end and
+due day. Nothing is seeded: values wait for the financial advisor (`docs/delivery/MALI_MUSAVIR_SORULARI_v1.md`); until
+then every counter is "undefined" and does not run. `LegalDeadlineCalculatorV1` is the only calculator; no holiday/weekend
+shift is applied (NEEDS-SINAN WP15-2). Settings serves the counters as a Work deadline source
+(`IWorkDeadlineSourceV1`, `GET /api/v1/work/deadlines`) on `settings.legal-deadlines.read` (registered, not granted).
+`20261122202227_AddLegalDeadlineCalendars`: Down refuses with `THROW 52280` while a calendar version exists (forward fix).

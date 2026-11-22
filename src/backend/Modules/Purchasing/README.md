@@ -546,3 +546,15 @@ activates nothing; real-SQL acceptance is **NOT_RUN** and independent K3 accepta
 - ASSUMPTION-AK3B-1 (geri alınabilir sunum ayrıntısı): sipariş gerçekleşme tablosunda sunucu yalnız gerçek kg fiyatı için neden kodu verir;
   diğer boş hücrelerin metni ekranda türetilir (`NotInvoiced` → "Henüz faturalanmadı", aksi halde alanın kendi nedeni).
 - Toplu mal kabul gönderim formu ayrı dilimdir; bu dilimde yalnız arka uç ve okuma paneli vardır.
+
+## WP15 — rule-based incoming invoice duplicate check (DALGA_PLANI_v2 1.16)
+
+`GET /api/v1/purchasing/invoices/duplicate-check` (facts before recording; `purchasing.invoices.import` + order price read)
+and `GET /api/v1/purchasing/invoices/{id}/duplicates` (a recorded invoice; `purchasing.invoices.read` + order price read)
+answer `behavior: "warn"` and never block: no decision says a match blocks (NEEDS-SINAN WP15-1). Rules
+(`PurchaseInvoiceDuplicateRule`): same ETTN; same supplier and official number equal after case/space/dash normalization;
+same supplier, invoice date, currency and exactly equal payable (no tolerance — a tolerance is an undecided policy). The
+existing database refusals (company + ETTN, company + supplier + exact number) are unchanged.
+`20261122200945_AddPurchaseIncomingInvoiceDuplicateFacts` adds nullable `InvoiceDate`, `CurrencyId`, `PayableAmount`
+(all-or-nothing check) and the `IX_IncomingInvoices_DuplicateDate` index; pure DDL, no backfill (older rows are read from
+their first revision). Down drops only derived copies, so it carries no guard.
