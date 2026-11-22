@@ -47,6 +47,14 @@ public static class WorkCollaborationEndpoints
         Command(passivate).ProducesErpConflict(WorkCollaborationProblemCodesV1.NoteNotOwn, WorkCollaborationProblemCodesV1.NoteAlreadyPassive,
             WorkCollaborationProblemCodesV1.SameKeyPayloadMismatch, WorkCollaborationProblemCodesV1.ConcurrentChange);
 
+        // WP9 read receipt: idempotent by (note, reader), so no Idempotency-Key; the author's own note answers 409.
+        group.MapPost("/notes/{noteId:guid}/read", (Guid noteId, HttpContext http, [FromServices] IWorkCollaborationServiceV1 service,
+                ICorrelationContext correlation, CancellationToken token) =>
+            ReadAsync(http, correlation, () => service.MarkNoteReadAsync(noteId, token)))
+            .WithName("MarkWorkNoteReadV1").Produces<WorkNoteReadResponseV1>()
+            .ProducesErpConflict(WorkCollaborationProblemCodesV1.NoteOwnRead)
+            .ProducesErpCodeLessNotFound().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
+
         group.MapGet("/tasks/mine", (bool? includeClosed, HttpContext http, [FromServices] IWorkCollaborationServiceV1 service,
                 ICorrelationContext correlation, CancellationToken token) =>
             ReadAsync(http, correlation, () => service.ListMyTasksAsync(includeClosed == true, token)))
@@ -102,6 +110,7 @@ public static class WorkCollaborationEndpoints
             .WithName("MarkWorkInboxNotificationReadV1").Produces<WorkInboxNotificationReadResponseV1>()
             .ProducesErpCodeLessNotFound().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
 
+        // WP9 / D7: work.tasks.assign or work.notes.write company-wide (code-less 403 otherwise); id + display name only.
         group.MapGet("/people", (string? query, HttpContext http, [FromServices] IWorkCollaborationServiceV1 service,
                 ICorrelationContext correlation, CancellationToken token) =>
             ReadAsync(http, correlation, () => service.SearchPeopleAsync(query, token)))

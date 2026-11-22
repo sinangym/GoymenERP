@@ -63,6 +63,7 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { useCompanyDirectory } from '../shell/useShellOrchestrator'
 import { StateBlock } from '../shell/StateBlock'
 import styles from './CariDetailPage.module.css'
+import { RecordNotesSection } from '../work/RecordNotesSection'
 
 /** See CariListPage: a contract refusal is about this client, never about the record. */
 const CONTRACT_PROBLEM_CODES = new Set<string>([
@@ -381,6 +382,7 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
     <section aria-labelledby="cari-detail-heading" className={styles.page}>
       <h1 id="cari-detail-heading">{detail.legalName}</h1>
       <BackToList />
+      <RecordNotesSection recordType="counterparty" recordId={detail.id} />
 
       {/**
         * TWO SECTIONS, and the split is not cosmetic.

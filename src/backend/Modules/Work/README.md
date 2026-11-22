@@ -64,15 +64,16 @@ tatil takvimi Work'e aittir): süre veya tatil takvimi kaydı varken reddeder.
 `AddWorkApprovalRuleVersions` Down guard **52100**: kural sürümü varken geri alma reddedilir (forward fix).
 ## W1-C: kayda bağlı not, bahsetme, görev ve iki sınıflı bildirim (AI-D20, AI-D23, AI-D29, YOL-D19)
 
-Yapay zekâ yoktur. Kayıt türleri: satış siparişi taslağı, alış siparişi, stok etiketi, üretim planı, cari. Kaydın
+Yapay zekâ yoktur. Kayıt türleri: satış siparişi taslağı, alış siparişi, stok etiketi, üretim planı, cari (WP9 ile
+yedi tür daha; aşağıya bakın). Kaydın
 varlığı ve okuma yetkisi sahip modülün kendi yetkili okumasından gelir (`IWorkRecordAccessPortV1`, host adaptörü
 `WorkOwnerRecordAccessPortV1`); Work başka modül tablosunu okumaz. Bahsedilen kişinin okuma yetkisi Identity'nin
 `IUserPermissionHolderReadPortV1` portuyla (sahibin okuma izni, şirket genelinde, şimdi) ölçülür; okuyamayan kişiye
 bahsetme bütün notu 422 `work_mention_refused` ile reddeder ve kişinin var olup olmadığını söylemez.
 
 - Not düzenlenmez; düzeltme `correctsNoteId` taşıyan yeni nottur. Silinmez; yazarı pasifleştirir (ayrı satır).
-  Saklama YOL-D19: bağlı kayıt kadar, en az 10 yıl. Bu dilimde hiçbir imha/otomatik pasifleştirme yolu yoktur;
-  saklama süresi parametresi imha politikası gelince Ayarlar'a bağlanır.
+  Saklama YOL-D19/YOL-D26: bağlı kayıt kadar, en az 10 yıl; kayıt imha edilince not da imha edilir. İmha yolu kodda
+  vardır ama kayıt imha politikası etkinleşene kadar kapalıdır (WP9 bölümü).
 - Görev: kayda bağlı ya da bağımsız; atanan yalnız aynı şirketin etkin üyesi (bağlı görevde kaydı da okuyabilmeli);
   açık → tamamlandı (yalnız atanan) / iptal (yalnız atayan, gerekçeli); beklenen sürüm, idempotency anahtarı, audit.
 - Bildirim sınıfları (AI-D29 varsayılanı): bahsetme ve süresi geçen görev "şimdi"; görev ataması "özet".
@@ -90,3 +91,34 @@ bahsetme bütün notu 422 `work_mention_refused` ile reddeder ve kişinin var ol
 `AddWorkCollaboration` migration'ı dokuz tenant filtreli tablo ekler. Down guard **52090**: not, bahsetme,
 pasifleştirme, görev, bildirim, okundu, özet veya komut denemesi varken geri almayı reddeder (forward fix); boş depo
 geri alınır.
+
+## WP9: kayıt türleri, not okundu bilgisi, D7/D8, Work shell yetenekleri, YOL-D26
+
+- **Kayıt türleri (6–12):** `sales-invoice` (Satış `ISalesInvoiceService`; okuma `sales.invoices.read` + fiyat okuma),
+  `loading-instruction` (Lojistik `ILogisticsInstructionService`; irsaliyenin notu talimatındadır — Lojistik irsaliyeyi
+  yalnız talimat üzerinden okur), `purchase-incoming-invoice` (Satınalma `IPurchaseIncomingInvoiceWorkflowV1`;
+  `purchasing.invoices.read` + alış fiyatı okuma), `manufacturing-order` (`ManufacturingCommandService.GetOrderAsync`),
+  `finance-manual-receipt` / `finance-manual-bank-payment` (Finans `DetailAuthorizedAsync`), `sales-quote`
+  (`ISalesQuoteService`). Mal kabul ayrı tür değildir: Satınalma onu yalnız (sipariş, kabul) çiftiyle okur; notu alış
+  siparişindedir (NEEDS-SINAN/Satınalma: kabul kimliğiyle okuma portu gelirse tür eklenir). Adlandırılmış kişinin okuma
+  hakkı: sahibin okuma izinlerinin **hepsi** şirket genelinde, şimdi.
+- **Okundu bilgisi:** `POST /api/v1/work/notes/{noteId}/read` (anahtar yok; (not, okuyan) başına ilk okuma kalır;
+  yazar kendi notunu işaretleyemez → 409 `work_note_own_read`). Not görünümü `readByMeAtUtc` ve `reads` (okuyan, ad,
+  zaman) taşır; kaydı okuyabilen herkes aynı listeyi görür.
+- **D7:** `GET /api/v1/work/people` yalnız `work.tasks.assign` veya `work.notes.write` (şirket geneli, şimdi) sahibine
+  cevap verir, diğerine kodsuz 403; satır yalnız `userId` + `displayName`.
+- **D8:** stok etiketi varlığı Stok'un yetkili okuma portu `IInventoryLabelDetailsV1` ile (etiket + bakiye okuma);
+  Work host artık Stok store'unu kullanmaz.
+- **Shell:** `WorkShellCapabilityProvider` (WORK 1.0): `work.tasks.mine` (`/gorevlerim`, `work.tasks.complete`) ve
+  kontrolü `work.tasks.assign`. Kişisel bildirim kutusu ve kayıt not paneli bilerek ilan edilmez (alıcıya özel /
+  sahibin okumasının arkasında; registry izinsiz "kullanılabilir" yeteneği reddeder).
+- **YOL-D26 imha yolu (KAPALI):** `IWorkNoteDisposalV1` kayda bağlı not ailesini (not, bahsetme, pasifleştirme,
+  okundu, bahsetme bildirimi ve okundusu/özet bağı) tek işlemde siler ve sayılarla sistem audit'i yazar; görevlere
+  dokunmaz. İki kapı: `Work:NoteDisposal:Enabled=true` (yok → kapalı) **ve** sahip modülün "kayıt imha edildi" cevabı
+  (`IWorkRecordDisposalPortV1`; host bugün her kayıt için `Unavailable`). Bugün not silinmez, pasifleşir; açılış kayıt
+  imha politikası kararıyla insan kapısıdır. Silme yalnız `WorkDbContext.OpenNoteDisposalWindow` içinde ve yalnız not
+  ailesine açıktır.
+
+`WidenWorkRecordTypesAndNoteReads` migration'ı üç kontrol kısıtını 1–12'ye genişletir ve `RecordNoteReads` tablosunu
+ekler. Down guard **52170**: okundu satırı ya da 6–12 türüne bağlı not/görev/bildirim varken geri almayı reddeder
+(forward fix).

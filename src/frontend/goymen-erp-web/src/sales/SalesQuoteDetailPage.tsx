@@ -62,6 +62,7 @@ import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
 import { StatusIndicator } from '../ui/StatusIndicator'
 import styles from './SalesPool.module.css'
+import { RecordNotesSection } from '../work/RecordNotesSection'
 
 const T = POOL_TEXT.quoteDetail
 const C = POOL_TEXT.common
@@ -151,6 +152,7 @@ function QuoteView({
           </StatusIndicator>
         </div>
       </header>
+      <RecordNotesSection recordType="sales-quote" recordId={quote.id} />
       <dl className={styles.facts}>
         <div><dt>{C.party}</dt><dd><PoolPartyCell partyId={quote.partyId} /></dd></div>
         <div><dt>{C.businessDate}</dt><dd>{formatBusinessDate(quote.businessDate)}</dd></div>

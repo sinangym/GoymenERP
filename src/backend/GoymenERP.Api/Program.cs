@@ -68,6 +68,7 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using GoymenERP.Modules.Settings.Infrastructure;
 using GoymenERP.Modules.Settings.Infrastructure.Shell;
 using GoymenERP.Modules.Work.Infrastructure;
+using GoymenERP.Modules.Work.Infrastructure.Shell;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -563,6 +564,8 @@ builder.Services.AddSingleton<IShellCapabilityProvider, ProductPriceListShellCap
 builder.Services.AddSingleton<IShellCapabilityProvider, ProductPaintMembershipShellCapabilityProvider>();
 // SAT-D61…D70: Settings' discount limit screen (settings.sales-discount-limits.manage, granted to no role).
 builder.Services.AddSingleton<IShellCapabilityProvider, SettingsShellCapabilityProvider>();
+// WP9: Work's own "Bana atanan" route and assign control (work.tasks.complete / work.tasks.assign, granted to no role).
+builder.Services.AddSingleton<IShellCapabilityProvider, WorkShellCapabilityProvider>();
 var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
     builder.Services,
     builder.Environment,

@@ -139,6 +139,7 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { StateBlock } from '../shell/StateBlock'
 import styles from './OrderDetailPage.module.css'
 import { Button } from '../ui/Button'
+import { RecordNotesSection } from '../work/RecordNotesSection'
 
 /** Registered with the shell so a company switch with an unsent fact warns first. */
 const DIRTY_SCOPE = 'manufacturing.order.fact'
@@ -244,6 +245,7 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
   return (
     <Frame>
       <OrderSummary order={order} />
+      <RecordNotesSection recordType="manufacturing-order" recordId={order.orderId} />
       <RollTable rolls={order.rolls} />
       <OutputPieceTable outputs={order.outputPieces} />
       <MassBalancePanel

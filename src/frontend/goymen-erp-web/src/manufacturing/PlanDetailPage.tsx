@@ -44,6 +44,7 @@ import { contextKey, contextKeyString, hasCapability } from '../shell/shellState
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './PlanPage.module.css'
 import { Button } from '../ui/Button'
+import { RecordNotesSection } from '../work/RecordNotesSection'
 
 type Attempt =
   | { readonly phase: 'idle' }
@@ -397,6 +398,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
         </div>
       </header>
       <PlanPaintSelectionSummary value={plan.processSpec} />
+      <RecordNotesSection recordType="manufacturing-plan" recordId={plan.planId} />
       <dl className={styles.facts}>
         <div><dt>{PLAN_DETAIL_TEXT.plan}</dt><dd className={styles.mono}>{plan.planId}</dd></div>
         <div><dt>{PLAN_DETAIL_TEXT.status}</dt><dd>{PLAN_STATUS_LABEL[plan.status]}</dd></div>
