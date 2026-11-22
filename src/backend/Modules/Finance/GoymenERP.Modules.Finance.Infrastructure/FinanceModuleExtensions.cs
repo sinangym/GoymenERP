@@ -116,6 +116,18 @@ public static class FinanceModuleExtensions
         services.AddScoped<WorkInbox.FinanceWorkInboxFence>();
         services.AddScoped<IWorkInboxSourceV1, WorkInbox.FinancePartyCreditLimitWorkInboxSourceV1>();
         services.AddScoped<IWorkInboxSourceV1, WorkInbox.FinanceManualBankPaymentWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.FinanceOfficialSalesInvoiceWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.FinanceManualBankPaymentReversalWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.FinanceManualReceiptReversalWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.FinanceExpensePaymentWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.FinanceBankAccountWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.FinanceBankAccountIbanChangeWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.FinanceCreditAccountWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.FinanceBankCreditLimitWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.FinanceCreditMovementWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.FinanceOpeningBalanceWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.FinanceOpeningBalanceReversalWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.FinanceCashExchangeBookValueWorkInboxSourceV1>();
         // FNS-D25 (API-25): one expense item. FNS-D102 uses the internal ledger, protected together with
         // each outgoing record in a serializable Finance transaction; unavailable never means sufficient.
         services.TryAddScoped<IFinanceExpenseItemCatalog, SingleExpenseItemCatalog>();
