@@ -23,7 +23,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// the PDF carry for each answer of the two reads. The PDF text is read back from the bytes (PdfPig), never assumed. The
 /// real host with the real store, grants and owners is <c>SalesOrderPdfSqlServerRelationalAcceptanceTests</c>.
 /// </summary>
-public sealed class SalesOrderPdfHttpAcceptanceTests(GoymenErpApiFactory factory) : IClassFixture<GoymenErpApiFactory>
+public sealed partial class SalesOrderPdfHttpAcceptanceTests(GoymenErpApiFactory factory) : IClassFixture<GoymenErpApiFactory>
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid Kg = Guid.Parse("6a1f0c3e-0d5b-4e7c-9f21-3b4c5d6e7f80");

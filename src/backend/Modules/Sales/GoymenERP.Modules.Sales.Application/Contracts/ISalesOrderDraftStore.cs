@@ -269,6 +269,19 @@ public interface ISalesOrderDraftStore
         throw new SalesFutureAllocationReleaseException(503, "service_unavailable", terminal: false);
 
     /// <summary>
+    /// WP13 / SAT-D471: the customer acceptance transition (only <see cref="SalesDraftCommands.RecordCustomerAcceptanceV1"/>) with the
+    /// owner's own rows of the same act staged by <paramref name="stage"/> into the SAME save (and, with
+    /// <paramref name="withinTransaction"/>, the same SQL transaction): the signed approval record is written together with the
+    /// acceptance or not at all. <paramref name="stage"/> runs after the domain transition and the participant, before the save; a
+    /// replayed acceptance key stages nothing. Not supported by a store without it (503, fail-closed).
+    /// </summary>
+    Task<SalesDraftStateResult?> UpdateDraftStateStagedAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit,
+        Func<SalesOrderDraft, int?, System.Data.IDbTransaction, CancellationToken, Task>? withinTransaction,
+        Func<SalesOrderDraft, DateTimeOffset, CancellationToken, Task> stage, CancellationToken cancellationToken = default) =>
+        throw new SalesDraftStoreException(SalesDraftProblemCodesV1.OwnerReferenceUnavailable, "Staged acceptance is not supported.");
+
+    /// <summary>
     /// F-018 / plan S1: the limit warnings recorded on the company's draft, newest first and at most
     /// <see cref="SalesDraftRiskWarningsApiV1.MaximumListed"/> + 1 (so the caller knows whether more exist; append-only, no
     /// amount). Another company's draft, or none, is null (never 403).

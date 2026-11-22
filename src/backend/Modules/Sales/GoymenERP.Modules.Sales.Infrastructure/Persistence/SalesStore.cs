@@ -221,6 +221,18 @@ public sealed partial class SalesStore(
         CancellationToken cancellationToken = default, SalesOrderRiskAssessment? riskWarning = null) =>
         UpdateDraftStateCoreAsync(envelope, requestHash, commandName, draftId, mutate, audit, null, cancellationToken, riskWarning);
 
+    public Task<SalesDraftStateResult?> UpdateDraftStateStagedAsync(SalesDraftWriteEnvelope envelope, string requestHash,
+        string commandName, Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit,
+        Func<SalesOrderDraft, int?, System.Data.IDbTransaction, CancellationToken, Task>? withinTransaction,
+        Func<SalesOrderDraft, DateTimeOffset, CancellationToken, Task> stage, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(stage);
+        if (commandName != SalesDraftCommands.RecordCustomerAcceptanceV1)
+            throw new ArgumentException("Yalnız müşteri kabulü aynı kayda eşlik eden satırları taşır.", nameof(commandName));
+        return UpdateDraftStateCoreAsync(envelope, requestHash, commandName, draftId, mutate, audit, withinTransaction,
+            cancellationToken, null, stage);
+    }
+
     public Task<SalesDraftStateResult?> UpdateDraftStateWithTransactionAsync(SalesDraftWriteEnvelope envelope,
         string requestHash, string commandName, Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate,
         SalesDraftStateAudit audit,
@@ -237,7 +249,8 @@ public sealed partial class SalesStore(
     private async Task<SalesDraftStateResult?> UpdateDraftStateCoreAsync(SalesDraftWriteEnvelope envelope, string requestHash,
         string commandName, Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit,
         Func<SalesOrderDraft, int?, System.Data.IDbTransaction, CancellationToken, Task>? withinTransaction,
-        CancellationToken cancellationToken, SalesOrderRiskAssessment? riskWarning)
+        CancellationToken cancellationToken, SalesOrderRiskAssessment? riskWarning,
+        Func<SalesOrderDraft, DateTimeOffset, CancellationToken, Task>? stage = null)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
@@ -415,6 +428,12 @@ public sealed partial class SalesStore(
         {
             // F-018 / plan S1 (FNS-D27(3)): the order's limit warning, appended in the same save as the transition it warned.
             AppendRiskWarning(envelope, companyId, commandName, draft, riskWarning, now);
+        }
+
+        if (stage is not null)
+        {
+            // WP13 / SAT-D471: the owner's rows of the same act (the signed approval) join this save — together or not at all.
+            await stage(draft, now, cancellationToken);
         }
 
         await SaveAsync(cancellationToken);

@@ -75,6 +75,8 @@ public static class SalesModuleExtensions
         // API-20 / API-21: the request use cases share the draft service's fence and owner reads (one scoped instance).
         services.AddScoped<ISalesRequestService>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         services.AddScoped<ISalesQuoteService>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
+        // WP13 / SAT-D471: the signed approval performs the customer acceptance through the SAME draft command.
+        services.AddScoped<ISalesOrderCustomerAcceptanceWithSignedApprovalV1>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         // API-41 / API-42: the Sales reports share the draft service's fence, measurement basis and price-read decision.
         services.AddScoped<ISalesReportService>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         // MOD-03 → Sales: the order's tax reads share the draft service's fence and price-read decision.
@@ -153,8 +155,25 @@ public static class SalesModuleExtensions
         // owner's and is NOT composed here: without it no limit is defined and every discount goes to approval (SAT-D346).
         services.AddScoped<ISalesContractStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         services.AddScoped<ISalesContractService>(CreateContractService);
+        // WP13 (YOL-D11): the order's signed approval records over the Sales store. The Document Vault port is the host's (Api) and
+        // is NOT composed here: without it a record is 503 before anything is written (fail-closed).
+        services.AddScoped<ISalesOrderSignedApprovalStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        services.AddScoped<ISalesOrderSignedApprovalServiceV1>(CreateSignedApprovalService);
         return services;
     }
+
+    // Named for the same architecture guard as the factories below: the company context is resolved, never registered.
+    // A missing Document Vault port stays null: a record fails closed (503), never a guessed document.
+    private static SalesOrderSignedApprovalService CreateSignedApprovalService(IServiceProvider serviceProvider) =>
+        new SalesOrderSignedApprovalService(
+            serviceProvider.GetRequiredService<ICompanyContext>(),
+            serviceProvider.GetRequiredService<ICurrentUser>(),
+            serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
+            serviceProvider.GetRequiredService<ICorrelationContext>(),
+            serviceProvider.GetRequiredService<ISalesOrderSignedApprovalStore>(),
+            serviceProvider.GetRequiredService<TimeProvider>(),
+            serviceProvider.GetService<ISalesOrderSignedApprovalDocumentPortV1>(),
+            serviceProvider.GetService<ISalesOrderCustomerAcceptanceWithSignedApprovalV1>());
 
     // Named for the same architecture guard as the factories below: the company context is resolved, never registered.
     // A missing discount limit source stays null: "sınır tanımlı değil", every discount goes to approval (SAT-D346).

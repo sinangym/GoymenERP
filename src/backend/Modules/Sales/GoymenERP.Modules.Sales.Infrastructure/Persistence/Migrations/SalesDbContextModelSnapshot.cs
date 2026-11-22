@@ -3012,6 +3012,172 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.OrderSignedApprovalAttemptRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CommandName")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("IdempotencyKeyHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Outcome")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RefusalJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.HasKey("CompanyId", "CommandName", "IdempotencyKeyHash");
+
+                    b.HasIndex("CompanyId", "OrderId");
+
+                    b.ToTable("OrderSignedApprovalAttempts", "sales", t =>
+                        {
+                            t.HasTrigger("TR_OrderSignedApprovalAttempts_Guard");
+
+                            t.HasCheckConstraint("CK_OrderSignedApprovalAttempts_Command", "[CommandName] IN (N'sales.order-signed-approval.record.v1', N'sales.order-signed-approval.deactivate.v1')");
+
+                            t.HasCheckConstraint("CK_OrderSignedApprovalAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+
+                            t.HasCheckConstraint("CK_OrderSignedApprovalAttempts_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+
+                            t.HasCheckConstraint("CK_OrderSignedApprovalAttempts_Outcome", "([Outcome] = 1 AND [RefusalJson] IS NULL) OR ([Outcome] = 2 AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
+                        });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.OrderSignedApprovalRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset?>("DeactivatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DeactivatedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int?>("DeactivationKind")
+                        .HasColumnType("int");
+
+                    b.Property<string>("DeactivationReason")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DocumentSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .IsFixedLength()
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<int>("DocumentVersionNo")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("OrderRevision")
+                        .HasColumnType("int");
+
+                    b.Property<long>("OrderVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("State")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("SupersededById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "OrderId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_OrderSignedApprovals_Active")
+                        .HasFilter("[State] = 1");
+
+                    b.HasIndex("CompanyId", "OrderId", "RecordedAtUtc")
+                        .HasDatabaseName("IX_OrderSignedApprovals_Order");
+
+                    b.ToTable("OrderSignedApprovals", "sales", t =>
+                        {
+                            t.HasTrigger("TR_OrderSignedApprovals_Guard");
+
+                            t.HasCheckConstraint("CK_OrderSignedApprovals_Document", "[DocumentId] <> '00000000-0000-0000-0000-000000000000' AND [DocumentVersionNo] >= 1 AND LEN([DocumentSha256]) = 64 AND [DocumentSha256] NOT LIKE '%[^0-9a-f]%' COLLATE Latin1_General_100_BIN2");
+
+                            t.HasCheckConstraint("CK_OrderSignedApprovals_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' AND [OrderRevision] >= 0 AND [OrderVersion] >= 1");
+
+                            t.HasCheckConstraint("CK_OrderSignedApprovals_State", "([State] = 1 AND [Version] = 1 AND [DeactivationKind] IS NULL AND [DeactivatedBy] IS NULL AND [DeactivatedAtUtc] IS NULL AND [DeactivationReason] IS NULL AND [SupersededById] IS NULL) OR ([State] = 2 AND [Version] = 2 AND [DeactivatedBy] IS NOT NULL AND LEN([DeactivatedBy]) > 0 AND [DeactivatedAtUtc] IS NOT NULL AND (([DeactivationKind] = 1 AND [DeactivationReason] IS NOT NULL AND LEN([DeactivationReason]) > 0 AND [SupersededById] IS NULL) OR ([DeactivationKind] = 2 AND [DeactivationReason] IS NULL AND [SupersededById] IS NOT NULL AND [SupersededById] <> [Id])))");
+
+                            t.HasCheckConstraint("CK_OrderSignedApprovals_Text", "LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+                        });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.OrganizationCompanyReference", b =>
                 {
                     b.Property<Guid>("Id")
@@ -5020,6 +5186,38 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.OrganizationCompanyReference", null)
                         .WithMany()
                         .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.OrderSignedApprovalAttemptRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OrderId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.OrderSignedApprovalRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OrderId")
+                        .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

@@ -43,8 +43,24 @@ public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer
 
     /// <summary>The document request and whether its prices are printed (the price-less variant otherwise).</summary>
     public (DocumentPdfRequest Request, bool PricesVisible) Compose(
-        Guid technicalId, SalesOrderDraftReadDetailViewV1 detail, SalesOrderPrintPricingV1 pricing)
+        Guid technicalId, SalesOrderDraftReadDetailViewV1 detail, SalesOrderPrintPricingV1 pricing) =>
+        Compose(technicalId, detail, pricing, SalesOrderPdfVariant.Order);
+
+    /// <summary>
+    /// WP13 (YOL-D11): the same order content as the <see cref="SalesOrderPdfVariant.Order"/> print, laid out as the order contract
+    /// ("sipariş sözleşmesi") sent to the customer for a wet signature: its own title, file-name type and footer, and a closing customer
+    /// approval block with empty name/date/signature lines. The business blocks, prices and totals are the order print's, unchanged;
+    /// no clause text is printed (the contract wording is not decided: NEEDS-SINAN), and nothing is computed here.
+    /// </summary>
+    public (DocumentPdfRequest Request, bool PricesVisible) Compose(
+        Guid technicalId, SalesOrderDraftReadDetailViewV1 detail, SalesOrderPrintPricingV1 pricing, SalesOrderPdfVariant variant)
     {
+        var contract = variant switch
+        {
+            SalesOrderPdfVariant.Order => false,
+            SalesOrderPdfVariant.Contract => true,
+            _ => throw new ArgumentOutOfRangeException(nameof(variant)),
+        };
         ArgumentNullException.ThrowIfNull(detail);
         ArgumentNullException.ThrowIfNull(pricing);
         if (!string.Equals(pricing.Version, detail.Draft.Version, StringComparison.Ordinal))
@@ -73,7 +89,9 @@ public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer
         var lineTotals = pricesVisible ? TotalsByLine(detail, pricing) : null;
         var currency = pricesVisible ? pricing.CurrencyCode! : null;
 
-        var title = Format(draft.CommercialStage == SalesCommercialStageV1.Quote ? "TitleQuote" : "TitleOrder", draft.DocumentNo);
+        var title = contract
+            ? Format("TitleContract", draft.DocumentNo)
+            : Format(draft.CommercialStage == SalesCommercialStageV1.Quote ? "TitleQuote" : "TitleOrder", draft.DocumentNo);
         var blocks = new List<DocumentPdfBlock>
         {
             new DocumentPdfHeading(T("HeadingOrder")),
@@ -108,10 +126,24 @@ public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer
             blocks.Add(new DocumentPdfParagraph(T("PricesNotShown")));
         }
 
+        if (contract)
+        {
+            blocks.Add(new DocumentPdfHeading(T("HeadingContractApproval")));
+            blocks.Add(new DocumentPdfParagraph(Format("ContractApprovalNote", draft.Revision)));
+            blocks.Add(new DocumentPdfFields(
+            [
+                new DocumentPdfField(T("ContractApprovalName"), T("ContractSignatureLine")),
+                new DocumentPdfField(T("ContractApprovalDate"), T("ContractSignatureLine")),
+                new DocumentPdfField(T("ContractApprovalSignature"), T("ContractSignatureLine")),
+            ]));
+        }
+
         var request = new DocumentPdfRequest(
             technicalId,
             new PdfDocumentFileNameParts(
-                pricesVisible ? T("DocumentType") : T("DocumentTypeWithoutPrices"),
+                contract
+                    ? pricesVisible ? T("DocumentTypeContract") : T("DocumentTypeContractWithoutPrices")
+                    : pricesVisible ? T("DocumentType") : T("DocumentTypeWithoutPrices"),
                 draft.DocumentNo,
                 FileNameParty(detail.PartyDisplay),
                 draft.BusinessDate,
@@ -119,7 +151,7 @@ public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer
                 StatusText(draft)),
             title,
             blocks,
-            Format("Footer", draft.DocumentNo, draft.Revision),
+            Format(contract ? "ContractFooter" : "Footer", draft.DocumentNo, draft.Revision),
             T("PageLabel"),
             accepted is null && !IsApprovedRevision(draft) ? T("DraftWatermark") : null);
         return (request, pricesVisible);
@@ -599,4 +631,11 @@ public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer
             ? throw new InvalidOperationException($"The sales order PDF text '{key}' is missing.")
             : text.Value;
     }
+}
+
+/// <summary>WP13: which document the order print lays out — the order itself, or the order contract sent for a signature.</summary>
+public enum SalesOrderPdfVariant
+{
+    Order = 0,
+    Contract = 1,
 }

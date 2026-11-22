@@ -32,6 +32,8 @@ public static class DocumentsRuntimeExtensions
         services.AddScoped<IDocumentOwnerLinkPortV1, FinanceBankStatementImportDocumentOwnerLinkPort>();
         services.AddScoped<IDocumentOwnerLinkPortV1, ManufacturingPlanDocumentOwnerLinkPort>();
         services.AddScoped<IDocumentOwnerLinkPortV1, ManufacturingOrderDocumentOwnerLinkPort>();
+        // WP13 (YOL-D11): the Sales signed approval checks its vault document through this host adapter (actor's own vault read).
+        services.AddScoped<GoymenERP.Modules.Sales.Application.Contracts.ISalesOrderSignedApprovalDocumentPortV1, SalesOrderSignedApprovalDocumentPort>();
         return services.AddDocumentsModule(
             configuration,
             (provider, options) => options.AddInterceptors(provider.GetRequiredService<AuditSaveChangesInterceptor>()),

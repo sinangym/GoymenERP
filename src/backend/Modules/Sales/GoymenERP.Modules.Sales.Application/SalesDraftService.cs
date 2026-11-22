@@ -82,7 +82,8 @@ public sealed partial class SalesDraftService(
     ISalesOrderFutureDemandReductionParticipantV1? futureDemandReduction = null,
     ISalesMarginCostReadPortV1? marginCosts = null,
     ISalesOrderInvoicedQuantityReadPortV1? invoicedQuantities = null,
-    IProductTheoreticalKilogramsPerUnitReadPortV1? kilogramsPerUnitSource = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
+    IProductTheoreticalKilogramsPerUnitReadPortV1? kilogramsPerUnitSource = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService,
+    ISalesOrderCustomerAcceptanceWithSignedApprovalV1
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -501,6 +502,24 @@ public sealed partial class SalesDraftService(
             new SalesDraftStateAudit("sales.order-draft.customer-acceptance-recorded.v1", "RecordCustomerAcceptance",
                 "Satış siparişinin güncel revizyonu için müşteri kabulü kaydedildi"),
             cancellationToken);
+
+    /// <summary>
+    /// WP13 / SAT-D471: the SAME customer acceptance command (permission, persona and re-approval floor fences, expected version,
+    /// idempotency, the accepted revision's demand reduction, attempt and audit), with the signed approval rows staged into the same
+    /// save by <paramref name="stage"/>. A replay of the acceptance key stages nothing (the caller refuses it).
+    /// </summary>
+    public Task<SalesOrderDraftResponse> RecordCustomerAcceptanceWithAsync(Guid draftId, SalesDraftStateCommandRequest request,
+        SalesCommandMetadata metadata, Func<SalesOrderDraft, DateTimeOffset, CancellationToken, Task> stage,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(stage);
+        return StateCommandAsync(draftId, request, metadata, SalesDraftCommands.RecordCustomerAcceptanceV1,
+            bindings.CustomerAcceptancePermission,
+            (draft, actor, expected, now) => draft.RecordCustomerAcceptance(expected, actor, now),
+            new SalesDraftStateAudit("sales.order-draft.customer-acceptance-recorded.v1", "RecordCustomerAcceptance",
+                "İmzalı sipariş sözleşmesiyle müşteri kabulü kaydedildi"),
+            cancellationToken, stage);
+    }
 
     /// <summary>
     /// SAT-D115 (EK14): records the customer's rejection of the current approved revision awaiting acceptance, with a required
@@ -979,7 +998,8 @@ public sealed partial class SalesDraftService(
 
     private async Task<SalesOrderDraftResponse> StateCommandAsync(Guid draftId, SalesDraftStateCommandRequest request,
         SalesCommandMetadata metadata, string commandName, string? permission,
-        Action<SalesOrderDraft, string, long, DateTimeOffset> transition, SalesDraftStateAudit audit, CancellationToken cancellationToken)
+        Action<SalesOrderDraft, string, long, DateTimeOffset> transition, SalesDraftStateAudit audit, CancellationToken cancellationToken,
+        Func<SalesOrderDraft, DateTimeOffset, CancellationToken, Task>? stage = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(metadata);
@@ -1083,8 +1103,8 @@ public sealed partial class SalesDraftService(
             };
             if (CompletesReducedRevision(current, expectedVersion, commandName))
             {
-                result = await store.UpdateDraftStateWithTransactionAsync(envelope, requestHash, commandName, draftId,
-                    mutate, audit, async (draft, previouslyAcceptedRevision, transaction, token) =>
+                Func<SalesOrderDraft, int?, System.Data.IDbTransaction, CancellationToken, Task> within =
+                    async (draft, previouslyAcceptedRevision, transaction, token) =>
                     {
                         scope = await RequireStillAsync(scope, permission, token);
                         var reductions = ReducedRevisionLines(draft, previouslyAcceptedRevision);
@@ -1112,11 +1132,19 @@ public sealed partial class SalesDraftService(
                             new SalesOrderFutureDemandReductionRequestV1(draft.Id, draft.Revision, lines,
                                 SalesOrderFutureDemandReductionTextsV1.AcceptedRevision, envelope), token);
                         scope = await RequireStillAsync(scope, permission, token);
-                    }, cancellationToken, riskWarning);
+                    };
+                result = stage is null
+                    ? await store.UpdateDraftStateWithTransactionAsync(envelope, requestHash, commandName, draftId,
+                        mutate, audit, within, cancellationToken, riskWarning)
+                    : await store.UpdateDraftStateStagedAsync(envelope, requestHash, commandName, draftId, mutate, audit, within,
+                        stage, cancellationToken);
             }
             else
-                result = await store.UpdateDraftStateAsync(envelope, requestHash, commandName, draftId,
-                    mutate, audit, cancellationToken, riskWarning);
+                result = stage is null
+                    ? await store.UpdateDraftStateAsync(envelope, requestHash, commandName, draftId,
+                        mutate, audit, cancellationToken, riskWarning)
+                    : await store.UpdateDraftStateStagedAsync(envelope, requestHash, commandName, draftId, mutate, audit, null,
+                        stage, cancellationToken);
         }
         catch (SalesFutureAllocationReleaseException exception) when (exception.Terminal)
         {

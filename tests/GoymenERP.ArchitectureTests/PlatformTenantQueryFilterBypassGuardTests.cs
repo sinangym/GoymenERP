@@ -6193,6 +6193,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // change without a reviewed fingerprint drift. Both files must be pinned.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/SalesPieceLineKilogramGuards.cs"] =
                     new("814a772b365e773df54588b32ad9ce826b73cb60390fcedd144016c7e5fb7d50", new Dictionary<string, int>(StringComparer.Ordinal)),
+                // WP13 (YOL-D11); K3 review pending. Up adds TR_OrderSignedApprovals_Guard (facts never change, Active -> Passive once, no
+                // delete; 52261) and TR_OrderSignedApprovalAttempts_Guard (append-only; 52262); Down refuses (52260) while a signed approval
+                // or attempt exists (forward fix). 3 lexical Sql call(s); the value is the guard output for this file.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261122201322_AddSalesOrderSignedApprovals.cs"] =
+                    new("030971daa0ffa41e827d91489074559373c28c338be434766723474483a505a6", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 3 }),
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/SalesOfficialInvoiceCancellationGuards.cs"] =
                     new("11d2eb4d9eafee146372461936adffe7f64514fb463a500a16230ff1e26757ff", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 7 }),
                 // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Operator two-factor recovery security history exists; AddOperatorTwoFactorRecoverySecurityEvents requires a forward fix. 1 lexical Sql call(s).

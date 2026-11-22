@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <data name="DocumentType" xml:space="preserve"><value>Satın Alma Siparişi</value></data>
+  <data name="DocumentTypeWithoutPrices" xml:space="preserve"><value>Satın Alma Siparişi Fiyatsız</value></data>
+  <data name="Title" xml:space="preserve"><value>Satın Alma Siparişi {0}</value></data>
+  <data name="Footer" xml:space="preserve"><value>{0} · sürüm {1} · Bilgi amaçlı teknik çıktıdır; resmî belge değildir.</value></data>
+  <data name="DraftWatermark" xml:space="preserve"><value>TASLAK</value></data>
+  <data name="PageLabel" xml:space="preserve"><value>Sayfa {0} / {1}</value></data>
+  <data name="HeadingOrder" xml:space="preserve"><value>Sipariş bilgileri</value></data>
+  <data name="HeadingLines" xml:space="preserve"><value>Sipariş satırları</value></data>
+  <data name="HeadingTotals" xml:space="preserve"><value>Toplamlar</value></data>
+  <data name="NoLines" xml:space="preserve"><value>Siparişte satır yok.</value></data>
+  <data name="PricesNotShown" xml:space="preserve"><value>Fiyat bilgileri bu belgede yer almaz.</value></data>
+  <data name="FieldDocumentNo" xml:space="preserve"><value>Belge no</value></data>
+  <data name="FieldStatus" xml:space="preserve"><value>Durum</value></data>
+  <data name="FieldSupplier" xml:space="preserve"><value>Tedarikçi</value></data>
+  <data name="FieldEffectiveOn" xml:space="preserve"><value>Sipariş tarihi</value></data>
+  <data name="FieldRevision" xml:space="preserve"><value>Sürüm</value></data>
+  <data name="FieldCurrency" xml:space="preserve"><value>Para birimi</value></data>
+  <data name="FieldCancellation" xml:space="preserve"><value>İptal</value></data>
+  <data name="Supplier" xml:space="preserve"><value>{0} — {1}</value></data>
+  <data name="SupplierWithTradeName" xml:space="preserve"><value>{0} — {1} ({2})</value></data>
+  <data name="Cancellation" xml:space="preserve"><value>{0} · {1} · {2}</value></data>
+  <data name="ColumnLineNo" xml:space="preserve"><value>Sıra</value></data>
+  <data name="ColumnProductCode" xml:space="preserve"><value>Ürün kodu</value></data>
+  <data name="ColumnProductName" xml:space="preserve"><value>Ürün adı</value></data>
+  <data name="ColumnQuantity" xml:space="preserve"><value>Miktar</value></data>
+  <data name="ColumnUnit" xml:space="preserve"><value>Birim</value></data>
+  <data name="ColumnDelivery" xml:space="preserve"><value>Teslim planı</value></data>
+  <data name="ColumnUnitPrice" xml:space="preserve"><value>Birim fiyat</value></data>
+  <data name="ColumnDiscount" xml:space="preserve"><value>İskonto</value></data>
+  <data name="ColumnNetAmount" xml:space="preserve"><value>Net tutar</value></data>
+  <data name="ColumnVatAmount" xml:space="preserve"><value>KDV</value></data>
+  <data name="NoDeliverySchedule" xml:space="preserve"><value>Teslim planı yok</value></data>
+  <data name="DeliverySlice" xml:space="preserve"><value>{0}: {1}</value></data>
+  <data name="UnitPrice" xml:space="preserve"><value>{0} {1} / {2}</value></data>
+  <data name="Percent" xml:space="preserve"><value>%{0}</value></data>
+  <data name="Amount" xml:space="preserve"><value>{0} {1}</value></data>
+  <data name="PricePending" xml:space="preserve"><value>Fiyat bekliyor</value></data>
+  <data name="TotalNet" xml:space="preserve"><value>Net toplam</value></data>
+  <data name="TotalVat" xml:space="preserve"><value>KDV toplamı</value></data>
+  <data name="TotalGross" xml:space="preserve"><value>KDV dahil toplam</value></data>
+  <data name="TotalWithheld" xml:space="preserve"><value>Tevkif edilen KDV toplamı</value></data>
+  <data name="TotalPayable" xml:space="preserve"><value>Ödenecek tutar</value></data>
+  <data name="StateComputed" xml:space="preserve"><value>Hesaplandı</value></data>
+  <data name="StateIncomplete" xml:space="preserve"><value>Hesaplanamadı: fiyatı olmayan satır var</value></data>
+  <data name="StateAmountOutOfRange" xml:space="preserve"><value>Hesaplanamadı: tutar hesaplanabilir aralığın dışında</value></data>
+  <data name="StateUnpriced" xml:space="preserve"><value>Fiyat bekliyor</value></data>
+  <data name="StateNotComputable" xml:space="preserve"><value>Hesaplanamadı: vergi kaynağı yok</value></data>
+  <data name="StateNotApplied" xml:space="preserve"><value>Tevkifat yok</value></data>
+  <data name="StateNotComputed" xml:space="preserve"><value>Hesaplanamadı: matrah eksik</value></data>
+  <data name="StateWithheld" xml:space="preserve"><value>Gösterilmez</value></data>
+  <data name="StatusDraft" xml:space="preserve"><value>Taslak</value></data>
+  <data name="StatusApproved" xml:space="preserve"><value>Onaylı</value></data>
+  <data name="StatusCancelled" xml:space="preserve"><value>İptal</value></data>
+</root>
