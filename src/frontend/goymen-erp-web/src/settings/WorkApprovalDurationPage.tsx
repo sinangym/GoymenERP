@@ -3,7 +3,8 @@
  * versioned company policy on `settings.work-approval-duration.manage`. WP1 D3: a class never recorded shows the server's
  * decided YOL-D18 default (version 0); the editor never preselects a value. Each new version is one command with an
  * Idempotency-Key; an unknown outcome keeps the same key and payload. YOL-D22 adds the yearly official holiday/eve calendar
- * section (`WorkHolidayCalendarSection`); WP1 adds the read-only versioned approval rule table (`WorkApprovalRulesSection`).
+ * section (`WorkHolidayCalendarSection`); WP1 adds the read-only versioned approval rule table (`WorkApprovalRulesSection`); WP2 (YOL-D25) adds the daily digest
+ * times (`WorkDigestScheduleSection`).
  */
 
 import { useState, type FormEvent } from 'react'
@@ -27,6 +28,7 @@ import {
 import { WORK_APPROVAL_DURATION_TEXT as T } from './workApprovalDurationText'
 import { WorkHolidayCalendarSection } from './WorkHolidayCalendarSection'
 import { WorkApprovalRulesSection } from './WorkApprovalRulesSection'
+import { WorkDigestScheduleSection } from './WorkDigestScheduleSection'
 import styles from './settings.module.css'
 
 const unitOf = (key: WorkApprovalDurationClassKey) => key === 'hours' ? T.hoursUnit : T.businessDaysUnit
@@ -68,6 +70,9 @@ function Screen({ namespace }: { readonly namespace: string | null }) {
       : null}
     {ready && company !== null
       ? <WorkHolidayCalendarSection companyId={company} namespace={namespace} routeEntryGeneration={shell.routeEntryGeneration} />
+      : null}
+    {ready && company !== null
+      ? <WorkDigestScheduleSection companyId={company} namespace={namespace} routeEntryGeneration={shell.routeEntryGeneration} />
       : null}
   </Frame>
 }
