@@ -798,7 +798,10 @@ public sealed partial class SalesInvoiceService(
             // A kg line's invoiced quantity is its scale kg, so its theoretical and actual kg are that quantity (TK4).
             var theoretical = line.Share.CarriesKilogramInformation ? line.Share.TheoreticalKilograms : line.Share.Quantity;
             var actual = line.Share.CarriesKilogramInformation ? line.Share.ActualKilograms : line.Share.Quantity;
-            return (line, amount: (decimal?)line.Amounts.Net.Amount, theoretical, actual);
+            // A maturity surcharge is inside the invoice net and no pre-surcharge net is kept: such a line fails closed on its
+            // kg figures and so does the document (K18 / N2), the same rule as the order read (SAT-D465 slice pending).
+            var surcharged = HasMaturitySurcharge(line.Share.Commercial);
+            return (line, amount: surcharged ? null : (decimal?)line.Amounts.Net.Amount, theoretical, actual);
         }).ToList();
         return new SalesInvoiceKilogramPricesV1(SalesKilogramPriceStatesV1.Computed,
             [.. lines.Select(item => new SalesInvoiceLineKilogramPricesV1(item.line.Id,
@@ -807,6 +810,12 @@ public sealed partial class SalesInvoiceService(
             SalesDraftService.View(SalesKilogramPriceCalculator.Document([.. lines.Select(item => new SalesKilogramPriceLine(item.amount, item.theoretical))])),
             SalesDraftService.View(SalesKilogramPriceCalculator.Document([.. lines.Select(item => new SalesKilogramPriceLine(item.amount, item.actual))])));
     }
+
+    private static bool HasMaturitySurcharge(CommercialDraftFields commercial) =>
+        IsNonZero(commercial.SurchargePercent) || IsNonZero(commercial.SurchargeAmount);
+
+    private static bool IsNonZero(string? text) =>
+        text is not null && (!decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out var value) || value != 0m);
 
     private static SalesInvoiceDecisionView? DecisionView(SalesInvoiceDecisionFacts facts) => facts == SalesInvoiceDecisionFacts.None
         ? null
@@ -963,7 +972,7 @@ public sealed partial class SalesInvoiceService(
     /// <summary>AK-4: whether an archived basis line's unit is the kilogram — the order line's own Settings answer for that unit.</summary>
     private static bool IsKilogramUnit(SalesOrderDraft order, Guid lineId, Guid unitId) =>
         order.Lines.Concat(order.RemovedLines).FirstOrDefault(line => line.Id == lineId && line.OrderUnit.UnitId == unitId)
-            ?.OrderUnit.IsKilogram ?? true;
+            ?.OrderUnit.IsKilogram ?? false;
 
     private sealed record InvoiceBasis(int Revision, Guid PartyId, Guid CompanyAccountId, Guid CurrencyId, Guid MoneyProfileId,
         string MoneyProfileVersion, int MoneyScale, SalesDueTerms? DueTerms, SalesBuyerTax? BuyerTax,

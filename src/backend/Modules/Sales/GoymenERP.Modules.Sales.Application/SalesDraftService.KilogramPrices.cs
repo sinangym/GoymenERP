@@ -87,13 +87,14 @@ public sealed partial class SalesDraftService
         foreach (var line in draft.Lines.OrderBy(item => item.LineNo))
         {
             var total = totals.Lines.Single(item => item.LineId == line.Id);
-            // TK1: the KDV-excluded line net after the line discount. A maturity surcharge is not a goods amount: such a line
-            // keeps its line figure, but the document figure fails closed (N2: vade farkı open).
-            var amount = total.NetAmount?.Amount;
+            // TK1: the KDV-excluded line net after the line discount. A maturity surcharge is not a goods amount (SAT-D465 keeps it
+            // out of the kg price) and the invoice amounts carry no pre-surcharge net, so until the SAT-D465 slice and its golden
+            // (EK2) land, a surcharged line fails closed on every figure: line and document, theoretical and actual (K18 / N2).
             var surcharged = total.NetAmountBeforeSurcharge is { } before && total.NetAmount is { } net && before.Amount != net.Amount;
+            var amount = surcharged ? null : total.NetAmount?.Amount;
             var perUnit = line.OrderUnit.IsKilogram ? (decimal?)1m : draft.KilogramsPerUnitOf(line.Id)?.KilogramsPerUnit;
             var theoreticalKg = TheoreticalKg(line.Quantity.Value, perUnit);
-            theoreticalDocument.Add(new(surcharged ? null : amount, theoreticalKg));
+            theoreticalDocument.Add(new(amount, theoreticalKg));
 
             var invoiced = activeLines.Where(item => item.Share.SalesOrderLineId == line.Id).ToList();
             var invoicedQuantity = invoiced.Sum(item => item.Share.Quantity);
@@ -102,7 +103,8 @@ public sealed partial class SalesDraftService
             decimal? actualKg = invoiced.Count == 0 || invoiced.Any(item => !line.OrderUnit.IsKilogram && item.Share.ActualKilograms is null)
                 ? null
                 : invoiced.Sum(item => line.OrderUnit.IsKilogram ? item.Share.Quantity : item.Share.ActualKilograms!.Value);
-            if (invoiced.Count > 0) actualDocument.Add(new(invoicedAmount, actualKg));
+            var priceAmount = surcharged ? null : invoicedAmount;
+            if (invoiced.Count > 0) actualDocument.Add(new(priceAmount, actualKg));
             var invoicedTheoreticalKg = invoiced.Count == 0 ? null : TheoreticalKg(invoicedQuantity, perUnit);
             decimal? difference = actualKg is { } a && invoicedTheoreticalKg is { } t ? a - t : null;
             // TK8: signed deviation = (actual − theoretical) / theoretical × 100, shown once rounded to 0,01 (URN-D7 display).
@@ -114,7 +116,7 @@ public sealed partial class SalesDraftService
                 View(SalesKilogramPriceCalculator.Line(amount, theoreticalKg, SalesKilogramPriceState.TheoreticalKgUnavailable)),
                 KgText(invoicedQuantity)!, invoicedAmount is { } value ? value.ToString("0.00", CultureInfo.InvariantCulture) : null,
                 KgText(actualKg),
-                View(SalesKilogramPriceCalculator.Line(invoicedAmount, actualKg, SalesKilogramPriceState.WeighedKgUnavailable)),
+                View(SalesKilogramPriceCalculator.Line(priceAmount, actualKg, SalesKilogramPriceState.WeighedKgUnavailable)),
                 difference is { } signed ? KgText(signed) : null, deviation));
         }
 

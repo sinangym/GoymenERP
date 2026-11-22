@@ -6185,6 +6185,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // kg/unit or invoice kg information exists, then restores the previous trigger body verbatim (forward fix). 3 lexical Sql call(s).
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261122101114_AddSalesPieceLineKilograms.cs"] =
                     new("9f7ecd9f9a8fbcdd66a2be4ef90401b9214628a1d37ee988bd9aa37cdb189a84", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 3 }),
+                // Tren-1 AK-4/AK-5 (K3-B P2-3): the trigger bodies AddSalesPieceLineKilograms runs through its three lexical Sql calls
+                // (ALTER TRIGGER [sales].[TR_InvoiceLines_Guard], THROW 52051). No Sql call of its own; pinned so the trigger text cannot
+                // change without a reviewed fingerprint drift. Both files must be pinned.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/SalesPieceLineKilogramGuards.cs"] =
+                    new("814a772b365e773df54588b32ad9ce826b73cb60390fcedd144016c7e5fb7d50", new Dictionary<string, int>(StringComparer.Ordinal)),
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/SalesOfficialInvoiceCancellationGuards.cs"] =
                     new("11d2eb4d9eafee146372461936adffe7f64514fb463a500a16230ff1e26757ff", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 7 }),
                 // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Operator two-factor recovery security history exists; AddOperatorTwoFactorRecoverySecurityEvents requires a forward fix. 1 lexical Sql call(s).

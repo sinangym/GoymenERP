@@ -179,6 +179,33 @@ public sealed partial class SalesDraftServiceTests
             (line.InvoicedQuantity, line.InvoicedAmount, line.ActualPrice.Value));
     }
 
+    [Fact]
+    public async Task SAT_D465_pending_a_surcharged_line_hides_every_kg_price_on_the_order_and_on_the_invoice()
+    {
+        // K18 / N2: a maturity surcharge ("vade farkı") is not a goods amount (SAT-D465) and the invoice keeps no pre-surcharge
+        // net. Until the SAT-D465 slice and its golden (EK2) land, every kg figure of such a line and of its document fails closed.
+        var invoicing = await PieceInvoiceWorldAsync(40m, 495m, 500.16m, surchargePercent: "2");
+        var invoice = (await invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-kgp-surcharge"))).Invoice;
+        var draft = Assert.Single(invoicing.World.Store.Drafts);
+
+        var read = SalesDraftService.KilogramPrices(draft, [Finalized(Assert.Single(invoicing.Invoices.Stored.Values))]);
+        var line = Assert.Single(read.Lines!);
+        Assert.Equal(("AmountUnavailable", null, "AmountUnavailable", null),
+            (line.TheoreticalPrice.State, line.TheoreticalPrice.Value, line.ActualPrice.State, line.ActualPrice.Value));
+        Assert.NotNull(line.InvoicedAmount); // the invoiced amount itself is a fact and stays shown
+        Assert.Null(read.DocumentTheoreticalPrice!.Value);
+        Assert.Null(read.DocumentActualPrice!.Value);
+        Assert.NotEqual("Shown", read.DocumentTheoreticalPrice.State);
+        Assert.NotEqual("Shown", read.DocumentActualPrice.State);
+
+        var block = invoice.KilogramPrices!;
+        var invoiceLine = Assert.Single(block.Lines!);
+        Assert.Equal(("AmountUnavailable", null, "AmountUnavailable", null), (invoiceLine.TheoreticalPrice.State,
+            invoiceLine.TheoreticalPrice.Value, invoiceLine.ActualPrice.State, invoiceLine.ActualPrice.Value));
+        Assert.Null(block.DocumentTheoreticalPrice!.Value);
+        Assert.Null(block.DocumentActualPrice!.Value);
+    }
+
     private static SalesInvoice Finalized(SalesInvoice invoice) => InState(invoice, SalesInvoiceState.Finalized);
 
     /// <summary>The same stored invoice facts restored in another lifecycle state (with the decision facts that state needs).</summary>
