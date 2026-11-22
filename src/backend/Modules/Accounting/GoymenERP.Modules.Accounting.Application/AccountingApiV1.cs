@@ -113,11 +113,14 @@ public static class AccountingPermissionManifestV1
     /// <summary>Ö5: closing an open period is one authorised act.</summary>
     public const string PeriodsClose = "accounting.periods.close";
 
+    /// <summary>ROL-D12: approving the reopening of a closed period — its own name, apart from the opening approval.</summary>
+    public const string PeriodsReopen = "accounting.periods.reopen";
+
     public const string JournalsRead = "accounting.journals.read";
     public const string PostingQueuesRead = "accounting.posting-queues.read";
 
     public static IReadOnlyList<string> All { get; } =
-        [PeriodsRead, PeriodsPropose, PeriodsApprove, PeriodsClose, JournalsRead, PostingQueuesRead];
+        [PeriodsRead, PeriodsPropose, PeriodsApprove, PeriodsClose, PeriodsReopen, JournalsRead, PostingQueuesRead];
 }
 
 /// <summary>The versioned command names of the ADR-011 log: one key is one attempt per command.</summary>

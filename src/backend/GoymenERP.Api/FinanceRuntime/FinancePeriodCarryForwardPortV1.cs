@@ -39,7 +39,7 @@ public sealed class FinancePeriodCarryForwardPortV1(AccountingDbContext accounti
         CancellationToken cancellationToken)
     {
         await using var session = await EnlistAsync(request.CompanyId, request.ActorId,
-            AccountingPermissionManifestV1.PeriodsApprove, metadata, cancellationToken);
+            AccountingPermissionManifestV1.PeriodsReopen, metadata, cancellationToken); // ROL-D12
         try
         {
             await session.ReverseAsync(Context(request.CompanyId, metadata), new FinancePeriodCarryReversalV1(request.ReopeningId, request.CompanyId,

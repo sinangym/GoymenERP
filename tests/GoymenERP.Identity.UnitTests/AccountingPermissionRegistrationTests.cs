@@ -27,6 +27,7 @@ public sealed class AccountingPermissionRegistrationTests
         ErpPermissions.AccountingPeriodsPropose,
         ErpPermissions.AccountingPeriodsApprove,
         ErpPermissions.AccountingPeriodsClose,
+        ErpPermissions.AccountingPeriodsReopen,
         ErpPermissions.AccountingJournalsRead,
         ErpPermissions.AccountingPostingQueuesRead,
         ErpPermissions.AccountingNormalJournalDraftCreate,
@@ -43,6 +44,7 @@ public sealed class AccountingPermissionRegistrationTests
         Assert.Equal("accounting.periods.propose", ErpPermissions.AccountingPeriodsPropose);
         Assert.Equal("accounting.periods.approve", ErpPermissions.AccountingPeriodsApprove);
         Assert.Equal("accounting.periods.close", ErpPermissions.AccountingPeriodsClose);
+        Assert.Equal("accounting.periods.reopen", ErpPermissions.AccountingPeriodsReopen);
         Assert.Equal("accounting.journals.read", ErpPermissions.AccountingJournalsRead);
         Assert.Equal("accounting.posting-queues.read", ErpPermissions.AccountingPostingQueuesRead);
         Assert.Equal("accounting.normal-journal.draft.create", ErpPermissions.AccountingNormalJournalDraftCreate);

@@ -43,8 +43,12 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     /// 1.4 (FIN-S16, M-05 Hesap Planı): the declaration set changed again — the staged account plan route under its
     /// own narrow read name (<see cref="AccountPlanPermissionNamesV1.Read"/>) is declared.
     /// </para>
+    /// <para>
+    /// 1.11 (WP5, ROL-D12): the declaration set changed — the period reopening approval is its own control of the period
+    /// list under the separate <see cref="AccountingPermissionManifestV1.PeriodsReopen"/> name (registered, not granted).
+    /// </para>
     /// </summary>
-    public const string OwnerContractVersion = "1.10";
+    public const string OwnerContractVersion = "1.11";
 
     public const string InvoicedShipmentPrepareCapabilityId = "accounting.invoiced-shipment-costs.prepare";
     public const string InvoicedShipmentPrepareRoutePath = "/muhasebe/sevk-smm-hazirla";
@@ -93,6 +97,7 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     public const string PeriodProposeRoutePath = "/muhasebe/donemler/yeni";
     public const string PeriodApproveCapabilityId = "accounting.periods.approve";
     public const string PeriodCloseCapabilityId = "accounting.periods.close";
+    public const string PeriodReopenCapabilityId = "accounting.periods.reopen";
 
     public const string JournalListCapabilityId = "accounting.journals.list";
     public const string JournalListRouteId = "accounting.journals";
@@ -187,6 +192,13 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
                 CapabilityId = PeriodCloseCapabilityId,
                 ParentCapabilityId = PeriodListCapabilityId,
                 RequiredPermissions = [AccountingPermissionManifestV1.PeriodsRead, AccountingPermissionManifestV1.PeriodsClose],
+            },
+            // ROL-D12: approving a period reopening is a control on the list too, under its own name.
+            periods with
+            {
+                CapabilityId = PeriodReopenCapabilityId,
+                ParentCapabilityId = PeriodListCapabilityId,
+                RequiredPermissions = [AccountingPermissionManifestV1.PeriodsRead, AccountingPermissionManifestV1.PeriodsReopen],
             },
             Declaration(JournalListCapabilityId, JournalListRouteId, JournalListRoutePath, JournalListScreenId,
                 ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.JournalsRead], available: true),

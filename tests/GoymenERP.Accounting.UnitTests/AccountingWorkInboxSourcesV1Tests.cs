@@ -19,12 +19,11 @@ namespace GoymenERP.Accounting.UnitTests;
 public sealed class AccountingWorkInboxSourcesV1Tests
 {
     // ROL-D12: reopening is approved under its own permission (not yet in the Accounting manifest).
-    private const string PeriodsReopen = "accounting.periods.reopen";
 
     public static TheoryData<string, string> Kinds { get; } = new()
     {
         { AccountingPeriodOpeningWorkInboxSourceV1.KindName, AccountingPermissionManifestV1.PeriodsApprove },
-        { AccountingPeriodReopeningWorkInboxSourceV1.KindName, PeriodsReopen },
+        { AccountingPeriodReopeningWorkInboxSourceV1.KindName, AccountingPermissionManifestV1.PeriodsReopen },
         { AccountingNormalJournalDraftWorkInboxSourceV1.KindName, NormalJournalPermissionNamesV1.DraftApprove },
         { AccountingJournalReversalWorkInboxSourceV1.KindName, AccountingJournalReversalPermissionNamesV1.Approve },
         { AccountingManufacturingCostDifferenceWorkInboxSourceV1.KindName, AccountingJournalReversalPermissionNamesV1.Approve },

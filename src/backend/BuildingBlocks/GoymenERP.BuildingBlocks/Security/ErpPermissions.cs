@@ -1370,6 +1370,15 @@ public static class ErpPermissions
     /// <inheritdoc cref="AccountingPeriodsRead"/>
     public const string AccountingPeriodsClose = "accounting.periods.close";
 
+    /// <summary>
+    /// ROL-D12 (SINAN_KARARLARI_2026-11-22_ROL_YETKI): approving the reopening of a closed period is its own permission,
+    /// apart from <see cref="AccountingPeriodsApprove"/> (the opening approval). The decision recommends it for the General
+    /// Manager only; that recommendation is not applied here. Registered, not granted: no role, seed or user receives it
+    /// (grant is a human gate). The proposer still may not approve their own proposal (the store enforces it). Company-wide
+    /// only. Not Critical.
+    /// </summary>
+    public const string AccountingPeriodsReopen = "accounting.periods.reopen";
+
     /// <inheritdoc cref="AccountingPeriodsRead"/>
     public const string AccountingJournalsRead = "accounting.journals.read";
 
@@ -1919,6 +1928,7 @@ public static class ErpPermissions
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
             AccountingPeriodsClose,
+            AccountingPeriodsReopen,
             AccountingJournalsRead,
             AccountingPostingQueuesRead,
             AccountingNormalJournalDraftCreate,
@@ -2233,6 +2243,7 @@ public static class ErpPermissions
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
             AccountingPeriodsClose,
+            AccountingPeriodsReopen,
             AccountingJournalsRead,
             AccountingPostingQueuesRead,
             AccountingNormalJournalDraftCreate,

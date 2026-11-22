@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Work;
+using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Accounting.Domain.Periods;
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -24,10 +25,6 @@ internal sealed class AccountingPeriodReopeningWorkInboxSourceV1(
     public const string KindName = "accounting.period-reopening.v1";
     public const string ScreenPath = "/muhasebe/donemler";
 
-    // ROL-D12: the separate reopening approval permission. AccountingPermissionManifestV1 does not name it yet; switch to
-    // AccountingPermissionManifestV1.PeriodsReopen once it is registered.
-    private const string PeriodsReopenPermission = "accounting.periods.reopen";
-
     /// <summary>A closed period is reopened (its carry voucher reversed) only with a different person's approval.</summary>
     public const string ReopeningRequestedRule = "accounting.period-reopening-requested";
 
@@ -38,7 +35,7 @@ internal sealed class AccountingPeriodReopeningWorkInboxSourceV1(
 
     public string Kind => KindName;
 
-    public string ApproverPermission => PeriodsReopenPermission;
+    public string ApproverPermission => AccountingPermissionManifestV1.PeriodsReopen;
 
     public Task<WorkInboxSourceResultV1> ListPendingAsync(
         WorkInboxSourceContextV1 context,
