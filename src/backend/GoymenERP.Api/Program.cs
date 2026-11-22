@@ -19,6 +19,7 @@ using GoymenERP.Api.Security;
 using GoymenERP.Api.Shell;
 using GoymenERP.Api.Startup;
 using GoymenERP.Api.WorkRuntime;
+using GoymenERP.Api.ReportingRuntime;
 using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.OpenApi;
@@ -67,6 +68,7 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using GoymenERP.Modules.Settings.Infrastructure;
 using GoymenERP.Modules.Settings.Infrastructure.Shell;
 using GoymenERP.Modules.Work.Infrastructure;
+using GoymenERP.Modules.Reporting.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -511,6 +513,14 @@ builder.Services.AddWorkModule(
 builder.Services.AddWorkOutboxDispatcher(builder.Configuration);
 // W1-C: notes, mentions, tasks and the collaboration inbox; the scheduler stays off unless Work:CollaborationScheduler:Enabled.
 builder.Services.AddWorkCollaborationHostV1(builder.Configuration);
+// WP14 (DALGA_PLANI_v2 1.15, YOL-D13, ROL-D13/D15): the report centre. Its numbers come from owner read ports through host
+// adapters; Reporting stores only saved views, export records and command attempts. No permission is granted.
+builder.Services.AddReportingModule(
+    builder.Configuration,
+    (services, options) => options.AddInterceptors(
+        services.GetRequiredService<AuditSaveChangesInterceptor>()));
+builder.Services.AddInventoryStockAgingReadPort();
+builder.Services.AddReportingRuntimeV1();
 // STK-S27 (LOJ-D19): Logistics's definite-shipment outbox is the dispatcher source "logistics" (registered, not enabled).
 builder.Services.AddLogisticsDefiniteShipmentOutbox();
 // SAT-S10 (LOJ-D19, SAT-D285): the Sales usage mirror is the inbox consumer of that source (registered after it, not enabled).
@@ -626,6 +636,7 @@ app.MapWorkQueueEndpoints();
 app.MapWorkInboxEndpoints();
 app.MapWorkNotificationEndpoints();
 app.MapWorkCollaborationEndpoints();
+app.MapReportingEndpoints();
 app.MapSalesEndpoints();
 app.MapSalesProductCandidateEndpoints();
 app.MapInventoryEndpoints();
@@ -707,6 +718,8 @@ if (!isOpenApiDocumentGeneration
     await app.Services.InitializeAccountingModuleAsync();
     // After Organization: Work's tables are tenant-scoped by CompanyId.
     await app.Services.InitializeWorkModuleAsync();
+    // After Organization: the report centre's tables are tenant-scoped by CompanyId.
+    await app.Services.InitializeReportingModuleAsync();
     // After Organization: the document vault's foreign keys reference its tables.
     await app.Services.InitializeDocumentsModuleAsync();
 }
