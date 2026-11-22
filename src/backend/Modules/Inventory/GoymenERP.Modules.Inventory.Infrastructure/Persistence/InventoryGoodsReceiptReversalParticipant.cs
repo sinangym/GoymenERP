@@ -406,7 +406,14 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
     private void ReleasePhysical(AllocationRow row, decimal kg, string reason, InventoryCommandMetadata metadata)
     {
         var before = row.RemainingKg; var version = row.Version;
-        if (kg == before) { row.RemainingKg = 0m; row.Status = (int)StockAllocationStatus.Released; row.ReleasedAtUtc = clock.GetUtcNow(); row.ReleaseReason = reason; }
+        // KLN-D119 / SAT-D434 (AK-4b): a piece-holding allocation released in full holds no pieces any more. How many
+        // pieces a PARTIAL kilogram release gives back has no rule (NEEDS-SINAN), so it fails closed before any write.
+        if (kg != before && row.RemainingPieces is not null) throw Error(422, Codes.PartialQuantityNotRepresentable);
+        if (kg == before)
+        {
+            row.RemainingKg = 0m; row.Status = (int)StockAllocationStatus.Released; row.ReleasedAtUtc = clock.GetUtcNow(); row.ReleaseReason = reason;
+            if (row.RemainingPieces is not null) row.RemainingPieces = 0;
+        }
         else { row.RemainingKg -= kg; row.AllocatedKg -= kg; }
         row.Version = checked(row.Version + 1); row.UpdatedAtUtc = clock.GetUtcNow();
         if (row.RemainingKg > 0m)

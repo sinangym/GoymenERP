@@ -74,4 +74,38 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         Assert.Equal(52052, refused.Number);
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.LoadingShares WHERE QuantityKg IS NOT NULL"));
     }
+
+    [SqlServerFact]
+    public async Task AK4_a_piece_line_share_without_physical_kilograms_is_an_inconsistent_store_not_a_rule_refusal()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        Guid id;
+        var load = Guid.NewGuid();
+        await using (var a = run.Store(CompanyA))
+        {
+            var stored = (await a.Store.StoreInstructionAsync(run.Envelope("piece-legacy-create"), Hash("piece-legacy-create"), Day, () =>
+            {
+                var instruction = LoadingInstruction.Create(Guid.NewGuid(), owners.Company, owners.Party, owners.Account, T0);
+                instruction.AddLine(instruction.Version, Guid.NewGuid(), new SourceOrderLineRef(owners.Order, Guid.NewGuid(), 0), Guid.NewGuid(),
+                    PieceUnit, null, Quantity.Of(100m, QuantityUnit.Piece), T0);
+                return instruction;
+            })).Instruction.Instruction;
+            id = stored.Id;
+            var line = stored.Lines[0].Id;
+            await a.Store.MutateInstructionAsync(run.Envelope("piece-legacy-issue"), Hash("piece-legacy-issue"), LogisticsCommands.IssueV1, id,
+                (instruction, now) => instruction.Issue(2, now), Issued);
+            await a.Store.MutateInstructionAsync(run.Envelope("piece-legacy-load"), Hash("piece-legacy-load"), LogisticsCommands.RecordLoadV1, id,
+                (instruction, now) => instruction.RecordLoad(3, load, line, Quantity.Of(40m, QuantityUnit.Piece), MeasurementKind.Measured,
+                    now, Kg(495m)), Loaded);
+        }
+
+        // A piece-line load row without its kg (no command writes one) is never rebuilt with a guessed kg.
+        await run.ExecuteAsync("UPDATE logistics.LoadingShares SET QuantityKg = NULL WHERE ShareId = @id", ("@id", load));
+        await using (var a = run.Store(CompanyA))
+        {
+            var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => a.Store.FindInstructionAsync(id));
+            Assert.Contains("fiziksel kg", refused.Message, StringComparison.Ordinal);
+        }
+    }
 }

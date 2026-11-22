@@ -242,7 +242,6 @@ internal sealed class InventoryGoodsReceiptFutureSupplySession(
             var row = byId[candidate.AllocationId];
             var remaining = Engine.RestoreStored(row).Remaining;
             var share = remaining < leftover ? remaining : leftover;
-            leftover -= share;
             var demand = demands[row.DemandLineId];
             var failure = labelFailure ?? DemandFailure(row, demand, label);
             Kilograms kilograms = default;
@@ -260,6 +259,9 @@ internal sealed class InventoryGoodsReceiptFutureSupplySession(
             {
                 conversions.Add(Convert(request, metadata, row, ledgerRow, share, kilograms, demand.Line!, label, source!, now));
                 unheldKg -= kilograms.Value;
+                // §3.5: only a consumed allocation takes its share of the accepted quantity. A failed link is released
+                // (acceptance-link-failed), so its share stays on the label for the next allocation in the order.
+                leftover -= share;
             }
             else
             {
