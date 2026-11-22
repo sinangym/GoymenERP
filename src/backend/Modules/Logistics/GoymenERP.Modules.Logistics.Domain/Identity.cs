@@ -30,6 +30,10 @@ public static class LogisticsRuleCodes
     public const string InstructionNotDraft = "logistics_instruction_not_draft";
     public const string InstructionNotIssued = "logistics_instruction_not_issued";
 
+    // AK-4 (KLN-D119): a piece line's load / shipment carries its physical kilograms; a kg line carries none beside its quantity.
+    public const string PhysicalKilogramsRequired = "logistics_piece_line_kilograms_required";
+    public const string PhysicalKilogramsOnKilogramLine = "logistics_kilogram_line_physical_kilograms";
+
     // F-020 instruction cancel: a cancelled instruction takes no further command; a recorded shipment makes the cancel final-refused.
     public const string InstructionCancelled = "logistics_instruction_cancelled";
     public const string InstructionShipped = "logistics_instruction_shipped";

@@ -510,6 +510,7 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
                 LineId = share.LineId,
                 Kind = (int)share.Kind,
                 Quantity = RequireFits(share.Quantity.Value),
+                QuantityKg = share.Kilograms is { } kilograms ? RequireFits(kilograms.Value) : null,
                 Measurement = share.Measurement is { } measurement ? (int)measurement : null,
                 SourceShipmentId = share.SourceShipmentId,
                 RecordedAtUtc = share.RecordedAtUtc,
@@ -636,6 +637,7 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
                 ProductId = source.ProductId,
                 UnitId = source.UnitId,
                 Quantity = RequireFits(line.Quantity.Value),
+                QuantityKg = line.Kilograms is { } kilograms ? RequireFits(kilograms.Value) : null,
             });
         }
     }
@@ -1135,13 +1137,14 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
             var share = shares[index];
             var line = lines.Single(candidate => candidate.LineId == share.LineId);
             var quantity = Quantity.Of(share.Quantity, line.UnitIsKilogram ? QuantityUnit.Kilogram : QuantityUnit.Piece);
+            Quantity? kilograms = share.QuantityKg is { } storedKg ? Quantity.Of(storedKg, QuantityUnit.Kilogram) : null;
             switch ((LoadingShareKind)share.Kind)
             {
                 case LoadingShareKind.Loaded:
-                    instruction.RecordLoad(instruction.Version, share.ShareId, share.LineId, quantity, (MeasurementKind)(share.Measurement ?? 0), share.RecordedAtUtc);
+                    instruction.RecordLoad(instruction.Version, share.ShareId, share.LineId, quantity, (MeasurementKind)(share.Measurement ?? 0), share.RecordedAtUtc, kilograms);
                     break;
                 case LoadingShareKind.Shipped:
-                    instruction.MarkShipped(instruction.Version, share.ShareId, share.LineId, quantity, share.RecordedAtUtc);
+                    instruction.MarkShipped(instruction.Version, share.ShareId, share.LineId, quantity, share.RecordedAtUtc, kilograms);
                     break;
                 case LoadingShareKind.Delivered:
                     instruction.MarkDelivered(instruction.Version, share.ShareId, share.LineId, share.SourceShipmentId ?? Guid.Empty, quantity, share.RecordedAtUtc);
@@ -1299,7 +1302,7 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
             var rebuilt = restored.Lines.SingleOrDefault(candidate => candidate.LineNo == line.LineNo);
             var source = rebuilt is null ? null : instruction.Lines.Single(candidate => candidate.Id == rebuilt.InstructionLineId);
             if (rebuilt is null || source is null || rebuilt.ShipmentId != line.ShipmentId || rebuilt.InstructionLineId != line.InstructionLineId
-                || rebuilt.Quantity.Value != line.Quantity || source.Source.OrderId != line.SourceOrderId || source.Source.LineId != line.SourceOrderLineId
+                || rebuilt.Quantity.Value != line.Quantity || rebuilt.Kilograms?.Value != line.QuantityKg || source.Source.OrderId != line.SourceOrderId || source.Source.LineId != line.SourceOrderLineId
                 || source.ProductId != line.ProductId || source.UnitId != line.UnitId)
             {
                 throw new InvalidOperationException("Kayıtlı irsaliye taslağı satırı sevkinden yeniden kurulan satırla uyuşmuyor.");

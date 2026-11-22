@@ -230,7 +230,9 @@ internal sealed class LogisticsRealizationTransactionRunner(
                         request.ExpectedLabelVersion,
                         request.MovementId,
                         request.QuantityKg,
-                        request.OccurredAtUtc),
+                        request.OccurredAtUtc,
+                        // AK-4 (KLN-D119): a piece line's shipment names the pieces leaving the label.
+                        request.PieceCount),
                     new InventoryCommandMetadata(
                         envelope.ActorId,
                         envelope.PermissionCode,

@@ -34,7 +34,9 @@ public sealed record IssueLoadingInstructionRequest(string ExpectedVersion);
 /// record); the quantity is exact text (Ö2).
 /// </summary>
 public sealed record RecordLoadRequest(string ExpectedVersion, Guid LoadId, string Quantity, string Measurement,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<LogisticsPlanExcessUseV1>? PlanExcessUses = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<LogisticsPlanExcessUseV1>? PlanExcessUses = null,
+    // AK-4 (KLN-D119): on a piece line <c>Quantity</c> is whole pieces and this is their physical kg; required there, refused on a kg line.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? QuantityKg = null);
 
 /// <summary>
 /// POST …/{id}/weighings (AT-053): the vehicle's manual weighbridge record for an issued instruction — the two
@@ -109,7 +111,10 @@ public sealed record LoadingInstructionLineView(
     Guid ProductId, Guid UnitId,
     string Instructed, string Loaded, string Shipped, string Delivered,
     string RemainingToLoad, string LoadedNotShipped, string ShippedNotDelivered, bool IsBlocked,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ApprovedPlanExcess = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ApprovedPlanExcess = null,
+    // AK-4 (KLN-D119): a piece line's loaded and shipped physical kg (exact text); omitted on a kg line.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? LoadedKg = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ShippedKg = null);
 
 /// <summary>
 /// One recorded share of a line. <c>RecordedBy</c> is the server-side actor who recorded it (for a Shipped share,
@@ -117,7 +122,9 @@ public sealed record LoadingInstructionLineView(
 /// </summary>
 public sealed record LoadingShareView(
     Guid ShareId, Guid LineId, string Kind, string Quantity, string? Measurement, Guid? SourceShipmentId, DateTimeOffset RecordedAtUtc,
-    string? RecordedBy);
+    string? RecordedBy,
+    // AK-4: a piece line's load / shipment physical kg; omitted on a kg line and on deliveries.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? QuantityKg = null);
 
 /// <summary>
 /// The instruction's manual weighbridge record (AT-053) as exact kilogram text: the two weighings as entered, the
@@ -145,7 +152,9 @@ public sealed record LoadingInstructionUnloadWeighingView(
 /// Sales order binding (D4), the product and unit identities, and the SHIPPED quantity as exact text (Ö2). Price-free.
 /// </summary>
 public sealed record DispatchNoteLineView(
-    int LineNo, Guid ShipmentId, Guid InstructionLineId, Guid SourceOrderId, Guid SourceOrderLineId, Guid ProductId, Guid UnitId, string Quantity);
+    int LineNo, Guid ShipmentId, Guid InstructionLineId, Guid SourceOrderId, Guid SourceOrderLineId, Guid ProductId, Guid UnitId, string Quantity,
+    // AK-4: a piece line's shipped physical kg; omitted on a kg line.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? QuantityKg = null);
 
 /// <summary>
 /// A dispatch note of the instruction (AT-055). <paramref name="Status"/> is "Draft" | "Approved" | "Cancelled".

@@ -20,7 +20,8 @@ public enum DispatchNoteStatus
 /// (never edited, never split). <paramref name="InstructionLineId"/> is the instruction line the shipment belongs to, so the
 /// Sales order line binding (D4), product and unit are that line's.
 /// </summary>
-public sealed record DispatchNoteLine(int LineNo, Guid ShipmentId, Guid InstructionLineId, Quantity Quantity);
+/// <remarks>AK-4 (KLN-D119): <c>Kilograms</c> is the physical kg of a piece line's shipment (null on a kg line).</remarks>
+public sealed record DispatchNoteLine(int LineNo, Guid ShipmentId, Guid InstructionLineId, Quantity Quantity, Quantity? Kilograms = null);
 
 /// <summary>
 /// The system (ERP) number of an approved dispatch note: the company's series and its gap-free sequence, assigned once on

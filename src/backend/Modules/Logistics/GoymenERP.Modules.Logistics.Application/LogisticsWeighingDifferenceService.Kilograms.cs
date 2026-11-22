@@ -9,7 +9,7 @@ public sealed partial class LogisticsWeighingDifferenceService
         WeighingDifferenceSourceV1 source, WeighingDifferenceEvaluation evaluation,
         DispatchKilogramFinalizedDocumentV1? finalized, CancellationToken cancellationToken)
     {
-        var lines = source.Lines.Select(line => new DispatchKilogramSourceLine(line.LineNo, line.ShipmentId, line.ProductId, line.Quantity)).ToArray();
+        var lines = source.Lines.Select(line => new DispatchKilogramSourceLine(line.LineNo, line.ShipmentId, line.ProductId, line.WeighedKilograms!.Value)).ToArray();
         var totals = evaluation.Products.Select(product => new DispatchKilogramProductTotal(product.ProductId, product.ScaleKg.Value)).ToArray();
         if (finalized is null) return DispatchKilogramSnapshot.Theoretical(lines, totals);
         var proof = await ReadDocumentAsync(scope, source.DispatchNoteId, finalized.DocumentId, finalized.ExpectedDocumentVersion, bindings.RecordPermission, cancellationToken);

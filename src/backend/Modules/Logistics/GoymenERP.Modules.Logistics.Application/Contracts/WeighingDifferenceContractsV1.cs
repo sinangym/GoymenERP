@@ -106,9 +106,17 @@ public interface ILogisticsWeighingDifferenceScopeV1
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>One dispatch-note line as stored by Logistics (its own tables), with whether its unit is the kilogram.</summary>
+/// <summary>
+/// One dispatch-note line as stored by Logistics (its own tables), with whether its unit is the kilogram. AK-4 (KLN-D119):
+/// <c>Kilograms</c> is a piece line's physical kg (null on a kg line); the weighing difference compares kilograms only, so a
+/// piece line takes part with these kilograms and its piece quantity stays the commercial quantity.
+/// </summary>
 public sealed record WeighingDifferenceSourceLineV1(int LineNo, Guid ShipmentId, Guid ProductId, decimal Quantity,
-    bool IsKilogram);
+    bool IsKilogram, decimal? Kilograms = null)
+{
+    /// <summary>The line's kilograms for the weighing difference, or null when it has none (a piece line without kg).</summary>
+    public decimal? WeighedKilograms => IsKilogram ? Quantity : Kilograms is > 0m ? Kilograms : null;
+}
 
 /// <summary>
 /// The dispatch note a record is evaluated against: its lines and the SAT-D321 (2) actors who entered its shipments and the

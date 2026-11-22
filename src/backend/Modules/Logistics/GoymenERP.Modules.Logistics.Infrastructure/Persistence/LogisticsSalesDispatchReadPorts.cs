@@ -184,6 +184,7 @@ internal sealed class LogisticsSalesDispatchReadPorts(LogisticsDbContext dbConte
                 row.line.ProductId,
                 row.line.UnitId,
                 row.line.Quantity,
+                row.line.QuantityKg,
             })
             .Take(query.Limit + 1).ToListAsync(cancellationToken);
         var hasMore = rows.Count > query.Limit;
@@ -204,7 +205,7 @@ internal sealed class LogisticsSalesDispatchReadPorts(LogisticsDbContext dbConte
 
             result.Add(new SalesInvoiceableShipmentV1(row.DispatchNoteId, DispatchNoteNumber.Of(series, sequence).Text,
                 row.EDispatchNumber, approvedAt, row.CustomerPartyId, row.CompanyAccountId, row.LineNo, row.ShipmentId, shippedAt,
-                row.SourceOrderId, row.SourceOrderLineId, row.ProductId, row.UnitId, row.Quantity));
+                row.SourceOrderId, row.SourceOrderLineId, row.ProductId, row.UnitId, row.Quantity, row.QuantityKg));
         }
 
         return new SalesInvoiceableShipmentAnswerV1(SalesDispatchReadOutcomeV1.Found, companyId, result, hasMore,

@@ -55,7 +55,7 @@ public sealed partial class LogisticsWeighingDifferenceService(
             if (!source.IsDraft)
                 throw new LogisticsWeighingDifferenceServiceException(409,
                     LogisticsWeighingDifferenceCodesV1.DispatchNoteNotDraft);
-            if (source.Lines.Count == 0 || source.Lines.Any(line => !line.IsKilogram))
+            if (source.Lines.Count == 0 || source.Lines.Any(line => line.WeighedKilograms is null))
                 throw new LogisticsWeighingDifferenceServiceException(409, WeighingDifferenceRuleCodes.UnitNotKilogram);
 
             var productIds = source.Lines.Select(line => line.ProductId).Distinct().ToArray();
@@ -67,7 +67,7 @@ public sealed partial class LogisticsWeighingDifferenceService(
             var remaining = RemainingPhysical(free, productIds);
 
             var noteLines = source.Lines.Select(line => new WeighingDifferenceNoteLine(line.LineNo, line.ShipmentId,
-                line.ProductId, Quantity.Of(line.Quantity, QuantityUnit.Kilogram))).ToArray();
+                line.ProductId, Quantity.Of(line.WeighedKilograms!.Value, QuantityUnit.Kilogram))).ToArray();
             // The issued document's quantities are authoritative; the browser does not sum or redistribute them.
             var measuredProducts = request.FinalizedDocument is { } finalized
                 ? finalized.Lines.GroupBy(line => line.ProductId).Select(group => new WeighingDifferenceScaleEntryV1(group.Key, group.Sum(line => line.Kilograms))).ToArray()

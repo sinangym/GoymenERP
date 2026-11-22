@@ -28,7 +28,8 @@ public sealed partial class SalesInvoiceService
             {
                 var source = value!.KilogramAllocation!.Lines.SingleOrDefault(line => line.ShipmentId == item.Share.ShipmentId);
                 if (source is null || source.ProductId != item.Share.ProductId || source.LineNo != item.Share.NoteLineNo
-                    || source.TheoreticalKg != item.Share.Quantity)
+                    // AK-4: a piece share weighs in with its physical kg (its Quantity is pieces); a kg share with its quantity.
+                    || source.TheoreticalKg != (item.Share.Kilograms ?? item.Share.Quantity))
                     reasons.Add(new(item.Field, SalesInvoiceReasonCodesV1.WeighingDifferenceUnavailable));
                 else kilograms.Add(item.Share.ShipmentId, source.Kilograms);
             }

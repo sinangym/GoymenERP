@@ -379,6 +379,10 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<decimal?>("QuantityKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
                     b.Property<bool>("Released")
                         .HasColumnType("bit");
 
@@ -411,6 +415,8 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_DispatchNoteLines_LineNo", "[LineNo] >= 1");
 
                             t.HasCheckConstraint("CK_DispatchNoteLines_Quantity", "[Quantity] > 0");
+
+                            t.HasCheckConstraint("CK_DispatchNoteLines_QuantityKg", "[QuantityKg] IS NULL OR [QuantityKg] > 0");
                         });
                 });
 
@@ -814,6 +820,10 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<decimal?>("QuantityKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
                     b.Property<DateTimeOffset>("RecordedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -841,6 +851,8 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_LoadingShares_Kind", "([Kind] = 1 AND [Measurement] IN (1, 2) AND [SourceShipmentId] IS NULL) OR ([Kind] = 2 AND [Measurement] IS NULL AND [SourceShipmentId] IS NULL) OR ([Kind] = 3 AND [Measurement] IS NULL AND [SourceShipmentId] IS NOT NULL AND [SourceShipmentId] <> '00000000-0000-0000-0000-000000000000')");
 
                             t.HasCheckConstraint("CK_LoadingShares_Quantity", "[Quantity] > 0");
+
+                            t.HasCheckConstraint("CK_LoadingShares_QuantityKg", "[QuantityKg] IS NULL OR ([QuantityKg] > 0 AND [Kind] IN (1, 2))");
 
                             t.HasCheckConstraint("CK_LoadingShares_RecordedBy", "[RecordedBy] IS NULL OR LEN([RecordedBy]) > 0");
 

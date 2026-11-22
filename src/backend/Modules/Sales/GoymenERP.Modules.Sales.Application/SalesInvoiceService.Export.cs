@@ -117,6 +117,8 @@ public sealed partial class SalesInvoiceService
                 line.Share.UnitId, line.Share.QuantityText, Decimal(line.NetUnitPrice), line.Share.Commercial.DiscountPercent,
                 line.Share.Commercial.DiscountAmount, line.Share.Commercial.SurchargePercent, line.Share.Commercial.SurchargeAmount,
                 Decimal(line.VatPercent), line.WithholdingShare is { } share ? Decimal(share) : null, Amounts(line.Amounts, scale),
-                line.Functional is { } f ? Amounts(f.Amounts, functionalScale) : null))]);
+                line.Functional is { } f ? Amounts(f.Amounts, functionalScale) : null,
+                line.Share.TheoreticalKilograms is { } theoretical ? KilogramText(theoretical) : null,
+                line.Share.ActualKilograms is { } actual ? KilogramText(actual) : null))]);
     }
 }

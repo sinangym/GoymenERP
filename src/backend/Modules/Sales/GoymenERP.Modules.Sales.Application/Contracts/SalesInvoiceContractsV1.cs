@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Invoices;
 
@@ -286,6 +287,12 @@ public static class SalesInvoiceReasonCodesV1
 
     /// <summary>The Logistics weighing-difference owner is not composed, failed or answered inconsistently — never invoiced unread.</summary>
     public const string WeighingDifferenceUnavailable = "weighing_difference_unavailable";
+
+    /// <summary>
+    /// SAT-D437 (AK-4): a piece line's share is invoiced only with the theoretical kg/unit pinned at the order's approval; an
+    /// order line without one (never expected after AK-4; no back-fill) waits rather than inventing the kg information.
+    /// </summary>
+    public const string KilogramsPerUnitMissing = "kg_per_unit_missing";
 }
 
 /// <summary>The invoice routes' problem codes beside the draft's (<see cref="SalesDraftProblemCodesV1"/>).</summary>
@@ -365,7 +372,11 @@ public sealed record SalesInvoiceLineView(
     string VatPercent,
     string? WithholdingShare,
     SalesInvoiceAmountsView Amounts,
-    SalesInvoiceLineFunctionalView? Functional);
+    SalesInvoiceLineFunctionalView? Functional,
+    // SAT-D434 (AK-4): a piece line's theoretical kg (pieces × the pinned kg/unit) and actual (scale) kg, information only;
+    // omitted on a kg line, whose Quantity already is the scale kg.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TheoreticalKg = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ActualKg = null);
 
 /// <summary>API-32 detail (and the create's answer). Amounts are prices: the read also needs <c>sales.orders.price.read</c>.</summary>
 public sealed record SalesInvoiceDetailView(
@@ -469,7 +480,10 @@ public sealed record SalesInvoiceExportQuery(string? Format, DateOnly From, Date
 public sealed record SalesInvoiceExportLineV1(int LineNo, string DispatchNoteNumber, int NoteLineNo, DateOnly ShipmentDate,
     Guid SalesOrderId, string SalesOrderNo, Guid ProductId, Guid UnitId, string Quantity, string NetUnitPrice, string? DiscountPercent,
     string? DiscountAmount, string? SurchargePercent, string? SurchargeAmount, string VatPercent, string? WithholdingShare,
-    SalesInvoiceAmountsView Amounts, SalesInvoiceAmountsView? FunctionalAmounts);
+    SalesInvoiceAmountsView Amounts, SalesInvoiceAmountsView? FunctionalAmounts,
+    // SAT-D434 (AK-4): the official invoice source states a piece line in pieces (Quantity) and carries its kg as information.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TheoreticalKg = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ActualKg = null);
 
 /// <summary>
 /// API-34 (SAT-D236/D244/D248): one finalised invoice of the export — header, the official match, the day of finalisation, the

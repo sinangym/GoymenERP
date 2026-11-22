@@ -67,6 +67,10 @@ internal sealed class LoadingShareRow : ILogisticsTenantRow
     public Guid LineId { get; set; }
     public int Kind { get; set; }
     public decimal Quantity { get; set; }
+
+    /// <summary>AK-4 (KLN-D119): the physical kg of a piece line's load / shipment; null on a kg line and on every earlier share.</summary>
+    public decimal? QuantityKg { get; set; }
+
     public int? Measurement { get; set; }
     public Guid? SourceShipmentId { get; set; }
     public DateTimeOffset RecordedAtUtc { get; set; }
@@ -162,6 +166,10 @@ internal sealed class DispatchNoteLineRow : ILogisticsTenantRow
     public Guid ProductId { get; set; }
     public Guid UnitId { get; set; }
     public decimal Quantity { get; set; }
+
+    /// <summary>AK-4 (KLN-D119): the physical kg of a piece line's shipment (copied from the share); null on a kg line.</summary>
+    public decimal? QuantityKg { get; set; }
+
     public bool Released { get; set; }
 }
 

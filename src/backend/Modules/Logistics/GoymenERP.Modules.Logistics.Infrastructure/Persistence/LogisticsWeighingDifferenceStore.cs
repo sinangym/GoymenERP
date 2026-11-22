@@ -217,7 +217,7 @@ public sealed class LogisticsWeighingDifferenceStore(
                            where line.InstructionId == note.InstructionId && line.DispatchNoteId == dispatchNoteId
                            orderby line.LineNo
                            select new WeighingDifferenceSourceLineV1(line.LineNo, line.ShipmentId, line.ProductId,
-                               line.Quantity, instructionLine.UnitIsKilogram))
+                               line.Quantity, instructionLine.UnitIsKilogram, line.QuantityKg))
             .ToListAsync(cancellationToken);
         var shipmentIds = lines.Select(line => line.ShipmentId).Distinct().ToList();
         var shipped = (int)LoadingShareKind.Shipped;

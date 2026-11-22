@@ -167,7 +167,10 @@ public sealed class SalesOrderDraftApprovalTests
         Assert.Equal(["AddLine", "Approve", "ApproveDiscountExceptions", "ApproveOverDelivery", "ApprovePriceFloorExceptions", "ApproveRemainderChange",
             "Cancel", "CloseByUser", "CloseLine", "ForceClose",
             // SAT-D115: the customer rejection is a mutation entry; IsCustomerRejected and IsOverDeliveryApproved are the reads in the population (queries).
-            "IsCustomerRejected", "IsLineClosed", "IsOverDeliveryApproved", "PinMarginCosts", "RecordCustomerAcceptance", "RecordCustomerRejection",
+            "IsCustomerRejected", "IsLineClosed", "IsOverDeliveryApproved",
+            // SAT-D437 (AK-4): KilogramsPerUnitOf and NeedsKilogramsPerUnit are queries; PinKilogramsPerUnit is an approval-only entry.
+            "KilogramsPerUnitOf", "NeedsKilogramsPerUnit",
+            "PinKilogramsPerUnit", "PinMarginCosts", "RecordCustomerAcceptance", "RecordCustomerRejection",
             // SAT-D253 / API-11: so is the source plan save (RequireSourcePlanWritable only reads).
             "RecordSourcePlan", "Reject", "RejectRemainderChange",
             "RequestRemainderChange", "RescheduleDelivery", "ReviseCommercial", "ReviseHeader",
@@ -179,6 +182,8 @@ public sealed class SalesOrderDraftApprovalTests
         var before = (draft.ApprovalState, draft.Version, draft.Revision, draft.Approval, draft.Lines.Count, draft.Lines[0].Commercial);
         Assert.Throws<InvalidOperationException>(() => draft.PinMarginCosts([]));
         Assert.Empty(draft.MarginCosts);
+        Assert.Throws<InvalidOperationException>(() => draft.PinKilogramsPerUnit([]));
+        Assert.Empty(draft.KilogramsPerUnitSnapshots);
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.AddLine(3, Line(), T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Submit(3, Preparer, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Approve(3, Approver, T0)));
