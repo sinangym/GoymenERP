@@ -939,13 +939,11 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
                     && (entry.Property(nameof(PurchaseOrderRow.DocumentNumberCancelledAtUtc)).OriginalValue is not null
                         || entry.Property(nameof(PurchaseOrderRow.DocumentNumberCancelledAtUtc)).CurrentValue is null))
                     throw new InvalidOperationException("Belge numarası iptal geçmişi yalnız bir kez eklenir.");
-                // AK-3 (SAT-D437): the theoretical kg per piece is recorded once at the first approval and never changes after.
+                // AK-3 (SAT-D437): the line's kg/unit snapshot is written once at the first approval and never moves.
                 if (entry.Entity is PurchaseOrderLineRow
-                    && (entry.Property(nameof(PurchaseOrderLineRow.TheoreticalKilogramsPerUnit)).IsModified
-                        || entry.Property(nameof(PurchaseOrderLineRow.TheoreticalKilogramsSourceVersion)).IsModified)
-                    && (entry.Property(nameof(PurchaseOrderLineRow.TheoreticalKilogramsPerUnit)).OriginalValue is not null
-                        || entry.Property(nameof(PurchaseOrderLineRow.TheoreticalKilogramsSourceVersion)).OriginalValue is not null))
-                    throw new InvalidOperationException("Teorik kg/adet onayda bir kez kaydedilir, sonra değişmez.");
+                    && (WrittenAgain(entry, nameof(PurchaseOrderLineRow.TheoreticalKilogramsPerUnit))
+                        || WrittenAgain(entry, nameof(PurchaseOrderLineRow.TheoreticalKilogramsSourceVersion))))
+                    throw new InvalidOperationException("Kayıtlı teorik kg/adet değiştirilemez.");
                 string[] allowed = entry.Entity switch
                 {
                     PurchaseRequestRow =>
@@ -1000,6 +998,12 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
                     throw new InvalidOperationException("Satınalma kaydının yalnız izinli alanı değişir; satırlar ve deneme kayıtları eklenir, değişmez.");
                 }
             }
+        }
+
+        static bool WrittenAgain(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry entry, string property)
+        {
+            var value = entry.Property(property);
+            return value.IsModified && value.OriginalValue is not null;
         }
     }
 }
