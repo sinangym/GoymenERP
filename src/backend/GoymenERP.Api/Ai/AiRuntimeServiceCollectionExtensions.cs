@@ -1,3 +1,4 @@
+using GoymenERP.Api.Ai.Commands;
 using GoymenERP.Api.Ai.External;
 using GoymenERP.Api.Ai.Knowledge;
 using GoymenERP.BuildingBlocks.Ai;
@@ -39,6 +40,13 @@ public static class AiRuntimeServiceCollectionExtensions
         services.AddScoped<AiToolCatalog>();
         services.AddScoped<AiCapabilityService>();
         services.AddScoped<AiAskService>();
+        // WP-C1: the approved write pipeline. Closed: Ai:Commands:Enabled is false, no command tool is allowlisted, the
+        // ledger is unconfigured (no durable store yet) and step-up never verifies (decision 156; method undecided).
+        services.AddOptions<AiCommandOptions>().Bind(configuration.GetSection(AiCommandOptions.SectionName));
+        services.TryAddScoped<IAiCommandLedgerV1, UnconfiguredAiCommandLedger>();
+        services.TryAddScoped<IAiStepUpVerifierV1, UnconfiguredAiStepUpVerifier>();
+        services.AddScoped<AiCommandToolCatalog>();
+        services.AddScoped<AiCommandPipeline>();
         return services;
     }
 
