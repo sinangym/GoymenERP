@@ -156,8 +156,16 @@ public sealed record SalesLineMarginCost
 /// rate of the approval day). Used only when <paramref name="NetSale"/> is foreign; a missing rate, or one for another pair, leaves
 /// the margin unavailable. Never a rate read at display time.
 /// </param>
+/// <param name="PieceConversion">
+/// SAT-D438 (AK-6): for a line whose order unit is not the cost unit (kg), the kg cost unit and the theoretical kg per order unit
+/// pinned on the document at approval (SAT-D437). Given, a kg cost is converted to the order unit as cost/kg × kg/unit, exact
+/// (golden TM1: never rounded in between); absent, a cost in another unit stays <c>UnitConversionUndecided</c> (golden M11).
+/// </param>
 public sealed record SalesLineMarginInput(Money? NetSale, Guid OrderUnitId, decimal Quantity, Guid FunctionalCurrencyId,
-    SalesLineMarginCost Cost, ExchangeRate? SaleRate = null);
+    SalesLineMarginCost Cost, ExchangeRate? SaleRate = null, SalesLinePieceConversion? PieceConversion = null);
+
+/// <summary>SAT-D438: the kg cost unit and the pinned theoretical kg per order unit (positive) a piece line's margin converts with.</summary>
+public sealed record SalesLinePieceConversion(Guid KilogramUnitId, decimal KilogramsPerUnit);
 
 /// <summary>
 /// One line's margin. <see cref="Amount"/> is in the functional currency at <see cref="SalesLineMarginCalculator.AmountScale"/>;
@@ -252,12 +260,16 @@ public static class SalesLineMarginCalculator
             return SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.CurrencyConversionUndecided);
         }
 
-        if (cost.UnitId != input.OrderUnitId)
+        // SAT-D438: a kg cost of a piece line is converted with the pinned kg/unit; any other unit pair stays undecided.
+        var converted = cost.UnitId != input.OrderUnitId;
+        if (converted && (input.PieceConversion is not { } conversion || conversion.KilogramUnitId != cost.UnitId
+            || conversion.KilogramsPerUnit <= 0m))
         {
             return SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.UnitConversionUndecided);
         }
 
         var unitCost = cost.UnitCost!.Value;
+        // G16 applies to the port's cost (per kg for a converted line); cost × kg/unit may exceed 4 decimals (golden TM1).
         if (unitCost < 0m || Money.SignificantDecimals(unitCost) > CostScale)
         {
             return SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.CostInvalid);
@@ -266,7 +278,10 @@ public static class SalesLineMarginCalculator
         var net = netSale.CurrencyId == input.FunctionalCurrencyId
             ? Exact.Of(netSale.Amount)
             : Exact.Of(netSale.Amount).Multiply(Exact.Of(input.SaleRate!.Value.Rate));
-        var margin = net.Subtract(Exact.Of(unitCost).Multiply(Exact.Of(input.Quantity)));
+        var costPerOrderUnit = converted
+            ? Exact.Of(unitCost).Multiply(Exact.Of(input.PieceConversion!.KilogramsPerUnit))
+            : Exact.Of(unitCost);
+        var margin = net.Subtract(costPerOrderUnit.Multiply(Exact.Of(input.Quantity)));
         if (!margin.RoundAwayFromZero(AmountScale).TryToDecimal(out var amount))
         {
             return SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.AmountOutOfRange);
