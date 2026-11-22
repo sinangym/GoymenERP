@@ -54,10 +54,12 @@ internal static class ShellCapabilityRegistryAuthorities
     // W1-A: Settings 1.19 adds the approval duration screen; re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision.
     // WP-A1: Settings 1.20 declares the AI gateway policy screen (not yet implemented); re-derived in place by
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
-    internal const string FullNormalHostWithSettingsAndPaintMemberships = "sha256:lKCSs9orhHjSLShVcZGLM8VZOzbIouvMoYbn20pDlWI";
+    // WP-A5: Settings 1.21 implements the AI management screen and adds its read-only event list control; this row and the
+    // Work row below re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    internal const string FullNormalHostWithSettingsAndPaintMemberships = "sha256:1wxYz1JP2bVWgp6C2abAxSdzgsUc3sH7slkI8SRBS-0";
     // WP9: the actual host adds Work 1.0 (work.tasks.mine route + work.tasks.assign control); produced by
     // ShellCapabilityRegistry.ComputeCandidateRevision over the actual providers.
-    internal const string FullNormalHostWithSettingsPaintMembershipsAndWork = "sha256:4UCYE5eruD6Xtoh3ZOrp7J_XsU54ZPgCU2T3W1eI-JY";
+    internal const string FullNormalHostWithSettingsPaintMembershipsAndWork = "sha256:pDt8kbKKk9v7Vdj9Mqivgxs6wN3PvfrYxHSBzgNmNqo";
     // Tren-1 wave 7: Settings 1.11 and Inventory 1.9; active authority rows re-derived in place
     // by ShellCapabilityRegistry.ComputeCandidateRevision over actual providers; historical rows preserved.
     // Tren-1 wave 6: Manufacturing 1.11, Inventory 1.8, Identity 1.2 and Settings 1.9; active authority rows
@@ -754,8 +756,9 @@ internal const string FullNormalHostWithProductPriceListsAndSalesReports =
     // rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
 // W1-A: Settings 1.19 re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision.
 // WP-A1: Settings 1.20 re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision.
+// WP-A5: Settings 1.21 (AI management screen implemented + event list control) re-derived in place likewise.
 internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV11 =
-        "sha256:UAd9d2sxpyUzADi613bZSDSVfccEKFlijsH1fKfhOCA";
+        "sha256:9AEm1RdSHaqwUPdVZ6Kh4NXWlBBi0jmvziUK6eU7k_4";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";

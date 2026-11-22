@@ -191,8 +191,8 @@ public sealed class SettingsShellAuthorityTests
     public void The_tax_master_screen_stands_on_the_one_tax_master_name_company_wide_in_one_company()
     {
         var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
-        Assert.Equal(49, declarations.Count);
-        Assert.Equal("1.20", new SettingsShellCapabilityProvider().ContractVersion);
+        Assert.Equal(50, declarations.Count);
+        Assert.Equal("1.21", new SettingsShellCapabilityProvider().ContractVersion);
         var declaration = Assert.Single(declarations,
             candidate => candidate.CapabilityId == SettingsShellCapabilityProvider.TaxMasterCapabilityId);
 
@@ -202,6 +202,32 @@ public sealed class SettingsShellAuthorityTests
         Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement);
         Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, declaration.ScopeRequirement);
         Assert.False(ErpPermissions.IsCritical(SettingsTaxMasterPermissionManifestV1.TaxMasterManage));
+    }
+
+    [Fact]
+    public void The_ai_management_screen_is_implemented_on_its_one_name_with_a_read_only_event_list_control()
+    {
+        var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
+        var screen = Assert.Single(declarations,
+            candidate => candidate.CapabilityId == SettingsShellCapabilityProvider.AiGatewayCapabilityId);
+
+        Assert.Equal(("settings.ai-gateway.manage", "/ayarlar/yapay-zeka-ag-gecidi", "AY-YZG-01"),
+            (screen.CapabilityId, screen.RoutePath, screen.ScreenId));
+        Assert.True(screen.ImplementationAvailable);
+        Assert.Null(screen.ParentCapabilityId);
+        Assert.Equal([SettingsAiGatewayPermissionsV1.Manage], screen.RequiredPermissions);
+        Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, screen.ContextRequirement);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, screen.ScopeRequirement);
+
+        var events = Assert.Single(declarations,
+            candidate => candidate.CapabilityId == SettingsShellCapabilityProvider.AiGatewayEventsCapabilityId);
+        Assert.Equal("settings.ai-gateway.events.read", events.CapabilityId);
+        Assert.Equal(SettingsShellCapabilityProvider.AiGatewayCapabilityId, events.ParentCapabilityId);
+        Assert.Equal((screen.RoutePath, screen.ScreenId), (events.RoutePath, events.ScreenId));
+        Assert.Equal([SettingsAiGatewayPermissionsV1.Manage, ErpPermissions.PlatformSecurityEventsRead],
+            events.RequiredPermissions);
+        Assert.True(events.ImplementationAvailable);
+        Assert.False(ErpPermissions.IsCritical(SettingsAiGatewayPermissionsV1.Manage));
     }
 
     [Fact]

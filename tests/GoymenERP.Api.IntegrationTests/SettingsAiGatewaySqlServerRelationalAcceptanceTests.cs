@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using GoymenERP.Api.Ai.Gateway;
 using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
@@ -109,6 +110,63 @@ public sealed partial class SettingsCompanyPolicySqlServerRelationalAcceptanceTe
         var guard = Assert.IsType<SqlOperation>(new AddAiGatewayPolicyAndBudgetLedger().DownOperations[0]).Sql;
         var downRefused = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
         Assert.Equal(52180, downRefused.Number);
+    }
+
+    /// <summary>
+    /// WP-A5 real SQL: no feature can be switched on before both budget values are entered (YOL-D21), and the management
+    /// screen's usage read shows the current month per feature from the ledger — a settled entry with its used units, an
+    /// open reservation with its reserved units — with the acceptance counts marked as not measured (no WP-C9 source).
+    /// </summary>
+    [SqlServerFact]
+    public async Task Ai_gateway_refuses_features_without_a_budget_and_reads_the_month_usage_per_feature_from_the_ledger()
+    {
+        await using var run = await HostRun.StartAsync();
+        var subject = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SettingsAiGatewayPermissionsV1.Manage);
+        using var editor = run.Client(subject, CompanyA);
+        using var foreign = run.Client(subject, CompanyB);
+        RecordAiModelRouteV1[] routes = [new("Answer", "Internal", "OnPremises", "SENTETIK-yerel")];
+
+        using (var noCeiling = await editor.SendAsync(Json(AiGatewayRoot + "/versions", "ai-no-ceiling",
+                   new RecordAiGatewayPolicyRequestV1("0", null, 100, ["Panel"], routes, "SENTETIK tavansız"))))
+            await ProblemAsync(noCeiling, HttpStatusCode.BadRequest, CompanyPolicyProblemCodesV1.RequestInvalid);
+        using (var zeroCeiling = await editor.SendAsync(Json(AiGatewayRoot + "/versions", "ai-zero-ceiling",
+                   new RecordAiGatewayPolicyRequestV1("0", 0, 100, ["Panel"], routes, "SENTETIK sıfır tavan"))))
+            await ProblemAsync(zeroCeiling, HttpStatusCode.BadRequest, CompanyPolicyProblemCodesV1.RequestInvalid);
+        using (var noReservation = await editor.SendAsync(Json(AiGatewayRoot + "/versions", "ai-no-reservation",
+                   new RecordAiGatewayPolicyRequestV1("0", 1000, null, ["Panel"], routes, "SENTETIK rezervsiz"))))
+            await ProblemAsync(noReservation, HttpStatusCode.BadRequest, CompanyPolicyProblemCodesV1.RequestInvalid);
+        Assert.Equal(0, await run.CountAsync("SELECT COUNT(*) FROM [settings].[AiGatewayPolicyVersions]"));
+
+        // All closed without a budget is a valid record (the routes may be prepared ahead of the budget decision).
+        await run.CommandAsync(editor, AiGatewayRoot + "/versions", "ai-closed",
+            new RecordAiGatewayPolicyRequestV1("0", null, null, [], routes, "SENTETIK kapalı hazırlık"));
+        await run.CommandAsync(editor, AiGatewayRoot + "/versions", "ai-open",
+            new RecordAiGatewayPolicyRequestV1("1", 1000, 300, ["Panel", "Summary"], routes, "SENTETIK bütçeli açılış"));
+
+        var empty = await editor.GetFromJsonAsync<AiGatewayUsageResponseV1>(AiGatewayRoot + "/usage");
+        Assert.Equal((CompanyA, 0L, 0, false), (empty!.CompanyId, empty.CommittedUnits, empty.EntryCount, empty.AcceptanceMeasured));
+        Assert.Empty(empty.Features);
+        Assert.Empty(empty.Acceptance);
+        using (var denied = await foreign.GetAsync(AiGatewayRoot + "/usage")) Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        using (var query = await editor.GetAsync(AiGatewayRoot + "/usage?companyId=" + CompanyB.ToString("D")))
+            await ProblemAsync(query, HttpStatusCode.BadRequest, CompanyPolicyProblemCodesV1.RequestInvalid);
+
+        var context = new CompanyContext();
+        context.Set(CompanyA);
+        await using var database = new SettingsDbContext(new DbContextOptionsBuilder<SettingsDbContext>()
+            .UseSqlServer(run.DatabaseConnectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", SettingsDbContext.Schema)).Options,
+            context);
+        var store = new SettingsAiGatewayStoreV1(database, context, new FixedActor(CompanyA), TimeProvider.System);
+        var settled = await store.ReserveAsync(Reservation(policyVersion: 2));
+        await store.SettleAsync(CompanyA, settled.EntryId!.Value, 40);
+        var open = await store.ReserveAsync(Reservation(policyVersion: 2) with { Feature = AiFeatureV1.Summary });
+        Assert.Equal(SettingsAiBudgetReservationOutcomeV1.Reserved, open.Outcome);
+
+        var usage = await editor.GetFromJsonAsync<AiGatewayUsageResponseV1>(AiGatewayRoot + "/usage");
+        Assert.Equal((340L, 2, false), (usage!.CommittedUnits, usage.EntryCount, usage.AcceptanceMeasured));
+        Assert.Equal([("Panel", 1, 0, 40L), ("Summary", 1, 1, 300L)],
+            usage.Features.Select(line => (line.Feature, line.EntryCount, line.OpenReservationCount, line.CommittedUnits)).ToArray());
+        Assert.Equal(SettingsAiBudgetMonthV1.Of(DateTimeOffset.UtcNow), usage.BudgetMonth);
     }
 
     private static SettingsAiBudgetReservationRequestV1 Reservation(long policyVersion) =>

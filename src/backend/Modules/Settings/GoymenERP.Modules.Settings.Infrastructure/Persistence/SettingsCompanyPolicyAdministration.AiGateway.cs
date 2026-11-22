@@ -44,6 +44,42 @@ internal sealed partial class SettingsCompanyPolicyAdministration : ISettingsAiG
                 row.MaxUnitsPerRequest, row.FeatureCount, row.RouteCount, row.RecordedBy, row.RecordedAtUtc, row.Reason)).ToArray());
     }
 
+    /// <summary>
+    /// WP-A5 (AI-20): the month's ledger lines per feature. Read on the same fence as the policy; a stored feature number
+    /// that is not a defined <see cref="AiFeatureV1"/> or a negative sum is a broken ledger and is refused, never shown.
+    /// </summary>
+    public async Task<AiGatewayUsageViewV1> GetAiGatewayUsageAsync(CancellationToken cancellationToken = default)
+    {
+        var companyId = RequireContextCompany();
+        var actor = currentUser.UserId;
+        await RequireAsync(AiGatewayPolicy.Permission, companyId, cancellationToken);
+        var month = SettingsAiBudgetMonthV1.Of(timeProvider.GetUtcNow());
+        var lines = await ReadAsync(() => database.AiBudgetLedgerEntries.AsNoTracking()
+            .Where(row => row.CompanyId == companyId && row.BudgetMonth == month)
+            .GroupBy(row => row.Feature)
+            .Select(group => new
+            {
+                Feature = group.Key,
+                EntryCount = group.Count(),
+                OpenCount = group.Count(row => row.State == 1),
+                Units = group.Sum(row => row.State == 2 ? (long)(row.UsedUnits ?? 0) : (long)row.ReservedUnits),
+            })
+            .ToArrayAsync(cancellationToken));
+        var usage = await ReadAsync(() => AiGatewayPolicyReader.ReadMonthAsync(database, companyId, month, cancellationToken));
+        await RequireStillAsync(AiGatewayPolicy.Permission, companyId, cancellationToken);
+        if (RequireContextCompany() != companyId || currentUser.UserId != actor) throw new UnauthorizedAccessException();
+        var features = new List<AiFeatureUsageViewV1>(lines.Length);
+        foreach (var line in lines.OrderBy(line => line.Feature))
+        {
+            var feature = (AiFeatureV1)line.Feature;
+            if (!Enum.IsDefined(feature) || line.Units < 0 || line.OpenCount < 0 || line.OpenCount > line.EntryCount)
+                throw new SettingsPrerequisiteException(CompanyPolicyProblemCodesV1.ProfileInvalid);
+            features.Add(new AiFeatureUsageViewV1(feature.ToString(), line.EntryCount, line.OpenCount, line.Units));
+        }
+
+        return new AiGatewayUsageViewV1(companyId, usage.BudgetMonth, usage.CommittedUnits, usage.EntryCount, features);
+    }
+
     public async Task<CompanyPolicyCommandResultV1> RecordAiGatewayPolicyAsync(RecordAiGatewayPolicyRequestV1 request,
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default)
     {
@@ -64,6 +100,11 @@ internal sealed partial class SettingsCompanyPolicyAdministration : ISettingsAiG
         if (!TryReadFeatures(request.EnabledFeatures, out var features, out var detail)
             || !TryReadRoutes(request.Routes, out var routes, out detail))
             return Unstored(Answers.Invalid(detail), metadata);
+        // WP-A5 (YOL-D21, S5): no feature is switched on before a budget value is entered — a positive monthly ceiling and a
+        // per-request reservation. The values themselves stay a human decision; the code only refuses "on without budget".
+        if (features.Count > 0 && (request.MonthlyUsageCeiling is not > 0 || request.MaxUnitsPerRequest is null))
+            return Unstored(Answers.Invalid(
+                "Bütçe değeri (aylık tavan ve istek başına ayrılan birim) girilmeden hiçbir özellik açılamaz."), metadata);
         if (ReasonRefusal(request.Reason, out var reason) is { } reasonRefusal)
             return Unstored(reasonRefusal, metadata);
 

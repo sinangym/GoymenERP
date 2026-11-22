@@ -44,7 +44,12 @@ public sealed partial class SettingsShellCapabilityProvider : IShellCapabilityPr
     // 1.19 (W1-A, YOL-D18): the approval duration screen (/ayarlar/onay-sureleri) on settings.work-approval-duration.manage.
     // 1.20 (WP-A1, AI-D24/AI-D30): the AI gateway policy screen (/ayarlar/yapay-zeka-ag-gecidi) on settings.ai-gateway.manage;
     // declared, not yet implemented (the management screen arrives with WP-A5). The name is granted to no role here.
-    public const string OwnerContractVersion = "1.20";
+    // 1.21 (WP-A5, AI-20): the AI management screen is implemented, with one read-only control — the AI security event list
+    // (ai.request.refused, ai.tool.called, ai.authz.denied) on the screen's name plus platform.security-events.read. Neither
+    // name is granted to a role here.
+    public const string OwnerContractVersion = "1.21";
+    public const string AiGatewayCapabilityId = SettingsAiGatewayPermissionsV1.Manage;
+    public const string AiGatewayEventsCapabilityId = "settings.ai-gateway.events.read";
     // Technical screen ids, not additional ERP permissions. Latest ALS-D105 authority decision.
     public const string SalesSubcontractTaxCapabilityId = "settings.sales-subcontract-tax-default.manage";
     public const string PurchasingSubcontractTaxCapabilityId = "settings.purchasing-subcontract-tax-default.manage";
@@ -166,6 +171,10 @@ public sealed partial class SettingsShellCapabilityProvider : IShellCapabilityPr
             ShellCapabilityScopeRequirement.CompanyWide,
             [SettingsExchangeRatePermissionManifestV1.Read],
             ImplementationAvailable: true);
+        var aiGateway = new ShellCapabilityDeclaration(AiGatewayCapabilityId, AiGatewayCapabilityId,
+            "/ayarlar/yapay-zeka-ag-gecidi", "AY-YZG-01", ShellCapabilityRoutePrecedence.Static,
+            ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
+            [SettingsAiGatewayPermissionsV1.Manage], ImplementationAvailable: true);
 
         return
         [
@@ -214,10 +223,13 @@ public sealed partial class SettingsShellCapabilityProvider : IShellCapabilityPr
                 "/ayarlar/onay-sureleri", "AY-OS-01", ShellCapabilityRoutePrecedence.Static,
                 ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
                 [SettingsOperationalPolicyPermissionsV1.WorkApprovalDurationManage], ImplementationAvailable: true),
-            new ShellCapabilityDeclaration(SettingsAiGatewayPermissionsV1.Manage, SettingsAiGatewayPermissionsV1.Manage,
-                "/ayarlar/yapay-zeka-ag-gecidi", "AY-YZG-01", ShellCapabilityRoutePrecedence.Static,
-                ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
-                [SettingsAiGatewayPermissionsV1.Manage], ImplementationAvailable: false),
+            aiGateway,
+            aiGateway with
+            {
+                CapabilityId = AiGatewayEventsCapabilityId,
+                ParentCapabilityId = AiGatewayCapabilityId,
+                RequiredPermissions = [SettingsAiGatewayPermissionsV1.Manage, ErpPermissions.PlatformSecurityEventsRead],
+            },
             new ShellCapabilityDeclaration(SettingsDocumentNumberSeriesPermissionsV1.Manage, SettingsDocumentNumberSeriesPermissionsV1.Manage,
                 "/ayarlar/belge-numara-serileri", "AY-BNS-01", ShellCapabilityRoutePrecedence.Static,
                 ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
