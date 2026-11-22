@@ -23,10 +23,13 @@ namespace GoymenERP.Api.Ai.Commands;
 /// its SHA-256 digest.</item>
 /// <item>Approval: bound to that digest and to the frozen context (actor, company, session, authority revision). The
 /// record is previewed again; when the target version, command or difference changed, the approval is invalidated.</item>
-/// <item>Execution (second approval + step-up, decision 156): the digest and approval id are sent again, permissions
-/// and authority are re-measured, the record is previewed again, step-up must be verified, then the frozen owner
-/// request runs with idempotency key <c>ai:&lt;previewId&gt;</c>. A resend never re-executes: an executed record
-/// replays its result, an executing or unknown one only looks the same frozen request up.</item>
+/// <item>Second approval (decision 156, YOL-D27): a different authorized person than the preparer and the first
+/// approver approves the same digest and approval id; the record is previewed again under their authority and their
+/// password is typed again (LocalAccount verification with the login lockout). The same person is refused.</item>
+/// <item>Execution by the preparer: the digest and approval id are sent again, session, permissions and authority are
+/// re-measured, the record is previewed again, then the frozen owner request runs with idempotency key
+/// <c>ai:&lt;previewId&gt;</c>. A resend never re-executes: an executed record replays its result, an executing or
+/// unknown one only looks the same frozen request up.</item>
 /// <item>Closed list (AI-D25): approval/rejection, payment, period close, role/permission assignment and policy
 /// publication are refused at proposal and at every later step.</item>
 /// <item>Audit: proposal, preview, approval, second approval, execution, rejection, invalidation and refusal are
@@ -34,7 +37,7 @@ namespace GoymenERP.Api.Ai.Commands;
 /// (<c>ai.tool.called</c> Started is fail-closed).</item>
 /// </list>
 /// Closed by default: <c>Ai:Enabled</c> and <c>Ai:Commands:Enabled</c> are false, no command tool is allowlisted, no
-/// durable ledger and no step-up verifier are configured.
+/// durable ledger is configured.
 /// </summary>
 public sealed class AiCommandPipeline(
     IOptions<AiRuntimeOptions> runtimeOptions,
@@ -224,7 +227,7 @@ public sealed class AiCommandPipeline(
             return await TerminalAsync(caller, record, cancellationToken);
         }
 
-        var (tool, bindingFailure) = await CheckBindingAsync(caller, record, cancellationToken);
+        var (tool, bindingFailure) = await CheckBindingAsync(caller, record, bindToPreparer: true, cancellationToken);
         if (tool is null)
         {
             return bindingFailure!;
@@ -336,35 +339,21 @@ public sealed class AiCommandPipeline(
             case AiCommandStateV1.Executing or AiCommandStateV1.Unknown:
                 return await LookupAsync(caller, record, cancellationToken);
             case AiCommandStateV1.Approved:
+                // YOL-D27: no execution before a different authorized person's second approval.
+                return await RefuseAsync(caller, record, null, AiCommandStatusV1.Refused, AiCommandReasonCodesV1.SecondApprovalRequired, null, cancellationToken);
+            case AiCommandStateV1.SecondApproved:
                 break;
             default:
                 return await TerminalAsync(caller, record, cancellationToken);
         }
 
-        var (tool, bindingFailure) = await CheckBindingAsync(caller, record, cancellationToken);
+        var (tool, bindingFailure) = await CheckBindingAsync(caller, record, bindToPreparer: true, cancellationToken);
         if (tool is null)
         {
             return bindingFailure!;
         }
 
         var descriptor = tool.Descriptor;
-        bool stepUpVerified;
-        try
-        {
-            stepUpVerified = await stepUpVerifier.IsVerifiedAsync(
-                new AiStepUpChallengeV1(caller.CompanyId, caller.ActorId, caller.SessionId, record.PreviewId, record.PreviewHash),
-                cancellationToken);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            stepUpVerified = false;
-        }
-
-        if (!stepUpVerified)
-        {
-            return await RefuseAsync(caller, record, descriptor, AiCommandStatusV1.Refused, AiCommandReasonCodesV1.StepUpRequired, null, cancellationToken);
-        }
-
         if (!TryBuildOwnerRequest(record, descriptor, out var ownerRequest))
         {
             return await InvalidateAsync(caller, record, descriptor, AiCommandReasonCodesV1.ApprovalMismatch, cancellationToken);
@@ -382,7 +371,7 @@ public sealed class AiCommandPipeline(
 
         var executing = record with { State = AiCommandStateV1.Executing, Version = record.Version + 1 };
         if (!await ledger.TryReplaceAsync(executing, record.Version,
-                LedgerEvent(caller, AiCommandEventKindV1.SecondApproved, executing, approvalId: approvalId), cancellationToken))
+                LedgerEvent(caller, AiCommandEventKindV1.ExecutionStarted, executing, approvalId: approvalId), cancellationToken))
         {
             await WriteCompletedAsync(caller, descriptor, released: false, cancellationToken);
             var current = await ledger.GetAsync(caller.CompanyId, previewId, cancellationToken);
@@ -410,6 +399,135 @@ public sealed class AiCommandPipeline(
         await WriteCompletedAsync(caller, descriptor, released: view.Result.Outcome == AiCommandOutcomeV1.Applied, cancellationToken);
         return await SettleAsync(caller, executing, descriptor, view.Result.Outcome, view.Result.ResultVersion,
             view.Result.RefusalCode, view.Result.IsReplay, cancellationToken);
+    }
+
+    /// <summary>
+    /// The preview as an authorized second approver sees it (YOL-D27): same company, the tool's permissions held now,
+    /// first approval recorded. The preparer and the first approver get it from their own preview/approval results.
+    /// </summary>
+    public async Task<AiCommandPipelineResultV1> ReviewAsync(Guid previewId, CancellationToken cancellationToken = default)
+    {
+        var (caller, failure) = await GateAsync(cancellationToken);
+        if (caller is null)
+        {
+            return failure!;
+        }
+
+        var (record, missing) = await LoadCompanyRecordAsync(caller, previewId, cancellationToken);
+        if (record is null)
+        {
+            return missing!;
+        }
+
+        var tool = catalog.Resolve(record.ToolId, record.ToolVersion);
+        if (tool is null || catalog.IsClosed(record.ToolId))
+        {
+            return await RefuseAsync(caller, record, null, AiCommandStatusV1.Refused, AiCommandReasonCodesV1.ToolNotAllowed, null, cancellationToken);
+        }
+
+        var (authorityRevision, missingPermission) = await MeasureAuthorityAsync(caller, tool.Descriptor, cancellationToken);
+        if (authorityRevision is null)
+        {
+            return await RefuseAsync(caller, record, tool.Descriptor, AiCommandStatusV1.Refused, AiCommandReasonCodesV1.PermissionMissing, missingPermission, cancellationToken);
+        }
+
+        return record.State == AiCommandStateV1.Approved
+            ? new AiCommandPipelineResultV1(AiCommandStatusV1.Approved, Preview: View(record), ApprovalId: record.ApprovalId)
+            : await TerminalAsync(caller, record, cancellationToken);
+    }
+
+    /// <summary>
+    /// Decision 156 + YOL-D27 second approval: a different authorized person than the preparer and the first approver,
+    /// bound to the same digest and approval id, with the record previewed again under their authority and their
+    /// password typed again (LocalAccount verification, login lockout). The same person is refused.
+    /// </summary>
+    public async Task<AiCommandPipelineResultV1> SecondApproveAsync(
+        Guid previewId, string? previewHash, Guid approvalId, string? password, CancellationToken cancellationToken = default)
+    {
+        var (caller, failure) = await GateAsync(cancellationToken);
+        if (caller is null)
+        {
+            return failure!;
+        }
+
+        var (record, missing) = await LoadCompanyRecordAsync(caller, previewId, cancellationToken);
+        if (record is null)
+        {
+            return missing!;
+        }
+
+        if (string.Equals(caller.ActorId, record.ActorId, StringComparison.Ordinal)
+            || string.Equals(caller.ActorId, record.ApprovedBy, StringComparison.Ordinal))
+        {
+            return await RefuseAsync(caller, record, null, AiCommandStatusV1.Refused, AiCommandReasonCodesV1.SamePerson, null, cancellationToken);
+        }
+
+        if (!HashMatches(record, previewHash))
+        {
+            return await RefuseAsync(caller, record, null, AiCommandStatusV1.Refused, AiCommandReasonCodesV1.PreviewHashMismatch, null, cancellationToken);
+        }
+
+        if (record.ApprovalId is not { } recordedApproval || recordedApproval != approvalId)
+        {
+            return await RefuseAsync(caller, record, null,
+                AiCommandStatusV1.Refused,
+                record.State == AiCommandStateV1.Previewed ? AiCommandReasonCodesV1.ApprovalRequired : AiCommandReasonCodesV1.ApprovalMismatch,
+                null, cancellationToken);
+        }
+
+        // A resent second approval by the same second approver is idempotent.
+        if (record.SecondApprovedBy is not null)
+        {
+            return string.Equals(record.SecondApprovedBy, caller.ActorId, StringComparison.Ordinal)
+                ? new AiCommandPipelineResultV1(AiCommandStatusV1.SecondApproved, Preview: View(record), ApprovalId: record.ApprovalId, IsReplay: true)
+                : await RefuseAsync(caller, record, null, AiCommandStatusV1.Refused, AiCommandReasonCodesV1.Terminal, null, cancellationToken);
+        }
+
+        if (record.State != AiCommandStateV1.Approved)
+        {
+            return await TerminalAsync(caller, record, cancellationToken);
+        }
+
+        var (tool, bindingFailure) = await CheckBindingAsync(caller, record, bindToPreparer: false, cancellationToken);
+        if (tool is null)
+        {
+            return bindingFailure!;
+        }
+
+        bool verified;
+        try
+        {
+            verified = await stepUpVerifier.IsVerifiedAsync(
+                new AiStepUpChallengeV1(caller.CompanyId, caller.ActorId, caller.SessionId, record.PreviewId, record.PreviewHash),
+                password,
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            verified = false;
+        }
+
+        if (!verified)
+        {
+            return await RefuseAsync(caller, record, tool.Descriptor, AiCommandStatusV1.Refused, AiCommandReasonCodesV1.StepUpRequired, null, cancellationToken);
+        }
+
+        var secondApprovalId = Guid.NewGuid();
+        var secondApproved = record with
+        {
+            State = AiCommandStateV1.SecondApproved,
+            Version = record.Version + 1,
+            SecondApprovalId = secondApprovalId,
+            SecondApprovedBy = caller.ActorId,
+            SecondApprovedAtUtc = Now(),
+        };
+        if (!await ledger.TryReplaceAsync(secondApproved, record.Version,
+                LedgerEvent(caller, AiCommandEventKindV1.SecondApproved, secondApproved, approvalId: secondApprovalId), cancellationToken))
+        {
+            return await RefuseAsync(caller, record, tool.Descriptor, AiCommandStatusV1.Refused, AiCommandReasonCodesV1.Concurrent, null, cancellationToken);
+        }
+
+        return new AiCommandPipelineResultV1(AiCommandStatusV1.SecondApproved, Preview: View(secondApproved), ApprovalId: record.ApprovalId);
     }
 
     private async Task<AiCommandPipelineResultV1> LookupAsync(Caller caller, AiCommandRecordV1 record, CancellationToken cancellationToken)
@@ -495,7 +613,7 @@ public sealed class AiCommandPipeline(
     /// owner's fresh preview of the same input still equals the approved target version, command and difference.
     /// </summary>
     private async Task<(IAiOwnerCommandToolV1? Tool, AiCommandPipelineResultV1? Failure)> CheckBindingAsync(
-        Caller caller, AiCommandRecordV1 record, CancellationToken cancellationToken)
+        Caller caller, AiCommandRecordV1 record, bool bindToPreparer, CancellationToken cancellationToken)
     {
         if (catalog.IsClosed(record.ToolId))
         {
@@ -519,7 +637,8 @@ public sealed class AiCommandPipeline(
             return (null, await InvalidateAsync(caller, record, descriptor, AiCommandReasonCodesV1.PreviewExpired, cancellationToken));
         }
 
-        if (!string.Equals(caller.SessionId, record.Context.SessionId, StringComparison.Ordinal))
+        // The preparer stays bound to the frozen session and authority; a second approver is measured on their own.
+        if (bindToPreparer && !string.Equals(caller.SessionId, record.Context.SessionId, StringComparison.Ordinal))
         {
             return (null, await RefuseAsync(caller, record, descriptor, AiCommandStatusV1.Refused, AiCommandReasonCodesV1.SessionInvalid, null, cancellationToken));
         }
@@ -530,7 +649,7 @@ public sealed class AiCommandPipeline(
             return (null, await RefuseAsync(caller, record, descriptor, AiCommandStatusV1.Refused, AiCommandReasonCodesV1.PermissionMissing, missingPermission, cancellationToken));
         }
 
-        if (!string.Equals(authorityRevision, record.Context.AuthorityRevision, StringComparison.Ordinal))
+        if (bindToPreparer && !string.Equals(authorityRevision, record.Context.AuthorityRevision, StringComparison.Ordinal))
         {
             return (null, await InvalidateAsync(caller, record, descriptor, AiCommandReasonCodesV1.AuthorityChanged, cancellationToken));
         }
@@ -612,6 +731,16 @@ public sealed class AiCommandPipeline(
         }
 
         return (record, null);
+    }
+
+    /// <summary>Company-scoped read for a second approver: another company's preview is absent.</summary>
+    private async Task<(AiCommandRecordV1? Record, AiCommandPipelineResultV1? Failure)> LoadCompanyRecordAsync(
+        Caller caller, Guid previewId, CancellationToken cancellationToken)
+    {
+        var record = previewId == Guid.Empty ? null : await ledger.GetAsync(caller.CompanyId, previewId, cancellationToken);
+        return record is null || record.CompanyId != caller.CompanyId
+            ? (null, await RefuseAsync(caller, null, null, AiCommandStatusV1.NotFound, AiCommandReasonCodesV1.CompanyContextMismatch, null, cancellationToken))
+            : (record, null);
     }
 
     private async Task<AiCommandPipelineResultV1> TerminalAsync(Caller caller, AiCommandRecordV1 record, CancellationToken cancellationToken) =>
@@ -792,7 +921,9 @@ public sealed class AiCommandPipeline(
                 (SecurityEventTypesV1.AiRequestRefused, SecurityEventReasonCodesV1.AiToolNotAllowed),
             AiCommandReasonCodesV1.DataClassNotAllowed => (SecurityEventTypesV1.AiRequestRefused, SecurityEventReasonCodesV1.AiDataClassNotAllowed),
             AiCommandReasonCodesV1.ProviderFailed => (SecurityEventTypesV1.AiRequestRefused, SecurityEventReasonCodesV1.AiProviderFailed),
-            AiCommandReasonCodesV1.ApprovalRequired or AiCommandReasonCodesV1.ApprovalMismatch or AiCommandReasonCodesV1.StepUpRequired
+            AiCommandReasonCodesV1.StepUpRequired => (SecurityEventTypesV1.AiRequestRefused, SecurityEventReasonCodesV1.CredentialsInvalid),
+            AiCommandReasonCodesV1.ApprovalRequired or AiCommandReasonCodesV1.ApprovalMismatch or AiCommandReasonCodesV1.SamePerson
+                or AiCommandReasonCodesV1.SecondApprovalRequired
                 or AiCommandReasonCodesV1.PreviewHashMismatch or AiCommandReasonCodesV1.PreviewExpired or AiCommandReasonCodesV1.PreviewStale
                 or AiCommandReasonCodesV1.AuthorityChanged =>
                 (SecurityEventTypesV1.AiRequestRefused, SecurityEventReasonCodesV1.AiApprovalMissing),

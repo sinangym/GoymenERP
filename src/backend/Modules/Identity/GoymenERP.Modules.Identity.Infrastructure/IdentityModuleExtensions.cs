@@ -110,6 +110,8 @@ public static class IdentityModuleExtensions
         services.AddScoped<ILocalCredentialCommandStore, SqlLocalCredentialCommandStore>();
         services.AddScoped<ILocalPasswordContextTermSource, SqlLocalPasswordContextTermSource>();
         services.AddScoped<ILocalAccountPasswordChangeService, LocalAccountPasswordChangeService>();
+        // YOL-D27: password re-entry at an AI second approval; same KS-8 lockout counter and policy as login.
+        services.AddScoped<ILocalAccountReauthenticationServiceV1, LocalAccountReauthenticationService>();
         // ID-2 one-shot founder bootstrap (KIM-D5/KIM-D18); the Admin role code has no default.
         services.AddOptions<IdentityBootstrapOptions>()
             .Bind(configuration.GetSection(IdentityBootstrapOptions.SectionName));
