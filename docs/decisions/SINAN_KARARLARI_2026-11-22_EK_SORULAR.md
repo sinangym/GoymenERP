@@ -31,6 +31,26 @@ işaretleri soranındır. Bu dosya bir **ajan aktarımıdır**; Issue #1189 kayd
 | E-17 | İş kutusunda "günde üç özet" (AI-D29) hangi saatlerde gönderilsin? | **09:00, 13:00, 17:00 (Önerilen)** | Seçilmeyenler: "08:30, 12:30, 16:30"; "08:00, 12:00, 18:00". Kaynak: Work + AI tamamlama planı §5 S1. |
 | E-18 | "Bekleyen sevkiyat" sayımında kısmen sevk edilmiş yayımlanmış talimat bekleyen sayılsın mı? | **Evet, kalanı varsa bekleyen (Önerilen)** | Seçilmeyen: "Hayır, sevk başlayınca düşer". Plan §5 S2. |
 | E-19 | Kayda bağlı notlar ve iş kutusu mesajları ne kadar saklansın? | **Bağlı kayıt kadar (Önerilen)** | Seçilmeyenler: "10 yıl sabit"; "Şimdilik karar yok". Plan §5 S4. |
+| E-20 | Kural 156 "ikinci onay" isteyen işlemlerde ikinci onayı kim verir, kimlik nasıl doğrulanır? (WP-C1) | **Farklı kişi + şifre (Önerilen)** | Seçilmeyenler: "Farklı kişi, ek doğrulama yok"; "Aynı kişi + şifre". |
+| E-21 | Onay süresi aşılınca bekleyen onay kime yükseltilsin? (WP1) | **Yeni "yükseltme" izni (Önerilen)** | Seçilmeyenler: "Yalnız Genel Müdür"; "Yükseltme yok". |
+| E-22 | Kişisel asistan hafıza kayıtları ne kadar saklansın? (WP-C6) | **1 yıl (Önerilen)** | Seçilmeyenler: "90 gün"; "2 yıl". AI-D15 notu ve plan S-listesi. |
+| E-23 | Banka ekstresi eşleştirmede tutar farkı toleransı? (WP12) | **Birebir + elle onay (Önerilen)** | Seçilmeyenler: "Küçük tolerans + onay"; "Birebir ise otomatik". |
+| E-24 | OTIF nasıl hesaplansın? (WP14) | **Termin günü + tam miktar (Önerilen)** | Seçilmeyenler: "Termin +1 gün tolerans"; "Miktar toleransı da olsun". |
+| E-25 | Yaşlandırma dilimleri ve başlangıcı? (WP14) | **Vadeden; 0-30/31-60/61-90/90+ (Önerilen)** | Seçilmeyenler: "Fatura tarihinden, aynı dilimler"; "Vadeden; 0-15/16-30/31-60/60+". |
+| E-26 | Belgeden taslakta kaynak belge ne kadar saklansın? (WP-B3) | **Kayıt açılırsa kayıtla, yoksa 90 gün (Önerilen)** | Seçilmeyenler: "Her durumda kayıt kadar / 1 yıl"; "Hiç saklanmasın". |
+| E-27 | Belgeden gelen taslakta tedarikçi teyidini kim yapar? (WP-B3) | **Yeni teyit izni (Önerilen)** | Seçilmeyenler: "Alış siparişi görebilen" (ASSUMPTION-AI-DRAFT-CONFIRMATION-1); "Alış faturası içe aktaran". |
+| E-28 | AI araçlarında cari verisinin veri sınıfı? (WP-A3a) | **Kişi/iletişim Gizli, tutar İç (Önerilen)** | Seçilmeyenler: "Tüm cari verisi Gizli"; "Tüm cari verisi İç". |
+| E-29 | Hazine bakiyesi okuma aracında bakiye kaynağı? (WP-A3c) | **Finans defteri + ekstre farkı (Önerilen)** | Seçilmeyenler: "Yalnız finans defteri"; "Son banka ekstresi". |
+| E-30 | AI paneline yazılan serbest sorunun veri sınıfı? (WP-A1) | **İç (Önerilen)** | Seçilmeyen: "Her zaman Gizli". |
+| E-31 | Depo Settings'te Dependabot uyarıları ve secret scanning açılsın mı? (WP16) | **Evet, ben açacağım (Önerilen)** | Seçilmeyen: "Şimdilik hayır". Ayar insan kapısıdır; Sinan açar. |
+| E-32 | Yönetici asistan hafızasını görüntüleyince/kapatınca kullanıcıya bildirim gitsin mi? (WP-C6, AI-D30) | **Hiç bildirme** | Seçilmeyenler: "Kapatınca bildir, görüntülemede hayır (Önerilen)"; "İkisinde de bildir". |
+| E-33 | Ekstrede karşı taraf IBAN'ıyla cari bulmada IBAN kaynağı? (WP12) | **Cari kartındaki IBAN listesi (Önerilen)** | Seçilmeyenler: "Onayla öğrensin"; "IBAN ile eşleme yok". |
+| E-34 | Grup şirketleri arası işlemler raporunda grup şirketi nasıl anlaşılsın? (WP14) | **Cari ↔ şirket bağlantısı (Önerilen)** | Seçilmeyen: "VKN eşleşmesi". |
+| E-35 | Stok maliyeti okuma aracı yapay zekâya açılsın mı? (WP-A3b) | **Açılsın, maliyet izniyle, Gizli (Önerilen)** | Seçilmeyen: "Şimdilik açılmasın". |
+| E-36 | Fason vergi kodu değiştirme izni: SAT-D395 (alış onayı) mı, #1189 6947126872 cevabı (satışta satış onayı, alışta alış onayı) mı? (K3FIX-F5) | **Modüle göre ayrı izin (Önerilen)** | Seçilmeyenler: "İkisi birden gereksin"; "Yalnız alış onayı (SAT-D395)". |
+| E-37 | Hiçbir şirkete atanmamış yeni hesapları kullanıcı yönetimi listesinde kim görür? (K3FIX-F5, KIM-D16) | **Yalnız oluşturan + Sistem Yöneticisi (Önerilen)** | Seçilmeyenler: "Kullanıcı yönetme yetkisi olan herkes"; "Yalnız Sistem Yöneticisi". |
+| E-38 | ERP'de satış faturası için ayrı PDF üretilsin mi? (WP13) | **Hayır, yalnız resmî PDF (Önerilen)** | Seçilmeyen: "Evet, 'Bilgi Formu' başlığıyla". |
+| E-39 | İmzalı sipariş sözleşmesi yüklenince müşteri kabulü otomatik gerçekleşsin mi, kaydı kim yapar? (WP13) | **Kabulü tetiklesin** | Seçilmeyenler: "Ayrı kalsın, kendi izni (Önerilen)"; "Ayrı kalsın, kabul izniyle". |
 
 ## Kararlar
 
@@ -55,6 +75,26 @@ işaretleri soranındır. Bu dosya bir **ajan aktarımıdır**; Issue #1189 kayd
 | YOL-D25 | Günlük özet saatleri (AI-D29 ayrıntısı) | "Özet" sınıfı bildirimler iş günlerinde şirket saat diliminde 09:00, 13:00 ve 17:00'de toplanır; saatler Ayarlar'dan değiştirilebilir. |
 | AI-D37 | Kısmi sevk (AI-D35 ayrıntısı) | Yayımlanmış yükleme talimatının sevk edilmemiş miktarı kaldıkça talimat "bekleyen sevkiyat" sayılır; tamamı sevk edilince düşer. |
 | YOL-D26 | Not ve iş kutusu mesajı saklama (YOL-D19 ayrıntısı) | Kayda bağlı not ve iş kutusu mesajı, bağlı olduğu kaydın yasal saklama süresi boyunca tutulur; kayıt imha edilince not da imha edilir. İmha yolu kayıt imha politikası etkinleşene kadar kapalı kalır; bugün not silinmez, pasifleştirilir. |
+| YOL-D27 | İkinci onay (kural 156, WP-C1) | İkinci onayı işlemi hazırlayandan ve ilk onaylayandan **farklı**, yetkili bir kişi verir; onay anında kullanıcının **şifresi yeniden sorulur**. Aynı kişinin ikinci onayı reddedilir. |
+| YOL-D28 | Onay yükseltme (WP1) | Süresi aşan onay için yeni bir **"onay yükseltme" izni** tanımlanır; yükseltilen onay bu izne sahip kullanıcıların iş kutusuna düşer. İzin hiçbir role verilmez (atama insan kapısı); izin sahibi yokken yalnız onaylayıcıya hatırlatma bildirimi gider. |
+| AI-D38 | Asistan hafızası saklama (AI-D15 notu) | Kişisel asistan hafıza kaydı **son kullanımdan 1 yıl** sonra pasife alınır; fiziksel imha kapalıdır (imha ayrı politika). |
+| AI-D39 | Hafıza gözetiminde bildirim (AI-D30 ayrıntısı) | Yöneticinin hafıza/zamanlı görev görüntülemesi ve kapatması kullanıcıya **bildirilmez**; her ikisi denetim kaydına yazılır. |
+| FNS-D113 | Banka ekstresi eşleştirme toleransı (WP12) | Yalnız tutarı **birebir** tutan kayıt önerilir; tolerans yoktur; eşleşme her zaman kullanıcı onayıyla kesinleşir. |
+| FNS-D114 | Ekstrede IBAN ile cari bulma (WP12) | Kaynak, cari kartındaki **IBAN listesidir** (Cari sahibi; birden fazla IBAN); ekstreden IBAN otomatik öğrenilmez. |
+| YOL-D29 | OTIF (WP14) | Sipariş satırı söz verilen **termin gününde veya önce** VE sipariş miktarının **tamamı** sevk edildiyse OTIF sayılır; kısmi sevk OTIF değildir; tolerans yoktur. |
+| YOL-D30 | Yaşlandırma (WP14) | Gecikme **vade tarihinden** sayılır; dilimler **0-30 / 31-60 / 61-90 / 90+** gün; vadesi gelmemişler ayrı sütunda. |
+| YOL-D31 | Grup şirketi tanımı (WP14) | Bir cari, cari kartındaki **cari ↔ şirket bağlantısı** kuruluysa grup şirketi sayılır; VKN eşleşmesiyle otomatik sayılmaz. |
+| AI-D40 | Belgeden taslak kaynak belgesi saklama (WP-B3) | Taslaktan kayıt açılırsa kaynak belge **bağlı kayıt kadar** (YOL-D26) saklanır; açılmazsa **90 gün** sonra pasife alınır; fiziksel imha kapalıdır. |
+| AI-D41 | Belgeden taslakta tedarikçi teyidi (WP-B3) | Yeni bir **"belgeden taslak teyidi" izni** tanımlanır; hiçbir role verilmez (atama insan kapısı). ASSUMPTION-AI-DRAFT-CONFIRMATION-1'in yerine geçer. |
+| AI-D42 | Cari verisinin veri sınıfı (WP-A3a) | Yetkili kişi adı, telefon, e-posta, TCKN **Gizli** (yalnız şirket içi model); cari unvanı, bakiye ve tutarlar **İç**. |
+| AI-D43 | Hazine bakiyesi kaynağı (WP-A3c) | Bakiye **finans defterindeki** hareketlerden gelir; son banka ekstresiyle fark varsa ayrıca uyarı gösterilir. |
+| AI-D44 | Serbest panel sorusunun veri sınıfı (WP-A1) | Soru metni varsayılan **İç**; kişisel veri (TCKN, telefon, IBAN vb.) içeriyorsa **Gizli**'ye yükselir; kaynak veri daha yüksekse o sınıf geçerlidir. |
+| AI-D45 | Stok maliyeti okuma aracı (WP-A3b) | Açılır; yalnız **maliyet görme izni** olan kullanıcının asistanı okur; veri **Gizli** sınıfındadır, bulut modele gitmez. |
+| GOV-D15 | Depo kod güvenliği ayarları (WP16) | Dependabot uyarıları, secret scanning ve push protection **Sinan tarafından** Settings'ten açılacaktır; ajan ayarı değiştirmez. |
+| SAT-D469 | Fason vergi kodu izni (SAT-D395'i modüle göre ayırır; #1189 6947126872) | Satış tarafındaki fason hizmet varsayılan vergi kodu ve satış satırı kodu **`sales.orders.approve`**, alış tarafındaki **`purchasing.orders.approve`** izniyle değiştirilir; iki iznin birlikte istenmesi gerekmez. Yeni izin açılmaz, rol ataması yapılmaz. |
+| KIM-D57 | Atanmamış hesapların görünürlüğü (KIM-D16 ayrıntısı) | Hiçbir şirkete atanmamış hesabı kullanıcı yönetimi listesinde yalnız **onu oluşturan yönetici** ve platform düzeyi **Sistem Yöneticisi** görür. Atama yapılınca KIM-D16 şirket çiti geçerlidir. |
+| SAT-D470 | Satış faturası PDF'i (FNS-D36/D38) | ERP ayrı satış faturası PDF'i **üretmez**; resmî e-Fatura/e-Arşiv PDF'i (Finans resmî kaydı) gösterilir. |
+| SAT-D471 | İmzalı sipariş sözleşmesi (WP13) | İmzalı sözleşme belgesinin kaydı siparişin **müşteri kabulünü** gerçekleştirir (kabul kaydı aynı işlemde, bir kez); kayıt **`sales.orders.customer-acceptance.record`** iznini ister, ayrı imzalı onay izni açılmaz. İmzalı belge pasife alınırsa kabul kendiliğinden geri alınmaz; mevcut kabul iptal/düzeltme yolu kullanılır. |
 
 ## Taslağa doğrudan yansıyanlar (yeni karar değil)
 
