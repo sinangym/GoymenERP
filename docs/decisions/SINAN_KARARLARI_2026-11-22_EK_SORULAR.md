@@ -57,6 +57,18 @@ işaretleri soranındır. Bu dosya bir **ajan aktarımıdır**; Issue #1189 kayd
 - AK-4b raporundaki "Finans'ın henüz cevaplamadığı kesinleşmiş fatura kg fiyatına girer mi" sorusu SAT-D452 ve SAT-D457
   ile kararlıdır: kesinleşmiş fatura girer, yalnız Finans'ın reddettiği fatura girmez.
 
+## Düzeltme: SAT-D414 yürürlükte (ajan notu, yeni karar değil)
+
+E-09, E-15 ve E-16 soruları sorulurken kilitli **SAT-D414** anılmadı (PR #1206 DOCS-REVIEW-1 P2-2). SAT-D414'e göre iskonto
+satır bazlıdır ve **belge altı (toplam üzerinden) iskonto alanı açılmaz**; alanın açılması yeni karar ister. Bu kararlar
+SAT-D414'ü değiştirmez:
+
+- SAT-D465'in "belge altı iskonto mal satırlarına oransal dağıtılıp düşülür" kısmı, SAT-D467 ve SAT-D468 bugün uygulanacak
+  bir girdi bulmaz; yalnız belge altı iskonto alanı yeni bir kararla açılırsa geçerli olur.
+- Bugün belge düzeyi kg fiyatı = (satır iskontoları düşülmüş, vade farkı ve kg'siz hizmet hariç, iade düşülmüş) net mal
+  tutarı / net kg; SAT-D466 aynen geçerlidir.
+- Golden EK2'deki belge altı iskonto satırları "SAT-D414 nedeniyle bugün girdi yok" olarak işaretlenir.
+
 ## Sınırlar
 
 - Bu dosya rol veya izin atamaz, seed'i değiştirmez; atama ve seed değişikliği insan kapısıdır.
