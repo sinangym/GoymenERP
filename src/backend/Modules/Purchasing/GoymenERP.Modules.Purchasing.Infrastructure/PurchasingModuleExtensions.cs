@@ -104,6 +104,9 @@ public static class PurchasingModuleExtensions
         services.AddScoped<IWorkInboxSourceV1, PurchaseOrderWorkInboxSourceV1>();
         services.AddScoped<IWorkInboxSourceV1, PurchaseIncomingInvoiceVarianceWorkInboxSourceV1>();
         services.AddScoped<IWorkInboxSourceV1, PurchaseGoodsReceiptBatchWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, PurchaseRequestWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, PurchaseSupplierReturnCostExceptionWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, PurchaseServiceOrderWorkInboxSourceV1>();
         // F-017 F17-1 (ALS-D82): the allocatable amount of an approved general line, read by Inventory's future allocation only.
         services.AddScoped<IPurchaseFutureSupplyReadPortV1, PurchaseFutureSupplyReadPort>();
         // F17-1b / KLN-D30: current unreceived schedule slices, on the same scoped owner context/transaction.
