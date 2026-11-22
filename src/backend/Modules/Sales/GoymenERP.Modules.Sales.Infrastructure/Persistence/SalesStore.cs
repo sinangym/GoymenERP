@@ -301,6 +301,7 @@ public sealed partial class SalesStore(
             customerRejection = draft.CurrentRevisionCustomerRejection };
         var rejectionsBefore = draft.CustomerRejections.Count;
         var marginCostsBefore = draft.MarginCosts.Count;
+        var kilogramsPerUnitBefore = draft.KilogramsPerUnitSnapshots.Count;
         var versionBefore = draft.Version;
         var linesBefore = LineRevisionStates(draft);
         var previouslyAcceptedRevision = draft.CustomerAcceptance?.Revision;
@@ -334,6 +335,7 @@ public sealed partial class SalesStore(
         }
 
         AppendMarginCosts(draft, marginCostsBefore);
+        AppendKilogramsPerUnit(draft, kilogramsPerUnitBefore);
         row.ApprovalState = (int)draft.ApprovalState;
         row.SubmittedBy = draft.Approval.SubmittedBy;
         row.SubmittedAtUtc = draft.Approval.SubmittedAtUtc;
@@ -397,7 +399,8 @@ public sealed partial class SalesStore(
                 customerRejection = draft.CurrentRevisionCustomerRejection,
                 // SAT-D211: the lines the rejection brought back / took out (omitted when none).
                 revertedLines = reverted.Count == 0 ? null : reverted,
-                marginCosts = draft.MarginCosts.Skip(marginCostsBefore).ToArray() }, Json),
+                marginCosts = draft.MarginCosts.Skip(marginCostsBefore).ToArray(),
+                kilogramsPerUnit = draft.KilogramsPerUnitSnapshots.Skip(kilogramsPerUnitBefore).ToArray() }, Json),
             audit.Reason,
             ApprovalContextJson: null,
             AuditAiInvolvement.None,
@@ -2058,6 +2061,7 @@ public sealed partial class SalesStore(
 
         var ids = rows.Select(row => row.Id).ToArray();
         var marginCostRows = await dbContext.DraftMarginCosts.AsNoTracking().Where(cost => ids.Contains(cost.DraftId)).ToListAsync(cancellationToken);
+        var kilogramsPerUnitRows = await dbContext.DraftLineKilogramsPerUnit.AsNoTracking().Where(item => ids.Contains(item.DraftId)).ToListAsync(cancellationToken);
         var lines = await dbContext.DraftLines.AsNoTracking().Where(line => ids.Contains(line.DraftId)).ToListAsync(cancellationToken);
         var slices = await dbContext.DraftDeliverySlices.AsNoTracking().Where(slice => ids.Contains(slice.DraftId)).ToListAsync(cancellationToken);
         var revisions = await dbContext.DraftRevisions.AsNoTracking().Where(revision => ids.Contains(revision.DraftId)).ToListAsync(cancellationToken);
@@ -2289,6 +2293,7 @@ public sealed partial class SalesStore(
                     cost.SaleRateCurrencyId is { } saleCurrency && cost.SaleExchangeRate is { } saleRate && cost.SaleRateDay is { } saleDay
                         ? new SalesMarginSaleRate(saleCurrency, saleRate, saleDay)
                         : null));
+            RestoreKilogramsPerUnit(draft, kilogramsPerUnitRows);
 
             drafts.Add(draft);
         }

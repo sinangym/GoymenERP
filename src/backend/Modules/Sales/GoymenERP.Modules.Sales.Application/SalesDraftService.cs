@@ -81,7 +81,8 @@ public sealed partial class SalesDraftService(
     ISalesOrderPlannedQuantityReadPortV1? plannedQuantities = null,
     ISalesOrderFutureDemandReductionParticipantV1? futureDemandReduction = null,
     ISalesMarginCostReadPortV1? marginCosts = null,
-    ISalesOrderInvoicedQuantityReadPortV1? invoicedQuantities = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
+    ISalesOrderInvoicedQuantityReadPortV1? invoicedQuantities = null,
+    IProductTheoreticalKilogramsPerUnitReadPortV1? kilogramsPerUnitSource = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -1058,6 +1059,12 @@ public sealed partial class SalesDraftService(
             && current.Version == expectedVersion && current.ApprovalState == InternalApprovalState.PendingApproval
             ? await PrepareMarginCostsAsync(scope, permission, current, cancellationToken)
             : [];
+        // SAT-D437 (AK-4): a piece line's theoretical kg/unit is read before the last fence and pinned in the same save; a piece
+        // line without a figure refuses the approval here (409, not recorded). Kilogram lines are never read.
+        var approvalKilogramsPerUnit = commandName == SalesDraftCommands.ApproveV1
+            && current.Version == expectedVersion && current.ApprovalState == InternalApprovalState.PendingApproval
+            ? await PrepareKilogramsPerUnitAsync(scope, permission, current, cancellationToken)
+            : [];
 
         // The last fence that can still prevent the write; none after the commit (ORG #321 P3-1).
         scope = await RequireStillAsync(scope, permission, cancellationToken);
@@ -1070,6 +1077,8 @@ public sealed partial class SalesDraftService(
                 transition(draft, scope.ActorId, expectedVersion, now);
                 if (approvalCosts.Count > 0)
                     draft.PinMarginCosts([.. approvalCosts.Select(cost => cost with { RecordedAtUtc = now.ToUniversalTime() })]);
+                if (approvalKilogramsPerUnit.Count > 0)
+                    draft.PinKilogramsPerUnit([.. approvalKilogramsPerUnit.Select(item => item with { RecordedAtUtc = now.ToUniversalTime() })]);
             };
             if (CompletesReducedRevision(current, expectedVersion, commandName))
             {
@@ -1925,7 +1934,8 @@ public sealed partial class SalesDraftService(
                     : [.. line.RequestedDeliverySlices.Select(slice => new SalesDraftDeliverySliceV1(slice.SliceId, line.OrderUnit.UnitId,
                         slice.QuantityText, slice.RequestedDeliveryDate))],
                 Disclosed(disclosure, line.Commercial.DiscountPercent), disclosure, line.OrderUnit.UnitCode,
-                line.AddedInRevision is { } added ? SalesDraftApiV1.RevisionText(added) : null))],
+                line.AddedInRevision is { } added ? SalesDraftApiV1.RevisionText(added) : null,
+                KilogramsPerUnitText(draft, line.Id)))],
             Reference(draft.Header.DeliveryAddress), Reference(draft.Header.Contact), Reference(draft.Header.Responsible),
             Reference(draft.Header.PaymentTerms), Reference(draft.Header.SourceStrategy), Reference(draft.Header.Package),
             new SalesDraftApprovalV1(draft.Approval.SubmittedBy, draft.Approval.SubmittedAtUtc, draft.Approval.DecidedBy,

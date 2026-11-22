@@ -1685,6 +1685,8 @@ public sealed partial class SalesDraftServiceTests
         public FakeProducts Products { get; init; } = new();
         public FakeStore Store { get; init; } = new();
         public ISalesMarginCostReadPortV1? MarginCosts { get; set; }
+        /// <summary>SAT-D437 (AK-4): the Product owner's theoretical kg/unit read; null = not composed.</summary>
+        public GoymenERP.Modules.Product.Application.Contracts.IProductTheoreticalKilogramsPerUnitReadPortV1? KilogramsPerUnit { get; set; }
         public ISalesOrderInvoicedQuantityReadPortV1? InvoicedQuantities { get; set; }
         /// <summary>API-20 / API-21: the in-memory request store; null = not composed (503).</summary>
         public FakeRequestStore? Requests { get; set; } = new();
@@ -1762,7 +1764,7 @@ public sealed partial class SalesDraftServiceTests
                 InvoiceRecords, PostedShares,
                 NoFutureAllocations ? null : FutureAllocations ?? (Allocations is null ? null : new NoFutureSupplyAllocations()),
                 FutureAllocationRelease, NoPlannedQuantities ? null : PlannedQuantities ?? new ApprovedLessShippedPlan(this), FutureDemandReduction, MarginCosts,
-                InvoicedQuantities);
+                InvoicedQuantities, KilogramsPerUnit);
         }
 
         /// <summary>
@@ -2058,12 +2060,18 @@ public sealed partial class SalesDraftServiceTests
             };
         }
 
+        /// <summary>AK-4: units the fake answers as the piece (adet) profile.</summary>
+        public HashSet<Guid> PieceUnits { get; } = [];
+
         public Task<UnitProfileV1> GetUnitProfileAsync(Guid unitId, DateOnly effectiveOn, CancellationToken cancellationToken = default)
         {
             Calls++;
             return Fault switch
             {
                 "unit-not-found" => Task.FromException<UnitProfileV1>(new SettingsPrerequisiteException(SettingsPrerequisiteCodesV1.UnitProfileNotFound)),
+                // AK-4: a unit named in PieceUnits answers the approved piece profile (count, scale 0).
+                _ when PieceUnits.Contains(unitId) => Task.FromResult(new UnitProfileV1(Company, unitId, "adet", "count", false,
+                    new ProfileVersionV1(KgProfile, 4), 0, true, new DateOnly(2026, 9, 1), null)),
                 _ => Task.FromResult(new UnitProfileV1(Fault == "unit-other-company" ? Guid.NewGuid() : Company, unitId, "kg", "weight", true,
                     new ProfileVersionV1(KgProfile, 4), 3, true, new DateOnly(2026, 9, 1), null)),
             };

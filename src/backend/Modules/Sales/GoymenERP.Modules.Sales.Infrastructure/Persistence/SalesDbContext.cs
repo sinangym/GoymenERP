@@ -750,6 +750,7 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
         ConfigureDrafts(modelBuilder);
         ConfigureDraftLines(modelBuilder);
         ConfigureMarginCosts(modelBuilder);
+        ConfigureKilogramsPerUnit(modelBuilder);
         ConfigureDraftDeliverySlices(modelBuilder);
         ConfigureDraftAttempts(modelBuilder);
         ConfigureDraftRevisions(modelBuilder);
@@ -2368,6 +2369,8 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
                     // F-018 / plan S1: a recorded credit limit warning is APPEND-ONLY — no column of it may change afterwards.
                     DraftRiskWarningRow => [],
                     DraftMarginCostRow => [],
+                    // SAT-D437: a pinned theoretical kg/unit is APPEND-ONLY — no column of it may change afterwards.
+                    DraftLineKilogramsPerUnitRow => [],
                     // No 30 / SAT-D12: a recorded force-closure is APPEND-ONLY — no column of it may change afterwards.
                     DraftForceClosureRow => [],
                     // SAT-D32: a recorded user closure is APPEND-ONLY — no column of it may change afterwards.

@@ -330,7 +330,10 @@ public static class SalesModuleExtensions
         // SAT-S8 / KLN-D105: the accepted reduced revision uses the host's participant in the Sales transaction.
         futureDemandReduction: serviceProvider.GetService<ISalesOrderFutureDemandReductionParticipantV1>(),
         marginCosts: serviceProvider.GetService<ISalesMarginCostReadPortV1>(),
-        invoicedQuantities: serviceProvider.GetService<ISalesOrderInvoicedQuantityReadPortV1>());
+        invoicedQuantities: serviceProvider.GetService<ISalesOrderInvoicedQuantityReadPortV1>(),
+        // SAT-D437 (AK-4): the Product owner's theoretical kg/unit read, pinned on piece lines at the internal approval. Absent, a
+        // piece line's approval is refused (fail-closed); kilogram lines never read it.
+        kilogramsPerUnitSource: serviceProvider.GetService<GoymenERP.Modules.Product.Application.Contracts.IProductTheoreticalKilogramsPerUnitReadPortV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(
