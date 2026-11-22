@@ -23,6 +23,16 @@ public sealed class StockScrapPieceCountTests
     }
 
     [Fact]
+    public void The_scrap_states_the_pieces_it_leaves_for_the_allocation_check_and_none_on_a_kg_only_label()
+    {
+        // KLN-D93 / KLN-D119 (K3-A P2-4): what stays after the scrap is checked against the active allocations' held pieces.
+        Assert.Equal(PieceCount.Of(3), Scrap(100m, 25m, 4, 1).RemainingPieces);
+        Assert.Equal(PieceCount.Zero, Scrap(100m, 100m, 4, 4).RemainingPieces);
+        Assert.Null(new StockScrap(ScrapId, CompanyA, Position(), Kilograms.Positive(100m), Kilograms.Positive(25m), At,
+            "SENTETIK fire").RemainingPieces);
+    }
+
+    [Fact]
     public void A_whole_scrap_takes_every_piece()
     {
         var ledger = Stocked(100m, 4);

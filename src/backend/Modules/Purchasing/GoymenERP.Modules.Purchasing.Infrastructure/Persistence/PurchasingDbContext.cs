@@ -939,6 +939,13 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
                     && (entry.Property(nameof(PurchaseOrderRow.DocumentNumberCancelledAtUtc)).OriginalValue is not null
                         || entry.Property(nameof(PurchaseOrderRow.DocumentNumberCancelledAtUtc)).CurrentValue is null))
                     throw new InvalidOperationException("Belge numarası iptal geçmişi yalnız bir kez eklenir.");
+                // AK-3 (SAT-D437): the theoretical kg per piece is recorded once at the first approval and never changes after.
+                if (entry.Entity is PurchaseOrderLineRow
+                    && (entry.Property(nameof(PurchaseOrderLineRow.TheoreticalKilogramsPerUnit)).IsModified
+                        || entry.Property(nameof(PurchaseOrderLineRow.TheoreticalKilogramsSourceVersion)).IsModified)
+                    && (entry.Property(nameof(PurchaseOrderLineRow.TheoreticalKilogramsPerUnit)).OriginalValue is not null
+                        || entry.Property(nameof(PurchaseOrderLineRow.TheoreticalKilogramsSourceVersion)).OriginalValue is not null))
+                    throw new InvalidOperationException("Teorik kg/adet onayda bir kez kaydedilir, sonra değişmez.");
                 string[] allowed = entry.Entity switch
                 {
                     PurchaseRequestRow =>
@@ -965,6 +972,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
                         nameof(PurchaseOrderLineRow.UnitPrice), nameof(PurchaseOrderLineRow.PriceUnitId),
                         nameof(PurchaseOrderLineRow.DiscountPercent), nameof(PurchaseOrderLineRow.DiscountAmount),
                         nameof(PurchaseOrderLineRow.DeferralPercent), nameof(PurchaseOrderLineRow.DeferralAmount),
+                        nameof(PurchaseOrderLineRow.TheoreticalKilogramsPerUnit), nameof(PurchaseOrderLineRow.TheoreticalKilogramsSourceVersion),
                     ],
                     // ALC-S16: a bulk receipt moves once (its status and decision facts); a label is only released by a rejection.
                     PurchaseGoodsReceiptBatchRow =>

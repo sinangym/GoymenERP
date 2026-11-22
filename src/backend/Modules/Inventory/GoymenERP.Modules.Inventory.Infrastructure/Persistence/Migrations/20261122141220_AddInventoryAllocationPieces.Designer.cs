@@ -1960,7 +1960,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_TransferReceipts_Overage", "([OverageKg] = 0 AND [OverageReason] IS NULL) OR ([OverageKg] > 0 AND [OverageReason] IS NOT NULL AND LEN(LTRIM(RTRIM([OverageReason]))) > 0)");
 
-                            t.HasCheckConstraint("CK_TransferReceipts_PieceCount", "([DispatchedPieceCount] IS NULL AND [ReceivedPieceCount] IS NULL AND [ShortagePieceCount] IS NULL AND [OveragePieceCount] IS NULL) OR ([DispatchedPieceCount] > 0 AND [ReceivedPieceCount] > 0 AND [ShortagePieceCount] >= 0 AND [OveragePieceCount] >= 0 AND ([ShortagePieceCount] = 0 OR [OveragePieceCount] = 0) AND [ReceivedPieceCount] + [ShortagePieceCount] - [OveragePieceCount] = [DispatchedPieceCount] AND ([ShortagePieceCount] = 0 OR [ShortageKg] > 0) AND ([OveragePieceCount] = 0 OR [OverageKg] > 0))");
+                            t.HasCheckConstraint("CK_TransferReceipts_PieceCount", "([DispatchedPieceCount] IS NULL AND [ReceivedPieceCount] IS NULL AND [ShortagePieceCount] IS NULL AND [OveragePieceCount] IS NULL) OR ([DispatchedPieceCount] IS NOT NULL AND [ReceivedPieceCount] IS NOT NULL AND [ShortagePieceCount] IS NOT NULL AND [OveragePieceCount] IS NOT NULL AND [DispatchedPieceCount] > 0 AND [ReceivedPieceCount] > 0 AND [ShortagePieceCount] >= 0 AND [OveragePieceCount] >= 0 AND ([ShortagePieceCount] = 0 OR [OveragePieceCount] = 0) AND [ReceivedPieceCount] + [ShortagePieceCount] - [OveragePieceCount] = [DispatchedPieceCount] AND ([ShortagePieceCount] = 0 OR [ShortageKg] > 0) AND ([OveragePieceCount] = 0 OR [OverageKg] > 0))");
 
                             t.HasCheckConstraint("CK_TransferReceipts_Quantities", "[DispatchedKg] > 0 AND [ReceivedKg] > 0 AND [ShortageKg] >= 0 AND [OverageKg] >= 0 AND ([ShortageKg] = 0 OR [OverageKg] = 0) AND [ReceivedKg] + [ShortageKg] - [OverageKg] = [DispatchedKg]");
 
@@ -3786,7 +3786,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_StockScraps_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OwnerId] <> '00000000-0000-0000-0000-000000000000' AND [CustodianId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
 
-                            t.HasCheckConstraint("CK_StockScraps_PieceCount", "([BookPieceCount] IS NULL AND [ScrapPieceCount] IS NULL) OR ([BookPieceCount] > 0 AND [ScrapPieceCount] >= 0 AND (([ScrapPieceCount] = [BookPieceCount] AND [ScrapKg] = [BookKg]) OR ([ScrapPieceCount] < [BookPieceCount] AND [ScrapKg] < [BookKg])))");
+                            t.HasCheckConstraint("CK_StockScraps_PieceCount", "([BookPieceCount] IS NULL AND [ScrapPieceCount] IS NULL) OR ([BookPieceCount] IS NOT NULL AND [ScrapPieceCount] IS NOT NULL AND [BookPieceCount] > 0 AND [ScrapPieceCount] >= 0 AND (([ScrapPieceCount] = [BookPieceCount] AND [ScrapKg] = [BookKg]) OR ([ScrapPieceCount] < [BookPieceCount] AND [ScrapKg] < [BookKg])))");
 
                             t.HasCheckConstraint("CK_StockScraps_State", "[OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] IN (1, 2) AND [LabelVersion] >= 1 AND [BookKg] > 0 AND [ScrapKg] > 0 AND [ScrapKg] <= [BookKg]");
 

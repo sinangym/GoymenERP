@@ -252,13 +252,14 @@ export function LabelAllocationPanel({ labelId, companyId, namespace, routeEntry
       setFormError(`Değişiklik gerekçesi zorunludur (en fazla ${REASON_MAX_LENGTH} karakter).`)
       return
     }
-    // KLN-D119: an allocation that holds pieces states the pieces it holds afterwards; a move may land on a label whose
+    // KLN-D119: an allocation that holds pieces states the pieces it holds afterwards — on a resize and, SAT-D463, on a move
+    // too (a piece-holding allocation never moves without its pieces). A kg-only allocation's move may land on a label whose
     // piece tracking this screen cannot see, so there the field is optional and the server decides.
     const holdsPieces = item.allocation.remainingPieces !== undefined
     const typedPieces = holdsPieces || draft.moveTo ? draft.pieceCount.trim() : ''
     let pieces: number | undefined
     if (typedPieces.length === 0) {
-      if (holdsPieces && !draft.moveTo) {
+      if (holdsPieces) {
         setFormError(PT.changePieceCountRequired)
         return
       }
@@ -384,13 +385,16 @@ export function LabelAllocationPanel({ labelId, companyId, namespace, routeEntry
                         <div>
                           <input id={`allocation-change-pieces-${item.allocation.allocationId}`} type="text" inputMode="numeric" autoComplete="off"
                             value={draft.pieceCount}
-                            required={item.allocation.remainingPieces !== undefined && !draft.moveTo}
-                            aria-required={item.allocation.remainingPieces !== undefined && !draft.moveTo}
+                            required={item.allocation.remainingPieces !== undefined}
+                            aria-required={item.allocation.remainingPieces !== undefined}
                             aria-describedby={`allocation-change-pieces-hint-${item.allocation.allocationId}`}
                             onChange={(event) => setDraft({ ...draft, pieceCount: event.target.value })} />
                           <p id={`allocation-change-pieces-hint-${item.allocation.allocationId}`}>
-                            {item.allocation.remainingPieces !== undefined && !draft.moveTo
-                              ? PT.changePieceCountRequiredHint(item.allocation.remainingPieces) : PT.changePieceCountMoveHint}
+                            {item.allocation.remainingPieces === undefined
+                              ? PT.changePieceCountMoveHint
+                              : draft.moveTo
+                                ? PT.changePieceCountHeldMoveHint(item.allocation.remainingPieces)
+                                : PT.changePieceCountRequiredHint(item.allocation.remainingPieces)}
                           </p>
                         </div>
                       </>
