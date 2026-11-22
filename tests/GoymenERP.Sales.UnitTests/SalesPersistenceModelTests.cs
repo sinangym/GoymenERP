@@ -45,6 +45,71 @@ public sealed partial class SalesPersistenceModelTests
         Assert.Throws<InvalidOperationException>(() => context.SaveChanges());
     }
 
+    [Theory]
+    [InlineData("modify")]
+    [InlineData("delete")]
+    [InlineData("foreign")]
+    public void SAT_D437_pinned_kilograms_per_unit_cannot_be_rewritten_deleted_or_inserted_for_another_company(string operation)
+    {
+        using var context = Context();
+        var row = new DraftLineKilogramsPerUnitRow { CompanyId = CompanyA, DraftId = Guid.NewGuid(), LineId = Guid.NewGuid(),
+            LineNo = 1, Revision = 0, ProductId = Guid.NewGuid(), UnitId = Guid.NewGuid(), KilogramsPerUnit = 12.345m,
+            SourceProof = "{}", RecordedAtUtc = At };
+        if (operation == "foreign") { row.CompanyId = CompanyB; context.Add(row); }
+        else
+        {
+            context.Attach(row);
+            if (operation == "delete") context.Remove(row);
+            else row.KilogramsPerUnit = 12.4m;
+        }
+        Assert.Throws<InvalidOperationException>(() => context.SaveChanges());
+    }
+
+    [Fact]
+    public void SAT_D437_piece_line_kilograms_are_tenant_snapshots_and_invoice_information_with_forward_fix_52051()
+    {
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var entity = model.FindEntityType(typeof(DraftLineKilogramsPerUnitRow))!;
+        Assert.Equal(("sales", "DraftLineKilogramsPerUnit"), (entity.GetSchema(), entity.GetTableName()));
+        Assert.Equal(new[] { "CompanyId", "DraftId", "LineId", "Revision" }, entity.FindPrimaryKey()!.Properties.Select(item => item.Name));
+        Assert.Single(entity.GetDeclaredQueryFilters());
+        Assert.Equal((18, 6), (entity.FindProperty(nameof(DraftLineKilogramsPerUnitRow.KilogramsPerUnit))!.GetPrecision(),
+            entity.FindProperty(nameof(DraftLineKilogramsPerUnitRow.KilogramsPerUnit))!.GetScale()));
+        Assert.Contains(entity.GetCheckConstraints(), item => item.Name == "CK_DraftLineKilogramsPerUnit_Value"
+            && item.Sql == SalesDbContext.KilogramsPerUnitValueConstraint);
+        Assert.Contains(entity.GetCheckConstraints(), item => item.Name == "CK_DraftLineKilogramsPerUnit_Proof"
+            && item.Sql == SalesDbContext.KilogramsPerUnitProofConstraint);
+        Assert.Contains(entity.GetCheckConstraints(), item => item.Name == "CK_DraftLineKilogramsPerUnit_Identity"
+            && item.Sql == SalesDbContext.KilogramsPerUnitIdentityConstraint);
+        Assert.Contains(entity.GetForeignKeys(), key => key.Properties.Select(item => item.Name)
+            .SequenceEqual(new[] { "CompanyId", "DraftId", "LineNo", "LineId" }));
+
+        var line = model.FindEntityType(typeof(InvoiceLineRow))!;
+        foreach (var name in new[] { nameof(InvoiceLineRow.TheoreticalKg), nameof(InvoiceLineRow.ActualKg) })
+        {
+            var property = line.FindProperty(name)!;
+            Assert.Equal((18, 3, true), (property.GetPrecision(), property.GetScale(), property.IsNullable));
+        }
+        Assert.Contains(line.GetCheckConstraints(), item => item.Name == "CK_InvoiceLines_KilogramInformation"
+            && item.Sql == SalesDbContext.InvoiceLineKilogramInformationConstraint);
+
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddSalesPieceLineKilograms();
+        // Up: the only SQL is the invoice line guard trigger, now covering the kg information.
+        var upSql = Assert.Single(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>()).Sql;
+        Assert.Contains("ALTER TRIGGER [sales].[TR_InvoiceLines_Guard]", upSql, StringComparison.Ordinal);
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(upSql, @"\[TheoreticalKg\], \[ActualKg\] FROM").Count);
+        // Down: the forward-fix guard first, then the previous trigger body, then the drops.
+        var down = migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>().ToArray();
+        Assert.Equal(2, down.Length);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 52051,", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("IF EXISTS", guard.Sql, StringComparison.Ordinal);
+        Assert.Same(down[1], migration.DownOperations[1]);
+        Assert.DoesNotContain("TheoreticalKg", down[1].Sql, StringComparison.Ordinal);
+        Assert.Contains("TR_InvoiceLines_Guard", down[1].Sql, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Margin_cost_snapshots_have_tenant_line_identity_exact_cost_and_forward_fix_51993_without_backfill()
     {
@@ -244,8 +309,8 @@ public sealed partial class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesContracts", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddShipmentRiskExceptionUsages", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSubcontractServiceInvoices", StringComparison.Ordinal));
-        Assert.Equal(new[] { "AddSalesOutboxCommittedCursor", "AddSalesMarginCostSnapshots", "AddSubcontractInvoiceLifecycle", "AddSubcontractInvoiceClaimRange", "AddSubcontractInvoiceReplaySequence", "AddSalesOfficialInvoiceCancellation", "RepairSalesOfficialInvoiceCancellationActorCollation", "AddSalesMarginSaleRates" },
-            context.Database.GetMigrations().TakeLast(8).Select(name => name[(name.IndexOf('_') + 1)..]));
+        Assert.Equal(new[] { "AddSalesOutboxCommittedCursor", "AddSalesMarginCostSnapshots", "AddSubcontractInvoiceLifecycle", "AddSubcontractInvoiceClaimRange", "AddSubcontractInvoiceReplaySequence", "AddSalesOfficialInvoiceCancellation", "RepairSalesOfficialInvoiceCancellationActorCollation", "AddSalesMarginSaleRates", "AddSalesPieceLineKilograms" },
+            context.Database.GetMigrations().TakeLast(9).Select(name => name[(name.IndexOf('_') + 1)..]));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

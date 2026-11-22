@@ -1794,6 +1794,31 @@ public static partial class SalesEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // SAT-D436 / SAT-D439 (AK-5): the order's kg prices and realization (draft read AND price read); FormulaGoldenPending until
+        // the formula golden is in main.
+        drafts.MapGet("/{id:guid}/kilogram-prices", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetDraftKilogramPricesAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftKilogramPricesV1")
+            .Produces<SalesOrderKilogramPricesResponse>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         drafts.MapGet("/{id:guid}/lines/{lineId:guid}/price-references", async (
             Guid id,
             Guid lineId,

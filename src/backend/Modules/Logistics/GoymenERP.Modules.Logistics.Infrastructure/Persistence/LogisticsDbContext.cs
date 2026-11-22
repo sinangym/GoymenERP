@@ -180,6 +180,12 @@ public sealed partial class LogisticsDbContext(DbContextOptions<LogisticsDbConte
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>AK-4 (KLN-D119): a piece line's load / shipment physical kg is positive; a delivery never carries one.</summary>
+    internal const string ShareQuantityKgCheck = "[QuantityKg] IS NULL OR ([QuantityKg] > 0 AND [Kind] IN (1, 2))";
+
+    /// <summary>AK-4: a dispatch note line's copied physical kg is positive when present.</summary>
+    internal const string DispatchNoteLineQuantityKgCheck = "[QuantityKg] IS NULL OR [QuantityKg] > 0";
+
     private void ConfigureShares(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<LoadingShareRow>();
@@ -194,12 +200,15 @@ public sealed partial class LogisticsDbContext(DbContextOptions<LogisticsDbConte
                 + "OR ([Kind] = 2 AND [Measurement] IS NULL AND [SourceShipmentId] IS NULL) "
                 + $"OR ([Kind] = 3 AND [Measurement] IS NULL AND [SourceShipmentId] IS NOT NULL AND [SourceShipmentId] <> {EmptyGuid})");
             table.HasCheckConstraint("CK_LoadingShares_RecordedBy", ShareRecordedByCheck);
+            // AK-4 (KLN-D119): a piece line's load / shipment carries positive physical kg; a delivery never does.
+            table.HasCheckConstraint("CK_LoadingShares_QuantityKg", ShareQuantityKgCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.InstructionId, x.ShareNo });
         // SAT-D216: the recording actor, compared ordinally by Sales (binary collation); null only for pre-column shares.
         entity.Property(x => x.RecordedBy).HasMaxLength(128).UseCollation(IdentityCollation);
         entity.HasIndex(x => new { x.CompanyId, x.InstructionId, x.ShareId }).IsUnique().HasDatabaseName("UX_LoadingShares_ShareId");
         entity.Property(x => x.Quantity).HasPrecision(18, 3);
+        entity.Property(x => x.QuantityKg).HasPrecision(18, 3);
         entity.HasOne<LoadingInstructionRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.InstructionId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
@@ -361,6 +370,7 @@ public sealed partial class LogisticsDbContext(DbContextOptions<LogisticsDbConte
                 $"[ShipmentId] <> {EmptyGuid} AND [InstructionLineId] <> {EmptyGuid} AND [SourceOrderId] <> {EmptyGuid} "
                 + $"AND [SourceOrderLineId] <> {EmptyGuid} AND [ProductId] <> {EmptyGuid} AND [UnitId] <> {EmptyGuid}");
             table.HasCheckConstraint("CK_DispatchNoteLines_Quantity", "[Quantity] > 0");
+            table.HasCheckConstraint("CK_DispatchNoteLines_QuantityKg", DispatchNoteLineQuantityKgCheck);
         });
         line.HasKey(x => new { x.CompanyId, x.InstructionId, x.DispatchNoteId, x.LineNo });
         // AT-055: "Aynı sevkiyat gerçekleşmesi iki kez irsaliyeye bağlanamaz" — one ACTIVE dispatch-note line per shipment; a
@@ -369,6 +379,7 @@ public sealed partial class LogisticsDbContext(DbContextOptions<LogisticsDbConte
             .HasFilter(DispatchNoteSchema.ActiveLineFilter);
         line.HasIndex(x => new { x.CompanyId, x.SourceOrderId }).HasDatabaseName("IX_DispatchNoteLines_SourceOrder");
         line.Property(x => x.Quantity).HasPrecision(18, 3);
+        line.Property(x => x.QuantityKg).HasPrecision(18, 3);
         line.HasOne<DispatchNoteRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.InstructionId, x.DispatchNoteId })
             .OnDelete(DeleteBehavior.Restrict);

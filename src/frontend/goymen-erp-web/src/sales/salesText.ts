@@ -300,6 +300,9 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
     'İstekteki şirket bağlamı geçerli değil; işlem yapılmadı. Şirket seçimini kontrol edip yeniden deneyin.',
   [SALES_PROBLEM_CODE.correlationMetadataInvalid]:
     'İstekteki izleme bilgisi geçerli değil; işlem yapılmadı.',
+  [SALES_PROBLEM_CODE.kilogramsPerUnitUnavailable]:
+    'Adetli satırın ürün kartında teorik kg/adet kaynağı yok (ölçü, ağırlık tablosu ya da yoğunluk eksik); sipariş onaylanmadı. '
+    + 'Kartı tamamlayıp yeniden onaylayın.',
 }
 
 export function problemCodeText(code: string | null): string | null {
@@ -1958,4 +1961,39 @@ export const HEADER_REVISION_TEXT = {
           : error.kind === 'share' ? `${error.row}. taksitte pay 0’dan büyük bir sayı olmalıdır.`
             : error.kind === 'buyer-tax' ? 'Alıcı vergi durumunu seçin; belge numarası ve tarihi birlikte girilir.'
               : 'Başlıkta hiçbir değer değişmedi; onay boşuna düşürülmez.',
+} as const
+
+/** SAT-D436 / SAT-D439 / SAT-D437 (AK-4, AK-5): the kg price indicator and the piece line's kg facts. */
+export const KILOGRAM_PRICE_TEXT = {
+  heading: 'Kg fiyatı ve gerçekleşme',
+  subject: 'kg fiyatı',
+  note: 'Kg fiyatı bilgi göstergesidir; maliyet değildir ve tutarı değiştirmez. Belge para birimindedir, kur kullanılmaz.',
+  pending: 'Kg fiyatı göstergesi formül doğrulaması (golden) ana dala girene kadar kapalıdır.',
+  unreadable: 'Kg fiyatı okunamadı; sipariş bilgileri etkilenmez. Sayfayı yenileyerek yeniden deneyin.',
+  line: (lineNo: number) => `${lineNo}. satır`,
+  theoreticalKg: 'Teorik kg',
+  theoreticalPrice: 'Teorik kg fiyatı',
+  invoicedQuantity: 'Faturalanan miktar',
+  invoicedAmount: 'Faturalanan tutar',
+  actualKg: 'Gerçek (kantar) kg',
+  actualPrice: 'Gerçek kg fiyatı',
+  kgDifference: 'Teorik farkı (kg)',
+  deviationPercent: 'Teorik farkı (%)',
+  documentTheoretical: 'Belge teorik kg fiyatı',
+  documentActual: 'Belge gerçek kg fiyatı',
+  none: '—',
+  perKg: (value: string) => `${value} /kg`,
+  percent: (value: string) => `%${value}`,
+  state: {
+    Shown: '',
+    TheoreticalKgUnavailable: 'Teorik kg yok (onaylı kg/adet kaydı bulunmuyor)',
+    WeighedKgUnavailable: 'Gerçek kg yok (faturalanmış ve tartılmış miktar bulunmuyor)',
+    ZeroKg: 'Kg sıfır; kg fiyatı hesaplanamaz',
+    AmountUnavailable: 'Tutar yok; kg fiyatı hesaplanamaz',
+    DocumentNotAllKilogramLines: 'Belge düzeyi gösterilmez: bütün satırlar kg’li mal satırı değil',
+    OutOfRange: 'Değer gösterilemiyor',
+  },
+  kilogramsPerUnit: 'Teorik kg/adet (onayda kaydedildi)',
+  invoiceTheoreticalKg: 'Teorik kg (bilgi)',
+  invoiceActualKg: 'Gerçek kg (bilgi)',
 } as const

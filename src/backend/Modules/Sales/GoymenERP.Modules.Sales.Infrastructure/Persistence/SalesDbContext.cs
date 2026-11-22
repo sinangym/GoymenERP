@@ -595,6 +595,9 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
     /// <summary>TR_InvoiceLines_Guard: the lines of a non-draft invoice are immutable but for their release stamp (THROW 51224).</summary>
     internal const string InvoiceLineGuardTrigger = "TR_InvoiceLines_Guard";
 
+    internal const string InvoiceLineKilogramInformationConstraint =
+        "([TheoreticalKg] IS NULL AND [ActualKg] IS NULL) OR ([TheoreticalKg] > 0 AND [ActualKg] > 0)";
+
     /// <summary>API-35: the match row is append-only; the trigger refuses every UPDATE and DELETE (THROW 51226).</summary>
     internal const string InvoiceMatchGuardTrigger = "TR_InvoiceMatches_Guard";
     // Legacy matches remain readable; a new match must carry the approved owner's complete proof in application/domain code.
@@ -750,6 +753,7 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
         ConfigureDrafts(modelBuilder);
         ConfigureDraftLines(modelBuilder);
         ConfigureMarginCosts(modelBuilder);
+        ConfigureKilogramsPerUnit(modelBuilder);
         ConfigureDraftDeliverySlices(modelBuilder);
         ConfigureDraftAttempts(modelBuilder);
         ConfigureDraftRevisions(modelBuilder);
@@ -1359,6 +1363,8 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
             table.HasCheckConstraint("CK_InvoiceLines_Functional", InvoiceLineFunctionalConstraint);
             table.HasCheckConstraint("CK_InvoiceLines_Json",
                 "ISJSON([TaxJson]) = 1 AND ([PricingJson] IS NULL OR ISJSON([PricingJson]) = 1)");
+            // SAT-D434 (AK-4): a piece line's kg information is both values or neither, each positive.
+            table.HasCheckConstraint("CK_InvoiceLines_KilogramInformation", InvoiceLineKilogramInformationConstraint);
             table.HasTrigger(InvoiceLineGuardTrigger);
         });
         line.HasKey(x => new { x.CompanyId, x.InvoiceId, x.LineNo });
@@ -1369,6 +1375,8 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
         line.Property(x => x.ShipmentDate).HasColumnType("date");
         line.Property(x => x.Quantity).HasPrecision(18, 3);
         line.Property(x => x.QuantityText).HasMaxLength(128).IsRequired();
+        line.Property(x => x.TheoreticalKg).HasPrecision(18, SalesInvoice.KilogramInformationScale);
+        line.Property(x => x.ActualKg).HasPrecision(18, SalesInvoice.KilogramInformationScale);
         line.Property(x => x.UnitPrice).HasMaxLength(64);
         line.Property(x => x.DiscountPercent).HasMaxLength(64);
         line.Property(x => x.PricingJson).HasColumnType("nvarchar(max)");
@@ -2368,6 +2376,8 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
                     // F-018 / plan S1: a recorded credit limit warning is APPEND-ONLY — no column of it may change afterwards.
                     DraftRiskWarningRow => [],
                     DraftMarginCostRow => [],
+                    // SAT-D437: a pinned theoretical kg/unit is APPEND-ONLY — no column of it may change afterwards.
+                    DraftLineKilogramsPerUnitRow => [],
                     // No 30 / SAT-D12: a recorded force-closure is APPEND-ONLY — no column of it may change afterwards.
                     DraftForceClosureRow => [],
                     // SAT-D32: a recorded user closure is APPEND-ONLY — no column of it may change afterwards.

@@ -61,6 +61,7 @@ export const INVOICE_NOT_READY_REASON_TEXT: Readonly<Record<string, string>> = {
   weighing_difference_not_recorded: 'İrsaliyenin kantar farkı kaydı yok; kayıt olmadan faturalanamaz.',
   weighing_difference_pending_approval: 'İrsaliyenin kantar farkı oranı aştı ve onay bekliyor.',
   weighing_kg_transfer_pending: 'Kantar kg değeri fatura satırlarına henüz aktarılamıyor; satır bazında kantar kg bilgisi bekleniyor.',
+  kg_per_unit_missing: 'Adetli satırın onayda kaydedilen teorik kg/adet değeri yok; fatura hazırlanmaz.',
   weighing_difference_unavailable: 'İrsaliyenin kantar farkı kaydı okunamadı.',
 }
 

@@ -53,7 +53,8 @@ public sealed partial class SalesOrderDraft
             snapshot.Validate();
             var line = Lines.SingleOrDefault(candidate => candidate.Id == snapshot.LineId);
             if (line is null || snapshot.Revision != Revision || snapshot.ProductId != line.Product.ProductId
-                || snapshot.UnitId != line.OrderUnit.UnitId || snapshot.Quantity != line.Quantity.Value
+                // SAT-D438: a non-kg line may pin its cost in the cost unit (kg); a kg line pins in its own unit only.
+                || (snapshot.UnitId != line.OrderUnit.UnitId && line.OrderUnit.IsKilogram) || snapshot.Quantity != line.Quantity.Value
                 || snapshot.RecordedAtUtc != Approval.DecidedAtUtc
                 || marginCosts.Any(item => item.LineId == snapshot.LineId && item.Revision == snapshot.Revision))
                 throw new InvalidOperationException("Marj maliyeti onaylanan satırla uyuşmuyor.");

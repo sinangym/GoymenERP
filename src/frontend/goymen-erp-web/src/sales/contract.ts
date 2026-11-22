@@ -502,6 +502,8 @@ export interface DraftLine {
   readonly priceDisclosure: PriceDisclosure
   /** SAT-D167 (EK24, additive): "Rev.N" on a line a line revision added; absent for a line that came with the create. */
   readonly addedInRevision?: string
+  /** SAT-D437 (AK-4, additive): the theoretical kg per order unit pinned on a piece line at approval; absent otherwise. */
+  readonly theoreticalKilogramsPerUnit?: string
 }
 
 /** SAT-D167 (EK24, `SalesOrderDraftRemovedLineV1`): a passive line — out of the order's totals, risk and shipping; history only. */
@@ -683,6 +685,8 @@ export const SALES_PROBLEM_CODE = {
   invoiceInstalmentFunctionalInvalid: 'sales_invoice_instalment_functional_invalid',
   companyContextInvalid: 'company_context_invalid',
   correlationMetadataInvalid: 'correlation_metadata_invalid',
+  // SAT-D437 (AK-4): a piece line's approval without a theoretical kg/unit from the product card (409, not recorded).
+  kilogramsPerUnitUnavailable: 'sales_kg_per_unit_unavailable',
 } as const
 
 export type SalesProblemCode = (typeof SALES_PROBLEM_CODE)[keyof typeof SALES_PROBLEM_CODE]
@@ -917,8 +921,10 @@ const LINE_KEYS = [
 ] as const
 
 function decodeLine(value: unknown): DraftLine | null {
-  const o = exactWithOptional(value, LINE_KEYS, ['orderUnitCode', 'addedInRevision'])
+  const o = exactWithOptional(value, LINE_KEYS, ['orderUnitCode', 'addedInRevision', 'theoreticalKilogramsPerUnit'])
   if (o === null) return null
+  // SAT-D437: absent before approval, on a kg line or an older order; otherwise a positive exact decimal.
+  if (o.theoreticalKilogramsPerUnit !== undefined && !isDecimal(o.theoreticalKilogramsPerUnit, true)) return null
   const slices = decodeSlices(o.requestedDeliverySlices)
   // SAT-D167: absent (or null) for a line of the create; otherwise the revision text the line was added in.
   if (o.addedInRevision !== undefined && o.addedInRevision !== null
@@ -972,6 +978,7 @@ function decodeLine(value: unknown): DraftLine | null {
     discountPercent: o.discountPercent,
     priceDisclosure: o.priceDisclosure,
     ...(typeof o.addedInRevision === 'string' ? { addedInRevision: o.addedInRevision } : {}),
+    ...(typeof o.theoreticalKilogramsPerUnit === 'string' ? { theoreticalKilogramsPerUnit: o.theoreticalKilogramsPerUnit } : {}),
   }
 }
 

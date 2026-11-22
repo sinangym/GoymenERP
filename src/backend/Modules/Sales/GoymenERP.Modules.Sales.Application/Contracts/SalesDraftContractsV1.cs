@@ -345,7 +345,11 @@ public sealed record SalesOrderDraftLineDetail(
     string? OrderUnitCode = null,
     // SAT-D167 (EK24): the revision a line revision added this line in ("Rev.N"); omitted for a line that came with the create.
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? AddedInRevision = null);
+    string? AddedInRevision = null,
+    // SAT-D437 (AK-4): the theoretical kg per order unit pinned on a piece line at its internal approval (invariant text, never
+    // re-read from the card); omitted for a kg line, a line not yet approved and an order approved before AK-4 (no back-fill).
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? TheoreticalKilogramsPerUnit = null);
 
 /// <summary>
 /// D2 (Sinan 5749046401): <c>IsOwnDraft</c> is the RELATIONSHIP, computed on the server for the caller — "the caller is
@@ -421,6 +425,9 @@ public static class SalesDraftApiV1
     // AT-018 / AT-021: the line pricing read (price read) and the line's list-price references (price write). The detail
     // wire is unchanged: pricing lives on its own route so the S-04 decoder (exact members) keeps working.
     public const string LinePricingPath = "/api/v1/sales/drafts/{id}/line-pricing";
+
+    /// <summary>SAT-D436 (AK-5): the order's kg prices and realization (draft read and price read).</summary>
+    public const string KilogramPricesPath = "/api/v1/sales/drafts/{id}/kilogram-prices";
     public const string PriceReferencesPath = "/api/v1/sales/drafts/{id}/lines/{lineId}/price-references";
 
     // DEC-SAL-002 / AT-023: the quantity revision (200 with the detail after the change; same-key replay 200 +

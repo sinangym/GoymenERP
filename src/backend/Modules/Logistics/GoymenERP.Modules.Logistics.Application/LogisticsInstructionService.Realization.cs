@@ -35,6 +35,13 @@ public sealed partial class LogisticsInstructionService
                 var line = stored.Instruction.Lines.SingleOrDefault(candidate => candidate.Id == lineId)
                     ?? throw new LogisticsInstructionServiceException(404, "not_found");
                 var quantity = await VerifyUnitAsync(scope, permission, line.UnitId, request.Quantity, stored.EffectiveOn, "shipment", token);
+                // AK-4 (KLN-D119, SAT-D434): a piece line ships whole pieces (the commercial quantity) and their physical kg; the kg
+                // leaves the stock and the pieces leave the label (Inventory PieceCount). A kg line names no separate kg.
+                var piece = quantity.Unit == QuantityUnit.Piece;
+                if (piece != (request.QuantityKg is not null))
+                    throw new LogisticsInstructionServiceException(422, "validation_failed", [new("quantityKg",
+                        piece ? LogisticsRuleCodes.PhysicalKilogramsRequired : LogisticsRuleCodes.PhysicalKilogramsOnKilogramLine)]);
+                Quantity? shippedKg = piece ? Quantity.Positive(ReadWeighingKg(request.QuantityKg!, "quantityKg"), QuantityUnit.Kilogram) : null;
                 await RequireShipmentSourceAsync(scope, permission, stored, line, quantity.Value, token);
                 var allocation = await GuardedAsync(scope, permission,
                     () => stock.FindAllocationAsync(line.Source.OrderId, line.Source.LineId, request.AllocationId, token), token);
@@ -59,12 +66,12 @@ public sealed partial class LogisticsInstructionService
                 var expected = long.Parse(request.ExpectedVersion, CultureInfo.InvariantCulture);
                 Task<LogisticsStoreResult?> Mutate(CancellationToken ct) => request.PlanExcessUses is null
                     ? gateStore.MutateInstructionWithShipmentRiskGateAsync(envelope, hash, LogisticsCommands.RecordShipmentV1, instructionId,
-                        (instruction, _) => instruction.MarkShipped(expected, request.ShipmentId, lineId, quantity, request.OccurredAtUtc),
+                        (instruction, _) => instruction.MarkShipped(expected, request.ShipmentId, lineId, quantity, request.OccurredAtUtc, shippedKg),
                         new LogisticsMutationAudit("logistics.loading-instruction.shipment-recorded.v1", "RecordShipment", "Definite shipment recorded"),
                         gate, ct)
                     : store is ILogisticsPlanExcessMutationStoreV1 excessStore
                         ? excessStore.MutateWithPlanExcessAsync(envelope, hash, LogisticsCommands.RecordShipmentV1, instructionId,
-                            (instruction, _) => instruction.MarkShipped(expected, request.ShipmentId, lineId, quantity, request.OccurredAtUtc),
+                            (instruction, _) => instruction.MarkShipped(expected, request.ShipmentId, lineId, quantity, request.OccurredAtUtc, shippedKg),
                             new("logistics.loading-instruction.shipment-recorded.v1", "RecordShipment", "Definite shipment recorded with approved plan exception"),
                             null, gate, new Dictionary<Guid, IReadOnlyList<LogisticsPlanExcessUseV1>?> { [lineId] = request.PlanExcessUses }, ct)
                         : throw new LogisticsInstructionServiceException(503, LogisticsPlanExcessV1.Unavailable);
@@ -73,7 +80,8 @@ public sealed partial class LogisticsInstructionService
 
                 var stockRequest = new LogisticsShipmentStockRequestV1(scope.CompanyId, request.ShipmentId, instructionId, lineId,
                     allocation.AllocationId, request.ExpectedAllocationVersion, allocation.LabelId, request.ExpectedLabelVersion,
-                    request.MovementId, request.Quantity, request.OccurredAtUtc);
+                    request.MovementId, piece ? request.QuantityKg! : request.Quantity, request.OccurredAtUtc,
+                    piece ? decimal.ToInt32(quantity.Value) : null);
                 var staged = await GuardedAsync(scope, permission, () => stock.StageAsync(stockRequest, envelope, token), token);
                 if (staged is null || staged.CompanyId != scope.CompanyId || staged.ShipmentId != request.ShipmentId
                     || staged.AllocationId != allocation.AllocationId || staged.LabelId != allocation.LabelId

@@ -53,6 +53,7 @@ EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
 # AK-2 (KLN-D119): +1 migration AddInventoryLabelPieceCounts; producer re-measured, K3 review pending.
 # AK-2b (KLN-D119): +1 migration AddInventoryMovementPieceCounts; producer re-measured, K3 review pending.
 # AK-7 (URT-D112): +1 migration AddManufacturingOutputPieces; producer re-measured, K3 review pending.
+# AK-4/AK-5/AK-6: Sales/Logistics piece-line migrations; producer re-measured, K3 review pending.
 EXPECTED_MIGRATION_COUNT = 349
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
     '96c0a537d3b33180437568a273524a505d0435c209e36cd2e787eeaf18f12c55'

@@ -102488,6 +102488,227 @@
         ]
       }
     },
+    "/api/v1/sales/drafts/{id}/kilogram-prices": {
+      "get": {
+        "tags": [
+          "Sales"
+        ],
+        "operationId": "GetSalesOrderDraftKilogramPricesV1",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Company-Id",
+            "in": "header",
+            "description": "Selected company identifier for this company-scoped request.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          }
+        ],
+        "responses": {
+          "409": {
+            "description": "Conflict",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "organization.company.setup_pending"
+            ]
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "service_unavailable"
+            ]
+          },
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SalesOrderKilogramPricesResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/sales/drafts/{id}/lines/{lineId}/price-references": {
       "get": {
         "tags": [
@@ -260145,6 +260366,12 @@
           },
           "quantity": {
             "type": "string"
+          },
+          "quantityKg": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -271524,6 +271751,18 @@
               "null",
               "string"
             ]
+          },
+          "loadedKg": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "shippedKg": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -271807,6 +272046,12 @@
             "format": "date-time"
           },
           "recordedBy": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "quantityKg": {
             "type": [
               "null",
               "string"
@@ -294604,6 +294849,12 @@
             "items": {
               "$ref": "#/components/schemas/LogisticsPlanExcessUseV1"
             }
+          },
+          "quantityKg": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -295575,6 +295826,12 @@
             "items": {
               "$ref": "#/components/schemas/LogisticsPlanExcessUseV1"
             }
+          },
+          "quantityKg": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -303316,6 +303573,16 @@
                 "$ref": "#/components/schemas/SalesInvoiceFinalizationView"
               }
             ]
+          },
+          "kilogramPrices": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SalesInvoiceKilogramPricesV1"
+              }
+            ]
           }
         }
       },
@@ -303555,6 +303822,46 @@
           }
         }
       },
+      "SalesInvoiceKilogramPricesV1": {
+        "required": [
+          "state"
+        ],
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "lines": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SalesInvoiceLineKilogramPricesV1"
+            }
+          },
+          "documentTheoreticalPrice": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SalesKilogramPriceViewV1"
+              }
+            ]
+          },
+          "documentActualPrice": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SalesKilogramPriceViewV1"
+              }
+            ]
+          }
+        }
+      },
       "SalesInvoiceLineFunctionalView": {
         "required": [
           "amounts",
@@ -303574,6 +303881,26 @@
           },
           "needsReview": {
             "type": "boolean"
+          }
+        }
+      },
+      "SalesInvoiceLineKilogramPricesV1": {
+        "required": [
+          "lineId",
+          "theoreticalPrice",
+          "actualPrice"
+        ],
+        "type": "object",
+        "properties": {
+          "lineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "theoreticalPrice": {
+            "$ref": "#/components/schemas/SalesKilogramPriceViewV1"
+          },
+          "actualPrice": {
+            "$ref": "#/components/schemas/SalesKilogramPriceViewV1"
           }
         }
       },
@@ -303680,6 +304007,18 @@
               {
                 "$ref": "#/components/schemas/SalesInvoiceLineFunctionalView"
               }
+            ]
+          },
+          "theoreticalKg": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "actualKg": {
+            "type": [
+              "null",
+              "string"
             ]
           }
         }
@@ -304007,6 +304346,23 @@
         "enum": [
           "NoSource"
         ]
+      },
+      "SalesKilogramPriceViewV1": {
+        "required": [
+          "state"
+        ],
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "value": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
       },
       "SalesLostAmountView": {
         "required": [
@@ -305238,6 +305594,12 @@
               "null",
               "string"
             ]
+          },
+          "theoreticalKilogramsPerUnit": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -306298,6 +306660,119 @@
               {
                 "$ref": "#/components/schemas/SalesDraftUserClosureV1"
               }
+            ]
+          }
+        }
+      },
+      "SalesOrderKilogramPricesResponse": {
+        "required": [
+          "state",
+          "currencyId"
+        ],
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "currencyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lines": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SalesOrderLineKilogramPricesV1"
+            }
+          },
+          "documentTheoreticalPrice": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SalesKilogramPriceViewV1"
+              }
+            ]
+          },
+          "documentActualPrice": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SalesKilogramPriceViewV1"
+              }
+            ]
+          }
+        }
+      },
+      "SalesOrderLineKilogramPricesV1": {
+        "required": [
+          "lineId",
+          "lineNo",
+          "theoreticalKg",
+          "theoreticalPrice",
+          "invoicedQuantity",
+          "invoicedAmount",
+          "actualKg",
+          "actualPrice",
+          "kgDifference",
+          "deviationPercent"
+        ],
+        "type": "object",
+        "properties": {
+          "lineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lineNo": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "theoreticalKg": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "theoreticalPrice": {
+            "$ref": "#/components/schemas/SalesKilogramPriceViewV1"
+          },
+          "invoicedQuantity": {
+            "type": "string"
+          },
+          "invoicedAmount": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "actualKg": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "actualPrice": {
+            "$ref": "#/components/schemas/SalesKilogramPriceViewV1"
+          },
+          "kgDifference": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "deviationPercent": {
+            "type": [
+              "null",
+              "string"
             ]
           }
         }

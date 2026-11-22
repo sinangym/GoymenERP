@@ -1085,6 +1085,54 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftLineKilogramsPerUnitRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DraftId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("LineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("KilogramsPerUnit")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("decimal(18,6)");
+
+                    b.Property<int>("LineNo")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("SourceProof")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("CompanyId", "DraftId", "LineId", "Revision");
+
+                    b.HasIndex("CompanyId", "DraftId", "LineNo", "LineId");
+
+                    b.ToTable("DraftLineKilogramsPerUnit", "sales", t =>
+                        {
+                            t.HasCheckConstraint("CK_DraftLineKilogramsPerUnit_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [UnitId] <> '00000000-0000-0000-0000-000000000000' AND [Revision] >= 0 AND [LineNo] >= 1");
+
+                            t.HasCheckConstraint("CK_DraftLineKilogramsPerUnit_Proof", "ISJSON([SourceProof]) = 1 AND LEN([SourceProof]) BETWEEN 2 AND 65536");
+
+                            t.HasCheckConstraint("CK_DraftLineKilogramsPerUnit_Value", "[KilogramsPerUnit] > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftLineRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -2325,6 +2373,10 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     b.Property<int>("LineNo")
                         .HasColumnType("int");
 
+                    b.Property<decimal?>("ActualKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
                     b.Property<string>("DiscountPercent")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
@@ -2413,6 +2465,10 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<decimal?>("TheoreticalKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
                     b.Property<Guid>("UnitId")
                         .HasColumnType("uniqueidentifier");
 
@@ -2458,6 +2514,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_InvoiceLines_Identity", "[LineId] <> '00000000-0000-0000-0000-000000000000' AND [ShipmentId] <> '00000000-0000-0000-0000-000000000000' AND [DispatchNoteId] <> '00000000-0000-0000-0000-000000000000' AND [SalesOrderId] <> '00000000-0000-0000-0000-000000000000' AND [SalesOrderLineId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [UnitId] <> '00000000-0000-0000-0000-000000000000'");
 
                             t.HasCheckConstraint("CK_InvoiceLines_Json", "ISJSON([TaxJson]) = 1 AND ([PricingJson] IS NULL OR ISJSON([PricingJson]) = 1)");
+
+                            t.HasCheckConstraint("CK_InvoiceLines_KilogramInformation", "([TheoreticalKg] IS NULL AND [ActualKg] IS NULL) OR ([TheoreticalKg] > 0 AND [ActualKg] > 0)");
 
                             t.HasCheckConstraint("CK_InvoiceLines_LineNo", "[LineNo] >= 1 AND [NoteLineNo] >= 1 AND [PriceBasisRevision] >= 0");
 
@@ -4665,6 +4723,16 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftLineRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "DraftId", "LineNo", "LineId")
+                        .HasPrincipalKey("CompanyId", "DraftId", "LineNo", "LineId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftLineKilogramsPerUnitRow", b =>
+                {
                     b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftLineRow", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "DraftId", "LineNo", "LineId")

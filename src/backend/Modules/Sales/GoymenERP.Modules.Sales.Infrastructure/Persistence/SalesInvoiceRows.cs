@@ -91,6 +91,11 @@ internal sealed class InvoiceLineRow : ISalesTenantRow
     public string? FunctionalAdjusted { get; set; }
     public bool FunctionalNeedsReview { get; set; }
     public DateTimeOffset? ReleasedAtUtc { get; set; }
+
+    /// <summary>SAT-D434 (AK-4): a piece line's theoretical and actual (scale) kg, information only; both null on a kg line.</summary>
+    public decimal? TheoreticalKg { get; set; }
+
+    public decimal? ActualKg { get; set; }
 }
 
 /// <summary>The invoice commands' own attempt table (ADR-011 §2, ADR-SAL-001 §2): the request attempt's shape, append-only.</summary>
@@ -254,6 +259,8 @@ internal static class SalesInvoiceRows
                 UnitId = share.UnitId,
                 Quantity = share.Quantity,
                 QuantityText = share.QuantityText,
+                TheoreticalKg = share.TheoreticalKilograms,
+                ActualKg = share.ActualKilograms,
                 UnitPrice = share.Commercial.UnitPrice,
                 PriceUnitId = share.Commercial.PriceUnitId,
                 DiscountPercent = share.Commercial.DiscountPercent,
@@ -434,7 +441,8 @@ internal static class SalesInvoiceRows
                 line.NoteLineNo, line.ShipmentDate, line.SalesOrderId, line.SalesOrderLineId, line.PriceBasisRevision, line.ProductId,
                 line.UnitId, line.Quantity, line.QuantityText,
                 SalesLinePricingJson.Restore(line.UnitPrice, line.PriceUnitId, line.DiscountPercent, line.PricingJson),
-                SalesTaxJson.RestoreLine(line.TaxJson) ?? throw new InvalidOperationException("Fatura satırının vergi kaydı okunamadı."));
+                SalesTaxJson.RestoreLine(line.TaxJson) ?? throw new InvalidOperationException("Fatura satırının vergi kaydı okunamadı."),
+                line.TheoreticalKg, line.ActualKg);
             var amounts = SalesInvoiceCalculator.Set(Money.Of(line.NetAmount, row.CurrencyId, row.AmountScale),
                 Money.Of(line.VatAmount, row.CurrencyId, row.AmountScale), Money.Of(line.WithholdingAmount, row.CurrencyId, row.AmountScale));
             SalesInvoiceFunctionalLine? functional = null;

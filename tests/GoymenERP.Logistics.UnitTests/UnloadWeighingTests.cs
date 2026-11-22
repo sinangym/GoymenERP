@@ -142,18 +142,23 @@ public sealed class UnloadWeighingTests
     }
 
     [Fact]
-    public void A_line_not_in_kilograms_refuses_the_unload_weighing()
+    public void AK4_a_piece_line_weighs_in_with_its_loads_physical_kg_at_the_unload_weighing()
     {
+        // AK-4 (KLN-D119): the unload weighing compares kilograms; a piece line takes part with its loads' physical kg (it no longer
+        // refuses the weighing as a non-kilogram line did before the piece unit was approved).
         var instruction = LoadingInstruction.Create(Guid.NewGuid(), Company, Customer, Account, T0);
         var line = instruction.AddLine(1, Guid.NewGuid(), new SourceOrderLineRef(Guid.NewGuid(), Guid.NewGuid(), 0), Guid.NewGuid(), KgUnit, null,
             Kg(6_000m), T0);
-        instruction.AddLine(2, Guid.NewGuid(), new SourceOrderLineRef(Guid.NewGuid(), Guid.NewGuid(), 0), Guid.NewGuid(), Guid.NewGuid(), null,
+        var piece = instruction.AddLine(2, Guid.NewGuid(), new SourceOrderLineRef(Guid.NewGuid(), Guid.NewGuid(), 0), Guid.NewGuid(), Guid.NewGuid(), null,
             Quantity.Of(10, QuantityUnit.Piece), T0);
         instruction.Issue(3, T0);
         instruction.RecordLoad(4, Guid.NewGuid(), line.Id, Kg(4_000m), MeasurementKind.Measured, T0);
-        instruction.CancelInstruction(5, "user-1", "hata", T1);
-        Assert.Equal(LogisticsRuleCodes.WeighingUnitUnsupported,
-            CodeOf(() => instruction.RecordUnloadWeighing(6, Guid.NewGuid(), WeighingDirection.TareFirst, Kg(15_000m), Kg(19_000m), Operator, T2)));
+        instruction.RecordLoad(5, Guid.NewGuid(), piece.Id, Quantity.Of(10, QuantityUnit.Piece), MeasurementKind.Measured, T0, Kg(123.45m));
+        instruction.CancelInstruction(6, "user-1", "hata", T1);
+
+        var unload = instruction.RecordUnloadWeighing(7, Guid.NewGuid(), WeighingDirection.TareFirst, Kg(15_000m), Kg(19_000m), Operator, T2);
+
+        Assert.Equal((4_123.45m, -123.45m), (unload.LoadedAtCancel.Value, unload.DifferenceKg));
     }
 
     [Fact]

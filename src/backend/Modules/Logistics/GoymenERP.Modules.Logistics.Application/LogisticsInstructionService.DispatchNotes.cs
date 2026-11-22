@@ -168,6 +168,6 @@ public sealed partial class LogisticsInstructionService
             {
                 var source = instruction.Lines.Single(candidate => candidate.Id == line.InstructionLineId);
                 return new DispatchNoteLineView(line.LineNo, line.ShipmentId, line.InstructionLineId, source.Source.OrderId, source.Source.LineId,
-                    source.ProductId, source.UnitId, Text(line.Quantity));
+                    source.ProductId, source.UnitId, Text(line.Quantity), line.Kilograms is { } kilograms ? Text(kilograms) : null);
             })]);
 }

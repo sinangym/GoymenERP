@@ -1,4 +1,5 @@
 import { SalesOfficialInvoiceCancellationPanel } from './SalesOfficialInvoiceCancellationPage'
+import { InvoiceKilogramPricesView } from './SalesKilogramPrices'
 /**
  * API-09 / API-36 (PR #986): the S-04 "Faturalar" tab — the order's invoices (`GET …/drafts/{id}/invoices`, under the draft
  * read) — and, per invoice, the finalization panel (`GET /sales/invoices/{id}`, under the invoice read and the price read).
@@ -259,6 +260,9 @@ export function SalesInvoiceFinalizationPanel({
           <div><dt>{T.paymentAllocationWarning}</dt><dd>{detail.paymentAllocationWarning}</dd></div>
         )}
       </dl>
+      {detail.kilogramPrices === undefined ? null : (
+        <InvoiceKilogramPricesView prices={detail.kilogramPrices} lines={detail.lines} />
+      )}
       <InvoiceDecisionFacts decision={detail.decision} />
       <InvoiceDraftAttemptNotice controller={draftController} />
       <SalesInvoiceDraftActions detail={detail} canWrite={canWrite} canApprove={canApprove} controller={draftController} />

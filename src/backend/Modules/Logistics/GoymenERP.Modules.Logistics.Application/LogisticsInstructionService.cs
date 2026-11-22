@@ -166,9 +166,13 @@ public sealed partial class LogisticsInstructionService(
             _ => throw new LogisticsInstructionServiceException(400, "validation_failed", [new("measurement", "validation_failed")]),
         };
         LogisticsOrderLineAggregateLoadLimit? aggregateLoadLimit = null;
+        // AK-4 (KLN-D119): a piece line's physical kg, exact text (≤ 3 decimals); the domain requires it there and refuses it on a kg line.
+        Quantity? kilograms = request.QuantityKg is null ? null
+            : Quantity.Positive(ReadWeighingKg(request.QuantityKg, "quantityKg"), QuantityUnit.Kilogram);
         return MutateAsync(instructionId, new { lineId, request }, request.ExpectedVersion, metadata, LogisticsCommands.RecordLoadV1,
             bindings.RecordPermission,
-            (instruction, expected, now, quantity, _) => instruction.RecordLoad(expected, request.LoadId, lineId, quantity!.Value, measurement, now),
+            (instruction, expected, now, quantity, _) => instruction.RecordLoad(expected, request.LoadId, lineId, quantity!.Value, measurement, now,
+                kilograms),
             new LogisticsMutationAudit("logistics.loading-instruction.load-recorded.v1", "RecordLoad", "Yükleme payı kaydedildi"),
             // The line's unit is re-verified against the Settings profile on the instruction's date (the
             // verifier-before-share contract): the loaded quantity's scale is the owner's, never guessed.
@@ -606,6 +610,12 @@ public sealed partial class LogisticsInstructionService(
         catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.LineNotFound)
         {
             throw new LogisticsInstructionServiceException(404, "not_found");
+        }
+        catch (LogisticsRuleException exception) when (exception.Code is LogisticsRuleCodes.PhysicalKilogramsRequired
+            or LogisticsRuleCodes.PhysicalKilogramsOnKilogramLine)
+        {
+            // AK-4: not recorded — the same key with the missing / extra kg is a different request.
+            throw new LogisticsInstructionServiceException(422, "validation_failed", [new("quantityKg", exception.Code)]);
         }
         catch (LogisticsRuleException exception)
         {
@@ -1047,9 +1057,12 @@ public sealed partial class LogisticsInstructionService(
                 line.Source.Revision, line.ProductId, line.UnitId, Text(line.InstructedQuantity), Text(line.LoadedQuantity),
                 Text(line.ShippedQuantity), Text(line.DeliveredQuantity), Text(line.RemainingToLoad), Text(line.LoadedNotShipped),
                 Text(line.ShippedNotDelivered), line.IsBlocked,
-                line.ApprovedPlanExcessQuantity.IsZero ? null : Text(line.ApprovedPlanExcessQuantity)))],
+                line.ApprovedPlanExcessQuantity.IsZero ? null : Text(line.ApprovedPlanExcessQuantity),
+                line.InstructedQuantity.Unit == QuantityUnit.Kilogram ? null : Text(instruction.PhysicalKilograms(line.Id, LoadingShareKind.Loaded)),
+                line.InstructedQuantity.Unit == QuantityUnit.Kilogram ? null : Text(instruction.PhysicalKilograms(line.Id, LoadingShareKind.Shipped))))],
             [.. instruction.Shares.Select(share => new LoadingShareView(share.ShareId, share.LineId, share.Kind.ToString(), Text(share.Quantity),
-                share.Measurement?.ToString(), share.SourceShipmentId, share.RecordedAtUtc, stored.ShareRecordedBy?.GetValueOrDefault(share.ShareId)))],
+                share.Measurement?.ToString(), share.SourceShipmentId, share.RecordedAtUtc, stored.ShareRecordedBy?.GetValueOrDefault(share.ShareId),
+                share.Kilograms is { } kilograms ? Text(kilograms) : null))],
             instruction.Weighing is { } weighing ? WeighingView(weighing) : null,
             [.. instruction.DispatchNotes.Select(note => DispatchNoteView(instruction, note))],
             instruction.UnloadWeighing is { } unload ? UnloadWeighingView(unload) : null);

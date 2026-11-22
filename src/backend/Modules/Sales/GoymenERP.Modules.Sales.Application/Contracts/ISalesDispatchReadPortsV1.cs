@@ -198,4 +198,7 @@ public sealed record SalesInvoiceableShipmentV1(
     Guid SalesOrderLineId,
     Guid ProductId,
     Guid UnitId,
-    decimal Quantity);
+    decimal Quantity,
+    // AK-4 (KLN-D119, SAT-D434): a piece line's shipped physical kg — Quantity is then whole pieces (the commercial quantity);
+    // null on a kg line, whose Quantity already is kg.
+    decimal? Kilograms = null);

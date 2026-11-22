@@ -176,3 +176,10 @@ The instruction remains 100 when an additional 20 is proposed and approved. A se
 EF-generated `20261117233641_AddLogisticsShipmentPlanExcess` adds `PlanExcessExceptions`, append-only `PlanExcessUsages` and `PlanExcessReservations`, and a separate `ApprovedPlanExcess` summary on the instruction line. Legacy rows receive zero capacity. SQL guards allow only the pending-to-approved transition (`51818`) and prohibit changing actual usage (`51819`) or reservation evidence (`51820`). Down first refuses with `51817` while any evidence or nonzero approved capacity remains; an empty store is reversible. The generated designer and snapshot retain the EF model.
 
 `MapLogisticsPlanExcessEndpoints` exposes purpose-scoped selection, proposal and approval. The subcontract host exposes a separate explicit reservation command. `logistics.shipments.plan-excess.approve` is registered only: no role, grant or Critical classification is assigned. The independent approval page uses that purpose; the preparation control and approval route remain staged, as do the eight original subcontract declarations. Runtime SQL/HTTP/browser acceptance and K3 review remain separate from source compilation; detailed commands, endpoint contracts and test names are recorded in `W8_stok_lojistik.md`.
+
+**AK-4 piece (adet) lines (KLN-D119, SAT-D434).** The approved piece identity is a loading unit (whole pieces). A piece line's load
+and shipment carry the physical kg of those pieces (`quantityKg`; required there, refused on a kg line); the weighbridge, the unload
+weighing, the weighing difference and the dispatch kilogram allocation compare kilograms (a piece line by its physical kg); the
+dispatch note line copies the shipment kg; the definite shipment sends that kg and the `PieceCount` to Inventory. EF-generated
+`20261122101040_AddLogisticsPieceLineKilograms` adds nullable `QuantityKg` to `LoadingShares` and `DispatchNoteLines` with checks;
+Down first refuses with **THROW 52052** while any piece-line kg exists (forward fix). Real-SQL acceptance is not run locally.

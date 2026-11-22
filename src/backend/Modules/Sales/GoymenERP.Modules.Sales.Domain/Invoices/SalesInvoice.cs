@@ -87,7 +87,17 @@ public sealed record SalesInvoiceShareInput(
     decimal Quantity,
     string QuantityText,
     CommercialDraftFields Commercial,
-    SalesLineTaxSnapshot Tax);
+    SalesLineTaxSnapshot Tax,
+    decimal? TheoreticalKilograms = null,
+    decimal? ActualKilograms = null)
+{
+    /// <summary>
+    /// SAT-D434 / SAT-D435 (AK-4): a piece line is invoiced as pieces × piece price (<see cref="Quantity"/> is whole pieces); its
+    /// theoretical kg (pieces × the kg/unit pinned at approval, SAT-D437, 3 decimals per URN-D9) and actual kg (the scale kg the
+    /// weighing difference carried to the share) travel as information only and never change an amount. A kg line carries neither.
+    /// </summary>
+    public bool CarriesKilogramInformation => TheoreticalKilograms is not null || ActualKilograms is not null;
+}
 
 /// <summary>One instalment of the invoice's payable amount (SAT-D124: the last takes the remainder) with its due date (SAT-D129).</summary>
 public sealed record SalesInvoiceInstalment(int SequenceNo, DateOnly DueDate, string SharePercent, Money Amount);
@@ -137,6 +147,9 @@ public sealed partial class SalesInvoice
     public const int MaximumDocumentNoLength = SalesOrderDraft.MaximumDocumentNoLength;
     public const int MaximumActorLength = SalesOrderDraft.MaximumActorLength;
     public const int MaximumDispatchNumberLength = 64;
+
+    /// <summary>AK-4: the kg information's stored scale (Ö2: kilograms carry at most three decimals).</summary>
+    public const int KilogramInformationScale = 3;
     public const int MaximumReasonLength = SalesOrderDraft.MaximumRejectionReasonLength;
 
     private readonly List<SalesInvoiceLine> lines = [];
@@ -492,6 +505,15 @@ public sealed partial class SalesInvoice
         if (share.Quantity <= 0m || share.NoteLineNo < 1 || share.PriceBasisRevision < 0)
         {
             throw new ArgumentException("Sevk payının miktarı, irsaliye satırı ya da revizyonu geçersiz.", nameof(share));
+        }
+
+        // AK-4: the kg information is both values or neither, each positive with at most the kilogram scale (3 decimals).
+        if (share.CarriesKilogramInformation && (share.TheoreticalKilograms is not { } theoretical || share.ActualKilograms is not { } actual
+            || theoretical <= 0m || actual <= 0m
+            || decimal.Round(theoretical, KilogramInformationScale, MidpointRounding.AwayFromZero) != theoretical
+            || decimal.Round(actual, KilogramInformationScale, MidpointRounding.AwayFromZero) != actual))
+        {
+            throw new ArgumentException("Adetli fatura satırının teorik ve gerçek kg bilgisi birlikte ve pozitif olmalıdır.", nameof(share));
         }
     }
 

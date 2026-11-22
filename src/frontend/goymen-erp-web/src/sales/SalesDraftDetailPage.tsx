@@ -104,7 +104,7 @@ import {
   carriedLabelCode,
 } from './capabilities'
 import { PRICE_CONTROL_TEXT } from './priceControlText'
-import { APPROVAL_STATE_TEXT, COMMERCIAL_STAGE_TEXT, ORDER_DETAIL_TEXT as T, ORDER_DRAFT_TEXT, ORDER_TABS_TEXT, problemCodeText } from './salesText'
+import { APPROVAL_STATE_TEXT, COMMERCIAL_STAGE_TEXT, KILOGRAM_PRICE_TEXT, ORDER_DETAIL_TEXT as T, ORDER_DRAFT_TEXT, ORDER_TABS_TEXT, problemCodeText } from './salesText'
 import { SALES_PROBLEM_CODE, currentRevisionRejection } from './contract'
 import { classifyOutcome } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
@@ -115,6 +115,7 @@ import { FUTURE_ALLOCATION_TEXT } from '../inventory/futureAllocationText'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { SalesDraftCommercialRevisionForm } from './SalesDraftCommercialRevisionForm'
 import { SalesDraftLinePricing } from './SalesDraftLinePricing'
+import { SalesOrderKilogramPrices } from './SalesKilogramPrices'
 import { SalesDraftPriceFloorApproval } from './SalesDraftPriceFloorApproval'
 import { SalesDraftRevisionHistory } from './SalesDraftRevisionHistory'
 import { SalesDraftQuantityRevisionForm } from './SalesDraftQuantityRevisionForm'
@@ -536,6 +537,8 @@ export function SalesDraftDetailPage() {
           <>
             {/* AT-018 / AT-021: the reference list price, the adjustments and the server's net, for a caller who may see prices. */}
             <SalesDraftLinePricing shell={shell} detail={outcome.data} companyId={companyId} />
+            {/* SAT-D436 (AK-5): the kg prices and the realization, for a caller who may see prices. */}
+            <SalesOrderKilogramPrices shell={shell} detail={outcome.data} companyId={companyId} />
             <SalesDraftPriceFloorApproval
               key={`floor:${namespace ?? ''}:${outcome.data.draft.id}`}
               shell={shell}
@@ -1363,6 +1366,11 @@ function LineView({ line, unitCodes, futureAllocationLink }: {
       {futureAllocationLink === null ? null : <p>{futureAllocationLink}</p>}
       {line.addedInRevision === undefined ? null : (
         <p className={styles.muted} data-testid={`sales-line-${line.lineNo}-added-in`}>{T.addedInRevision(line.addedInRevision)}</p>
+      )}
+      {line.theoreticalKilogramsPerUnit === undefined ? null : (
+        <p className={styles.muted} data-testid={`sales-line-${line.lineNo}-kg-per-unit`}>
+          {`${KILOGRAM_PRICE_TEXT.kilogramsPerUnit}: ${line.theoreticalKilogramsPerUnit}`}
+        </p>
       )}
       <dl className={`${styles.facts} ${styles.lineFacts}`} data-testid={`sales-line-${line.lineNo}-facts`}>
         <div>

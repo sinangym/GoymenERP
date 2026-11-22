@@ -48,6 +48,8 @@ public interface ISalesDraftService
         CancellationToken cancellationToken = default);
     /// <summary>AT-018 / AT-021: every line's reference, adjustments and net (price read).</summary>
     Task<SalesOrderDraftLinePricingResponse> GetDraftLinePricingAsync(Guid draftId, CancellationToken cancellationToken = default);
+    /// <summary>SAT-D436 (AK-5): the order's kg prices and realization (draft read and price read); closed until its golden.</summary>
+    Task<SalesOrderKilogramPricesResponse> GetDraftKilogramPricesAsync(Guid draftId, CancellationToken cancellationToken = default);
 
     /// <summary>API-03 / SAT-D11: the order's line and document totals from the one backend calculator (draft read + price read).</summary>
     Task<SalesOrderDraftTotalsResponse> GetDraftTotalsAsync(Guid draftId, CancellationToken cancellationToken = default);

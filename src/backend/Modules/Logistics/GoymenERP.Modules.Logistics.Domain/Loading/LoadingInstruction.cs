@@ -267,7 +267,7 @@ public sealed class LoadingInstruction
     /// what remains to load; a blocked line loads nothing; the same load id is one load.
     /// </summary>
     public LoadingShare RecordLoad(long expectedVersion, Guid loadId, Guid lineId, Quantity loaded,
-        MeasurementKind measurement, DateTimeOffset now)
+        MeasurementKind measurement, DateTimeOffset now, Quantity? kilograms = null)
     {
         RequireVersion(expectedVersion);
         RequireStatus(LoadingInstructionStatus.Issued, LogisticsRuleCodes.InstructionNotIssued, "Yükleme yalnız yayımlanmış talimata kaydedilir.");
@@ -287,8 +287,10 @@ public sealed class LoadingInstruction
         RequireNotBlocked(line, "Bloklu satıra yükleme kaydedilemez.");
         RequirePositiveShare(loadId, loaded, line.RemainingToLoad, LogisticsRuleCodes.LoadExceedsInstructed,
             "Yüklenen pay talimatın yüklenmemiş kalanını aşamaz.");
+        RequirePhysicalKilograms(line, kilograms);
         line.AddLoaded(loaded);
-        return Add(new LoadingShare(loadId, line.Id, LoadingShareKind.Loaded, loaded, measurement, null, now.ToUniversalTime()), now);
+        return Add(new LoadingShare(loadId, line.Id, LoadingShareKind.Loaded, loaded, measurement, null, now.ToUniversalTime(),
+            kilograms), now);
     }
 
     /// <summary>
@@ -298,7 +300,8 @@ public sealed class LoadingInstruction
     /// "sevk serbestliği yok"). The stock exit and the allocation consumption that go with a
     /// definite shipment are Inventory's (T11/T12) and belong in the same transaction as this share.
     /// </summary>
-    public LoadingShare MarkShipped(long expectedVersion, Guid shipmentId, Guid lineId, Quantity shipped, DateTimeOffset now)
+    public LoadingShare MarkShipped(long expectedVersion, Guid shipmentId, Guid lineId, Quantity shipped, DateTimeOffset now,
+        Quantity? kilograms = null)
     {
         RequireVersion(expectedVersion);
         RequireStatus(LoadingInstructionStatus.Issued, LogisticsRuleCodes.InstructionNotIssued, "Sevk yalnız yayımlanmış talimatta kaydedilir.");
@@ -313,8 +316,17 @@ public sealed class LoadingInstruction
         RequireNotBlocked(line, "Bloklu satırdan sevk kaydedilemez.");
         RequirePositiveShare(shipmentId, shipped, line.LoadedNotShipped, LogisticsRuleCodes.ShipmentExceedsLoaded,
             "Sevk edilen pay yüklenmiş ama sevk edilmemiş payı aşamaz.");
+        RequirePhysicalKilograms(line, kilograms);
+        if (kilograms is { } shippedKg && shippedKg.IsGreaterThan(PhysicalKilograms(line.Id, LoadingShareKind.Loaded)
+                .Subtract(PhysicalKilograms(line.Id, LoadingShareKind.Shipped))))
+        {
+            throw new LogisticsRuleException(LogisticsRuleCodes.ShipmentExceedsLoaded,
+                "Adetli satırda sevk edilen kg yüklenmiş ama sevk edilmemiş kg'yi aşamaz.");
+        }
+
         line.AddShipped(shipped);
-        return Add(new LoadingShare(shipmentId, line.Id, LoadingShareKind.Shipped, shipped, null, null, now.ToUniversalTime()), now);
+        return Add(new LoadingShare(shipmentId, line.Id, LoadingShareKind.Shipped, shipped, null, null, now.ToUniversalTime(),
+            kilograms), now);
     }
 
     /// <summary>
@@ -382,15 +394,9 @@ public sealed class LoadingInstruction
                 "Bu talimatın kantar tartımı zaten kayıtlı; ikinci tartım kaydedilmez, yanlış giriş gerekçeli düzeltmeyle düzeltilir.");
         }
 
-        if (lines.Any(line => line.InstructedQuantity.Unit != QuantityUnit.Kilogram))
-        {
-            throw new LogisticsRuleException(LogisticsRuleCodes.WeighingUnitUnsupported, "Kantar farkı yalnız kilogram satırlarıyla karşılaştırılır.");
-        }
-
         var net = WeighbridgeCalculator.Net(direction, firstWeighing, secondWeighing);
-        // Re-read through Of so equal kilograms print equally (3.0 → 3), as every entered quantity does.
-        var loaded = Quantity.Of(lines.Aggregate(Quantity.Zero(QuantityUnit.Kilogram), (sum, line) => sum.Add(line.LoadedQuantity)).Value,
-            QuantityUnit.Kilogram);
+        // AK-4 (KLN-D119): a piece line weighs in with its loads' physical kilograms; a kg line with its loaded quantity.
+        var loaded = LoadedPhysicalKilograms();
         Weighing = new VehicleWeighing(weighingId, direction, firstWeighing, secondWeighing, net, loaded,
             WeighbridgeCalculator.Difference(net, loaded), shares.Count, recordedBy.Trim(), now.ToUniversalTime());
         Touch(now);
@@ -476,15 +482,8 @@ public sealed class LoadingInstruction
             throw new LogisticsRuleException(LogisticsRuleCodes.UnloadNothingLoaded, "Talimatta araca yüklenmiş mal yok; indirme tartısı kaydedilmez.");
         }
 
-        if (lines.Any(line => line.InstructedQuantity.Unit != QuantityUnit.Kilogram))
-        {
-            throw new LogisticsRuleException(LogisticsRuleCodes.WeighingUnitUnsupported, "İndirme tartısı farkı yalnız kilogram satırlarıyla karşılaştırılır.");
-        }
-
         var net = WeighbridgeCalculator.Net(direction, firstWeighing, secondWeighing);
-        // Re-read through Of so equal kilograms print equally (3.0 → 3), as every entered quantity does.
-        var loaded = Quantity.Of(lines.Aggregate(Quantity.Zero(QuantityUnit.Kilogram), (sum, line) => sum.Add(line.LoadedQuantity)).Value,
-            QuantityUnit.Kilogram);
+        var loaded = LoadedPhysicalKilograms();
         UnloadWeighing = new UnloadWeighing(weighingId, direction, firstWeighing, secondWeighing, net, loaded,
             WeighbridgeCalculator.Difference(net, loaded), recordedBy.Trim(), now.ToUniversalTime());
         Touch(now);
@@ -533,7 +532,8 @@ public sealed class LoadingInstruction
         }
 
         var lines = chosen.OrderBy(shipment => IndexOfShare(shipment.ShareId))
-            .Select((shipment, index) => new DispatchNoteLine(index + 1, shipment.ShareId, shipment.LineId, shipment.Quantity))
+            .Select((shipment, index) => new DispatchNoteLine(index + 1, shipment.ShareId, shipment.LineId, shipment.Quantity,
+                shipment.Kilograms))
             .ToArray();
         var draft = new DispatchNoteDraft(dispatchNoteId, DispatchNoteStatus.Draft, Array.AsReadOnly(lines), shares.Count, createdBy.Trim(),
             now.ToUniversalTime(), DispatchSteps + 1);
@@ -717,6 +717,39 @@ public sealed class LoadingInstruction
         shares.Where(share => share.Kind == LoadingShareKind.Delivered && share.SourceShipmentId == shipment.ShareId)
             .Aggregate(shipment.Quantity, (left, delivery) => left.Subtract(delivery.Quantity));
 
+    /// <summary>
+    /// AK-4 (KLN-D119): a piece (non-kilogram) line's load and shipment carry the physical kilograms of the pieces (the label kg
+    /// leaving with them) beside the piece count — required there and refused on a kg line, whose quantity already is kg.
+    /// </summary>
+    private static void RequirePhysicalKilograms(LoadingInstructionLine line, Quantity? kilograms)
+    {
+        if (line.InstructedQuantity.Unit == QuantityUnit.Kilogram)
+        {
+            if (kilograms is not null)
+                throw new LogisticsRuleException(LogisticsRuleCodes.PhysicalKilogramsOnKilogramLine,
+                    "Kilogram satırında ayrıca fiziksel kg girilmez; miktar zaten kg'dir.");
+            return;
+        }
+
+        if (kilograms is not { } value || value.Unit != QuantityUnit.Kilogram || value.IsZero)
+            throw new LogisticsRuleException(LogisticsRuleCodes.PhysicalKilogramsRequired,
+                "Adetli satırda yüklenen ve sevk edilen adedin fiziksel kg'si girilmelidir.");
+    }
+
+    /// <summary>AK-4: the physical kilograms of one line's shares of a kind (zero for a kg line, whose shares carry none).</summary>
+    public Quantity PhysicalKilograms(Guid lineId, LoadingShareKind kind) =>
+        Quantity.Of(shares.Where(share => share.LineId == lineId && share.Kind == kind && share.Kilograms is not null)
+            .Aggregate(Quantity.Zero(QuantityUnit.Kilogram), (sum, share) => sum.Add(share.Kilograms!.Value)).Value, QuantityUnit.Kilogram);
+
+    /// <summary>
+    /// AK-4: the kilograms on the vehicle — a kg line's loaded quantity plus a piece line's loads' physical kilograms. Re-read
+    /// through Of so equal kilograms print equally (3.0 → 3), as every entered quantity does.
+    /// </summary>
+    private Quantity LoadedPhysicalKilograms() =>
+        Quantity.Of(lines.Aggregate(Quantity.Zero(QuantityUnit.Kilogram), (sum, line) => sum.Add(
+            line.InstructedQuantity.Unit == QuantityUnit.Kilogram ? line.LoadedQuantity : PhysicalKilograms(line.Id, LoadingShareKind.Loaded))).Value,
+            QuantityUnit.Kilogram);
+
     private LoadingShare FindShipment(Guid shipmentId) =>
         shares.FirstOrDefault(share => share.ShareId == shipmentId && share.Kind == LoadingShareKind.Shipped)
         ?? throw new LogisticsRuleException(LogisticsRuleCodes.ShipmentNotFound, "Kaynak sevk kaydı bulunamadı.");
@@ -795,4 +828,4 @@ public enum LoadingShareKind
 /// document, not a stock movement.
 /// </summary>
 public sealed record LoadingShare(Guid ShareId, Guid LineId, LoadingShareKind Kind, Quantity Quantity,
-    MeasurementKind? Measurement, Guid? SourceShipmentId, DateTimeOffset RecordedAtUtc);
+    MeasurementKind? Measurement, Guid? SourceShipmentId, DateTimeOffset RecordedAtUtc, Quantity? Kilograms = null);

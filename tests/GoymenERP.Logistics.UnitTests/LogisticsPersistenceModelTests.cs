@@ -147,6 +147,35 @@ public sealed class LogisticsPersistenceModelTests
     }
 
     [Fact]
+    public void AK4_piece_line_physical_kilograms_are_nullable_checked_columns_and_the_migration_down_refuses_with_52052()
+    {
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var shares = model.FindEntityType(typeof(LoadingShareRow))!;
+        var lines = model.FindEntityType(typeof(DispatchNoteLineRow))!;
+        foreach (var column in new[] { shares.FindProperty(nameof(LoadingShareRow.QuantityKg))!, lines.FindProperty(nameof(DispatchNoteLineRow.QuantityKg))! })
+        {
+            // Earlier shares and kg lines carry none and are never back-filled.
+            Assert.Equal((18, 3, true), (column.GetPrecision(), column.GetScale(), column.IsNullable));
+        }
+
+        Assert.Contains(shares.GetCheckConstraints(), check => check.Name == "CK_LoadingShares_QuantityKg"
+            && check.Sql == LogisticsDbContext.ShareQuantityKgCheck);
+        Assert.Contains(lines.GetCheckConstraints(), check => check.Name == "CK_DispatchNoteLines_QuantityKg"
+            && check.Sql == LogisticsDbContext.DispatchNoteLineQuantityKgCheck);
+        Assert.EndsWith("_AddLogisticsPieceLineKilograms", context.Database.GetMigrations().Last(), StringComparison.Ordinal);
+        Assert.False(context.Database.HasPendingModelChanges());
+
+        var migration = new GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations.AddLogisticsPieceLineKilograms();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation);
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("[QuantityKg] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 52052,", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    [Fact]
     public void A_cancelled_instruction_keeps_its_canceller_time_and_reason_in_nullable_columns_under_a_check_and_the_migration_down_refuses_with_51265()
     {
         using var context = Context();
