@@ -42,7 +42,8 @@ public sealed class ManufacturingOutputSelectionReaderTests
             Location, "HOL-1", "Üretim holü", Site, "OSM", "Osmangazi"),
             Assert.Single(locationAnswer.Items));
         Assert.True(locationAnswer.SearchWindowFull);
-        Assert.Equal(4, authority.Calls);
+        // Products: before the owner read, after it and after the piece-counting reads; locations: before and after.
+        Assert.Equal(5, authority.Calls);
         Assert.All(authority.Permissions, permission =>
             Assert.Equal(ErpPermissions.ManufacturingFactsRecord, permission));
     }

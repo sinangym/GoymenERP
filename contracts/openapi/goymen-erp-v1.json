@@ -275131,7 +275131,8 @@
           "productVersion",
           "code",
           "name",
-          "stockUnitCode"
+          "stockUnitCode",
+          "pieceCounting"
         ],
         "type": "object",
         "properties": {
@@ -275152,8 +275153,7 @@
             "type": "string"
           },
           "pieceCounting": {
-            "type": "string",
-            "default": "Unavailable"
+            "type": "string"
           }
         }
       },

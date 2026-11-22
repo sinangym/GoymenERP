@@ -378,15 +378,16 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
     public async Task The_piece_count_of_a_create_and_a_change_reaches_the_writer_and_an_absent_one_stays_absent()
     {
         // KLN-D119 / SAT-D434 (AK-4b): the host only forwards the count; the stock owner decides whether the label needs it.
-        var counted = Fixture();
-        await counted.Service.CreateAsync(CreateRequest() with { PieceCount = 4 }, Metadata(), CancellationToken.None);
-        await counted.Service.ChangeAsync(Guid.NewGuid(), ChangeRequest() with { PieceCount = 2 }, Metadata(), CancellationToken.None);
-        var plain = Fixture();
-        await plain.Service.CreateAsync(CreateRequest(), Metadata(), CancellationToken.None);
-        await plain.Service.ChangeAsync(Guid.NewGuid(), ChangeRequest(), Metadata(), CancellationToken.None);
+        var (countedCreate, countedChange, plainCreate, plainChange) = (Fixture(), Fixture(), Fixture(), Fixture());
+        await countedCreate.Service.CreateAsync(CreateRequest() with { PieceCount = 4 }, Metadata(), CancellationToken.None);
+        await countedChange.Service.ChangeAsync(Guid.NewGuid(), ChangeRequest() with { PieceCount = 2 }, Metadata(), CancellationToken.None);
+        await plainCreate.Service.CreateAsync(CreateRequest(), Metadata(), CancellationToken.None);
+        await plainChange.Service.ChangeAsync(Guid.NewGuid(), ChangeRequest(), Metadata(), CancellationToken.None);
 
-        Assert.Equal((4, 2), (counted.Writer.CreateRequest!.PieceCount, counted.Writer.Change!.Value.Request.PieceCount));
-        Assert.Equal(((int?)null, (int?)null), (plain.Writer.CreateRequest!.PieceCount, plain.Writer.Change!.Value.Request.PieceCount));
+        Assert.Equal(((int?)4, (int?)2),
+            (countedCreate.Writer.CreateRequest!.PieceCount, countedChange.Writer.Change!.Value.Request.PieceCount));
+        Assert.Equal(((int?)null, (int?)null),
+            (plainCreate.Writer.CreateRequest!.PieceCount, plainChange.Writer.Change!.Value.Request.PieceCount));
     }
 
     [Theory]
