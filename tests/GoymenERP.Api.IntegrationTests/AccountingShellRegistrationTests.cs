@@ -62,7 +62,7 @@ public sealed class AccountingShellRegistrationTests
             .ToArray();
         // Published owner routes and existing staged source/cost declarations, plus the three
         // staged mapping read/prepare/activate actions. The exact published set below is unchanged.
-        Assert.Equal(29, accounting.Length);
+        Assert.Equal(30, accounting.Length);
         // Named rather than counted, and asserted as a SET: "all staged" was true only until the flip, while
         // "these six and no others" stays true and fails loudly if a seventh is ever published without an
         // acceptance to stand on.
@@ -71,7 +71,7 @@ public sealed class AccountingShellRegistrationTests
             "accounting.journals.detail", "accounting.journals.list", "accounting.normal-journal-drafts.approve",
             "accounting.normal-journal-drafts.create", "accounting.normal-journal-drafts.detail",
             "accounting.periods.approve", "accounting.periods.close",
-            "accounting.periods.list", "accounting.periods.propose", "accounting.posting-queues",
+            "accounting.periods.list", "accounting.periods.propose", "accounting.periods.reopen", "accounting.posting-queues",
             "accounting.trial-balance",
         ];
         Assert.Equal(published, accounting.Where(item => item.Declaration.ImplementationAvailable)
@@ -114,6 +114,7 @@ public sealed class AccountingShellRegistrationTests
             "accounting.periods.close",
             "accounting.periods.list",
             "accounting.periods.propose",
+            "accounting.periods.reopen",
             "accounting.posting-mappings.activate",
             "accounting.posting-mappings.prepare",
             "accounting.posting-mappings.read",

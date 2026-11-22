@@ -1361,6 +1361,16 @@ public static class ErpPermissions
     /// <inheritdoc cref="AccountingPeriodsRead"/>
     public const string AccountingPeriodsClose = "accounting.periods.close";
 
+    /// <summary>
+    /// ROL-D12 (SINAN_KARARLARI_2026-11-22_ROL_YETKI.md): reopening a closed period is its own permission, apart from
+    /// approving a period opening (<see cref="AccountingPeriodsApprove"/>). The approval that reopens a period requires
+    /// this name; proposing a reopening keeps <see cref="AccountingPeriodsPropose"/> and the maker-checker rule stays in the
+    /// Accounting service. The decision names only the General Manager as holder; the grant is a human gate. Registered,
+    /// not granted: no role, seed or user receives it here, so the reopening approval is closed (403) until a person
+    /// grants it. Company-wide only (a period belongs to its company). Not Critical (W5-3.1 reading for new names).
+    /// </summary>
+    public const string AccountingPeriodsReopen = "accounting.periods.reopen";
+
     /// <inheritdoc cref="AccountingPeriodsRead"/>
     public const string AccountingJournalsRead = "accounting.journals.read";
 
@@ -1853,6 +1863,7 @@ public static class ErpPermissions
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
             AccountingPeriodsClose,
+            AccountingPeriodsReopen,
             AccountingJournalsRead,
             AccountingPostingQueuesRead,
             AccountingNormalJournalDraftCreate,
@@ -2155,6 +2166,7 @@ public static class ErpPermissions
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
             AccountingPeriodsClose,
+            AccountingPeriodsReopen,
             AccountingJournalsRead,
             AccountingPostingQueuesRead,
             AccountingNormalJournalDraftCreate,

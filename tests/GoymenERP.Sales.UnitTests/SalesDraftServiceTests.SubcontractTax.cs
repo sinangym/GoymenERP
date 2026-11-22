@@ -41,6 +41,24 @@ public sealed partial class SalesDraftServiceTests
         Assert.Empty(world.Store.Transitions);
     }
     [Fact]
+    public async Task Subcontract_tax_revision_needs_only_the_Sales_approval_and_never_measures_the_Purchasing_approval()
+    {
+        // SAT-D469: the sales side changes with sales.orders.approve; the two approvals are not required together.
+        var world = new World { ItemTypes = new FakeItemTypes(), LineTaxes = new FakeLineTaxes() };
+        var created = (await world.Service().CreateDraftAsync(Subcontract("10"), Metadata("SENTETIK-tax-sales-only-create"))).Detail;
+        var submitted = await world.Service().SubmitDraftAsync(created.Draft.Id, Command(created.Draft.Version), Metadata("SENTETIK-tax-sales-only-submit"));
+        var approved = (await world.Service().ApproveDraftAsync(created.Draft.Id, Command(submitted.Detail.Draft.Version), Metadata("SENTETIK-tax-sales-only-approve"))).Detail;
+        world.Authority.Denied.Add(GoymenERP.BuildingBlocks.Security.ErpPermissions.PurchasingOrdersApprove);
+        world.Authority.Measured.Clear();
+        var request = new SalesSubcontractTaxRevisionV1(approved.Draft.Version, approved.Lines[0].LineId,
+            new(SalesDraftLineTaxModesV1.Override, TaxBuyerSituationsV1.FinalConsumer, "SENTETIK alıcı vergi dayanağı"), "SENTETIK satır vergisi");
+        var result = await world.Service().ReviseSubcontractTaxAsync(created.Draft.Id, request, Metadata("SENTETIK-tax-sales-only"));
+        Assert.False(result.IsReplay);
+        Assert.Contains(ApprovePermission, world.Authority.Measured);
+        Assert.DoesNotContain(GoymenERP.BuildingBlocks.Security.ErpPermissions.PurchasingOrdersApprove, world.Authority.Measured);
+    }
+
+    [Fact]
     public async Task A_normal_goods_order_cannot_use_the_subcontract_tax_only_entry_point()
     {
         var world = new World { LineTaxes = new FakeLineTaxes() };

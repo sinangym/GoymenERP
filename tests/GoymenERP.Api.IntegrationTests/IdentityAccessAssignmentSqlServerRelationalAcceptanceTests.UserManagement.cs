@@ -11,6 +11,95 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed partial class IdentityAccessAssignmentSqlServerRelationalAcceptanceTests
 {
     [SqlServerFact]
+    public async Task Managed_user_list_hides_users_outside_the_context_company_or_outside_the_actor_management_scope()
+    {
+        await WithDatabaseAsync(SyntheticCode("ADMIN"), async factory =>
+        {
+            var manager = await CreateRoleAsync(factory, SyntheticCode("MANAGER"), ErpPermissions.IdentityUsersManage);
+            var plain = await CreateRoleAsync(factory, SyntheticCode("PLAIN"), ErpPermissions.IdentityProfileRead);
+            var actor = await EnsureUserAsync(factory, TestUsers.NoAssignment);
+            await AssignDirectlyAsync(factory, actor, manager, TestCompanyIds.CompanyA);
+            using var client = CreateClient(factory, TestUsers.NoAssignment, TestCompanyIds.CompanyA);
+            async Task<Guid> CreateAsync(string label)
+            {
+                var id = Guid.NewGuid();
+                using var created = await PostAsync(client, "/api/v1/identity/access/users", new CreateLocalUserV1(id, "0",
+                    $"Sentetik {label}", $"synthetic-{label}-{id:N}", "SentetikOnly!Temporary.5172", "Sentetik oluşturma"), NewKey(), NewKey());
+                Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+                return id;
+            }
+            var onlyA = await CreateAsync("only-a");
+            var onlyB = await CreateAsync("only-b");
+            var bothAandB = await CreateAsync("a-and-b");
+            var expiredB = await CreateAsync("expired-b");
+            var neverAssigned = await CreateAsync("never-assigned");
+            await AssignDirectlyAsync(factory, onlyA, plain, TestCompanyIds.CompanyA);
+            await AssignDirectlyAsync(factory, onlyB, plain, TestCompanyIds.CompanyB);
+            await AssignDirectlyAsync(factory, bothAandB, plain, TestCompanyIds.CompanyA);
+            await AssignDirectlyAsync(factory, bothAandB, plain, TestCompanyIds.CompanyB);
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+                var expired = new GoymenERP.Modules.Identity.Domain.Assignments.RoleAssignment(Guid.NewGuid(), expiredB, plain,
+                    TestCompanyIds.CompanyB, DateTimeOffset.UtcNow.AddDays(-2), DateTimeOffset.UtcNow.AddDays(-1), approvedByUserId: null);
+                expired.AddScope(GoymenERP.Modules.Identity.Domain.Assignments.AccessScopeType.Company, TestCompanyIds.CompanyB);
+                identity.RoleAssignments.Add(expired);
+                await identity.SaveChangesAsync();
+            }
+
+            async Task<Guid[]> ListAsync()
+            {
+                using var response = await client.GetAsync("/api/v1/identity/access/managed-users");
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                return body.RootElement.EnumerateArray().Select(user => user.GetProperty("userId").GetGuid()).ToArray();
+            }
+
+            // KIM-D57: an account with no valid assignment is listed only for its creator; another creator's or a
+            // creator-less (seed/bootstrap) account is not, and the platform-level branch admits nobody yet.
+            var otherCreator = Guid.NewGuid();
+            Guid strangerUnassigned = Guid.NewGuid(), creatorless = Guid.NewGuid();
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+                identity.Users.Add(new GoymenERP.Modules.Identity.Domain.Users.UserAccount(otherCreator, "Sentetik başka yönetici", null));
+                identity.Users.Add(new GoymenERP.Modules.Identity.Domain.Users.UserAccount(strangerUnassigned, "Sentetik başkasının", null, otherCreator));
+                identity.Users.Add(new GoymenERP.Modules.Identity.Domain.Users.UserAccount(creatorless, "Sentetik oluşturansız", null));
+                foreach (var id in new[] { strangerUnassigned, creatorless })
+                    identity.LocalCredentials.Add(new GoymenERP.Modules.Identity.Domain.Credentials.LocalCredential(id, $"synthetic-x-{id:N}",
+                        "SENTETIK-hash", 1, true, DateTimeOffset.UtcNow, Guid.NewGuid()));
+                await identity.SaveChangesAsync();
+                Assert.Equal(actor, (await identity.Users.AsNoTracking().SingleAsync(x => x.Id == neverAssigned)).CreatedByUserId);
+            }
+
+            var listed = await ListAsync();
+            Assert.Contains(onlyA, listed);
+            Assert.Contains(neverAssigned, listed);
+            Assert.Contains(expiredB, listed); // no valid assignment any more, created by the actor (KIM-D57)
+            Assert.DoesNotContain(onlyB, listed);
+            Assert.DoesNotContain(bothAandB, listed);
+            Assert.DoesNotContain(strangerUnassigned, listed);
+            Assert.DoesNotContain(creatorless, listed);
+
+            await AssignDirectlyAsync(factory, actor, manager, TestCompanyIds.CompanyB);
+            listed = await ListAsync();
+            Assert.Contains(bothAandB, listed);
+            Assert.DoesNotContain(onlyB, listed);
+            Assert.DoesNotContain(strangerUnassigned, listed);
+
+            // KIM-D57 migration Down is a forward fix while a creator is recorded (real SQL).
+            var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(
+                new GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations.AddUserAccountCreatedBy().DownOperations[0]).Sql;
+            await using (var connection = new Microsoft.Data.SqlClient.SqlConnection(factory.DatabaseConnectionString))
+            {
+                await connection.OpenAsync();
+                await using var command = new Microsoft.Data.SqlClient.SqlCommand(guard, connection);
+                Assert.Equal(52082, (await Assert.ThrowsAsync<Microsoft.Data.SqlClient.SqlException>(() => command.ExecuteNonQueryAsync())).Number);
+            }
+        });
+    }
+
+    [SqlServerFact]
     public async Task User_management_requires_every_membership_company_and_replays_without_applying_a_second_password()
     {
         await WithDatabaseAsync(SyntheticCode("ADMIN"), async factory =>
