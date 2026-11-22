@@ -1,4 +1,4 @@
-using GoymenERP.Api.Shell;
+using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using GoymenERP.Modules.Settings.Infrastructure.Shell;
