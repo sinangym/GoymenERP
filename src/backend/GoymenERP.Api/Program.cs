@@ -266,6 +266,7 @@ builder.Services.AddSecurityEventsModule(builder.Configuration);
 builder.Services.AddErpSecretStore(builder.Configuration);
 // AI-3: READ-only AI runtime, off unless configured (Ai:Enabled); no owner tool is registered here.
 builder.Services.AddAiRuntime(builder.Configuration);
+builder.Services.AddAiSecurityWatchTools();
 builder.Services.AddSettingsModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(

@@ -1,0 +1,32 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "contracts/security/emergency-step-list-v1.schema.json",
+ "title": "Göymen ERP önceden onaylı acil güvenlik adımı listesi v1 (yalnız şema)",
+ "description": "AI-D18: Sinan'ın önceden onayladığı sınırlı acil durum adımlarının listesi ayrıca karara bağlanır. Bu sürümde liste her zaman boştur, executable her zaman false'tur ve hiçbir kod adım yürütmez; şema yalnız ileride karar verildiğinde sözleşme değişmeden doldurulabilsin diye vardır.",
+ "type": "object",
+ "additionalProperties": false,
+ "required": ["status", "decisionRef", "executable", "steps"],
+ "properties": {
+  "status": {"const": "separate-decision-pending"},
+  "decisionRef": {"const": "AI-D18"},
+  "executable": {"const": false},
+  "steps": {
+   "type": "array",
+   "maxItems": 0,
+   "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["stepId", "title", "trigger", "effect", "approvalDecisionRef", "notifiesImmediately", "reviewedAfterwards"],
+    "properties": {
+     "stepId": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,63}$"},
+     "title": {"type": "string", "minLength": 1, "maxLength": 200},
+     "trigger": {"type": "string", "minLength": 1, "maxLength": 200},
+     "effect": {"type": "string", "minLength": 1, "maxLength": 200},
+     "approvalDecisionRef": {"type": "string", "pattern": "^[A-Z][A-Z0-9-]{1,79}$"},
+     "notifiesImmediately": {"const": true},
+     "reviewedAfterwards": {"const": true}
+    }
+   }
+  }
+ }
+}

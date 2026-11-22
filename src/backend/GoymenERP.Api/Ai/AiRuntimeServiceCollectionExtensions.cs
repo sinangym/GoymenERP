@@ -1,6 +1,7 @@
 using GoymenERP.Api.Ai.Commands;
 using GoymenERP.Api.Ai.External;
 using GoymenERP.Api.Ai.Knowledge;
+using GoymenERP.Api.Ai.SecurityWatch;
 using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Security.SecretStore;
@@ -47,6 +48,19 @@ public static class AiRuntimeServiceCollectionExtensions
         services.TryAddScoped<IAiStepUpVerifierV1, UnconfiguredAiStepUpVerifier>();
         services.AddScoped<AiCommandToolCatalog>();
         services.AddScoped<AiCommandPipeline>();
+        return services;
+    }
+
+    /// <summary>
+    /// WP-C10: the read-only <c>security.tech-watch.summary.v1</c> tool and its dependency scan report source. It needs
+    /// the SecurityEvents module (its owner digest), so the host calls this after <c>AddSecurityEventsModule</c>.
+    /// Registration only: no default report path, no allowlist entry, Confidential data class.
+    /// </summary>
+    public static IServiceCollection AddAiSecurityWatchTools(this IServiceCollection services)
+    {
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IDependencyScanReportSourceV1, ConfiguredDependencyScanReportSource>();
+        services.AddScoped<IAiOwnerToolV1, SecurityTechWatchAiTool>();
         return services;
     }
 

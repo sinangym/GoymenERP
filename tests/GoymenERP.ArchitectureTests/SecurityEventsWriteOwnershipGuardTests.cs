@@ -83,7 +83,14 @@ public sealed class SecurityEventsWriteOwnershipGuardTests
             new[] { QueryServicePath },
             FindProductionSourcesContaining(".SecurityEvents.AsNoTracking("));
         Assert.Equal(
-            new[] { "src/backend/GoymenERP.Api/Endpoints/SecurityEventsEndpoints.cs", ModuleExtensionsPath, QueryServicePath }
+            new[]
+                {
+                    "src/backend/GoymenERP.Api/Endpoints/SecurityEventsEndpoints.cs",
+                    // WP-C10: the read-only AI digest reads only through the query service (every read recorded).
+                    "src/backend/Modules/SecurityEvents/GoymenERP.Modules.SecurityEvents.Infrastructure/Ai/SecurityEventDigestReader.cs",
+                    ModuleExtensionsPath,
+                    QueryServicePath,
+                }
                 .Order(StringComparer.Ordinal),
             FindProductionSourcesContaining("ISecurityEventQueryServiceV1")
                 .Where(path => !path.EndsWith("/Reading/SecurityEventQueryContractsV1.cs", StringComparison.Ordinal)));

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using GoymenERP.Api.Ai;
 using GoymenERP.Api.Ai.Knowledge;
+using GoymenERP.Api.Ai.SecurityWatch;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.BuildingBlocks.Multitenancy;
@@ -9,6 +10,8 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Security.Events;
 using GoymenERP.Modules.Logistics.Application.Ai;
 using GoymenERP.Modules.Logistics.Application.Contracts;
+using GoymenERP.Modules.SecurityEvents.Infrastructure.Ai;
+using GoymenERP.Modules.SecurityEvents.Infrastructure.Reading;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
@@ -133,6 +136,10 @@ public sealed class AiYa1ReadToolsTests
         {
             DecisionTool().Descriptor,
             new LogisticsPendingShipmentsAiTool(new ListOnlyInstructionService(), new FixedTime(Now)).Descriptor,
+            // WP-C10
+            new SecurityEventsSummaryAiTool(new SecurityEventDigestReader(new DeniedSecurityEventQuery()), new FixedTime(Now)).Descriptor,
+            new SecurityTechWatchAiTool(new FixedDependencyScanReportSource(DependencyScanReadResultV1.NotConfigured),
+                new SecurityEventDigestReader(new DeniedSecurityEventQuery()), new FixedTime(Now)).Descriptor,
         };
         var entries = catalog.RootElement.GetProperty("tools").EnumerateArray().ToArray();
         Assert.Equal(descriptors.Length, entries.Length);
@@ -318,6 +325,13 @@ public sealed class AiYa1ReadToolsTests
     private sealed class FixedTime(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class DeniedSecurityEventQuery : ISecurityEventQueryServiceV1
+    {
+        public Task<SecurityEventQueryResultV1> GetEventsAsync(int pageSize, string? cursor, string? eventType,
+            string? correlationId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(SecurityEventQueryResultV1.Denied);
     }
 
     /// <summary>A SENTETIK Logistics owner shipment-state read: this company's rows only, pages by exact status.</summary>
