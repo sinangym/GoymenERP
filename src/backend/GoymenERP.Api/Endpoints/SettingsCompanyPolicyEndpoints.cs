@@ -200,6 +200,7 @@ public static partial class SettingsCompanyPolicyEndpoints
 
         MapPurchasingSubcontractTaxDefault(group);
         MapOperationalPolicies(group);
+        MapLegalDeadlineCalendar(group);
         MapDocumentNumberPolicies(group);
         return endpoints;
     }

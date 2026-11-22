@@ -207,6 +207,7 @@ builder.Services.AddScoped<NativeApprovalQueueReadQueryV1>();
 // and records only Work's own measurement events; it decides nothing.
 builder.Services.AddWorkApprovalInboxMeasurementsV1();
 builder.Services.AddScoped<WorkInboxReadQueryV1>();
+builder.Services.AddScoped<WorkDeadlineReadQueryV1>();
 builder.Services.AddScoped<IFinancePartyAccountPort, CounterpartyFinancePartyAccountPort>();
 // B-17: the version bump with the account's roles (dual role) and supplier IBAN view; V1 stays for its consumers.
 builder.Services.AddScoped<IFinancePartyAccountPortV2, CounterpartyFinancePartyAccountPortV2>();
@@ -624,6 +625,7 @@ app.MapFinanceOpenItemReadEndpoints();
 app.MapWorkApprovalEndpoints();
 app.MapWorkQueueEndpoints();
 app.MapWorkInboxEndpoints();
+app.MapWorkDeadlineEndpoints();
 app.MapWorkNotificationEndpoints();
 app.MapWorkCollaborationEndpoints();
 app.MapSalesEndpoints();

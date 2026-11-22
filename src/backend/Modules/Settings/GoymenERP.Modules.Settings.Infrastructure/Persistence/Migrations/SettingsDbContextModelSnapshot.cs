@@ -1546,6 +1546,66 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.LegalDeadlineCalendarEntryRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Obligation")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DueDayOfMonth")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MonthsAfterPeriodEnd")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PeriodMonths")
+                        .HasColumnType("int");
+
+                    b.HasKey("CompanyId", "Version", "Obligation");
+
+                    b.ToTable("LegalDeadlineCalendarEntries", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsLegalDeadlineCalendarEntries_Entry", "[Obligation] BETWEEN 1 AND 8 AND [PeriodMonths] IN (1, 3, 12) AND [MonthsAfterPeriodEnd] BETWEEN 0 AND 12 AND [DueDayOfMonth] BETWEEN 1 AND 31");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.LegalDeadlineCalendarVersionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("EntryCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("CompanyId", "Version");
+
+                    b.ToTable("LegalDeadlineCalendarVersions", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsLegalDeadlineCalendarVersions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Version] > 0 AND [EntryCount] BETWEEN 0 AND 8 AND LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.LoginRateLimitVersionRow", b =>
                 {
                     b.Property<long>("Version")
@@ -4069,6 +4129,15 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.FinanceApprovalPolicyRow", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "PolicyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.LegalDeadlineCalendarEntryRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.LegalDeadlineCalendarVersionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "Version")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

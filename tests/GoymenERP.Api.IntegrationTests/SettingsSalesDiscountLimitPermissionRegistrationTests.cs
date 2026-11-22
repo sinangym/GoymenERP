@@ -33,6 +33,8 @@ public sealed class SettingsSalesDiscountLimitPermissionRegistrationTests
                 "settings.exchange-rates.import",
                 "settings.exchange-rates.read",
                 "settings.finance-opening-period.manage",
+                "settings.legal-deadline-calendar.manage",
+                "settings.legal-deadlines.read",
                 "settings.login-rate-limit.manage",
                 "settings.money-profiles.manage",
                 "settings.notification-retention.manage",

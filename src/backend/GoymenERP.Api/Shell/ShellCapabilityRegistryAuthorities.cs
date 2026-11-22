@@ -52,7 +52,9 @@ internal static class ShellCapabilityRegistryAuthorities
     // Tren-1 W8 (UI-64, API-33 / API-36): Sales 1.27 publishes the four invoice controls of the S-09 list; every row that
     // contains the Sales provider re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision; names unchanged.
     // W1-A: Settings 1.19 adds the approval duration screen; re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision.
-    internal const string FullNormalHostWithSettingsAndPaintMemberships = "sha256:nCbm4YLiQlzeaf7z0-7iMMwU2IYVGMQsrX6ZCdNYwFQ";
+    // WP15: Settings 1.20 adds the legal deadline calendar and upcoming legal deadlines screens; re-derived in place by
+    // ShellCapabilityRegistry.ComputeCandidateRevision.
+    internal const string FullNormalHostWithSettingsAndPaintMemberships = "sha256:t1lirdYGA9LBMmvJe2-pt91xzdT_PupThwrPUfBGql0";
     // Tren-1 wave 7: Settings 1.11 and Inventory 1.9; active authority rows re-derived in place
     // by ShellCapabilityRegistry.ComputeCandidateRevision over actual providers; historical rows preserved.
     // Tren-1 wave 6: Manufacturing 1.11, Inventory 1.8, Identity 1.2 and Settings 1.9; active authority rows
@@ -749,7 +751,7 @@ internal const string FullNormalHostWithProductPriceListsAndSalesReports =
     // rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
 // W1-A: Settings 1.19 re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision.
 internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV11 =
-        "sha256:AhYXXhmjuvWWyLEXBg02rgALvDwjPaESrbESBdCYRck";
+        "sha256:Ng81mTTHGQIjf_c7vI4p0ZFTnYzNwRMA79pPhFBz670"; // WP15: Settings 1.20, re-derived in place.
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";
