@@ -318,7 +318,22 @@ public sealed record PurchaseOrderLineView(
     /// has none (its quantity is scheduled on its general line).
     /// </summary>
     public IReadOnlyList<PurchaseOrderDeliverySliceView> DeliverySchedule { get; init; } = [];
+
+    /// <summary>
+    /// AK-5 (SAT-D436, SAT-D439): the line's kg price indicator in the order's currency; never written while the indicator is off
+    /// (golden not in main), the prices are withheld (PRS-02) or the line is a technical slice.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PurchaseKgPriceView? KgPrice { get; init; }
 }
+
+/// <summary>
+/// AK-5 (SAT-D436): a kg price indicator — theoretical (amount ÷ theoretical kg) and real (invoiced amount ÷ weighed kg), each a
+/// 2-decimal text in the document currency or null with its reason code (<c>PurchaseKgPriceUnavailableCodes</c>). Information only;
+/// not a cost and never an amount.
+/// </summary>
+public sealed record PurchaseKgPriceView(string? TheoreticalKgPrice, string? TheoreticalUnavailable, string? RealKgPrice,
+    string? RealUnavailable);
 
 /// <summary>A3 API-30: one delivery slice of a line's current schedule, its quantity as exact text in the line's unit.</summary>
 public sealed record PurchaseOrderDeliverySliceView(Guid SliceId, int SliceNo, string Quantity, DateOnly DeliveryDate);
@@ -500,6 +515,13 @@ public sealed record PurchaseOrderDetailView(PurchaseOrderSummaryView Order, IRe
     /// A2a-1 (ALS-D18): true while a general line has no price ("fiyat bekliyor"); null when the prices are withheld (PRS-02).
     /// </summary>
     public bool? PricePending { get; init; }
+
+    /// <summary>
+    /// AK-5 (SAT-D436): the document-level kg price indicator (Σ amount ÷ Σ kg of the general lines, shown only while every line has
+    /// its kg — N2 open); never written while the indicator is off or the prices are withheld.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PurchaseKgPriceView? KgPrice { get; init; }
 }
 
 public sealed record PurchaseOrderReadDetailViewV1(

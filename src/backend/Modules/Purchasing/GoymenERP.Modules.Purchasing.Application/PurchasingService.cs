@@ -1088,6 +1088,7 @@ public sealed partial class PurchasingService(
                     ? new PurchaseOrderLineClosureView(closure.ClosedBy, closure.ClosedAtUtc, closure.Reason)
                     : null,
                 Price = visible ? PriceView(line, stored.Order.Money) : null,
+                KgPrice = visible && PurchaseKgPriceGoldenAccepted ? LineKgPriceView(line, stored.Order.Money) : null,
                 DeliverySchedule = [.. line.DeliverySchedule.Select(slice =>
                     new PurchaseOrderDeliverySliceView(slice.SliceId, slice.SliceNo, Text(slice.Quantity), slice.DeliveryDate))],
             })])
@@ -1095,6 +1096,7 @@ public sealed partial class PurchasingService(
             PriceDisclosure = visible ? PurchasingPriceDisclosureV1.Visible : PurchasingPriceDisclosureV1.Withheld,
             Currency = CurrencyView(stored.Order.Money),
             PricePending = visible ? HasUnpricedGeneralLine(stored.Order) : null,
+            KgPrice = visible && PurchaseKgPriceGoldenAccepted ? DocumentKgPriceView(stored.Order) : null,
             Acceptances = [.. stored.Order.Acceptances.Select(acceptance => new PurchaseOrderAcceptanceHistoryView(
                 acceptance.AcceptanceId, acceptance.LineId, Text(acceptance.Quantity), acceptance.RecordedAtUtc))],
             Cancellation = stored.Order.Cancellation is { } cancellation
