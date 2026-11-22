@@ -20,6 +20,7 @@ import { ReceiptAdjustmentBatchPanel } from './ReceiptAdjustmentBatchPanel'
 import { SupplierReturnSourceAllocation } from './SupplierReturnSourceAllocation'
 import { SupplierReturnSourceSummary } from './SupplierReturnSourceSummary'
 import type { SupplierReturnCostAllocation } from './supplierReturnSourceContract'
+import { SupplierReturnLineagePanel } from './SupplierReturnLineagePanel'
 
 interface Props {
   readonly detail: PurchaseOrderDetail; readonly binding: string; readonly attemptBinding: string
@@ -55,7 +56,12 @@ function WorkspaceBody(props: Props) {
       {props.canAdjust && receipts.data?.type === 'ok-single' && receipts.data.data.items.length > 0
         ? <ReceiptAdjustmentBatchPanel {...props} receipts={receipts.data.data.items} onSettled={refresh} /> : null}
       {receipts.data?.type === 'ok-single' ? receipts.data.data.items.length === 0 ? <p>{T.empty}</p>
-        : receipts.data.data.items.map((receipt) => <ReceiptOperation key={receipt.acceptanceId} {...props} receipt={receipt} onSettled={refresh} />)
+        : receipts.data.data.items.map((receipt) => <div key={receipt.acceptanceId}>
+          <ReceiptOperation {...props} receipt={receipt} onSettled={refresh} />
+          {/* AK-8b: a split or merged label of this receipt's supplier is returned from its own, collapsed section. */}
+          {props.canReturn ? <SupplierReturnLineagePanel detail={props.detail} receipt={receipt} binding={props.binding}
+            attemptBinding={props.attemptBinding} onSettled={refresh} /> : null}
+        </div>)
         : <StateBlock subject={T.receipts} state={receipts.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(receipts.data)} onRetry={() => void receipts.refetch()} />}
     </> : null}
     {props.canDecide ? <><h3>{T.returns}</h3>

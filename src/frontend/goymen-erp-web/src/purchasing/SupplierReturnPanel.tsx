@@ -4,6 +4,7 @@ import { fetchSupplierReturns } from './supplierReturnApi'
 import type { SupplierReturn, SupplierReturnPage } from './supplierReturnContract'
 import {
   SUPPLIER_RETURN_COST_BASIS_TEXT,
+  SUPPLIER_RETURN_LINEAGE_MODE_TEXT,
   SUPPLIER_RETURN_SOURCE_BLOCK_TEXT,
   SUPPLIER_RETURN_STATUS_TEXT,
   SUPPLIER_RETURN_TEXT as T,
@@ -76,6 +77,11 @@ function ReturnFacts({ item, index }: { readonly item: SupplierReturn; readonly 
       <div><dt>{T.version}</dt><dd>{item.version}</dd></div>
       <div><dt>{T.sourceBlock}</dt><dd>{SUPPLIER_RETURN_SOURCE_BLOCK_TEXT[item.sourceBlock] ?? item.sourceBlock}</dd></div>
       <div><dt>{T.quantityKg}</dt><dd className={styles.number}>{item.quantityKg}</dd></div>
+      {item.sourceLabelId !== undefined && item.lineageMode !== undefined ? <>
+        <div><dt>{T.sourceLabel}</dt><dd className={styles.identifier}>{item.sourceLabelId}</dd></div>
+        <div><dt>{T.lineageMode}</dt><dd>{SUPPLIER_RETURN_LINEAGE_MODE_TEXT[item.lineageMode] ?? item.lineageMode}</dd></div>
+      </> : null}
+      {item.pieceCount !== undefined ? <div><dt>{T.pieceCount}</dt><dd className={styles.number}>{item.pieceCount}</dd></div> : null}
       {item.undoQuantity !== undefined ? <>
         <div><dt>{T.undoQuantity}</dt><dd className={styles.number}>{item.undoQuantity}</dd></div>
         <div><dt>{T.expectedOrderVersion}</dt><dd>{item.expectedPurchaseOrderVersion}</dd></div>
@@ -94,5 +100,20 @@ function ReturnFacts({ item, index }: { readonly item: SupplierReturn; readonly 
       {item.decisionReason !== null ? <div><dt>{T.decisionReason}</dt><dd>{item.decisionReason}</dd></div> : null}
     </dl>
     {item.costAllocation !== undefined ? <SupplierReturnSourceSummary allocation={item.costAllocation} labels={item.costAllocationSources} /> : null}
+    {item.lineageParts !== undefined ? <table>
+      <caption>{T.partsCaption}</caption>
+      <thead><tr><th scope="col">{T.partReceipt}</th><th scope="col">{T.partKg}</th><th scope="col">{T.partPieces}</th>
+        <th scope="col">{T.partCostBasis}</th><th scope="col">{T.partUnitCost}</th><th scope="col">{T.partChoice}</th></tr></thead>
+      <tbody>{item.lineageParts.map((part) => <tr key={part.goodsAcceptanceId}>
+        <td className={styles.identifier}>{part.goodsAcceptanceId}</td>
+        <td className={styles.number}>{part.quantityKg}</td>
+        <td className={styles.number}>{part.pieceCount ?? T.partNoPieces}</td>
+        <td>{SUPPLIER_RETURN_COST_BASIS_TEXT[part.costBasis] ?? part.costBasis}</td>
+        <td className={styles.number}>{part.unitCostTryPerKg ?? T.priceWithheld}</td>
+        <td>{part.pendingKg === undefined || part.invoiced === undefined ? T.partChoiceImplied
+          : [...(part.pendingKg === '0' ? [] : [T.partPending(part.pendingKg)]),
+            ...part.invoiced.map((selected) => T.partInvoiced(selected.quantityKg))].join('; ')}</td>
+      </tr>)}</tbody>
+    </table> : null}
   </article>
 }

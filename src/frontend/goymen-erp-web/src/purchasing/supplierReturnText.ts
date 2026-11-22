@@ -29,7 +29,26 @@ export const SUPPLIER_RETURN_TEXT = {
   expectedOrderVersion: 'Girişteki sipariş sürümü',
   replacementExpected: 'Yenisi bekleniyor',
   definitiveReturn: 'Kesin iade',
+  sourceLabel: 'Çıkan etiket (kabulün kendi etiketi değil)',
+  lineageMode: 'İade türü',
+  pieceCount: 'İade (adet)',
+  partsCaption: 'Kabul başına paylar',
+  partReceipt: 'Kabul',
+  partKg: 'İade (kg)',
+  partPieces: 'Adet',
+  partNoPieces: 'Adet izlenmiyor',
+  partCostBasis: 'Maliyet dayanağı',
+  partUnitCost: 'Birim maliyet (TRY/kg)',
+  partChoice: 'Seçilen paylar',
+  partChoiceImplied: 'Tek açık pay',
+  partPending: (kg: string) => `Fatura bekleyen ${kg} kg`,
+  partInvoiced: (kg: string) => `Faturalı ${kg} kg`,
 } as const
+
+export const SUPPLIER_RETURN_LINEAGE_MODE_TEXT: Readonly<Record<string, string>> = {
+  Lineage: 'Soy payına göre dağıtım',
+  Quantity: 'Miktar iadesi',
+}
 
 export const SUPPLIER_RETURN_STATUS_TEXT: Readonly<Record<string, string>> = {
   PendingCostException: 'Maliyet istisnası onayı bekliyor',

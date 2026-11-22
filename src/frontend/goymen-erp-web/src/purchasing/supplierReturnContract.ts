@@ -1,5 +1,6 @@
 import { isPurchasingGuid, isPurchasingInstant, isPurchasingVersion } from './contract'
 import { decodeSupplierReturnCostAllocation, decodeSupplierReturnSourceLabels, type SupplierReturnCostAllocation, type SupplierReturnSourceLabel } from './supplierReturnSourceContract'
+import { decodeSupplierReturnLineageParts, type SupplierReturnLineageMode, type SupplierReturnLineagePart } from './supplierReturnLineageContract'
 
 /**
  * B-19 (ALC-S5; SAT-D306, SAT-D392, SAT-D393, SAT-D396): GET …/orders/{id}/supplier-returns — the order's returns to supplier.
@@ -38,6 +39,12 @@ export interface SupplierReturn {
   readonly undoQuantity?: string
   readonly costAllocation?: SupplierReturnCostAllocation
   readonly costAllocationSources?: readonly SupplierReturnSourceLabel[]
+  /** AK-8/AK-8b: the label that physically left when it is not the receipt's own label, and how; both present or both absent. */
+  readonly sourceLabelId?: string
+  readonly lineageMode?: SupplierReturnLineageMode
+  /** AK-8b: the returned pieces of a piece-tracking source label and the per-receipt parts; only with a source label. */
+  readonly pieceCount?: number
+  readonly lineageParts?: readonly SupplierReturnLineagePart[]
 }
 
 export interface SupplierReturnPage {
@@ -51,6 +58,7 @@ const DECIMAL = /^(0|[1-9]\d*)(\.\d*[1-9])?$/
 const STATUSES: readonly string[] = ['PendingCostException', 'Recorded', 'Rejected']
 const BASES: readonly string[] = ['InvoiceUnitCost', 'ManualCostWithException']
 const BLOCKS: readonly string[] = ['Free', 'Blocked']
+const LINEAGE_MODES: readonly string[] = ['Lineage', 'Quantity']
 const RETURN_FIELDS = ['companyId', 'returnId', 'returnLineId', 'purchaseOrderId', 'purchaseOrderLineId', 'goodsAcceptanceId',
   'inventoryMovementId', 'status', 'version', 'sourceBlock', 'quantityKg', 'costBasis', 'unitCostTryPerKg', 'priceDisclosure', 'replacementExpected',
   'reason', 'occurredAtUtc', 'requestedBy', 'requestedAtUtc', 'decidedBy', 'decidedAtUtc', 'decisionReason'] as const
@@ -85,7 +93,8 @@ function oneOf(value: unknown, names: readonly string[]): value is string {
  * Strict decoder for one return, fail closed: exactly its fields; this company and the order asked for; known status, cost basis
  * and source block names; positive canonical kg and unit cost texts. An invoice-cost return is recorded at once and never decided;
  * a manual-cost return is pending with no decision, recorded by a decider, or rejected by a decider with a reason. A replacement
- * return requires the explicit purchase-unit undo quantity and original expected order version (ALS-D91/D92).
+ * return requires the explicit purchase-unit undo quantity and original expected order version (ALS-D91/D92). AK-8/AK-8b: a
+ * source label and its mode come together; pieces and per-receipt parts exist only with them and are measured by the parts rule.
  */
 export function decodeSupplierReturn(value: unknown, companyId: string, orderId: string): SupplierReturn | null {
   const source = record(value)
@@ -93,8 +102,13 @@ export function decodeSupplierReturn(value: unknown, companyId: string, orderId:
   const allocationPresent = source !== null && Object.hasOwn(source, 'costAllocation')
   const labelsPresent = source !== null && Object.hasOwn(source, 'costAllocationSources')
   const allocation = allocationPresent ? decodeSupplierReturnCostAllocation(source.costAllocation) : null
+  const lineagePresent = source !== null && Object.hasOwn(source, 'sourceLabelId')
+  const piecesPresent = source !== null && Object.hasOwn(source, 'pieceCount')
+  const partsPresent = source !== null && Object.hasOwn(source, 'lineageParts')
   const fields = [...RETURN_FIELDS, ...(metadataPresent ? ['expectedPurchaseOrderVersion', 'undoQuantity'] : []),
-    ...(allocationPresent ? ['costAllocation'] : []), ...(labelsPresent ? ['costAllocationSources'] : [])]
+    ...(allocationPresent ? ['costAllocation'] : []), ...(labelsPresent ? ['costAllocationSources'] : []),
+    ...(lineagePresent ? ['sourceLabelId', 'lineageMode'] : []), ...(piecesPresent ? ['pieceCount'] : []),
+    ...(partsPresent ? ['lineageParts'] : [])]
   if (source === null || !exact(source, fields)
     || !isPurchasingGuid(source.companyId) || source.companyId.toLowerCase() !== companyId.toLowerCase()
     || !isPurchasingGuid(source.returnId) || !isPurchasingGuid(source.returnLineId) || !isPurchasingGuid(source.purchaseOrderId)
@@ -112,7 +126,16 @@ export function decodeSupplierReturn(value: unknown, companyId: string, orderId:
     || !nullableNonBlank(source.decidedBy) || !(source.decidedAtUtc === null || isPurchasingInstant(source.decidedAtUtc))
     || !nullableNonBlank(source.decisionReason)
     || allocationPresent && (!metadataPresent || allocation === null || !labelsPresent)
-    || labelsPresent && (allocation === null || decodeSupplierReturnSourceLabels(source.costAllocationSources, allocation) === null)) return null
+    || labelsPresent && (allocation === null || decodeSupplierReturnSourceLabels(source.costAllocationSources, allocation) === null)
+    // AK-8/AK-8b: a foreign source label never adjusts the receipt and never carries the receipt-label allocation.
+    || lineagePresent && (!isPurchasingGuid(source.sourceLabelId) || !oneOf(source.lineageMode, LINEAGE_MODES) || metadataPresent || allocationPresent)
+    || (piecesPresent || partsPresent) && !lineagePresent
+    || piecesPresent && !(typeof source.pieceCount === 'number' && Number.isInteger(source.pieceCount) && source.pieceCount >= 1)
+    || partsPresent && decodeSupplierReturnLineageParts(source.lineageParts, {
+      goodsAcceptanceId: source.goodsAcceptanceId, returnLineId: source.returnLineId, inventoryMovementId: source.inventoryMovementId,
+      quantityKg: source.quantityKg, purchaseOrderId: source.purchaseOrderId, purchaseOrderLineId: source.purchaseOrderLineId,
+      pieceCount: piecesPresent ? source.pieceCount as number : undefined, priceVisible: source.priceDisclosure === 'Visible',
+      lineageMode: source.lineageMode as SupplierReturnLineageMode }) === null) return null
   const decided = source.decidedBy !== null
   if (decided !== (source.decidedAtUtc !== null)) return null
   if (source.costBasis === 'InvoiceUnitCost') {
