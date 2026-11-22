@@ -307,6 +307,7 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
           routeEntryGeneration={shell.routeEntryGeneration}
           companyId={activeCompanyId ?? ''}
           canReadInventoryLabel={canReadInventoryLabel}
+          pendingKey={storeKey}
           onRefresh={refresh}
         />
       ) : null}

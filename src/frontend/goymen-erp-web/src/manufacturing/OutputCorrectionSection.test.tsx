@@ -181,6 +181,30 @@ describe('output correction (UI-14)', () => {
     expect(second.body).toEqual(first.body)
   })
 
+  it('keeps an unknown correction across leaving and reopening the order: frozen, re-sent with the same key and ids only', async () => {
+    const user = userEvent.setup()
+    const recorded = stub({
+      commands: [() => problem(503, { code: 'manufacturing_unavailable' }), () => json(order({ version: 2 }))],
+    })
+    const { router } = renderAt(PATH)
+    const section = await fillCorrection(user)
+    await submitAndConfirm(user, section)
+    await within(section).findByText('Düzeltmenin sonucu bilinmiyor')
+
+    await router.navigate('/')
+    await router.navigate(PATH)
+    const reopened = await screen.findByRole('region', { name: HEADING })
+    await within(reopened).findByText('Düzeltmenin sonucu bilinmiyor')
+    expect(within(reopened).queryByRole('button', { name: 'Düzeltmeyi gönder' })).toBeNull()
+    await user.click(within(reopened).getByRole('button', { name: 'Aynı işlem anahtarıyla yeniden gönder' }))
+    await within(reopened).findByText('Düzeltme kaydedildi')
+
+    const [first, second] = posts(recorded)
+    expect(posts(recorded)).toHaveLength(2)
+    expect(second.headers['Idempotency-Key']).toBe(first.headers['Idempotency-Key'])
+    expect(second.body).toEqual(first.body)
+  })
+
   it('refuses to send without a reason, a valid kg or a time', async () => {
     const user = userEvent.setup()
     const recorded = stub()
