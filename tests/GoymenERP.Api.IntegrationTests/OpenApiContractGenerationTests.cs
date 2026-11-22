@@ -31,6 +31,44 @@ public sealed partial class OpenApiContractGenerationTests
 
     private static readonly IReadOnlyList<OperationExpectation> ExpectedOperations =
     [
+        // W1-C (AI-D20/AI-D23/AI-D29): Work notes, mentions, tasks and the collaboration inbox.
+        new("get", "/api/v1/work/inbox-notifications", "GetMyWorkInboxNotificationsV1",
+            AuthenticatedResponses("409:application/problem+json", "503:application/problem+json", "200:application/json", "400:application/problem+json"),
+            ParameterValues: ["query:notificationClass:false:type:string", "query:unreadOnly:false:type:boolean"]),
+        new("post", "/api/v1/work/inbox-notifications/{notificationId}/read", "MarkWorkInboxNotificationReadV1",
+            AuthenticatedResponses("409:application/problem+json", "503:application/problem+json", "200:application/json", "404:application/problem+json"),
+            ParameterValues: ["path:notificationId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/work/notes/{noteId}/passivation", "PassivateWorkNoteV1",
+            AuthenticatedResponses("409:application/problem+json", "503:application/problem+json", "200:application/json", "400:application/problem+json", "422:application/problem+json", "415:", "404:application/problem+json"),
+            "#/components/schemas/PassivateWorkNoteRequestV1",
+            ParameterValues: ["path:noteId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/work/people", "SearchWorkPeopleV1",
+            AuthenticatedResponses("409:application/problem+json", "503:application/problem+json", "200:application/json", "400:application/problem+json"),
+            ParameterValues: ["query:query:false:type:string"]),
+        new("get", "/api/v1/work/records/{recordType}/{recordId}/notes", "GetWorkRecordNotesV1",
+            AuthenticatedResponses("409:application/problem+json", "503:application/problem+json", "200:application/json", "404:application/problem+json"),
+            ParameterValues: ["path:recordType:true:type:string", "path:recordId:true:type:string;format:uuid", "query:includePassive:false:type:boolean"]),
+        new("post", "/api/v1/work/records/{recordType}/{recordId}/notes", "AddWorkRecordNoteV1",
+            AuthenticatedResponses("409:application/problem+json", "503:application/problem+json", "201:application/json", "400:application/problem+json", "422:application/problem+json", "415:", "404:application/problem+json"),
+            "#/components/schemas/AddWorkNoteRequestV1",
+            ParameterValues: ["path:recordType:true:type:string", "path:recordId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/work/records/{recordType}/{recordId}/tasks", "GetWorkRecordTasksV1",
+            AuthenticatedResponses("409:application/problem+json", "503:application/problem+json", "200:application/json", "404:application/problem+json"),
+            ParameterValues: ["path:recordType:true:type:string", "path:recordId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/work/tasks", "CreateWorkTaskV1",
+            AuthenticatedResponses("409:application/problem+json", "503:application/problem+json", "201:application/json", "400:application/problem+json", "422:application/problem+json", "415:", "404:application/problem+json"),
+            "#/components/schemas/CreateWorkTaskRequestV1"),
+        new("get", "/api/v1/work/tasks/mine", "GetMyWorkTasksV1",
+            AuthenticatedResponses("409:application/problem+json", "503:application/problem+json", "200:application/json"),
+            ParameterValues: ["query:includeClosed:false:type:boolean"]),
+        new("post", "/api/v1/work/tasks/{taskId}/cancellation", "CancelWorkTaskV1",
+            AuthenticatedResponses("409:application/problem+json", "503:application/problem+json", "200:application/json", "400:application/problem+json", "422:application/problem+json", "415:", "404:application/problem+json"),
+            "#/components/schemas/CancelWorkTaskRequestV1",
+            ParameterValues: ["path:taskId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/work/tasks/{taskId}/completion", "CompleteWorkTaskV1",
+            AuthenticatedResponses("409:application/problem+json", "503:application/problem+json", "200:application/json", "400:application/problem+json", "422:application/problem+json", "415:", "404:application/problem+json"),
+            "#/components/schemas/CompleteWorkTaskRequestV1",
+            ParameterValues: ["path:taskId:true:type:string;format:uuid"]),
         new("get", "/api/v1/accounting/account-plan", "GetAccountingAccountPlanV1",
             AuthenticatedResponses("409:application/problem+json", "503:application/problem+json", "200:application/json", "400:application/problem+json")),
         new("post", "/api/v1/accounting/approved-source-catalog/packages", "PrepareAccountingApprovedSourceCatalogV1",
@@ -2682,6 +2720,18 @@ public sealed partial class OpenApiContractGenerationTests
     private static readonly IReadOnlyDictionary<string, string> ExpectedSuccessSchemas =
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
+            // W1-C (AI-D20/AI-D23/AI-D29): Work notes, mentions, tasks and the collaboration inbox.
+            ["GetMyWorkInboxNotificationsV1"] = "ref:WorkInboxNotificationPageV1",
+            ["MarkWorkInboxNotificationReadV1"] = "ref:WorkInboxNotificationReadResponseV1",
+            ["PassivateWorkNoteV1"] = "ref:WorkNoteViewV1",
+            ["SearchWorkPeopleV1"] = "ref:WorkPeoplePageV1",
+            ["GetWorkRecordNotesV1"] = "ref:WorkNotePageV1",
+            ["AddWorkRecordNoteV1"] = "ref:WorkNoteViewV1",
+            ["GetWorkRecordTasksV1"] = "ref:WorkTaskPageV1",
+            ["CreateWorkTaskV1"] = "ref:WorkTaskViewV1",
+            ["GetMyWorkTasksV1"] = "ref:WorkTaskPageV1",
+            ["CancelWorkTaskV1"] = "ref:WorkTaskViewV1",
+            ["CompleteWorkTaskV1"] = "ref:WorkTaskViewV1",
             ["AcceptPurchaseServiceV1"] = "ref:PurchaseServiceOrderResponseV1",
             ["ActivateAccountingApprovedSourceCatalogV1"] = "ref:ApprovedAccountingSourceCatalogViewV1",
             ["ActivateAccountingPostingAccountMappingV1"] = "ref:AccountingPostingAccountMappingViewV1",
@@ -3509,6 +3559,18 @@ public sealed partial class OpenApiContractGenerationTests
 
     private static readonly HashSet<string> RequiredCompanyOperations =
     [
+        // W1-C (AI-D20/AI-D23/AI-D29): Work notes, mentions, tasks and the collaboration inbox.
+        "AddWorkRecordNoteV1",
+        "CancelWorkTaskV1",
+        "CompleteWorkTaskV1",
+        "CreateWorkTaskV1",
+        "GetMyWorkInboxNotificationsV1",
+        "GetMyWorkTasksV1",
+        "GetWorkRecordNotesV1",
+        "GetWorkRecordTasksV1",
+        "MarkWorkInboxNotificationReadV1",
+        "PassivateWorkNoteV1",
+        "SearchWorkPeopleV1",
         "AcceptPurchaseServiceV1",
         "ActivateAccountingApprovedSourceCatalogV1",
         "ActivateAccountingPostingAccountMappingV1",
@@ -4328,6 +4390,12 @@ public sealed partial class OpenApiContractGenerationTests
 
     private static readonly HashSet<string> IdempotentOperations =
     [
+        // W1-C (AI-D20/AI-D23/AI-D29): Work notes, mentions, tasks and the collaboration inbox.
+        "AddWorkRecordNoteV1",
+        "CancelWorkTaskV1",
+        "CompleteWorkTaskV1",
+        "CreateWorkTaskV1",
+        "PassivateWorkNoteV1",
         "AcceptPurchaseServiceV1",
         "ActivateAccountingApprovedSourceCatalogV1",
         "ActivateAccountingPostingAccountMappingV1",
@@ -4754,6 +4822,12 @@ public sealed partial class OpenApiContractGenerationTests
     private static readonly IReadOnlyDictionary<string, HashSet<int>> ReplayableResponseStatuses =
         new Dictionary<string, HashSet<int>>(StringComparer.Ordinal)
         {
+            // W1-C (AI-D20/AI-D23/AI-D29): Work notes, mentions, tasks and the collaboration inbox.
+            ["AddWorkRecordNoteV1"] = [201, 409],
+            ["CancelWorkTaskV1"] = [200, 409],
+            ["CompleteWorkTaskV1"] = [200, 409],
+            ["CreateWorkTaskV1"] = [201, 409],
+            ["PassivateWorkNoteV1"] = [200, 409],
             ["AcceptPurchaseServiceV1"] = [200, 409],
             ["ActivateAccountingApprovedSourceCatalogV1"] = [200, 404, 409],
             ["ActivateAccountingPostingAccountMappingV1"] = [200, 403, 404, 409],
@@ -5179,6 +5253,12 @@ public sealed partial class OpenApiContractGenerationTests
 
     private static readonly HashSet<string> EmptyBodyPossible400Operations =
     [
+        // W1-C (AI-D20/AI-D23/AI-D29): Work notes, mentions, tasks and the collaboration inbox.
+        "AddWorkRecordNoteV1",
+        "CancelWorkTaskV1",
+        "CompleteWorkTaskV1",
+        "CreateWorkTaskV1",
+        "PassivateWorkNoteV1",
         "AcceptPurchaseServiceV1",
         "ActivateAccountingApprovedSourceCatalogV1",
         "ActivateAccountingPostingAccountMappingV1",
@@ -5715,6 +5795,15 @@ public sealed partial class OpenApiContractGenerationTests
 
     private static readonly HashSet<string> CodeLessProblemResponses =
     [
+        // W1-C (AI-D20/AI-D23/AI-D29): Work notes, mentions, tasks and the collaboration inbox.
+        "AddWorkRecordNoteV1:404",
+        "CancelWorkTaskV1:404",
+        "CompleteWorkTaskV1:404",
+        "CreateWorkTaskV1:404",
+        "GetWorkRecordNotesV1:404",
+        "GetWorkRecordTasksV1:404",
+        "MarkWorkInboxNotificationReadV1:404",
+        "PassivateWorkNoteV1:404",
         "AcceptPurchaseServiceV1:404",
         "ActivateAccountingApprovedSourceCatalogV1:404",
         "ActivateAccountingPostingAccountMappingV1:404",
@@ -6522,6 +6611,24 @@ public sealed partial class OpenApiContractGenerationTests
     private static readonly IReadOnlyDictionary<string, string[]> AdditionalProblemCodes =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
+            // W1-C (AI-D20/AI-D23/AI-D29): Work notes, mentions, tasks and the collaboration inbox.
+            ["AddWorkRecordNoteV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["AddWorkRecordNoteV1:409"] = ["concurrent_change", "same_key_payload_mismatch"],
+            ["AddWorkRecordNoteV1:422"] = ["validation_failed", "work_corrected_note_invalid", "work_mention_refused"],
+            ["CancelWorkTaskV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["CancelWorkTaskV1:409"] = ["concurrent_change", "same_key_payload_mismatch", "version_conflict", "work_task_not_assigner", "work_task_not_open"],
+            ["CancelWorkTaskV1:422"] = ["validation_failed"],
+            ["CompleteWorkTaskV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["CompleteWorkTaskV1:409"] = ["concurrent_change", "same_key_payload_mismatch", "version_conflict", "work_task_not_assignee", "work_task_not_open"],
+            ["CompleteWorkTaskV1:422"] = ["validation_failed"],
+            ["CreateWorkTaskV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["CreateWorkTaskV1:409"] = ["concurrent_change", "same_key_payload_mismatch"],
+            ["CreateWorkTaskV1:422"] = ["validation_failed", "work_assignee_refused"],
+            ["GetMyWorkInboxNotificationsV1:400"] = ["validation_failed"],
+            ["PassivateWorkNoteV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["PassivateWorkNoteV1:409"] = ["concurrent_change", "same_key_payload_mismatch", "work_note_already_passive", "work_note_not_own"],
+            ["PassivateWorkNoteV1:422"] = ["validation_failed"],
+            ["SearchWorkPeopleV1:400"] = ["validation_failed"],
             ["AcceptPurchaseServiceV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["AcceptPurchaseServiceV1:409"] = ["concurrent_change", "purchasing_service_acceptance_exceeded", "purchasing_service_order_same_actor", "purchasing_service_order_state_conflict", "purchasing_service_order_version_conflict", "same_key_payload_mismatch"],
             ["AcceptPurchaseServiceV1:422"] = ["purchasing_subcontract_own_material_required", "purchasing_subcontract_product_invalid", "validation_failed"],
@@ -7997,6 +8104,25 @@ public sealed partial class OpenApiContractGenerationTests
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation> ExpectedSuccessComponentSchemas =
         new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
         {
+            // W1-C (AI-D20/AI-D23/AI-D29): Work notes, mentions, tasks and the collaboration inbox.
+            ["WorkInboxNotificationPageV1"] = ObjectSchema(["companyId", "items", "hasMore", "unreadNowCount", "unreadDigestCount"],
+                ("companyId", "type:string;format:uuid"), ("items", "type:array;items:ref:WorkInboxNotificationViewV1"), ("hasMore", "type:boolean"), ("unreadNowCount", "type:integer|string;format:int32"), ("unreadDigestCount", "type:integer|string;format:int32")),
+            ["WorkInboxNotificationReadResponseV1"] = ObjectSchema(["id", "readAtUtc"],
+                ("id", "type:string;format:uuid"), ("readAtUtc", "type:string;format:date-time")),
+            ["WorkInboxNotificationViewV1"] = ObjectSchema(["id", "companyId", "kind", "class", "sourceId", "recordType", "recordId", "actorUserId", "recordedAtUtc", "visibleAtUtc", "readAtUtc"],
+                ("id", "type:string;format:uuid"), ("companyId", "type:string;format:uuid"), ("kind", "type:string"), ("class", "type:string"), ("sourceId", "type:string;format:uuid"), ("recordType", "type:null|string"), ("recordId", "type:null|string;format:uuid"), ("actorUserId", "type:null|string;format:uuid"), ("recordedAtUtc", "type:string;format:date-time"), ("visibleAtUtc", "type:string;format:date-time"), ("readAtUtc", "type:null|string;format:date-time")),
+            ["WorkNotePageV1"] = ObjectSchema(["companyId", "recordType", "recordId", "items", "hasMore"],
+                ("companyId", "type:string;format:uuid"), ("recordType", "type:string"), ("recordId", "type:string;format:uuid"), ("items", "type:array;items:ref:WorkNoteViewV1"), ("hasMore", "type:boolean")),
+            ["WorkNoteViewV1"] = ObjectSchema(["id", "companyId", "recordType", "recordId", "authorUserId", "authorDisplayName", "body", "correctsNoteId", "mentionedUserIds", "createdAtUtc", "passivatedAtUtc", "passivationReason"],
+                ("id", "type:string;format:uuid"), ("companyId", "type:string;format:uuid"), ("recordType", "type:string"), ("recordId", "type:string;format:uuid"), ("authorUserId", "type:string;format:uuid"), ("authorDisplayName", "type:string"), ("body", "type:string"), ("correctsNoteId", "type:null|string;format:uuid"), ("mentionedUserIds", "type:array;items:type:string;format:uuid"), ("createdAtUtc", "type:string;format:date-time"), ("passivatedAtUtc", "type:null|string;format:date-time"), ("passivationReason", "type:null|string")),
+            ["WorkPeoplePageV1"] = ObjectSchema(["companyId", "people", "hasMore"],
+                ("companyId", "type:string;format:uuid"), ("people", "type:array;items:ref:WorkPersonV1"), ("hasMore", "type:boolean")),
+            ["WorkPersonV1"] = ObjectSchema(["userId", "displayName", "isActiveInCompany"],
+                ("userId", "type:string;format:uuid"), ("displayName", "type:string"), ("isActiveInCompany", "type:boolean")),
+            ["WorkTaskPageV1"] = ObjectSchema(["companyId", "items", "hasMore"],
+                ("companyId", "type:string;format:uuid"), ("items", "type:array;items:ref:WorkTaskViewV1"), ("hasMore", "type:boolean")),
+            ["WorkTaskViewV1"] = ObjectSchema(["id", "companyId", "recordType", "recordId", "title", "details", "assignerUserId", "assignerDisplayName", "assigneeUserId", "assigneeDisplayName", "dueAtUtc", "status", "version", "createdAtUtc", "closedAtUtc", "closedByUserId", "cancelReason"],
+                ("id", "type:string;format:uuid"), ("companyId", "type:string;format:uuid"), ("recordType", "type:null|string"), ("recordId", "type:null|string;format:uuid"), ("title", "type:string"), ("details", "type:null|string"), ("assignerUserId", "type:string;format:uuid"), ("assignerDisplayName", "type:string"), ("assigneeUserId", "type:string;format:uuid"), ("assigneeDisplayName", "type:string"), ("dueAtUtc", "type:string;format:date-time"), ("status", "type:string"), ("version", "type:string"), ("createdAtUtc", "type:string;format:date-time"), ("closedAtUtc", "type:null|string;format:date-time"), ("closedByUserId", "type:null|string;format:uuid"), ("cancelReason", "type:null|string")),
             ["AccountPlanAccountViewV1"] = ObjectSchema(["accountId", "code", "name"],
                 ("accountId", "type:string;format:uuid"),
                 ("code", "type:string"),
@@ -16962,6 +17088,17 @@ public sealed partial class OpenApiContractGenerationTests
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation> ExpectedRequestComponentSchemas =
         new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
         {
+            // W1-C (AI-D20/AI-D23/AI-D29): Work notes, mentions, tasks and the collaboration inbox.
+            ["AddWorkNoteRequestV1"] = ObjectSchema(["body", "mentionedUserIds", "correctsNoteId"],
+                ("body", "type:string"), ("mentionedUserIds", "type:array|null;items:type:string;format:uuid"), ("correctsNoteId", "type:null|string;format:uuid")),
+            ["CancelWorkTaskRequestV1"] = ObjectSchema(["expectedVersion", "reason"],
+                ("expectedVersion", "type:string"), ("reason", "type:string")),
+            ["CompleteWorkTaskRequestV1"] = ObjectSchema(["expectedVersion"],
+                ("expectedVersion", "type:string")),
+            ["CreateWorkTaskRequestV1"] = ObjectSchema(["title", "details", "assigneeUserId", "dueAtUtc", "recordType", "recordId"],
+                ("title", "type:string"), ("details", "type:null|string"), ("assigneeUserId", "type:string;format:uuid"), ("dueAtUtc", "type:string;format:date-time"), ("recordType", "type:null|string"), ("recordId", "type:null|string;format:uuid")),
+            ["PassivateWorkNoteRequestV1"] = ObjectSchema(["reason"],
+                ("reason", "type:string")),
             ["AcceptPurchaseServiceV1"] = ObjectSchema(["expectedVersion", "acceptanceId", "lineId", "quantity", "acceptedOn", "reason"],
                 ("acceptanceId", "type:string;format:uuid"),
                 ("acceptedOn", "type:string;format:date"),

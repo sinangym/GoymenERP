@@ -36,6 +36,7 @@ public sealed partial class WorkDbContext(
         ConfigureOutboxDispatch(modelBuilder);
         ConfigureNotifications(modelBuilder);
         ConfigureApprovalInbox(modelBuilder);
+        ConfigureCollaboration(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -235,6 +236,29 @@ public sealed partial class WorkDbContext(
                 && entry.State != EntityState.Added)
             {
                 throw new InvalidOperationException("Work inbox and outbox records are append-only.");
+            }
+
+            if (IsAppendOnlyCollaborationRow(entry.Entity) && entry.State != EntityState.Added)
+            {
+                throw new InvalidOperationException("Work notes, notifications, digests and attempts are append-only.");
+            }
+
+            if (entry.Entity is WorkTaskRow task && entry.State == EntityState.Modified)
+            {
+                if (!Equals(entry.Property(nameof(task.Id)).OriginalValue, task.Id)
+                    || !Equals(entry.Property(nameof(task.AssignerUserId)).OriginalValue, task.AssignerUserId)
+                    || !Equals(entry.Property(nameof(task.AssigneeUserId)).OriginalValue, task.AssigneeUserId)
+                    || !Equals(entry.Property(nameof(task.RecordType)).OriginalValue, task.RecordType)
+                    || !Equals(entry.Property(nameof(task.RecordId)).OriginalValue, task.RecordId)
+                    || !Equals(entry.Property(nameof(task.Title)).OriginalValue, task.Title)
+                    || !Equals(entry.Property(nameof(task.Details)).OriginalValue, task.Details)
+                    || !Equals(entry.Property(nameof(task.DueAtUtc)).OriginalValue, task.DueAtUtc)
+                    || entry.Property(nameof(task.Status)).OriginalValue is not 1
+                    || entry.Property(nameof(task.Version)).OriginalValue is not long version
+                    || task.Version != checked(version + 1))
+                {
+                    throw new InvalidOperationException("A work task only closes once, by one version step, and keeps its identity.");
+                }
             }
 
             if (entry.Entity is WorkOutboxDeliveryRow outboxDelivery

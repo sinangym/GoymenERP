@@ -316,7 +316,7 @@ public sealed class WorkOutboxRegistrationTests
                 .Options,
             company);
 
-        Assert.Equal(new[] { "AddWorkInboxConsumerDedup", "AddPersonalNotifications", "AddWorkApprovalInboxEvents" },
+        Assert.Equal(new[] { "AddPersonalNotifications", "AddWorkCollaboration", "AddWorkApprovalInboxEvents" },
             context.Database.GetMigrations().TakeLast(3).Select(name => name.Split('_', 2)[1]));
         Assert.False(context.Database.HasPendingModelChanges());
 

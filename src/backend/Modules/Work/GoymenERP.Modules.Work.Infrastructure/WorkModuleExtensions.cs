@@ -81,6 +81,39 @@ public static class WorkModuleExtensions
     }
 
     /// <summary>
+    /// W1-C: registers the collaboration scheduler (overdue notifications and AI-D29 digest release). OFF by default:
+    /// nothing runs unless <c>Work:CollaborationScheduler:Enabled</c> is true (activation is a human gate); when enabled the
+    /// poll interval must be configured. Like the outbox dispatcher, the hosted service is never registered during OpenAPI
+    /// document generation.
+    /// </summary>
+    public static IServiceCollection AddWorkCollaborationScheduler(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        var section = configuration.GetSection(Collaboration.WorkCollaborationSchedulerOptions.SectionName);
+        services.Configure<Collaboration.WorkCollaborationSchedulerOptions>(section);
+        var options = new Collaboration.WorkCollaborationSchedulerOptions();
+        section.Bind(options);
+        if (!options.Enabled)
+        {
+            return services;
+        }
+
+        _ = options.ResolvePollInterval();
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<Collaboration.WorkCollaborationScheduler>();
+        if (!OpenApiDocumentGenerationMode.IsActive)
+        {
+            services.AddHostedService<Collaboration.WorkCollaborationSchedulerHostedService>();
+        }
+
+        return services;
+    }
+
+    /// <summary>
     /// Registers a module outbox as a dispatcher source under <paramref name="sourceName"/> (registration contract v1,
     /// F-021). The name is unique, lower-case ASCII and is the cursor/inbox key, so it must never be renamed once
     /// deliveries exist. Registering a source does not enable the dispatcher.

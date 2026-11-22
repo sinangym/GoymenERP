@@ -11,6 +11,8 @@ import { CapabilityRoute } from '../shell/CapabilityRoute'
 import { ApprovalInboxDetailPage, ApprovalInboxPage } from './ApprovalInboxPages'
 import { WorkQueuePage } from './WorkQueuePage'
 import { NotificationsPage } from './NotificationsPage'
+import { MyTasksPage } from './MyTasksPage'
+import { MY_TASKS_ROUTE } from './collaborationContract'
 import { NOTIFICATIONS_ROUTE } from './notificationContract'
 import { WORK_APPROVALS_CAPABILITIES, WORK_ROUTE } from './workText'
 import { WORK_INBOX_CAPABILITIES } from './workInboxKinds'
@@ -24,7 +26,9 @@ const WORK_INBOX_ROUTE_CAPABILITIES: readonly string[] = [...new Set([...WORK_AP
 export const workRoutes: RouteObject[] = [
   // Personal recipient-only inbox; backend refreshes active membership and accepts no recipient override.
   { path: NOTIFICATIONS_ROUTE.slice(1), element: <NotificationsPage /> },
-  // B-25 / W1-A: the Work inbox, behind the owners' approve capabilities (declared before the detail route).
+  // W1-C "Bana atanan": own tasks only, like the personal inbox; the server accepts no assignee override.
+  { path: MY_TASKS_ROUTE.slice(1), element: <MyTasksPage /> },
+  // B-25 / W1-A: the Work inbox and the one-list Work queue, behind the same owners' approve capabilities (declared before the detail route).
   {
     path: WORK_ROUTE.queue.slice(1),
     element: <CapabilityRoute capability={WORK_INBOX_ROUTE_CAPABILITIES}><WorkQueuePage /></CapabilityRoute>,

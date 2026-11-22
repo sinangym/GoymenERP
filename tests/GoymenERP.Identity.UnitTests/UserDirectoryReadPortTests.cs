@@ -345,6 +345,60 @@ public sealed class UserDirectoryReadPortTests
         Assert.Equal((UserDirectoryOutcomeV1.Denied, 0, false), (answer.Outcome, answer.Items.Count, answer.HasMore));
     }
 
+    [Fact]
+    public async Task Holds_answers_true_only_for_an_active_member_with_a_company_wide_hold_now_W1C()
+    {
+        await using var db = CreateDbContext();
+        var seeded = Seed(db);
+        const string name = ErpPermissions.SalesDraftsRead;
+        var holder = AddUser(db, "Okur");
+        Grant(db, holder, CompanyA, name, AccessScopeType.Company, CompanyA);
+        var siteOnly = AddUser(db, "Saha Okur");
+        Grant(db, siteOnly, CompanyA, name, AccessScopeType.Site, Guid.NewGuid());
+        Assign(db, siteOnly, CompanyA, scoped: true);
+        var inB = AddUser(db, "B Okur");
+        Assign(db, inB, CompanyA, scoped: true);
+        Grant(db, inB, CompanyB, name, AccessScopeType.Company, CompanyB);
+        await db.SaveChangesAsync();
+
+        var port = Port(db, CompanyA, seeded.Caller);
+        async Task<(UserDirectoryOutcomeV1, bool)> Ask(Guid user, string permission = name)
+        {
+            var answer = await port.HoldsAsync(new UserPermissionHolderRequestV1(CompanyA, Actor(seeded.Caller), user, permission));
+            return (answer.Outcome, answer.Holds);
+        }
+
+        Assert.Equal((UserDirectoryOutcomeV1.Found, true), await Ask(holder));
+        Assert.Equal((UserDirectoryOutcomeV1.Found, false), await Ask(siteOnly));
+        Assert.Equal((UserDirectoryOutcomeV1.Found, false), await Ask(inB));
+        Assert.Equal((UserDirectoryOutcomeV1.Found, false), await Ask(seeded.OnlyInB));
+        Assert.Equal((UserDirectoryOutcomeV1.Found, false), await Ask(Guid.NewGuid()));
+        // A name that is not company-wide only still needs the company scope here (W1-C reads are company-wide).
+        var siteSites = AddUser(db, "Saha Sites");
+        Grant(db, siteSites, CompanyA, ErpPermissions.OrganizationLocationsRead, AccessScopeType.Site, Guid.NewGuid());
+        Assign(db, siteSites, CompanyA, scoped: true);
+        await db.SaveChangesAsync();
+        Assert.Equal((UserDirectoryOutcomeV1.Found, false), await Ask(siteSites, ErpPermissions.OrganizationLocationsRead));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" sales.drafts.read")]
+    [InlineData("not.a.registered.permission")]
+    public async Task Holds_refuses_an_unknown_name_an_empty_user_and_a_foreign_context_W1C(string permission)
+    {
+        await using var db = CreateDbContext();
+        var seeded = Seed(db);
+        await db.SaveChangesAsync();
+        var port = Port(db, CompanyA, seeded.Caller);
+        Assert.Equal(UserDirectoryOutcomeV1.Denied, (await port.HoldsAsync(
+            new UserPermissionHolderRequestV1(CompanyA, Actor(seeded.Caller), seeded.Alice, permission))).Outcome);
+        Assert.Equal(UserDirectoryOutcomeV1.Denied, (await port.HoldsAsync(
+            new UserPermissionHolderRequestV1(CompanyA, Actor(seeded.Caller), Guid.Empty, ErpPermissions.SalesDraftsRead))).Outcome);
+        Assert.Equal(UserDirectoryOutcomeV1.Denied, (await port.HoldsAsync(
+            new UserPermissionHolderRequestV1(CompanyB, Actor(seeded.Caller), seeded.Alice, ErpPermissions.SalesDraftsRead))).Outcome);
+    }
+
     /// <summary>A role carrying exactly <paramref name="permission"/>, assigned under one scope (plus the company scope when asked).</summary>
     private static RoleAssignment Grant(
         IdentityDbContext db,

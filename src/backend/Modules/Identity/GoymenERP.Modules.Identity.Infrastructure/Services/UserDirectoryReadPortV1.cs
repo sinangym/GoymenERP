@@ -16,7 +16,8 @@ internal sealed class UserDirectoryReadPortV1(
     IdentityDbContext dbContext,
     ICompanyContext companyContext,
     ICurrentUser currentUser)
-    : IUserDirectoryReadPortV1, IUserCompanyMembershipReadPortV1, ICompanySingleActiveMemberReadPortV1
+    : IUserDirectoryReadPortV1, IUserCompanyMembershipReadPortV1, ICompanySingleActiveMemberReadPortV1,
+      IUserPermissionHolderReadPortV1
 {
     /// <summary>Enough rows to tell "exactly one" from "more than one"; the count itself never leaves the module.</summary>
     private const int SingleMemberProbeSize = 2;
@@ -256,6 +257,56 @@ internal sealed class UserDirectoryReadPortV1(
         catch (Exception)
         {
             return new CompanySingleActiveMemberAnswerV1(UserDirectoryOutcomeV1.Unavailable, false);
+        }
+    }
+
+    public async Task<UserPermissionHolderAnswerV1> HoldsAsync(
+        UserPermissionHolderRequestV1 request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (request is null || request.UserId == Guid.Empty || string.IsNullOrWhiteSpace(request.Permission)
+            || !string.Equals(request.Permission, request.Permission.Trim(), StringComparison.Ordinal)
+            || !ErpPermissions.IsKnown(request.Permission)
+            || !TryFence(request.CompanyId, request.ActorId, out var fence))
+        {
+            return new UserPermissionHolderAnswerV1(UserDirectoryOutcomeV1.Denied, false);
+        }
+
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            if (!await IsActiveMemberAsync(fence.ActorUserId, fence.CompanyId, now, cancellationToken))
+            {
+                return new UserPermissionHolderAnswerV1(UserDirectoryOutcomeV1.Denied, false);
+            }
+
+            var permission = request.Permission;
+            var companyId = fence.CompanyId;
+            var holds = await ActiveMembers(companyId, now)
+                .Where(user => user.Id == request.UserId)
+                .AnyAsync(user => dbContext.RoleAssignments.Any(assignment =>
+                    assignment.UserId == user.Id
+                    && assignment.CompanyId == companyId
+                    && assignment.Status == RoleAssignmentStatus.Active
+                    && assignment.ValidFromUtc <= now
+                    && (!assignment.ValidUntilUtc.HasValue || assignment.ValidUntilUtc > now)
+                    && dbContext.Roles.Any(role => role.Id == assignment.RoleId && role.IsActive)
+                    && dbContext.RolePermissions.Any(rolePermission =>
+                        rolePermission.RoleId == assignment.RoleId && rolePermission.PermissionCode == permission)
+                    && assignment.Scopes.Any(scope => scope.ScopeType == AccessScopeType.Company && scope.ScopeId == companyId)),
+                    cancellationToken);
+            return StillFenced(fence)
+                ? new UserPermissionHolderAnswerV1(UserDirectoryOutcomeV1.Found, holds)
+                : new UserPermissionHolderAnswerV1(UserDirectoryOutcomeV1.Denied, false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return new UserPermissionHolderAnswerV1(UserDirectoryOutcomeV1.Unavailable, false);
         }
     }
 

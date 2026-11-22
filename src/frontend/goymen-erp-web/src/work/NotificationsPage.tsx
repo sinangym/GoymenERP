@@ -11,6 +11,7 @@ import { PURCHASING_CAPABILITY, purchaseOrderDetailPath } from '../purchasing/ca
 import { fetchWorkNotifications } from './notificationApi'
 import { NOTIFICATIONS_ROUTE } from './notificationContract'
 import { NOTIFICATION_TEXT as T } from './notificationText'
+import { CollaborationInbox } from './CollaborationInbox'
 import styles from './Work.module.css'
 
 export function NotificationsHomeEntry() {
@@ -54,5 +55,6 @@ function NotificationsBody() {
             {item.purchaseOrderId !== null && hasCapability(shell, PURCHASING_CAPABILITY.orderDetail) ? <> <Link to={purchaseOrderDetailPath(item.purchaseOrderId)}>{T.order}</Link></> : null}</td>
             <td>{item.reasonText}</td><td><time dateTime={item.recordedAtUtc}>{new Date(item.recordedAtUtc).toLocaleString('tr-TR')}</time></td><td>{item.passivatedAtUtc === null ? T.active : T.passive}</td></tr>)}</tbody>
         </table></div>{page.hasMore ? <button type="button" onClick={() => setCursor(page.nextCursor)}>{T.more}</button> : null}</>}
+    <CollaborationInbox />
   </section>
 }
