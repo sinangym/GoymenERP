@@ -130,3 +130,38 @@ describe('A2a-1 currency candidates and the priced create', () => {
     expect(sent.lines[0].price).toEqual({ unitPrice: '41.25', discountPercent: '2.5' })
   })
 })
+
+describe('AK-5 kg price indicator (SAT-D436, SAT-D439)', () => {
+  // Golden K10: 200 pieces × 45,00 → theoretical 9 000,00 / 500,000 kg = 18,00; the real price is not wired yet.
+  const kgPrice = { theoreticalKgPrice: '18.00', theoreticalUnavailable: null, realKgPrice: null, realUnavailable: 'RealizationNotAvailable' }
+
+  it('decodes the line and the document kg price exactly as the server sent them', () => {
+    const detail = decodePurchaseOrderDetail(body({ kgPrice }, [line({ kgPrice })]))
+    expect(detail?.kgPrice).toEqual(kgPrice)
+    expect(detail?.lines[0].kgPrice).toEqual(kgPrice)
+    expect(decodePurchaseOrderDetail(body())?.kgPrice).toBeUndefined()
+  })
+
+  it('decodes a document level hidden by the N2 interim rule as a reason, never a value', () => {
+    const hidden = { theoreticalKgPrice: null, theoreticalUnavailable: 'NotAllLinesHaveKg', realKgPrice: null, realUnavailable: 'RealizationNotAvailable' }
+    expect(decodePurchaseOrderDetail(body({ kgPrice: hidden }))?.kgPrice?.theoreticalUnavailable).toBe('NotAllLinesHaveKg')
+  })
+
+  it.each([
+    ['a price and a reason together', { ...kgPrice, theoreticalUnavailable: 'ZeroKg' }],
+    ['neither a price nor a reason', { ...kgPrice, theoreticalKgPrice: null }],
+    ['a price with three decimals', { ...kgPrice, theoreticalKgPrice: '18.004' }],
+    ['a price without decimals', { ...kgPrice, theoreticalKgPrice: '18' }],
+    ['an unknown reason', { ...kgPrice, realUnavailable: 'Guessed' }],
+    ['an extra field', { ...kgPrice, cost: '1.00' }],
+  ])('fails closed on %s', (_name, broken) => {
+    expect(decodePurchaseOrderDetail(body({ kgPrice: broken }))).toBeNull()
+    expect(decodePurchaseOrderDetail(body({}, [line({ kgPrice: broken })]))).toBeNull()
+  })
+
+  it('fails closed on a kg price beside withheld prices (PRS-02)', () => {
+    const withheld = { priceDisclosure: 'Withheld', pricePending: null }
+    expect(decodePurchaseOrderDetail(body({ ...withheld, kgPrice }, [line({ price: null })]))).toBeNull()
+    expect(decodePurchaseOrderDetail(body(withheld, [line({ price: null, kgPrice })]))).toBeNull()
+  })
+})

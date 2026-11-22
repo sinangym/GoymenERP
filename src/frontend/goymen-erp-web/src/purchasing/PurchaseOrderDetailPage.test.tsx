@@ -692,6 +692,40 @@ describe('PurchaseOrderDetailPage remainder cancellation (A1-3, plan API-10/UI-0
     expect(screen.getByTestId('purchase-order-status-facts').textContent).toContain('TRY')
   })
 
+  it('AK-5: draws the server’s theoretical and real kg price per kg in the order currency, with the reasons in words', () => {
+    // Golden K10: 9 000,00 TL over 500,000 kg theoretical → 18,00 TL/kg; the real price is not wired yet.
+    const kgPrice = { theoreticalKgPrice: '18.00', theoreticalUnavailable: null, realKgPrice: null, realUnavailable: 'RealizationNotAvailable' } as const
+    scenario.status = 'Approved'
+    scenario.cancellation = null
+    scenario.lines = [
+      { ...serverLine(), cancelled: '0', price: { unitPrice: '45', priceUnitId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', discountPercent: null, discountAmount: null, netUnitPrice: '45', lineAmount: '9000.00' }, kgPrice },
+      { ...serverLine(), lineId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', lineNo: 8, cancelled: '0', price: null,
+        kgPrice: { theoreticalKgPrice: null, theoreticalUnavailable: 'AmountUnavailable', realKgPrice: null, realUnavailable: 'RealizationNotAvailable' } as const },
+    ]
+    scenario.pricing = {
+      priceDisclosure: 'Visible', currency: { currencyId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', currencyCode: 'TRY', scale: 2 }, pricePending: true,
+      kgPrice: { theoreticalKgPrice: null, theoreticalUnavailable: 'AmountUnavailable', realKgPrice: null, realUnavailable: 'RealizationNotAvailable' },
+    }
+    renderDetail()
+    const header = within(screen.getByRole('table', { name: T.linesCaption })).getAllByRole('columnheader').map((cell) => cell.textContent)
+    expect(header.slice(-2)).toEqual([T.theoreticalKgPrice, T.realKgPrice])
+    expect(within(screen.getByTestId('purchase-order-line-7')).getAllByRole('cell').slice(-2).map((cell) => cell.textContent))
+      .toEqual(['18.00 TRY/kg', T.kgPriceUnavailable.RealizationNotAvailable])
+    expect(within(screen.getByTestId('purchase-order-line-8')).getAllByRole('cell').slice(-2).map((cell) => cell.textContent))
+      .toEqual([T.kgPriceUnavailable.AmountUnavailable, T.kgPriceUnavailable.RealizationNotAvailable])
+    expect(screen.getByTestId('purchase-order-kg-price').textContent).toContain(T.kgPriceUnavailable.AmountUnavailable)
+  })
+
+  it('AK-5: without the indicator (switch off) no kg price column or fact is drawn', () => {
+    scenario.status = 'Approved'
+    scenario.cancellation = null
+    scenario.lines = [{ ...serverLine(), cancelled: '0', price: null }]
+    scenario.pricing = { priceDisclosure: 'Visible', currency: { currencyId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', currencyCode: 'TRY', scale: 2 }, pricePending: true }
+    renderDetail()
+    expect(screen.queryByRole('columnheader', { name: T.theoreticalKgPrice })).toBeNull()
+    expect(screen.queryByTestId('purchase-order-kg-price')).toBeNull()
+  })
+
   it('A2a-1 (PRS-02): with the prices withheld no price column or amount is drawn, only the notice', () => {
     scenario.status = 'Approved'
     scenario.cancellation = null

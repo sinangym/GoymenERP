@@ -118,6 +118,29 @@ function PriceCells({ line, currency }: { readonly line: PurchaseOrderLine; read
   </>
 }
 
+/** AK-5 (SAT-D436): drawn only when the server sends the kg price indicator (switch on, prices visible). */
+const KG_PRICE_COLUMNS = [
+  { name: T.theoreticalKgPrice, numeric: true }, { name: T.realKgPrice, numeric: true },
+] as const
+
+/** AK-5: a kg price or its reason, as the server answered it; the screen never recomputes it. */
+function kgPriceText(value: string | null, code: string | null, currency: PurchaseOrderCurrency | null): string {
+  if (value !== null && currency !== null) return T.kgPricePerKg(value, currency.currencyCode)
+  return code === null ? T.noDiscount : T.kgPriceUnavailable[code] ?? code
+}
+
+function KgPriceCells({ line, currency }: { readonly line: PurchaseOrderLine; readonly currency: PurchaseOrderCurrency | null }) {
+  const kg = line.kgPrice
+  if (kg === undefined) {
+    const text = line.kind === 'Technical' ? T.technicalPriceCell : T.noDiscount
+    return <>{KG_PRICE_COLUMNS.map((column) => <Cell key={column.name} label={column.name} numeric>{text}</Cell>)}</>
+  }
+  return <>
+    <Cell label={T.theoreticalKgPrice} numeric>{kgPriceText(kg.theoreticalKgPrice, kg.theoreticalUnavailable, currency)}</Cell>
+    <Cell label={T.realKgPrice} numeric>{kgPriceText(kg.realKgPrice, kg.realUnavailable, currency)}</Cell>
+  </>
+}
+
 const ACCEPTANCE_COLUMNS = [
   { name: T.acceptanceId }, { name: T.lineNo }, { name: T.quantity, numeric: true }, { name: T.recordedAtUtc },
 ] as const
@@ -219,6 +242,8 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
   const cancellation = state.data.cancellation ?? null
   // A2a-1 (PRS-02): prices are drawn only when the server says Visible; a body from before A2a-1 carries none.
   const pricesVisible = state.data.priceDisclosure === 'Visible'
+  // AK-5: the kg price columns only when the server sent the indicator on some line.
+  const kgPricesShown = state.data.lines.some((line) => line.kgPrice !== undefined)
   const currency = state.data.currency ?? null
   const isCurrentDetail = order.id === orderId && order.companyId === companyId
   const lineNoById = new Map(lines.map((line) => [line.lineId, line.lineNo] as const))
@@ -254,7 +279,8 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
       <h2 id="purchase-order-lines-heading">{T.linesHeading}</h2>
       {state.data.priceDisclosure === 'Withheld' ? <p data-testid="purchase-order-prices-withheld">{T.pricesWithheld}</p> : null}
       {pricesVisible && state.data.pricePending === true ? <p role="status" className={styles.warning} data-testid="purchase-order-price-pending">{T.pricePending}</p> : null}
-      <RecordTable label={T.linesCaption} columns={pricesVisible ? [...LINE_COLUMNS, ...PRICE_COLUMNS] : LINE_COLUMNS}>
+      <RecordTable label={T.linesCaption} columns={pricesVisible
+        ? [...LINE_COLUMNS, ...PRICE_COLUMNS, ...(kgPricesShown ? KG_PRICE_COLUMNS : [])] : LINE_COLUMNS}>
         {lines.map((line) => <tr key={line.lineId} role="row" data-testid={`purchase-order-line-${line.lineNo}`}>
           <Cell label={LINE_NO}>{line.lineNo}</Cell>
           <Cell label={T.productId} identifier>{line.productId}</Cell>
@@ -266,8 +292,14 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
           <Cell label={T.cancelledShare} numeric>{line.cancelled ?? '0'}</Cell>
           <Cell label={T.remaining} numeric>{line.remaining}</Cell>
           {pricesVisible ? <PriceCells line={line} currency={currency} /> : null}
+          {pricesVisible && kgPricesShown ? <KgPriceCells line={line} currency={currency} /> : null}
         </tr>)}
       </RecordTable>
+      {pricesVisible && state.data.kgPrice !== undefined ? <dl className={styles.facts} data-testid="purchase-order-kg-price"
+        aria-label={T.kgPriceHeading}>
+        <div><dt>{T.theoreticalKgPrice}</dt><dd>{kgPriceText(state.data.kgPrice.theoreticalKgPrice, state.data.kgPrice.theoreticalUnavailable, currency)}</dd></div>
+        <div><dt>{T.realKgPrice}</dt><dd>{kgPriceText(state.data.kgPrice.realKgPrice, state.data.kgPrice.realUnavailable, currency)}</dd></div>
+      </dl> : null}
     </section>
     {/* F-027 (ALS-D94, ALS-D81): each line's current termin and its recorded revisions; the termin change control (UI-07) only
         behind its child capability. */}
