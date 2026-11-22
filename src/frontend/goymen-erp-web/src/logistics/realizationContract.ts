@@ -21,6 +21,8 @@ export interface RecordShipmentRequest {
   readonly quantity: string
   readonly occurredAtUtc: string
   readonly planExcessUses?: readonly PlanExcessUse[]
+  /** AK-4 (KLN-D119): a piece line's physical kg of the pieces leaving; required there and refused on a kg line (backend 422). */
+  readonly quantityKg?: string
 }
 
 export interface RecordDeliveryRequest {

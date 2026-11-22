@@ -466,7 +466,8 @@ function useCommitCommand(companyId: string, storeKey: string, onApplied: (resou
   const send = useCallback(async (body: CommitCashTransferRequest) => {
     if (busy.current) return
     busy.current = true
-    const attempt = recallPendingCashTransferAttempt(storeKey) ?? { key: generateCashTransferAttemptKey(), body }
+    const held = recallPendingCashTransferAttempt(storeKey)
+    const attempt = held ?? { key: generateCashTransferAttemptKey(), body }
     rememberPendingCashTransferAttempt(storeKey, attempt)
     setState({ phase: 'sending' })
     const snapshot = boundary.capture()
@@ -474,6 +475,13 @@ function useCommitCommand(companyId: string, storeKey: string, onApplied: (resou
     busy.current = false
     if (outcome.kind === 'unknown') {
       setState({ phase: 'unknown', reason: outcome.reason, attempt })
+      return
+    }
+    if (held !== null && outcome.kind === 'failed' && (outcome.status === 401 || outcome.status === 403)) {
+      // A 401/403 on the RETRY of an unknown attempt says nothing about the first send, which may have moved the money: the key
+      // is kept and the attempt stays unknown, so the next send is that same attempt again — never a second transfer.
+      boundary.report(outcome.status, snapshot)
+      setState({ phase: 'unknown', reason: null, attempt })
       return
     }
     forgetPendingCashTransferAttempt(storeKey)

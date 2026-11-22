@@ -1117,6 +1117,7 @@ parameters (`GetDraftKilogramPricesAsync(.., kilogramPriceOpen)`, `SalesInvoiceS
 `CalculateMarginInTurkishLira(.., pieceMarginOpen)`). A piece line's margin cost is read and pinned per kilogram (never a
 converted per-piece cost, TM1). N2 stays open: a document-level kg price is hidden while any line is not a kg-bearing goods
 line (K17/K18). The order realization counts only **finalised** invoices - one named rule,
-`SalesDraftService.EntersKilogramPriceRealization` (SAT-D452; a finalised invoice whose last Finance answer is a refusal
-stays out until a re-drive is admitted, SAT-D457); an invoice's own kg price block is shown on the document in every state. Real-SQL
+`SalesDraftService.EntersKilogramPriceRealization` (SAT-D452; a finalised invoice Finance refused stays out until Finance
+admits a re-drive, SAT-D457 / EK1 E21-E21a; a re-drive answered unavailable/retry/denied does not bring it back, and a ledger
+with more than one non-admitted answer stays out because it keeps only the last answer); an invoice's own kg price block is shown on the document in every state. Real-SQL
 acceptance is not run locally.

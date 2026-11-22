@@ -11,6 +11,8 @@ export interface TransferList { readonly companyId: string; readonly items: read
 export interface TransferLine {
   readonly lineId: string; readonly labelId: string; readonly expectedLabelVersion: string; readonly plannedKg: string
   readonly actualShippedKg: string | null; readonly differenceKg: string | null; readonly status: string
+  /** KLN-D119 (AK-2b): the dispatched pieces of a piece-tracking line; absent for a kg-only or undispatched line. */
+  readonly dispatchedPieceCount?: number
 }
 export interface TransferDetail extends TransferSummary {
   readonly sourceCustodianKind: string; readonly sourceCustodianId: string
@@ -52,7 +54,12 @@ export function decodeTransferDetail(value: unknown): TransferDetail | null {
     || !['Company', 'Counterparty'].includes(String(value.destinationCustodianKind)) || !guid(value.destinationCustodianId) || !Array.isArray(value.lines)) return null
   const ids = new Set<string>()
   for (const line of value.lines) {
-    if (!record(line) || !exact(line, ['lineId', 'labelId', 'expectedLabelVersion', 'plannedKg', 'actualShippedKg', 'differenceKg', 'status'])
+    const pieces = record(line) && Object.hasOwn(line, 'dispatchedPieceCount')
+    if (!record(line) || !exact(line, ['lineId', 'labelId', 'expectedLabelVersion', 'plannedKg', 'actualShippedKg', 'differenceKg', 'status',
+      ...(pieces ? ['dispatchedPieceCount'] : [])])
+      // KLN-D119: dispatched pieces only on a dispatched line, a positive whole number.
+      || pieces && (line.actualShippedKg === null || typeof line.dispatchedPieceCount !== 'number'
+        || !Number.isInteger(line.dispatchedPieceCount) || line.dispatchedPieceCount < 1 || line.dispatchedPieceCount > 2147483647)
       || !guid(line.lineId) || !guid(line.labelId) || !version(line.expectedLabelVersion) || !quantity(line.plannedKg)
       || !(line.actualShippedKg === null || quantity(line.actualShippedKg))
       || !(line.differenceKg === null || typeof line.differenceKg === 'string' && /^-?\d+(?:\.\d{1,3})?$/.test(line.differenceKg))

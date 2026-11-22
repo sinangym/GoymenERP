@@ -112,6 +112,22 @@ describe('supplier return decoder with a source label and per-receipt parts (AK-
       COMPANY, ORDER)).toBeNull()
   })
 
+  it('SAT-D455: the document pieces are not a price — kept when the price is withheld, never on a lineage part', () => {
+    const quantity = (part: Record<string, unknown>, over: Record<string, unknown> = {}) =>
+      lineageReturn({ lineageMode: 'Quantity', lineageParts: [storedPart({ quantityKg: '300', ...part })], ...over })
+    const withheld = { priceDisclosure: 'Withheld', unitCostTryPerKg: null }
+    expect(decodeSupplierReturn(quantity({ unitCostTryPerKg: null, supplierPieceQuantity: 4 }, withheld), COMPANY, ORDER)
+      ?.lineageParts?.[0].supplierPieceQuantity).toBe(4)
+    expect(decodeSupplierReturn(quantity({ unitCostTryPerKg: null, supplierPieceQuantity: 0 }, withheld), COMPANY, ORDER)).toBeNull()
+    expect(decodeSupplierReturn(quantity({ unitCostTryPerKg: null, supplierPieceQuantity: '4' }, withheld), COMPANY, ORDER)).toBeNull()
+    // With the price visible the pieces travel with the price they count for.
+    expect(decodeSupplierReturn(quantity({ supplierPieceQuantity: 4 }), COMPANY, ORDER)).toBeNull()
+    const lineageParts = (pieces: boolean) => lineageReturn().lineageParts.map((part, index) =>
+      ({ ...part, unitCostTryPerKg: null, ...(pieces && index === 0 ? { supplierPieceQuantity: 4 } : {}) }))
+    expect(decodeSupplierReturn(lineageReturn({ ...withheld, lineageParts: lineageParts(false) }), COMPANY, ORDER)).not.toBeNull()
+    expect(decodeSupplierReturn(lineageReturn({ ...withheld, lineageParts: lineageParts(true) }), COMPANY, ORDER)).toBeNull()
+  })
+
   it('withholds every part price together with the document price', () => {
     const withheld = lineageReturn({ priceDisclosure: 'Withheld', unitCostTryPerKg: null,
       lineageParts: lineageReturn().lineageParts.map((item) => ({ ...item, unitCostTryPerKg: null })) })

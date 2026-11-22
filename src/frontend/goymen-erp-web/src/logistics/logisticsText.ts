@@ -165,6 +165,8 @@ export const INSTRUCTION_DETAIL_TEXT = {
   remainingToLoad: 'Yüklenecek kalan',
   loadedNotShipped: 'Yüklenmiş, sevk bekleyen',
   shippedNotDelivered: 'Sevk edilmiş, teslim bekleyen',
+  /** AK-4 (KLN-D119): a piece line's physical kilograms beside its piece figure; the kg is the server's. */
+  physicalKg: (kg: string) => ` (${kg} kg)`,
   blocked: 'Bloklu',
   sharesHeading: 'Paylar',
   noShares: 'Henüz pay kaydedilmedi.',
@@ -185,6 +187,9 @@ export const INSTRUCTION_DETAIL_TEXT = {
     note: 'Yükleme payı talimat kalanını aşamaz; bloklu satıra pay kaydedilmez. Sunucu yetkiyi her gönderimde yeniden ölçer.',
     line: 'Satır',
     quantity: 'Yüklenen miktar',
+    /** AK-4: on a piece line the quantity is whole pieces and the physical kg is entered beside it. */
+    quantityPieces: 'Yüklenen miktar (adet)',
+    quantityKg: 'Yüklenen adetlerin fiziksel ağırlığı (kg)',
     measurement: 'Ölçüm',
     record: 'Payı kaydet',
     draftOnly: 'Yükleme payı yalnız yayımlanmış talimata kaydedilir.',
@@ -285,6 +290,12 @@ export const REALIZATION_TEXT = {
   allocation: 'Tahsis edilmiş etiket',
   sourceShipment: 'Kaynak sevk',
   quantity: 'Miktar (kg)',
+  /** AK-4 (KLN-D119): a piece line ships whole pieces with their physical kg (the label kg leaving). */
+  quantityPieces: 'Miktar (adet)',
+  quantityKg: 'Sevk edilen adetlerin fiziksel ağırlığı (kg)',
+  pieceUnit: 'adet',
+  kgUnit: 'kg',
+  invalidPieces: 'Listeden geçerli bir kaynak seçin; pozitif adet ve pozitif fiziksel ağırlık (kg) girin.',
   remaining: 'Kalan',
   line: 'Satır',
   labelReference: 'Etiket ref.',

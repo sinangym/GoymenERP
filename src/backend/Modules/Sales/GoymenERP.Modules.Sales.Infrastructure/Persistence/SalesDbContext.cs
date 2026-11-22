@@ -596,7 +596,7 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
     internal const string InvoiceLineGuardTrigger = "TR_InvoiceLines_Guard";
 
     internal const string InvoiceLineKilogramInformationConstraint =
-        "([TheoreticalKg] IS NULL AND [ActualKg] IS NULL) OR ([TheoreticalKg] > 0 AND [ActualKg] > 0)";
+        "([TheoreticalKg] IS NULL AND [ActualKg] IS NULL) OR ([TheoreticalKg] IS NOT NULL AND [TheoreticalKg] > 0 AND [ActualKg] IS NOT NULL AND [ActualKg] > 0)";
 
     /// <summary>API-35: the match row is append-only; the trigger refuses every UPDATE and DELETE (THROW 51226).</summary>
     internal const string InvoiceMatchGuardTrigger = "TR_InvoiceMatches_Guard";

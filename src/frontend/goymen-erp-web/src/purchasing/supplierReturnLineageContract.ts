@@ -203,8 +203,10 @@ export function decodeSupplierReturnLineageParts(value: unknown, header: {
         || !COST.test(source.supplierUnitPriceTry) || source.supplierUnitPriceTry === '0'
         || typeof source.supplierAmountTry !== 'string' || !/^(0|[1-9]\d{0,15})(\.\d?[1-9])?$/.test(source.supplierAmountTry)
         || source.supplierAmountTry === '0')
-      || supplierPiecesPresent && (!pricePresent || !count(source.supplierPieceQuantity)
-        || source.supplierPieceQuantity < 1)) return null
+      // SAT-D455: the document's return pieces belong to a quantity return only. A piece count is not a price: it stays visible
+      // when the price is withheld (the backend masks only the price members); with the price visible it goes with the price.
+      || supplierPiecesPresent && (header.lineageMode !== 'Quantity' || header.priceVisible && !pricePresent
+        || !count(source.supplierPieceQuantity) || source.supplierPieceQuantity < 1)) return null
     if (choicePresent) {
       const invoiced = decodeSelections(source.invoiced)
       if (!isLineageKg(source.pendingKg) || invoiced === null

@@ -70,6 +70,9 @@ function SupplierReturnList({ fenceKey, companyId, orderId, orderVersion }: Supp
 }
 
 function ReturnFacts({ item, index }: { readonly item: SupplierReturn; readonly index: number }) {
+  // SAT-D454/SAT-D455: a quantity return's supplier figures, shown as decoded (never recomputed); the price columns say when the
+  // price is withheld, the pieces stay visible (a count is not a price).
+  const supplierFigures = item.lineageMode === 'Quantity'
   return <article data-testid={`purchase-order-supplier-return-${index}`} data-status={item.status}>
     <h3>{T.returnHeading(index)}</h3>
     <dl className={styles.facts}>
@@ -103,7 +106,9 @@ function ReturnFacts({ item, index }: { readonly item: SupplierReturn; readonly 
     {item.lineageParts !== undefined ? <table>
       <caption>{T.partsCaption}</caption>
       <thead><tr><th scope="col">{T.partReceipt}</th><th scope="col">{T.partKg}</th><th scope="col">{T.partPieces}</th>
-        <th scope="col">{T.partCostBasis}</th><th scope="col">{T.partUnitCost}</th><th scope="col">{T.partChoice}</th></tr></thead>
+        <th scope="col">{T.partCostBasis}</th><th scope="col">{T.partUnitCost}</th><th scope="col">{T.partChoice}</th>
+        {supplierFigures ? <><th scope="col">{T.partSupplierPrice}</th><th scope="col">{T.partSupplierAmount}</th>
+          <th scope="col">{T.partSupplierPieces}</th></> : null}</tr></thead>
       <tbody>{item.lineageParts.map((part) => <tr key={part.goodsAcceptanceId}>
         <td className={styles.identifier}>{part.goodsAcceptanceId}</td>
         <td className={styles.number}>{part.quantityKg}</td>
@@ -113,6 +118,12 @@ function ReturnFacts({ item, index }: { readonly item: SupplierReturn; readonly 
         <td>{part.pendingKg === undefined || part.invoiced === undefined ? T.partChoiceImplied
           : [...(part.pendingKg === '0' ? [] : [T.partPending(part.pendingKg)]),
             ...part.invoiced.map((selected) => T.partInvoiced(selected.quantityKg))].join('; ')}</td>
+        {supplierFigures ? <>
+          <td className={styles.number} data-testid="supplier-return-part-supplier-price">
+            {part.supplierUnitPriceTry ?? (item.priceDisclosure === 'Withheld' ? T.priceWithheld : T.partNoSupplierFigure)}</td>
+          <td className={styles.number}>{part.supplierAmountTry ?? (item.priceDisclosure === 'Withheld' ? T.priceWithheld : T.partNoSupplierFigure)}</td>
+          <td className={styles.number} data-testid="supplier-return-part-supplier-pieces">{part.supplierPieceQuantity ?? T.partNoSupplierFigure}</td>
+        </> : null}
       </tr>)}</tbody>
     </table> : null}
   </article>

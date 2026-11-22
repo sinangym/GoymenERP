@@ -191,7 +191,72 @@ public sealed partial class SalesDraftServiceTests
 
         var frozen = Assert.Single(draft.MarginCosts, cost => cost.LineId == added.LineId).SaleRate!;
         Assert.Equal((Currency, 34.5678m), (frozen.CurrencyId, frozen.Rate));
+        // The first line's pinned snapshot is append-only: it is not rewritten and its cost is not re-read (SAT-D269). The order
+        // rate still converts it (golden T4 / D15, measured on a priced order in the next test).
         Assert.Null(Assert.Single(draft.MarginCosts, cost => cost.LineId == firstLine).SaleRate);
+    }
+
+    [Fact]
+    public async Task SAT_D430_golden_D15_a_revision_approval_that_repins_no_line_freezes_the_order_rate_and_converts_every_line()
+    {
+        // Golden D15: the first approval read no rate (the approval went on, no rate); the revision approval reads USD/TRY and
+        // freezes it at that moment (SAT-D430). The revision is price-only, so no cost is re-read (SAT-D269).
+        var source = new MarginCostSource { CostCurrency = SettingsCurrencyIdentitiesV1.TurkishLira, Cost = 3m };
+        var rates = new FakeExchangeRates("NotFound", null);
+        var world = new World { MarginCosts = source, ExchangeRates = rates }.AllowDiscountsUpTo(10m);
+        var created = (await world.Service().CreateDraftAsync(Priced(), Metadata("fx-d15-create"))).Detail;
+        var draft = Assert.Single(world.Store.Drafts);
+        var line = created.Lines[0].LineId;
+        await ApproveDiscountChecksAsync(world, created.Draft.Id, draft.Version.ToString(), line);
+        await world.Service().SubmitDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-d15-submit"));
+        await world.Service().ApproveDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-d15-approve"));
+        var firstPin = Assert.Single(draft.MarginCosts);
+        Assert.Null(firstPin.SaleRate);
+        Assert.Equal("CurrencyConversionUndecided",
+            Assert.Single((await world.Service().GetDraftLinePricingAsync(draft.Id)).Margin.Lines!).UnavailableReason); // D19
+
+        rates.State = ExchangeRateResolutionStatesV1.Resolved;
+        rates.Rate = "34.6000";
+        source.Cost = 99m; // a later owner cost is never read for the unchanged line
+        Owners(world);
+        await world.Service().ReviseCommercialAsync(draft.Id,
+            Revision(draft.Version.ToString(), new SalesDraftLineCommercialV1(line, "13.00", KgUnit, "5")), Metadata("fx-d15-revise"));
+        await ApproveDiscountChecksAsync(world, created.Draft.Id, draft.Version.ToString(), line);
+        await world.Service().SubmitDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-d15-resubmit"));
+        await world.Service().ApproveDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-d15-reapprove"));
+
+        Assert.Equal(1, source.Reads);
+        var carrier = Assert.Single(draft.MarginCosts, cost => cost.Revision == draft.Revision);
+        Assert.True(draft.Revision > firstPin.Revision);
+        Assert.Equal((Currency, 34.6000m), (carrier.SaleRate!.CurrencyId, carrier.SaleRate.Rate));
+        // The cost stays exactly as pinned at the first approval; only the order rate travels with the revision's copy.
+        Assert.Equal(firstPin with { Revision = draft.Revision, SaleRate = carrier.SaleRate, RecordedAtUtc = carrier.RecordedAtUtc }, carrier);
+        Assert.Equal(firstPin, Assert.Single(draft.MarginCosts, cost => cost.Revision == firstPin.Revision));
+
+        var margin = Assert.Single((await world.Service().GetDraftLinePricingAsync(draft.Id)).Margin.Lines!);
+        Assert.Null(margin.UnavailableReason);
+        Assert.Equal(ExpectedMargin(draft, line, firstPin with { SaleRate = carrier.SaleRate }), margin.Amount);
+
+        // T4: a later approval never re-freezes it.
+        rates.Rate = "50";
+        Owners(world);
+        await world.Service().ReviseCommercialAsync(draft.Id,
+            Revision(draft.Version.ToString(), new SalesDraftLineCommercialV1(line, "13.50", KgUnit, "5")), Metadata("fx-d15-revise-2"));
+        await ApproveDiscountChecksAsync(world, created.Draft.Id, draft.Version.ToString(), line);
+        await world.Service().SubmitDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-d15-resubmit-2"));
+        await world.Service().ApproveDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-d15-reapprove-2"));
+        Assert.Equal(2, draft.MarginCosts.Count); // no further copy: the rate is already frozen
+        var again = Assert.Single((await world.Service().GetDraftLinePricingAsync(draft.Id)).Margin.Lines!);
+        Assert.Equal(ExpectedMargin(draft, line, firstPin with { SaleRate = carrier.SaleRate }), again.Amount);
+    }
+
+    private static string? ExpectedMargin(SalesOrderDraft draft, Guid lineId, SalesMarginCostSnapshot cost)
+    {
+        var line = draft.Lines.Single(item => item.Id == lineId);
+        var expected = SalesDraftService.CalculateMarginInTurkishLira(
+            SalesOrderTotalsCalculator.CalculateWithLineTax(draft).Lines.Single(item => item.LineId == lineId).NetAmountBeforeSurcharge,
+            line.OrderUnit.UnitId, line.Quantity.Value, cost);
+        return expected.Amount!.Value.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     [Fact]
