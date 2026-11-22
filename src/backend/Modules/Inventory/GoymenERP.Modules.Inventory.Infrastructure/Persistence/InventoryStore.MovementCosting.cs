@@ -22,6 +22,9 @@ public sealed partial class InventoryStore
     // SAT-D411: this value is admitted by Purchasing's actual invoice/manual-exception flow, never a receipt-price fallback.
     internal void UseSupplierReturnCost(Guid movementId, decimal? approvedTlUnitCost) => supplierReturnCostInputs.Add(movementId, approvedTlUnitCost);
     internal void UseSupplierReturnAllocation(Guid movementId, InventorySupplierReturnAllocationProofV1 proof) => supplierReturnAllocations.Add(movementId, proof);
+    private readonly Dictionary<Guid, InventorySupplierReturnLineageSelectionProofV1> supplierReturnLineageSelections = [];
+    // AK-8b (K3-B2): the invoiced/pending attribution of a foreign-label exit is retained with its movement's cost evidence.
+    internal void UseSupplierReturnLineageSelection(Guid movementId, InventorySupplierReturnLineageSelectionProofV1 proof) => supplierReturnLineageSelections.Add(movementId, proof);
 
     /// <summary>
     /// Called after physical-domain validation, before changing the tracked balances. Stamp and cost-pool updates are part
@@ -148,7 +151,9 @@ public sealed partial class InventoryStore
                         sourceVersion = pool.Version;
                         stamp.EvidenceJson = supplierReturnAllocations.TryGetValue(movement.Id, out var allocation)
                             ? JsonSerializer.Serialize(new { movement.Source, approvedReturnTlUnitCost = unit, supplierReturnAllocation = allocation }, CostJson)
-                            : JsonSerializer.Serialize(new { movement.Source, approvedReturnTlUnitCost = unit });
+                            : supplierReturnLineageSelections.TryGetValue(movement.Id, out var lineageSelection)
+                                ? JsonSerializer.Serialize(new { movement.Source, approvedReturnTlUnitCost = unit, supplierReturnLineageSelection = lineageSelection }, CostJson)
+                                : JsonSerializer.Serialize(new { movement.Source, approvedReturnTlUnitCost = unit });
                         stamp.EntryCurrencyStatus = (int)InventoryIssueCostCurrencyStatusV1.FunctionalCurrency;
                         stamp.OriginalCurrencyId = null; stamp.ForeignUnitCostPerKg = null; stamp.EntryExchangeRate = null;
                         stamp.ForeignUnitCostRatioJson = null; stamp.EntryExchangeRateRatioJson = null;

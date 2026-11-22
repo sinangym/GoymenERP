@@ -25,20 +25,33 @@ public enum PurchaseSupplierReturnLineageModeV1
     Quantity = 2,
 }
 
-/// <summary>One lineage root as Inventory answers it; <see cref="GoodsAcceptanceId"/> only for a purchase receipt root.</summary>
+/// <summary>
+/// One lineage root as Inventory answers it; <see cref="GoodsAcceptanceId"/> only for a purchase receipt root. Roots are answered
+/// in receipt order (SAT-D440/SAT-D442 ties). <see cref="Receipt"/> is the receipt's open state when the owner supplied it.
+/// </summary>
 public sealed record PurchaseSupplierReturnLineageRootV1(bool IsPurchaseReceipt, Guid? GoodsAcceptanceId, string ShareNumerator,
-    string ShareDenominator);
-
-/// <summary>A label's lineage roots (company-fenced); the shares add up to one.</summary>
-public sealed record PurchaseSupplierReturnLineageV1(Guid LabelId, IReadOnlyList<PurchaseSupplierReturnLineageRootV1> Roots);
+    string ShareDenominator, PurchaseSupplierReturnReceiptStateV1? Receipt = null);
 
 /// <summary>
-/// Reads a label's lineage from the Inventory owner (wired by the host). Purchasing never reads Inventory tables. An unreadable
-/// lineage is answered by throwing; a host without the port leaves foreign-label returns 503.
+/// A label's lineage roots (company-fenced); the shares add up to one. The stock facts are price-free:
+/// <see cref="AverageCostReadable"/> says whether the label's location/product moving average can be read (SAT-D444).
+/// </summary>
+public sealed record PurchaseSupplierReturnLineageV1(Guid LabelId, IReadOnlyList<PurchaseSupplierReturnLineageRootV1> Roots,
+    bool TracksPieces = false, string FreeKg = "0", string BlockedKg = "0", int? FreePieces = null, int? BlockedPieces = null,
+    bool AverageCostReadable = false);
+
+/// <summary>
+/// Reads a label's lineage plan and a receipt's open state from the Inventory owner (wired by the host). Purchasing never reads
+/// Inventory tables. An unreadable answer is given by throwing; a host without the port leaves foreign-label returns 503.
 /// </summary>
 public interface IPurchaseSupplierReturnLineageReadPortV1
 {
-    Task<PurchaseSupplierReturnLineageV1> ReadAsync(Guid companyId, Guid labelId, CancellationToken cancellationToken);
+    /// <summary>The lineage with what a return of <paramref name="quantityKg"/> / <paramref name="pieceCount"/> takes from each receipt.</summary>
+    Task<PurchaseSupplierReturnLineageV1> PlanAsync(Guid companyId, Guid labelId, string quantityKg, int? pieceCount,
+        CancellationToken cancellationToken);
+
+    /// <summary>The open state of one goods receipt (the chosen receipt of a quantity return).</summary>
+    Task<PurchaseSupplierReturnReceiptStateV1> ReadReceiptAsync(Guid companyId, Guid goodsAcceptanceId, CancellationToken cancellationToken);
 }
 
 /// <summary>The planned way a foreign-label return leaves stock.</summary>
@@ -46,9 +59,8 @@ public sealed record PurchaseSupplierReturnLineagePlanV1(PurchaseSupplierReturnL
 
 /// <summary>
 /// AK-8 planning rules (pure). SAT-D445: lineage distribution only when every root is a purchase receipt of the returning
-/// supplier; any other lineage is a quantity return from the chosen receipt. SAT-D433 with SAT-D440/D442 needs one exit per
-/// receipt in one atomic return; a single-receipt lineage (a split of that receipt) is one exit of the whole return, a
-/// multi-receipt lineage is not staged yet (503, never a partial or re-routed share).
+/// supplier; any other lineage is a quantity return from the chosen receipt. In a lineage return the named acceptance is the
+/// document's own receipt and must be one of the label's receipts; nothing is re-routed to another receipt.
 /// </summary>
 public static class PurchaseSupplierReturnLineagePlannerV1
 {
@@ -69,8 +81,7 @@ public static class PurchaseSupplierReturnLineagePlannerV1
             throw Unavailable();
         var onlySupplier = roots.All(root => root.IsPurchaseReceipt && supplierByAcceptance[root.GoodsAcceptanceId!.Value] == supplierId);
         if (!onlySupplier) return new(PurchaseSupplierReturnLineageModeV1.Quantity);
-        if (purchase.Length > 1) throw Unavailable();
-        if (purchase[0] != goodsAcceptanceId)
+        if (!purchase.Contains(goodsAcceptanceId))
             throw new PurchasingServiceException(409, PurchaseSupplierReturnCodesV1.LineageReceiptMismatch,
                 [new("goodsAcceptanceId", PurchaseSupplierReturnCodesV1.LineageReceiptMismatch)]);
         return new(PurchaseSupplierReturnLineageModeV1.Lineage);
@@ -91,5 +102,53 @@ public static class PurchaseSupplierReturnLineagePlannerV1
         }
 
         return numerator == denominator;
+    }
+}
+
+/// <summary>What one order line offers a quantity return as its price (the facts the rule needs, nothing else).</summary>
+public sealed record PurchaseSupplierReturnQuantityPriceLineV1(bool IsTurkishLira, bool IsKilogramLine, bool PricedPerOrderUnit,
+    decimal? UnitPrice, bool HasDiscount, bool HasDeferral);
+
+public enum PurchaseSupplierReturnQuantityPriceOutcomeV1
+{
+    Priced = 1,
+
+    /// <summary>409: not a priced kilogram line in TL (golden TI8 prices a kg order; a piece order's return quantity is not given).</summary>
+    NotAKilogramTryLine = 2,
+
+    /// <summary>422: a discounted or deferred line — gross or net is not decided (SAT-D444, OPEN).</summary>
+    Undecided = 3,
+
+    /// <summary>503: the price does not fit the four-decimal TL/kg contract; it is never rounded.</summary>
+    NotRepresentable = 4,
+}
+
+public sealed record PurchaseSupplierReturnQuantityPriceV1(PurchaseSupplierReturnQuantityPriceOutcomeV1 Outcome, decimal? UnitPriceTryPerKg);
+
+/// <summary>
+/// SAT-D444, THE single rule point for "the chosen purchase order's unit price" of a quantity return. For a plain kilogram line
+/// in TL it is the line's unit price. For a line with a discount or a deferral Sinan has not yet answered whether the price is
+/// gross or net: <see cref="DiscountedLinePriceDecision"/> is null, so such a line is refused with
+/// <see cref="PurchaseSupplierReturnCodesV1.QuantityPriceUndecided"/> (422) and nothing is recorded. When the answer arrives it
+/// is implemented here, in <see cref="Resolve"/>, and nowhere else.
+/// </summary>
+public static class PurchaseSupplierReturnQuantityPriceRuleV1
+{
+    /// <summary>OPEN (NEEDS-SINAN): null until the gross/net answer; no value is assumed.</summary>
+    public const string? DiscountedLinePriceDecision = null;
+
+    private const int UnitCostScale = 4;
+    private const decimal UnitCostUpperBound = 100_000_000_000_000m;
+
+    public static PurchaseSupplierReturnQuantityPriceV1 Resolve(PurchaseSupplierReturnQuantityPriceLineV1 line)
+    {
+        ArgumentNullException.ThrowIfNull(line);
+        if (!line.IsTurkishLira || !line.IsKilogramLine || !line.PricedPerOrderUnit || line.UnitPrice is not { } price || price <= 0m)
+            return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.NotAKilogramTryLine, null);
+        if (line.HasDiscount || line.HasDeferral)
+            return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.Undecided, null);
+        if (price >= UnitCostUpperBound || decimal.Round(price, UnitCostScale) != price)
+            return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.NotRepresentable, null);
+        return new(PurchaseSupplierReturnQuantityPriceOutcomeV1.Priced, price);
     }
 }

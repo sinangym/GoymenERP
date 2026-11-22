@@ -59,7 +59,7 @@ public sealed class InventorySupplierReturnLineageTests
     }
 
     [Fact]
-    public void A_merge_of_two_receipts_has_kilogram_weighted_shares_and_stays_503_in_single_exit_lineage_mode()
+    public void A_merge_of_two_receipts_has_kilogram_weighted_shares_and_a_single_exit_naming_it_is_a_request_fault()
     {
         var lineage = InventorySupplierReturnLineageReader.Compose(Company, Merged, Product, [R1Label, R2Label], new HashSet<Guid>(),
             [(Id(10), InventoryLabelTransformationKind.Merge)],
@@ -71,7 +71,8 @@ public sealed class InventorySupplierReturnLineageTests
         Assert.Equal(new InventoryExactCostRatioV1("2", "5"), lineage.Roots[1].Share);
         var refused = Assert.Throws<InventorySupplierReturnExitException>(() =>
             InventorySupplierReturnLineageGateV1.RequireLineageMode(lineage, R1Label));
-        Assert.Equal(503, refused.Status);
+        // AK-8b: several receipts are ONE atomic return with one exit per receipt (StageLineageAsync), never a single exit.
+        Assert.Equal((400, InventorySupplierReturnExitCodesV1.InvalidRequest), (refused.Status, refused.Code));
     }
 
     [Fact]

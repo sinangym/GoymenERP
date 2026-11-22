@@ -58,7 +58,7 @@ public sealed partial class PurchasingService
         var lineId = await GuardedAsync(scope, permission,
                 () => returns.FindAcceptanceLineAsync(orderId, request.GoodsAcceptanceId, cancellationToken), cancellationToken)
             ?? throw new PurchasingServiceException(404, "not_found");
-        if (stored.Order.Lines.SingleOrDefault(line => line.Id == lineId) is { Quantity.Unit: QuantityUnit.Piece }
+        if (request.SourceLabelId is null && stored.Order.Lines.SingleOrDefault(line => line.Id == lineId) is { Quantity.Unit: QuantityUnit.Piece }
             && (request.UndoQuantity is not { } undo || !int.TryParse(undo, NumberStyles.None, CultureInfo.InvariantCulture, out var pieces)
                 || pieces < 1))
         {
@@ -74,21 +74,16 @@ public sealed partial class PurchasingService
         }
 
         IReadOnlyList<PurchaseSupplierReturnInvoiceSourceLabelV1>? costSourceLabels = null;
-        PurchaseSupplierReturnLineagePlanV1? lineagePlan = null;
-        decimal? quantityReturnPrice = null;
+        ReturnLineageDecision? lineage = null;
         try
         {
             if (request.SourceLabelId is { } sourceLabelId)
             {
-                // AK-8: a foreign source label is planned from its lineage. The receipt-label cost-source attribution does not
-                // apply to it (Inventory refuses an invoiced receipt for such an exit: no per-invoice share is guessed).
-                lineagePlan = await PlanReturnLineageAsync(scope, permission, returns, stored.Order, sourceLabelId,
-                    request.GoodsAcceptanceId, cancellationToken);
-                if (lineagePlan.Mode == PurchaseSupplierReturnLineageModeV1.Quantity)
-                {
-                    if (request.ManualUnitCostTryPerKg is not null) throw new PurchasingServiceException(400, "validation_failed");
-                    quantityReturnPrice = QuantityReturnUnitPrice(stored.Order, lineId);
-                }
+                // AK-8/AK-8b: a foreign source label is planned from its lineage; every receipt's share, open parts and cost
+                // source are decided here, before anything is written. The receipt-label cost-source attribution does not apply.
+                var plan = await PlanReturnLineageAsync(scope, permission, returns, stored.Order, lineId, sourceLabelId,
+                    request.GoodsAcceptanceId, request.QuantityKg, request.PieceCount, collectRefusal: false, cancellationToken);
+                lineage = DecideReturnLineage(plan, request);
             }
             else
             {
@@ -101,12 +96,15 @@ public sealed partial class PurchasingService
             return await ReturnTerminalAsync(scope, permission, returns, orderId, envelope, requestHash, command,
                 new(exception.Status, exception.Code, exception.Errors, exception.Detail), cancellationToken);
         }
-        // SAT-D444: a quantity return bills the chosen order's unit price; no invoice cost is read for it.
-        var invoiceCost = quantityReturnPrice ?? await ReadReturnInvoiceCostAsync(scope, permission, request.GoodsAcceptanceId, cancellationToken);
+
         PurchaseSupplierReturnStatus status;
         PurchaseSupplierReturnCostBasis basis;
         decimal unitCost;
-        if (invoiceCost is { } invoiced)
+        if (lineage is not null)
+        {
+            (status, basis, unitCost) = (lineage.Status, lineage.CostBasis, lineage.UnitCostTryPerKg);
+        }
+        else if (await ReadReturnInvoiceCostAsync(scope, permission, request.GoodsAcceptanceId, cancellationToken) is { } invoiced)
         {
             if (request.ManualUnitCostTryPerKg is not null)
             {
@@ -135,7 +133,7 @@ public sealed partial class PurchasingService
             request.Reason.Trim(), request.OccurredAtUtc,
             request.ExpectedPurchaseOrderVersion is null ? null : long.Parse(request.ExpectedPurchaseOrderVersion, CultureInfo.InvariantCulture),
             request.UndoQuantity is null ? null : ParseKg(request.UndoQuantity), request.CostAllocation, costSourceLabels,
-            request.SourceLabelId, lineagePlan?.Mode);
+            request.SourceLabelId, lineage?.Mode, request.SourceLabelId is null ? null : request.PieceCount, lineage?.Parts);
         try
         {
             StoredPurchaseSupplierReturn saved;
@@ -280,7 +278,8 @@ public sealed partial class PurchasingService
 
         try
         {
-            if (approve && stored.Return.CostAllocation is null)
+            // A foreign-label return carries its own per-receipt choice; the receipt-label cost sources do not describe it.
+            if (approve && stored.Return.CostAllocation is null && stored.Return.SourceLabelId is null)
                 await ValidateReturnCostSourcesAsync(scope, permission, orderId, stored.Return.GoodsAcceptanceId,
                     Kg(stored.Return.QuantityKg), stored.Return.UndoQuantity is { } undo ? Kg(undo) : null,
                     null, cancellationToken);
@@ -362,7 +361,10 @@ public sealed partial class PurchasingService
         var result = await exit.StageExitAsync(new PurchaseSupplierReturnExitRequestV1(scope.CompanyId, draft.ReturnId, draft.ReturnLineId,
             draft.GoodsAcceptanceId, draft.InventoryMovementId, draft.SourceBlock, Kg(draft.QuantityKg), UnitCostText(draft.UnitCostTryPerKg),
             draft.OccurredAtUtc, draft.CostAllocation, draft.PurchaseOrderId,
-            draft.UndoQuantity is { } undo ? Kg(undo) : null, draft.SourceLabelId, draft.LineageMode), envelope, cancellationToken);
+            draft.UndoQuantity is { } undo ? Kg(undo) : null, draft.SourceLabelId, draft.LineageMode, draft.PieceCount, draft.LineageParts,
+            // SAT-D393 on a quantity return: the stored manual cost reaches Inventory only through an approved exception.
+            draft.LineageMode == PurchaseSupplierReturnLineageModeV1.Quantity
+                && draft.CostBasis == PurchaseSupplierReturnCostBasis.ManualCostWithException ? true : null), envelope, cancellationToken);
         if (result is null || result.InventoryMovementId != draft.InventoryMovementId) throw ReturnUnavailable();
     }
 
@@ -465,7 +467,10 @@ public sealed partial class PurchasingService
             Kg(item.QuantityKg), item.CostBasis.ToString(), visible ? UnitCostText(item.UnitCostTryPerKg) : null, item.ReplacementExpected, item.Reason,
             item.OccurredAtUtc, stored.RequestedBy, stored.RequestedAtUtc, stored.DecidedBy, stored.DecidedAtUtc, stored.DecisionReason,
             item.ExpectedPurchaseOrderVersion?.ToString(CultureInfo.InvariantCulture), item.UndoQuantity is { } undo ? Kg(undo) : null,
-            item.CostAllocation, item.CostAllocationSources, item.SourceLabelId, item.LineageMode?.ToString())
+            item.CostAllocation, item.CostAllocationSources, item.SourceLabelId, item.LineageMode?.ToString(), item.PieceCount,
+            item.LineageParts?.Select(part => new PurchaseSupplierReturnLineagePartViewV1(part.GoodsAcceptanceId, part.PurchaseOrderId,
+                part.PurchaseOrderLineId, part.ReturnLineId, part.InventoryMovementId, Kg(part.QuantityKg), part.CostBasis.ToString(),
+                visible ? UnitCostText(part.UnitCostTryPerKg) : null, part.PieceCount, part.PendingKg, part.Invoiced)).ToArray())
         {
             PriceDisclosure = visible ? PurchasingPriceDisclosureV1.Visible : PurchasingPriceDisclosureV1.Withheld,
         };

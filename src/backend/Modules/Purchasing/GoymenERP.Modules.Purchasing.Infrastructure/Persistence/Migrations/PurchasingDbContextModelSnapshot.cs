@@ -2073,6 +2073,9 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                     b.Property<int?>("LineageMode")
                         .HasColumnType("int");
 
+                    b.Property<string>("LineagePartsJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<Guid>("MovementId")
                         .HasColumnType("uniqueidentifier");
 
@@ -2081,6 +2084,9 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("OrderId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("PieceCount")
+                        .HasColumnType("int");
 
                     b.Property<decimal>("QuantityKg")
                         .HasPrecision(18, 3)
@@ -2164,6 +2170,8 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_PurchaseSupplierReturns_Identity", "[ReturnId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ReturnLineId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [GoodsAcceptanceId] <> '00000000-0000-0000-0000-000000000000' AND [MovementId] <> '00000000-0000-0000-0000-000000000000'");
 
                             t.HasCheckConstraint("CK_PurchaseSupplierReturns_Lineage", "([SourceLabelId] IS NULL AND [LineageMode] IS NULL) OR ([SourceLabelId] IS NOT NULL AND [SourceLabelId] <> '00000000-0000-0000-0000-000000000000' AND [LineageMode] IN (1, 2))");
+
+                            t.HasCheckConstraint("CK_PurchaseSupplierReturns_LineageParts", "([LineagePartsJson] IS NULL OR ([SourceLabelId] IS NOT NULL AND ISJSON([LineagePartsJson]) = 1)) AND ([PieceCount] IS NULL OR ([SourceLabelId] IS NOT NULL AND [PieceCount] >= 1))");
 
                             t.HasCheckConstraint("CK_PurchaseSupplierReturns_Status", "[Status] IN (1, 2, 3) AND [CostBasis] IN (1, 2)");
 

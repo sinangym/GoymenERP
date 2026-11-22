@@ -57,4 +57,10 @@ public static class PurchaseReceiptAdjustmentCodesV1
     public const string Unavailable = "purchasing_receipt_adjustment_unavailable";
     public const string UndoExceedsAcceptance = "purchasing_receipt_adjustment_exceeds_acceptance";
     public const string OriginalAcceptanceNotFound = "purchasing_receipt_adjustment_acceptance_not_found";
+
+    /// <summary>
+    /// AK-8b (KLN-D119) 422: the correction or undo of a piece purchase line names whole pieces as its undo quantity; a fraction
+    /// of a piece is refused, never converted from kilograms.
+    /// </summary>
+    public const string PieceCountRequired = "purchasing_receipt_adjustment_piece_count_required";
 }

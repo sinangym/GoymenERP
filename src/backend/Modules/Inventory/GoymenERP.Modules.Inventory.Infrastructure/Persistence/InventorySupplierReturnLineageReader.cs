@@ -37,6 +37,98 @@ public sealed class InventorySupplierReturnLineageReader(InventoryDbContext db, 
         }
     }
 
+    public async Task<InventorySupplierReturnLineagePlanV1> PlanAsync(Guid companyId, Guid labelId, string quantityKg, int? pieceCount,
+        CancellationToken cancellationToken = default)
+    {
+        if (!decimal.TryParse(quantityKg, System.Globalization.NumberStyles.AllowDecimalPoint,
+                System.Globalization.CultureInfo.InvariantCulture, out var kg) || kg <= 0m
+            || InventorySupplierReturnReceiptStates.Kg(kg) != quantityKg || pieceCount is < 1)
+            throw InventorySupplierReturnExitException.Refused(400, InventorySupplierReturnExitCodesV1.InvalidQuantity);
+        var lineage = await ReadAsync(companyId, labelId, cancellationToken);
+        try
+        {
+            var balances = await db.Balances.AsNoTracking().Where(row => row.CompanyId == companyId && row.LabelId == labelId)
+                .Select(row => new { row.Block, row.QuantityKg, row.PieceCount, row.LocationId, row.OwnerKind, row.OwnerId })
+                .ToListAsync(cancellationToken);
+            var stocked = balances.Where(row => row.QuantityKg > 0m).ToArray();
+            var tracks = stocked.Any(row => row.PieceCount is not null);
+            var free = stocked.Where(row => row.Block == (int)BlockState.Free).ToArray();
+            var blocked = stocked.Where(row => row.Block == (int)BlockState.Blocked).ToArray();
+            var locations = stocked.Where(row => row.OwnerKind == (int)StockPartyKind.Company && row.OwnerId == companyId)
+                .Select(row => row.LocationId).Distinct().ToArray();
+            var averageReadable = locations.Length == 1 && stocked.All(row => row.OwnerKind == (int)StockPartyKind.Company)
+                && await InventorySupplierReturnReceiptStates.ReadAverageAsync(db, companyId, lineage.ProductId, locations[0],
+                    cancellationToken) is not null;
+            var purchase = lineage.Roots.Where(root => root.Kind == InventorySupplierReturnLineageRootKindV1.PurchaseReceipt).ToArray();
+            IReadOnlyList<SupplierReturnLineagePart>? parts = null;
+            if (purchase.Length == lineage.Roots.Count)
+            {
+                // SAT-D442 behind its own gate: with it closed a piece return over several receipts is not distributed.
+                if (pieceCount is not null && purchase.Length > 1 && !InventorySupplierReturnPieceDistributionV1.IsAccepted())
+                    throw Unreadable();
+                parts = SupplierReturnLineageCalculator.DistributeByShare(Shares(lineage), kg, tracks ? pieceCount : null);
+            }
+
+            var receipts = new List<InventorySupplierReturnReceiptStateV1>();
+            foreach (var root in purchase)
+            {
+                var facts = await InventorySupplierReturnReceiptStates.ReadAsync(db, companyId, root.GoodsAcceptanceId!.Value,
+                    cancellationToken) ?? throw Unreadable();
+                if (facts.ReceiptMovementId != root.ReceiptMovementId || facts.RootLabelId != root.RootLabelId) throw Unreadable();
+                var part = parts?.Single(item => item.RootId == root.RootLabelId);
+                receipts.Add(State(companyId, facts) with
+                {
+                    DistributedKg = part is null ? null : InventorySupplierReturnReceiptStates.Kg(part.QuantityKg),
+                    DistributedPieces = part?.Pieces,
+                });
+            }
+
+            return new InventorySupplierReturnLineagePlanV1(lineage, tracks,
+                InventorySupplierReturnReceiptStates.Kg(free.Sum(row => row.QuantityKg)),
+                InventorySupplierReturnReceiptStates.Kg(blocked.Sum(row => row.QuantityKg)),
+                tracks ? free.Sum(row => row.PieceCount ?? 0) : null, tracks ? blocked.Sum(row => row.PieceCount ?? 0) : null,
+                averageReadable, receipts);
+        }
+        catch (Exception exception) when (exception is DbException or InvalidOperationException or ArgumentException
+            or OverflowException or DivideByZeroException)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            throw Unreadable();
+        }
+    }
+
+    public async Task<InventorySupplierReturnReceiptStateV1> ReadReceiptAsync(Guid companyId, Guid goodsAcceptanceId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!company.IsResolved || companyId == Guid.Empty || company.CompanyId != companyId || goodsAcceptanceId == Guid.Empty)
+            throw Unreadable();
+        try
+        {
+            var facts = await InventorySupplierReturnReceiptStates.ReadAsync(db, companyId, goodsAcceptanceId, cancellationToken)
+                ?? throw Unreadable();
+            return State(companyId, facts);
+        }
+        catch (Exception exception) when (exception is DbException or InvalidOperationException or ArgumentException
+            or OverflowException or DivideByZeroException)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            throw Unreadable();
+        }
+    }
+
+    /// <summary>The lineage's shares in receipt order (the order the roots are answered in), for SAT-D440/SAT-D442 ties.</summary>
+    internal static IReadOnlyList<SupplierReturnLineageShare> Shares(InventorySupplierReturnLineageV1 lineage) =>
+        lineage.Roots.Select((root, index) => new SupplierReturnLineageShare(root.RootLabelId, index + 1, root.Share.Value())).ToArray();
+
+    internal static InventorySupplierReturnReceiptStateV1 State(Guid companyId, InventorySupplierReturnReceiptStates.Facts facts) =>
+        new(companyId, facts.GoodsAcceptanceId, facts.ReceiptMovementId, facts.RootLabelId, facts.ReceivedAtUtc,
+            InventorySupplierReturnReceiptStates.Kg(facts.ReceivedKg),
+            InventorySupplierReturnReceiptStates.Kg(facts.ReceivedKg - facts.ReturnedKg), facts.Cohorts is not null,
+            facts.Cohorts is null ? null : InventoryExactCostRatioV1.From(facts.Cohorts.PendingKg),
+            facts.Cohorts is null ? [] : facts.Cohorts.InvoicedKg.OrderBy(pair => pair.Key)
+                .Select(pair => new InventorySupplierReturnInvoicedPartV1(pair.Key, facts.Invoices[pair.Key].InvoiceId,
+                    facts.Invoices[pair.Key].InvoiceLineId, InventoryExactCostRatioV1.From(pair.Value))).ToArray());
+
     private async Task<InventorySupplierReturnLineageV1> ReadCoreAsync(Guid companyId, Guid labelId, CancellationToken token)
     {
         var target = await db.Labels.AsNoTracking().Where(row => row.CompanyId == companyId && row.Id == labelId)

@@ -83,7 +83,9 @@ internal sealed partial class PurchaseReceiptReversalHost
                         // Reserve the whole general-line replacement budget. The successive Inventory stages consume it cumulatively.
                         var replacement = write.Request.Lines.Where(candidate => targets[candidate.AcceptanceId].GeneralLineId == target.GeneralLineId)
                             .Sum(candidate => QuantityText(candidate.ReplacementReceipt?.AcceptedQuantity ?? "0"));
-                        return new InventoryGoodsReceiptReversalBatchLineV1(StockRequest(line), new(companyId, write.OrderId,
+                        // KLN-D119: a piece line's undo carries its pieces to the piece-tracking label (null on a kilogram line).
+                        return new InventoryGoodsReceiptReversalBatchLineV1(StockRequest(line) with
+                            { PieceCount = PieceCountOf(target.UnitIsKilogram, line.UndoQuantity, isSupplierReturn: false) }, new(companyId, write.OrderId,
                             target.GeneralLineId, Version(adjusted.OrderVersion), fact.NetOpenedQuantity, fact.AllocatableQuantity,
                             replacement.ToString("0.###", CultureInfo.InvariantCulture)), ChildMetadata(line));
                     }).ToArray();

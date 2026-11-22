@@ -33,6 +33,14 @@ internal sealed class PurchaseSupplierReturnRow : IPurchasingTenantRow
     /// </summary>
     public Guid? SourceLabelId { get; set; }
     public int? LineageMode { get; set; }
+
+    /// <summary>
+    /// AK-8b (SAT-D433/SAT-D440/SAT-D442, K3-B2): the returned pieces of a piece-tracking source label and the per-receipt
+    /// parts (receipt, order line, exit movement, kg, pieces, invoiced/pending choice, cost basis and unit cost) of the ONE
+    /// return document. Both null on every earlier return.
+    /// </summary>
+    public int? PieceCount { get; set; }
+    public string? LineagePartsJson { get; set; }
     public string Reason { get; set; } = string.Empty;
     public DateTimeOffset OccurredAtUtc { get; set; }
     public string RequestedBy { get; set; } = string.Empty;

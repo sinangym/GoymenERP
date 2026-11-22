@@ -18,6 +18,11 @@ public static partial class PurchasingEndpoints
 {
     private const int DefaultSupplierReturnListLimit = 50;
     private static readonly HashSet<string> SupplierReturnListQueryNames = new([LimitQueryName], StringComparer.Ordinal);
+    private const string SourceLabelQueryName = "sourceLabelId";
+    private const string QuantityKgQueryName = "quantityKg";
+    private const string PieceCountQueryName = "pieceCount";
+    private static readonly HashSet<string> SupplierReturnLineagePreviewQueryNames =
+        new([SourceLabelQueryName, QuantityKgQueryName, PieceCountQueryName], StringComparer.Ordinal);
 
     private static void MapSupplierReturns(RouteGroupBuilder group)
     {
@@ -39,6 +44,38 @@ public static partial class PurchasingEndpoints
             .ProducesErpServiceUnavailable(SupplierReturnUnavailableCodes())
             .ProducesErpAuthenticatedProblems();
 
+        group.MapGet("/{id:guid}/goods-receipts/{acceptanceId:guid}/supplier-return-lineage-preview", async (Guid id, Guid acceptanceId,
+            HttpContext httpContext, [FromServices] IPurchaseSupplierReturnServiceV1 service, ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            var query = httpContext.Request.Query;
+            // AK-8b: exactly the documented names, each once; the label and the kg are required, the piece count optional.
+            if (query.Keys.Any(name => !SupplierReturnLineagePreviewQueryNames.Contains(name)) || query.Any(pair => pair.Value.Count != 1)
+                || !Guid.TryParseExact(query[SourceLabelQueryName].ToString(), "D", out var sourceLabelId)
+                || !query.ContainsKey(QuantityKgQueryName)
+                || query.ContainsKey(PieceCountQueryName) && (!int.TryParse(query[PieceCountQueryName].ToString(),
+                        System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+                    || parsed < 1 || parsed.ToString(System.Globalization.CultureInfo.InvariantCulture) != query[PieceCountQueryName].ToString()))
+                return Problem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            int? pieceCount = query.ContainsKey(PieceCountQueryName)
+                ? int.Parse(query[PieceCountQueryName].ToString(), System.Globalization.CultureInfo.InvariantCulture) : null;
+            try
+            {
+                return Results.Json(await service.GetSupplierReturnLineagePreviewAsync(id, acceptanceId, sourceLabelId,
+                    query[QuantityKgQueryName].ToString(), pieceCount, cancellationToken), PurchasingJson.Options);
+            }
+            catch (PurchasingServiceException exception) { return Problem(httpContext, exception, correlation); }
+        })
+            .WithName("GetPurchaseSupplierReturnLineagePreviewV1")
+            .Produces<PurchaseSupplierReturnLineagePreviewV1>()
+            .ProducesErpBadRequest(["validation_failed", .. InventorySupplierReturnExitCodesV1.Status400Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(PurchaseSupplierReturnCodesV1.LineageReceiptMismatch)
+            .ProducesErpUnprocessableEntity(PurchaseSupplierReturnCodesV1.PieceCountRequired)
+            .ProducesErpServiceUnavailable(SupplierReturnUnavailableCodes())
+            .ProducesErpAuthenticatedProblems();
+
         group.MapPost("/{id:guid}/supplier-returns", (Guid id, HttpContext httpContext,
                 [FromServices] IPurchaseSupplierReturnServiceV1 service, ICorrelationContext correlation,
                 CancellationToken cancellationToken) =>
@@ -56,7 +93,7 @@ public static partial class PurchasingEndpoints
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(SupplierReturnCreateConflictCodes())
             .ProducesErpUnprocessableEntity(PurchaseSupplierReturnCodesV1.ReplacementUnsupported, PurchaseSupplierReturnCodesV1.PieceCountRequired,
-                "validation_failed")
+                PurchaseSupplierReturnCodesV1.QuantityPriceUndecided, "validation_failed")
             .ProducesErpServiceUnavailable(SupplierReturnUnavailableCodes())
             .ProducesErpAuthenticatedProblems();
 
@@ -156,6 +193,11 @@ public static partial class PurchasingEndpoints
         PurchaseSupplierReturnCostAllocationContractV1.Stale,
         PurchaseSupplierReturnCostAllocationContractV1.ExceedsSource,
         PurchaseSupplierReturnCodesV1.LineageReceiptMismatch,
+        PurchaseSupplierReturnCodesV1.LineagePartsMismatch,
+        PurchaseSupplierReturnCodesV1.LineageSelectionRequired,
+        PurchaseSupplierReturnCodesV1.LineageReceiptLimitExceeded,
+        PurchaseSupplierReturnCodesV1.QuantityAverageAvailable,
+        PurchaseSupplierReturnCodesV1.QuantityManualCostDifference,
         .. InventorySupplierReturnExitCodesV1.Status409Codes.Order(StringComparer.Ordinal),
     ];
 
@@ -170,6 +212,8 @@ public static partial class PurchasingEndpoints
         PurchaseSupplierReturnCostAllocationContractV1.Required,
         PurchaseSupplierReturnCostAllocationContractV1.Stale,
         PurchaseSupplierReturnCostAllocationContractV1.ExceedsSource,
+        // SAT-D393 on a quantity return: Inventory can no longer take the approved manual cost (see the host mapping).
+        PurchaseSupplierReturnCodesV1.CostRequired,
         .. InventorySupplierReturnExitCodesV1.Status409Codes.Order(StringComparer.Ordinal),
     ];
 

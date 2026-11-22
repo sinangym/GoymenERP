@@ -96,16 +96,8 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
                     var target = RequireTarget(await Checked(() => purchase.ReadTargetAsync(write.OrderId, write.AcceptanceId,
                         cancellationToken)), companyId, write);
                     supplySource.Target = target;
-                    if (write.IsSupplierReturn && !target.UnitIsKilogram)
-                    {
-                        // AK-3 (KLN-D119): a piece purchase line's supplier return takes its undo quantity (whole pieces) out of the
-                        // piece-tracking label; a fraction or a missing undo quantity is never turned into a guessed count.
-                        if (!int.TryParse(write.Request.UndoQuantity, System.Globalization.NumberStyles.None,
-                                System.Globalization.CultureInfo.InvariantCulture, out var pieces) || pieces < 1)
-                            throw new PurchasingServiceException(422, PurchaseSupplierReturnCodesV1.PieceCountRequired,
-                                [new PurchasingFieldError("undoQuantity", PurchaseSupplierReturnCodesV1.PieceCountRequired)]);
+                    if (PieceCountOf(target.UnitIsKilogram, write.Request.UndoQuantity, write.IsSupplierReturn) is { } pieces)
                         stockRequest = stockRequest with { PieceCount = pieces };
-                    }
                     var next = write.Request.ReplacementReceipt;
                     if (next is not null && next.ExpectedProductVersion != target.ProductVersion)
                         throw new PurchasingServiceException(409, PurchaseAcceptanceParticipantCodes.ProductVersionConflict);
@@ -253,6 +245,22 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
         try { await InventoryNegativeStockAttemptRecording.AfterRollbackAsync(services, exception); }
         catch (Exception) { throw Unavailable(); }
     }
+    /// <summary>
+    /// AK-3 / AK-8b (KLN-D119): the undo quantity of a piece purchase line IS its pieces. A supplier return, a receipt correction
+    /// and an undo all take them out of the piece-tracking label with their kilograms: a partial undo names its whole pieces, a
+    /// full undo names every accepted piece. A fraction or a missing quantity is never turned into a guessed count (422). Null
+    /// for a kilogram line, exactly as before.
+    /// </summary>
+    internal static int? PieceCountOf(bool unitIsKilogram, string? undoQuantity, bool isSupplierReturn)
+    {
+        if (unitIsKilogram) return null;
+        var code = isSupplierReturn ? PurchaseSupplierReturnCodesV1.PieceCountRequired : PurchaseReceiptAdjustmentCodesV1.PieceCountRequired;
+        return int.TryParse(undoQuantity, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture,
+            out var pieces) && pieces >= 1
+            ? pieces
+            : throw new PurchasingServiceException(422, code, [new PurchasingFieldError("undoQuantity", code)]);
+    }
+
     private static async Task<bool> RollbackQuietlyAsync(IDbContextTransaction transaction)
     { try { await transaction.RollbackAsync(CancellationToken.None); return true; } catch { return false; } }
 }

@@ -17,15 +17,21 @@ public sealed record InventorySupplierReturnPieceAllocationV1(Guid AcceptanceId,
 /// separately (SAT-D433/SAT-D440).
 /// <para>
 /// The arithmetic is exact (integer floor of <c>pieces × share</c>; no decimal rounding). The rule is a stock formula whose
-/// independent golden (ADET_KG_FORMUL_GOLDEN_V1 rows I10 and I15) is not in main yet, so <see cref="GoldenAccepted"/> is
-/// false and no live command uses it: the lineage-proportional supplier return (AK-8) keeps its 503 boundary until the
-/// golden is merged, exactly like the SAT-D426 <c>ForeignSaleMarginGoldenAccepted</c> gate.
+/// independent golden is ADET_KG_FORMUL_GOLDEN_V1 rows I10 and I15. Behind <see cref="GoldenAccepted"/> the atomic
+/// multi-receipt supplier return (AK-8b) distributes its pieces with it; with the gate closed that return keeps the 503
+/// boundary, exactly like the SAT-D426 <c>ForeignSaleMarginGoldenAccepted</c> gate.
 /// </para>
 /// </summary>
 public static class InventorySupplierReturnPieceDistributionV1
 {
-    /// <summary>SAT-D442 golden gate: closed until the independent golden is in main.</summary>
-    public static bool GoldenAccepted => false;
+    /// <summary>
+    /// SAT-D442 golden gate. The independent golden (rows I10 and I15) is part of this train, so the gate is open; false restores
+    /// the earlier boundary: a piece return over several receipts is refused 503 and nothing is staged.
+    /// </summary>
+    public const bool GoldenAccepted = true;
+
+    /// <summary>The gate read through one seam so tests can pin both the open and the closed behaviour.</summary>
+    public static bool IsAccepted(bool? overrideForTests = null) => overrideForTests ?? GoldenAccepted;
 
     public static IReadOnlyList<InventorySupplierReturnPieceAllocationV1> Distribute(
         int returnedPieces,
