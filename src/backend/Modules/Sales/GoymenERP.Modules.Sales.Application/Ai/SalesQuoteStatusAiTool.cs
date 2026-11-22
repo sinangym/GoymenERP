@@ -11,8 +11,16 @@ namespace GoymenERP.Modules.Sales.Application.Ai;
 /// company and filters by tenant. No SQL, no table, no other module, no price (the list carries none).
 /// <para>
 /// Counts are exact integers over every page read; a state that was not asked is not read and its count is null; when the
-/// scan cap is reached every count is withheld (null) and <c>complete</c> is false. The validity date is released as the owner
-/// recorded it: whether a quote is "expired" is a business-date policy this tool does not compute.
+/// scan cap is reached every count is withheld (null) and <c>complete</c> is false.
+/// </para>
+/// <para>
+/// Validity (SAT-D24, SAT-D39, SAT-D234): an open quote is expired when its validity date precedes the server's Europe/Istanbul
+/// business day; the tool never computes it — it takes the owner's own <see cref="SalesQuoteExpiryV1"/> from the quote detail
+/// read (same <c>sales.quotes.read</c>), for every open quote up to <see cref="ExpiryCheckLimit"/>. Beyond that, or when the
+/// owner's business days differ between reads, the expiry counts are null and <c>expiryComplete</c> is false. A quote without a
+/// validity date never expires (SAT-D39: the date is not mandatory); the 15-day default of SAT-D234 (2) is only the owner's
+/// suggestion when a quote is created and is not applied here. A listed lost quote carries the owner's list reason code and
+/// label (SAT-D234 (1): the five standard reasons, or a reason added later); the free-text explanation is not released.
 /// </para>
 /// </summary>
 public sealed class SalesQuoteStatusAiTool(ISalesQuoteService quotes, TimeProvider timeProvider) : IAiOwnerReadToolV1
@@ -28,7 +36,9 @@ public sealed class SalesQuoteStatusAiTool(ISalesQuoteService quotes, TimeProvid
     public const int MaximumLimit = 50;
     public const int PageSize = 100;
     public const int ScanLimit = 1000;
+    public const int ExpiryCheckLimit = 100;
     public const string TargetKind = "sales.quotes.status";
+    public const string ValidityRule = "SAT-D24+SAT-D39+SAT-D234";
 
     private static readonly string[] States = [OpenState, ConvertedState, LostState];
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -46,11 +56,11 @@ public sealed class SalesQuoteStatusAiTool(ISalesQuoteService quotes, TimeProvid
             InputSchema: "sales.quote-status.v1/input@1",
             OutputSchema: "sales.quote-status.v1/output@1",
             FieldPolicy: "sales.quote-status.v1/fields@1",
-            LimitPolicy: "sales.quote-status.v1/limit-50-scan-1000@1",
+            LimitPolicy: "sales.quote-status.v1/limit-50-scan-1000-expiry-100@2",
             Catalogue: "contracts/ai/tool-catalog-v1.json",
             AuthorizationPolicy: "ai.panel.use+sales.quotes.read@1",
-            SourceContract: "ISalesQuoteService.GetQuoteListAsync@v1",
-            RedactionPolicy: "sales.quote-status.v1/no-price-no-free-text@1"));
+            SourceContract: "ISalesQuoteService.GetQuoteListAsync+GetQuoteDetailAsync.Expiry/Loss@v1",
+            RedactionPolicy: "sales.quote-status.v1/no-price-no-person-no-free-text@2"));
 
     public async Task<AiReadResultV1> ReadAsync(AiToolInputV1 input, AiServerContextV1 context, CancellationToken cancellationToken = default)
     {
@@ -130,15 +140,62 @@ public sealed class SalesQuoteStatusAiTool(ISalesQuoteService quotes, TimeProvid
             : null;
 
         var ordered = rows.OrderByDescending(row => row.CreatedAtUtc).ThenBy(row => row.Id).ToArray();
-        var listed = ordered.Take(limit).Select(row => new SalesQuoteStatusItemV1(
-            row.Id, row.DocumentNo, row.State, row.Revision, row.Version, row.PartyId, row.CompanyAccountId, row.BusinessDate,
-            row.ValidUntil, row.LineCount, row.ConvertedDraftId, row.CreatedAtUtc)).ToArray();
+        var listedRows = ordered.Take(limit).ToArray();
+        var open = rows.Where(row => row.State == OpenState).OrderBy(row => row.Id).ToArray();
+        var expiryComplete = complete && wantedStates.Contains(OpenState) && open.Length <= ExpiryCheckLimit;
+        var details = new Dictionary<Guid, SalesQuoteDetailView>();
+        try
+        {
+            // The owner's expiry measure for every open quote (when within the limit) and the loss reason of listed lost quotes.
+            var toRead = (expiryComplete ? open : Array.Empty<SalesQuoteSummaryView>())
+                .Concat(listedRows.Where(row => row.State is OpenState or LostState))
+                .Select(row => row.Id).Distinct().ToArray();
+            foreach (var id in toRead)
+            {
+                var detail = await quotes.GetQuoteDetailAsync(id, cancellationToken);
+                var summary = rows.Single(row => row.Id == id);
+                if (detail?.Quote is null || detail.Expiry is null || detail.Quote.Id != id || detail.Quote.CompanyId != context.CompanyId
+                    || !string.Equals(detail.Quote.State, summary.State, StringComparison.Ordinal))
+                {
+                    return new AiReadResultV1(AiToolOutcomeV1.Unavailable);
+                }
+
+                details[id] = detail;
+            }
+        }
+        catch (SalesDraftServiceException exception) when (exception.Status is 401 or 403)
+        {
+            return new AiReadResultV1(AiToolOutcomeV1.Denied);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return new AiReadResultV1(AiToolOutcomeV1.Unavailable);
+        }
+
+        var businessDays = details.Values.Select(detail => detail.Expiry.BusinessDay).Distinct().ToArray();
+        expiryComplete = expiryComplete && businessDays.Length <= 1;
+        var openExpiry = expiryComplete ? open.Select(row => details[row.Id].Expiry).ToArray() : null;
+        var listed = listedRows.Select(row =>
+        {
+            details.TryGetValue(row.Id, out var detail);
+            var expiry = row.State == OpenState && detail is not null && businessDays.Length <= 1 ? detail.Expiry : null;
+            var loss = row.State == LostState ? detail?.Loss : null;
+            return new SalesQuoteStatusItemV1(
+                row.Id, row.DocumentNo, row.State, row.Revision, row.Version, row.PartyId, row.CompanyAccountId, row.BusinessDate,
+                row.ValidUntil, row.LineCount, row.ConvertedDraftId, row.CreatedAtUtc,
+                expiry?.IsExpired, expiry?.IsApproved, loss?.ReasonCode, loss?.ReasonLabel);
+        }).ToArray();
         var content = new SalesQuoteStatusContentV1(
             complete,
             state,
             CountOf(OpenState),
             CountOf(ConvertedState),
             CountOf(LostState),
+            ValidityRule,
+            expiryComplete,
+            businessDays.Length == 1 ? businessDays[0] : null,
+            openExpiry?.Count(expiry => expiry.IsExpired),
+            openExpiry?.Count(expiry => expiry.IsExpired && expiry.IsApproved),
             listed.Length,
             listed);
         var source = new AiSourceV1(ToolId, ToolVersion, TargetKind, context.CompanyId, "Satış teklifleri durumu",
@@ -148,13 +205,21 @@ public sealed class SalesQuoteStatusAiTool(ISalesQuoteService quotes, TimeProvid
     }
 }
 
-/// <summary>The released fields only: no price, no loss reason text, no free text. A count is null when not read or not complete.</summary>
+/// <summary>
+/// The released fields only: no price, no person, no free-text loss explanation. A count is null when not read or not complete;
+/// the expiry counts come from the owner's expiry measure (SAT-D24) on <c>BusinessDay</c>.
+/// </summary>
 public sealed record SalesQuoteStatusContentV1(
     bool Complete,
     string? StateFilter,
     int? OpenCount,
     int? ConvertedCount,
     int? LostCount,
+    string ValidityRule,
+    bool ExpiryComplete,
+    DateOnly? BusinessDay,
+    int? ExpiredOpenCount,
+    int? ExpiredApprovedForConversionCount,
     int ListedCount,
     IReadOnlyList<SalesQuoteStatusItemV1> Items);
 
@@ -170,4 +235,8 @@ public sealed record SalesQuoteStatusItemV1(
     DateOnly? ValidUntil,
     int LineCount,
     Guid? ConvertedDraftId,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc,
+    bool? IsExpired,
+    bool? ExpiredConversionApproved,
+    string? LossReasonCode,
+    string? LossReasonLabel);

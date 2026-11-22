@@ -49,6 +49,7 @@ public static class CounterpartyModuleExtensions
         services.AddScoped<IAiOwnerToolV1, CounterpartyPartyLookupAiTool>();
         services.AddScoped<IAiOwnerToolV1, CounterpartyPartySummaryAiTool>();
         services.AddScoped<IAiOwnerToolV1, CounterpartyRoleCountsAiTool>();
+        services.AddScoped<IAiOwnerToolV1, CounterpartyPartyContactsAiTool>();
         services.AddScoped<
             ICounterpartyPartyDisplayBatchReadServiceV1,
             CounterpartyPartyDisplayBatchReadServiceV1>();
