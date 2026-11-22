@@ -26,7 +26,8 @@ public sealed record CreatePurchaseSupplierReturnV1(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseSupplierReturnCostAllocationV1? CostAllocation = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? SourceLabelId = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? PieceCount = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseSupplierReturnLineagePartRequestV1>? LineageParts = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseSupplierReturnLineagePartRequestV1>? LineageParts = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? SupplierPieceQuantity = null);
 
 /// <summary>An approval or a rejection of a pending cost exception; a rejection needs a reason.</summary>
 public sealed record DecidePurchaseSupplierReturnV1(string ExpectedVersion, string? Reason,
@@ -166,6 +167,18 @@ public static class PurchaseSupplierReturnCodesV1
     /// price. That is a known difference with no decided posting; it is refused, never recorded.
     /// </summary>
     public const string QuantityManualCostDifference = "purchasing_supplier_return_quantity_manual_cost_difference";
+
+    /// <summary>
+    /// SAT-D459 422: in a quantity return from a piece order line the pieces the preparer enters for the document must equal the
+    /// pieces that leave the label; a different count, or a label that tracks no pieces, is refused.
+    /// </summary>
+    public const string QuantityPieceQuantityMismatch = "purchasing_supplier_return_quantity_piece_quantity_mismatch";
+
+    /// <summary>
+    /// SAT-D458 422: the chosen order carries a document-level discount. It is neither deducted from the line's net price nor
+    /// spread over the lines, so a quantity return from that order stops here.
+    /// </summary>
+    public const string QuantityDocumentDiscount = "purchasing_supplier_return_quantity_document_discount";
 }
 
 /// <summary>
@@ -192,7 +205,8 @@ public interface IPurchaseSupplierReturnInvoiceCostReadPortV1
 /// cannot decide its exception) until the same-person approval question is decided; it is a configuration, not a default choice.
 /// </summary>
 public sealed record PurchaseSupplierReturnPolicyV1(bool AllowSameActorCostExceptionDecision,
-    bool LineageGoldenAccepted = PurchaseSupplierReturnLineageGoldenV1.SupplierReturnLineageGoldenAccepted)
+    bool LineageGoldenAccepted = PurchaseSupplierReturnLineageGoldenV1.SupplierReturnLineageGoldenAccepted,
+    bool QuantityRulesGoldenAccepted = PurchaseSupplierReturnLineageGoldenV1.SupplierReturnQuantityRulesGoldenAccepted)
 {
     public static PurchaseSupplierReturnPolicyV1 Default { get; } = new(false);
 }
@@ -207,9 +221,13 @@ public sealed record PurchaseSupplierReturnExitRequestV1(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseSupplierReturnLineageModeV1? LineageMode = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? PieceCount = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseSupplierReturnLineagePartV1>? LineageParts = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? ApprovedCostException = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? ApprovedCostException = null,
+    // SAT-D456 (behind the quantity-rules gate): the kuruş-rounded amount the document bills; Inventory measures the difference on it.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] decimal? SupplierReturnAmountTry = null);
 
-public sealed record PurchaseSupplierReturnExitResultV1(Guid InventoryMovementId, Guid LabelId, string QuantityKg, bool IsReplay);
+/// <summary><see cref="UnitCostTryPerKg"/>: the TL unit cost the exit actually left stock at (the moving average of an amount-measured quantity return).</summary>
+public sealed record PurchaseSupplierReturnExitResultV1(Guid InventoryMovementId, Guid LabelId, string QuantityKg, bool IsReplay,
+    string? UnitCostTryPerKg = null);
 
 public interface IPurchaseSupplierReturnExitV1
 {
@@ -325,7 +343,8 @@ public static class PurchaseSupplierReturnJsonV1
             || request.OccurredAtUtc == default || request.OccurredAtUtc.Offset != TimeSpan.Zero
             || request.SourceLabelId == Guid.Empty
             || (request.PieceCount is not null || request.LineageParts is not null) && request.SourceLabelId is null
-            || request.PieceCount is < 1 || !PurchaseSupplierReturnLineagePartsV1.ValidRequestShape(request))
+            || request.PieceCount is < 1 || !PurchaseSupplierReturnLineagePartsV1.ValidRequestShape(request)
+            || request.SupplierPieceQuantity is not null && (request.SourceLabelId is null || request.SupplierPieceQuantity < 1))
         {
             throw new JsonException("Invalid return shape; identities, a block, a positive exact kg, a reason and UTC time are required.");
         }

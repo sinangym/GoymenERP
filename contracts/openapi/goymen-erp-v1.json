@@ -179629,6 +179629,8 @@
             },
             "x-erp-problem-codes": [
               "purchasing_supplier_return_piece_count_required",
+              "purchasing_supplier_return_quantity_document_discount",
+              "purchasing_supplier_return_quantity_piece_quantity_mismatch",
               "purchasing_supplier_return_quantity_price_undecided",
               "purchasing_supplier_return_replacement_unsupported",
               "validation_failed"
@@ -256869,6 +256871,15 @@
             "items": {
               "$ref": "#/components/schemas/PurchaseSupplierReturnLineagePartRequestV1"
             }
+          },
+          "supplierPieceQuantity": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -294399,6 +294410,27 @@
             "items": {
               "$ref": "#/components/schemas/PurchaseSupplierReturnInvoicedSelectionV1"
             }
+          },
+          "supplierUnitPriceTry": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "supplierPieceQuantity": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "supplierAmountTry": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

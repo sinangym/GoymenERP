@@ -169,6 +169,63 @@ public sealed class InventorySupplierReturnLineageReturnTests
         Assert.Equal(("260", "240", "500"), (Text(state.PendingKg), Text(state.InvoicedKg[InvoiceA]), Text(state.OpenKg)));
     }
 
+    [Theory]
+    [InlineData("80", "40.2187", "3217.5", "3217.5", "0")]       // 3217.496 → 3217.50: no difference although the unit values differ
+    [InlineData("80", "21.25", "1640", "1700", "60")]           // golden I11 shape: 1 700,00 − 1 640,00 = 60,00
+    [InlineData("80", "10.2531", "820", "820.25", "0.25")]
+    [InlineData("3", "0.335", "1.01", "1.01", "0")]             // 1.005 → half away from zero on the exit side too
+    public void SAT_D456_the_difference_is_the_kurus_rounded_exit_amount_minus_the_kurus_rounded_billed_amount(string kg, string average,
+        string billed, string exit, string difference)
+    {
+        static decimal Number(string text) => decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
+
+        var answer = SupplierReturnLineageCalculator.QuantityReturnAmountDifference(Number(kg), Number(average), Number(billed));
+
+        Assert.Equal((Number(exit), Number(difference)), answer);
+    }
+
+    [Theory]
+    // Golden EK1 (docs/decisions/ADET_KG_FORMUL_GOLDEN_V1_EK1.md): row, kg leaving stock, stock cost per kg (the moving average or,
+    // when it cannot be read, the approved manual cost), billed document amount → stock exit amount and difference (SAT-D456).
+    [InlineData("E06", "80", "21.2500", "1638.00", "1700.00", "62.00")]
+    [InlineData("E08", "80", "22.1000", "1638.00", "1768.00", "130.00")]
+    [InlineData("E09", "80", "20.4750", "1638.00", "1638.00", "0.00")]
+    [InlineData("E12", "37.461", "21.2500", "775.51", "796.05", "20.54")]
+    [InlineData("E13", "37.461", "21.2500", "775.51", "796.05", "20.54")]
+    [InlineData("E13a", "37.461", "21.2500", "900.00", "796.05", "-103.95")]
+    [InlineData("E13b", "37.461", "21.2500", "796.05", "796.05", "0.00")]   // exact values give −0.00375; on kuruş it is zero
+    [InlineData("E14", "37.461", "20.7000", "775.51", "775.44", "-0.07")]   // exact values give −0.0627 → −0.06: NOT that
+    public void Golden_EK1_the_quantity_return_difference_is_measured_on_the_two_kurus_rounded_amounts(string row, string kg, string cost,
+        string billed, string exit, string difference)
+    {
+        static decimal Number(string text) => decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
+
+        var answer = SupplierReturnLineageCalculator.QuantityReturnAmountDifference(Number(kg), Number(cost), Number(billed));
+
+        Assert.Equal((row, Number(exit), Number(difference)), (row, answer.StockExitTry, answer.DifferenceTry));
+        // SAT-D461: the return passes only on a zero difference; every other row waits (409 on the Inventory side).
+        Assert.Equal(row is "E09" or "E13b", answer.DifferenceTry == 0m);
+    }
+
+    [Fact]
+    public void SAT_D456_the_billed_amount_is_a_canonical_positive_kurus_text_and_is_null_on_every_earlier_request()
+    {
+        InventorySupplierReturnExitRequestV1 Request(string? amount) => new(Company, Return, Id(51), A1, Id(52), BlockState.Free, "80", null,
+            DateTimeOffset.UnixEpoch, SourceLabelId: Label, LineageMode: InventorySupplierReturnLineageModeV1.Quantity, SupplierReturnAmountTry: amount);
+
+        Assert.Null(InventorySupplierReturnExitContractV1.Validate(Request("3217.5"), Metadata(), Company).OriginalUnitCostTryPerKg);
+        foreach (var bad in new[] { "0", "3217.50", "3217.505", "-1", "" })
+            Assert.Equal((400, InventorySupplierReturnExitCodesV1.InvalidCost), Refusal(() =>
+                InventorySupplierReturnExitContractV1.Validate(Request(bad), Metadata(), Company)));
+        Assert.DoesNotContain("SupplierReturnAmountTry", System.Text.Json.JsonSerializer.Serialize(Request(null)), StringComparison.Ordinal);
+    }
+
+    private static (int, string) Refusal(Action action)
+    {
+        var refused = Assert.Throws<InventorySupplierReturnExitException>(action);
+        return (refused.Status, refused.Code);
+    }
+
     [Fact]
     public void The_quantity_cost_unreadable_code_is_a_closed_409_and_the_exception_flag_is_part_of_the_request_shape()
     {

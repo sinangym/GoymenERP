@@ -45,6 +45,7 @@ public sealed partial class InventorySupplierReturnExitParticipant : IInventoryS
     private readonly TimeProvider clock;
     private readonly Func<CancellationToken, Task>? onStaged;
     private readonly Dictionary<Guid, InventorySupplierReturnLineageSelectionProofV1> lineageSelections = [];
+    private readonly Dictionary<Guid, decimal> quantityAverageCosts = [];
     private int started;
     private bool disposed;
 
@@ -206,6 +207,14 @@ public sealed partial class InventorySupplierReturnExitParticipant : IInventoryS
         if (lineageExit)
         {
             receipt = await LineageExitTraceAsync(receipt, request, input, plannedLineage, cancellationToken);
+            // SAT-D456: an amount-measured quantity return leaves at the moving average Inventory itself read.
+            if (quantityAverageCosts.Remove(request.InventoryMovementId, out var averageCost))
+                input = input with { OriginalUnitCostTryPerKg = averageCost };
+        }
+        else if (request.SupplierReturnAmountTry is not null || request.LineageSelection is not null || request.ApprovedCostException is not null)
+        {
+            // These belong to a foreign-label exit only.
+            throw Refused(400, InventorySupplierReturnExitCodesV1.InvalidRequest);
         }
 
         // Original receipt fixes the product. The company guard is already held before locating physical stock.

@@ -27,6 +27,12 @@ export interface SupplierReturnLineagePart {
   readonly pieceCount?: number
   readonly pendingKg?: string
   readonly invoiced?: readonly SupplierReturnInvoicedSelection[]
+  /** SAT-D454/SAT-D455: the price the supplier is billed at when recorded apart from the stock cost (absent when withheld). */
+  readonly supplierUnitPriceTry?: string
+  /** SAT-D455: the document's pieces of a quantity return from a piece order line; the price above is then per piece. */
+  readonly supplierPieceQuantity?: number
+  /** SAT-D453/SAT-D456: the kuruş-rounded amount the document bills; present exactly when the supplier price is. */
+  readonly supplierAmountTry?: string
 }
 
 export interface SupplierReturnInvoicedPart {
@@ -91,6 +97,8 @@ export interface SupplierReturnLineageRequest {
   readonly sourceLabelId: string
   readonly pieceCount?: number
   readonly lineageParts?: readonly SupplierReturnLineagePartRequest[]
+  /** SAT-D455: the pieces returned on the document when the chosen order line is a piece line. */
+  readonly supplierPieceQuantity?: number
 }
 
 type JsonObject = Record<string, unknown>
@@ -179,14 +187,24 @@ export function decodeSupplierReturnLineageParts(value: unknown, header: {
     if (source === null) return null
     const piecePresent = Object.hasOwn(source, 'pieceCount')
     const choicePresent = Object.hasOwn(source, 'pendingKg')
-    const fields = [...PART_FIELDS, ...(piecePresent ? ['pieceCount'] : []), ...(choicePresent ? ['pendingKg', 'invoiced'] : [])]
+    const pricePresent = Object.hasOwn(source, 'supplierUnitPriceTry')
+    const supplierPiecesPresent = Object.hasOwn(source, 'supplierPieceQuantity')
+    const fields = [...PART_FIELDS, ...(piecePresent ? ['pieceCount'] : []), ...(choicePresent ? ['pendingKg', 'invoiced'] : []),
+      ...(pricePresent ? ['supplierUnitPriceTry', 'supplierAmountTry'] : []), ...(supplierPiecesPresent ? ['supplierPieceQuantity'] : [])]
     if (!exact(source, fields) || !isPurchasingGuid(source.goodsAcceptanceId) || !isPurchasingGuid(source.purchaseOrderId)
       || !isPurchasingGuid(source.purchaseOrderLineId) || !isPurchasingGuid(source.returnLineId)
       || !isPurchasingGuid(source.inventoryMovementId) || !positiveKg(source.quantityKg)
       || typeof source.costBasis !== 'string' || !BASES.includes(source.costBasis)
       || !(header.priceVisible ? typeof source.unitCostTryPerKg === 'string' && COST.test(source.unitCostTryPerKg)
         && source.unitCostTryPerKg !== '0' : source.unitCostTryPerKg === null)
-      || piecePresent !== (header.pieceCount !== undefined) || piecePresent && !count(source.pieceCount)) return null
+      || piecePresent !== (header.pieceCount !== undefined) || piecePresent && !count(source.pieceCount)
+      // SAT-D454/SAT-D455: a supplier price only on a quantity return and only while the price is visible; pieces are whole.
+      || pricePresent && (header.lineageMode !== 'Quantity' || !header.priceVisible || typeof source.supplierUnitPriceTry !== 'string'
+        || !COST.test(source.supplierUnitPriceTry) || source.supplierUnitPriceTry === '0'
+        || typeof source.supplierAmountTry !== 'string' || !/^(0|[1-9]\d{0,15})(\.\d?[1-9])?$/.test(source.supplierAmountTry)
+        || source.supplierAmountTry === '0')
+      || supplierPiecesPresent && (!pricePresent || !count(source.supplierPieceQuantity)
+        || source.supplierPieceQuantity < 1)) return null
     if (choicePresent) {
       const invoiced = decodeSelections(source.invoiced)
       if (!isLineageKg(source.pendingKg) || invoiced === null

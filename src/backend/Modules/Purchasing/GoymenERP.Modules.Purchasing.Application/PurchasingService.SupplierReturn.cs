@@ -83,7 +83,7 @@ public sealed partial class PurchasingService
                 // source are decided here, before anything is written. The receipt-label cost-source attribution does not apply.
                 var plan = await PlanReturnLineageAsync(scope, permission, returns, stored.Order, lineId, sourceLabelId,
                     request.GoodsAcceptanceId, request.QuantityKg, request.PieceCount, collectRefusal: false, cancellationToken);
-                lineage = DecideReturnLineage(plan, request);
+                lineage = DecideReturnLineage(plan, request, QuantityRulesAccepted);
             }
             else
             {
@@ -154,8 +154,11 @@ public sealed partial class PurchasingService
                 var runner = returnTransactions ?? throw ReturnUnavailable();
                 saved = await runner.ExecuteAsync(scope.CompanyId, async (exit, token) =>
                 {
-                    await StageReturnExitAsync(scope, exit, draft, envelope, token);
-                    return await returns.SaveNewAsync(draft, envelope, requestHash, command, token);
+                    var staged = await StageReturnExitAsync(scope, exit, draft, envelope, token);
+                    // SAT-D456: an amount-measured quantity return left stock at the moving average Inventory read; the
+                    // document records that actual unit cost, never the price it was compared with.
+                    var recorded = WithStagedStockCost(draft, staged);
+                    return await returns.SaveNewAsync(recorded, envelope, requestHash, command, token);
                 }, token => RequireStillAsync(scope, permission, token), cancellationToken);
             }
 
@@ -304,7 +307,7 @@ public sealed partial class PurchasingService
                 var runner = returnTransactions ?? throw ReturnUnavailable();
                 saved = await runner.ExecuteAsync(scope.CompanyId, async (exit, token) =>
                 {
-                    await StageReturnExitAsync(scope, exit, stored.Return, envelope, token);
+                    _ = await StageReturnExitAsync(scope, exit, stored.Return, envelope, token);
                     return await returns.SaveDecisionAsync(orderId, supplierReturn, expectedVersion, envelope, requestHash, command, token);
                 }, token => RequireStillAsync(scope, permission, token), cancellationToken);
             }
@@ -355,17 +358,33 @@ public sealed partial class PurchasingService
     /// (never more than the receipt), the allocation guard (KLN-D93) and the cost-difference guard (SAT-D371); its refusals reach
     /// the caller with its own code through the host. An answer for another movement fails closed.
     /// </summary>
-    private static async Task StageReturnExitAsync(Scope scope, IPurchaseSupplierReturnExitV1 exit, PurchaseSupplierReturnDraft draft,
-        PurchasingWriteEnvelope envelope, CancellationToken cancellationToken)
+    private static async Task<PurchaseSupplierReturnExitResultV1> StageReturnExitAsync(Scope scope, IPurchaseSupplierReturnExitV1 exit,
+        PurchaseSupplierReturnDraft draft, PurchasingWriteEnvelope envelope, CancellationToken cancellationToken)
     {
+        // SAT-D456: a quantity return that records its billed amount is measured on that amount. With a readable average no unit
+        // cost is sent (Inventory leaves at the average); on the approved exception path the manual cost is sent with it.
+        var amountPart = draft.LineageMode == PurchaseSupplierReturnLineageModeV1.Quantity ? draft.LineageParts?[0] : null;
+        var amount = amountPart?.SupplierAmountTry;
+        var sendsCost = amount is null || draft.CostBasis == PurchaseSupplierReturnCostBasis.ManualCostWithException;
         var result = await exit.StageExitAsync(new PurchaseSupplierReturnExitRequestV1(scope.CompanyId, draft.ReturnId, draft.ReturnLineId,
-            draft.GoodsAcceptanceId, draft.InventoryMovementId, draft.SourceBlock, Kg(draft.QuantityKg), UnitCostText(draft.UnitCostTryPerKg),
+            draft.GoodsAcceptanceId, draft.InventoryMovementId, draft.SourceBlock, Kg(draft.QuantityKg),
+            sendsCost ? UnitCostText(draft.UnitCostTryPerKg) : string.Empty,
             draft.OccurredAtUtc, draft.CostAllocation, draft.PurchaseOrderId,
             draft.UndoQuantity is { } undo ? Kg(undo) : null, draft.SourceLabelId, draft.LineageMode, draft.PieceCount, draft.LineageParts,
             // SAT-D393 on a quantity return: the stored manual cost reaches Inventory only through an approved exception.
             draft.LineageMode == PurchaseSupplierReturnLineageModeV1.Quantity
-                && draft.CostBasis == PurchaseSupplierReturnCostBasis.ManualCostWithException ? true : null), envelope, cancellationToken);
+                && draft.CostBasis == PurchaseSupplierReturnCostBasis.ManualCostWithException ? true : null, amount), envelope, cancellationToken);
         if (result is null || result.InventoryMovementId != draft.InventoryMovementId) throw ReturnUnavailable();
+        return result;
+    }
+
+    private static PurchaseSupplierReturnDraft WithStagedStockCost(PurchaseSupplierReturnDraft draft, PurchaseSupplierReturnExitResultV1 staged)
+    {
+        if (draft.LineageMode != PurchaseSupplierReturnLineageModeV1.Quantity || draft.LineageParts is not [{ SupplierAmountTry: not null } part]
+            || draft.CostBasis != PurchaseSupplierReturnCostBasis.InvoiceUnitCost) return draft;
+        if (!PurchaseSupplierReturnJsonV1.IsPositiveUnitCost(staged.UnitCostTryPerKg)) throw ReturnUnavailable();
+        var cost = ParseUnitCost(staged.UnitCostTryPerKg!);
+        return draft with { UnitCostTryPerKg = cost, LineageParts = [part with { UnitCostTryPerKg = cost }] };
     }
 
     /// <summary>
@@ -470,7 +489,9 @@ public sealed partial class PurchasingService
             item.CostAllocation, item.CostAllocationSources, item.SourceLabelId, item.LineageMode?.ToString(), item.PieceCount,
             item.LineageParts?.Select(part => new PurchaseSupplierReturnLineagePartViewV1(part.GoodsAcceptanceId, part.PurchaseOrderId,
                 part.PurchaseOrderLineId, part.ReturnLineId, part.InventoryMovementId, Kg(part.QuantityKg), part.CostBasis.ToString(),
-                visible ? UnitCostText(part.UnitCostTryPerKg) : null, part.PieceCount, part.PendingKg, part.Invoiced)).ToArray())
+                visible ? UnitCostText(part.UnitCostTryPerKg) : null, part.PieceCount, part.PendingKg, part.Invoiced,
+                visible && part.SupplierUnitPriceTry is { } supplierPrice ? UnitCostText(supplierPrice) : null, part.SupplierPieceQuantity,
+                visible && part.SupplierAmountTry is { } supplierAmount ? supplierAmount.ToString("0.##", CultureInfo.InvariantCulture) : null)).ToArray())
         {
             PriceDisclosure = visible ? PurchasingPriceDisclosureV1.Visible : PurchasingPriceDisclosureV1.Withheld,
         };

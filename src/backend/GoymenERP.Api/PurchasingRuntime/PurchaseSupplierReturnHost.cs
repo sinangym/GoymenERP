@@ -117,7 +117,9 @@ internal sealed class PurchaseSupplierReturnHost(
 
             var staged = await participant.StageAsync(new InventorySupplierReturnExitRequestV1(request.CompanyId, request.ReturnId,
                 request.ReturnLineId, request.GoodsAcceptanceId, request.InventoryMovementId, block, request.QuantityKg,
-                request.UnitCostTryPerKg, request.OccurredAtUtc, PurchaseSupplierReturnCostSources.Map(request.CostAllocation),
+                // SAT-D456: an amount-measured quantity return with a readable average names no unit cost (empty → none).
+                request.UnitCostTryPerKg.Length == 0 ? null : request.UnitCostTryPerKg, request.OccurredAtUtc,
+                PurchaseSupplierReturnCostSources.Map(request.CostAllocation),
                 PurchaseSupplierReturnCostSources.Map(purchase), request.UndoQuantity,
                 PieceCount: request.SourceLabelId is null ? null : request.PieceCount,
                 SourceLabelId: request.SourceLabelId,
@@ -130,9 +132,11 @@ internal sealed class PurchaseSupplierReturnHost(
                 },
                 // A quantity return (or an earlier single-receipt lineage return) carries at most one part: its explicit choice.
                 LineageSelection: request.LineageParts is { Count: 1 } single ? Selection(single[0]) : null,
-                ApprovedCostException: request.ApprovedCostException),
+                ApprovedCostException: request.ApprovedCostException,
+                SupplierReturnAmountTry: request.SupplierReturnAmountTry?.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)),
                 Metadata(envelope), cancellationToken);
-            return new PurchaseSupplierReturnExitResultV1(staged.InventoryMovementId, staged.LabelId, staged.QuantityKg, staged.IsReplay);
+            return new PurchaseSupplierReturnExitResultV1(staged.InventoryMovementId, staged.LabelId, staged.QuantityKg, staged.IsReplay,
+                staged.OriginalUnitCostTryPerKg);
         }
 
         private static string UnitCost(decimal value) => value.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);

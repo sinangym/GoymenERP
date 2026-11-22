@@ -168,6 +168,136 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         }
     }
 
+    /// <summary>
+    /// SAT-D456 / SAT-D461 (golden EK1 E06, E08, E10) on real SQL Server: a quantity return measured on the billed document amount
+    /// is refused on any kuruş difference — against the readable moving average and, when it cannot be read, against the approved
+    /// manual cost — and stages nothing. An unreadable average without an approved manual cost is the SAT-D393 boundary.
+    /// </summary>
+    [SqlServerFact]
+    public async Task A_quantity_supplier_return_measured_on_the_billed_amount_is_refused_on_a_kurus_difference_with_a_readable_or_an_unreadable_average()
+    {
+        await using var run = await Run.StartAsync();
+        var (first, merged) = await MergedQuantityReturnLabelAsync(run);
+
+        // Unreadable average: nothing without the approved manual cost; with it, 3 × 20.7 = 62.10 against 61.50 billed is a difference.
+        await SeedQuantityReturnAverageAsync(run, merged, null);
+        Assert.Equal((409, InventorySupplierReturnExitCodesV1.QuantityCostUnreadable),
+            await QuantityReturnRefusalAsync(run, QuantityReturnRequest(first, merged, null, "61.5", null)));
+        Assert.Equal((409, InventorySupplierReturnExitCodesV1.QuantityCostUnreadable),
+            await QuantityReturnRefusalAsync(run, QuantityReturnRequest(first, merged, "20.7", "61.5", null)));
+        Assert.Equal((409, InventorySupplierReturnExitCodesV1.CostDifferenceUnposted),
+            await QuantityReturnRefusalAsync(run, QuantityReturnRequest(first, merged, "20.7", "61.5", true)));
+
+        // Readable average 21.25: 3 × 21.25 = 63.75 against 63 billed is a difference; a manual cost or an approval has no place.
+        await SeedQuantityReturnAverageAsync(run, merged, 21.25m);
+        Assert.Equal((409, InventorySupplierReturnExitCodesV1.CostDifferenceUnposted),
+            await QuantityReturnRefusalAsync(run, QuantityReturnRequest(first, merged, null, "63", null)));
+        Assert.Equal((409, InventorySupplierReturnExitCodesV1.CostDifferenceUnposted),
+            await QuantityReturnRefusalAsync(run, QuantityReturnRequest(first, merged, "21.25", "63.75", true)));
+
+        Assert.Equal(8m, await LabelBlockKgAsync(run, merged, BlockState.Free));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Movements WHERE Kind = @kind", ("@kind", (int)StockMovementKind.SupplierReturnExit)));
+    }
+
+    /// <summary>
+    /// SAT-D456 / SAT-D461 (golden EK1 E13b shape) on real SQL Server: with a readable moving average and no kuruş difference the
+    /// quantity return leaves the foreign label at the average Inventory itself read, and answers that average.
+    /// </summary>
+    [SqlServerFact]
+    public async Task A_quantity_supplier_return_without_a_kurus_difference_leaves_the_label_at_the_moving_average_inventory_read()
+    {
+        await using var run = await Run.StartAsync();
+        var (first, merged) = await MergedQuantityReturnLabelAsync(run);
+        await SeedQuantityReturnAverageAsync(run, merged, 21.25m);
+        var request = QuantityReturnRequest(first, merged, null, "63.75", null);
+
+        await using (var connection = new SqlConnection(run.Factory.DatabaseConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            await using var participant = await InventorySupplierReturnExitParticipant.EnlistAsync(
+                connection, transaction, CompanyA, GoodsReceiptSettings(run));
+            var staged = await participant.StageAsync(request, SupplierReturnMetadata(run));
+            await transaction.CommitAsync();
+            Assert.False(staged.IsReplay);
+            Assert.Equal((merged, "21.25"), (staged.LabelId, staged.OriginalUnitCostTryPerKg));
+        }
+
+        Assert.Equal(5m, await LabelBlockKgAsync(run, merged, BlockState.Free));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Movements WHERE Kind = @kind AND Id = @id AND SourceId = @receipt",
+            ("@kind", (int)StockMovementKind.SupplierReturnExit), ("@id", request.InventoryMovementId), ("@receipt", first.MovementId)));
+    }
+
+    private static async Task<(InventoryGoodsReceiptRequestV1 First, Guid Merged)> MergedQuantityReturnLabelAsync(Run run)
+    {
+        var first = await ReceiveForSupplierReturnAsync(run, BlockState.Free);
+        var second = await ReceiveForSupplierReturnAsync(run, BlockState.Free);
+        var merged = Guid.NewGuid();
+        await using var context = run.Context(CompanyA);
+        var versions = await context.Labels.AsNoTracking().Where(row => row.Id == first.LabelId || row.Id == second.LabelId)
+            .ToDictionaryAsync(row => row.Id, row => row.Version);
+        await using var owner = run.Store(CompanyA);
+        await owner.Store.TransformAsync(new TransformInventoryLabelsV1(Guid.NewGuid(), InventoryLabelTransformationKindV1.Merge,
+            [new(first.LabelId, versions[first.LabelId].ToString(CultureInfo.InvariantCulture)),
+                new(second.LabelId, versions[second.LabelId].ToString(CultureInfo.InvariantCulture))],
+            [new(merged, $"SYN-AK8B-QTY-{Guid.NewGuid():N}", "8")], GoodsReceiptTime.AddMinutes(30),
+            "Sentetik AK-8b miktar iadesi birlestirme."), Metadata(run));
+        return (first, merged);
+    }
+
+    private static InventorySupplierReturnExitRequestV1 QuantityReturnRequest(InventoryGoodsReceiptRequestV1 receipt, Guid merged,
+        string? manualCost, string billedAmount, bool? approved) => new(CompanyA, Guid.NewGuid(), Guid.NewGuid(), receipt.AcceptanceId,
+        Guid.NewGuid(), BlockState.Free, "3", manualCost, GoodsReceiptTime.AddHours(1), SourceLabelId: merged,
+        LineageMode: InventorySupplierReturnLineageModeV1.Quantity, ApprovedCostException: approved, SupplierReturnAmountTry: billedAmount);
+
+    private static async Task<(int Status, string Code)> QuantityReturnRefusalAsync(Run run, InventorySupplierReturnExitRequestV1 request)
+    {
+        await using var connection = new SqlConnection(run.Factory.DatabaseConnectionString);
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        await using var participant = await InventorySupplierReturnExitParticipant.EnlistAsync(
+            connection, transaction, CompanyA, GoodsReceiptSettings(run));
+        var refused = await Assert.ThrowsAsync<InventorySupplierReturnExitException>(() =>
+            participant.StageAsync(request, SupplierReturnMetadata(run)));
+        await transaction.RollbackAsync();
+        return (refused.Status, refused.Code);
+    }
+
+    /// <summary>
+    /// Sets the label's location/product moving-average row: a known average over exactly the company's costed stock there, or
+    /// (null) an unreadable position. Synthetic test state; the ledger writer itself is covered by the average-cost facts.
+    /// </summary>
+    private static async Task SeedQuantityReturnAverageAsync(Run run, Guid labelId, decimal? average)
+    {
+        var location = await run.LocationOfAsync(CompanyA);
+        var product = await run.ScalarAsync<Guid>("SELECT ProductId FROM inventory.Labels WHERE Id = @id", ("@id", labelId));
+        await run.ExecuteAsync(
+            "DELETE FROM inventory.AverageCostLedger WHERE CompanyId = @company AND LocationId = @location AND ProductId = @product;",
+            ("@company", CompanyA), ("@location", location), ("@product", product));
+        if (average is not { } known)
+        {
+            await run.ExecuteAsync(
+                """
+                INSERT INTO inventory.AverageCostLedger
+                    (Id, CompanyId, LocationId, ProductId, Status, UnreadableReason, QuantityKg, AverageCostPerKg, Version, UpdatedAtUtc)
+                VALUES (NEWID(), @company, @location, @product, 2, 3, NULL, NULL, 1, SYSUTCDATETIME());
+                """, ("@company", CompanyA), ("@location", location), ("@product", product));
+            return;
+        }
+
+        await run.ExecuteAsync(
+            """
+            INSERT INTO inventory.AverageCostLedger
+                (Id, CompanyId, LocationId, ProductId, Status, UnreadableReason, QuantityKg, AverageCostPerKg, Version, UpdatedAtUtc)
+            SELECT NEWID(), @company, @location, @product, 1, NULL, SUM(QuantityKg), @average, 1, SYSUTCDATETIME()
+            FROM inventory.Balances
+            WHERE CompanyId = @company AND ProductId = @product AND LocationId = @location AND OwnerKind = 1 AND OwnerId = @company
+                AND CustodianKind = 1 AND CustodianId = @company AND QuantityKg > 0;
+            """, ("@company", CompanyA), ("@location", location), ("@product", product), ("@average", known));
+    }
+
     private static InventoryExactCostRatioV1 Normalised(InventoryExactCostRatioV1 ratio)
     {
         var numerator = System.Numerics.BigInteger.Parse(ratio.Numerator, CultureInfo.InvariantCulture);

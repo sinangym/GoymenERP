@@ -93,7 +93,8 @@ public static partial class PurchasingEndpoints
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(SupplierReturnCreateConflictCodes())
             .ProducesErpUnprocessableEntity(PurchaseSupplierReturnCodesV1.ReplacementUnsupported, PurchaseSupplierReturnCodesV1.PieceCountRequired,
-                PurchaseSupplierReturnCodesV1.QuantityPriceUndecided, "validation_failed")
+                PurchaseSupplierReturnCodesV1.QuantityPriceUndecided, PurchaseSupplierReturnCodesV1.QuantityPieceQuantityMismatch,
+                PurchaseSupplierReturnCodesV1.QuantityDocumentDiscount, "validation_failed")
             .ProducesErpServiceUnavailable(SupplierReturnUnavailableCodes())
             .ProducesErpAuthenticatedProblems();
 
