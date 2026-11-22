@@ -1,6 +1,7 @@
 # Sinan Kararları — 22 Kasım 2026 (Work ve yapay zekâ kapsamı, model yolu, sistem dışı kullanım, dalgaların kesinleşmesi; adet/kg açık soruları)
 
-Bu belge önceki karar dosyalarını silmez; AI-D22–AI-D30, YOL-D17, SAT-D451 ve SAT-D452 ekler. DEC-AI-001..009, AI-D1..AI-D21,
+Bu belge önceki karar dosyalarını silmez; AI-D22–AI-D30, YOL-D17, SAT-D451 ve SAT-D452 ekler; aynı gün ek cevaplarla
+(SINAN-CEVAP 63) SAT-D453–SAT-D455 ve ALS-D122 eklendi. DEC-AI-001..009, AI-D1..AI-D21,
 YOL-D1..YOL-D16, SAT-D433–SAT-D445, DEC-DOC-006/007 ve 21 Ekim kararlarının 125 ve 156 numaraları geçerliliğini korur.
 AI-D22 ve AI-D25, AI-D19'un "her şey aynı anda" yaklaşımını ve AI-D21'in ilk aşamasını bu belgedeki sırayla daraltır;
 AI-D27, AI-D17'nin ilk aşamasını genişletir.
@@ -27,6 +28,11 @@ onlara değil seçilen yöne dayanır.
 | 11 | Miktar iadesinde seçilen sipariş satırı iskontoluysa ya da vade farkı içeriyorsa hangi fiyat alınsın? | **İskonto sonrası net fiyat, vade farkı hariç (Önerilen)** | İade, mal için gerçekten ödenen fiyattan kesilir; vade farkı finansman bedeli olduğu için iade fiyatına girmez. Seçilmeyenler: "İskonto öncesi brüt liste fiyatı"; "Net fiyat, vade farkı dahil". |
 | 12 | Siparişin "gerçekleşen kg fiyatı" hesabına hangi faturalar girsin? | **Yalnız kesinleşmiş faturalar (Önerilen)** | Taslak, iptal ve reddedilmiş faturalar sayılmaz; rakam ancak fatura kesinleşince değişir. Seçilmeyen: "Taslaklar dahil". |
 
+| 13 | Miktar iadesinde iskonto sonrası net fiyat 4 ondalığı aşarsa (örnek: 41,25 − %2,5 = 40,21875 TL/kg) ne yapılsın? | **4 ondalığa yuvarla, yarımda yukarı (Önerilen)** | Birim fiyat 40,2188 olur; sistemin birim fiyat hassasiyeti zaten 4 ondalık; iade tutarı bu yuvarlanmış fiyatla hesaplanır. Seçilmeyenler: "Yuvarlama, tutarı kesin hesapla"; "Reddetmeye devam, elle girilsin". |
+| 14 | Miktar iadesinde stok ortalama maliyeti okunamıyorsa, farklı kişinin onayladığı elle maliyet sipariş fiyatından farklı olabilir mi? | **Evet; fark mevcut iade farkı kuralıyla kaydedilsin (Önerilen)** | Stok çıkışı onaylı elle maliyetle, fatura siparişin net fiyatıyla; aradaki fark, ortalama okunduğunda olduğu gibi iade farkı olarak ve farklı kişi onayıyla kaydedilir. Seçilmeyen: "Hayır; elle maliyet sipariş fiyatına eşit olmalı". |
+| 15 | Miktar iadesinin düşüldüğü sipariş satırı adet birimliyse iade nasıl belirlensin? | **Hazırlayan adedi girer, fiyat adet fiyatı; kg tartılan (Önerilen)** | İade belgesi adet × siparişin net adet fiyatı olur (adetli satıştaki kuralla aynı); stoktan çıkan kg ve adet etiketten gelir; kg yalnız bilgi. Seçilmeyenler: "Kg üzerinden, siparişin teorik kg fiyatıyla"; "Şimdilik kapalı kalsın". |
+| 16 | Adetli alış kabulünde önce kısmi iade, sonra kısmi fatura gelirse faturalanan adede düşen kg nasıl hesaplansın? | **Kalan kg ÷ kalan adet (Önerilen)** | İade gerçek tartıyla çıktığı için kalan malın gerçek kg/adet oranı kullanılır; iade kabulün kendi oranıyla çıkmadıysa da çalışır. Seçilmeyen: "Kabulün özgün oranı (ALS-D121 aynen)". |
+
 ## Kararlar
 
 | No | Konu | Karar | Etkilenen yer |
@@ -43,9 +49,15 @@ onlara değil seçilen yöne dayanır.
 | YOL-D17 | Onay süresi, yükseltme ve vekâlet | Süre dolunca **bir hatırlatma**, sonra **yükseltme**; otomatik onay ya da ret yoktur (125 numaralı karardaki 2 iş günü varsayılanı sürer). Sevk, araç ve üretim bekleten onay türleri için **saat ölçeğinde ayrı süre sınıfı** tanımlanır (hangi türler ve kaç saat: parametre, ayrı karar). **Vekil yalnız o onay iznine zaten sahip kişi** olabilir; vekâlet sürelidir, zincirleme devredilmez, vekil kendi hazırladığı kaydı onaylayamaz. Uygun onaycı kalmazsa iş "sahipsiz onay" olarak görünür. | Work kural tablosu, onay akışları |
 | SAT-D451 | Miktar iadesinde fiyat (SAT-D444 ayrıntısı) | Miktar iadesinde (SAT-D441/D444) tedarikçiye fatura birim fiyatı, seçilen alış siparişi satırının **iskonto sonrası net birim fiyatı**dır; **vade farkı dahil edilmez**. | Tedarikçi iadesi belgesi |
 | SAT-D452 | Gerçekleşen kg fiyatına giren faturalar (SAT-D436 ayrıntısı) | Satış ve alışta gerçekleşme ve gerçek kg fiyatı hesabına **yalnız kesinleşmiş faturalar** girer; taslak, iptal ve reddedilmiş faturalar sayılmaz. | Kg fiyatı göstergesi (satış, alış) |
+| SAT-D453 | Miktar iadesinde net fiyat yuvarlaması (SAT-D451 ayrıntısı) | İskonto sonrası net birim fiyat 4 ondalığı aşarsa **4 ondalığa, yarımda sıfırdan uzağa** yuvarlanır; iade tutarı yuvarlanmış birim fiyatla hesaplanır. | Tedarikçi iadesi belgesi |
+| SAT-D454 | Ortalama okunamazken elle maliyet (SAT-D393/SAT-D444 ayrıntısı) | Miktar iadesinde ortalama maliyet okunamıyorsa farklı kişinin onayladığı elle maliyet sipariş fiyatından **farklı olabilir**; stok çıkışı onaylı elle maliyetle, fatura siparişin net fiyatıyla yapılır ve fark mevcut iade farkı kuralıyla (SAT-D392/D393, farklı kişi onayı) kaydedilir. Ortalama okunabiliyorken elle maliyet girilemez (SAT-D371/D410 sürer). | Tedarikçi iadesi, Stok iade çıkışı |
+| SAT-D455 | Adetli sipariş satırından miktar iadesi | Seçilen alış siparişi satırı adet birimliyse hazırlayan **iade adedini** girer; belge adet × siparişin net adet fiyatıdır (SAT-D451/D453); stoktan çıkan kg ve adet etiketten gelir, kg yalnız bilgidir. | Tedarikçi iadesi belgesi |
+| ALS-D122 | Kısmi iadeden sonra kısmi fatura kg payı (ALS-D121 ayrıntısı) | Adetli alış kabulünde kısmi iade yapıldıktan sonra gelen faturada faturalanan adede düşen kg = **kabulün kalan kg'si × faturalanan adet ÷ kalan adet**. İade yoksa ALS-D121 aynen geçerlidir. | Alış faturası maliyet uygulaması |
 
 ## Sınırlar
 
+- SAT-D453–SAT-D455 ve ALS-D122 para/maliyet formülüdür: golden satırları SAT-D431 yöntemiyle (bağımsız yazar, iki DOCS
+  incelemesi) hazırlanıp trene girmeden etkinleştirilmez; o zamana kadar ilgili yollar anlaşılır kodla kapalı kalır.
 - **NEEDS-SINAN:** çekirdek dilimlerin başarı eşikleri ve durdurma koşulları; AI-D25'te açılacak komutların sırası;
   AI-D26'da "düşük riskli" onay türleri; YOL-D17'de saat ölçekli türler ve süreleri; AI-D28'de abonelik ürünü, kişi
   listesi, bütçe ve bağlantı pilotunun veri listesi; AI-D30'da hafıza saklama süresi; e-posta platformu ve hesabı; aylık
