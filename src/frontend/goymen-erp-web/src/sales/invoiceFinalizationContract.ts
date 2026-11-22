@@ -10,6 +10,7 @@
  */
 import { LIMITS } from './contract'
 import { isDateOnly, isReferenceId, isVersionString } from './wirePrimitives'
+import { decodeInvoiceKilogramPrices, type InvoiceKilogramPrices } from './kilogramPriceContract'
 
 type Obj = Record<string, unknown>
 
@@ -22,6 +23,15 @@ function exact(value: unknown, fields: readonly string[]): Obj | null {
   if (object === null) return null
   const keys = Object.keys(object)
   if (keys.length !== fields.length) return null
+  return fields.every((field) => Object.hasOwn(object, field)) ? object : null
+}
+
+/** `fields` exactly, plus any of `optional` (the server's `WhenWritingNull` members, absent when null). */
+function exactPlus(value: unknown, fields: readonly string[], optional: readonly string[]): Obj | null {
+  const object = record(value)
+  if (object === null) return null
+  const allowed = new Set([...fields, ...optional])
+  if (Object.keys(object).some((key) => !allowed.has(key))) return null
   return fields.every((field) => Object.hasOwn(object, field)) ? object : null
 }
 
@@ -190,6 +200,9 @@ export interface InvoiceLine {
   readonly netUnitPrice: string
   readonly vatPercent: string
   readonly amounts: InvoiceAmounts
+  /** SAT-D434 (AK-4, additive): a piece line's theoretical and scale kg, information only; absent on a kg line. */
+  readonly theoreticalKg?: string
+  readonly actualKg?: string
 }
 const LINE_FIELDS = [
   'lineId', 'lineNo', 'shipmentId', 'dispatchNoteId', 'dispatchNoteNumber', 'noteLineNo', 'shipmentDate', 'salesOrderId',
@@ -206,7 +219,10 @@ function decodeLineFunctional(value: unknown): true | null {
 }
 
 function decodeLine(value: unknown): InvoiceLine | null {
-  const o = exact(value, LINE_FIELDS)
+  const o = exactPlus(value, LINE_FIELDS, ['theoreticalKg', 'actualKg'])
+  // SAT-D434: the kg information is both values or neither, each an exact positive decimal.
+  if (o !== null && ((o.theoreticalKg === undefined) !== (o.actualKg === undefined)
+    || (o.theoreticalKg !== undefined && (!isAmount(o.theoreticalKg) || !isAmount(o.actualKg))))) return null
   if (
     o === null || !isReferenceId(o.lineId) || !isPositiveCount(o.lineNo) || !isReferenceId(o.shipmentId)
     || !isReferenceId(o.dispatchNoteId) || !isText(o.dispatchNoteNumber) || !isPositiveCount(o.noteLineNo)
@@ -227,6 +243,8 @@ function decodeLine(value: unknown): InvoiceLine | null {
     netUnitPrice: o.netUnitPrice,
     vatPercent: o.vatPercent,
     amounts,
+    ...(typeof o.theoreticalKg === 'string' && typeof o.actualKg === 'string'
+      ? { theoreticalKg: o.theoreticalKg, actualKg: o.actualKg } : {}),
   }
 }
 
@@ -462,6 +480,8 @@ export interface SalesInvoiceDetail {
   readonly isReplay: boolean
   readonly match: InvoiceMatch | null
   readonly finalization: InvoiceFinalization | null
+  /** SAT-D436 (AK-5, additive): the kg prices of an invoice with a piece line; absent on a kg-only invoice. */
+  readonly kilogramPrices?: InvoiceKilogramPrices
 }
 export const SALES_INVOICE_DETAIL_FIELDS = [
   'id', 'documentNo', 'state', 'version', 'businessDate', 'partyId', 'companyAccountId', 'currencyId', 'amountScale',
@@ -474,7 +494,9 @@ export const SALES_INVOICE_MATCH_FIELDS = MATCH_FIELDS
 
 /** The detail of exactly `invoiceId`; anything else (another id, a broken invariant, a stray member) is `null`. */
 export function decodeSalesInvoiceDetail(value: unknown, invoiceId: string): SalesInvoiceDetail | null {
-  const o = exact(value, SALES_INVOICE_DETAIL_FIELDS)
+  const o = exactPlus(value, SALES_INVOICE_DETAIL_FIELDS, ['kilogramPrices'])
+  const kilogramPrices = o === null || o.kilogramPrices === undefined ? undefined : decodeInvoiceKilogramPrices(o.kilogramPrices)
+  if (kilogramPrices === null) return null
   if (
     o === null || !isReferenceId(o.id) || o.id.toLowerCase() !== invoiceId.toLowerCase() || !isText(o.documentNo)
     || !isInvoiceState(o.state) || !isVersionString(o.version) || !isDateOnly(o.businessDate) || !isReferenceId(o.partyId)
@@ -502,6 +524,7 @@ export function decodeSalesInvoiceDetail(value: unknown, invoiceId: string): Sal
     companyAccountId: o.companyAccountId, currencyId: o.currencyId, amountScale: o.amountScale, exchangeRate, totals,
     functionalTotals, vatGroups, instalments, lines, createdBy: o.createdBy, createdAtUtc: o.createdAtUtc, decision,
     paymentAllocationWarning: o.paymentAllocationWarning, isReplay: o.isReplay, match, finalization,
+    ...(kilogramPrices === undefined ? {} : { kilogramPrices }),
   }
 }
 

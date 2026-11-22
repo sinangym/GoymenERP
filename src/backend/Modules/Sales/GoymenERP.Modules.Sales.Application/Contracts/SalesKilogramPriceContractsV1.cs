@@ -20,19 +20,20 @@ public sealed record SalesKilogramPriceViewV1(string State,
 /// <summary>
 /// One order line's kg facts (SAT-D436): its theoretical kg (quantity × the kg/unit pinned at approval, SAT-D437; a kg line's
 /// quantity) and theoretical kg price, and its realization — invoiced quantity, invoiced net amount, the invoiced shares' scale kg
-/// and actual kg price, and the difference to the invoiced quantity's theoretical kg (kg and signed percent, TK8).
+/// and actual kg price, and the difference to the invoiced quantity's theoretical kg (kg and signed percent, TK8). Every member is
+/// present; a figure the line has not is <c>null</c>.
 /// </summary>
 public sealed record SalesOrderLineKilogramPricesV1(
     Guid LineId,
     int LineNo,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TheoreticalKg,
+    string? TheoreticalKg,
     SalesKilogramPriceViewV1 TheoreticalPrice,
     string InvoicedQuantity,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? InvoicedAmount,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ActualKg,
+    string? InvoicedAmount,
+    string? ActualKg,
     SalesKilogramPriceViewV1 ActualPrice,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? KgDifference,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? DeviationPercent);
+    string? KgDifference,
+    string? DeviationPercent);
 
 /// <summary>
 /// GET …/drafts/{id}/kilogram-prices (draft read AND price read): the order's kg prices and realization. While the formula golden
