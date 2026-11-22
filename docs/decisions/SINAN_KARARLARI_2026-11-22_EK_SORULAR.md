@@ -1,6 +1,6 @@
 # Sinan Kararları — 22 Kasım 2026 (adet/kg sevk, yapay zekâ okuma araçları, rol taslağı ek soruları)
 
-Bu belge önceki karar dosyalarını silmez; SAT-D462–SAT-D465, AI-D35–AI-D36, ROL-D21–ROL-D23, YOL-D22–YOL-D24, SAT-D466–SAT-D467 ve GOV-D14 ekler. ROL-D21,
+Bu belge önceki karar dosyalarını silmez; SAT-D462–SAT-D465, AI-D35–AI-D36, ROL-D21–ROL-D23, YOL-D22–YOL-D24, SAT-D466–SAT-D468 ve GOV-D14 ekler. ROL-D21,
 SAT-D250 ve SAT-D276 (2)'deki marj görünürlüğünü günceller.
 
 **Kaynak:** Sinan, 22 Kasım 2026, Claude Code oturumunda soru kutusuyla. Sorular şerit raporlarındaki NEEDS-SINAN
@@ -27,6 +27,7 @@ işaretleri soranındır. Bu dosya bir **ajan aktarımıdır**; Issue #1189 kayd
 | E-13 | Golden yazarı belge düzeyi kg fiyatı golden'ını (EK2) `claude/adet-kg-golden-ek2` dalına push etsin mi? | **Evet, izin veriyorum (Önerilen)** | Seçilmeyen: "Hayır". |
 | E-14 | Net kg pozitif ama net mal tutarı sıfır ya da negatifse belge düzeyi kg fiyatı gösterilsin mi? | **Gösterilmesin (Önerilen)** | Seçilmeyen: "Hesaplanan değer gösterilsin". |
 | E-15 | Belge altı iskontonun satırlara dağıtımında iade satırları tabana girsin mi? | **Hayır, yalnız satış mal satırları (Önerilen)** | Seçilmeyen: "Evet, iade de girer". |
+| E-16 | Belge altı iskonto oransal dağıtılırken vade farkı olan satırın tutarı tabana vade farkı dahil mi girsin? (PR #1206 DOCS-REVIEW-2 P2-1) | **Vade hariç taban (Önerilen)** | Seçilmeyen: "Vade dahil taban". |
 
 ## Kararlar
 
@@ -46,6 +47,7 @@ işaretleri soranındır. Bu dosya bir **ajan aktarımıdır**; Issue #1189 kayd
 | YOL-D24 | Komut paleti son ekranlar | "Son açılan 10 ekran" yalnız sekme oturumunda tutulur, sekme kapanınca unutulur; tarayıcıda kalıcı saklanmaz (LF-11). |
 | SAT-D466 | Belge düzeyi kg fiyatında sıfır/negatif tutar | Net kg pozitif ama net mal tutarı sıfır ya da negatifse belge düzeyi kg fiyatı gösterilmez ("hesaplanamaz"); net kg ≤ 0 durumuyla aynı davranış. |
 | SAT-D467 | Belge altı iskonto dağıtım tabanı | Belge altı iskonto yalnız pozitif mal satırlarına tutarla oransal dağıtılır; iade satırı dağıtım tabanına girmez ve pay almaz. Belge düzeyi kg fiyatı (SAT-D465) bundan etkilenmez. |
+| SAT-D468 | Belge altı iskonto dağıtım tabanında vade farkı (SAT-D407/SAT-D467 ayrıntısı) | Belge altı iskonto pozitif mal satırlarına satırın **vade farkı hariç** iskontolu tutarıyla oransal dağıtılır; vade farkı finansman bedelidir ve dağıtım tabanına girmez. Belge düzeyi kg fiyatı (SAT-D465) bundan etkilenmez. |
 | GOV-D14 | Golden EK2 dalı için izin | Golden yazarı oturumu yalnız `docs/decisions/ADET_KG_FORMUL_GOLDEN_V1_EK2.md` dosyasını `claude/adet-kg-golden-ek2` dalına gönderebilir; PR'ı ana oturum açar; merge yetkisi vermez; SAT-D431 gereği iki bağımsız DOCS incelemesi aranır. |
 
 ## Taslağa doğrudan yansıyanlar (yeni karar değil)
