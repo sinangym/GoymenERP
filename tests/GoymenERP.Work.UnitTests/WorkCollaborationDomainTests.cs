@@ -81,9 +81,10 @@ public sealed class WorkCollaborationDomainTests
     }
 
     [Fact]
-    public void The_permission_manifest_spells_exactly_three_names()
+    public void The_permission_manifest_spells_exactly_the_four_Work_names()
     {
-        Assert.Equal(new[] { "work.notes.write", "work.tasks.assign", "work.tasks.complete" },
+        // WP-C6 adds work.assistant-memory.oversee (AI-D30) next to the three W1-C names.
+        Assert.Equal(new[] { "work.assistant-memory.oversee", "work.notes.write", "work.tasks.assign", "work.tasks.complete" },
             WorkPermissionManifestV1.Names.Order(StringComparer.Ordinal));
     }
 }

@@ -511,6 +511,8 @@ builder.Services.AddWorkModule(
 builder.Services.AddWorkOutboxDispatcher(builder.Configuration);
 // W1-C: notes, mentions, tasks and the collaboration inbox; the scheduler stays off unless Work:CollaborationScheduler:Enabled.
 builder.Services.AddWorkCollaborationHostV1(builder.Configuration);
+// WP-C6 (AI-D30): personal assistant memory; writing stays closed until Work:AssistantMemory is opened by a human decision.
+builder.Services.AddWorkAssistantMemoryV1(builder.Configuration);
 // STK-S27 (LOJ-D19): Logistics's definite-shipment outbox is the dispatcher source "logistics" (registered, not enabled).
 builder.Services.AddLogisticsDefiniteShipmentOutbox();
 // SAT-S10 (LOJ-D19, SAT-D285): the Sales usage mirror is the inbox consumer of that source (registered after it, not enabled).
@@ -626,6 +628,7 @@ app.MapWorkQueueEndpoints();
 app.MapWorkInboxEndpoints();
 app.MapWorkNotificationEndpoints();
 app.MapWorkCollaborationEndpoints();
+app.MapWorkAssistantMemoryEndpoints();
 app.MapSalesEndpoints();
 app.MapSalesProductCandidateEndpoints();
 app.MapInventoryEndpoints();

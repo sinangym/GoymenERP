@@ -37,6 +37,7 @@ public sealed partial class WorkDbContext(
         ConfigureNotifications(modelBuilder);
         ConfigureApprovalInbox(modelBuilder);
         ConfigureCollaboration(modelBuilder);
+        ConfigureAssistantMemory(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -237,6 +238,8 @@ public sealed partial class WorkDbContext(
             {
                 throw new InvalidOperationException("Work inbox and outbox records are append-only.");
             }
+
+            GuardAssistantMemoryWrite(entry);
 
             if (IsAppendOnlyCollaborationRow(entry.Entity) && entry.State != EntityState.Added)
             {
