@@ -7,6 +7,17 @@ public sealed partial class FinanceDbContext
     internal DbSet<FinanceBankStatementImportRow> BankStatementImports => Set<FinanceBankStatementImportRow>();
     internal DbSet<FinanceBankStatementLineRow> BankStatementLines => Set<FinanceBankStatementLineRow>();
     internal DbSet<FinanceBankStatementCommandRow> BankStatementCommands => Set<FinanceBankStatementCommandRow>();
+    internal DbSet<FinanceBankStatementMatchRow> BankStatementMatches => Set<FinanceBankStatementMatchRow>();
+    internal DbSet<FinanceBankStatementMatchReversalRow> BankStatementMatchReversals => Set<FinanceBankStatementMatchReversalRow>();
+
+    internal const string BankStatementMatchCheck = "[Id] <> " + EmptyGuid + " AND [ImportId] <> " + EmptyGuid
+        + " AND [LineId] <> " + EmptyGuid + " AND [BankAccountId] <> " + EmptyGuid + " AND [RecordId] <> " + EmptyGuid
+        + " AND [CandidateKind] IN (1,2,3,4) AND [CounterpartyCheck] IN (1,2) AND LEN([ConfirmedBy]) > 0 "
+        + "AND (([ReversalId] IS NULL AND [Version] = 1) OR ([ReversalId] IS NOT NULL AND [ReversalId] <> " + EmptyGuid
+        + " AND [Version] = 2))";
+
+    internal const string BankStatementMatchReversalCheck = "[Id] <> " + EmptyGuid + " AND [MatchId] <> " + EmptyGuid
+        + " AND LEN([Reason]) > 0 AND LEN([ReversedBy]) > 0";
 
     private const string EmptyGuid = "'00000000-0000-0000-0000-000000000000'";
 
@@ -71,6 +82,34 @@ public sealed partial class FinanceDbContext
         line.HasIndex(x => new { x.CompanyId, x.BankAccountId, x.Fingerprint, x.Occurrence }).IsUnique();
         line.HasIndex(x => new { x.CompanyId, x.ImportId, x.LineNumber });
         line.HasOne<FinanceBankStatementImportRow>().WithMany().HasForeignKey(x => new { x.CompanyId, x.ImportId })
+            .OnDelete(DeleteBehavior.Restrict);
+
+        var match = model.Entity<FinanceBankStatementMatchRow>();
+        match.ToTable("BankStatementMatches", Schema, table =>
+            table.HasCheckConstraint("CK_BankStatementMatches_Content", BankStatementMatchCheck));
+        match.HasKey(x => new { x.CompanyId, x.Id });
+        match.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
+        match.Property(x => x.Version).IsConcurrencyToken();
+        match.Property(x => x.ConfirmedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        match.HasIndex(x => new { x.CompanyId, x.LineId }).IsUnique().HasFilter("[ReversalId] IS NULL")
+            .HasDatabaseName("UX_BankStatementMatches_ActiveLine");
+        match.HasIndex(x => new { x.CompanyId, x.CandidateKind, x.RecordId }).IsUnique().HasFilter("[ReversalId] IS NULL")
+            .HasDatabaseName("UX_BankStatementMatches_ActiveRecord");
+        match.HasIndex(x => new { x.CompanyId, x.ImportId });
+        match.HasOne<FinanceBankStatementLineRow>().WithMany().HasForeignKey(x => new { x.CompanyId, x.LineId })
+            .OnDelete(DeleteBehavior.Restrict);
+        match.HasOne<FinanceBankStatementImportRow>().WithMany().HasForeignKey(x => new { x.CompanyId, x.ImportId })
+            .OnDelete(DeleteBehavior.Restrict);
+
+        var reversal = model.Entity<FinanceBankStatementMatchReversalRow>();
+        reversal.ToTable("BankStatementMatchReversals", Schema, table =>
+            table.HasCheckConstraint("CK_BankStatementMatchReversals_Content", BankStatementMatchReversalCheck));
+        reversal.HasKey(x => new { x.CompanyId, x.Id });
+        reversal.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
+        reversal.Property(x => x.Reason).HasMaxLength(1000);
+        reversal.Property(x => x.ReversedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        reversal.HasIndex(x => new { x.CompanyId, x.MatchId }).IsUnique();
+        reversal.HasOne<FinanceBankStatementMatchRow>().WithMany().HasForeignKey(x => new { x.CompanyId, x.MatchId })
             .OnDelete(DeleteBehavior.Restrict);
 
         var command = model.Entity<FinanceBankStatementCommandRow>();

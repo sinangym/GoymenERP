@@ -7,9 +7,11 @@ public sealed class FinanceBankStatementPermissionRegistrationTests
     [Theory]
     [InlineData("finance.bank-statements.import")]
     [InlineData("finance.bank-statements.read")]
+    [InlineData("finance.bank-statements.match")]
     public void Statement_permissions_are_registered_company_wide_not_critical_and_not_seeded(string permission)
     {
-        Assert.Contains(permission, new[] { ErpPermissions.FinanceBankStatementsImport, ErpPermissions.FinanceBankStatementsRead });
+        Assert.Contains(permission, new[] { ErpPermissions.FinanceBankStatementsImport, ErpPermissions.FinanceBankStatementsRead,
+            ErpPermissions.FinanceBankStatementsMatch });
         Assert.True(ErpPermissions.IsKnown(permission));
         Assert.Single(ErpPermissions.All, name => name == permission);
         Assert.True(ErpPermissions.RequiresCompanyWideScope(permission));

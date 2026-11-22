@@ -742,6 +742,12 @@ public static class ErpPermissions
     /// <summary>WP12: read statement imports, lines and the exact match suggestions. Registered, not granted. Company-wide only.</summary>
     public const string FinanceBankStatementsRead = "finance.bank-statements.read";
 
+    /// <summary>
+    /// WP12 / FNS-D113: confirm a statement line as one recorded movement (the only way a match becomes final) and reverse
+    /// a confirmed match with a reversal record. Registered, not granted. Company-wide only; not Critical.
+    /// </summary>
+    public const string FinanceBankStatementsMatch = "finance.bank-statements.match";
+
     /// <summary>FI04 independent read and amount disclosure; registration grants no user or role access.</summary>
     public const string FinanceOpenItemsRead = "finance.open-items.read";
     public const string FinanceOpenItemsAmountRead = "finance.open-items.amount.read";
@@ -1985,6 +1991,7 @@ public static class ErpPermissions
         FinancePartyBalanceTransfersRecord,
         FinanceBankStatementsImport,
         FinanceBankStatementsRead,
+        FinanceBankStatementsMatch,
         FinanceOpenItemsRead,
         FinanceOpenItemsAmountRead,
         FinanceAllocationWrite,
@@ -2299,6 +2306,7 @@ public static class ErpPermissions
         FinancePartyBalanceTransfersRecord,
         FinanceBankStatementsImport,
         FinanceBankStatementsRead,
+        FinanceBankStatementsMatch,
         FinanceOpenItemsRead,
         FinanceOpenItemsAmountRead,
         FinanceAllocationWrite,

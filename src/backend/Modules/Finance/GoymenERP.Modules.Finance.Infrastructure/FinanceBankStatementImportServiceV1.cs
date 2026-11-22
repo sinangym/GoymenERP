@@ -20,22 +20,30 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// <item><b>Reserve</b> creates a Reserved import for an APPROVED Finance bank account; the client then uploads the file to
 /// the vault on this import (B-26 type list, scan and owner check stay the vault's).</item>
 /// <item><b>Parse</b> reads that exact vault version once: CSV with the bank's active Settings column mapping (no fallback),
-/// MT940 by the SWIFT layout, XLSX refused (NEEDS-SINAN WP12-S2). Any issue refuses the whole file. New lines are stored;
+/// MT940 by the SWIFT layout, XLSX only through the known headers (NEEDS-SINAN WP12-S2). Any issue refuses the whole file. New lines are stored;
 /// a line already stored for the account (same fingerprint and occurrence) is counted as a duplicate, and the same file
 /// twice is refused.</item>
-/// <item><b>Suggestions</b> are a READ (<see cref="FinanceBankStatementMatcher"/>): nothing is recorded, no movement and no
-/// journal is created. A missing movement is recorded by a person with Finance's existing commands.</item>
+/// <item><b>Suggestions</b> are a READ (<see cref="FinanceBankStatementMatcher"/>; FNS-D113 exact amount, no tolerance).
+/// A match becomes final only with <b>ConfirmMatch</b> (a person); <b>ReverseMatch</b> undoes it with a reversal record, never a
+/// deletion. No movement and no journal is created. A missing movement is recorded by a person with Finance's existing
+/// commands.</item>
 /// </list>
 /// Every command: permission fence before and after each await, Idempotency-Key replay (same actor and payload) before
 /// validation, expected version (Parse), one serializable save of row + lines + command record + audit.
 /// </summary>
 public sealed class FinanceBankStatementImportServiceV1(FinanceDbContext database, ICompanyContext company,
     ICurrentUser user, IFinancePermissionPort permissions, ISettingsBankCsvMappingProviderV1 csvMappings,
-    IFinanceBankStatementDocumentReadV1 documents, IAuditEventCollector audit, FinanceAuditEnvelope auditEnvelope,
-    TimeProvider clock, IAuditTransactionWriterV1? auditOwner = null) : IFinanceBankStatementImportServiceV1
+    IFinanceBankStatementDocumentReadV1 documents, IFinancePartyIbanReadPortV1 partyIbans, IAuditEventCollector audit,
+    FinanceAuditEnvelope auditEnvelope,
+    TimeProvider clock, IAuditTransactionWriterV1? auditOwner = null, FinanceAuditEnvelope? matchAuditEnvelope = null)
+    : IFinanceBankStatementImportServiceV1
 {
+    private readonly FinanceAuditEnvelope matchEnvelope = matchAuditEnvelope
+        ?? auditEnvelope with { PermissionCode = FinanceBankStatementPermissionsV1.Match, RoleCodes = [] };
     public const string ReserveCommand = "finance.bank-statement-import.reserve.v1";
     public const string ParseCommand = "finance.bank-statement-import.parse.v1";
+    public const string ConfirmMatchCommand = "finance.bank-statement-match.confirm.v1";
+    public const string ReverseMatchCommand = "finance.bank-statement-match.reverse.v1";
     private const int ApprovedBankAccount = 2;
     private const int FingerprintChunk = 500;
     private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
@@ -62,8 +70,6 @@ public sealed class FinanceBankStatementImportServiceV1(FinanceDbContext databas
 
         if (await database.BankStatementImports.AsNoTracking().AnyAsync(x => x.Id == request.ImportId, cancellationToken))
             return Refused(CommandOutcome.VersionConflict);
-        if (request.Format == FinanceBankStatementFormatV1.Xlsx)
-            return Refused(CommandOutcome.ValidationFailed, FinanceBankStatementCodesV1.FormatNotSupported);
         if (request.Format == FinanceBankStatementFormatV1.Csv ? !BankCsvMappingRulesV1.IsBankKey(request.BankKey) : request.BankKey is not null)
             return Refused(CommandOutcome.ValidationFailed, FinanceBankStatementCodesV1.BankKeyInvalid);
         if (await ApprovedBankAccountAsync(request.BankAccountId, cancellationToken) is null)
@@ -117,8 +123,6 @@ public sealed class FinanceBankStatementImportServiceV1(FinanceDbContext databas
         if (row.Version != expected || row.State != FinanceBankStatementImportStates.Reserved)
             return Refused(CommandOutcome.VersionConflict);
         var format = (FinanceBankStatementFormatV1)row.Format;
-        if (format == FinanceBankStatementFormatV1.Xlsx)
-            return Refused(CommandOutcome.ValidationFailed, FinanceBankStatementCodesV1.FormatNotSupported);
         var account = await ApprovedBankAccountAsync(row.BankAccountId, cancellationToken);
         if (account is null) return Refused(CommandOutcome.ValidationFailed, FinanceBankStatementCodesV1.BankAccountUnavailable);
 
@@ -155,6 +159,10 @@ public sealed class FinanceBankStatementImportServiceV1(FinanceDbContext databas
             if (mapping.Refusal is { } mappingRefusal) return mappingRefusal;
             csv = mapping.Mapping!;
             parsed = FinanceBankStatementParser.ParseCsv(document.Content.Span, csv);
+        }
+        else if (format == FinanceBankStatementFormatV1.Xlsx)
+        {
+            parsed = FinanceBankStatementParser.ParseXlsx(document.Content.Span);
         }
         else
         {
@@ -249,11 +257,20 @@ public sealed class FinanceBankStatementImportServiceV1(FinanceDbContext databas
             var movements = row.FirstTransactionOn is { } from && row.LastTransactionOn is { } through
                 ? await MovementsAsync(row.BankAccountId, from, through, cancellationToken)
                 : [];
+            var activeOnAccount = await database.BankStatementMatches.AsNoTracking()
+                .Where(x => x.BankAccountId == row.BankAccountId && x.ReversalId == null).ToListAsync(cancellationToken);
+            var lineIds = lines.Select(x => x.Id).ToHashSet();
+            var elsewhere = activeOnAccount.Where(x => !lineIds.Contains(x.LineId))
+                .Select(x => ((FinanceBankStatementCandidateKindV1)x.CandidateKind, x.RecordId)).ToHashSet();
+            var ownMatches = activeOnAccount.Where(x => lineIds.Contains(x.LineId))
+                .ToDictionary(x => x.LineId, x => MatchView(x, null));
+            var parties = await PartyIbansAsync(context, lines.Select(x => x.CounterpartyIban), cancellationToken);
             if (await FenceAsync(context, FinanceAction.ReadBankStatements, cancellationToken) is { } late)
                 return new(ReadRefusal(late), null);
             var suggestions = FinanceBankStatementMatcher.Suggest(
                 lines.Select(x => new FinanceStatementMatchLine(x.Id, x.TransactionOn, Direction(x.Direction), x.AmountText,
-                    x.CounterpartyIban)).ToArray(), movements);
+                    x.CounterpartyIban)).ToArray(),
+                movements.Where(x => !elsewhere.Contains((x.Kind, x.RecordId))).ToArray(), parties, ownMatches);
             var views = lines.Select(x => new FinanceBankStatementLineViewV1(x.Id, x.LineNumber, x.TransactionOn, x.ValueOn,
                 Direction(x.Direction), x.AmountText, x.BalanceText, x.CurrencyText, x.Reference, x.Description,
                 x.CounterpartyIban, suggestions[x.Id])).ToArray();
@@ -316,37 +333,201 @@ public sealed class FinanceBankStatementImportServiceV1(FinanceDbContext databas
         }
     }
 
+    public async Task<FinanceBankStatementMatchCommandResultV1> ConfirmMatchAsync(FinanceContext context, CommandMetadata metadata,
+        Guid importId, ConfirmFinanceBankStatementMatchV1 request, CancellationToken cancellationToken)
+    {
+        if (await FenceAsync(context, FinanceAction.MatchBankStatement, cancellationToken) is { } refusal) return MatchRefused(refusal);
+        if (metadata is null || !Text(metadata.IdempotencyKey, 128) || request is null || importId == Guid.Empty
+            || request.MatchId == Guid.Empty || request.LineId == Guid.Empty || request.RecordId == Guid.Empty
+            || !Enum.IsDefined(request.Kind))
+            return MatchRefused(CommandOutcome.ValidationFailed, FinanceBankStatementCodesV1.RequestInvalid);
+        return await FinanceTreasuryTransaction.ExecuteAsync(database,
+            () => ConfirmCoreAsync(context, metadata, importId, request, cancellationToken),
+            () => Task.FromResult(MatchRefused(CommandOutcome.Unavailable, FinanceBankStatementCodesV1.Unavailable)),
+            auditOwner, cancellationToken);
+    }
+
+    private async Task<FinanceBankStatementMatchCommandResultV1> ConfirmCoreAsync(FinanceContext context, CommandMetadata metadata,
+        Guid importId, ConfirmFinanceBankStatementMatchV1 request, CancellationToken cancellationToken)
+    {
+        var key = FinanceCommandKeys.Hash(metadata.IdempotencyKey);
+        var payload = PayloadHash(ConfirmMatchCommand, importId, request);
+        if (await MatchReplayAsync(context, key, payload, cancellationToken) is { } replay) return replay;
+
+        var import = await database.BankStatementImports.AsNoTracking().SingleOrDefaultAsync(x => x.Id == importId, cancellationToken);
+        if (import is null || import.State != FinanceBankStatementImportStates.Parsed)
+            return MatchRefused(CommandOutcome.ValidationFailed, FinanceBankStatementCodesV1.ImportNotFound);
+        var line = await database.BankStatementLines.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == request.LineId && x.ImportId == importId, cancellationToken);
+        if (line is null) return MatchRefused(CommandOutcome.ValidationFailed, FinanceBankStatementCodesV1.LineNotFound);
+        if (await database.BankStatementMatches.AsNoTracking().AnyAsync(x => x.Id == request.MatchId, cancellationToken))
+            return MatchRefused(CommandOutcome.VersionConflict);
+        var kind = (int)request.Kind;
+        if (await database.BankStatementMatches.AsNoTracking().AnyAsync(x => x.ReversalId == null
+                && (x.LineId == line.Id || (x.CandidateKind == kind && x.RecordId == request.RecordId)), cancellationToken))
+            return MatchRefused(CommandOutcome.VersionConflict, FinanceBankStatementCodesV1.AlreadyMatched);
+
+        // FNS-D113: the record must be a recorded movement of the same bank account, same direction, exactly the same amount.
+        // The date is the person's decision (a value-date difference is not a tolerance on the amount).
+        var movement = (await MovementsAsync(line.BankAccountId, DateOnly.MinValue, DateOnly.MaxValue, request.RecordId,
+                cancellationToken))
+            .SingleOrDefault(x => x.Kind == request.Kind && x.RecordId == request.RecordId);
+        if (movement is null || movement.Direction != Direction(line.Direction)
+            || !FinanceExactDecimalText.Equal(movement.Amount, line.AmountText))
+            return MatchRefused(CommandOutcome.ValidationFailed, FinanceBankStatementCodesV1.RecordNotEligible);
+        var parties = await PartyIbansAsync(context, [line.CounterpartyIban], cancellationToken);
+        var check = FinanceBankStatementMatcher.Check(line.CounterpartyIban, movement, parties);
+        if (check == FinanceBankStatementCounterpartyCheckV1.Mismatch)
+            return MatchRefused(CommandOutcome.ValidationFailed, FinanceBankStatementCodesV1.CounterpartyMismatch);
+
+        if (await FenceAsync(context, FinanceAction.MatchBankStatement, cancellationToken) is { } late) return MatchRefused(late);
+        var now = clock.GetUtcNow();
+        var row = new FinanceBankStatementMatchRow
+        {
+            Id = request.MatchId, CompanyId = context.CompanyId, Version = 1, ImportId = importId, LineId = line.Id,
+            BankAccountId = line.BankAccountId, CandidateKind = kind, RecordId = request.RecordId, CounterpartyCheck = (int)check,
+            ConfirmedBy = context.ActorId, ConfirmedAtUtc = now,
+        };
+        database.BankStatementMatches.Add(row);
+        var view = MatchView(row, null);
+        var result = new FinanceBankStatementMatchCommandResultV1(CommandOutcome.Succeeded, view, null);
+        StageMatch(context, metadata, key, payload, ConfirmMatchCommand, importId, row.Id, result, null, view, "Confirm",
+            "finance.bank-statement-match.confirmed.v1", "Banka ekstresi satırı kullanıcı onayıyla kayda eşlendi.", now);
+        if (await FenceAsync(context, FinanceAction.MatchBankStatement, cancellationToken) is { } final) return MatchRefused(final);
+        await database.SaveChangesAsync(cancellationToken);
+        return result;
+    }
+
+    public async Task<FinanceBankStatementMatchCommandResultV1> ReverseMatchAsync(FinanceContext context, CommandMetadata metadata,
+        Guid matchId, ReverseFinanceBankStatementMatchV1 request, CancellationToken cancellationToken)
+    {
+        if (await FenceAsync(context, FinanceAction.MatchBankStatement, cancellationToken) is { } refusal) return MatchRefused(refusal);
+        if (metadata is null || !Text(metadata.IdempotencyKey, 128) || request is null || matchId == Guid.Empty
+            || request.ReversalId == Guid.Empty || !TryVersion(request.ExpectedVersion, out _))
+            return MatchRefused(CommandOutcome.ValidationFailed, FinanceBankStatementCodesV1.RequestInvalid);
+        if (!Text(request.Reason, FinanceBankStatementLimitsV1.ReasonMaximumLength))
+            return MatchRefused(CommandOutcome.ValidationFailed, FinanceBankStatementCodesV1.ReasonRequired);
+        return await FinanceTreasuryTransaction.ExecuteAsync(database,
+            () => ReverseCoreAsync(context, metadata, matchId, request, cancellationToken),
+            () => Task.FromResult(MatchRefused(CommandOutcome.Unavailable, FinanceBankStatementCodesV1.Unavailable)),
+            auditOwner, cancellationToken);
+    }
+
+    private async Task<FinanceBankStatementMatchCommandResultV1> ReverseCoreAsync(FinanceContext context, CommandMetadata metadata,
+        Guid matchId, ReverseFinanceBankStatementMatchV1 request, CancellationToken cancellationToken)
+    {
+        var key = FinanceCommandKeys.Hash(metadata.IdempotencyKey);
+        var payload = PayloadHash(ReverseMatchCommand, matchId, request);
+        if (await MatchReplayAsync(context, key, payload, cancellationToken) is { } replay) return replay;
+
+        var row = await database.BankStatementMatches.SingleOrDefaultAsync(x => x.Id == matchId, cancellationToken);
+        if (row is null) return MatchRefused(CommandOutcome.ValidationFailed, FinanceBankStatementCodesV1.MatchNotFound);
+        TryVersion(request.ExpectedVersion, out var expected);
+        if (row.Version != expected || row.ReversalId is not null
+            || await database.BankStatementMatchReversals.AsNoTracking().AnyAsync(x => x.Id == request.ReversalId, cancellationToken))
+            return MatchRefused(CommandOutcome.VersionConflict);
+
+        if (await FenceAsync(context, FinanceAction.MatchBankStatement, cancellationToken) is { } late) return MatchRefused(late);
+        var now = clock.GetUtcNow();
+        var before = MatchView(row, null);
+        var reversal = new FinanceBankStatementMatchReversalRow
+        {
+            Id = request.ReversalId, CompanyId = context.CompanyId, MatchId = row.Id, Reason = request.Reason,
+            ReversedBy = context.ActorId, ReversedAtUtc = now,
+        };
+        database.BankStatementMatchReversals.Add(reversal);
+        row.ReversalId = reversal.Id;
+        row.Version = checked(row.Version + 1);
+        var view = MatchView(row, reversal);
+        var result = new FinanceBankStatementMatchCommandResultV1(CommandOutcome.Succeeded, view, null);
+        StageMatch(context, metadata, key, payload, ReverseMatchCommand, row.ImportId, row.Id, result, before, view, "Reverse",
+            "finance.bank-statement-match.reversed.v1", request.Reason, now);
+        if (await FenceAsync(context, FinanceAction.MatchBankStatement, cancellationToken) is { } final) return MatchRefused(final);
+        await database.SaveChangesAsync(cancellationToken);
+        return result;
+    }
+
+    /// <summary>FNS-D114: the cari IBAN lists for the lines' IBANs; Off when no line has one or no source answers.</summary>
+    private async Task<FinanceStatementPartyIbans> PartyIbansAsync(FinanceContext context, IEnumerable<string?> ibans,
+        CancellationToken cancellationToken)
+    {
+        var asked = ibans.Where(iban => iban is not null).Select(iban => iban!).Distinct(StringComparer.Ordinal).ToArray();
+        if (asked.Length == 0) return FinanceStatementPartyIbans.Off;
+        var answer = await partyIbans.ReadAsync(context, asked, cancellationToken);
+        if (!Same(context) || answer is null || answer.Outcome != FinancePartyIbanOutcomeV1.Available || answer.PartiesByIban is null)
+            return FinanceStatementPartyIbans.Off;
+        var listed = answer.PartiesByIban.Where(pair => asked.Contains(pair.Key, StringComparer.Ordinal))
+            .ToDictionary(pair => pair.Key, pair => (IReadOnlyList<Guid>)pair.Value.Where(id => id != Guid.Empty).Distinct().ToArray(),
+                StringComparer.Ordinal);
+        return new FinanceStatementPartyIbans(true, listed);
+    }
+
+    private void StageMatch(FinanceContext context, CommandMetadata metadata, string key, string payload, string commandName,
+        Guid importId, Guid matchId, FinanceBankStatementMatchCommandResultV1 result, FinanceBankStatementMatchViewV1? before,
+        FinanceBankStatementMatchViewV1 after, string operation, string eventType, string reason, DateTimeOffset now)
+    {
+        database.BankStatementCommands.Add(new FinanceBankStatementCommandRow
+        {
+            CompanyId = context.CompanyId, KeyHash = key, CommandName = commandName, ActorId = context.ActorId,
+            PayloadHash = payload, ImportId = importId, ResultJson = JsonSerializer.Serialize(result, Json), RecordedAtUtc = now,
+        });
+        audit.Enqueue(new AuditEventDraft(context.CompanyId, eventType, "Finance.BankStatementMatch", matchId.ToString("D"),
+            operation, before is null ? null : 1, before is null ? 1 : 2, AuditActorTypes.User, context.ActorId,
+            matchEnvelope.PermissionCode, matchEnvelope.RoleCodes,
+            before is null ? "{}" : JsonSerializer.Serialize(before, Json), JsonSerializer.Serialize(after, Json), reason,
+            null, AuditAiInvolvement.None, null, matchEnvelope.SourceChannel, matchEnvelope.ClientIpAddress,
+            matchEnvelope.UserAgent, context.CorrelationId, context.CausationId, metadata.IdempotencyKey));
+    }
+
+    private static FinanceBankStatementMatchViewV1 MatchView(FinanceBankStatementMatchRow row,
+        FinanceBankStatementMatchReversalRow? reversal) => new(
+        row.Id, row.CompanyId, row.ImportId, row.LineId, (FinanceBankStatementCandidateKindV1)row.CandidateKind, row.RecordId,
+        row.Version.ToString(CultureInfo.InvariantCulture),
+        row.ReversalId is null ? FinanceBankStatementMatchStateV1.Confirmed : FinanceBankStatementMatchStateV1.Reversed,
+        (FinanceBankStatementCounterpartyCheckV1)row.CounterpartyCheck, row.ConfirmedBy, row.ConfirmedAtUtc, row.ReversalId,
+        reversal?.ReversedBy, reversal?.ReversedAtUtc, reversal?.Reason);
+
+    private static FinanceBankStatementMatchCommandResultV1 MatchRefused(CommandOutcome outcome, string? code = null) =>
+        new(outcome, null, code);
+
     /// <summary>
     /// The recorded movements of the bank account within the statement's dates, each read once: a receipt at its bank net
     /// (POS), a party payment, a recorded expense payment and every transfer leg. Reversals, opening balances and credit
     /// legs are not candidates (they are not what a person records from a statement line), so such a line stays Manual.
     /// </summary>
     private async Task<IReadOnlyList<FinanceStatementMovement>> MovementsAsync(Guid bankAccountId, DateOnly from,
-        DateOnly through, CancellationToken cancellationToken)
+        DateOnly through, CancellationToken cancellationToken) =>
+        await MovementsAsync(bankAccountId, from, through, null, cancellationToken);
+
+    private async Task<IReadOnlyList<FinanceStatementMovement>> MovementsAsync(Guid bankAccountId, DateOnly from,
+        DateOnly through, Guid? recordId, CancellationToken cancellationToken)
     {
         var result = new List<FinanceStatementMovement>();
         var receipts = await database.MoneyEvents.AsNoTracking()
             .Where(x => x.TreasuryAccountId == bankAccountId && x.OccurredOn >= from && x.OccurredOn <= through
+                && (recordId == null || x.SourceId == recordId)
                 && (x.Kind == MoneyEventKinds.ManualBankReceiptRecorded || x.Kind == MoneyEventKinds.CustomerInstrumentCollected))
-            .Select(x => new { x.SourceId, x.OccurredOn, x.AmountText, x.PosBankNetAmountText }).ToListAsync(cancellationToken);
+            .Select(x => new { x.SourceId, x.PartyId, x.OccurredOn, x.AmountText, x.PosBankNetAmountText }).ToListAsync(cancellationToken);
         result.AddRange(receipts.Select(x => new FinanceStatementMovement(FinanceBankStatementCandidateKindV1.Receipt, x.SourceId,
-            x.OccurredOn, FinanceBankStatementDirectionV1.Inflow, x.PosBankNetAmountText ?? x.AmountText, false, null)));
+            x.OccurredOn, FinanceBankStatementDirectionV1.Inflow, x.PosBankNetAmountText ?? x.AmountText, x.PartyId, null)));
 
         var payments = await database.OutgoingMoneyEvents.AsNoTracking()
-            .Where(x => x.TreasuryAccountId == bankAccountId && x.OccurredOn >= from && x.OccurredOn <= through)
-            .Select(x => new { x.PaymentId, x.OccurredOn, x.AmountText }).ToListAsync(cancellationToken);
+            .Where(x => x.TreasuryAccountId == bankAccountId && x.OccurredOn >= from && x.OccurredOn <= through
+                && (recordId == null || x.PaymentId == recordId))
+            .Select(x => new { x.PaymentId, x.PartyId, x.OccurredOn, x.AmountText }).ToListAsync(cancellationToken);
         result.AddRange(payments.Select(x => new FinanceStatementMovement(FinanceBankStatementCandidateKindV1.Payment, x.PaymentId,
-            x.OccurredOn, FinanceBankStatementDirectionV1.Outflow, x.AmountText, false, null)));
+            x.OccurredOn, FinanceBankStatementDirectionV1.Outflow, x.AmountText, x.PartyId, null)));
 
         var expenses = await database.ExpensePayments.AsNoTracking()
             .Where(x => x.SourceKind == ExpensePaymentSourceKinds.Bank && x.TreasuryAccountId == bankAccountId
-                && x.Status == ExpensePaymentStatuses.Recorded && x.OccurredOn >= from && x.OccurredOn <= through)
+                && x.Status == ExpensePaymentStatuses.Recorded && x.OccurredOn >= from && x.OccurredOn <= through
+                && (recordId == null || x.Id == recordId))
             .Select(x => new { x.Id, x.OccurredOn, x.AmountText }).ToListAsync(cancellationToken);
         result.AddRange(expenses.Select(x => new FinanceStatementMovement(FinanceBankStatementCandidateKindV1.ExpensePayment, x.Id,
-            x.OccurredOn, FinanceBankStatementDirectionV1.Outflow, x.AmountText, false, null)));
+            x.OccurredOn, FinanceBankStatementDirectionV1.Outflow, x.AmountText, null, null)));
 
         var transfers = await database.CashTransfers.AsNoTracking()
-            .Where(x => x.OccurredOn >= from && x.OccurredOn <= through
+            .Where(x => x.OccurredOn >= from && x.OccurredOn <= through && (recordId == null || x.Id == recordId)
                 && ((x.SourceKind == CashTransferAccountKinds.Bank && x.SourceAccountId == bankAccountId)
                     || (x.TargetKind == CashTransferAccountKinds.Bank && x.TargetAccountId == bankAccountId)))
             .Select(x => new { x.Id, x.OccurredOn, x.SourceKind, x.SourceAccountId, x.SourceAmountText,
@@ -368,14 +549,14 @@ public sealed class FinanceBankStatementImportServiceV1(FinanceDbContext databas
             {
                 var iban = Counterparty(transfer.TargetKind, transfer.TargetAccountId, approvedIbans);
                 result.Add(new FinanceStatementMovement(FinanceBankStatementCandidateKindV1.Transfer, transfer.Id, transfer.OccurredOn,
-                    FinanceBankStatementDirectionV1.Outflow, transfer.SourceAmountText, iban is not null, iban));
+                    FinanceBankStatementDirectionV1.Outflow, transfer.SourceAmountText, null, iban));
             }
 
             if (transfer.TargetKind == CashTransferAccountKinds.Bank && transfer.TargetAccountId == bankAccountId)
             {
                 var iban = Counterparty(transfer.SourceKind, transfer.SourceAccountId, approvedIbans);
                 result.Add(new FinanceStatementMovement(FinanceBankStatementCandidateKindV1.Transfer, transfer.Id, transfer.OccurredOn,
-                    FinanceBankStatementDirectionV1.Inflow, transfer.TargetAmountText, iban is not null, iban));
+                    FinanceBankStatementDirectionV1.Inflow, transfer.TargetAmountText, null, iban));
             }
         }
 
@@ -419,19 +600,47 @@ public sealed class FinanceBankStatementImportServiceV1(FinanceDbContext databas
     private async Task<FinanceBankStatementCommandResultV1?> ReplayAsync(FinanceContext context, string key, string payload,
         CancellationToken cancellationToken)
     {
-        var prior = await database.BankStatementCommands.AsNoTracking().SingleOrDefaultAsync(x => x.KeyHash == key, cancellationToken);
-        if (prior is null) return null;
-        if (await FenceAsync(context, FinanceAction.ImportBankStatement, cancellationToken) is { } fence) return Refused(fence);
-        if (prior.ActorId != context.ActorId || prior.PayloadHash != payload) return Refused(CommandOutcome.IdempotencyConflict);
+        var (refusal, json) = await PriorAsync(context, FinanceAction.ImportBankStatement, key, payload, cancellationToken);
+        if (refusal is { } outcome) return Refused(outcome, outcome == CommandOutcome.Unavailable ? FinanceBankStatementCodesV1.Unavailable : null);
+        if (json is null) return null;
         try
         {
-            return (JsonSerializer.Deserialize<FinanceBankStatementCommandResultV1>(prior.ResultJson, Json)
+            return (JsonSerializer.Deserialize<FinanceBankStatementCommandResultV1>(json, Json)
                     ?? throw new JsonException()) with { Replayed = true };
         }
         catch (JsonException)
         {
             return Refused(CommandOutcome.Unavailable, FinanceBankStatementCodesV1.Unavailable);
         }
+    }
+
+    private async Task<FinanceBankStatementMatchCommandResultV1?> MatchReplayAsync(FinanceContext context, string key,
+        string payload, CancellationToken cancellationToken)
+    {
+        var (refusal, json) = await PriorAsync(context, FinanceAction.MatchBankStatement, key, payload, cancellationToken);
+        if (refusal is { } outcome)
+            return MatchRefused(outcome, outcome == CommandOutcome.Unavailable ? FinanceBankStatementCodesV1.Unavailable : null);
+        if (json is null) return null;
+        try
+        {
+            return (JsonSerializer.Deserialize<FinanceBankStatementMatchCommandResultV1>(json, Json)
+                    ?? throw new JsonException()) with { Replayed = true };
+        }
+        catch (JsonException)
+        {
+            return MatchRefused(CommandOutcome.Unavailable, FinanceBankStatementCodesV1.Unavailable);
+        }
+    }
+
+    /// <summary>The stored answer of the same key: a refusal (fence lost, other actor/payload) or the result JSON; both null when new.</summary>
+    private async Task<(CommandOutcome? Refusal, string? Json)> PriorAsync(FinanceContext context, FinanceAction action, string key,
+        string payload, CancellationToken cancellationToken)
+    {
+        var prior = await database.BankStatementCommands.AsNoTracking().SingleOrDefaultAsync(x => x.KeyHash == key, cancellationToken);
+        if (prior is null) return (null, null);
+        if (await FenceAsync(context, action, cancellationToken) is { } fence) return (fence, null);
+        if (prior.ActorId != context.ActorId || prior.PayloadHash != payload) return (CommandOutcome.IdempotencyConflict, null);
+        return (null, prior.ResultJson);
     }
 
     private void Stage(FinanceContext context, CommandMetadata metadata, string key, string payload, string commandName,

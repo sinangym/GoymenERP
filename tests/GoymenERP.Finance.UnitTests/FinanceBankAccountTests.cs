@@ -135,7 +135,10 @@ public sealed class FinanceBankAccountTests
         const string bankStatementImports = "20261122201621_AddBankStatementImports";
         Assert.Contains(bankStatementImports, migrations);
         Assert.True(Array.IndexOf(migrations, collateralBankProof) < Array.IndexOf(migrations, bankStatementImports));
-        Assert.Equal(bankStatementImports, migrations.Last());
+        // FNS-D113 then appends the confirmed matches and their reversal records.
+        const string bankStatementMatches = "20261122220335_AddBankStatementMatches";
+        Assert.True(Array.IndexOf(migrations, bankStatementImports) < Array.IndexOf(migrations, bankStatementMatches));
+        Assert.Equal(bankStatementMatches, migrations.Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

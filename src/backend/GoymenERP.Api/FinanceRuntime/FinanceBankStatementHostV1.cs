@@ -9,6 +9,7 @@ using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.FinanceRuntime;
 
@@ -22,6 +23,9 @@ public static class FinanceBankStatementHostV1
     public static IServiceCollection AddFinanceBankStatementImportsV1(this IServiceCollection services)
     {
         services.AddScoped<IFinanceBankStatementDocumentReadV1, DocumentsFinanceBankStatementDocumentReadV1>();
+        // FNS-D114: the cari card carries no IBAN list on this tree, so party IBAN matching stays off until the Counterparty
+        // owner registers its own IFinancePartyIbanReadPortV1 (TryAdd keeps that registration when it exists).
+        services.TryAddScoped<IFinancePartyIbanReadPortV1, UnavailableFinancePartyIbanReadPort>();
         services.AddScoped<IFinanceBankStatementImportServiceV1>(provider =>
         {
             var permissions = provider.GetRequiredService<FinancePermissionPort>();
@@ -30,11 +34,15 @@ public static class FinanceBankStatementHostV1
                 provider.GetRequiredService<ICompanyContext>(), provider.GetRequiredService<ICurrentUser>(), permissions,
                 provider.GetRequiredService<ISettingsBankCsvMappingProviderV1>(),
                 provider.GetRequiredService<IFinanceBankStatementDocumentReadV1>(),
+                provider.GetRequiredService<IFinancePartyIbanReadPortV1>(),
                 provider.GetRequiredService<IAuditEventCollector>(),
                 new FinanceAuditEnvelope(FinanceBankStatementPermissionsV1.Import,
                     permissions.RoleCodesOf(FinanceAction.ImportBankStatement),
                     correlation.SourceChannel, correlation.ClientIpAddress, correlation.UserAgent),
-                provider.GetRequiredService<TimeProvider>(), provider.GetService<IAuditTransactionWriterV1>());
+                provider.GetRequiredService<TimeProvider>(), provider.GetService<IAuditTransactionWriterV1>(),
+                new FinanceAuditEnvelope(FinanceBankStatementPermissionsV1.Match,
+                    permissions.RoleCodesOf(FinanceAction.MatchBankStatement),
+                    correlation.SourceChannel, correlation.ClientIpAddress, correlation.UserAgent));
         });
         return services;
     }

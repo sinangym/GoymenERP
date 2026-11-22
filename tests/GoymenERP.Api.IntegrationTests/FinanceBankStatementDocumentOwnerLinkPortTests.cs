@@ -90,6 +90,14 @@ public sealed class FinanceBankStatementDocumentOwnerLinkPortTests
 
         public Task<FinanceBankStatementListResultV1> ListAuthorizedAsync(FinanceContext context, Guid? bankAccountId,
             CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<FinanceBankStatementMatchCommandResultV1> ConfirmMatchAsync(FinanceContext context, CommandMetadata metadata,
+            Guid importId, ConfirmFinanceBankStatementMatchV1 request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<FinanceBankStatementMatchCommandResultV1> ReverseMatchAsync(FinanceContext context, CommandMetadata metadata,
+            Guid matchId, ReverseFinanceBankStatementMatchV1 request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 
     private sealed class FixedCorrelation : ICorrelationContext

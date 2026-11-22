@@ -109,6 +109,49 @@ public sealed class FinanceBankStatementSqlServerRelationalAcceptanceTests
         Assert.Equal(distinct, lines);
     }
 
+    [SqlServerFact]
+    public async Task A_confirmed_match_is_one_per_line_and_record_survives_reversal_as_a_record_and_guards_its_down()
+    {
+        await using var run = await Run.StartAsync();
+        var guard = Assert.IsType<SqlOperation>(new AddBankStatementMatches().DownOperations[0]).Sql;
+        await run.ExecuteAsync(guard);
+        await run.SeedBankAccountAsync();
+        var receipt = await run.SeedReceiptAsync("100.00", new DateOnly(2026, 11, 17));
+        var import = Guid.NewGuid();
+        FinanceBankStatementMatchViewV1 match;
+        await using (var scope = run.Open())
+        {
+            await scope.ReserveAsync("SENTETIK-r", import);
+            await scope.ParseAsync("SENTETIK-p", import, File);
+            var line = (await scope.Db.BankStatementLines.AsNoTracking().SingleAsync(x => x.Reference == "V-1")).Id;
+            match = (await scope.Service.ConfirmMatchAsync(scope.Context, new("SENTETIK-c"), import,
+                new(Guid.NewGuid(), line, FinanceBankStatementCandidateKindV1.Receipt, receipt), default)).Resource!;
+        }
+
+        // The filtered unique indexes refuse a second active match of the same line or record, whatever the writer.
+        var second = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "INSERT INTO finance.BankStatementMatches (CompanyId, Id, Version, ImportId, LineId, BankAccountId, CandidateKind, RecordId, "
+            + "CounterpartyCheck, ConfirmedBy, ConfirmedAtUtc) SELECT CompanyId, NEWID(), 1, ImportId, LineId, BankAccountId, CandidateKind, "
+            + "RecordId, CounterpartyCheck, ConfirmedBy, ConfirmedAtUtc FROM finance.BankStatementMatches"));
+        Assert.Contains(second.Number, new[] { 2601, 2627 });
+
+        await using (var scope = run.Open())
+        {
+            var reversed = await scope.Service.ReverseMatchAsync(scope.Context, new("SENTETIK-rev"), match.Id,
+                new("1", Guid.NewGuid(), "SENTETIK yanlis eslesme"), default);
+            Assert.Equal(FinanceBankStatementMatchStateV1.Reversed, reversed.Resource!.State);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.BankStatementMatches"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.BankStatementMatchReversals"));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType LIKE N'finance.bank-statement-match.%'"));
+        // A reversed match without its reversal link is refused by the check.
+        Assert.Equal(547, (await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "UPDATE finance.BankStatementMatches SET ReversalId = NULL"))).Number);
+        Assert.Equal(52251, (await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard))).Number);
+    }
+
     private sealed class Run(string baseConnection, SqlServerRelationalApiFactory factory) : IAsyncDisposable
     {
         public static async Task<Run> StartAsync()
@@ -137,7 +180,7 @@ public sealed class FinanceBankStatementSqlServerRelationalAcceptanceTests
             var context = new FinanceContext(company.CompanyId, Actor, "SENTETIK-statement-correlation", null);
             var documents = new Documents();
             var service = new FinanceBankStatementImportServiceV1(db, company, user, new Permissions(),
-                new Mapping(company.CompanyId), documents, collector,
+                new Mapping(company.CompanyId), documents, new UnavailableFinancePartyIbanReadPort(), collector,
                 new(FinanceBankStatementPermissionsV1.Import, ["SENTETIK"], "Web"), TimeProvider.System);
             return new Scope(db, context, service, documents);
         }
@@ -153,6 +196,26 @@ public sealed class FinanceBankStatementSqlServerRelationalAcceptanceTests
                 ApprovedAtUtc = now, UpdatedAtUtc = now, Iban = "TR420001000000000000000001",
             });
             await scope.Db.SaveChangesAsync();
+        }
+
+        public async Task<Guid> SeedReceiptAsync(string amount, DateOnly on)
+        {
+            await using var scope = Open();
+            var source = Guid.NewGuid();
+            var now = DateTimeOffset.UtcNow;
+            var party = Guid.NewGuid();
+            var account = Guid.NewGuid();
+            var currency = Guid.NewGuid();
+            scope.Db.ReceiptDrafts.Add(new() { Id = source, CompanyId = Company, Version = 2, PartyId = party, CompanyAccountId = account,
+                TreasuryAccountId = BankAccount, CurrencyId = currency, AmountText = amount, ProfileId = "SENTETIK", ProfileVersion = "1",
+                OccurredOn = on, CreatedAtUtc = now, UpdatedAtUtc = now, CreatedBy = Actor, UpdatedBy = Actor,
+                Stage = ReceiptStages.Recorded, RecordedAtUtc = now, RecordedBy = Actor });
+            scope.Db.MoneyEvents.Add(new() { Id = Guid.NewGuid(), CompanyId = Company, SourceId = source,
+                Kind = MoneyEventKinds.ManualBankReceiptRecorded, PartyId = party, CompanyAccountId = account, TreasuryAccountId = BankAccount,
+                CurrencyId = currency, AmountText = amount, ProfileId = "SENTETIK", ProfileVersion = "1", OccurredOn = on,
+                RecordedAtUtc = now, RecordedBy = Actor, CorrelationId = "SENTETIK seed" });
+            await scope.Db.SaveChangesAsync();
+            return source;
         }
 
         public async Task<T> ScalarAsync<T>(string sql)

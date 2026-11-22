@@ -1720,6 +1720,104 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceBankStatementMatchReversalRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("MatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTimeOffset>("ReversedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ReversedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "MatchId")
+                        .IsUnique();
+
+                    b.ToTable("BankStatementMatchReversals", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_BankStatementMatchReversals_Content", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [MatchId] <> '00000000-0000-0000-0000-000000000000' AND LEN([Reason]) > 0 AND LEN([ReversedBy]) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceBankStatementMatchRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("BankAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("CandidateKind")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("ConfirmedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ConfirmedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<int>("CounterpartyCheck")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("ImportId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("LineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RecordId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ReversalId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "ImportId");
+
+                    b.HasIndex("CompanyId", "LineId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_BankStatementMatches_ActiveLine")
+                        .HasFilter("[ReversalId] IS NULL");
+
+                    b.HasIndex("CompanyId", "CandidateKind", "RecordId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_BankStatementMatches_ActiveRecord")
+                        .HasFilter("[ReversalId] IS NULL");
+
+                    b.ToTable("BankStatementMatches", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_BankStatementMatches_Content", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [ImportId] <> '00000000-0000-0000-0000-000000000000' AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] <> '00000000-0000-0000-0000-000000000000' AND [RecordId] <> '00000000-0000-0000-0000-000000000000' AND [CandidateKind] IN (1,2,3,4) AND [CounterpartyCheck] IN (1,2) AND LEN([ConfirmedBy]) > 0 AND (([ReversalId] IS NULL AND [Version] = 1) OR ([ReversalId] IS NOT NULL AND [ReversalId] <> '00000000-0000-0000-0000-000000000000' AND [Version] = 2))");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceCommandRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -5142,6 +5240,30 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceBankStatementImportRow", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "ImportId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceBankStatementMatchReversalRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceBankStatementMatchRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "MatchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceBankStatementMatchRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceBankStatementImportRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "ImportId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceBankStatementLineRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "LineId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
