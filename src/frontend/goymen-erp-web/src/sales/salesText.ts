@@ -1969,6 +1969,7 @@ export const KILOGRAM_PRICE_TEXT = {
   subject: 'kg fiyatı',
   note: 'Kg fiyatı bilgi göstergesidir; maliyet değildir ve tutarı değiştirmez. Belge para birimindedir, kur kullanılmaz.',
   pending: 'Kg fiyatı göstergesi formül doğrulaması (golden) ana dala girene kadar kapalıdır.',
+  unreadable: 'Kg fiyatı okunamadı; sipariş bilgileri etkilenmez. Sayfayı yenileyerek yeniden deneyin.',
   line: (lineNo: number) => `${lineNo}. satır`,
   theoreticalKg: 'Teorik kg',
   theoreticalPrice: 'Teorik kg fiyatı',

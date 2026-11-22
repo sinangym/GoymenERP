@@ -2,18 +2,12 @@ import { useQuery } from '@tanstack/react-query'
 import type { DraftDetail } from './contract'
 import type { InvoiceLine } from './invoiceFinalizationContract'
 import { fetchDraftKilogramPrices } from './kilogramPriceApi'
-import type { InvoiceKilogramPrices, KilogramPrice, OrderKilogramPrices } from './kilogramPriceContract'
+import type { InvoiceKilogramPrices, OrderKilogramPrices } from './kilogramPriceContract'
 import { KILOGRAM_PRICE_TEXT as T } from './salesText'
 import { contextKey, contextKeyString, type ShellState } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
-import { StateBlock } from '../shell/StateBlock'
-import { classifyOutcome } from '../shell/uiState'
+import { kilogramPriceText } from './kilogramPriceText'
 import styles from './SalesPages.module.css'
-
-/** A server kg price as text: the value per kg, or why it is not shown — never a figure the screen computed. */
-export function kilogramPriceText(price: KilogramPrice): string {
-  return price.state === 'Shown' && price.value !== null ? T.perKg(price.value) : T.state[price.state]
-}
 
 /**
  * SAT-D436 (AK-5): the order's kg prices and realization — read only by a caller who may see prices (a withheld line means
@@ -40,13 +34,11 @@ export function SalesOrderKilogramPrices({ shell, detail, companyId }: {
   })
   if (!disclosed) return null
   const outcome = query.data
-  if (outcome?.type !== 'ok-single') {
-    return (
-      <section className={styles.actions} aria-label={T.heading} data-testid="sales-kilogram-prices">
-        <StateBlock state={outcome === undefined ? { kind: 'initial-loading' } : classifyOutcome(outcome)} subject={T.subject}
-          onRetry={() => void query.refetch()} />
-      </section>
-    )
+  // Like the line pricing beside it: an information panel never raises a second alert over the order's own states; a
+  // denied or unreadable read says so quietly (401/403 are reported to the shell boundary above).
+  if (outcome === undefined) return null
+  if (outcome.type !== 'ok-single') {
+    return <p className={styles.muted} data-testid="sales-kilogram-prices-unreadable">{T.unreadable}</p>
   }
   return <OrderKilogramPricesView prices={outcome.data} />
 }

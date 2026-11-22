@@ -94,13 +94,16 @@ describe('API-36 client ↔ canonical OpenAPI', () => {
   })
 
   it('pins every decoded member list to the schema exactly', () => {
-    expect([...SALES_INVOICE_DETAIL_FIELDS].sort()).toEqual([...declared('SalesInvoiceDetailView')].sort())
+    // SAT-D436 (AK-5): `kilogramPrices` is the one additive member the server omits when null (decoded separately).
+    expect(declared('SalesInvoiceDetailView')).toContain('kilogramPrices')
+    const detailMembers = declared('SalesInvoiceDetailView').filter((name) => name !== 'kilogramPrices')
+    expect([...SALES_INVOICE_DETAIL_FIELDS].sort()).toEqual([...detailMembers].sort())
     expect([...SALES_INVOICE_FINALIZATION_FIELDS].sort()).toEqual([...declared('SalesInvoiceFinalizationView')].sort())
     expect([...SALES_INVOICE_FINAL_INSTALMENT_FIELDS].sort()).toEqual([...declared('SalesInvoiceFinalInstalmentView')].sort())
     expect([...SALES_INVOICE_MATCH_FIELDS].sort()).toEqual([...declared('SalesInvoiceMatchView')].sort())
     expect([...SALES_DRAFT_INVOICES_FIELDS].sort()).toEqual([...declared('SalesDraftInvoicesResponse')].sort())
     expect([...SALES_DRAFT_INVOICE_ITEM_FIELDS].sort()).toEqual([...declared('SalesDraftInvoiceItemView')].sort())
-    expect(Object.keys(invoiceDetail()).sort()).toEqual([...declared('SalesInvoiceDetailView')].sort())
+    expect(Object.keys(invoiceDetail()).sort()).toEqual([...detailMembers].sort())
     expect(Object.keys(finalizationOf()).sort()).toEqual([...declared('SalesInvoiceFinalizationView')].sort())
     expect(Object.keys(matchOf()).sort()).toEqual([...declared('SalesInvoiceMatchView')].sort())
   })
