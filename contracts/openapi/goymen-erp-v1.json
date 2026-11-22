@@ -177264,6 +177264,7 @@
               "purchasing_goods_receipt_batch_variance_acknowledgement_required",
               "purchasing_goods_receipt_label_code_conflict",
               "purchasing_line_busy",
+              "purchasing_receipt_theoretical_kilograms_missing",
               "sales_order_line_busy",
               "same_key_payload_mismatch",
               "version_conflict"
@@ -177357,6 +177358,8 @@
               "inventory_goods_receipt_invalid_request",
               "inventory_goods_receipt_quantity_invalid",
               "inventory_goods_receipt_version_invalid",
+              "purchasing_acceptance_measured_kg_mismatch",
+              "purchasing_receipt_piece_count_invalid",
               "validation_failed"
             ],
             "x-erp-empty-body-possible": true
@@ -183571,6 +183574,7 @@
               "organization.company.setup_pending",
               "purchasing_invoice_maker_checker",
               "purchasing_invoice_match_required",
+              "purchasing_invoice_piece_quantity_invalid",
               "purchasing_invoice_source_mismatch",
               "purchasing_invoice_state_conflict",
               "purchasing_invoice_variance_approval_required",
@@ -183905,6 +183909,7 @@
               "organization.company.setup_pending",
               "purchasing_invoice_maker_checker",
               "purchasing_invoice_match_required",
+              "purchasing_invoice_piece_quantity_invalid",
               "purchasing_invoice_source_mismatch",
               "purchasing_invoice_state_conflict",
               "purchasing_invoice_variance_approval_required",
@@ -184239,6 +184244,7 @@
               "organization.company.setup_pending",
               "purchasing_invoice_maker_checker",
               "purchasing_invoice_match_required",
+              "purchasing_invoice_piece_quantity_invalid",
               "purchasing_invoice_source_mismatch",
               "purchasing_invoice_state_conflict",
               "purchasing_invoice_variance_approval_required",
@@ -184573,6 +184579,7 @@
               "organization.company.setup_pending",
               "purchasing_invoice_maker_checker",
               "purchasing_invoice_match_required",
+              "purchasing_invoice_piece_quantity_invalid",
               "purchasing_invoice_source_mismatch",
               "purchasing_invoice_state_conflict",
               "purchasing_invoice_variance_approval_required",
@@ -185732,6 +185739,7 @@
               "organization.company.setup_pending",
               "purchasing_invoice_maker_checker",
               "purchasing_invoice_match_required",
+              "purchasing_invoice_piece_quantity_invalid",
               "purchasing_invoice_source_mismatch",
               "purchasing_invoice_state_conflict",
               "purchasing_invoice_variance_approval_required",
@@ -288557,6 +288565,12 @@
               "null",
               "string"
             ]
+          },
+          "acceptedQuantity": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -288626,6 +288640,15 @@
               "null",
               "string"
             ]
+          },
+          "pieceCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -288779,6 +288802,16 @@
             "items": {
               "$ref": "#/components/schemas/PurchaseGoodsReceiptBatchLabelViewV1"
             }
+          },
+          "pieceKilograms": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PurchaseGoodsReceiptPieceKilogramsV1"
+              }
+            ]
           }
         }
       },
@@ -289438,6 +289471,16 @@
             "type": [
               "null",
               "string"
+            ]
+          },
+          "kgPrice": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PurchaseKgPriceView"
+              }
             ]
           }
         }
@@ -290758,6 +290801,16 @@
               "string"
             ],
             "format": "uuid"
+          },
+          "kgPrice": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PurchaseKgPriceView"
+              }
+            ]
           }
         }
       },
@@ -291320,6 +291373,16 @@
               },
               {
                 "$ref": "#/components/schemas/PurchaseKgPriceView"
+              }
+            ]
+          },
+          "realization": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PurchaseOrderRealizationView"
               }
             ]
           }
@@ -291905,6 +291968,16 @@
                 "$ref": "#/components/schemas/PurchaseKgPriceView"
               }
             ]
+          },
+          "realization": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PurchaseOrderRealizationView"
+              }
+            ]
           }
         }
       },
@@ -291966,6 +292039,16 @@
               },
               {
                 "$ref": "#/components/schemas/PurchaseKgPriceView"
+              }
+            ]
+          },
+          "realization": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PurchaseOrderRealizationView"
               }
             ]
           }
@@ -292071,6 +292154,69 @@
             "type": [
               "null",
               "boolean"
+            ]
+          }
+        }
+      },
+      "PurchaseOrderRealizationView": {
+        "required": [
+          "invoicedQuantity",
+          "invoicedAmount",
+          "weighedKg",
+          "theoreticalKg",
+          "differenceKg",
+          "deviationPercent",
+          "realKgPrice",
+          "realUnavailable"
+        ],
+        "type": "object",
+        "properties": {
+          "invoicedQuantity": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "invoicedAmount": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "weighedKg": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "theoreticalKg": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "differenceKg": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "deviationPercent": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "realKgPrice": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "realUnavailable": {
+            "type": [
+              "null",
+              "string"
             ]
           }
         }

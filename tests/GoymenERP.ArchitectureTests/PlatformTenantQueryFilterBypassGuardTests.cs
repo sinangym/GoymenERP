@@ -565,7 +565,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // W8 EK24 FNS-D105: +1 finalized outbox Down-guard fact, kept ordinal-sorted (4bea9141… -> 982791b3…).
                 // W8 KLN-D105: rename one same-line lock-busy SQL fact to its actual owner-lock contract; same count, ordinal order.
                 // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): +1 SQL fact, ordinal-sorted; SQL execution NOT_RUN; value from guard_fingerprint.py (82f5a6dc… -> e31a4690…).
-                "e31a46901e68506b8c6f490a605e16d8539462fdd6e3fd3b1a2d944ee81cfb4d",
+                // Re-fingerprinted for AK-3b: +6 SQL facts (piece comparison replay, bulk receipt piece facts Down 52042, invoice match kilogram
+                // facts, order realization read), ordinal-sorted; SQL execution NOT_RUN; value from guard_fingerprint.py (e31a4690… -> e8b1a49e…).
+                "e8b1a49e913cedb71c538d837887c69278d432c2f2c85616e9865f5c4311a96a",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
@@ -947,7 +949,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (fb48d6ed… -> e4ca95ad…).
                 // W8 EK24 FNS-D105: finalized invoice outbox event joins the existing typed check; tenant filters unchanged.
                 // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): gated source-label supplier return; value from guard_fingerprint.py (928ffbe0… -> 8fc7fbaa…).
-                "8fc7fbaa3d3c7327d7aedc0bd727e4bc70df067b9b72aeefada6bbe773cc0dc3",
+                // Re-fingerprinted for AK-3b (KLN-D119, BS-16/BS-17): bulk receipt piece facts (batch kg per piece, label piece count) and the
+                // variance check's piece branch; tenant filters unchanged; value from guard_fingerprint.py (8fc7fbaa… -> fd895592…).
+                "fd895592d57d3481cc6325a45114f52e244cbb3669110301a59ae37dd62d1141",
             // ERP-000G / AT-065: company-scoped like Organization; every tenant row (blobs, documents, versions, links,
             // attempts) and AuditEvent carries the CompanyId filter, and the write guard refuses any update or delete.
             // A standard entry, not an exception.
@@ -2223,7 +2227,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (00ee5787… -> 5c81176d…).
                         // Re-fingerprinted for tren-1 W7: owner transaction or response changes; existing API counts retained; K3 review pending.
-                        "4394742cb265fb028007b29af06f25548dd6d531f4e3e5940b738373567feae2",
+                        // Re-fingerprinted for AK-3b (KLN-D119, BS-16/BS-17): a piece order line takes pieces + weighed kg per label through the same
+                        // participants; no new store call, .FindAsync count unchanged; value from guard_fingerprint.py (4394742c… -> bb182a16…).
+                        "bb182a1609a3eb2d0eac9ddd61da7b2c6b8d1484411ab4d24ffc1051ab0f7e26",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         [".FindAsync"] = 3
@@ -2234,7 +2240,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "Persistence/PurchaseGoodsReceiptBatchStore.cs"] =
                     new(
                         // Re-fingerprinted for tren-1 W6: W5 correction: replace the unauthorized filter bypass with a company-bound collision lookup; reviewed API counts unchanged (c7baa6ff... -> ad37942b...).
-                        "d8f149c014a8c0323888478cecc57a91e2b9a9caceef61670355995da6020c08",
+                        // Re-fingerprinted for AK-3b (KLN-D119): the batch row keeps the recorded kg per piece and each label its piece count (own
+                        // company-filtered rows only); SqlClient count unchanged; value from guard_fingerprint.py (d8f149c0… -> b0ae0179…).
+                        "b0ae0179cf2b7711c7110437ba623d23fac57b499289fb27c0086c5dd008b81d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         ["Microsoft.Data.SqlClient"] = 1
@@ -2876,7 +2884,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // company-filtered context); reviewed tokens and the three construction sites unchanged (23106d16... -> 60aab061...).
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (60aab061… -> 4f423055…).
                         // Re-fingerprinted for tren-1 W7: owner transaction or response changes; existing API counts retained; K3 review pending.
-                        "72ae3cae1dae9eff49d017cec110e2e1b62a28740d649c9f88ae624903bfde08",
+                        // Re-fingerprinted for AK-3b (BS-16/BS-17): the staged result stores the piece comparison handed in with the request and a
+                        // replay answers the stored one; reviewed tokens unchanged; value from guard_fingerprint.py over the AK-3 participant
+                        // (2227a0ca… -> df56f751…; the base pin 72ae3cae… predates AK-3 and is superseded by this value).
+                        "df56f751f729ad56ca1091bf1a208c248c7752a4ee8a955673b356fe45edf8a8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -3824,7 +3835,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // company-keyed PurchaseLineSerializationLock within own Serializable transaction. Writes Purchasing
                 // invoice/bindings/finalized outbox; no Inventory directwrites.
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.IncomingInvoices.cs"] =
-                    new("a99b3fcace66aca1921f198bde6ee99fbcb85059c51b18c33cc114bc4d599317",
+                    // Re-fingerprinted for AK-3b (SAT-D436 TK6): +ReadOrderInvoiceSharesAsync, an untracked company-filtered read of the order's
+                    // invoice revisions and receipt bindings (no write, no lock, no new bypass token); value from guard_fingerprint.py (a99b3fca… -> ef173cda…).
+                    new("ef173cdadec220477cf37fa635dd3b42a75b8bebfe726134f9687d280c1977d4",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["GetDbConnection"] = 1,
@@ -4075,6 +4088,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedMigrationMutationSources =
             new Dictionary<string, ReviewedMigrationMutationSource>(StringComparer.Ordinal)
             {
+                // AK-3b (KLN-D119, BS-16/BS-17); K3 review pending. EF-generated nullable bulk receipt piece facts and the widened variance
+                // check. Down refuses 52042 (used by no other migration) while a piece batch or a label piece count exists; one
+                // deployment-time SQL guard, no runtime tenant bypass.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/"
+                 + "20261122141554_AddPurchaseGoodsReceiptBatchPieceFacts.cs"] =
+                    new("eb32c2a700bb3b1dba31e317253f9084f51503fe0212df5d0578a30be3a76028",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 // AK-8 (SAT-D433/SAT-D441/SAT-D445); K3 review pending. EF-generated nullable source label and mode of a supplier return.
                 // Down refuses 52071 while a source-label return exists; one deployment-time SQL guard, no runtime tenant bypass.
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/"
