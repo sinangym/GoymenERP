@@ -209,3 +209,37 @@ Her özellik için önerilen ölçüm düzeni aynıdır: 4–8 haftalık yapay z
 Bu çalışmanın değiştirdiği anlayış şudur: "gerçekten çalışan genel yapay zekâ" bir model ya da ajan sayısı değil, bir **düzendir**. Şirketin bütün işlerini bilen ve yapan sistem, zaten var olan komut hattının üstüne oturan ince bir seçim katmanıdır; yetki, sürüm, tekrar koruması ve denetim kaydı o hatta durduğu sürece yapay zekâ genişledikçe risk aynı kalır. Bu yüzden en değerli yatırım yeni yetenek eklemek değil, her yeteneğin aynı dört şeritten (oku, taslakla ve ekranda aç, benzet, önizle–onayla–yürüt) geçmesini sağlamaktır. İş kutusu da aynı düzenin insan tarafıdır: yapay zekânın hazırladığı her şey sonunda bir insanın önüne, tek bir yerde, kanıtıyla birlikte düşer. Kutuyu önce bitirmek bu yüzden yapay zekâyı geciktirmez, ona zemin hazırlar.
 
 İkinci çıkarım sahibin en çok istediği özelliklerle kanıtın en güçlü olduğu özelliklerin örtüşmediğidir. Zamanlı görev, sabah özeti, konuşarak ayar ve sistem dışı sohbet en çok istenenler, ama faydası en az ölçülmüş olanlardır; belgeden taslak ve kaynak gösteren bilgi asistanı daha az heyecan verir, ama ölçülmüş kazancı vardır. Bu açıklık iki yoldan kapanır ve ikisi de sahibin elindedir: belge hacmi, onay bekleme süresi ve kullanıcı deneyimi gibi üç temel sayının verilmesi ve her pilotun önceden yazılmış bir durdurma koşuluyla başlaması. Böylece "kazanılan otonomi" kararı bir inanç değil, şirketin kendi ölçümü olur. Raporun dış rakamları doğrulanana kadar yalnız yön göstergesi olarak okunmalıdır; önce doğrulanması gerekenler etki büyüklükleri, sağlayıcı saklama şartları ve yurt dışına aktarım kurallarıdır.
+
+## Düzeltmeler (22 Kasım 2026, sahibin paylaştığı değerlendirme sonrası)
+
+Sahip, bu raporu ayrı bir değerlendirmeyle inceletip paylaştı. Aşağıdaki düzeltmeler o değerlendirmeden alındı ve
+`SINAN_KARARLARI_2026-11-22_WORK_AI_DALGALAR.md` (AI-D31–AI-D34) ile `DALGA_PLANI_v2.md`'ye işlendi. Değerlendirmedeki dış
+kaynak kontrollerinin bir kısmı (ör. METR'nin Şubat 2026 güncellemesi) bu oturumda bağımsız doğrulanmadı.
+
+1. **Onay sırası:** "Bekleyen listesi hazır 18 akış" bir öncelik ölçütü değildir; sıra iş etkisine (işi durdurma, sıklık,
+   bekleme, efor) göre kurulur (AI-D31).
+2. **Bağımlılıklar:** Her yapay zekâ özelliği yalnız kendi asgari ön koşulunu bekler; Y-B "bütün Dalga 1, rapor merkezi ve
+   yerel model bitmeden başlamaz" diye okunmamalıdır (AI-D32).
+3. **Görev, not, bahsetme** Work çekirdeğidir (yapay zekâ pilotu değil); yapay zekânın konuşmadan görev çıkarması ayrıdır.
+4. **Belge okuma kademelidir:** yapılı dosya → metin ayrıştırma → OCR → yalnız gerektiğinde yerel model; her belge büyük
+   model ya da yeni ekran kartı gerektirmez.
+5. **Asistanın üç bilgi kaynağı** ayrı tutulur: yürürlükteki kararlar (durum, yürürlük, kapsam, yerine geçer), güncel işlem
+   durumu (canlı okuma, tarih itibarıyla), yayındaki yazılımın davranışı. Karar belgeleri de kişisel veri içerebilir.
+6. **Araştırma yorumları:** CRMArena-Pro'daki "tek tur" tek araç çağrısı değildir; çok tur deneyi eksik bilgiyi sorma
+   becerisini de ölçer. TheAgentCompany'deki yaklaşık %30, belirli bir model ve sürümün simüle 175 görevdeki sonucudur, bizim
+   sistemin tavanı değildir. 106 deneylik meta-analiz insan + yapay zekânın yalnız insandan ortalama daha iyi olduğunu da
+   bildirir; "gerekçeli öneri karar kalitesini düşürür" genellemesi fazla güçlüdür. METR'nin %19 yavaşlama sonucu 2025 ilk
+   yarısının araçlarına aittir. Kanıt bulunmaması özelliğin değersiz olduğunu göstermez; küçük pilotu gerektirir.
+7. **Kanıt sınıfları:** Hakemsiz çalışma makaleleri A değil, ayrıca işaretlenmelidir; önemli iddialarda çalışma türü, tarih,
+   test edilen sistem ve ölçülen sonuç yazılmalıdır.
+8. **Güvenlik:** "Kapsam genişledikçe risk aynı kalır" ifadesi yanlıştır; doğrusu, ortak altyapının yeni hata türlerini aynı
+   yöntemle sınırlaması, izlemesi ve kapatabilmesidir. Onay somut işleme bağlıdır; "temiz kayıt" sınıflaması modele
+   bırakılmaz; belge içeriği yalnız veridir (AI-D34).
+9. **Zamanlı görev** etkileri dörde ayrılır ve yetki kalkınca görev durur (AI-D33).
+10. **Ölçüm:** sabit hafta yerine iş sayısı, dağılım ve önceden yazılmış ölçüt; taban ölçümü paralel başlar.
+11. **Maliyet:** Rapordaki hacimle resmî fiyat tablosuna göre aylık token bedeli yaklaşık Haiku 5.5 19,60, Sonnet 5.5 392,
+    Opus 5.5 784, Fable 5.2 1.568 USD'dir; "maliyet belirleyici değildir" sonucu erkendir, toplam maliyet (geliştirme,
+    bakım, donanım, düzeltme emeği) ayrıca değerlendirilir.
+12. **Saklama:** Sıfır saklama kuruluş ve özellik bazındadır; belirli üst model ailelerindeki 30 gün şartının sağlayıcının
+    izin verdiği istisnası vardır, seçilen modelin sözleşmeli uygunluğu ayrıca doğrulanır. Eğitim, saklama ve işleme yeri
+    ayrı yazılır.
