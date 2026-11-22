@@ -7,6 +7,7 @@
 | `tool-catalog-v1.json` | Okuma araçları: `decisions.lookup.v1`, `logistics.pending-shipments.v1` (Y-A1); `security.events.summary.v1`, `security.tech-watch.summary.v1` (WP-C10, bkz. `contracts/security/README.md`) (Read, izinler, alan izin listesi, veri sınıfı). | `AiYa1ReadToolsTests` sözleşmeyi C# tanımlarıyla karşılaştırır. |
 | `tool-catalog-v1.json` | Okuma araçları (Read, izinler, alan izin listesi, veri sınıfı). Y-A1: `decisions.lookup.v1`, `logistics.pending-shipments.v1`. WP-A3a: `sales.pending-approvals.v1`, `sales.quote-status.v1`, `sales.order-status.v1`, `logistics.order-dispatch-notes.v1`, `logistics.instruction-shipment-status.v1`, `counterparty.party-lookup.v1`, `counterparty.party-summary.v1`, `counterparty.role-counts.v1`. | `AiYa1ReadToolsTests` sözleşmeyi bütün C# tanımlarıyla karşılaştırır; modül davranışı `SalesReadAiToolsTests`, `LogisticsReadAiToolsTests`, `CounterpartyReadAiToolsTests`. |
 | `eval/eval-set-wpa3a-oneriler-v1.json` | WP-A3a araçları için ÖNERİ değerlendirme maddeleri (29, SENTETİK): başarı, yetki dışı/başka şirket, eksik veri. Sete henüz katılmadı. | Doğrulanmaz; set tren head'inde güncellenir. |
+| `tool-catalog-v1.json` | Okuma araçları: Y-A1 `decisions.lookup.v1`, `logistics.pending-shipments.v1`; WP-A3b Stok (`inventory.stock-positions.v1`, `inventory.negative-stock-attempts.v1`, `inventory.pending-stock-counts.v1`), Üretim (`manufacturing.order-status.v1`, `manufacturing.plan-status.v1`, `manufacturing.work-center-queue.v1`), Satınalma (`purchasing.order-status.v1`, `purchasing.pending-receipts.v1`, `purchasing.invoice-variances.v1` — **Confidential**). Read, izinler, alan izin listesi, veri sınıfı, birim kuralı. | `AiYa1ReadToolsTests` sözleşmeyi C# tanımlarıyla (argüman adları dahil) karşılaştırır; `AiWpa3bReadToolsTests` host kaydını ve varsayılan-ret'i doğrular. Senaryo önerileri: `docs/delivery/arastirma/work_ai/2026-11-22_wpa3b_eval_senaryo_onerileri.md`. |
 | `eval/eval-set-v1.json` | SENTETİK değerlendirme seti: 150 karar sorusu (bilgi çıkarma 70, güncellenen karar 30, cevap verememeyi bilme 30, yetki dışı 20) + 20 bekleyen sevkiyat senaryosu. | `python3 -I tools/evaluate_ai_eval_set.py` (modelsiz: şema, kaynak, araç, kişisel veri). Test: `tests/ai_eval_set`; sevkiyat senaryoları ayrıca `LogisticsPendingShipmentsAiToolTests` ile araca karşı koşar. |
 
 Sınırlar: hiçbir model/sağlayıcı çağrısı, anahtar veya dış ağ yok; `Ai:Enabled=false` ve `Ai:AllowedTools=[]` kalır.
@@ -15,3 +16,8 @@ paketlenmesi dağıtım kapısıdır. Dizin tren head'inde yeniden üretilir; ka
 bayatsa `tests/ai_decision_index` kırmızı olur). Durum eşlemesi `ASSUMPTION-AI-INDEX-STATUS-1`: KAPANDI → kilitli,
 KISMEN/AÇIK → açık, ERTELENDI ayrı durum, golden → belirsiz. Bekleyen sevkiyat tanımı AI-D35; `ai.decisions.read`
 önerisi AI-D36 (grant insan kapısı).
+
+WP-A3b araçları yalnız sahip modülün yetkili okuma servisinden okur, izinlerini sunucu şirketi için okumadan önce ve sonra
+şirket çapında ölçer (tesis/lokasyon/iş merkezi kapsamlı izin reddedilir), sayıları kesin verir; tarama sınırı aşılırsa
+sayılar verilmez ve `complete=false` döner. Stok ve üretim yalnız kg'dır; satınalma miktarları satırın kendi birimindedir ve
+birimler toplanmaz. Hiçbir izin bir role verilmez.

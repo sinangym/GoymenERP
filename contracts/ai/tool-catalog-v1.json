@@ -355,6 +355,332 @@
    "source": "ISalesQuoteService.GetQuoteListAsync (Satış sahibi, sayfalı, şirket filtreli; fiyat taşımaz)",
    "released": "teklif no, durum, revizyon, cari/hesap kimliği, iş tarihi, geçerlilik tarihi (süresi doldu hesabı yapılmaz), satır sayısı",
    "scanLimit": 1000
+  },
+  {
+   "toolId": "inventory.stock-positions.v1",
+   "version": "1",
+   "ownerModule": "Inventory",
+   "risk": "Read",
+   "dataClass": "Internal",
+   "requiredPermissions": [
+    "inventory.balances.read",
+    "inventory.labels.read"
+   ],
+   "fieldAllowlist": [
+    "labelCode",
+    "limit",
+    "locationId",
+    "productId"
+   ],
+   "arguments": {
+    "labelCode": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 64,
+     "note": "Etiket kodu araması; baş/son boşluk ve kontrol karakteri reddedilir."
+    },
+    "productId": {
+     "type": "string",
+     "format": "uuid",
+     "note": "Tek ürün."
+    },
+    "locationId": {
+     "type": "string",
+     "format": "uuid",
+     "note": "Tek lokasyon."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 50,
+     "default": 20
+    }
+   },
+   "source": "IInventoryStockPositionsV1.SearchAsync (Stok sahibi, sayfalı, şirket filtreli, inventory.labels.read + inventory.balances.read şirket çapında)",
+   "units": "Yalnız kg (stok kg tutulur; adet türetilmez). Toplamlar sahip kg metinlerinin kesin toplamıdır.",
+   "redaction": "Maliyet, lot/döküm metni, sahip/emanetçi gösterimi verilmez.",
+   "scanLimit": 1000
+  },
+  {
+   "toolId": "inventory.negative-stock-attempts.v1",
+   "version": "1",
+   "ownerModule": "Inventory",
+   "risk": "Read",
+   "dataClass": "Internal",
+   "requiredPermissions": [
+    "inventory.balances.read",
+    "inventory.labels.read"
+   ],
+   "fieldAllowlist": [
+    "limit",
+    "locationId",
+    "openOnly",
+    "productId"
+   ],
+   "arguments": {
+    "openOnly": {
+     "type": "boolean",
+     "default": true,
+     "note": "true: sayımla kapanmamış denemeler."
+    },
+    "productId": {
+     "type": "string",
+     "format": "uuid",
+     "note": "Tek ürün."
+    },
+    "locationId": {
+     "type": "string",
+     "format": "uuid",
+     "note": "Tek lokasyon."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 50,
+     "default": 20
+    }
+   },
+   "source": "IInventoryNegativeStockAttemptsV1.SearchAsync (Stok sahibi, tek sınırlı pencere = 100)",
+   "units": "Yalnız kg.",
+   "redaction": "Deneyen ve kapatan kişi (kişisel veri) verilmez.",
+   "incomplete": "Sahip penceresi doluysa sayılar ve eksik kg toplamı verilmez, complete=false."
+  },
+  {
+   "toolId": "inventory.pending-stock-counts.v1",
+   "version": "1",
+   "ownerModule": "Inventory",
+   "risk": "Read",
+   "dataClass": "Internal",
+   "requiredPermissions": [
+    "inventory.balances.read",
+    "inventory.labels.read",
+    "inventory.stock-count.approve"
+   ],
+   "fieldAllowlist": [
+    "limit"
+   ],
+   "arguments": {
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 50,
+     "default": 20
+    }
+   },
+   "source": "IInventoryStockCountPendingApprovalReadServiceV1.ListAsync (D-05; soranın kendi gönderdiği sayımlar sahip tarafından dışarıda)",
+   "units": "Yalnız kg; fazla, eksik ve net fark kesin toplam.",
+   "redaction": "Sayım nedeni (serbest metin) ve gönderen verilmez.",
+   "scanLimit": 1000
+  },
+  {
+   "toolId": "manufacturing.order-status.v1",
+   "version": "1",
+   "ownerModule": "Manufacturing",
+   "risk": "Read",
+   "dataClass": "Internal",
+   "requiredPermissions": [
+    "manufacturing.orders.read"
+   ],
+   "fieldAllowlist": [
+    "limit",
+    "status"
+   ],
+   "arguments": {
+    "status": {
+     "type": "string",
+     "enum": [
+      "Open",
+      "Closed",
+      "Cancelled"
+     ],
+     "default": "Open"
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 50,
+     "default": 20
+    }
+   },
+   "source": "ManufacturingCommandService.ListOrdersAsync (IManufacturingAiReadSourceV1 üzerinden; liste uç nokta politikasına dayandığı için izin araçta ölçülür)",
+   "units": "Yalnız kg (planlanan girdi kg kesin toplam).",
+   "scanLimit": 1000
+  },
+  {
+   "toolId": "manufacturing.plan-status.v1",
+   "version": "1",
+   "ownerModule": "Manufacturing",
+   "risk": "Read",
+   "dataClass": "Internal",
+   "requiredPermissions": [
+    "manufacturing.plans.read"
+   ],
+   "fieldAllowlist": [
+    "limit",
+    "status"
+   ],
+   "arguments": {
+    "status": {
+     "type": "string",
+     "enum": [
+      "Draft",
+      "Approved",
+      "Cancelled"
+     ],
+     "note": "Verilmezse Draft ve Approved."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 50,
+     "default": 20
+    }
+   },
+   "source": "ManufacturingCommandService.ListPlansAsync (IManufacturingAiReadSourceV1)",
+   "units": "Yalnız kg.",
+   "scanLimit": 1000
+  },
+  {
+   "toolId": "manufacturing.work-center-queue.v1",
+   "version": "1",
+   "ownerModule": "Manufacturing",
+   "risk": "Read",
+   "dataClass": "Internal",
+   "requiredPermissions": [
+    "manufacturing.plans.read"
+   ],
+   "fieldAllowlist": [
+    "limit",
+    "planId"
+   ],
+   "arguments": {
+    "planId": {
+     "type": "string",
+     "format": "uuid",
+     "note": "Zorunlu; bu planın iş merkezi kuyruğu okunur."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 50,
+     "default": 20
+    }
+   },
+   "source": "ManufacturingCommandService.GetPlanWorkCenterQueueAsync (URT-D97 sırası sahipten; yeniden hesaplanmaz)",
+   "units": "Yalnız kg (planlanan, işlenen, kalan kesin toplam)."
+  },
+  {
+   "toolId": "purchasing.order-status.v1",
+   "version": "1",
+   "ownerModule": "Purchasing",
+   "risk": "Read",
+   "dataClass": "Internal",
+   "requiredPermissions": [
+    "purchasing.orders.read"
+   ],
+   "fieldAllowlist": [
+    "limit",
+    "status",
+    "supplierPartyId"
+   ],
+   "arguments": {
+    "status": {
+     "type": "string",
+     "enum": [
+      "Draft",
+      "Approved",
+      "Cancelled"
+     ],
+     "note": "Verilmezse Draft ve Approved."
+    },
+    "supplierPartyId": {
+     "type": "string",
+     "format": "uuid",
+     "note": "Tek tedarikçi."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 50,
+     "default": 20
+    }
+   },
+   "source": "IPurchasingOrderReadServiceV1.GetOrderListAsync",
+   "redaction": "Fiyat, tutar ve tedarikçi görünen adı verilmez (yalnız kimlik).",
+   "scanLimit": 1000
+  },
+  {
+   "toolId": "purchasing.pending-receipts.v1",
+   "version": "1",
+   "ownerModule": "Purchasing",
+   "risk": "Read",
+   "dataClass": "Internal",
+   "requiredPermissions": [
+    "purchasing.orders.read"
+   ],
+   "fieldAllowlist": [
+    "limit",
+    "productId",
+    "supplierPartyId"
+   ],
+   "arguments": {
+    "supplierPartyId": {
+     "type": "string",
+     "format": "uuid",
+     "note": "Tek tedarikçi."
+    },
+    "productId": {
+     "type": "string",
+     "format": "uuid",
+     "note": "Tek ürün."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 50,
+     "default": 20
+    }
+   },
+   "source": "IPurchaseOpenLineReadPortV1.ListOpenApprovedLinesAsync (AT-025; port yetki taşımaz, izin araçta ölçülür)",
+   "units": "Her satır kendi Ayarlar birimindedir; toplamlar BİRİM BAŞINA verilir, birimler toplanmaz, kg↔adet dönüşümü yapılmaz.",
+   "redaction": "Fiyatsız (port yapısı gereği).",
+   "scanLimit": 1000
+  },
+  {
+   "toolId": "purchasing.invoice-variances.v1",
+   "version": "1",
+   "ownerModule": "Purchasing",
+   "risk": "Read",
+   "dataClass": "Confidential",
+   "requiredPermissions": [
+    "purchasing.invoices.read",
+    "purchasing.orders.price.read"
+   ],
+   "fieldAllowlist": [
+    "decision",
+    "limit"
+   ],
+   "arguments": {
+    "decision": {
+     "type": "string",
+     "enum": [
+      "pending",
+      "decided",
+      "any"
+     ],
+     "default": "pending"
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 25,
+     "default": 10
+    }
+   },
+   "source": "IPurchaseIncomingInvoiceWorkspaceV1.ListAsync (25'lik sayfa, en çok 40 sayfa)",
+   "units": "Fiyat farkı para birimi başına toplanır (para birimleri toplanmaz); miktar farkı yalnız sayılır, satırın birimiyle verilir.",
+   "redaction": "Fark onaylayanı ve nedeni verilmez. Fiyat = hassas (Confidential).",
+   "scanLimit": 1000
   }
  ]
 }

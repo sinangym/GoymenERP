@@ -152,7 +152,7 @@ public sealed class AiYa1ReadToolsTests
             new CounterpartyPartyLookupAiTool(null!, new FixedTime(Now)).Descriptor,
             new CounterpartyPartySummaryAiTool(null!, new FixedTime(Now)).Descriptor,
             new CounterpartyRoleCountsAiTool(null!, new FixedTime(Now)).Descriptor,
-        };
+        }.Concat(AiWpa3bReadToolsTests.Descriptors()).ToArray();
         Assert.Equal(descriptors.Length, descriptors.Select(descriptor => descriptor.ToolId).Distinct(StringComparer.Ordinal).Count());
         var entries = catalog.RootElement.GetProperty("tools").EnumerateArray().ToArray();
         Assert.Equal(descriptors.Length, entries.Length);
@@ -168,6 +168,11 @@ public sealed class AiYa1ReadToolsTests
             Assert.Equal(descriptor.FieldAllowlist,
                 entry.GetProperty("fieldAllowlist").EnumerateArray().Select(value => value.GetString()!).Order(StringComparer.Ordinal));
             Assert.Null(descriptor.OwnerCommandName);
+            if (entry.TryGetProperty("arguments", out var arguments))
+            {
+                Assert.Equal(descriptor.FieldAllowlist,
+                    arguments.EnumerateObject().Select(argument => argument.Name).Order(StringComparer.Ordinal));
+            }
         }
     }
 
