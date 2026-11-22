@@ -1,6 +1,7 @@
 using System.Globalization;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.Labels;
 using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -48,15 +49,9 @@ internal sealed class SqlInventoryStockAgingReadPortV1(InventoryDbContext databa
             var labelIds = page.Select(row => row.LabelId).Distinct().ToArray();
             var labels = await database.Labels.AsNoTracking()
                 .Where(row => row.CompanyId == companyId && labelIds.Contains(row.Id))
-                .Select(row => new { row.Id, row.Code, row.HeatNumber, row.CoilNumber, row.CreatedAtUtc })
+                .Select(row => new { row.Id, row.Code, row.HeatNumber, row.CoilNumber })
                 .ToDictionaryAsync(row => row.Id, cancellationToken);
-            var firstIncoming = await (from line in database.MovementLines.AsNoTracking()
-                    join movement in database.Movements.AsNoTracking()
-                        on new { line.CompanyId, Id = line.MovementId } equals new { movement.CompanyId, movement.Id }
-                    where line.CompanyId == companyId && labelIds.Contains(line.LabelId) && line.Direction == (int)StockDirection.In
-                    group movement by line.LabelId into grouped
-                    select new { LabelId = grouped.Key, First = grouped.Min(item => item.OccurredAtUtc) })
-                .ToDictionaryAsync(row => row.LabelId, row => row.First, cancellationToken);
+            var entries = await EntriesAsync(companyId, labelIds, cancellationToken);
 
             var items = new List<InventoryStockAgingPositionV1>(page.Length);
             foreach (var position in page)
@@ -67,9 +62,9 @@ internal sealed class SqlInventoryStockAgingReadPortV1(InventoryDbContext databa
                     return new(InventoryStockAgingOutcomeV1.Unavailable, companyId, [], false);
                 }
 
+                var (entry, inherited) = entries[position.LabelId];
                 items.Add(new InventoryStockAgingPositionV1(position.LabelId, label.Code, position.ProductId, position.LocationId,
-                    label.HeatNumber, label.CoilNumber, Kilograms(position.Kg), label.CreatedAtUtc,
-                    firstIncoming.TryGetValue(position.LabelId, out var first) ? first : null));
+                    label.HeatNumber, label.CoilNumber, Kilograms(position.Kg), entry, inherited));
             }
 
             return new(InventoryStockAgingOutcomeV1.Found, companyId, items, positions.Length > query.PageSize);
@@ -81,7 +76,103 @@ internal sealed class SqlInventoryStockAgingReadPortV1(InventoryDbContext databa
         }
     }
 
+    /// <summary>Technical walk bound (not a business rule): a longer split/merge chain answers an unknown entry.</summary>
+    internal const int MaximumAncestorDepth = 32;
+
+    /// <summary>
+    /// The entry of each label: walk split/merge edges (never manufacturing) back to the roots in batched reads, take each root's
+    /// first incoming movement, and give every descendant the oldest entry among its parents.
+    /// </summary>
+    private async Task<Dictionary<Guid, (DateTimeOffset? Entry, bool Inherited)>> EntriesAsync(Guid companyId, IReadOnlyCollection<Guid> labelIds,
+        CancellationToken cancellationToken)
+    {
+        var parents = new Dictionary<Guid, List<Guid>>();
+        var seen = new HashSet<Guid>(labelIds);
+        var frontier = labelIds.ToArray();
+        var truncated = new HashSet<Guid>();
+        for (var depth = 0; frontier.Length > 0; depth++)
+        {
+            if (depth == MaximumAncestorDepth)
+            {
+                truncated.UnionWith(frontier);
+                break;
+            }
+
+            var current = frontier;
+            var edges = await (from output in database.LabelTransformationOutputs.AsNoTracking()
+                    join transformation in database.LabelTransformations.AsNoTracking()
+                        on new { output.CompanyId, Id = output.TransformationId } equals new { transformation.CompanyId, transformation.Id }
+                    join input in database.LabelTransformationInputs.AsNoTracking()
+                        on new { output.CompanyId, output.TransformationId } equals new { input.CompanyId, input.TransformationId }
+                    where output.CompanyId == companyId && current.Contains(output.LabelId)
+                        && (transformation.Kind == (int)InventoryLabelTransformationKind.Split
+                            || transformation.Kind == (int)InventoryLabelTransformationKind.Merge)
+                    select new { Child = output.LabelId, Parent = input.LabelId })
+                .ToArrayAsync(cancellationToken);
+            var next = new List<Guid>();
+            foreach (var edge in edges)
+            {
+                if (!parents.TryGetValue(edge.Child, out var list)) parents[edge.Child] = list = [];
+                if (!list.Contains(edge.Parent)) list.Add(edge.Parent);
+                if (seen.Add(edge.Parent)) next.Add(edge.Parent);
+            }
+
+            frontier = [.. next];
+        }
+
+        var roots = seen.Where(label => !parents.ContainsKey(label) && !truncated.Contains(label)).ToArray();
+        var firstIncoming = await (from line in database.MovementLines.AsNoTracking()
+                join movement in database.Movements.AsNoTracking()
+                    on new { line.CompanyId, Id = line.MovementId } equals new { movement.CompanyId, movement.Id }
+                where line.CompanyId == companyId && roots.Contains(line.LabelId) && line.Direction == (int)StockDirection.In
+                group movement by line.LabelId into grouped
+                select new { LabelId = grouped.Key, First = grouped.Min(item => item.OccurredAtUtc) })
+            .ToDictionaryAsync(row => row.LabelId, row => row.First, cancellationToken);
+
+        return InventoryStockAgingEntryResolver.Resolve(labelIds, parents, firstIncoming, truncated);
+    }
+
     private static string Kilograms(decimal value) => value.ToString("0.############################", CultureInfo.InvariantCulture);
+}
+
+/// <summary>
+/// WP14: the pure entry resolution over an already-read genealogy. A root's entry is its first incoming movement; a split/merge
+/// child takes the OLDEST entry of its parents (merge: NEEDS-SINAN); any unknown or truncated parent makes the child unknown —
+/// an oldest date is never taken from a partial set. A cycle (a broken store) is unknown.
+/// </summary>
+internal static class InventoryStockAgingEntryResolver
+{
+    public static Dictionary<Guid, (DateTimeOffset? Entry, bool Inherited)> Resolve(IReadOnlyCollection<Guid> labelIds,
+        IReadOnlyDictionary<Guid, List<Guid>> parents, IReadOnlyDictionary<Guid, DateTimeOffset> firstIncoming, IReadOnlySet<Guid> truncated)
+    {
+        var memo = new Dictionary<Guid, DateTimeOffset?>();
+        var onPath = new HashSet<Guid>();
+        DateTimeOffset? Resolve(Guid label)
+        {
+            if (memo.TryGetValue(label, out var known)) return known;
+            if (!onPath.Add(label)) return null;
+            DateTimeOffset? entry;
+            if (truncated.Contains(label))
+            {
+                entry = null;
+            }
+            else if (!parents.TryGetValue(label, out var list))
+            {
+                entry = firstIncoming.TryGetValue(label, out var first) ? first : null;
+            }
+            else
+            {
+                var resolved = list.Select(Resolve).ToArray();
+                entry = resolved.Any(item => item is null) ? null : resolved.Min();
+            }
+
+            onPath.Remove(label);
+            memo[label] = entry;
+            return entry;
+        }
+
+        return labelIds.Distinct().ToDictionary(label => label, label => (Resolve(label), parents.ContainsKey(label)));
+    }
 }
 
 public static class InventoryStockAgingRegistration

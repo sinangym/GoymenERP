@@ -1,4 +1,7 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Observability;
+using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Reporting.Domain;
@@ -27,7 +30,7 @@ internal sealed class ReportingInventoryStockAgingSourceV1(IInventoryStockAgingR
         };
         return new(outcome, answer.CompanyId, outcome == ReportingSourceOutcomeV1.Found
             ? answer.Items.Select(item => new ReportingStockAgingSourceRowV1(item.LabelId, item.LabelCode, item.ProductId, item.LocationId,
-                item.HeatNumber, item.CoilNumber, item.PhysicalKg, item.LabelCreatedAtUtc, item.FirstIncomingAtUtc)).ToArray()
+                item.HeatNumber, item.CoilNumber, item.PhysicalKg, item.EntryAtUtc, item.EntryInherited)).ToArray()
             : [], outcome == ReportingSourceOutcomeV1.Found && answer.HasMore);
     }
 }
@@ -97,17 +100,62 @@ internal sealed class ReportingAccountingTrialBalanceSourceV1(AccountingTrialBal
     }
 }
 
+/// <summary>
+/// YOL-D30: the company's open items of one direction through Finance's own authorized open-item read (its read and amount
+/// authorities apply). Only Open items with a disclosed, positive outstanding amount are passed on; a redacted amount is Denied.
+/// More than the technical bound sets WindowFull (the centre then refuses rather than show a cut sub-ledger).
+/// </summary>
+internal sealed class ReportingFinancePartyAgingSourceV1(IFinanceOpenItemReadServiceV1 owner, ICompanyContext company, ICurrentUser user,
+    ICorrelationContext correlation) : IReportingPartyAgingSourceV1
+{
+    public async Task<ReportingPartyAgingSourceV1> ReadAsync(Guid companyId, bool receivable, CancellationToken cancellationToken = default)
+    {
+        if (!company.IsResolved || company.CompanyId != companyId || user.UserId is not { Length: > 0 } actor)
+            return new(ReportingSourceOutcomeV1.Denied, companyId, [], false);
+        var context = new FinanceContext(companyId, actor, correlation.IsResolved ? correlation.CorrelationId : Guid.NewGuid().ToString("N"),
+            correlation.IsResolved ? correlation.CausationId : null);
+        var direction = receivable ? FinanceOpenItemDirectionV1.Receivable : FinanceOpenItemDirectionV1.Payable;
+        var items = new List<ReportingPartyAgingItemV1>();
+        var scanned = 0;
+        string? cursor = null;
+        do
+        {
+            var result = await owner.ListAuthorizedAsync(context, new SourceListRequest(cursor), cancellationToken);
+            if (result.Outcome != ReadOutcome.Found || result.Resource is not { } page)
+                return new(result.Outcome == ReadOutcome.Denied ? ReportingSourceOutcomeV1.Denied : ReportingSourceOutcomeV1.Unavailable, companyId, [], false);
+            if (page.CompanyId != companyId) return new(ReportingSourceOutcomeV1.Unavailable, companyId, [], false);
+            foreach (var item in page.Items)
+            {
+                if (item.CompanyId != companyId) return new(ReportingSourceOutcomeV1.Unavailable, companyId, [], false);
+                if (++scanned > IReportingPartyAgingSourceV1.MaximumItems) return new(ReportingSourceOutcomeV1.Found, companyId, items, true);
+                if (item.Direction != direction) continue;
+                if (item.Status is null || item.OutstandingAmount.Disclosure != AmountDisclosure.Visible || item.OutstandingAmount.Money is not { } money)
+                    return new(ReportingSourceOutcomeV1.Denied, companyId, [], false);
+                if (item.Status != FinanceOpenItemStatusV1.Open) continue;
+                if (money.CurrencyId != item.CurrencyId) return new(ReportingSourceOutcomeV1.Unavailable, companyId, [], false);
+                items.Add(new ReportingPartyAgingItemV1(item.PartyId, item.CompanyAccountId, item.CurrencyId, item.DueOn, money.Amount));
+            }
+
+            cursor = page.NextCursor;
+        }
+        while (cursor is not null);
+
+        return new(ReportingSourceOutcomeV1.Found, companyId, items, false);
+    }
+}
+
 public static class ReportingRuntimeServiceCollectionExtensions
 {
     /// <summary>
-    /// WP14: the report centre with its connected owner sources. OTIF (no Sales owner read of requested date × shipment date
-    /// yet) and the intercompany dump (no leg marking decided, EK-40) stay "not connected" — NEEDS-SINAN in the WP14 report.
+    /// WP14: the report centre with its connected owner sources. OTIF (no owner read of promised day × dated shipment per order
+    /// line yet) and the intercompany dump (YOL-D31's party ↔ company link is not recorded by Counterparty yet) stay "not connected".
     /// </summary>
     public static IServiceCollection AddReportingRuntimeV1(this IServiceCollection services)
     {
         services.AddScoped<IReportingStockAgingSourceV1, ReportingInventoryStockAgingSourceV1>();
         services.AddScoped<IReportingRecallSourceV1, ReportingInventoryRecallSourceV1>();
         services.AddScoped<IReportingTrialBalanceSourceV1, ReportingAccountingTrialBalanceSourceV1>();
+        services.AddScoped<IReportingPartyAgingSourceV1, ReportingFinancePartyAgingSourceV1>();
         return services;
     }
 }

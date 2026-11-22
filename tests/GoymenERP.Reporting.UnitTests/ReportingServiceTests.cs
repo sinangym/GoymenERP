@@ -17,19 +17,21 @@ public sealed class ReportingServiceTests
     private static readonly Guid Location = Guid.Parse("10000000-0000-4000-8000-000000000001");
     private static readonly string[] InventoryRead = [ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead];
 
-    private static Dictionary<string, string?> AgingParameters(string basis = "label-created") => new()
+    private static Dictionary<string, string?> AgingParameters() => new()
     {
-        ["asOf"] = "2026-11-22", ["ageBasis"] = basis, ["bucketDays"] = "30,60",
+        ["asOf"] = "2026-11-22", ["bucketDays"] = "30,60",
     };
 
     private static ReportingHarness WithStock()
     {
         var harness = new ReportingHarness();
-        // Entered 2026-11-01 Istanbul time (21 days) and 2026-09-01 (82 days); the second has no incoming movement.
+        // Entered 2026-11-01 Istanbul time (21 days); the second inherited 2026-09-01 (82 days) from its split source; the third
+        // has an entry the owner could not name.
         harness.StockAging.Rows.Add(new(Label, "ETK-1", Product, Location, "D-1", null, "1250.5", new DateTimeOffset(2026, 10, 31, 22, 30, 0, TimeSpan.Zero),
-            new DateTimeOffset(2026, 10, 31, 22, 30, 0, TimeSpan.Zero)));
+            false));
         harness.StockAging.Rows.Add(new(Guid.Parse("1a000000-0000-4000-8000-000000000002"), "=ETK-2", Product, Location, null, null, "300",
-            new DateTimeOffset(2026, 9, 1, 8, 0, 0, TimeSpan.Zero), null));
+            new DateTimeOffset(2026, 9, 1, 8, 0, 0, TimeSpan.Zero), true));
+        harness.StockAging.Rows.Add(new(Guid.Parse("1a000000-0000-4000-8000-000000000003"), "ETK-3", Product, Location, null, null, "50", null, false));
         return harness;
     }
 
@@ -63,16 +65,14 @@ public sealed class ReportingServiceTests
         Assert.Equal(new[] { ReportingHarness.Company }, harness.StockAging.AskedCompanies.ToArray());
         Assert.Equal(ReportingHarness.Company, table.CompanyId);
         Assert.Equal(new string?[] { "ETK-1", Label.ToString("D"), Product.ToString("D"), Location.ToString("D"), "D-1", null, "1250.5",
-            "2026-11-01", "21", "0-30" }, table.Rows[0].ToArray());
-        Assert.Equal(new string?[] { "2026-09-01", "82", "61+" }, table.Rows[1].Skip(7).ToArray());
+            "2026-11-01", "false", "21", "0-30" }, table.Rows[0].ToArray());
+        Assert.Equal(new string?[] { "2026-09-01", "true", "82", "61+" }, table.Rows[1].Skip(7).ToArray());
+        // An entry the owner could not name stays unknown, never guessed.
+        Assert.Equal(new string?[] { null, "false", null, null }, table.Rows[2].Skip(7).ToArray());
         Assert.Contains(table.Summary, item => item is { Id: "bucketKg:0-30", Value: "1250.5" });
         Assert.Contains(table.Summary, item => item is { Id: "bucketKg:61+", Value: "300" });
-        Assert.Contains(table.Summary, item => item is { Id: "pageTotalKg", Value: "1550.5" });
-
-        // On the first-incoming basis a position with no incoming movement has an unknown age, never a guessed one.
-        var incoming = await harness.Service(Reader, InventoryRead).RunAsync("stock-aging", AgingParameters("first-incoming"), null, null);
-        Assert.Equal(new string?[] { null, null, null }, incoming.Rows[1].Skip(7).ToArray());
-        Assert.Contains(incoming.Summary, item => item is { Id: "unknownAgeKg", Value: "300" });
+        Assert.Contains(table.Summary, item => item is { Id: "unknownAgeKg", Value: "50" });
+        Assert.Contains(table.Summary, item => item is { Id: "pageTotalKg", Value: "1600.5" });
     }
 
     [Fact]
@@ -119,10 +119,7 @@ public sealed class ReportingServiceTests
     {
         var harness = new ReportingHarness();
         Assert.Equal((503, ReportingProblemCodesV1.SourceNotConnected), await Code(() => harness.Service(Reader, ErpPermissions.SalesReportsRead)
-            .RunAsync("otif", new Dictionary<string, string?>
-            {
-                ["from"] = "2026-11-01", ["to"] = "2026-11-30", ["onTimeToleranceDays"] = "0", ["inFullTolerancePercent"] = "0",
-            }, null, null)));
+            .RunAsync("otif", new Dictionary<string, string?> { ["from"] = "2026-11-01", ["to"] = "2026-11-30" }, null, null)));
         Assert.Equal((503, ReportingProblemCodesV1.SourceNotConnected), await Code(() => harness.Service(Reader, ErpPermissions.ReportingIntercompanyRead)
             .RunAsync("intercompany", new Dictionary<string, string?> { ["from"] = "2026-11-01", ["to"] = "2026-11-30" }, null, null)));
     }
@@ -161,14 +158,14 @@ public sealed class ReportingServiceTests
 
         var file = await harness.Service(Reader, [.. InventoryRead, ErpPermissions.ReportingExport]).ExportAsync("stock-aging", request);
         var text = Encoding.UTF8.GetString(file.Content, 3, file.Content.Length - 3);
-        Assert.Equal("Etiket,Fiziksel kg,Yaş aralığı\r\nETK-1,1250.5,0-30\r\n'=ETK-2,300,61+\r\n", text);
-        Assert.Equal(2, file.RowCount);
+        Assert.Equal("Etiket,Fiziksel kg,Yaş aralığı\r\nETK-1,1250.5,0-30\r\n'=ETK-2,300,61+\r\nETK-3,50,\r\n", text);
+        Assert.Equal(3, file.RowCount);
         await using var database = harness.Database();
         var record = Assert.Single(await database.Exports.ToListAsync());
-        Assert.Equal((ReportingHarness.Company, Reader, "stock-aging", "csv", 1, 100, 2, file.ContentSha256, file.ExportId, "corr-test"),
+        Assert.Equal((ReportingHarness.Company, Reader, "stock-aging", "csv", 1, 100, 3, file.ContentSha256, file.ExportId, "corr-test"),
             (record.CompanyId, record.ActorUserId, record.ReportId, record.Format, record.Page, record.PageSize, record.RowCount, record.ContentSha256,
                 record.Id, record.CorrelationId));
-        Assert.Equal("""{"ageBasis":"label-created","asOf":"2026-11-22","bucketDays":"30,60"}""", record.ParametersJson);
+        Assert.Equal("""{"asOf":"2026-11-22","bucketDays":"30,60"}""", record.ParametersJson);
         var audit = Assert.Single(harness.Audit.Events);
         Assert.Equal(("reporting.report.exported.v1", ReportingHarness.Company, ErpPermissions.ReportingExport, file.ExportId.ToString("D")),
             (audit.EventType, audit.CompanyId, audit.PermissionCode, audit.EntityId));
@@ -203,6 +200,8 @@ public sealed class ReportingServiceTests
         Assert.Equal("included", sections["trial-balance"]);
         Assert.Equal("forbidden", sections["stock-positions"]);
         Assert.Equal("forbidden", sections["intercompany"]);
+        Assert.Equal("forbidden", sections["receivables-aging"]);
+        Assert.False(sections.ContainsKey("counterparty-balances"));
         Assert.Equal("not-connected", sections["document-trail"]);
         Assert.Equal(ReportingHarness.Company, manifest.RootElement.GetProperty("companyId").GetGuid());
         Assert.Empty(harness.StockAging.AskedCompanies);
@@ -276,6 +275,51 @@ public sealed class ReportingServiceTests
         Assert.Equal((404, "not_found"), await Code(() => foreign.PassivateSavedViewAsync(created.View.Id, new("1"), Meta("x2"))));
         await using var other = harness.Database(new FixedCompany(ReportingHarness.OtherCompany));
         Assert.Empty(await other.SavedViews.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Party_aging_groups_open_items_per_party_account_and_currency_in_the_decided_buckets_without_mixing_currencies()
+    {
+        var harness = new ReportingHarness();
+        var party = Guid.Parse("e0000000-0000-4000-8000-000000000001");
+        var account = Guid.Parse("e1000000-0000-4000-8000-000000000001");
+        var tryCurrency = Guid.Parse("e2000000-0000-4000-8000-000000000001");
+        var usd = Guid.Parse("e2000000-0000-4000-8000-000000000002");
+        harness.PartyAging.Receivables.Add(new(party, account, tryCurrency, new DateOnly(2026, 12, 1), "100.50"));
+        harness.PartyAging.Receivables.Add(new(party, account, tryCurrency, new DateOnly(2026, 11, 22), "10"));
+        harness.PartyAging.Receivables.Add(new(party, account, tryCurrency, new DateOnly(2026, 8, 1), "5"));
+        harness.PartyAging.Receivables.Add(new(party, account, tryCurrency, null, "1"));
+        harness.PartyAging.Receivables.Add(new(party, account, usd, new DateOnly(2026, 10, 1), "7"));
+        var permissions = new[] { ErpPermissions.FinanceOpenItemsRead, ErpPermissions.FinanceOpenItemsAmountRead };
+        var table = await harness.Service(Reader, permissions).RunAsync("party-aging",
+            new Dictionary<string, string?> { ["asOf"] = "2026-11-22", ["direction"] = "receivable" }, null, null);
+        Assert.Equal(new[] { (ReportingHarness.Company, true) }, harness.PartyAging.Asked.ToArray());
+        Assert.Equal(2, table.Rows.Count);
+        Assert.Equal(new string?[] { party.ToString("D"), account.ToString("D"), tryCurrency.ToString("D"), "100.5", "10", "0", "0", "5", "1", "116.5", "4" },
+            table.Rows[0].ToArray());
+        Assert.Equal(new string?[] { "0", "0", "7", "0", "0", "0", "7", "1" }, table.Rows[1].Skip(3).ToArray());
+
+        Assert.Equal(403, (await Assert.ThrowsAsync<ReportingException>(() => harness.Service(Reader, ErpPermissions.FinanceOpenItemsRead)
+            .RunAsync("party-aging", new Dictionary<string, string?> { ["asOf"] = "2026-11-22", ["direction"] = "payable" }, null, null))).StatusCode);
+        harness.PartyAging.WindowFull = true;
+        Assert.Equal((503, ReportingProblemCodesV1.SourceWindowFull), await Code(() => harness.Service(Reader, permissions)
+            .RunAsync("party-aging", new Dictionary<string, string?> { ["asOf"] = "2026-11-22", ["direction"] = "receivable" }, null, null)));
+    }
+
+    [Fact]
+    public async Task The_auditor_package_carries_receivable_and_payable_aging_as_of_the_period_end_for_a_finance_reader()
+    {
+        var harness = new ReportingHarness();
+        harness.PartyAging.Payables.Add(new(Guid.Parse("e0000000-0000-4000-8000-000000000009"), Guid.Parse("e1000000-0000-4000-8000-000000000009"),
+            Guid.Parse("e2000000-0000-4000-8000-000000000001"), new DateOnly(2026, 6, 30), "40"));
+        var file = await harness.Service(Reader, ErpPermissions.ReportingAuditorPackageExport, ErpPermissions.FinanceOpenItemsRead,
+            ErpPermissions.FinanceOpenItemsAmountRead).BuildAuditorPackageAsync(new("2026-01-01", "2026-06-30"));
+        using var archive = new ZipArchive(new MemoryStream(file.Content));
+        Assert.Contains("sections/payables-aging.csv", archive.Entries.Select(entry => entry.FullName));
+        Assert.Contains("sections/receivables-aging.csv", archive.Entries.Select(entry => entry.FullName));
+        var payables = new StreamReader(archive.GetEntry("sections/payables-aging.csv")!.Open()).ReadToEnd();
+        // Due on the period end itself: 0 days overdue.
+        Assert.Contains(",0,40,0,0,0,0,40,1", payables);
     }
 
     private static async Task<(int, string)> Code(Func<Task> action)
