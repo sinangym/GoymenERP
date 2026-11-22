@@ -773,3 +773,13 @@ The global Product card now carries a separate explicit `TradeGoods` or `Manufac
 - UI: the existing Product card contains the explicit class panel and a separate server-granted child control `product.items.set-cogs-classification` (PRODUCT owner version 1.3). It shows no inferred account, retains ambiguous command bodies/keys by API/session/actor/company/product and rejects former-context replies.
 
 Runtime SQL, unit tests, Vitest, browser, CI and final K3 reviews remain separate evidence. Central route mapping, registry admission/fingerprint, OpenAPI, recovery/release and relational/test-group inventories are coordinated at train integration. New private Product participant context construction and narrow canonical Audit operation changes remain K3 review surfaces; no query-filter bypass or guard allowlist was added.
+
+### AK-1 — theoretical kg per unit read port (SAT-D437, KLN-D119)
+
+`IProductTheoreticalKilogramsPerUnitReadPortV1.ReadAsync(productId, unitId, effectiveOn)` (implemented by
+`ProductTheoreticalKilogramsPerUnitReadPort`, registered with `AddProductPurchaseUnitConversion`) answers how many kg one
+unit of the card weighs in theory, as a view over the existing B-07 source (`ProductPurchaseUnitConversionService` and
+`ProductUnitConversionCalculatorV1`; no new formula). `Found` carries the figure and its evidence (card version, formula
+version, dimension/weight-table versions, Settings policy id/version/density, unit profile id/version, unit semantics
+version) so a consumer can pin it at order approval (SAT-D437); a unit not on the card or without a kg source is `NoSource`,
+a weight-table conflict `Refused`, and not-found/denied/unavailable carry no figure (fail-closed).

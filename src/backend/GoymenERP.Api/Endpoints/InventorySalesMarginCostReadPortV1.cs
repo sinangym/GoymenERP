@@ -24,6 +24,10 @@ public sealed class InventorySalesMarginCostReadPortV1(
             throw new InvalidOperationException("Stok maliyet kaynağı istekle uyuşmuyor.");
         SalesLineMarginUnavailableReason? reason = answer.Status switch
         {
+            // SAT-D438 / AK-6: the margin of a line in another unit than the kg (a converted cost, named by its policy) stays
+            // closed until its golden is on main; AK-1's Product kg/unit source must not open it. Only the kg cost passes.
+            InventoryAverageCostUnitReadStatusV1.Value when answer.PolicyProfileId is not null
+                => SalesLineMarginUnavailableReason.UnitConversionUndecided,
             InventoryAverageCostUnitReadStatusV1.Value when answer.CostCurrencyId == SettingsCurrencyIdentitiesV1.TurkishLira => null,
             InventoryAverageCostUnitReadStatusV1.Value => SalesLineMarginUnavailableReason.CurrencyConversionUndecided,
             InventoryAverageCostUnitReadStatusV1.NoSource => SalesLineMarginUnavailableReason.CostNoSource,

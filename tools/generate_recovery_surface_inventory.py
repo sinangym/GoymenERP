@@ -50,9 +50,10 @@ EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
     "3d62237456b4c9d291ced56872b2748d1ce53eed7f6d6164f8cc63e406eca09c"
 )
 # W8 approval-mode repair (7e2c50a0b): exact producer measurements; K3 review remains pending.
-EXPECTED_MIGRATION_COUNT = 347
+# AK-2 (KLN-D119): +1 migration AddInventoryLabelPieceCounts; producer re-measured, K3 review pending.
+EXPECTED_MIGRATION_COUNT = 348
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
-    '8f52a3417e71daccd95d883162c27f57cb9a1d36edccb48700ed635ecb7a5e72'
+    '8e93dc7c75f0da53a114d9dc156e14b96c5f0811e79345c9f9050d858a660d51'
 )
 # tren-1 wave 3 integration: +7 durable stores from platform/alis_cari/uretim/finans/kimlik and
 # +1 from stok_lojistik (product.profile-weight-attempts); every new classification is
@@ -97,10 +98,10 @@ EXPECTED_DURABLE_STORE_COUNT = 66
 # The full src/backend byte digest is still computed and emitted as `sourceSurface` in the
 # inventory (and copied into the release manifest).  The manifest sourceSurface is post-hoc
 # evidence, not a merge block: it is never compared with a pinned constant.
-EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 1480
-# URN-D25 duplicate read (ProductReadStore) after SAT-D426: producer re-measured; 1480 inputs, 347 migrations; K3 pending.
+EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 1482
+# AK-1/AK-2 piece/kg base (KLN-D119): producer re-measured; 1482 inputs, 348 migrations; K3 pending.
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    '7d2e86dbbf6eb3fc7ce262017fa34d49d7c458af928488f27aa2306c651855f2'
+    '40521ce5d1eec2c1dca46ec6b79291b222a69ae18fdfdcb03d8d90d0ca672ed7'
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -1479,7 +1480,7 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
     (
         "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryDefiniteShipmentParticipant.cs",
         "StageAsync",
-    ): "162eec3f1c3f5a624e20210b851dde63f61e839a2033d0f463bce7c3f6bd6fbe",
+    ): "9ba569731bc64694f5c81a990b8aa3d2e1a43a6ed9df9ec63c02b3223b823ca6",
     # tren-1 wave 3 (stok_lojistik): K3 review pending (stok).
     (
         "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventorySupplierReturnExitParticipant.cs",
@@ -1647,7 +1648,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Executions/SqlGroupSharedCommandTerminalStore.cs": "5ecf927a5505ff79b5d2f3d79e436dc674d1b98aa05db28c8ae6e6669ac9b301",
     "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/InventoryOpeningCommandService.cs": "fd384d4cdc34ec642db71049b1dbd0180f2d317f38acfd3a6758d943d571bebb",
     "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryCustomerReturnParticipant.cs": "f46571193991fdf2d7e4b26b5608998293ca55384b7568189418aef283f2b443",
-    "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryDefiniteShipmentParticipant.cs": 'a06242b10b55ddac408e4e1daca2ba35b1b41e8fe47527614ba1e62fd00de544',
+    "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryDefiniteShipmentParticipant.cs": '8db571bdd9cf302ba08004f2964f948547a2e471319a513bb55fff26585a4dac',
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsCustomerReturnStore.cs": "06808d6fe56293d16cf04d41fdff20505dcc0ed1862471ceae600e48a30c91df",
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsStore.cs": "20c61595c4c05a84097373db7cf44ba8078514f430df459fb98ad75ea0bca290",
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsTransferOutgoingDocumentStore.cs": '9cad954953c033049b2b879ba47a16a6c9cde69fd0449673e1f6b4228ea2b918',

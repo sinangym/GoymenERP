@@ -12,7 +12,7 @@ public sealed class ApprovedUnitIdentityCatalogTests
     private static readonly Guid Gsp = Guid.Parse("10000000-0000-0000-0000-000000000002");
 
     [Fact]
-    public async Task Standard_unit_identities_are_explicit_while_existing_company_profiles_remain_kilogram_only()
+    public async Task Standard_unit_identities_are_explicit_and_only_kilogram_and_piece_carry_company_profiles()
     {
         var catalog = new ApprovedSettingsUnitIdentityCatalog();
 
@@ -22,8 +22,10 @@ public sealed class ApprovedUnitIdentityCatalogTests
             new UnitIdentityV1(Guid.Parse("564b68b4-02a8-5e72-af2a-4f5cb9b91702"), "m", "length", false),
             new UnitIdentityV1(Guid.Parse("ab3cea5c-850e-515f-8de5-16f192ad7771"), "t", "weight", false),
         }, await catalog.ListAsync());
-        Assert.Equal(3, ApprovedUnitProfileCatalog.Approved.Entries.Count);
-        Assert.All(ApprovedUnitProfileCatalog.Approved.Entries, entry => Assert.Equal(Kg, entry.UnitId));
+        // AK-1: kg and piece carry company profiles; metre and tonne remain identities only.
+        Assert.Equal(6, ApprovedUnitProfileCatalog.Approved.Entries.Count);
+        Assert.All(ApprovedUnitProfileCatalog.Approved.Entries,
+            entry => Assert.Contains(entry.UnitId, new[] { Kg, SettingsUnitIdentitiesV1.Piece }));
         Assert.Equal(expected, await catalog.ReadAsync(Kg));
     }
 

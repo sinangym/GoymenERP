@@ -93,6 +93,25 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
     /// </summary>
     internal const string LabelTransformationKindCheck = "[Kind] IN (1, 2, 3)";
 
+    /// <summary>KLN-D119 (AK-2): a bucket's piece count is null (no piece tracking) or zero exactly when its kg is zero.</summary>
+    internal const string BalancePieceCountCheck =
+        "[PieceCount] IS NULL OR ([PieceCount] = 0 AND [QuantityKg] = 0) OR ([PieceCount] > 0 AND [QuantityKg] > 0)";
+
+    /// <summary>KLN-D119: a movement line moves zero or more pieces (zero for a kg-only count adjustment).</summary>
+    internal const string MovementLinePieceCountCheck = "[PieceCount] IS NULL OR [PieceCount] >= 0";
+
+    /// <summary>KLN-D119: a split/merge source or output label carries at least one piece when it tracks pieces.</summary>
+    internal const string LabelTransformationPieceCountCheck = "[PieceCount] IS NULL OR [PieceCount] > 0";
+
+    /// <summary>
+    /// KLN-D119: a count of a piece-tracking label carries both piece counts, a kg-only count neither; each is zero exactly
+    /// when its kilograms are.
+    /// </summary>
+    internal const string StockCountPieceCountCheck =
+        "([BookPieceCount] IS NULL AND [CountedPieceCount] IS NULL) OR ([BookPieceCount] IS NOT NULL AND [CountedPieceCount] IS NOT NULL "
+        + "AND (([BookPieceCount] = 0 AND [BookKg] = 0) OR ([BookPieceCount] > 0 AND [BookKg] > 0)) "
+        + "AND (([CountedPieceCount] = 0 AND [CountedKg] = 0) OR ([CountedPieceCount] > 0 AND [CountedKg] > 0)))";
+
     /// <summary>F-017 STOK §3.2 (F017-b): no empty identity on a future supply allocation.</summary>
     internal const string FutureSupplyAllocationIdentityCheck =
         "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
@@ -462,6 +481,7 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
         {
             table.HasCheckConstraint("CK_LabelTransformationInputs_Sequence", "[Sequence] >= 1");
             table.HasCheckConstraint("CK_LabelTransformationInputs_State", "[LabelVersion] >= 1 AND [QuantityKg] > 0");
+            table.HasCheckConstraint("CK_LabelTransformationInputs_PieceCount", LabelTransformationPieceCountCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.TransformationId, x.Sequence });
         entity.Property(x => x.QuantityKg).HasPrecision(18, 3);
@@ -478,6 +498,7 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
         {
             table.HasCheckConstraint("CK_LabelTransformationOutputs_Sequence", "[Sequence] >= 1");
             table.HasCheckConstraint("CK_LabelTransformationOutputs_State", "[LabelVersion] >= 1 AND [QuantityKg] > 0");
+            table.HasCheckConstraint("CK_LabelTransformationOutputs_PieceCount", LabelTransformationPieceCountCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.TransformationId, x.Sequence });
         entity.Property(x => x.QuantityKg).HasPrecision(18, 3);
@@ -573,6 +594,7 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
             table.HasCheckConstraint("CK_MovementLines_Enums",
                 "[Direction] IN (1, 2) AND [OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] IN (1, 2)");
             table.HasCheckConstraint("CK_MovementLines_Quantity", "[QuantityKg] > 0");
+            table.HasCheckConstraint("CK_MovementLines_PieceCount", MovementLinePieceCountCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.MovementId, x.LineNumber });
         entity.Property(x => x.QuantityKg).HasPrecision(18, 3);
@@ -594,6 +616,7 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
             table.HasCheckConstraint("CK_Balances_Enums",
                 "[OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] IN (1, 2)");
             table.HasCheckConstraint("CK_Balances_Quantity", "[QuantityKg] >= 0");
+            table.HasCheckConstraint("CK_Balances_PieceCount", BalancePieceCountCheck);
         });
         entity.HasKey(x => x.Id);
         entity.Property(x => x.Id).ValueGeneratedNever();
@@ -897,6 +920,7 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
                 + "AND [CustodianId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
             table.HasCheckConstraint("CK_StockCounts_State", StockCountStateCheck);
+            table.HasCheckConstraint("CK_StockCounts_PieceCount", StockCountPieceCountCheck);
             table.HasCheckConstraint("CK_StockCounts_Text",
                 "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 "
                 + "AND LEN([CorrelationId]) > 0");

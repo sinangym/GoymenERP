@@ -172,7 +172,13 @@ public sealed record StockSourceReference
 }
 
 /// <summary>One line: a positive kilogram amount into or out of one physical position.</summary>
-public sealed record StockMovementLine(StockPosition Position, StockDirection Direction, Kilograms Quantity);
+/// <summary>
+/// One movement line. <paramref name="Pieces"/> (KLN-D119, AK-2) is the piece count that moves with the kilograms on a
+/// piece-tracking label; null on a label without a piece count. The ledger refuses a null on a piece-tracking label and a
+/// value on a piece-less label that holds stock.
+/// </summary>
+public sealed record StockMovementLine(StockPosition Position, StockDirection Direction, Kilograms Quantity,
+    PieceCount? Pieces = null);
 
 /// <summary>
 /// An immutable physical trace (§7.1). Once built it cannot change: there are no setters,
@@ -365,7 +371,7 @@ public sealed class StockMovement
             var into = lines[index];
             var outOf = lines[index + 1];
             if (into.Direction != StockDirection.In || outOf.Direction != StockDirection.Out
-                || into.Position != outOf.Position || into.Quantity != outOf.Quantity)
+                || into.Position != outOf.Position || into.Quantity != outOf.Quantity || into.Pieces != outOf.Pieces)
             {
                 throw Invalid("Transfer yolda kayıp hareketi aynı pozisyonda giriş-çıkış çiftleridir.");
             }
@@ -390,7 +396,7 @@ public sealed class StockMovement
         var inLine = ins[0];
         if (outLine.Position.Block != from || inLine.Position.Block != to
             || outLine.Position.WithBlock(to) != inLine.Position
-            || outLine.Quantity != inLine.Quantity)
+            || outLine.Quantity != inLine.Quantity || outLine.Pieces != inLine.Pieces)
         {
             throw Invalid("Blokaj değişikliği aynı fiziksel pozisyonda, aynı miktarla yalnız blokaj durumunu değiştirir.");
         }

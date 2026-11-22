@@ -15,11 +15,16 @@ public sealed record InventoryLabelTransformationSourceV1(
     [property: JsonRequired] Guid LabelId,
     [property: JsonRequired] string ExpectedLabelVersion);
 
+/// <summary>
+/// One new output label. <c>PieceCount</c> (KLN-D119, AK-2) is required when the source labels track pieces and must be
+/// omitted when they do not; the outputs' piece counts add up to the sources' (each output at least one piece).
+/// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record InventoryLabelTransformationOutputV1(
     [property: JsonRequired] Guid LabelId,
     [property: JsonRequired] string Code,
-    [property: JsonRequired] string QuantityKg);
+    [property: JsonRequired] string QuantityKg,
+    int? PieceCount = null);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record TransformInventoryLabelsV1(

@@ -53,10 +53,10 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
         RequireResolvedCompany();
         cancellationToken.ThrowIfCancellationRequested();
 
-        var (expectedVersion, counted, reason) = ParseStockCount(request);
+        var (expectedVersion, counted, reason, countedPieces) = ParseStockCount(request);
         var companyId = companyContext.CompanyId;
         var keyHash = GenealogyHash(metadata.IdempotencyKey.Trim());
-        var payloadHash = GenealogyPayloadHash(new
+        var kilogramContent = new
         {
             request.CountId,
             request.LabelId,
@@ -64,7 +64,15 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
             countedKg = counted.ToString(),
             countedAtUtc = request.CountedAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
             reason,
-        });
+        };
+        // KLN-D119: the counted pieces join the hash only when given, so every kg-only count keeps its stored hash.
+        var payloadHash = countedPieces is { } piecesForHash
+            ? GenealogyPayloadHash(new
+            {
+                kilogramContent.CountId, kilogramContent.LabelId, kilogramContent.expectedVersion, kilogramContent.countedKg,
+                kilogramContent.countedAtUtc, kilogramContent.reason, countedPieceCount = piecesForHash.Value,
+            })
+            : GenealogyPayloadHash(kilogramContent);
         if (await FindStockCountKeyReplayAsync(RecordStockCountCommand, keyHash, payloadHash, metadata.ActorId,
                 freshAuthorityFence, cancellationToken) is { } replay)
         {
@@ -114,7 +122,8 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
             count = new StockCount(request.CountId, companyId,
                 Position(balance.CompanyId, balance.OwnerKind, balance.OwnerId, balance.CustodianKind,
                     balance.CustodianId, balance.LocationId, IdentityOnly(label), balance.Block),
-                Kilograms.Of(balance.QuantityKg), counted, request.CountedAtUtc, reason);
+                Kilograms.Of(balance.QuantityKg), counted, request.CountedAtUtc, reason,
+                balance.PieceCount is { } bookPieces ? PieceCount.Of(bookPieces) : null, countedPieces);
         }
         catch (InventoryRuleException exception)
         {
@@ -154,6 +163,8 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
                     Block = balance.Block,
                     BookKg = count.Book.Value,
                     CountedKg = count.Counted.Value,
+                    BookPieceCount = count.BookPieces?.Value,
+                    CountedPieceCount = count.CountedPieces?.Value,
                     CountedAtUtc = count.CountedAtUtc,
                     Reason = count.Reason,
                     PayloadHash = payloadHash,
@@ -450,18 +461,21 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
                 StoredCountCostStatus(commands.GetValueOrDefault(row.Id), row, decisions.GetValueOrDefault(row.Id))))], windowFull);
     }
 
-    private static (long ExpectedVersion, Kilograms Counted, string Reason) ParseStockCount(RecordInventoryStockCountV1 request)
+    private static (long ExpectedVersion, Kilograms Counted, string Reason, PieceCount? CountedPieces) ParseStockCount(
+        RecordInventoryStockCountV1 request)
     {
         if (request.CountId == Guid.Empty || request.LabelId == Guid.Empty
             || !TryVersion(request.ExpectedLabelVersion, out var version)
             || !TryCountedQuantity(request.CountedKg, out var counted)
+            || request.CountedPieceCount is < 0
             || request.CountedAtUtc.Offset != TimeSpan.Zero
             || string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Trim().Length > StockCount.MaximumReasonLength)
         {
             throw StockCountError(400, InventoryStockCountCodesV1.ValidationFailed);
         }
 
-        return (version, counted, request.Reason.Trim());
+        return (version, counted, request.Reason.Trim(),
+            request.CountedPieceCount is { } pieces ? PieceCount.Of(pieces) : null);
     }
 
     /// <summary>A counted amount: canonical non-negative kg text with at most 3 decimals ("0" = the piece is gone).</summary>
@@ -626,7 +640,9 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
             return new StockCount(row.Id, row.CompanyId,
                 Position(row.CompanyId, row.OwnerKind, row.OwnerId, row.CustodianKind, row.CustodianId, row.LocationId,
                     IdentityOnly(label), row.Block),
-                Kilograms.Of(row.BookKg), Kilograms.Of(row.CountedKg), row.CountedAtUtc, row.Reason);
+                Kilograms.Of(row.BookKg), Kilograms.Of(row.CountedKg), row.CountedAtUtc, row.Reason,
+                row.BookPieceCount is { } bookPieces ? PieceCount.Of(bookPieces) : null,
+                row.CountedPieceCount is { } countedPieces ? PieceCount.Of(countedPieces) : null);
         }
         catch (InventoryRuleException exception)
         {
@@ -748,7 +764,9 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
                     decision.Decision == DecisionApproved ? InventoryStockCountStatusesV1.Approved : InventoryStockCountStatusesV1.Rejected,
                     decision.DecidedAtUtc,
                     decision.Reason,
-                    decision.MovementId, costStatus));
+                    decision.MovementId, costStatus),
+            row.BookPieceCount,
+            row.CountedPieceCount);
     }
 
     // The first decision freezes only the actual immutable TL movement stamp's status, never its price.

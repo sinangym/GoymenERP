@@ -12,7 +12,7 @@ using static GoymenERP.Product.UnitTests.ProductSalesEligibilityServiceTests;
 namespace GoymenERP.Product.UnitTests;
 
 /// <summary>B-07 source composition over synthetic owner replies; no SQL or production acceptance is claimed.</summary>
-public sealed class ProductPurchaseUnitConversionSourceTests
+public sealed partial class ProductPurchaseUnitConversionSourceTests
 {
     private static readonly Guid Tonne = Guid.Parse("6765373c-58a2-437e-8352-50e8af3487b5");
     private static readonly Guid Metre = Guid.Parse("ced78a0f-ea9f-48d5-9e85-a5ddc2aa27e5");

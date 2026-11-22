@@ -191,11 +191,21 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
             };
         }
 
+        PieceCount? pieces;
+        try
+        {
+            pieces = request.PieceCount is { } count ? PieceCount.Positive(count) : null;
+        }
+        catch (InventoryRuleException)
+        {
+            throw Refused(400, InventoryDefiniteShipmentCodesV1.InvalidQuantity);
+        }
+
         var movement = new StockMovement(request.MovementId, companyId, StockMovementKind.Issue,
             request.OccurredAtUtc,
             new StockSourceReference("logistics.definite-shipment", request.ShipmentId,
                 request.LoadingInstructionLineId),
-            [new StockMovementLine(position, StockDirection.Out, quantity)], CostResult.NotCalculated);
+            [new StockMovementLine(position, StockDirection.Out, quantity, pieces)], CostResult.NotCalculated);
         InventoryWriteOutcome movementOutcome;
         try
         {
@@ -204,6 +214,13 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
         catch (InventoryRuleException exception) when (exception.Code == InventoryRuleCodes.NegativePhysicalStock)
         {
             throw Refused(409, InventoryDefiniteShipmentCodesV1.PhysicalStockInsufficient, exception);
+        }
+        catch (InventoryRuleException exception) when (exception.Code is InventoryRuleCodes.PieceCountRequired
+            or InventoryRuleCodes.PieceCountNotTracked or InventoryRuleCodes.NegativePieceCount
+            or InventoryRuleCodes.InvalidPieceCount)
+        {
+            // KLN-D119: an unknown, extra or impossible piece count for this label is the request's quantity fault.
+            throw Refused(400, InventoryDefiniteShipmentCodesV1.InvalidQuantity, exception);
         }
         catch (InventoryStoreException exception) when (exception.Code is
             InventoryStoreCodes.MovementIdConflict or InventoryStoreCodes.DuplicateSource)
@@ -329,8 +346,16 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
         }
     }
 
-    private static string RequestHash(InventoryDefiniteShipmentRequestV1 request) => Hash(
-        JsonSerializer.Serialize(new
+    /// <summary>KLN-D119: the piece count joins the hash only when given, so every piece-less request keeps its stored hash.</summary>
+    private static string RequestHash(InventoryDefiniteShipmentRequestV1 request)
+    {
+        var core = KilogramRequestContent(request);
+        return Hash(request.PieceCount is { } pieces
+            ? JsonSerializer.Serialize(new { core, pieceCount = pieces }, Json)
+            : JsonSerializer.Serialize(core, Json));
+    }
+
+    private static object KilogramRequestContent(InventoryDefiniteShipmentRequestV1 request) => new
         {
             request.CompanyId,
             request.ShipmentId,
@@ -343,7 +368,7 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
             request.MovementId,
             request.QuantityKg,
             request.OccurredAtUtc,
-        }, Json));
+        };
 
     private static string Hash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToUpperInvariant();

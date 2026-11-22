@@ -98,6 +98,8 @@ internal sealed class LabelTransformationInputRow : IInventoryTenantRow
     public Guid LabelId { get; set; }
     public long LabelVersion { get; set; }
     public decimal QuantityKg { get; set; }
+    /// <summary>KLN-D119 (AK-2): the piece count; null on a label that does not track pieces.</summary>
+    public int? PieceCount { get; set; }
 }
 
 /// <summary>An output-label edge captured when its new physical identity is created.</summary>
@@ -109,6 +111,8 @@ internal sealed class LabelTransformationOutputRow : IInventoryTenantRow
     public Guid LabelId { get; set; }
     public long LabelVersion { get; set; }
     public decimal QuantityKg { get; set; }
+    /// <summary>KLN-D119 (AK-2): the piece count; null on a label that does not track pieces.</summary>
+    public int? PieceCount { get; set; }
 }
 
 /// <summary>
@@ -167,6 +171,8 @@ internal sealed class MovementLineRow : IInventoryTenantRow
     public Guid ProductId { get; set; }
     public int Block { get; set; }
     public decimal QuantityKg { get; set; }
+    /// <summary>KLN-D119 (AK-2): the piece count; null on a label that does not track pieces.</summary>
+    public int? PieceCount { get; set; }
 }
 
 /// <summary>
@@ -186,6 +192,8 @@ internal sealed class BalanceRow : IInventoryTenantRow
     public Guid ProductId { get; set; }
     public int Block { get; set; }
     public decimal QuantityKg { get; set; }
+    /// <summary>KLN-D119 (AK-2): the piece count; null on a label that does not track pieces.</summary>
+    public int? PieceCount { get; set; }
     public byte[] RowVersion { get; set; } = [];
 }
 
@@ -390,6 +398,9 @@ internal sealed class StockCountRow : IInventoryTenantRow
     public int Block { get; set; }
     public decimal BookKg { get; set; }
     public decimal CountedKg { get; set; }
+    /// <summary>KLN-D119 (AK-2): the book and counted pieces of a piece-tracking label; both null on a kg-only label.</summary>
+    public int? BookPieceCount { get; set; }
+    public int? CountedPieceCount { get; set; }
     public DateTimeOffset CountedAtUtc { get; set; }
     public string Reason { get; set; } = string.Empty;
     public string PayloadHash { get; set; } = string.Empty;

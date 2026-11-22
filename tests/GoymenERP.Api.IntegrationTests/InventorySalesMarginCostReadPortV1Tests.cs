@@ -37,6 +37,23 @@ public sealed class InventorySalesMarginCostReadPortV1Tests
             .ReadAsync(company, product, unit, new(2026, 11, 17)));
     }
 
+    [Fact]
+    public async Task AK6_gate_a_cost_converted_into_another_unit_stays_unit_conversion_undecided_until_the_SAT_D438_golden()
+    {
+        // AK-1 gives Inventory a Product kg/unit source, so a piece cost can now be converted; the margin of such a line
+        // (SAT-D438) is AK-6 and stays closed: no cost leaves the boundary, only the kg cost (no policy) passes.
+        var company = Guid.NewGuid(); var product = Guid.NewGuid(); var piece = Guid.NewGuid();
+        var context = new CompanyContext(); context.Set(company);
+        var owner = new CostOwner(InventoryAverageCostUnitReadAnswerV1.ForConverted(
+            InventoryCompanyWideAverageCostReadAnswerV1.ForValue(company, product, 10m,
+                [new(Guid.NewGuid(), 40m, 17)], SettingsCurrencyIdentitiesV1.TurkishLira), piece, 314m, 31.4m, Guid.NewGuid(), 3));
+
+        var answer = await new InventorySalesMarginCostReadPortV1(context, owner).ReadAsync(company, product, piece, new(2026, 11, 21));
+
+        Assert.Equal((SalesLineMarginUnavailableReason.UnitConversionUndecided, (decimal?)null, (Guid?)null),
+            (answer.UnavailableReason, answer.CostPerUnit, answer.CurrencyId));
+    }
+
     private sealed class CostOwner(InventoryAverageCostUnitReadAnswerV1 answer) : IInventoryAverageCostUnitReadPortV1
     {
         public Task<InventoryAverageCostUnitReadAnswerV1> ReadCompanyWideInUnitAsync(Guid productId, Guid unitId,

@@ -21,6 +21,9 @@ public sealed class ProductPurchaseUnitConversionService(ICompanyContext company
     private const string InvalidCode = "product_unit_conversion_invalid";
     private const string UnavailableCode = "product_unit_conversion_unavailable";
 
+    /// <summary>The source reason when the card's kg/m weight-table rows disagree (BS-13).</summary>
+    internal const string WeightConflictReason = "product_profile_weight_conflict";
+
     public async Task<ProductPurchaseUnitConversionReadV1> ReadAsync(Guid productId, DateOnly effectiveOn,
         CancellationToken cancellationToken = default) => (await ReadCoreAsync(productId, effectiveOn, cancellationToken)).Read;
 
@@ -153,7 +156,8 @@ public sealed class ProductPurchaseUnitConversionService(ICompanyContext company
                 hasFormula ? UnitConversionClassV1.FormulaBound : UnitConversionClassV1.None, answerUnits,
                 ProductUnitConversionCalculatorV1.FormulaVersion, dimension.Version, dimension.KgPerMetreTableVersion,
                 dimension.KgPerMetreSourceLabel, policy?.Profile.ProfileId, policy?.Profile.Version,
-                dimension.KgPerMetreConflict ? "product_profile_weight_conflict" : hasFormula ? null : NoSourceCode);
+                dimension.KgPerMetreConflict ? WeightConflictReason : hasFormula ? null : NoSourceCode,
+                policy?.DensityGramsPerCubicCentimetre);
             return new(new(ProductPurchaseUnitConversionOutcomeV1.Available, source), settings);
         }
         catch (OperationCanceledException) { throw; }

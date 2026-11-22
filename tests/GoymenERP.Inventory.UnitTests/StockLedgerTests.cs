@@ -7,7 +7,7 @@ using static GoymenERP.Inventory.UnitTests.InventoryFixture;
 
 namespace GoymenERP.Inventory.UnitTests;
 
-public sealed class StockLedgerTests
+public sealed partial class StockLedgerTests
 {
     [Fact]
     public void A_receipt_then_a_partial_issue_leaves_the_exact_remainder()
@@ -375,7 +375,9 @@ public sealed class StockLedgerTests
             .Select(method => method.Name)
             .Where(name => name != nameof(StockLedger.QuantityAt)
                 && name != nameof(StockLedger.PhysicalTotal)
-                && name != nameof(StockLedger.FreeTotal))
+                && name != nameof(StockLedger.FreeTotal)
+                && name != nameof(StockLedger.PiecesAt)
+                && name != nameof(StockLedger.TracksPieces))
             .ToArray();
         Assert.Equal([nameof(StockLedger.Apply)], writable);
     }

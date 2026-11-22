@@ -5,7 +5,7 @@ using GoymenERP.Modules.Inventory.Domain.Stock;
 
 namespace GoymenERP.Inventory.UnitTests;
 
-public sealed class InventoryLabelGenealogyTests
+public sealed partial class InventoryLabelGenealogyTests
 {
     private static readonly Guid CompanyId = Guid.Parse("10000000-0000-0000-0000-000000000001");
     private static readonly Guid ProductId = Guid.Parse("20000000-0000-0000-0000-000000000001");
