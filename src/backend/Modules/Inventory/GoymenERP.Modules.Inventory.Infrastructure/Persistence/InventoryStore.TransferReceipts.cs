@@ -213,12 +213,13 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
         dbContext.TransferAcceptances.Add(acceptance);
         dbContext.TransferReceipts.Add(receipt);
         var writtenOffIds = state.WrittenOff.Select(candidate => candidate.LineId).ToArray();
-        var before = TransferView(row, state.Lines, state.Dispatch, state.DispatchLines, state.Accepted, writtenOffIds);
+        var before = TransferView(row, state.Lines, state.Dispatch, state.DispatchLines, state.Accepted, writtenOffIds,
+            DispatchedPieces(state.Buckets));
         row.Version = effect.Acceptance.TransferVersion;
         row.Status = (int)aggregate.Status;
         row.UpdatedAtUtc = now;
         var view = TransferView(row, state.Lines, state.Dispatch, state.DispatchLines,
-            state.Accepted.Append(acceptance).ToArray(), writtenOffIds);
+            state.Accepted.Append(acceptance).ToArray(), writtenOffIds, DispatchedPieces(state.Buckets));
         var facts = await ReceiptFactsAsync(row, cancellationToken, addedReceipt: receipt);
         dbContext.Commands.Add(ReceiptCommandRow(ReceiveTransferLineCommand, keyHash, payloadHash, metadata, row.Id,
             view, facts));
@@ -724,7 +725,7 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             row.Status = (int)aggregate.Status;
             row.UpdatedAtUtc = now;
             view = TransferView(row, state.Lines, state.Dispatch, state.DispatchLines, state.Accepted,
-                state.WrittenOff.Select(candidate => candidate.LineId).Append(lineId).ToArray());
+                state.WrittenOff.Select(candidate => candidate.LineId).Append(lineId).ToArray(), DispatchedPieces(state.Buckets));
         }
         else
         {

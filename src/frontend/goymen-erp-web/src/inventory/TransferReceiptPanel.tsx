@@ -18,6 +18,7 @@ import { beginReceiptAttempt, fetchReceiptCandidates, fetchReceiptDocuments, fet
   recallReceiptSelection, rememberReceiptSelection, ReceiptReadError, sendReceiptCommand, subscribeReceiptAttempt, TRANSFER_RECEIPT_CAPABILITIES as CAP,
   type ReceiptCommand, type ReceiptPurpose, type ReceiptSnapshot, type ReceiptWork } from './transferReceiptApi'
 import { TRANSFER_RECEIPT_TEXT as T } from './transferReceiptText'
+import { parsePieceCount } from './stockCountContract'
 import styles from './inventory.module.css'
 
 interface Props { readonly transferId: string | null; readonly onChanged: (transferId: string) => void }
@@ -63,6 +64,8 @@ function Workspace({ transferId: seed, onChanged, shell, namespace, allowed, com
   const [revision, setRevision] = useState(0); const [documentRevision, setDocumentRevision] = useState(0)
   const [documentId, setDocumentId] = useState(''); const [documentLineId, setDocumentLineId] = useState(''); const [lineId, setLineId] = useState('')
   const [requestKey, setRequestKey] = useState(''); const [when, setWhen] = useState(''); const [reason, setReason] = useState(''); const [quantity, setQuantity] = useState('')
+  // KLN-D119 (AK-2b): the received / re-requested pieces of a line dispatched with pieces.
+  const [pieces, setPieces] = useState('')
   const [choice, setChoice] = useState<'' | 'Approve' | 'Reject'>('')
   const [draftLines, setDraftLines] = useState<Readonly<Record<string, { readonly selected: boolean; readonly kg: string; readonly reason: string }>>>({})
   const [error, setError] = useState<string | null>(null)
@@ -91,6 +94,9 @@ function Workspace({ transferId: seed, onChanged, shell, namespace, allowed, com
   const documentItems = mergeReceiptDocumentPages(documents.data?.pages ?? [])
   const selectedDocument = documentItems?.find((row) => row.documentId === documentId) ?? null
   const selectedDocumentLine = selectedDocument?.lines.find((row) => row.documentLineId === documentLineId) ?? null
+  const dispatchedPiecesOf = (transferLineId: string) => work?.transfer.lines.find((line) => line.lineId === transferLineId)?.dispatchedPieceCount
+  const receivePieceLine = selectedDocumentLine !== null && dispatchedPiecesOf(selectedDocumentLine.transferLineId) !== undefined
+  const renewalPieceLine = lineId !== '' && dispatchedPiecesOf(lineId) !== undefined
   const sameTarget = attempt.phase === 'idle' || transferId !== null && attempt.snapshot.work.transfer.transferId.toLowerCase() === transferId.toLowerCase()
   const ready = !frozen && work !== null && !workQuery.isFetching && purpose !== null && allowed.includes(purpose)
   const docsReady = ready && !documents.isFetching && !documents.isError && documentItems !== null
@@ -131,16 +137,24 @@ function Workspace({ transferId: seed, onChanged, shell, namespace, allowed, com
   }
   function receive() {
     if (!docsReady || work === null || selectedDocument?.status !== 'Effective' || selectedDocumentLine === null) { setError(T.invalid); return }
+    const receivedPieces = receivePieceLine ? parsePieceCount(pieces) : undefined
+    if (receivedPieces === null || receivedPieces === 0) { setError(T.invalidPieces); return }
     start({ kind: 'receive', lineId: selectedDocumentLine.transferLineId, document: selectedDocument, payload: { expectedTransferVersion: work.transfer.version,
       receivedAtUtc: selectedDocument.receivedAtUtc, incomingDocument: { kind: 'inventory.transfer.incoming', id: selectedDocument.documentId, lineId: selectedDocumentLine.documentLineId },
-      receivedKg: selectedDocumentLine.receivedKg, overageReason: selectedDocumentLine.overageReason, expectedIncomingDocumentVersion: selectedDocument.version } })
+      receivedKg: selectedDocumentLine.receivedKg, overageReason: selectedDocumentLine.overageReason, expectedIncomingDocumentVersion: selectedDocument.version,
+      ...(receivedPieces === undefined ? {} : { receivedPieceCount: receivedPieces }) } })
   }
   function action(event: FormEvent, kind: 'overage-decision' | 'overage-renewal' | 'loss-request' | 'loss-decision' | 'loss-withdrawal') {
     event.preventDefault(); if (!ready || work === null) return
     const at = localUtc(when); const why = reason.trim()
     if (at === null || !receiptReason(why)) { setError(T.invalid); return }
     if (kind === 'loss-request') { start({ kind, lineId, payload: { expectedTransferVersion: work.transfer.version, requestedAtUtc: at, explanation: why } }); return }
-    if (kind === 'overage-renewal') { start({ kind, lineId, payload: { expectedTransferVersion: work.transfer.version, requestedAtUtc: at, overageKg: quantity.trim(), reason: why } }); return }
+    if (kind === 'overage-renewal') {
+      const overagePieces = renewalPieceLine ? parsePieceCount(pieces) : undefined
+      if (overagePieces === null) { setError(T.invalidPieces); return }
+      start({ kind, lineId, payload: { expectedTransferVersion: work.transfer.version, requestedAtUtc: at, overageKg: quantity.trim(), reason: why,
+        ...(overagePieces === undefined ? {} : { overagePieceCount: overagePieces }) } }); return
+    }
     const pending = kind === 'overage-decision' ? work.facts.receipts.map((row) => latestOverage(work, row.lineId)).filter((row) => row?.status === 'Pending')
       : work.facts.losses.filter((row) => row.status === 'Pending')
     const selectedRequest = pending.find((row) => row !== null && `${row.lineId}:${row.requestNumber}` === requestKey)
@@ -204,7 +218,9 @@ function Workspace({ transferId: seed, onChanged, shell, namespace, allowed, com
               {selectedDocument ? <><p>{T.sourceReceivedAt}: {selectedDocument.receivedAtUtc}</p>{selectedDocument.status === 'Draft' ? <form onSubmit={finalize}>{reasonField}<Button type="submit">{T.finalize}</Button></form>
                 : <><Field label={T.documentLine}>{(control) => <select {...control} value={documentLineId} onChange={(event) => setDocumentLineId(event.currentTarget.value)}><option value="">{T.choose}</option>
                   {selectedDocument.lines.filter((row) => work.transfer.lines.some((line) => line.lineId === row.transferLineId && line.status === 'InTransit') && !work.facts.losses.some((loss) => loss.lineId === row.transferLineId && loss.status === 'Pending')).map((row) => <option key={row.documentLineId} value={row.documentLineId}>{row.labelId} — {T.received}: {row.receivedKg}</option>)}</select>}</Field>
-                  {selectedDocumentLine ? <p>{T.received}: {selectedDocumentLine.receivedKg} — {selectedDocumentLine.overageReason ?? '—'}</p> : null}<Button type="button" disabled={selectedDocumentLine === null} onClick={receive}>{T.receive}</Button></>}</> : null}
+                  {selectedDocumentLine ? <p>{T.received}: {selectedDocumentLine.receivedKg} — {selectedDocumentLine.overageReason ?? '—'}</p> : null}
+                  {receivePieceLine ? <Field label={T.receivedPieces} help={T.dispatchedPieces(dispatchedPiecesOf(selectedDocumentLine!.transferLineId)!)}>{(control) =>
+                    <input {...control} inputMode="numeric" required aria-required="true" value={pieces} maxLength={10} onChange={(event) => setPieces(event.currentTarget.value)} />}</Field> : null}<Button type="button" disabled={selectedDocumentLine === null} onClick={receive}>{T.receive}</Button></>}</> : null}
             </fieldset>
             {inTransit.length === 0 ? <p>{T.noTransit}</p> : <form className={styles.form} onSubmit={create}><fieldset disabled={!docsReady}><legend>{T.create}</legend>
               {inTransit.map((line, index) => { const draft = draftLines[line.lineId] ?? { selected: false, kg: '', reason: '' }; const update = (change: Partial<typeof draft>) => setDraftLines((rows) => ({ ...rows, [line.lineId]: { ...draft, ...change } })); return <div className={styles.lineCard} key={line.lineId}>
@@ -214,7 +230,9 @@ function Workspace({ transferId: seed, onChanged, shell, namespace, allowed, com
               <Field label={T.receivedAt}>{(control) => <input {...control} type="datetime-local" step="1" value={when} onChange={(event) => setWhen(event.currentTarget.value)} />}</Field><Button type="submit">{T.create}</Button></fieldset></form>}
             {rejectedOverages.length === 0 ? <p>{T.noRenewal}</p> : <form className={styles.form} onSubmit={(event) => action(event, 'overage-renewal')}><fieldset disabled={!ready}><legend>{T.renewOverage}</legend>
               <Field label={T.line}>{(control) => <select {...control} value={lineId} onChange={(event) => setLineId(event.currentTarget.value)}><option value="">{T.choose}</option>{rejectedOverages.map((row) => <option key={row.lineId} value={row.lineId}>{row.lineId} — {T.declaredOverage}: {row.overageKg}</option>)}</select>}</Field>
-              <Field label={T.renewalKg} help={T.kgHelp}>{(control) => <input {...control} maxLength={19} inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.currentTarget.value)} />}</Field>{reasonField}{timeField}<Button type="submit">{T.renewOverage}</Button></fieldset></form>}
+              <Field label={T.renewalKg} help={T.kgHelp}>{(control) => <input {...control} maxLength={19} inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.currentTarget.value)} />}</Field>
+              {renewalPieceLine ? <Field label={T.renewalPieces}>{(control) => <input {...control} inputMode="numeric" required aria-required="true" value={pieces} maxLength={10}
+                onChange={(event) => setPieces(event.currentTarget.value)} />}</Field> : null}{reasonField}{timeField}<Button type="submit">{T.renewOverage}</Button></fieldset></form>}
           </> : purpose === 'overage-decision' ? pendingOverages.length === 0 ? <p>{T.noPending}</p> : <form className={styles.form} onSubmit={(event) => action(event, 'overage-decision')}><fieldset disabled={!ready}><legend>{T.decideOverage}</legend><p>{T.makerChecker}</p>
             <Field label={T.pendingOverage}>{(control) => <select {...control} value={requestKey} onChange={(event) => setRequestKey(event.currentTarget.value)}><option value="">{T.choose}</option>{pendingOverages.map((row) => row && <option key={`${row.lineId}:${row.requestNumber}`} value={`${row.lineId}:${row.requestNumber}`}>{row.lineId} — {T.requestNumber} {row.requestNumber}</option>)}</select>}</Field>{decisionField}{reasonField}{timeField}<Button type="submit">{T.decideOverage}</Button></fieldset></form>
             : purpose === 'loss-request' ? <>{inTransit.length === 0 ? <p>{T.noTransit}</p> : <form className={styles.form} onSubmit={(event) => action(event, 'loss-request')}><fieldset disabled={!ready}><legend>{T.lossRequest}</legend>

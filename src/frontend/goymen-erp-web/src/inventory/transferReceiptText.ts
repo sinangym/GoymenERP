@@ -1,6 +1,10 @@
 export const TRANSFER_RECEIPT_TEXT = {
   /** KLN-D119: a piece-tracking line's piece figure beside its kg; absent for a kg-only line. */
   pieces: (count: number | undefined) => count === undefined ? '' : ` · ${count} adet`,
+  receivedPieces: 'Teslim alınan adet',
+  dispatchedPieces: (count: number) => `Sevk edilen: ${count} adet. Adet farkı aynı yönde bir kg farkıyla birlikte kaydedilir.`,
+  renewalPieces: 'Yeniden talep edilen fazla adet',
+  invalidPieces: 'Adetli satırda adet zorunludur: tam sayı (teslimde en az 1).',
   heading: 'Hedef kabulü ve fark işlemleri', intro: 'Önce işlem amacını seçin. Belge kaydı, belge kesinleştirme, fiziksel kabul ve fark kararları ayrı işlemlerdir.',
   purpose: 'İşlem amacı', choosePurpose: 'İşlem amacı seçin…', choose: 'Kayıt seçin…',
   search: 'Etiketle transfer ara', searchSubmit: 'Transferleri ara', candidates: 'kabul işlemi adayları', noCandidates: 'Bu amaç ve arama için transfer adayı yok.', candidateMore: 'Daha fazla transfer', open: 'Bu transferi aç', returnPending: 'Bekleyen işlemin transferine dön',
