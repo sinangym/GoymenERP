@@ -99,8 +99,9 @@ public sealed class AiWpa3bReadToolsTests
             MaxDataClass = AiDataClassV1.Confidential,
             AllowedTools =
             [
-                new AiAllowedToolOptions { ToolId = InventoryStockPositionsAiTool.ToolId, Version = "1" },
-                new AiAllowedToolOptions { ToolId = PurchasingInvoiceVariancesAiTool.ToolId, Version = "2" },
+                // WP-A6: both entries carry the approved card pin; the version still decides admission.
+                new AiAllowedToolOptions { ToolId = InventoryStockPositionsAiTool.ToolId, Version = "1", DescriptionSha256 = AiToolDescriptionPinV1.Compute(tools[0].Descriptor) },
+                new AiAllowedToolOptions { ToolId = PurchasingInvoiceVariancesAiTool.ToolId, Version = "2", DescriptionSha256 = AiToolDescriptionPinV1.Compute(tools[1].Descriptor) },
             ],
         }));
 

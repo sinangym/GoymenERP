@@ -1,3 +1,4 @@
+using GoymenERP.Api.Ai.DocumentDrafts;
 using GoymenERP.Api.Ai.Commands;
 using GoymenERP.Api.Ai.External;
 using GoymenERP.Api.Ai.Gateway;
@@ -48,6 +49,17 @@ public static class AiRuntimeServiceCollectionExtensions
         services.AddSingleton<IAiAnswerComposerV1>(_ => new FakeAiAnswerComposer(AiModelPlacementV1.OnPremises));
         services.AddScoped<IAiGatewayV1, AiGateway>();
         services.AddScoped<AiAskService>();
+
+        // WP-B3 document drafts: off (Ai:DocumentDrafts:Enabled=false and Ai:Enabled=false). OCR and the local model are
+        // closed ports (no engine, OPEN-014); counterparty matching waits for an owner tax-identity port; the product
+        // matcher uses the Product owner's candidate ports; the source goes to the object-storage abstraction.
+        services.AddOptions<AiDocumentDraftOptions>().Bind(configuration.GetSection(AiDocumentDraftOptions.SectionName));
+        services.TryAddSingleton<IAiDocumentOcrV1, UnavailableAiDocumentOcr>();
+        services.TryAddSingleton<IAiDocumentLocalModelV1, ClosedAiDocumentLocalModel>();
+        services.TryAddSingleton<IAiDocumentCounterpartyMatcherV1, UnconfiguredAiDocumentCounterpartyMatcher>();
+        services.TryAddScoped<IAiDocumentProductMatcherV1, ProductCandidatesAiDocumentProductMatcher>();
+        services.TryAddScoped<IAiDocumentSourceStoreV1, ObjectStoreAiDocumentSourceStore>();
+        services.AddScoped<AiDocumentDraftService>();
         // WP-C1: the approved write pipeline. Closed: Ai:Commands:Enabled is false, no command tool is allowlisted, the
         // ledger is unconfigured (no durable store yet) and step-up never verifies (decision 156; method undecided).
         services.AddOptions<AiCommandOptions>().Bind(configuration.GetSection(AiCommandOptions.SectionName));

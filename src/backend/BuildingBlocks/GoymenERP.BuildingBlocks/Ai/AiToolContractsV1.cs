@@ -28,10 +28,18 @@ public sealed record AiToolDescriptorV1
     public string? OwnerCommandName { get; }
     public AiContractRevisionV1 Contract { get; }
 
+    /// <summary>
+    /// WP-A6: the model-facing description. It is pinned with the rest of the model card
+    /// (<see cref="AiToolDescriptionPinV1"/>); a changed description is not admitted until a human re-approves the pin.
+    /// Empty when the tool carries no description.
+    /// </summary>
+    public string Description { get; }
+
     public AiToolDescriptorV1(string toolId, string version, string ownerModule, AiToolRiskClassV1 risk,
         AiDataClassV1 dataClass, IEnumerable<string> requiredPermissions, IEnumerable<string> fieldAllowlist,
-        string? ownerCommandName, AiContractRevisionV1 contract)
+        string? ownerCommandName, AiContractRevisionV1 contract, string? description = null)
     {
+        Description = description ?? string.Empty;
         if (!IsWellFormedToolId(toolId)) throw new ArgumentException("Malformed tool identity.", nameof(toolId));
         if (!Enum.IsDefined(risk) || !Enum.IsDefined(dataClass)) throw new ArgumentException("Unknown classification.");
         if ((risk == AiToolRiskClassV1.Write) != (ownerCommandName is not null))

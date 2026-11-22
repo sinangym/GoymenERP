@@ -157,6 +157,14 @@ public sealed class AiYa1ReadToolsTests
         var entries = catalog.RootElement.GetProperty("tools").EnumerateArray().ToArray();
         // Every catalog entry is a reviewed descriptor: the two Y-A1 tools here and the WP-A3c tools checked in AiWpA3cReadToolsTests.
         Assert.Equal(descriptors.Length + AiWpA3cReadToolsTests.CatalogDescriptors().Length, entries.Length);
+        // WP-A6: the catalog records the reviewed pin of every card; a changed card needs a re-reviewed catalog entry.
+        var stalePins = descriptors.Concat(AiWpA3cReadToolsTests.CatalogDescriptors())
+            .Where(descriptor => entries.Single(e => e.GetProperty("toolId").GetString() == descriptor.ToolId)
+                .TryGetProperty("descriptionSha256", out var pin) is var hasPin
+                && (!hasPin || pin.GetString() != AiToolDescriptionPinV1.Compute(descriptor)))
+            .Select(descriptor => $"{descriptor.ToolId}={AiToolDescriptionPinV1.Compute(descriptor)}")
+            .ToArray();
+        Assert.True(stalePins.Length == 0, string.Join(";", stalePins));
         foreach (var descriptor in descriptors)
         {
             var entry = Assert.Single(entries, e => e.GetProperty("toolId").GetString() == descriptor.ToolId);
@@ -437,9 +445,23 @@ public sealed class AiYa1ReadToolsTests
                 MaxDataClass = AiDataClassV1.Internal,
                 AllowedTools =
                 [
-                    new AiAllowedToolOptions { ToolId = DecisionLookupAiTool.ToolId, Version = DecisionLookupAiTool.ToolVersion },
-                    new AiAllowedToolOptions { ToolId = LogisticsPendingShipmentsAiTool.ToolId, Version = LogisticsPendingShipmentsAiTool.ToolVersion },
-                    .. extraTools.Select(tool => new AiAllowedToolOptions { ToolId = tool.Descriptor.ToolId, Version = tool.Descriptor.Version }),
+                    // WP-A6: each entry carries the approved pin of the card it admits.
+                    new AiAllowedToolOptions
+                    {
+                        ToolId = DecisionLookupAiTool.ToolId, Version = DecisionLookupAiTool.ToolVersion,
+                        DescriptionSha256 = AiToolDescriptionPinV1.Compute(DecisionTool().Descriptor),
+                    },
+                    new AiAllowedToolOptions
+                    {
+                        ToolId = LogisticsPendingShipmentsAiTool.ToolId, Version = LogisticsPendingShipmentsAiTool.ToolVersion,
+                        DescriptionSha256 = AiToolDescriptionPinV1.Compute(
+                            new LogisticsPendingShipmentsAiTool(new ListOnlyInstructionService(), new FixedTime(Now)).Descriptor),
+                    },
+                    .. extraTools.Select(tool => new AiAllowedToolOptions
+                    {
+                        ToolId = tool.Descriptor.ToolId, Version = tool.Descriptor.Version,
+                        DescriptionSha256 = AiToolDescriptionPinV1.Compute(tool.Descriptor),
+                    }),
                 ],
             };
             CompanyScope.Set(Company);

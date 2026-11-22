@@ -97,7 +97,7 @@ public sealed class AiAskService(
         {
             var available = catalog.Descriptors
                 .Where(descriptor => descriptor.DataClass <= limits.MaxDataClass)
-                .Select(descriptor => new AiModelToolV1(descriptor.ToolId, descriptor.Version, descriptor.DataClass, descriptor.FieldAllowlist))
+                .Select(descriptor => new AiModelToolV1(descriptor.ToolId, descriptor.Version, descriptor.DataClass, descriptor.FieldAllowlist, descriptor.Description))
                 .ToArray();
             plan = await provider.PlanAsync(new AiModelRequestV1(question, available, hint), cancellationToken);
         }
@@ -177,7 +177,7 @@ public sealed class AiAskService(
         }
 
         var composed = await gateway.ComposeAsync(
-            new AiGatewayRequestV1(AiFeatureV1.Panel, AiTaskKindV1.Answer, question, AiDataClassV1.Internal, grounding,
+            new AiGatewayRequestV1(AiFeatureV1.Panel, AiTaskKindV1.Answer, question, AiQuestionDataClassV1.Classify(question), grounding,
                 new AiGatewayCallerV1(companyId, actorId, correlationContext.CorrelationId, correlationContext.CausationId)),
             cancellationToken);
 

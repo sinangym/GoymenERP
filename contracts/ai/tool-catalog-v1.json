@@ -1,6 +1,6 @@
 {
  "format": "goymen.ai.tool-catalog.v1",
- "description": "Work + yapay zekâ programının okuma araçları (Y-A1, WP-A3a/b/c, WP-C10). Kayıt, çalışma zamanının varsayılan-ret kataloğuna (AiToolCatalog) aday olmaktır; bir aracın çağrılabilmesi ayrıca yapılandırma izin listesi (Ai:AllowedTools), Ai:Enabled=true, ai.panel.use ve aracın kendi izinlerinin şirket çapında verilmesini ister. Hiçbir izin bir role verilmez.",
+ "description": "Work + yapay zekâ programının okuma araçları (Y-A1, WP-A3a/b/c, WP-C10). Kayıt, çalışma zamanının varsayılan-ret kataloğuna (AiToolCatalog) aday olmaktır; bir aracın çağrılabilmesi ayrıca yapılandırma izin listesi (Ai:AllowedTools), Ai:Enabled=true, ai.panel.use ve aracın kendi izinlerinin şirket çapında verilmesini ister. Hiçbir izin bir role verilmez. WP-A6: descriptionSha256, aracın model kartının (AiToolDescriptionPinV1) incelenmiş pin'idir; Ai:AllowedTools girdisi aynı değeri taşımadıkça araç kabul edilmez.",
  "tools": [
   {
    "toolId": "decisions.lookup.v1",
@@ -8,6 +8,7 @@
    "ownerModule": "Ai",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "2d409bf727eae397b5b3763c9da27f6099da273996be9f291c77ff10e9c7a994",
    "requiredPermissions": [
     "ai.decisions.read"
    ],
@@ -44,6 +45,7 @@
    "ownerModule": "Logistics",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "344a998831bb58fff4aa09beb6253423c593ece6da47a8c1b39d166900be97db",
    "requiredPermissions": [
     "logistics.loading-instructions.read"
    ],
@@ -77,6 +79,7 @@
    "ownerModule": "SecurityEvents",
    "risk": "Read",
    "dataClass": "Confidential",
+   "descriptionSha256": "1329214f358bf3cf6a1a31989c5442aac80ee527c17e74f9f21be4b88fd82ac8",
    "requiredPermissions": [
     "platform.security-events.read"
    ],
@@ -111,6 +114,7 @@
    "ownerModule": "Ai",
    "risk": "Read",
    "dataClass": "Confidential",
+   "descriptionSha256": "6666269722febe030c7b1e35ac835f6e936ad85660b45f68c88ed9d8479bb988",
    "requiredPermissions": [
     "platform.security-events.read"
    ],
@@ -135,6 +139,7 @@
    "ownerModule": "Counterparty",
    "risk": "Read",
    "dataClass": "Confidential",
+   "descriptionSha256": "7106b548d9e35a5f9cc2f799ed6b630ca58b09be5e6ea8cfd0653ec7fda365b9",
    "requiredPermissions": [
     "counterparty.parties.read"
    ],
@@ -177,6 +182,7 @@
    "ownerModule": "Counterparty",
    "risk": "Read",
    "dataClass": "Confidential",
+   "descriptionSha256": "6b8bd2e857d7b8a0889b5b2462094e1bd8a7bf0568f4ce36a488f14da2d88651",
    "requiredPermissions": [
     "counterparty.parties.read"
    ],
@@ -200,6 +206,7 @@
    "ownerModule": "Counterparty",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "8c86577d14936c10dd57de25afdf66a62bcbeaa91648994701a7539c5a07dd6e",
    "requiredPermissions": [
     "counterparty.parties.read"
    ],
@@ -214,6 +221,7 @@
    "ownerModule": "Logistics",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "91eb0e28f504c703b4987af89d3e9e6961640ccc73b781efe789cdf5c9008005",
    "requiredPermissions": [
     "logistics.loading-instructions.read"
    ],
@@ -237,6 +245,7 @@
    "ownerModule": "Logistics",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "5e46132822ae99db5f1327a4da03d946ad601c52cc0d3b6123950626b9dce8b3",
    "requiredPermissions": [
     "logistics.loading-instructions.read"
    ],
@@ -267,6 +276,7 @@
    "ownerModule": "Sales",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "66b029fdf5d13a340830725f89ef37831b8d3f4a5c00b4981c3bf11ff928f72a",
    "requiredPermissions": [
     "sales.drafts.read"
    ],
@@ -303,6 +313,7 @@
    "ownerModule": "Sales",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "a2dd69296657326eb9d92d48da0d4641fe473632a9158ab3be256d68ce617b71",
    "requiredPermissions": [
     "sales.drafts.read",
     "sales.orders.approve"
@@ -328,6 +339,7 @@
    "ownerModule": "Sales",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "79e4e7c1e416c7b4a79fa6aa906da842e3462b00ef011ffcde6cd19ddda6604e",
    "requiredPermissions": [
     "sales.quotes.read"
    ],
@@ -362,6 +374,7 @@
    "ownerModule": "Inventory",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "bb0c88993fa519c82d88f58b39ad2a10e765e1792cc850bab2e0ce8e05864891",
    "requiredPermissions": [
     "inventory.balances.read",
     "inventory.labels.read"
@@ -407,6 +420,7 @@
    "ownerModule": "Inventory",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "dcd5e7f977629ab52983aa99a6a1bd8562b86f1fe05057614c1d5e2fa35e156f",
    "requiredPermissions": [
     "inventory.balances.read",
     "inventory.labels.read"
@@ -451,6 +465,7 @@
    "ownerModule": "Inventory",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "f2cb42a61933edd677aaad3892de9d6b35a93d6b6e5642628e4a574928886694",
    "requiredPermissions": [
     "inventory.balances.read",
     "inventory.labels.read",
@@ -478,6 +493,7 @@
    "ownerModule": "Manufacturing",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "e8766c28eebd07ad8e1dec2f2a939d22c457af5518ec95f25de938fe4074f22d",
    "requiredPermissions": [
     "manufacturing.orders.read"
    ],
@@ -512,6 +528,7 @@
    "ownerModule": "Manufacturing",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "1629ee90723d0dee1df5abb3facf4a1f3c499c98b9071b274e8195f7dec61f66",
    "requiredPermissions": [
     "manufacturing.plans.read"
    ],
@@ -546,6 +563,7 @@
    "ownerModule": "Manufacturing",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "306480afbffd43d3257ac7a138d448c25c50ff844c7e55a770c41da16a98327c",
    "requiredPermissions": [
     "manufacturing.plans.read"
    ],
@@ -575,6 +593,7 @@
    "ownerModule": "Purchasing",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "e3df1a20751df99dec3e14b32a5440d9a366b129b436b8059a9ca50ac4ba9356",
    "requiredPermissions": [
     "purchasing.orders.read"
    ],
@@ -615,6 +634,7 @@
    "ownerModule": "Purchasing",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "e5ec37467601a4af0d0536f4b4d920ba6f3a0c36cf17fe456f46d0c188a5250c",
    "requiredPermissions": [
     "purchasing.orders.read"
    ],
@@ -652,6 +672,7 @@
    "ownerModule": "Purchasing",
    "risk": "Read",
    "dataClass": "Confidential",
+   "descriptionSha256": "0a469ce2c8294911d89c0275dab70f1e1104f7e7f468e895a3cd5747fbe806a2",
    "requiredPermissions": [
     "purchasing.invoices.read",
     "purchasing.orders.price.read"
@@ -688,6 +709,7 @@
    "ownerModule": "Finance",
    "risk": "Read",
    "dataClass": "Confidential",
+   "descriptionSha256": "dd351a1900222590a812766307baa82a5c57fee0d49f08416bf6dcf9ff11fc84",
    "requiredPermissions": [
     "finance.open-items.amount.read",
     "finance.open-items.read"
@@ -730,6 +752,7 @@
    "ownerModule": "Finance",
    "risk": "Read",
    "dataClass": "Confidential",
+   "descriptionSha256": "4b9a97e3bed624561edc0dad432ce17c29cd3a353667a7ae3b5b3469ed7f83df",
    "requiredPermissions": [
     "finance.customer-instrument.amount.read",
     "finance.customer-instrument.read"
@@ -772,6 +795,7 @@
    "ownerModule": "Finance",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "df2d3025a3079a7ad64e579c2afc06627f3711fc240757acc3eb85d78da93bed",
    "requiredPermissions": [
     "finance.bank-account.read",
     "finance.cash-account.read"
@@ -806,6 +830,7 @@
    "ownerModule": "Accounting",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "3d7c25d98e684ed4b3c75a3a292afc587eee34e62b93c12ef5dfc4e84c10ea2c",
    "requiredPermissions": [
     "accounting.periods.read"
    ],
@@ -830,6 +855,7 @@
    "ownerModule": "Accounting",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "33420ac98423a9ec5971d93c9271ddfd929634fd2fe54442def246b429609b3e",
    "requiredPermissions": [
     "accounting.posting-queues.read"
    ],
@@ -862,6 +888,7 @@
    "ownerModule": "Accounting",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "9a5c6ec0f4cb45bfe990b6635acab99afb57b6bd5f761bc4e15b08c13496d42b",
    "requiredPermissions": [
     "accounting.journals.read",
     "accounting.periods.read"
@@ -896,6 +923,7 @@
    "ownerModule": "Work",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "0e45e774751876e18bd5c23df83db25a02e39e6912a0e9dfa85a79672999d344",
    "requiredPermissions": [],
    "fieldAllowlist": [
     "limit"
@@ -917,6 +945,7 @@
    "ownerModule": "Work",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "a0e6236b38d9b04baf8ed4a5aaca831c59a91d76ff3139992707da6b74cb0724",
    "requiredPermissions": [],
    "fieldAllowlist": [
     "limit"
@@ -938,6 +967,7 @@
    "ownerModule": "Work",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "9834e87a0320ae9ab2cbd1794b50947a4723b59743b690cd288184f9859e8b08",
    "requiredPermissions": [],
    "fieldAllowlist": [
     "limit"

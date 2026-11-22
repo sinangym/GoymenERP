@@ -8,6 +8,8 @@ namespace GoymenERP.Api.Ai.Commands;
 /// registered an <see cref="IAiOwnerCommandToolV1"/> with WRITE risk and an owner command name, declared its effects,
 /// is not on the AI-D25 closed list, and <c>Ai:Commands:AllowedTools</c> lists its exact id and version. A tool id
 /// registered more than once is excluded entirely. This package registers no command tool and allowlists none.
+/// WP-A6: the allowlist entry must also carry the approved pin of the tool's model card (<see cref="AiToolDescriptionPinV1"/>);
+/// a changed card (description, fields, permissions) is excluded until a human approves the new pin.
 /// </summary>
 public sealed class AiCommandToolCatalog
 {
@@ -32,6 +34,7 @@ public sealed class AiCommandToolCatalog
             .Where(entry => !string.IsNullOrWhiteSpace(entry?.ToolId) && !string.IsNullOrWhiteSpace(entry?.Version))
             .Select(entry => (entry.ToolId!, entry.Version!))
             .ToHashSet();
+        var pins = AiToolPinAllowlistV1.ApprovedPins(configured ?? []);
 
         var registered = ownerTools.Where(tool => tool is not null).ToArray();
         var duplicateIds = registered
@@ -52,6 +55,7 @@ public sealed class AiCommandToolCatalog
         tools = commands
             .Where(tool => !closedToolIds.Contains(tool.Descriptor.ToolId))
             .Where(tool => allowlist.Contains((tool.Descriptor.ToolId, tool.Descriptor.Version)))
+            .Where(tool => AiToolPinAllowlistV1.Holds(pins, tool.Descriptor))
             .ToDictionary(tool => (tool.Descriptor.ToolId, tool.Descriptor.Version));
     }
 

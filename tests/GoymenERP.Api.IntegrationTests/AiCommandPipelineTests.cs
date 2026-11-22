@@ -419,6 +419,20 @@ public sealed class AiCommandPipelineTests
         Assert.Empty(harness.Tool.Previews);
     }
 
+    [Theory]
+    [InlineData("0000000000000000000000000000000000000000000000000000000000000000")]
+    [InlineData("not-a-pin")]
+    public async Task A_command_tool_whose_card_no_longer_matches_its_approved_pin_is_refused(string stalePin)
+    {
+        // WP-A6: an allowlisted id+version is not enough; the card the model sees must be the approved one.
+        var harness = new Harness(configureCommands: commands => commands.AllowedTools.ForEach(entry => entry.DescriptionSha256 = stalePin));
+
+        var result = await harness.Service().ProposeAsync(Proposal());
+
+        Assert.Equal(AiCommandReasonCodesV1.ToolNotAllowed, result.ReasonCode);
+        Assert.Empty(harness.Tool.Previews);
+    }
+
     [Fact]
     public async Task The_default_unconfigured_ledger_keeps_the_pipeline_unavailable()
     {
@@ -509,6 +523,12 @@ public sealed class AiCommandPipelineTests
             Tool = declareEffects
                 ? new DeclaredCommandTool(descriptor, Time, effects ?? [AiCommandEffectV1.RecordChange])
                 : new UndeclaredCommandTool(descriptor, Time);
+            // WP-A6: the harness approves the pin of the card it registers, unless a test configured its own pin.
+            foreach (var entry in commands.AllowedTools.Where(entry => entry.ToolId == toolId && entry.Version == ToolVersion
+                         && entry.DescriptionSha256 is null))
+            {
+                entry.DescriptionSha256 = AiToolDescriptionPinV1.Compute(descriptor);
+            }
             Authority = new FakeAuthority(ErpPermissions.AiPanelUse, permission);
             CompanyScope.Set(Company);
             Correlation.Set("corr-ai-komut-sentetik", null, SourceChannels.Web, null, null);
