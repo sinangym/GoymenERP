@@ -25,6 +25,12 @@ internal sealed class PurchaseGoodsReceiptBatchRow : IPurchasingTenantRow
     public int VarianceOutcome { get; set; }
     public decimal? TolerancePercent { get; set; }
     public bool VarianceAcknowledged { get; set; }
+
+    /// <summary>
+    /// AK-3b (KLN-D119, SAT-D437): the kg per piece recorded on the order line at approval, for a bulk receipt of a piece-unit line;
+    /// null for a kilogram line and on older rows. When set, ExpectedQuantityKg is the theoretical kg of the received pieces.
+    /// </summary>
+    public decimal? KilogramsPerUnit { get; set; }
     public string PreparedBy { get; set; } = string.Empty;
     public DateTimeOffset PreparedAtUtc { get; set; }
     public string? DecidedBy { get; set; }
@@ -53,6 +59,9 @@ internal sealed class PurchaseGoodsReceiptBatchLabelRow : IPurchasingTenantRow
     public long? GeneratedNumber { get; set; }
     public string? SupplierLabelNumber { get; set; }
     public decimal MeasuredQuantityKg { get; set; }
+
+    /// <summary>AK-3b (KLN-D119): the label's whole piece count on a piece-unit line; null on a kilogram line and on older rows.</summary>
+    public int? PieceCount { get; set; }
     public string? HeatNumber { get; set; }
     public string? CoilNumber { get; set; }
     public bool Released { get; set; }

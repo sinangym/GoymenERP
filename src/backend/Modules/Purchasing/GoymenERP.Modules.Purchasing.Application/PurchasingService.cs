@@ -490,7 +490,9 @@ public sealed partial class PurchasingService(
             throw Store(exception);
         }
 
-        return stored is null ? throw new PurchasingServiceException(404, "not_found") : OrderDetail(stored, disclosure);
+        if (stored is null) throw new PurchasingServiceException(404, "not_found");
+        var visible = string.Equals(disclosure, PurchasingPriceDisclosureV1.Visible, StringComparison.Ordinal);
+        return OrderDetail(await WithInvoiceSharesAsync(scope, stored, visible, cancellationToken), disclosure);
     }
 
     public async Task<PurchaseOrderListResponse> GetOrderListAsync(PurchaseOrderListQuery query, CancellationToken cancellationToken = default)
@@ -1089,7 +1091,9 @@ public sealed partial class PurchasingService(
                     ? new PurchaseOrderLineClosureView(closure.ClosedBy, closure.ClosedAtUtc, closure.Reason)
                     : null,
                 Price = visible ? PriceView(line, stored.Order.Money) : null,
-                KgPrice = visible && PurchaseKgPriceGoldenAccepted ? LineKgPriceView(line, stored.Order.Money) : null,
+                KgPrice = visible && PurchaseKgPriceGoldenAccepted ? LineKgPriceView(stored, line) : null,
+                Realization = visible && PurchaseKgPriceGoldenAccepted
+                    ? PurchaseOrderKgPriceViews.LineRealization(stored.Order, line, stored.InvoiceShares) : null,
                 DeliverySchedule = [.. line.DeliverySchedule.Select(slice =>
                     new PurchaseOrderDeliverySliceView(slice.SliceId, slice.SliceNo, Text(slice.Quantity), slice.DeliveryDate))],
             })])
@@ -1097,7 +1101,9 @@ public sealed partial class PurchasingService(
             PriceDisclosure = visible ? PurchasingPriceDisclosureV1.Visible : PurchasingPriceDisclosureV1.Withheld,
             Currency = CurrencyView(stored.Order.Money),
             PricePending = visible ? HasUnpricedGeneralLine(stored.Order) : null,
-            KgPrice = visible && PurchaseKgPriceGoldenAccepted ? DocumentKgPriceView(stored.Order) : null,
+            KgPrice = visible && PurchaseKgPriceGoldenAccepted ? DocumentKgPriceView(stored) : null,
+            Realization = visible && PurchaseKgPriceGoldenAccepted
+                ? PurchaseOrderKgPriceViews.DocumentRealization(stored.Order, stored.InvoiceShares) : null,
             Acceptances = [.. stored.Order.Acceptances.Select(acceptance => new PurchaseOrderAcceptanceHistoryView(
                 acceptance.AcceptanceId, acceptance.LineId, Text(acceptance.Quantity), acceptance.RecordedAtUtc))],
             Cancellation = stored.Order.Cancellation is { } cancellation

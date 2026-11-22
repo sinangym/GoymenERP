@@ -41,7 +41,8 @@ public static partial class PurchasingEndpoints
             .Produces<PurchaseGoodsReceiptBatchResponseV1>(PurchasingApiV1.CreatedStatus)
             .ProducesErpBadRequest("validation_failed", PurchasingProblemCodesV1.CommandMetadataInvalid,
                 InventoryGoodsReceiptCodesV1.InvalidRequest, InventoryGoodsReceiptCodesV1.InvalidVersion,
-                InventoryGoodsReceiptCodesV1.InvalidQuantity)
+                InventoryGoodsReceiptCodesV1.InvalidQuantity, PurchaseGoodsReceiptCodesV1.PieceCountInvalid,
+                PurchaseAcceptanceParticipantCodes.MeasuredKilogramsMismatch)
             .AllowsEmptyErpBadRequestBody()
             .ProducesErpUnsupportedMediaType()
             .ProducesErpCodeLessNotFound()
@@ -215,6 +216,8 @@ public static partial class PurchasingEndpoints
         PurchaseGoodsReceiptBatchCodesV1.LabelCodeConflict,
         PurchaseGoodsReceiptBatchCodesV1.DuplicateLabel,
         PurchaseGoodsReceiptBatchCodesV1.BatchIdTaken,
+        // AK-3b: a piece line without its recorded kg per piece takes no receipt (the single receipt's code).
+        PurchaseGoodsReceiptCodesV1.TheoreticalKilogramsMissing,
         .. ParticipantConflictCodes().Where(code => code != PurchaseAcceptanceParticipantCodes.OrderStateConflict),
     ];
 

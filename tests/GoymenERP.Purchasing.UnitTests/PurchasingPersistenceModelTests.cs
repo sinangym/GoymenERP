@@ -303,7 +303,8 @@ public sealed class PurchasingPersistenceModelTests
                 "20261117120452_AddPurchaseAdditionalCostInvoiceBindings",
                 "20261119012425_AllowPurchaseIncomingInvoiceFinalizedOutboxEvents",
                 "20261120103531_AddPurchaseSupplierReturnCostAllocations", "20261122095454_AddPurchasePieceKilogramFacts",
-                "20261122122332_AddPurchaseSupplierReturnLineageSource", "20261122142515_AddPurchaseSupplierReturnLineageParts"],
+                "20261122122332_AddPurchaseSupplierReturnLineageSource",
+                "20261122141554_AddPurchaseGoodsReceiptBatchPieceFacts", "20261122142515_AddPurchaseSupplierReturnLineageParts"],
             context.Database.GetMigrations().TakeLast(25));
         Assert.False(context.Database.HasPendingModelChanges());
 
@@ -983,6 +984,42 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Contains("THROW 52041", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[TheoreticalKilogramsPerUnit] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[MeasuredQuantityKg] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_AK_3b_bulk_receipt_piece_facts_are_nullable_columns_and_the_Down_refuses_while_a_piece_batch_exists()
+    {
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+
+        var batches = model.FindEntityType(typeof(PurchaseGoodsReceiptBatchRow))!;
+        var perUnit = batches.FindProperty(nameof(PurchaseGoodsReceiptBatchRow.KilogramsPerUnit))!;
+        Assert.Equal((true, 18, 6), (perUnit.IsNullable, perUnit.GetPrecision(), perUnit.GetScale()));
+        Assert.Contains(batches.GetCheckConstraints(), check => check.Name == "CK_PurchaseGoodsReceiptBatches_Variance"
+            && check.Sql == PurchasingDbContext.GoodsReceiptBatchVarianceCheck);
+        // A kilogram batch keeps KLN-D45's rule word for word; a piece batch is always posted without a decider (BS-16/BS-17).
+        Assert.Contains("[KilogramsPerUnit] IS NULL AND ([VarianceOutcome] <> 2 OR [VarianceAcknowledged] = 1) "
+            + "AND ([Status] <> 2 OR [VarianceOutcome] IN (1, 2) OR [DecidedBy] IS NOT NULL)",
+            PurchasingDbContext.GoodsReceiptBatchVarianceCheck, StringComparison.Ordinal);
+        Assert.Contains("[KilogramsPerUnit] IS NOT NULL AND [KilogramsPerUnit] > 0 AND [Status] = 2 AND [DecidedBy] IS NULL",
+            PurchasingDbContext.GoodsReceiptBatchVarianceCheck, StringComparison.Ordinal);
+
+        var labels = model.FindEntityType(typeof(PurchaseGoodsReceiptBatchLabelRow))!;
+        Assert.True(labels.FindProperty(nameof(PurchaseGoodsReceiptBatchLabelRow.PieceCount))!.IsNullable);
+        Assert.Contains(labels.GetCheckConstraints(), check => check.Name == "CK_PurchaseGoodsReceiptBatchLabels_PieceCount"
+            && check.Sql == "[PieceCount] IS NULL OR [PieceCount] > 0");
+
+        var migration = new GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations.AddPurchaseGoodsReceiptBatchPieceFacts();
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Contains("THROW 52042", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[KilogramsPerUnit] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[PieceCount] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+        // The rollback restores the earlier variance rule exactly.
+        var restored = migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>()
+            .Single(operation => operation.Name == "CK_PurchaseGoodsReceiptBatches_Variance");
+        Assert.Equal(PurchasingDbContext.GoodsReceiptBatchVarianceCheckBeforePieceFacts, restored.Sql);
     }
 
     [Fact]

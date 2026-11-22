@@ -23,6 +23,37 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
         return snapshot;
     }
 
+    /// <summary>
+    /// AK-3b (SAT-D436 TK6): the receipt shares of the invoices bound to <paramref name="orderId"/> that count toward its realization.
+    /// Each invoice is read at its latest revision and restored through its own history (an inconsistent one throws); which
+    /// statuses count is <see cref="PurchaseInvoiceRealizationRule"/>'s. Untracked, company-filtered, nothing written.
+    /// </summary>
+    public async Task<IReadOnlyList<PurchaseOrderInvoiceShare>?> ReadOrderInvoiceSharesAsync(Guid orderId,
+        CancellationToken cancellationToken = default)
+    {
+        var company = RequireResolvedCompany();
+        if (orderId == Guid.Empty) return [];
+        var invoiceIds = await dbContext.InvoiceReceiptBindings.AsNoTracking().Where(row => row.OrderId == orderId)
+            .Select(row => row.InvoiceId).Distinct().ToListAsync(cancellationToken);
+        if (invoiceIds.Count == 0) return [];
+        var revisions = await dbContext.IncomingInvoiceRevisions.AsNoTracking()
+            .Where(row => invoiceIds.Contains(row.InvoiceId)
+                && row.Version == dbContext.IncomingInvoiceRevisions
+                    .Where(item => item.CompanyId == row.CompanyId && item.InvoiceId == row.InvoiceId).Max(item => item.Version))
+            .OrderBy(row => row.InvoiceId).ToListAsync(cancellationToken);
+        var shares = new List<PurchaseOrderInvoiceShare>();
+        foreach (var row in revisions)
+        {
+            var snapshot = ReadInvoiceSnapshot(row.SnapshotJson);
+            if (row.CompanyId != company || snapshot.CompanyId != company || snapshot.Id != row.InvoiceId || snapshot.Version != row.Version
+                || (int)snapshot.Status != row.Status)
+                throw new InvalidOperationException("Fatura geçmişi şirket ve sürüm kaydıyla uyuşmuyor.");
+            shares.AddRange(PurchaseOrderRealizations.SharesOf(snapshot.Restore(), orderId));
+        }
+
+        return shares;
+    }
+
     public async Task<PurchasingIncomingInvoiceWriteResult?> FindIncomingInvoiceAttemptAsync(string command,
         PurchasingWriteEnvelope envelope, string requestHash, CancellationToken cancellationToken = default)
     {

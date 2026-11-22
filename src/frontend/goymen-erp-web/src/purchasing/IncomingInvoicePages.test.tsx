@@ -1,5 +1,5 @@
 /** Synthetic UI sources only; runtime/real HTTP/SQL/browser acceptance remains NOT_RUN. */
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -8,7 +8,9 @@ import type { ViewOutcome } from '../shell/uiState'
 import { IncomingInvoiceDetailPage, IncomingInvoiceListPage } from './IncomingInvoicePages'
 import { fetchIncomingInvoice, fetchIncomingInvoices, fetchInvoiceReceipts, fetchInvoiceAdditionalCosts, submitInvoiceCommand } from './incomingInvoiceApi'
 import { incomingInvoiceFixture, invoiceReceiptFixture, invoiceTestId as id } from './incomingInvoiceFixtures.testSupport'
-import { INCOMING_INVOICE_TEXT as T } from './incomingInvoiceText'
+import { INCOMING_INVOICE_PROBLEM_TEXT, INCOMING_INVOICE_TEXT as T } from './incomingInvoiceText'
+import { PURCHASE_KG_PRICE_UNAVAILABLE_TEXT } from './purchaseOrderDetailText'
+import { currencyShown } from '../finance/currencyCodes'
 import { resetAdjustmentAttemptsForTests } from './useReceiptAdjustmentAttempt'
 import type { InvoicePage } from './incomingInvoiceContract'
 let currentShell: ShellState
@@ -93,6 +95,54 @@ describe('Incoming invoice workspace (synthetic, NOT_ENV)', () => {
     fireEvent.click(screen.getByRole('button', { name: T.match }))
     expect(await screen.findByText(T.invalidSelection)).not.toBeNull()
     expect(submitInvoiceCommand).not.toHaveBeenCalled()
+  })
+  it('AK-3b: shows the line and document kg price as the server sent them, in the invoice currency, with the reasons in words', async () => {
+    const existing = incomingInvoiceFixture()
+    const invoice = { ...existing, kgPrice: { theoreticalKgPrice: '20.25', theoreticalUnavailable: null, realKgPrice: '19.99', realUnavailable: null } as const,
+      lines: [{ ...existing.lines[0], kgPrice: { theoreticalKgPrice: '20.25', theoreticalUnavailable: null, realKgPrice: null, realUnavailable: 'WeighedKgUnavailable' } as const }] }
+    vi.mocked(fetchIncomingInvoice).mockResolvedValue({ type: 'ok-single', data: invoice })
+    mount(true)
+    const document = await screen.findByTestId('incoming-invoice-kg-price')
+    const currency = currencyShown(invoice.currencyId, null)
+    expect(within(document).getByRole('heading').textContent).toBe(T.kgPriceHeading)
+    expect(within(document).getAllByRole('definition').map((cell) => cell.textContent))
+      .toEqual([T.kgPricePerKg('20.25', currency), T.kgPricePerKg('19.99', currency)])
+    expect(within(screen.getByTestId('incoming-invoice-line-1-kg-price')).getAllByRole('definition').map((cell) => cell.textContent))
+      .toEqual([T.kgPricePerKg('20.25', currency), PURCHASE_KG_PRICE_UNAVAILABLE_TEXT.WeighedKgUnavailable])
+  })
+  it('AK-3b: a document hidden by a service or expense line shows the reason, never a figure; no kg price member draws nothing', async () => {
+    const hidden = { theoreticalKgPrice: null, theoreticalUnavailable: 'NotAllLinesHaveKg', realKgPrice: null, realUnavailable: 'NotAllLinesHaveKg' } as const
+    vi.mocked(fetchIncomingInvoice).mockResolvedValue({ type: 'ok-single', data: { ...incomingInvoiceFixture(), kgPrice: hidden } })
+    const first = mount(true)
+    expect(within(await screen.findByTestId('incoming-invoice-kg-price')).getAllByRole('definition').map((cell) => cell.textContent))
+      .toEqual([PURCHASE_KG_PRICE_UNAVAILABLE_TEXT.NotAllLinesHaveKg, PURCHASE_KG_PRICE_UNAVAILABLE_TEXT.NotAllLinesHaveKg])
+    expect(screen.queryByTestId('incoming-invoice-line-1-kg-price')).toBeNull()
+    first.unmount()
+    vi.mocked(fetchIncomingInvoice).mockResolvedValue({ type: 'ok-single', data: incomingInvoiceFixture() })
+    mount(true); await screen.findByText(/SENTETIK-PO-01/)
+    expect(screen.queryByTestId('incoming-invoice-kg-price')).toBeNull()
+  })
+  it.each([
+    ['malformed (decoder fail-closed)', { type: 'malformed' }, 'malformed-response'],
+    ['503', { type: 'http', status: 503 }, 'service-unavailable'],
+    ['409', { type: 'http', status: 409 }, 'conflict'],
+    ['404', { type: 'http', status: 404 }, 'not-found'],
+  ] as const)('AK-3b: a %s invoice read draws its state and no kg price', async (_, outcome, state) => {
+    vi.mocked(fetchIncomingInvoice).mockResolvedValue(outcome)
+    mount(true)
+    await screen.findByText((_content, element) => element?.getAttribute('data-state') === state)
+    expect(screen.queryByTestId('incoming-invoice-kg-price')).toBeNull()
+  })
+  it('AK-3b: names the whole-piece matching refusal (409) in user words and keeps the conflict state', async () => {
+    vi.mocked(submitInvoiceCommand).mockResolvedValue({ type: 'failed', status: 409, code: 'purchasing_invoice_piece_quantity_invalid' })
+    mount(true); await screen.findByText(/SENTETIK-PO-01/)
+    fireEvent.click(screen.getByRole('checkbox', { name: T.select }))
+    fireEvent.change(screen.getByLabelText(T.share), { target: { value: '1,5' } })
+    fireEvent.click(screen.getByRole('button', { name: T.match }))
+    expect(await screen.findByText(INCOMING_INVOICE_PROBLEM_TEXT.purchasing_invoice_piece_quantity_invalid)).not.toBeNull()
+    expect(screen.queryByText(T.conflict)).toBeNull()
+    expect(vi.mocked(submitInvoiceCommand).mock.calls[0][2]).toEqual({ action: 'matching', request: { expectedVersion: '1', receipts: [
+      { invoiceLineId: id(8), purchaseOrderId: id(11), acceptanceId: id(13), quantity: '1.5' }] } })
   })
   it('does not reveal the former company when its late read completes after a context switch', async () => {
     let finish!: (answer: ViewOutcome<InvoicePage>) => void

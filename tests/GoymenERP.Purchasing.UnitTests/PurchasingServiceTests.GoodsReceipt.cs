@@ -415,8 +415,15 @@ public sealed partial class PurchasingServiceTests
             Events.Add("purchase");
             Purchase = request;
             return Task.FromResult(new PurchaseAcceptanceStageResultV1(Company, request.AcceptanceId, request.PurchaseOrderId,
-                request.PurchaseOrderLineId, "4", request.AcceptedQuantity, "8", Original is not null, "synthetic-correlation"));
+                request.PurchaseOrderLineId, "4", request.AcceptedQuantity, "8", Original is not null, "synthetic-correlation")
+            {
+                // AK-3b: a first attempt records the comparison it is given; a replay answers what was recorded with the acceptance.
+                PieceKilograms = Original is null ? request.PieceKilograms : RecordedPieceKilograms,
+            });
         }
+
+        /// <summary>AK-3b: the piece comparison stored with the original acceptance (what a replay answers); null = none recorded.</summary>
+        public PurchaseGoodsReceiptPieceKilogramsV1? RecordedPieceKilograms { get; set; }
 
         public Task<PurchaseReceiptStockResultV1> StageInventoryAsync(PurchaseReceiptStockRequestV1 request, PurchasingWriteEnvelope envelope,
             CancellationToken cancellationToken)

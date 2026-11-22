@@ -672,8 +672,19 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
     /// <summary>
     /// ALC-S16 (KLN-D45): a batch posted without an approver was exact (1) or inside the tolerance (2) and acknowledged; outside (3) or
     /// with no tolerance set (4) it never posts without a decider. The tolerance snapshot is 0..100 when present and absent for (4).
+    /// AK-3b (BS-16/BS-17): a piece batch ([KilogramsPerUnit] set) compares theoretical with weighed kg as a warning only, so it is
+    /// always Posted without a decider, whatever the outcome, and needs no acknowledgement.
     /// </summary>
     internal const string GoodsReceiptBatchVarianceCheck =
+        "[VarianceOutcome] IN (1, 2, 3, 4) AND [ExpectedQuantityKg] > 0 AND [ReceivedQuantityKg] > 0 "
+        + "AND ([TolerancePercent] IS NULL OR ([TolerancePercent] >= 0 AND [TolerancePercent] <= 100)) "
+        + "AND (([VarianceOutcome] = 4 AND [TolerancePercent] IS NULL) OR ([VarianceOutcome] IN (2, 3) AND [TolerancePercent] IS NOT NULL) OR [VarianceOutcome] = 1) "
+        + "AND (([KilogramsPerUnit] IS NULL AND ([VarianceOutcome] <> 2 OR [VarianceAcknowledged] = 1) "
+        + "AND ([Status] <> 2 OR [VarianceOutcome] IN (1, 2) OR [DecidedBy] IS NOT NULL)) "
+        + "OR ([KilogramsPerUnit] IS NOT NULL AND [KilogramsPerUnit] > 0 AND [Status] = 2 AND [DecidedBy] IS NULL))";
+
+    /// <summary>The variance rule before AK-3b; the AddPurchaseGoodsReceiptBatchPieceFacts rollback restores it.</summary>
+    internal const string GoodsReceiptBatchVarianceCheckBeforePieceFacts =
         "[VarianceOutcome] IN (1, 2, 3, 4) AND [ExpectedQuantityKg] > 0 AND [ReceivedQuantityKg] > 0 "
         + "AND ([TolerancePercent] IS NULL OR ([TolerancePercent] >= 0 AND [TolerancePercent] <= 100)) "
         + "AND (([VarianceOutcome] = 4 AND [TolerancePercent] IS NULL) OR ([VarianceOutcome] IN (2, 3) AND [TolerancePercent] IS NOT NULL) OR [VarianceOutcome] = 1) "
@@ -706,6 +717,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
         batch.Property(x => x.ExpectedQuantityKg).HasPrecision(18, 3);
         batch.Property(x => x.ReceivedQuantityKg).HasPrecision(18, 3);
         batch.Property(x => x.TolerancePercent).HasPrecision(9, 6);
+        batch.Property(x => x.KilogramsPerUnit).HasPrecision(18, PurchaseOrderLineTheoreticalKilograms.KilogramsPerUnitScale);
         batch.Property(x => x.PreparedBy).HasMaxLength(128).IsRequired();
         batch.Property(x => x.DecidedBy).HasMaxLength(128);
         batch.Property(x => x.DecisionReason).HasMaxLength(PurchaseGoodsReceiptBatchMaximumReasonLength);
@@ -730,6 +742,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
                 + $"AND [LabelId] <> {EmptyGuid} AND [MovementId] <> {EmptyGuid}");
             table.HasCheckConstraint("CK_PurchaseGoodsReceiptBatchLabels_LineNo", "[LineNo] >= 1");
             table.HasCheckConstraint("CK_PurchaseGoodsReceiptBatchLabels_Quantity", "[MeasuredQuantityKg] > 0");
+            table.HasCheckConstraint("CK_PurchaseGoodsReceiptBatchLabels_PieceCount", "[PieceCount] IS NULL OR [PieceCount] > 0");
             // KLN-D41: an entered (2) or supplier (1) code, or a generated (3) one with its number; a supplier code equals the supplier number.
             table.HasCheckConstraint("CK_PurchaseGoodsReceiptBatchLabels_Code",
                 "LEN([LabelCode]) > 0 AND (([CodeSource] = 3 AND [GeneratedNumber] IS NOT NULL AND [GeneratedNumber] >= 1) "

@@ -24,7 +24,12 @@ public sealed record PurchaseInvoiceGoodsCostSourceV1(Guid ProductId, Guid UnitI
 public sealed record PurchaseInvoiceReceiptCostShareV1(Guid AcceptanceId, Guid OrderId, Guid OrderLineId,
     long OrderVersion, decimal MatchedQuantity, decimal AcceptedQuantity,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-    IReadOnlyList<PurchaseInvoiceReceiptAdjustmentV1>? ReceiptAdjustments = null);
+    IReadOnlyList<PurchaseInvoiceReceiptAdjustmentV1>? ReceiptAdjustments = null,
+    // AK-3b (ALS-D121): the kilograms weighed for the WHOLE acceptance of a piece-line share, as Purchasing recorded them. The
+    // consumer checks them against its own immutable receipt before it applies kg = weighed × matched ÷ accepted pieces.
+    // Absent on a kilogram line and on a share recorded before AK-3b, so their payloads are unchanged.
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    decimal? MeasuredQuantityKg = null);
 public sealed record PurchaseInvoiceReceiptAdjustmentV1(Guid AdjustmentId, decimal UndoQuantity, bool IsSupplierReturn);
 public sealed record PurchaseInvoiceOfficialDocumentV1(Guid DocumentId, long DocumentVersion, string Sha256, Guid Ettn);
 

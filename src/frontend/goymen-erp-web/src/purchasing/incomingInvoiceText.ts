@@ -16,5 +16,13 @@ export const INCOMING_INVOICE_TEXT = {
   chooseExpenses: 'Eşleştirilecek ek masrafları seç', expenseAvailable: 'Sunucuda kalan net masraf tutarı', expenseShare: 'Bu faturaya bağlanacak net tutar',
   expenseHint: 'Masraf aynı carinin faturalarına parça parça bağlanır. Toplam sınırını sunucu denetler; stok hareketi oluşmaz.',
   expenseTotal: 'Kaydedilmiş net masraf', expenseDescription: 'Masraf açıklaması',
+  // AK-3b (SAT-D436, SAT-D439): kg price indicator in the invoice's own currency — information only, never converted or recomputed.
+  kgPriceHeading: 'Fatura kg fiyatı (bilgi; maliyet değildir)', lineKgPriceHeading: 'Satır kg fiyatı (bilgi)',
+  theoreticalKgPrice: 'Teorik kg fiyatı', realKgPrice: 'Gerçek kg fiyatı',
+  kgPricePerKg: (amount: string, currency: string) => `${amount} ${currency}/kg`, kgPriceNone: '—',
 } as const
+/** AK-3b: invoice command refusals named in user words; any other code keeps the generic conflict / refusal text. */
+export const INCOMING_INVOICE_PROBLEM_TEXT: Readonly<Record<string, string>> = {
+  purchasing_invoice_piece_quantity_invalid: 'Adetli sipariş satırı yalnız tam adetle eşleştirilebilir. Paylaştırılan miktarı tam adet olarak girin.',
+}
 export const INCOMING_INVOICE_STATUS = { Recorded: 'Kaydedildi', Matched: 'Eşleştirildi', FinancePending: 'Finans aktarımı bekliyor', FinanceAccepted: 'Finansa aktarıldı' } as const

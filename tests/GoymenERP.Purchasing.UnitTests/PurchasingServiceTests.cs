@@ -526,6 +526,10 @@ public sealed partial class PurchasingServiceTests
         /// <summary>KLN-D45: the Ayarlar receipt policy the service is composed with (null: not composed, every tolerance NotSet).</summary>
         public IPurchaseGoodsReceiptPolicyReadPortV1? ReceiptPolicy { get; set; }
 
+        /// <summary>ALC-S16 / AK-3b: the bulk receipt store and transaction host the service is composed with (null: not composed).</summary>
+        public IPurchaseGoodsReceiptBatchStore? BatchStore { get; set; }
+        public IPurchaseGoodsReceiptBatchTransactionV1? BatchTransactions { get; set; }
+
         public PurchasingServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, RevisePermission: RevisePermission);
 
         public PurchasingService Service(IPurchaseGoodsReceiptTransactionV1? receipts = null, IPurchaseGoodsReceiptReadsV1? reads = null,
@@ -540,7 +544,8 @@ public sealed partial class PurchasingServiceTests
                 new PurchaseUnitVerifier(Settings), Store, Bindings, TimeProvider.System, receipts, reads, MoneyOwner ?? Money, CandidateOwner ?? Money, LineTaxes, SalesSources,
                 allocationLinks: AllocationLinks, receiptReversals: reversals, returnStore: returns, returnInvoiceCosts: returnCosts,
                 receiptReversalBatches: reversalBatches, returnCostSources: returnSources, theoreticalKilograms: TheoreticalKilograms,
-                receiptPolicy: ReceiptPolicy, returnLineage: returnLineage, returnPolicy: returnPolicy, returnTransactions: returnExits);
+                receiptPolicy: ReceiptPolicy, returnLineage: returnLineage, returnPolicy: returnPolicy, returnTransactions: returnExits,
+                batchStore: BatchStore, batchTransactions: BatchTransactions);
         }
 
         /// <summary>Runs one call as the synthetic approver (not the request's preparer or submitter) and switches back.</summary>

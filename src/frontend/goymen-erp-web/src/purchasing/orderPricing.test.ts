@@ -172,3 +172,73 @@ describe('AK-3 approval refusal text', () => {
     expect(ORDER_APPROVAL_PROBLEM_TEXT.purchasing_theoretical_kilograms_missing).toContain('teorik kg/adet')
   })
 })
+
+describe('AK-3b order realization (SAT-D436 TK6, TK8)', () => {
+  // Golden K02: 40 pieces invoiced for 10 000,00; 500,16 kg weighed against 493,8 kg theoretical → +6,36 kg, +1,29 %, 19,99 /kg.
+  const k02 = { invoicedQuantity: '40', invoicedAmount: '10000.00', weighedKg: '500.16', theoreticalKg: '493.8', differenceKg: '6.36',
+    deviationPercent: '1.29', realKgPrice: '19.99', realUnavailable: null }
+  const k02KgPrice = { theoreticalKgPrice: '20.25', theoreticalUnavailable: null, realKgPrice: '19.99', realUnavailable: null }
+  const notInvoiced = { invoicedQuantity: '0', invoicedAmount: '0.00', weighedKg: null, theoreticalKg: null, differenceKg: null,
+    deviationPercent: null, realKgPrice: null, realUnavailable: 'NotInvoiced' }
+  const documentOf = (realization: Record<string, unknown>) => ({ ...realization, invoicedQuantity: null })
+
+  it('decodes the K02 line and document realization exactly as the server sent them', () => {
+    const detail = decodePurchaseOrderDetail(body({ kgPrice: k02KgPrice, realization: documentOf(k02) }, [line({ kgPrice: k02KgPrice, realization: k02 })]))
+    expect(detail?.lines[0].realization).toEqual(k02)
+    expect(detail?.lines[0].kgPrice).toEqual(k02KgPrice)
+    expect(detail?.realization).toEqual(documentOf(k02))
+  })
+
+  it('decodes "nothing invoiced" as a true zero with no kg figure, and NotInvoiced as a kg price reason', () => {
+    const kgPrice = { ...k02KgPrice, realKgPrice: null, realUnavailable: 'NotInvoiced' }
+    const detail = decodePurchaseOrderDetail(body({ kgPrice, realization: documentOf(notInvoiced) }, [line({ kgPrice, realization: notInvoiced })]))
+    expect(detail?.lines[0].realization).toEqual(notInvoiced)
+    expect(detail?.realization?.realUnavailable).toBe('NotInvoiced')
+    expect(detail?.kgPrice?.realUnavailable).toBe('NotInvoiced')
+  })
+
+  it('decodes a short delivery (signed difference and deviation) and every unknown figure as null', () => {
+    const short = { ...k02, weighedKg: '469.11', differenceKg: '-24.69', deviationPercent: '-5.00', realKgPrice: '21.32' }
+    expect(decodePurchaseOrderDetail(body({}, [line({ realization: short })]))?.lines[0].realization).toEqual(short)
+    const unweighed = { ...k02, weighedKg: null, differenceKg: null, deviationPercent: null, realKgPrice: null, realUnavailable: 'WeighedKgUnavailable' }
+    expect(decodePurchaseOrderDetail(body({}, [line({ realization: unweighed })]))?.lines[0].realization).toEqual(unweighed)
+    const hidden = { ...documentOf(k02), invoicedAmount: null, realKgPrice: null, realUnavailable: 'NotAllLinesHaveKg' }
+    expect(decodePurchaseOrderDetail(body({ realization: hidden }))?.realization).toEqual(hidden)
+  })
+
+  it('an absent realization stays absent (command responses, older bodies)', () => {
+    const detail = decodePurchaseOrderDetail(body())
+    expect(detail?.realization).toBeUndefined()
+    expect(detail?.lines[0].realization).toBeUndefined()
+  })
+
+  it.each([
+    ['an unknown reason code', { ...notInvoiced, realUnavailable: 'Guessed' }],
+    ['a price and a reason together', { ...k02, realUnavailable: 'ZeroKg' }],
+    ['neither a price nor a reason', { ...k02, realKgPrice: null }],
+    ['a missing member', (({ deviationPercent: _dropped, ...rest }) => rest)(k02)],
+    ['an extra member', { ...k02, cost: '1.00' }],
+    ['a numeric amount', { ...k02, invoicedAmount: 10000 }],
+    ['a numeric kg', { ...k02, weighedKg: 500.16 }],
+    ['a non-canonical kg', { ...k02, theoreticalKg: '493.80' }],
+    ['a negative zero difference', { ...k02, differenceKg: '-0' }],
+    ['a deviation without two decimals', { ...k02, deviationPercent: '1.3' }],
+    ['a real kg price with three decimals', { ...k02, realKgPrice: '19.990' }],
+    ['an undefined figure', { ...k02, weighedKg: undefined }],
+    ['null instead of an object', null],
+  ])('refuses %s on a line and on the document', (_, broken) => {
+    expect(decodePurchaseOrderDetail(body({}, [line({ realization: broken })]))).toBeNull()
+    expect(decodePurchaseOrderDetail(body({ realization: broken === null ? null : { ...(broken as object), invoicedQuantity: null } }))).toBeNull()
+  })
+
+  it('fails closed on a document realization with an invoiced quantity, on a technical slice and beside withheld or absent prices', () => {
+    expect(decodePurchaseOrderDetail(body({ realization: k02 }))).toBeNull()
+    const technical = line({ lineId: '99999999-9999-4999-8999-999999999999', lineNo: 2, kind: 'Technical',
+      parentLineId: '55555555-5555-4555-8555-555555555555', price: null, realization: k02 })
+    expect(decodePurchaseOrderDetail(body({ order: { ...readSummary, lineCount: 2 } }, [line(), technical]))).toBeNull()
+    const withheld = { priceDisclosure: 'Withheld', pricePending: null }
+    expect(decodePurchaseOrderDetail(body({ ...withheld, realization: documentOf(k02) }, [line({ price: null })]))).toBeNull()
+    expect(decodePurchaseOrderDetail(body(withheld, [line({ price: null, realization: k02 })]))).toBeNull()
+    expect(decodePurchaseOrderDetail({ order: readSummary, lines: [line({ price: undefined, realization: k02 })], acceptances: [], cancellation: null })).toBeNull()
+  })
+})

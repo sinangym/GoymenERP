@@ -76,7 +76,8 @@ public static partial class PurchasingEndpoints
         .ProducesErpUnsupportedMediaType().ProducesErpCodeLessNotFound()
         .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict, PurchasingProblemCodesV1.SameKeyPayloadMismatch,
             PurchasingProblemCodesV1.ConcurrentChange, PurchaseIncomingInvoice.StateConflict, PurchaseIncomingInvoice.MakerChecker,
-            PurchaseIncomingInvoice.MatchRequired, PurchaseIncomingInvoice.VarianceApprovalRequired, PurchaseIncomingInvoice.SourceMismatch)
+            PurchaseIncomingInvoice.MatchRequired, PurchaseIncomingInvoice.VarianceApprovalRequired, PurchaseIncomingInvoice.SourceMismatch,
+            PurchaseIncomingInvoice.PieceQuantityInvalid)
         .ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
     private static void InvoiceWorkspaceRead(RouteHandlerBuilder endpoint) => endpoint
         .ProducesErpBadRequest("validation_failed").AllowsEmptyErpBadRequestBody().AllowsCodeLessErpBadRequestBody()

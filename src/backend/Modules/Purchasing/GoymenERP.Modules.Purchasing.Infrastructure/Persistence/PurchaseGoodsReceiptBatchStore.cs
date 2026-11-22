@@ -3,6 +3,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Domain.GoodsReceipts;
+using GoymenERP.Modules.Purchasing.Domain.Orders;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
@@ -210,6 +211,7 @@ public sealed class PurchaseGoodsReceiptBatchStore(PurchasingDbContext dbContext
             VarianceOutcome = (int)draft.VarianceOutcome,
             TolerancePercent = draft.TolerancePercent,
             VarianceAcknowledged = draft.VarianceAcknowledged,
+            KilogramsPerUnit = draft.KilogramsPerUnit,
             PreparedBy = actorId,
             PreparedAtUtc = now,
             CorrelationId = envelope.CorrelationId.Trim(),
@@ -229,6 +231,7 @@ public sealed class PurchaseGoodsReceiptBatchStore(PurchasingDbContext dbContext
             GeneratedNumber = label.GeneratedNumber,
             SupplierLabelNumber = label.SupplierLabelNumber,
             MeasuredQuantityKg = RequireFits(label.MeasuredQuantityKg),
+            PieceCount = label.PieceCount,
             HeatNumber = label.HeatNumber,
             CoilNumber = label.CoilNumber,
             Released = false,
@@ -371,10 +374,12 @@ public sealed class PurchaseGoodsReceiptBatchStore(PurchasingDbContext dbContext
                 Enum.IsDefined(typeof(GoodsReceiptLabelCodeSource), label.CodeSource)
                     ? (GoodsReceiptLabelCodeSource)label.CodeSource
                     : throw new InvalidOperationException("Kayıtlı etiket kodu kaynağı tanınmıyor."),
-                label.GeneratedNumber, label.SupplierLabelNumber, label.MeasuredQuantityKg, label.HeatNumber, label.CoilNumber))
+                label.GeneratedNumber, label.SupplierLabelNumber, label.MeasuredQuantityKg, label.HeatNumber, label.CoilNumber,
+                label.PieceCount))
             .ToArray();
         if (labels.Length == 0 || labels.Select((label, index) => label.LineNo == index + 1).Any(ordered => !ordered)
-            || labels.Sum(label => label.MeasuredQuantityKg) != row.ReceivedQuantityKg)
+            || labels.Sum(label => label.MeasuredQuantityKg) != row.ReceivedQuantityKg
+            || !PieceFactsAgree(row.KilogramsPerUnit, row.ExpectedQuantityKg, labels))
         {
             // The stored total is the Σ of its labels, numbered 1..n; anything else is a corrupt record, refused.
             throw new InvalidOperationException("Toplu mal kabul etiketleri kayıtlı toplamla uyuşmuyor.");
@@ -382,7 +387,7 @@ public sealed class PurchaseGoodsReceiptBatchStore(PurchasingDbContext dbContext
 
         var draft = new PurchaseGoodsReceiptBatchDraft(row.BatchId, row.OrderId, row.LineId, row.ProductId, row.ProductVersion, row.UnitId,
             row.LocationId, row.OccurredAtUtc, status, row.ExpectedQuantityKg, row.ReceivedQuantityKg, outcome, row.TolerancePercent,
-            row.VarianceAcknowledged, labels);
+            row.VarianceAcknowledged, labels, row.KilogramsPerUnit);
         return new StoredPurchaseGoodsReceiptBatch(companyId, draft, row.Version, row.PreparedBy, row.PreparedAtUtc, row.DecidedBy, row.DecidedAtUtc,
             row.DecisionReason);
     }
@@ -402,7 +407,9 @@ public sealed class PurchaseGoodsReceiptBatchStore(PurchasingDbContext dbContext
             || !Enum.IsDefined(draft.VarianceOutcome)
             || draft.TolerancePercent is { } tolerance && !GoodsReceiptKgVariance.IsValidTolerancePercent(tolerance) || draft.Labels is null || draft.Labels.Count == 0
             || draft.Labels.Select((label, index) => label.LineNo == index + 1).Any(ordered => !ordered)
-            || draft.Labels.Sum(label => label.MeasuredQuantityKg) != draft.ReceivedQuantityKg)
+            || draft.Labels.Sum(label => label.MeasuredQuantityKg) != draft.ReceivedQuantityKg
+            || !PieceFactsAgree(draft.KilogramsPerUnit, draft.ExpectedQuantityKg, draft.Labels)
+            || draft.IsPieceBatch && draft.Status != PurchaseGoodsReceiptBatchStatus.Posted)
         {
             throw new ArgumentException("Yeni toplu mal kabul kimlikli, 1..n numaralı etiketli ve etiket toplamı kadardır.", nameof(draft));
         }
@@ -412,6 +419,19 @@ public sealed class PurchaseGoodsReceiptBatchStore(PurchasingDbContext dbContext
         {
             throw Refused(PurchasingStoreCodes.ValueDoesNotFit, "Ürün sürümü veya etiket kodu sütununa sığmıyor.");
         }
+    }
+
+    /// <summary>
+    /// AK-3b: a kilogram batch has no piece fact at all; a piece batch has a positive kg per piece, a positive whole piece count on
+    /// every label and an expected kg equal to the theoretical kg of its pieces (Σ pieces × kg per piece, URN-D9).
+    /// </summary>
+    private static bool PieceFactsAgree(decimal? kilogramsPerUnit, decimal expectedQuantityKg,
+        IReadOnlyCollection<PurchaseGoodsReceiptBatchLabelRecord> labels)
+    {
+        if (kilogramsPerUnit is not { } perUnit) return labels.All(label => label.PieceCount is null);
+        if (perUnit <= 0m || labels.Any(label => label.PieceCount is not > 0)) return false;
+        var pieces = labels.Sum(label => (long)label.PieceCount!.Value);
+        return PurchasePieceKilograms.TheoreticalKilograms(pieces, perUnit) == expectedQuantityKg;
     }
 
     private static decimal RequireFits(decimal value) =>
@@ -473,6 +493,7 @@ public sealed class PurchaseGoodsReceiptBatchStore(PurchasingDbContext dbContext
         VarianceOutcome = stored.Batch.VarianceOutcome.ToString(),
         stored.Batch.TolerancePercent,
         stored.Batch.VarianceAcknowledged,
+        stored.Batch.KilogramsPerUnit,
         stored.Batch.LocationId,
         stored.PreparedBy,
         stored.DecidedBy,
@@ -485,6 +506,7 @@ public sealed class PurchaseGoodsReceiptBatchStore(PurchasingDbContext dbContext
             CodeSource = label.CodeSource.ToString(),
             label.SupplierLabelNumber,
             label.MeasuredQuantityKg,
+            label.PieceCount,
         }),
     }, Json);
 

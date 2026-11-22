@@ -36,7 +36,16 @@ public sealed record PurchaseAcceptanceStageRequestV1(
     Guid UnitId,
     string AcceptedQuantity,
     DateTimeOffset OccurredAtUtc,
-    string? MeasuredQuantityKg = null);
+    string? MeasuredQuantityKg = null)
+{
+    /// <summary>
+    /// AK-3b (BS-16/BS-17): the theoretical/weighed comparison of a piece-line receipt as the service evaluated it on the FIRST
+    /// attempt (the Ayarlar tolerance in force then). The participant records it with the acceptance and answers the recorded
+    /// value on a replay; it is a derived server fact, so it is not part of the request hash. Null on a kilogram line and for a
+    /// bulk-receipt label (the batch keeps its own comparison).
+    /// </summary>
+    public PurchaseGoodsReceiptPieceKilogramsV1? PieceKilograms { get; init; }
+}
 
 /// <summary>
 /// The staged acceptance share. F-017 F17-1 (ALIS_F017 v1 §3.4/§5): <see cref="PurchaseOrderGeneralLineId"/> is the purchase GENERAL
@@ -54,7 +63,16 @@ public sealed record PurchaseAcceptanceStageResultV1(
     string RemainingQuantity,
     bool IsReplay,
     string OriginalCorrelationId,
-    Guid? PurchaseOrderGeneralLineId = null);
+    Guid? PurchaseOrderGeneralLineId = null)
+{
+    /// <summary>
+    /// AK-3b: the piece-line comparison recorded with the acceptance on its first attempt (see
+    /// <see cref="PurchaseAcceptanceStageRequestV1.PieceKilograms"/>). A replay answers this stored value, never a comparison
+    /// recomputed with today's Ayarlar tolerance; null on a kilogram line and for an acceptance recorded before AK-3b.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public PurchaseGoodsReceiptPieceKilogramsV1? PieceKilograms { get; init; }
+}
 
 /// <summary>
 /// AK-3 (ALS-D119/ALS-D121): <see cref="MeasuredQuantityKg"/> is the weighed kilograms of a piece-line acceptance (required there,

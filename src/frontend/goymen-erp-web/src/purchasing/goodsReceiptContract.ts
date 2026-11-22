@@ -1,4 +1,5 @@
 import type { PurchaseOrderDetail, PurchaseOrderLine } from './contract'
+import { decodePieceKilograms, type PieceKilograms } from './pieceKilogramsContract'
 
 /** Exact server-published capability id used only to fail-closed the receipt control mount. */
 export const PURCHASE_GOODS_RECEIPT_CAPABILITY = 'purchasing.goods-receipts.record'
@@ -70,6 +71,11 @@ export interface GoodsReceiptResponse {
   readonly isReplay: boolean
   readonly originalCorrelationId: string
   readonly futureSupplyReleases: readonly FutureSupplyRelease[]
+  /**
+   * AK-3b: on a piece-unit line, the theoretical vs weighed kilograms as the server recorded them at the first attempt (a replay
+   * answers that record; it is absent on a kilogram line and on a replay of a receipt older than AK-3b). Never recomputed here.
+   */
+  readonly pieceKilograms?: PieceKilograms
 }
 
 const record = (value: unknown): Record<string, unknown> | null => typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -167,7 +173,15 @@ export function decodeGoodsReceiptResponse(value: unknown, detail: PurchaseOrder
     || Date.parse(receipt.occurredAtUtc) !== Date.parse(sent.occurredAtUtc)) return null
   const futureSupplyReleases = decodeFutureSupplyReleases(body.futureSupplyReleases)
   if (futureSupplyReleases === null) return null
-  return { receipt, isReplay: replayHeader, originalCorrelationId: body.originalCorrelationId, futureSupplyReleases }
+  // AK-3b: absent = no comparison (kilogram line / older receipt). Present = exact, and about THIS receipt: its piece count is
+  // the accepted quantity and its weighed kg the receipt's. A malformed comparison refuses the whole answer, never a partial one.
+  if (!Object.hasOwn(body, 'pieceKilograms')) {
+    return { receipt, isReplay: replayHeader, originalCorrelationId: body.originalCorrelationId, futureSupplyReleases }
+  }
+  const pieceKilograms = decodePieceKilograms(body.pieceKilograms)
+  if (pieceKilograms === null || String(pieceKilograms.pieceCount) !== receipt.acceptedQuantity
+    || pieceKilograms.measuredQuantityKg !== receipt.measuredQuantityKg) return null
+  return { receipt, isReplay: replayHeader, originalCorrelationId: body.originalCorrelationId, futureSupplyReleases, pieceKilograms }
 }
 
 /**

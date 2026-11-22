@@ -42,6 +42,7 @@ public sealed class PurchasingOrderReadServiceV1(
             Currency = detail.Currency,
             PricePending = detail.PricePending,
             KgPrice = detail.KgPrice,
+            Realization = detail.Realization,
         };
     }
 

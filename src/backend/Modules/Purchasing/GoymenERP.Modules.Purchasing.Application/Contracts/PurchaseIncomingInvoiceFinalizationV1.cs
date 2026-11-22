@@ -37,7 +37,9 @@ public static class PurchaseIncomingInvoiceFinalizationV1
         return new(line.ProductId, line.UnitId, line.Quantity, Array.AsReadOnly(matches.Select(x =>
             new PurchaseInvoiceReceiptCostShareV1(x.AcceptanceId, x.OrderId, x.OrderLineId, x.OrderVersion, x.Quantity, x.AcceptedQuantity!.Value,
                 x.ReceiptAdjustments is null ? null : Array.AsReadOnly(x.ReceiptAdjustments.Select(adjustment =>
-                    new PurchaseInvoiceReceiptAdjustmentV1(adjustment.AdjustmentId, adjustment.UndoQuantity, adjustment.IsSupplierReturn)).ToArray()))).ToArray()));
+                    new PurchaseInvoiceReceiptAdjustmentV1(adjustment.AdjustmentId, adjustment.UndoQuantity, adjustment.IsSupplierReturn)).ToArray()),
+                // AK-3b (ALS-D121): a piece-line share names the kilograms weighed for its whole acceptance.
+                x.Kilograms is { UnitIsKilogram: false } kilograms ? kilograms.AcceptanceMeasuredKg : null)).ToArray()));
     }
 
     private static IReadOnlyList<PurchaseInvoiceSubcontractTaxSourceV1>? TaxSources(PurchaseIncomingInvoice invoice, Guid lineId)

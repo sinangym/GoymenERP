@@ -70,6 +70,19 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
                     || receipt.CustodianKind != StockPartyKind.Company || receipt.CustodianId != companyId)
                     throw Invalid("purchase_invoice_cost_receipt_source_conflict");
                 var basis = await ReadReceiptCostBasisAsync(receipt, share, cancellationToken);
+                if (share.MeasuredQuantityKg is { } weighedKg)
+                {
+                    // AK-3b (ALS-D121): Purchasing's piece-line share must be THIS immutable piece receipt with exactly the
+                    // kilograms it weighed; the kg share is then weighed kg × matched pieces ÷ accepted pieces.
+                    if (receipt.PieceCount is not { } receivedPieces || receivedPieces != share.AcceptedQuantity
+                        || basis.OriginalKg.CompareTo(ExactCostRatio.Of(weighedKg)) != 0)
+                        throw Invalid("purchase_invoice_cost_receipt_source_conflict");
+                    // A return or reversal that did not leave in the receipt's own kg-per-piece proportion makes "remaining kg ×
+                    // matched ÷ remaining pieces" differ from ALS-D121. Which one applies is not decided; the source stays pending.
+                    if (!PurchaseInvoiceKilogramShare.KeepsOriginalProportion(basis.OriginalKg, share.AcceptedQuantity,
+                            basis.EligibleKg, basis.EligibleQuantity))
+                        throw Unavailable("purchase_invoice_cost_piece_reversal_basis_unavailable");
+                }
                 if (basis.Cohort is { } cohort ? ExactCostRatio.Of(share.MatchedQuantity).CompareTo(cohort.PendingQuantity) > 0
                     : priorShares.Aggregate(ExactCostRatio.Of(share.MatchedQuantity),
                         (sum, row) => sum.Add(ExactCostRatio.Of(row.MatchedQuantity))).CompareTo(basis.EligibleQuantity) > 0)
@@ -97,7 +110,7 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
                     .CompareTo(basis.OriginalKg.Divide(share.AcceptedQuantity)) != 0)
                     throw Unavailable("purchase_invoice_cost_known_reversal_basis_unavailable");
                 // Physical kg comes from the immutable original Inventory receipt, not current Product conversion.
-                var invoicedKg = basis.EligibleKg.Multiply(share.MatchedQuantity).Divide(basis.EligibleQuantity);
+                var invoicedKg = PurchaseInvoiceKilogramShare.Of(basis.EligibleKg, share.MatchedQuantity, basis.EligibleQuantity);
                 var previousValue = originalUnit.Multiply(invoicedKg);
                 var invoiceValue = share.TlNetShare.Value();
                 var result = new InventoryPurchaseInvoiceCostReceiptResultV1(share.InvoiceLineId, share.InvoiceLineNo, share.AcceptanceId,
