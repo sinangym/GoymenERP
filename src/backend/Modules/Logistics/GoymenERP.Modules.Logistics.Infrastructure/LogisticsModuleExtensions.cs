@@ -1,7 +1,9 @@
+using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Logistics.Application;
+using GoymenERP.Modules.Logistics.Application.Ai;
 using GoymenERP.Modules.Logistics.Application.Contracts;
 using GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Application.Contracts;
@@ -69,6 +71,8 @@ public static class LogisticsModuleExtensions
         // AT-025: the operations work list — two separate sections over the Sales and Purchasing owners' read ports (registered by
         // those modules) and Logistics's own recorded totals; each section measures its own name.
         services.AddScoped<ILogisticsOrderLineProgressReader, LogisticsOrderLineProgressReader>();
+        // Y-A1: the owner READ tool over the instruction list (registration only; Ai:AllowedTools admits it).
+        services.AddScoped<IAiOwnerToolV1, LogisticsPendingShipmentsAiTool>();
         services.TryAddSingleton(new LogisticsOperationsWorkBindings());
         services.AddScoped<ILogisticsOperationsWorkService, LogisticsOperationsWorkService>();
         services.AddScoped<LogisticsCustomerReturnStore>();

@@ -1,4 +1,6 @@
 using GoymenERP.Api.Ai.External;
+using GoymenERP.Api.Ai.Knowledge;
+using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Security.SecretStore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -9,8 +11,9 @@ namespace GoymenERP.Api.Ai;
 public static class AiRuntimeServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the AI-3 READ runtime. No owner module tool is registered here: owner READ tools are added by their
-    /// owning modules (AI-6) and still need a configuration allowlist entry before the catalog admits them.
+    /// Registers the AI-3 READ runtime and the platform-owned <c>decisions.lookup.v1</c> READ tool (Y-A1). Module READ
+    /// tools are added by their owning modules (e.g. Logistics <c>logistics.pending-shipments.v1</c>); every tool still
+    /// needs a configuration allowlist entry before the catalog admits it.
     /// </summary>
     public static IServiceCollection AddAiRuntime(this IServiceCollection services, IConfiguration configuration)
     {
@@ -28,6 +31,11 @@ public static class AiRuntimeServiceCollectionExtensions
         services.TryAddScoped<IAiExternalEgressPolicySourceV1, UnconfiguredAiExternalEgressPolicySource>();
         services.TryAddScoped<ExternalAiModelProvider>();
         services.TryAddScoped<IAiModelProviderV1>(ResolveModelProvider);
+        // Y-A1: the platform-owned decision index READ tool. Registration only: the catalog admits it solely when
+        // Ai:AllowedTools lists decisions.lookup.v1@1, a call still needs ai.panel.use + ai.decisions.read, and with no
+        // Ai:Knowledge:DecisionIndexPath configured the tool answers unavailable.
+        services.TryAddSingleton<IAiDecisionIndexSource, ConfiguredAiDecisionIndexSource>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IAiOwnerToolV1, DecisionLookupAiTool>());
         services.AddScoped<AiToolCatalog>();
         services.AddScoped<AiCapabilityService>();
         services.AddScoped<AiAskService>();

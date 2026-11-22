@@ -23,12 +23,19 @@ public sealed class AiPanelPermissionRegistrationTests
     public static TheoryData<string> Permissions => new()
     {
         ErpPermissions.AiPanelUse,
+        ErpPermissions.AiDecisionsRead,
     };
 
     [Fact]
     public void The_name_is_spelled_as_the_AI_plan_spells_it()
     {
         Assert.Equal("ai.panel.use", ErpPermissions.AiPanelUse);
+    }
+
+    [Fact]
+    public void The_decision_lookup_name_is_spelled_as_registered()
+    {
+        Assert.Equal("ai.decisions.read", ErpPermissions.AiDecisionsRead);
     }
 
     [Theory]

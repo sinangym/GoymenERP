@@ -1690,6 +1690,12 @@ public static class ErpPermissions
     /// tool still requires its own permissions in addition to this capability, and the runtime itself stays off (AI-D6).
     /// </summary>
     public const string AiPanelUse = "ai.panel.use";
+    /// <summary>
+    /// Y-A1 (AI-D12, AI-D32, DALGA_PLANI_v2 A.4 (1)): may use the READ tool <c>decisions.lookup.v1</c> over the decision
+    /// index in addition to <see cref="AiPanelUse"/>. The name is a reviewed assumption (NEEDS-SINAN: name and holders).
+    /// Registered company-wide only, not critical; no seeded role holds it: applying a grant is a human gate.
+    /// </summary>
+    public const string AiDecisionsRead = "ai.decisions.read";
 
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(
         [
@@ -1977,6 +1983,7 @@ public static class ErpPermissions
             IdentityAuditRead,
             IdentityAssignmentsRead,
             AiPanelUse,
+            AiDecisionsRead,
             IdentityUsersManage,
             PlatformSecurityEventsRead,
         ],
@@ -2275,6 +2282,7 @@ public static class ErpPermissions
             IdentityAuditRead,
             IdentityAssignmentsRead,
             AiPanelUse,
+            AiDecisionsRead,
             IdentityUsersManage,
             PlatformSecurityEventsRead,
         ],

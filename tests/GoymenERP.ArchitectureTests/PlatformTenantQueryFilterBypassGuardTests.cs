@@ -2679,7 +2679,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): the unload weighing slice registered (c695b524… -> 1069a748…).
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (1069a748… -> 0e7a30b4…).
-                        "3fbc504da02c04d583bc93883042deca14c5fbdeb630cda3fecd9666cbb2d045",
+                        // Re-fingerprinted for Y-A1: one scoped registration of the Logistics-owned READ AI tool
+                        // (logistics.pending-shipments.v1, DI-only); provider branch and token counts unchanged (3fbc504d… -> 4cb81c32…).
+                        "4cb81c3292056e2ba1bbcaea83fb3591c1189bbd640bd3f62ede92b929818171",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
