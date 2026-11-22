@@ -54,6 +54,11 @@ public sealed class PurchaseReceiptCostProof : IPurchaseReceiptCostProofV1
             .Select(row => new { row.ProductId, row.ProductVersion }).SingleOrDefaultAsync(cancellationToken);
         EnsureTransaction();
         if (line is null || line.ProductId == Guid.Empty || string.IsNullOrWhiteSpace(line.ProductVersion)) throw Unavailable();
+        var measured = await database.Acceptances.AsNoTracking().Where(row => row.CompanyId == company.CompanyId
+                && row.OrderId == purchaseOrderId && row.LineId == purchaseOrderLineId && row.AcceptanceId == acceptanceId)
+            .Select(row => new { row.MeasuredQuantityKg }).SingleOrDefaultAsync(cancellationToken);
+        EnsureTransaction();
+        if (measured is null) throw Unavailable();
         var price = await new PurchaseOrderLineCostReadPort(database, company).GetAsync(company.CompanyId,
             purchaseOrderId, purchaseOrderLineId, cancellationToken);
         EnsureTransaction();
@@ -71,7 +76,8 @@ public sealed class PurchaseReceiptCostProof : IPurchaseReceiptCostProofV1
             || approvedOrderRate.Outcome == PurchaseOrderExchangeRateOutcomeV1.NotFound) throw Unavailable();
         return new PurchaseReceiptCostProofV1(company.CompanyId, purchaseOrderId, purchaseOrderLineId, acceptanceId, line.ProductId,
             line.ProductVersion, acceptance.AcceptedQuantity, acceptance.PurchaseOrderVersionAfter, acceptance.OccurredAtUtc,
-            price, rate, approvedOrderRate);
+            price, rate, approvedOrderRate,
+            measured.MeasuredQuantityKg is { } kilograms ? PurchaseAcceptanceParticipantContractV1.FormatQuantity(kilograms) : null);
     }
 
     private void EnsureTransaction()

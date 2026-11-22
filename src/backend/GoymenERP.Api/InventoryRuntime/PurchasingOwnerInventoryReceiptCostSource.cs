@@ -52,16 +52,29 @@ public sealed class PurchasingOwnerInventoryReceiptCostSource(IPurchaseReceiptCo
                 return Unavailable(proof.Price.UnreadableReason ?? "purchase_receipt_price_not_recorded");
             if (price.MovingAverageUnitCost <= 0m) return Unavailable("purchase_receipt_cost_zero_unreadable");
             var day = ProductPriceBusinessDayV2.DateOf(proof.ReceivedAtUtc);
-            var unitConversion = await product.ConvertAsync(new(selection.ProductId, 1m, price.PriceUnitId, null, day), cancellationToken);
-            Fence(selection.CompanyId, actor);
-            if (unitConversion.Outcome != ProductPurchaseUnitConversionOutcomeV1.Available || unitConversion.Quantity is not > 0m
-                || unitConversion.InputKg != unitConversion.Quantity || unitConversion.RemainderKg != 0m
-                || unitConversion.Source is not { } unitSource || unitSource.CompanyId != selection.CompanyId
-                || unitSource.ProductId != selection.ProductId || !unitSource.Units.Any(unit => unit.UnitId == price.PriceUnitId
-                    && unit.KgPerUnit == unitConversion.Quantity))
-                return Unavailable("purchase_receipt_unit_conversion_unreadable");
-            conversion = unitConversion;
-            var originalRatio = ExactCostRatio.Of(price.MovingAverageUnitCost).Divide(conversion.Quantity!.Value);
+            ExactCostRatio originalRatio;
+            if (PurchaseReceiptWeighedCost.PurchaseCostGoldenAccepted && !price.PriceUnitIsKilogram)
+            {
+                // AK-3 (ALS-D119/ALS-D120): paid amount ÷ weighed kg, exact; no theoretical-kg fallback (TA3).
+                var weighedRatio = PurchaseReceiptWeighedCost.PerWeighedKilogram(price.MovingAverageUnitCost,
+                    ParseQuantity(proof.AcceptedQuantity), proof.MeasuredQuantityKg is { } weighed ? ParseQuantity(weighed) : null);
+                if (weighedRatio is null) return Unavailable("purchase_receipt_weighed_kg_unavailable");
+                originalRatio = weighedRatio;
+            }
+            else
+            {
+                var unitConversion = await product.ConvertAsync(new(selection.ProductId, 1m, price.PriceUnitId, null, day), cancellationToken);
+                Fence(selection.CompanyId, actor);
+                if (unitConversion.Outcome != ProductPurchaseUnitConversionOutcomeV1.Available || unitConversion.Quantity is not > 0m
+                    || unitConversion.InputKg != unitConversion.Quantity || unitConversion.RemainderKg != 0m
+                    || unitConversion.Source is not { } unitSource || unitSource.CompanyId != selection.CompanyId
+                    || unitSource.ProductId != selection.ProductId || !unitSource.Units.Any(unit => unit.UnitId == price.PriceUnitId
+                        && unit.KgPerUnit == unitConversion.Quantity))
+                    return Unavailable("purchase_receipt_unit_conversion_unreadable");
+                conversion = unitConversion;
+                originalRatio = ExactCostRatio.Of(price.MovingAverageUnitCost).Divide(conversion.Quantity!.Value);
+            }
+
             decimal? original = originalRatio.TryToDecimal(out var originalScalar) ? originalScalar : null;
             var currency = price.UnitPrice.CurrencyId;
             var invoice = MapInvoice(proof.InvoiceRate);
@@ -143,6 +156,9 @@ public sealed class PurchasingOwnerInventoryReceiptCostSource(IPurchaseReceiptCo
         _ => InventoryPurchaseInvoiceCostRateV1.Unavailable(answer.CompanyId, answer.GoodsReceiptLineId, answer.PurchaseOrderId,
             answer.PurchaseOrderLineId, answer.OrderCurrencyId, InventoryPurchaseInvoiceCostRateReasonsV1.Unreadable),
     };
+
+    private static decimal ParseQuantity(string text) =>
+        decimal.Parse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture);
 
     private void Fence(Guid companyId, string? actor)
     {
