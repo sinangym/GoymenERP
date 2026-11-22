@@ -1,14 +1,17 @@
-# Adet/kg Formül Golden v1 — EK1 (SAT-D451–SAT-D459, ALS-D122–ALS-D124)
+# Adet/kg Formül Golden v1 — EK1 (SAT-D451–SAT-D460, ALS-D122–ALS-D124)
 
 ## Kaynak, bağımsızlık ve kabul sınırı
 
 Bu belge **yeni Sinan kararı eklemez**. `ADET_KG_FORMUL_GOLDEN_V1.md`'nin ekidir ve SAT-D431 yöntemiyle, aşağıdaki
 kararların formül golden'ını kaydeder. Ana golden'ın tanımları (TK1–TK9, TA1–TA5, TI1–TI5, TI8), ortak kabul ve etiket
-örnekleri (R1, R5, L9, A07, K02/K03) ve gösterim kuralları burada da geçerlidir.
+örnekleri (R1, R5, L9, A07, K02/K03) ve gösterim kuralları burada da geçerlidir. **İstisna:** ana golden'daki TI8 farkı
+kesin değerlerden tanımlar; bu ekte fark tabanı SAT-D456 ile **kuruş tabanına** geçmiştir (aşağıda "Fark tabanı"). Ana
+golden'ın I11 ve I12 satırlarında tutarlar tam kuruş olduğu için değerleri değişmez; ana golden'daki TI8 metninin
+hizalanması ayrı bir belge değişikliğinin işidir.
 
 **Kaynak kararlar:** `SINAN_KARARLARI_2026-11-22_WORK_AI_DALGALAR.md` (bu belge yazılırken `claude/nifty-franklin-nk76d5`
-@ `453f72dbad0bd4b738fd8a89efb757c84808f426` dalında, main'de değil): SAT-D451–SAT-D459, ALS-D122–ALS-D124, GOV-D13 ve
-11–23. cevaplar. SAT-D456–SAT-D459, ALS-D123 ve ALS-D124 (SINAN-CEVAP 64), bu ekin ilk taslağındaki NEEDS-SINAN EN1–EN6
+@ `cc9efec8cc948645c8a43e2c41a42fc1d51f54ff` dalında, main'de değil): SAT-D451–SAT-D460, ALS-D122–ALS-D124, GOV-D13,
+11–23. ve 28. cevaplar. SAT-D460 (SINAN-CEVAP 66) adetli miktar iadesinde maliyet karşılaştırmasını belirler. SAT-D456–SAT-D459, ALS-D123 ve ALS-D124 (SINAN-CEVAP 64), bu ekin ilk taslağındaki NEEDS-SINAN EN1–EN6
 sorularına verilen cevaplardır; GOV-D13 bu ekin ayrı dala gönderilip taslak PR açılmasına izin verir (merge yetkisi
 vermez). Dayandıkları önceki kararlar: SAT-D436, SAT-D441, SAT-D444, SAT-D445, ALS-D119, ALS-D120,
 ALS-D121, SAT-D371, SAT-D392, SAT-D393, SAT-D396, SAT-D408, SAT-D410, SAT-D427 (`SINAN_KARARLARI_2026-11-21_TREN_KAPANIS.md`
@@ -29,10 +32,15 @@ karar metninde açıkça yazmayan ve mevcut kurallardan gerekçesiyle çıkarıl
 **Fark tabanı (SAT-D456):** iade farkı = belgeye yazılan (kuruşa yuvarlanmış) stok çıkış tutarı − belgeye yazılan
 (kuruşa yuvarlanmış) iade tutarı.
 
-**Ortak sonuç notu (miktar iadesi):** Bu ekteki miktar iadesi satırlarında stok çıkışı ile iade faturası arasında fark
-≠ 0 olduğunda sonuç ana golden I11/I12 ile aynıdır: ortalama okunabiliyorsa fark içeren iade Finans spec'i gelene kadar
+**Ortak sonuç notu (miktar iadesi):** Bu not yalnız **kg birimli** sipariş satırından miktar iadesi için geçerlidir (E06,
+E08). Ortalama okunamazken elle maliyet yolu (SAT-D454) hem kg hem adetli satırda Bölüm 2'deki gibidir (E08, E14). Kg birimli satırda stok çıkışı ile iade faturası arasında fark ≠ 0 olduğunda sonuç ana
+golden I11/I12 ile aynıdır: ortalama okunabiliyorsa fark içeren iade Finans spec'i gelene kadar
 **reddedilir** (SAT-D371); fark okunamıyorsa yol SAT-D393/D396/D408 farklı kişi onaylı istisnadır; onaylı istisna Stok
 `cost_difference_unposted` (409) reddini aşmaz (SAT-D410). Satırlardaki tutarlar bu kuralın karşılaştırdığı değerlerdir.
+**Adetli sipariş satırlarından miktar iadesinde (SAT-D455) SAT-D460 geçerlidir:** fark iade farkı olarak kaydedilir, farklı
+kişi onayıyla geçer, **reddedilmez** (Bölüm 3; E12, E13, E13a). Bu onayın Stok `cost_difference_unposted` (409)
+beklemesiyle (SAT-D410) ilişkisini SAT-D460 yazmaz; golden bu ilişkiyi seçmez (NEEDS-SINAN EN8). Kg ve adetli satır
+arasındaki bu ayrım karar metnini harfiyen izler; teyidi NEEDS-SINAN EN9'dur.
 
 ---
 
@@ -41,7 +49,7 @@ karar metninde açıkça yazmayan ve mevcut kurallardan gerekçesiyle çıkarıl
 ### Formül
 
 1. Net birim fiyat = seçilen alış siparişi satırının birim fiyatından satıra ait **bütün satır iskontoları** (yüzde,
-   zincir, tutar) düşülmüş fiyattır; **vade farkı eklenmez** (SAT-D451, SAT-D458). Sinan'ın örneği: 41,25 − %2,5 =
+   zincir, tutar) düşülmüş fiyattır (SAT-D458); **vade farkı eklenmez** (SAT-D451, 11. soru). Sinan'ın örneği: 41,25 − %2,5 =
    40,21875 (13. soru).
    **Belge altı iskonto düşülmez** ve satıra dağıtılmaz; belge altı iskontosu olan siparişten miktar iadesi anlaşılır
    hata koduyla durur (SAT-D458).
@@ -59,7 +67,9 @@ karar metninde açıkça yazmayan ve mevcut kurallardan gerekçesiyle çıkarıl
   modeline göre (uygulama kuralı; karar metninde yazılı değildir, golden yazarı uygulama kodunu okumadı) satırda iskonto
   **ya yüzde ya tutardır, ikisi birlikte olmaz**; satır düzeyinde zincir iskonto tanımlı değildir; **tutar iskontosu birim
   başınadır**: net birim fiyat = birim fiyat − tutar iskontosu (E07a). Bu nedenle zincir iskonto (E07) ve yüzde + tutar
-  birlikteliği (E07c) mevcut modelde oluşamaz. Model değişirse bu satırlar yeniden ele alınır.
+  birlikteliği (E07c) mevcut modelde oluşamaz. Model değişirse bu satırlar yeniden ele alınır. **Dayanak:** iki bağımsız
+  DOCS reviewer bu modeli `claude/nifty-franklin-nk76d5` @ `cc9efec8` üzerinde doğruladı (DOCS-REVIEW-2: şema kısıtı
+  `CK_PurchaseOrderLines_Price`; DOCS-REVIEW-1: `PurchaseOrderPricing.cs`).
 
 ### Golden satırları (kg birimli seçilen sipariş satırı)
 
@@ -124,16 +134,17 @@ Hesaplanamaz / reddedilir:
 6. Fark = kuruşa yuvarlanmış stok çıkışı − kuruşa yuvarlanmış iade belgesi tutarı (SAT-D456).
 7. **Maliyet karşılaştırması (SAT-D460):** belge tutarı (adet × net adet fiyatı) iade kg'sine bölünerek stok ortalama kg
    maliyetiyle karşılaştırılır; fark (6. adım) **iade farkı** olarak kaydedilir ve farklı kişi onayıyla (SAT-D392/D393)
-   geçer; **fark yüzünden iade reddedilmez**. Kg başına faturalanan değer karşılaştırma bilgisidir; golden onun gösterim
+   geçer; **fark yüzünden iade reddedilmez**. Bu onayın Stok 409 (SAT-D410) beklemesiyle ilişkisi kararda yazmaz (EN8).
+   Kg başına faturalanan değer karşılaştırma bilgisidir; golden onun gösterim
    hassasiyetini seçmez, kesin değerini verir.
 
 ### Golden satırları
 
 | # | Durum | Girdiler | Kesin ara değerler | Gösterilen / sonuç |
 |---|---|---|---|---|
-| E12 | Adetli satır, iskonto, yarım sınırı (SAT-D460) | Sipariş satırı 265,13 TL/adet, %2,5 iskonto; iade 3 adet; etiket 3 adet / 37,461 kg; depo/ürün ortalaması 21,2500 TL/kg | Net 265.13 × 0.975 = 258.50175 (tam yarım) → **258,5018**; belge 3 × 258.5018 = 775,5054 → 775,51; kg başına faturalanan 775.51 / 37.461 = 20.70179653… (ortalama 21,25 ile karşılaştırılır); stok çıkışı 37.461 × 21.25 = 796,04625 → 796,05; fark (SAT-D456) 796,05 − 775,51 | Birim fiyat **258,5018 TL/adet**; iade faturası **775,51 TL** (3 adet; kg 37,461 bilgi); stok çıkışı **796,05 TL**; fark **20,54 TL** iade farkı olarak kaydedilir, farklı kişi onayıyla geçer; **reddedilmez** (SAT-D460) |
-| E13 | Adetli satır, vade farkı hariç | E12 satırında ayrıca %2 vade farkı | Net yine 258,5018 (vade farkı dahil 258.50175 × 1.02 = 263,671785 → 263,6718 **OLMAZ**) | E12 ile aynı: **775,51 TL** fatura, **796,05 TL** çıkış, fark **20,54 TL** iade farkı, farklı kişi onayı (SAT-D460) |
-| E13a | Adetli satır, fatura stok çıkışından büyük (SAT-D460) | Net 300,00 TL/adet; iade 3 adet; etiket 3 adet / 37,461 kg; ortalama 21,2500 | Belge 900,00; kg başına faturalanan 900 / 37.461 = 24.02498598…; stok çıkışı 796,05; fark 796,05 − 900,00 | İade faturası **900,00 TL**; stok çıkışı **796,05 TL**; fark **−103,95 TL** iade farkı, farklı kişi onayıyla geçer; **reddedilmez** |
+| E12 | Adetli satır, iskonto, yarım sınırı (SAT-D460) | Sipariş satırı 265,13 TL/adet, %2,5 iskonto; iade 3 adet; etiket 3 adet / 37,461 kg; depo/ürün ortalaması 21,2500 TL/kg | Net 265.13 × 0.975 = 258.50175 (tam yarım) → **258,5018**; belge 3 × 258.5018 = 775,5054 → 775,51; kg başına faturalanan 775.51 / 37.461 = 20.70179653… (ortalama 21,25 ile karşılaştırılır); stok çıkışı 37.461 × 21.25 = 796,04625 → 796,05; fark (SAT-D456) 796,05 − 775,51 | Birim fiyat **258,5018 TL/adet**; iade faturası **775,51 TL** (3 adet; kg 37,461 bilgi); stok çıkışı **796,05 TL**; fark **20,54 TL** iade farkı olarak kaydedilir, farklı kişi onayıyla geçer; **reddedilmez** (SAT-D460); Stok 409 ilişkisi EN8 |
+| E13 | Adetli satır, vade farkı hariç | E12 satırında ayrıca %2 vade farkı | Net yine 258,5018 (vade farkı dahil 258.50175 × 1.02 = 263,671785 → 263,6718 **OLMAZ**) | E12 ile aynı: **775,51 TL** fatura, **796,05 TL** çıkış, fark **20,54 TL** iade farkı, farklı kişi onayı (SAT-D460); Stok 409 ilişkisi EN8 |
+| E13a | Adetli satır, fatura stok çıkışından büyük (SAT-D460) | Net 300,00 TL/adet; iade 3 adet; etiket 3 adet / 37,461 kg; ortalama 21,2500 | Belge 900,00; kg başına faturalanan 900 / 37.461 = 24.02498598…; stok çıkışı 796,05; fark 796,05 − 900,00 | İade faturası **900,00 TL**; stok çıkışı **796,05 TL**; fark **−103,95 TL** iade farkı, farklı kişi onayıyla geçer; **reddedilmez**; Stok 409 ilişkisi EN8 |
 | E13b | Adetli satır, fark kuruş tabanında sıfır (SAT-D460, SAT-D456) | Net 265,35 TL/adet; iade 3 adet; etiket 37,461 kg; ortalama 21,2500 | Belge 796,05; kg başına faturalanan 796.05 / 37.461 = 21.25010010…; stok çıkışı 796,04625 → 796,05; fark 796,05 − 796,05 | Fark **0,00 TL** → iade farkı yok (kesin değerlerden −0,00375 çıkar; kuruş tabanında sıfırdır, fark kaydı **OLMAZ**) |
 | E14 | Adetli satır, ortalama okunamıyor (SAT-D454); ayırt edici fark tabanı (SAT-D456) | E12; ortalama okunamıyor; onaylı elle maliyet 20,7000 TL/kg | Stok çıkışı 37.461 × 20.7 = 775,4427 → 775,44; fark 775,44 − 775,51 | Stok çıkışı **775,44 TL**; iade faturası **775,51 TL**; fark **−0,07 TL** (kesin değerlerden 775.4427 − 775.5054 = −0,0627 → −0,06 **OLMAZ**); onaylı istisna Stok 409'unu aşmaz (SAT-D410) |
 
@@ -227,8 +238,13 @@ hesaplanamaz kabul edilip `NEEDS-SINAN`'a taşınmalıdır.
 
 ## NEEDS-SINAN
 
-Açık nokta yoktur. EN7, mevcut satır modelinde oluşamadığı için listeden çıkarıldı (TE2); "iskonto yüzde ya da
-tutardır" kuralı uygulama kuralıdır, ayrıca bir karar satırına bağlanması istenirse Sinan'a sorulabilir.
+EN7, mevcut satır modelinde oluşamadığı için listeden çıkarıldı (TE2). Açık noktalar (satır değerlerini değiştirmez):
+
+- **EN8 (E12, E13, E13a):** SAT-D460'a göre adetli miktar iadesinde farklı kişi onayıyla geçen iade farkı, Stok'un
+  `cost_difference_unposted` (409) beklemesini (SAT-D410) de aşar mı, yoksa iade fark işlenene kadar mı bekler?
+- **EN9 (E06 ile E12):** Kg birimli miktar iadesinde ortalama okunabilirken fark içeren iade reddediliyor (SAT-D371,
+  ana golden I11/I12); adetli satırda ise onayla geçiyor (SAT-D460). 28. cevaptaki "diğer miktar iadeleri gibi … ret yok"
+  ifadesi kg satırının da onayla geçmesinin istendiğini düşündürebilir; bu ayrım isteniyor mu?
 
 ## Sınırlar
 
