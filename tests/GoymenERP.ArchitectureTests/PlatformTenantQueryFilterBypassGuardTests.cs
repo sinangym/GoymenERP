@@ -3530,6 +3530,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["System.Data.Common"] = 1,
                         }),
+                // AK-8 (SAT-D433 TI1, SAT-D441, SAT-D445); K3 review pending. System.Data.Common is DbException failure classification only
+                // (every refusal is the closed 503 receipt-trace code). InventorySupplierReturnLineageReader reads label/transformation/
+                // movement facts through the injected InventoryDbContext with an explicit CompanyId predicate on every batch (AsNoTracking);
+                // no SQL handle, raw query, filter bypass or write.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventorySupplierReturnLineageReader.cs"] =
+                    new("6731f698209990a7da01a45bd5db5b1c2701147e649c32f95d7540affae00e97",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                        }),
                 // Tren-1 W8; K3 review pending. Fresh InventoryDbContext bound to explicit/captured company, UseTransactionAsync
                 // on supplied exact open connection/transaction; own receipt/future-supply conversion reversal, immutable history,
                 // command/outbox. Disposes only session context, never commits caller transaction. Existing read/write source
