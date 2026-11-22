@@ -12,6 +12,8 @@ export const ALLOCATION_PIECE_TEXT = {
     `Bu tahsis adet tutuyor (şu an ${held} adet). Değişiklikten sonra tahsisin tutacağı adedi girin: tam sayı, en az 1.`,
   changePieceCountMoveHint:
     'Hedef etiket adetle izleniyorsa tahsisin değişiklikten sonra tutacağı adedi girin (tam sayı, en az 1); adetle izlenmiyorsa boş bırakın. Stok kayıt anında doğrular.',
+  changePieceCountHeldMoveHint: (held: number) =>
+    `Bu tahsis adet tutuyor (şu an ${held} adet). Taşımada adet zorunludur: hedef etikette tutulacak adedi girin (tam sayı, en az 1). Adetle izlenmeyen etikete adet tutan tahsis taşınamaz.`,
   changePieceCountRequired: 'Bu tahsis adet tutuyor; değişiklikten sonra tutulacak adet zorunludur.',
   changePieceCountFormat: 'Yeni tahsis adedi sıfırdan büyük bir tam sayı olmalıdır.',
   unchangedWithPieces: 'Değişiklik yok: miktar ve adet şu anki tahsisle aynı.',
@@ -29,7 +31,7 @@ export const ALLOCATION_PIECE_REFUSAL_TEXT: Readonly<Record<string, string>> = {
   inventory_allocation_piece_count_required:
     'Hedef etiketin serbest stoku adetle izleniyor; tahsisin tutacağı adet girilmeden değişiklik kaydedilmez. Adedi girip tekrar deneyin.',
   inventory_allocation_piece_count_not_tracked:
-    'Hedef etiketin serbest stoku adetle izlenmiyor; adet gönderilemez. Adet alanını boş bırakıp tekrar deneyin.',
+    'Hedef etiketin serbest stoku adetle izlenmiyor; adet gönderilemez. Adet tutan tahsis bu etikete taşınamaz; adet tutmayan tahsiste adet alanını boş bırakıp tekrar deneyin.',
   inventory_allocation_piece_count_invalid:
     'Tahsis adedi geçersiz: sıfırdan büyük bir tam sayı olmalı ve tahsis miktarıyla tutarlı olmalıdır.',
   inventory_allocation_insufficient_free_pieces:

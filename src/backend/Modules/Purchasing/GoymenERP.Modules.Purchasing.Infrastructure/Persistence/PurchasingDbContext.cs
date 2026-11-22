@@ -824,7 +824,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
 
     internal const string SupplierReturnLineageCheck =
         "([SourceLabelId] IS NULL AND [LineageMode] IS NULL) "
-        + "OR ([SourceLabelId] IS NOT NULL AND [SourceLabelId] <> " + EmptyGuid + " AND [LineageMode] IN (1, 2))";
+        + "OR ([SourceLabelId] IS NOT NULL AND [SourceLabelId] <> " + EmptyGuid + " AND [LineageMode] IS NOT NULL AND [LineageMode] IN (1, 2))";
 
     private void ConfigureSupplierReturns(ModelBuilder modelBuilder)
     {

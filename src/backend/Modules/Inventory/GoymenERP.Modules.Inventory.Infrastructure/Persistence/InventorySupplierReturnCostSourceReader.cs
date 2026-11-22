@@ -58,6 +58,12 @@ public sealed class InventorySupplierReturnCostSourceReader(InventoryDbContext d
                 || effect.MatchedQuantity <= 0m || ExactCostRatio.Of(effect.MatchedQuantity).CompareTo(current.PendingQuantity) > 0)
                 throw Unavailable();
             var invoicedKg = current.PendingRootKg.Multiply(effect.MatchedQuantity).Divide(current.PendingQuantity);
+            // ALS-D122/D123/D124 (golden EK1 E26, E28): a piece receipt's invoice takes the pending kg rounded to three decimals,
+            // the last one the whole pending kg (the cost store's rule over the same pending figures); with the switch closed the
+            // store keeps the exact share above. Either way the recorded kilograms are one of these two deterministic values.
+            if (current.PieceReceipt && receipt.InvoicedPhysicalKg.Value().CompareTo(invoicedKg) != 0)
+                invoicedKg = PurchaseInvoiceKilogramShare.RemainingShare(current.PendingRootKg, current.PendingQuantity,
+                    effect.MatchedQuantity);
             var stockKg = invoicedKg.Multiply(current.PendingStockKg).Divide(current.PendingRootKg);
             if (receipt.InvoicedPhysicalKg.Value().CompareTo(invoicedKg) != 0
                 || receipt.ConsumedQuantityKg.Value().CompareTo(invoicedKg.Subtract(stockKg)) != 0)
@@ -232,7 +238,7 @@ public sealed class InventorySupplierReturnCostSourceReader(InventoryDbContext d
         return new Snapshot(new InventorySupplierReturnCostSourcesV1(companyId, acceptanceId, receipt.LabelId, version, Ratio(pendingStock), Ratio(pendingQuantity), rows,
             pendingRoot.CompareTo(pendingStock) == 0),
             pendingRoot, pendingStock, pendingQuantity, lineage.RemainingKg, label.Version,
-            states.ToDictionary(x => x.Key, x => new SourceRemainder(x.Value.RootKg, x.Value.Quantity)));
+            states.ToDictionary(x => x.Key, x => new SourceRemainder(x.Value.RootKg, x.Value.Quantity)), receipt.PieceCount is not null);
 
         void ScaleStock(ExactCostRatio next)
         {
@@ -293,7 +299,7 @@ public sealed class InventorySupplierReturnCostSourceReader(InventoryDbContext d
         InventorySupplierReturnExitException.Refused(503, InventorySupplierReturnExitCodesV1.ReceiptTraceInvalid);
     internal sealed record Snapshot(InventorySupplierReturnCostSourcesV1 Preview, ExactCostRatio PendingRootKg,
         ExactCostRatio PendingStockKg, ExactCostRatio PendingQuantity, ExactCostRatio StockKg, long LabelVersion,
-        IReadOnlyDictionary<Guid, SourceRemainder> Roots);
+        IReadOnlyDictionary<Guid, SourceRemainder> Roots, bool PieceReceipt = false);
     internal sealed record SourceRemainder(ExactCostRatio RootKg, ExactCostRatio Quantity);
     internal sealed record StockAttribution(ExactCostRatio StockKg, ExactCostRatio PendingStockKg);
     private sealed record Cohort(Guid EventId, Guid InvoiceId, Guid InvoiceLineId, ExactCostRatio RootKg, ExactCostRatio StockKg, ExactCostRatio Quantity);

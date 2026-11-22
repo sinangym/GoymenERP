@@ -160,6 +160,50 @@ public sealed class StockAllocationPieceTests
             Kilograms.Positive(40m), 4, Kilograms.Of(100m), null, PieceCount.Zero, true));
     }
 
+    [Fact]
+    public void SAT_D463_a_piece_holding_allocation_never_moves_without_its_pieces_even_to_a_kg_only_label()
+    {
+        var counted = Restore(remainingKg: 60m, allocatedPieces: 10, remainingPieces: 6);
+
+        // Without pieces the move is refused whatever the target counts: the reserved pieces may not be dropped silently.
+        AssertFailure(StockAllocationFailure.PiecesRequired, () => StockAllocation.MovedPieces(counted, Kilograms.Positive(60m),
+            null, Kilograms.Of(100m), null, PieceCount.Zero, true));
+        AssertFailure(StockAllocationFailure.PiecesRequired, () => StockAllocation.MovedPieces(counted, Kilograms.Positive(60m),
+            null, Kilograms.Of(100m), PieceCount.Of(10), PieceCount.Zero, true));
+        // A kg-only target cannot count the pieces it would carry.
+        AssertFailure(StockAllocationFailure.PiecesNotTracked, () => StockAllocation.MovedPieces(counted, Kilograms.Positive(60m),
+            6, Kilograms.Of(100m), null, PieceCount.Zero, true));
+        // A counted target takes them by the reservation rule.
+        Assert.Equal(6, StockAllocation.MovedPieces(counted, Kilograms.Positive(60m), 6, Kilograms.Of(100m), PieceCount.Of(10),
+            PieceCount.Zero, true)!.Value.Value);
+    }
+
+    [Fact]
+    public void A_kg_only_allocation_still_moves_without_pieces_to_a_kg_only_label_and_with_pieces_to_a_counted_one()
+    {
+        var plain = Restore(remainingKg: 60m);
+
+        Assert.Null(StockAllocation.MovedPieces(plain, Kilograms.Positive(60m), null, Kilograms.Of(100m), null, PieceCount.Zero, true));
+        Assert.Equal(4, StockAllocation.MovedPieces(plain, Kilograms.Positive(40m), 4, Kilograms.Of(100m), PieceCount.Of(10),
+            PieceCount.Zero, true)!.Value.Value);
+        AssertFailure(StockAllocationFailure.PiecesRequired, () => StockAllocation.MovedPieces(plain, Kilograms.Positive(40m),
+            null, Kilograms.Of(100m), PieceCount.Of(10), PieceCount.Zero, true));
+    }
+
+    [Theory]
+    // remaining kg, remaining pieces, reserved kg, reserved pieces, expected
+    // KLN-D93 example: label 10 pieces / 100 kg, allocation 60 kg / 6 pieces; a 30 kg / 5 pieces exit leaves 70 kg but 5 pieces.
+    [InlineData(70, 5, 60, 6, false)]
+    [InlineData(70, 6, 60, 6, true)]
+    [InlineData(59, 10, 60, 6, false)]
+    // Allocations without pieces hold none: only the kilograms are checked.
+    [InlineData(60, null, 60, 0, true)]
+    // Held pieces with an unknown remaining count (a kg-only label or an exit stating no pieces) are refused fail-closed.
+    [InlineData(70, null, 60, 6, false)]
+    public void An_exit_must_leave_the_active_allocations_kilograms_and_held_pieces_covered(
+        int remainingKg, int? remainingPieces, int reservedKg, int reservedPieces, bool expected) =>
+        Assert.Equal(expected, StockAllocation.ExitLeavesActiveAllocations(remainingKg, remainingPieces, reservedKg, reservedPieces));
+
     [Theory]
     [InlineData(10, null)]
     [InlineData(null, 10)]

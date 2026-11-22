@@ -76,7 +76,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                 name: "CK_TransferReceipts_PieceCount",
                 schema: "inventory",
                 table: "TransferReceipts",
-                sql: "([DispatchedPieceCount] IS NULL AND [ReceivedPieceCount] IS NULL AND [ShortagePieceCount] IS NULL AND [OveragePieceCount] IS NULL) OR ([DispatchedPieceCount] > 0 AND [ReceivedPieceCount] > 0 AND [ShortagePieceCount] >= 0 AND [OveragePieceCount] >= 0 AND ([ShortagePieceCount] = 0 OR [OveragePieceCount] = 0) AND [ReceivedPieceCount] + [ShortagePieceCount] - [OveragePieceCount] = [DispatchedPieceCount] AND ([ShortagePieceCount] = 0 OR [ShortageKg] > 0) AND ([OveragePieceCount] = 0 OR [OverageKg] > 0))");
+                sql: "([DispatchedPieceCount] IS NULL AND [ReceivedPieceCount] IS NULL AND [ShortagePieceCount] IS NULL AND [OveragePieceCount] IS NULL) OR ([DispatchedPieceCount] IS NOT NULL AND [ReceivedPieceCount] IS NOT NULL AND [ShortagePieceCount] IS NOT NULL AND [OveragePieceCount] IS NOT NULL AND [DispatchedPieceCount] > 0 AND [ReceivedPieceCount] > 0 AND [ShortagePieceCount] >= 0 AND [OveragePieceCount] >= 0 AND ([ShortagePieceCount] = 0 OR [OveragePieceCount] = 0) AND [ReceivedPieceCount] + [ShortagePieceCount] - [OveragePieceCount] = [DispatchedPieceCount] AND ([ShortagePieceCount] = 0 OR [ShortageKg] > 0) AND ([OveragePieceCount] = 0 OR [OverageKg] > 0))");
 
             migrationBuilder.AddCheckConstraint(
                 name: "CK_TransferOverageRenewals_PieceCount",
@@ -94,7 +94,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                 name: "CK_StockScraps_PieceCount",
                 schema: "inventory",
                 table: "StockScraps",
-                sql: "([BookPieceCount] IS NULL AND [ScrapPieceCount] IS NULL) OR ([BookPieceCount] > 0 AND [ScrapPieceCount] >= 0 AND (([ScrapPieceCount] = [BookPieceCount] AND [ScrapKg] = [BookKg]) OR ([ScrapPieceCount] < [BookPieceCount] AND [ScrapKg] < [BookKg])))");
+                sql: "([BookPieceCount] IS NULL AND [ScrapPieceCount] IS NULL) OR ([BookPieceCount] IS NOT NULL AND [ScrapPieceCount] IS NOT NULL AND [BookPieceCount] > 0 AND [ScrapPieceCount] >= 0 AND (([ScrapPieceCount] = [BookPieceCount] AND [ScrapKg] = [BookKg]) OR ([ScrapPieceCount] < [BookPieceCount] AND [ScrapKg] < [BookKg])))");
         }
 
         /// <inheritdoc />

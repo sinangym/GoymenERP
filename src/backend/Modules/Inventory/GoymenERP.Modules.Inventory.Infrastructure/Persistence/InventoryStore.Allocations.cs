@@ -297,14 +297,18 @@ public sealed partial class InventoryStore
     /// domain rule (<see cref="StockAllocation.ReservablePieces"/>); its refusals are the request's own answers.
     /// </summary>
     private static PieceCount? ReservablePieces(Kilograms quantity, int? requested, BalanceRow source,
-        ActiveAllocated active)
+        ActiveAllocated active, StockAllocation? moved = null)
     {
         try
         {
-            return StockAllocation.ReservablePieces(quantity, requested,
-                Kilograms.Of(Math.Max(0m, source.QuantityKg - active.Kilograms)),
-                source.PieceCount is { } physical ? PieceCount.Of(physical) : null,
-                PieceCount.Of(active.Pieces), active.EveryOneHoldsPieces);
+            var unreservedKg = Kilograms.Of(Math.Max(0m, source.QuantityKg - active.Kilograms));
+            var positionPieces = source.PieceCount is { } physical ? PieceCount.Of(physical) : (PieceCount?)null;
+            // SAT-D463: a move carries the moved allocation so a piece-holding one cannot lose its pieces.
+            return moved is null
+                ? StockAllocation.ReservablePieces(quantity, requested, unreservedKg, positionPieces,
+                    PieceCount.Of(active.Pieces), active.EveryOneHoldsPieces)
+                : StockAllocation.MovedPieces(moved, quantity, requested, unreservedKg, positionPieces,
+                    PieceCount.Of(active.Pieces), active.EveryOneHoldsPieces);
         }
         catch (StockAllocationException exception)
         {
