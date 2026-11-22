@@ -24,6 +24,10 @@ export const SETTINGS_CAPABILITY = {
   notificationRetention: 'settings.notification-retention.manage',
   /** W1-A (YOL-D18) AY-OS-01: the two approval duration class lengths. */
   workApprovalDuration: 'settings.work-approval-duration.manage',
+  /** WP15 (1.16) AY-YST-01: the versioned legal deadline calendar (values wait for the financial advisor). */
+  legalDeadlineCalendar: 'settings.legal-deadline-calendar.manage',
+  /** WP15 (1.16) AY-YS-01: the upcoming legal deadline counters (Work deadline view). */
+  legalDeadlines: 'settings.legal-deadlines.read',
   documentNumberSeries: 'settings.document-number-series.manage',
   manufacturingParameters: 'settings.manufacturing-parameter-profiles.read',
   manufacturingTolerances: 'settings.manufacturing-tolerance-profiles.read',
@@ -122,6 +126,8 @@ export const SETTINGS_ROUTE: Record<SettingsCapabilityId, string> = {
   [SETTINGS_CAPABILITY.manufacturingScrapCost]: '/ayarlar/fire-maliyet-katilimi',
   [SETTINGS_CAPABILITY.notificationRetention]: '/ayarlar/bildirim-etkinlik-suresi',
   [SETTINGS_CAPABILITY.workApprovalDuration]: '/ayarlar/onay-sureleri',
+  [SETTINGS_CAPABILITY.legalDeadlineCalendar]: '/ayarlar/yasal-sure-takvimi',
+  [SETTINGS_CAPABILITY.legalDeadlines]: '/ayarlar/yasal-sureler',
   [SETTINGS_CAPABILITY.documentNumberSeries]: '/ayarlar/belge-numara-serileri',
   [SETTINGS_CAPABILITY.manufacturingParameters]: '/ayarlar/uretim-parametre-profilleri',
   [SETTINGS_CAPABILITY.manufacturingTolerances]: '/ayarlar/uretim-tolerans-profilleri',
@@ -154,6 +160,8 @@ export const SETTINGS_NAV_LABEL: Record<SettingsCapabilityId, string> = {
   [SETTINGS_CAPABILITY.manufacturingScrapCost]: 'Fire maliyete katılımı',
   [SETTINGS_CAPABILITY.notificationRetention]: 'Bildirim etkinlik süresi',
   [SETTINGS_CAPABILITY.workApprovalDuration]: 'Onay süreleri',
+  [SETTINGS_CAPABILITY.legalDeadlineCalendar]: 'Yasal süre takvimi',
+  [SETTINGS_CAPABILITY.legalDeadlines]: 'Yaklaşan yasal süreler',
   [SETTINGS_CAPABILITY.documentNumberSeries]: 'Belge numara serileri',
   [SETTINGS_CAPABILITY.manufacturingParameters]: 'Üretim parametre profilleri',
   [SETTINGS_CAPABILITY.manufacturingTolerances]: 'Üretim tolerans profilleri',

@@ -34,6 +34,7 @@ import { contextKey, contextKeyString, hasCapability } from '../shell/shellState
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './Work.module.css'
+import { LegalDeadlinesPanel } from '../settings/LegalDeadlinesPage'
 
 const kindText = (kind: string): string => APPROVAL_KIND_TEXT[kind] ?? kind
 const moduleText = (module: string): string => WORK_QUEUE_MODULE_TEXT[module] ?? module
@@ -69,6 +70,8 @@ export function WorkQueuePage() {
         routeEntryGeneration={shell.routeEntryGeneration}
         enabled={inboxEnabled} />
     </section>
+    {/* WP15 (1.16): upcoming legal deadlines, owned and computed by Settings; drawn only with settings.legal-deadlines.read. */}
+    <LegalDeadlinesPanel heading />
     {queueEnabled
       ? <section className={styles.section} aria-labelledby="work-queue-legacy-heading" data-testid="work-queue-legacy">
         <h2 id="work-queue-legacy-heading">{I.legacyHeading}</h2>

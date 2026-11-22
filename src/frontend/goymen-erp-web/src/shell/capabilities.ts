@@ -362,6 +362,9 @@ export const CAPABILITY = {
   settingsManufacturingScrapCost: 'settings.manufacturing-scrap-cost.manage',
   settingsNotificationRetention: 'settings.notification-retention.manage',
   settingsWorkApprovalDuration: 'settings.work-approval-duration.manage',
+  /** WP15 (1.16) AY-YST-01 / AY-YS-01: the legal deadline calendar and the upcoming legal deadlines. */
+  settingsLegalDeadlineCalendar: 'settings.legal-deadline-calendar.manage',
+  settingsLegalDeadlines: 'settings.legal-deadlines.read',
   settingsDocumentNumberSeries: 'settings.document-number-series.manage',
   settingsFinancePolicies: 'settings.finance-policies.prepare',
   settingsCashDifferencePolicies: 'settings.cash-count-difference-policies.prepare',
@@ -579,6 +582,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.settingsManufacturingScrapCost]: '/ayarlar/fire-maliyet-katilimi',
   [CAPABILITY.settingsNotificationRetention]: '/ayarlar/bildirim-etkinlik-suresi',
   [CAPABILITY.settingsWorkApprovalDuration]: '/ayarlar/onay-sureleri',
+  [CAPABILITY.settingsLegalDeadlineCalendar]: '/ayarlar/yasal-sure-takvimi',
+  [CAPABILITY.settingsLegalDeadlines]: '/ayarlar/yasal-sureler',
   [CAPABILITY.settingsDocumentNumberSeries]: '/ayarlar/belge-numara-serileri',
   [CAPABILITY.settingsFinancePolicies]: '/ayarlar/finans-onay-politikalari',
   [CAPABILITY.settingsCashDifferencePolicies]: '/ayarlar/kasa-sayim-fark-politikalari',
