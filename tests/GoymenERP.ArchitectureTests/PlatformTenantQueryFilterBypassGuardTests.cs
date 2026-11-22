@@ -6214,6 +6214,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // W1-A; K3 review pending. Down refuses (52080, used by no other migration) while Work approval inbox measurement events exist; use a forward fix. 1 lexical Sql call(s).
                 ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261122163006_AddWorkApprovalInboxEvents.cs"] =
                     new("c2a85a0761cb686b08ec9cfbb9d1cae09fd06fa6f25f190cd59a2b5c4d9e3dc8", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // WP-C6; K3 review pending. Down refuses (52210, WP-C range, used by no other migration) while Work assistant memory entries, closures or oversight views exist; use a forward fix. 1 lexical Sql call(s).
+                ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261122201440_AddWorkAssistantMemory.cs"] =
+                    new("c8b69576f8347846dbe40206bef8669e2c03fc2347a28c8e696795cdd176bd1a", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 // W1-A; K3 review pending. Down refuses (52084, Work range, used by no other migration) while work.approval-duration-* policy versions or holiday calendar versions exist; use a forward fix. 1 lexical Sql call(s).
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/20261122181548_AddWorkApprovalDurationPolicies.cs"] =
                     new("c2be1e8e212f794bb5a0c4ebdd3f98dcc805a559caa98c1a2fdc842ea0b53d18", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
