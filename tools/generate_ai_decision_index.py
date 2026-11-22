@@ -441,12 +441,12 @@ def _parse_tables(builder: _Builder, path: str, lines: list[str], file_kind: str
             if not identity.startswith("OPEN-"):
                 continue
             status = OPEN_STATUS.get(status_cell or "", "belirsiz")
+            # Columns: ID | Durum | decided part | still-open part | decision evidence | code evidence.
+            decided = cells[2] if len(cells) > 2 else ""
+            open_part = cells[3] if len(cells) > 3 else ""
+            text = f"Kapanan bölüm: {decided} | Açık kalan: {open_part}"
             record = _record(identity, "acik_karar", identity, text, status, f"ACIK_KARARLAR Durum={status_cell}",
                              None, "belirsiz", path, number, None, None)
-            # The open-decision table names the decided part first and the still-open part next.
-            open_part = cells[3] if len(cells) > 3 else ""
-            if open_part:
-                record["text"] = f"{text} | Açık kalan: {open_part}"
         elif identity.startswith("OPEN-"):
             lowered = (status_cell or text).lower()
             status = "acik" if "açık" in lowered else "belirsiz"
