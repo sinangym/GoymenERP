@@ -1,0 +1,39 @@
+# Dependency update configuration (DALGA_PLANI_v2 1.18, WP16).
+#
+# PREPARED, NOT ACTIVE: every ecosystem has open-pull-requests-limit: 0, so Dependabot opens no version-update pull
+# request while this file is on main. Raising a limit (and switching on Dependabot alerts / security updates in
+# Settings -> Code security) is a human gate; it is not done by an agent. No private registry, secret or token is
+# configured here; all sources are the public ones the repository already uses (nuget.org, npm, Docker Hub / MCR,
+# GitHub Actions). Pinned by tests/security_scan/test_dependabot_config.py.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+  - package-ecosystem: npm
+    directory: /src/frontend/goymen-erp-web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+  - package-ecosystem: npm
+    directory: /tests/e2e
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+  - package-ecosystem: docker
+    directory: /src/backend/GoymenERP.Api
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+  - package-ecosystem: docker
+    directory: /src/frontend/goymen-erp-web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
