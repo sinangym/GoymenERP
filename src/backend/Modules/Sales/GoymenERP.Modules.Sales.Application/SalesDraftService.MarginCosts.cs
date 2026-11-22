@@ -19,14 +19,18 @@ public sealed partial class SalesDraftService
     private static bool ForeignSaleMarginGoldenAccepted => true;
 
     // SAT-D438 / SAT-D265(5) (AK-6): a piece line's margin converts the kg cost with the theoretical kg/unit pinned at approval
-    // (SAT-D437). Its independent golden (ADET_KG_FORMUL_GOLDEN_V1 rows M01-M15) is not in main yet, so this stays CLOSED: the
-    // order unit's cost is read as before and the port keeps a converted cost UnitConversionUndecided. Opening it requires the
-    // golden in main and the train's exact-head K3 acceptance.
-    internal static bool PieceMarginGoldenAccepted => false;
+    // (SAT-D437). OPEN: its independent golden (ADET_KG_FORMUL_GOLDEN_V1 §3, rows M01-M15) travels in this train (PR #1201) with
+    // the decision file it cites and the rows are pinned by row id in SalesPieceMarginGoldenTests. The train's exact-head K3
+    // acceptance still decides the merge. It neither grants margin disclosure nor supplies a missing kg cost or kg/unit
+    // (M11-M14 stay unavailable); the closed path is measured through the named parameter of CalculateMarginInTurkishLira.
+    internal static bool PieceMarginGoldenAccepted => true;
 
     /// <summary>SAT-D438: the unit a line's margin cost is read and pinned in — the kg for a piece line once AK-6 is open.</summary>
-    private static Guid CostUnitOf(SalesOrderDraftLine line) =>
-        PieceMarginGoldenAccepted && !line.OrderUnit.IsKilogram ? SettingsUnitIdentitiesV1.Kilogram : line.OrderUnit.UnitId;
+    private static Guid CostUnitOf(SalesOrderDraftLine line) => CostUnitOf(line, PieceMarginGoldenAccepted);
+
+    /// <summary>The same choice with the AK-6 switch named (closed: the order unit, exactly as before AK-6).</summary>
+    internal static Guid CostUnitOf(SalesOrderDraftLine line, bool pieceMarginOpen) =>
+        pieceMarginOpen && !line.OrderUnit.IsKilogram ? SettingsUnitIdentitiesV1.Kilogram : line.OrderUnit.UnitId;
 
     private static SalesMarginCostSnapshot? LastMarginCost(SalesOrderDraft draft, Guid lineId) =>
         draft.MarginCosts.Where(cost => cost.LineId == lineId && cost.Revision <= draft.Revision)

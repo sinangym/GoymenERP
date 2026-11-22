@@ -4,6 +4,7 @@ using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Domain.Products;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Api.ManufacturingRuntime;
 
@@ -17,7 +18,8 @@ internal sealed class ManufacturingOutputSelectionReader(
     IOrganizationLocationCandidatesV1 locations,
     IErpAuthorityRevalidationService authority,
     ICompanyContext company,
-    ICurrentUser user)
+    ICurrentUser user,
+    IProductTheoreticalKilogramsPerUnitReadPortV1? kilogramsPerPiece = null)
     : IManufacturingOutputSelectionV1
 {
     public async Task<ManufacturingOutputProductCandidatesV1> SearchProductsAsync(
@@ -63,14 +65,54 @@ internal sealed class ManufacturingOutputSelectionReader(
             throw Unavailable();
         }
 
+        // AK-7b (URT-D112): each candidate says whether its output is counted in pieces, read from the Product owner
+        // (never from another module's table) by the declaration's own rule. The window is bounded by the query limit.
+        var counting = new Dictionary<Guid, string>();
+        foreach (var item in answer.Items)
+        {
+            counting[item.ProductId] = await ReadPieceCountingAsync(scope, item.ProductId, query.EffectiveOn, cancellationToken);
+        }
+
+        await RequireScopeAsync(scope, cancellationToken);
         return new ManufacturingOutputProductCandidatesV1(
             [.. answer.Items.Select(item => new ManufacturingOutputProductCandidateV1(
                 item.ProductId,
                 item.ProductVersion,
                 item.Code,
                 item.Name,
-                item.StockUnitCode))],
+                item.StockUnitCode,
+                counting[item.ProductId]))],
             answer.SearchWindowFull);
+    }
+
+    /// <summary>
+    /// One candidate's piece counting. A failed or unwired owner read is <c>Unavailable</c> for that candidate only (the
+    /// declaration would answer unavailable too); a lost authority or cancellation still ends the whole read.
+    /// </summary>
+    private async Task<string> ReadPieceCountingAsync(SelectionScope scope, Guid productId, DateOnly effectiveOn,
+        CancellationToken cancellationToken)
+    {
+        if (kilogramsPerPiece is null)
+        {
+            return ManufacturingOutputPieceCountingV1.Unavailable;
+        }
+
+        try
+        {
+            var read = await kilogramsPerPiece.ReadAsync(productId, SettingsUnitIdentitiesV1.Piece, effectiveOn, cancellationToken);
+            return company.IsResolved && company.CompanyId == scope.CompanyId
+                ? ManufacturingOutputPieceCountingRuleV1.Classify(read, scope.CompanyId, productId)
+                : ManufacturingOutputPieceCountingV1.Unavailable;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            await RequireScopeAfterFailureAsync(scope, cancellationToken);
+            return ManufacturingOutputPieceCountingV1.Unavailable;
+        }
     }
 
     public async Task<ManufacturingOutputLocationCandidatesV1> SearchLocationsAsync(

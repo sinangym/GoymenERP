@@ -219,7 +219,9 @@ internal sealed class SqlInventoryPhysicalAllocationReader(InventoryDbContext db
             row.ReservedUntilUtc,
             row.CreatedAtUtc,
             row.UpdatedAtUtc,
-            row.IsSubstitute);
+            row.IsSubstitute,
+            row.AllocatedPieces,
+            row.RemainingPieces);
         return new InventoryPhysicalAllocationReadRecord(allocation, label.Version);
     }
 

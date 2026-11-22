@@ -77,15 +77,109 @@ public sealed class ManufacturingOutputSelectionReaderTests
             (error.Failure, error.Code));
     }
 
+    [Fact]
+    public async Task Without_the_product_piece_port_every_candidate_is_piece_counting_unavailable()
+    {
+        var products = new Products(new ProductStockCandidatesV1([Candidate(Product, "PRD-12")], false));
+        var reader = Reader(products, new Locations(new OrganizationLocationCandidatesV1([], false)), new Authority());
+
+        var answer = await reader.SearchProductsAsync(
+            new ManufacturingOutputProductQueryV1(null, new DateOnly(2026, 9, 25)), default);
+
+        Assert.Equal(ManufacturingOutputPieceCountingV1.Unavailable, Assert.Single(answer.Items).PieceCounting);
+    }
+
+    [Fact]
+    public async Task Each_candidate_carries_the_piece_counting_the_product_owner_answers_for_the_query_date()
+    {
+        // AK-7b (URT-D112): the selector reads the Product owner's port per candidate with the declaration's own rule.
+        var counted = Product;
+        var plain = Guid.Parse("20000000-0000-0000-0000-000000000003");
+        var missing = Guid.Parse("20000000-0000-0000-0000-000000000004");
+        var broken = Guid.Parse("20000000-0000-0000-0000-000000000005");
+        var foreign = Guid.Parse("20000000-0000-0000-0000-000000000006");
+        var products = new Products(new ProductStockCandidatesV1(
+            [Candidate(counted, "PRD-1"), Candidate(plain, "PRD-2"), Candidate(missing, "PRD-3"), Candidate(broken, "PRD-4"),
+                Candidate(foreign, "PRD-5")], false));
+        var pieces = new Pieces
+        {
+            Answers =
+            {
+                [counted] = () => Found(Company, counted),
+                [plain] = () => ProductTheoreticalKilogramsPerUnitAnswerV1.Without(
+                    ProductTheoreticalKilogramsPerUnitOutcomeV1.NoSource, ProductTheoreticalKilogramsPerUnitCodesV1.UnitNotOnCard),
+                [missing] = () => ProductTheoreticalKilogramsPerUnitAnswerV1.Without(
+                    ProductTheoreticalKilogramsPerUnitOutcomeV1.NoSource, ProductTheoreticalKilogramsPerUnitCodesV1.NoSource),
+                [broken] = () => throw new InvalidOperationException("SENTETIK owner read failure"),
+                // A found figure that names another company's evidence is never trusted.
+                [foreign] = () => Found(Guid.Parse("10000000-0000-0000-0000-0000000000ff"), foreign),
+            },
+        };
+        var authority = new Authority();
+        var reader = Reader(products, new Locations(new OrganizationLocationCandidatesV1([], false)), authority, pieces: pieces);
+
+        var answer = await reader.SearchProductsAsync(
+            new ManufacturingOutputProductQueryV1(null, new DateOnly(2026, 9, 25)), default);
+
+        Assert.Equal(
+            [(counted, ManufacturingOutputPieceCountingV1.Counted), (plain, ManufacturingOutputPieceCountingV1.NotCounted),
+                (missing, ManufacturingOutputPieceCountingV1.SourceMissing), (broken, ManufacturingOutputPieceCountingV1.Unavailable),
+                (foreign, ManufacturingOutputPieceCountingV1.Unavailable)],
+            answer.Items.Select(item => (item.ProductId, item.PieceCounting)));
+        Assert.All(pieces.Asked, asked => Assert.Equal(
+            (GoymenERP.Modules.Settings.Application.Contracts.V1.SettingsUnitIdentitiesV1.Piece, new DateOnly(2026, 9, 25)),
+            (asked.UnitId, asked.EffectiveOn)));
+        Assert.Equal([counted, plain, missing, broken, foreign], pieces.Asked.Select(asked => asked.ProductId));
+        // Before the owner read, after it, after the failed piece read and after the last piece read.
+        Assert.Equal(4, authority.Calls);
+    }
+
+    [Fact]
+    public async Task A_scope_swapped_during_a_piece_read_releases_no_candidates()
+    {
+        var user = new User();
+        var products = new Products(new ProductStockCandidatesV1([Candidate(Product, "PRD-12")], false));
+        var pieces = new Pieces { Answers = { [Product] = () => { user.Swap(); return Found(Company, Product); } } };
+        var reader = Reader(products, new Locations(new OrganizationLocationCandidatesV1([], false)), new Authority(), user, pieces);
+
+        var error = await Assert.ThrowsAsync<ManufacturingOutputSelectionException>(() =>
+            reader.SearchProductsAsync(new ManufacturingOutputProductQueryV1(null, new DateOnly(2026, 9, 25)), default));
+
+        Assert.Equal(ManufacturingOutputSelectionFailure.Denied, error.Failure);
+    }
+
+    private static ProductStockCandidateV1 Candidate(Guid productId, string code) =>
+        new(productId, "12", code, "SENTETIK " + code, Guid.NewGuid(), "kg", Guid.NewGuid(), "4");
+
+    private static ProductTheoreticalKilogramsPerUnitAnswerV1 Found(Guid company, Guid product) =>
+        ProductTheoreticalKilogramsPerUnitAnswerV1.Found(0.4m, new ProductTheoreticalKilogramsPerUnitEvidenceV1(
+            company, product, GoymenERP.Modules.Settings.Application.Contracts.V1.SettingsUnitIdentitiesV1.Piece,
+            ProductPhysicalUnitKindV1.Piece, "12", "product-unit-conversion.v1", 4, null, null, null, null, null,
+            Guid.Parse("a7000000-0000-0000-0000-0000000000a7"), 1, "unit-semantics.v1"));
+
     private static ManufacturingOutputSelectionReader Reader(
         IProductStockCandidatesV1 products,
         IOrganizationLocationCandidatesV1 locations,
         IErpAuthorityRevalidationService authority,
-        ICurrentUser? user = null)
+        ICurrentUser? user = null,
+        IProductTheoreticalKilogramsPerUnitReadPortV1? pieces = null)
     {
         var company = new CompanyContext();
         company.Set(Company);
-        return new ManufacturingOutputSelectionReader(products, locations, authority, company, user ?? new User());
+        return new ManufacturingOutputSelectionReader(products, locations, authority, company, user ?? new User(), pieces);
+    }
+
+    private sealed class Pieces : IProductTheoreticalKilogramsPerUnitReadPortV1
+    {
+        public Dictionary<Guid, Func<ProductTheoreticalKilogramsPerUnitAnswerV1>> Answers { get; } = [];
+        public List<(Guid ProductId, Guid UnitId, DateOnly EffectiveOn)> Asked { get; } = [];
+
+        public Task<ProductTheoreticalKilogramsPerUnitAnswerV1> ReadAsync(Guid productId, Guid unitId, DateOnly effectiveOn,
+            CancellationToken cancellationToken = default)
+        {
+            Asked.Add((productId, unitId, effectiveOn));
+            return Task.FromResult(Answers[productId]());
+        }
     }
 
     private sealed class Products(ProductStockCandidatesV1 answer) : IProductStockCandidatesV1

@@ -26,6 +26,9 @@ public static class InventoryAllocationDemandKindsV1
 /// user's confirmation that a label of ANOTHER product ("muadil") holds the line: the writer re-verifies on the server
 /// that the label's product is similar within the Settings tolerance (KLN-D40/D70) and refuses otherwise; with no
 /// tolerance configured only the line's own product is allowed. A label of the line's own product never carries the flag.
+/// <see cref="PieceCount"/> (KLN-D119, SAT-D434; AK-4b) is the number of pieces reserved with the kilograms: required when
+/// the label's free stock tracks pieces (omitted → 422 <see cref="InventoryAllocationCodesV1.PieceCountRequired"/>,
+/// fail-closed) and refused on a kg-only label (<see cref="InventoryAllocationCodesV1.PieceCountNotTracked"/>, no backfill).
 /// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record CreatePhysicalSalesAllocationV1(
@@ -39,7 +42,8 @@ public sealed record CreatePhysicalSalesAllocationV1(
     [property: JsonRequired] string QuantityKg,
     [property: JsonRequired] string Reason,
     DateTimeOffset? ReservedUntilUtc,
-    bool IsSubstitute = false);
+    bool IsSubstitute = false,
+    int? PieceCount = null);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ReleasePhysicalAllocationV1(
@@ -52,6 +56,8 @@ public sealed record ReleasePhysicalAllocationV1(
 /// allocation's own label for a quantity change (in place: same allocation id, <see cref="NewAllocationId"/> null) or
 /// another label of the same product for a move (the source allocation is released and <see cref="NewAllocationId"/>
 /// reserves the target in the same save). <see cref="QuantityKg"/> is the kilograms the allocation holds afterwards.
+/// <see cref="PieceCount"/> (KLN-D119, AK-4b) is the pieces it holds afterwards: required when the allocation (resize) or
+/// the target label's free stock (move) tracks pieces, refused otherwise.
 /// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ChangePhysicalSalesAllocationV1(
@@ -64,7 +70,8 @@ public sealed record ChangePhysicalSalesAllocationV1(
     [property: JsonRequired] string ExpectedTargetLabelVersion,
     [property: JsonRequired] string QuantityKg,
     [property: JsonRequired] string Reason,
-    Guid? NewAllocationId);
+    Guid? NewAllocationId,
+    int? PieceCount = null);
 
 public static class InventoryAllocationChangeKindsV1
 {
@@ -106,7 +113,11 @@ public sealed record InventoryPhysicalAllocationViewV1(
     DateTimeOffset? ReservedUntilUtc,
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset UpdatedAtUtc,
-    bool IsSubstitute = false);
+    bool IsSubstitute = false,
+    // KLN-D119 (AK-4b): the reserved and still-held pieces of an allocation on a piece-tracking label; omitted on an
+    // allocation without pieces, so every stored result and audit payload of such an allocation keeps its bytes.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? AllocatedPieces = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? RemainingPieces = null);
 
 public sealed record InventoryPhysicalAllocationResultV1(
     InventoryPhysicalAllocationViewV1 Allocation,
@@ -162,6 +173,17 @@ public static class InventoryAllocationCodesV1
     /// line's own product. A label of another product without the flag stays <see cref="InvalidReference"/>.
     /// </summary>
     public const string SubstituteNotSimilar = "inventory_allocation_substitute_not_similar";
+    /// <summary>422 (KLN-D119): the label's free stock (or the allocation) tracks pieces and the request names none. Fail-closed.</summary>
+    public const string PieceCountRequired = "inventory_allocation_piece_count_required";
+
+    /// <summary>422 (KLN-D119): a piece count on a label or allocation without pieces; a count is never backfilled.</summary>
+    public const string PieceCountNotTracked = "inventory_allocation_piece_count_not_tracked";
+
+    /// <summary>422 (KLN-D119): the pieces and the kilograms would not run out together (the last kilograms take the last pieces).</summary>
+    public const string PieceCountInvalid = "inventory_allocation_piece_count_invalid";
+
+    /// <summary>409 (KLN-D119): the label has fewer unreserved pieces than requested.</summary>
+    public const string InsufficientFreePieces = "inventory_allocation_insufficient_free_pieces";
     public const string ConcurrentChange = "inventory_concurrent_change";
     public const string ValueDoesNotFit = "inventory_value_does_not_fit";
 

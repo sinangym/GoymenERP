@@ -29,12 +29,18 @@ public sealed record ManufacturingOutputProductCandidatesV1(
     IReadOnlyList<ManufacturingOutputProductCandidateV1> Items,
     bool SearchWindowFull);
 
+/// <summary>
+/// <see cref="PieceCounting"/> (AK-7b, URT-D112) is one of <see cref="ManufacturingOutputPieceCountingV1"/>: whether an
+/// output of this product is declared with a piece count, read from the Product owner on the query's effective date by the
+/// same rule the declaration uses. It is information for the form; the declaration decides again on the server.
+/// </summary>
 public sealed record ManufacturingOutputProductCandidateV1(
     Guid ProductId,
     string ProductVersion,
     string Code,
     string Name,
-    string StockUnitCode);
+    string StockUnitCode,
+    string PieceCounting = ManufacturingOutputPieceCountingV1.Unavailable);
 
 public sealed record ManufacturingOutputLocationCandidatesV1(
     IReadOnlyList<ManufacturingOutputLocationCandidateV1> Items,

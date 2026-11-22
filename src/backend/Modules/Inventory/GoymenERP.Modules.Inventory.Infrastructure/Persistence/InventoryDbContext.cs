@@ -93,6 +93,15 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
     /// </summary>
     internal const string LabelTransformationKindCheck = "[Kind] IN (1, 2, 3)";
 
+    /// <summary>
+    /// KLN-D119 / SAT-D434 (AK-4b): an allocation holds pieces from its creation or never; it reserved at least one piece
+    /// and never holds more than it reserved. Compared by the persistence-model test.
+    /// </summary>
+    internal const string AllocationPiecesCheck =
+        "([AllocatedPieces] IS NULL AND [RemainingPieces] IS NULL) OR ([AllocatedPieces] IS NOT NULL "
+        + "AND [RemainingPieces] IS NOT NULL AND [AllocatedPieces] > 0 AND [RemainingPieces] >= 0 "
+        + "AND [RemainingPieces] <= [AllocatedPieces])";
+
     /// <summary>KLN-D119 (AK-2): a bucket's piece count is null (no piece tracking) or zero exactly when its kg is zero.</summary>
     internal const string BalancePieceCountCheck =
         "[PieceCount] IS NULL OR ([PieceCount] = 0 AND [QuantityKg] = 0) OR ([PieceCount] > 0 AND [QuantityKg] > 0)";
@@ -704,6 +713,7 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
                 + "AND [DemandProductVersion] IS NOT NULL AND LEN([DemandProductVersion]) > 0 "
                 + "AND [Reason] IS NOT NULL AND LEN(LTRIM(RTRIM([Reason]))) > 0 AND [ReservedUntilUtc] IS NULL)");
             table.HasCheckConstraint("CK_Allocations_Substitute", AllocationSubstituteCheck);
+            table.HasCheckConstraint("CK_Allocations_Pieces", AllocationPiecesCheck);
             table.HasCheckConstraint("CK_Allocations_ReleasedKg",
                 "[ReleasedKg] IS NULL OR ([Status] = 3 AND [ReleasedKg] > 0 AND [ReleasedKg] <= [AllocatedKg])");
             table.HasCheckConstraint("CK_Allocations_Release",
