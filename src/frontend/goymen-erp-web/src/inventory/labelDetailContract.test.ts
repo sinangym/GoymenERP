@@ -184,6 +184,23 @@ describe('Inventory label detail contract', () => {
     expect(decodeInventoryLabelMovementTimeline(cancellation('Out'), LABEL)).toBeNull()
   })
 
+  it('decodes StockMovementKind 12–16 with their owner line shapes and refuses a wrong shape or an unknown kind', () => {
+    const base = movementTimeline().entries[0]
+    const out = { ...base.lines[0], direction: 'Out' }
+    const timeline = (kind: string, lines: unknown[]) => decodeInventoryLabelMovementTimeline({ ...movementTimeline(),
+      entries: [{ ...base, kind, lines }] }, LABEL)
+    for (const kind of ['TransferReceiptShortage', 'SupplierReturnExit', 'PurchaseAcceptanceReversal']) {
+      expect(timeline(kind, [out])?.entries[0].kind, kind).toBe(kind)
+      expect(timeline(kind, [base.lines[0]]), kind).toBeNull()
+    }
+    expect(timeline('TransferReceiptOverage', [base.lines[0]])).not.toBeNull()
+    expect(timeline('TransferReceiptOverage', [out])).toBeNull()
+    expect(timeline('TransferTransitLoss', [base.lines[0], { ...out, sequence: 2 }])).not.toBeNull()
+    expect(timeline('TransferTransitLoss', [base.lines[0], { ...out, sequence: 2, quantityKg: '1' }])).toBeNull()
+    expect(timeline('TransferTransitLoss', [base.lines[0]])).toBeNull()
+    expect(timeline('UnknownKind', [out])).toBeNull()
+  })
+
   it('fails closed for impossible or internally inconsistent transformation groups', () => {
     const [first, second] = genealogy().edges
     const decode = (edges: unknown[]) => decodeInventoryLabelGenealogy({ ...genealogy(), edges }, LABEL, 'LBL-100')

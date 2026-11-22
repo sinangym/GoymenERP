@@ -149,6 +149,15 @@ describe('decodeInventoryMovementTimelinePage', () => {
         ok: [line({ direction: 'Out', block: 'Blocked' }), line({ sequence: 2 })],
         bad: [line({ direction: 'Out', block: 'Blocked' }), line({ sequence: 2, labelCode: 'OTHER' })],
       },
+      // StockMovementKind 12–16 (B-22c, B-19, ALS-D86).
+      TransferReceiptShortage: { ok: [line({ direction: 'Out', block: 'Blocked' })], bad: [line()] },
+      TransferReceiptOverage: { ok: [line()], bad: [out, line({ sequence: 2 })] },
+      TransferTransitLoss: {
+        ok: [line(), line({ sequence: 2, direction: 'Out' })],
+        bad: [line(), line({ sequence: 2, direction: 'Out', quantityKg: '1' })],
+      },
+      SupplierReturnExit: { ok: [line({ direction: 'Out', block: 'Blocked' })], bad: [line()] },
+      PurchaseAcceptanceReversal: { ok: [out], bad: [out, line({ sequence: 2, direction: 'Out' })] },
     }
     expect(Object.keys(shapes).sort()).toEqual([...MOVEMENT_KINDS].sort())
     for (const [kind, { ok, bad }] of Object.entries(shapes)) {
