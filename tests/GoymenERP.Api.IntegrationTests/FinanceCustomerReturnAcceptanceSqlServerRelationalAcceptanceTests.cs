@@ -155,6 +155,59 @@ public sealed class FinanceCustomerReturnAcceptanceSqlServerRelationalAcceptance
     }
 
     [SqlServerFact]
+    public async Task A_return_over_two_successors_takes_the_most_recently_transferred_part_first_FNS_D117()
+    {
+        await using var run = await Run.StartAsync();
+        var invoice = Invoice(Installment(1, "100.00"));
+        Assert.Equal(CommandOutcome.Succeeded, (await run.AdmitAsync("successors-1", invoice)).Outcome);
+        var item = invoice.Installments[0].OpenItemId;
+        var earlierAccount = Guid.Parse("7c4a2a83-9e5d-4fa0-b132-4d5e6f708007");
+        var laterAccount = Guid.Parse("7c4a2a83-9e5d-4fa0-b132-4d5e6f708008");
+        // SENTETIK: 30.00 moved on 10 November, 50.00 on 12 November; 20.00 stays with the original account.
+        await SeedTransferAsync(run, item, Guid.Parse("7c4a2a83-9e5d-4fa0-b132-4d5e6f708009"), earlierAccount,
+            "2026-11-10", "30.00");
+        await SeedTransferAsync(run, item, Guid.Parse("7c4a2a83-9e5d-4fa0-b132-4d5e6f70800a"), laterAccount,
+            "2026-11-12", "50.00");
+
+        // 90.00: the original 20.00, then 50.00 from the later transfer and the last 20.00 from the earlier one.
+        var accepted = await run.AcceptAsync("successors-2", Return(invoice, "90.00"));
+        Assert.Equal(CommandOutcome.Succeeded, accepted.Outcome);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItems WHERE Id = @id AND OutstandingAmountText = N'10.00' AND Version = 2",
+            ("@id", item)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.PartyBalanceAssignments WHERE SourceId = @id AND CurrentAccountId = @account "
+            + "AND AvailableAmountText = '0.00' AND Version = 2", ("@id", item), ("@account", laterAccount)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.PartyBalanceAssignments WHERE SourceId = @id AND CurrentAccountId = @account "
+            + "AND AvailableAmountText = '10.00' AND Version = 2", ("@id", item), ("@account", earlierAccount)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.CustomerReturnCredits WHERE PartyId = @party AND CompanyAccountId = @account",
+            ("@party", Party), ("@account", Account)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
+    }
+
+    /// <summary>SENTETIK test seed: one recorded transfer and the item's assignment to its successor account.</summary>
+    private static async Task SeedTransferAsync(Run run, Guid item, Guid successorParty, Guid successorAccount,
+        string occurredOn, string amount)
+    {
+        var transfer = Guid.NewGuid();
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "INSERT INTO finance.PartyBalanceTransfers (Id, CompanyId, PredecessorPartyId, PredecessorAccountId, "
+            + "SuccessorPartyId, SuccessorAccountId, OwnerProofJson, EvidenceJson, CurrenciesJson, AssignmentSnapshotJson, "
+            + "SnapshotVersion, OccurredOn, Reason, RecordedBy, RecordedAtUtc) VALUES (@transfer, @company, @party, "
+            + "@account, @successorParty, @successorAccount, N'{}', N'{}', N'[]', N'[]', REPLICATE('a', 64), @occurredOn, "
+            + "N'SENTETIK devir', N'SENTETIK-transfer', SYSDATETIMEOFFSET()); "
+            + "INSERT INTO finance.PartyBalanceAssignments (CompanyId, Kind, SourceId, CurrentAccountId, OriginalPartyId, "
+            + "OriginalAccountId, CurrentPartyId, CurrencyId, AvailableAmountText, LastTransferId, Version) VALUES "
+            + "(@company, 1, @item, @successorAccount, @party, @account, @successorParty, @currency, @amount, @transfer, 1); "
+            + "SELECT 2",
+            ("@transfer", transfer), ("@company", CompanyA), ("@party", Party), ("@account", Account),
+            ("@successorParty", successorParty), ("@successorAccount", successorAccount), ("@item", item),
+            ("@currency", Lira), ("@occurredOn", occurredOn), ("@amount", amount)));
+    }
+
+    [SqlServerFact]
     public async Task A_return_above_the_outstanding_total_closes_the_items_and_the_rest_is_the_customers_advance()
     {
         await using var run = await Run.StartAsync();
