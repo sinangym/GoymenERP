@@ -1,4 +1,5 @@
 using GoymenERP.Api.Ai.External;
+using GoymenERP.Api.Ai.Gateway;
 using GoymenERP.Api.Ai.Knowledge;
 using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.Api.Security;
@@ -38,6 +39,12 @@ public static class AiRuntimeServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IAiOwnerToolV1, DecisionLookupAiTool>());
         services.AddScoped<AiToolCatalog>();
         services.AddScoped<AiCapabilityService>();
+        // WP-A1 gateway: the Settings-owned policy port and usage ledger come from the Settings module. Only the in-process
+        // Fake composers are registered (one per placement); the runtime never admits the Fake kind in Production, and no
+        // external or local composer exists until the provider and hardware decisions (OPEN-020, OPEN-014).
+        services.AddSingleton<IAiAnswerComposerV1>(_ => new FakeAiAnswerComposer(AiModelPlacementV1.Cloud));
+        services.AddSingleton<IAiAnswerComposerV1>(_ => new FakeAiAnswerComposer(AiModelPlacementV1.Local));
+        services.AddScoped<IAiGatewayV1, AiGateway>();
         services.AddScoped<AiAskService>();
         return services;
     }

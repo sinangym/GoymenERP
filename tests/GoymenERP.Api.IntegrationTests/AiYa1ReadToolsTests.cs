@@ -311,8 +311,11 @@ public sealed class AiYa1ReadToolsTests
                 new FixedSessionResolver(),
                 Correlation,
                 Writer,
-                new FixedTime(Now));
+                new FixedTime(Now),
+                AiGatewayTestDoubles.Gateway(options, GatewayStore));
         }
+
+        public InMemoryAiGatewayStore GatewayStore { get; } = new(Company);
     }
 
     private sealed class FixedTime(DateTimeOffset now) : TimeProvider
