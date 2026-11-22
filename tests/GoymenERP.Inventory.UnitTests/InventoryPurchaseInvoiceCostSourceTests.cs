@@ -178,6 +178,36 @@ public sealed class InventoryPurchaseInvoiceCostSourceTests
         Assert.Throws<ArgumentOutOfRangeException>(() => PurchaseInvoiceKilogramShare.Of(originalKg, -1m, ExactCostRatio.Of(1m)));
     }
 
+    [Fact]
+    public void ALS_D122_stays_closed_and_a_non_proportional_return_keeps_the_piece_share_waiting()
+    {
+        Assert.False(PurchaseInvoiceKilogramShare.PurchaseInvoiceRemainingShareGoldenAccepted);
+        var originalKg = ExactCostRatio.Of(1250.4m);
+        // 20 of 100 pieces returned weighing 249,870 kg: 1 000,530 kg / 80 pieces remain, not in the receipt's own proportion.
+        Assert.False(PurchaseInvoiceKilogramShare.PieceShareIsDecided(originalKg, 100m, ExactCostRatio.Of(1000.53m), ExactCostRatio.Of(80m),
+            remainingShareAccepted: false));
+        // No return, or a proportional one: ALS-D121 and ALS-D122 agree, so the share is decided whatever the switch.
+        Assert.True(PurchaseInvoiceKilogramShare.PieceShareIsDecided(originalKg, 100m, originalKg, ExactCostRatio.Of(100m), false));
+        Assert.True(PurchaseInvoiceKilogramShare.PieceShareIsDecided(originalKg, 100m, ExactCostRatio.Of(1000.32m), ExactCostRatio.Of(80m), false));
+    }
+
+    [Fact]
+    public void ALS_D122_open_takes_the_remaining_kilograms_over_the_remaining_pieces()
+    {
+        var originalKg = ExactCostRatio.Of(1250.4m);
+        var remainingKg = ExactCostRatio.Of(1000.53m);
+        var remainingPieces = ExactCostRatio.Of(80m);
+
+        Assert.True(PurchaseInvoiceKilogramShare.PieceShareIsDecided(originalKg, 100m, remainingKg, remainingPieces, remainingShareAccepted: true));
+        // 1 000,530 x 40 / 80 = 500,265 kg (ALS-D121's 1 250,4 x 40 / 100 = 500,160 no longer applies after the return).
+        var share = PurchaseInvoiceKilogramShare.Of(remainingKg, 40m, remainingPieces);
+        Assert.Equal(0, share.CompareTo(ExactCostRatio.Of(500.265m)));
+        Assert.NotEqual(0, share.CompareTo(PurchaseInvoiceKilogramShare.Of(originalKg, 40m, ExactCostRatio.Of(100m))));
+        // All remaining pieces invoiced take all remaining kg; nothing left is never decided.
+        Assert.Equal(0, PurchaseInvoiceKilogramShare.Of(remainingKg, 80m, remainingPieces).CompareTo(remainingKg));
+        Assert.False(PurchaseInvoiceKilogramShare.PieceShareIsDecided(originalKg, 100m, ExactCostRatio.Of(0m), ExactCostRatio.Of(0m), true));
+    }
+
     private static InventoryPurchaseInvoiceCostSourceV1 Source() => new(Company, Guid.NewGuid(), 4,
         Guid.NewGuid(), SettingsCurrencyIdentitiesV1.TurkishLira, 100.01m, null, new(2026, 11, 17), "synthetic-finalizer",
         [new(Guid.NewGuid(), 1, "Product", "resale", 100.01m, null,

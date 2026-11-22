@@ -78,9 +78,10 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
                         || basis.OriginalKg.CompareTo(ExactCostRatio.Of(weighedKg)) != 0)
                         throw Invalid("purchase_invoice_cost_receipt_source_conflict");
                     // A return or reversal that did not leave in the receipt's own kg-per-piece proportion makes "remaining kg ×
-                    // matched ÷ remaining pieces" differ from ALS-D121. Which one applies is not decided; the source stays pending.
-                    if (!PurchaseInvoiceKilogramShare.KeepsOriginalProportion(basis.OriginalKg, share.AcceptedQuantity,
-                            basis.EligibleKg, basis.EligibleQuantity))
+                    // matched ÷ remaining pieces" (ALS-D122) differ from ALS-D121. ALS-D122 applies only behind its switch (golden
+                    // pending); until then the source stays pending.
+                    if (!PurchaseInvoiceKilogramShare.PieceShareIsDecided(basis.OriginalKg, share.AcceptedQuantity,
+                            basis.EligibleKg, basis.EligibleQuantity, PurchaseInvoiceKilogramShare.PurchaseInvoiceRemainingShareGoldenAccepted))
                         throw Unavailable("purchase_invoice_cost_piece_reversal_basis_unavailable");
                 }
                 if (basis.Cohort is { } cohort ? ExactCostRatio.Of(share.MatchedQuantity).CompareTo(cohort.PendingQuantity) > 0

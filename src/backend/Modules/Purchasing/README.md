@@ -534,3 +534,15 @@ Inventory command in the host transaction; quantity mode (SAT-D441/SAT-D444) tak
 receipt. `PurchaseSupplierReturnQuantityPriceRuleV1` is the single rule point of "the chosen order's unit price";
 SAT-D451: it is the net price after the discount, without the deferral; a net price with more than four decimals is refused 422 (never rounded). The migration grants no access and
 activates nothing; real-SQL acceptance is **NOT_RUN** and independent K3 acceptance remains required.
+
+## AK-3b (adet/kg — alışı tamamlama)
+
+- Migration `20261122141554_AddPurchaseGoodsReceiptBatchPieceFacts`: toplu mal kabulde adetli satır (batch `KilogramsPerUnit`, etiket `PieceCount`,
+  varyans check'inin adet dalı). Down guard **52042** (forward fix): adetli toplu kabul varken geri alınmaz.
+- ALS-D119/D120 ve SAT-D436/D439 anahtarları açık (`PurchaseCostGoldenAccepted`, `PurchaseKgPriceGoldenAccepted`). ALS-D122 anahtarı
+  (`PurchaseInvoiceKilogramShare.PurchaseInvoiceRemainingShareGoldenAccepted`, Inventory) golden gelene kadar kapalı; kapalıyken oransız iadeli
+  adetli kabulün faturası `purchase_invoice_cost_piece_reversal_basis_unavailable` ile bekler.
+- SAT-D452: gerçekleşmeye yalnız kesinleşmiş faturalar girer (`PurchaseInvoiceRealizationRule`).
+- ASSUMPTION-AK3B-1 (geri alınabilir sunum ayrıntısı): sipariş gerçekleşme tablosunda sunucu yalnız gerçek kg fiyatı için neden kodu verir;
+  diğer boş hücrelerin metni ekranda türetilir (`NotInvoiced` → "Henüz faturalanmadı", aksi halde alanın kendi nedeni).
+- Toplu mal kabul gönderim formu ayrı dilimdir; bu dilimde yalnız arka uç ve okuma paneli vardır.

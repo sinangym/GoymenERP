@@ -19,6 +19,28 @@ public static class PurchaseInvoiceKilogramShare
     }
 
     /// <summary>
+    /// ALS-D122's switch (SINAN_KARARLARI_2026-11-22_WORK_AI_DALGALAR): after a partial return of a piece receipt, the invoiced
+    /// pieces take "remaining kg × invoiced pieces ÷ remaining pieces". Its golden rows are prepared by an independent session
+    /// (SAT-D431) and are not in the train yet, so this stays false: a piece share whose return did not leave in the receipt's own
+    /// proportion keeps waiting (<c>purchase_invoice_cost_piece_reversal_basis_unavailable</c>).
+    /// </summary>
+    public static bool PurchaseInvoiceRemainingShareGoldenAccepted => false;
+
+    /// <summary>
+    /// Whether a piece-line share's kilograms can be applied. Without a non-proportional return ALS-D121 and ALS-D122 agree, so the
+    /// share is always decided; with one it is decided only while ALS-D122 is accepted (<paramref name="remainingShareAccepted"/>),
+    /// and the share is then <see cref="Of"/> over the remaining kg and remaining pieces.
+    /// </summary>
+    public static bool PieceShareIsDecided(ExactCostRatio originalKg, decimal originalQuantity, ExactCostRatio remainingKg,
+        ExactCostRatio remainingQuantity, bool remainingShareAccepted)
+    {
+        ArgumentNullException.ThrowIfNull(remainingKg);
+        ArgumentNullException.ThrowIfNull(remainingQuantity);
+        if (KeepsOriginalProportion(originalKg, originalQuantity, remainingKg, remainingQuantity)) return true;
+        return remainingShareAccepted && originalQuantity > 0m && remainingKg.Sign > 0 && remainingQuantity.Sign > 0;
+    }
+
+    /// <summary>
     /// True when a receipt's remaining kilograms and remaining quantity (after its recorded returns and reversals) still stand in
     /// the receipt's ORIGINAL kg-per-unit proportion. Only then does "remaining kg × invoiced ÷ remaining quantity" equal ALS-D121's
     /// "weighed kg × invoiced pieces ÷ accepted pieces"; otherwise no rule is chosen here.
