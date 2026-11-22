@@ -103,7 +103,7 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
                         if (!int.TryParse(write.Request.UndoQuantity, System.Globalization.NumberStyles.None,
                                 System.Globalization.CultureInfo.InvariantCulture, out var pieces) || pieces < 1)
                             throw new PurchasingServiceException(422, PurchaseSupplierReturnCodesV1.PieceCountRequired,
-                                [new("undoQuantity", PurchaseSupplierReturnCodesV1.PieceCountRequired)]);
+                                [new PurchasingFieldError("undoQuantity", PurchaseSupplierReturnCodesV1.PieceCountRequired)]);
                         stockRequest = stockRequest with { PieceCount = pieces };
                     }
                     var next = write.Request.ReplacementReceipt;
