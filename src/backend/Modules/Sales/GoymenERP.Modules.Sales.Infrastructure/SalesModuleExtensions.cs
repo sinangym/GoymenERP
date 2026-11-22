@@ -95,6 +95,13 @@ public static class SalesModuleExtensions
         services.AddScoped<IWorkInboxSourceV1, SalesPriceFloorExceptionWorkInboxSourceV1>();
         services.AddScoped<IWorkInboxSourceV1, SalesDiscountExceptionWorkInboxSourceV1>();
         services.AddScoped<IWorkInboxSourceV1, SalesRiskExceptionWorkInboxSourceV1>();
+        // WP4: the remaining Sales approval kinds in the one Work inbox.
+        services.AddScoped<ISalesWorkInboxApprovalStoreV1, SalesWorkInboxApprovalStoreV1>();
+        services.AddScoped<IWorkInboxSourceV1, SalesRequestWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, SalesInvoiceWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, SalesSubcontractInvoiceWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, SalesCustomerReturnWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, SalesContractDiscountWorkInboxSourceV1>();
         // SALES-A1: the Sales-owned line reference port (Business 5737989917 = B) for the allocation
         // and loading consumers, over the same company-filtered store. Registered here, in the module
         // (no host file), so that a consumer module reads Sales only through this port.

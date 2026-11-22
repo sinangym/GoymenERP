@@ -13,11 +13,47 @@ internal static class SalesWorkInboxItemsV1
     public const string OrderDraftRole = "sales-order-draft";
     public const string PriceListRole = "price-list";
     public const string ProductRole = "product";
+    public const string RequestRole = "sales-request";
+    public const string InvoiceRole = "sales-invoice";
+    public const string SubcontractInvoiceRole = "sales-subcontract-invoice";
+    public const string CustomerReturnRole = "sales-customer-return";
+    public const string ContractRole = "sales-contract";
 
     private static readonly Regex CurrencyUnitPattern = new("^[A-Za-z]{1,16}\\z", RegexOptions.CultureInvariant);
 
     /// <summary>The Sales order 360 screen (<c>/satis/siparisler/:draftId</c>): the price-floor, discount and risk exception panels.</summary>
     public static string OrderLink(Guid draftId) => $"/satis/siparisler/{draftId:D}";
+
+    /// <summary>WP4: S-01 one request (<c>/satis/talepler/:requestId</c>): the request approval and rejection controls.</summary>
+    public static string RequestLink(Guid requestId) => $"/satis/talepler/{requestId:D}";
+
+    /// <summary>WP4: S-09 Satış faturaları (<c>/satis/faturalar</c>): the invoice approval and rejection controls of the list.</summary>
+    public const string InvoicesLink = "/satis/faturalar";
+
+    /// <summary>
+    /// WP4: S-11 Satış sözleşmeleri, the screen's planned route. The screen is not routed yet (its shell capability is not
+    /// published), so the link opens the shell's not-found page until it is; the decision is never given from the inbox.
+    /// </summary>
+    public const string ContractsLink = "/satis/sozlesmeler";
+
+    /// <summary>WP4: S-10 one customer return (<c>/satis/iadeler/:returnId</c>): the approval control.</summary>
+    public static string CustomerReturnLink(Guid returnId) => $"/satis/iadeler/{returnId:D}";
+
+    /// <summary>WP4: the owner's "may not decide" set beyond the maker: the other named actors, distinct from the maker and each other.</summary>
+    public static IReadOnlyList<string>? Others(string maker, params string?[] actors)
+    {
+        var others = actors
+            .Where(actor => !string.IsNullOrWhiteSpace(actor))
+            .Select(actor => actor!.Trim())
+            .Where(actor => !WorkInboxRulesV1.SameUser(actor, maker))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        return others.Length == 0 ? null : others;
+    }
+
+    public static DateTimeOffset RequireTime(DateTimeOffset? value) => value is { } time
+        ? time.ToUniversalTime()
+        : throw new InvalidOperationException("Satış kaydının onaya gönderilme zamanı boş.");
 
     public static string RequireLabel(string? label)
     {

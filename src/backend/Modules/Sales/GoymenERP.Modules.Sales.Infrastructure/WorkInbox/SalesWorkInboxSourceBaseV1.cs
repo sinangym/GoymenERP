@@ -12,6 +12,10 @@ namespace GoymenERP.Modules.Sales.Infrastructure.WorkInbox;
 /// company-wide. Anything else is <see cref="WorkInboxSourceResultV1.Denied"/>; a read failure (not a cancellation) is
 /// <see cref="WorkInboxSourceResultV1.Unavailable"/>. Price figures (floor, net, discount) are shown only to a caller who also
 /// holds the Sales price-read permission company-wide (the owner's price disclosure); otherwise the rule carries no numbers.
+/// WP4: a kind whose owner decision command also requires another permission (the invoice and customer-return decisions require
+/// the price read) declares it in <see cref="DecisionCoPermissions"/>; a caller without every one of them company-wide cannot
+/// decide and the source answers Denied. D11: every Sales decision command accepts only a company-wide grant, so
+/// <see cref="IWorkInboxSourceV1.AcceptsScopedApprovers"/> stays false and a scoped caller is Denied.
 /// </summary>
 internal abstract class SalesWorkInboxSourceBaseV1(
     ICompanyContext companyContext,
@@ -27,6 +31,12 @@ internal abstract class SalesWorkInboxSourceBaseV1(
     public abstract string ApproverPermission { get; }
 
 
+    /// <summary>
+    /// The other permissions the owner's own decision command requires besides <see cref="ApproverPermission"/> (company-wide).
+    /// Without any of them the caller cannot decide, so the kind is not theirs to see (Denied).
+    /// </summary>
+    protected virtual IReadOnlyList<string> DecisionCoPermissions => [];
+
     /// <summary>Whether the source's rules carry price figures that the owner discloses only under its price-read permission.</summary>
     protected virtual bool CarriesPriceFigures => false;
 
@@ -39,6 +49,12 @@ internal abstract class SalesWorkInboxSourceBaseV1(
         cancellationToken.ThrowIfCancellationRequested();
         var take = Math.Clamp(maxCount, 1, NativeApprovalQueueRulesV1.MaxItemsPerSource);
 
+        if (context.GrantScope is not null)
+        {
+            // D11: no Sales decision command accepts a site/location/work-center scoped grant.
+            return WorkInboxSourceResultV1.Denied();
+        }
+
         try
         {
             if (!await AllowedAsync(context, ApproverPermission, cancellationToken))
@@ -46,10 +62,16 @@ internal abstract class SalesWorkInboxSourceBaseV1(
                 return WorkInboxSourceResultV1.Denied();
             }
 
+            if (!await CoPermissionsAllowedAsync(context, cancellationToken))
+            {
+                return WorkInboxSourceResultV1.Denied();
+            }
+
             var disclosePrices = CarriesPriceFigures
                 && await AllowedAsync(context, SalesPermissionManifestV1.OrdersPriceRead, cancellationToken);
             var (items, hasMore) = await ReadAsync(context.CompanyId, take, disclosePrices, cancellationToken);
-            if (!await AllowedAsync(context, ApproverPermission, cancellationToken))
+            if (!await AllowedAsync(context, ApproverPermission, cancellationToken)
+                || !await CoPermissionsAllowedAsync(context, cancellationToken))
             {
                 return WorkInboxSourceResultV1.Denied();
             }
@@ -72,6 +94,19 @@ internal abstract class SalesWorkInboxSourceBaseV1(
     /// </summary>
     protected abstract Task<(IReadOnlyList<WorkInboxItemV1> Items, bool HasMore)> ReadAsync(Guid companyId, int take,
         bool disclosePrices, CancellationToken cancellationToken);
+
+    private async Task<bool> CoPermissionsAllowedAsync(WorkInboxSourceContextV1 context, CancellationToken cancellationToken)
+    {
+        foreach (var coPermission in DecisionCoPermissions)
+        {
+            if (!await AllowedAsync(context, coPermission, cancellationToken))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     private async Task<bool> AllowedAsync(WorkInboxSourceContextV1 context, string permission, CancellationToken cancellationToken)
     {
