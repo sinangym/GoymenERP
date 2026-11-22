@@ -32,6 +32,14 @@ public static class SettingsModuleExtensions
         services.Replace(ServiceDescriptor.Scoped<ISettingsManufacturingToleranceProviderV1,
             SettingsManufacturingToleranceProviderV1>());
         services.TryAddSingleton(TimeProvider.System);
+        // WP7 (AI-D31/AI-D32): the read-only Work inbox sources of Ayarlar policy versions waiting for publication; they publish nothing.
+        services.AddScoped<WorkInbox.SettingsWorkInboxFence>();
+        services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkInboxSourceV1, WorkInbox.SettingsFinanceApprovalPolicyWorkInboxSourceV1>();
+        services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkInboxSourceV1, WorkInbox.SettingsCashCountDifferencePolicyWorkInboxSourceV1>();
+        services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkInboxSourceV1, WorkInbox.SettingsBankInstitutionPolicyWorkInboxSourceV1>();
+        services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkInboxSourceV1, WorkInbox.SettingsCollateralRatePolicyWorkInboxSourceV1>();
+        services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkInboxSourceV1, WorkInbox.SettingsManufacturingParameterProfileWorkInboxSourceV1>();
+        services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkInboxSourceV1, WorkInbox.SettingsManufacturingToleranceProfileWorkInboxSourceV1>();
         services.AddScoped<SettingsDocumentNumberSeriesV1>();
         services.AddScoped<ISettingsDocumentNumberSeriesV1>(sp => sp.GetRequiredService<SettingsDocumentNumberSeriesV1>());
         services.AddScoped<ISettingsDocumentNumberSeriesAdministrationV1>(sp => sp.GetRequiredService<SettingsDocumentNumberSeriesV1>());
