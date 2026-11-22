@@ -1,14 +1,26 @@
-# Rol–Yetki Taslağı v1.1 (bütün modüller)
+# Rol–Yetki Taslağı v1.2 (bütün modüller)
 
-- **Durum:** TASLAK v1.1. Sinan'ın S-01–S-20 cevaplarıyla (ROL-D1–ROL-D20,
-  `docs/decisions/SINAN_KARARLARI_2026-11-22_ROL_YETKI.md`) güncellendi. Bu belge **karar değildir**; yeni karar kimliği
+- **Durum:** TASLAK v1.2. Sinan'ın S-01–S-20 cevaplarıyla (ROL-D1–ROL-D20,
+  `docs/decisions/SINAN_KARARLARI_2026-11-22_ROL_YETKI.md`) ve Y-01–Y-05 cevaplarıyla (ROL-D21–ROL-D23, AI-D36,
+  `docs/decisions/SINAN_KARARLARI_2026-11-22_EK_SORULAR.md`) güncellendi. Bu belge **karar değildir**; yeni karar kimliği
   üretmez, `KARAR_SICILI.md`'yi, `docs/decisions/**`'ı, seed'i, manifesti veya kodu değiştirmez.
-- **Dayanak:** YOL-D2, YOL-D20 ve ROL-D1–ROL-D20. Dalga 1, dilim W1-D.
+- **Dayanak:** YOL-D2, YOL-D20, ROL-D1–ROL-D23 ve AI-D36. Dalga 1, dilim W1-D.
 - **İnsan kapısı:** Hiçbir rol, izin veya grant bu belgeyle etkinleşmez. Rol tanımı, rol seed'i, grant, Critical sınıfı
   ve gerçek kişi ataması AGENTS.md "Değişmeyen insan kapıları" gereği Sinan'ın somut kararını ister. Taslak atama öncesi
   kişi listesiyle Sinan'a yeniden sunulur (ROL kararları "Sınırlar").
 - **Makine-okunur eş:** [`ROL_YETKI_TASLAGI_v1.csv`](ROL_YETKI_TASLAGI_v1.csv) — her izin için bir satır; §2.3 matrisi o
   dosyadan üretilmiştir. Çelişki olursa CSV'deki hücre esas alınır ve belge yeniden üretilir.
+
+## v1.2 değişiklik özeti
+
+| Karar | Taslağa etkisi |
+|---|---|
+| ROL-D21 | `sales.orders.margin.read` = GM + Satış Müdürü (SAT-D250/SAT-D276 (2) "GM + Admin" yerine); Sistem Yöneticisi görmez. |
+| ROL-D22 | `settings.policies.publish-critical` = Sistem Yöneticisi. |
+| ROL-D23 | Sistem Yöneticisi acil erişimi: süreli, gerekçeli, başka yetkilinin onayladığı, denetim kayıtlı, süre bitince kalkan erişim ataması; kalıcı iş izni değil. |
+| Y-02 (ROL-D19 sonucu) | `settings.sales-discount-limits.manage` = GM + Sistem Yöneticisi. |
+| Y-05 (ROL-D14 sonucu) | Kantar isteğe bağlı rol olarak kalır. |
+| AI-D36 | `ai.decisions.read` bütün kullanıcı rollerine önerilir. İzin bugün `ErpPermissions`'ta **kayıtlı değildir**; matrise satır olarak girmez, kaydedildiğinde `ai.panel.use` ile aynı sütunlara eklenir (§4). |
 
 ## v1.1 değişiklik özeti
 
@@ -19,7 +31,7 @@
 | ROL-D3 | Uygun onaycı kalmazsa onay **ilgili modül müdürü ve Genel Müdür**'e düşer; yoksa sahipsiz onay (YOL-D17). Küçük kadro istisnası yok. |
 | ROL-D4 | GM vekili, ilgili izne sahip modül müdürü; Sistem Yöneticisi vekil olamaz. |
 | ROL-D5 | **Yeni rol: Operasyon Müdürü (OPM)** — sevk, depo ve üretim müdürlüğü tek rolde. Sayım, hurda, transfer, irsaliye, plan üstü sevk, tartım farkı ve üretim planı onayları OPM'ye geçti; GM yedek. SAT-D191 ara dönem kayıt hücreleri (açılış stoğu, üretim fiilîsi, yükleme talimatı, yükleme) GM'den OPM'ye geçti. |
-| ROL-D6 | Sistem Yöneticisi (SYS) iş onaylarını ve iş kayıtlarını **taşımaz**; 27 izne indi (temel okumalar, kurulum ana verisi, sistem ayarları, kullanıcı yönetimi, AI paneli). Bu, SAT-D187'nin Admin satırlarının yerine geçer. |
+| ROL-D6 | Sistem Yöneticisi (SYS) iş onaylarını ve iş kayıtlarını **taşımaz**; 27 izne indi (v1.2'de ROL-D22 ile 28) (temel okumalar, kurulum ana verisi, sistem ayarları, kullanıcı yönetimi, AI paneli). Bu, SAT-D187'nin Admin satırlarının yerine geçer. |
 | ROL-D7 | Satış Müdürü kredi limitini ve cari ekstreyi (tutarlar dahil) okur. |
 | ROL-D8 | Muhasebe dönem ve yevmiyeyi salt okur. |
 | ROL-D9 | Üretim emri kapatma OPM; tahsilat kaydı Finans. |
@@ -56,7 +68,7 @@ kararlı çekirdek + öneri uzantısı. **ÖNERİ** = kararlarda persona kümesi
 hiçbir role önerilmez.
 
 **Özet sayılar:** 286 izinden **268**'i en az bir role önerildi; **18**'i hiçbir role önerilmedi (17 Critical +
-`identity.company-setup.first-admin.assign`). Durum dağılımı: KARARLI 87 · KISMEN 12 · ÖNERİ 169 · IK 16 · YOK 2.
+`identity.company-setup.first-admin.assign`). Durum dağılımı: KARARLI 88 · KISMEN 12 · ÖNERİ 168 · IK 16 · YOK 2.
 Sınıflandırılamayan izin yoktur.
 
 ## 1. Standart roller
@@ -69,7 +81,7 @@ bazında** atanır (§4).
 |---|---|---|---|---|
 | GM | Genel Müdür | SAT-D187/D188/D190, ROL-D3/D4 | Bütün modüllerde müdür onaylarının **yedek ve yükseltme** onaycısıdır (ROL-D3); kendi alanı olmayan organizasyon ve sistem dışı politika onaylarını verir. Finansta yalnız onaylar (SAT-D197). Kullanıcı/rol/sistem ayarı yönetmez (SAT-D190). Vekili ilgili izne sahip modül müdürüdür (ROL-D4). | KARARLI |
 | SAT | Satış Temsilcisi | Satış Uzmanı (SAT-D141) + Satış Destek (ROL-D2) | Teklif, talep ve sipariş taslağı hazırlar, fiyat ve başlık yazar, kaynak planı girer, alış talebi/siparişi açabilir. Sipariş onaylamaz; kendi talebi dışındaki risk istisnasını ve kendi sevki dışındaki fazla teslimi onaylayabilir (SAT-D153/D216). Fatura kesmez (SAT-D202). | KARARLI |
-| SATM | Satış Müdürü | SAT-D187/D188, ROL-D7/D14/D18 | Satış siparişini, fiyat/iskonto istisnalarını, iptal ve zorla kapatmayı onaylar; fiyat listesini hazırlar ve yayımlar (ROL-D18); irsaliyeyi onaylayabilir (ROL-D14); kredi limiti ve cari ekstreyi okur (ROL-D7); teklif politikası ve teslim toleransını yönetir. Onay eşiklerini belirlemez (ROL-D19). | KARARLI |
+| SATM | Satış Müdürü | SAT-D187/D188, ROL-D7/D14/D18/D21 | Satış siparişini, fiyat/iskonto istisnalarını, iptal ve zorla kapatmayı onaylar; fiyat listesini hazırlar ve yayımlar (ROL-D18); irsaliyeyi onaylayabilir (ROL-D14); kredi limiti ve cari ekstreyi okur (ROL-D7); satış marjını görür (ROL-D21); teklif politikası ve teslim toleransını yönetir. Onay eşiklerini belirlemez (ROL-D19). | KARARLI |
 | ALM | Satınalma | Satın Alma Uzmanı (ALS-D53) | Alış talebi ve siparişini hazırlar, revize eder, kendi talebini geri çeker, tedarikçi iadesini hazırlar. Onaylamaz. | KARARLI |
 | ALMM | Satınalma Müdürü | Satın Alma Müdürü (ALS-D53), ROL-D10 | Alış talebi ve siparişini onaylar, kalanı iptal eder, mal kabul farkı ve fazla teslimi onaylar. Gelen fatura farkını onaylamaz (ROL-D10). | KARARLI |
 | OPM | **Operasyon Müdürü** *(yeni)* | ROL-D5, ROL-D9, ROL-D14 | Sevk, depo ve üretimin tek müdürüdür: sayım, hurda, transfer, irsaliye, plan üstü sevk, tartım farkı, üretim planı ve tolerans dışı kapanış onayları; üretim emri kapatma (ROL-D9); açılış stoğu, üretim fiilîsi, yükleme talimatı ve yüklemenin müdür hücreleri. | KARARLI |
@@ -82,7 +94,7 @@ bazında** atanır (§4).
 | FINM | Finans Müdürü | SAT-D196 | Finans işlemlerini onaylar; banka CSV eşlemesi, teminat türleri, finans açılış dönemi, finans politika taslağı. Oluşturmaz. | KARARLI |
 | MUH | Muhasebe | SAT-D142, ROL-D8 | Satışta her şeyi görür; faturayı hazırlar, keser, eşleştirir, kesinleştirir; vergi ayarı önerir; cari e-belge; fiş taslağı ve ters kayıt önerir; dönem ve yevmiyeyi salt okur (ROL-D8). | KARARLI |
 | MUHM | Muhasebe Müdürü | SAT-D187/D188/D192, ROL-D1/D10 | Dönem, fiş, hesap eşleme/katalog etkinleştirme; gelen fatura farkı onayı (ROL-D10); vergi ana verisi, kalem tipi, kur düzeltmesi; cari kart yönetimi (SAT-D192). | KARARLI |
-| SYS | Sistem Yöneticisi | ROL-D6, ROL-D17 | Yalnız sistem yönetimi ve acil durum: kullanıcı yönetimi, kurulum ana verisi (organizasyon), sistem ayarları (giriş sınırı, görev ayrılığı, saklama, birim/para profili, numara serileri, referans listeleri), satış eşik/limit ayarı (ROL-D19). Şimdilik rol kurgulama + erişim onayı adayıdır (ROL-D17, Critical, insan kapısı). İş onayı/kaydı yok. | KARARLI |
+| SYS | Sistem Yöneticisi | ROL-D6, ROL-D17, ROL-D22, ROL-D23 | Yalnız sistem yönetimi ve acil durum: kullanıcı yönetimi, kurulum ana verisi (organizasyon), sistem ayarları (giriş sınırı, görev ayrılığı, saklama, birim/para profili, numara serileri, referans listeleri), satış eşik/limit ayarı (ROL-D19), kritik politika yayımı (ROL-D22). Acil durum yetkisi kalıcı izin değil, süreli/gerekçeli/başka yetkilinin onayladığı ve süresi bitince kalkan atamadır (ROL-D23). Şimdilik rol kurgulama + erişim onayı adayıdır (ROL-D17, Critical, insan kapısı). İş onayı/kaydı yok. | KARARLI |
 
 **Kaldırılan:** Salt Okunur Denetçi (v1'de DEN) — ROL-D13 gereği sisteme erişim verilmez; denetçi paketi dışa aktarılır.
 
@@ -92,9 +104,9 @@ bazında** atanır (§4).
 
 | Rol | Önerilen izin | Bunların koşullu (`K`) olanı |
 |---|---|---|
-| GM | 185 | 46 |
+| GM | 185 | 45 |
 | SAT | 51 | 3 |
-| SATM | 70 | 10 |
+| SATM | 71 | 10 |
 | ALM | 24 | 0 |
 | ALMM | 33 | 4 |
 | OPM | 65 | 16 |
@@ -107,7 +119,7 @@ bazında** atanır (§4).
 | FINM | 39 | 7 |
 | MUH | 58 | 1 |
 | MUHM | 84 | 9 |
-| SYS | 27 (+5 `IK` adayı) | 0 |
+| SYS | 28 (+5 `IK` adayı) | 0 |
 
 GM'nin sayısı yüksek kalır, çünkü ROL-D3 gereği her müdür onayının yedek onaycısıdır ve müdürlerin okumalarını taşır.
 
@@ -124,7 +136,7 @@ GM'nin sayısı yüksek kalır, çünkü ROL-D3 gereği her müdür onayının y
 | `finance.credit-limits.approve`, `finance.credits.approve` | Critical. Aday: Finans Müdürü veya GM (SAT-D197). |
 | `counterparty.parties.tax-identity.approve` | Critical. Aday: Muhasebe Müdürü veya GM; hazırlayandan farklı kişi. |
 
-Kayıtta Critical olmayıp yalnız Sistem Yöneticisi'ne önerilen 5 ad: `settings.sales-discount-limits.manage` (SAT-D65/D69),
+Kayıtta Critical olmayıp yalnız Sistem Yöneticisi'ne önerilen 5 ad: `settings.policies.publish-critical` (ROL-D22),
 `settings.login-rate-limit.manage`, `settings.segregation-of-duties.manage`, `settings.notification-retention.manage`,
 `identity.users.manage`.
 
@@ -304,7 +316,7 @@ Operasyon Müdürü · DEPO Depo/Sevk · KNT Kantar (isteğe bağlı) · UPL Ür
 | `sales.orders.approve` | K | · | K | · | · | · | · | · | · | · | · | · | · | · | · | · | KARARLI | SAT-D6, SAT-D188; P6 hazırlayan ≠ onaylayan. |
 | `sales.orders.price.write` | + | + | + | · | · | · | · | · | · | · | · | · | · | · | · | · | KARARLI | SAT-D151, SAT-D188. |
 | `sales.orders.price.read` | + | + | + | · | · | · | · | · | · | · | · | · | · | + | + | · | KARARLI | SAT-D150; Depo/Sevk görmez. |
-| `sales.orders.margin.read` | + | · | · | · | · | · | · | · | · | · | · | · | · | · | · | · | KARARLI | SAT-D250, SAT-D276 (2): GM + Admin; Admin hücresi ROL-D6 ile kalktı (soru Y-01). |
+| `sales.orders.margin.read` | + | · | + | · | · | · | · | · | · | · | · | · | · | · | · | · | KARARLI | ROL-D21: GM + Satış Müdürü (SAT-D250/SAT-D276 (2) yerine); Sistem Yöneticisi görmez. |
 | `sales.orders.price-floor-exception.approve` | K | · | K | · | · | · | · | · | · | · | · | · | · | · | · | · | KARARLI | SAT-D1, SAT-D188. |
 | `sales.orders.discount-exception.approve` | K | · | K | · | · | · | · | · | · | · | · | · | · | · | · | · | KARARLI | SAT-D37/D67: Satış Müdürü'nün kendi limitini aşanı başkası onaylar. |
 | `sales.orders.delivery-schedule.write` | + | + | + | · | · | · | · | · | · | · | · | · | · | · | · | · | ÖNERİ | Teslim planı sipariş düzenlemesidir. |
@@ -416,7 +428,7 @@ Operasyon Müdürü · DEPO Depo/Sevk · KNT Kantar (isteğe bağlı) · UPL Ür
 
 | İzin | GM | SAT | SATM | ALM | ALMM | OPM | DEPO | KNT | UPL | UOP | KAL | FIN | FINM | MUH | MUHM | SYS | Durum | Gerekçe |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `settings.sales-discount-limits.manage` | · | · | · | · | · | · | · | · | · | · | · | · | · | · | · | + | KARARLI | SAT-D65/D69: yalnız Admin; ROL-D19 eşik/limit ayarını GM + Sistem Yöneticisi'nde topladı (GM eklensin mi: soru Y-02). |
+| `settings.sales-discount-limits.manage` | + | · | · | · | · | · | · | · | · | · | · | · | · | · | · | + | KARARLI | ROL-D19 sonucu (Y-02): GM + Sistem Yöneticisi; Satış Müdürü almaz (SAT-D65). |
 | `settings.tax-master.manage` | + | · | · | · | · | · | · | · | · | · | · | · | · | · | + | · | KARARLI | SAT-D145, SAT-D188. |
 | `settings.sales-delivery-tolerances.manage` | + | · | + | · | · | · | · | · | · | · | · | · | · | · | · | · | KARARLI | SAT-D189 (teslim toleransı). |
 | `settings.sales-approval-thresholds.manage` | + | · | · | · | · | · | · | · | · | · | · | · | · | · | · | + | KARARLI | ROL-D19: GM + Sistem Yöneticisi. |
@@ -447,7 +459,7 @@ Operasyon Müdürü · DEPO Depo/Sevk · KNT Kantar (isteğe bağlı) · UPL Ür
 | `settings.policies.prepare` | · | · | · | · | · | · | · | · | · | · | · | · | + | · | · | · | ÖNERİ | Finans onay matrisleri vb. politika taslağı. |
 | `settings.policies.approve` | K | · | · | · | · | · | · | · | · | · | · | · | · | · | · | · | ÖNERİ | Hazırlayan ≠ onaylayan. |
 | `settings.policies.publish` | + | · | · | · | · | · | · | · | · | · | · | · | · | · | · | · | ÖNERİ | Onaylı politikayı yayımlama. |
-| `settings.policies.publish-critical` | K | · | · | · | · | · | · | · | · | · | · | · | · | · | · | · | ÖNERİ | Kritik politika yayımı iş politikasıdır; ROL-D6 sonrası Sistem Yöneticisi değil GM (soru Y-03). |
+| `settings.policies.publish-critical` | · | · | · | · | · | · | · | · | · | · | · | · | · | · | · | + | KARARLI | ROL-D22: Sistem Yöneticisi. |
 | `settings.manufacturing-parameter-profiles.prepare` | · | · | · | · | · | · | · | · | + | · | · | · | · | · | · | · | ÖNERİ | Profili planlama hazırlar. |
 | `settings.manufacturing-parameter-profiles.approve` | K | · | · | · | · | K | · | · | · | · | · | · | · | · | · | · | ÖNERİ | Hazırlayan ≠ onaylayan; ROL-D5. |
 | `settings.manufacturing-parameter-profiles.publish` | + | · | · | · | · | + | · | · | · | · | · | · | · | · | · | · | ÖNERİ | Onaylı profili yayımlama. |
@@ -616,7 +628,7 @@ ettiği risk; denetim kaydı ve raporla izlenir · ✅ **giderildi**.
   `finance.credit-limits.approve`, `finance.credits.approve`, `counterparty.parties.tax-identity.approve`.
   Grant'ları kritik rol erişim talebi akışından geçer (akış #58; ROL-D17 gereği şimdilik Sistem Yöneticisi). Taslak aday
   rol yazar (`IK`), hiçbirini vermez.
-- **Kayıtta Critical olmayan ama dikkat isteyenler:** `settings.policies.publish-critical` (öneri GM, soru Y-03),
+- **Kayıtta Critical olmayan ama dikkat isteyenler:** `settings.policies.publish-critical` (Sistem Yöneticisi, ROL-D22),
   `settings.segregation-of-duties.manage`, `identity.users.manage`, `accounting.periods.close` ve yeniden açma (ROL-D12),
   `sales.invoices.finalize` (SAT-D249: normal yetki).
 - **İki kademeli onay:** SAT-D67 — Satış Müdürü'nün kendi limitini aşan iskontosu GM'ye gider. Tek adımlı finans
@@ -637,6 +649,11 @@ ettiği risk; denetim kaydı ve raporla izlenir · ✅ **giderildi**.
 - **`ai.panel.use`:** başlangıçta **bütün kullanıcı rollerine** önerilir (ROL-D16; AI-D8 başlangıcının yerine geçer). İzin,
   kullanıcının göremediği veriyi açmaz (AI-D1); AI canlıda kapalı başlar ve açılması ayrı insan kapısıdır (AI-D6); grant
   insan kapısıdır. Pasif Kalite rolü atanmadığı sürece izni fiilen kullanılmaz.
+- **`ai.decisions.read` (AI-D36):** bütün kullanıcı rollerine önerilir (ROL-D16 ile tutarlı); kişi adları dizinde
+  maskelenir (AI-D34); grant insan kapısıdır. İzin henüz kayıtlı değildir; kaydedildiğinde CSV'ye `ai.panel.use` ile
+  aynı sütunlarla eklenir.
+- **Sistem Yöneticisi acil erişimi (ROL-D23):** süreli ve gerekçeli erişim ataması; başka bir yetkili onaylar, denetim
+  kaydına yazılır, süre bitince kalkar. Kalıcı iş izni olarak matriste yer almaz.
 
 ## 5. Sinan'a sorular
 
@@ -665,15 +682,17 @@ ettiği risk; denetim kaydı ve raporla izlenir · ✅ **giderildi**.
 | S-19 | Satış eşik/limit? | Cevaplandı — ROL-D19: GM + SYS; tolerans Satış Müdürü. |
 | S-20 | Kalite rolü? | Cevaplandı — ROL-D20: pasif. |
 
-### 5.2 v1.1'in doğurduğu küçük sorular (önerili)
+### 5.2 v1.1 soruları — cevaplandı (22 Kasım 2026)
 
-| No | Soru | Öneri |
+| No | Soru | Durum |
 |---|---|---|
-| Y-01 | `sales.orders.margin.read` SAT-D250'de GM + Admin idi; ROL-D6 ile Admin iş görünümü almıyor. Marjı yalnız GM mi görsün? | Evet, yalnız GM. |
-| Y-02 | `settings.sales-discount-limits.manage` SAT-D69 gereği yalnız Admin; ROL-D19 eşik/limitleri GM + SYS'ye verdi. GM de eklensin mi? | Evet, GM + SYS (ROL-D19 ile tutarlı). |
-| Y-03 | `settings.policies.publish-critical` (kritik politika yayımı) kimde? v1'de Admin'deydi. | GM (koşullu: hazırlayan ≠ yayımlayan). |
-| Y-04 | Sistem Yöneticisi'nin "acil durum" yetkisi nasıl modellenecek? | Süreli, gerekçeli, ayrı onaylı acil erişim ataması; kalıcı iş izni değil. |
-| Y-05 | Ayrı Kantar rolü taslakta kalsın mı (ROL-D14 zorunlu değil dedi)? | İsteğe bağlı rol olarak kalsın; kantarcı yoksa atanmaz. |
+| Y-01 | Marjı kim görsün? | Cevaplandı — ROL-D21: GM + Satış Müdürü (öneriden farklı); Sistem Yöneticisi görmez. |
+| Y-02 | İskonto limiti ayarına GM eklensin mi? | Cevaplandı — ROL-D19 sonucu: GM + Sistem Yöneticisi. |
+| Y-03 | Kritik politika yayımı kimde? | Cevaplandı — ROL-D22: Sistem Yöneticisi (öneriden farklı). |
+| Y-04 | Acil durum erişimi nasıl modellensin? | Cevaplandı — ROL-D23: süreli, gerekçeli, başka yetkili onaylı, denetim kayıtlı, süresi bitince kalkan atama. |
+| Y-05 | Ayrı Kantar rolü kalsın mı? | Cevaplandı — ROL-D14 sonucu: isteğe bağlı rol olarak kalır. |
+
+Açık soru kalmadı. Atama öncesi taslak kişi listesiyle Sinan'a yeniden sunulur.
 
 ## 6. Mevcut seed rolleriyle ilişki
 

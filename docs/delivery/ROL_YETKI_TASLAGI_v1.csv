@@ -135,7 +135,7 @@ sales.drafts.read,sales,hayır,evet,+,+,+,,,,,,,,,,,+,+,,KARARLI,Kart. Depo/Sevk
 sales.orders.approve,sales,hayır,evet,K,,K,,,,,,,,,,,,,,KARARLI,"SAT-D6, SAT-D188; P6 hazırlayan ≠ onaylayan."
 sales.orders.price.write,sales,hayır,evet,+,+,+,,,,,,,,,,,,,,KARARLI,"SAT-D151, SAT-D188."
 sales.orders.price.read,sales,hayır,evet,+,+,+,,,,,,,,,,,+,+,,KARARLI,SAT-D150; Depo/Sevk görmez.
-sales.orders.margin.read,sales,hayır,evet,+,,,,,,,,,,,,,,,,KARARLI,"SAT-D250, SAT-D276 (2): GM + Admin; Admin hücresi ROL-D6 ile kalktı (soru Y-01)."
+sales.orders.margin.read,sales,hayır,evet,+,,+,,,,,,,,,,,,,,KARARLI,ROL-D21: GM + Satış Müdürü (SAT-D250/SAT-D276 (2) yerine); Sistem Yöneticisi görmez.
 sales.orders.price-floor-exception.approve,sales,hayır,evet,K,,K,,,,,,,,,,,,,,KARARLI,"SAT-D1, SAT-D188."
 sales.orders.discount-exception.approve,sales,hayır,evet,K,,K,,,,,,,,,,,,,,KARARLI,SAT-D37/D67: Satış Müdürü'nün kendi limitini aşanı başkası onaylar.
 sales.orders.delivery-schedule.write,sales,hayır,evet,+,+,+,,,,,,,,,,,,,,ÖNERİ,Teslim planı sipariş düzenlemesidir.
@@ -227,7 +227,7 @@ accounting.posting-mappings.read,accounting,hayır,evet,+,,,,,,,,,,,,,+,+,,ÖNER
 accounting.posting-mappings.prepare,accounting,hayır,evet,,,,,,,,,,,,,,+,+,,ÖNERİ,Eşleme hazırlığı.
 accounting.posting-mappings.activate,accounting,hayır,evet,K,,,,,,,,,,,,,,K,,ÖNERİ,Hazırlayan ≠ etkinleştiren.
 accounting.account-plan.read,accounting,hayır,evet,+,,,,,,,,,,,+,+,+,+,,ÖNERİ,Hesap planı okuması.
-settings.sales-discount-limits.manage,settings,hayır,evet,,,,,,,,,,,,,,,,+,KARARLI,SAT-D65/D69: yalnız Admin; ROL-D19 eşik/limit ayarını GM + Sistem Yöneticisi'nde topladı (GM eklensin mi: soru Y-02).
+settings.sales-discount-limits.manage,settings,hayır,evet,+,,,,,,,,,,,,,,,+,KARARLI,ROL-D19 sonucu (Y-02): GM + Sistem Yöneticisi; Satış Müdürü almaz (SAT-D65).
 settings.tax-master.manage,settings,hayır,evet,+,,,,,,,,,,,,,,+,,KARARLI,"SAT-D145, SAT-D188."
 settings.sales-delivery-tolerances.manage,settings,hayır,evet,+,,+,,,,,,,,,,,,,,KARARLI,SAT-D189 (teslim toleransı).
 settings.sales-approval-thresholds.manage,settings,hayır,evet,+,,,,,,,,,,,,,,,+,KARARLI,ROL-D19: GM + Sistem Yöneticisi.
@@ -258,7 +258,7 @@ settings.manufacturing-parameter-profiles.read,settings,hayır,evet,+,,,,,+,,,+,
 settings.policies.prepare,settings,hayır,evet,,,,,,,,,,,,,+,,,,ÖNERİ,Finans onay matrisleri vb. politika taslağı.
 settings.policies.approve,settings,hayır,evet,K,,,,,,,,,,,,,,,,ÖNERİ,Hazırlayan ≠ onaylayan.
 settings.policies.publish,settings,hayır,evet,+,,,,,,,,,,,,,,,,ÖNERİ,Onaylı politikayı yayımlama.
-settings.policies.publish-critical,settings,hayır,evet,K,,,,,,,,,,,,,,,,ÖNERİ,Kritik politika yayımı iş politikasıdır; ROL-D6 sonrası Sistem Yöneticisi değil GM (soru Y-03).
+settings.policies.publish-critical,settings,hayır,evet,,,,,,,,,,,,,,,,+,KARARLI,ROL-D22: Sistem Yöneticisi.
 settings.manufacturing-parameter-profiles.prepare,settings,hayır,evet,,,,,,,,,+,,,,,,,,ÖNERİ,Profili planlama hazırlar.
 settings.manufacturing-parameter-profiles.approve,settings,hayır,evet,K,,,,,K,,,,,,,,,,,ÖNERİ,Hazırlayan ≠ onaylayan; ROL-D5.
 settings.manufacturing-parameter-profiles.publish,settings,hayır,evet,+,,,,,+,,,,,,,,,,,ÖNERİ,Onaylı profili yayımlama.
