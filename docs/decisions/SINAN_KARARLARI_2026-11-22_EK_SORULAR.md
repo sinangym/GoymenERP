@@ -47,6 +47,10 @@ işaretleri soranındır. Bu dosya bir **ajan aktarımıdır**; Issue #1189 kayd
 | E-33 | Ekstrede karşı taraf IBAN'ıyla cari bulmada IBAN kaynağı? (WP12) | **Cari kartındaki IBAN listesi (Önerilen)** | Seçilmeyenler: "Onayla öğrensin"; "IBAN ile eşleme yok". |
 | E-34 | Grup şirketleri arası işlemler raporunda grup şirketi nasıl anlaşılsın? (WP14) | **Cari ↔ şirket bağlantısı (Önerilen)** | Seçilmeyen: "VKN eşleşmesi". |
 | E-35 | Stok maliyeti okuma aracı yapay zekâya açılsın mı? (WP-A3b) | **Açılsın, maliyet izniyle, Gizli (Önerilen)** | Seçilmeyen: "Şimdilik açılmasın". |
+| E-36 | Fason vergi kodu değiştirme izni: SAT-D395 (alış onayı) mı, #1189 6947126872 cevabı (satışta satış onayı, alışta alış onayı) mı? (K3FIX-F5) | **Modüle göre ayrı izin (Önerilen)** | Seçilmeyenler: "İkisi birden gereksin"; "Yalnız alış onayı (SAT-D395)". |
+| E-37 | Hiçbir şirkete atanmamış yeni hesapları kullanıcı yönetimi listesinde kim görür? (K3FIX-F5, KIM-D16) | **Yalnız oluşturan + Sistem Yöneticisi (Önerilen)** | Seçilmeyenler: "Kullanıcı yönetme yetkisi olan herkes"; "Yalnız Sistem Yöneticisi". |
+| E-38 | ERP'de satış faturası için ayrı PDF üretilsin mi? (WP13) | **Hayır, yalnız resmî PDF (Önerilen)** | Seçilmeyen: "Evet, 'Bilgi Formu' başlığıyla". |
+| E-39 | İmzalı sipariş sözleşmesi yüklenince müşteri kabulü otomatik gerçekleşsin mi, kaydı kim yapar? (WP13) | **Kabulü tetiklesin** | Seçilmeyenler: "Ayrı kalsın, kendi izni (Önerilen)"; "Ayrı kalsın, kabul izniyle". |
 
 ## Kararlar
 
@@ -87,6 +91,10 @@ işaretleri soranındır. Bu dosya bir **ajan aktarımıdır**; Issue #1189 kayd
 | AI-D44 | Serbest panel sorusunun veri sınıfı (WP-A1) | Soru metni varsayılan **İç**; kişisel veri (TCKN, telefon, IBAN vb.) içeriyorsa **Gizli**'ye yükselir; kaynak veri daha yüksekse o sınıf geçerlidir. |
 | AI-D45 | Stok maliyeti okuma aracı (WP-A3b) | Açılır; yalnız **maliyet görme izni** olan kullanıcının asistanı okur; veri **Gizli** sınıfındadır, bulut modele gitmez. |
 | GOV-D15 | Depo kod güvenliği ayarları (WP16) | Dependabot uyarıları, secret scanning ve push protection **Sinan tarafından** Settings'ten açılacaktır; ajan ayarı değiştirmez. |
+| SAT-D469 | Fason vergi kodu izni (SAT-D395'i modüle göre ayırır; #1189 6947126872) | Satış tarafındaki fason hizmet varsayılan vergi kodu ve satış satırı kodu **`sales.orders.approve`**, alış tarafındaki **`purchasing.orders.approve`** izniyle değiştirilir; iki iznin birlikte istenmesi gerekmez. Yeni izin açılmaz, rol ataması yapılmaz. |
+| KIM-D57 | Atanmamış hesapların görünürlüğü (KIM-D16 ayrıntısı) | Hiçbir şirkete atanmamış hesabı kullanıcı yönetimi listesinde yalnız **onu oluşturan yönetici** ve platform düzeyi **Sistem Yöneticisi** görür. Atama yapılınca KIM-D16 şirket çiti geçerlidir. |
+| SAT-D470 | Satış faturası PDF'i (FNS-D36/D38) | ERP ayrı satış faturası PDF'i **üretmez**; resmî e-Fatura/e-Arşiv PDF'i (Finans resmî kaydı) gösterilir. |
+| SAT-D471 | İmzalı sipariş sözleşmesi (WP13) | İmzalı sözleşme belgesinin kaydı siparişin **müşteri kabulünü** gerçekleştirir (kabul kaydı aynı işlemde, bir kez); kayıt **`sales.orders.customer-acceptance.record`** iznini ister, ayrı imzalı onay izni açılmaz. İmzalı belge pasife alınırsa kabul kendiliğinden geri alınmaz; mevcut kabul iptal/düzeltme yolu kullanılır. |
 
 ## Taslağa doğrudan yansıyanlar (yeni karar değil)
 
