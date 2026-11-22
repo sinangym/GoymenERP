@@ -16,6 +16,7 @@ import { MY_TASKS_ROUTE } from './collaborationContract'
 import { NOTIFICATIONS_ROUTE } from './notificationContract'
 import { WORK_APPROVALS_CAPABILITIES, WORK_ROUTE } from './workText'
 import { WORK_INBOX_CAPABILITIES } from './workInboxKinds'
+import { WORK_MY_TASKS_CAPABILITIES } from './capabilities'
 
 /**
  * W1-A: the Work inbox (`/onaylarim/kuyruk`) also opens for an actor holding any inbox kind's EXISTING approve
@@ -26,8 +27,12 @@ const WORK_INBOX_ROUTE_CAPABILITIES: readonly string[] = [...new Set([...WORK_AP
 export const workRoutes: RouteObject[] = [
   // Personal recipient-only inbox; backend refreshes active membership and accepts no recipient override.
   { path: NOTIFICATIONS_ROUTE.slice(1), element: <NotificationsPage /> },
-  // W1-C "Bana atanan": own tasks only, like the personal inbox; the server accepts no assignee override.
-  { path: MY_TASKS_ROUTE.slice(1), element: <MyTasksPage /> },
+  // W1-C "Bana atanan": own tasks only; the server accepts no assignee override. WP9: behind Work's own `work.tasks.mine`
+  // capability (work.tasks.complete), so an actor without it sees the neutral not-found block and nothing is read.
+  {
+    path: MY_TASKS_ROUTE.slice(1),
+    element: <CapabilityRoute capability={WORK_MY_TASKS_CAPABILITIES}><MyTasksPage /></CapabilityRoute>,
+  },
   // B-25 / W1-A: the Work inbox and the one-list Work queue, behind the same owners' approve capabilities (declared before the detail route).
   {
     path: WORK_ROUTE.queue.slice(1),

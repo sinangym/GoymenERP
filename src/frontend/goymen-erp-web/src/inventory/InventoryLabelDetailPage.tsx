@@ -43,6 +43,7 @@ import {
   type RowActionTarget,
 } from './stockRowActions'
 import styles from './inventory.module.css'
+import { RecordNotesSection } from '../work/RecordNotesSection'
 
 const DIRECTION_TEXT = { In: 'Giriş', Out: 'Çıkış' } as const
 
@@ -155,6 +156,7 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
     {target !== null && !offered[target]
       ? <p role="status">İstenen işlem bu etikette sizin için açık değil; etiket bilgileri gösteriliyor.</p>
       : null}
+    <RecordNotesSection recordType="stock-label" recordId={identity.labelId} />
 
     <section aria-labelledby="label-identity-heading">
       <h2 id="label-identity-heading">Etiket ve lot kimliği</h2>

@@ -94,6 +94,7 @@ import {
   type FrozenCustomerReturnAttempt,
 } from './customerReturnApi'
 import type { ApproveCustomerReturnV1, RejectCustomerReturnV1, RequestCustomerReturnV1 } from './customerReturnContract'
+import { RecordNotesSection } from '../work/RecordNotesSection'
 
 export function InstructionDetailPage() {
   const shell = useShellState()
@@ -173,6 +174,8 @@ export function InstructionDetailPage() {
               companyId={companyId} onRecorded={reread} />
             <InstructionCancelCommand key={`cancel:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId}
               onRecorded={reread} />
+            {/* WP9: the instruction's notes also carry its dispatch notes' (Logistics reads a dispatch note only through its instruction). */}
+            <RecordNotesSection recordType="loading-instruction" recordId={detail.instruction.id} />
           </>
         )
       }

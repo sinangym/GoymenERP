@@ -5,13 +5,18 @@
  * The answer's company must be the active company; a page's record must be the requested record.
  */
 
-export const WORK_RECORD_TYPES = ['sales-order-draft', 'purchase-order', 'stock-label', 'manufacturing-plan', 'counterparty'] as const
+// WP9 appends seven record kinds (the server's order; existing names never move). A dispatch note's notes are its loading
+// instruction's; a goods receipt's notes stay on its purchase order (the owner reads a receipt only by order + acceptance).
+export const WORK_RECORD_TYPES = ['sales-order-draft', 'purchase-order', 'stock-label', 'manufacturing-plan', 'counterparty',
+  'sales-invoice', 'loading-instruction', 'purchase-incoming-invoice', 'manufacturing-order', 'finance-manual-receipt',
+  'finance-manual-bank-payment', 'sales-quote'] as const
 export type WorkRecordType = (typeof WORK_RECORD_TYPES)[number]
 
 export const MY_TASKS_ROUTE = '/gorevlerim'
 export const workRecordNotesPath = (type: WorkRecordType, id: string) => `/work/records/${type}/${encodeURIComponent(id)}/notes`
 export const workRecordTasksPath = (type: WorkRecordType, id: string) => `/work/records/${type}/${encodeURIComponent(id)}/tasks`
 export const workNotePassivationPath = (noteId: string) => `/work/notes/${encodeURIComponent(noteId)}/passivation`
+export const workNoteReadPath = (noteId: string) => `/work/notes/${encodeURIComponent(noteId)}/read`
 export const WORK_TASKS_PATH = '/work/tasks'
 export const WORK_MY_TASKS_PATH = '/work/tasks/mine'
 export const workTaskCompletionPath = (taskId: string) => `/work/tasks/${encodeURIComponent(taskId)}/completion`
@@ -20,14 +25,18 @@ export const WORK_INBOX_PATH = '/work/inbox-notifications'
 export const workInboxReadPath = (id: string) => `/work/inbox-notifications/${encodeURIComponent(id)}/read`
 export const WORK_PEOPLE_PATH = '/work/people'
 
-export const WORK_LIMITS = { noteBody: 4000, mentions: 20, taskTitle: 200, taskDetails: 2000, reason: 500, page: 100, peopleQuery: 100 } as const
+export const WORK_LIMITS = { noteBody: 4000, mentions: 20, taskTitle: 200, taskDetails: 2000, reason: 500, page: 100, peopleQuery: 100, noteReads: 100 } as const
 
 export interface WorkNote {
   readonly id: string; readonly companyId: string; readonly recordType: WorkRecordType; readonly recordId: string
   readonly authorUserId: string; readonly authorDisplayName: string; readonly body: string; readonly correctsNoteId: string | null
   readonly mentionedUserIds: readonly string[]; readonly createdAtUtc: string; readonly passivatedAtUtc: string | null
   readonly passivationReason: string | null
+  /** WP9: when the CALLER marked the note read (null: not yet); `reads` = who read it and when, oldest first. */
+  readonly readByMeAtUtc: string | null; readonly reads: readonly WorkNoteRead[]
 }
+export interface WorkNoteRead { readonly userId: string; readonly displayName: string; readonly readAtUtc: string }
+export interface WorkNoteReadReceipt { readonly noteId: string; readonly readAtUtc: string }
 export interface WorkNotePage { readonly companyId: string; readonly recordType: WorkRecordType; readonly recordId: string; readonly items: readonly WorkNote[]; readonly hasMore: boolean }
 
 export type WorkTaskStatus = 'open' | 'completed' | 'cancelled'
@@ -49,16 +58,18 @@ export interface WorkInboxItem {
 }
 export interface WorkInboxPage { readonly companyId: string; readonly items: readonly WorkInboxItem[]; readonly hasMore: boolean; readonly unreadNowCount: number; readonly unreadDigestCount: number }
 export interface WorkInboxRead { readonly id: string; readonly readAtUtc: string }
-export interface WorkPerson { readonly userId: string; readonly displayName: string; readonly isActiveInCompany: boolean }
+/** WP9 / D7: the picker answers only id + display name (active members of the company only). */
+export interface WorkPerson { readonly userId: string; readonly displayName: string }
 export interface WorkPeoplePage { readonly companyId: string; readonly people: readonly WorkPerson[]; readonly hasMore: boolean }
 
-export const NOTE_FIELDS = ['id', 'companyId', 'recordType', 'recordId', 'authorUserId', 'authorDisplayName', 'body', 'correctsNoteId', 'mentionedUserIds', 'createdAtUtc', 'passivatedAtUtc', 'passivationReason'] as const
+export const NOTE_FIELDS = ['id', 'companyId', 'recordType', 'recordId', 'authorUserId', 'authorDisplayName', 'body', 'correctsNoteId', 'mentionedUserIds', 'createdAtUtc', 'passivatedAtUtc', 'passivationReason', 'readByMeAtUtc', 'reads'] as const
+export const NOTE_READ_FIELDS = ['userId', 'displayName', 'readAtUtc'] as const
 export const NOTE_PAGE_FIELDS = ['companyId', 'recordType', 'recordId', 'items', 'hasMore'] as const
 export const TASK_FIELDS = ['id', 'companyId', 'recordType', 'recordId', 'title', 'details', 'assignerUserId', 'assignerDisplayName', 'assigneeUserId', 'assigneeDisplayName', 'dueAtUtc', 'status', 'version', 'createdAtUtc', 'closedAtUtc', 'closedByUserId', 'cancelReason'] as const
 export const TASK_PAGE_FIELDS = ['companyId', 'items', 'hasMore'] as const
 export const INBOX_FIELDS = ['id', 'companyId', 'kind', 'class', 'sourceId', 'recordType', 'recordId', 'actorUserId', 'recordedAtUtc', 'visibleAtUtc', 'readAtUtc'] as const
 export const INBOX_PAGE_FIELDS = ['companyId', 'items', 'hasMore', 'unreadNowCount', 'unreadDigestCount'] as const
-export const PERSON_FIELDS = ['userId', 'displayName', 'isActiveInCompany'] as const
+export const PERSON_FIELDS = ['userId', 'displayName'] as const
 export const PEOPLE_PAGE_FIELDS = ['companyId', 'people', 'hasMore'] as const
 
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -78,8 +89,21 @@ function decodeNote(raw: unknown, companyId: string): WorkNote | null {
     || !Array.isArray(raw.mentionedUserIds) || raw.mentionedUserIds.length > WORK_LIMITS.mentions || !raw.mentionedUserIds.every(guid)
     || new Set(raw.mentionedUserIds).size !== raw.mentionedUserIds.length || !instant(raw.createdAtUtc)
     || !nullable(raw.passivatedAtUtc, instant) || (raw.passivatedAtUtc === null) !== (raw.passivationReason === null)
-    || (raw.passivationReason !== null && !text(raw.passivationReason, WORK_LIMITS.reason)) || raw.correctsNoteId === raw.id) return null
+    || (raw.passivationReason !== null && !text(raw.passivationReason, WORK_LIMITS.reason)) || raw.correctsNoteId === raw.id
+    || !nullable(raw.readByMeAtUtc, instant) || !Array.isArray(raw.reads) || raw.reads.length > WORK_LIMITS.noteReads) return null
+  const readers = new Set<string>()
+  for (const read of raw.reads as unknown[]) {
+    // The author never has a read receipt of their own note; a reader appears once.
+    if (!object(read) || !exact(read, NOTE_READ_FIELDS) || !guid(read.userId) || !text(read.displayName, 400) || !instant(read.readAtUtc)
+      || read.userId === raw.authorUserId || readers.has(read.userId)) return null
+    readers.add(read.userId)
+  }
   return raw as unknown as WorkNote
+}
+
+export function decodeWorkNoteReadReceipt(raw: unknown, noteId: string): WorkNoteReadReceipt | null {
+  if (!object(raw) || !exact(raw, ['noteId', 'readAtUtc']) || raw.noteId !== noteId || !instant(raw.readAtUtc)) return null
+  return { noteId, readAtUtc: raw.readAtUtc }
 }
 
 export function decodeWorkNote(raw: unknown, companyId: string, recordId?: string): WorkNote | null {
@@ -166,7 +190,7 @@ export function decodeWorkPeoplePage(raw: unknown, companyId: string): WorkPeopl
   if (!object(raw) || !exact(raw, PEOPLE_PAGE_FIELDS) || raw.companyId !== companyId || typeof raw.hasMore !== 'boolean' || !Array.isArray(raw.people) || raw.people.length > 50) return null
   const people: WorkPerson[] = []
   for (const person of raw.people) {
-    if (!object(person) || !exact(person, PERSON_FIELDS) || !guid(person.userId) || !text(person.displayName, 400) || person.isActiveInCompany !== true
+    if (!object(person) || !exact(person, PERSON_FIELDS) || !guid(person.userId) || !text(person.displayName, 400)
       || people.some((previous) => previous.userId === person.userId)) return null
     people.push(person as unknown as WorkPerson)
   }

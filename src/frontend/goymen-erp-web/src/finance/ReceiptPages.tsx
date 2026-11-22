@@ -41,6 +41,7 @@ import { ManualReceiptDraftForm } from './ManualReceiptDraftForm'
 import { CustomerInstrumentReceiveForm } from './CustomerInstruments'
 import { CustomerInstrumentRiskBlock } from './CustomerInstrumentRisk'
 import styles from './Finance.module.css'
+import { RecordNotesSection } from '../work/RecordNotesSection'
 
 /** DEC-FIN-016: how the customer pays on the new-receipt page — a bank / POS receipt draft, or a cheque / note. */
 const RECEIPT_INSTRUMENT_LABEL = 'Tahsilat aracı'
@@ -181,6 +182,7 @@ export function ReceiptDetailPage() {
       {isBoundUuid(sourceId) ? (
         <>
           <FinanceSourceDetail sourceId={sourceId} offerRecord={canRecord} offerReverse={canProposeReversal} />
+          <RecordNotesSection recordType="finance-manual-receipt" recordId={sourceId} />
           <SourcePartyLedgerLink sourceId={sourceId} />
         </>
       ) : (

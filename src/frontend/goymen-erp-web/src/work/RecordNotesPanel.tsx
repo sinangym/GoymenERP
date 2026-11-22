@@ -6,7 +6,7 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { StateBlock } from '../shell/StateBlock'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { Button } from '../ui/Button'
-import { addRecordNote, commandScope, fetchRecordNotes, passivateNote, pendingKey, searchWorkPeople, settleKey } from './collaborationApi'
+import { addRecordNote, commandScope, fetchRecordNotes, markNoteRead, passivateNote, pendingKey, searchWorkPeople, settleKey } from './collaborationApi'
 import { payloadFingerprint, refusalMessage } from './collaborationOutcome'
 import { WORK_LIMITS, type WorkNote, type WorkPerson, type WorkRecordType } from './collaborationContract'
 import { COLLABORATION_TEXT as T } from './collaborationText'
@@ -85,6 +85,19 @@ function RecordNotesBody({ recordType, recordId }: { readonly recordType: WorkRe
     void queryClient.invalidateQueries({ queryKey: [namespace, shell.routeEntryGeneration, 'work-record-notes', recordType, recordId] })
   }
 
+  // WP9 read receipt: no key (the server keeps the first read time); the author never marks their own note.
+  const markRead = async (noteId: string) => {
+    if (busy) return
+    setBusy(true)
+    setMessage(null)
+    const outcome = await markNoteRead(companyId, noteId)
+    setBusy(false)
+    if (outcome.type === 'unknown') { setMessage(T.readFailed); return }
+    if (outcome.type === 'refused') { setMessage(refusalMessage(outcome)); return }
+    setMessage(T.noteReadSaved)
+    void queryClient.invalidateQueries({ queryKey: [namespace, shell.routeEntryGeneration, 'work-record-notes', recordType, recordId] })
+  }
+
   const findPeople = async () => {
     const answer = await searchWorkPeople(companyId, peopleQuery)
     setPeople(answer.type === 'ok-single' ? answer.data.people.filter((person) => person.userId !== actorId) : [])
@@ -100,6 +113,11 @@ function RecordNotesBody({ recordType, recordId }: { readonly recordType: WorkRe
           <p className={styles.noteMeta}>{T.author}: {note.authorDisplayName} · <time dateTime={note.createdAtUtc}>{new Date(note.createdAtUtc).toLocaleString('tr-TR')}</time>
             {note.correctsNoteId === null ? null : <> · {T.correctionOf}</>}{note.passivatedAtUtc === null ? null : <> · <strong>{T.passive}</strong> ({note.passivationReason})</>}</p>
           <p className={styles.noteBody}>{note.body}</p>
+          <p className={styles.noteMeta} data-testid={`work-note-reads-${note.id}`}>{T.noteReaders}: {note.reads.length === 0 ? T.noteNoReaders
+            : note.reads.map((read) => `${read.displayName} (${new Date(read.readAtUtc).toLocaleString('tr-TR')})`).join(', ')}</p>
+          {note.authorUserId === actorId ? null : note.readByMeAtUtc === null
+            ? <Button type="button" size="sm" disabled={busy} onClick={() => void markRead(note.id)}>{T.noteMarkRead}</Button>
+            : <p className={styles.noteMeta}>{T.noteReadByMe}: <time dateTime={note.readByMeAtUtc}>{new Date(note.readByMeAtUtc).toLocaleString('tr-TR')}</time></p>}
           {note.passivatedAtUtc === null && note.authorUserId === actorId ? <div>
             <Button type="button" size="sm" onClick={() => { setCorrecting(note); setBody(note.body) }}>{T.correct}</Button>{' '}
             <Button type="button" size="sm" variant="ghost" onClick={() => setPassivating({ noteId: note.id, reason: '' })}>{T.passivate}</Button>

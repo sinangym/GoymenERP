@@ -26,9 +26,15 @@ export const COLLABORATION_TEXT = {
   kindMention: 'Sizden bahsedildi', kindAssigned: 'Size görev atandı', kindOverdue: 'Görevin süresi geçti',
   inboxScope: 'Bahsetme ve süresi geçen işler hemen; diğerleri günde birkaç kez özet olarak gelir. Yalnız uygulama içidir.',
   readFailed: 'Okundu bilgisi kaydedilemedi; tekrar deneyin.',
+  // WP9 note read receipts.
+  noteMarkRead: 'Okudum', noteReadByMe: 'Okudunuz', noteReaders: 'Okuyanlar', noteNoReaders: 'Henüz okuyan yok.',
+  noteOwnRead: 'Kendi notunuz için okundu bilgisi tutulmaz.', noteReadSaved: 'Okundu bilgisi kaydedildi.',
 } as const
 
 export const RECORD_TYPE_TEXT = {
   'sales-order-draft': 'Satış siparişi', 'purchase-order': 'Alış siparişi', 'stock-label': 'Stok etiketi',
   'manufacturing-plan': 'Üretim planı', counterparty: 'Cari',
+  'sales-invoice': 'Satış faturası', 'loading-instruction': 'Yükleme talimatı / irsaliye', 'purchase-incoming-invoice': 'Gelen fatura',
+  'manufacturing-order': 'Üretim emri', 'finance-manual-receipt': 'Tahsilat', 'finance-manual-bank-payment': 'Banka ödemesi',
+  'sales-quote': 'Teklif',
 } as const

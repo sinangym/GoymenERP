@@ -53,6 +53,9 @@ internal static class ShellCapabilityRegistryAuthorities
     // contains the Sales provider re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision; names unchanged.
     // W1-A: Settings 1.19 adds the approval duration screen; re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision.
     internal const string FullNormalHostWithSettingsAndPaintMemberships = "sha256:nCbm4YLiQlzeaf7z0-7iMMwU2IYVGMQsrX6ZCdNYwFQ";
+    // WP9: the actual host adds Work 1.0 (work.tasks.mine route + work.tasks.assign control); produced by
+    // ShellCapabilityRegistry.ComputeCandidateRevision over the actual providers.
+    internal const string FullNormalHostWithSettingsPaintMembershipsAndWork = "sha256:Kv4Y6GHctlwnv4KzZABtPMwpONP2phQyhwb6kqHqOww";
     // Tren-1 wave 7: Settings 1.11 and Inventory 1.9; active authority rows re-derived in place
     // by ShellCapabilityRegistry.ComputeCandidateRevision over actual providers; historical rows preserved.
     // Tren-1 wave 6: Manufacturing 1.11, Inventory 1.8, Identity 1.2 and Settings 1.9; active authority rows

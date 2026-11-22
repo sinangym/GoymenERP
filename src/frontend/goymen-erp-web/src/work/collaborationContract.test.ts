@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  NOTE_FIELDS, decodeWorkInboxPage, decodeWorkNotePage, decodeWorkPeoplePage, decodeWorkTask, decodeWorkTaskPage, problemCode,
+  NOTE_FIELDS, WORK_RECORD_TYPES, decodeWorkInboxPage, decodeWorkNotePage, decodeWorkNoteReadReceipt, decodeWorkPeoplePage, decodeWorkTask,
+  decodeWorkTaskPage, problemCode,
 } from './collaborationContract'
 
 const COMPANY = 'aaaaaaaa-0000-4000-8000-000000000001'
@@ -12,7 +13,7 @@ const READER = 'eeeeeeee-0000-4000-8000-000000000001'
 export const note = (overrides: Record<string, unknown> = {}) => ({
   id: 'ffffffff-0000-4000-8000-000000000001', companyId: COMPANY, recordType: 'sales-order-draft', recordId: RECORD,
   authorUserId: AUTHOR, authorDisplayName: 'SENTETIK Yazar', body: 'SENTETIK not', correctsNoteId: null, mentionedUserIds: [READER],
-  createdAtUtc: '2026-11-22T09:00:00+00:00', passivatedAtUtc: null, passivationReason: null, ...overrides,
+  createdAtUtc: '2026-11-22T09:00:00+00:00', passivatedAtUtc: null, passivationReason: null, readByMeAtUtc: null, reads: [], ...overrides,
 })
 export const task = (overrides: Record<string, unknown> = {}) => ({
   id: '12345678-0000-4000-8000-000000000001', companyId: COMPANY, recordType: null, recordId: null, title: 'SENTETIK görev', details: null,
@@ -65,12 +66,35 @@ describe('W1-C collaboration decoders', () => {
     expect(decodeWorkInboxPage(page([inboxItem({ companyId: OTHER })]), COMPANY)).toBeNull()
   })
 
-  it('accepts only active people of the company and reads a refusal by its code', () => {
-    const person = { userId: READER, displayName: 'SENTETIK Okur', isActiveInCompany: true }
-    expect(decodeWorkPeoplePage({ companyId: COMPANY, people: [person], hasMore: false }, COMPANY)?.people).toHaveLength(1)
-    expect(decodeWorkPeoplePage({ companyId: COMPANY, people: [{ ...person, isActiveInCompany: false }], hasMore: false }, COMPANY)).toBeNull()
+  it('D7: accepts people as id + display name only and reads a refusal by its code', () => {
+    const person = { userId: READER, displayName: 'SENTETIK Okur' }
+    expect(decodeWorkPeoplePage({ companyId: COMPANY, people: [person], hasMore: false }, COMPANY)?.people).toEqual([person])
+    // Anything beyond the two keys (the old membership flag, an e-mail) is a contract break.
+    expect(decodeWorkPeoplePage({ companyId: COMPANY, people: [{ ...person, isActiveInCompany: true }], hasMore: false }, COMPANY)).toBeNull()
+    expect(decodeWorkPeoplePage({ companyId: COMPANY, people: [{ ...person, email: 'x@example.invalid' }], hasMore: false }, COMPANY)).toBeNull()
     expect(decodeWorkPeoplePage({ companyId: COMPANY, people: [person, person], hasMore: false }, COMPANY)).toBeNull()
     expect(problemCode({ code: 'work_mention_refused' })).toBe('work_mention_refused')
     expect(problemCode({ code: 'Bir şey' })).toBeNull()
+  })
+
+  it('WP9: decodes the read receipts of a note and refuses an author receipt, a duplicate reader or extra keys', () => {
+    const read = { userId: READER, displayName: 'SENTETIK Okur', readAtUtc: '2026-11-22T10:00:00Z' }
+    const page = decodeWorkNotePage(notePage([note({ reads: [read], readByMeAtUtc: '2026-11-22T10:00:00Z' })]), COMPANY, 'sales-order-draft', RECORD)
+    expect(page?.items[0].reads).toEqual([read])
+    expect(page?.items[0].readByMeAtUtc).toBe('2026-11-22T10:00:00Z')
+    for (const bad of [note({ reads: [{ ...read, userId: AUTHOR }] }), note({ reads: [read, read] }), note({ reads: [{ ...read, extra: 1 }] }),
+      note({ reads: null }), note({ readByMeAtUtc: 'dün' })]) {
+      expect(decodeWorkNotePage(notePage([bad]), COMPANY, 'sales-order-draft', RECORD)).toBeNull()
+    }
+    expect(decodeWorkNoteReadReceipt({ noteId: RECORD, readAtUtc: '2026-11-22T10:00:00Z' }, RECORD)).toEqual({ noteId: RECORD, readAtUtc: '2026-11-22T10:00:00Z' })
+    expect(decodeWorkNoteReadReceipt({ noteId: OTHER, readAtUtc: '2026-11-22T10:00:00Z' }, RECORD)).toBeNull()
+  })
+
+  it('WP9: knows the twelve server record kinds in the server order and nothing else', () => {
+    expect(WORK_RECORD_TYPES).toEqual(['sales-order-draft', 'purchase-order', 'stock-label', 'manufacturing-plan', 'counterparty',
+      'sales-invoice', 'loading-instruction', 'purchase-incoming-invoice', 'manufacturing-order', 'finance-manual-receipt',
+      'finance-manual-bank-payment', 'sales-quote'])
+    expect(decodeWorkNotePage({ ...notePage([note({ recordType: 'sales-quote' })]), recordType: 'sales-quote' }, COMPANY, 'sales-quote', RECORD)).not.toBeNull()
+    expect(decodeWorkNotePage(notePage([note({ recordType: 'goods-receipt' })]), COMPANY, 'sales-order-draft', RECORD)).toBeNull()
   })
 })
