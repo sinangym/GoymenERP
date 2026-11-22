@@ -1,4 +1,5 @@
 using System.Numerics;
+using GoymenERP.BuildingBlocks.Quantities;
 
 namespace GoymenERP.Modules.Purchasing.Domain.Orders;
 
@@ -49,7 +50,7 @@ public sealed record PurchaseKgPriceLine(decimal? Amount, decimal? Kilograms, bo
 public static class PurchaseKgPrice
 {
     /// <summary>The display scale of a kg price (SAT-D436: 0,01 per kg; TK9: of the document currency).</summary>
-    public const int Scale = 2;
+    public const int Scale = KilogramPriceArithmetic.PriceScale;
 
     public static PurchaseKgPriceResult Line(decimal? amount, decimal? kilograms, string missingKilogramsCode)
     {
@@ -83,28 +84,11 @@ public static class PurchaseKgPrice
         return new(RoundedQuotient(lines.Sum(line => line.Amount!.Value), kilograms), null);
     }
 
-    /// <summary>amount ÷ kilograms rounded once to <see cref="Scale"/> decimals, half away from zero, in exact integer arithmetic.</summary>
-    internal static decimal RoundedQuotient(decimal amount, decimal kilograms)
-    {
-        if (kilograms <= 0m) throw new ArgumentOutOfRangeException(nameof(kilograms));
-        var (amountMantissa, amountScale) = Split(amount);
-        var (kgMantissa, kgScale) = Split(kilograms);
-        // amount / kg × 10^Scale = (aM × 10^kS × 10^Scale) / (kM × 10^aS)
-        var numerator = BigInteger.Abs(amountMantissa) * BigInteger.Pow(10, kgScale + Scale);
-        var denominator = kgMantissa * BigInteger.Pow(10, amountScale);
-        var quotient = BigInteger.DivRem(numerator, denominator, out var remainder);
-        if (remainder * 2 >= denominator) quotient++;
-        var result = (decimal)quotient / 100m;
-        return amountMantissa.Sign < 0 ? -result : result;
-    }
-
-    private static (BigInteger Mantissa, int Scale) Split(decimal value)
-    {
-        var bits = decimal.GetBits(value);
-        var mantissa = new BigInteger((uint)bits[0]) | (new BigInteger((uint)bits[1]) << 32) | (new BigInteger((uint)bits[2]) << 64);
-        var scale = (bits[3] >> 16) & 0xFF;
-        return (bits[3] < 0 ? -mantissa : mantissa, scale);
-    }
+    /// <summary>
+    /// amount ÷ kilograms rounded once to <see cref="Scale"/> decimals, half away from zero — the shared deterministic division
+    /// (<see cref="KilogramPriceArithmetic"/>, the same one Sales uses).
+    /// </summary>
+    internal static decimal RoundedQuotient(decimal amount, decimal kilograms) => KilogramPriceArithmetic.RoundedQuotient(amount, kilograms);
 }
 
 /// <summary>

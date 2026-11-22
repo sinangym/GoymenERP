@@ -42,8 +42,16 @@ public sealed partial class SalesOrderDraft
     private readonly List<SalesMarginCostSnapshot> marginCosts = [];
     public IReadOnlyList<SalesMarginCostSnapshot> MarginCosts => marginCosts.AsReadOnly();
 
-    public void PinMarginCosts(IReadOnlyList<SalesMarginCostSnapshot> snapshots)
+    /// <summary>
+    /// Pins the approval's costs. A kilogram line pins in its own unit only. A non-kilogram (piece) line pins in its own unit, or —
+    /// SAT-D438 (AK-6, golden TM1: a piece line's cost is read per kilogram, never a converted per-piece cost) — in the kilogram unit
+    /// the caller names (<paramref name="costKilogramUnitId"/>, the Settings kilogram identity); any other unit is refused.
+    /// </summary>
+    public void PinMarginCosts(IReadOnlyList<SalesMarginCostSnapshot> snapshots, Guid? costKilogramUnitId = null)
     {
+        ArgumentNullException.ThrowIfNull(snapshots);
+        if (costKilogramUnitId == Guid.Empty)
+            throw new ArgumentException("Maliyet kilogram birimi boş olamaz.", nameof(costKilogramUnitId));
         if (ApprovalState != InternalApprovalState.Approved)
             throw new InvalidOperationException("Marj maliyeti yalnız iç onayla sabitlenir.");
         if (snapshots.Select(item => item.LineId).Distinct().Count() != snapshots.Count)
@@ -53,8 +61,10 @@ public sealed partial class SalesOrderDraft
             snapshot.Validate();
             var line = Lines.SingleOrDefault(candidate => candidate.Id == snapshot.LineId);
             if (line is null || snapshot.Revision != Revision || snapshot.ProductId != line.Product.ProductId
-                // SAT-D438: a non-kg line may pin its cost in the cost unit (kg); a kg line pins in its own unit only.
-                || (snapshot.UnitId != line.OrderUnit.UnitId && line.OrderUnit.IsKilogram) || snapshot.Quantity != line.Quantity.Value
+                // SAT-D438: a non-kg line may pin its cost in the named kg cost unit; a kg line pins in its own unit only.
+                || (snapshot.UnitId != line.OrderUnit.UnitId
+                    && (line.OrderUnit.IsKilogram || costKilogramUnitId is not { } kilogram || snapshot.UnitId != kilogram))
+                || snapshot.Quantity != line.Quantity.Value
                 || snapshot.RecordedAtUtc != Approval.DecidedAtUtc
                 || marginCosts.Any(item => item.LineId == snapshot.LineId && item.Revision == snapshot.Revision))
                 throw new InvalidOperationException("Marj maliyeti onaylanan satırla uyuşmuyor.");
