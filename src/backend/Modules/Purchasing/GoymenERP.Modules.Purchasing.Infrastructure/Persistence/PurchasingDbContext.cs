@@ -939,6 +939,11 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
                     && (entry.Property(nameof(PurchaseOrderRow.DocumentNumberCancelledAtUtc)).OriginalValue is not null
                         || entry.Property(nameof(PurchaseOrderRow.DocumentNumberCancelledAtUtc)).CurrentValue is null))
                     throw new InvalidOperationException("Belge numarası iptal geçmişi yalnız bir kez eklenir.");
+                // AK-3 (SAT-D437): the line's kg/unit snapshot is written once at the first approval and never moves.
+                if (entry.Entity is PurchaseOrderLineRow
+                    && (WrittenAgain(entry, nameof(PurchaseOrderLineRow.TheoreticalKilogramsPerUnit))
+                        || WrittenAgain(entry, nameof(PurchaseOrderLineRow.TheoreticalKilogramsSourceVersion))))
+                    throw new InvalidOperationException("Kayıtlı teorik kg/adet değiştirilemez.");
                 string[] allowed = entry.Entity switch
                 {
                     PurchaseRequestRow =>
@@ -965,6 +970,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
                         nameof(PurchaseOrderLineRow.UnitPrice), nameof(PurchaseOrderLineRow.PriceUnitId),
                         nameof(PurchaseOrderLineRow.DiscountPercent), nameof(PurchaseOrderLineRow.DiscountAmount),
                         nameof(PurchaseOrderLineRow.DeferralPercent), nameof(PurchaseOrderLineRow.DeferralAmount),
+                        nameof(PurchaseOrderLineRow.TheoreticalKilogramsPerUnit), nameof(PurchaseOrderLineRow.TheoreticalKilogramsSourceVersion),
                     ],
                     // ALC-S16: a bulk receipt moves once (its status and decision facts); a label is only released by a rejection.
                     PurchaseGoodsReceiptBatchRow =>
@@ -992,6 +998,12 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
                     throw new InvalidOperationException("Satınalma kaydının yalnız izinli alanı değişir; satırlar ve deneme kayıtları eklenir, değişmez.");
                 }
             }
+        }
+
+        static bool WrittenAgain(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry entry, string property)
+        {
+            var value = entry.Property(property);
+            return value.IsModified && value.OriginalValue is not null;
         }
     }
 }
