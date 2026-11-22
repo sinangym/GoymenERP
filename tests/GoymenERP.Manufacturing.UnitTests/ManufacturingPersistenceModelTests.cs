@@ -179,7 +179,55 @@ public sealed class ManufacturingPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddManufacturingCostGenerations", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddManufacturingNonKgInputFacts", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddManufacturingPaintSelections", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddManufacturingOutputPieces", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public void A_counted_output_stores_its_pieces_with_the_theoretical_figure_and_its_rollback_refuses_while_one_exists()
+    {
+        // AK-7 (URT-D112): the piece count, the theoretical kg per piece and its source are three nullable all-or-none
+        // columns on an output fact (not a process loss); a reversal carries a nullable non-negative piece count. Up is
+        // pure DDL without backfill; Down refuses (THROW 52061) while any counted output or counted reversal exists.
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var facts = model.FindEntityType(typeof(FactRow))!;
+        foreach (var name in new[]
+                 {
+                     nameof(FactRow.OutputPieceCount), nameof(FactRow.OutputTheoreticalKgPerPiece),
+                     nameof(FactRow.OutputTheoreticalKgPerPieceSource),
+                 })
+        {
+            Assert.True(facts.FindProperty(name)!.IsNullable, name);
+        }
+
+        var theoretical = facts.FindProperty(nameof(FactRow.OutputTheoreticalKgPerPiece))!;
+        Assert.Equal((ManufacturingDbContext.TheoreticalKgPerPiecePrecision, OutputTheoreticalKilogramsPerPiece.Scale),
+            (theoretical.GetPrecision()!.Value, theoretical.GetScale()!.Value));
+        var source = facts.FindProperty(nameof(FactRow.OutputTheoreticalKgPerPieceSource))!;
+        Assert.Equal(OutputTheoreticalKilogramsPerPiece.SourceVersionMaximumLength, source.GetMaxLength());
+        Assert.False(source.IsUnicode());
+        Assert.Equal(ManufacturingDbContext.FactOutputPiecesCheck,
+            facts.GetCheckConstraints().Single(check => check.Name == "CK_Facts_OutputPieces").Sql);
+
+        var reversals = model.FindEntityType(typeof(OutputReversalRow))!;
+        Assert.True(reversals.FindProperty(nameof(OutputReversalRow.PieceCount))!.IsNullable);
+        Assert.Equal(ManufacturingDbContext.OutputReversalPiecesCheck,
+            reversals.GetCheckConstraints().Single(check => check.Name == "CK_OutputReversals_Pieces").Sql);
+
+        var migration = new AddManufacturingOutputPieces();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        Assert.All(migration.UpOperations.OfType<AddColumnOperation>(), column => Assert.True(column.IsNullable, column.Name));
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 52061", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[OutputPieceCount] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("FROM [manufacturing].[OutputReversals] WHERE [PieceCount] IS NOT NULL", guard.Sql,
+            StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
+        Assert.Contains(migration.DownOperations, operation => operation is DropColumnOperation
+            { Table: "Facts", Name: "OutputPieceCount" });
+        Assert.Contains(migration.DownOperations, operation => operation is DropColumnOperation
+            { Table: "OutputReversals", Name: "PieceCount" });
     }
 
     [Fact]

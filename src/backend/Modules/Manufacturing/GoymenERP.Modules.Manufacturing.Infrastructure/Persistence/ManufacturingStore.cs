@@ -1015,14 +1015,25 @@ public sealed partial class ManufacturingStore(
         Guid parentRollId, OutputClass outputClass, Kilograms mass, DateTimeOffset declaredAt,
         PlanOutputLineReference? outputLine, ManufacturingCommandMetadata metadata,
         CancellationToken cancellationToken = default) =>
+        DeclareOutputAsync(orderId, expectedVersion, outputId, parentRollId, outputClass, mass, declaredAt, outputLine,
+            pieces: null, metadata, cancellationToken);
+
+    /// <summary>
+    /// AK-7 (URT-D112): an output declaration with the piece count and the captured theoretical kg per piece of a counted
+    /// output. A null <paramref name="pieces"/> stores an uncounted declaration exactly as before AK-7 (same payload hash).
+    /// </summary>
+    public Task<ManufacturingWriteOutcome> DeclareOutputAsync(Guid orderId, long expectedVersion, Guid outputId,
+        Guid parentRollId, OutputClass outputClass, Kilograms mass, DateTimeOffset declaredAt,
+        PlanOutputLineReference? outputLine, OutputPieces? pieces, ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken = default) =>
         RecordFactAsync(orderId, FactKind.OutputDeclaration, outputId, parentRollId, mass, declaredAt, outputClass, metadata,
             order =>
             {
                 var fact = order.DeclareOutput(expectedVersion, outputId, parentRollId, outputClass, mass, declaredAt,
-                    outputLine);
+                    outputLine, pieces);
                 return (fact.DeclaredAtUtc, (CostStatus?)fact.Cost.Status);
             },
-            "manufacturing.output.declared.v1", cancellationToken, outputLine);
+            "manufacturing.output.declared.v1", cancellationToken, outputLine, pieces);
 
     /// <summary>
     /// F-009 D2 (URT-D28, R6): records an output reversal — a new fact linked to the output declaration, which itself
@@ -1033,16 +1044,26 @@ public sealed partial class ManufacturingStore(
     /// concurrency token. F-009 D3 (URT-S2): the correction endpoint calls this through the return/output host, in
     /// the same transaction as Inventory's output reversal movement; the stock movement of a correction is Inventory's.
     /// </summary>
-    public async Task<ManufacturingWriteOutcome> ReverseOutputAsync(Guid orderId, long expectedVersion, Guid reversalId,
+    public Task<ManufacturingWriteOutcome> ReverseOutputAsync(Guid orderId, long expectedVersion, Guid reversalId,
         Guid outputId, Kilograms mass, string reason, DateTimeOffset reversedAt, ManufacturingCommandMetadata metadata,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        ReverseOutputAsync(orderId, expectedVersion, reversalId, outputId, mass, pieces: null, reason, reversedAt, metadata,
+            cancellationToken);
+
+    /// <summary>
+    /// AK-7 (URT-D112): a reversal that also names the pieces taken back from a counted declaration (zero allowed). A null
+    /// <paramref name="pieces"/> is a reversal of an uncounted declaration, stored and hashed exactly as before AK-7.
+    /// </summary>
+    public async Task<ManufacturingWriteOutcome> ReverseOutputAsync(Guid orderId, long expectedVersion, Guid reversalId,
+        Guid outputId, Kilograms mass, PieceCount? pieces, string reason, DateTimeOffset reversedAt,
+        ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(reason);
         RequireMetadata(metadata);
         var companyId = RequireResolvedCompany();
         RequireFits([mass]);
 
-        var payloadHash = OutputReversalHash(orderId, outputId, mass, reversedAt, reason);
+        var payloadHash = OutputReversalHash(orderId, outputId, mass, reversedAt, reason, pieces);
         var existing = await dbContext.OutputReversals.AsNoTracking()
             .SingleOrDefaultAsync(candidate => candidate.Id == reversalId, cancellationToken);
         if (existing is not null)
@@ -1058,7 +1079,7 @@ public sealed partial class ManufacturingStore(
         var versionBefore = order.Version;
 
         // The domain decides; nothing below runs for a refused reversal.
-        var reversal = order.ReverseOutput(expectedVersion, reversalId, outputId, mass, reason, reversedAt);
+        var reversal = order.ReverseOutput(expectedVersion, reversalId, outputId, mass, reason, reversedAt, pieces);
         var declaration = order.Outputs.Single(output => output.OutputId == outputId);
 
         var now = timeProvider.GetUtcNow();
@@ -1071,6 +1092,7 @@ public sealed partial class ManufacturingStore(
             OutputId = outputId,
             ParentRollId = declaration.ParentRollId,
             MassKg = reversal.Mass.Value,
+            PieceCount = reversal.Pieces?.Value,
             Reason = reversal.Reason,
             OccurredAtUtc = reversal.ReversedAtUtc,
             PayloadHash = payloadHash,
@@ -1082,8 +1104,15 @@ public sealed partial class ManufacturingStore(
         row.UpdatedAtUtc = now;
         Audit(metadata, companyId, OrderEntityType, orderId, "manufacturing.output.reversed.v1", "Reverse",
             versionBefore, order.Version,
-            before: JsonSerializer.Serialize(new { outputId, netMassKg = (order.NetMassOf(outputId) + reversal.Mass).Value },
-                Json),
+            before: reversal.Pieces is { } takenPieces
+                ? JsonSerializer.Serialize(new
+                {
+                    outputId,
+                    netMassKg = (order.NetMassOf(outputId) + reversal.Mass).Value,
+                    netPieceCount = order.NetPiecesOf(outputId)!.Value.Value + takenPieces.Value,
+                }, Json)
+                : JsonSerializer.Serialize(new { outputId, netMassKg = (order.NetMassOf(outputId) + reversal.Mass).Value },
+                    Json),
             after: JsonSerializer.Serialize(new
             {
                 reversalId,
@@ -1092,6 +1121,8 @@ public sealed partial class ManufacturingStore(
                 outputClass = declaration.Class.ToString(),
                 massKg = reversal.Mass.Value,
                 netMassKg = order.NetMassOf(outputId).Value,
+                pieceCount = reversal.Pieces?.Value,
+                netPieceCount = order.NetPiecesOf(outputId)?.Value,
                 occurredAtUtc = reversal.ReversedAtUtc,
                 reason = reversal.Reason,
                 payloadHash,
@@ -1438,7 +1469,8 @@ public sealed partial class ManufacturingStore(
     private async Task<ManufacturingWriteOutcome> RecordFactAsync(Guid orderId, FactKind kind, Guid factId,
         Guid parentRollId, Kilograms mass, DateTimeOffset occurredAt, OutputClass? outputClass,
         ManufacturingCommandMetadata metadata, Func<ProductionOrder, (DateTimeOffset OccurredAtUtc, CostStatus? Cost)> apply,
-        string eventType, CancellationToken cancellationToken, PlanOutputLineReference? outputLine = null)
+        string eventType, CancellationToken cancellationToken, PlanOutputLineReference? outputLine = null,
+        OutputPieces? pieces = null)
     {
         RequireMetadata(metadata);
         var companyId = RequireResolvedCompany();
@@ -1447,7 +1479,7 @@ public sealed partial class ManufacturingStore(
         // A replay is recognised before the version fence: the same fact again is answered even
         // after the order has moved on, and never changes the version.
         var kindValue = (int)kind;
-        var payloadHash = FactHash(kind, orderId, parentRollId, mass, occurredAt, outputClass, outputLine);
+        var payloadHash = FactHash(kind, orderId, parentRollId, mass, occurredAt, outputClass, outputLine, pieces);
         var existing = await dbContext.Facts.AsNoTracking()
             .SingleOrDefaultAsync(row => row.Kind == kindValue && row.Id == factId, cancellationToken);
         if (existing is not null)
@@ -1480,6 +1512,9 @@ public sealed partial class ManufacturingStore(
             OutputLineKind = outputLine is null ? null : (int)outputLine.Kind,
             OutputLineSequence = outputLine?.SlitLineSequence,
             OutputLineId = outputLine?.CutLineId,
+            OutputPieceCount = pieces?.Count.Value,
+            OutputTheoreticalKgPerPiece = pieces?.Theoretical.KilogramsPerPiece,
+            OutputTheoreticalKgPerPieceSource = pieces?.Theoretical.SourceVersion,
             PayloadHash = payloadHash,
             RecordedAtUtc = now,
             RecordedBy = metadata.ActorId.Trim(),
@@ -1501,6 +1536,14 @@ public sealed partial class ManufacturingStore(
                 outputLine = outputLine is null
                     ? null
                     : new { kind = outputLine.Kind.ToString(), outputLine.SlitLineSequence, outputLine.CutLineId },
+                pieces = pieces is null
+                    ? null
+                    : new
+                    {
+                        pieceCount = pieces.Count.Value,
+                        theoreticalKgPerPiece = pieces.Theoretical.KilogramsPerPiece,
+                        theoreticalSource = pieces.Theoretical.SourceVersion,
+                    },
                 payloadHash,
             }, Json),
             "Üretim gerçekleşme olgusu");
@@ -1830,13 +1873,13 @@ public sealed partial class ManufacturingStore(
                 fact.OccurredAtUtc)),
             Of(FactKind.OutputDeclaration).Select(fact => new OutputDeclaration(fact.Id, fact.ParentRollId,
                 (OutputClass)(fact.OutputClass ?? 0), new Kilograms(fact.MassKg), fact.OccurredAtUtc, Cost(fact.CostStatus),
-                OutputLine(fact))),
+                OutputLine(fact), StoredPieces(fact))),
             Of(FactKind.WipMeasurement).Select(fact => new WipMeasurement(fact.Id, fact.ParentRollId, new Kilograms(fact.MassKg),
                 fact.OccurredAtUtc)),
             row.ClosedByUserId, row.ClosedAtUtc, row.Version, policy, approval,
             plannedOutputLines,
             reversals.Select(reversal => new OutputReversal(reversal.Id, reversal.OutputId, new Kilograms(reversal.MassKg),
-                reversal.Reason, reversal.OccurredAtUtc)),
+                reversal.Reason, reversal.OccurredAtUtc, StoredPieceCount(reversal.PieceCount))),
             row.DueDate, row.DueDateRevision, planDueDate,
             row.CancelledByUserId, row.CancelledAtUtc, row.CancellationReason,
             reopenings?.Select(reopening => new ProductionOrderReopeningV1(reopening.ClosedOrderVersion,
@@ -1849,6 +1892,48 @@ public sealed partial class ManufacturingStore(
     /// before D2, and every fact that is not an output). A column combination no reference produces is a stored-record
     /// refusal, never repaired.
     /// </summary>
+    /// <summary>
+    /// AK-7 (URT-D112): the pieces of a stored counted output, or null for an uncounted one. Columns that do not come
+    /// together, or a value the domain refuses, are a stored-record refusal, never repaired.
+    /// </summary>
+    private static OutputPieces? StoredPieces(FactRow fact)
+    {
+        if (fact.OutputPieceCount is null && fact.OutputTheoreticalKgPerPiece is null
+            && fact.OutputTheoreticalKgPerPieceSource is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            if (fact.OutputPieceCount is not { } count || fact.OutputTheoreticalKgPerPiece is not { } kilogramsPerPiece
+                || fact.OutputTheoreticalKgPerPieceSource is not { } source)
+            {
+                throw new ArgumentException("Adet, teorik kg/adet ve kaynağı birlikte kaydedilir.");
+            }
+
+            return new OutputPieces(new PieceCount(count), new OutputTheoreticalKilogramsPerPiece(kilogramsPerPiece, source));
+        }
+        catch (ArgumentException exception)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı çıktının adet bilgisi geçerli değil: " + exception.Message);
+        }
+    }
+
+    private static PieceCount? StoredPieceCount(int? value)
+    {
+        try
+        {
+            return value is { } count ? new PieceCount(count) : null;
+        }
+        catch (ArgumentException exception)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı çıktı düzeltmesinin adedi geçerli değil: " + exception.Message);
+        }
+    }
+
     private static PlanOutputLineReference? OutputLine(FactRow fact)
     {
         if (fact.OutputLineKind is not { } kind)
@@ -2132,7 +2217,7 @@ public sealed partial class ManufacturingStore(
     /// without a line keeps exactly the content (and so the stored hash and its replay) it had before D2.
     /// </summary>
     internal static string FactHash(FactKind kind, Guid orderId, Guid parentRollId, Kilograms mass, DateTimeOffset occurredAt,
-        OutputClass? outputClass, PlanOutputLineReference? outputLine = null)
+        OutputClass? outputClass, PlanOutputLineReference? outputLine = null, OutputPieces? pieces = null)
     {
         var parts = new List<string>
         {
@@ -2152,6 +2237,15 @@ public sealed partial class ManufacturingStore(
             parts.Add(outputLine.CutLineId is { } lineId ? lineId.ToString("D") : "-");
         }
 
+        // AK-7: an uncounted output keeps the hash it had before pieces existed.
+        if (pieces is not null)
+        {
+            parts.Add("pieces");
+            parts.Add(pieces.Count.Value.ToString(CultureInfo.InvariantCulture));
+            parts.Add(Canonical(pieces.Theoretical.KilogramsPerPiece));
+            parts.Add(pieces.Theoretical.SourceVersion);
+        }
+
         return Hash(string.Join('|', parts));
     }
 
@@ -2160,7 +2254,7 @@ public sealed partial class ManufacturingStore(
     /// UTC and the trimmed reason (length-prefixed, so no reason text can shift another field).
     /// </summary>
     internal static string OutputReversalHash(Guid orderId, Guid outputId, Kilograms mass, DateTimeOffset reversedAt,
-        string reason)
+        string reason, PieceCount? pieces = null)
     {
         var builder = new StringBuilder();
         AppendToken(builder, "manufacturing.output-reversal.v1");
@@ -2169,6 +2263,13 @@ public sealed partial class ManufacturingStore(
         AppendToken(builder, Canonical(mass.Value));
         AppendToken(builder, reversedAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture));
         AppendToken(builder, reason.Trim());
+        // AK-7: a reversal of an uncounted output keeps the hash it had before pieces existed.
+        if (pieces is { } count)
+        {
+            AppendToken(builder, "pieces");
+            AppendToken(builder, count.Value.ToString(CultureInfo.InvariantCulture));
+        }
+
         return Hash(builder.ToString());
     }
 

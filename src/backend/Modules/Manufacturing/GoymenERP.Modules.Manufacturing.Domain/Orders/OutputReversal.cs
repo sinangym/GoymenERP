@@ -9,13 +9,18 @@ namespace GoymenERP.Modules.Manufacturing.Domain.Orders;
 /// output of a declaration is its mass minus the sum of its reversals, and that sum never exceeds the declaration
 /// (<see cref="ManufacturingRuleCodes.OutputReversalExceedsDeclared"/>). Every class is reversed the same way; the
 /// stock movement a reversal causes (none for process loss) belongs to Inventory and is not performed here.
+/// <para>
+/// AK-7 (URT-D112): <see cref="Pieces"/> is the piece count taken back from a counted declaration (zero when only the
+/// weighed kg is corrected); null exactly when the declaration is not counted in pieces.
+/// </para>
 /// </summary>
 public sealed record OutputReversal(
     Guid ReversalId,
     Guid OutputId,
     Kilograms Mass,
     string Reason,
-    DateTimeOffset ReversedAtUtc)
+    DateTimeOffset ReversedAtUtc,
+    PieceCount? Pieces = null)
 {
     /// <summary>The longest reason kept (the module's decision reason length); a longer one is refused, never cut.</summary>
     public const int ReasonMaximumLength = ProductionPlan.DecisionReasonMaximumLength;

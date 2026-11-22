@@ -350,6 +350,18 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                     b.Property<int?>("OutputLineSequence")
                         .HasColumnType("int");
 
+                    b.Property<int?>("OutputPieceCount")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("OutputTheoreticalKgPerPiece")
+                        .HasPrecision(28, 12)
+                        .HasColumnType("decimal(28,12)");
+
+                    b.Property<string>("OutputTheoreticalKgPerPieceSource")
+                        .HasMaxLength(512)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(512)");
+
                     b.Property<Guid>("ParentRollId")
                         .HasColumnType("uniqueidentifier");
 
@@ -382,6 +394,8 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_Facts_Output", "([Kind] = 3 AND [OutputClass] IN (1, 2, 3, 4, 5) AND [CostStatus] IN (1, 2, 3)) OR ([Kind] <> 3 AND [OutputClass] IS NULL AND [CostStatus] IS NULL)");
 
                             t.HasCheckConstraint("CK_Facts_OutputLine", "([OutputLineKind] IS NULL AND [OutputLineSequence] IS NULL AND [OutputLineId] IS NULL) OR ([Kind] = 3 AND (([OutputLineKind] = 1 AND [OutputClass] = 1 AND [OutputLineSequence] >= 1 AND [OutputLineId] IS NULL) OR ([OutputLineKind] = 2 AND [OutputClass] = 1 AND [OutputLineSequence] IS NULL AND [OutputLineId] IS NOT NULL AND [OutputLineId] <> '00000000-0000-0000-0000-000000000000') OR ([OutputLineKind] = 3 AND [OutputLineSequence] IS NULL AND [OutputLineId] IS NULL)))");
+
+                            t.HasCheckConstraint("CK_Facts_OutputPieces", "([OutputPieceCount] IS NULL AND [OutputTheoreticalKgPerPiece] IS NULL AND [OutputTheoreticalKgPerPieceSource] IS NULL) OR ([Kind] = 3 AND [OutputClass] IN (1, 2, 3, 4) AND [OutputPieceCount] > 0 AND [OutputTheoreticalKgPerPiece] > 0 AND LEN([OutputTheoreticalKgPerPieceSource]) > 0)");
 
                             t.HasCheckConstraint("CK_Facts_Text", "LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
                         });
@@ -1002,6 +1016,9 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                         .IsUnicode(false)
                         .HasColumnType("varchar(64)");
 
+                    b.Property<int?>("PieceCount")
+                        .HasColumnType("int");
+
                     b.Property<string>("Reason")
                         .IsRequired()
                         .HasMaxLength(256)
@@ -1026,6 +1043,8 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_OutputReversals_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' AND [OutputId] <> '00000000-0000-0000-0000-000000000000' AND [ParentRollId] <> '00000000-0000-0000-0000-000000000000'");
 
                             t.HasCheckConstraint("CK_OutputReversals_Mass", "[OutputKind] = 3 AND [MassKg] > 0");
+
+                            t.HasCheckConstraint("CK_OutputReversals_Pieces", "[PieceCount] IS NULL OR [PieceCount] >= 0");
 
                             t.HasCheckConstraint("CK_OutputReversals_Text", "LEN([Reason]) > 0 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
                         });

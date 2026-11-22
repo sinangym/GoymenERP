@@ -212,6 +212,28 @@ public static class ManufacturingRuleCodes
     public const string OutputReversalExceedsDeclared = "manufacturing_output_reversal_exceeds_declared";
 
     /// <summary>
+    /// AK-7 (URT-D112): the output's product is counted in pieces (its card names the piece unit with a theoretical kg per
+    /// piece), so the declaration must carry the piece count with the weighed kg; or a correction of a counted output
+    /// names no piece count. Refused, never derived from the kg.
+    /// </summary>
+    public const string OutputPiecesRequired = "manufacturing_output_pieces_required";
+
+    /// <summary>
+    /// AK-7 (URT-D112): a piece count was given for an output that is not counted in pieces — a process loss, a product
+    /// whose card does not name the piece unit, or a correction of a declaration recorded without pieces.
+    /// </summary>
+    public const string OutputPiecesNotApplicable = "manufacturing_output_pieces_not_applicable";
+
+    /// <summary>AK-7 (URT-D112): the corrections of one counted output would take back more pieces than were declared.</summary>
+    public const string OutputPieceReversalExceedsDeclared = "manufacturing_output_piece_reversal_exceeds_declared";
+
+    /// <summary>
+    /// AK-7 (URT-D112): after the correction a counted output would keep kilograms without pieces, or pieces without
+    /// kilograms; the net kg and the net piece count reach zero together or not at all.
+    /// </summary>
+    public const string OutputPieceReversalInconsistent = "manufacturing_output_piece_reversal_inconsistent";
+
+    /// <summary>
     /// URT-D53: a weighing correction names an output that is not weighed (the declared process loss has no weighing
     /// and no label), so there is no weighing to correct.
     /// </summary>

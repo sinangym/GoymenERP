@@ -12,6 +12,11 @@ namespace GoymenERP.Modules.Manufacturing.Domain.Orders;
 /// declaration stored before D2 has none ("satırsız"): it still counts in every balance, but it cannot be corrected
 /// (fail-closed).
 /// </para>
+/// <para>
+/// AK-7 (URT-D112): <see cref="Pieces"/> is the piece count of an output whose product is counted in pieces, with the
+/// theoretical kg per piece captured at declaration; null for an output that is not counted (and every output stored
+/// before AK-7). The weighed <see cref="Mass"/> stays the output's quantity for balance and cost (cost per kg).
+/// </para>
 /// </summary>
 public sealed record OutputDeclaration(
     Guid OutputId,
@@ -20,4 +25,5 @@ public sealed record OutputDeclaration(
     Kilograms Mass,
     DateTimeOffset DeclaredAtUtc,
     CostResult Cost,
-    PlanOutputLineReference? OutputLine = null);
+    PlanOutputLineReference? OutputLine = null,
+    OutputPieces? Pieces = null);

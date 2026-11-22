@@ -189,9 +189,14 @@ public sealed class WeighingCorrection
         }
 
         var at = approvedAt.ToUniversalTime();
-        var reversal = order.ReverseOutput(order.Version, reversalId, OutputId, RecordedMass, Reason, at);
+        // AK-7 (URT-D112): a counted output keeps its pieces — the reversal takes back the net pieces with the net kg, and
+        // the correct weighing is declared with the same pieces and the theoretical kg per piece captured with the output.
+        var netPieces = order.NetPiecesOf(OutputId);
+        var theoretical = order.Outputs.Single(output => output.OutputId == OutputId).Pieces?.Theoretical;
+        var reversal = order.ReverseOutput(order.Version, reversalId, OutputId, RecordedMass, Reason, at, netPieces);
         var corrected = order.DeclareOutput(
-            order.Version, correctedOutputId, ParentRollId, OutputClass, CorrectMass, at, OutputLine);
+            order.Version, correctedOutputId, ParentRollId, OutputClass, CorrectMass, at, OutputLine,
+            netPieces is { } pieces && theoretical is not null ? new OutputPieces(pieces, theoretical) : null);
         Status = WeighingCorrectionStatus.Approved;
         DecidedByUserId = approverUserId;
         DecidedAtUtc = at;
